@@ -213,12 +213,12 @@ hot-config round-trip, webui vitest suite. CI runs all.
 
 1. ✅ Scaffold monorepo, git init, commit per phase. Walls first: ast-grep
    rules + single Python orchestrator + red/green tests (done 2026-07-13).
-2. server/: decompose + fixes; node --test green.
-3. Management API + layered hot config (server-side, curl-verifiable).
-4. webui/: pages over the typed client; singlefile build; served at
-   /dashboard; commit dist artifact.
-5. Launchers: ensure-proxy + assemble-env + thin shims; swap
-   ~/.local/bin/{claudex,claudithos}.
+2. ✅ server/: decompose + fixes; node --test green (77 tests, f3fc1fb).
+3. ✅ Management API + layered hot config (curl-verified PATCH round trip).
+4. ✅ webui/: FSD pages over the typed client; singlefile build served at
+   /dashboard; dist artifact committed (e572d6f).
+5. ✅ Launchers: ensure-proxy + assemble-env + prepare-config + thin shims
+   (080dd88). ~/.local/bin swap deferred to cutover (6).
 6. Cutover: kill ALL old proxies by port+name (pgrep loop excluding own PID).
    Live verify: /health v30/v3; shadow-classifier lines appear; manual
    /compact detected with a real summary; /context shows autocompact enabled

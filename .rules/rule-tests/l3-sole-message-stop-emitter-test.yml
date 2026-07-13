@@ -1,0 +1,6 @@
+id: l3-sole-message-stop-emitter
+valid:
+  - 'emit("message_delta", payload)'
+invalid:
+  - 'emit("message_stop", {})'
+  - 'res.write(`event: message_stop\n`)'

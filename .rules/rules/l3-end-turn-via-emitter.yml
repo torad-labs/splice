@@ -1,0 +1,20 @@
+# Invariant L3 — end_turn is reachable only via emitTerminal(reason) on the SSE
+# path (sse.mjs) or as the terminal stop_reason built by translate-response.mjs
+# on the non-stream path. An `end_turn` literal anywhere else is a fake-success
+# path (failures must go through emitError, never masquerade as a clean stop).
+id: l3-end-turn-via-emitter
+language: javascript
+severity: error
+message: "L3: `end_turn` may appear only in anthropic/sse.mjs or codex/translate-response.mjs — failures use emitError, never a fabricated end_turn."
+note: |
+  A fabricated end_turn is the fake-success bug class: an upstream failure that
+  reaches the client as a clean stop. Streams end via emitTerminal(reason) in
+  sse.mjs; the non-stream terminal message is built only by translate-response.
+files:
+  - server/src/**/*.mjs
+ignores:
+  - server/src/anthropic/sse.mjs
+  - server/src/codex/translate-response.mjs
+rule:
+  kind: string_fragment
+  regex: \bend_turn\b

@@ -1,0 +1,28 @@
+# The proxies and the bearer-guarded management plane are loopback-only
+# infrastructure. Every listen() must pass the literal '127.0.0.1' — a bare
+# listen(port) binds all interfaces, and a variable host is an unauditable bind.
+id: loopback-bind-only
+language: javascript
+severity: error
+message: "Bind 127.0.0.1 explicitly — listen(port, '127.0.0.1', ...). No bare or variable-host binds."
+note: |
+  The management API is bearer-guarded but still loopback-only by design; the
+  proxies serve one operator on one machine. Pass the literal host string so
+  the bind is auditable at the call site: `server.listen(port, '127.0.0.1', cb)`.
+files:
+  - server/**/*.mjs
+rule:
+  any:
+    - pattern: $S.listen($P)
+    - pattern: $S.listen($P, $HOST)
+    - pattern: $S.listen($P, $HOST, $$$REST)
+constraints:
+  HOST:
+    not:
+      any:
+        - pattern: "'127.0.0.1'"
+        - pattern: '"127.0.0.1"'
+labels:
+  HOST:
+    style: primary
+    message: "host must be the literal '127.0.0.1'"

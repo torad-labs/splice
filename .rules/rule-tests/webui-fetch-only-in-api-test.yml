@@ -1,0 +1,6 @@
+id: webui-fetch-only-in-api
+valid:
+  - 'const usage = await mgmtClient.get("/mgmt/usage");'
+invalid:
+  - 'const r = await fetch("/mgmt/status");'
+  - 'const r = await window.fetch(url, opts);'

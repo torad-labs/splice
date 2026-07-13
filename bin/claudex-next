@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# claudex-next — the mythos v30 stack on a SIDE PORT (:3097) for pre-cutover
+# testing. The production v29 proxy on :3099 and the old claudex binary are
+# untouched; state/config dirs are shared (same contract paths), so sessions
+# here are directly comparable. Delete after cutover.
+set -euo pipefail
+REPO="${CLAUDEX_ROOT:-$HOME/Documents/dev/projects/mythos/repo}"
+NODE_BIN="${CLAUDEX_NODE:-$(command -v node)}"
+[[ -n "$NODE_BIN" ]] || { echo "claudex-next: node not found" >&2; exit 1; }
+export CODEX_PROXY_PORT="${CODEX_PROXY_PORT:-3097}"
+mapfile -d '' -t CMD < <("$NODE_BIN" "$REPO/server/launcher/ensure-proxy.mjs" claudex "$@")
+[[ ${#CMD[@]} -gt 0 ]] || { echo "claudex-next: launcher failed (see messages above)" >&2; exit 1; }
+exec env "${CMD[@]}"

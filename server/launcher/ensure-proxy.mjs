@@ -19,6 +19,7 @@ import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CODEX_PROXY_VERSION, CLAUDITHOS_PROXY_VERSION } from '../src/versions.mjs';
+import { statePaths } from '../src/config.mjs';
 import {
   assembleClaudexEnv,
   assembleClaudithosEnv,
@@ -117,7 +118,7 @@ function spawnProxy({ scriptName, proxyEnv, logName }) {
 
 async function patchMode(port, mode) {
   try {
-    const keyPath = join(homedir(), '.claude-codex', 'state', 'mgmt-key');
+    const keyPath = statePaths.mgmtKey();
     if (!existsSync(keyPath)) return false;
     const key = readFileSync(keyPath, 'utf8').trim();
     const res = await fetch(`http://127.0.0.1:${port}/mgmt/config`, {

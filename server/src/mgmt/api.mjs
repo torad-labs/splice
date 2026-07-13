@@ -107,6 +107,11 @@ export async function handleMgmt(req, res, ctx) {
     sendJson(res, 200, {
       stats: readCompactStats(50),
       shadow: shadowTail(100),
+      // The stats file lives in the shared state dir and is written by the
+      // codex head; claudithos passes compaction through untouched.
+      ...(ctx.proxy === 'claudithos-proxy'
+        ? { note: 'compact stats are recorded by the codex head (shared state file); the shadow tail below is this head’s own' }
+        : {}),
     });
     return true;
   }

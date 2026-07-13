@@ -137,6 +137,8 @@
   border-radius: var(--radius-1);
 }
 
+/* Static skeleton — shape signals loading; no animation (locked motion gate:
+   no infinite loops; skeletons read by layout, not by shimmer). */
 .myx-skeleton { display: grid; gap: var(--space-2); }
 .myx-skeleton-row { display: flex; gap: var(--space-2); }
 .myx-skeleton-cell {
@@ -144,9 +146,8 @@
   height: var(--space-4);
   border-radius: var(--radius-1);
   background: var(--surface-sunk);
-  animation: myx-shimmer 1.2s var(--ease-in-out) infinite alternate;
+  border: var(--hair) solid var(--line-mute);
 }
-@keyframes myx-shimmer { from { opacity: 0.5; } to { opacity: 1; } }
 
 .myx-stale {
   font-family: var(--font-mono);
@@ -157,5 +158,4 @@
 @media (prefers-reduced-motion: reduce) {
   .myx-btn { transition: none; }
   .myx-btn:active { transform: none; }
-  .myx-skeleton-cell { animation: none; }
 }

@@ -2,5 +2,11 @@
   "name": "@mythos/server",
   "private": true,
   "version": "0.0.0",
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "undici": "^7.4.0"
+  },
+  "scripts": {
+    "test": "node --test"
+  }
 }

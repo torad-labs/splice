@@ -1,0 +1,25 @@
+# Invariant L1 — no reasoning-item replay. translate-request must NEVER set
+# `include` on the upstream Responses request (replaying encrypted reasoning is
+# a locked non-goal). The permanent test asserts buildRequest(any).include ===
+# undefined; this wall blocks the write before the test can even fail.
+id: l1-no-reasoning-replay
+language: javascript
+severity: error
+message: "L1: translate-request must never set `include` — reasoning replay is a locked non-goal."
+note: |
+  Covers `include:` pairs, `{ include }` shorthand, and dot/bracket assignment.
+  If you are threading a new upstream field, add it to the pure {req, meta}
+  contract explicitly — `include` itself is permanently off the table.
+files:
+  - server/src/codex/translate-request.mjs
+rule:
+  any:
+    - pattern:
+        context: '({ include: $V })'
+        selector: pair
+    - pattern:
+        context: '({ include })'
+        selector: shorthand_property_identifier
+    - pattern: $X.include = $V
+    - pattern: '$X["include"] = $V'
+    - pattern: "$X['include'] = $V"

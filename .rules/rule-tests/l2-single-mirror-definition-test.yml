@@ -1,0 +1,7 @@
+id: l2-single-mirror-definition
+valid:
+  - 'import { mirrorInto } from "../reasoning/mirror.mjs"; mirrorInto(target, reasoning);'
+invalid:
+  - 'function mirrorInto(target, reasoning) { return target; }'
+  - 'async function mirrorInto(target, reasoning) { return target; }'
+  - 'const mirrorInto = (target, reasoning) => target;'

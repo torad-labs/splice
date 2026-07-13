@@ -1,0 +1,18 @@
+# Kill-stale must be a pgrep loop that excludes the launcher's own PID.
+# `pkill -f` self-matches the launcher command line (the v29 trap: launcher
+# kills itself, stale proxy keeps the port, EADDRINUSE silent-exit(0),
+# version-handshake loop). Any pkill in launcher strings is that trap.
+id: launcher-no-pkill
+language: javascript
+severity: error
+message: "Never pkill in the launcher — use a pgrep loop excluding process.pid, then targeted kill per PID."
+note: |
+  Kill-stale recipe: `pgrep -f <name>` → parse PIDs → filter out process.pid
+  (and its parents) → process.kill(pid) each. pkill -f matches the launcher's
+  own command line and kills it mid-restart, leaving the stale proxy holding
+  the port (EADDRINUSE → silent exit(0) → version-handshake loop).
+files:
+  - server/launcher/**/*.mjs
+rule:
+  kind: string_fragment
+  regex: pkill

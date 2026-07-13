@@ -1,0 +1,16 @@
+# FSD: UI strictly via state — tsx variant. api segments are plain .ts, so ANY
+# fetch in a .tsx file is a component fetching server state directly.
+id: webui-fetch-only-in-api-tsx
+language: tsx
+severity: error
+message: "No fetch in components — HTTP lives in entity api segments (entities/*/api); views render store state only."
+note: |
+  Components are pure renderings of store state; local useState is for
+  ephemeral input only. Move the call into the owning entity's api segment
+  and subscribe via a selector.
+files:
+  - webui/src/**/*.tsx
+rule:
+  any:
+    - pattern: fetch($$$A)
+    - pattern: $W.fetch($$$A)

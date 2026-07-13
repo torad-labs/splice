@@ -1,0 +1,161 @@
+/* Instrument primitives. Tokens only: spacing from --space-*, sizes from
+   --text-*, radii locked to --radius-1 (instruments) / --radius-0 (wells).
+   Hairline dividers over cards; depth by surface tier, never shadow. */
+
+.myx-panel {
+  background: var(--surface-raised);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-1);
+}
+.myx-panel-signal { border-color: color-mix(in srgb, var(--data-info) 45%, transparent); }
+
+.myx-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-bottom: var(--hair) solid var(--line);
+}
+.myx-panel-title {
+  margin: var(--space-0);
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+.myx-panel-actions { display: flex; gap: var(--space-2); align-items: center; }
+.myx-panel-body { padding: var(--space-3); }
+
+.myx-pill {
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: var(--space-0) var(--space-2);
+  border-radius: var(--radius-1);
+  border: var(--hair) solid var(--line);
+}
+.myx-pill-pos   { color: var(--data-pos); border-color: color-mix(in srgb, var(--data-pos) 50%, transparent); }
+.myx-pill-neg   { color: var(--data-neg); border-color: color-mix(in srgb, var(--data-neg) 50%, transparent); }
+.myx-pill-info  { color: var(--data-info); border-color: color-mix(in srgb, var(--data-info) 50%, transparent); }
+.myx-pill-amber { color: var(--data-amber); border-color: color-mix(in srgb, var(--data-amber) 50%, transparent); }
+.myx-pill-mute  { color: var(--ink-mute); }
+
+.myx-metric { display: grid; gap: var(--space-1); }
+.myx-metric-value {
+  font-family: var(--font-mono);
+  font-size: var(--text-6);
+  font-weight: 500;
+  color: var(--ink-strong);
+  font-variant-numeric: tabular-nums;
+}
+.myx-metric-unit { font-size: var(--text-2); color: var(--ink-mute); margin-left: var(--space-1); }
+.myx-metric-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-mute);
+}
+.myx-ink-pos   { color: var(--data-pos); }
+.myx-ink-neg   { color: var(--data-neg); }
+.myx-ink-info  { color: var(--data-info); }
+.myx-ink-amber { color: var(--data-amber); }
+
+.myx-btn {
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-1);
+  border: var(--hair) solid var(--line-strong);
+  background: var(--control-surface);
+  color: var(--ink-body);
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease-snap), background var(--dur-1) var(--ease-snap);
+}
+.myx-btn:hover { border-color: var(--accent); color: var(--ink-strong); }
+.myx-btn:active { transform: translateY(var(--hair)); }
+.myx-btn:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset); }
+.myx-btn-primary { background: var(--control-fill); color: var(--on-accent); border-color: var(--accent); }
+.myx-btn-primary:hover { background: var(--accent-bright); color: var(--on-accent); }
+.myx-btn-danger { color: var(--data-neg); border-color: color-mix(in srgb, var(--data-neg) 55%, transparent); }
+.myx-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
+.myx-btn-busy { cursor: wait; }
+
+.myx-field { display: grid; gap: var(--space-1); }
+.myx-field-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-mute);
+}
+.myx-field input,
+.myx-field select {
+  font-family: var(--font-mono);
+  font-size: var(--text-3);
+  color: var(--ink-strong);
+  background: var(--control-surface);
+  border: var(--hair) solid var(--line-strong);
+  border-radius: var(--radius-1);
+  padding: var(--space-1) var(--space-2);
+}
+.myx-field input:focus-visible,
+.myx-field select:focus-visible { outline: var(--focus-width) solid var(--focus); outline-offset: var(--focus-offset); }
+
+.myx-well {
+  background: var(--surface-sunk);
+  border: var(--hair) solid var(--line-mute);
+  border-radius: var(--radius-0);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  overflow-x: auto;
+}
+
+.myx-empty {
+  margin: var(--space-0);
+  padding: var(--space-4);
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  color: var(--ink-mute);
+  border: var(--hair) dashed var(--line);
+  border-radius: var(--radius-1);
+}
+
+.myx-error {
+  margin: var(--space-0);
+  padding: var(--space-2) var(--space-3);
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  color: var(--data-neg);
+  border: var(--hair) solid color-mix(in srgb, var(--data-neg) 55%, transparent);
+  border-radius: var(--radius-1);
+}
+
+.myx-skeleton { display: grid; gap: var(--space-2); }
+.myx-skeleton-row { display: flex; gap: var(--space-2); }
+.myx-skeleton-cell {
+  flex: 1;
+  height: var(--space-4);
+  border-radius: var(--radius-1);
+  background: var(--surface-sunk);
+  animation: myx-shimmer 1.2s var(--ease-in-out) infinite alternate;
+}
+@keyframes myx-shimmer { from { opacity: 0.5; } to { opacity: 1; } }
+
+.myx-stale {
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  color: var(--data-amber);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .myx-btn { transition: none; }
+  .myx-btn:active { transform: none; }
+  .myx-skeleton-cell { animation: none; }
+}

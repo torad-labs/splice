@@ -1,0 +1,232 @@
+/* mythos shell composition — page-owned, hand-authored, .myx-* namespace.
+   Instrument register: mono-led, information-dense, hairline dividers over
+   cards. Every spacing value from --space-0..12, every font size from
+   --text-0..10 (wall: webui-css-tokens-only). One accent page-wide
+   (vermilion, action/focus only); cyan/gold-dim stay DATA inks. */
+
+* { box-sizing: border-box; }
+
+body {
+  margin: var(--space-0);
+  background: var(--surface);
+  color: var(--ink-body);
+  font-family: var(--font-mono);
+  font-size: var(--text-3);
+  line-height: 1.55;
+}
+
+::selection { background: var(--selection); }
+
+a { color: var(--accent); }
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
+}
+
+.myx-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  max-width: var(--container);
+  margin-inline: auto;
+  padding: var(--space-3) var(--space-4);
+  gap: var(--space-5);
+}
+
+/* header: compact instrument masthead — no hero, status opens the page */
+.myx-header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+  border-bottom: var(--hair) solid var(--line-strong);
+  padding-bottom: var(--space-3);
+}
+.myx-wordmark {
+  margin: var(--space-0);
+  font-family: var(--font-mono);
+  font-size: var(--text-5);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--ink-strong);
+}
+.myx-wordmark-sub {
+  margin-left: var(--space-2);
+  font-size: var(--text-1);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+.myx-tabs { display: flex; gap: var(--space-1); flex-wrap: wrap; }
+.myx-tab {
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+  text-decoration: none;
+  color: var(--ink-mute);
+  padding: var(--space-1) var(--space-2);
+  border: var(--hair) solid transparent;
+  border-radius: var(--radius-1);
+  transition: color var(--dur-1) var(--ease-snap), border-color var(--dur-1) var(--ease-snap);
+}
+.myx-tab:hover { color: var(--ink-strong); border-color: var(--line); }
+.myx-tab[aria-current='page'] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+.myx-tab:active { transform: translateY(var(--hair)); }
+
+.myx-theme-btn {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-mute);
+  background: none;
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-1);
+  padding: var(--space-1) var(--space-2);
+  cursor: pointer;
+}
+.myx-theme-btn:hover { color: var(--ink-strong); border-color: var(--line-strong); }
+
+.myx-main { display: block; }
+.myx-stack { display: grid; gap: var(--space-5); }
+
+.myx-footer {
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+  border-top: var(--hair) solid var(--line);
+  padding-top: var(--space-2);
+}
+
+/* data tables: dense, hairline rows, tabular numerals */
+.myx-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
+}
+.myx-table th {
+  text-align: left;
+  font-weight: 500;
+  font-size: var(--text-1);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ink-mute);
+  border-bottom: var(--hair) solid var(--line-strong);
+  padding: var(--space-1) var(--space-2);
+}
+.myx-table td {
+  border-bottom: var(--hair) solid var(--line-mute);
+  padding: var(--space-1) var(--space-2);
+  vertical-align: top;
+}
+.myx-table tbody tr:hover { background: var(--grid); }
+.myx-num { font-variant-numeric: tabular-nums; text-align: right; }
+.myx-trunc { max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.myx-ink-mute { color: var(--ink-mute); }
+.myx-ink-strong { color: var(--ink-strong); }
+
+.myx-metric-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+  gap: var(--space-4);
+}
+.myx-pill-row { display: flex; gap: var(--space-2); flex-wrap: wrap; margin-bottom: var(--space-3); }
+
+.myx-footnote {
+  margin: var(--space-2) var(--space-0) var(--space-0);
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}
+
+.myx-bar {
+  height: var(--space-2);
+  background: var(--surface-sunk);
+  border: var(--hair) solid var(--line-mute);
+  border-radius: var(--radius-0);
+  margin-top: var(--space-3);
+  overflow: hidden;
+}
+.myx-bar-fill {
+  height: 100%;
+  background: var(--data-info);
+  transition: width var(--dur-2) var(--ease-snap);
+}
+
+.myx-log {
+  margin: var(--space-0);
+  font-size: var(--text-1);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* config editor */
+.myx-editcfg { display: grid; gap: var(--space-4); }
+.myx-editcfg-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
+  gap: var(--space-3);
+}
+.myx-editcfg-actions { display: flex; align-items: center; gap: var(--space-3); }
+.myx-editcfg-result { font-family: var(--font-mono); font-size: var(--text-2); color: var(--data-pos); }
+
+.myx-control-row { display: flex; gap: var(--space-4); align-items: end; flex-wrap: wrap; }
+.myx-control-grid { display: grid; gap: var(--space-4); margin-top: var(--space-4); }
+.myx-inline-action { display: inline-flex; align-items: center; gap: var(--space-2); }
+.myx-inline-note { font-family: var(--font-mono); font-size: var(--text-1); color: var(--ink-mute); }
+
+/* modal (config confirm + key gate) */
+.myx-modal-scrim {
+  position: fixed;
+  inset: var(--space-0);
+  z-index: var(--z-modal);
+  background: color-mix(in srgb, var(--surface-sunk) 62%, transparent);
+  display: grid;
+  place-items: center;
+  padding: var(--space-4);
+}
+.myx-modal {
+  background: var(--surface-raised);
+  border: var(--hair) solid var(--line-strong);
+  border-radius: var(--radius-1);
+  padding: var(--space-4);
+  max-width: 44rem;
+  width: 100%;
+  display: grid;
+  gap: var(--space-4);
+  max-height: 85vh;
+  overflow-y: auto;
+}
+.myx-modal-title {
+  margin: var(--space-0);
+  font-family: var(--font-mono);
+  font-size: var(--text-4);
+  font-weight: 600;
+  color: var(--ink-strong);
+}
+.myx-modal-actions { display: flex; justify-content: end; gap: var(--space-2); }
+.myx-unlock-form { display: grid; gap: var(--space-3); }
+
+@media (max-width: 720px) {
+  .myx-shell { padding: var(--space-2) var(--space-3); }
+  .myx-header { gap: var(--space-3); }
+  .myx-theme-btn { margin-left: var(--space-0); }
+  .myx-table { display: block; overflow-x: auto; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .myx-tab, .myx-bar-fill { transition: none; }
+  .myx-tab:active { transform: none; }
+}

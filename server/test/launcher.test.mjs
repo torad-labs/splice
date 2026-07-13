@@ -16,7 +16,7 @@ import {
   readTomlKey,
   resolveContextWindow,
 } from '../launcher/assemble-env.mjs';
-import { decideAction, filterSelf } from '../launcher/ensure-proxy.mjs';
+import { decideAction, filterSelf, stalePattern } from '../launcher/ensure-proxy.mjs';
 
 const dir = mkdtempSync(join(tmpdir(), 'mythos-launcher-test-'));
 
@@ -149,4 +149,12 @@ test('decideAction: start/restart/patch-mode/ok', () => {
 
 test('filterSelf: never targets our own pid/ppid, pid 1, or garbage', () => {
   assert.deepEqual(filterSelf([100, 200, 300, 1, NaN], { pid: 200, ppid: 300 }), [100]);
+});
+
+test('stalePattern: matches only OUR tagged instance on OUR port', () => {
+  const re = new RegExp(stalePattern('codex-proxy.mjs', 3097));
+  assert.ok(re.test('node /repo/server/src/codex-proxy.mjs --instance=3097'), 'own side-port instance matches');
+  assert.ok(!re.test('node /repo/server/src/codex-proxy.mjs --instance=3099'), 'production new-stack instance does NOT name-match');
+  assert.ok(!re.test('node /old/fork/scripts/codex-proxy.mjs'), 'old v29 fork (untagged) does NOT name-match — port-kill only');
+  assert.ok(!re.test('node /repo/server/src/codex-proxy.mjs --instance=30971'), 'port prefix collision guarded');
 });

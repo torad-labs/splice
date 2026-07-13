@@ -190,6 +190,25 @@ test('native arm: request passes through byte-faithful (thinking + native tool b
   assert.equal(starts, 2, 'response passthrough in control arm');
 });
 
+test('/mgmt/compact on this head carries the shared-state note', async () => {
+  const { ensureMgmtKey } = await import('../src/mgmt/api.mjs');
+  const key = ensureMgmtKey();
+  const { status, text } = await new Promise((resolve, reject) => {
+    http.get(
+      { host: '127.0.0.1', port: proxyPort, path: '/mgmt/compact', headers: { Authorization: `Bearer ${key}` } },
+      (res) => {
+        let t = '';
+        res.on('data', (c) => { t += c; });
+        res.on('end', () => resolve({ status: res.statusCode, text: t }));
+      },
+    ).on('error', reject);
+  });
+  assert.equal(status, 200);
+  const j = JSON.parse(text);
+  assert.match(j.note, /codex head/, 'claudithos labels the shared stats file');
+  assert.ok(Array.isArray(j.shadow), 'own shadow tail present');
+});
+
 test('health reports mode and v3', async () => {
   process.env.CLAUDITHOS_MODE = 'amnesia';
   const { status, text } = await new Promise((resolve, reject) => {

@@ -22,6 +22,10 @@ export default defineConfig({
     assetsInlineLimit: 1024 * 1024,
     chunkSizeWarningLimit: 4096,
   },
+  server: {
+    // dev-mode only: the built artifact is served same-origin by the proxy
+    proxy: { '/mgmt': `http://127.0.0.1:${process.env.CODEX_PROXY_PORT ?? '3099'}` },
+  },
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],

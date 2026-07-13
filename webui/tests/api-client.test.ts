@@ -35,20 +35,34 @@ describe('mgmt client', () => {
     expect((init.headers as Record<string, string>).Authorization).toBe('Bearer sekrit');
   });
 
-  test('401 fires the unauthorized signal and throws MgmtError', async () => {
+  test('401 fires the unauthorized signal, throws, and LOCKS the client', async () => {
     const onUnauthorized = vi.fn();
     bindUnauthorized(onUnauthorized);
     fetchMock.mockResolvedValueOnce(jsonResponse(401, { error: { message: 'nope' } }));
     await expect(mgmt.status()).rejects.toThrow(MgmtError);
     expect(onUnauthorized).toHaveBeenCalledOnce();
+
+    // while locked, pollers short-circuit — zero network traffic behind the key gate
+    await expect(mgmt.usage()).rejects.toThrow(MgmtError);
+    await expect(mgmt.compact()).rejects.toThrow(MgmtError);
+    expect(fetchMock).toHaveBeenCalledOnce();
+
+    // storing a key re-arms the client
+    storeKey('fresh');
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { proxy: 'codex-proxy' }));
+    await mgmt.status();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect((fetchMock.mock.calls[1][1].headers as Record<string, string>).Authorization).toBe('Bearer fresh');
   });
 
   test('non-ok surfaces the Anthropic-shaped error message', async () => {
+    storeKey('k'); // ensure unlocked
     fetchMock.mockResolvedValueOnce(jsonResponse(400, { error: { message: 'unknown key' } }));
     await expect(mgmt.config()).rejects.toThrow('unknown key');
   });
 
   test('PATCH serializes the patch body', async () => {
+    storeKey('k');
     fetchMock.mockResolvedValueOnce(jsonResponse(200, { applied: { effort: 'low' }, rejected: {}, restart_required: [], effective: {} }));
     await mgmt.patchConfig({ effort: 'low' });
     const [, init] = fetchMock.mock.calls[0];

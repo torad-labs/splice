@@ -18,6 +18,7 @@ export function CompactFeed() {
     <div className="myx-stack">
       <Panel title="compact outcomes" actions={<Stale lastUpdated={lastUpdated} />}>
         {error ? <ErrorNote message={error} /> : null}
+        {data?.note ? <p className="myx-footnote">{data.note}</p> : null}
         {loading && !data ? <SkeletonRows rows={2} cols={4} /> : null}
         {data ? (
           <div className="myx-pill-row">

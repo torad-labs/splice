@@ -1,0 +1,163 @@
+/* ============================================================
+   Torad Design System · Tokens
+   Primitive tier (raw values) + Semantic tier (purpose, themed).
+
+   Themes: paper (light, default) + observatory (dark).
+   The system follows the OS via color-scheme + light-dark();
+   a user choice overrides it via [data-theme] on <html>.
+   ============================================================ */
+
+:root {
+  /* default: follow the operating system preference */
+  color-scheme: light dark;
+
+  /* ---------- PRIMITIVE · color ---------- */
+  /* THE PLATE WORLD - 18th-c. pigments. paper = daylight rag salon; obsidian = candlelight leather. */
+  --paper-0:#fbf3df; --paper-50:#efe6d2; --paper-100:#e7dcc2; --paper-200:#e0d4b8;   /* warm rag stock */
+  --ink-900:#241d14; --ink-700:#5d5240; --ink-500:#635741; --ink-400:#8c8068; --ink-200:#bdb39c;  /* iron-gall (ink-500 deepened to clear AA on surface-sunk) */
+  --obsidian-900:#1c1610; --obsidian-800:#241a12; --obsidian-700:#150f09;            /* candlelight leather */
+  /* cream text scale: the candlelight ink, where iron-gall reads light on leather */
+  --mist-100:#efe2c6; --mist-300:#cbbd9d; --mist-400:#b6a888; --mist-500:#968969;  /* mute lightened to clear AA on leather */
+  /* vermilion (cinnabar) - THE rubric + the single charged accent. 800/700 are the LIGHT-theme
+     grades, deep enough to clear WCAG AA (4.5:1) on rag where vermilion is the link colour;
+     400/300 are the candlelight grades (brighter vermilion on leather already passes). */
+  --vermilion-800:#8f2412; --vermilion-700:#a62815; --vermilion-600:#bb301a; --vermilion-500:#c5331d; --vermilion-400:#e2563b; --vermilion-300:#f06a4c;
+  --prussian-600:#1c3c5c; --prussian-400:#6fa8cf;   /* the first synthetic blue - the instrument */
+  --verdigris-600:#2c6555; --verdigris-400:#5bb59c; /* copper green - the live / offline mark (600 deepened to clear AA on sunk) */
+  --ormolu-600:#7d5419; --ormolu-400:#e7c069;       /* gilt bronze - the asserted / provisional ink. 600 deepened from #a8802f (2.92 on rag, FAILED AA) to clear 4.5:1 on rag AND surface-sunk; 400 is the candlelight grade (10.36 on leather, already passes) */
+  --red-600:#a53b39; --red-400:#e85d5d;             /* negative data ink (rare; 600 deepened to clear AA on sunk) */
+  /* legacy gold/cyan/green primitives - superseded by the Plate pigments above; kept for safety */
+  --gold-700:#8a5e1f; --gold-600:#a9762d; --gold-500:#c2922f; --gold-400:#d4a853; --gold-300:#e0bd72; --gold-800:#7d5419;
+  --cyan-600:#2a7d76; --cyan-400:#4ecdc4; --green-600:#3f7d46; --green-400:#7bc47f;
+
+  /* ---------- PRIMITIVE · scales (theme-agnostic) ---------- */
+  --space-0:0; --space-1:.25rem; --space-2:.5rem; --space-3:.75rem; --space-4:1rem;
+  --space-5:1.5rem; --space-6:2rem; --space-7:3rem; --space-8:4rem; --space-9:6rem; --space-10:8rem;
+
+  --text-1:.62rem; --text-2:.72rem; --text-3:.84rem; --text-4:1rem; --text-5:1.16rem;
+  --text-6:1.5rem; --text-7:2.1rem; --text-8:3rem; --text-9:clamp(2.9rem, 6.4vw, 5rem);
+
+  --radius-0:0; --radius-1:2px; --radius-2:6px;
+  --dur-1:.18s; --dur-2:.28s; --ease-snap:cubic-bezier(.16,.84,.18,1);
+  --hair:1px;
+
+  --font-display:'Fraunces', serif;
+  --font-body:'Source Serif 4', serif;
+  --font-mono:'IBM Plex Mono', monospace;
+
+  /* ---------- SEMANTIC · themed via light-dark(LIGHT, DARK) ---------- */
+  /* surfaces */
+  --surface:        light-dark(var(--paper-50),  var(--obsidian-900));
+  --surface-raised: light-dark(var(--paper-100), var(--obsidian-800));
+  --surface-sunk:   light-dark(var(--paper-200), var(--obsidian-700));
+  /* ink */
+  --ink-strong: light-dark(var(--ink-900), var(--mist-100));
+  --ink-body:   light-dark(var(--ink-700), var(--mist-400));
+  --ink-mute:   light-dark(var(--ink-500), var(--mist-500));  /* ink-500 darkened to clear AA on the sunk surface too; ink-400 failed AA on paper */
+  /* the single gold voltage. Light = deep gold (AA on paper, gold is the link colour);
+     dark = bright gold (passes on near-black). accent-bright deepens on light (more
+     emphasis = more contrast), brightens on dark — both directions stay legible. */
+  /* the single vermilion voltage. Light = deep cinnabar (AA on rag, vermilion is the link colour);
+     dark = bright vermilion (passes on leather). accent-bright deepens on light, brightens on dark. */
+  --accent:        light-dark(var(--vermilion-700), var(--vermilion-400));
+  --accent-bright: light-dark(var(--vermilion-800), var(--vermilion-300));
+  --on-accent:     light-dark(var(--paper-0), var(--obsidian-900));
+  /* lines + structure (hairlines, not shadows) - iron-gall on rag, cream on leather */
+  --line:        light-dark(rgba(36,29,20,.14),  rgba(239,226,198,.16));
+  --line-strong: light-dark(rgba(36,29,20,.30),  rgba(239,226,198,.32));
+  --tick:        light-dark(var(--ink-900),       var(--vermilion-400));
+  --grid:        light-dark(rgba(36,29,20,.04),  rgba(239,226,198,.05));
+  --focus:       light-dark(var(--vermilion-700), var(--vermilion-400));
+  /* data inks · measurements only, never chrome · the instrument palette */
+  --data-pos:  light-dark(var(--verdigris-600), var(--verdigris-400));
+  --data-neg:  light-dark(var(--red-600),   var(--red-400));
+  --data-info: light-dark(var(--prussian-600),  var(--prussian-400));
+  --selection: light-dark(rgba(197,51,29,.20), rgba(226,86,59,.26));
+
+  /* ---------- SEMANTIC · layout ---------- */
+  --container: 940px;
+  --measure: 38rem;
+  /* Compatibility default for existing generic bands. New pages own their
+     spacing in route-scoped CSS instead of selecting a global tempo recipe. */
+  --gap-section: clamp(3rem, 4vw, 4rem);
+  --gap-block: var(--space-5);
+
+  /* ---------- SEMANTIC · layout v2 (THE PLATE) — additive; --container/--measure stay ---------- */
+  /* Reading measure, ch-locked. --measure (px, 38rem≈80ch) kept for back-compat; these are
+     the law for NEW prose, which binds here and NEVER to the canvas width. */
+  --measure-text:   66ch;   /* body prose */
+  --measure-narrow: 56ch;   /* decks / standfirst */
+  --measure-wide:   74ch;   /* technical body w/ inline code — never exceeds 75ch */
+
+  /* Cross-track gutter — distinct from intra-component gaps (size-contrast needs a wider alley). */
+  --gap-track: clamp(var(--space-5), 4vw, var(--space-7));  /* 24 → 48px */
+
+  /* Breakout track sizes (consumed by .t-canvas). */
+  --track-content: min(var(--measure-text), 100% - var(--gap-track) * 2);
+  --track-popout:  minmax(0, var(--space-7));   /* pull-quote / anchor-stat edge */
+  --track-feature: minmax(0, 8vw);              /* proof grids, keyed plates, ladders */
+  --track-full:    minmax(var(--space-6), 1fr); /* the bleed gutter (floor 2rem = clean edge) */
+  --track-rail:    minmax(0, 13rem);            /* the gloss-rail in .t-spread */
+
+  /* The canvas. Gutter-aware; no 0px floor, no 940 floor (which would h-scroll phones). */
+  --canvas:      min(100% - (2 * var(--space-6)), 1480px);
+  --canvas-wide: min(100% - (2 * var(--space-6)), 1600px);  /* hero / ledger / live-field only */
+
+  /* Back-compat aliases for the three bodies that still use the old section
+     recipe. New pages do not inherit these composition names. */
+  --pad-section:  var(--gap-section);
+  --pad-chapter:  clamp(4.5rem, 8vw, 7.5rem);
+  --pad-overture: clamp(5.5rem, 10vw, 9rem);
+
+  /* Anchor type step (current top --text-9 maxes at 5rem — mid on a wide canvas). */
+  --text-10: clamp(3.4rem, 9vw, 7.5rem);
+
+  /* Sticky-rail clearance under the fixed nav. */
+  --rail-top: calc(var(--space-9) + var(--space-2));
+
+  /* ---------- PRIMITIVE · amber (ASSERTED data ink) ---------- */
+  --amber-600:#9a6a12; --amber-400:#d9a441;
+
+  /* ---------- SCALE additions (theme-agnostic) ---------- */
+  /* breakpoints (documented; used in @media): s 480 / m 720 / l 960 / xl 1120 == --container */
+  --space-11: 10rem; --space-12: 14rem; --text-0: .54rem;
+  --dur-3: .42s;
+  --ease-out: cubic-bezier(.22,1,.36,1);
+  --ease-in-out: cubic-bezier(.65,0,.35,1);
+  --icon-1: 1rem; --icon-2: 1.5rem; --icon-3: 2.25rem;
+  --focus-width: 2px; --focus-offset: 2px;
+  --control-box: 1.15rem; --field-control-h: 2.4rem;
+  /* z-index scale (depth via stacking, never shadow) · single source */
+  --z-base: 0; --z-raised: 1; --z-dropdown: 10; --z-flyout: 90;
+  --z-sticky: 100; --z-drawer: 110; --z-overlay: 190; --z-modal: 200;
+  --z-skip: 210; --z-toast: 300;
+
+  /* ---------- SEMANTIC additions ---------- */
+  --data-amber:      light-dark(var(--ormolu-600), var(--ormolu-400));   /* asserted = gilt / provisional */
+  --control-surface: light-dark(var(--paper-0),   var(--obsidian-800));
+  --control-fill:    var(--accent);
+  --line-mute:  light-dark(rgba(36,29,20,.07), rgba(239,226,198,.10));
+  --tick-soft:  light-dark(rgba(36,29,20,.4),  rgba(239,226,198,.5));
+
+  /* ---------- THE BURIN: tone = cut-depth, never opacity ---------- */
+  /* a shallow graver line (bw-1) reads light because it is thin; a deep one (bw-6) heavy. */
+  --bw-1:.34; --bw-2:.55; --bw-3:.8; --bw-4:1.15; --bw-5:1.7; --bw-6:2.6;
+  /* intaglio plate-mark: the rag pressed by a copper plate (the deboss + the bevel return) */
+  --plate-well:  light-dark(92%, 84%);  /* mix of paper-0 into the surface for the well's lit centre (deeper = more deboss read) */
+  --plate-sink:  light-dark(rgba(36,29,20,.32), rgba(0,0,0,.56));   /* the pressed shadow (deepened for the apex's larger plates) */
+  --plate-rise:  light-dark(rgba(255,250,235,.72), rgba(239,226,198,.08)); /* the cream highlight return */
+  --plate-bevel: light-dark(rgba(36,29,20,.42), rgba(239,226,198,.26));    /* the bevelled edge bite */
+  /* THE NICE PLATE (ported verbatim from the book's .pl-plate, torad-world.css): a struck
+     leaf LIFTING off the desk. A crisp cream rim catches the light on the near edge, the far
+     edge sinks soft, and one tight warm drop hugs underneath. Reads raised + letterpress, NOT
+     pressed-in (the intaglio deboss the founder rejected) and NOT a generic floating card. */
+  --plate-leaf:
+    inset 2px 2px 0 light-dark(rgba(255,250,235,.7),  rgba(239,226,198,.10)),
+    inset -2px -3px 7px light-dark(rgba(36,29,20,.16), rgba(0,0,0,.42)),
+    0 1px 0 light-dark(rgba(255,250,235,.6), rgba(0,0,0,0)),
+    0 22px 50px -34px light-dark(rgba(36,29,20,.5), rgba(0,0,0,.7));
+}
+
+/* User override (persisted): force a theme, beating the OS default. */
+:root[data-theme="paper"]       { color-scheme: light; }
+:root[data-theme="observatory"] { color-scheme: dark; }

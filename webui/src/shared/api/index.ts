@@ -27,9 +27,14 @@ export function storeKey(key: string): void {
     localStorage.setItem(KEY_STORAGE, key.trim());
   } catch { /* private mode: key lives for the session via module state below */ }
   sessionKey = key.trim();
+  locked = false; // re-arm the pollers; the next tick retries with the new key
 }
 
 let sessionKey = getStoredKey();
+
+// While locked (last response was 401) requests short-circuit without touching
+// the network — no poller 401 spam behind the key gate. storeKey() re-arms.
+let locked = false;
 
 type UnauthorizedListener = () => void;
 let onUnauthorized: UnauthorizedListener | null = null;
@@ -38,6 +43,7 @@ export function bindUnauthorized(fn: UnauthorizedListener): void {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  if (locked) throw new MgmtError(401, 'management key required');
   const res = await fetch(path, {
     ...init,
     headers: {
@@ -47,6 +53,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   if (res.status === 401) {
+    locked = true;
     onUnauthorized?.();
     throw new MgmtError(401, 'management key required');
   }
@@ -149,6 +156,7 @@ export interface ShadowRow {
 export interface CompactPayload {
   stats: { total: number; by_outcome: Record<string, number>; tail: CompactRow[] };
   shadow: ShadowRow[];
+  note?: string;
 }
 
 export interface AuthPayload {

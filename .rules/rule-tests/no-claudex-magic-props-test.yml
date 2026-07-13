@@ -1,0 +1,7 @@
+id: no-claudex-magic-props
+valid:
+  - 'const { req, meta } = translateRequest(body); log(meta.effort);'
+invalid:
+  - 'body.__claudexEffort = "high"'
+  - 'const effort = body["__claudex_effort"]'
+  - 'const req = { ...body, __claudexModel: pinned }'

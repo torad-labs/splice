@@ -1,0 +1,18 @@
+# Invariant L3 — honest failures. anthropic/sse.mjs is the ONLY module that can
+# emit message_stop; a `message_stop` literal anywhere else is a second wire
+# emitter in the making (the fake-end_turn bug class).
+id: l3-sole-message-stop-emitter
+language: javascript
+severity: error
+message: "L3: only server/src/anthropic/sse.mjs may reference `message_stop` — emit via its emitTerminal/emitError."
+note: |
+  Honest failures: sse.mjs is the sole Anthropic wire emitter. Success ends via
+  emitTerminal(reason), failures via emitError — never a hand-rolled
+  message_stop frame from a translation or stream module.
+files:
+  - server/src/**/*.mjs
+ignores:
+  - server/src/anthropic/sse.mjs
+rule:
+  kind: string_fragment
+  regex: \bmessage_stop\b

@@ -1,0 +1,13 @@
+id: webui-fetch-only-in-api-tsx
+valid:
+  - |
+    export function UsageMeter() {
+      const usage = useUsageStore(selectUsage);
+      return <div>{usage.tokens}</div>;
+    }
+invalid:
+  - |
+    export function UsageMeter() {
+      useEffect(() => { fetch("/mgmt/usage"); }, []);
+      return <div />;
+    }

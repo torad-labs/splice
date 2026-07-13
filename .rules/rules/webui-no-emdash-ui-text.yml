@@ -1,0 +1,18 @@
+# Copy gate (locked design decision): zero em-dashes in UI text. Functional
+# labels only. Applies to JSX text and string literals; code comments are free.
+id: webui-no-emdash-ui-text
+language: tsx
+severity: error
+message: "Zero em-dashes in UI text (locked copy gate) — rewrite the label."
+note: |
+  Functional labels only: split the phrase, use a colon, or drop the clause.
+  Data cells use a plain hyphen or an explicit empty-state string, never an
+  em-dash placeholder.
+files:
+  - webui/src/**/*.tsx
+rule:
+  any:
+    - kind: jsx_text
+      regex: "—"
+    - kind: string_fragment
+      regex: "—"

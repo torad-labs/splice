@@ -25,7 +25,9 @@ import { discoveryModels, unwrapCodexModel } from './models/codex-models.mjs';
 import { handleMgmt } from './mgmt/api.mjs';
 import { handleDashboard } from './mgmt/dashboard.mjs';
 
-export const PROXY_VERSION = '30'; // mythos: modular decomposition + SSE-overflow fix + tools-agnostic compact detection
+import { CODEX_PROXY_VERSION as PROXY_VERSION } from './versions.mjs';
+
+export { PROXY_VERSION };
 
 const startedAt = Date.now();
 

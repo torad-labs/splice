@@ -1,0 +1,6 @@
+id: l3-end-turn-via-emitter
+valid:
+  - 'emitTerminal(reason)'
+invalid:
+  - 'msg.stop_reason = "end_turn"'
+  - "emitTerminal('end_turn')"

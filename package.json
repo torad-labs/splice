@@ -1,0 +1,13 @@
+{
+  "name": "mythos",
+  "private": true,
+  "version": "0.0.0",
+  "workspaces": [
+    "server",
+    "webui"
+  ],
+  "scripts": {
+    "gate:rules": "ast-grep scan && ast-grep test --skip-snapshot-tests",
+    "test:hooks": "python3 .claude/hooks/tests/test_orchestrator.py"
+  }
+}

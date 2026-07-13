@@ -1,0 +1,28 @@
+# Design-language gate (operator's explicit emphasis): every spacing value from
+# the --space-0..12 scale, every font size from --text-0..10. No ad-hoc px/rem
+# on spacing/font-size properties anywhere outside the vendored token sheet.
+# Matches the unit NODE structurally (integer_value/float_value > unit), so
+# unitless 0 and var()/calc() token references stay clean.
+id: webui-css-tokens-only
+language: css
+severity: error
+message: "Spacing/font-size must come from the token scales (var(--space-N) / var(--text-N)) — no ad-hoc px/rem values."
+note: |
+  Dense data surfaces sit at var(--text-2)/var(--text-3), annotations var(--text-1),
+  page titles var(--text-5)/var(--text-6); rhythm var(--space-2)/var(--space-3)
+  inside instruments, var(--space-5)/var(--space-6) between them. Border widths
+  and radii are not gated by this rule.
+files:
+  - webui/src/**/*.css
+ignores:
+  - webui/src/shared/tokens.css
+rule:
+  kind: declaration
+  all:
+    - has:
+        kind: property_name
+        regex: '^(font-size|gap|row-gap|column-gap|inset|top|right|bottom|left|(margin|padding)(-[a-z]+)?)$'
+    - has:
+        stopBy: end
+        kind: unit
+        regex: '^(px|rem)$'

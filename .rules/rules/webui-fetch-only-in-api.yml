@@ -1,0 +1,20 @@
+# FSD: UI strictly via state. The mgmt HTTP client is touched only by entity
+# api segments (and the shared client itself); views subscribe to Zustand
+# selectors. A fetch anywhere else is component-local server state.
+id: webui-fetch-only-in-api
+language: typescript
+severity: error
+message: "HTTP lives in entity api segments (entities/*/api) via the shared client — components render store state only."
+note: |
+  Flow: user action → feature action → entity api service → Zustand store →
+  view selector. The api segment polls/mutates through the shared mgmt client
+  and writes to the store; nothing else talks to the network.
+files:
+  - webui/src/**/*.ts
+ignores:
+  - webui/src/shared/api/**
+  - webui/src/entities/*/api/**
+rule:
+  any:
+    - pattern: fetch($$$A)
+    - pattern: $W.fetch($$$A)

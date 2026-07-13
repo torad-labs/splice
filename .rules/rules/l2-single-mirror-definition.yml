@@ -1,0 +1,23 @@
+# Invariant L2 — the mirror never regresses. Exactly ONE mirrorInto() exists,
+# in server/src/reasoning/mirror.mjs; stream and non-stream paths both call it.
+# The v29 bug was two drifting copies (:1616 / :1702). Defining mirrorInto
+# anywhere else recreates that bug shape.
+id: l2-single-mirror-definition
+language: javascript
+severity: error
+message: "L2: mirrorInto is defined ONLY in server/src/reasoning/mirror.mjs — import it, do not redefine it."
+note: |
+  `import { mirrorInto } from '../reasoning/mirror.mjs'` and call it. The stream
+  and non-stream paths must share the one implementation (a permanent test
+  asserts both call sites); a local copy is how the v29 mirror regressed.
+files:
+  - server/src/**/*.mjs
+ignores:
+  - server/src/reasoning/mirror.mjs
+rule:
+  any:
+    - pattern: function mirrorInto($$$P) { $$$B }
+    - pattern: async function mirrorInto($$$P) { $$$B }
+    - pattern: const mirrorInto = $V
+    - pattern: let mirrorInto = $V
+    - pattern: var mirrorInto = $V

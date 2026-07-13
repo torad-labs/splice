@@ -1,0 +1,24 @@
+# translate-request is PURE {req, meta} — the v29 body.__claudex* magic-prop
+# side channel is dead. Any __claudex-prefixed property (dot/bracket access,
+# object key, shorthand, or destructuring) reintroduces the hidden coupling
+# this migration killed.
+id: no-claudex-magic-props
+language: javascript
+severity: error
+message: "No __claudex* magic props — pass request metadata through the pure {req, meta} contract."
+note: |
+  v29 smuggled routing state through body.__claudex* properties on the Anthropic
+  request body. In mythos, translate-request returns {req, meta}: upstream wire
+  fields live on req, proxy-internal state lives on meta. Add a named meta field.
+files:
+  - server/**/*.mjs
+rule:
+  any:
+    - kind: property_identifier
+      regex: ^__claudex
+    - kind: shorthand_property_identifier
+      regex: ^__claudex
+    - kind: shorthand_property_identifier_pattern
+      regex: ^__claudex
+    - kind: string_fragment
+      regex: ^__claudex

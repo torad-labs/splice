@@ -1,0 +1,10 @@
+id: webui-no-emdash-ui-text
+valid:
+  - |
+    export function Status() {
+      // comments may use an em-dash — rules gate UI text only
+      return <span title="uptime, seconds">up</span>;
+    }
+invalid:
+  - 'export const Label = () => <span>usage — live</span>;'
+  - 'const title = "requests — in flight";'

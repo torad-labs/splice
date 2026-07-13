@@ -1,0 +1,9 @@
+id: webui-css-tokens-only
+valid:
+  - '.myx-panel { padding: var(--space-2); gap: var(--space-3); font-size: var(--text-2); margin: 0; }'
+  - '.myx-divider { border-width: 1px; }'
+invalid:
+  - '.myx-panel { font-size: 13px; }'
+  - '.myx-panel { margin: 0.5rem; }'
+  - '.myx-panel { padding: calc(var(--space-1) + 2px); }'
+  - '.myx-panel { gap: 4px 8px; }'

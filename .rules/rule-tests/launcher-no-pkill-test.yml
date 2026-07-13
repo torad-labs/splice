@@ -1,0 +1,6 @@
+id: launcher-no-pkill
+valid:
+  - 'execSync("pgrep -f codex-proxy")'
+invalid:
+  - 'execSync("pkill -f codex-proxy")'
+  - 'const cmd = `pkill -f ${name}`'

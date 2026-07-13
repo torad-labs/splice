@@ -1,0 +1,9 @@
+id: loopback-bind-only
+valid:
+  - "server.listen(3099, '127.0.0.1')"
+  - 'server.listen(3099, "127.0.0.1", () => log("up"))'
+invalid:
+  - 'server.listen(3099)'
+  - "server.listen(3099, '0.0.0.0')"
+  - 'server.listen(port, host, cb)'
+  - 'server.listen(3099, cb)'

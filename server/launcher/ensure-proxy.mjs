@@ -20,6 +20,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CODEX_PROXY_VERSION, CLAUDITHOS_PROXY_VERSION } from '../src/versions.mjs';
 import { statePaths } from '../src/config.mjs';
+import { proxyLogName } from '../src/mgmt/api.mjs';
 import {
   assembleClaudexEnv,
   assembleClaudithosEnv,
@@ -59,6 +60,17 @@ export function filterSelf(pids, self = { pid: process.pid, ppid: process.ppid }
   return pids.filter((pid) => Number.isFinite(pid) && pid > 1 && pid !== self.pid && pid !== self.ppid);
 }
 
+/**
+ * pgrep pattern for OUR instance on OUR port only (unit-tested). Spawns are
+ * tagged with an inert --instance=<port> argv so a side-port test head
+ * (claudex-next on :3097) can never name-match the production proxy — nor the
+ * old v29 fork, whose same-named script carries no tag. Anything else dies
+ * only via the PORT it actually holds, which is the cutover semantic.
+ */
+export function stalePattern(scriptName, port) {
+  return `${scriptName}.*--instance=${port}(\\s|$)`;
+}
+
 function pgrep(pattern) {
   try {
     const out = execFileSync('pgrep', ['-f', pattern], { encoding: 'utf8' });
@@ -77,7 +89,8 @@ function pidsOnPort(port) {
   }
 }
 
-export async function killStale({ namePattern, port }) {
+export async function killStale({ scriptName, port }) {
+  const namePattern = stalePattern(scriptName, port);
   const candidates = filterSelf([...new Set([...pgrep(namePattern), ...pidsOnPort(port)])]);
   if (!candidates.length) return;
   process.stderr.write(`launcher: killing stale proxy pid(s) ${candidates.join(', ')}\n`);
@@ -88,6 +101,7 @@ export async function killStale({ namePattern, port }) {
     await sleep(100);
     if (!filterSelf([...new Set([...pgrep(namePattern), ...pidsOnPort(port)])]).length) return;
   }
+  // escalation: whoever still HOLDS the port is the blocker
   for (const pid of filterSelf(pidsOnPort(port))) {
     try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
   }
@@ -98,7 +112,7 @@ function logsDir() {
   return join(homedir(), '.claude-codex', 'logs');
 }
 
-function spawnProxy({ scriptName, proxyEnv, logName }) {
+function spawnProxy({ scriptName, port, proxyEnv, logName }) {
   mkdirSync(logsDir(), { recursive: true });
   const logPath = join(logsDir(), logName);
   const fd = openSync(logPath, 'a');
@@ -107,7 +121,8 @@ function spawnProxy({ scriptName, proxyEnv, logName }) {
   delete env.ANTHROPIC_BASE_URL;
   delete env.ANTHROPIC_API_KEY;
   delete env.ANTHROPIC_AUTH_TOKEN;
-  const child = spawn(process.execPath, [join(SRC_DIR, scriptName)], {
+  // --instance tags the cmdline for stalePattern; the entries ignore argv.
+  const child = spawn(process.execPath, [join(SRC_DIR, scriptName), `--instance=${port}`], {
     detached: true,
     stdio: ['ignore', fd, fd],
     env,
@@ -153,9 +168,9 @@ export async function ensureProxy({ name, scriptName, port, wantVersion, wantMod
   if (action === 'restart') {
     process.stderr.write(`launcher: restarting ${name} (have v${health?.version ?? '?'}, want v${wantVersion})\n`);
   }
-  await killStale({ namePattern: scriptName, port });
+  await killStale({ scriptName, port });
 
-  const logPath = spawnProxy({ scriptName, proxyEnv, logName });
+  const logPath = spawnProxy({ scriptName, port, proxyEnv, logName });
   process.stderr.write(`launcher: starting ${name} on 127.0.0.1:${port} (log: ${logPath})\n`);
 
   for (let i = 0; i < 40; i++) {
@@ -224,7 +239,7 @@ async function main() {
       port: profile.port,
       wantVersion: CODEX_PROXY_VERSION,
       proxyEnv: profile.proxyEnv,
-      logName: 'codex-proxy.log',
+      logName: proxyLogName('codex-proxy', profile.port),
     });
     const bin = resolveClaudeBin();
     if (!bin) die('Claude Code not found; set CLAUDE_CODEX_CLAUDE_BIN');
@@ -253,7 +268,7 @@ async function main() {
       wantVersion: CLAUDITHOS_PROXY_VERSION,
       wantMode: profile.mode,
       proxyEnv: profile.proxyEnv,
-      logName: 'claudithos-proxy.log',
+      logName: proxyLogName('claudithos-proxy', profile.port),
     });
     const bin = resolveClaudeBin();
     if (!bin) die('Claude Code not found; set CLAUDE_CODEX_CLAUDE_BIN');

@@ -35,8 +35,16 @@ function authorized(req) {
   return presented.length === expected.length && timingSafeEqual(presented, expected);
 }
 
+/** Port-scoped log name — the launcher writes it, /mgmt/logs reads it; both
+ * derive from this so a side-port test head never reads production's log. */
+export function proxyLogName(proxy, port) {
+  return `${proxy}-${port}.log`;
+}
+
 function readLogsTail(proxy, tailN) {
-  const path = join(logsDir(), `${proxy}.log`);
+  const cfg = getConfig();
+  const port = proxy === 'claudithos-proxy' ? cfg.claudithosPort : cfg.port;
+  const path = join(logsDir(), proxyLogName(proxy, port));
   if (!existsSync(path)) return { path, lines: [], note: 'no log file yet' };
   try {
     const lines = readFileSync(path, 'utf8').split('\n').filter(Boolean);

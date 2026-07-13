@@ -23,7 +23,9 @@ import { getOauthToken, invalidateCreds, credCached } from './auth/claude-oauth.
 import { handleMgmt } from './mgmt/api.mjs';
 import { handleDashboard } from './mgmt/dashboard.mjs';
 
-export const PROXY_VERSION = '3'; // v2 + mythos decomposition + management plane
+import { CLAUDITHOS_PROXY_VERSION as PROXY_VERSION } from './versions.mjs';
+
+export { PROXY_VERSION };
 
 const startedAt = Date.now();
 

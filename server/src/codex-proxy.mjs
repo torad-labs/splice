@@ -9,6 +9,8 @@
  *
  * Requirements: Codex CLI OAuth login in ~/.codex/auth.json.
  */
+import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { getConfig } from './config.mjs';
 import { createProxyServer, endResponse, listenLoopback, readBody, sendJson } from './http/server.mjs';
 import { createSseEmitter } from './anthropic/sse.mjs';
@@ -35,6 +37,23 @@ function logDebug(...args) {
   process.stderr.write(`[codex-proxy:debug] ${args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ')}\n`);
 }
 
+/** Env-gated dump of the raw Anthropic request body for capture→replay A/Bs.
+ * Off unless SPLICE_CAPTURE_DIR is set on the proxy process. Sequential
+ * turn-NNN.json so a multi-turn live session can be replayed byte-identical. */
+function maybeCaptureRequest(rawBody) {
+  const dir = process.env.SPLICE_CAPTURE_DIR;
+  if (!dir) return;
+  try {
+    mkdirSync(dir, { recursive: true });
+    const n = readdirSync(dir).filter((f) => /^turn-\d+\.json$/.test(f)).length + 1;
+    const name = `turn-${String(n).padStart(3, '0')}.json`;
+    writeFileSync(join(dir, name), rawBody);
+    process.stderr.write(`[codex-proxy] capture ${name} (${rawBody.length}b) → ${dir}\n`);
+  } catch (err) {
+    process.stderr.write(`[codex-proxy] capture dump failed: ${err?.message || err}\n`);
+  }
+}
+
 async function handleMessages(req, res) {
   const cfg = getConfig();
   let rawBody;
@@ -53,6 +72,8 @@ async function handleMessages(req, res) {
     sendJson(res, 400, { error: { type: 'invalid_request_error', message: 'Invalid JSON' } });
     return;
   }
+
+  maybeCaptureRequest(rawBody);
 
   // Discovery-wrapped ids (claude-codex--gpt-5.6-luna) unwrap for routing; the
   // id Claude Code sent is echoed back in every response.

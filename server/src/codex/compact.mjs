@@ -19,10 +19,23 @@ import { appendFile as appendFileAsync } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { statePaths } from '../config.mjs';
 
-/** Claude Code's dedicated summarizer system prompt (v2.1.207, binary-traced):
- * "You are a helpful AI assistant tasked with summarizing conversations."
- * A canary test pins the exact sentence; drift fails the suite loudly. */
+/** Primary summarizer marker (kept for the canary test + shadow key). */
 export const COMPACT_MARKER = 'tasked with summarizing conversations';
+
+/** Every verbatim summarizer INSTRUCTION Claude Code 2.1.207 emits (binary-
+ * traced: auto + manual + partial/microcompact). The instruction moved between
+ * the system prompt and an appended user message across builds, so detection
+ * checks BOTH fields. Each is an instruction ("your task is to create a detailed
+ * summary…"), never the post-compaction resume ("this session is being
+ * continued…") — so a resumed turn never false-matches (the v13/v24 misfire
+ * class stays dead). On drift: add the new verbatim sentence here + a fixture. */
+export const COMPACT_MARKERS = [
+  'tasked with summarizing conversations',
+  'your task is to create a detailed summary of this conversation',
+  'your task is to create a detailed summary of the conversation',
+  'your task is to create a detailed summary of the recent portion',
+  'summarize this portion of a claude code session transcript',
+];
 
 export function systemText(body) {
   if (typeof body?.system === 'string') return body.system;
@@ -49,6 +62,15 @@ export function lastUserTextOf(body) {
   return '';
 }
 
+/** True when a verbatim summarizer instruction is present in the system prompt
+ * OR the last user message (the two places the trigger instruction lives). Only
+ * the last user message is scanned — never the whole transcript — so a summary
+ * quoted in history can never re-trigger detection on later turns. */
+export function markerPresent(body) {
+  const hay = `${systemText(body)}\n${lastUserTextOf(body)}`.toLowerCase();
+  return COMPACT_MARKERS.some((m) => hay.includes(m));
+}
+
 /**
  * Detect Claude Code's /compact summarization call (auto + manual) by positive
  * marker only. Tools-agnostic. Size heuristics stay dead (the v13/v24 bug
@@ -56,14 +78,12 @@ export function lastUserTextOf(body) {
  * toolless utility calls must never match).
  */
 export function classifyCompact(body) {
-  const sys = systemText(body);
-  if (sys.toLowerCase().includes(COMPACT_MARKER)) return true;
+  if (markerPresent(body)) return true;
   // Explicit compaction affordances some builds put user-side (positive
   // statements about compaction itself, not content heuristics).
   const lastUserText = lastUserTextOf(body);
   return /compaction agent should only produce text/i.test(lastUserText)
-    || /tool use is not allowed during compaction/i.test(lastUserText)
-    || /summarizing the conversation so far/i.test(lastUserText);
+    || /tool use is not allowed during compaction/i.test(lastUserText);
 }
 
 // ── Shadow classifier (in-memory ring + stderr line) ─────────────────────────
@@ -74,7 +94,7 @@ export function recordShadow(body, compact) {
   const row = {
     ts: Date.now(),
     compact,
-    has_marker: systemText(body).toLowerCase().includes(COMPACT_MARKER),
+    has_marker: markerPresent(body),
     tool_count: Array.isArray(body?.tools) ? body.tools.length : 0,
     sys_len: systemText(body).length,
     model: String(body?.model ?? ''),

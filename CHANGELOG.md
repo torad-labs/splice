@@ -1,5 +1,94 @@
 # Changelog
 
+## mythos — control server v1 (mythosd) - 2026-07-15
+
+Split the dashboard out of the proxies into a centralized control plane. Each head
+(codex/claudithos, grok later) used to serve its own single-head `/dashboard` +
+`/mgmt`; now a loopback control server (`mythosd`, :3096) hosts ONE dashboard over
+an aggregated `/api/*` spanning every head. The heads keep `/mgmt` as their machine
+interface but no longer serve a dashboard.
+
+### Added
+
+- **`mythosd` control server** (`src/control-server.mjs` + `src/control/api.mjs`,
+  loopback :3096, `controlPort`). Bearer-guarded `/api/*` sharing the proxies'
+  mgmt-key: `GET /api/status`, `GET /api/heads` + `POST /api/heads/:head/{start,
+  stop,restart}` (full lifecycle), `GET|PATCH /api/config`, `GET /api/usage`,
+  `GET /api/auth` + `POST /api/auth/:head/{refresh,login}`, `GET /api/compact`,
+  `GET /api/logs/:head`. Serves the dashboard at `/`. Mints the mgmt-key at boot.
+- **Shared head lifecycle** (`launcher/heads.mjs`): the head registry + health /
+  spawn / kill / start / stop / restart, used by BOTH the CLI launcher and the
+  control server so process logic is never forked. Control-side spawns strip the
+  config env (`CONFIG_ENV_NAMES`) so `config.json` — the dashboard's source of
+  truth — wins over a stale inherited value.
+- **Soft-warn usage caps** (`src/usage/warn.mjs`; `usageWarnPct` /
+  `usageWarnTokens5h`): never blocks. Classifies each head's headroom ok / warn /
+  critical from the rate-limit remaining, with a 5h output-token cap as fallback.
+  Feeds a dashboard banner and a subtle statusline `⚠` that stays hidden until near
+  the cap.
+- **`claudex dashboard`** (and `claudithos dashboard`): ensures mythosd is up and
+  opens the browser; the launcher also best-effort-starts mythosd alongside any
+  head launch (non-blocking).
+- **Multi-head dashboard** (`webui/`, FSD React): a fleet of instrument head-plates
+  (live status + start / stop / restart with a two-step confirm on the destructive
+  actions + a per-head usage meter tinted by warn level), per-head auth cards
+  (codex Sign-in-with-ChatGPT + refresh, claude plain-claude + refresh), and a
+  shared config editor with layer provenance and guided enum dropdowns. Retired the
+  single-head models / reasoning / proxy-status surfaces.
+
+### Changed
+
+- `codex-proxy.mjs` and `claudithos-proxy.mjs` no longer serve `/dashboard` (it
+  moved to mythosd); they keep `/mgmt`. Dashboard config changes reach a running
+  head through a `PATCH /mgmt/config` fan-out (the runtime layer, which beats the
+  launcher's env pin), falling back to writing the config file when no head is up.
+
+## mythos — codex-proxy v31 - 2026-07-14
+
+Codex-parity prompt-cache warmth for the claudex head. Native Codex keeps the
+backend prompt cache hot with three coupled mechanisms
+(`codex-rs/core/src/client.rs`): `include=["reasoning.encrypted_content"]`,
+`store=false`, and a stable `prompt_cache_key = session_id`. claudex sent none of
+them, so the growing conversation prefix went cold every turn (no cached-input
+discount, higher latency) — acute once account-level limits made cache hits
+load-bearing. This ships all three, on by default, without abandoning the mirror.
+
+### Added
+
+- **Reasoning replay (default on, `replayReasoning`).** The backend's encrypted
+  reasoning rides through the transcript as a `redacted_thinking` block
+  (`reasoning/replay.mjs`, tag `mythos-reasoning` v1) and decodes back into a
+  Responses `reasoning` input item, so the reasoning KV / prompt-cache prefix
+  stays byte-stable across the agent loop. Emitted on both response paths — the
+  stream path via the sole SSE emitter (`addRedactedThinking`), the non-stream
+  path via `translateResponse`. Never on compact. Opt out with
+  `CLAUDEX_REPLAY_REASONING=0` to run the pure distillation loop.
+- **`prompt_cache_key` (always on).** `mythos-<sha256(first user message)[:32]>`
+  — keyed on the first user message: stable for the whole conversation and immune
+  to per-turn system-reminder drift (keying on the system prompt would bust it
+  every turn). Routes every turn of one conversation to the same cache shard.
+- Both run ALONGSIDE the mirror (L2), unchanged: the mirror carries the reasoning
+  SUMMARY to the model as readable text; replay carries the ENCRYPTED reasoning to
+  the backend. Different channels — they compose, they don't compete.
+
+### Changed
+
+- **L1 retired.** The former locked invariant "no reasoning-item replay" (the bet
+  that per-turn amnesia beat replay on the hardest multi-day work) is overturned:
+  the power came from the mirror, not from dropping replay. The
+  `l1-no-reasoning-replay` wall + rule-test are removed; the L1 behavioral test is
+  replaced by a replay round-trip / gating / cache-key / both-channels-coexist
+  suite; orchestrator routing tests re-pointed to L3. The pure-amnesia A/B is
+  preserved behind the flag.
+- `replayReasoning` is a hot-applicable config knob (defaults ← file ← env
+  `CLAUDEX_REPLAY_REASONING` ← runtime PATCH) — toggle the A/B live from the
+  dashboard, no restart.
+
+### Gates
+
+- server 87/87 (10 new), gate:rules 10 rules green, test:hooks 13/13, webui
+  lint+test+build green, `webui/dist` byte-unchanged.
+
 ## mythos — codex-proxy v30 / claudithos v3 - 2026-07-13
 
 Productization: the 1783-line `codex-proxy.mjs` v29 (which diverged through six

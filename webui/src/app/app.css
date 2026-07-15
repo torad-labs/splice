@@ -130,7 +130,6 @@ select:focus-visible {
 }
 .myx-table tbody tr:hover { background: var(--grid); }
 .myx-num { font-variant-numeric: tabular-nums; text-align: right; }
-.myx-trunc { max-width: 22ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .myx-ink-mute { color: var(--ink-mute); }
 .myx-ink-strong { color: var(--ink-strong); }
 
@@ -148,18 +147,79 @@ select:focus-visible {
   color: var(--ink-mute);
 }
 
-.myx-bar {
-  height: var(--space-2);
-  background: var(--surface-sunk);
-  border: var(--hair) solid var(--line-mute);
-  border-radius: var(--radius-0);
-  margin-top: var(--space-3);
-  overflow: hidden;
+/* fleet: the bench of head plates. --plate-leaf reads as a struck leaf
+   lifting off the desk (crisp near-edge highlight, soft far-edge sink, one
+   tight drop shadow) — a physical instrument, not a generic floating card. */
+.myx-fleet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+  gap: var(--space-4);
 }
-.myx-bar-fill {
-  height: 100%;
-  background: var(--data-info);
-  transition: width var(--dur-2) var(--ease-snap);
+.myx-plate {
+  background: var(--surface-raised);
+  border: var(--hair) solid var(--line);
+  border-radius: var(--radius-1);
+  padding: var(--space-3);
+  display: grid;
+  gap: var(--space-3);
+  box-shadow: var(--plate-leaf);
+}
+.myx-plate-head { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--space-2); }
+.myx-plate-head-right { display: flex; align-items: center; gap: var(--space-2); }
+.myx-plate-label {
+  font-family: var(--font-mono);
+  font-size: var(--text-4);
+  font-weight: 600;
+  color: var(--ink-strong);
+}
+.myx-plate-sub {
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.myx-plate-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(6rem, 1fr));
+  gap: var(--space-3);
+}
+.myx-plate-usage { display: grid; gap: var(--space-1); }
+.myx-plate-usage-row {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin: var(--space-0);
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+}
+.myx-plate-usage-none {
+  margin: var(--space-0);
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  color: var(--ink-mute);
+  font-style: italic;
+}
+.myx-plate-actions { display: flex; gap: var(--space-2); }
+.myx-plate-note {
+  margin: var(--space-0);
+  font-family: var(--font-mono);
+  font-size: var(--text-1);
+  color: var(--data-info);
+}
+
+/* fleet-banner: absent at rest, a single hairline strip in the warn ink when
+   any head crosses into warn/critical. */
+.myx-fleet-banner {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-2) var(--space-3);
+  border: var(--hair) solid var(--line-strong);
+  border-radius: var(--radius-1);
+  font-family: var(--font-mono);
+  font-size: var(--text-2);
 }
 
 .myx-log {
@@ -182,8 +242,6 @@ select:focus-visible {
 .myx-editcfg-actions { display: flex; align-items: center; gap: var(--space-3); }
 .myx-editcfg-result { font-family: var(--font-mono); font-size: var(--text-2); color: var(--data-pos); }
 
-.myx-control-row { display: flex; gap: var(--space-4); align-items: end; flex-wrap: wrap; }
-.myx-control-grid { display: grid; gap: var(--space-4); margin-top: var(--space-4); }
 .myx-inline-action { display: inline-flex; align-items: center; gap: var(--space-2); }
 .myx-inline-note { font-family: var(--font-mono); font-size: var(--text-1); color: var(--ink-mute); }
 
@@ -227,6 +285,6 @@ select:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .myx-tab, .myx-bar-fill { transition: none; }
+  .myx-tab { transition: none; }
   .myx-tab:active { transform: none; }
 }

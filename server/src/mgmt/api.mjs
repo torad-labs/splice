@@ -35,6 +35,11 @@ function authorized(req) {
   return presented.length === expected.length && timingSafeEqual(presented, expected);
 }
 
+/** Same bearer check, exported for the control server (one auth story, one key). */
+export function checkMgmtBearer(req) {
+  return authorized(req);
+}
+
 /** Port-scoped log name — the launcher writes it, /mgmt/logs reads it; both
  * derive from this so a side-port test head never reads production's log. */
 export function proxyLogName(proxy, port) {
@@ -153,7 +158,7 @@ export async function handleMgmt(req, res, ctx) {
       catalog: CODEX_MODEL_OPTIONS,
       context_windows: CODEX_MODEL_CONTEXT_WINDOWS,
       pinned: cfg.pinnedModel,
-      discovery: discoveryModels(cfg.pinnedModel).map((m) => m.id),
+      discovery: discoveryModels().map((m) => m.id),
     });
     return true;
   }

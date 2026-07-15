@@ -2,13 +2,20 @@
 // {req, meta} and never mutates the incoming body (v29 smuggled per-request
 // state through body.__claudex* magic props; meta replaces that side channel).
 //
-// Invariant L1 (locked non-goal): this module NEVER sets `include` — no
-// reasoning-item replay. The per-turn amnesia plus the text mirror form the
-// mythos distillation loop: conclusions persist in the transcript, reasoning is
-// re-derived from live evidence at every tool boundary at full effort.
-// Operator-observed to outperform native Codex CLI (which replays) on the
-// hardest multi-day work. Revisit only as a measured A/B, never silently.
+// Reasoning replay (default ON — config.replayReasoning): sets
+// `include: ['reasoning.encrypted_content']` and decodes redacted_thinking
+// blocks in history back into Responses reasoning input items, so the backend
+// reuses its reasoning KV and the prompt-cache prefix stays byte-stable across
+// the agent loop. This runs ALONGSIDE the text mirror (reasoning/mirror.mjs):
+// the mirror carries the reasoning SUMMARY to the model as readable text;
+// replay carries the ENCRYPTED reasoning to the backend. prompt_cache_key routes
+// every turn of a conversation to the same prompt-cache shard. The old L1
+// no-replay invariant was retired 2026-07-14 (the power came from the mirror,
+// not from dropping replay); opt back into the pure distillation loop with
+// CLAUDEX_REPLAY_REASONING=0.
+import { createHash } from 'node:crypto';
 import { stripModelSuffixes } from '../models/codex-models.mjs';
+import { decodeReasoningEnvelope } from '../reasoning/replay.mjs';
 
 const ALLOWED_EFFORT = new Set(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
 const ALLOWED_SUMMARY = new Set(['auto', 'concise', 'detailed', 'none']);
@@ -66,6 +73,27 @@ function systemInstructions(body) {
 }
 
 /**
+ * Stable prompt-cache routing key (Codex-parity). Native Codex sends
+ * prompt_cache_key = session/thread id so every turn routes to the same cache
+ * shard. Claude Code exposes no thread id, so we key on the FIRST user message —
+ * stable across the whole conversation and immune to per-turn system-reminder
+ * drift (keying on the system prompt would bust the key every turn). Routing
+ * hint only; never affects output. Null when there is nothing stable to key on,
+ * so the backend falls back to its default prefix-hash routing.
+ */
+export function stablePromptCacheKey(messages) {
+  const firstUser = (messages ?? []).find((m) => m?.role === 'user');
+  if (!firstUser) return null;
+  const seed = typeof firstUser.content === 'string'
+    ? firstUser.content
+    : (Array.isArray(firstUser.content)
+      ? firstUser.content.filter((b) => b?.type === 'text').map((b) => b.text).join('\n')
+      : '');
+  if (!seed) return null;
+  return `mythos-${createHash('sha256').update(seed).digest('hex').slice(0, 32)}`;
+}
+
+/**
  * Build the upstream Responses request.
  * body: the Anthropic request (read-only).
  * opts: { compact, config, originalModel } — compact from classifyCompact,
@@ -96,6 +124,14 @@ export function buildRequest(body, { compact, config, originalModel }) {
         if (!compact) {
           input.push({ role: 'user', content: `[document omitted by claudex proxy: ${block.source?.media_type ?? 'unknown type'}]` });
         }
+      } else if (block.type === 'redacted_thinking') {
+        // Replay (gated): decode our reasoning envelope back into a Responses
+        // reasoning input item, in position (before the tool_use it preceded) so
+        // the prompt-cache prefix stays byte-stable. Never on compact; replay-off
+        // drops it exactly as the pure amnesia loop did.
+        if (compact || !config.replayReasoning) continue;
+        const reasoning = decodeReasoningEnvelope(block.data);
+        if (reasoning) input.push(reasoning);
       } else if (block.type === 'tool_use') {
         // Compact must stay text-only; skip tool_use items
         if (compact) continue;
@@ -140,8 +176,17 @@ export function buildRequest(body, { compact, config, originalModel }) {
     }
   }
 
-  // Full fidelity: never shrink input, never swap model — same body Claude Code sent (translated).
-  const upstreamModel = stripModelSuffixes(body.model);
+  // Full fidelity on normal turns: never shrink input, never swap the model.
+  // Compaction MUST run on the session's SAME model — empty compactModel (the default)
+  // falls through to body.model, which Claude Code sets to the session model. The
+  // compaction prefix reuses the session's warm prompt cache ONLY when BOTH the model
+  // AND the reasoning effort match the session; a mismatch on EITHER invalidates it and
+  // re-reads the whole ~160k transcript cold. Model match is here; effort match is in
+  // the reasoning block below. A non-empty compactModel pins a compactor at the cost of
+  // that cache — leave it empty.
+  const upstreamModel = (compact && config.compactModel)
+    ? stripModelSuffixes(config.compactModel)
+    : stripModelSuffixes(body.model);
   const instructions = systemInstructions(body);
   const req = {
     model: upstreamModel,
@@ -149,6 +194,18 @@ export function buildRequest(body, { compact, config, originalModel }) {
     store: false, // required by ChatGPT backend
     stream: true, // ChatGPT backend requires stream=true; non-stream clients collect SSE
   };
+
+  // Reasoning replay (Codex-parity, default on): ask the backend to return its
+  // encrypted reasoning so it round-trips into the next turn's input (decoded
+  // above) and the reasoning KV / prompt-cache prefix survives the agent loop.
+  // Never on compact (a text-only summarizer turn). store:false is the required
+  // pairing — encrypted_content is the only way to preserve reasoning statelessly.
+  if (!compact && config.replayReasoning) req.include = ['reasoning.encrypted_content'];
+
+  // Stable prompt-cache routing key — every turn of one conversation hits the
+  // same shard so the cache does not go cold each turn. Routing hint only.
+  const cacheKey = stablePromptCacheKey(body.messages);
+  if (cacheKey) req.prompt_cache_key = cacheKey;
 
   if (compact) {
     // Force a real TEXT handoff summary — Claude Code only keeps text blocks.
@@ -207,11 +264,12 @@ export function buildRequest(body, { compact, config, originalModel }) {
 
   const showReasoning = config.showReasoning;
 
-  if (compact) {
-    // Compact needs final message TEXT. High reasoning often fills only
-    // summary_text and leaves output_text empty → a useless stub summary.
-    req.reasoning = { effort: 'low' };
-  } else if (!disabled) {
+  // Compaction MUST run at the session's SAME model AND SAME reasoning effort. A
+  // different reasoning effort INVALIDATES the prompt cache (established from traces),
+  // so the old hardcoded `low` made every compaction re-read the whole ~160k transcript
+  // COLD — that is the "compaction ate my subscription" bug. Inherit the session effort
+  // here (NO compact special-case); the session-model match is handled at upstreamModel.
+  if (!disabled) {
     if (!effort) {
       // Harness-authoritative (v27): the /effort picker (budget) WINS over the
       // config/env fallback; config applies only when there is no thinking budget.

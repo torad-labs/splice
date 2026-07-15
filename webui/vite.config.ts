@@ -3,9 +3,10 @@ import react from '@vitejs/plugin-react';
 import { viteSingleFile } from 'vite-plugin-singlefile';
 import { fileURLToPath } from 'node:url';
 
-// Single inlined HTML — the proxy serves dist/index.html at /dashboard with no
-// frontend toolchain. Fonts (Plex Mono woff2) inline as data URIs via the
-// assetsInlineLimit; serif faces fall back to system serif to keep it small.
+// Single inlined HTML — the control server serves dist/index.html at / (and
+// /dashboard) with no frontend toolchain. Fonts (Plex Mono woff2) inline as
+// data URIs via the assetsInlineLimit; serif faces fall back to system serif
+// to keep it small.
 export default defineConfig({
   plugins: [react(), viteSingleFile()],
   resolve: {
@@ -23,8 +24,8 @@ export default defineConfig({
     chunkSizeWarningLimit: 4096,
   },
   server: {
-    // dev-mode only: the built artifact is served same-origin by the proxy
-    proxy: { '/mgmt': `http://127.0.0.1:${process.env.CODEX_PROXY_PORT ?? '3099'}` },
+    // dev-mode only: the built artifact is served same-origin by the control server
+    proxy: { '/api': `http://127.0.0.1:${process.env.MYTHOS_CONTROL_PORT ?? '3096'}` },
   },
   test: {
     environment: 'node',

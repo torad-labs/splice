@@ -20,10 +20,9 @@ import { anthropicErrorBody, mapOutStatus } from './codex/errors.mjs';
 import { extractThinking, mirrorInto } from './reasoning/mirror.mjs';
 import { acquireSlot, fetchUpstreamWithRetries, gateSnapshot } from './upstream/gate.mjs';
 import { getCodexAuth, describeCodexAuth } from './auth/codex-oauth.mjs';
-import { appendCodexUsage, buildUsagePayload, makeOutputClamp, persistCodexRateLimit } from './usage/hud.mjs';
+import { appendCodexUsage, buildUsagePayload, logTurnCache, makeOutputClamp, persistCodexRateLimit } from './usage/hud.mjs';
 import { discoveryModels, unwrapCodexModel } from './models/codex-models.mjs';
 import { handleMgmt } from './mgmt/api.mjs';
-import { handleDashboard } from './mgmt/dashboard.mjs';
 
 import { CODEX_PROXY_VERSION as PROXY_VERSION } from './versions.mjs';
 
@@ -178,7 +177,8 @@ async function handleMessages(req, res) {
       // wholesale via translateResponse — one translator for both paths.
       const { finalResp, failure } = await collectTerminal(upstreamRes, slot);
       if (finalResp && !failure) {
-        const anthropicResp = translateResponse(finalResp, meta.originalModel);
+        logTurnCache({ model: meta.upstreamModel, usage: finalResp.usage ?? {}, compact: compactMode });
+        const anthropicResp = translateResponse(finalResp, meta.originalModel, { replay: !compactMode && cfg.replayReasoning });
         const clampOutput = makeOutputClamp(meta.clientMaxTokens, compactMode);
         if (anthropicResp.usage) anthropicResp.usage.output_tokens = clampOutput(anthropicResp.usage.output_tokens ?? 0);
         // Reasoning mirror parity for non-stream clients — the SAME mirrorInto
@@ -258,7 +258,7 @@ export function createServer() {
     // GETs {base}/v1/models?limit=1000 when gateway discovery is enabled,
     // re-fetched every startup. Ids MUST be claude/anthropic-prefixed.
     if (req.method === 'GET' && (req.url === '/v1/models' || req.url?.startsWith('/v1/models?'))) {
-      sendJson(res, 200, { object: 'list', has_more: false, data: discoveryModels(cfg.pinnedModel) });
+      sendJson(res, 200, { object: 'list', has_more: false, data: discoveryModels() });
       return;
     }
 
@@ -274,8 +274,6 @@ export function createServer() {
         summary_fallback: cfg.summary,
       }),
     })) return;
-
-    if (handleDashboard(req, res)) return;
 
     if (!req.url?.includes('/messages')) {
       res.writeHead(404);

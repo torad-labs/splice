@@ -21,7 +21,6 @@ import { createProxyServer, listenLoopback, readBodyBuffer, sendJson } from './h
 import { transformMessages } from './mythos/transform.mjs';
 import { getOauthToken, invalidateCreds, credCached } from './auth/claude-oauth.mjs';
 import { handleMgmt } from './mgmt/api.mjs';
-import { handleDashboard } from './mgmt/dashboard.mjs';
 
 import { CLAUDITHOS_PROXY_VERSION as PROXY_VERSION } from './versions.mjs';
 
@@ -64,8 +63,6 @@ export function createServer() {
       startedAt,
       status: () => ({ mode: cfg.claudithosMode, upstream: cfg.anthropicUpstream }),
     })) return;
-
-    if (handleDashboard(req, res)) return;
 
     const token = getOauthToken();
     if (!token) {

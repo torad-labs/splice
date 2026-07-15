@@ -33,10 +33,27 @@ Everything else is held constant: same `model`, same `reasoning.effort`, same
 the request param is identical), and a fresh, non-colliding `prompt_cache_key`
 per pass. It prints cached vs uncached input tokens per turn and a total.
 
-## Run it
+## Run it (real path — preferred)
 
-Against your ChatGPT/Codex subscription (uses `~/.codex/auth.json`, spends a
-little quota):
+The honest A/B is on the live Claude Code → proxy path. Capture ONE session,
+then replay the exact Anthropic bodies twice with only `replayReasoning`
+toggled. Isolated on `:3097` by default (does not target production `:3099`).
+
+```bash
+# spends quota: 1 live 10-turn capture + 2 full replays of those turns
+CLAUDEX_ROOT=$PWD ./experiments/cache-replay/real-ab.sh
+```
+
+`real-ab.sh` will: pin production `:3099` to `replayReasoning=false` (shared
+config.json), capture with `SPLICE_CAPTURE_DIR` on the side proxy, then run
+`replay-captured.mjs` for Arm A (ON) and Arm B (OFF). Per-turn cache hit% comes
+from the proxy log line `[codex-proxy] cache: input=… hit=…%`.
+
+## Synthetic harness (backend-direct — not the real proxy path)
+
+`run.mjs` hits the Responses backend **directly** and never exercises the
+proxy's `replayReasoning` gate. Useful as a cheap backend-only sanity check;
+do **not** treat it as proof about the live path.
 
 ```bash
 node experiments/cache-replay/run.mjs

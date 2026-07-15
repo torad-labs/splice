@@ -21,7 +21,6 @@ design constraint, 2026-07-13).
 
 | rule | scope | wall |
 |---|---|---|
-| l1-no-reasoning-replay | codex/translate-request.mjs | invariant L1: never set `include` |
 | l2-single-mirror-definition | server/src (not reasoning/mirror.mjs) | invariant L2: one mirrorInto |
 | l3-sole-message-stop-emitter | server/src (not anthropic/sse.mjs) | invariant L3: one wire emitter |
 | l3-end-turn-via-emitter | server/src (not sse/translate-response) | invariant L3: no fabricated end_turn |
@@ -31,6 +30,11 @@ design constraint, 2026-07-13).
 | webui-fetch-only-in-api(-tsx) | webui/src | FSD: UI strictly via state |
 | webui-no-emdash-ui-text | webui/src *.tsx | locked copy gate |
 | webui-css-tokens-only | webui/src *.css | --space/--text token scales only |
+
+L1 (no reasoning replay) was RETIRED 2026-07-14: encrypted reasoning replay is
+now a supported, default-on, config-gated behavior (`replayReasoning`), paired
+with `prompt_cache_key` for Codex-parity prompt-cache warmth. The mirror (L2)
+remains the load-bearing thesis — reasoning still surfaces as visible text.
 
 Invariant L4 (no fake summaries) and the L2 both-paths-call assertion are
 test-plane invariants (`server/test/`), not lintable shapes.

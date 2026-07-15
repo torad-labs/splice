@@ -4,7 +4,7 @@
 // the pure handshake/kill-stale decisions.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { lstatSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -16,6 +16,8 @@ import {
   readTomlKey,
   resolveContextWindow,
 } from '../launcher/assemble-env.mjs';
+import { prepareClaudexConfig } from '../launcher/prepare-config.mjs';
+import { availableModelIds, DEFAULT_CODEX_MODEL } from '../src/models/codex-models.mjs';
 import { decideAction, filterSelf, stalePattern } from '../launcher/ensure-proxy.mjs';
 
 const dir = mkdtempSync(join(tmpdir(), 'mythos-launcher-test-'));
@@ -103,6 +105,62 @@ test('claudex proxy env pins the model and mirrors the reasoning knobs', () => {
   assert.equal(p.proxyEnv.CLAUDEX_PINNED_MODEL, 'gpt-5.6-luna');
   assert.equal(p.proxyEnv.CLAUDEX_REASONING_EFFORT, 'xhigh');
   assert.equal(p.proxyEnv.CODEX_PROXY_PORT, '3099');
+});
+
+test('claudex env: alias slots are distinct, named, allowlisted picker rows; UNWRAPPED for the 272k window', () => {
+  const p = assembleClaudexEnv({ env: { CLAUDEX_MODEL: 'gpt-5.6-sol' }, cachePath, tomlPath });
+  // Unwrapped active model — a claude-* id makes Claude Code ignore the context
+  // window and compact early (~140k), the bug this reverts.
+  assert.equal(p.model, 'gpt-5.6-sol', 'returned model (for --model) is unwrapped');
+  assert.equal(p.childEnv.ANTHROPIC_MODEL, 'gpt-5.6-sol');
+  assert.ok(!/^claude/.test(p.childEnv.ANTHROPIC_MODEL), 'never claude-prefixed');
+  // Distinct targets → no duplicate row; each carries a clean label + subtitle.
+  const slots = {
+    OPUS: ['gpt-5.6-sol', 'Codex 5.6 Sol'],
+    SONNET: ['gpt-5.6-terra', 'Codex 5.6 Terra'],
+    HAIKU: ['gpt-5.4-mini', 'Codex 5.4 Mini'],
+    FABLE: ['gpt-5.6-luna', 'Codex 5.6 Luna'],
+  };
+  for (const [slot, [id, name]] of Object.entries(slots)) {
+    assert.equal(p.childEnv[`ANTHROPIC_DEFAULT_${slot}_MODEL`], id);
+    assert.equal(p.childEnv[`ANTHROPIC_DEFAULT_${slot}_MODEL_NAME`], name, 'clean label, not the raw wrapped id');
+    assert.ok(p.childEnv[`ANTHROPIC_DEFAULT_${slot}_MODEL_DESCRIPTION`], 'has a description, not the "Custom X model" fallback');
+  }
+  const targets = Object.values(slots).map(([id]) => id);
+  assert.equal(new Set(targets).size, targets.length, 'all four alias targets distinct — no duplicate picker rows');
+  assert.ok(!('ANTHROPIC_CUSTOM_MODEL_OPTION' in p.childEnv), 'availableModels + discovery own the picker now');
+  assert.equal(p.proxyEnv.CLAUDEX_PINNED_MODEL, 'gpt-5.6-sol', 'proxy still pinned to the UNWRAPPED id');
+});
+
+test('prepareClaudexConfig: writes a claudex-only availableModels allowlist, NEVER touching global settings', () => {
+  const home = mkdtempSync(join(tmpdir(), 'mythos-home-'));
+  const globalDir = join(home, '.claude');
+  mkdirSync(globalDir, { recursive: true });
+  const globalSettings = join(globalDir, 'settings.json');
+  writeFileSync(globalSettings, JSON.stringify({ model: 'opus[1m]', permissions: { allow: ['Bash'] }, hooks: { x: 1 } }));
+  writeFileSync(join(globalDir, 'CLAUDE.md'), '# global');
+
+  const configDir = join(home, '.claude-codex');
+  mkdirSync(configDir, { recursive: true });
+  // Simulate the pre-change state: settings.json symlinked to global.
+  symlinkSync(globalSettings, join(configDir, 'settings.json'));
+
+  prepareClaudexConfig({ home });
+
+  const dst = join(configDir, 'settings.json');
+  assert.ok(!lstatSync(dst).isSymbolicLink(), 'settings.json is a real file now, not the symlink');
+  const written = JSON.parse(readFileSync(dst, 'utf8'));
+  assert.deepEqual(written.availableModels, availableModelIds(), 'availableModels = the codex allowlist');
+  assert.ok(written.availableModels.every((m) => !/^claude/.test(m)), 'unwrapped ids — else the active model mis-sizes the window');
+  assert.equal(written.enforceAvailableModels, true, 'enforced so even the Default row is bounded');
+  assert.equal(written.model, DEFAULT_CODEX_MODEL, 'default is unwrapped Sol (keeps the 272k window)');
+  assert.deepEqual(written.permissions, { allow: ['Bash'] }, 'global permissions preserved');
+  assert.deepEqual(written.hooks, { x: 1 }, 'global hooks preserved');
+
+  // The safety invariant: plain `claude` (global settings) is untouched.
+  const globalAfter = JSON.parse(readFileSync(globalSettings, 'utf8'));
+  assert.equal(globalAfter.model, 'opus[1m]', 'global model unchanged');
+  assert.ok(!('availableModels' in globalAfter), 'global never receives availableModels');
 });
 
 test('claudithos env: arm validated, defaults mirror, no model overrides', () => {

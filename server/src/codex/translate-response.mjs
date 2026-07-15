@@ -3,6 +3,7 @@
 // promote-to-text only ever promotes MODEL content (reasoning summary) — no
 // literal is fabricated beyond error strings/markers elsewhere.
 import { PROMOTE_MIN_CHARS } from '../reasoning/mirror.mjs';
+import { encodeReasoningEnvelope } from '../reasoning/replay.mjs';
 import { buildUsagePayload } from '../usage/hud.mjs';
 
 export function isWeakSummaryText(text) {
@@ -60,8 +61,11 @@ export function harvestResponsesOutput(resp) {
   return { text, thinking };
 }
 
-/** Terminal Responses object → Anthropic message shape. */
-export function translateResponse(resp, originalModel) {
+/** Terminal Responses object → Anthropic message shape. `replay` (default off)
+ * carries the backend's encrypted reasoning back as a redacted_thinking block so
+ * it round-trips into the next request (the non-stream half of Codex-parity
+ * replay; the stream path emits the same block via the SSE emitter). */
+export function translateResponse(resp, originalModel, { replay = false } = {}) {
   const content = [];
   let outputTokens = 0;
   let inputTokens = 0;
@@ -78,6 +82,11 @@ export function translateResponse(resp, originalModel) {
         .filter(Boolean)
         .join('\n\n');
       if (text) content.push({ type: 'thinking', thinking: text });
+      // Replay (gated): carry the encrypted reasoning as a redacted_thinking
+      // block so it round-trips into the next request and holds the prompt cache.
+      if (replay && item.encrypted_content) {
+        content.push({ type: 'redacted_thinking', data: encodeReasoningEnvelope(item) });
+      }
     } else if (item.type === 'message') {
       for (const c of item.content ?? []) {
         if (c.type === 'output_text') {

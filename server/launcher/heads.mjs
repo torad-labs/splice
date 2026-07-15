@@ -8,7 +8,7 @@ import { mkdirSync, openSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CONFIG_ENV_NAMES, getConfig, logsDir } from '../src/config.mjs';
-import { CODEX_PROXY_VERSION, CLAUDITHOS_PROXY_VERSION } from '../src/versions.mjs';
+import { CODEX_PROXY_VERSION } from '../src/versions.mjs';
 import { proxyLogName } from '../src/mgmt/api.mjs';
 
 const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'src');
@@ -19,7 +19,6 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // conductor lands (portKey: 'grokPort', authKind: 'grok', label: 'claude-grok').
 export const HEAD_REGISTRY = Object.freeze({
   codex: { key: 'codex', name: 'codex-proxy', scriptName: 'codex-proxy.mjs', portKey: 'port', version: CODEX_PROXY_VERSION, authKind: 'codex', label: 'claudex' },
-  claudithos: { key: 'claudithos', name: 'claudithos-proxy', scriptName: 'claudithos-proxy.mjs', portKey: 'claudithosPort', version: CLAUDITHOS_PROXY_VERSION, authKind: 'claude', label: 'claudithos' },
 });
 
 export function listHeads() {

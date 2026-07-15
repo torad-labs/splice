@@ -1,4 +1,4 @@
-// Claude OAuth credential read for claudithos (mtime-aware cache; plain
+// Claude OAuth credential read (mtime-aware cache; plain
 // `claude` sessions keep ~/.claude/.credentials.json refreshed).
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { getConfig } from '../config.mjs';

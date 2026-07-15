@@ -10,7 +10,6 @@ import { join } from 'node:path';
 import {
   AUTO_COMPACT_WINDOW_FLOOR,
   assembleClaudexEnv,
-  assembleClaudithosEnv,
   buildClaudeArgs,
   contextWindowFromModelsCache,
   readTomlKey,
@@ -20,7 +19,7 @@ import { prepareClaudexConfig } from '../launcher/prepare-config.mjs';
 import { availableModelIds, DEFAULT_CODEX_MODEL } from '../src/models/codex-models.mjs';
 import { decideAction, filterSelf, stalePattern } from '../launcher/ensure-proxy.mjs';
 
-const dir = mkdtempSync(join(tmpdir(), 'mythos-launcher-test-'));
+const dir = mkdtempSync(join(tmpdir(), 'splice-launcher-test-'));
 
 // ── TOML: the sed bug this replaces ──────────────────────────────────────────
 
@@ -133,7 +132,7 @@ test('claudex env: alias slots are distinct, named, allowlisted picker rows; UNW
 });
 
 test('prepareClaudexConfig: writes a claudex-only availableModels allowlist, NEVER touching global settings', () => {
-  const home = mkdtempSync(join(tmpdir(), 'mythos-home-'));
+  const home = mkdtempSync(join(tmpdir(), 'splice-home-'));
   const globalDir = join(home, '.claude');
   mkdirSync(globalDir, { recursive: true });
   const globalSettings = join(globalDir, 'settings.json');
@@ -161,15 +160,6 @@ test('prepareClaudexConfig: writes a claudex-only availableModels allowlist, NEV
   const globalAfter = JSON.parse(readFileSync(globalSettings, 'utf8'));
   assert.equal(globalAfter.model, 'opus[1m]', 'global model unchanged');
   assert.ok(!('availableModels' in globalAfter), 'global never receives availableModels');
-});
-
-test('claudithos env: arm validated, defaults mirror, no model overrides', () => {
-  const p = assembleClaudithosEnv({ env: { CLAUDITHOS_MODE: 'weird' } });
-  assert.equal(p.mode, 'mirror');
-  const a = assembleClaudithosEnv({ env: { CLAUDITHOS_MODE: 'amnesia' } });
-  assert.equal(a.proxyEnv.CLAUDITHOS_MODE, 'amnesia');
-  assert.equal(a.childEnv.ANTHROPIC_AUTH_TOKEN, 'mythos-local');
-  assert.ok(!('ANTHROPIC_MODEL' in a.childEnv), 'normal default model applies from shared settings');
 });
 
 // ── claude arg policy ────────────────────────────────────────────────────────

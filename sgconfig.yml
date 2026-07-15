@@ -1,4 +1,4 @@
-# mythos ast-grep config — the single source of truth for the architecture walls.
+# splice ast-grep config — the single source of truth for the architecture walls.
 # The SAME rule files run two ways (same-checker-twice):
 #   - agent hook: .claude/hooks/orchestrator.py (PreToolUse) scans PROPOSED write
 #     content mirrored to a temp tree, so files:/ignores: globs bind identically

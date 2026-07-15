@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# claudex-next — the mythos v30 stack on a SIDE PORT (:3097) for pre-cutover
+# claudex-next — the splice v30 stack on a SIDE PORT (:3097) for pre-cutover
 # testing. The production v29 proxy on :3099 and the old claudex binary are
 # untouched; state/config dirs are shared (same contract paths), so sessions
 # here are directly comparable. Delete after cutover.
 set -euo pipefail
-REPO="${CLAUDEX_ROOT:-$HOME/Documents/dev/projects/mythos/repo}"
+REPO="${CLAUDEX_ROOT:-$HOME/Documents/dev/projects/splice/repo}"
 NODE_BIN="${CLAUDEX_NODE:-$(command -v node)}"
 [[ -n "$NODE_BIN" ]] || { echo "claudex-next: node not found" >&2; exit 1; }
 export CODEX_PROXY_PORT="${CODEX_PROXY_PORT:-3097}"

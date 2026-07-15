@@ -10,7 +10,7 @@
 //   ~/.claude-codex/state/codex-usage.json
 //   ~/.claude-codex/state/codex-ratelimit.json
 //   ~/.claude-codex/claudex-compact-stats.jsonl
-// New state introduced by mythos lives in the same dirs:
+// New state introduced by splice lives in the same dirs:
 //   ~/.claude-codex/state/config.json   (file layer + PATCH persistence)
 //   ~/.claude-codex/state/mgmt-key      (management API bearer key)
 //   ~/.claude-codex/logs/               (proxy logs; moved out of /tmp)
@@ -57,9 +57,6 @@ export const DEFAULTS = Object.freeze({
   authCacheMs: 60_000,
   debug: false,
   contextWindowOverride: null, // number | null — CODEX_MODEL_CONTEXT_WINDOW
-  // claudithos head
-  claudithosPort: 3098,
-  claudithosMode: 'mirror', // native | amnesia | mirror
   anthropicUpstream: 'https://api.anthropic.com',
   claudeCredentialsPath: join(homedir(), '.claude', '.credentials.json'),
   // grok head (xAI). Shares showReasoning/effort/replayReasoning with codex.
@@ -67,7 +64,7 @@ export const DEFAULTS = Object.freeze({
   grokModel: 'grok-4.5',
   xaiApiBase: 'https://api.x.ai/v1',
   grokAuthPath: join(homedir(), '.local', 'share', 'claude-grok', 'auth.json'),
-  // control plane (mythosd) — the centralized dashboard + management server that
+  // control plane (spliced) — the centralized dashboard + management server that
   // spans all heads; loopback-only like the proxies.
   controlPort: 3096,
   usageWarnPct: 80,        // soft-warn (never block) when a head's rate-limit consumption ≥ this %
@@ -75,7 +72,7 @@ export const DEFAULTS = Object.freeze({
 });
 
 // Everything else hot-applies on the next request.
-export const RESTART_REQUIRED_KEYS = Object.freeze(['port', 'claudithosPort', 'grokPort', 'controlPort', 'upstreamTimeoutMs']);
+export const RESTART_REQUIRED_KEYS = Object.freeze(['port', 'grokPort', 'controlPort', 'upstreamTimeoutMs']);
 
 const ENV_MAP = {
   port: ['CODEX_PROXY_PORT'],
@@ -95,17 +92,15 @@ const ENV_MAP = {
   authCacheMs: ['CLAUDEX_AUTH_CACHE_MS'],
   debug: ['CLAUDEX_DEBUG', 'CODEX_PROXY_DEBUG'],
   contextWindowOverride: ['CODEX_MODEL_CONTEXT_WINDOW'],
-  claudithosPort: ['CLAUDITHOS_PORT'],
-  claudithosMode: ['CLAUDITHOS_MODE'],
   anthropicUpstream: ['ANTHROPIC_UPSTREAM'],
   claudeCredentialsPath: ['CLAUDE_CREDENTIALS_PATH'],
   grokPort: ['GROK_PROXY_PORT'],
   grokModel: ['CLAUDE_GROK_MODEL', 'CLAUDE_GROK_PINNED_MODEL'],
   xaiApiBase: ['XAI_API_BASE'],
   grokAuthPath: ['GROK_AUTH_PATH'],
-  controlPort: ['MYTHOS_CONTROL_PORT', 'CONTROL_PROXY_PORT'],
-  usageWarnPct: ['MYTHOS_USAGE_WARN_PCT'],
-  usageWarnTokens5h: ['MYTHOS_USAGE_WARN_TOKENS_5H'],
+  controlPort: ['SPLICE_CONTROL_PORT', 'CONTROL_PROXY_PORT'],
+  usageWarnPct: ['SPLICE_USAGE_WARN_PCT'],
+  usageWarnTokens5h: ['SPLICE_USAGE_WARN_TOKENS_5H'],
 };
 
 /** Every env var name the config layer reads. The control server strips these
@@ -115,7 +110,7 @@ export const CONFIG_ENV_NAMES = Object.freeze([...new Set(Object.values(ENV_MAP)
 
 const NUMBER_KEYS = new Set([
   'port', 'maxInflight', 'upstreamRetries', 'upstreamTimeoutMs', 'firstByteTimeoutMs',
-  'streamIdleMs', 'authCacheMs', 'contextWindowOverride', 'claudithosPort', 'grokPort',
+  'streamIdleMs', 'authCacheMs', 'contextWindowOverride', 'grokPort',
   'controlPort', 'usageWarnPct', 'usageWarnTokens5h',
 ]);
 const BOOL_KEYS = new Set(['debug', 'replayReasoning']);
@@ -150,11 +145,6 @@ function normalize(cfg) {
   const idleFloor = process.env.CODEX_PROXY_TEST === '1' ? 250 : 30_000;
   out.streamIdleMs = Math.max(idleFloor, out.streamIdleMs || DEFAULTS.streamIdleMs);
   out.authCacheMs = Math.max(5_000, out.authCacheMs || DEFAULTS.authCacheMs);
-  if (!['native', 'amnesia', 'mirror'].includes(String(out.claudithosMode).toLowerCase())) {
-    out.claudithosMode = DEFAULTS.claudithosMode;
-  } else {
-    out.claudithosMode = String(out.claudithosMode).toLowerCase();
-  }
   out.showReasoning = normalizeShowReasoning(out.showReasoning);
   if (out.contextWindowOverride != null && !(out.contextWindowOverride > 0)) out.contextWindowOverride = null;
   out.usageWarnPct = Math.min(100, Math.max(0, Number(out.usageWarnPct) || 0));

@@ -30,8 +30,7 @@ import {
 const AUTH_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'auth');
 const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 
-// Heads whose usage the proxy tracks (statePaths pair). claudithos passes
-// compaction/usage through untouched, so it has none; grok joins when it lands.
+// Heads whose usage the proxy tracks (statePaths pair). grok joins when it lands.
 const HEAD_USAGE_PATHS = {
   codex: { usage: statePaths.usage, ratelimit: statePaths.ratelimit },
   grok: { usage: statePaths.grokUsage, ratelimit: statePaths.grokRatelimit },
@@ -139,7 +138,7 @@ async function refreshAuth(head) {
     const fresh = await refreshCodexAuth();
     return { head, refreshed: Boolean(fresh?.token), ...describeCodexAuth() };
   }
-  if (head === 'claude' || head === 'claudithos') {
+  if (head === 'claude') {
     invalidateCreds();
     return { head: 'claude', refreshed: Boolean(getOauthToken()), ...describeClaudeAuth() };
   }

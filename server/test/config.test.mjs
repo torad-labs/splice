@@ -6,7 +6,7 @@ import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const root = mkdtempSync(join(tmpdir(), 'mythos-config-test-'));
+const root = mkdtempSync(join(tmpdir(), 'splice-config-test-'));
 process.env.CLAUDEX_STATE_DIR = join(root, 'state');
 mkdirSync(process.env.CLAUDEX_STATE_DIR, { recursive: true });
 process.env.CODEX_PROXY_TEST = '1';
@@ -64,24 +64,12 @@ test('maxInflight accepts unlimited/off aliases as 0', () => {
   assert.equal(getConfig().maxInflight, 0);
 });
 
-test('claudithosMode reads live env (arm flips without restart) but PATCH wins', () => {
-  process.env.CLAUDITHOS_MODE = 'amnesia';
-  assert.equal(getConfig().claudithosMode, 'amnesia');
-  process.env.CLAUDITHOS_MODE = 'native';
-  assert.equal(getConfig().claudithosMode, 'native');
-  patchConfig({ claudithosMode: 'mirror' });
-  assert.equal(getConfig().claudithosMode, 'mirror', 'runtime layer beats env');
-  patchConfig({ claudithosMode: null }); // clear the runtime override
-  delete process.env.CLAUDITHOS_MODE;
-});
-
-test('normalization: floors, showReasoning aliases, invalid mode falls back', () => {
-  patchConfig({ streamIdleMs: 1, authCacheMs: 1, upstreamRetries: 0, claudithosMode: 'weird', showReasoning: 'full' });
+test('normalization: floors, showReasoning aliases', () => {
+  patchConfig({ streamIdleMs: 1, authCacheMs: 1, upstreamRetries: 0, showReasoning: 'full' });
   const cfg = getConfig();
   assert.equal(cfg.streamIdleMs, 250, 'test-mode idle floor');
   assert.equal(cfg.authCacheMs, 5000);
   assert.equal(cfg.upstreamRetries, 2, '0 is unset → default (v29: || 2); an explicit 1 is honored');
-  assert.equal(cfg.claudithosMode, 'mirror', 'invalid mode → default');
   assert.equal(cfg.showReasoning, 'text', '"full" aliases to text');
-  patchConfig({ streamIdleMs: null, authCacheMs: null, upstreamRetries: null, claudithosMode: null, showReasoning: null });
+  patchConfig({ streamIdleMs: null, authCacheMs: null, upstreamRetries: null, showReasoning: null });
 });

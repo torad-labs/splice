@@ -6,11 +6,11 @@ product
 
 ## Users
 
-The operator (a single developer) running the mythos proxy stack on their own loopback machine, driving Claude Code against non-Anthropic backends (ChatGPT Codex, xAI Grok) through decomposed proxy "heads" (claudex/codex, claudithos, grok). Their context: mid-session, often with live coding sessions running, wanting to see and steer the fleet without leaving the terminal for long.
+The operator (a single developer) running the splice proxy stack on their own loopback machine, driving Claude Code against non-Anthropic backends (ChatGPT Codex, xAI Grok) through decomposed proxy "heads" (claudex/codex, grok). Their context: mid-session, often with live coding sessions running, wanting to see and steer the fleet without leaving the terminal for long.
 
 ## Product Purpose
 
-mythos is a control plane for the proxy heads. The dashboard (mythosd, loopback :3096) is the single place to see each head's live status, start / stop / restart it, watch 5-hour usage against a soft cap (which never blocks), manage per-head auth (ChatGPT sign-in, credential refresh), and edit the shared proxy config with layer provenance. Success is that the operator trusts the fleet at a glance and can act on any head without reading logs or restarting by hand.
+splice is a control plane for the proxy heads. The dashboard (spliced, loopback :3096) is the single place to see each head's live status, start / stop / restart it, watch 5-hour usage against a soft cap (which never blocks), manage per-head auth (ChatGPT sign-in, credential refresh), and edit the shared proxy config with layer provenance. Success is that the operator trusts the fleet at a glance and can act on any head without reading logs or restarting by hand.
 
 ## Brand Personality
 

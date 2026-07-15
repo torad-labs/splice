@@ -12,7 +12,7 @@
 // the request translator. Replay is config-gated (config.replayReasoning) and
 // never runs on compact turns — the gating lives at the call sites.
 
-export const REASONING_ENVELOPE_TAG = 'mythos-reasoning';
+export const REASONING_ENVELOPE_TAG = 'splice-reasoning';
 export const REASONING_ENVELOPE_VERSION = 1;
 
 /** Responses `reasoning` output item → base64 envelope for a redacted_thinking block. */

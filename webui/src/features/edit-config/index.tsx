@@ -17,7 +17,6 @@ function fmtVal(v: ConfigValue | undefined): string {
 // text: they are nullable (inherit) and the server clamps loose values anyway.
 const ENUM_OPTIONS: Record<string, readonly string[]> = {
   showReasoning: ['off', 'thinking', 'text'],
-  claudithosMode: ['native', 'amnesia', 'mirror'],
   replayReasoning: ['true', 'false'],
   debug: ['true', 'false'],
 };

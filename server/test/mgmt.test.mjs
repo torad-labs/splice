@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
 
-const root = mkdtempSync(join(tmpdir(), 'mythos-mgmt-test-'));
+const root = mkdtempSync(join(tmpdir(), 'splice-mgmt-test-'));
 process.env.CODEX_PROXY_TEST = '1';
 process.env.CLAUDEX_STATE_DIR = join(root, 'state');
 process.env.CODEX_AUTH_PATH = join(root, 'auth.json'); // absent — mgmt must still work

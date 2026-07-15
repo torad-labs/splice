@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""mythos hook orchestrator — every write-time policy routes to ast-grep rules.
+"""splice hook orchestrator — every write-time policy routes to ast-grep rules.
 
 ONE orchestrator, ZERO per-rule Python (operator design constraint, 2026-07-13):
 policy lives only in .rules/rules/*.yml. This file owns routing, not rules.
@@ -26,7 +26,7 @@ with a loud stderr warning (session end must never wedge on scan
 infrastructure; the write-time wall and the gate are the backstops).
 
 Walls are grant-gated: edits to .rules/, .claude/hooks/, .claude/settings.json,
-or sgconfig.yml are blocked unless the operator sets MYTHOS_WALLS_OK=1. The
+or sgconfig.yml are blocked unless the operator sets SPLICE_WALLS_OK=1. The
 override is loud by design — never set it to push past your own block.
 
 Deliberate rule exceptions go inline: `// ast-grep-ignore: <rule-id>` plus a
@@ -43,10 +43,10 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
-# MYTHOS_HOOK_ROOT exists for the hermetic test harness only. Redirecting it to
-# dodge policy is equivalent to setting MYTHOS_WALLS_OK — visible, auditable,
+# SPLICE_HOOK_ROOT exists for the hermetic test harness only. Redirecting it to
+# dodge policy is equivalent to setting SPLICE_WALLS_OK — visible, auditable,
 # and caught by the gate re-running the same rules on the real tree.
-ROOT = Path(os.environ.get("MYTHOS_HOOK_ROOT", "") or Path(__file__).resolve().parents[2])
+ROOT = Path(os.environ.get("SPLICE_HOOK_ROOT", "") or Path(__file__).resolve().parents[2])
 SGCONFIG = ROOT / "sgconfig.yml"
 ERROR_LOG = Path(__file__).resolve().parent / "log" / "orchestrator_errors.log"
 
@@ -72,13 +72,13 @@ def main() -> int:
         _log(traceback.format_exc())
         if lifecycle == "pretooluse":
             _emit_block(
-                "HOOK POLICY INCOMPLETE: mythos orchestrator failed on a blocking lifecycle.\n\n"
+                "HOOK POLICY INCOMPLETE: splice orchestrator failed on a blocking lifecycle.\n\n"
                 f"log: {ERROR_LOG}\n\n"
                 "Failing closed — silently skipping write-time policy is unsafe. Fix the\n"
                 "orchestrator or the scan toolchain (is ast-grep on PATH?); never route around it."
             )
         else:
-            sys.stderr.write(f"mythos orchestrator: stop lifecycle degraded, see {ERROR_LOG}\n")
+            sys.stderr.write(f"splice orchestrator: stop lifecycle degraded, see {ERROR_LOG}\n")
     return 0
 
 
@@ -99,12 +99,12 @@ def pretooluse(data: dict) -> int:
     except ValueError:
         return 0  # outside the repo — not this wall's jurisdiction
 
-    if _is_wall_path(rel) and os.environ.get("MYTHOS_WALLS_OK") != "1":
+    if _is_wall_path(rel) and os.environ.get("SPLICE_WALLS_OK") != "1":
         _emit_block(
-            f"MYTHOS WALLS: {rel} is wall infrastructure (rules / orchestrator / settings).\n\n"
+            f"SPLICE WALLS: {rel} is wall infrastructure (rules / orchestrator / settings).\n\n"
             "Walls are grant-gated: a blocked write means fix the code, not the wall.\n"
             "If the operator consciously approved a wall change, re-run with\n"
-            "MYTHOS_WALLS_OK=1 — loud and never silent. Then re-run the gate\n"
+            "SPLICE_WALLS_OK=1 — loud and never silent. Then re-run the gate\n"
             "(npm run gate:rules && npm run test:hooks) to prove red/green."
         )
         return 0
@@ -117,10 +117,10 @@ def pretooluse(data: dict) -> int:
     errors = [m for m in matches if m.get("severity") == "error"]
     advisories = [m for m in matches if m.get("severity") != "error"]
     if advisories:
-        sys.stderr.write(_format_findings("mythos walls (advisory)", advisories) + "\n")
+        sys.stderr.write(_format_findings("splice walls (advisory)", advisories) + "\n")
     if errors:
         _emit_block(
-            _format_findings(f"MYTHOS WALLS: write to {rel} blocked", errors)
+            _format_findings(f"SPLICE WALLS: write to {rel} blocked", errors)
             + "\n\nFix the content. For a deliberate, justified exception add\n"
             "`// ast-grep-ignore: <rule-id>` with a reason on the line above.\n"
             "Rules: .rules/rules/ (tests in .rules/rule-tests/). The gate re-runs\n"
@@ -137,13 +137,13 @@ def stop(data: dict) -> int:
     except Exception:
         _log(traceback.format_exc())
         sys.stderr.write(
-            f"mythos orchestrator: stop scan unavailable, relying on gate (see {ERROR_LOG})\n"
+            f"splice orchestrator: stop scan unavailable, relying on gate (see {ERROR_LOG})\n"
         )
         return 0
     errors = [m for m in matches if m.get("severity") == "error"]
     if errors:
         _emit_block(
-            _format_findings("MYTHOS WALLS: the tree has rule violations — not done yet", errors)
+            _format_findings("SPLICE WALLS: the tree has rule violations — not done yet", errors)
             + "\n\nFix them before stopping (same rules as npm run gate:rules)."
         )
     return 0
@@ -182,7 +182,7 @@ def _scan_mirrored(rel: Path, content: str) -> list[dict]:
     """Scan proposed content at its repo-relative path so files:/ignores: bind."""
     if not SGCONFIG.exists():
         raise RuntimeError(f"missing {SGCONFIG}")
-    with tempfile.TemporaryDirectory(prefix="mythos-walls-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="splice-walls-") as tmp:
         target = Path(tmp) / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(content, encoding="utf-8")

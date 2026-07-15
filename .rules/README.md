@@ -1,4 +1,4 @@
-# mythos architecture walls
+# splice architecture walls
 
 All write-time policy is ast-grep rules in `rules/`. There are NO per-rule
 Python hooks — `.claude/hooks/orchestrator.py` is the single router (operator
@@ -56,4 +56,4 @@ test-plane invariants (`server/test/`), not lintable shapes.
   justification on the same or previous line.
 - Wall infrastructure (this directory, `.claude/hooks/`, `.claude/settings.json`,
   `sgconfig.yml`) is grant-gated: writes require the operator to set
-  `MYTHOS_WALLS_OK=1`, loudly. A blocked write means fix the code, not the wall.
+  `SPLICE_WALLS_OK=1`, loudly. A blocked write means fix the code, not the wall.

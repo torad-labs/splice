@@ -1,7 +1,7 @@
 // The control-plane HTTP client — the ONLY module in the app that talks to the
 // network. Importable solely from entity api segments (lint-enforced boundary;
 // an ast-grep wall additionally forbids fetch() anywhere else in webui/src).
-// Served same-origin by the control server (mythosd), which also hosts this
+// Served same-origin by the control server (spliced), which also hosts this
 // dashboard at /; the bearer key comes from ~/.claude-codex/state/mgmt-key,
 // pasted once by the operator.
 

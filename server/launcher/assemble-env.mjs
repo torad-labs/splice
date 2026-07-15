@@ -175,34 +175,7 @@ export function assembleClaudexEnv({ env = process.env, tomlPath, cachePath } = 
   };
 }
 
-export function assembleClaudithosEnv({ env = process.env } = {}) {
-  const port = env.CLAUDITHOS_PORT || '3098';
-  const mode = ['native', 'amnesia', 'mirror'].includes(String(env.CLAUDITHOS_MODE || '').toLowerCase())
-    ? String(env.CLAUDITHOS_MODE).toLowerCase()
-    : 'mirror';
-  return {
-    mode,
-    port: parseInt(port, 10),
-    proxyEnv: {
-      CLAUDITHOS_PORT: port,
-      CLAUDITHOS_MODE: mode,
-    },
-    childUnset: [
-      'ANTHROPIC_BASE_URL', 'ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN',
-      'CLAUDE_CODE_OAUTH_TOKEN', 'CLAUDE_CODE_OAUTH_REFRESH_TOKEN',
-    ],
-    childEnv: {
-      ANTHROPIC_BASE_URL: `http://127.0.0.1:${port}`,
-      ANTHROPIC_AUTH_TOKEN: 'mythos-local',
-      CLAUDE_CONFIG_DIR: env.CLAUDE_CONFIG_DIR_MYTHOS || join(homedir(), '.claude-mythos'),
-      NO_PROXY: '127.0.0.1,localhost',
-      CLAUDITHOS: '1',
-      CLAUDITHOS_MODE: mode,
-    },
-  };
-}
-
-// ── claude arg policy (shared by both heads) ─────────────────────────────────
+// ── claude arg policy ────────────────────────────────────────────────────────
 
 export function buildClaudeArgs(userArgs, { defaultModel = null, safeEnvVar = 'CLAUDEX_SAFE', env = process.env } = {}) {
   const args = [...userArgs];

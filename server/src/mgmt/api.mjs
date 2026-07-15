@@ -9,7 +9,6 @@ import { configLayers, getConfig, logsDir, patchConfig, RESTART_REQUIRED_KEYS, s
 import { readUsageState } from '../usage/hud.mjs';
 import { readCompactStats, shadowTail } from '../codex/compact.mjs';
 import { describeCodexAuth, refreshCodexAuth } from '../auth/codex-oauth.mjs';
-import { describeClaudeAuth, getOauthToken, invalidateCreds } from '../auth/claude-oauth.mjs';
 import { CODEX_MODEL_OPTIONS, CODEX_MODEL_CONTEXT_WINDOWS, discoveryModels } from '../models/codex-models.mjs';
 
 export function ensureMgmtKey() {
@@ -48,7 +47,7 @@ export function proxyLogName(proxy, port) {
 
 function readLogsTail(proxy, tailN) {
   const cfg = getConfig();
-  const port = proxy === 'claudithos-proxy' ? cfg.claudithosPort : cfg.port;
+  const port = cfg.port;
   const path = join(logsDir(), proxyLogName(proxy, port));
   if (!existsSync(path)) return { path, lines: [], note: 'no log file yet' };
   try {
@@ -61,7 +60,7 @@ function readLogsTail(proxy, tailN) {
 
 /**
  * Handle a /mgmt/* request. Returns true when the request was consumed.
- * ctx: { proxy: 'codex-proxy'|'claudithos-proxy', version, startedAt, status() }
+ * ctx: { proxy: 'codex-proxy', version, startedAt, status() }
  */
 export async function handleMgmt(req, res, ctx) {
   const url = new URL(req.url, 'http://127.0.0.1');
@@ -120,29 +119,18 @@ export async function handleMgmt(req, res, ctx) {
     sendJson(res, 200, {
       stats: readCompactStats(50),
       shadow: shadowTail(100),
-      // The stats file lives in the shared state dir and is written by the
-      // codex head; claudithos passes compaction through untouched.
-      ...(ctx.proxy === 'claudithos-proxy'
-        ? { note: 'compact stats are recorded by the codex head (shared state file); the shadow tail below is this head’s own' }
-        : {}),
     });
     return true;
   }
 
   if (route === 'GET /mgmt/auth') {
-    sendJson(res, 200, ctx.proxy === 'claudithos-proxy' ? describeClaudeAuth() : describeCodexAuth());
+    sendJson(res, 200, describeCodexAuth());
     return true;
   }
 
   if (route === 'POST /mgmt/auth/refresh') {
-    if (ctx.proxy === 'claudithos-proxy') {
-      invalidateCreds();
-      const token = getOauthToken();
-      sendJson(res, 200, { refreshed: Boolean(token), ...describeClaudeAuth() });
-    } else {
-      const fresh = await refreshCodexAuth();
-      sendJson(res, 200, { refreshed: Boolean(fresh?.token), ...describeCodexAuth() });
-    }
+    const fresh = await refreshCodexAuth();
+    sendJson(res, 200, { refreshed: Boolean(fresh?.token), ...describeCodexAuth() });
     return true;
   }
 

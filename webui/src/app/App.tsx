@@ -62,7 +62,7 @@ export function App() {
     <div className="myx-shell">
       <header className="myx-header">
         <h1 className="myx-wordmark">
-          mythos
+          splice
           <span className="myx-wordmark-sub">
             {status ? `control v${status.version} · ${status.heads.length} heads` : 'connecting'}
           </span>

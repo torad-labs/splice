@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# claudex — Claude Code on ChatGPT Codex via the mythos proxy (thin shim).
+# claudex — Claude Code on ChatGPT Codex via the splice proxy (thin shim).
 # ALL logic lives in server/launcher/; this shim only execs what it prints.
 # Usage: claudex | claudex -c | claudex -p "…" | CLAUDEX_SAFE=1 claudex
 set -euo pipefail
-REPO="${CLAUDEX_ROOT:-$HOME/Documents/dev/projects/mythos/repo}"
+REPO="${CLAUDEX_ROOT:-$HOME/Documents/dev/projects/splice/repo}"
 NODE_BIN="${CLAUDEX_NODE:-$(command -v node)}"
 [[ -n "$NODE_BIN" ]] || { echo "claudex: node not found" >&2; exit 1; }
 mapfile -d '' -t CMD < <("$NODE_BIN" "$REPO/server/launcher/ensure-proxy.mjs" claudex "$@")

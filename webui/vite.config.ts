@@ -25,7 +25,7 @@ export default defineConfig({
   },
   server: {
     // dev-mode only: the built artifact is served same-origin by the control server
-    proxy: { '/api': `http://127.0.0.1:${process.env.MYTHOS_CONTROL_PORT ?? '3096'}` },
+    proxy: { '/api': `http://127.0.0.1:${process.env.SPLICE_CONTROL_PORT ?? '3096'}` },
   },
   test: {
     environment: 'node',

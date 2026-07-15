@@ -2,7 +2,7 @@
 /**
  * Codex Proxy (claudex head) — Anthropic Messages API → ChatGPT Codex Responses API.
  *
- * v30: the mythos decomposition of the 1783-line v29 single file. This entry is
+ * v30: the splice decomposition of the 1783-line v29 single file. This entry is
  * the conductor only — translation, streaming, compaction, auth, gating, and
  * the management plane live in their modules; every wire frame goes through
  * anthropic/sse.mjs (L3) and both response paths mirror via reasoning/mirror.mjs (L2).

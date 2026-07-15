@@ -87,7 +87,7 @@ test('prompt_cache_key: stable across turns, keyed on the first user message', (
   ] };
   const k1 = buildRequest(turn1, { compact: false, config: getConfig(), originalModel: turn1.model }).req.prompt_cache_key;
   const k2 = buildRequest(turn2, { compact: false, config: getConfig(), originalModel: turn2.model }).req.prompt_cache_key;
-  assert.ok(k1 && k1.startsWith('mythos-'), 'key present and namespaced');
+  assert.ok(k1 && k1.startsWith('splice-'), 'key present and namespaced');
   assert.equal(k1, k2, 'same conversation (same first user msg) → same shard key across turns');
 
   const other = { model: 'gpt-5.6-sol', messages: [{ role: 'user', content: 'a different task' }] };

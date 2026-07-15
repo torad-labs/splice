@@ -65,7 +65,7 @@ test('authJsonFromTokens: the ~/.codex/auth.json shape (with optional api key)',
 });
 
 test('round-trip: login output is read back by the proxy getCodexAuth path', async () => {
-  const dir = mkdtempSync(join(tmpdir(), 'mythos-login-'));
+  const dir = mkdtempSync(join(tmpdir(), 'splice-login-'));
   const authPath = join(dir, 'auth.json');
   process.env.CLAUDEX_STATE_DIR = join(dir, 'state');
   process.env.CODEX_AUTH_PATH = authPath;

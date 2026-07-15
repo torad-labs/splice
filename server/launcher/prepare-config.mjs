@@ -1,5 +1,5 @@
 // Config-dir isolation (the slimmed claudex-prepare — only the pure half):
-// build ~/.claude-codex (or ~/.claude-mythos) as a CLAUDE_CONFIG_DIR that
+// build ~/.claude-codex (or ~/.claude-splice) as a CLAUDE_CONFIG_DIR that
 // shares the operator's real profile via symlinks, with its own .claude.json
 // state so codex model options never leak into plain `claude`.
 import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync, copyFileSync } from 'node:fs';
@@ -132,20 +132,4 @@ export function prepareClaudexConfig({ home = homedir(), configDir } = {}) {
 
   writeFileSync(statePath, JSON.stringify(data, null, 2) + '\n');
   return { configDir: dir, models: CODEX_MODEL_OPTIONS.length, mcpServers: Object.keys(data.mcpServers || {}).length };
-}
-
-/** claudithos: isolated config dir; state seeded ONCE by copy (never shared live). */
-export function prepareClaudithosConfig({ home = homedir(), configDir } = {}) {
-  const dir = configDir ?? join(home, '.claude-mythos');
-  if (!dir.includes('.claude-mythos')) {
-    throw new Error(`prepare-config: refuse to write outside .claude-mythos: ${dir}`);
-  }
-  mkdirSync(dir, { recursive: true });
-  linkShared(dir, home);
-  const statePath = join(dir, '.claude.json');
-  const globalState = join(home, '.claude.json');
-  if (existsSync(globalState) && !existsSync(statePath)) {
-    copyFileSync(globalState, statePath);
-  }
-  return { configDir: dir };
 }

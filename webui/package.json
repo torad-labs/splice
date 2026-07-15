@@ -1,5 +1,5 @@
 {
-  "name": "@mythos/webui",
+  "name": "@splice/webui",
   "private": true,
   "version": "0.0.0",
   "type": "module",

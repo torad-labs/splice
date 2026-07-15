@@ -1,6 +1,6 @@
 // Per-head token refresh: codex exchanges the OAuth refresh_token; claude
 // invalidates the local cache so the next read picks up ~/.claude's own
-// refresh (plain `claude` owns that token, mythos only observes it).
+// refresh (plain `claude` owns that token, splice only observes it).
 import { useState } from 'react';
 import { refreshAuth } from '@entities/auth';
 import { Btn } from '@shared/ui';

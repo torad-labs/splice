@@ -1,11 +1,11 @@
-# AGENTS.md — contracts for anyone (human or agent) touching mythos
+# AGENTS.md — contracts for anyone (human or agent) touching splice
 
 ## The invariants (L1 retired; L2–L4 locked)
 
 Structural walls enforce these at write time (`.rules/rules/`, orchestrated by
 `.claude/hooks/orchestrator.py`) and permanent tests enforce the behavioral
 half (`server/test/invariants.test.mjs`). Do not weaken either; walls are
-grant-gated behind `MYTHOS_WALLS_OK=1`.
+grant-gated behind `SPLICE_WALLS_OK=1`.
 
 1. **L1 — hard lock RETIRED (2026-07-14); replay DEFAULT-OFF (2026-07-15,
    measured).** Was "no reasoning-item replay." Replay is now a supported,
@@ -35,18 +35,20 @@ grant-gated behind `MYTHOS_WALLS_OK=1`.
 
 - State paths byte-identical: `~/.claude-codex/state/*` and
   `~/.claude-codex/claudex-compact-stats.jsonl` (an out-of-repo HUD reads them).
-- Config dirs keep their names: `~/.claude-codex`, `~/.claude-mythos`.
-- Ports: claudex 3099, claudithos 3098, control 3096. `/health` keeps `version`.
+- Config dirs keep their names: `~/.claude-codex`, `~/.claude-splice`.
+- Ports: claudex 3099, control 3096. `/health` keeps `version`.
 - Discovery prefix `claude-codex--`; the pinned model is excluded from
   `/v1/models` (it rides `ANTHROPIC_CUSTOM_MODEL_OPTION`).
 - Effort precedence (v27): explicit body effort field, then the Claude
   `/effort` picker (`thinking.budget_tokens`), then config/env fallback, then
-  `high`. Compact turns always run `effort: low`, tools stripped.
+  `high`. Compact turns inherit the session's own model AND effort (a mismatch on
+  either invalidates the prompt cache and re-reads the whole transcript cold);
+  tools stripped.
 - Mirror wire format: `\n[reasoning summary]\n<text>\n` (`mirrorWireText`).
 - Reasoning replay envelope (`reasoning/replay.mjs`): encrypted reasoning rides
-  as a `redacted_thinking` block tagged `mythos-reasoning` v1; encode/decode
+  as a `redacted_thinking` block tagged `splice-reasoning` v1; encode/decode
   stay paired (a tag/version bump strands in-flight transcripts).
-- `prompt_cache_key`: `mythos-<sha256(first user message)[:32]>`, stable per
+- `prompt_cache_key`: `splice-<sha256(first user message)[:32]>`, stable per
   conversation. Changing the derivation cold-starts every live session's cache.
 
 ## Management API
@@ -67,12 +69,12 @@ loopback-only, both proxies:
 
 Config layering: defaults ← state/config.json ← env ← runtime PATCH. Env is
 the boot authority (the launcher writes it); PATCH wins until restart and
-persists to the file layer. `port`, `claudithosPort`, `upstreamTimeoutMs`
+persists to the file layer. `port`, `grokPort`, `controlPort`, `upstreamTimeoutMs`
 need a restart; everything else hot-applies on the next request.
 
-## Control plane (mythosd)
+## Control plane (spliced)
 
-The dashboard is centralized. `mythosd` (`src/control-server.mjs`, loopback
+The dashboard is centralized. `spliced` (`src/control-server.mjs`, loopback
 `:3096`, `controlPort`) hosts the single webui at `/` and a bearer-guarded
 `/api/*` that AGGREGATES every head (same mgmt-key). It reads file-based truth
 (auth, usage, compact) directly so a DOWN head is still visible, and talks to
@@ -86,22 +88,22 @@ RUNNING heads over `/mgmt` for live status + config.
 | GET /api/auth · POST /api/auth/:head/{refresh,login} | per-head auth; codex browser login |
 | GET /api/compact · GET /api/logs/:head | compact stats, per-head log tail |
 
-- **Head lifecycle is shared** (`launcher/heads.mjs`): the CLI launcher and mythosd
+- **Head lifecycle is shared** (`launcher/heads.mjs`): the CLI launcher and spliced
   call the SAME registry + spawn/kill primitives (never forked). Control-side
   spawns strip `CONFIG_ENV_NAMES` so `config.json` wins over inherited env.
 - **Config PATCH fans out** to each running head's `/mgmt/config` (the runtime
   layer, which beats the launcher's env pin); with no head up it writes the file.
 - **Soft-warn never blocks** (`usage/warn.mjs`, `usageWarnPct` / `usageWarnTokens5h`):
   drives the dashboard banner and the statusline `⚠`.
-- Heads keep `/mgmt` but no longer serve `/dashboard`. `claudex dashboard` /
-  `claudithos dashboard` open mythosd; every head launch best-effort-starts it.
+- Heads keep `/mgmt` but no longer serve `/dashboard`. `claudex dashboard` opens
+  spliced; every head launch best-effort-starts it.
 
 ## Gates
 
 ```
 npm run gate:rules    # ast-grep scan (tree) + rule red/green tests
 npm run test:hooks    # orchestrator routing tests
-npm test -w server    # 112 node --test behavior/invariant tests
+npm test -w server    # 103 node --test behavior/invariant tests
 npm run lint -w webui # FSD boundaries — the architecture is lint-enforced
 npm test -w webui     # vitest
 npm run build -w webui# tsc strict + single-file dist (commit dist/index.html)
@@ -120,6 +122,6 @@ pins the sentence. On drift: update `COMPACT_MARKER` + fixture together.
 
 ## Out of scope (locked)
 
-No transcript shrinking. No fake summaries (L4). claudithos stays an experiment
-tool for disposable tasks only. (Reasoning replay was formerly out of scope; as
-of 2026-07-14 it is default-on for the codex head — see "L1 — RETIRED" above.)
+No transcript shrinking. No fake summaries (L4). (Reasoning replay was formerly
+out of scope; as of 2026-07-14 it is default-on for the codex head — see
+"L1 — RETIRED" above.)

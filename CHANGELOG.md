@@ -1,16 +1,38 @@
 # Changelog
 
-## mythos — control server v1 (mythosd) - 2026-07-15
+## splice — codex-proxy v35, claudithos removed, renamed from "mythos" - 2026-07-15
+
+Public release under the new name **splice** (was "mythos", which collided with Anthropic's
+model line). Two functional changes ship alongside the rename.
+
+### Fixed
+
+- **Compaction re-read the whole transcript cold and drained quota (codex-proxy v35).** The
+  stream idle-watchdog was reaping big-context compaction PREFILLS: a ~160k compaction is
+  silent for minutes while the backend prefills before its first byte, and the watchdog's
+  `streamIdleMs` treated that silence as a zombie and aborted — so every compaction died
+  mid-prefill and retried, re-reading the transcript uncached each attempt. The idle abort now
+  uses `firstByteTimeoutMs` until the first byte arrives; `streamIdleMs` applies only once
+  streaming has actually started. Compaction also inherits the session's own model AND reasoning
+  effort — a mismatch on either invalidates the prompt cache.
+
+### Removed
+
+- **The `claudithos` head** (a Claude-on-Claude memory-architecture experiment, port 3098): the
+  launcher arm, proxy branch, auth panel, `claudithosMode` config knob, and its tests are gone.
+  The stack is now the `claudex`/codex head plus a scaffolded Grok head.
+
+## splice — control server v1 (spliced) - 2026-07-15
 
 Split the dashboard out of the proxies into a centralized control plane. Each head
-(codex/claudithos, grok later) used to serve its own single-head `/dashboard` +
-`/mgmt`; now a loopback control server (`mythosd`, :3096) hosts ONE dashboard over
+(codex, grok later) used to serve its own single-head `/dashboard` +
+`/mgmt`; now a loopback control server (`spliced`, :3096) hosts ONE dashboard over
 an aggregated `/api/*` spanning every head. The heads keep `/mgmt` as their machine
 interface but no longer serve a dashboard.
 
 ### Added
 
-- **`mythosd` control server** (`src/control-server.mjs` + `src/control/api.mjs`,
+- **`spliced` control server** (`src/control-server.mjs` + `src/control/api.mjs`,
   loopback :3096, `controlPort`). Bearer-guarded `/api/*` sharing the proxies'
   mgmt-key: `GET /api/status`, `GET /api/heads` + `POST /api/heads/:head/{start,
   stop,restart}` (full lifecycle), `GET|PATCH /api/config`, `GET /api/usage`,
@@ -26,8 +48,8 @@ interface but no longer serve a dashboard.
   critical from the rate-limit remaining, with a 5h output-token cap as fallback.
   Feeds a dashboard banner and a subtle statusline `⚠` that stays hidden until near
   the cap.
-- **`claudex dashboard`** (and `claudithos dashboard`): ensures mythosd is up and
-  opens the browser; the launcher also best-effort-starts mythosd alongside any
+- **`claudex dashboard`**: ensures spliced is up and
+  opens the browser; the launcher also best-effort-starts spliced alongside any
   head launch (non-blocking).
 - **Multi-head dashboard** (`webui/`, FSD React): a fleet of instrument head-plates
   (live status + start / stop / restart with a two-step confirm on the destructive
@@ -38,12 +60,12 @@ interface but no longer serve a dashboard.
 
 ### Changed
 
-- `codex-proxy.mjs` and `claudithos-proxy.mjs` no longer serve `/dashboard` (it
-  moved to mythosd); they keep `/mgmt`. Dashboard config changes reach a running
+- `codex-proxy.mjs` no longer serves `/dashboard` (it
+  moved to spliced); it keeps `/mgmt`. Dashboard config changes reach a running
   head through a `PATCH /mgmt/config` fan-out (the runtime layer, which beats the
   launcher's env pin), falling back to writing the config file when no head is up.
 
-## mythos — codex-proxy v31 - 2026-07-14
+## splice — codex-proxy v31 - 2026-07-14
 
 Codex-parity prompt-cache warmth for the claudex head. Native Codex keeps the
 backend prompt cache hot with three coupled mechanisms
@@ -57,13 +79,13 @@ load-bearing. This ships all three, on by default, without abandoning the mirror
 
 - **Reasoning replay (default on, `replayReasoning`).** The backend's encrypted
   reasoning rides through the transcript as a `redacted_thinking` block
-  (`reasoning/replay.mjs`, tag `mythos-reasoning` v1) and decodes back into a
+  (`reasoning/replay.mjs`, tag `splice-reasoning` v1) and decodes back into a
   Responses `reasoning` input item, so the reasoning KV / prompt-cache prefix
   stays byte-stable across the agent loop. Emitted on both response paths — the
   stream path via the sole SSE emitter (`addRedactedThinking`), the non-stream
   path via `translateResponse`. Never on compact. Opt out with
   `CLAUDEX_REPLAY_REASONING=0` to run the pure distillation loop.
-- **`prompt_cache_key` (always on).** `mythos-<sha256(first user message)[:32]>`
+- **`prompt_cache_key` (always on).** `splice-<sha256(first user message)[:32]>`
   — keyed on the first user message: stable for the whole conversation and immune
   to per-turn system-reminder drift (keying on the system prompt would bust it
   every turn). Routes every turn of one conversation to the same cache shard.
@@ -89,7 +111,7 @@ load-bearing. This ships all three, on by default, without abandoning the mirror
 - server 87/87 (10 new), gate:rules 10 rules green, test:hooks 13/13, webui
   lint+test+build green, `webui/dist` byte-unchanged.
 
-## mythos — codex-proxy v30 / claudithos v3 - 2026-07-13
+## splice — codex-proxy v30 - 2026-07-13
 
 Productization: the 1783-line `codex-proxy.mjs` v29 (which diverged through six
 local versions in two days inside a forked npm package) becomes this repo —
@@ -134,11 +156,10 @@ dashboard. All three autocompact locks fixed as part of the move:
   round-trip, usage, compact + shadow, auth + refresh, logs, models);
   `/dashboard` serving the committed single-file WebUI (React 19 + Zustand,
   FSD lint-enforced, Torad tokens, Reasoning + Compaction instrument pages).
-- Launchers: `ensure-proxy` (health/version handshake, claudithos arm
-  hot-switch via mgmt PATCH), `assemble-env` (section-aware TOML replacing
-  the sed that leaked [profile] values; models_cache + ceiling resolution),
-  `prepare-config` (config-dir isolation half of claudex-prepare), thin
-  `bin/{claudex,claudithos}` exec-env shims. Proxy logs move to
+- Launchers: `ensure-proxy` (health/version handshake), `assemble-env`
+  (section-aware TOML replacing the sed that leaked [profile] values;
+  models_cache + ceiling resolution), `prepare-config` (config-dir isolation
+  half of claudex-prepare), thin `bin/claudex` exec-env shim. Proxy logs move to
   `~/.claude-codex/logs/` (out of /tmp).
 - Walls: single Python hook orchestrator routing every write-time policy to
   ast-grep rules (L1/L2/L3 structural invariants, loopback bind, magic
@@ -184,16 +205,6 @@ self-update + network call per launch), `bin/claude-codex`.
 ### Fixed
 
 - **Compaction "response exceeded N output token maximum"**: the ChatGPT backend rejects token-limit params so generation is uncapped, and reasoning tokens count in `output_tokens` — an undetected max-effort compaction tripped Claude Code's output guard. Reported `output_tokens` is now clamped to the client's `max_tokens`, with a stderr diagnostic on every clamp.
-
-## claudithos v2 - 2026-07-13
-
-### Fixed
-
-- **Tool-use loop fragmented in mirror mode** (v1 bug, caught in first live session): v1 injected the `[reasoning summary]` block into the live response stream, including `tool_use` turns — parallel tool calls dropped, turns stopped early. B (the reasoning notebook) now lives entirely in the REQUEST transform: past `thinking` becomes text on replay; the response stream is a byte-faithful passthrough in all three arms.
-
-## claudithos v1 - 2026-07-13
-
-New experiment tool: `claudithos` launcher + proxy (port 3098). Runs Claude Code on Claude (Fable) through a memory-architecture transform to test whether the claudex/Sol "mythos" configuration reproduces within the Claude family. Three arms through the SAME proxy: `native` (control), `amnesia` (A: thinking dropped + tool exchanges textualized on replay), `mirror` (A+B, default: amnesia + thinking persists as `[reasoning summary]` text). EXPERIMENT TOOL — disposable tasks only.
 
 ## local codex-proxy v25 - 2026-07-13
 

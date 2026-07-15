@@ -20,7 +20,6 @@ import { configLayers, getConfig, logsDir, patchConfig, RESTART_REQUIRED_KEYS, s
 import { computeUsageWarn } from '../usage/warn.mjs';
 import { readCompactStats } from '../codex/compact.mjs';
 import { describeCodexAuth, refreshCodexAuth } from '../auth/codex-oauth.mjs';
-import { describeClaudeAuth, getOauthToken, invalidateCreds } from '../auth/claude-oauth.mjs';
 import { CONTROL_SERVER_VERSION } from '../versions.mjs';
 import {
   HEAD_REGISTRY, headStatus, listHeads, proxyHealth, resolveHead,
@@ -129,7 +128,6 @@ function usagePayload() {
 function describeAllAuth() {
   return {
     codex: { kind: 'codex', login: 'automated', ...describeCodexAuth() },
-    claude: { kind: 'claude', login: 'plain-claude', ...describeClaudeAuth() },
   };
 }
 
@@ -137,10 +135,6 @@ async function refreshAuth(head) {
   if (head === 'codex') {
     const fresh = await refreshCodexAuth();
     return { head, refreshed: Boolean(fresh?.token), ...describeCodexAuth() };
-  }
-  if (head === 'claude') {
-    invalidateCreds();
-    return { head: 'claude', refreshed: Boolean(getOauthToken()), ...describeClaudeAuth() };
   }
   return null;
 }
@@ -150,7 +144,7 @@ async function refreshAuth(head) {
  * dashboard polls /api/auth to see it flip to present. */
 function startLogin(head) {
   if (head !== 'codex') {
-    return { started: false, note: 'claude auth is maintained by plain `claude` — run `claude` and sign in there' };
+    return { started: false, note: 'browser login is only wired for the codex head' };
   }
   const script = join(AUTH_DIR, 'codex-login.mjs');
   const fd = openSync(join(logsDir(), 'codex-login.log'), 'a');

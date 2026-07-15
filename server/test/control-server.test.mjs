@@ -17,7 +17,6 @@ process.env.CONTROL_SERVER_TEST = '1'; // don't auto-start; we listen manually
 process.env.CLAUDEX_STATE_DIR = stateDir;
 process.env.CODEX_PROXY_PORT = '3991'; // isolated + unused → heads report not-running
 process.env.CODEX_AUTH_PATH = join(root, 'codex-auth.json'); // absent
-process.env.CLAUDE_CREDENTIALS_PATH = join(root, 'claude-creds.json'); // absent
 
 const control = await import('../src/control-server.mjs');
 const { statePaths, resetRuntimeConfigForTests } = await import('../src/config.mjs');
@@ -92,13 +91,12 @@ test('GET /api/heads: every head reported; not running on isolated ports', async
   assert.equal(codex.wantVersion, CODEX_PROXY_VERSION);
 });
 
-test('GET /api/auth: both heads introspected, present=false in fixture, no token material', async () => {
+test('GET /api/auth: codex introspected, present=false in fixture, no token material', async () => {
   const { status, json } = await call('GET', '/api/auth');
   assert.equal(status, 200);
   assert.equal(json.codex.present, false);
-  assert.equal(json.claude.present, false);
   assert.equal(json.codex.login, 'automated');
-  assert.equal(json.claude.login, 'plain-claude');
+  assert.equal(json.claude, undefined, 'claude auth removed');
   assert.ok(!JSON.stringify(json).includes('access_token'), 'never exposes token material');
 });
 

@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Red/green proof for the mythos orchestrator routing (walls-first, §17).
+"""Red/green proof for the splice orchestrator routing (walls-first, §17).
 
 Every case drives the REAL orchestrator as a subprocess with a synthetic hook
-event against a hermetic copy of the repo's sgconfig + rules (MYTHOS_HOOK_ROOT).
+event against a hermetic copy of the repo's sgconfig + rules (SPLICE_HOOK_ROOT).
 The rules themselves are proven by `ast-grep test`; this suite proves the
 ROUTING: proposed-content computation, glob binding via the temp mirror,
 severity → decision mapping, the walls grant gate, and fail-closed behavior.
@@ -35,7 +35,7 @@ class OrchestratorTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        cls._tmp = tempfile.TemporaryDirectory(prefix="mythos-hook-test-")
+        cls._tmp = tempfile.TemporaryDirectory(prefix="splice-hook-test-")
         cls.root = Path(cls._tmp.name)
         shutil.copy(REPO / "sgconfig.yml", cls.root / "sgconfig.yml")
         shutil.copytree(REPO / ".rules", cls.root / ".rules")
@@ -45,8 +45,8 @@ class OrchestratorTest(unittest.TestCase):
         cls._tmp.cleanup()
 
     def run_hook(self, lifecycle: str, event: dict, env_extra: dict | None = None, root: Path | None = None):
-        env = {**os.environ, "MYTHOS_HOOK_ROOT": str(root or self.root)}
-        env.pop("MYTHOS_WALLS_OK", None)
+        env = {**os.environ, "SPLICE_HOOK_ROOT": str(root or self.root)}
+        env.pop("SPLICE_WALLS_OK", None)
         env.update(env_extra or {})
         proc = subprocess.run(
             [sys.executable, str(ORCHESTRATOR), lifecycle],
@@ -166,8 +166,8 @@ class OrchestratorTest(unittest.TestCase):
         event = self.write_event(".rules/rules/l2-single-mirror-definition.yml", "id: weakened\n")
         raw, _ = self.run_hook("pretooluse", event)
         decision = self.expect_block(raw, "un-granted wall edit must block")
-        self.assertIn("MYTHOS WALLS", decision["reason"])
-        decision, _ = self.run_hook("pretooluse", event, env_extra={"MYTHOS_WALLS_OK": "1"})
+        self.assertIn("SPLICE WALLS", decision["reason"])
+        decision, _ = self.run_hook("pretooluse", event, env_extra={"SPLICE_WALLS_OK": "1"})
         self.assertIsNone(decision, "granted wall edit must pass")
 
     def test_missing_ast_grep_fails_closed(self):
@@ -179,7 +179,7 @@ class OrchestratorTest(unittest.TestCase):
     # --- Stop ----------------------------------------------------------------------
 
     def test_stop_blocks_on_dirty_tree_and_respects_active_flag(self):
-        with tempfile.TemporaryDirectory(prefix="mythos-stop-test-") as tmp:
+        with tempfile.TemporaryDirectory(prefix="splice-stop-test-") as tmp:
             root = Path(tmp)
             shutil.copy(REPO / "sgconfig.yml", root / "sgconfig.yml")
             shutil.copytree(REPO / ".rules", root / ".rules")

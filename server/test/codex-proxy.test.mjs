@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Behavior tests for the mythos codex proxy (v30) — real assembled server
+// Behavior tests for the splice codex proxy (v30) — real assembled server
 // against a mock ChatGPT upstream (scenario-mock pattern, ported from v29).
 //
 // v29 coverage carried: multi-part reasoning summaries (one thinking block,
@@ -311,7 +311,7 @@ test('replay (stream): encrypted reasoning → redacted_thinking block, alongsid
   // The request the proxy SENT upstream carried the replay + cache-key fields
   const sent = upstreamBodies.find((u) => u.scenario === 'replaystream').body;
   assert.deepEqual(sent.include, ['reasoning.encrypted_content'], 'include requests encrypted reasoning back');
-  assert.ok(typeof sent.prompt_cache_key === 'string' && sent.prompt_cache_key.startsWith('mythos-'), 'stable prompt_cache_key sent');
+  assert.ok(typeof sent.prompt_cache_key === 'string' && sent.prompt_cache_key.startsWith('splice-'), 'stable prompt_cache_key sent');
   assert.equal(sent.store, false, 'store:false is the required replay pairing');
 });
 
@@ -499,7 +499,7 @@ test('compact detection: post-compact resume and long toolless dumps do NOT matc
   assert.equal(proxy.classifyCompact({
     system: 'x',
     messages: [{ role: 'user', content: `<conversation>${'y'.repeat(600)}</conversation>` }],
-  }), false, 'conversation tags alone are a content heuristic — dead in mythos');
+  }), false, 'conversation tags alone are a content heuristic — dead in splice');
 });
 
 test('compact detection: 2.1.207 marker that moved to a user message / new phrasing still matches', () => {

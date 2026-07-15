@@ -38,12 +38,11 @@ mockHead.listen(0, '127.0.0.1');
 await once(mockHead, 'listening');
 const mockPort = mockHead.address().port;
 
-const root = mkdtempSync(join(tmpdir(), 'mythos-fanout-test-'));
+const root = mkdtempSync(join(tmpdir(), 'splice-fanout-test-'));
 mkdirSync(join(root, 'state'), { recursive: true });
 process.env.CONTROL_SERVER_TEST = '1';
 process.env.CLAUDEX_STATE_DIR = join(root, 'state');
 process.env.CODEX_PROXY_PORT = String(mockPort); // codex head = the mock
-process.env.CLAUDITHOS_PORT = '3994'; // unused
 
 const control = await import('../src/control-server.mjs');
 const { resetRuntimeConfigForTests } = await import('../src/config.mjs');

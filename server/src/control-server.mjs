@@ -1,11 +1,11 @@
 #!/usr/bin/env node
 /**
- * mythosd — the control server: the centralized dashboard + cross-head management
+ * spliced — the control server: the centralized dashboard + cross-head management
  * plane (auth, usage soft-warn, config, full lifecycle). Loopback only. Serves:
  *   GET /            → the unified dashboard (webui/dist/index.html)
  *   *   /api/*       → aggregated control API (heads, config, usage, auth, logs)
  *   GET /health      → liveness for the launcher version handshake
- * The heads (codex/claudithos/grok) are the data plane; no Messages traffic is
+ * The heads (codex/grok) are the data plane; no Messages traffic is
  * proxied here — this plane never touches a subscription token.
  */
 import { getConfig } from './config.mjs';

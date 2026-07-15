@@ -1,5 +1,5 @@
 // The compaction instrument: outcome totals + the event tail from GET
-// /api/compact (codex detail; claudithos passes compaction through untouched
+// /api/compact (codex detail
 // and carries no compact stats of its own).
 import { useCompact } from '@entities/compact-stats';
 import { fmtInt, fmtMs, timeAgo } from '@shared/lib';

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Control server (mythosd): bearer auth, aggregated /api/*, config fan-out (the
+// Control server (spliced): bearer auth, aggregated /api/*, config fan-out (the
 // file path when no head runs), usage soft-warn, auth introspection, and
 // lifecycle routing. Head ports point at unused ports so nothing real is touched.
 import { test, after } from 'node:test';
@@ -10,13 +10,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { once } from 'node:events';
 
-const root = mkdtempSync(join(tmpdir(), 'mythos-control-test-'));
+const root = mkdtempSync(join(tmpdir(), 'splice-control-test-'));
 const stateDir = join(root, 'state');
 mkdirSync(stateDir, { recursive: true });
 process.env.CONTROL_SERVER_TEST = '1'; // don't auto-start; we listen manually
 process.env.CLAUDEX_STATE_DIR = stateDir;
 process.env.CODEX_PROXY_PORT = '3991'; // isolated + unused → heads report not-running
-process.env.CLAUDITHOS_PORT = '3992';
 process.env.CODEX_AUTH_PATH = join(root, 'codex-auth.json'); // absent
 process.env.CLAUDE_CREDENTIALS_PATH = join(root, 'claude-creds.json'); // absent
 
@@ -79,7 +78,7 @@ test('GET /api/status: server meta + head registry', async () => {
   assert.equal(status, 200);
   assert.equal(json.server, 'control');
   assert.equal(json.version, control.PROXY_VERSION);
-  assert.deepEqual(json.heads, ['codex', 'claudithos']);
+  assert.deepEqual(json.heads, ['codex']);
   assert.ok(json.registry.some((h) => h.key === 'codex' && h.authKind === 'codex'));
 });
 
@@ -91,7 +90,6 @@ test('GET /api/heads: every head reported; not running on isolated ports', async
   assert.equal(codex.healthy, false);
   assert.equal(codex.port, 3991);
   assert.equal(codex.wantVersion, CODEX_PROXY_VERSION);
-  assert.ok(json.heads.find((h) => h.key === 'claudithos'), 'claudithos present too');
 });
 
 test('GET /api/auth: both heads introspected, present=false in fixture, no token material', async () => {
@@ -112,8 +110,6 @@ test('GET /api/usage: aggregated + soft-warn fires from the seeded 90% ratelimit
   assert.equal(codex.usage.warn.level, 'warn', '90% used ≥ 80% default → warn (never blocks)');
   assert.equal(codex.usage.warn.pct, 90);
   assert.equal(codex.usage.warn.source, 'ratelimit');
-  const claudithos = json.heads.find((h) => h.key === 'claudithos');
-  assert.equal(claudithos.usage, null, 'claudithos tracks no usage');
 });
 
 test('PATCH /api/config with no head up → persists to file, reflected by GET', async () => {

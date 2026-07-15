@@ -35,7 +35,7 @@ export function AuthPage() {
             {data.codex.auth_path ? <p className="myx-footnote">{data.codex.auth_path}</p> : null}
           </Panel>
 
-          <Panel title="claudithos (claude auth)" actions={<RefreshAuth head="claude" />}>
+          <Panel title="claude auth" actions={<RefreshAuth head="claude" />}>
             <div className="myx-pill-row">
               <StatusPill tone={data.claude.present ? 'pos' : 'neg'}>
                 {data.claude.present ? 'token present' : 'no token'}

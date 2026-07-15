@@ -5,11 +5,11 @@
 // Process-lifecycle primitives (health / spawn / kill / handshake) now live in
 // heads.mjs — the ONE source shared with the control server so start/stop/kill
 // logic is never forked. This entry keeps the launcher-only orchestration: the
-// version handshake, the claudithos arm hot-switch, claude-bin resolution, and
+// version handshake, claude-bin resolution, and
 // the NUL-separated exec-argv handoff.
 //
-// Invocation (from bin/claudex | bin/claudithos):
-//   node ensure-proxy.mjs <claudex|claudithos> [claude args…]
+// Invocation (from bin/claudex):
+//   node ensure-proxy.mjs <claudex> [claude args…]
 // stdout: NUL-separated `env` argv (unsets, KEY=VALs, claude bin, args) for
 // the shim's `exec env`. All diagnostics go to stderr.
 import { execFileSync, spawn } from 'node:child_process';
@@ -17,15 +17,14 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { CODEX_PROXY_VERSION, CLAUDITHOS_PROXY_VERSION, CONTROL_SERVER_VERSION } from '../src/versions.mjs';
+import { CODEX_PROXY_VERSION, CONTROL_SERVER_VERSION } from '../src/versions.mjs';
 import { getConfig, statePaths } from '../src/config.mjs';
 import { proxyLogName } from '../src/mgmt/api.mjs';
 import {
   assembleClaudexEnv,
-  assembleClaudithosEnv,
   buildClaudeArgs,
 } from './assemble-env.mjs';
-import { prepareClaudexConfig, prepareClaudithosConfig } from './prepare-config.mjs';
+import { prepareClaudexConfig } from './prepare-config.mjs';
 import { decideAction, filterSelf, killStale, proxyHealth, sleep, spawnProxy, stalePattern } from './heads.mjs';
 
 // Re-export the pure lifecycle helpers so existing importers (launcher tests) keep resolving them here.
@@ -38,37 +37,9 @@ function die(msg) {
   process.exit(1);
 }
 
-async function patchMode(port, mode) {
-  try {
-    const keyPath = statePaths.mgmtKey();
-    if (!existsSync(keyPath)) return false;
-    const key = readFileSync(keyPath, 'utf8').trim();
-    const res = await fetch(`http://127.0.0.1:${port}/mgmt/config`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
-      body: JSON.stringify({ claudithosMode: mode }),
-      signal: AbortSignal.timeout(2000),
-    });
-    if (!res.ok) return false;
-    const health = await proxyHealth(port);
-    return health?.mode === mode;
-  } catch {
-    return false;
-  }
-}
-
-export async function ensureProxy({ name, scriptName, port, wantVersion, wantMode = null, proxyEnv, logName }) {
+export async function ensureProxy({ name, scriptName, port, wantVersion, proxyEnv, logName }) {
   let health = await proxyHealth(port);
-  let action = decideAction({ health, wantVersion, wantMode });
-
-  if (action === 'patch-mode') {
-    // Hot arm switch through our own management plane — no restart needed.
-    if (await patchMode(port, wantMode)) {
-      process.stderr.write(`launcher: ${name} arm hot-switched to ${wantMode} via /mgmt/config\n`);
-      return;
-    }
-    action = 'restart';
-  }
+  const action = decideAction({ health, wantVersion });
 
   if (action === 'ok') return;
 
@@ -131,7 +102,7 @@ function openBrowser(url) {
 }
 
 /**
- * Ensure the control server (mythosd) is up. wait=false (a head launch) just
+ * Ensure the control server (spliced) is up. wait=false (a head launch) just
  * fires the spawn and returns — the dashboard comes up async and never blocks the
  * head; wait+fatal (`claudex dashboard`) confirms /health before opening a tab.
  * Concurrent launches racing to spawn are safe: listenLoopback exits 0 on
@@ -157,16 +128,16 @@ async function ensureControlServer({ wait = false, fatal = false } = {}) {
 async function handleDashboardCmd() {
   await ensureControlServer({ wait: true, fatal: true });
   const url = `http://127.0.0.1:${getConfig().controlPort}/`;
-  process.stderr.write(`\nmythos dashboard → ${url}\n  unlock key: ${statePaths.mgmtKey()}\n\n`);
+  process.stderr.write(`\nsplice dashboard → ${url}\n  unlock key: ${statePaths.mgmtKey()}\n\n`);
   openBrowser(url);
-  emitExecArgv({ unsets: [], envMap: {}, bin: 'echo', args: [`mythos dashboard: ${url}`] });
+  emitExecArgv({ unsets: [], envMap: {}, bin: 'echo', args: [`splice dashboard: ${url}`] });
 }
 
 async function main() {
   const head = process.argv[2];
   const userArgs = process.argv.slice(3);
 
-  // `claudex dashboard` / `claudithos dashboard` — head-agnostic: open mythosd.
+  // `claudex dashboard` — head-agnostic: open spliced.
   if (userArgs[0] === 'dashboard') { await handleDashboardCmd(); return; }
 
   if (head === 'claudex') {
@@ -216,35 +187,7 @@ async function main() {
     return;
   }
 
-  if (head === 'claudithos') {
-    const credPath = process.env.CLAUDE_CREDENTIALS_PATH || join(homedir(), '.claude', '.credentials.json');
-    if (!existsSync(credPath)) die(`no Claude OAuth at ${credPath} — log in with plain \`claude\` first`);
-
-    const profile = assembleClaudithosEnv({});
-    prepareClaudithosConfig({});
-    await ensureProxy({
-      name: 'claudithos',
-      scriptName: 'claudithos-proxy.mjs',
-      port: profile.port,
-      wantVersion: CLAUDITHOS_PROXY_VERSION,
-      wantMode: profile.mode,
-      proxyEnv: profile.proxyEnv,
-      logName: proxyLogName('claudithos-proxy', profile.port),
-    });
-    await ensureControlServer(); // best-effort: the dashboard rides alongside every head launch
-    const bin = resolveClaudeBin();
-    if (!bin) die('Claude Code not found; set CLAUDE_CODEX_CLAUDE_BIN');
-    process.stderr.write(`claudithos: arm=${profile.mode} proxy=127.0.0.1:${profile.port} v${CLAUDITHOS_PROXY_VERSION} (experiment tool — disposable tasks only)\n`);
-    emitExecArgv({
-      unsets: profile.childUnset,
-      envMap: profile.childEnv,
-      bin,
-      args: buildClaudeArgs(userArgs, { safeEnvVar: 'CLAUDITHOS_SAFE' }),
-    });
-    return;
-  }
-
-  die(`unknown head '${head}' — usage: ensure-proxy.mjs <claudex|claudithos> [claude args…]`);
+  die(`unknown head '${head}' — usage: ensure-proxy.mjs <claudex> [claude args…]`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

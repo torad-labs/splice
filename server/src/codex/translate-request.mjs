@@ -90,7 +90,7 @@ export function stablePromptCacheKey(messages) {
       ? firstUser.content.filter((b) => b?.type === 'text').map((b) => b.text).join('\n')
       : '');
   if (!seed) return null;
-  return `mythos-${createHash('sha256').update(seed).digest('hex').slice(0, 32)}`;
+  return `splice-${createHash('sha256').update(seed).digest('hex').slice(0, 32)}`;
 }
 
 /**

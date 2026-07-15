@@ -1,31 +1,30 @@
-# mythos
+# splice
 
 **Run [Claude Code](https://docs.anthropic.com/en/docs/claude-code) against a ChatGPT Codex subscription — and keep the model's reasoning warm, legible, and cheap across the whole agent loop.**
 
-mythos is a local, loopback-only proxy stack. It speaks Anthropic's Messages API on one side and OpenAI's ChatGPT **Responses** API on the other, so Claude Code's agent loop drives a ChatGPT Codex backend (or Claude, or Grok) without knowing the difference. Its load-bearing feature is the **mythos loop**: the backend's reasoning is surfaced back into the transcript as a visible **mirror**, so conclusions persist and stay legible turn after turn instead of evaporating.
+splice is a local, loopback-only proxy stack. It speaks Anthropic's Messages API on one side and OpenAI's ChatGPT **Responses** API on the other, so Claude Code's agent loop drives a ChatGPT Codex backend without knowing the difference. Its load-bearing feature is the **splice loop**: the backend's reasoning is surfaced back into the transcript as a visible **mirror**, so conclusions persist and stay legible turn after turn instead of evaporating.
 
-> Status: personal project, run locally on loopback. Two heads are usable today (`claudex`, `claudithos`); a Grok head is scaffolded. No warranty — see [License](#license).
+> Status: personal project, run locally on loopback. One head is usable today (`claudex`); a Grok head is scaffolded. No warranty — see [License](#license).
 
 ## Why it exists
 
-Long coding-agent sessions bleed tokens and lose the thread. mythos goes after both:
+Long coding-agent sessions bleed tokens and lose the thread. splice goes after both:
 
 - **Cache warmth is engineered, not hoped for.** A stable `prompt_cache_key`, encrypted-reasoning replay, and — critically — **compaction that runs on the session's own model and reasoning effort** keep the prompt cache warm across a long session. A mismatched compaction model *or* effort silently invalidates the cache and re-reads the entire transcript uncached every time it fires; getting this right is the difference between a session that sips your quota and one that drains it.
 - **Reasoning is load-bearing.** The mirror writes the model's reasoning back into the transcript as readable text, so the agent — and you — can see *why* it did what it did, and that context survives compaction.
-- **One instrument panel for the fleet.** A centralized control server (`mythosd`) serves a single dashboard over every head: live status, start/stop/restart, layered config with provenance, per-head 5-hour usage soft-warnings, auth, and logs.
+- **One instrument panel for the fleet.** A centralized control server (`spliced`) serves a single dashboard over every head: live status, start/stop/restart, layered config with provenance, per-head 5-hour usage soft-warnings, auth, and logs.
 
-## Two heads, one stack
+## The stack
 
 - **claudex** (`:3099`) — Claude Code on a **ChatGPT Codex** subscription. Anthropic Messages ⇄ ChatGPT Responses translation, gateway model discovery, compaction detection with a shadow instrument, OAuth refresh, reasoning replay, and `prompt_cache_key` for Codex-parity cache warmth.
-- **claudithos** (`:3098`) — Claude Code on **Claude** through the mythos memory-architecture transform (arms: `native` / `amnesia` / `mirror`). Experimental — for disposable tasks only.
+- **grok** — Claude Code on **xAI Grok**. The request/response translators exist; the proxy head and launcher wiring are still scaffolded, so it is not runnable yet.
 
 ## Quick start
 
 ```bash
 bin/claudex login        # Sign in with ChatGPT (OAuth + PKCE) → ~/.codex/auth.json
-bin/claudex              # launch Claude Code against the codex proxy (:3099) + mythosd
-bin/claudex dashboard    # open the control dashboard (mythosd, :3096)
-bin/claudithos           # Claude head, armed from CLAUDITHOS_MODE (:3098)
+bin/claudex              # launch Claude Code against the codex proxy (:3099) + spliced
+bin/claudex dashboard    # open the control dashboard (spliced, :3096)
 ```
 
 The dashboard and every `/mgmt/*` and `/api/*` endpoint are bearer-guarded and loopback-only. The unlock key lives at `~/.claude-codex/state/mgmt-key`.
@@ -44,7 +43,7 @@ Findings so far are **directional, not conclusive** — single runs are noisy an
 ```
 server/        Node, no build step (dep: undici) — proxy src, launcher, control server, tests
 webui/         React 19 + Vite + Zustand, Feature-Sliced Design, single-file build
-bin/           thin claudex / claudithos shims (exec env; all logic lives in launcher/)
+bin/           thin claudex shim (exec env; all logic lives in launcher/)
 experiments/   cache-replay A/B reproducer
 .rules/        ast-grep "walls" enforced write-time AND at the commit gate (same rules twice)
 ```

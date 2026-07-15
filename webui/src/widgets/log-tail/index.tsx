@@ -8,7 +8,6 @@ import { EmptyState, ErrorNote, Field, Panel, SkeletonRows, Stale, Well } from '
 const TAIL_SIZES = [50, 200, 500, 1000];
 const FALLBACK_HEADS = [
   { key: 'codex', label: 'claudex' },
-  { key: 'claudithos', label: 'claudithos' },
 ];
 
 export function LogTail() {

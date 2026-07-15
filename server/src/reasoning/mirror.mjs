@@ -1,4 +1,4 @@
-// The reasoning mirror — the load-bearing half of the mythos distillation loop
+// The reasoning mirror — the load-bearing half of the splice distillation loop
 // (invariant L2). Reasoning items are never replayed upstream (L1, locked
 // non-goal); instead each turn's summary is mirrored into the transcript as
 // visible text, so conclusions persist while reasoning is re-derived fresh.
@@ -13,7 +13,7 @@ export const PROMOTE_MIN_CHARS = 40;  // thinking may be promoted to text at/abo
 export const HONESTY_MIN_CHARS = 20;  // completed-but-empty below this → honest error, not blank end_turn
 
 /** WIRE CONTRACT (external): the mirror block format v25–v29 shipped. The
- * claudithos request transform and any transcript tooling key on this shape. */
+ * any transcript tooling key on this shape. */
 export function mirrorWireText(thinking) {
   return `\n[reasoning summary]\n${String(thinking).trim()}\n`;
 }

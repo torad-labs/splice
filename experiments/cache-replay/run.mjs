@@ -160,28 +160,51 @@ async function main() {
   const a = await passRun('Pass A — replay ON (encrypted reasoning echoed into input)', true, `cacherepl-on-${salt}`, null);
   const b = await passRun('Pass B — replay OFF (same text, reasoning items dropped)', false, `cacherepl-off-${salt}`, a.golden);
 
-  console.log('\n== per-turn cache (% of input served from cache) ==');
-  console.log('turn |  replay-ON  |  replay-OFF');
+  console.log('\n== per-turn cache hit% (share of input served from cache) ==');
+  console.log('turn |  replay-ON        |  replay-OFF');
   let uncachedOn = 0, uncachedOff = 0;
+  let coldOn = 0, coldOff = 0, hitOnSum = 0, hitOffSum = 0, warmTurns = 0;
   for (let i = 0; i < TURNS.length; i++) {
     const ra = a.rows[i], rb = b.rows[i];
     uncachedOn += ra.input - ra.cached;
     uncachedOff += rb.input - rb.cached;
-    console.log(`  ${String(ra.turn).padStart(2)} |  ${String(ra.cachedPct).padStart(3)}% ${String(ra.cached).padStart(7)} | ${String(rb.cachedPct).padStart(3)}% ${String(rb.cached).padStart(7)}`);
+    // Turn 1 has no prior prefix to cache; only turns >=2 actually test warmth.
+    if (i >= 1) {
+      warmTurns++;
+      hitOnSum += ra.cachedPct; hitOffSum += rb.cachedPct;
+      if (ra.input > 1024 && ra.cachedPct < 20) coldOn++;   // over the 1024 floor yet stone cold = a real miss
+      if (rb.input > 1024 && rb.cachedPct < 20) coldOff++;
+    }
+    console.log(`  ${String(ra.turn).padStart(2)} |  ${String(ra.cachedPct).padStart(3)}% (${String(ra.cached).padStart(6)}) | ${String(rb.cachedPct).padStart(3)}% (${String(rb.cached).padStart(6)})`);
   }
-  console.log(`\ntotal UNCACHED input tokens (this is what drains quota):`);
+  const avgOn = warmTurns ? Math.round(hitOnSum / warmTurns) : 0;
+  const avgOff = warmTurns ? Math.round(hitOffSum / warmTurns) : 0;
+
+  // PRIMARY signal: cache warmth on turns 2..N. Same user + assistant text in both
+  // passes; the ONLY difference is whether encrypted reasoning rides in the input.
+  // A lower hit% / more cold turns under replay ON = replay destabilized the prefix.
+  console.log(`\n== cache warmth on turns 2..${TURNS.length} (the controlled comparison) ==`);
+  console.log(`  replay ON  : avg hit ${avgOn}%   COLD turns (>1024 tok, <20% hit) = ${coldOn}/${warmTurns}`);
+  console.log(`  replay OFF : avg hit ${avgOff}%   COLD turns (>1024 tok, <20% hit) = ${coldOff}/${warmTurns}`);
+
+  // SECONDARY: real-world uncached token cost. CONFOUND: replay ON also SHIPS the
+  // encrypted reasoning as extra input, so part of any gap here is volume, not a
+  // cache miss. Read it alongside the hit% above, never instead of it.
+  console.log(`\ntotal uncached input tokens (secondary; replay ON also ships the reasoning blobs):`);
   console.log(`  replay ON  = ${uncachedOn}`);
   console.log(`  replay OFF = ${uncachedOff}`);
   const ratio = uncachedOff > 0 ? (uncachedOn / uncachedOff) : 0;
-  const delta = uncachedOn - uncachedOff;
-  console.log(delta > 0
-    ? `\n>> Replay ON billed ${delta} MORE uncached input tokens (${ratio.toFixed(2)}x). Dropping encrypted reasoning kept the cache warm. THEORY HELD.`
-    : `\n>> No cache penalty from replay in this run (delta=${delta}). Theory NOT reproduced with consistent replay; try the tool-use variant.`);
+
+  const bustsCache = coldOn > coldOff || avgOn + 5 < avgOff; // directional; ONE run is noisy
+  console.log(bustsCache
+    ? `\n>> Directional: replay ON ran colder (avg ${avgOn}% vs ${avgOff}%, ${coldOn} vs ${coldOff} cold turns) — consistent with replay destabilizing the cacheable prefix. One run is noisy; re-run several times before trusting it.`
+    : `\n>> Directional: no cache penalty from replay this run (avg ${avgOn}% vs ${avgOff}%, ${coldOn} vs ${coldOff} cold). Not reproduced here; re-run, and try the tool-use variant where the backend's keep/drop of reasoning is less predictable.`);
 
   const outFile = join(process.cwd(), `trace-${Date.now()}.json`);
   writeFileSync(outFile, JSON.stringify({
     model: MODEL, effort: EFFORT, backend: API_KEY ? 'api.openai.com' : BASE, at: new Date().toISOString(),
-    turns: TURNS, replayOn: a.rows, replayOff: b.rows, uncachedOn, uncachedOff, ratio,
+    turns: TURNS, replayOn: a.rows, replayOff: b.rows,
+    avgHitOn: avgOn, avgHitOff: avgOff, coldOn, coldOff, warmTurns, uncachedOn, uncachedOff, ratio,
   }, null, 2));
   console.log(`\nfull machine-readable trace: ${outFile}`);
 }

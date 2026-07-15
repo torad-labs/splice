@@ -217,18 +217,8 @@ export interface CodexAuth {
   cache_age_ms?: number | null;
 }
 
-export interface ClaudeAuth {
-  kind: 'claude';
-  login: string;
-  present: boolean;
-  expires_at: number | null;
-  cred_path?: string;
-  cached?: boolean;
-}
-
 export interface AuthPayload {
   codex: CodexAuth;
-  claude: ClaudeAuth;
 }
 
 /** POST /api/auth/:head/refresh|login — a transient outcome, not the full card

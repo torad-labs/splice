@@ -1,1 +1,2 @@
 trace-*.json
+# capture/ is intentionally kept in-repo (the A/B fixture). Do not ignore it.

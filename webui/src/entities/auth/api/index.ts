@@ -16,7 +16,7 @@ export function startAuthPolling(intervalMs = 15000): () => void {
   return poll(fetchAuth, intervalMs);
 }
 
-/** POST /api/auth/:head/refresh, then reload both cards from the source of
+/** POST /api/auth/:head/refresh, then reload the card from the source of
  * truth (the refresh response is a transient outcome, not the full card). */
 export async function refreshAuth(head: string): Promise<AuthActionResult> {
   const result = await control.refreshAuth(head);
@@ -24,8 +24,7 @@ export async function refreshAuth(head: string): Promise<AuthActionResult> {
   return result;
 }
 
-/** POST /api/auth/:head/login — codex only; spawns the browser OAuth flow.
- * claude returns started:false with a note pointing at `claude` itself. */
+/** POST /api/auth/:head/login — codex only; spawns the browser OAuth flow. */
 export async function loginAuth(head: string): Promise<AuthActionResult> {
   const result = await control.loginAuth(head);
   await fetchAuth();

@@ -4,8 +4,13 @@
 // state so codex model options never leak into plain `claude`.
 import { existsSync, lstatSync, mkdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync, copyFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
-import { CODEX_MODEL_OPTIONS } from '../src/models/codex-models.mjs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { CODEX_MODEL_OPTIONS, DEFAULT_CODEX_MODEL, availableModelIds } from '../src/models/codex-models.mjs';
+
+// In-repo statusline script (rendered on every Claude Code tick). Absolute path so
+// it resolves regardless of the launch cwd; regenerated into settings.json each start.
+const STATUSLINE_SCRIPT = join(dirname(fileURLToPath(import.meta.url)), '..', 'statusline', 'claudex-statusline.mjs');
 
 const SHARED_LINKS = ['settings.json', 'agents', 'commands', 'skills', 'hooks', 'plugins', 'CLAUDE.md'];
 
@@ -57,6 +62,37 @@ function linkShared(configDir, home) {
   }
 }
 
+/** Write claudex's settings.json as a REAL merged file: the operator's global
+ * settings + a claudex-only `availableModels` allowlist (+ `enforceAvailableModels`)
+ * that REPLACES the /model picker with the codex catalog, hiding the built-in
+ * Claude models (whose picker rows are hardcoded and can't be renamed away).
+ * Re-merged every launch so global-settings changes still propagate; plain
+ * `claude` (which reads ~/.claude/settings.json) is untouched. The symlink
+ * linkShared() just made is broken FIRST — writing through it would clobber the
+ * operator's real settings. */
+function writeClaudexSettings(configDir, home) {
+  const dstPath = join(configDir, 'settings.json');
+  const global = readJson(join(home, '.claude', 'settings.json'));
+  let existing = {};
+  try {
+    const st = lstatSync(dstPath);
+    if (st.isSymbolicLink()) unlinkSync(dstPath);
+    else existing = readJson(dstPath);
+  } catch { /* no settings.json yet */ }
+  const allow = availableModelIds();
+  // Preserve a saved /model choice when it is still an allowed codex model.
+  const model = existing.model && allow.includes(existing.model) ? existing.model : DEFAULT_CODEX_MODEL;
+  writeFileSync(dstPath, JSON.stringify({
+    ...global,
+    availableModels: allow,
+    enforceAvailableModels: true,
+    model,
+    // claudex bottom bar: model · actual tokens used/window · cache hit% · repo/branch.
+    // process.execPath pins the launcher's own node so the tick never depends on PATH.
+    statusLine: { type: 'command', command: `"${process.execPath}" "${STATUSLINE_SCRIPT}"`, padding: 0 },
+  }, null, 2) + '\n');
+}
+
 /** claudex: isolated config dir + model picker cache + MCP/UI-state inherit. */
 export function prepareClaudexConfig({ home = homedir(), configDir } = {}) {
   const dir = configDir ?? join(home, '.claude-codex');
@@ -65,6 +101,7 @@ export function prepareClaudexConfig({ home = homedir(), configDir } = {}) {
   }
   mkdirSync(dir, { recursive: true });
   linkShared(dir, home);
+  writeClaudexSettings(dir, home);
 
   const statePath = join(dir, '.claude.json');
   const globalData = readJson(join(home, '.claude.json'));

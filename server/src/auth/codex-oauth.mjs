@@ -4,13 +4,20 @@ import { existsSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { fetch as undiciFetch } from 'undici';
 import { getConfig } from '../config.mjs';
 
-// Codex CLI's public OAuth client id + token endpoint, verified in the local
-// codex binary. Without refresh, an expired access token meant every session
-// 401'd until the operator manually ran `codex`.
-function tokenUrl() {
-  return process.env.CODEX_OAUTH_TOKEN_URL || 'https://auth.openai.com/oauth/token';
+// Codex CLI's public OAuth issuer + client id, verified in the local codex
+// binary. Reusing the public client id is what lets claudex mint a
+// ChatGPT-subscription token itself (see auth/codex-login.mjs). Without refresh,
+// an expired access token meant every session 401'd until a manual re-login.
+export function codexIssuer() {
+  return (process.env.CODEX_OAUTH_ISSUER || 'https://auth.openai.com').replace(/\/$/, '');
 }
-function clientId() {
+export function codexTokenUrl() {
+  return process.env.CODEX_OAUTH_TOKEN_URL || `${codexIssuer()}/oauth/token`;
+}
+export function codexAuthorizeUrl() {
+  return process.env.CODEX_OAUTH_AUTHORIZE_URL || `${codexIssuer()}/oauth/authorize`;
+}
+export function codexClientId() {
   return process.env.CODEX_OAUTH_CLIENT_ID || 'app_EMoamEEZ73f0CkXaXp7hrann';
 }
 
@@ -88,13 +95,13 @@ export async function refreshCodexAuth() {
       const timer = setTimeout(() => ac.abort(), 30_000);
       let resp;
       try {
-        resp = await undiciFetch(tokenUrl(), {
+        resp = await undiciFetch(codexTokenUrl(), {
           method: 'POST',
           headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
           body: new URLSearchParams({
             grant_type: 'refresh_token',
             refresh_token: refreshToken,
-            client_id: clientId(),
+            client_id: codexClientId(),
           }).toString(),
           signal: ac.signal,
         });

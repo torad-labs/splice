@@ -1,8 +1,9 @@
-// The mgmt HTTP client — the ONLY module in the app that talks to the network.
-// Importable solely from entity api segments (lint-enforced boundary; an
-// ast-grep wall additionally forbids fetch() anywhere else in webui/src).
-// Served same-origin by the proxy at /dashboard; the bearer key comes from
-// ~/.claude-codex/state/mgmt-key, pasted once by the operator.
+// The control-plane HTTP client — the ONLY module in the app that talks to the
+// network. Importable solely from entity api segments (lint-enforced boundary;
+// an ast-grep wall additionally forbids fetch() anywhere else in webui/src).
+// Served same-origin by the control server (mythosd), which also hosts this
+// dashboard at /; the bearer key comes from ~/.claude-codex/state/mgmt-key,
+// pasted once by the operator.
 
 const KEY_STORAGE = 'myx-mgmt-key';
 
@@ -67,6 +68,19 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 // ── payload types ────────────────────────────────────────────────────────────
 
+export interface RegistryEntry {
+  key: string;
+  label: string;
+  authKind: string;
+}
+
+export interface ControlStatusPayload {
+  server: string;
+  version: string;
+  heads: string[];
+  registry: RegistryEntry[];
+}
+
 export interface GateLive {
   label: string;
   compact: boolean;
@@ -87,17 +101,33 @@ export interface GateSnapshot {
   stream_idle_ms: number;
 }
 
-export interface StatusPayload {
-  proxy: string;
-  version: string;
-  uptime_s: number;
-  gate?: GateSnapshot;
-  mode?: string;
-  upstream?: string;
-  pinned_model?: string;
-  show_reasoning?: string;
-  effort_fallback?: string | null;
-  summary_fallback?: string | null;
+export interface HeadStatus {
+  key: string;
+  label: string;
+  name: string;
+  port: number;
+  authKind: string;
+  wantVersion: string;
+  running: boolean;
+  healthy: boolean;
+  version: string | null;
+  versionMatch: boolean | null;
+  mode: string | null;
+  gate: GateSnapshot | null;
+  maxInflight: number | null;
+  pids: number[];
+}
+
+/** The lifecycle endpoints return the fresh head status plus a transient note. */
+export interface HeadActionResult extends HeadStatus {
+  started?: boolean;
+  stopped?: boolean;
+  note?: string;
+  logPath?: string;
+}
+
+export interface HeadsPayload {
+  heads: HeadStatus[];
 }
 
 export type ConfigValue = string | number | boolean | null;
@@ -112,27 +142,55 @@ export interface ConfigPayload {
     runtime: EffectiveConfig;
   };
   restart_required_keys: string[];
+  source: string;
+}
+
+export interface ConfigPatchTarget {
+  key: string;
+  ok: boolean;
 }
 
 export interface PatchResult {
   applied: EffectiveConfig;
   rejected: Record<string, string>;
   restart_required: string[];
-  effective: EffectiveConfig;
+  targets: ConfigPatchTarget[];
+  persisted: string;
 }
 
 export interface RatelimitState {
   limit_tokens: number;
   remaining_tokens: number | null;
   reset_tokens: string | null;
-  updated_at: number;
+}
+
+export type WarnLevel = 'ok' | 'warn' | 'critical';
+
+export interface UsageWarn {
+  level: WarnLevel;
+  pct: number;
+  source: string;
+  reset: string | null;
+}
+
+export interface HeadUsage {
+  output_tokens_5h: number;
+  entries: number;
+  ratelimit: RatelimitState | null;
+  warn: UsageWarn;
+}
+
+export interface HeadUsageEntry {
+  key: string;
+  label: string;
+  usage: HeadUsage | null;
 }
 
 export interface UsagePayload {
   window_hours: number;
-  entries: number;
-  output_tokens_5h: number;
-  ratelimit: RatelimitState | null;
+  warn_pct: number;
+  warn_tokens_5h: number;
+  heads: HeadUsageEntry[];
 }
 
 export interface CompactRow {
@@ -144,64 +202,66 @@ export interface CompactRow {
   error?: string;
 }
 
-export interface ShadowRow {
-  ts: number;
-  compact: boolean;
-  has_marker: boolean;
-  tool_count: number;
-  sys_len: number;
-  model: string;
-}
-
 export interface CompactPayload {
   stats: { total: number; by_outcome: Record<string, number>; tail: CompactRow[] };
-  shadow: ShadowRow[];
-  note?: string;
+}
+
+export interface CodexAuth {
+  kind: 'codex';
+  login: string;
+  present: boolean;
+  account_id_masked: string | null;
+  last_refresh: string | null;
+  auth_path?: string;
+  cached?: boolean;
+  cache_age_ms?: number | null;
+}
+
+export interface ClaudeAuth {
+  kind: 'claude';
+  login: string;
+  present: boolean;
+  expires_at: number | null;
+  cred_path?: string;
+  cached?: boolean;
 }
 
 export interface AuthPayload {
-  present: boolean;
-  cached?: boolean;
-  cache_age_ms?: number | null;
-  account_id_masked?: string | null;
-  last_refresh?: string | null;
-  expires_at?: number | null;
-  auth_path?: string;
-  cred_path?: string;
+  codex: CodexAuth;
+  claude: ClaudeAuth;
+}
+
+/** POST /api/auth/:head/refresh|login — a transient outcome, not the full card
+ * (callers re-fetch /api/auth for the authoritative card state). */
+export interface AuthActionResult {
+  head?: string;
   refreshed?: boolean;
+  started?: boolean;
+  note?: string;
 }
 
 export interface LogsPayload {
+  key: string;
   path: string;
   lines: string[];
   note?: string;
 }
 
-export interface ModelOption {
-  value: string;
-  label: string;
-  description: string;
-  context_window: number;
-}
-
-export interface ModelsPayload {
-  catalog: ModelOption[];
-  context_windows: Record<string, number>;
-  pinned: string;
-  discovery: string[];
-}
-
 // ── endpoints ────────────────────────────────────────────────────────────────
 
-export const mgmt = {
-  status: () => request<StatusPayload>('/mgmt/status'),
-  config: () => request<ConfigPayload>('/mgmt/config'),
+export const control = {
+  status: () => request<ControlStatusPayload>('/api/status'),
+  heads: () => request<HeadsPayload>('/api/heads'),
+  startHead: (head: string) => request<HeadActionResult>(`/api/heads/${head}/start`, { method: 'POST' }),
+  stopHead: (head: string) => request<HeadActionResult>(`/api/heads/${head}/stop`, { method: 'POST' }),
+  restartHead: (head: string) => request<HeadActionResult>(`/api/heads/${head}/restart`, { method: 'POST' }),
+  config: () => request<ConfigPayload>('/api/config'),
   patchConfig: (patch: Record<string, ConfigValue>) =>
-    request<PatchResult>('/mgmt/config', { method: 'PATCH', body: JSON.stringify(patch) }),
-  usage: () => request<UsagePayload>('/mgmt/usage'),
-  compact: () => request<CompactPayload>('/mgmt/compact'),
-  auth: () => request<AuthPayload>('/mgmt/auth'),
-  refreshAuth: () => request<AuthPayload>('/mgmt/auth/refresh', { method: 'POST' }),
-  logs: (tail: number) => request<LogsPayload>(`/mgmt/logs?tail=${tail}`),
-  models: () => request<ModelsPayload>('/mgmt/models'),
+    request<PatchResult>('/api/config', { method: 'PATCH', body: JSON.stringify(patch) }),
+  usage: () => request<UsagePayload>('/api/usage'),
+  auth: () => request<AuthPayload>('/api/auth'),
+  refreshAuth: (head: string) => request<AuthActionResult>(`/api/auth/${head}/refresh`, { method: 'POST' }),
+  loginAuth: (head: string) => request<AuthActionResult>(`/api/auth/${head}/login`, { method: 'POST' }),
+  compact: () => request<CompactPayload>('/api/compact'),
+  logs: (head: string, tail: number) => request<LogsPayload>(`/api/logs/${head}?tail=${tail}`),
 };

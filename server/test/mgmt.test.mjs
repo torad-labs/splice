@@ -64,7 +64,7 @@ test('GET /mgmt/status: version, uptime, gate snapshot', async () => {
   const { status, json } = await call('GET', '/mgmt/status');
   assert.equal(status, 200);
   assert.equal(json.proxy, 'codex-proxy');
-  assert.equal(json.version, '30');
+  assert.equal(json.version, proxy.PROXY_VERSION);
   assert.ok(json.uptime_s >= 0);
   assert.ok(json.gate && typeof json.gate.inflight === 'number');
   assert.ok('live' in json.gate);

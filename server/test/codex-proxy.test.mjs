@@ -113,7 +113,22 @@ const mock = http.createServer((req, res) => {
       sseLine(res, { type: 'response.output_text.delta', output_index: 0, delta: 'partial answer' });
       res.end(); // no response.completed
     } else if (scenario === 'idle') {
+      // Stream STARTS (first byte) then stalls with no completion → the post-first-byte
+      // idle watchdog (streamIdleMs) reaps it as a zombie.
+      sseLine(res, { type: 'response.output_item.added', output_index: 0, item: { type: 'message' } });
+      sseLine(res, { type: 'response.output_text.delta', output_index: 0, delta: 'partial' });
       setTimeout(() => { try { res.end(); } catch { /* ignore */ } }, 5_000).unref();
+    } else if (scenario === 'prefill') {
+      // Silent well past streamIdleMs (a big-context PREFILL, like a ~160k compaction)
+      // then streams + completes. Must NOT be reaped: pre-first-byte idle is governed
+      // by firstByteTimeoutMs, not streamIdleMs. This is the compaction regression.
+      setTimeout(() => {
+        sseLine(res, { type: 'response.output_item.added', output_index: 0, item: { type: 'message' } });
+        sseLine(res, { type: 'response.output_text.delta', output_index: 0, delta: 'summary after slow prefill' });
+        sseLine(res, { type: 'response.output_item.done', output_index: 0 });
+        sseLine(res, { type: 'response.completed', response: { usage: { input_tokens: 1000, output_tokens: 5 } } });
+        try { res.end(); } catch { /* ignore */ }
+      }, 1500).unref();
     } else if (scenario === 'drip') {
       // endless deltas until the client (the proxy) aborts us — records the abort
       sseLine(res, { type: 'response.output_item.added', output_index: 0, item: { type: 'message' } });
@@ -157,6 +172,20 @@ const mock = http.createServer((req, res) => {
         response: { id: 'rc', status: 'completed', output: [], usage: { input_tokens: 9, output_tokens: 3 } },
       });
       res.end();
+    } else if (scenario === 'replaystream') {
+      // Reasoning item carrying encrypted_content on its done event → the proxy
+      // must emit a redacted_thinking replay block (stream path) AND the mirror.
+      sseLine(res, { type: 'response.output_item.added', output_index: 0, item: { type: 'reasoning' } });
+      sseLine(res, { type: 'response.reasoning_summary_text.delta', output_index: 0, delta: 'Long enough reasoning summary to mirror into text.' });
+      sseLine(res, { type: 'response.output_item.done', output_index: 0, item: { type: 'reasoning', id: 'rs_stream', encrypted_content: 'ENC-STREAM' } });
+      sseLine(res, { type: 'response.output_item.added', output_index: 1, item: { type: 'message' } });
+      sseLine(res, { type: 'response.output_text.delta', output_index: 1, delta: 'answer' });
+      sseLine(res, { type: 'response.output_item.done', output_index: 1 });
+      sseLine(res, {
+        type: 'response.completed',
+        response: { id: 'rrs', status: 'completed', output: [], usage: { input_tokens: 7, output_tokens: 4 } },
+      });
+      res.end();
     } else {
       // basic / refresh-after-refresh: minimal text turn
       sseLine(res, { type: 'response.output_item.added', output_index: 0, item: { type: 'message' } });
@@ -185,11 +214,16 @@ process.env.CLAUDEX_UPSTREAM_RETRIES = '2';
 process.env.CLAUDEX_SHOW_REASONING = 'text';
 process.env.CLAUDEX_REASONING_EFFORT = 'high';
 process.env.CLAUDEX_REASONING_SUMMARY = 'detailed';
+// Replay ships OFF by default (it suppresses the reasoning wall); this suite
+// exercises the replay wire path, so opt it on. Only the 'replaystream' scenario
+// returns encrypted_content, so no other scenario is affected.
+process.env.CLAUDEX_REPLAY_REASONING = '1';
 delete process.env.CLAUDEX_MAX_INFLIGHT;
 
 const proxy = await import('../src/codex-proxy.mjs');
 const { getConfig } = await import('../src/config.mjs');
 const { COMPACT_MARKER } = await import('../src/codex/compact.mjs');
+const { decodeReasoningEnvelope } = await import('../src/reasoning/replay.mjs');
 const server = proxy.createServer();
 server.listen(0, '127.0.0.1');
 await once(server, 'listening');
@@ -264,6 +298,23 @@ test('multi-part reasoning: one thinking block, no premature stop, full mirror',
   assert.ok(text.includes('"type":"message_stop"'));
 });
 
+test('replay (stream): encrypted reasoning → redacted_thinking block, alongside the mirror, with include + prompt_cache_key sent', async () => {
+  const { status, text } = await postMessages(baseBody('replaystream'));
+  assert.equal(status, 200);
+
+  // Client receives an encrypted-reasoning replay block that round-trips exactly
+  const m = /"content_block_start","index":\d+,"content_block":\{"type":"redacted_thinking","data":"([^"]+)"/.exec(text);
+  assert.ok(m, `expected a redacted_thinking block, transcript:\n${text}`);
+  assert.equal(decodeReasoningEnvelope(m[1]).encrypted_content, 'ENC-STREAM', 'envelope round-trips to the backend blob');
+  assert.ok(text.includes('[reasoning summary]'), 'the mirror still runs alongside replay (both channels)');
+
+  // The request the proxy SENT upstream carried the replay + cache-key fields
+  const sent = upstreamBodies.find((u) => u.scenario === 'replaystream').body;
+  assert.deepEqual(sent.include, ['reasoning.encrypted_content'], 'include requests encrypted reasoning back');
+  assert.ok(typeof sent.prompt_cache_key === 'string' && sent.prompt_cache_key.startsWith('mythos-'), 'stable prompt_cache_key sent');
+  assert.equal(sent.store, false, 'store:false is the required replay pairing');
+});
+
 test('output_tokens clamped to client max_tokens (compaction overflow guard)', async () => {
   const { status, text } = await postMessages(baseBody('bigout', { max_tokens: 128000 }));
   assert.equal(status, 200);
@@ -317,6 +368,16 @@ test('idle upstream → watchdog aborts and surfaces SSE error (not empty end_tu
   assert.ok(text.includes('event: error'), `expected idle error, got:\n${text}`);
   assert.ok(/idle/i.test(text));
   assert.ok(!text.includes('"type":"message_stop"'));
+});
+
+test('slow prefill (silent past streamIdleMs, then streams) is NOT reaped — the compaction fix', async () => {
+  // A ~160k compaction is silent for minutes while the backend prefills, then streams.
+  // Before this fix the idle watchdog reaped it at streamIdleMs (700ms here) → every
+  // compaction aborted → retry loop re-read the transcript. It must complete cleanly.
+  const { text } = await postMessages(baseBody('prefill'));
+  assert.ok(text.includes('summary after slow prefill'), `prefill must complete, got:\n${text}`);
+  assert.ok(text.includes('"type":"message_stop"'), 'clean completion, not an abort');
+  assert.ok(!text.includes('event: error'), 'no abort error for a legit slow prefill');
 });
 
 // ── Eli gap #3: client abort mid-stream ──────────────────────────────────────
@@ -441,14 +502,50 @@ test('compact detection: post-compact resume and long toolless dumps do NOT matc
   }), false, 'conversation tags alone are a content heuristic — dead in mythos');
 });
 
-test('compact end-to-end: tools stripped upstream, effort low, summary text delivered', async () => {
+test('compact detection: 2.1.207 marker that moved to a user message / new phrasing still matches', () => {
+  // 2.1.207 moved the summarizer instruction out of the system into the last user message.
+  assert.equal(proxy.classifyCompact({
+    system: 'You are Claude Code, an interactive CLI tool.',
+    messages: [
+      { role: 'user', content: 'earlier turn' },
+      { role: 'user', content: 'Your task is to create a detailed summary of this conversation. This summary will be placed at the start of a continuing session.' },
+    ],
+  }), true, 'summarizer instruction in the last user message is detected');
+  // Partial/microcompact summarizer as the system prompt.
+  assert.equal(proxy.classifyCompact({
+    system: 'Summarize this portion of a Claude Code session transcript. Focus on: key decisions.',
+    messages: [{ role: 'user', content: 'x' }],
+  }), true, 'portion summarizer in the system is detected');
+});
+
+test('compact model: default runs on the session model (pinnedModel) + session effort; explicit compactModel still overrides the model; normal turns untouched', () => {
+  const body = REAL_COMPACT_FIXTURE();
+  // Default (empty compactModel): compaction mirrors the session — model = pinnedModel,
+  // effort = the session effort (NOT a hardcoded low) — so it shares the warm cache.
+  const dflt = proxy.buildRequest(body, { compact: true, config: { ...getConfig(), compactModel: '' }, originalModel: body.model });
+  assert.equal(dflt.req.model, 'gpt-5.6-sol', 'empty compactModel runs compaction on the session model (pinnedModel)');
+  assert.deepEqual(dflt.req.reasoning, { effort: 'high', summary: 'detailed' }, 'compact inherits the session effort, no hardcoded low');
+
+  // Explicit override still forces a specific compact model (at the same session effort).
+  const on = proxy.buildRequest(body, { compact: true, config: { ...getConfig(), compactModel: 'gpt-5.4-mini' }, originalModel: body.model });
+  assert.equal(on.req.model, 'gpt-5.4-mini', 'explicit compactModel still overrides the model');
+  assert.deepEqual(on.req.reasoning, { effort: 'high', summary: 'detailed' }, 'override changes the model, not the (session) effort');
+
+  const normal = proxy.buildRequest(
+    { model: 'gpt-5.6-sol', messages: [{ role: 'user', content: 'hi' }] },
+    { compact: false, config: { ...getConfig(), compactModel: 'gpt-5.4-mini' }, originalModel: 'gpt-5.6-sol' },
+  );
+  assert.equal(normal.req.model, 'gpt-5.6-sol', 'normal turns never swap the model');
+});
+
+test('compact end-to-end: tools stripped upstream, session effort, summary text delivered', async () => {
   const { status, text } = await postMessages(REAL_COMPACT_FIXTURE());
   assert.equal(status, 200);
   const up = upstreamBodies.filter((b) => b.scenario === 'compactish').at(-1);
   assert.ok(up, 'upstream received the compact request');
   assert.equal(up.body.tools, undefined, 'tools stripped upstream (forces text)');
   assert.ok(/COMPACT MODE/.test(up.body.instructions), 'compact instructions attached');
-  assert.deepEqual(up.body.reasoning, { effort: 'low' }, 'compact runs at low effort, no summary');
+  assert.deepEqual(up.body.reasoning, { effort: 'high', summary: 'detailed' }, 'compact runs at the session effort (mirrors a normal turn), not forced low');
   // The model answered thinking-only → promote-to-text delivers a REAL summary
   const textDeltas = [...text.matchAll(/"text_delta","text":"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1]).join('');
   assert.ok(textDeltas.includes('Goal: port the proxy.'), 'summary text present (promoted from model thinking)');
@@ -496,7 +593,7 @@ test('buildRequest: images become input_image, tool_result images ride along', (
   assert.equal(ride.content.find((p) => p.type === 'input_image').image_url, 'data:image/jpeg;base64,BBBB');
 });
 
-test('gateway discovery: GET /v1/models returns claude-prefixed ids, excludes pinned default', async () => {
+test('gateway discovery: GET /v1/models returns every codex model as a claude-prefixed id', async () => {
   const { status, text } = await getPath('/v1/models?limit=1000');
   assert.equal(status, 200);
   const j = JSON.parse(text);
@@ -505,7 +602,8 @@ test('gateway discovery: GET /v1/models returns claude-prefixed ids, excludes pi
   const ids = j.data.map((m) => m.id);
   assert.ok(ids.includes('claude-codex--gpt-5.6-luna'), 'Luna present (wrapped)');
   assert.ok(ids.includes('claude-codex--gpt-5.6-terra'), 'Terra present (wrapped)');
-  assert.ok(!ids.includes('claude-codex--gpt-5.6-sol'), 'pinned Sol excluded from discovery');
+  assert.ok(ids.includes('claude-codex--gpt-5.6-sol'), 'Sol now included — it needs a discovery row for its label');
+  assert.ok(!ids.includes('claude-codex--gpt-5.3-mini'), 'dropped speculative model absent');
   assert.ok(j.data.every((m) => m.display_name), 'each has a display_name for the picker');
 });
 

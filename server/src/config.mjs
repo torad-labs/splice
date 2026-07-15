@@ -32,6 +32,10 @@ export const statePaths = {
   config: () => join(stateDir(), 'config.json'),
   mgmtKey: () => join(stateDir(), 'mgmt-key'),
   compactStats: () => join(dirname(stateDir()), 'claudex-compact-stats.jsonl'),
+  // grok head — shares the state dir + mgmt-key + config layer, own stat files.
+  grokUsage: () => join(stateDir(), 'grok-usage.json'),
+  grokRatelimit: () => join(stateDir(), 'grok-ratelimit.json'),
+  grokCompactStats: () => join(dirname(stateDir()), 'claude-grok-compact-stats.jsonl'),
 };
 
 export const DEFAULTS = Object.freeze({
@@ -40,9 +44,11 @@ export const DEFAULTS = Object.freeze({
   chatgptApiBase: 'https://chatgpt.com/backend-api/codex',
   codexAuthPath: join(homedir(), '.codex', 'auth.json'),
   pinnedModel: 'gpt-5.6-sol',
+  compactModel: '', // '' = compaction runs on the SESSION model (pinnedModel) + effort, sharing its warm prompt-cache namespace. A distinct compact model forfeits the whole transcript cache (measured 2026-07-15: 0% hit x ~167k tokens every compaction). Set a model here only to force a cheaper compactor at the cost of that cache.
   effort: null,            // env/config fallback for turns with no thinking budget (v27 chain)
   summary: null,           // reasoning summary fallback
   showReasoning: 'text',   // off | thinking | text — install default is text (load-bearing mirror)
+  replayReasoning: false,  // OFF by default (2026-07-15, measured): replaying encrypted reasoning makes the model REUSE prior thinking instead of re-deriving it fresh, which suppressed the detailed-reasoning "wall" — the load-bearing feature (output dropped ~4x, reasoning went thin). Input caching still warms via prompt_cache_key + the mirror. Opt in with CLAUDEX_REPLAY_REASONING=1 to trade reasoning depth for extra cache warmth.
   maxInflight: 0,          // 0 = unlimited
   upstreamRetries: 2,
   upstreamTimeoutMs: 900_000,
@@ -56,19 +62,31 @@ export const DEFAULTS = Object.freeze({
   claudithosMode: 'mirror', // native | amnesia | mirror
   anthropicUpstream: 'https://api.anthropic.com',
   claudeCredentialsPath: join(homedir(), '.claude', '.credentials.json'),
+  // grok head (xAI). Shares showReasoning/effort/replayReasoning with codex.
+  grokPort: 3100,
+  grokModel: 'grok-4.5',
+  xaiApiBase: 'https://api.x.ai/v1',
+  grokAuthPath: join(homedir(), '.local', 'share', 'claude-grok', 'auth.json'),
+  // control plane (mythosd) — the centralized dashboard + management server that
+  // spans all heads; loopback-only like the proxies.
+  controlPort: 3096,
+  usageWarnPct: 80,        // soft-warn (never block) when a head's rate-limit consumption ≥ this %
+  usageWarnTokens5h: 0,    // soft-warn when 5h output tokens ≥ this (0 = off; fallback when the backend sends no ratelimit headers)
 });
 
 // Everything else hot-applies on the next request.
-export const RESTART_REQUIRED_KEYS = Object.freeze(['port', 'claudithosPort', 'upstreamTimeoutMs']);
+export const RESTART_REQUIRED_KEYS = Object.freeze(['port', 'claudithosPort', 'grokPort', 'controlPort', 'upstreamTimeoutMs']);
 
 const ENV_MAP = {
   port: ['CODEX_PROXY_PORT'],
   chatgptApiBase: ['CHATGPT_API_BASE'],
   codexAuthPath: ['CODEX_AUTH_PATH'],
   pinnedModel: ['CLAUDEX_PINNED_MODEL', 'CLAUDEX_MODEL'],
+  compactModel: ['CLAUDEX_COMPACT_MODEL'],
   effort: ['CLAUDEX_REASONING_EFFORT', 'CODEX_REASONING_EFFORT'],
   summary: ['CLAUDEX_REASONING_SUMMARY', 'CODEX_REASONING_SUMMARY'],
   showReasoning: ['CLAUDEX_SHOW_REASONING', 'CODEX_SHOW_REASONING'],
+  replayReasoning: ['CLAUDEX_REPLAY_REASONING', 'CODEX_REPLAY_REASONING'],
   maxInflight: ['CLAUDEX_MAX_INFLIGHT'],
   upstreamRetries: ['CLAUDEX_UPSTREAM_RETRIES'],
   upstreamTimeoutMs: ['CLAUDEX_UPSTREAM_TIMEOUT_MS'],
@@ -81,13 +99,26 @@ const ENV_MAP = {
   claudithosMode: ['CLAUDITHOS_MODE'],
   anthropicUpstream: ['ANTHROPIC_UPSTREAM'],
   claudeCredentialsPath: ['CLAUDE_CREDENTIALS_PATH'],
+  grokPort: ['GROK_PROXY_PORT'],
+  grokModel: ['CLAUDE_GROK_MODEL', 'CLAUDE_GROK_PINNED_MODEL'],
+  xaiApiBase: ['XAI_API_BASE'],
+  grokAuthPath: ['GROK_AUTH_PATH'],
+  controlPort: ['MYTHOS_CONTROL_PORT', 'CONTROL_PROXY_PORT'],
+  usageWarnPct: ['MYTHOS_USAGE_WARN_PCT'],
+  usageWarnTokens5h: ['MYTHOS_USAGE_WARN_TOKENS_5H'],
 };
+
+/** Every env var name the config layer reads. The control server strips these
+ * when it spawns a head so config.json — the dashboard's source of truth — wins
+ * over a stale value inherited from the control server's own environment. */
+export const CONFIG_ENV_NAMES = Object.freeze([...new Set(Object.values(ENV_MAP).flat())]);
 
 const NUMBER_KEYS = new Set([
   'port', 'maxInflight', 'upstreamRetries', 'upstreamTimeoutMs', 'firstByteTimeoutMs',
-  'streamIdleMs', 'authCacheMs', 'contextWindowOverride', 'claudithosPort',
+  'streamIdleMs', 'authCacheMs', 'contextWindowOverride', 'claudithosPort', 'grokPort',
+  'controlPort', 'usageWarnPct', 'usageWarnTokens5h',
 ]);
-const BOOL_KEYS = new Set(['debug']);
+const BOOL_KEYS = new Set(['debug', 'replayReasoning']);
 
 function coerce(key, raw) {
   if (raw == null) return undefined;
@@ -111,6 +142,7 @@ function normalize(cfg) {
   const out = { ...cfg };
   out.chatgptApiBase = String(out.chatgptApiBase).replace(/\/$/, '');
   out.anthropicUpstream = String(out.anthropicUpstream).replace(/\/$/, '');
+  out.xaiApiBase = String(out.xaiApiBase).replace(/\/$/, '');
   out.maxInflight = Math.max(0, out.maxInflight || 0);
   out.upstreamRetries = Math.max(1, out.upstreamRetries || DEFAULTS.upstreamRetries);
   out.upstreamTimeoutMs = Math.max(30_000, out.upstreamTimeoutMs || DEFAULTS.upstreamTimeoutMs);
@@ -125,6 +157,9 @@ function normalize(cfg) {
   }
   out.showReasoning = normalizeShowReasoning(out.showReasoning);
   if (out.contextWindowOverride != null && !(out.contextWindowOverride > 0)) out.contextWindowOverride = null;
+  out.usageWarnPct = Math.min(100, Math.max(0, Number(out.usageWarnPct) || 0));
+  out.usageWarnTokens5h = Math.max(0, Number(out.usageWarnTokens5h) || 0);
+  out.controlPort = out.controlPort > 0 ? out.controlPort : DEFAULTS.controlPort;
   return out;
 }
 

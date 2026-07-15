@@ -12,6 +12,16 @@ function fmtVal(v: ConfigValue | undefined): string {
   return String(v);
 }
 
+// Known small-enum + boolean keys get a guided dropdown instead of a raw text
+// box, so operators do not have to recall the valid tokens. effort / summary stay
+// text: they are nullable (inherit) and the server clamps loose values anyway.
+const ENUM_OPTIONS: Record<string, readonly string[]> = {
+  showReasoning: ['off', 'thinking', 'text'],
+  claudithosMode: ['native', 'amnesia', 'mirror'],
+  replayReasoning: ['true', 'false'],
+  debug: ['true', 'false'],
+};
+
 export function EditConfig() {
   const data = useConfig((s) => s.data);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
@@ -54,7 +64,10 @@ export function EditConfig() {
       const restart = result.restart_required.length
         ? `; restart required for ${result.restart_required.join(', ')}`
         : '';
-      setLastResult(`applied ${applied}${restart}`);
+      const targets = result.targets.length
+        ? `; targets ${result.targets.map((t) => `${t.key} ${t.ok ? 'ok' : 'failed'}`).join(', ')}`
+        : '';
+      setLastResult(`applied ${applied}${restart}${targets}; persisted ${result.persisted}`);
       setDrafts({});
       setPending(null);
     } catch (err) {
@@ -69,12 +82,22 @@ export function EditConfig() {
       <div className="myx-editcfg-grid">
         {Object.entries(effective).map(([key, value]) => (
           <Field key={key} label={restartKeys.includes(key) ? `${key} (restart)` : key} htmlFor={`cfg-${key}`}>
-            <input
-              id={`cfg-${key}`}
-              value={drafts[key] ?? fmtVal(value)}
-              onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))}
-              spellCheck={false}
-            />
+            {ENUM_OPTIONS[key] ? (
+              <select
+                id={`cfg-${key}`}
+                value={drafts[key] ?? fmtVal(value)}
+                onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))}
+              >
+                {ENUM_OPTIONS[key].map((opt) => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+            ) : (
+              <input
+                id={`cfg-${key}`}
+                value={drafts[key] ?? fmtVal(value)}
+                onChange={(e) => setDrafts((d) => ({ ...d, [key]: e.target.value }))}
+                spellCheck={false}
+              />
+            )}
           </Field>
         ))}
       </div>

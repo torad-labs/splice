@@ -1,31 +1,27 @@
 // Shell: hash tab router + theme cycle. Bootstrap only — every surface is a
-// page composition; every number on screen comes from the mgmt API.
+// page composition; every number on screen comes from the control API.
 import { useEffect, useState } from 'react';
-import { DashboardPage } from '@pages/dashboard';
-import { ConfigPage } from '@pages/config';
-import { ReasoningPage } from '@pages/reasoning';
-import { CompactionPage } from '@pages/compaction';
+import { FleetPage } from '@pages/fleet';
 import { AuthPage } from '@pages/auth';
+import { ConfigPage } from '@pages/config';
 import { LogsPage } from '@pages/logs';
-import { ModelsPage } from '@pages/models';
+import { CompactionPage } from '@pages/compaction';
 import { UnlockMgmt } from '@features/unlock-mgmt';
-import { useStatus } from '@entities/proxy-status';
+import { fetchControlStatus, useControlStatus } from '@entities/control-status';
 
 const TABS = [
-  { id: 'dashboard', label: 'dashboard', page: DashboardPage },
-  { id: 'config', label: 'config', page: ConfigPage },
-  { id: 'reasoning', label: 'reasoning', page: ReasoningPage },
-  { id: 'compaction', label: 'compaction', page: CompactionPage },
+  { id: 'fleet', label: 'fleet', page: FleetPage },
   { id: 'auth', label: 'auth', page: AuthPage },
+  { id: 'config', label: 'config', page: ConfigPage },
   { id: 'logs', label: 'logs', page: LogsPage },
-  { id: 'models', label: 'models', page: ModelsPage },
+  { id: 'compaction', label: 'compaction', page: CompactionPage },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
 
 function currentTab(): TabId {
   const hash = window.location.hash.replace('#', '');
-  return (TABS.some((t) => t.id === hash) ? hash : 'dashboard') as TabId;
+  return (TABS.some((t) => t.id === hash) ? hash : 'fleet') as TabId;
 }
 
 const THEMES = ['auto', 'paper', 'observatory'] as const;
@@ -38,7 +34,11 @@ function applyTheme(theme: string) {
 export function App() {
   const [tab, setTab] = useState<TabId>(currentTab);
   const [theme, setTheme] = useState(() => localStorage.getItem('myx-theme') ?? 'auto');
-  const status = useStatus((s) => s.data);
+  const status = useControlStatus((s) => s.data);
+
+  useEffect(() => {
+    void fetchControlStatus();
+  }, []);
 
   useEffect(() => {
     const onHash = () => setTab(currentTab());
@@ -56,7 +56,7 @@ export function App() {
     setTheme(next);
   };
 
-  const ActivePage = TABS.find((t) => t.id === tab)?.page ?? DashboardPage;
+  const ActivePage = TABS.find((t) => t.id === tab)?.page ?? FleetPage;
 
   return (
     <div className="myx-shell">
@@ -64,7 +64,7 @@ export function App() {
         <h1 className="myx-wordmark">
           mythos
           <span className="myx-wordmark-sub">
-            {status ? `${status.proxy} v${status.version}` : 'connecting'}
+            {status ? `control v${status.version} · ${status.heads.length} heads` : 'connecting'}
           </span>
         </h1>
         <nav className="myx-tabs" aria-label="pages">
@@ -87,7 +87,7 @@ export function App() {
         <ActivePage />
       </main>
       <footer className="myx-footer">
-        loopback-only; bearer-guarded /mgmt; key at ~/.claude-codex/state/mgmt-key
+        loopback-only; bearer-guarded /api; key at ~/.claude-codex/state/mgmt-key
       </footer>
       <UnlockMgmt />
     </div>

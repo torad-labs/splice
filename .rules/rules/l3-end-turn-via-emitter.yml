@@ -5,7 +5,7 @@
 id: l3-end-turn-via-emitter
 language: javascript
 severity: error
-message: "L3: `end_turn` may appear only in anthropic/sse.mjs or codex/translate-response.mjs — failures use emitError, never a fabricated end_turn."
+message: "L3: `end_turn` may appear only in anthropic/sse.mjs or a head's translate-response.mjs (codex/grok) — failures use emitError, never a fabricated end_turn."
 note: |
   A fabricated end_turn is the fake-success bug class: an upstream failure that
   reaches the client as a clean stop. Streams end via emitTerminal(reason) in
@@ -15,6 +15,7 @@ files:
 ignores:
   - server/src/anthropic/sse.mjs
   - server/src/codex/translate-response.mjs
+  - server/src/grok/translate-response.mjs
 rule:
   kind: string_fragment
   regex: \bend_turn\b

@@ -11,7 +11,8 @@ let cache = { mtimeMs: -1, html: null };
 
 export function handleDashboard(req, res) {
   const path = (req.url ?? '').split('?')[0];
-  if (req.method !== 'GET' || (path !== '/dashboard' && path !== '/dashboard/')) return false;
+  // Served by the control server at the root and at /dashboard.
+  if (req.method !== 'GET' || !['/', '/dashboard', '/dashboard/'].includes(path)) return false;
   try {
     if (!existsSync(DIST_HTML)) {
       sendJson(res, 503, { error: { type: 'api_error', message: 'dashboard not built: webui/dist/index.html missing' } });

@@ -85,6 +85,16 @@
 .myx-btn:disabled { opacity: 0.55; cursor: not-allowed; transform: none; }
 .myx-btn-busy { cursor: wait; }
 
+/* ConfirmBtn: armed state reads visibly more urgent than the resting danger
+   outline (a filled danger tint), so a scan of the bench can't mistake it
+   for the idle "stop" control. */
+.myx-confirm { display: inline-flex; gap: var(--space-2); align-items: center; }
+.myx-btn-danger.myx-btn-armed {
+  background: color-mix(in srgb, var(--data-neg) 16%, transparent);
+  border-color: var(--data-neg);
+  color: var(--data-neg);
+}
+
 .myx-field { display: grid; gap: var(--space-1); }
 .myx-field-label {
   font-family: var(--font-mono);
@@ -155,7 +165,26 @@
   color: var(--data-amber);
 }
 
+/* MeterBar: a hairline track, fill is the ONLY warn-tinted element (measurement
+   ink, never a colored panel background). */
+.myx-meter {
+  height: var(--space-2);
+  background: var(--surface-sunk);
+  border: var(--hair) solid var(--line-mute);
+  border-radius: var(--radius-0);
+  overflow: hidden;
+}
+.myx-meter-fill {
+  height: 100%;
+  transition: width var(--dur-2) var(--ease-snap);
+}
+.myx-meter-fill-pos   { background: var(--data-pos); }
+.myx-meter-fill-amber { background: var(--data-amber); }
+.myx-meter-fill-neg   { background: var(--data-neg); }
+.myx-meter-fill-mute  { background: var(--ink-mute); }
+
 @media (prefers-reduced-motion: reduce) {
   .myx-btn { transition: none; }
   .myx-btn:active { transform: none; }
+  .myx-meter-fill { transition: none; }
 }

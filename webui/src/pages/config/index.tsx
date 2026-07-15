@@ -17,6 +17,7 @@ export function ConfigPage() {
         {error ? <ErrorNote message={error} /> : null}
         {loading && !data ? <SkeletonRows rows={8} cols={2} /> : null}
         {data ? <EditConfig /> : null}
+        {data ? <p className="myx-footnote">effective config observed from: {data.source}</p> : null}
       </Panel>
       {data ? (
         <Panel title="layers (defaults, then file, then env, then runtime patch)">

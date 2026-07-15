@@ -137,13 +137,27 @@ export function assembleClaudexEnv({ env = process.env, tomlPath, cachePath } = 
       ...shared,
       ANTHROPIC_BASE_URL: `http://127.0.0.1:${port}`,
       ANTHROPIC_AUTH_TOKEN: 'codex-local',
+      // The four alias slots are the named picker rows AND the resolution targets
+      // for subagent aliases under enforceAvailableModels. Ids are UNWRAPPED
+      // (plain gpt-*): a claude-* wrapped active model makes Claude Code ignore
+      // CLAUDE_CODE_MAX_CONTEXT_TOKENS and mis-size the window — it compacted
+      // early (~140k instead of ~231k), which also churned the prompt cache.
+      // Each slot carries an explicit _NAME (else the label is the raw id) and
+      // _DESCRIPTION (else "Custom Opus model"), and a DISTINCT model (else it
+      // duplicates across rows). Every target is in the availableModels allowlist.
       ANTHROPIC_MODEL: model,
-      ANTHROPIC_DEFAULT_SONNET_MODEL: model,
-      ANTHROPIC_DEFAULT_OPUS_MODEL: model,
+      ANTHROPIC_DEFAULT_OPUS_MODEL: 'gpt-5.6-sol',
+      ANTHROPIC_DEFAULT_OPUS_MODEL_NAME: 'Codex 5.6 Sol',
+      ANTHROPIC_DEFAULT_OPUS_MODEL_DESCRIPTION: 'Primary · highest reasoning (gpt-5.6-sol)',
+      ANTHROPIC_DEFAULT_SONNET_MODEL: 'gpt-5.6-terra',
+      ANTHROPIC_DEFAULT_SONNET_MODEL_NAME: 'Codex 5.6 Terra',
+      ANTHROPIC_DEFAULT_SONNET_MODEL_DESCRIPTION: 'Balanced 5.6 (gpt-5.6-terra)',
       ANTHROPIC_DEFAULT_HAIKU_MODEL: 'gpt-5.4-mini',
-      ANTHROPIC_CUSTOM_MODEL_OPTION: model,
-      ANTHROPIC_CUSTOM_MODEL_OPTION_NAME: `Codex ${model}`,
-      ANTHROPIC_CUSTOM_MODEL_OPTION_DESCRIPTION: 'ChatGPT Codex via local proxy',
+      ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME: 'Codex 5.4 Mini',
+      ANTHROPIC_DEFAULT_HAIKU_MODEL_DESCRIPTION: 'Fast (gpt-5.4-mini)',
+      ANTHROPIC_DEFAULT_FABLE_MODEL: 'gpt-5.6-luna',
+      ANTHROPIC_DEFAULT_FABLE_MODEL_NAME: 'Codex 5.6 Luna',
+      ANTHROPIC_DEFAULT_FABLE_MODEL_DESCRIPTION: '5.6 Luna · alt high-reasoning (gpt-5.6-luna)',
       CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY: '1',
       // Still honored for unwrapped gpt-* names; ignored for claude-* wrapped ids.
       CLAUDE_CODE_MAX_CONTEXT_TOKENS: String(contextWindow),

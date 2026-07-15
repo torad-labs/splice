@@ -2,24 +2,23 @@
 // Launcher entry (shared by both heads): health check, version handshake,
 // kill-stale, restart, and the exec-argv handoff to the thin bash shim.
 //
-// Kill-stale is a pgrep/lsof loop with SIGTERM→SIGKILL escalation that
-// excludes our own PID/PPID — never `pkill -f` (the v29 trap: a self-matching
-// pkill mid-restart left the stale proxy holding the port, the fresh spawn hit
-// EADDRINUSE and silently exit(0)'d, and the shim looped on the version
-// handshake forever). A surviving wrong-version proxy is now a LOUD failure
-// pointing at the log, never a loop.
+// Process-lifecycle primitives (health / spawn / kill / handshake) now live in
+// heads.mjs — the ONE source shared with the control server so start/stop/kill
+// logic is never forked. This entry keeps the launcher-only orchestration: the
+// version handshake, the claudithos arm hot-switch, claude-bin resolution, and
+// the NUL-separated exec-argv handoff.
 //
 // Invocation (from bin/claudex | bin/claudithos):
 //   node ensure-proxy.mjs <claudex|claudithos> [claude args…]
 // stdout: NUL-separated `env` argv (unsets, KEY=VALs, claude bin, args) for
 // the shim's `exec env`. All diagnostics go to stderr.
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, openSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { CODEX_PROXY_VERSION, CLAUDITHOS_PROXY_VERSION } from '../src/versions.mjs';
-import { statePaths } from '../src/config.mjs';
+import { CODEX_PROXY_VERSION, CLAUDITHOS_PROXY_VERSION, CONTROL_SERVER_VERSION } from '../src/versions.mjs';
+import { getConfig, statePaths } from '../src/config.mjs';
 import { proxyLogName } from '../src/mgmt/api.mjs';
 import {
   assembleClaudexEnv,
@@ -27,108 +26,16 @@ import {
   buildClaudeArgs,
 } from './assemble-env.mjs';
 import { prepareClaudexConfig, prepareClaudithosConfig } from './prepare-config.mjs';
+import { decideAction, filterSelf, killStale, proxyHealth, sleep, spawnProxy, stalePattern } from './heads.mjs';
+
+// Re-export the pure lifecycle helpers so existing importers (launcher tests) keep resolving them here.
+export { decideAction, filterSelf, proxyHealth, stalePattern };
 
 const SRC_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'src');
 
 function die(msg) {
   process.stderr.write(`launcher: ${msg}\n`);
   process.exit(1);
-}
-
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-
-export async function proxyHealth(port) {
-  try {
-    const res = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(1000) });
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
-  }
-}
-
-/** Pure handshake decision — unit-tested. */
-export function decideAction({ health, wantVersion, wantMode = null }) {
-  if (!health || health.ok !== true) return 'start';
-  if (String(health.version) !== String(wantVersion)) return 'restart';
-  if (wantMode && health.mode !== wantMode) return 'patch-mode';
-  return 'ok';
-}
-
-/** Exclude our own process tree from a kill candidate list — unit-tested. */
-export function filterSelf(pids, self = { pid: process.pid, ppid: process.ppid }) {
-  return pids.filter((pid) => Number.isFinite(pid) && pid > 1 && pid !== self.pid && pid !== self.ppid);
-}
-
-/**
- * pgrep pattern for OUR instance on OUR port only (unit-tested). Spawns are
- * tagged with an inert --instance=<port> argv so a side-port test head
- * (claudex-next on :3097) can never name-match the production proxy — nor the
- * old v29 fork, whose same-named script carries no tag. Anything else dies
- * only via the PORT it actually holds, which is the cutover semantic.
- */
-export function stalePattern(scriptName, port) {
-  return `${scriptName}.*--instance=${port}(\\s|$)`;
-}
-
-function pgrep(pattern) {
-  try {
-    const out = execFileSync('pgrep', ['-f', pattern], { encoding: 'utf8' });
-    return out.split('\n').filter(Boolean).map((s) => parseInt(s, 10));
-  } catch {
-    return []; // no matches
-  }
-}
-
-function pidsOnPort(port) {
-  try {
-    const out = execFileSync('lsof', ['-ti', `tcp:${port}`, '-sTCP:LISTEN'], { encoding: 'utf8' });
-    return out.split('\n').filter(Boolean).map((s) => parseInt(s, 10));
-  } catch {
-    return [];
-  }
-}
-
-export async function killStale({ scriptName, port }) {
-  const namePattern = stalePattern(scriptName, port);
-  const candidates = filterSelf([...new Set([...pgrep(namePattern), ...pidsOnPort(port)])]);
-  if (!candidates.length) return;
-  process.stderr.write(`launcher: killing stale proxy pid(s) ${candidates.join(', ')}\n`);
-  for (const pid of candidates) {
-    try { process.kill(pid, 'SIGTERM'); } catch { /* already gone */ }
-  }
-  for (let i = 0; i < 20; i++) {
-    await sleep(100);
-    if (!filterSelf([...new Set([...pgrep(namePattern), ...pidsOnPort(port)])]).length) return;
-  }
-  // escalation: whoever still HOLDS the port is the blocker
-  for (const pid of filterSelf(pidsOnPort(port))) {
-    try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
-  }
-  await sleep(200);
-}
-
-function logsDir() {
-  return join(homedir(), '.claude-codex', 'logs');
-}
-
-function spawnProxy({ scriptName, port, proxyEnv, logName }) {
-  mkdirSync(logsDir(), { recursive: true });
-  const logPath = join(logsDir(), logName);
-  const fd = openSync(logPath, 'a');
-  const env = { ...process.env, ...proxyEnv };
-  // The proxy process must never inherit the caller's Anthropic routing.
-  delete env.ANTHROPIC_BASE_URL;
-  delete env.ANTHROPIC_API_KEY;
-  delete env.ANTHROPIC_AUTH_TOKEN;
-  // --instance tags the cmdline for stalePattern; the entries ignore argv.
-  const child = spawn(process.execPath, [join(SRC_DIR, scriptName), `--instance=${port}`], {
-    detached: true,
-    stdio: ['ignore', fd, fd],
-    env,
-  });
-  child.unref();
-  return logPath;
 }
 
 async function patchMode(port, mode) {
@@ -217,18 +124,71 @@ function emitExecArgv({ unsets, envMap, bin, args }) {
   process.stdout.write(tokens.join('\0') + '\0');
 }
 
+function openBrowser(url) {
+  const cmd = process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
+  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
+  try { spawn(cmd, args, { stdio: 'ignore', detached: true }).unref(); } catch { /* best effort */ }
+}
+
+/**
+ * Ensure the control server (mythosd) is up. wait=false (a head launch) just
+ * fires the spawn and returns — the dashboard comes up async and never blocks the
+ * head; wait+fatal (`claudex dashboard`) confirms /health before opening a tab.
+ * Concurrent launches racing to spawn are safe: listenLoopback exits 0 on
+ * EADDRINUSE, so the first to bind wins and the rest no-op.
+ */
+async function ensureControlServer({ wait = false, fatal = false } = {}) {
+  const port = getConfig().controlPort;
+  const health = await proxyHealth(port);
+  if (health && String(health.version) === String(CONTROL_SERVER_VERSION)) return { port, already: true };
+  if (health) await killStale({ scriptName: 'control-server.mjs', port });
+  const logPath = spawnProxy({ scriptName: 'control-server.mjs', port, proxyEnv: {}, logName: proxyLogName('control-server', port) });
+  if (!wait) return { port, logPath, spawned: true };
+  for (let i = 0; i < 40; i++) {
+    await sleep(100);
+    if (await proxyHealth(port)) return { port, logPath };
+  }
+  const msg = `control-server failed to start on :${port} — see ${logPath}`;
+  if (fatal) die(msg);
+  process.stderr.write(`launcher: ${msg}\n`);
+  return { port, logPath, failed: true };
+}
+
+async function handleDashboardCmd() {
+  await ensureControlServer({ wait: true, fatal: true });
+  const url = `http://127.0.0.1:${getConfig().controlPort}/`;
+  process.stderr.write(`\nmythos dashboard → ${url}\n  unlock key: ${statePaths.mgmtKey()}\n\n`);
+  openBrowser(url);
+  emitExecArgv({ unsets: [], envMap: {}, bin: 'echo', args: [`mythos dashboard: ${url}`] });
+}
+
 async function main() {
   const head = process.argv[2];
   const userArgs = process.argv.slice(3);
 
+  // `claudex dashboard` / `claudithos dashboard` — head-agnostic: open mythosd.
+  if (userArgs[0] === 'dashboard') { await handleDashboardCmd(); return; }
+
   if (head === 'claudex') {
+    if (userArgs[0] === 'login') {
+      // `claudex login` → interactive Sign in with ChatGPT. Emit an exec argv so
+      // the shim runs the login CLI with a real tty (opens the browser, binds
+      // the :1455 OAuth callback, writes ~/.codex/auth.json).
+      emitExecArgv({
+        unsets: [],
+        envMap: {},
+        bin: process.execPath,
+        args: [join(SRC_DIR, 'auth', 'codex-login.mjs'), ...userArgs.slice(1)],
+      });
+      return;
+    }
     const authPath = process.env.CODEX_AUTH_PATH || join(homedir(), '.codex', 'auth.json');
-    if (!existsSync(authPath)) die(`no Codex auth at ${authPath} — run: codex login (Sign in with ChatGPT)`);
+    if (!existsSync(authPath)) die(`no Codex auth at ${authPath} — run: claudex login (Sign in with ChatGPT)`);
     try {
       const auth = JSON.parse(readFileSync(authPath, 'utf8'));
       if (!auth.tokens?.access_token) throw new Error('no access_token');
     } catch {
-      die('Codex auth incomplete — run: codex login (Sign in with ChatGPT)');
+      die('Codex auth incomplete — run: claudex login (Sign in with ChatGPT)');
     }
 
     const profile = assembleClaudexEnv({});
@@ -241,6 +201,7 @@ async function main() {
       proxyEnv: profile.proxyEnv,
       logName: proxyLogName('codex-proxy', profile.port),
     });
+    await ensureControlServer(); // best-effort: the dashboard rides alongside every head launch
     const bin = resolveClaudeBin();
     if (!bin) die('Claude Code not found; set CLAUDE_CODEX_CLAUDE_BIN');
     process.stderr.write(
@@ -270,6 +231,7 @@ async function main() {
       proxyEnv: profile.proxyEnv,
       logName: proxyLogName('claudithos-proxy', profile.port),
     });
+    await ensureControlServer(); // best-effort: the dashboard rides alongside every head launch
     const bin = resolveClaudeBin();
     if (!bin) die('Claude Code not found; set CLAUDE_CODEX_CLAUDE_BIN');
     process.stderr.write(`claudithos: arm=${profile.mode} proxy=127.0.0.1:${profile.port} v${CLAUDITHOS_PROXY_VERSION} (experiment tool — disposable tasks only)\n`);

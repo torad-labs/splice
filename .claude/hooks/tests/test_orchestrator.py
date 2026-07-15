@@ -22,8 +22,12 @@ HOOKS_DIR = Path(__file__).resolve().parents[1]
 ORCHESTRATOR = HOOKS_DIR / "orchestrator.py"
 REPO = HOOKS_DIR.parents[1]
 
-VIOLATION_L1 = 'export function buildRequest(m) {\n  return { model: m, include: ["reasoning.encrypted_content"] };\n}\n'
-CLEAN_L1 = "export function buildRequest(m) {\n  return { model: m, stream: true };\n}\n"
+# An error-severity finding used to prove the orchestrator routes a violation to
+# a block. Uses L3 (a `message_stop` literal outside the sole emitter) — the
+# former L1 include example was retired 2026-07-14 when reasoning replay shipped.
+VIOLATION = 'export function endTurn(res) {\n  res.write("message_stop");\n}\n'
+CLEAN = "export function endTurn(res) {\n  res.end();\n}\n"
+L3_TARGET = "server/src/codex/stream.mjs"  # a server module that is NOT the emitter
 
 
 class OrchestratorTest(unittest.TestCase):
@@ -72,25 +76,26 @@ class OrchestratorTest(unittest.TestCase):
     # --- PreToolUse: Write routing -------------------------------------------------
 
     def test_write_violation_blocks_with_rule_id_and_note(self):
-        raw, _ = self.run_hook("pretooluse", self.write_event("server/src/codex/translate-request.mjs", VIOLATION_L1))
+        raw, _ = self.run_hook("pretooluse", self.write_event(L3_TARGET, VIOLATION))
         decision = self.expect_block(raw, "violation write must block")
-        self.assertIn("l1-no-reasoning-replay", decision["reason"])
-        self.assertIn("locked non-goal", decision["reason"])
+        self.assertIn("l3-sole-message-stop-emitter", decision["reason"])
+        self.assertIn("emitTerminal", decision["reason"])
 
     def test_write_clean_passes(self):
-        decision, _ = self.run_hook("pretooluse", self.write_event("server/src/codex/translate-request.mjs", CLEAN_L1))
+        decision, _ = self.run_hook("pretooluse", self.write_event(L3_TARGET, CLEAN))
         self.assertIsNone(decision)
 
     def test_files_glob_binds_same_shape_elsewhere_passes(self):
-        # The l1 rule is path-scoped; the identical shape outside its files: glob is legal.
-        decision, _ = self.run_hook("pretooluse", self.write_event("server/src/usage/hud.mjs", VIOLATION_L1))
+        # l3 is path-scoped: it ignores the sole emitter, so the identical
+        # message_stop shape inside anthropic/sse.mjs is legal.
+        decision, _ = self.run_hook("pretooluse", self.write_event("server/src/anthropic/sse.mjs", VIOLATION))
         self.assertIsNone(decision)
 
     def test_inline_suppression_is_honored(self):
-        suppressed = VIOLATION_L1.replace(
-            "  return {", "  // ast-grep-ignore: l1-no-reasoning-replay\n  return {"
+        suppressed = VIOLATION.replace(
+            "  res.write", "  // ast-grep-ignore: l3-sole-message-stop-emitter\n  res.write"
         )
-        decision, _ = self.run_hook("pretooluse", self.write_event("server/src/codex/translate-request.mjs", suppressed))
+        decision, _ = self.run_hook("pretooluse", self.write_event(L3_TARGET, suppressed))
         self.assertIsNone(decision)
 
     def test_tsx_and_css_rules_route(self):
@@ -153,12 +158,12 @@ class OrchestratorTest(unittest.TestCase):
     def test_outside_repo_passes(self):
         decision, _ = self.run_hook("pretooluse", {
             "tool_name": "Write",
-            "tool_input": {"file_path": "/etc/hosts.test", "content": VIOLATION_L1},
+            "tool_input": {"file_path": "/etc/hosts.test", "content": VIOLATION},
         })
         self.assertIsNone(decision)
 
     def test_wall_paths_are_grant_gated(self):
-        event = self.write_event(".rules/rules/l1-no-reasoning-replay.yml", "id: weakened\n")
+        event = self.write_event(".rules/rules/l2-single-mirror-definition.yml", "id: weakened\n")
         raw, _ = self.run_hook("pretooluse", event)
         decision = self.expect_block(raw, "un-granted wall edit must block")
         self.assertIn("MYTHOS WALLS", decision["reason"])
@@ -166,7 +171,7 @@ class OrchestratorTest(unittest.TestCase):
         self.assertIsNone(decision, "granted wall edit must pass")
 
     def test_missing_ast_grep_fails_closed(self):
-        event = self.write_event("server/src/codex/translate-request.mjs", CLEAN_L1)
+        event = self.write_event(L3_TARGET, CLEAN)
         raw, _ = self.run_hook("pretooluse", event, env_extra={"PATH": "/nonexistent"})
         decision = self.expect_block(raw, "missing scanner must fail closed on PreToolUse")
         self.assertIn("HOOK POLICY INCOMPLETE", decision["reason"])
@@ -180,12 +185,12 @@ class OrchestratorTest(unittest.TestCase):
             shutil.copytree(REPO / ".rules", root / ".rules")
             decision, _ = self.run_hook("stop", {}, root=root)
             self.assertIsNone(decision, "clean tree must not block stop")
-            bad = root / "server/src/codex/translate-request.mjs"
+            bad = root / "server/src/codex/stream.mjs"
             bad.parent.mkdir(parents=True)
-            bad.write_text(VIOLATION_L1, encoding="utf-8")
+            bad.write_text(VIOLATION, encoding="utf-8")
             raw, _ = self.run_hook("stop", {}, root=root)
             decision = self.expect_block(raw, "dirty tree must block stop")
-            self.assertIn("l1-no-reasoning-replay", decision["reason"])
+            self.assertIn("l3-sole-message-stop-emitter", decision["reason"])
             decision, _ = self.run_hook("stop", {"stop_hook_active": True}, root=root)
             self.assertIsNone(decision, "stop_hook_active must not re-block")
 

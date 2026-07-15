@@ -7,8 +7,9 @@ import { getConfig } from '../config.mjs';
 import { classifyUpstreamFailure } from './errors.mjs';
 import { pickModelText, isWeakSummaryText, harvestResponsesOutput } from './translate-response.mjs';
 import { mirrorInto, HONESTY_MIN_CHARS } from '../reasoning/mirror.mjs';
+import { encodeReasoningEnvelope } from '../reasoning/replay.mjs';
 import { recordCompactStat } from './compact.mjs';
-import { appendCodexUsage, makeOutputClamp } from '../usage/hud.mjs';
+import { appendCodexUsage, logTurnCache, makeOutputClamp } from '../usage/hud.mjs';
 
 /** Streaming UTF-8 line reader over an SSE body (multi-byte-safe). */
 async function* sseEvents(body, onBytes) {
@@ -50,21 +51,41 @@ export async function runStreamTurn({ upstreamRes, upstreamAbort, res, emitter, 
   let streamOutputTokens = 0;
   const clampOutput = makeOutputClamp(meta.clientMaxTokens, meta.compact);
 
-  // Idle watchdog: ChatGPT sometimes holds the stream open with no bytes. The
-  // abort surfaces as an SSE error downstream, never a clean end_turn (v25).
+  // Two watchdog backstops so a stream never wedges its gate slot + undici
+  // connection forever: (1) IDLE — no bytes for streamIdleMs; (2) TOTAL ELAPSED —
+  // an overloaded backend can trickle non-terminal bytes (keepalives / slow
+  // partial deltas) that keep idle low yet never send response.completed. Without
+  // (2) that for-await never exits, the finally never runs, and the slot + its
+  // pooled connection leak: the 64-conn pool fills and new turns stall (the
+  // "55 inflight, 2 agents" leak). The abort surfaces as an SSE error downstream,
+  // never a clean end_turn (v25).
+  // BEFORE the first byte the backend is PREFILLING — a big-context turn
+  // (compaction re-reads the whole ~160k transcript uncached) legitimately takes
+  // minutes before it streams anything, so the pre-first-byte idle limit is the
+  // long firstByteTimeoutMs, NOT streamIdleMs. Reaping prefill on streamIdleMs was
+  // the regression that aborted every compaction mid-prefill → retry loop that
+  // re-read the whole transcript each attempt (the "compaction ate my quota" bug).
+  // streamIdleMs only means "zombie" AFTER streaming has actually started.
   let idleAborted = false;
+  let sawFirstByte = false;
   const idleTimer = setInterval(() => {
     if (!slot) return;
     const idle = slot.idleFor();
-    if (idle >= cfg.streamIdleMs) {
+    const idleLimit = sawFirstByte ? cfg.streamIdleMs : cfg.firstByteTimeoutMs;
+    const overIdle = idle >= idleLimit;
+    const overCap = Date.now() - t0 >= cfg.upstreamTimeoutMs;
+    if (overIdle || overCap) {
       idleAborted = true;
-      process.stderr.write(`[codex-proxy] stream idle ${idle}ms label=${meta.upstreamModel} — aborting upstream\n`);
+      const why = overCap
+        ? `over ${cfg.upstreamTimeoutMs}ms total cap`
+        : sawFirstByte ? `idle ${idle}ms` : `no first byte in ${idle}ms (prefill)`;
+      process.stderr.write(`[codex-proxy] stream ${why} label=${meta.upstreamModel} — aborting upstream\n`);
       try { upstreamAbort?.abort(); } catch { /* ignore */ }
     }
   }, Math.min(15_000, Math.max(250, Math.floor(cfg.streamIdleMs / 3))));
 
   try {
-    for await (const evt of sseEvents(upstreamRes.body, () => slot?.touch())) {
+    for await (const evt of sseEvents(upstreamRes.body, () => { sawFirstByte = true; slot?.touch(); })) {
       if (evt.type === 'response.completed' || evt.type === 'response.done' || evt.type === 'response.incomplete') {
         finalResponse = evt.response ?? evt;
         if (evt.type === 'response.incomplete' || finalResponse?.status === 'incomplete') state.incomplete = true;
@@ -107,6 +128,12 @@ export async function runStreamTurn({ upstreamRes, upstreamAbort, res, emitter, 
           if (b) emitter.closeBlock(b.idx);
           const rb = state.blocks.get(`reasoning:${oi}`);
           if (rb) emitter.closeBlock(rb.idx);
+        }
+        // Replay (gated): emit the encrypted reasoning as a redacted_thinking
+        // block HERE, in position — right after its summary closes and before the
+        // tool_use it preceded — so the round-tripped input preserves cache order.
+        if (cfg.replayReasoning && !meta.compact && evt.item?.type === 'reasoning' && evt.item.encrypted_content) {
+          emitter.addRedactedThinking(encodeReasoningEnvelope(evt.item));
         }
         continue;
       }
@@ -223,7 +250,7 @@ export async function runStreamTurn({ upstreamRes, upstreamAbort, res, emitter, 
   if (idleAborted) {
     failTurn(
       'overloaded_error',
-      `claudex: upstream stream idle ${Math.round(cfg.streamIdleMs / 1000)}s — aborted (no bytes from ChatGPT); retry`,
+      `claudex: upstream stream stalled (no completion within the ${Math.round(cfg.streamIdleMs / 1000)}s idle or ${Math.round(cfg.upstreamTimeoutMs / 1000)}s total cap) — aborted; retry`,
     );
     return { outcome: 'idle_abort' };
   }
@@ -274,6 +301,7 @@ export async function runStreamTurn({ upstreamRes, upstreamAbort, res, emitter, 
     { showReasoning: meta.showReasoning, compact: meta.compact },
   );
 
+  logTurnCache({ model: meta.upstreamModel, usage: finalResponse?.usage ?? {}, compact: meta.compact });
   emitter.emitTerminal({
     hasToolUse: state.hasToolUse,
     incomplete: state.incomplete,

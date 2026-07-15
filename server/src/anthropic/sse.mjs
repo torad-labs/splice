@@ -83,6 +83,15 @@ export function createSseEmitter(res, { model, onFirstByte, onWriteError }) {
       closeBlock(idx);
     },
 
+    /** Emit an encrypted-reasoning replay block (redacted_thinking) in one shot —
+     * the data rides in content_block_start, no delta. Round-trips into the next
+     * request to hold the prompt cache (Codex-parity replay, stream path). */
+    addRedactedThinking(data) {
+      if (!data) return;
+      const idx = openBlock({ type: 'redacted_thinking', data });
+      closeBlock(idx);
+    },
+
     /**
      * The ONLY clean ending. Derives stop_reason internally so no caller ever
      * holds an end_turn literal: tool_use > max_tokens (incomplete) > end_turn.

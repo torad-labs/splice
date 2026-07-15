@@ -3,10 +3,13 @@ import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { appendFile as appendFileAsync, writeFile as writeFileAsync } from 'node:fs/promises';
 import { getContextWindowForModel } from '../models/codex-models.mjs';
 import { getConfig, stateDir, statePaths } from '../config.mjs';
+export { computeUsageWarn } from './warn.mjs';
 
-export function buildUsagePayload(model, usage = {}) {
+export function buildUsagePayload(model, usage = {}, contextWindowOverride = null) {
   const cfg = getConfig();
-  const contextWindow = getContextWindowForModel(model, cfg.contextWindowOverride ?? undefined);
+  // Callers for a non-codex head (grok, 500k) pass their own window; codex omits
+  // it and resolves from its own catalog.
+  const contextWindow = contextWindowOverride ?? getContextWindowForModel(model, cfg.contextWindowOverride ?? undefined);
   // Accept Anthropic names and OpenAI Responses aliases
   const inputTokens = usage.input_tokens ?? usage.prompt_tokens ?? 0;
   const outputTokens = usage.output_tokens ?? usage.completion_tokens ?? 0;
@@ -28,6 +31,23 @@ export function buildUsagePayload(model, usage = {}) {
     payload.used_percentage = contextWindow > 0 ? (totalInputTokens / contextWindow) * 100 : 0;
   }
   return payload;
+}
+
+/** One concise line per completed turn so the prompt-cache hit rate is watchable
+ * live: `tail -f ~/.claude-codex/logs/codex-proxy-<port>.log | grep cache`.
+ * `cached` is the subset of input the ChatGPT backend served from the prompt
+ * cache (input_tokens_details.cached_tokens). A healthy warm cache climbs to a
+ * high hit% across a conversation once prompt_cache_key + replay hold the prefix
+ * stable; hit=0% every turn means the cache is cold (the burn-the-subscription
+ * case). Cheap: one stderr line per turn, never on the hot write path. */
+export function logTurnCache({ model, usage = {}, compact = false }) {
+  const input = usage.input_tokens ?? usage.prompt_tokens ?? 0;
+  const cached = usage.input_tokens_details?.cached_tokens ?? usage.cache_read_input_tokens ?? 0;
+  const output = usage.output_tokens ?? usage.completion_tokens ?? 0;
+  const pct = input > 0 ? Math.round((cached / input) * 100) : 0;
+  process.stderr.write(
+    `[codex-proxy] cache: input=${input} cached=${cached} hit=${pct}% output=${output}${compact ? ' compact' : ''} model=${model}\n`,
+  );
 }
 
 const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;

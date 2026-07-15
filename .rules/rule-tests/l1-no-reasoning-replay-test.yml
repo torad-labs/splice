@@ -1,9 +1,0 @@
-id: l1-no-reasoning-replay
-valid:
-  - 'const req = { model: m, stream: true, instructions: sys }'
-  - 'const included = meta.include'
-invalid:
-  - 'const req = { model: m, include: ["reasoning.encrypted_content"] }'
-  - 'const req = { model, include }'
-  - 'req.include = ["reasoning.encrypted_content"]'
-  - 'req["include"] = ["reasoning.encrypted_content"]'

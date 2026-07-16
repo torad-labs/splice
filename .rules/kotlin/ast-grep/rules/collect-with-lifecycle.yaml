@@ -1,0 +1,14 @@
+# TENET: Collect flows with lifecycle awareness.
+# Rationale: Plain .collect() in Compose doesn't respect lifecycle.
+# Use collectAsStateWithLifecycle() or LaunchedEffect with lifecycle scope.
+# This prevents collecting when the UI is in the background.
+id: collect-with-lifecycle
+language: kotlin
+severity: error
+message: "Use collectAsStateWithLifecycle() instead of collectAsState() for lifecycle awareness."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  pattern: $FLOW.collectAsState($$$ARGS)

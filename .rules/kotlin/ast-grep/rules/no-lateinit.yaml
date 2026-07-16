@@ -1,0 +1,17 @@
+# TENET: Avoid lateinit var in production code.
+# Rationale: lateinit defers initialization without compile-time safety.
+# Use constructor injection, lazy delegation, or make the property nullable.
+id: no-lateinit
+language: kotlin
+severity: error
+message: "Avoid `lateinit var`. Use constructor injection, `by lazy`, or nullable types."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+  - "**/*Test.kt"
+rule:
+  kind: property_declaration
+  has:
+    kind: property_modifier
+    regex: "^lateinit$"

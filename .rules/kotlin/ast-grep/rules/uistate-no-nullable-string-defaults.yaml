@@ -1,0 +1,16 @@
+# TENET: Use empty string, not nullable String, in UI state.
+# Rationale: `String? = null` forces every Composable into ?.let{}/null branches.
+# Use `String = ""` — absence is the empty string; the Composable renders it directly.
+id: uistate-no-nullable-string-defaults
+language: kotlin
+severity: error
+message: "Use `String = \"\"` not `String? = null` in UI state. Absence is the empty string."
+files:
+  - "**/*UiState.kt"
+  - "**/*State.kt"
+rule:
+  any:
+    - kind: class_parameter
+      regex: ":\\s*String\\?\\s*=\\s*null"
+    - kind: property_declaration
+      regex: ":\\s*String\\?\\s*=\\s*null"

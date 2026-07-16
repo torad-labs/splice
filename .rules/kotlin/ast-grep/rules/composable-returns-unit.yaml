@@ -1,0 +1,31 @@
+# TENET: @Composable functions return Unit (with exceptions).
+# Rationale: Composable functions emit UI, they don't return values.
+# EXCEPTIONS:
+#   - remember* functions (rememberX pattern for state hoisting)
+#   - provide* functions (for CompositionLocal)
+id: composable-returns-unit
+language: kotlin
+severity: error
+message: "@Composable functions should typically return Unit. Exceptions: remember*, provide* patterns."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  kind: function_declaration
+  all:
+    - has:
+        kind: modifiers
+        has:
+          kind: annotation
+          regex: "Composable"
+    - has:
+        kind: user_type
+        not:
+          has:
+            kind: type_identifier
+            regex: "^Unit$"
+    - not:
+        has:
+          kind: simple_identifier
+          regex: "^(remember|provide)"

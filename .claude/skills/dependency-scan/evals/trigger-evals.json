@@ -1,0 +1,82 @@
+[
+  {
+    "query": "scan our dependencies — I have a feeling some of them are really outdated",
+    "should_trigger": true
+  },
+  {
+    "query": "we haven't done a dep audit in a while, can you check for anything vulnerable or abandoned",
+    "should_trigger": true
+  },
+  {
+    "query": "before we ship I want to make sure we're not carrying any packages with known CVEs",
+    "should_trigger": true
+  },
+  {
+    "query": "run dependency-scan on the backend repo — we just got flagged in a security review",
+    "should_trigger": true
+  },
+  {
+    "query": "which of our npm packages are the furthest behind? I want to know before we start the upgrade sprint",
+    "should_trigger": true
+  },
+  {
+    "query": "something in our supply chain feels off — can you scan dependencies and flag anything that looks sketchy or abandoned",
+    "should_trigger": true
+  },
+  {
+    "query": "I want a full picture of our third-party dependency risk before we go through SOC2",
+    "should_trigger": true
+  },
+  {
+    "query": "do we have any transitive dependencies that could blow up on us? I want the hidden risks surfaced",
+    "should_trigger": true
+  },
+  {
+    "query": "we're pinned to an old version of a library because something downstream relies on it — can you map out the dependency chain so I can see what's blocking us",
+    "should_trigger": true
+  },
+  {
+    "query": "check our lock file against what's actually installed and tell me if anything is drifting",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to know if our codebase has god objects or circular dependencies in the source code itself",
+    "should_trigger": false
+  },
+  {
+    "query": "scan for security vulnerabilities in our auth endpoints — I'm worried about SQL injection and CSRF",
+    "should_trigger": false
+  },
+  {
+    "query": "which features in our product backlog are most vulnerable to competitive pressure?",
+    "should_trigger": false
+  },
+  {
+    "query": "do a structural scan of the codebase and tell me where the complexity is out of control",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to harden our API against common attack vectors before the pen test",
+    "should_trigger": false
+  },
+  {
+    "query": "can you review our deployment pipeline for any steps that could fail silently?",
+    "should_trigger": false
+  },
+  {
+    "query": "run a full security audit of our application — endpoints, auth, storage, all of it",
+    "should_trigger": false
+  },
+  {
+    "query": "I need to evaluate whether switching to a monorepo makes sense for our team right now",
+    "should_trigger": false
+  },
+  {
+    "query": "what patterns in our codebase are going to create migration pain when we eventually move to the new framework?",
+    "should_trigger": false
+  },
+  {
+    "query": "do a code health check on the payments module before the refactor",
+    "should_trigger": false
+  }
+]

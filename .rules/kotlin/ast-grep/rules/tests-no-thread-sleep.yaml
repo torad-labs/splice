@@ -1,0 +1,12 @@
+# TENET: No Thread.sleep in tests.
+# Rationale: Thread.sleep blocks real wall-clock time — slow and flaky.
+# Use runTest virtual time (advanceTimeBy / advanceUntilIdle).
+id: tests-no-thread-sleep
+language: kotlin
+severity: error
+message: "Thread.sleep blocks real time. Use runTest virtual time (advanceTimeBy / advanceUntilIdle)."
+files:
+  - "**/test/**/*.kt"
+  - "**/*Test.kt"
+rule:
+  pattern: Thread.sleep($$$ARGS)

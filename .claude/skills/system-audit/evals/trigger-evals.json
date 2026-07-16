@@ -1,0 +1,82 @@
+[
+  {
+    "query": "I want a full system audit — infrastructure, auth, deployment pipeline, data handling, all of it",
+    "should_trigger": true
+  },
+  {
+    "query": "run a system audit before we go live — I need to know what we're missing across the whole stack",
+    "should_trigger": true
+  },
+  {
+    "query": "something is wrong at the system level and I can't isolate it — can you do a comprehensive review?",
+    "should_trigger": true
+  },
+  {
+    "query": "we're scaling up and I want to audit our system design end to end before we hit the next order of magnitude",
+    "should_trigger": true
+  },
+  {
+    "query": "do a system-wide health check — I want to know where the single points of failure are",
+    "should_trigger": true
+  },
+  {
+    "query": "I need a cross-cutting audit: observability, alerting, deployment, rollback — is our system production-grade?",
+    "should_trigger": true
+  },
+  {
+    "query": "run system-audit — we just had an incident and I want to understand the systemic gaps that allowed it",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to audit everything from the database to the CDN — I'm not looking for one specific thing, I want the full picture",
+    "should_trigger": true
+  },
+  {
+    "query": "our system has been growing organically for 2 years and I think there are hidden landmines — can you do a structural audit?",
+    "should_trigger": true
+  },
+  {
+    "query": "before we raise our Series A I want a rigorous system audit so I know what we're walking into",
+    "should_trigger": true
+  },
+  {
+    "query": "harden our API — I specifically want injection points, auth gaps, and rate limiting reviewed",
+    "should_trigger": false
+  },
+  {
+    "query": "scan our codebase for coupling and complexity issues",
+    "should_trigger": false
+  },
+  {
+    "query": "audit our AI SDK usage — specifically how we're using streamText and generateObject",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to audit just our developer experience — tooling, setup friction, documentation",
+    "should_trigger": false
+  },
+  {
+    "query": "check our npm dependencies for vulnerabilities",
+    "should_trigger": false
+  },
+  {
+    "query": "audit our AI prompts and agent pipeline for structural issues",
+    "should_trigger": false
+  },
+  {
+    "query": "run a security-only audit — I want to know our OWASP posture before the pen test",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to explore whether our system architecture has deep parallels to biological immune systems",
+    "should_trigger": false
+  },
+  {
+    "query": "check our frontend codebase for anti-patterns",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to validate a specific decision: did we make the right call going with serverless for the processing pipeline?",
+    "should_trigger": false
+  }
+]

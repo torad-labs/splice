@@ -1,0 +1,13 @@
+# TENET: No `!!` non-null assertion in production code.
+# Rationale: `!!` crashes with no context when null.
+# Use `?:` (early return/default), `requireNotNull(x) { "..." }`, `map.getValue(k)`, or `x?.let { }`.
+id: no-unsafe-bang-bang
+language: kotlin
+severity: error
+message: "Avoid `!!`. Use `?:`, `requireNotNull`, `map.getValue(k)`, or `?.let { }`."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  pattern: $X!!

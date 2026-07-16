@@ -1,0 +1,26 @@
+# TENET: UseCases return Flow, not suspend single values.
+# Rationale: Public UseCase functions with explicit return types should return Flow<T>.
+# Flow enables composition; suspend functions break the flow chain.
+id: usecases-return-flow
+language: kotlin
+severity: error
+message: "Public UseCase functions should return Flow<T> for composability."
+files:
+  - "**/*UseCase.kt"
+ignores:
+  - "**/test/**"
+rule:
+  kind: function_declaration
+  all:
+    - has:
+        kind: modifiers
+        has:
+          kind: function_modifier
+          regex: "^suspend$"
+    - inside:
+        kind: class_body
+        inside:
+          kind: class_declaration
+          has:
+            kind: type_identifier
+            regex: "UseCase$"

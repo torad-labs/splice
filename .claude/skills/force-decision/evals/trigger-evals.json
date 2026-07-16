@@ -1,0 +1,82 @@
+[
+  {
+    "query": "we've been debating postgres vs mongo for 3 weeks — just pick one",
+    "should_trigger": true
+  },
+  {
+    "query": "force a decision: should we build this feature in-house or buy a third-party solution",
+    "should_trigger": true
+  },
+  {
+    "query": "I need an answer in the next 10 minutes — React or Vue for the new frontend. go",
+    "should_trigger": true
+  },
+  {
+    "query": "we have analysis paralysis on the hiring decision. I need you to cut through it and make the call",
+    "should_trigger": true
+  },
+  {
+    "query": "force-decision: do we ship with the bug and patch it after, or delay the release?",
+    "should_trigger": true
+  },
+  {
+    "query": "I've heard all the arguments. I need a binary recommendation. do we pivot or stay the course?",
+    "should_trigger": true
+  },
+  {
+    "query": "pick the better option and commit: raise a round now or extend runway by cutting headcount",
+    "should_trigger": true
+  },
+  {
+    "query": "we can't agree on a deployment strategy — terraform or pulumi. just decide for us",
+    "should_trigger": true
+  },
+  {
+    "query": "I'm in a meeting in 5 minutes and I need a decision: do we sign the enterprise contract with the unfavorable SLA?",
+    "should_trigger": true
+  },
+  {
+    "query": "stop evaluating and just tell me which vendor to go with — I'll give you the key constraints",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to evaluate whether switching to a monorepo is the right decision — check the reasoning from multiple angles",
+    "should_trigger": false
+  },
+  {
+    "query": "can you validate this decision before we commit to it? I want to stress-test the reasoning",
+    "should_trigger": false
+  },
+  {
+    "query": "help me think through all the factors before I decide on the architecture",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to deeply explore whether remote-first is better for product velocity — give me the structural analysis",
+    "should_trigger": false
+  },
+  {
+    "query": "run a pressure test on this feature — does it have structural right to exist?",
+    "should_trigger": false
+  },
+  {
+    "query": "explore the design space for our checkout flow before we commit to a direction",
+    "should_trigger": false
+  },
+  {
+    "query": "what are the tradeoffs between the two architecture approaches? I want to understand before I decide",
+    "should_trigger": false
+  },
+  {
+    "query": "we're considering a pivot — can you help me think through it from first principles?",
+    "should_trigger": false
+  },
+  {
+    "query": "run a trajectory check — are we still pointed at the right goal?",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to do a decision check on the call we made last month — does the reasoning still hold?",
+    "should_trigger": false
+  }
+]

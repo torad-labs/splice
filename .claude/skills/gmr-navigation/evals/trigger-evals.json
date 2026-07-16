@@ -1,0 +1,82 @@
+[
+  {
+    "query": "run gmr on the concept of institutional memory — I want to see what it connects to that I wouldn't expect",
+    "should_trigger": true
+  },
+  {
+    "query": "navigate the thesis that technical debt is organizational scar tissue",
+    "should_trigger": true
+  },
+  {
+    "query": "do a vertex scan on pricing psychology for our freemium model",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to explore this from completely unexpected angles — the idea that open source communities function like immune systems",
+    "should_trigger": true
+  },
+  {
+    "query": "find non-obvious connections between supply chain logistics and jazz improvisation",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to look at developer experience from completely different perspectives — not the usual stuff, something structural",
+    "should_trigger": true
+  },
+  {
+    "query": "what are the structural parallels between cathedral architecture and API design? I feel like there's something there but I can't articulate it",
+    "should_trigger": true
+  },
+  {
+    "query": "deep explore the relationship between cooking and software testing — I know it sounds weird but hear me out",
+    "should_trigger": true
+  },
+  {
+    "query": "run a full navigation on 'onboarding is a compression problem' — I want the toroidal geometry, all the blocks",
+    "should_trigger": true
+  },
+  {
+    "query": "I have a hunch that hiring processes and immune systems share deep structure. can you find the actual connections, not just surface metaphors?",
+    "should_trigger": true
+  },
+  {
+    "query": "gmr navigate the concept of silence in music and its equivalent in product design — what's the void doing?",
+    "should_trigger": true
+  },
+  {
+    "query": "can you explain what a toroidal manifold is? I'm trying to understand the math behind it",
+    "should_trigger": false
+  },
+  {
+    "query": "summarize this article about geometric topology for me — I need the key points for a presentation",
+    "should_trigger": false
+  },
+  {
+    "query": "write me a blog post about non-obvious thinking and how to cultivate it as a habit",
+    "should_trigger": false
+  },
+  {
+    "query": "pressure test this roadmap — we have 8 features and I need to know which ones survive competitive pressure",
+    "should_trigger": false
+  },
+  {
+    "query": "what features should we build next quarter? we're a B2B SaaS with 200 customers and growing 15% MoM",
+    "should_trigger": false
+  },
+  {
+    "query": "help me brainstorm names for our new product line — something catchy that signals innovation",
+    "should_trigger": false
+  },
+  {
+    "query": "run a competitive pressure analysis on our feature backlog before the planning meeting",
+    "should_trigger": false
+  },
+  {
+    "query": "can you compare our product to three competitors? I need a feature matrix and pricing comparison",
+    "should_trigger": false
+  },
+  {
+    "query": "I need to validate whether our referral feature has structural right to exist — can you run CPA on it?",
+    "should_trigger": false
+  }
+]

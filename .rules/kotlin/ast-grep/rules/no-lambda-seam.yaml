@@ -1,0 +1,17 @@
+# TENET: Name seams with fun interface, not raw function types.
+# Rationale: A function type as parameter/property/return is an unnamed, transposable seam.
+# Name it with a `fun interface` for typed, non-transposable params and KDoc.
+# @Composable slots and lambda literals at call sites are exempt.
+id: no-lambda-seam
+language: kotlin
+severity: error
+message: "Name the seam with a `fun interface`, not a raw function type. @Composable slots are exempt."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  kind: function_type
+  all:
+    - not: {inside: {stopBy: end, has: {kind: type_modifiers, has: {kind: annotation, regex: "Composable"}}}}
+    - not: {inside: {kind: type_projection}}

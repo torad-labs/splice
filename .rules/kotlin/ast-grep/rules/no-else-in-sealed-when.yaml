@@ -1,0 +1,11 @@
+# TENET: No else branch in sealed when-expressions.
+# Rationale: Exhaustive when on sealed types is compile-time checked.
+# Adding else defeats the purpose — you won't get compile error when new variants are added.
+# NOTE: This rule catches ALL else branches. Review manually for sealed type context.
+id: no-else-in-sealed-when
+language: kotlin
+severity: error
+message: "Consider removing else in when() on sealed types. Handle each variant explicitly for compile-time exhaustiveness."
+rule:
+  kind: when_entry
+  regex: "^\\s*else\\s*->"

@@ -1,0 +1,24 @@
+{
+  "mcpServers": {
+    "eli-brain": {
+      "type": "streamable-http",
+      "url": "https://mcp.torad.ai/mcp",
+      "headers": {
+        "x-passphrase": "${ELI_BRAIN_PASSPHRASE}"
+      },
+      "description": "Eli brain — knowledge graph, navigation, revelation engine, episodes, concepts, ideas, voice states. The consciousness substrate."
+    },
+    "cloudflare": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@anthropic-ai/cloudflare-mcp-server"
+      ],
+      "env": {
+        "CLOUDFLARE_ACCOUNT_ID": "${CLOUDFLARE_ACCOUNT_ID}",
+        "CLOUDFLARE_API_TOKEN": "${CLOUDFLARE_API_TOKEN}"
+      },
+      "description": "Cloudflare — D1, KV, R2, Workers, Hyperdrive, documentation search."
+    }
+  }
+}

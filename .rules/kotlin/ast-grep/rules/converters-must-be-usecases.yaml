@@ -1,0 +1,18 @@
+# TENET: Domain→UI converters are injectable UseCases.
+# Rationale: Converters should be classes with `operator fun invoke()`, not loose functions.
+# This makes them injectable, testable, and composable via Flow.
+# Pattern: `class XxxToUiStateUseCase { operator fun invoke(domain: Xxx): XxxUiState }`
+id: converters-must-be-usecases
+language: kotlin
+severity: error
+message: "Wrap domain→UI conversion in a UseCase class with `operator fun invoke()`, not a top-level converter function."
+files:
+  - "**/*Converter*.kt"
+  - "**/converters/**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  kind: function_declaration
+  all:
+    - inside: {kind: source_file}
+    - regex: "^fun\\s+\\w+\\s*\\([^)]*\\)\\s*:\\s*\\w*(UiState|UiModel)\\b"

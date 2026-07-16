@@ -1,0 +1,121 @@
+diff --git a/gateway/provider-spi/src/test/kotlin/WatchdogTest.kt b/gateway/provider-spi/src/test/kotlin/WatchdogTest.kt
+new file mode 100644
+index 0000000..1c17b07
+--- /dev/null
++++ b/gateway/provider-spi/src/test/kotlin/WatchdogTest.kt
+@@ -0,0 +1,115 @@
++// PORT-OF: the v35 watchdog pins from server/test/codex-proxy.test.mjs @ 4ca99f7 — the
++// slow-prefill regression (silent LONGER than streamIdle but shorter than firstByteTimeout
++// must NOT be reaped before the first byte), idle-after-first-byte reaped, total cap reaped,
++// typed sentinel set before cancel. Real clocks with generous margins (the poller sleeps).
++import kotlinx.coroutines.delay
++import kotlinx.coroutines.launch
++import kotlinx.coroutines.runBlocking
++import org.junit.jupiter.api.Assertions.assertEquals
++import org.junit.jupiter.api.Assertions.assertNull
++import org.junit.jupiter.api.Assertions.assertTrue
++import org.junit.jupiter.api.Test
++import splice.core.turn.WatchdogBudget
++import splice.spi.InflightGate
++import splice.spi.TurnWatchdog
++import splice.spi.WatchdogFired
++import java.util.concurrent.atomic.AtomicBoolean
++import kotlin.time.Duration.Companion.milliseconds
++import kotlin.time.Duration.Companion.seconds
++
++class WatchdogTest {
++
++    private fun budget(firstByteMs: Long, idleMs: Long, capMs: Long) = WatchdogBudget(
++        firstByteTimeout = firstByteMs.milliseconds,
++        streamIdle = idleMs.milliseconds,
++        totalCap = capMs.milliseconds,
++    )
++
++    @Test
++    fun `prefill silence beyond streamIdle is NOT reaped before first byte - the v35 case`() {
++        runBlocking {
++            val gate = InflightGate({ 0 })
++            val slot = gate.acquire()
++            val dog = TurnWatchdog(budget(firstByteMs = 5_000, idleMs = 300, capMs = 30_000))
++            val cancelled = AtomicBoolean(false)
++            val target = launch {
++                try {
++                    delay(10.seconds)
++                } finally {
++                    cancelled.set(true)
++                }
++            }
++            val poller = dog.launchIn(this, slot, target)
++            delay(900) // silent 3x streamIdle, still under firstByteTimeout
++            assertNull(dog.fired, "prefill was reaped — the compaction-ate-my-quota regression")
++            target.cancel()
++            poller.cancel()
++            slot.release()
++        }
++    }
++
++    @Test
++    fun `idle after first byte is reaped with a typed sentinel`() {
++        runBlocking {
++            val gate = InflightGate({ 0 })
++            val slot = gate.acquire()
++            val dog = TurnWatchdog(budget(firstByteMs = 10_000, idleMs = 300, capMs = 30_000))
++            val target = launch { delay(10.seconds) }
++            val poller = dog.launchIn(this, slot, target)
++            slot.touch()
++            dog.markByte()
++            delay(900)
++            target.join()
++            val fired = dog.fired
++            assertTrue(fired is WatchdogFired.Idle, "expected Idle, got $fired")
++            assertTrue((fired as WatchdogFired.Idle).sawFirstByte)
++            assertTrue(target.isCancelled)
++            poller.cancel()
++            slot.release()
++        }
++    }
++
++    @Test
++    fun `total cap reaps even a lively stream`() {
++        runBlocking {
++            val gate = InflightGate({ 0 })
++            val slot = gate.acquire()
++            val dog = TurnWatchdog(budget(firstByteMs = 10_000, idleMs = 5_000, capMs = 600))
++            val target = launch {
++                // lively: touch constantly so idle never fires
++                while (true) {
++                    slot.touch()
++                    dog.markByte()
++                    delay(50)
++                }
++            }
++            val poller = dog.launchIn(this, slot, target)
++            target.join()
++            assertTrue(dog.fired is WatchdogFired.TotalCap, "expected TotalCap, got ${dog.fired}")
++            poller.cancel()
++            slot.release()
++        }
++    }
++
++    @Test
++    fun `clean exit - poller cancelled, nothing fired`() {
++        runBlocking {
++            val gate = InflightGate({ 0 })
++            val slot = gate.acquire()
++            val dog = TurnWatchdog(budget(2_000, 2_000, 5_000))
++            val target = launch { delay(100) }
++            val poller = dog.launchIn(this, slot, target)
++            target.join()
++            poller.cancel()
++            assertNull(dog.fired)
++            slot.release()
++        }
++    }
++
++    @Test
++    fun `poll interval floors and caps`() {
++        assertEquals(250, TurnWatchdog(budget(1, 300, 1)).pollInterval().inWholeMilliseconds)
++        assertEquals(15_000, TurnWatchdog(budget(1, 600_000, 1)).pollInterval().inWholeMilliseconds)
++        assertEquals(1_000, TurnWatchdog(budget(1, 3_000, 1)).pollInterval().inWholeMilliseconds)
++    }
++}

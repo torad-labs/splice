@@ -20,6 +20,7 @@ import splice.spi.Provider
 import splice.spi.StreamTranslator
 import splice.spi.WatchdogFired
 
+@Suppress("LongParameterList") // a provider bundles catalog+auth+quirks+config — all load-bearing
 public class CodexProvider(
     override val key: String,
     override val label: String,

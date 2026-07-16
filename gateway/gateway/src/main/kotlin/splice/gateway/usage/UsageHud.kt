@@ -10,8 +10,6 @@
 
 package splice.gateway.usage
 
-import splice.core.usage.RateLimitState
-
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -20,6 +18,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import splice.core.usage.RateLimitState
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CancellationException

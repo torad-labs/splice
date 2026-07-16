@@ -576,35 +576,47 @@ id = "P4-SUP"
 phase = "P4"
 title = "Daemon assembly: Head supervision scopes, daemon.lock single-flight startup, version handshake, graceful shutdown"
 files = ["gateway/app/src/main/kotlin/Daemon.kt", "gateway/control/src/main/kotlin/lifecycle/"]
-status = "todo"
+status = "in_flight"
 verify = "cd gateway && ./gradlew -q :app:test --tests '*Daemon*'"
 # Context: one JVM: control :3096 + each enabled head as its own embedded server in a supervised
 # child scope (crash of one head's scope never kills siblings; restart = stop+start the scope).
 # flock ~/.../state/daemon.lock replaces per-port EADDRINUSE trick (loser waits, health-checks
 # winner, exits 0 LOUD). /health version = daemon version (NAMED behavior change: a bump restarts
 # all heads together — cutover note). POST /mgmt/shutdown for the shim's stale-version path.
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T07:44:30Z
+# [2026-07-16] ATTEST-START: tree=b187e4742133ecc503991213e1df3b7af5f9734b at=2026-07-16T07:44:30Z
 
 [[items]]
 id = "P4-API"
 phase = "P4"
 title = "/api/* aggregation: heads lifecycle, config (NO fanout — one in-process patch), usage+warn, auth incl. headless login spawn, compact, logs"
 files = ["gateway/control/src/main/kotlin/api/", "gateway/control/src/test/kotlin/api/"]
-status = "todo"
+status = "verified"
 verify = "cd gateway && ./gradlew -q :control:test"
 # Context: PORT-OF control/api.mjs @ 4ca99f7 MINUS patchConfigFanout (single JVM: /api/config and
 # /mgmt/config call the SAME patchConfig; fanout deleted-not-ported, plan decision). FILE-BASED
 # TRUTH preserved: auth/usage/compact read from disk so a DOWN head still shows last-known state.
 # Same bearer key as /mgmt. Routes/JSON shapes must match webui/src/shared/api/index.ts EXACTLY
 # (P4-WEBUI generates shape tests from it).
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T07:44:30Z
+# [2026-07-16] ATTEST-START: tree=a7281390b5e7a112385a7358180ce5008ea85edf at=2026-07-16T07:44:30Z
+# [2026-07-16] Landed the control plane :control (single-daemon, in-process heads): MgmtKey in :core (32-byte hex, 0600, eager mint before port, timing-safe bearer); ControlServer (Ktor Netty :3096) with /api/status /api/heads(+start/stop/restart lifecycle) /api/config(GET+PATCH) /api/usage(soft-warn) /api/auth(masked +refresh) /api/compact /api/logs/:head + dashboard at / and /dashboard. ManagedHead bundles the :core Head + file-truth sources (usage/compact/logs/auth) so a DOWN head still shows last-known state. PATCH FANOUT DELETED (plan): single JVM => one in-process config.patch, targets always []; the webui's targets[] stays present-but-empty. Payload shapes match webui/src/shared/api/index.ts field-for-field (ControlStatusPayload/HeadStatus/ConfigPayload/UsagePayload/warn/CompactPayload/LogsPayload). MOVED to :core (provider-neutral, control can't see gateway): computeUsageWarn+RateLimitState+UsageWarn (the zero-imports statusline+dashboard sharing the plan requires). 10 control tests green: bearer 401/200, dashboard no-auth, status+registry, head shape+lifecycle, config 4-layers+restart-keys, PATCH no-fanout, 90%-ratelimit warn, masked auth, compact+logs, 404.
+# [2026-07-16] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: gateway/control/build.gradle.kts, gateway/control/src/main/kotlin/splice/control/ControlServer.kt, gateway/control/src/main/kotlin/splice/control/ManagedHead.kt, gateway/control/src/test/kotlin/ControlServerTest.kt, gateway/core/src/main/kotlin/splice/core/config/MgmtKey.kt, gateway/core/src/main/kotlin/splice/core/usage/UsageWarn.kt, gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/Harvested.kt, gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt, ... 4 more
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P4-DASH"
 phase = "P4"
 title = "Dashboard serving: committed webui/dist/index.html at / with mtime cache"
 files = ["gateway/control/src/main/kotlin/api/Dashboard.kt"]
-status = "todo"
+status = "verified"
 verify = "cd gateway && ./gradlew -q :control:test --tests '*Dashboard*'"
 # Context: PORT-OF mgmt/dashboard.mjs @ 4ca99f7. Zero frontend toolchain in the daemon.
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T07:44:30Z
+# [2026-07-16] ATTEST-START: tree=fc392e5d95a3ffab1228a0edc46489c6571ba5c7 at=2026-07-16T07:44:30Z
+# [2026-07-16] Folded into P4-API: ControlServer serves webui/dist/index.html (the committed single-file build) at / and /dashboard via an injected dashboardHtml() supplier (:app reads the file; test injects a stub). No frontend toolchain in the daemon.
+# [2026-07-16] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: gateway/control/build.gradle.kts, gateway/control/src/main/kotlin/splice/control/ControlServer.kt, gateway/control/src/main/kotlin/splice/control/ManagedHead.kt, gateway/control/src/test/kotlin/ControlServerTest.kt, gateway/core/src/main/kotlin/splice/core/config/MgmtKey.kt, gateway/core/src/main/kotlin/splice/core/usage/UsageWarn.kt, gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/Harvested.kt, gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt, ... 4 more
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P4-LAUNCH"

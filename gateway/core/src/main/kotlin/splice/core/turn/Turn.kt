@@ -22,10 +22,15 @@ public enum class ErrorType(public val wireName: String) {
 }
 
 public sealed interface TurnOutcome {
+    /** Buffers ride the outcome (pinned P2-MACH slot): the gateway pipeline runs
+     *  promote-to-text -> honesty gates -> mirror -> terminal AFTER the machine returns. */
     public data class Success(
         val hasToolUse: Boolean,
         val incomplete: Boolean,
         val usage: Usage,
+        val thinkingText: String = "",
+        val bodyText: String = "",
+        val emittedText: Boolean = false,
     ) : TurnOutcome
 
     public data class Failure(

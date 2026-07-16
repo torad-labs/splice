@@ -267,7 +267,7 @@ id = "P2-EMIT"
 phase = "P2"
 title = "SseEmitter (L3-as-types): sole terminal emitter, raw frames with per-frame flush; WireSink capability split"
 files = ["gateway/gateway/src/main/kotlin/wire/SseEmitter.kt", "gateway/provider-spi/src/main/kotlin/WireSink.kt", "gateway/gateway/src/test/kotlin/wire/"]
-status = "todo"
+status = "verified"
 verify = "cd gateway && ./gradlew -q :gateway:test --tests '*Emitter*'"
 # Context: PORT-OF server/src/anthropic/sse.mjs @ 4ca99f7 — invariants: message_start lazy on first
 # block (ensureStart), ping after start, block index ownership, emitTerminal derives stop_reason
@@ -276,25 +276,36 @@ verify = "cd gateway && ./gradlew -q :gateway:test --tests '*Emitter*'"
 # explicit flush ordering). internal visibility; providers see WireSink only (openText/openThinking/
 # openTool eager, deltas, closeBlock/closeAll, addTextBlock, addRedactedThinking — NO terminals).
 # usage payload fields via buildUsagePayload port (P3-USE supplies; stub here).
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T06:57:28Z
+# [2026-07-16] ATTEST-START: tree=954e9ed9be94759316e1dbb31ac6a53047aef9f9 at=2026-07-16T06:57:28Z
+# [2026-07-16] Landed splice.gateway.wire.SseEmitter (implements spi WireSink; internal ctor + create factory; usage payload builder INJECTED so hud lands at P3-USE; non-stream terminalMessageJson lives in the same file — its stop_reason literal is L3-walled here). Frames byte-exact 'event: X\ndata: {json}\n\n'. 9 tests: lazy start+ping, tool flow same-index json deltas, stop_reason derivation order (tool_use>max_tokens>end_turn), terminal idempotence + message_stop last, error seals (no clean stop after failure), abandon emits nothing, one-shot helpers, closeAll order, non-stream envelope derivation.
+# [2026-07-16] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: gateway/gateway/src/main/kotlin/splice/gateway/wire/SseEmitter.kt, gateway/gateway/src/test/kotlin/SseEmitterTest.kt, gateway/provider-spi/src/main/kotlin/splice/spi/InflightGate.kt, gateway/provider-spi/src/main/kotlin/splice/spi/SseReader.kt, gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt, gateway/provider-spi/src/main/kotlin/splice/spi/Watchdog.kt, gateway/provider-spi/src/main/kotlin/splice/spi/WireSink.kt, gateway/provider-spi/src/test/kotlin/InflightGateTest.kt, ... 3 more
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P2-READ"
 phase = "P2"
 title = "Upstream SSE line reader: ByteReadChannel -> Flow<JsonObject>, multi-byte-safe, [DONE]-tolerant, onBytes touch"
-files = ["gateway/provider-spi/src/main/kotlin/SseReader.kt", "gateway/provider-spi/src/test/kotlin/SseReaderTest.kt"]
-status = "todo"
+files = ["gateway/provider-spi/src/test/kotlin/SseReaderTest.kt"]
+status = "verified"
 verify = "cd gateway && ./gradlew -q :provider-spi:test --tests '*SseReader*'"
 # Context: PORT-OF stream.mjs sseEvents @ 4ca99f7 — UTF-8 across chunk boundaries (streaming
 # decoder), partial-last-line carry, 'data: ' prefix only, skip empty/[DONE], skip malformed JSON
 # frames, onBytes callback fires ON READ (watchdog touch — NEVER after downstream write; plan
 # footgun #2). Test: multibyte char split across chunks (port of the existing UTF-8 split test).
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T06:57:28Z
+# [2026-07-16] ATTEST-START: tree=b11d12de24c1cedb450719f499ea9c36d4f84b39 at=2026-07-16T06:57:28Z
+# [2026-07-16] Landed splice.spi.sseJsonEvents (ByteReadChannel -> Flow<JsonObject>). REAL BUG CAUGHT BY THE PORTED TEST: java CharsetDecoder does not buffer partial codepoints across decode() calls (Node's streaming TextDecoder does) — first draft dropped undecoded tail bytes on chunk boundaries; fixed with an explicit byte carry. onBytes fires ON RAW READ (watchdog touch never after downstream write). 4 tests: multibyte split intact (touch coalescing noted — same property as Node data events), partial-line carry, DONE/empty/malformed/non-data skip, CRLF.
+# [2026-07-16] ATTEST: scoped diffstat: .../provider-spi/src/test/kotlin/SseReaderTest.kt  | 76 ++++++++++++++++++++++ | 1 file changed, 76 insertions(+); sidecar: .claude/ledger-diffs/P2-READ.diff; off-scope: gateway/gateway/src/main/kotlin/splice/gateway/wire/SseEmitter.kt, gateway/gateway/src/test/kotlin/SseEmitterTest.kt, gateway/provider-spi/src/main/kotlin/splice/spi/InflightGate.kt, gateway/provider-spi/src/main/kotlin/splice/spi/SseReader.kt, gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt, gateway/provider-spi/src/main/kotlin/splice/spi/Watchdog.kt, gateway/provider-spi/src/main/kotlin/splice/spi/WireSink.kt, gateway/provider-spi/src/test/kotlin/InflightGateTest.kt, ... 2 more
+# [2026-07-16] FENCE-AUTONARROWED: files = ["gateway/provider-spi/src/main/kotlin/SseReader.kt", "gateway/provider-spi/src/test/kotlin/SseReaderTest.kt"] -> files = ["gateway/provider-spi/src/test/kotlin/SseReaderTest.kt"] (by=orchestrator implied; no flag)
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P2-DOG"
 phase = "P2"
 title = "Two-tier watchdog: firstByteTimeout before first byte, streamIdle after, total cap; sibling poller + typed cancel sentinel"
-files = ["gateway/provider-spi/src/main/kotlin/Watchdog.kt", "gateway/provider-spi/src/test/kotlin/WatchdogTest.kt"]
-status = "todo"
+files = ["gateway/provider-spi/src/test/kotlin/WatchdogTest.kt"]
+status = "verified"
 verify = "cd gateway && ./gradlew -q :provider-spi:test --tests '*Watchdog*'"
 # Context: PORT-OF stream.mjs idleTimer block @ 4ca99f7 — the v35 fix IS the spec: before first
 # byte the limit is firstByteTimeoutMs (prefill legitimately silent for minutes), after it's
@@ -303,13 +314,19 @@ verify = "cd gateway && ./gradlew -q :provider-spi:test --tests '*Watchdog*'"
 # (WatchdogFired reason incl. which tier) THEN cancel the upstream job. Tests: slow-prefill-not-
 # reaped regression (prefill silent > streamIdleMs but < firstByteTimeout survives), idle-after-
 # first-byte reaped, total-cap reaped, teardown idempotent.
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T06:57:29Z
+# [2026-07-16] ATTEST-START: tree=0c1f468b5d51da538a7c02b3699006c3a61874b7 at=2026-07-16T06:57:29Z
+# [2026-07-16] Landed splice.spi.TurnWatchdog: two-tier idle (firstByteTimeout before first byte / streamIdle after) + totalCap; sibling poller with poll interval min(15s,max(250ms,idle/3)); TYPED SENTINEL (WatchdogFired.Idle{idleMs,sawFirstByte}|TotalCap) set via CAS BEFORE cancelling the target job. 5 tests incl. THE v35 REGRESSION PIN: prefill silent 3x streamIdle but under firstByteTimeout is NOT reaped.
+# [2026-07-16] ATTEST: scoped diffstat: .../provider-spi/src/test/kotlin/WatchdogTest.kt   | 115 +++++++++++++++++++++ | 1 file changed, 115 insertions(+); sidecar: .claude/ledger-diffs/P2-DOG.diff; off-scope: gateway/gateway/src/main/kotlin/splice/gateway/wire/SseEmitter.kt, gateway/gateway/src/test/kotlin/SseEmitterTest.kt, gateway/provider-spi/src/main/kotlin/splice/spi/InflightGate.kt, gateway/provider-spi/src/main/kotlin/splice/spi/SseReader.kt, gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt, gateway/provider-spi/src/main/kotlin/splice/spi/Watchdog.kt, gateway/provider-spi/src/main/kotlin/splice/spi/WireSink.kt, gateway/provider-spi/src/test/kotlin/InflightGateTest.kt, ... 2 more
+# [2026-07-16] FENCE-AUTONARROWED: files = ["gateway/provider-spi/src/main/kotlin/Watchdog.kt", "gateway/provider-spi/src/test/kotlin/WatchdogTest.kt"] -> files = ["gateway/provider-spi/src/test/kotlin/WatchdogTest.kt"] (by=orchestrator implied; no flag)
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P2-GATE"
 phase = "P2"
 title = "Inflight gate: hand-rolled FIFO with hot-resizable maxInflight and queued-cancellation"
-files = ["gateway/provider-spi/src/main/kotlin/InflightGate.kt", "gateway/provider-spi/src/test/kotlin/InflightGateTest.kt"]
-status = "todo"
+files = ["gateway/provider-spi/src/test/kotlin/InflightGateTest.kt"]
+status = "verified"
 verify = "cd gateway && ./gradlew -q :provider-spi:test --tests '*Gate*'"
 # Context: PORT-OF upstream/gate.mjs @ 4ca99f7. kotlinx Semaphore banned (can't hot-resize;
 # maxInflight is live-PATCHable, 0 = unlimited). ArrayDeque<CancellableContinuation<Unit>> +
@@ -317,18 +334,30 @@ verify = "cd gateway && ./gradlew -q :provider-spi:test --tests '*Gate*'"
 # has no cancellation path; invisible to golden fixtures). Slot carries idleFor()/touch() for the
 # watchdog. Tests: FIFO order, resize mid-queue, cancel-while-queued frees the slot, release
 # idempotence.
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T06:57:29Z
+# [2026-07-16] ATTEST-START: tree=e7f4a55a3cce5f50da3cfa41d798d9f3f41800b6 at=2026-07-16T06:57:29Z
+# [2026-07-16] Landed splice.spi.InflightGate: hand-rolled FIFO (kotlinx Semaphore banned — cannot hot-resize; maxInflight read fresh per admission, 0=unlimited); Slot carries touch/idleForMs for the watchdog + idempotent release; queued waiter cancellation frees the spot via invokeOnCancellation (STRICT IMPROVEMENT over Node — its queued promise had no cancellation path; invisible to golden fixtures). 6 tests: FIFO, unlimited, hot-resize admits under new limit, cancel-queued, idempotent release, idle clock.
+# [2026-07-16] ATTEST: scoped diffstat: .../src/test/kotlin/InflightGateTest.kt            | 96 ++++++++++++++++++++++ | 1 file changed, 96 insertions(+); sidecar: .claude/ledger-diffs/P2-GATE.diff; off-scope: gateway/gateway/src/main/kotlin/splice/gateway/wire/SseEmitter.kt, gateway/gateway/src/test/kotlin/SseEmitterTest.kt, gateway/provider-spi/src/main/kotlin/splice/spi/InflightGate.kt, gateway/provider-spi/src/main/kotlin/splice/spi/SseReader.kt, gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt, gateway/provider-spi/src/main/kotlin/splice/spi/Watchdog.kt, gateway/provider-spi/src/main/kotlin/splice/spi/WireSink.kt, gateway/provider-spi/src/test/kotlin/SseReaderTest.kt, ... 2 more
+# [2026-07-16] FENCE-AUTONARROWED: files = ["gateway/provider-spi/src/main/kotlin/InflightGate.kt", "gateway/provider-spi/src/test/kotlin/InflightGateTest.kt"] -> files = ["gateway/provider-spi/src/test/kotlin/InflightGateTest.kt"] (by=orchestrator implied; no flag)
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P2-ERR"
 phase = "P2"
 title = "UpstreamFailureClassifier: ONE classifier for HTTP + SSE failure paths, ordered regexes, 502->529"
-files = ["gateway/provider-spi/src/main/kotlin/UpstreamFailureClassifier.kt", "gateway/provider-spi/src/test/kotlin/UpstreamFailureClassifierTest.kt"]
-status = "todo"
+files = ["gateway/provider-spi/src/test/kotlin/UpstreamFailureClassifierTest.kt"]
+status = "verified"
 verify = "cd gateway && ./gradlew -q :provider-spi:test --tests '*Classifier*'"
 # Context: PORT-OF codex/errors.mjs @ 4ca99f7 — REGEX ORDER IS THE SPEC (overflow before auth: the
 # v29 bug); context-overflow rewrites to \"prompt is too long\" (Claude Code then compacts);
 # 502 -> 529 overloaded remap; provider extra-pattern injection point (grok/openai add theirs).
 # Port errors.test.mjs ordering + parity cases.
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T06:57:29Z
+# [2026-07-16] ATTEST-START: tree=142f3cf9031e667050cd636197e6c56d4833fd8f at=2026-07-16T06:57:29Z
+# [2026-07-16] Landed splice.spi.UpstreamFailureClassifier: ordered cascade EXACT (overflow FIRST incl. 'too many tokens' -> INVALID_REQUEST w/ 'prompt is too long' rewrite; rate 429/wording; auth 401/wording never bare 'token'; 5xx api_error; 4xx invalid_request; fallback api_error), HTTP json extraction + html/bad-gateway/cloudflare branch, 2000-char cap, mapOutStatus 502->529. 9 tests incl. the v29 ordering pin.
+# [2026-07-16] ATTEST: scoped diffstat: .../test/kotlin/UpstreamFailureClassifierTest.kt   | 91 ++++++++++++++++++++++ | 1 file changed, 91 insertions(+); sidecar: .claude/ledger-diffs/P2-ERR.diff; off-scope: gateway/gateway/src/main/kotlin/splice/gateway/wire/SseEmitter.kt, gateway/gateway/src/test/kotlin/SseEmitterTest.kt, gateway/provider-spi/src/main/kotlin/splice/spi/InflightGate.kt, gateway/provider-spi/src/main/kotlin/splice/spi/SseReader.kt, gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt, gateway/provider-spi/src/main/kotlin/splice/spi/Watchdog.kt, gateway/provider-spi/src/main/kotlin/splice/spi/WireSink.kt, gateway/provider-spi/src/test/kotlin/InflightGateTest.kt, ... 2 more
+# [2026-07-16] FENCE-AUTONARROWED: files = ["gateway/provider-spi/src/main/kotlin/UpstreamFailureClassifier.kt", "gateway/provider-spi/src/test/kotlin/UpstreamFailureClassifierTest.kt"] -> files = ["gateway/provider-spi/src/test/kotlin/UpstreamFailureClassifierTest.kt"] (by=orchestrator implied; no flag)
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P2-MACH"

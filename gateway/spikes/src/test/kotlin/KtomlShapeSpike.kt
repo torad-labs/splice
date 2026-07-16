@@ -153,3 +153,22 @@ class KtomlShapeSpike {
         println(receipt.readText())
     }
 }
+
+// P1-CORE rider: does ktoml honor @SerialName? (product schema wants camelCase
+// properties + snake_case TOML keys; detekt bans snake_case ctor params)
+@kotlinx.serialization.Serializable
+data class SerialNameProbe(
+    @kotlinx.serialization.SerialName("control_port") val controlPort: Int,
+    @kotlinx.serialization.SerialName("base_url") val baseUrl: String = "x",
+)
+
+class KtomlSerialNameSpike {
+    @Test
+    fun `ktoml honors SerialName`() {
+        val decoded = Toml.decodeFromString<SerialNameProbe>(
+            "control_port = 3096\nbase_url = \"https://example\"",
+        )
+        check(decoded.controlPort == 3096 && decoded.baseUrl == "https://example") { "SerialName not honored: $decoded" }
+        println("SerialName probe: PASS -> $decoded")
+    }
+}

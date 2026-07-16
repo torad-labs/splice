@@ -123,6 +123,15 @@ class ControlServerTest {
         client.get("http://127.0.0.1:$port$path") { header("Authorization", "Bearer $key") }.bodyAsText()
 
     @Test
+    fun `control health is unauthenticated for the launch shim liveness probe`() = runTest {
+        val resp = client.get("http://127.0.0.1:$port/health") // no Authorization header
+        assertEquals(HttpStatusCode.OK, resp.status)
+        val body = json.parseToJsonElement(resp.bodyAsText()).jsonObject
+        assertEquals("true", body["ok"]?.jsonPrimitive?.content)
+        assertTrue(body.containsKey("version"))
+    }
+
+    @Test
     fun `bearer guard - 401 without the key, 200 with`() = runTest {
         val unauth = client.get("http://127.0.0.1:$port/api/status")
         assertEquals(HttpStatusCode.Unauthorized, unauth.status)

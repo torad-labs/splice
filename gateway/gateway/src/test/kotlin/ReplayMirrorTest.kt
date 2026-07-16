@@ -10,10 +10,10 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.reasoning.decodeReasoningEnvelope
+import splice.core.reasoning.encodeReasoningEnvelope
 import splice.core.wire.TextBlock
 import splice.core.wire.ThinkingBlock
-import splice.gateway.reasoning.decodeReasoningEnvelope
-import splice.gateway.reasoning.encodeReasoningEnvelope
 import splice.gateway.reasoning.extractThinking
 import splice.gateway.reasoning.mirrorInto
 import splice.gateway.reasoning.mirrorWireText

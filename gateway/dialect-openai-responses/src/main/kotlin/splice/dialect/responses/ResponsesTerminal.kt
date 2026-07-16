@@ -6,30 +6,9 @@
 package splice.dialect.responses
 
 import kotlinx.serialization.json.JsonObject
-import splice.core.turn.PROMOTE_MIN_CHARS
+import splice.core.turn.isWeakSummaryText
 
 public data class Harvested(val text: String, val thinking: String)
-
-public data class PickedText(val text: String, val source: String)
-
-private val weakRe = Regex("no model text returned", RegexOption.IGNORE_CASE)
-
-public fun isWeakSummaryText(text: String?): Boolean {
-    val t = text.orEmpty().trim()
-    return t.isEmpty() || weakRe.containsMatchIn(t)
-}
-
-/** Prefer real model text, then reasoning summary promoted to text (model content only, L4). */
-public fun pickModelText(thinkingBuf: String, textBuf: String): PickedText {
-    val text = textBuf.trim()
-    val thinking = thinkingBuf.trim()
-    return when {
-        text.isNotEmpty() && !isWeakSummaryText(text) -> PickedText(text, "model_text")
-        thinking.length >= PROMOTE_MIN_CHARS -> PickedText(thinking, "model_thinking")
-        text.isNotEmpty() -> PickedText(text, "model_text_weak")
-        else -> PickedText("", "empty")
-    }
-}
 
 private fun str(el: kotlinx.serialization.json.JsonElement?): String =
     (el as? kotlinx.serialization.json.JsonPrimitive)?.content ?: ""

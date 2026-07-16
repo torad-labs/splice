@@ -1,0 +1,6 @@
+{
+  "scoped_paths": [
+    "gateway/spikes/results/pool-cancel.md",
+    "gateway/spikes/src/test/kotlin/PoolCancelSpike.kt"
+  ]
+}

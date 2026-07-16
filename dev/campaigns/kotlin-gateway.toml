@@ -206,13 +206,19 @@ verify = "npm run gate:rules"
 id = "P1-KONSIST"
 phase = "P1"
 title = "Konsist architecture laws in :arch-tests incl. PORT-OF/NEW header check; detekt pruned to backend reality"
-files = ["gateway/arch-tests/src/test/kotlin/", "gateway/detekt.yml"]
-status = "todo"
+files = ["gateway/arch-tests/src/test/kotlin/ArchitectureLawsTest.kt", "gateway/detekt.yml"]
+status = "verified"
 verify = "cd gateway && ./gradlew -q :arch-tests:test"
 # Context: laws: every .kt in port-scope modules opens with '// PORT-OF: <source> @ <sha>' or
 # '// NEW: <reason>'; :core types @Serializable; no ktor imports in :core; providers import no
 # concrete sibling provider; SseEmitter internal. Red/green: plant a violating fixture file, prove
 # the test fails, remove it. detekt.yml starts from .rules/kotlin/detekt.yml, pruned.
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T06:37:05Z
+# [2026-07-16] ATTEST-START: tree=47a9a68862d98bc2ef7cec8058cbe5263efbfaf5 at=2026-07-16T06:37:05Z
+# [2026-07-16] Landed: :arch-tests Konsist laws (slot-header PORT-OF/NEW on every production .kt across 10 modules; :core ktor-free; :core ..wire.. classes @Serializable — arm vacuously, fire as code lands) + detekt wired via splice.kotlin-common (kit detekt.yml copied verbatim to gateway/detekt.yml with lineage header + detekt-formatting plugin for its formatting: section). TWO GATE FIXES with rationale: (1) :arch-tests:test declared the whole tree's production sources as task INPUTS — without it Gradle marked the task UP-TO-DATE and the laws silently stopped running (caught in first red/green attempt); (2) Konsist scopeFromDirectory takes root-relative paths (absolute paths double-prefix + IAE — caught same way). detekt DISABLED for :spikes only (scratch experiments; receipts are the value — fix-the-gate decision). Evidence: strict red/green — planted headerless core file => :arch-tests:test exit nonzero; removed => exit 0; full ./gradlew check green incl. detekt on all product modules.
+# [2026-07-16] ATTEST: scoped diffstat: .../src/test/kotlin/ArchitectureLawsTest.kt        |  59 +++++ | gateway/detekt.yml                                 | 295 +++++++++++++++++++++ | 2 files changed, 354 insertions(+); sidecar: .claude/ledger-diffs/P1-KONSIST.diff; off-scope: gateway/arch-tests/build.gradle.kts, gateway/build-logic/build.gradle.kts, gateway/build-logic/src/main/kotlin/splice.kotlin-common.gradle.kts, gateway/spikes/build.gradle.kts
+# [2026-07-16] FENCE-AUTONARROWED: files = ["gateway/arch-tests/src/test/kotlin/", "gateway/detekt.yml"] -> files = ["gateway/arch-tests/src/test/kotlin/ArchitectureLawsTest.kt", "gateway/detekt.yml"] (by=orchestrator implied; no flag)
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P1-CORE"

@@ -26,3 +26,9 @@ tasks.withType<Test>().configureEach {
         showStandardStreams = true
     }
 }
+
+// Product style gates don't apply to scratch experiments (fix-the-gate decision,
+// ledger P1-KONSIST): spike value is the receipt, not the formatting.
+tasks.withType<io.gitlab.arturbosch.detekt.Detekt>().configureEach {
+    enabled = false
+}

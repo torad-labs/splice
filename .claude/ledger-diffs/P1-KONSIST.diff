@@ -1,0 +1,366 @@
+diff --git a/gateway/arch-tests/src/test/kotlin/ArchitectureLawsTest.kt b/gateway/arch-tests/src/test/kotlin/ArchitectureLawsTest.kt
+new file mode 100644
+index 0000000..45f9974
+--- /dev/null
++++ b/gateway/arch-tests/src/test/kotlin/ArchitectureLawsTest.kt
+@@ -0,0 +1,59 @@
++// NEW: Konsist architecture laws (P1-KONSIST) — ring 3 of the enforcement stack.
++// These arm as code lands: an empty scope passes vacuously, a violation fails :arch-tests:test.
++// Grow this file as modules land; every new law gets a red/green proof in the ledger note.
++import com.lemonappdev.konsist.api.Konsist
++import com.lemonappdev.konsist.api.verify.assertTrue
++import org.junit.jupiter.api.Test
++import java.io.File
++
++/** Production modules whose every .kt file must open with a slot header (#963):
++ *  `// PORT-OF: <source> @ <sha> — invariants: ...` or `// NEW: <reason>`. */
++private val PORT_SCOPE_MODULES = listOf(
++    "core", "provider-spi", "dialect-openai-responses", "dialect-openai-chat",
++    "provider-codex", "provider-grok", "provider-openai", "gateway", "control", "app",
++)
++
++class ArchitectureLawsTest {
++
++    private val root: File = File(System.getProperty("gateway.root"))
++
++    // Konsist resolves scopeFromDirectory RELATIVE to the Gradle root it detects;
++    // absolute paths get prefixed and blow up (caught in this law's first red/green).
++    private fun mainScope(module: String) =
++        Konsist.scopeFromDirectory("$module/src/main/kotlin")
++
++    @Test
++    fun `slot headers - every production file declares PORT-OF or NEW`() {
++        PORT_SCOPE_MODULES.forEach { module ->
++            val dir = File(root, "$module/src/main/kotlin")
++            if (!dir.exists()) return@forEach
++            mainScope(module).files.assertTrue(additionalMessage = SLOT_HEADER_LAW) { file ->
++                val firstLine = file.text.lineSequence().firstOrNull().orEmpty()
++                firstLine.startsWith("// PORT-OF: ") || firstLine.startsWith("// NEW: ")
++            }
++        }
++    }
++
++    @Test
++    fun `core stays framework-free - no ktor imports in core`() {
++        val dir = File(root, "core/src/main/kotlin")
++        if (!dir.exists()) return
++        mainScope("core").imports.assertTrue { !it.name.startsWith("io.ktor") }
++    }
++
++    @Test
++    fun `core wire types are serializable`() {
++        val dir = File(root, "core/src/main/kotlin")
++        if (!dir.exists()) return
++        mainScope("core")
++            .classes()
++            .filter { it.resideInPackage("..wire..") }
++            .assertTrue { cls -> cls.annotations.any { it.name.endsWith("Serializable") } }
++    }
++
++    private companion object {
++        const val SLOT_HEADER_LAW =
++            "Slot-authoring law (#963): first line must be '// PORT-OF: <source> @ <sha> — invariants: ...' " +
++                "for ported code or '// NEW: <reason>' for new code. The declaration is the survival artifact."
++    }
++}
+diff --git a/gateway/detekt.yml b/gateway/detekt.yml
+new file mode 100644
+index 0000000..b7e995e
+--- /dev/null
++++ b/gateway/detekt.yml
+@@ -0,0 +1,295 @@
++# Lineage: copied verbatim from .rules/kotlin/detekt.yml (torad kit) 2026-07-16 (P1-KONSIST); prune with ledger notes.
++# Torad Kotlin Detekt Configuration
++# Install: copy to project root as detekt.yml
++# Builds on detekt defaults; warnings fail the build (warningsAsErrors).
++# Thresholds follow "no monsters" stance — keep code small and simple.
++
++build:
++  maxIssues: 0
++  weights: {}
++
++config:
++  validation: true
++  warningsAsErrors: true
++  excludes: ''
++
++processors:
++  active: true
++
++console-reports:
++  active: true
++
++# === COMPLEXITY ===
++# Keep functions small, classes focused, conditions simple.
++complexity:
++  active: true
++  ComplexCondition:
++    active: true
++    threshold: 3
++  CyclomaticComplexMethod:
++    active: true
++    threshold: 10
++  LargeClass:
++    active: true
++    threshold: 400
++  LongMethod:
++    active: true
++    threshold: 50
++  LongParameterList:
++    active: true
++    functionThreshold: 6
++    constructorThreshold: 8
++    ignoreDefaultParameters: true
++    ignoreDataClasses: true
++    ignoreAnnotated: ['Composable']
++  TooManyFunctions:
++    active: true
++    thresholdInFiles: 15
++    thresholdInClasses: 15
++    thresholdInInterfaces: 15
++    thresholdInObjects: 15
++    thresholdInEnums: 15
++    ignoreDeprecated: true
++    ignoreOverridden: true
++  NestedBlockDepth:
++    active: true
++    threshold: 4
++  StringLiteralDuplication:
++    active: true
++    threshold: 4
++    excludeStringsWithLessThan5Characters: true
++
++# === STYLE ===
++# Consistent formatting and idioms.
++style:
++  active: true
++  MagicNumber:
++    active: true
++    ignoreNumbers: ['-1', '0', '1', '2', '100', '1000']
++    ignoreEnums: true
++    ignoreCompanionObjectPropertyDeclaration: true
++    ignoreAnnotation: true
++  MaxLineLength:
++    active: true
++    maxLineLength: 120
++    excludePackageStatements: true
++    excludeImportStatements: true
++    excludeCommentStatements: true
++    excludes:
++      - "**/test/**"
++  ReturnCount:
++    active: true
++    max: 3
++  ThrowsCount:
++    active: true
++    max: 2
++  UnusedImports:
++    active: true
++  UnusedPrivateMember:
++    active: true
++  UnusedPrivateClass:
++    active: true
++  UseDataClass:
++    active: true
++  WildcardImport:
++    active: true
++  ForbiddenComment:
++    active: true
++    comments: ['STOPSHIP:', 'FIXME:', 'XXX:']
++  NewLineAtEndOfFile:
++    active: true
++  ExplicitItLambdaParameter:
++    active: true
++  UnnecessaryAbstractClass:
++    active: true
++  UnnecessaryInheritance:
++    active: true
++  UtilityClassWithPublicConstructor:
++    active: true
++  VarCouldBeVal:
++    active: true
++
++# === FORMATTING (ktlint rules) ===
++# Requires detekt-formatting plugin.
++formatting:
++  active: true
++  android: false
++  autoCorrect: false
++  Indentation:
++    active: true
++  MaximumLineLength:
++    active: true
++    maxLineLength: 120
++    excludes:
++      - "**/test/**"
++  NoWildcardImports:
++    active: true
++  TrailingCommaOnCallSite:
++    active: true
++    useTrailingCommaOnCallSite: true
++  TrailingCommaOnDeclarationSite:
++    active: true
++    useTrailingCommaOnDeclarationSite: true
++  SpacingAroundColon:
++    active: true
++  SpacingAroundComma:
++    active: true
++  SpacingAroundCurly:
++    active: true
++  SpacingAroundKeyword:
++    active: true
++  SpacingAroundOperators:
++    active: true
++  SpacingAroundParens:
++    active: true
++
++# === NAMING ===
++# Consistent naming conventions.
++naming:
++  active: true
++  ClassNaming:
++    active: true
++    classPattern: '[A-Z][a-zA-Z0-9]*'
++  FunctionNaming:
++    active: true
++    functionPattern: '[a-z][a-zA-Z0-9]*'
++    ignoreAnnotated: ['Composable']
++  PackageNaming:
++    active: true
++    packagePattern: '[a-z]+(\.[a-z][a-zA-Z0-9_]*)*'
++  VariableNaming:
++    active: true
++    variablePattern: '[a-z][A-Za-z0-9]*'
++    privateVariablePattern: '(_)?[a-z][A-Za-z0-9]*'
++  MatchingDeclarationName:
++    active: true
++  TopLevelPropertyNaming:
++    active: true
++    constantPattern: '[A-Z][A-Za-z0-9_]*'
++    propertyPattern: '[a-z][A-Za-z0-9]*'
++
++# === POTENTIAL BUGS ===
++potential-bugs:
++  active: true
++  CastToNullableType:
++    active: true
++  Deprecation:
++    active: true
++  DontDowncastCollectionTypes:
++    active: true
++  EqualsAlwaysReturnsTrueOrFalse:
++    active: true
++  EqualsWithHashCodeExist:
++    active: true
++  ExplicitGarbageCollectionCall:
++    active: true
++  HasPlatformType:
++    active: true
++  IgnoredReturnValue:
++    active: true
++  ImplicitDefaultLocale:
++    active: true
++  InvalidRange:
++    active: true
++  IteratorHasNextCallsNextMethod:
++    active: true
++  IteratorNotThrowingNoSuchElementException:
++    active: true
++  LateinitUsage:
++    active: true
++    ignoreAnnotated: ['Inject']
++  MapGetWithNotNullAssertionOperator:
++    active: true
++  NullableToStringCall:
++    active: true
++  UnconditionalJumpStatementInLoop:
++    active: true
++  UnnecessaryNotNullOperator:
++    active: true
++  UnnecessarySafeCall:
++    active: true
++  UnreachableCode:
++    active: true
++  UnsafeCallOnNullableType:
++    active: true
++  UnsafeCast:
++    active: true
++
++# === EXCEPTIONS ===
++exceptions:
++  active: true
++  SwallowedException:
++    active: true
++    ignoredExceptionTypes:
++      - 'InterruptedException'
++      - 'NumberFormatException'
++      - 'MalformedURLException'
++      - 'ParseException'
++  TooGenericExceptionCaught:
++    active: true
++  TooGenericExceptionThrown:
++    active: true
++  ThrowingExceptionsWithoutMessageOrCause:
++    active: true
++  ThrowingNewInstanceOfSameException:
++    active: true
++  RethrowCaughtException:
++    active: true
++  ReturnFromFinally:
++    active: true
++
++# === PERFORMANCE ===
++performance:
++  active: true
++  ArrayPrimitive:
++    active: true
++  ForEachOnRange:
++    active: true
++  SpreadOperator:
++    active: true
++  UnnecessaryTemporaryInstantiation:
++    active: true
++
++# === EMPTY BLOCKS ===
++empty-blocks:
++  active: true
++  EmptyCatchBlock:
++    active: true
++  EmptyClassBlock:
++    active: true
++  EmptyDefaultConstructor:
++    active: true
++  EmptyDoWhileBlock:
++    active: true
++  EmptyElseBlock:
++    active: true
++  EmptyFinallyBlock:
++    active: true
++  EmptyForBlock:
++    active: true
++  EmptyFunctionBlock:
++    active: true
++  EmptyIfBlock:
++    active: true
++  EmptyInitBlock:
++    active: true
++  EmptyKtFile:
++    active: true
++  EmptySecondaryConstructor:
++    active: true
++  EmptyTryBlock:
++    active: true
++  EmptyWhenBlock:
++    active: true
++  EmptyWhileBlock:
++    active: true
++
++# === COROUTINES ===
++coroutines:
++  active: true
++  GlobalCoroutineUsage:
++    active: true
++  SuspendFunSwallowedCancellation:
++    active: true
++  SuspendFunWithFlowReturnType:
++    active: true

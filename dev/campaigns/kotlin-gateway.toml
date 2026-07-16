@@ -425,7 +425,7 @@ id = "P3-REQ"
 phase = "P3"
 title = "Responses request builder + Quirks: one translator core for codex/xai/openai-platform"
 files = ["gateway/dialect-openai-responses/src/main/kotlin/ResponsesRequestBuilder.kt", "gateway/dialect-openai-responses/src/main/kotlin/Quirks.kt"]
-status = "todo"
+status = "verified"
 verify = "cd gateway && ./gradlew -q :dialect-openai-responses:test --tests '*RequestBuilder*'"
 # Context: PORT-OF codex/translate-request.mjs @ 4ca99f7 with grok/translate-request.mjs diffed in
 # as Quirks: effort ceiling+aliases (codex none..max incl. ultracode->max; grok low|medium|high,
@@ -437,6 +437,11 @@ verify = "cd gateway && ./gradlew -q :dialect-openai-responses:test --tests '*Re
 # user message), document markers, compact: tools stripped + forced instructions verbatim + model
 # fallthrough body.model when compactModel empty. PURITY: {req,meta}, never mutate body (no-magic-
 # props wall analog). Port buildRequest purity/determinism/effort-precedence tests.
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T07:15:12Z
+# [2026-07-16] ATTEST-START: tree=56ec5047e3f7b4468d4ef2f917e1db050d5d5b89 at=2026-07-16T07:15:12Z
+# [2026-07-16] Landed ResponsesRequestBuilder: ONE builder for the dialect, ResponsesQuirks{providerTag,store,cacheKeyStrategy(FIRST_MESSAGE_HASH|SESSION_ID|OFF),effortLadder(CODEX|GROK),supportsSummary,summaryRejectModelRegex(spark),compactEffortPin,emitToolChoice,emitStrict}. PURE build(body,raw,opts)->{req,meta}. All source invariants carried: compact strip+force+fold, images (incl. tool_result ride-along), documents markers, replay decode in-position + include field, v27 effort precedence + visibility floor (floor never raises deliberate picks), spark summary drop, cache keys both strategies, grok ladder clamp + tool_choice/parallel/strict. FIDELITY CATCH pinned in test: grok disabled-thinking runs the DEFAULT chain (high) — the low-floor is only for out-of-ladder values (my first test assumption was wrong; source wins). 10 test groups green; module + gateway checks green.
+# [2026-07-16] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesRequestBuilder.kt, gateway/dialect-openai-responses/src/test/kotlin/ResponsesRequestBuilderTest.kt
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P3-AUTH"

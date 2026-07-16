@@ -1,0 +1,219 @@
+// PORT-OF: buildRequest pins from server/test/codex-proxy.test.mjs @ 4ca99f7 — effort
+// precedence (v27), visibility floor semantics, spark summary quirk, compact stripping +
+// instruction forcing + same-model/effort inheritance, cache-key stability, tool mapping,
+// replay gating, grok ladder clamps, purity/determinism.
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import splice.core.parse.parseAnthropicBody
+import splice.dialect.responses.BuildOptions
+import splice.dialect.responses.CacheKeyStrategy
+import splice.dialect.responses.EffortLadder
+import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.ResponsesRequestBuilder
+import splice.dialect.responses.stablePromptCacheKey
+
+private val CODEX = ResponsesQuirks(providerTag = "claudex")
+private val GROK = ResponsesQuirks(
+    providerTag = "claude-grok",
+    cacheKeyStrategy = CacheKeyStrategy.SESSION_ID,
+    effortLadder = EffortLadder.GROK,
+    supportsSummary = false,
+    summaryRejectModelRegex = null,
+    compactEffortPin = "low",
+    emitToolChoice = true,
+    emitStrict = true,
+)
+
+private fun opts(
+    compact: Boolean = false,
+    effort: String? = null,
+    summary: String? = null,
+    show: String = "text",
+    replay: Boolean = false,
+    model: String = "gpt-5.6-sol",
+    sessionId: String? = null,
+) = BuildOptions(
+    compact = compact,
+    originalModel = "claude-codex--$model",
+    upstreamModel = model,
+    configEffort = effort,
+    configSummary = summary,
+    showReasoning = show,
+    replayReasoning = replay,
+    sessionId = sessionId,
+    decodeReasoningEnvelope = { data ->
+        kotlinx.serialization.json.buildJsonObject {
+            put("type", kotlinx.serialization.json.JsonPrimitive("reasoning"))
+            put("decoded", kotlinx.serialization.json.JsonPrimitive(data))
+        }
+    },
+)
+
+private fun build(json: String, quirks: ResponsesQuirks = CODEX, options: BuildOptions = opts()): JsonObject {
+    val parsed = parseAnthropicBody(json)
+    return ResponsesRequestBuilder(quirks).build(parsed.typed, parsed.raw, options).req
+}
+
+class ResponsesRequestBuilderTest {
+
+    @Test
+    fun `effort precedence - body beats budget beats config, ultracode maps to max`() {
+        val budgetBody = """{"model":"m","thinking":{"type":"enabled","budget_tokens":32000},
+            "messages":[{"role":"user","content":"x"}]}"""
+        // budget 32k -> xhigh (beats config low)
+        var req = build(budgetBody, options = opts(effort = "low"))
+        assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        // explicit body field beats the budget
+        req = build(
+            """{"model":"m","effort":"ultracode","thinking":{"type":"enabled","budget_tokens":2000},
+                "messages":[{"role":"user","content":"x"}]}""",
+        )
+        assertEquals("max", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        // nothing anywhere -> high
+        req = build("""{"model":"m","messages":[{"role":"user","content":"x"}]}""")
+        assertEquals("high", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `visibility floor lifts none-minimal to low but never a deliberate pick`() {
+        var req = build(
+            """{"model":"m","effort":"minimal","messages":[{"role":"user","content":"x"}]}""",
+            options = opts(show = "text"),
+        )
+        assertEquals("low", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        assertEquals("detailed", req["reasoning"]?.jsonObject?.get("summary")?.jsonPrimitive?.content)
+        req = build(
+            """{"model":"m","effort":"medium","messages":[{"role":"user","content":"x"}]}""",
+            options = opts(show = "text", summary = "concise"),
+        )
+        assertEquals("medium", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `disabled thinking emits no reasoning block on codex`() {
+        val req = build(
+            """{"model":"m","thinking":{"type":"disabled"},"messages":[{"role":"user","content":"x"}]}""",
+        )
+        assertNull(req["reasoning"])
+    }
+
+    @Test
+    fun `spark rejects the summary field`() {
+        val req = build(
+            """{"model":"m","messages":[{"role":"user","content":"x"}]}""",
+            options = opts(model = "gpt-5.3-codex-spark"),
+        )
+        assertEquals("high", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        assertNull(req["reasoning"]?.jsonObject?.get("summary"))
+    }
+
+    @Test
+    fun `compact strips tools, forces text-only instructions, folds tool results`() {
+        val req = build(
+            """{"model":"m","system":"base system",
+                "tools":[{"name":"run","input_schema":{"type":"object"}}],
+                "messages":[{"role":"user","content":[
+                  {"type":"tool_result","tool_use_id":"t1","content":"result body"},
+                  {"type":"image","source":{"type":"base64","media_type":"image/png","data":"aGk="}},
+                  {"type":"text","text":"please compact"}
+                ]}]}""",
+            options = opts(compact = true),
+        )
+        assertNull(req["tools"])
+        val instructions = req["instructions"]?.jsonPrimitive?.content.orEmpty()
+        assertTrue(instructions.startsWith("base system"))
+        assertTrue(instructions.contains("COMPACT MODE (critical)"))
+        assertTrue(instructions.contains("No tools. No function calls."))
+        val inputs = req["input"]!!.jsonArray.map { it.jsonObject }
+        assertTrue(inputs.any { it["content"]?.jsonPrimitive?.content == "[tool_result t1] result body" })
+        // images dropped on compact
+        assertFalse(inputs.any { it.toString().contains("input_image") })
+    }
+
+    @Test
+    fun `tool_use and tool_result map to function_call items - images ride follow-up`() {
+        val req = build(
+            """{"model":"m","messages":[
+                {"role":"assistant","content":[{"type":"tool_use","id":"t9","name":"run","input":{"c":1}}]},
+                {"role":"user","content":[{"type":"tool_result","tool_use_id":"t9","content":[
+                    {"type":"text","text":"out"},
+                    {"type":"image","source":{"type":"base64","media_type":"image/png","data":"aGk="}}
+                ]}]}
+            ]}""",
+        )
+        val inputs = req["input"]!!.jsonArray.map { it.jsonObject }
+        val call = inputs.first { it["type"]?.jsonPrimitive?.content == "function_call" }
+        assertEquals("t9", call["call_id"]?.jsonPrimitive?.content)
+        assertEquals("""{"c":1}""", call["arguments"]?.jsonPrimitive?.content)
+        val output = inputs.first { it["type"]?.jsonPrimitive?.content == "function_call_output" }
+        assertEquals("out", output["output"]?.jsonPrimitive?.content)
+        val follower = inputs.last()
+        assertTrue(follower.toString().contains("images from tool_result t9"))
+        assertTrue(follower.toString().contains("data:image/png;base64,aGk="))
+    }
+
+    @Test
+    fun `replay gating - include field and decoded reasoning items only when on`() {
+        val body = """{"model":"m","messages":[{"role":"assistant","content":[
+            {"type":"redacted_thinking","data":"ZW52ZWxvcGU="}]},
+            {"role":"user","content":"next"}]}"""
+        val on = build(body, options = opts(replay = true))
+        assertTrue(on["include"].toString().contains("reasoning.encrypted_content"))
+        assertTrue(on["input"]!!.jsonArray.any { it.jsonObject["decoded"] != null })
+        val off = build(body, options = opts(replay = false))
+        assertNull(off["include"])
+        assertFalse(off["input"]!!.jsonArray.any { it.jsonObject["decoded"] != null })
+    }
+
+    @Test
+    fun `cache key - stable sha prefix on codex, session id on grok, null without seed`() {
+        val body = """{"model":"m","messages":[{"role":"user","content":"first message"}]}"""
+        val a = build(body)["prompt_cache_key"]?.jsonPrimitive?.content
+        val b = build(body)["prompt_cache_key"]?.jsonPrimitive?.content
+        assertEquals(a, b)
+        assertTrue(a!!.startsWith("splice-") && a.length == "splice-".length + 32)
+        val parsed = parseAnthropicBody("""{"model":"m","messages":[]}""")
+        assertNull(stablePromptCacheKey(parsed.typed))
+        val grokReq = build(body, quirks = GROK, options = opts(sessionId = "sess-1"))
+        assertEquals("claude-grok:sess-1", grokReq["prompt_cache_key"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `grok ladder clamps xhigh to high, emits tool_choice, floors disabled to low`() {
+        val req = build(
+            """{"model":"grok-4.5","effort":"xhigh","tools":[{"name":"t","input_schema":{"type":"object"}}],
+                "tool_choice":{"type":"any"},"messages":[{"role":"user","content":"x"}]}""",
+            quirks = GROK,
+            options = opts(model = "grok-4.5"),
+        )
+        assertEquals("high", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        assertNull(req["reasoning"]?.jsonObject?.get("summary"))
+        assertEquals("required", req["tool_choice"]?.jsonPrimitive?.content)
+        assertEquals(true, req["parallel_tool_calls"]?.jsonPrimitive?.content?.toBoolean())
+        // disabled thinking does NOT disable grok reasoning — the default chain applies
+        // (Node grok source: budget skipped, config||high; the low-floor is only for
+        // out-of-ladder values)
+        val disabled = build(
+            """{"model":"grok-4.5","thinking":{"type":"disabled"},"messages":[{"role":"user","content":"x"}]}""",
+            quirks = GROK,
+            options = opts(model = "grok-4.5"),
+        )
+        assertEquals("high", disabled["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `purity - identical inputs build identical requests, store false, stream true`() {
+        val body = """{"model":"m","messages":[{"role":"user","content":"same"}]}"""
+        assertEquals(build(body).toString(), build(body).toString())
+        val req = build(body)
+        assertEquals("false", req["store"]?.jsonPrimitive?.content)
+        assertEquals("true", req["stream"]?.jsonPrimitive?.content)
+    }
+}

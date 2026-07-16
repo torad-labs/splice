@@ -11,7 +11,10 @@ public fun runCli(args: Array<String>) {
     when (args.firstOrNull()) {
         "doctor" -> doctor()
         "version" -> println("splice kt-1")
-        else -> System.err.println("usage: splice [daemon|doctor|version]")
+        "init" -> InstallCommand.init()
+        "install" -> InstallCommand.install(args.getOrNull(1))
+        "uninstall" -> InstallCommand.uninstall(args.getOrNull(1))
+        else -> System.err.println("usage: splice [daemon|doctor|version|init|install|uninstall]")
     }
 }
 

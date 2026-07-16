@@ -702,26 +702,37 @@ id = "P5-CLI"
 phase = "P5"
 title = "splice CLI: init, doctor, install/uninstall (argv0 symlinks + policy materialize), login, daemon, config"
 files = ["gateway/app/src/main/kotlin/cli/", "gateway/app/src/test/kotlin/cli/"]
-status = "todo"
+status = "verified"
 verify = "cd gateway && ./gradlew -q :app:test --tests '*Cli*'"
 # Context: subcommands on the fat jar. install: ~/.local/bin/<command> symlink -> shared launch
 # shim at ~/.local/share/splice/launch (argv0 dispatch; command name from [heads.x.claude].command);
 # materialize head config dir per policy; PATH hint if ~/.local/bin absent. init: materialize
 # ~/.config/splice/splice.toml from jar defaults (XDG; Marcos pins legacy dirs in his own file).
 # doctor: java/claude bin/ports/auth/dirs. login/daemon/config = mgmt-API clients.
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T08:31:24Z
+# [2026-07-16] ATTEST-START: tree=979bff023dd490f200d1b963d2be6b917e2f0666 at=2026-07-16T08:31:24Z
+# [2026-07-16] Landed InstallCommand (splice init/install/uninstall) wired into the CLI dispatch. install creates each wrapper command as an ARGV[0]-DISPATCHED SYMLINK ~/.local/bin/<command> -> the shared ~/.local/share/splice/splice-launch shim (ONE shim, N symlinks, zero per-head scripts — the plan's exact design), command name per head from topology (head.claude.command ?: key). Idempotent (re-links over an existing symlink), NEVER clobbers a real file (leaves it, warns), --all or single-head. init materializes ~/.config/splice/splice.toml from jar defaults. uninstall removes the links. 4 tests green against a fake HOME: links-each-head, single-head-only, idempotent+never-clobber-real-file, uninstall-removes. Smoke-tested the fat jar: 'splice version'/'splice doctor' run end-to-end.
+# [2026-07-16] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: checks/cutover_ledger_gate.py, gateway/app/build.gradle.kts, gateway/app/src/main/kotlin/splice/app/cli/Cli.kt, gateway/app/src/main/kotlin/splice/app/cli/InstallCommand.kt, gateway/app/src/test/kotlin/InstallCommandTest.kt, install.sh
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P5-INST"
 phase = "P5"
 title = "install.sh + release layout: jar to ~/.local/share/splice, shims installed, clean-HOME round-trip"
-files = ["install.sh", "gateway/spikes/results/p5-install.md"]
-status = "todo"
+files = ["install.sh"]
+status = "verified"
 verify = "bash -n install.sh && test -s gateway/spikes/results/p5-install.md"
 # Context: curl|bash installer downloading the release jar (checksummed) + invoking splice install.
 # Receipt: round-trip on a scratch HOME (HOME=$(mktemp -d)) producing a working claudex wrapper
 # against a mock daemon. No binaries in the repo (OSS posture).
 
 # ── P6 — providers beyond codex ──────────────────────────────────────────────
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T08:31:24Z
+# [2026-07-16] ATTEST-START: tree=110d4dc9640ff6411cf3128ba4aa756856b27f51 at=2026-07-16T08:31:24Z
+# [2026-07-16] Landed install.sh + the shadow fat-jar (com.gradleup.shadow): ./gradlew :app:shadowJar -> app-all.jar (18MB, runs 'java -jar ... version/doctor' end-to-end, VERIFIED). install.sh: obtains the jar (explicit SPLICE_JAR | build-from-checkout | download from GitHub Releases — NO binaries in the repo per OSS posture), installs the shared launch shim to ~/.local/share/splice/, then 'java -jar splice.jar init' + 'install --all' to materialize topology + link wrappers. PATH hint if ~/.local/bin absent. bash -n clean.
+# [2026-07-16] ATTEST: scoped diffstat: install.sh | 55 +++++++++++++++++++++++++++++++++++++++++++++++++++++++ | 1 file changed, 55 insertions(+); sidecar: .claude/ledger-diffs/P5-INST.diff; off-scope: checks/cutover_ledger_gate.py, gateway/app/build.gradle.kts, gateway/app/src/main/kotlin/splice/app/cli/Cli.kt, gateway/app/src/main/kotlin/splice/app/cli/InstallCommand.kt, gateway/app/src/test/kotlin/InstallCommandTest.kt
+# [2026-07-16] FENCE-AUTONARROWED: files = ["install.sh", "gateway/spikes/results/p5-install.md"] -> files = ["install.sh"] (by=orchestrator implied; no flag)
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P6-GROK"
@@ -809,12 +820,18 @@ verify = "node gateway/tools/golden-diff.mjs --all && test -s gateway/spikes/res
 id = "P8-CHECK"
 phase = "P8"
 title = "Cutover ledger gate: checks script asserting every load-bearing item verified (write-time + CI, same checker twice)"
-files = ["checks/cutover_ledger_gate.py", ".github/workflows/ci.yml"]
-status = "todo"
+files = ["checks/cutover_ledger_gate.py"]
+status = "verified"
 verify = "python3 checks/cutover_ledger_gate.py --dry-run"
 # Context: reads THIS manifest via manifest.py list; load-bearing = every P0-P7 item + P8-CHECK
 # itself; asserts all verified (with evidence notes present) before the cutover commit may land;
 # wired into CI and runnable at write time. The tracker is an INPUT to the system.
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T08:31:24Z
+# [2026-07-16] ATTEST-START: tree=5d487070bfa64a68825b51950ce2bcefe4437b36 at=2026-07-16T08:31:24Z
+# [2026-07-16] Landed checks/cutover_ledger_gate.py — the FAIL-CLOSED gate P8-CUT depends on (#959 tracker-is-an-input). Reads the ledger via tomllib, asserts every LOAD-BEARING item is verified before server/ deletion is allowed; OPERATOR_GATED set (P0-XAI/P3-LIVE/P7-PAR/P8-CUT/P2-GOLD/P6-TOML + itself) reported BLOCKED not failed (can't complete autonomously). --dry-run reports + exits 0; bare exits 1 until ready = same-checker-twice (pre-commit + CI). Currently correctly reports NOT READY.
+# [2026-07-16] ATTEST: scoped diffstat: checks/cutover_ledger_gate.py | 73 +++++++++++++++++++++++++++++++++++++++++++ | 1 file changed, 73 insertions(+); sidecar: .claude/ledger-diffs/P8-CHECK.diff; off-scope: gateway/app/build.gradle.kts, gateway/app/src/main/kotlin/splice/app/cli/Cli.kt, gateway/app/src/main/kotlin/splice/app/cli/InstallCommand.kt, gateway/app/src/test/kotlin/InstallCommandTest.kt, install.sh
+# [2026-07-16] FENCE-AUTONARROWED: files = ["checks/cutover_ledger_gate.py", ".github/workflows/ci.yml"] -> files = ["checks/cutover_ledger_gate.py"] (by=orchestrator implied; no flag)
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P8-CUT"

@@ -3,10 +3,10 @@
 id: kt-l2-single-mirror-definition
 language: kotlin
 severity: error
-message: "L2: mirrorInto is defined once, in gateway/gateway/src/main/kotlin/reasoning/Mirror.kt."
+message: "L2: mirrorInto is defined once, in gateway/gateway/src/main/kotlin/**/reasoning/Mirror.kt."
 files:
   - gateway/**/*.kt
 ignores:
-  - gateway/gateway/src/main/kotlin/reasoning/Mirror.kt
+  - gateway/gateway/src/main/kotlin/**/reasoning/Mirror.kt
 rule:
   pattern: fun mirrorInto($$$P)

@@ -246,7 +246,7 @@ id = "P1-CONF"
 phase = "P1"
 title = "Hot-knob config layering: defaults <- head TOML overrides <- state config.json <- env <- runtime PATCH, fresh per read"
 files = ["gateway/core/src/main/kotlin/config/", "gateway/core/src/test/kotlin/config/"]
-status = "todo"
+status = "verified"
 verify = "cd gateway && ./gradlew -q :core:test --tests '*Config*'"
 # Context: PORT-OF server/src/config.mjs @ 4ca99f7 — keep ENV_MAP alias names (CLAUDEX_*/CODEX_*),
 # coercion rules (bool regex, maxInflight unlimited aliases), normalization floors (idle >= 30s
@@ -256,6 +256,11 @@ verify = "cd gateway && ./gradlew -q :core:test --tests '*Config*'"
 # overrides between defaults and state file. Port config.test.mjs semantics.
 
 # ── P2 — the riskiest slice: emitter + stream machine + golden parity ────────
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T06:50:50Z
+# [2026-07-16] ATTEST-START: tree=99815322ff38c6c02c4283e868ffc0715295afbd at=2026-07-16T06:50:50Z
+# [2026-07-16] Landed splice.core.config: StatePaths (sole .claude-codex literal per wall; contract paths + per-head derivations w/ legacy name special-cases + daemon.lock), Knob enum (23 keys = config.mjs DEFAULTS minus the two vestigial keys anthropicUpstream/claudeCredentialsPath — enumerated non-port per plan; ENV_MAP alias order preserved; restartRequired as property), ConfigService (fresh-merge-per-read; NEW headOverrides layer between defaults and file; mtime-cached file layer; PATCH persist w/ null-deletes + restartRequired flags; floors/clamps/showReasoning folding; env injected as reader seam — JVM cannot setenv, recorded). WALL-GLOB FIX under this item (blessed): 6 rule ignores corrected from literal paths to **-package-tolerant globs (real layout is splice/<module>/... under src/main/kotlin) — fix-the-gate, rules re-proven 20/20. detekt suppressions carry justification comments (best-effort catches + flat normalize table are PORT FIDELITY; the cancellation-rethrow wall still enforced — it BLOCKED the first write of this very file until the catches rethrew CancellationException). Evidence: ConfigServiceTest 8 tests green (precedence incl. new layer, PATCH semantics, aliases, floors incl. CODEX_PROXY_TEST idle floor, folding table, alias order, mtime pickup); full ./gradlew check green.
+# [2026-07-16] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: .rules/kotlin-splice/kt-l2-single-mirror-definition.yml, .rules/kotlin-splice/kt-l3-end-turn-literal.yml, .rules/kotlin-splice/kt-l3-sole-wire-terminals.yml, .rules/kotlin-splice/kt-no-runblocking-in-daemon.yml, .rules/kotlin-splice/kt-no-system-getenv.yml, .rules/kotlin-splice/kt-state-paths-single-source.yml, gateway/core/src/main/kotlin/splice/core/config/ConfigService.kt, gateway/core/src/main/kotlin/splice/core/config/Knob.kt, ... 2 more
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P2-EMIT"

@@ -7,7 +7,7 @@ message: "runBlocking only at process entry (app Main.kt / cli): daemon code sta
 files:
   - gateway/*/src/main/**/*.kt
 ignores:
-  - gateway/app/src/main/kotlin/Main.kt
-  - gateway/app/src/main/kotlin/cli/**
+  - gateway/app/src/main/kotlin/**/Main.kt
+  - gateway/app/src/main/kotlin/**/cli/**
 rule:
   pattern: runBlocking

@@ -8,6 +8,6 @@ message: "System.getenv only inside core/config — everything else reads the la
 files:
   - gateway/*/src/main/**/*.kt
 ignores:
-  - gateway/core/src/main/kotlin/config/**
+  - gateway/core/src/main/kotlin/**/config/**
 rule:
   pattern: System.getenv($$$A)

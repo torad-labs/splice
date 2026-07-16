@@ -1,0 +1,22 @@
+{
+  "scoped_paths": [
+    "gateway/app/build.gradle.kts",
+    "gateway/arch-tests/build.gradle.kts",
+    "gateway/build-logic/build.gradle.kts",
+    "gateway/build-logic/settings.gradle.kts",
+    "gateway/build-logic/src/main/kotlin/splice.kotlin-common.gradle.kts",
+    "gateway/build-logic/src/main/kotlin/splice.module-law.gradle.kts",
+    "gateway/control/build.gradle.kts",
+    "gateway/core/build.gradle.kts",
+    "gateway/dialect-openai-chat/build.gradle.kts",
+    "gateway/dialect-openai-responses/build.gradle.kts",
+    "gateway/gateway/build.gradle.kts",
+    "gateway/gradle/libs.versions.toml",
+    "gateway/provider-codex/build.gradle.kts",
+    "gateway/provider-grok/build.gradle.kts",
+    "gateway/provider-openai/build.gradle.kts",
+    "gateway/provider-spi/build.gradle.kts",
+    "gateway/settings.gradle.kts",
+    "gateway/spikes/build.gradle.kts"
+  ]
+}

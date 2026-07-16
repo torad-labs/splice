@@ -26,6 +26,9 @@ public data class CompactView(val total: Int, val byOutcome: Map<String, Int>, v
 /** Reads the head's log tail (file truth). */
 public interface HeadLogSource {
     public fun tail(lines: Int): String
+
+    /** The log file path — /api/logs reports it (webui LogsPayload.path). */
+    public fun path(): String
 }
 
 public data class ManagedHead(
@@ -36,6 +39,8 @@ public data class ManagedHead(
     val logs: HeadLogSource,
     val warnPct: Int,
     val warnTokens5h: Long,
+    /** The auth dialect for HeadStatus.authKind (webui) — known at wiring time (chatgpt-oauth|api-key). */
+    val authKind: String = "unknown",
     /** Present when this head can be launched as a Claude Code wrapper (P4-LAUNCH). */
     val launchSpec: LaunchSpec? = null,
 )

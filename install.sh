@@ -40,16 +40,21 @@ else
   echo "splice: warning — launch shim not found at $SHIM_SRC" >&2
 fi
 
-# 3. Materialize the topology + link wrapper commands via the CLI (argv[0] symlinks).
+# 3. Materialize the topology + link the wrapper commands (+ the `splice` command).
 java -jar "$JAR_DST" init || true
 SPLICE_JAR="$JAR_DST" java -jar "$JAR_DST" install --all || true
 
 echo
-echo "splice: installed."
-echo "  jar:    $JAR_DST"
-echo "  shim:   ${SHARE_DIR}/splice-launch"
-echo "  config: ~/.config/splice/splice.toml"
+echo "splice: installed  (jar: $JAR_DST)"
 case ":$PATH:" in
-  *":$BIN_DIR:"*) : ;;
-  *) echo "  NOTE: add $BIN_DIR to your PATH to use the wrappers (e.g. claudex)." ;;
+  *":$BIN_DIR:"*)
+    echo
+    echo "Next:  splice setup      # sign in to your backends, then you're done"
+    echo "       claudex           # Claude Code on ChatGPT Codex"
+    echo "       claude-grok       # Claude Code on xAI Grok"
+    ;;
+  *)
+    echo
+    echo "Add $BIN_DIR to your PATH, then run:  splice setup"
+    ;;
 esac

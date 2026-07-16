@@ -153,6 +153,7 @@ public class Daemon(
             logs = LogFileSource(logFile),
             warnPct = cfg.usageWarnPct,
             warnTokens5h = cfg.usageWarnTokens5h,
+            authKind = providerCfg.auth.kind,
             launchSpec = launchSpec,
         )
     }

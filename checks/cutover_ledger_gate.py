@@ -30,9 +30,10 @@ OPERATOR_GATED = {
     "P7-PAR",    # needs a full real workday on the Kotlin stack
     "P8-CUT",    # the destructive cutover itself — operator sign-off after live parity
     "P8-CHECK",  # this gate (don't require itself verified to run)
-    "P2-GOLD",   # the Node-vs-Kotlin differential needs the Node harness + live comparison
-    "P6-TOML",   # the zero-code vendor proof needs a live vendor turn
+    "P2-GOLD",   # the Node-vs-Kotlin LIVE differential needs the Node harness + live comparison
 }
+# (P6-TOML's zero-code assembly is proven against mocks — verified, no longer gated; the only
+#  remaining P6-TOML residue is a live vendor turn, folded into the P7-PAR live-parity gate.)
 
 
 def main() -> int:

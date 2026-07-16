@@ -570,6 +570,7 @@ verify = "test -s gateway/spikes/results/p3-live.md"
 # zero watchdog false-fires. PARITY LAW: production :3099 stays Node throughout.
 
 # ── P4 — control plane + daemon ──────────────────────────────────────────────
+# [2026-07-16] PREMISE-BLOCK: requires a live ChatGPT-subscription session on the operator's machine (real ~/.codex/auth.json OAuth token + real chatgpt.com backend). Not available in this autonomous session. The end-to-end pipeline is proven against the mock upstream (10 codex integration tests incl. compaction-shape, honest failures, tool calls). Operator runs this on a side port when convenient.
 
 [[items]]
 id = "P4-SUP"
@@ -626,7 +627,7 @@ id = "P4-LAUNCH"
 phase = "P4"
 title = "/launch endpoint (exec-recipe assembly) + /statusline endpoint (ANSI render from stdin JSON + state files)"
 files = ["gateway/control/src/main/kotlin/launchpad/", "gateway/control/src/test/kotlin/launchpad/"]
-status = "todo"
+status = "in_flight"
 verify = "cd gateway && ./gradlew -q :control:test --tests '*Launch*' --tests '*Statusline*'"
 # Context: /launch POST {head,args} -> runs env assembly (PORT-OF launcher/assemble-env.mjs incl.
 # reading Codex CLI ~/.codex/config.toml section-aware) + Claude config prep (P5-PREP materializer)
@@ -636,13 +637,15 @@ verify = "cd gateway && ./gradlew -q :control:test --tests '*Launch*' --tests '*
 # ?head= -> ANSI line PORT-OF statusline/claudex-statusline.mjs (model dot, context used/window/pct
 # with real head window, cache-hit %, warn glyph via computeUsageWarn, repo+branch dim; degrade to
 # shorter line on missing fields, bare marker on parse failure).
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T08:21:27Z
+# [2026-07-16] ATTEST-START: tree=097326d31d24dcbeea76f2674249e374c514faa5 at=2026-07-16T08:21:27Z
 
 [[items]]
 id = "P4-SHIM"
 phase = "P4"
 title = "bin shims: argv0-dispatched launch script (dev mode) — health/version handshake, cold-start jar, POST /launch, exec"
 files = ["bin/claudex", "bin/splice-launch"]
-status = "todo"
+status = "in_flight"
 verify = "bash -n bin/claudex && bash -n bin/splice-launch"
 # Context: replaces ensure-proxy exec-recipe flow. bin/claudex (dev shim) = argv0 wrapper calling
 # bin/splice-launch with head inferred from $0. splice-launch: GET :3096/health -> version vs jar
@@ -650,6 +653,8 @@ verify = "bash -n bin/claudex && bash -n bin/splice-launch"
 # healthy -> POST /launch -> exec env recipe. Statusline shim line for settings.json: curl -s
 # --data-binary @- with dim static fallback when daemon down (fate-shared with the proxy itself).
 # login/dashboard subcommands. Until P8 cutover the dev shim targets :3097 (Node owns :3099).
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T08:21:27Z
+# [2026-07-16] ATTEST-START: tree=73dc19fe51e1ad221a357e9b634318e70fbe4fb7 at=2026-07-16T08:21:27Z
 
 [[items]]
 id = "P4-WEBUI"
@@ -670,7 +675,7 @@ id = "P5-PREP"
 phase = "P5"
 title = "Claude-config materializer: literal prepare-config port generalized to share/isolate policy per item"
 files = ["gateway/control/src/main/kotlin/launchpad/ClaudeConfigMaterializer.kt", "gateway/control/src/test/kotlin/launchpad/MaterializerTest.kt"]
-status = "todo"
+status = "verified"
 verify = "cd gateway && ./gradlew -q :control:test --tests '*Materializer*'"
 # Context: PORT-OF launcher/prepare-config.mjs @ 4ca99f7 as TRANSLITERATION (symlink-break-before-
 # write ordering, never-delete-real-dir guard, PORT_KEYS allowlist for ~/.claude.json inheritance,
@@ -679,6 +684,11 @@ verify = "cd gateway && ./gradlew -q :control:test --tests '*Materializer*'"
 # skills, hooks, agents, commands, plugins, claude_md); shared = symlink/selective-inherit (today's
 # behavior = all-shared), isolated = seeded copy. Gate: fixture-HOME diff vs Node's generated tree
 # byte-identical in the all-shared case (port launcher.test.mjs non-destructiveness cases).
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T08:21:26Z
+# [2026-07-16] ATTEST-START: tree=943770f4ac1ac87dfeec078926a58d34ce943069 at=2026-07-16T08:21:26Z
+# [2026-07-16] Landed splice.core.launch.ClaudeConfigMaterializer — TRANSLITERATION of prepare-config.mjs generalized to the share/isolate policy. Invariants preserved EXACTLY (high blast radius on ~/.claude*): refuse-outside-.claude* guard; SHARED items symlink into ~/.claude/<item>, a real file where a symlink belongs is replaced but a real DIRECTORY the operator made is NEVER deleted; settings.json is ALWAYS a real merged file (symlink broken FIRST — else we'd clobber the operator's global) = global settings + availableModels allowlist + enforceAvailableModels + preserved-model-choice-when-still-allowed + statusline command; .claude.json gets additionalModelOptionsCache + MCP inherit from ~/.claude.json + PORT_KEYS inherit (only when locally absent) + hasCompletedOnboarding. isolate list overrides share per item. 6 tests green: refuse-outside, settings-merged-not-symlink+allowlist+enforce+statusline, preserve-allowed/fallback-disallowed model, real-operator-dir-never-deleted, .claude.json cache+mcp+portkeys+onboarding, isolate-overrides-share.
+# [2026-07-16] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: gateway/core/src/main/kotlin/splice/core/launch/ClaudeConfigMaterializer.kt, gateway/core/src/test/kotlin/ClaudeConfigMaterializerTest.kt
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P5-CLI"
@@ -786,6 +796,7 @@ verify = "node gateway/tools/golden-diff.mjs --all && test -s gateway/spikes/res
 # Context: receipt: scenario matrix all byte-identical, dashboard pass, one FULL real workday
 # (sessions, compactions, tool storms, 12+ concurrent streams) on Kotlin :3097/:3096 with Node
 # still owning :3099. Any deviation -> items cut, fixed, re-run. This is the last gate before P8.
+# [2026-07-16] PREMISE-BLOCK (operator-gated): the golden differential + a full real workday on the Kotlin stack need the operator's live sessions + credentials. The per-scenario mock parity is proven (14 scenarios). P2-GOLD builds the differential harness; the LIVE comparison is operator work.
 
 [[items]]
 id = "P8-CHECK"
@@ -813,3 +824,4 @@ verify = "python3 checks/cutover_ledger_gate.py && npm run gate:rules && cd gate
 # restated in Kotlin terms + named changes (daemon version blast radius, count_tokens fix, fanout
 # deletion). Release workflow: tag -> fat jar + checksums. Capture fixtures: regenerate synthetic
 # or scrub (real transcripts in turn-*.json). Gate: P8-CHECK green + full CI + one more real session.
+# [2026-07-16] PREMISE-BLOCK (destructive + operator-gated, DELIBERATELY NOT DONE): deletes server/ — the working Node proxy the operator depends on DAILY. The plan's own PARITY-BEFORE-CUTOVER law + my operating principles forbid this without live parity validation (P7-PAR) which needs the operator's credentials/sessions. Building everything up to the cutover is correct; performing the cutover autonomously would be an unsafe destructive action on the user's daily driver. Awaits operator sign-off after live parity.

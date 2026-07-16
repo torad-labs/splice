@@ -25,7 +25,7 @@ import kotlin.io.path.writeText
 class ClaudeConfigMaterializerTest {
 
     private val allPolicy = ClaudePolicy(
-        share = setOf("settings", "settings.json", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE.md"),
+        share = setOf("settings", "mcps", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE.md"),
         isolate = emptySet(),
     )
     private val optionsCache = buildJsonObject { put("cache", "codex-models") }
@@ -125,5 +125,36 @@ class ClaudeConfigMaterializerTest {
         materializer(tmp).materialize(dir, policy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
         assertFalse(Files.exists(dir.resolve("commands"), java.nio.file.LinkOption.NOFOLLOW_LINKS)) // isolated: no link
         assertTrue(dir.resolve("agents").isSymbolicLink()) // still shared
+    }
+
+    @Test
+    fun `the topology default vocabulary (claude_md, settings, mcps) shares everything`(@TempDir tmp: Path) {
+        seedGlobal(tmp)
+        val dir = tmp.resolve(".claude-codex")
+        // EXACTLY the ClaudeSharingDefaults.share vocabulary — friendly names, not on-disk item names
+        val policy = ClaudePolicy(
+            share = setOf("settings", "mcps", "skills", "hooks", "agents", "commands", "plugins", "claude_md"),
+            isolate = emptySet(),
+        )
+        val result = materializer(tmp).materialize(dir, policy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
+        // CLAUDE.md shares despite the "claude_md" alias (the bug this pins) — and agents/commands too
+        assertTrue(dir.resolve("CLAUDE.md").isSymbolicLink())
+        assertTrue(dir.resolve("agents").isSymbolicLink())
+        // settings merged (the global theme survives alongside the allowlist)
+        val settings = kotlinx.serialization.json.Json
+            .parseToJsonElement(dir.resolve("settings.json").readText()).jsonObject
+        assertEquals("dark", settings["theme"]?.jsonPrimitive?.content)
+        // MCP servers inherited via the "mcps" alias
+        assertEquals(1, result.mcpServers)
+    }
+
+    @Test
+    fun `isolate wins over a shared alias (claude_md)`(@TempDir tmp: Path) {
+        seedGlobal(tmp)
+        val dir = tmp.resolve(".claude-codex")
+        val policy = ClaudePolicy(share = setOf("claude_md", "mcps"), isolate = setOf("claude_md"))
+        val result = materializer(tmp).materialize(dir, policy, listOf("m"), "m", optionsCache)
+        assertFalse(Files.exists(dir.resolve("CLAUDE.md"), java.nio.file.LinkOption.NOFOLLOW_LINKS)) // isolated
+        assertEquals(1, result.mcpServers) // mcps still shared
     }
 }

@@ -7,7 +7,7 @@ message: "L3: `end_turn` is derived inside SseEmitter.emitTerminal — no other 
 files:
   - gateway/*/src/main/**/*.kt
 ignores:
-  - gateway/gateway/src/main/kotlin/wire/SseEmitter.kt
+  - gateway/gateway/src/main/kotlin/**/wire/SseEmitter.kt
 rule:
   kind: string_content
   regex: \bend_turn\b

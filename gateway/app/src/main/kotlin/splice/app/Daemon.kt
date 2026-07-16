@@ -10,6 +10,7 @@ import splice.control.ControlServer
 import splice.control.LaunchService
 import splice.control.LaunchSpec
 import splice.control.ManagedHead
+import splice.core.auth.RefreshableAuthProvider
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.SpliceConfig
@@ -23,6 +24,7 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.topology.catalogFor
 import splice.core.turn.WatchdogBudget
+import splice.dialect.chat.ChatQuirks
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.HeadDeps
@@ -31,7 +33,12 @@ import splice.gateway.usage.UsageStore
 import splice.provider.codex.CodexAuthProvider
 import splice.provider.codex.CodexProvider
 import splice.provider.codex.RefreshedTokens
+import splice.provider.grok.GrokProvider
+import splice.provider.openai.ApiKeyAuthProvider
+import splice.provider.openai.OpenAiChatProvider
+import splice.provider.openai.OpenAiResponsesProvider
 import splice.spi.InflightGate
+import splice.spi.Provider
 import splice.spi.UpstreamClient
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -58,15 +65,10 @@ public class Daemon(
             streamIdle = cfg.streamIdleMs.milliseconds,
             totalCap = cfg.upstreamTimeoutMs.milliseconds,
         )
-        @Suppress("LoopWithTooManyJumpStatements") // skip-unwired-dialect guard
         for ((key, head) in topology.heads) {
             val providerCfg = topology.providers[head.provider] ?: continue
-            if (providerCfg.dialect != Dialect.OPENAI_RESPONSES) {
-                log("[daemon] head $key: dialect ${providerCfg.dialect} not yet wired; skipping\n")
-                continue
-            }
             val catalog = providerCfg.catalogFor(head)
-            heads[key] = buildCodexHead(key, head, providerCfg, catalog, watchdog, cfg)
+            heads[key] = assembleHead(key, head, providerCfg, catalog, watchdog, cfg)
         }
         // topology owns the control port (loaded once at start, restart-required); the
         // ConfigService knob is only the hot-knob default when topology omits it.
@@ -86,8 +88,113 @@ public class Daemon(
         control?.stop()
     }
 
-    @Suppress("LongParameterList", "LongMethod")
-    private fun buildCodexHead(
+    /** Provider + its auth, chosen by (dialect, auth.kind) — the multi-provider dispatch. */
+    private data class Wired(val provider: Provider, val auth: RefreshableAuthProvider)
+
+    // The dispatch that makes the daemon genuinely multi-provider: codex (responses+oauth), grok
+    // (responses+api-key, session cache key), openai-platform (responses+api-key, hash cache key),
+    // and ANY openai-compatible vendor (chat dialect + api-key) — the last is pure TOML, zero code.
+    @Suppress("LongParameterList")
+    private fun buildProvider(
+        key: String,
+        head: HeadConfig,
+        providerCfg: ProviderConfig,
+        catalog: ModelCatalog,
+        watchdog: WatchdogBudget,
+        cfg: SpliceConfig,
+    ): Wired {
+        val label = head.claude.command ?: key
+        return when (providerCfg.dialect) {
+            Dialect.OPENAI_RESPONSES -> responsesProvider(key, label, head, providerCfg, catalog, watchdog, cfg)
+            Dialect.OPENAI_CHAT -> {
+                val auth = ApiKeyAuthProvider(
+                    envVar = providerCfg.auth.env ?: "${key.uppercase()}_API_KEY",
+                    keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
+                )
+                Wired(
+                    OpenAiChatProvider(
+                        key = key,
+                        label = label,
+                        catalog = catalog,
+                        pinnedModel = head.pinnedModel,
+                        auth = auth,
+                        baseUrl = providerCfg.baseUrl,
+                        watchdog = watchdog,
+                        quirks = ChatQuirks(providerTag = key),
+                    ),
+                    auth,
+                )
+            }
+            // anthropic-passthrough is the P0-XAI fidelity probe path — not built (credential-gated).
+            Dialect.ANTHROPIC_PASSTHROUGH -> error("head $key: anthropic-passthrough dialect not wired")
+        }
+    }
+
+    @Suppress("LongParameterList")
+    private fun responsesProvider(
+        key: String,
+        label: String,
+        head: HeadConfig,
+        providerCfg: ProviderConfig,
+        catalog: ModelCatalog,
+        watchdog: WatchdogBudget,
+        cfg: SpliceConfig,
+    ): Wired = when (providerCfg.auth.kind) {
+        "chatgpt-oauth" -> {
+            val tokenUrl = "${providerCfg.baseUrl.removeSuffix("/codex")}/oauth/token"
+            val auth = CodexAuthProvider(
+                authPath = Paths.get(TopologyLoader.expandHome(providerCfg.auth.file ?: cfg.codexAuthPath)),
+                authCacheMs = cfg.authCacheMs,
+                refreshCall = { rt -> refreshCall(tokenUrl, rt) },
+            )
+            Wired(
+                CodexProvider(
+                    key = key, label = label, catalog = catalog, pinnedModel = head.pinnedModel, auth = auth,
+                    baseUrl = providerCfg.baseUrl, watchdog = watchdog, showReasoning = cfg.showReasoning,
+                    replayReasoning = cfg.replayReasoning, configEffort = cfg.effort, configSummary = cfg.summary,
+                    accountIdHeader = providerCfg.quirks.accountIdHeader,
+                ),
+                auth,
+            )
+        }
+        else -> apiKeyResponsesProvider(key, label, head, providerCfg, catalog, watchdog, cfg)
+    }
+
+    // api-key + responses: grok (session-id cache key, effort-clamped, no summary) vs openai
+    // platform (first-message-hash, summary). The TOML cache_key quirk selects the profile.
+    @Suppress("LongParameterList")
+    private fun apiKeyResponsesProvider(
+        key: String,
+        label: String,
+        head: HeadConfig,
+        providerCfg: ProviderConfig,
+        catalog: ModelCatalog,
+        watchdog: WatchdogBudget,
+        cfg: SpliceConfig,
+    ): Wired {
+        val auth = ApiKeyAuthProvider(
+            envVar = providerCfg.auth.env ?: "${key.uppercase()}_API_KEY",
+            keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
+        )
+        val provider = if (providerCfg.quirks.cacheKey == "session-id") {
+            GrokProvider(
+                key = key, label = label, catalog = catalog, pinnedModel = head.pinnedModel, auth = auth,
+                baseUrl = providerCfg.baseUrl, watchdog = watchdog, showReasoning = cfg.showReasoning,
+                replayReasoning = cfg.replayReasoning, configEffort = cfg.effort,
+            )
+        } else {
+            OpenAiResponsesProvider(
+                key = key, label = label, catalog = catalog, pinnedModel = head.pinnedModel, auth = auth,
+                baseUrl = providerCfg.baseUrl, watchdog = watchdog, showReasoning = cfg.showReasoning,
+                replayReasoning = cfg.replayReasoning, configEffort = cfg.effort, configSummary = cfg.summary,
+            )
+        }
+        return Wired(provider, auth)
+    }
+
+    // Common assembly shared by every provider: stores, the generic HeadServer, launch spec.
+    @Suppress("LongParameterList")
+    private fun assembleHead(
         key: String,
         head: HeadConfig,
         providerCfg: ProviderConfig,
@@ -95,32 +202,12 @@ public class Daemon(
         watchdog: WatchdogBudget,
         cfg: SpliceConfig,
     ): ManagedHead {
-        val authPath = Paths.get(TopologyLoader.expandHome(providerCfg.auth.file ?: cfg.codexAuthPath))
-        val tokenUrl = "${providerCfg.baseUrl.removeSuffix("/codex")}/oauth/token"
-        val auth = CodexAuthProvider(
-            authPath = authPath,
-            authCacheMs = cfg.authCacheMs,
-            refreshCall = { rt -> refreshCall(tokenUrl, rt) },
-        )
-        val provider = CodexProvider(
-            key = key,
-            label = head.claude.command ?: key,
-            catalog = catalog,
-            pinnedModel = head.pinnedModel,
-            auth = auth,
-            baseUrl = providerCfg.baseUrl,
-            watchdog = watchdog,
-            showReasoning = cfg.showReasoning,
-            replayReasoning = cfg.replayReasoning,
-            configEffort = cfg.effort,
-            configSummary = cfg.summary,
-            accountIdHeader = providerCfg.quirks.accountIdHeader,
-        )
+        val wired = buildProvider(key, head, providerCfg, catalog, watchdog, cfg)
         val usageStore = UsageStore(statePaths.usageFile(key), statePaths.ratelimitFile(key))
         val compactStats = CompactStats(statePaths.compactStatsFile(key))
         val logFile = statePaths.logsDir.resolve("$key-${head.port}.log")
         val server = HeadServer(
-            provider = provider,
+            provider = wired.provider,
             listenPort = head.port,
             deps = HeadDeps(
                 upstream = UpstreamClient(cfg.firstByteTimeoutMs, cfg.upstreamTimeoutMs, cfg.upstreamRetries),
@@ -131,23 +218,18 @@ public class Daemon(
                 log = log,
             ),
         )
-        val configDir = java.nio.file.Paths.get(
-            TopologyLoader.expandHome(head.claude.configDir ?: "~/.claude-$key"),
-        )
+        val configDir = Paths.get(TopologyLoader.expandHome(head.claude.configDir ?: "~/.claude-$key"))
         val launchSpec = LaunchSpec(
             configDir = configDir,
             pinnedModel = head.pinnedModel,
             availableModelIds = catalog.availableModelIds(),
             modelOptionsCache = buildJsonObject { },
-            policy = ClaudePolicy(
-                share = topology.claude.share.toSet(),
-                isolate = head.claude.isolate.toSet(),
-            ),
+            policy = ClaudePolicy(share = topology.claude.share.toSet(), isolate = head.claude.isolate.toSet()),
             port = head.port,
         )
         return ManagedHead(
             head = server,
-            auth = auth,
+            auth = wired.auth,
             usage = UsageStoreSource(usageStore),
             compact = CompactStatsSource(compactStats),
             logs = LogFileSource(logFile),

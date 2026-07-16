@@ -1,0 +1,77 @@
+# splice — example multi-provider topology.
+#
+# Copy to ~/.config/splice/splice.toml (or run `splice init` for the codex-only starter).
+# Loaded once at daemon start; adding a provider/head is an operator action → restart the daemon.
+#
+# THE POINT: a new vendor is added HERE, in TOML — no Kotlin. The daemon dispatches on
+# (dialect, auth.kind) to the right built-in provider:
+#   openai-responses + chatgpt-oauth        → codex (ChatGPT backend)
+#   openai-responses + api-key + session-id → grok / xAI
+#   openai-responses + api-key (hash key)   → OpenAI platform
+#   openai-chat      + api-key              → ANY OpenAI-compatible vendor (Ollama/OpenRouter/…)
+
+[daemon]
+control_port = 3096          # loopback-only control plane + dashboard
+
+# ── codex: ChatGPT Codex subscription via OAuth ────────────────────────────────
+[providers.codex]
+dialect = "openai-responses"
+base_url = "https://chatgpt.com/backend-api/codex"
+auth = { kind = "chatgpt-oauth", file = "~/.codex/auth.json" }
+quirks = { store = false, account_id_header = true, cache_key = "first-message-hash", effort_ceiling = "max", summary_field = true }
+[[providers.codex.models]]
+id = "gpt-5.6-sol"
+label = "Codex 5.6 Sol"
+context_window = 272000
+
+# ── xAI / grok: same Responses dialect, api-key auth, session-scoped cache key ──
+[providers.xai]
+dialect = "openai-responses"
+base_url = "https://api.x.ai/v1"
+auth = { kind = "api-key", env = "XAI_API_KEY", file = "~/.local/share/claude-grok/auth.json" }
+quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = false, compact_effort = "low", tool_choice = true }
+[[providers.xai.models]]
+id = "grok-4.5"
+label = "Grok 4.5"
+context_window = 1000000
+
+# ── openrouter: the "new vendor = pure TOML, zero code" proof (Chat Completions) ─
+# Swap base_url + env for Ollama (http://localhost:11434/v1), LM Studio, DeepSeek, etc.
+[providers.openrouter]
+dialect = "openai-chat"
+base_url = "https://openrouter.ai/api/v1"
+auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }
+[[providers.openrouter.models]]
+id = "meta/llama-4"
+label = "Llama 4"
+context_window = 128000
+
+# ── heads: each is a Claude Code wrapper on its own loopback port ───────────────
+# `command` names the installed wrapper (`splice install` links ~/.local/bin/<command>).
+[claude]                       # global config-sharing policy for every wrapper
+share = ["settings", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE.md"]
+
+[heads.claudex]
+provider = "codex"
+port = 3099
+discovery_prefix = "claude-codex--"
+pinned_model = "gpt-5.6-sol"
+[heads.claudex.claude]
+command = "claudex"
+
+[heads.grok]
+provider = "xai"
+port = 3100
+discovery_prefix = "claude-grok--"
+pinned_model = "grok-4.5"
+[heads.grok.claude]
+command = "clagrok"
+isolate = ["commands"]         # this head gets its own commands/, everything else shared
+
+[heads.openrouter]
+provider = "openrouter"
+port = 3101
+discovery_prefix = "claude-openrouter--"
+pinned_model = "meta/llama-4"
+[heads.openrouter.claude]
+command = "claudeor"

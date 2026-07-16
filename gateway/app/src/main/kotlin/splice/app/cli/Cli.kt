@@ -8,6 +8,7 @@ import splice.app.TopologyLoader
 import splice.core.config.StatePaths
 import java.nio.file.Files
 
+@Suppress("CyclomaticComplexMethod") // a flat subcommand dispatch
 public fun runCli(args: Array<String>) {
     when (args.firstOrNull()) {
         "doctor" -> doctor()
@@ -16,7 +17,12 @@ public fun runCli(args: Array<String>) {
         "install" -> InstallCommand.install(args.getOrNull(1))
         "uninstall" -> InstallCommand.uninstall(args.getOrNull(1))
         "login" -> runBlocking { LoginCommand.login(args.getOrNull(1)) }
-        else -> System.err.println("usage: splice [daemon|doctor|version|init|install|uninstall|login <head>]")
+        "setup" -> runBlocking { SetupCommand.setup() }
+        "status" -> StatusCommand.status()
+        "dashboard" -> DashboardCommand.dashboard()
+        else -> System.err.println(
+            "usage: splice [setup|status|dashboard|login <head>|install|uninstall|init|doctor|daemon|version]",
+        )
     }
 }
 

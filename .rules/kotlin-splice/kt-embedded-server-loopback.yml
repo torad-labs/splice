@@ -1,0 +1,15 @@
+# Loopback-only (ported wall) — every embeddedServer call must pass the literal
+# "127.0.0.1"; Ktor's default host is 0.0.0.0 and a variable host can drift.
+id: kt-embedded-server-loopback
+language: kotlin
+severity: error
+message: "Loopback only: embeddedServer must be called with the literal host \"127.0.0.1\"."
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  pattern: embeddedServer($$$ARGS)
+  not:
+    has:
+      kind: string_content
+      regex: ^127\.0\.0\.1$
+      stopBy: end

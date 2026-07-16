@@ -1,0 +1,5 @@
+id: kt-no-system-getenv
+valid:
+  - 'val v = config.effort'
+invalid:
+  - 'val v = System.getenv("CLAUDEX_REASONING_EFFORT")'

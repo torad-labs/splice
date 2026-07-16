@@ -1,0 +1,13 @@
+# Invariant L3 (Kotlin) — no caller ever holds an end_turn literal; stop_reason
+# derivation lives inside SseEmitter.emitTerminal (tool_use > max_tokens > end_turn).
+id: kt-l3-end-turn-literal
+language: kotlin
+severity: error
+message: "L3: `end_turn` is derived inside SseEmitter.emitTerminal — no other file may hold the literal."
+files:
+  - gateway/*/src/main/**/*.kt
+ignores:
+  - gateway/gateway/src/main/kotlin/wire/SseEmitter.kt
+rule:
+  kind: string_content
+  regex: \bend_turn\b

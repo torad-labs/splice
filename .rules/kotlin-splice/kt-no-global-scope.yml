@@ -1,0 +1,9 @@
+# Structured concurrency — GlobalScope has no owner, no cancellation, no supervision.
+id: kt-no-global-scope
+language: kotlin
+severity: error
+message: "No GlobalScope: use the head's supervised scope (structured concurrency has an owner)."
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  pattern: GlobalScope

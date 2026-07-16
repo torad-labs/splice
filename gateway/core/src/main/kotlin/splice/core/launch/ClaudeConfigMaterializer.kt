@@ -74,11 +74,26 @@ public class ClaudeConfigMaterializer(
         Files.createDirectories(configDir)
         linkShared(configDir, policy)
         writeSettings(configDir, policy, availableModelIds, defaultModel)
-        val mcpCount = writeClaudeJson(configDir, modelOptionsCache)
+        val mcpCount = writeClaudeJson(configDir, modelOptionsCache, shareMcp = shares(policy, "mcps"))
         return MaterializeResult(configDir, availableModelIds.size, mcpCount)
     }
 
     private fun globalDir() = home.resolve(".claude")
+
+    /**
+     * Does the policy share [item]? Alias-aware, so the friendly config vocabulary (settings,
+     * mcps, claude_md) matches the on-disk item names (settings.json, mcps, CLAUDE.md). isolate
+     * wins over share for any alias.
+     */
+    private fun shares(policy: ClaudePolicy, item: String): Boolean {
+        val aliases = when (item.lowercase()) {
+            "settings.json" -> setOf("settings.json", "settings")
+            "claude.md" -> setOf("CLAUDE.md", "claude_md", "claude.md", "claudemd")
+            "mcps" -> setOf("mcps", "mcp")
+            else -> setOf(item)
+        }
+        return aliases.any { it in policy.share } && aliases.none { it in policy.isolate }
+    }
 
     @Suppress(
         "TooGenericExceptionCaught",
@@ -90,7 +105,7 @@ public class ClaudeConfigMaterializer(
     private fun linkShared(configDir: Path, policy: ClaudePolicy) {
         for (item in SHARED_LINK_ITEMS) {
             if (item == "settings.json" || item == "mcps") continue // settings merged; mcps via json
-            if (item in policy.isolate || item !in policy.share) continue
+            if (!shares(policy, item)) continue
             val src = globalDir().resolve(item)
             if (!Files.exists(src, java.nio.file.LinkOption.NOFOLLOW_LINKS)) continue
             val dst = configDir.resolve(item)
@@ -113,7 +128,7 @@ public class ClaudeConfigMaterializer(
     @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException", "CyclomaticComplexMethod", "ComplexCondition")
     private fun writeSettings(configDir: Path, policy: ClaudePolicy, allow: List<String>, defaultModel: String) {
         val dst = configDir.resolve("settings.json")
-        val global = if ("settings" in policy.share || "settings.json" in policy.share) {
+        val global = if (shares(policy, "settings.json")) {
             readJson(globalDir().resolve("settings.json"))
         } else {
             JsonObject(emptyMap())
@@ -146,7 +161,7 @@ public class ClaudeConfigMaterializer(
     }
 
     @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException")
-    private fun writeClaudeJson(configDir: Path, modelOptionsCache: JsonObject): Int {
+    private fun writeClaudeJson(configDir: Path, modelOptionsCache: JsonObject, shareMcp: Boolean): Int {
         val statePath = configDir.resolve(".claude.json")
         val global = readJson(home.resolve(".claude.json"))
         val local = readJson(statePath)
@@ -154,7 +169,7 @@ public class ClaudeConfigMaterializer(
         val next = buildJsonObject {
             local.forEach { (k, v) -> put(k, v) }
             put("additionalModelOptionsCache", modelOptionsCache)
-            val globalMcp = global["mcpServers"] as? JsonObject
+            val globalMcp = (global["mcpServers"] as? JsonObject)?.takeIf { shareMcp }
             if (globalMcp != null) {
                 mcpCount = globalMcp.size
                 put("mcpServers", globalMcp)

@@ -1,8 +1,8 @@
-// NEW: SingleFlight — the "N concurrent callers, ONE block run" invariant AND the coroutine-hazard
-// fix: a leader cancelled mid-block must NOT broadcast its cancellation to followers on unrelated
-// healthy requests; they re-elect a new leader instead. UnconfinedTestDispatcher = eager execution
-// so a leader actually SUSPENDS at the gate while followers register (StandardTestDispatcher would
-// run each coroutine to completion serially, defeating the coalescing being tested).
+// NEW: SingleFlight — exactly-one-block-per-wave, decoupled from any caller's lifecycle. The block
+// runs in an injected scope, so a caller cancelled mid-wait cancels only ITS await, never the shared
+// refresh; and N followers coalesce onto ONE run (the re-election design regressed this to one run
+// per follower). UnconfinedTestDispatcher = eager execution so callers actually coalesce before the
+// gate opens.
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
@@ -18,14 +18,14 @@ class SingleFlightTest {
 
     @Test
     fun `N concurrent callers run the block once and all get the result`() = runTest(UnconfinedTestDispatcher()) {
-        val sf = SingleFlight<Int>()
+        val sf = SingleFlight<Int>(UnconfinedTestDispatcher(testScheduler))
         val runs = AtomicInteger(0)
         val gate = CompletableDeferred<Unit>()
         val jobs = (1..5).map {
             async {
                 sf.run {
                     runs.incrementAndGet()
-                    gate.await() // leader suspends here while the other 4 register as followers
+                    gate.await()
                     42
                 }
             }
@@ -37,44 +37,46 @@ class SingleFlightTest {
     }
 
     @Test
-    fun `a leader cancelled mid-block does not kill a follower - the follower re-elects`() =
+    fun `a cancelled caller does not kill peers - the shared block runs once and completes`() =
         runTest(UnconfinedTestDispatcher()) {
-            val sf = SingleFlight<String>()
-            val leaderEntered = CompletableDeferred<Unit>()
-            val secondRuns = AtomicInteger(0)
+            val sf = SingleFlight<String>(UnconfinedTestDispatcher(testScheduler))
+            val runs = AtomicInteger(0)
+            val gate = CompletableDeferred<Unit>()
 
-            // Leader: enters the block, signals, then suspends forever until cancelled.
+            // Leader initiates the shared refresh, then suspends on the gate.
             val leader = launch {
                 sf.run {
-                    leaderEntered.complete(Unit)
-                    CompletableDeferred<String>().await() // never completes; will be cancelled
-                    "leader-value"
+                    runs.incrementAndGet()
+                    gate.await()
+                    "value"
                 }
             }
-            leaderEntered.await()
-
-            // Follower: a DIFFERENT, healthy request that coalesced behind the leader.
-            val follower = async {
+            // TWO followers coalesce behind it — the exact case that regressed to a per-follower run.
+            val f1 = async {
                 sf.run {
-                    secondRuns.incrementAndGet()
-                    "follower-value"
+                    runs.incrementAndGet()
+                    gate.await()
+                    "value"
+                }
+            }
+            val f2 = async {
+                sf.run {
+                    runs.incrementAndGet()
+                    gate.await()
+                    "value"
                 }
             }
 
-            // Cancel ONLY the leader (its client disconnected). The follower must survive.
-            leader.cancel()
-            val followerResult = follower.await()
-
-            assertEquals("follower-value", followerResult) // follower re-elected and produced a result
-            assertEquals(1, secondRuns.get())
+            leader.cancel() // the leader's client disconnects; the shared refresh must continue
+            gate.complete(Unit) // the single shared block finishes
+            assertEquals("value", f1.await())
+            assertEquals("value", f2.await())
+            assertEquals(1, runs.get()) // EXACTLY ONE execution despite cancel + 2 followers
         }
 
     @Test
-    fun `a null leader result is a real value, not a re-elect signal`() = runTest(UnconfinedTestDispatcher()) {
-        // SingleFlight<Credentials?> legitimately returns null (no refresh possible). Box<T> keeps
-        // "leader returned null" distinct from "leader aborted → re-elect": every follower must get
-        // null, and the block must run exactly once (no spurious re-election).
-        val sf = SingleFlight<String?>()
+    fun `a null result is a real value shared by all callers`() = runTest(UnconfinedTestDispatcher()) {
+        val sf = SingleFlight<String?>(UnconfinedTestDispatcher(testScheduler))
         val runs = AtomicInteger(0)
         val gate = CompletableDeferred<Unit>()
         val jobs = (1..4).map {
@@ -88,32 +90,13 @@ class SingleFlightTest {
         }
         gate.complete(Unit)
         val results = jobs.map { it.await() }
-        assertEquals(1, runs.get()) // exactly one run — null did NOT trigger re-election
+        assertEquals(1, runs.get())
         assertTrue(results.all { it == null })
     }
 
     @Test
-    fun `a follower's own cancellation propagates, does not re-elect`() = runTest(UnconfinedTestDispatcher()) {
-        val sf = SingleFlight<String>()
-        val leaderEntered = CompletableDeferred<Unit>()
-        val leaderRelease = CompletableDeferred<String>()
-        val leader = launch {
-            sf.run {
-                leaderEntered.complete(Unit)
-                leaderRelease.await() // hold leadership so the follower stays a follower
-            }
-        }
-        leaderEntered.await()
-        val follower = launch { sf.run { "never" } } // coalesces behind the leader, then suspends
-        follower.cancel() // the FOLLOWER's own client disconnects
-        assertTrue(follower.isCancelled)
-        leaderRelease.complete("leader-done") // leader finishes cleanly, unaffected
-        leader.join()
-    }
-
-    @Test
     fun `a genuine block failure propagates to every awaiter`() = runTest(UnconfinedTestDispatcher()) {
-        val sf = SingleFlight<Int>()
+        val sf = SingleFlight<Int>(UnconfinedTestDispatcher(testScheduler))
         val gate = CompletableDeferred<Unit>()
         val jobs = (1..3).map {
             async {
@@ -127,7 +110,16 @@ class SingleFlightTest {
         }
         gate.complete(Unit)
         val outcomes = jobs.map { it.await() }
-        assertTrue(outcomes.all { it.isFailure }) // all awaiters see the real failure
+        assertTrue(outcomes.all { it.isFailure })
         assertTrue(outcomes.all { it.exceptionOrNull()?.message == "refresh failed" })
+    }
+
+    @Test
+    fun `a settled refresh is not reused - the next wave starts fresh`() = runTest(UnconfinedTestDispatcher()) {
+        val sf = SingleFlight<Int>(UnconfinedTestDispatcher(testScheduler))
+        val runs = AtomicInteger(0)
+        assertEquals(1, sf.run { runs.incrementAndGet() }) // wave 1
+        assertEquals(2, sf.run { runs.incrementAndGet() }) // wave 2 — fresh, not the cached 1
+        assertEquals(2, runs.get())
     }
 }

@@ -1,0 +1,14 @@
+# TENET: No empty catch blocks.
+# Rationale: Silent failures hide bugs. At minimum, log the exception.
+# Better yet, handle the error properly or let it propagate.
+id: no-empty-catch
+language: kotlin
+severity: error
+message: "Empty catch blocks swallow errors silently. Log or handle the exception."
+files:
+  - "**/*.kt"
+rule:
+  kind: catch_block
+  has:
+    kind: statements
+    regex: "^\\s*$"

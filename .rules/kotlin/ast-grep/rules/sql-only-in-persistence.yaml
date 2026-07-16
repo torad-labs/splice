@@ -1,0 +1,21 @@
+# TENET: SQL/JDBC access belongs in persistence layer only.
+# Rationale: Raw SQL and JDBC belong behind Repositories in a dedicated persistence module.
+# Customize the ignores to match your persistence module path.
+id: sql-only-in-persistence
+language: kotlin
+severity: error
+message: "Raw SQL/JDBC belongs in persistence layer only. Move to Repository implementation."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+  - "**/persistence/**"
+  - "**/data/**"
+rule:
+  any:
+    - kind: import_header
+      regex: "^import\\s+(java\\.sql|org\\.postgresql)"
+    - kind: string_content
+      regex: "^\\s*(jdbc:postgresql|SELECT|INSERT\\s+INTO|UPDATE|DELETE\\s+FROM|CREATE\\s+TABLE)\\b"
+    - pattern: $DB.createStatement($$$ARGS)
+    - pattern: $DB.prepareStatement($$$ARGS)

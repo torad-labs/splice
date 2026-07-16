@@ -1,0 +1,15 @@
+# TENET: No CoroutineScope() factory in production code.
+# Rationale: CoroutineScope() creates an unbound scope with no lifecycle.
+# Use structured concurrency: viewModelScope, lifecycleScope, or injected scopes.
+id: no-coroutine-scope-factory
+language: kotlin
+severity: error
+message: "Don't create CoroutineScope(). Use viewModelScope, lifecycleScope, or injected scopes."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  any:
+    - pattern: CoroutineScope($$$ARGS)
+    - pattern: MainScope()

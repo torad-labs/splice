@@ -1,0 +1,20 @@
+# TENET: Prefer .orEmpty() over Elvis empty fallbacks.
+# Rationale: Idiomatic Kotlin uses .orEmpty() for nullable → empty fallbacks.
+# `?: ""` and `?: emptyList()` are verbose and non-idiomatic.
+id: use-or-empty
+language: kotlin
+severity: error
+message: "Use `.orEmpty()` instead of `?: \"\"` or `?: emptyList()`."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  any:
+    - pattern: "$X ?: \"\""
+    - pattern: "$X ?: emptyList()"
+    - pattern: "$X ?: emptyMap()"
+    - pattern: "$X ?: emptySet()"
+    - pattern: "$X ?: listOf()"
+    - pattern: "$X ?: mapOf()"
+    - pattern: "$X ?: setOf()"

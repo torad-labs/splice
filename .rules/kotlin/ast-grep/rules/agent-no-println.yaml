@@ -1,0 +1,15 @@
+# TENET: Agent code logs through middleware, not println.
+# Rationale: Agent/provider code logs through observability middleware.
+# Raw println bypasses structured logging and breaks observability.
+id: agent-no-println
+language: kotlin
+severity: error
+message: "Route logs through middleware, not println. Use structured logging or events."
+files:
+  - "**/agent/**/*.kt"
+  - "**/provider/**/*.kt"
+ignores:
+  - "**/middleware/**"
+  - "**/test/**"
+rule:
+  pattern: println($$$ARGS)

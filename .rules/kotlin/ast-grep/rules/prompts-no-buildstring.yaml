@@ -1,0 +1,15 @@
+# TENET: Prompt prose belongs in markdown files, not buildString.
+# Rationale: Prompts assembled with buildString are hard to read and maintain.
+# Load them from prompts/*.md files via a prompt loader.
+id: prompts-no-buildstring
+language: kotlin
+severity: error
+message: "Prompt prose assembled with buildString belongs in prompts/*.md. Use a prompt loader."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+  - "**/prompts/**"
+rule:
+  pattern: buildString { $$$BODY }
+  regex: "(You are|You have|You MUST|you must|system:|user:|assistant:|tool:)"

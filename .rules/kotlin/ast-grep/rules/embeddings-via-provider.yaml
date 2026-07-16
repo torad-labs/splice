@@ -1,0 +1,20 @@
+# TENET: Embedding clients go through the provider seam.
+# Rationale: Embedding generation is a network operation — construct clients only in core-provider.
+# Other layers depend on the embeddings interface, not concrete implementations.
+id: embeddings-via-provider
+language: kotlin
+severity: error
+message: "Embedding clients belong in core-provider only. Depend on the embeddings interface."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+  - "**/provider/**"
+rule:
+  any:
+    - kind: string_content
+      regex: "(\\btext-embedding-\\w+|/v1/embeddings\\b)"
+    - kind: call_expression
+      has:
+        kind: simple_identifier
+        regex: "^createEmbedding(s|Client|Model)?$"

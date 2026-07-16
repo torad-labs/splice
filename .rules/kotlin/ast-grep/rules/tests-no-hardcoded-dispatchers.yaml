@@ -1,0 +1,19 @@
+# TENET: No hardcoded Dispatchers in tests.
+# Rationale: Literal Dispatchers.IO/Default/Main/Unconfined force real threads and real time.
+# Use TestDispatcher (StandardTestDispatcher(testScheduler)) for virtual time + deterministic ordering.
+id: tests-no-hardcoded-dispatchers
+language: kotlin
+severity: error
+message: "Inject a TestDispatcher, not Dispatchers.IO/Default/Main. Hardcoded dispatchers use real threads."
+files:
+  - "**/test/**/*.kt"
+  - "**/*Test.kt"
+ignores:
+  - "**/Dispatchers*.kt"
+  - "**/*DispatcherProvider*.kt"
+rule:
+  any:
+    - pattern: Dispatchers.IO
+    - pattern: Dispatchers.Default
+    - pattern: Dispatchers.Main
+    - pattern: Dispatchers.Unconfined

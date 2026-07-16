@@ -1,0 +1,82 @@
+[
+  {
+    "query": "run a prime-explore on the idea that documentation is actually a social contract",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to explore this thesis using primes — the idea that trust is a product feature, not a feeling",
+    "should_trigger": true
+  },
+  {
+    "query": "prime-explore the concept of 'velocity debt' — I coined this term and want to see what structural space it maps to",
+    "should_trigger": true
+  },
+  {
+    "query": "I have a half-formed idea that feedback loops in organizations work like immune responses — can you prime-explore that?",
+    "should_trigger": true
+  },
+  {
+    "query": "run a prime exploration on 'simplicity as an emergent property' — I want the structural primes, not just examples",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to explore the prime structure of the claim that 'markets are conversations'",
+    "should_trigger": true
+  },
+  {
+    "query": "do a prime-explore on the thesis that every onboarding failure is actually a communication failure",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to find the primes behind why developer communities self-organize the way they do",
+    "should_trigger": true
+  },
+  {
+    "query": "prime-explore 'code review as knowledge transfer' — what are the underlying structural principles?",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to decompose the idea of 'technical leadership' into its prime components — what is it actually made of?",
+    "should_trigger": true
+  },
+  {
+    "query": "run a full GMR navigation on this concept — I want the toroidal geometry and the block traversal",
+    "should_trigger": false
+  },
+  {
+    "query": "deep-analysis on why our retention is stuck — I've tried the obvious stuff",
+    "should_trigger": false
+  },
+  {
+    "query": "explore the design space for our new feature — I want breadth, not convergence",
+    "should_trigger": false
+  },
+  {
+    "query": "find unexpected connections between supply chain logistics and improvisation — vertex scan, all the non-obvious links",
+    "should_trigger": false
+  },
+  {
+    "query": "can you explain what prime numbers are and why they're important in cryptography?",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to brainstorm names for our new product — give me 20 options",
+    "should_trigger": false
+  },
+  {
+    "query": "summarize the concept of first principles thinking for me",
+    "should_trigger": false
+  },
+  {
+    "query": "force a decision on which framework we should use — we've been debating too long",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to validate this specific decision before we commit to it",
+    "should_trigger": false
+  },
+  {
+    "query": "write a blog post exploring the idea that software is more like biology than engineering",
+    "should_trigger": false
+  }
+]

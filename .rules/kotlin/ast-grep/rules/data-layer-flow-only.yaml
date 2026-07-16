@@ -1,0 +1,23 @@
+# TENET: Data layer returns Flow, not suspend.
+# Rationale: Repository/DataSource/Store functions should return Flow<T> for composability.
+# Suspend functions in data layer break flow composition — caller can't combine streams.
+# This rule catches public suspend functions in data layer files.
+id: data-layer-flow-only
+language: kotlin
+severity: error
+message: "Data layer functions (Repository/DataSource/Store) should return Flow<T>, not be suspend. Flow enables composition."
+files:
+  - "**/*Repository.kt"
+  - "**/*RepositoryImpl.kt"
+  - "**/*DataSource.kt"
+  - "**/*Store.kt"
+ignores:
+  - "**/test/**"
+rule:
+  kind: function_declaration
+  inside: {kind: class_body}
+  has:
+    kind: modifiers
+    has:
+      kind: function_modifier
+      regex: '^suspend$'

@@ -1,0 +1,432 @@
+diff --git a/gateway/app/build.gradle.kts b/gateway/app/build.gradle.kts
+new file mode 100644
+index 0000000..baee2a7
+--- /dev/null
++++ b/gateway/app/build.gradle.kts
+@@ -0,0 +1,16 @@
++plugins {
++    id("splice.kotlin-common")
++    id("splice.module-law")
++}
++
++dependencies {
++    implementation(project(":core"))
++    implementation(project(":provider-spi"))
++    implementation(project(":dialect-openai-responses"))
++    implementation(project(":dialect-openai-chat"))
++    implementation(project(":provider-codex"))
++    implementation(project(":provider-grok"))
++    implementation(project(":provider-openai"))
++    implementation(project(":gateway"))
++    implementation(project(":control"))
++}
+diff --git a/gateway/arch-tests/build.gradle.kts b/gateway/arch-tests/build.gradle.kts
+new file mode 100644
+index 0000000..8f4cdcb
+--- /dev/null
++++ b/gateway/arch-tests/build.gradle.kts
+@@ -0,0 +1,8 @@
++plugins {
++    id("splice.kotlin-common")
++    id("splice.module-law")
++}
++
++dependencies {
++    testImplementation(libs.konsist)
++}
+diff --git a/gateway/build-logic/build.gradle.kts b/gateway/build-logic/build.gradle.kts
+new file mode 100644
+index 0000000..9836a17
+--- /dev/null
++++ b/gateway/build-logic/build.gradle.kts
+@@ -0,0 +1,9 @@
++// NEW: precompiled convention plugins (P1-GRADLE).
++plugins {
++    `kotlin-dsl`
++}
++
++dependencies {
++    implementation("org.jetbrains.kotlin:kotlin-gradle-plugin:${libs.versions.kotlin.get()}")
++    implementation("org.jetbrains.kotlin:kotlin-serialization:${libs.versions.kotlin.get()}")
++}
+diff --git a/gateway/build-logic/settings.gradle.kts b/gateway/build-logic/settings.gradle.kts
+new file mode 100644
+index 0000000..eb539f0
+--- /dev/null
++++ b/gateway/build-logic/settings.gradle.kts
+@@ -0,0 +1,14 @@
++// NEW: build-logic included build — convention plugins carrying the module law (P1-GRADLE).
++dependencyResolutionManagement {
++    repositories {
++        mavenCentral()
++        gradlePluginPortal()
++    }
++    versionCatalogs {
++        create("libs") {
++            from(files("../gradle/libs.versions.toml"))
++        }
++    }
++}
++
++rootProject.name = "build-logic"
+diff --git a/gateway/build-logic/src/main/kotlin/splice.kotlin-common.gradle.kts b/gateway/build-logic/src/main/kotlin/splice.kotlin-common.gradle.kts
+new file mode 100644
+index 0000000..18823d7
+--- /dev/null
++++ b/gateway/build-logic/src/main/kotlin/splice.kotlin-common.gradle.kts
+@@ -0,0 +1,20 @@
++// NEW: shared Kotlin/JVM configuration for every gateway module (P1-GRADLE).
++// Kind-specific rules (dependency law, explicitApi) live in splice.module-law.
++plugins {
++    id("org.jetbrains.kotlin.jvm")
++    id("org.jetbrains.kotlin.plugin.serialization")
++}
++
++kotlin {
++    jvmToolchain(21)
++}
++
++dependencies {
++    "testImplementation"(platform("org.junit:junit-bom:6.1.2"))
++    "testImplementation"("org.junit.jupiter:junit-jupiter")
++    "testRuntimeOnly"("org.junit.platform:junit-platform-launcher")
++}
++
++tasks.withType<Test>().configureEach {
++    useJUnitPlatform()
++}
+diff --git a/gateway/build-logic/src/main/kotlin/splice.module-law.gradle.kts b/gateway/build-logic/src/main/kotlin/splice.module-law.gradle.kts
+new file mode 100644
+index 0000000..03d3af7
+--- /dev/null
++++ b/gateway/build-logic/src/main/kotlin/splice.module-law.gradle.kts
+@@ -0,0 +1,74 @@
++// NEW: THE MODULE LAW (P1-GRADLE) — the dependency graph as configuration-time enforcement.
++//
++// Doctrine (#924, make drift not compile): hooks and review are probabilistic filters;
++// the only wall that holds against an unbounded generator is one where the violation
++// is inexpressible. An illegal project dependency here is a BUILD ERROR, not a review
++// comment. Pattern lineage: grailseeker's torad.block.ui dependency-law plugin.
++//
++// The table below IS the architecture diagram. Changing it is changing the architecture:
++// do that deliberately, with a ledger note (dev/campaigns/kotlin-gateway.toml).
++import org.gradle.api.artifacts.ProjectDependency
++import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
++
++/** project path -> allowed project-dependency paths. Absent key = unrestricted (:app, :spikes). */
++val moduleLaw: Map<String, Set<String>> = mapOf(
++    ":core" to emptySet(),
++    ":provider-spi" to setOf(":core"),
++    ":dialect-openai-responses" to setOf(":core", ":provider-spi"),
++    ":dialect-openai-chat" to setOf(":core", ":provider-spi"),
++    ":provider-codex" to setOf(":core", ":provider-spi", ":dialect-openai-responses"),
++    ":provider-grok" to setOf(":core", ":provider-spi", ":dialect-openai-responses"),
++    ":provider-openai" to setOf(":core", ":provider-spi", ":dialect-openai-responses", ":dialect-openai-chat"),
++    ":gateway" to setOf(":core", ":provider-spi"),
++    ":control" to setOf(":core"),
++    ":arch-tests" to emptySet(),
++)
++
++/** :core may only reach the kotlin/kotlinx ecosystem — the domain stays framework-free. */
++val coreExternalGroups = setOf("org.jetbrains.kotlin", "org.jetbrains.kotlinx")
++
++/** Modules exempt from explicitApi (executables and test harnesses, not libraries). */
++val nonLibrary = setOf(":app", ":spikes", ":arch-tests")
++
++val lawChecked = setOf("api", "implementation", "compileOnly", "runtimeOnly")
++
++if (project.path !in nonLibrary) {
++    pluginManager.withPlugin("org.jetbrains.kotlin.jvm") {
++        extensions.configure<KotlinJvmProjectExtension>("kotlin") {
++            explicitApi()
++        }
++    }
++}
++
++afterEvaluate {
++    val allowed = moduleLaw[project.path]
++    if (allowed != null) {
++        configurations
++            .filter { it.name in lawChecked }
++            .forEach { cfg ->
++                cfg.dependencies.withType(ProjectDependency::class.java).forEach { dep ->
++                    val depPath = dep.path
++                    check(depPath == project.path || depPath in allowed) {
++                        "MODULE LAW: ${project.path} may not depend on $depPath " +
++                            "(allowed: ${allowed.sorted()}). The graph is the architecture — " +
++                            "see gateway/build-logic/src/main/kotlin/splice.module-law.gradle.kts " +
++                            "and the kotlin-gateway campaign ledger before touching it."
++                    }
++                }
++            }
++    }
++    if (project.path == ":core") {
++        configurations
++            .filter { it.name in lawChecked }
++            .forEach { cfg ->
++                cfg.dependencies
++                    .filter { it !is ProjectDependency && it.group != null }
++                    .forEach { dep ->
++                        check(coreExternalGroups.any { g -> dep.group == g || dep.group!!.startsWith("$g.") }) {
++                            "MODULE LAW: :core is framework-free — external dependency " +
++                                "${dep.group}:${dep.name} is not in the kotlin/kotlinx allowlist."
++                        }
++                    }
++            }
++    }
++}
+diff --git a/gateway/control/build.gradle.kts b/gateway/control/build.gradle.kts
+new file mode 100644
+index 0000000..6184612
+--- /dev/null
++++ b/gateway/control/build.gradle.kts
+@@ -0,0 +1,12 @@
++plugins {
++    id("splice.kotlin-common")
++    id("splice.module-law")
++}
++
++dependencies {
++    implementation(project(":core"))
++    implementation(libs.ktor.server.core)
++    implementation(libs.ktor.server.netty)
++    testImplementation(libs.ktor.server.test.host)
++    testImplementation(libs.kotlinx.coroutines.test)
++}
+diff --git a/gateway/core/build.gradle.kts b/gateway/core/build.gradle.kts
+new file mode 100644
+index 0000000..2a78f2c
+--- /dev/null
++++ b/gateway/core/build.gradle.kts
+@@ -0,0 +1,8 @@
++plugins {
++    id("splice.kotlin-common")
++    id("splice.module-law")
++}
++
++dependencies {
++    api(libs.kotlinx.serialization.json)
++}
+diff --git a/gateway/dialect-openai-chat/build.gradle.kts b/gateway/dialect-openai-chat/build.gradle.kts
+new file mode 100644
+index 0000000..a9846c1
+--- /dev/null
++++ b/gateway/dialect-openai-chat/build.gradle.kts
+@@ -0,0 +1,10 @@
++plugins {
++    id("splice.kotlin-common")
++    id("splice.module-law")
++}
++
++dependencies {
++    implementation(project(":core"))
++    implementation(project(":provider-spi"))
++    testImplementation(libs.kotlinx.coroutines.test)
++}
+diff --git a/gateway/dialect-openai-responses/build.gradle.kts b/gateway/dialect-openai-responses/build.gradle.kts
+new file mode 100644
+index 0000000..a9846c1
+--- /dev/null
++++ b/gateway/dialect-openai-responses/build.gradle.kts
+@@ -0,0 +1,10 @@
++plugins {
++    id("splice.kotlin-common")
++    id("splice.module-law")
++}
++
++dependencies {
++    implementation(project(":core"))
++    implementation(project(":provider-spi"))
++    testImplementation(libs.kotlinx.coroutines.test)
++}
+diff --git a/gateway/gateway/build.gradle.kts b/gateway/gateway/build.gradle.kts
+new file mode 100644
+index 0000000..f29e814
+--- /dev/null
++++ b/gateway/gateway/build.gradle.kts
+@@ -0,0 +1,14 @@
++plugins {
++    id("splice.kotlin-common")
++    id("splice.module-law")
++}
++
++dependencies {
++    implementation(project(":core"))
++    implementation(project(":provider-spi"))
++    implementation(libs.ktor.server.core)
++    implementation(libs.ktor.server.netty)
++    implementation(libs.ktor.server.sse)
++    testImplementation(libs.ktor.server.test.host)
++    testImplementation(libs.kotlinx.coroutines.test)
++}
+diff --git a/gateway/gradle/libs.versions.toml b/gateway/gradle/libs.versions.toml
+new file mode 100644
+index 0000000..548a389
+--- /dev/null
++++ b/gateway/gradle/libs.versions.toml
+@@ -0,0 +1,34 @@
++# Version catalog — single source of truth for the gateway build (P1-GRADLE).
++# Versions verified against repo1.maven.org maven-metadata 2026-07-16 (the solrsearch
++# index was stale — always check metadata <latest>, not search "latestVersion").
++[versions]
++kotlin = "2.3.21"
++ktor = "3.5.1"
++coroutines = "1.11.0"
++serialization = "1.11.0"
++ktoml = "0.7.1"
++konsist = "0.17.3"
++detekt = "1.23.8"
++junit = "6.1.2"
++
++[libraries]
++kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
++kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
++kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }
++ktoml-core = { module = "com.akuleshov7:ktoml-core", version.ref = "ktoml" }
++ktor-server-core = { module = "io.ktor:ktor-server-core", version.ref = "ktor" }
++ktor-server-netty = { module = "io.ktor:ktor-server-netty", version.ref = "ktor" }
++ktor-server-cio = { module = "io.ktor:ktor-server-cio", version.ref = "ktor" }
++ktor-server-sse = { module = "io.ktor:ktor-server-sse", version.ref = "ktor" }
++ktor-server-test-host = { module = "io.ktor:ktor-server-test-host", version.ref = "ktor" }
++ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
++ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
++konsist = { module = "com.lemonappdev:konsist", version.ref = "konsist" }
++junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
++junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
++junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
++
++[plugins]
++kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
++kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
++detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
+diff --git a/gateway/provider-codex/build.gradle.kts b/gateway/provider-codex/build.gradle.kts
+new file mode 100644
+index 0000000..334a4b2
+--- /dev/null
++++ b/gateway/provider-codex/build.gradle.kts
+@@ -0,0 +1,11 @@
++plugins {
++    id("splice.kotlin-common")
++    id("splice.module-law")
++}
++
++dependencies {
++    implementation(project(":core"))
++    implementation(project(":provider-spi"))
++    implementation(project(":dialect-openai-responses"))
++    testImplementation(libs.kotlinx.coroutines.test)
++}
+diff --git a/gateway/provider-grok/build.gradle.kts b/gateway/provider-grok/build.gradle.kts
+new file mode 100644
+index 0000000..334a4b2
+--- /dev/null
++++ b/gateway/provider-grok/build.gradle.kts
+@@ -0,0 +1,11 @@
++plugins {
++    id("splice.kotlin-common")
++    id("splice.module-law")
++}
++
++dependencies {
++    implementation(project(":core"))
++    implementation(project(":provider-spi"))
++    implementation(project(":dialect-openai-responses"))
++    testImplementation(libs.kotlinx.coroutines.test)
++}
+diff --git a/gateway/provider-openai/build.gradle.kts b/gateway/provider-openai/build.gradle.kts
+new file mode 100644
+index 0000000..bd02591
+--- /dev/null
++++ b/gateway/provider-openai/build.gradle.kts
+@@ -0,0 +1,12 @@
++plugins {
++    id("splice.kotlin-common")
++    id("splice.module-law")
++}
++
++dependencies {
++    implementation(project(":core"))
++    implementation(project(":provider-spi"))
++    implementation(project(":dialect-openai-responses"))
++    implementation(project(":dialect-openai-chat"))
++    testImplementation(libs.kotlinx.coroutines.test)
++}
+diff --git a/gateway/provider-spi/build.gradle.kts b/gateway/provider-spi/build.gradle.kts
+new file mode 100644
+index 0000000..d5beb61
+--- /dev/null
++++ b/gateway/provider-spi/build.gradle.kts
+@@ -0,0 +1,12 @@
++plugins {
++    id("splice.kotlin-common")
++    id("splice.module-law")
++}
++
++dependencies {
++    api(project(":core"))
++    api(libs.kotlinx.coroutines.core)
++    api(libs.ktor.client.core)
++    implementation(libs.ktor.client.cio)
++    testImplementation(libs.kotlinx.coroutines.test)
++}
+diff --git a/gateway/settings.gradle.kts b/gateway/settings.gradle.kts
+new file mode 100644
+index 0000000..eb3ab87
+--- /dev/null
++++ b/gateway/settings.gradle.kts
+@@ -0,0 +1,32 @@
++// NEW: Gradle root for the Kotlin gateway (campaign kotlin-gateway P1-GRADLE).
++// Module graph is LAW — see build-logic/src/main/kotlin/splice.module-law.gradle.kts.
++pluginManagement {
++    includeBuild("build-logic")
++    repositories {
++        mavenCentral()
++        gradlePluginPortal()
++    }
++}
++
++dependencyResolutionManagement {
++    repositories {
++        mavenCentral()
++    }
++}
++
++rootProject.name = "splice-gateway"
++
++include(
++    ":core",
++    ":provider-spi",
++    ":dialect-openai-responses",
++    ":dialect-openai-chat",
++    ":provider-codex",
++    ":provider-grok",
++    ":provider-openai",
++    ":gateway",
++    ":control",
++    ":app",
++    ":spikes",
++    ":arch-tests",
++)
+diff --git a/gateway/spikes/build.gradle.kts b/gateway/spikes/build.gradle.kts
+new file mode 100644
+index 0000000..ffab04a
+--- /dev/null
++++ b/gateway/spikes/build.gradle.kts
+@@ -0,0 +1,17 @@
++plugins {
++    id("splice.kotlin-common")
++    id("splice.module-law")
++}
++
++dependencies {
++    implementation(libs.kotlinx.coroutines.core)
++    implementation(libs.kotlinx.serialization.json)
++    implementation(libs.ktoml.core)
++    implementation(libs.ktor.server.core)
++    implementation(libs.ktor.server.netty)
++    implementation(libs.ktor.server.cio)
++    implementation(libs.ktor.server.sse)
++    implementation(libs.ktor.client.core)
++    implementation(libs.ktor.client.cio)
++    testImplementation(libs.kotlinx.coroutines.test)
++}

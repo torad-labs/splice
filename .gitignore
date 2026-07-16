@@ -8,3 +8,10 @@ __pycache__/
 .torad.lock
 # <<< torad-managed <<<
 .DS_Store
+
+# gradle (gateway/)
+gateway/.gradle/
+gateway/**/.gradle/
+gateway/**/build/
+gateway/.kotlin/
+gateway/build-logic/.kotlin/

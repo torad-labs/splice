@@ -462,13 +462,18 @@ id = "P3-COMP"
 phase = "P3"
 title = "Compaction: positive-marker classify, shadow classifier on every request, stats JSONL"
 files = ["gateway/gateway/src/main/kotlin/compact/", "gateway/gateway/src/test/kotlin/compact/"]
-status = "todo"
+status = "verified"
 verify = "cd gateway && ./gradlew -q :gateway:test --tests '*Compact*'"
 # Context: PORT-OF codex/compact.mjs @ 4ca99f7 — the 5 verbatim COMPACT_MARKERS (system prompt or
 # last user message), NEVER size/content heuristics (v13/v24 misfire class), shadow classifier logs
 # {has_marker, tool_count, sys_len} unconditionally, marker CANARY test pins the sentence,
 # recordCompactStat/readCompactStats JSONL at the configured compact_stats path (Marcos pin:
 # claudex-compact-stats.jsonl).
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T07:21:52Z
+# [2026-07-16] ATTEST-START: tree=9690cdbaa6e0a7134c43f30b6b0bedc8ec9dc8c3 at=2026-07-16T07:21:52Z
+# [2026-07-16] Landed splice.gateway.compact: COMPACT_MARKER + 5 verbatim COMPACT_MARKERS (canary test pins the sentence + count), systemText/lastUserTextOf (LAST user message only — quoted history never re-triggers, pinned), markerPresent (system OR last-user, lowercase contains), classifyCompact (+2 positive affordance regexes; tools-agnostic pinned; 50k-char resume turn never matches — v13/v24 class pinned), ShadowClassifier (injected log seam, 500-ring, instrument fields pinned incl. the exact [shadow-compact] line format), CompactStats (JSONL contract file: record best-effort append + read total/by_outcome/tail round-trip). 8 test groups green; gateway+arch checks green.
+# [2026-07-16] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: gateway/gateway/src/main/kotlin/splice/gateway/compact/Compact.kt, gateway/gateway/src/test/kotlin/CompactTest.kt
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P3-MIR"

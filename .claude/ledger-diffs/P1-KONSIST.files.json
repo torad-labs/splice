@@ -1,0 +1,6 @@
+{
+  "scoped_paths": [
+    "gateway/arch-tests/src/test/kotlin/ArchitectureLawsTest.kt",
+    "gateway/detekt.yml"
+  ]
+}

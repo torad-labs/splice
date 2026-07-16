@@ -12,7 +12,6 @@ import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.headers
 import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
-import io.ktor.client.statement.HttpStatement
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
@@ -76,7 +75,10 @@ public class UpstreamClient(
                         if (auth.refresh() != null) continue // does not consume a normal attempt
                     }
                     val retryable = outcome.status in RETRYABLE_STATUSES
-                    onRetry("upstream ${outcome.status} attempt ${attempt + 1}/$maxRetries: ${outcome.text.take(160)}")
+                    onRetry(
+                        "upstream ${outcome.status} attempt ${attempt + 1}/$maxRetries: " +
+                            outcome.text.take(ERR_SNIPPET),
+                    )
                     if (!retryable || attempt == maxRetries - 1) break
                     backoff(attempt)
                 }
@@ -105,6 +107,7 @@ public class UpstreamClient(
     public companion object {
         private const val BACKOFF_BASE_MS = 200L
         private const val UNAUTHORIZED = 401
+        private const val ERR_SNIPPET = 160
         private val RETRYABLE_STATUSES = setOf(502, 503, 529, 429)
 
         public fun defaultClient(firstByteTimeoutMs: Long, totalTimeoutMs: Long): HttpClient =

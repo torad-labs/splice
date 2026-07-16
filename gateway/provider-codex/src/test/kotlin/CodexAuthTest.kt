@@ -146,8 +146,14 @@ class CodexAuthTest {
         assertEquals("refresh-2", tokens["refresh_token"]?.jsonPrimitive?.content)
         assertEquals("acct-keep", tokens["account_id"]?.jsonPrimitive?.content) // preserved
         assertEquals("2026-07-16T00:00:00Z", onDisk["last_refresh"]?.jsonPrimitive?.content)
-        val perms = Files.getPosixFilePermissions(path).toString()
-        assertEquals("[OWNER_READ, OWNER_WRITE]", perms)
+        val perms = Files.getPosixFilePermissions(path)
+        assertEquals(
+            setOf(
+                java.nio.file.attribute.PosixFilePermission.OWNER_READ,
+                java.nio.file.attribute.PosixFilePermission.OWNER_WRITE,
+            ),
+            perms,
+        )
     }
 
     @Test

@@ -28,6 +28,7 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
@@ -45,6 +46,7 @@ public class ControlServer(
     private val mgmtKey: MgmtKey,
     private val dashboardHtml: () -> String,
     private val log: (String) -> Unit,
+    private val launchService: LaunchService? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -67,6 +69,9 @@ public class ControlServer(
                 post("/api/auth/{head}/{action}") { guarded(call) { authAction(call) } }
                 get("/api/compact") { guarded(call) { respond(call, compactJson()) } }
                 get("/api/logs/{head}") { guarded(call) { logsJson(call) } }
+                post("/launch/{head}") { guarded(call) { launch(call) } }
+                post("/statusline/{head}") { statusline(call) } // stdin-piped per tick; no bearer
+                get("/statusline/{head}") { statusline(call) }
             }
         }
         engine.start(wait = false)
@@ -283,6 +288,43 @@ public class ControlServer(
                 put("log", managed.logs.tail(tail))
             }.toString(),
         )
+    }
+
+    private suspend fun launch(call: ApplicationCall) {
+        val key = call.parameters["head"].orEmpty()
+        val managed = heads[key]
+        val spec = managed?.launchSpec
+        if (spec == null || launchService == null) {
+            call.respondText(errorJson("head not launchable"), ContentType.Application.Json, HttpStatusCode.NotFound)
+            return
+        }
+        val body = runCatching { json.parseToJsonElement(call.receiveText()).jsonObject }.getOrNull()
+        val safe = body?.get("safe")?.jsonPrimitive?.content == "true"
+        val extraArgs = (body?.get("args") as? kotlinx.serialization.json.JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.content } ?: emptyList()
+        val recipe = launchService.launch(spec, extraArgs, safe)
+        log("[control] launch $key -> ${recipe.argv}\n")
+        respond(
+            call,
+            buildJsonObject {
+                putJsonObject("env") { recipe.env.forEach { (k, v) -> put(k, v) } }
+                putJsonArray("unset") { recipe.unset.forEach { add(it) } }
+                putJsonArray("argv") { recipe.argv.forEach { add(it) } }
+            }.toString(),
+        )
+    }
+
+    private suspend fun statusline(call: ApplicationCall) {
+        val key = call.parameters["head"].orEmpty()
+        val managed = heads[key]
+        if (managed == null) {
+            call.respondText(managed?.head?.label ?: key, ContentType.Text.Plain)
+            return
+        }
+        val stdin = runCatching { call.receiveText() }.getOrDefault("")
+        val line = StatuslineRenderer(managed.head.label)
+            .render(stdin, managed.usage, managed.warnPct, managed.warnTokens5h)
+        call.respondText(line, ContentType.Text.Plain)
     }
 
     private fun errorJson(message: String): String = buildJsonObject { put("error", message) }.toString()

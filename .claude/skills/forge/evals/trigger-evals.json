@@ -1,0 +1,82 @@
+[
+  {
+    "query": "forge this feature: user-configurable notification preferences — spec it, code it, test it",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to go from feature idea to working code in one pass — can you forge the file upload feature for me?",
+    "should_trigger": true
+  },
+  {
+    "query": "forge: audit log feature for our admin panel — requirements, implementation, and tests",
+    "should_trigger": true
+  },
+  {
+    "query": "take this vague requirement and forge it into working code: 'users should be able to export their data'",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to go end-to-end on this: team permissions model — from design to implementation",
+    "should_trigger": true
+  },
+  {
+    "query": "forge the CSV import feature — handle validation, errors, and edge cases, not just the happy path",
+    "should_trigger": true
+  },
+  {
+    "query": "I want a complete working implementation of our referral system — forge it",
+    "should_trigger": true
+  },
+  {
+    "query": "forge this: a webhook receiver that validates signatures and retries on failure",
+    "should_trigger": true
+  },
+  {
+    "query": "take the PRD I'll share and forge it into a shippable feature — schema, endpoints, and frontend",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to go from zero to working code on the search feature — full forge, not just a scaffold",
+    "should_trigger": true
+  },
+  {
+    "query": "help me build a skill from scratch for running structured retrospectives",
+    "should_trigger": false
+  },
+  {
+    "query": "scaffold an agent that orchestrates competitor research across multiple sources",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to write unit tests for the pricing module — not build the feature, just the tests",
+    "should_trigger": false
+  },
+  {
+    "query": "review the code I wrote for the file upload feature and tell me what's wrong",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to deeply explore different ways the search feature could be designed before we commit",
+    "should_trigger": false
+  },
+  {
+    "query": "can you write a spec for the notifications feature? I'll hand it off to the team",
+    "should_trigger": false
+  },
+  {
+    "query": "help me refactor the existing payments module — don't add features, just clean it up",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to evaluate whether to build this feature at all before we invest in it",
+    "should_trigger": false
+  },
+  {
+    "query": "write an e2e test for the checkout flow",
+    "should_trigger": false
+  },
+  {
+    "query": "I need a code review on the PR before we merge",
+    "should_trigger": false
+  }
+]

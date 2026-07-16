@@ -1,0 +1,27 @@
+# TENET: Network construction confined to provider seam.
+# Rationale: HTTP clients and raw sockets should only be built in provider/engine modules.
+# Other layers depend on the provider/engine interface, not concrete HTTP implementation.
+# This enables testing with fake providers and swapping HTTP libraries.
+id: no-network-outside-seam
+language: kotlin
+severity: error
+message: "HTTP clients and sockets belong in provider/engine modules only. Depend on the interface here."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+  - "**/provider/**"
+  - "**/engine/**"
+  - "**/network/**"
+  - "**/http/**"
+  - "**/client/**"
+rule:
+  any:
+    - kind: import_header
+      regex: "^import\\s+io\\.ktor\\.client"
+    - pattern: HttpClient($$$ARGS)
+    - kind: import_header
+      regex: "^import\\s+okhttp3\\."
+    - pattern: OkHttpClient($$$ARGS)
+    - kind: import_header
+      regex: "^import\\s+java\\.net\\.Socket$"

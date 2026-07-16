@@ -1,0 +1,15 @@
+# TENET: No TODO() in production code.
+# Rationale: TODO() throws NotImplementedError at runtime.
+# Either implement the code or remove the placeholder.
+id: no-todo-throws
+language: kotlin
+severity: error
+message: "TODO() throws at runtime. Implement the code or remove the placeholder."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  any:
+    - pattern: TODO()
+    - pattern: TODO($$$MSG)

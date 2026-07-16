@@ -1,0 +1,14 @@
+# TENET: ViewModel uses StateFlow, not mutableStateOf.
+# Rationale: ViewModels expose state via StateFlow/SharedFlow for lifecycle awareness.
+# mutableStateOf is for Compose UI layer only.
+# Pattern: private val _state = MutableStateFlow(Initial); val state = _state.asStateFlow()
+id: no-mutablestateof-in-viewmodel
+language: kotlin
+severity: error
+message: "ViewModel should use StateFlow, not mutableStateOf. Use MutableStateFlow + asStateFlow()."
+files:
+  - "**/*ViewModel.kt"
+ignores:
+  - "**/test/**"
+rule:
+  pattern: mutableStateOf($$$ARGS)

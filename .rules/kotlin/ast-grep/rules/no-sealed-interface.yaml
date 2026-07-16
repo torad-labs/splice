@@ -1,0 +1,22 @@
+# TENET: Prefer sealed CLASS over sealed interface.
+# Rationale: Sealed classes allow shared state in the base, sealed interfaces don't.
+# When you need shared properties or behavior in the hierarchy root, sealed class is required.
+# Future-proofing: start with sealed class so you can add shared state later without breaking change.
+# EXCEPTIONS:
+#   - @Serializable polymorphic wire types (kotlinx.serialization idiom)
+#   - private sealed interfaces (internal state machines)
+id: no-sealed-interface
+language: kotlin
+severity: error
+message: "Use `sealed class` instead of `sealed interface`. Sealed classes allow shared state in the base type. Exceptions: @Serializable wire types, private interfaces."
+rule:
+  all:
+    - kind: class_declaration
+    - has: { regex: '^interface$', stopBy: neighbor }
+    - has:
+        kind: modifiers
+        has: { kind: class_modifier, regex: '^sealed$' }
+  not:
+    any:
+      - has: { kind: modifiers, has: { kind: annotation, regex: 'Serializable' } }
+      - has: { kind: modifiers, has: { kind: visibility_modifier, regex: '^private$' } }

@@ -1,0 +1,13 @@
+# TENET: No secondary constructors — use factory functions or builder.
+# Rationale: Secondary constructors fragment initialization logic.
+# Use primary constructor with default values, or companion object factory functions.
+id: no-secondary-constructor
+language: kotlin
+severity: error
+message: "Avoid secondary constructors. Use primary constructor with defaults or factory functions."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  kind: secondary_constructor

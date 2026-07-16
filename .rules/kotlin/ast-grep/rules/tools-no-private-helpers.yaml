@@ -1,0 +1,19 @@
+# TENET: Tool classes stay thin — no private helpers.
+# Rationale: *Tool.kt files are thin factories that delegate to injected collaborators.
+# Private helpers belong in UseCases or other collaborators, not in the Tool itself.
+id: tools-no-private-helpers
+language: kotlin
+severity: error
+message: "Move private helper functions out of *Tool.kt into injected collaborators/UseCases."
+files:
+  - "**/*Tool.kt"
+ignores:
+  - "**/test/**"
+rule:
+  kind: function_declaration
+  all:
+    - has:
+        kind: modifiers
+        has:
+          kind: visibility_modifier
+          regex: "^private$"

@@ -1,0 +1,16 @@
+# TENET: No extension functions — use top-level functions with explicit receiver parameter.
+# Rationale: Extension functions create implicit coupling and make the call site ambiguous.
+# Use `fun name(receiver: ReceiverType, ...): R` instead of `fun ReceiverType.name(...): R`.
+# Calling third-party extensions (Modifier.padding, Flow.stateIn) is fine — rule only matches DECLARATIONS.
+id: no-extension-functions
+language: kotlin
+severity: error
+message: "Use a top-level function `fun name(receiver: ReceiverType, ...)` instead of extension `fun ReceiverType.name(...)`. Extensions create implicit coupling."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+  - "**/*Test.kt"
+rule:
+  kind: function_declaration
+  regex: "^\\s*(?:(?:public|private|internal|protected|inline|suspend|operator|infix|tailrec|override)\\s+)*fun\\s+(?:<[^>]*>\\s+)?[A-Za-z_][\\w.]*(?:<[^>]+>)?\\??\\.[A-Za-z_]\\w*\\s*\\("

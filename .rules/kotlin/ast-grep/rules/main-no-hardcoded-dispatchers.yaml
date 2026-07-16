@@ -1,0 +1,18 @@
+# TENET: Inject CoroutineDispatcher seams in production code.
+# Rationale: Hardcoded Dispatchers.IO/Default/Main make code untestable.
+# Inject a CoroutineDispatcher so tests can use TestDispatcher.
+id: main-no-hardcoded-dispatchers
+language: kotlin
+severity: error
+message: "Inject a CoroutineDispatcher seam. Don't hardcode Dispatchers.IO/Default/Main."
+files:
+  - "**/main/**/*.kt"
+ignores:
+  - "**/test/**"
+  - "**/Dispatchers*.kt"
+  - "**/*DispatcherProvider*.kt"
+rule:
+  any:
+    - pattern: Dispatchers.IO
+    - pattern: Dispatchers.Default
+    - pattern: Dispatchers.Main

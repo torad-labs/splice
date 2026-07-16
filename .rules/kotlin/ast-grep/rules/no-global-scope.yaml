@@ -1,0 +1,13 @@
+# TENET: No GlobalScope in production code.
+# Rationale: GlobalScope launches work with no parent, no lifecycle, no cancellation.
+# Use the injected CoroutineScope — structured concurrency means every coroutine has an owner.
+id: no-global-scope
+language: kotlin
+severity: error
+message: "Use injected CoroutineScope, never GlobalScope. Structured concurrency needs an owner."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  pattern: GlobalScope

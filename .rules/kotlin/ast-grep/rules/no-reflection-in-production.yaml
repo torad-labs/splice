@@ -1,0 +1,18 @@
+# TENET: Avoid reflection in production code.
+# Rationale: Reflection bypasses compile-time safety, is slow, and breaks obfuscation.
+# Use interfaces, generics, or sealed types for runtime polymorphism.
+id: no-reflection-in-production
+language: kotlin
+severity: error
+message: "Avoid reflection. Use interfaces, generics, or sealed types instead."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+  - "**/di/**"
+rule:
+  any:
+    - pattern: $T::class.java
+    - pattern: $T::class.qualifiedName
+    - pattern: $X.javaClass
+    - pattern: Class.forName($$$ARGS)

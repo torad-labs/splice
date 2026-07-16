@@ -1,0 +1,28 @@
+# TENET: ViewModel injection discipline — inject UseCases only (plus dispatchers/scope).
+# Rationale: ViewModels compose UseCases via Flow. They don't directly depend on Repositories
+# or DataSources. The dependency direction is: ViewModel → UseCase → Repository → DataSource.
+# Allowed: UseCases, CoroutineDispatcher, CoroutineScope, Clock, initial UiState, ActionDispatcher.
+# Forbidden: Repository, DataSource, Dao, HttpClient, direct data layer dependencies.
+id: vm-injection-discipline
+language: kotlin
+severity: error
+message: "ViewModels should inject UseCases (plus dispatchers/scope), not Repositories/DataSources directly."
+files:
+  - "**/*ViewModel.kt"
+ignores:
+  - "**/test/**"
+rule:
+  kind: class_parameter
+  all:
+    - inside:
+        kind: primary_constructor
+        inside:
+          kind: class_declaration
+          has:
+            kind: type_identifier
+            regex: "ViewModel$"
+    - has:
+        kind: user_type
+        has:
+          kind: type_identifier
+          regex: "(Repository|RepositoryImpl|DataSource|Dao|HttpClient)$"

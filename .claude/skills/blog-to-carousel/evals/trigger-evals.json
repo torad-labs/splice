@@ -1,0 +1,82 @@
+[
+  {
+    "query": "turn this blog post into a carousel — I want it formatted for LinkedIn",
+    "should_trigger": true
+  },
+  {
+    "query": "I have a 2000-word post and I want to repurpose it as a slide carousel for Instagram",
+    "should_trigger": true
+  },
+  {
+    "query": "blog-to-carousel: take the article I'm sharing and extract the key insights as carousel slides",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to take this technical blog post and turn it into something visual for social — can you do a carousel version?",
+    "should_trigger": true
+  },
+  {
+    "query": "I wrote a long essay and I want the carousel version — hook slide, 6 insight slides, CTA slide",
+    "should_trigger": true
+  },
+  {
+    "query": "convert this article into a carousel that would work on LinkedIn — keep the insight density high",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to take my newsletter issue and break it into carousel format for reposting",
+    "should_trigger": true
+  },
+  {
+    "query": "this thought leadership piece needs to become a carousel — can you structure it with a strong hook and progressive reveals?",
+    "should_trigger": true
+  },
+  {
+    "query": "turn the key ideas from this post into a 10-slide carousel — each slide should be able to stand alone",
+    "should_trigger": true
+  },
+  {
+    "query": "I want a carousel version of this how-to article — make it snappy and visual",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to turn this blog post into a Twitter/X thread — short punchy takes",
+    "should_trigger": false
+  },
+  {
+    "query": "take this article and write a LinkedIn post about it — 3 paragraphs, conversational tone",
+    "should_trigger": false
+  },
+  {
+    "query": "generate social media posts from this blog — one for each platform",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to repurpose this content into a short-form video script",
+    "should_trigger": false
+  },
+  {
+    "query": "turn this content into a voice-over script for a 60-second explainer",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to publish this post — can you help me finalize and send it?",
+    "should_trigger": false
+  },
+  {
+    "query": "write a blog post about the lessons from our last product launch",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to write a carousel from scratch — not based on existing content",
+    "should_trigger": false
+  },
+  {
+    "query": "take this memo and turn it into a social kit — different formats for each channel",
+    "should_trigger": false
+  },
+  {
+    "query": "create a content calendar based on the key themes in this post",
+    "should_trigger": false
+  }
+]

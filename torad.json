@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "toolkit": "^1.2.0",
+  "packs": [
+    "core"
+  ],
+  "vendor": true,
+  "configs": [
+    "kotlin-rules"
+  ],
+  "skills": {
+    "add": [
+      "torad-frontend",
+      "pipeline-xray",
+      "impeccable",
+      "taste-skill",
+      "blog-to-carousel",
+      "build-skill"
+    ]
+  },
+  "agents": [
+    "torad-toolkit",
+    "eli-protocol",
+    "crystallize-agent",
+    "gmr-agent"
+  ]
+}

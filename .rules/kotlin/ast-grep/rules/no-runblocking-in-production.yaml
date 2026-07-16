@@ -1,0 +1,17 @@
+# TENET: No runBlocking in production code.
+# Rationale: runBlocking blocks the calling thread and defeats structured concurrency.
+# Use suspend functions or launch from a proper CoroutineScope.
+id: no-runblocking-in-production
+language: kotlin
+severity: error
+message: "Don't use runBlocking in production. Use suspend functions or proper CoroutineScope."
+files:
+  - "**/main/**/*.kt"
+ignores:
+  - "**/test/**"
+  - "**/Main.kt"
+  - "**/*Application.kt"
+rule:
+  any:
+    - pattern: runBlocking { $$$BODY }
+    - pattern: runBlocking($$$ARGS) { $$$BODY }

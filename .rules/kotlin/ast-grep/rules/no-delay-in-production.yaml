@@ -1,0 +1,14 @@
+# TENET: Avoid delay() in production code.
+# Rationale: delay() is usually a code smell — you're waiting for something that should emit.
+# Use Flow operators (debounce, timeout) or proper synchronization.
+id: no-delay-in-production
+language: kotlin
+severity: error
+message: "delay() is usually a code smell. Use Flow operators or proper synchronization."
+files:
+  - "**/main/**/*.kt"
+ignores:
+  - "**/test/**"
+  - "**/animation/**"
+rule:
+  pattern: delay($$$ARGS)

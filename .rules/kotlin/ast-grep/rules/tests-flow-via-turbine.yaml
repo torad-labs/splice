@@ -1,0 +1,20 @@
+# TENET: Test Flow emissions via Turbine, not toList().
+# Rationale: Flow.toList() can hang on hot flows and hides ordering/completion assertions.
+# Use Turbine: flow.test { awaitItem(); awaitComplete() }
+id: tests-flow-via-turbine
+language: kotlin
+severity: error
+message: "Use Turbine for Flow testing, not toList(). toList() can hang and hides ordering assertions."
+files:
+  - "**/test/**/*.kt"
+  - "**/*Test.kt"
+rule:
+  kind: source_file
+  all:
+    - has:
+        kind: import_header
+        regex: "kotlinx.coroutines.flow.(toList|\\*)"
+        stopBy: end
+    - has:
+        pattern: $R.toList()
+        stopBy: end

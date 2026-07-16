@@ -28,6 +28,8 @@ import splice.control.ControlServer
 import splice.control.HeadCompactSource
 import splice.control.HeadLogSource
 import splice.control.HeadUsageSource
+import splice.control.LaunchService
+import splice.control.LaunchSpec
 import splice.control.ManagedHead
 import splice.control.RateLimitView
 import splice.core.auth.AuthDescription
@@ -86,13 +88,25 @@ class ControlServerTest {
             warnPct = 80,
             warnTokens5h = 0,
         )
+        val configDir = tmp.resolve(".claude-codex-test")
+        val launchSpec = LaunchSpec(
+            configDir = configDir,
+            pinnedModel = "gpt-5.6-sol",
+            availableModelIds = listOf("gpt-5.6-sol"),
+            modelOptionsCache = kotlinx.serialization.json.buildJsonObject { },
+            policy = splice.core.launch.ClaudePolicy(share = emptySet(), isolate = emptySet()),
+            port = 3099,
+        )
         control = ControlServer(
             port = port,
-            heads = mapOf("codex" to managed),
+            heads = mapOf("codex" to managed.copy(launchSpec = launchSpec)),
             config = ConfigService(paths),
             mgmtKey = mgmt,
             dashboardHtml = { "<!doctype html><title>splice</title>" },
             log = {},
+            launchService = LaunchService(
+                splice.core.launch.ClaudeConfigMaterializer(tmp, "\"/bin/curl\" -s :3096/statusline"),
+            ),
         )
         control.start()
         Thread.sleep(600)
@@ -197,5 +211,30 @@ class ControlServerTest {
     fun `unknown head 404s`() = runTest {
         val r = client.get("http://127.0.0.1:$port/api/logs/nope") { header("Authorization", "Bearer $key") }
         assertEquals(HttpStatusCode.NotFound, r.status)
+    }
+
+    @Test
+    fun `launch returns an exec recipe with head env and argv`() = runTest {
+        val body = client.post("http://127.0.0.1:$port/launch/codex") {
+            header("Authorization", "Bearer $key")
+            header("Content-Type", "application/json")
+            setBody("""{"safe":"false","args":["-c"]}""")
+        }.bodyAsText()
+        val obj = json.parseToJsonElement(body).jsonObject
+        assertEquals("http://127.0.0.1:3099", obj["env"]!!.jsonObject["ANTHROPIC_BASE_URL"]?.jsonPrimitive?.content)
+        val argv = obj["argv"]!!.jsonArray.map { it.jsonPrimitive.content }
+        assertTrue(argv.contains("--dangerously-skip-permissions"))
+        assertTrue(argv.contains("--model") && argv.contains("gpt-5.6-sol") && argv.contains("-c"))
+    }
+
+    @Test
+    fun `statusline renders the model from stdin json, no bearer needed`() = runTest {
+        val line = client.post("http://127.0.0.1:$port/statusline/codex") {
+            header("Content-Type", "application/json")
+            setBody(
+                """{"model":{"display_name":"Codex 5.6 Sol"},"current_usage":{"input_tokens":100,"context_window":272000}}""",
+            )
+        }.bodyAsText()
+        assertTrue(line.contains("Codex 5.6 Sol"))
     }
 }

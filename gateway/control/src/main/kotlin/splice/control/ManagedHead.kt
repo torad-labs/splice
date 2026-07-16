@@ -36,4 +36,6 @@ public data class ManagedHead(
     val logs: HeadLogSource,
     val warnPct: Int,
     val warnTokens5h: Long,
+    /** Present when this head can be launched as a Claude Code wrapper (P4-LAUNCH). */
+    val launchSpec: LaunchSpec? = null,
 )

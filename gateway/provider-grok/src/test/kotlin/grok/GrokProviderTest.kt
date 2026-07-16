@@ -1,7 +1,7 @@
-// NEW: grok provider — the multi-provider abstraction proof. A HeadServer wired with GrokProvider
-// against the mock upstream serves a real turn (same dialect + machine as codex, only quirks +
-// auth differ). Plus grok quirks pinned: session-id cache key, effort clamp, no summary,
-// tool_choice; and api-key auth from env + file.
+// NEW: grok provider — the multi-provider abstraction proof, now on OAuth (SuperGrok/X-Premium+).
+// A HeadServer wired with GrokProvider + GrokAuthProvider (reading ~/.grok/auth.json) serves a real
+// turn (same dialect + machine as codex, only quirks + oauth-vs-chatgpt-oauth differ). Plus grok
+// quirks pinned (session-id cache key, effort clamp, no summary) and the OAuth Bearer + refresh.
 package grok
 
 import io.ktor.client.HttpClient
@@ -34,9 +34,11 @@ import splice.gateway.head.HeadServer
 import splice.gateway.usage.UsageStore
 import splice.provider.grok.GrokAuthProvider
 import splice.provider.grok.GrokProvider
+import splice.provider.grok.GrokRefreshedTokens
 import splice.spi.InflightGate
 import splice.spi.UpstreamClient
 import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -46,6 +48,7 @@ class GrokProviderTest {
     private val client = HttpClient(CIO)
     private val port = 39270
     private lateinit var head: HeadServer
+    private lateinit var tmp: Path
 
     private val catalog = ModelCatalog(
         discoveryPrefix = "claude-grok--",
@@ -66,14 +69,26 @@ class GrokProviderTest {
         configEffort = "high",
     )
 
+    /** ~/.grok/auth.json with an OAuth access token. */
+    private fun oauthAuth(
+        dir: Path,
+        access: String = "xai-access-token-abc",
+        refresh: String = "xai-refresh",
+    ): GrokAuthProvider {
+        val authFile = dir.resolve(".grok").resolve("auth.json")
+        Files.createDirectories(authFile.parent)
+        Files.writeString(authFile, """{"tokens":{"access_token":"$access","refresh_token":"$refresh"}}""")
+        return GrokAuthProvider(
+            authPath = authFile,
+            refreshCall = { GrokRefreshedTokens("refreshed-access", "refreshed-refresh") },
+        )
+    }
+
     @BeforeAll
     fun setUp() = runBlocking {
-        val tmp = Files.createTempDirectory("grok-it")
-        val keyFile = tmp.resolve("auth.json")
-        Files.writeString(keyFile, """{"api_key":"xai-secret-key-123456"}""")
-        val auth = GrokAuthProvider(keyFile = keyFile, envReader = { null })
+        tmp = Files.createTempDirectory("grok-it")
         head = HeadServer(
-            provider = provider(auth),
+            provider = provider(oauthAuth(tmp)),
             listenPort = port,
             deps = HeadDeps(
                 upstream = UpstreamClient(5_000, 30_000, 2),
@@ -96,7 +111,7 @@ class GrokProviderTest {
     }
 
     @Test
-    fun `grok serves a real turn through the shared dialect and machine`() = runBlocking {
+    fun `grok serves a real turn through the shared dialect and machine on oauth`() = runBlocking {
         val sse = client.post("http://127.0.0.1:$port/v1/messages") {
             header("Content-Type", "application/json")
             header("x-claude-code-session-id", "sess-xyz")
@@ -107,19 +122,18 @@ class GrokProviderTest {
         }.bodyAsText()
         assertTrue(sse.contains("ok after auth"))
         assertTrue(sse.contains("event: message_stop"))
-        // api key rode as the bearer
-        assertTrue(mock.upstreamAuths.any { it.second == "Bearer xai-secret-key-123456" })
-        // session-id cache key + tool_choice absence (no tools) verified via the sent body
-        val body = mock.upstreamBodies.last().second
-        assertTrue(body.contains("claude-grok:sess-xyz"))
+        // the OAuth access token rode as the bearer (no ChatGPT-Account-ID header — grok has none)
+        assertTrue(mock.upstreamAuths.any { it.second == "Bearer xai-access-token-abc" })
+        // session-id cache key in the body
+        assertTrue(mock.upstreamBodies.last().second.contains("claude-grok:sess-xyz"))
     }
 
     @Test
-    fun `grok quirks - effort clamps to high, no summary field, session cache key`() {
+    fun `grok quirks - effort clamps to high, no summary field, session cache key`() = runBlocking {
         val parsed = parseAnthropicBody(
             """{"model":"grok-4.5","effort":"xhigh","messages":[{"role":"user","content":"first"}]}""",
         )
-        val grokProvider = provider(GrokAuthProvider(keyFile = null, envReader = { "xai-env-key" }))
+        val grokProvider = provider(oauthAuth(Files.createTempDirectory("q")))
         val built = grokProvider.buildTurn(parsed, compact = false, sessionId = "s1")
         val reasoning = built.requestBody["reasoning"]!!.jsonObject
         assertEquals("high", reasoning["effort"]?.jsonPrimitive?.content) // xhigh clamped to high
@@ -128,22 +142,25 @@ class GrokProviderTest {
     }
 
     @Test
-    fun `api-key auth - env wins over file, masked describe`() = runBlocking {
-        val envAuth = GrokAuthProvider(
-            keyFile = null,
-            envReader = { if (it == "XAI_API_KEY") "xai-from-env-key" else null },
-        )
-        assertEquals("xai-from-env-key", (envAuth.credentials() as Credentials.ApiKey).key)
-        val desc = envAuth.describe()
+    fun `oauth auth - reads access token, refresh rotates it, masked describe`() = runBlocking {
+        val dir = Files.createTempDirectory("oauth")
+        val auth = oauthAuth(dir, access = "first-access", refresh = "first-refresh")
+        assertEquals("first-access", (auth.credentials() as Credentials.Bearer).token)
+        assertNull((auth.credentials() as Credentials.Bearer).accountId) // grok carries no account id
+        // refresh writes the rotated token back to auth.json and returns it
+        assertEquals("refreshed-access", (auth.refresh() as Credentials.Bearer).token)
+        val onDisk = Files.readString(dir.resolve(".grok").resolve("auth.json"))
+        assertTrue(onDisk.contains("refreshed-access") && onDisk.contains("refreshed-refresh"))
+        val desc = auth.describe()
         assertTrue(desc.present)
-        assertEquals("api-key", desc.kind)
-        assertTrue(desc.fields["api_key_masked"]!!.contains("…"))
-        assertNull((GrokAuthProvider(keyFile = null, envReader = { null })).credentials())
+        assertEquals("grok-oauth", desc.kind)
+        // no token material in the introspection
+        assertTrue(desc.fields.values.none { it.contains("access") })
+        assertNull((GrokAuthProvider(authPath = dir.resolve("missing.json"), refreshCall = { null })).credentials())
     }
 
     @Test
     fun `health carries the grok port`(): Unit = runBlocking {
-        val body = client.get("http://127.0.0.1:$port/health").bodyAsText()
-        assertTrue(body.contains("\"port\":$port"))
+        assertTrue(client.get("http://127.0.0.1:$port/health").bodyAsText().contains("\"port\":$port"))
     }
 }

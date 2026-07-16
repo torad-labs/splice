@@ -216,4 +216,39 @@ class ResponsesRequestBuilderTest {
         assertEquals("false", req["store"]?.jsonPrimitive?.content)
         assertEquals("true", req["stream"]?.jsonPrimitive?.content)
     }
+
+    @Test
+    fun `grok compaction pins reasoning effort to low regardless of session budget`() {
+        val body = """{"model":"grok-4.5","thinking":{"type":"enabled","budget_tokens":50000},
+            "messages":[{"role":"user","content":"summarize"}]}"""
+        val req = build(body, quirks = GROK, options = opts(compact = true, model = "grok-4.5"))
+        assertEquals("low", req["reasoning"]!!.jsonObject["effort"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `a malformed reasoning field (bare string) does not crash the builder`() {
+        // Node's optional chaining degrades to defaults; the Kotlin port must not throw on
+        // `?.jsonObject` (safe cast instead). This would otherwise be an uncaught 500 in HeadServer.
+        val body = """{"model":"gpt-5.6-sol","reasoning":"high","metadata":"x","output_config":"y",
+            "messages":[{"role":"user","content":"hi"}]}"""
+        val req = build(body) // must not throw
+        assertTrue(req.containsKey("reasoning")) // falls back to config/default effort
+    }
+
+    @Test
+    fun `compact instructions have no blank line between system prompt and COMPACT MODE`() {
+        val body = """{"model":"gpt-5.6-sol","system":"base system",
+            "messages":[{"role":"user","content":"go"}]}"""
+        val req = build(body, options = opts(compact = true))
+        val instructions = req["instructions"]!!.jsonPrimitive.content
+        assertTrue(instructions.startsWith("base system\nCOMPACT MODE")) // \n not \n\n (Node .filter(Boolean))
+    }
+
+    @Test
+    fun `image with empty media_type falls back to image-png like Node`() {
+        val body = """{"model":"gpt-5.6-sol","messages":[{"role":"user","content":[
+            {"type":"image","source":{"type":"base64","media_type":"","data":"aGk="}}]}]}"""
+        val req = build(body)
+        assertTrue(req.toString().contains("data:image/png;base64,aGk="))
+    }
 }

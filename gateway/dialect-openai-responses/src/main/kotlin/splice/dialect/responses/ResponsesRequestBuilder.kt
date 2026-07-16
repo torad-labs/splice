@@ -31,7 +31,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.turn.TurnMeta
 import splice.core.wire.AnthropicMessage
@@ -98,6 +97,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         val instructions = compactAwareInstructions(body.system, opts.compact)
         val effort = resolveEffort(body, raw, opts)
         val summary = resolveSummary(raw, opts, effort)
+        val reasoning = reasoningBlock(effort, summary, opts)
 
         val req = buildJsonObject {
             put("model", opts.upstreamModel)
@@ -131,8 +131,11 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
                     put("parallel_tool_calls", body.toolChoice?.disableParallelToolUse != true)
                 }
             }
-            reasoningBlock(effort, summary, opts)?.let { put("reasoning", it) }
+            reasoning?.let { put("reasoning", it) }
         }
+        // meta.summary reflects what was ACTUALLY sent (spark drops it → "none"), like Node's
+        // `req.reasoning?.summary ?? 'none'` — not the computed-but-maybe-dropped value.
+        val sentSummary = (reasoning?.get("summary") as? JsonPrimitive)?.content ?: "none"
 
         val meta = TurnMeta(
             compact = opts.compact,
@@ -142,7 +145,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
             upstreamModel = opts.upstreamModel,
             clientMaxTokens = body.maxTokens?.takeIf { it > 0 },
             effort = effort ?: "disabled",
-            summary = summary,
+            summary = sentSummary,
             budgetTokens = body.thinking?.budgetTokens,
         )
         return BuiltRequest(req, meta)
@@ -249,7 +252,9 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         source == null -> null
         source.type == "base64" && !source.data.isNullOrEmpty() -> buildJsonObject {
             put("type", "input_image")
-            put("image_url", "data:${source.mediaType ?: "image/png"};base64,${source.data}")
+            // Node `src.media_type || 'image/png'` falls back on empty string too, not just null.
+            val mime = source.mediaType?.takeIf { it.isNotEmpty() } ?: "image/png"
+            put("image_url", "data:$mime;base64,${source.data}")
         }
         source.type == "url" && !source.url.isNullOrEmpty() -> buildJsonObject {
             put("type", "input_image")
@@ -276,7 +281,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
             "Do not put the summary only in reasoning — the final message text MUST contain the full summary.",
             "Structure with headings: Goal, Decisions, Files touched, Current state, Errors, Next steps, Constraints.",
             "Be concrete (paths, commands, numbers). Omit boilerplate.",
-        ).filter { it.isNotEmpty() || it == "" }.joinToString("\n").trimStart('\n')
+        ).filter { it.isNotEmpty() }.joinToString("\n") // Node .filter(Boolean): drops the "" separator
     }
 
     private fun cacheKey(body: AnthropicRequest, opts: BuildOptions): String? = when (quirks.cacheKeyStrategy) {
@@ -286,6 +291,10 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
     }
 
     private fun resolveEffort(body: AnthropicRequest, raw: JsonObject, opts: BuildOptions): String? {
+        // PORT: grok pins compaction effort to `low` (Node grok/translate-request.mjs:141
+        // `req.reasoning = { effort: 'low' }`) — bypasses budget/config so a compaction started
+        // at high effort can't run the summarizer at full cost. codex leaves the pin null → inherits.
+        if (opts.compact) quirks.compactEffortPin?.let { return it }
         if (body.thinking?.disabled == true && quirks.effortLadder == EffortLadder.CODEX) return null
         var effort = looseEffort(raw)
         val budgetEffort = body.thinking
@@ -307,12 +316,14 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         return effort
     }
 
+    // NB: `as? JsonObject` NOT `?.jsonObject` — the latter THROWS on a non-object (e.g. a client
+    // sending `"reasoning":"high"` as a bare string); Node's optional chaining degrades to default.
     private fun looseEffort(raw: JsonObject): String? = sequenceOf(
         raw["effort"],
         raw["reasoning_effort"],
-        raw["output_config"]?.jsonObject?.get("effort"),
-        raw["metadata"]?.jsonObject?.get("effort"),
-        raw["reasoning"]?.jsonObject?.get("effort"),
+        (raw["output_config"] as? JsonObject)?.get("effort"),
+        (raw["metadata"] as? JsonObject)?.get("effort"),
+        (raw["reasoning"] as? JsonObject)?.get("effort"),
     ).mapNotNull { (it as? JsonPrimitive)?.content }
         .mapNotNull { normalizeEffort(it, quirks.effortLadder) }
         .firstOrNull()
@@ -320,9 +331,9 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
     private fun resolveSummary(raw: JsonObject, opts: BuildOptions, effort: String?): String? {
         if (!quirks.supportsSummary || effort == null) return null
         var summary = sequenceOf(
-            raw["reasoning"]?.jsonObject?.get("summary"),
+            (raw["reasoning"] as? JsonObject)?.get("summary"),
             raw["reasoning_summary"],
-            raw["output_config"]?.jsonObject?.get("reasoning_summary"),
+            (raw["output_config"] as? JsonObject)?.get("reasoning_summary"),
         ).mapNotNull { (it as? JsonPrimitive)?.content }
             .mapNotNull { normalizeSummary(it) }
             .firstOrNull()

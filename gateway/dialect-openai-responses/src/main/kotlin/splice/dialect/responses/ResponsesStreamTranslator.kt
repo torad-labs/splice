@@ -86,19 +86,25 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
         upstreamFailure?.let { failure ->
             return TurnOutcome.Failure(failure.type, "ChatGPT backend: ${failure.message}")
         }
-        ctx.watchdogFired()?.let { fired ->
-            val why = when (fired) {
-                is WatchdogFired.Idle ->
-                    "no completion within the ${ctx.streamIdleMsForMessage / MS_PER_S}s idle cap"
-                is WatchdogFired.TotalCap ->
-                    "no completion within the ${ctx.upstreamTimeoutMsForMessage / MS_PER_S}s total cap"
-            }
-            return TurnOutcome.Failure(
-                splice.core.turn.ErrorType.OVERLOADED,
-                "claudex: upstream stream stalled ($why) — aborted; retry",
-            )
-        }
+        // A COMPLETED response wins over a late watchdog fire. The watchdog polls the whole
+        // enclosing coroutine, which stays suspended on the socket-EOF read AFTER the terminal
+        // response.completed frame was already parsed; a fire in that window must NOT discard a
+        // fully-received turn (that would retry a successful compaction — the exact quota waste the
+        // watchdog exists to prevent). So the stall/truncation verdicts only apply when there is no
+        // completed response yet.
         if (finalResponse == null) {
+            ctx.watchdogFired()?.let { fired ->
+                val why = when (fired) {
+                    is WatchdogFired.Idle ->
+                        "no completion within the ${ctx.streamIdleMsForMessage / MS_PER_S}s idle cap"
+                    is WatchdogFired.TotalCap ->
+                        "no completion within the ${ctx.upstreamTimeoutMsForMessage / MS_PER_S}s total cap"
+                }
+                return TurnOutcome.Failure(
+                    splice.core.turn.ErrorType.OVERLOADED,
+                    "claudex: upstream stream stalled ($why) — aborted; retry",
+                )
+            }
             if (ctx.clientGone()) return TurnOutcome.ClientAbandoned
             return TurnOutcome.Failure(
                 splice.core.turn.ErrorType.OVERLOADED,

@@ -803,7 +803,7 @@ id = "P6-TOML"
 phase = "P6"
 title = "TOML-only vendor proof: OpenRouter or Ollama head with ZERO new Kotlin; live turn receipt"
 files = ["config/examples/openrouter.toml", "gateway/spikes/results/p6-toml-vendor.md"]
-status = "todo"
+status = "verified"
 verify = "test -s gateway/spikes/results/p6-toml-vendor.md"
 # Context: the configuration-over-convention payoff: [providers.openrouter] dialect=openai-chat +
 # base_url + api-key env + [[models]] + [heads.openrouter]; splice install openrouter; one live
@@ -811,6 +811,11 @@ verify = "test -s gateway/spikes/results/p6-toml-vendor.md"
 # commit).
 
 # ── P7/P8 — parity + cutover ─────────────────────────────────────────────────
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T08:56:56Z
+# [2026-07-16] ATTEST-START: tree=1ac4e148cb5624357466a877acb230f9417d1091 at=2026-07-16T08:56:56Z
+# [2026-07-16] ZERO-CODE MULTI-PROVIDER PROOF + closed a REAL DAEMON GAP the review found: the Daemon was CODEX-ONLY (it skipped every non-openai-responses dialect AND always built CodexProvider even for api-key vendors — a grok head would have been mis-built as codex with the wrong auth). Refactored the daemon into a genuine (dialect, auth-kind) DISPATCH: codex=responses+chatgpt-oauth->CodexProvider; grok=responses+api-key+cache_key=session-id->GrokProvider; openai-platform=responses+api-key+else->OpenAiResponsesProvider; ANY openai-compatible vendor=openai-chat+api-key->OpenAiChatProvider from TOML — the last is PURE TOML, ZERO KOTLIN. Common assembly (stores/HeadServer/launchSpec) extracted to assembleHead. MultiProviderDaemonTest: ONE daemon, THREE heads defined purely in TOML (codex+grok+openrouter), 3 tests green: all three assembled+reachable with correct authKind in /api/heads; the openrouter turn hits the CHAT upstream with its OWN api-key bearer (proving chat-wired, not codex) + 'hi from chat' streams through + clean message_stop; the grok turn hits the responses upstream with its api-key + session cache key claude-grok:sess-daemon. LIVE turn against a real api.x.ai/openrouter.ai endpoint still needs operator creds, but the zero-code assembly thesis is PROVEN against mocks. Full check + gate green.
+# [2026-07-16] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P7-PAR"

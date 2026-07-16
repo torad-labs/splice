@@ -1,0 +1,103 @@
+{
+  "skill_name": "product-brief",
+  "evals": [
+    {
+      "id": 1,
+      "name": "completeness-all-sections",
+      "prompt": "Create a product brief for: A mobile app that uses AI to match dog owners with compatible dog walkers based on dog temperament, owner preferences, and walker experience.",
+      "expected_output": "Complete brief with all sections, all three output formats",
+      "assertions": [
+        "HTML output exists in /mnt/user-data/outputs/",
+        "DOCX output exists in /mnt/user-data/outputs/",
+        "Markdown output exists in /mnt/user-data/outputs/",
+        "output contains Decision Dashboard with color-coded metrics",
+        "output contains Problem section with quantified market pain",
+        "output contains Solution section in present tense with user scenario",
+        "output contains 'What This Is NOT' scope exclusions",
+        "output contains Why Now section with specific timing catalyst",
+        "output contains How It Works section",
+        "output contains Market section with TAM and competitive table",
+        "output contains Business Model section with pricing",
+        "output contains Risks section with confidence tags per risk",
+        "output contains scenario branching with at least 2 What If paths",
+        "output contains PR/FAQ section with press release + external + internal FAQs",
+        "output contains Expert Panel with 4 expert responses in Yes/And format",
+        "output contains convergent additions in expert synthesis",
+        "output contains living document markers with freshness dates",
+        "no marketing superlatives (revolutionary, game-changing, disruptive)",
+        "no framework-specific jargon (no crossbar, void, vertex, navigation, toroid)",
+        "The Ask section is present and shorter than all other sections"
+      ],
+      "files": []
+    },
+    {
+      "id": 2,
+      "name": "prior-analysis-integration",
+      "prompt": "Create a product brief for a privacy-first legal research tool for everyday Americans. Use analysis_id: 391. The prior analysis found that the key strategic insight is the difference between deletion architecture and absorption architecture, identified adversarial exploitation as a blind spot, and surfaced comprehension-in-safety as the product's experiential shape.",
+      "expected_output": "Brief that integrates prior analysis findings in product language",
+      "assertions": [
+        "output contains Key Insights section",
+        "output references absorption vs deletion as strategic advantage — not as framework term",
+        "output references adversarial exploitation as market risk — not as framework term",
+        "output uses product briefing language throughout",
+        "no instances of: crossbar, void, vertex, surviving vertices, toroid, navigation anchor",
+        "Risks section addresses unauthorized practice of law concerns",
+        "Why Now section references a specific timing catalyst",
+        "expert panel experts use domain-specific perspective for legal-tech"
+      ],
+      "files": []
+    },
+    {
+      "id": 3,
+      "name": "citation-integrity",
+      "prompt": "Create a product brief for: A SaaS platform that helps small restaurants optimize their food waste using computer vision on existing security cameras.",
+      "expected_output": "Brief where every claim is sourced",
+      "assertions": [
+        "every market size claim has source attribution",
+        "every competitor mention has source attribution",
+        "every regulatory reference has source attribution",
+        "no fabricated statistics",
+        "unknowns explicitly tagged UNKNOWN",
+        "HTML has hover tooltips on sourced claims",
+        "DOCX has footnotes for sourced claims",
+        "Markdown has inline [Source:] citations",
+        "confidence tags appear on individual claims not just sections"
+      ],
+      "files": []
+    },
+    {
+      "id": 4,
+      "name": "expert-panel-quality",
+      "prompt": "Create a product brief for: An AI-powered tool that automatically generates legally binding contracts from natural language descriptions, targeting freelancers. Domain: legal-tech.",
+      "expected_output": "Expert panel with domain-specific expertise",
+      "assertions": [
+        "Director of Product thinks as legal-tech product leader — not generic",
+        "CEO thinks as legal-tech CEO — not generic startup CEO",
+        "Sr Principal Engineer raises legal validity or compliance concern",
+        "GTM Specialist identifies specific acquisition channel for freelancers",
+        "all experts use Yes/And format — not pure criticism",
+        "at least one expert verdict is ITERATE or PASS",
+        "synthesis identifies convergent additions from 2+ experts",
+        "expert responses are included in full in all three output formats"
+      ],
+      "files": []
+    },
+    {
+      "id": 5,
+      "name": "confidence-and-scenarios",
+      "prompt": "Create a product brief for: A browser extension that detects dark patterns on e-commerce sites and alerts users before checkout.",
+      "expected_output": "Brief with confidence system and scenario branching",
+      "assertions": [
+        "confidence tags appear on individual claims not just sections",
+        "at least 3 different confidence levels used across the brief",
+        "confidence tags are color-coded in HTML output",
+        "Risks section contains at least 2 'What If' scenarios",
+        "each What If scenario has: trigger condition, impact, and response",
+        "living document markers present with freshness dates",
+        "Decision Dashboard at top has color-coded metrics",
+        "at least one claim tagged UNKNOWN or SPECULATIVE (honest about gaps)"
+      ],
+      "files": []
+    }
+  ]
+}

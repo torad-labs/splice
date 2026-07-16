@@ -1,0 +1,108 @@
+{
+  "schema": {
+    "title": {
+      "type": "string",
+      "required": true,
+      "description": "Product or concept name. Used as hero title and filename slug.",
+      "examples": ["SafeLegal AI", "WalkMatch", "DarkPatternGuard"]
+    },
+    "body": {
+      "type": "string",
+      "required": true,
+      "description": "Concept description, any length. The skill detects input type and adapts.",
+      "detection_logic": {
+        "prior_analysis": {
+          "markers": ["key strategic insight", "central finding", "identified blind spots", "supporting concepts", "thematic groups", "SURVIVING VERTICES", "CROSSBAR"],
+          "behavior": "Extract insights, translate to product language, map to sections"
+        },
+        "existing_brief": {
+          "markers": ["§ THE PROBLEM", "§ THE SOLUTION", "DECISION DASHBOARD"],
+          "behavior": "Parse existing structure, identify what to update"
+        },
+        "url_collection": {
+          "markers": ["http://", "https://"],
+          "behavior": "Fetch and analyze source material"
+        },
+        "raw_concept": {
+          "markers": "none of the above",
+          "behavior": "Full research pipeline from scratch"
+        }
+      },
+      "examples": [
+        "A privacy-first legal research tool for everyday Americans. Post-Heppner, consumer AI chats are discoverable in court. 80 million Americans face civil legal issues yearly but can't afford lawyers. We build a legal research environment with architectural zero data retention — self-hosted inference, volatile memory only, no logging layer.",
+        "[Full GMR Navigation Block 7 output pasted here]",
+        "Competitor: DoNotPay ($9.99/mo). Competitor: AI Lawyer ($5.99/week). Gap: none offer architectural privacy guarantees."
+      ]
+    },
+    "domain": {
+      "type": "string",
+      "required": false,
+      "description": "Industry/market. Propagates to expert panel system prompts.",
+      "examples": ["legal-tech", "fintech", "devtools", "edtech", "healthtech", "proptech"],
+      "propagation": "Block 4 expert prompts receive domain context"
+    },
+    "audience": {
+      "type": "string",
+      "required": false,
+      "default": "founder",
+      "description": "Primary reader. Controls vocabulary depth and metrics emphasis.",
+      "options": ["investors", "team", "partners", "founder", "board"],
+      "calibration": {
+        "investors": "Focus on market size, moat, returns. Lighter on technical depth.",
+        "team": "Focus on feasibility, architecture, timeline. Full technical depth.",
+        "partners": "Focus on integration, compatibility, mutual value.",
+        "founder": "Balanced — all dimensions equally weighted.",
+        "board": "Focus on risk, strategy, competitive position. Executive summary style."
+      }
+    },
+    "stage": {
+      "type": "string",
+      "required": false,
+      "default": "concept",
+      "options": ["concept", "mvp", "growth"],
+      "calibration": {
+        "concept": "Market validation focus. Lighter metrics. Pricing hypotheses. Technical feasibility questions.",
+        "mvp": "Early traction focus. Customer acquisition data. Technical architecture decisions. First revenue signals.",
+        "growth": "Unit economics focus. LTV/CAC. Scaling challenges. Competitive dynamics. Margin analysis."
+      }
+    },
+    "analysis_id": {
+      "type": "number",
+      "required": false,
+      "description": "ID for prior deep analysis. Skill reads analysis data and maps findings into brief structure.",
+      "mapping": {
+        "central_finding": "Maps to WHY NOW or HOW IT WORKS as strategic insight",
+        "blind_spots": "Maps to RISKS & SCENARIOS as identified risks",
+        "thematic_groups": "Shapes section emphasis and content weighting",
+        "supporting_concepts": "Become analogies and positioning devices in THE SOLUTION"
+      }
+    },
+    "constraints": {
+      "type": "string",
+      "required": false,
+      "description": "Hard constraints that shape the brief.",
+      "examples": [
+        "Budget: $50K for MVP. Timeline: 8 weeks. Team: 2 engineers.",
+        "Regulatory: must operate within TRAIGA sandbox. No external API dependencies.",
+        "Geographic: Texas only at launch. Must not cross UPL boundary."
+      ]
+    },
+    "prior_art": {
+      "type": "string",
+      "required": false,
+      "description": "Known competitors. Seeds Block 1 competitive research.",
+      "examples": [
+        "DoNotPay, AI Lawyer, Courtroom5, Rocket Lawyer",
+        "Spellbook (lawyer-focused), Harvey AI (enterprise), Casetext/CoCounsel"
+      ]
+    },
+    "version": {
+      "type": "number",
+      "required": false,
+      "default": 1,
+      "description": "Brief version number. Version > 1 loads previous version and tracks delta.",
+      "storage_key": "brief:{title-slug}",
+      "delta_behavior": "Block 1 focuses on what changed. Block 5 adds 'Changes from v{N-1}' section."
+    }
+  }
+}

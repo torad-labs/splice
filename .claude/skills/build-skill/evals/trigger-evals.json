@@ -1,0 +1,82 @@
+[
+  {
+    "query": "I want to create a new skill for running retrospectives — help me build it from scratch",
+    "should_trigger": true
+  },
+  {
+    "query": "build-skill: I need a skill for generating competitor battle cards",
+    "should_trigger": true
+  },
+  {
+    "query": "help me scaffold a new skill — it should run a weekly digest of Slack highlights",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to create a skill that helps engineers write better commit messages — what do I need?",
+    "should_trigger": true
+  },
+  {
+    "query": "I have an idea for a skill that validates sprint plans against capacity — can you build it with me?",
+    "should_trigger": true
+  },
+  {
+    "query": "build me a skill for doing structured customer interview analysis",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to package up our incident review process as a skill — where do I start?",
+    "should_trigger": true
+  },
+  {
+    "query": "create a new skill that checks if a product spec meets our definition of ready",
+    "should_trigger": true
+  },
+  {
+    "query": "help me write a skill for a single-purpose task: converting meeting notes into action items",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to build a skill from scratch — it's a focused tool for one specific thing: evaluating naming choices",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to build an agent that can autonomously run competitor research and surface findings weekly",
+    "should_trigger": false
+  },
+  {
+    "query": "audit this skill I wrote and tell me if the structure is correct",
+    "should_trigger": false
+  },
+  {
+    "query": "help me build an agent with multiple specialized sub-agents — one for research, one for writing, one for fact-checking",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to create a multi-step pipeline with handoffs between agents — help me scaffold it",
+    "should_trigger": false
+  },
+  {
+    "query": "forge me a complete feature — I want the spec, the code, and the tests generated end to end",
+    "should_trigger": false
+  },
+  {
+    "query": "review this SKILL.md and tell me what's wrong with it",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to deeply understand the design of good skills before I write one — explain the principles",
+    "should_trigger": false
+  },
+  {
+    "query": "build me an agent system where agents spawn other agents dynamically based on need",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to explore what skills could exist for the content team — brainstorm, not build yet",
+    "should_trigger": false
+  },
+  {
+    "query": "help me write a prompt template for our customer support team to use",
+    "should_trigger": false
+  }
+]

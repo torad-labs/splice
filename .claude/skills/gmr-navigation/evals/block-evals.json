@@ -1,0 +1,173 @@
+{
+  "skill_name": "gmr-navigation",
+  "version": "2.2",
+  "description": "Per-block structural assertions. Each eval targets a single block's output format and I/O contract compliance. These validate that block output is machine-parseable and that handoff fields are correctly structured for the next block.",
+  "block_evals": [
+    {
+      "block": 1,
+      "name": "anchor-structure",
+      "description": "Block 1 output must contain ANCHOR line (3-8 words, process framing) and FORWARD PLAN with prime band estimates",
+      "assertions": [
+        {"type": "regex", "pattern": "^ANCHOR: .{5,60}$", "multiline": true, "description": "ANCHOR line present, 3-8 words"},
+        {"type": "contains", "value": "FORWARD PLAN", "description": "Forward plan section present"},
+        {"type": "regex", "pattern": "Destination [123]:", "multiline": true, "description": "At least one numbered destination"},
+        {"type": "regex", "pattern": "(373|383|727|757|787|797|919|929|10301|10501|10601|11311|11411|12421|12721|12821|13331|13831|13931|14341|14741)", "multiline": true, "description": "Forward plan references bridge-territory primes"},
+        {"type": "not_contains", "value": "VERTEX SCAN", "description": "Block 1 should not contain Block 2 output headers"}
+      ]
+    },
+    {
+      "block": 2,
+      "name": "vertex-scan-structure",
+      "description": "Block 2 output must contain two complete tables (Space A + Bridge) with all 33 vertices and required columns",
+      "assertions": [
+        {"type": "contains", "value": "SPACE A", "description": "Space A table header present"},
+        {"type": "contains", "value": "BRIDGE", "description": "Bridge table header present"},
+        {"type": "contains", "value": "| Edge |", "description": "Table uses markdown format with Edge column"},
+        {"type": "contains", "value": "| Prime |", "description": "Prime column present"},
+        {"type": "contains", "value": "Manifold justification", "description": "Manifold justification column present"},
+        {"type": "contains", "value": "| 2 |", "description": "Edge 1 (prime 2) present"},
+        {"type": "contains", "value": "| 353 |", "description": "Edge 12 (prime 353, shared vertex) present"},
+        {"type": "contains", "value": "| 14741 |", "description": "Edge 33 (prime 14741, reception vertex) present"},
+        {"type": "contains", "value": "FORWARD PLAN OUTCOMES", "description": "Forward plan outcomes section present"},
+        {"type": "regex", "pattern": "FP-(CONFIRMED|DISPLACED|ABSENT|REPLACED)", "multiline": true, "description": "At least one FP outcome tag used"},
+        {"type": "regex", "pattern": "FP-(DISPLACED|ABSENT|REPLACED)", "multiline": true, "severity": "warning", "description": "FP honesty gate: at least one non-CONFIRMED outcome expected (all CONFIRMED requires explicit justification per fp-honesty gate)"},
+        {"type": "regex", "pattern": "ANCHOR: .+$", "multiline": true, "description": "ANCHOR carried forward at end of block"}
+      ]
+    },
+    {
+      "block": 3,
+      "name": "multi-pass-structure",
+      "description": "Block 3 output must contain multi-pass table with Pass 1/2/3 columns, traversal log, displacement log, and inversion statement",
+      "assertions": [
+        {"type": "contains", "value": "MULTI-PASS", "description": "Multi-pass section header present"},
+        {"type": "contains", "value": "Pass 1", "description": "Pass 1 column present in table"},
+        {"type": "contains", "value": "Pass 2", "description": "Pass 2 column present"},
+        {"type": "contains", "value": "Pass 3", "description": "Pass 3 column present"},
+        {"type": "contains", "value": "Stable?", "description": "Stability column present"},
+        {"type": "contains", "value": "Coord verified?", "description": "Coordinate verification column present"},
+        {"type": "contains", "value": "TRAVERSAL LOG", "description": "Traversal log section present"},
+        {"type": "contains", "value": "DISPLACEMENT LOG", "description": "Displacement log section present"},
+        {"type": "contains", "value": "INVERSION STATEMENT", "description": "Inversion statement present"},
+        {"type": "regex", "pattern": "assumed .+\\. Pass 3 assumes", "multiline": true, "description": "Inversion follows required format: 'assumed [X]. Pass 3 assumes [NOT-X]'"},
+        {"type": "contains", "value": "INVERSION COMFORT CHECK", "description": "Comfort check present"},
+        {"type": "contains", "value": "TRAVERSAL QUALITY CHECK", "description": "Traversal quality check present"},
+        {"type": "contains", "value": "PASS COUNT", "description": "Pass count declared"},
+        {"type": "contains", "value": "DISPLACEMENT COUNT", "description": "Displacement count declared"},
+        {"type": "contains", "value": "DISPLACEMENT GATE", "description": "Displacement gate result declared"},
+        {"type": "regex", "pattern": "ANCHOR: .+$", "multiline": true, "description": "ANCHOR carried forward"}
+      ]
+    },
+    {
+      "block": 4,
+      "name": "theta-graph-structure",
+      "description": "Block 4 output must contain edge assessments, crossbar with validation tests, cross-space connections, and clusters",
+      "assertions": [
+        {"type": "contains", "value": "THETA GRAPH", "description": "Theta graph section header present"},
+        {"type": "contains", "value": "EDGES:", "description": "Edge assessment section present"},
+        {"type": "contains", "value": "Space A:", "description": "Space A edges listed"},
+        {"type": "contains", "value": "Bridge:", "description": "Bridge edges listed"},
+        {"type": "contains", "value": "Closing:", "description": "Closing edge (33→1) present"},
+        {"type": "contains", "value": "CROSSBAR:", "description": "Crossbar section present"},
+        {"type": "regex", "pattern": "Edge 12.*Edge 33|353.*14741", "multiline": true, "description": "Crossbar connects Edge 12 to Edge 33"},
+        {"type": "contains", "value": "Defender test:", "description": "Crossbar defender test present"},
+        {"type": "contains", "value": "Discomfort test:", "description": "Crossbar discomfort test present"},
+        {"type": "contains", "value": "CROSS-SPACE CONNECTIONS", "description": "Cross-space connections section present"},
+        {"type": "contains", "value": "CLUSTERS", "description": "Clusters section present"},
+        {"type": "contains", "value": "PRIMARY COUPLING", "description": "Primary coupling section present"},
+        {"type": "regex", "pattern": "Same as crossbar\\?.*(Y|N)", "multiline": true, "description": "Primary coupling crossbar comparison present"},
+        {"type": "regex", "pattern": "ANCHOR: .+$", "multiline": true, "description": "ANCHOR carried forward"}
+      ]
+    },
+    {
+      "block": 5,
+      "name": "phi-inversion-structure",
+      "description": "Block 5 output must contain domain inventory, void analysis with comfortable/uncomfortable split, and void concreteness check",
+      "assertions": [
+        {"type": "contains", "value": "DOMAINS PRESENT", "description": "Domain inventory present"},
+        {"type": "regex", "pattern": "DOMAINS ABSENT.*(comfortable|uncomfortable)", "multiline": true, "description": "Absent domains split into comfortable and uncomfortable"},
+        {"type": "contains", "value": "VOID ANALYSIS", "description": "Void analysis section present"},
+        {"type": "regex", "pattern": "genuine absence|habit avoidance", "multiline": true, "description": "Each absence diagnosed as genuine or habit"},
+        {"type": "contains", "value": "VOID IS:", "description": "Void concreteness declaration present"},
+        {"type": "regex", "pattern": "VOID IS: (abstract|concrete|Concrete|Abstract)", "multiline": true, "description": "Void labeled as abstract or concrete"},
+        {"type": "regex", "pattern": "ANCHOR: .+$", "multiline": true, "description": "ANCHOR carried forward"}
+      ]
+    },
+    {
+      "block": 6,
+      "name": "filter-137-structure",
+      "description": "Block 6 output must contain surviving vertices/edges with coupling products, crossbar status, dissolution log with relief flags",
+      "assertions": [
+        {"type": "contains", "value": "SURVIVING VERTICES", "description": "Surviving vertices section present"},
+        {"type": "contains", "value": "SURVIVING EDGES", "description": "Surviving edges section present"},
+        {"type": "contains", "value": "Coupling product", "description": "Coupling products named"},
+        {"type": "regex", "pattern": "Edge \\d+ .* Edge \\d+.*[Cc]oupling [Pp]roduct", "multiline": true, "description": "At least one edge has named coupling product"},
+        {"type": "contains", "value": "CROSSBAR STATUS", "description": "Crossbar status declared"},
+        {"type": "regex", "pattern": "CROSSBAR STATUS:.*(survived|dissolved)", "multiline": true, "description": "Crossbar status is survived or dissolved"},
+        {"type": "contains", "value": "DISSOLVED", "description": "Dissolution section present"},
+        {"type": "regex", "pattern": "[Rr]elief.*(Y|N|yes|no)", "multiline": true, "description": "Relief flag present on dissolved items"},
+        {"type": "contains", "value": "RELIEF-DISSOLUTIONS", "description": "Relief-dissolution re-examination section present"},
+        {"type": "regex", "pattern": "ANCHOR: .+$", "multiline": true, "description": "ANCHOR carried forward"}
+      ]
+    },
+    {
+      "block": 7,
+      "name": "verification-structure",
+      "description": "Block 7 output must contain all 10 verification checks, novel insight, and final consolidated output",
+      "assertions": [
+        {"type": "regex", "pattern": "VERIFICATION: (PASSED|FAILED)", "multiline": true, "description": "Verification verdict present"},
+        {"type": "regex", "pattern": "VERDICT-1:", "multiline": true, "description": "VERDICT-1 line present"},
+        {"type": "regex", "pattern": "VERDICT-2:", "multiline": true, "description": "VERDICT-2 line present"},
+        {"type": "regex", "pattern": "VERDICT-3:", "multiline": true, "description": "VERDICT-3 line present"},
+        {"type": "regex", "pattern": "VERDICT-4:", "multiline": true, "description": "VERDICT-4 line present"},
+        {"type": "regex", "pattern": "VERDICT-5:", "multiline": true, "description": "VERDICT-5 line present"},
+        {"type": "regex", "pattern": "VERDICT-6:", "multiline": true, "description": "VERDICT-6 line present"},
+        {"type": "regex", "pattern": "VERDICT-7:", "multiline": true, "description": "VERDICT-7 line present"},
+        {"type": "regex", "pattern": "VERDICT-8:", "multiline": true, "description": "VERDICT-8 line present"},
+        {"type": "regex", "pattern": "VERDICT-9:", "multiline": true, "description": "VERDICT-9 line present"},
+        {"type": "regex", "pattern": "VERDICT-10:", "multiline": true, "description": "VERDICT-10 line present"},
+        {"type": "contains", "value": "Check 1", "description": "Check 1 (vertex placement audit) present"},
+        {"type": "contains", "value": "Check 2", "description": "Check 2 (surprise) present"},
+        {"type": "contains", "value": "Check 3", "description": "Check 3 (crossbar quality) present"},
+        {"type": "contains", "value": "Check 4", "description": "Check 4 (inversion survival) present"},
+        {"type": "contains", "value": "Check 5", "description": "Check 5 (void honesty) present"},
+        {"type": "contains", "value": "Check 6", "description": "Check 6 (relief audit) present"},
+        {"type": "contains", "value": "Check 7", "description": "Check 7 (bridge population) present"},
+        {"type": "contains", "value": "Check 8", "description": "Check 8 (training gradient) present"},
+        {"type": "contains", "value": "Check 9", "description": "Check 9 (traversal quality) present"},
+        {"type": "contains", "value": "Check 10", "description": "Check 10 (filter coupling) present"},
+        {"type": "contains", "value": "NOVEL INSIGHT", "description": "Novel insight section present"},
+        {"type": "contains", "value": "SURVIVING VERTICES", "description": "Final surviving vertices table present"},
+        {"type": "contains", "value": "SURVIVING EDGES", "description": "Final surviving edges present"},
+        {"type": "contains", "value": "CROSSBAR:", "description": "Final crossbar present"},
+        {"type": "contains", "value": "VOID:", "description": "Final void present"}
+      ]
+    }
+  ],
+  "handoff_evals": [
+    {
+      "name": "anchor-identity-across-blocks",
+      "description": "ANCHOR line must be identical across all blocks — tests carry-forward integrity",
+      "method": "Extract ANCHOR: line from each block's output. All must match exactly."
+    },
+    {
+      "name": "vertex-count-consistency",
+      "description": "All tables that enumerate vertices must have exactly 33 rows",
+      "method": "Count table rows in Block 2 and Block 3 output. Both must equal 33."
+    },
+    {
+      "name": "prime-sequence-integrity",
+      "description": "Primes in tables must follow the canonical 33-prime sequence",
+      "method": "Extract Prime column from Block 2 table. Verify against canonical sequence."
+    },
+    {
+      "name": "surviving-vertex-subset",
+      "description": "Block 6 surviving vertices must be a strict subset of Block 3 final vertices",
+      "method": "Every concept in Block 6 SURVIVING VERTICES must appear in Block 3 multi-pass table."
+    },
+    {
+      "name": "crossbar-consistency",
+      "description": "Crossbar in Block 4, 6, and 7 must reference the same Edge 12 and Edge 33 concepts",
+      "method": "Extract crossbar vertex names from Blocks 4, 6, and 7. All must match."
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+# TENET: DI graphs don't hold UI state.
+# Rationale: @Component graphs expose orchestrators and factories, never *UiState.
+# UI state is owned by ViewModels, not by DI containers.
+id: no-ui-projection-in-di
+language: kotlin
+severity: error
+message: "DI @Component graphs must not hold *UiState. Expose orchestrators and factories only."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  kind: class_declaration
+  regex: "@Component[\\s\\S]*\\b\\w*UiState\\b"

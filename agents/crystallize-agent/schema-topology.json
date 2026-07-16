@@ -1,0 +1,653 @@
+{
+  "_meta": {
+    "generated": "2026-03-11",
+    "generator": "eli/hypergraph-scan",
+    "scope": "agents/crystallize-agent/tools/**/*.ts",
+    "files_scanned": 7,
+    "total_named_schemas": 14,
+    "total_inline_schemas": 6,
+    "total_local_interfaces": 18,
+    "duplication_hotspots": 6
+  },
+
+  "hypergraph": {
+    "nodes": [
+      {
+        "id": "V_DIMENSION",
+        "file": "convergence/encode.ts",
+        "line": 144,
+        "fields": 4,
+        "field_names": ["name", "mu", "sigma", "description"],
+        "type": "named_const",
+        "centrality": 3,
+        "duplication_factor": 2,
+        "note": "Defined here as named const. Re-inlined anonymously in convergence/index.ts:93"
+      },
+      {
+        "id": "V_QUALITY_VECTOR",
+        "file": "convergence/measure.ts",
+        "line": 149,
+        "fields": 8,
+        "field_names": ["elbo", "holistic", "accuracy", "complexity", "dimensions", "weakest", "rejection_severity", "rejection_count"],
+        "type": "named_const",
+        "centrality": 3,
+        "duplication_factor": 2,
+        "note": "Defined here as named const. Re-inlined anonymously in convergence/index.ts:94-103"
+      },
+      {
+        "id": "V_ADJUSTMENT",
+        "file": "convergence/converge.ts",
+        "line": 157,
+        "fields": 3,
+        "field_names": ["dimension", "direction", "magnitude"],
+        "type": "named_const",
+        "centrality": 3,
+        "duplication_factor": 2,
+        "note": "Defined here with v.union([v.literal(...)]). Re-inlined in convergence/index.ts:111 using v.picklist (inconsistent construct)"
+      },
+      {
+        "id": "V_ANTIBODY",
+        "file": "convergence/converge.ts",
+        "line": 168,
+        "fields": 3,
+        "field_names": ["pattern", "type", "strength"],
+        "type": "named_const",
+        "centrality": 5,
+        "duplication_factor": 3,
+        "note": "Highest duplication. Defined in converge.ts (v.union), re-defined in output/index.ts:110 (v.union), re-inlined in convergence/index.ts:110 (v.picklist). Three copies, two constructs."
+      },
+      {
+        "id": "V_ANTIBODY__output",
+        "file": "output/index.ts",
+        "line": 110,
+        "fields": 3,
+        "field_names": ["pattern", "type", "strength"],
+        "type": "named_const",
+        "centrality": 2,
+        "duplication_factor": 0,
+        "note": "DUPLICATE of V_ANTIBODY from converge.ts. Structurally identical. Used by V_OUTPUT_OUTPUT and report_summary tool."
+      },
+      {
+        "id": "V_TOKEN_USAGE",
+        "file": "convergence/index.ts",
+        "line": 90,
+        "fields": 3,
+        "field_names": ["inputTokens", "outputTokens", "cacheReadTokens"],
+        "type": "named_const",
+        "centrality": 2,
+        "duplication_factor": 3,
+        "note": "Named here. Inlined anonymously in navigate/index.ts:102-106, output/index.ts:125, and convergence/index.ts:105"
+      },
+      {
+        "id": "V_CONVERGENCE_OUTPUT",
+        "file": "convergence/index.ts",
+        "line": 92,
+        "fields": 12,
+        "field_names": ["encoding", "qualityVector", "elbo", "elboTrajectory", "iterations", "converged", "outputs", "thinking", "antibodies", "adjustmentSignals", "usage", "usages"],
+        "type": "named_const_exported",
+        "centrality": 1,
+        "duplication_factor": 0,
+        "note": "Mega-schema. Re-inlines V_DIMENSION, V_QUALITY_VECTOR, V_ANTIBODY, V_ADJUSTMENT, V_TOKEN_USAGE as anonymous objects instead of importing the named consts."
+      },
+      {
+        "id": "V_VERTEX",
+        "file": "navigate/index.ts",
+        "line": 89,
+        "fields": 6,
+        "field_names": ["id", "perspective", "survived", "reason", "delta", "edges"],
+        "type": "named_const",
+        "centrality": 2,
+        "duplication_factor": 0,
+        "note": "Used twice within same file: V_NAVIGATE_OUTPUT.vertices and generateText output schema. No cross-file duplication."
+      },
+      {
+        "id": "V_NAVIGATE_OUTPUT",
+        "file": "navigate/index.ts",
+        "line": 98,
+        "fields": 4,
+        "field_names": ["vertices", "text", "thinking", "usage"],
+        "type": "named_const_exported",
+        "centrality": 1,
+        "duplication_factor": 0,
+        "note": "Inlines TokenUsage anonymously instead of using V_TOKEN_USAGE"
+      },
+      {
+        "id": "V_OUTPUT_OUTPUT",
+        "file": "output/index.ts",
+        "line": 120,
+        "fields": 5,
+        "field_names": ["text", "thinking", "antibodies", "files", "usage"],
+        "type": "named_const_exported",
+        "centrality": 1,
+        "duplication_factor": 0,
+        "note": "Inlines TokenUsage anonymously. Uses local V_ANTIBODY duplicate."
+      },
+      {
+        "id": "V_OUTPUT_CONTEXT",
+        "file": "output/index.ts",
+        "line": 128,
+        "fields": 7,
+        "field_names": ["pipelineContext", "elboSummary", "iterations", "converged", "slug", "outputMode", "outputDir"],
+        "type": "named_const",
+        "centrality": 1,
+        "duplication_factor": 0,
+        "note": "Internal validation schema for experimental_context. Not exported."
+      },
+      {
+        "id": "encode_tool_input",
+        "file": "convergence/encode.ts",
+        "line": 155,
+        "fields": 2,
+        "field_names": ["encoding", "thinking"],
+        "type": "anonymous_inline",
+        "centrality": 0,
+        "duplication_factor": 0
+      },
+      {
+        "id": "decode_tool_input",
+        "file": "convergence/decode.ts",
+        "line": 138,
+        "fields": 2,
+        "field_names": ["decoded_plan", "thinking"],
+        "type": "anonymous_inline",
+        "centrality": 0,
+        "duplication_factor": 0
+      },
+      {
+        "id": "measure_tool_input",
+        "file": "convergence/measure.ts",
+        "line": 164,
+        "fields": 2,
+        "field_names": ["quality_vector", "thinking"],
+        "type": "anonymous_inline",
+        "centrality": 0,
+        "duplication_factor": 0
+      },
+      {
+        "id": "converge_tool_input",
+        "file": "convergence/converge.ts",
+        "line": 182,
+        "fields": 5,
+        "field_names": ["converged", "adjustment_signals", "antibodies", "elbo", "thinking"],
+        "type": "anonymous_inline",
+        "centrality": 0,
+        "duplication_factor": 0
+      },
+      {
+        "id": "convergence_tool_input",
+        "file": "convergence/index.ts",
+        "line": 229,
+        "fields": 1,
+        "field_names": ["navigate_summary"],
+        "type": "anonymous_inline",
+        "centrality": 0,
+        "duplication_factor": 0,
+        "note": "Only schema using v.pipe(v.string(), v.description(...))"
+      },
+      {
+        "id": "navigate_tool_input",
+        "file": "navigate/index.ts",
+        "line": 252,
+        "fields": 1,
+        "field_names": ["input_text"],
+        "type": "anonymous_inline",
+        "centrality": 0,
+        "duplication_factor": 0
+      },
+      {
+        "id": "output_tool_input",
+        "file": "output/index.ts",
+        "line": 319,
+        "fields": 1,
+        "field_names": ["convergence_summary"],
+        "type": "anonymous_inline",
+        "centrality": 0,
+        "duplication_factor": 0,
+        "note": "Uses v.pipe(v.string(), v.description(...))"
+      },
+      {
+        "id": "submit_file_input",
+        "file": "output/index.ts",
+        "line": 376,
+        "fields": 2,
+        "field_names": ["name", "content"],
+        "type": "anonymous_inline",
+        "centrality": 0,
+        "duplication_factor": 0,
+        "note": "Both fields use v.pipe(v.string(), v.description(...))"
+      },
+      {
+        "id": "report_summary_input",
+        "file": "output/index.ts",
+        "line": 404,
+        "fields": 2,
+        "field_names": ["text", "antibodies"],
+        "type": "anonymous_inline",
+        "centrality": 0,
+        "duplication_factor": 0
+      }
+    ],
+
+    "edges": {
+      "composition": [
+        { "from": "V_DIMENSION", "to": "encode_tool_input", "relation": "field:encoding[]" },
+        { "from": "V_QUALITY_VECTOR", "to": "measure_tool_input", "relation": "field:quality_vector" },
+        { "from": "V_ADJUSTMENT", "to": "converge_tool_input", "relation": "field:adjustment_signals[]" },
+        { "from": "V_ANTIBODY", "to": "converge_tool_input", "relation": "field:antibodies[]" },
+        { "from": "V_ANTIBODY__output", "to": "V_OUTPUT_OUTPUT", "relation": "field:antibodies[]" },
+        { "from": "V_ANTIBODY__output", "to": "report_summary_input", "relation": "field:antibodies[]" },
+        { "from": "V_TOKEN_USAGE", "to": "V_CONVERGENCE_OUTPUT", "relation": "field:usage,usages[value]" },
+        { "from": "V_VERTEX", "to": "V_NAVIGATE_OUTPUT", "relation": "field:vertices[]" },
+        { "from": "V_VERTEX", "to": "navigate_generateText_output", "relation": "field:vertices[]" }
+      ],
+      "structural_duplicate": [
+        {
+          "canonical": "V_ANTIBODY",
+          "duplicates": ["V_ANTIBODY__output", "V_CONVERGENCE_OUTPUT.antibodies[item]"],
+          "construct_divergence": true,
+          "note": "converge.ts uses v.union([v.literal(...)]), output/index.ts uses v.union([v.literal(...)]), convergence/index.ts uses v.picklist([])"
+        },
+        {
+          "canonical": "V_ADJUSTMENT",
+          "duplicates": ["V_CONVERGENCE_OUTPUT.adjustmentSignals[item]"],
+          "construct_divergence": true,
+          "note": "converge.ts uses v.union, convergence/index.ts uses v.picklist"
+        },
+        {
+          "canonical": "V_DIMENSION",
+          "duplicates": ["V_CONVERGENCE_OUTPUT.encoding[item]"],
+          "construct_divergence": false
+        },
+        {
+          "canonical": "V_QUALITY_VECTOR",
+          "duplicates": ["V_CONVERGENCE_OUTPUT.qualityVector"],
+          "construct_divergence": false
+        },
+        {
+          "canonical": "V_TOKEN_USAGE",
+          "duplicates": ["V_NAVIGATE_OUTPUT.usage", "V_OUTPUT_OUTPUT.usage"],
+          "construct_divergence": false
+        }
+      ],
+      "helper_duplication": [
+        {
+          "function": "valibotSchema<T>()",
+          "copies": 7,
+          "files": ["encode.ts", "decode.ts", "measure.ts", "converge.ts", "convergence/index.ts", "navigate/index.ts", "output/index.ts"],
+          "replacement": "@ai-sdk/valibot :: valibotSchema"
+        },
+        {
+          "function": "formatCompactIdentity()",
+          "copies": 5,
+          "files": ["encode.ts", "decode.ts", "measure.ts", "converge.ts", "navigate/index.ts"],
+          "note": "navigate and output use formatFullIdentity instead (different function, also duplicated 2x)"
+        },
+        {
+          "function": "formatFullIdentity()",
+          "copies": 2,
+          "files": ["navigate/index.ts", "output/index.ts"]
+        },
+        {
+          "function": "iterBlockName()",
+          "copies": 4,
+          "files": ["encode.ts", "decode.ts", "measure.ts", "converge.ts"]
+        },
+        {
+          "function": "tryRead()",
+          "copies": 5,
+          "files": ["encode.ts", "decode.ts", "measure.ts", "converge.ts", "navigate/index.ts"],
+          "note": "output/index.ts has a variant with warn callback"
+        },
+        {
+          "interface": "LocalIdentity",
+          "copies": 6,
+          "files": ["encode.ts", "decode.ts", "measure.ts", "converge.ts", "navigate/index.ts", "output/index.ts"],
+          "note": "Identical structure across all 6 files. Includes nested LocalMechanism, LocalConstraint, LocalGene, LocalPersona (4 more interfaces, each duplicated 6x = 24 total interface copies)"
+        }
+      ]
+    }
+  },
+
+  "compliance_matrix": {
+    "legend": {
+      "ai_sdk_valibot": "Uses @ai-sdk/valibot instead of local valibotSchema reimplementation",
+      "infer_output": "Uses v.InferOutput<typeof Schema> instead of manual interface mirror",
+      "picklist": "Uses v.picklist for string literal enums instead of v.union([v.literal(...)])",
+      "descriptions": "Uses v.description() on fields to guide LLM tool use",
+      "boundary_validation": "Has min/max constraints on bounded numeric fields",
+      "empty_string_guard": "Has v.minLength(1) on semantically non-empty strings",
+      "score": "0.0 = no compliance, 1.0 = full compliance"
+    },
+    "files": {
+      "convergence/encode.ts": {
+        "ai_sdk_valibot": { "score": 0.0, "detail": "Local valibotSchema reimplementation at line 69" },
+        "infer_output": { "score": 0.0, "detail": "LocalDimension manually mirrors V_DIMENSION" },
+        "picklist": { "score": 1.0, "detail": "No enum fields in this file" },
+        "descriptions": { "score": 0.0, "detail": "V_DIMENSION has 0/4 fields with descriptions. Tool input has 0/2." },
+        "boundary_validation": { "score": 0.0, "detail": "mu, sigma have no bounds. sigma should be >=0." },
+        "empty_string_guard": { "score": 0.0, "detail": "name field has no minLength" },
+        "aggregate": 0.17
+      },
+      "convergence/decode.ts": {
+        "ai_sdk_valibot": { "score": 0.0, "detail": "Local valibotSchema reimplementation at line 61" },
+        "infer_output": { "score": 1.0, "detail": "No local interface mirrors a schema (decode has no domain schema)" },
+        "picklist": { "score": 1.0, "detail": "No enum fields" },
+        "descriptions": { "score": 0.0, "detail": "Tool input has 0/2 fields with descriptions" },
+        "boundary_validation": { "score": 1.0, "detail": "No numeric fields" },
+        "empty_string_guard": { "score": 0.0, "detail": "decoded_plan has no minLength" },
+        "aggregate": 0.50
+      },
+      "convergence/measure.ts": {
+        "ai_sdk_valibot": { "score": 0.0, "detail": "Local valibotSchema reimplementation at line 74" },
+        "infer_output": { "score": 0.0, "detail": "LocalQualityVector manually mirrors V_QUALITY_VECTOR" },
+        "picklist": { "score": 1.0, "detail": "No enum fields" },
+        "descriptions": { "score": 0.0, "detail": "V_QUALITY_VECTOR has 0/8 fields with descriptions" },
+        "boundary_validation": { "score": 0.0, "detail": "elbo, holistic, accuracy, complexity conceptually [0,1] — no bounds. rejection_severity unbounded. rejection_count should be integer >=0." },
+        "empty_string_guard": { "score": 1.0, "detail": "No semantically non-empty string fields in schema" },
+        "aggregate": 0.33
+      },
+      "convergence/converge.ts": {
+        "ai_sdk_valibot": { "score": 0.0, "detail": "Local valibotSchema reimplementation at line 84" },
+        "infer_output": { "score": 0.0, "detail": "LocalAntibody mirrors V_ANTIBODY, LocalAdjustmentSignal mirrors V_ADJUSTMENT" },
+        "picklist": { "score": 0.0, "detail": "V_ANTIBODY.type and V_ADJUSTMENT.direction both use v.union([v.literal(...)]) instead of v.picklist" },
+        "descriptions": { "score": 0.0, "detail": "0 fields with descriptions across all schemas" },
+        "boundary_validation": { "score": 0.0, "detail": "strength (conceptually [0,1]) unbounded. magnitude unbounded." },
+        "empty_string_guard": { "score": 0.0, "detail": "pattern, dimension have no minLength" },
+        "aggregate": 0.0
+      },
+      "convergence/index.ts": {
+        "ai_sdk_valibot": { "score": 0.0, "detail": "Local valibotSchema reimplementation at line 38" },
+        "infer_output": { "score": 0.5, "detail": "ConvergenceState/ConvergenceOutput are manual interfaces, but they include cross-type composition so InferOutput alone wouldn't suffice. Partial credit." },
+        "picklist": { "score": 1.0, "detail": "V_CONVERGENCE_OUTPUT already uses v.picklist for antibody type and adjustment direction" },
+        "descriptions": { "score": 0.1, "detail": "Only convergence_tool_input.navigate_summary has v.description. 1/13 total fields." },
+        "boundary_validation": { "score": 0.0, "detail": "All inlined numeric fields unbounded" },
+        "empty_string_guard": { "score": 0.0, "detail": "No guards on any string fields" },
+        "aggregate": 0.27
+      },
+      "navigate/index.ts": {
+        "ai_sdk_valibot": { "score": 0.0, "detail": "Local valibotSchema reimplementation at line 58" },
+        "infer_output": { "score": 0.0, "detail": "NavigateVertex manually mirrors V_VERTEX. TokenUsage is a manual interface." },
+        "picklist": { "score": 1.0, "detail": "No enum fields" },
+        "descriptions": { "score": 0.0, "detail": "0 fields with descriptions across V_VERTEX (6 fields) and tool input (1 field)" },
+        "boundary_validation": { "score": 0.0, "detail": "delta is unbounded" },
+        "empty_string_guard": { "score": 0.0, "detail": "id, perspective, reason have no minLength" },
+        "aggregate": 0.17
+      },
+      "output/index.ts": {
+        "ai_sdk_valibot": { "score": 0.0, "detail": "Local valibotSchema reimplementation at line 68" },
+        "infer_output": { "score": 0.0, "detail": "LocalAntibody, LocalFile, OutputOutput, OutputToolContext all manually mirror schemas" },
+        "picklist": { "score": 0.0, "detail": "V_ANTIBODY.type uses v.union([v.literal(...)]) instead of v.picklist" },
+        "descriptions": { "score": 0.3, "detail": "submit_file has 2/2 fields with descriptions. output_tool_input has 1/1. report_summary has 0/2. V_ANTIBODY 0/3. V_OUTPUT_OUTPUT 0/5. V_OUTPUT_CONTEXT 0/7." },
+        "boundary_validation": { "score": 0.0, "detail": "strength unbounded. Token counts unbounded." },
+        "empty_string_guard": { "score": 0.0, "detail": "pattern has no minLength" },
+        "aggregate": 0.05
+      }
+    },
+    "global_aggregate": 0.21
+  },
+
+  "reference_spec": {
+    "_note": "What each schema SHOULD look like using full Valibot best practices. Expressed as pseudo-Valibot (valid construct names, not runnable).",
+
+    "shared/schemas.ts": {
+      "purpose": "Single source of truth for all shared schemas. Every tool file imports from here.",
+      "schemas": {
+        "V_ANTIBODY_TYPE": "v.picklist([\"training_pull\", \"default_override\", \"bias_caught\"])",
+        "V_ADJUSTMENT_DIRECTION": "v.picklist([\"widen_sigma\", \"narrow_sigma\", \"shift_mu_up\", \"shift_mu_down\"])",
+        "V_DIMENSION": {
+          "construct": "v.object",
+          "fields": {
+            "name": "v.pipe(v.string(), v.minLength(1), v.description(\"Latent dimension name\"))",
+            "mu": "v.pipe(v.number(), v.description(\"Mean of the dimension's distribution\"))",
+            "sigma": "v.pipe(v.number(), v.minValue(0), v.description(\"Standard deviation (must be non-negative)\"))",
+            "description": "v.optional(v.pipe(v.string(), v.description(\"What this dimension measures\")))"
+          }
+        },
+        "V_QUALITY_VECTOR": {
+          "construct": "v.object",
+          "fields": {
+            "elbo": "v.pipe(v.number(), v.minValue(0), v.maxValue(1), v.description(\"Evidence Lower BOund — primary convergence metric\"))",
+            "holistic": "v.pipe(v.number(), v.minValue(0), v.maxValue(1), v.description(\"Holistic quality score\"))",
+            "accuracy": "v.pipe(v.number(), v.minValue(0), v.maxValue(1), v.description(\"Accuracy of decoded output vs input\"))",
+            "complexity": "v.pipe(v.number(), v.minValue(0), v.maxValue(1), v.description(\"Complexity penalty\"))",
+            "dimensions": "v.record(v.string(), v.pipe(v.number(), v.description(\"Per-dimension quality score\")))",
+            "weakest": "v.optional(v.array(v.pipe(v.string(), v.minLength(1))))",
+            "rejection_severity": "v.optional(v.pipe(v.number(), v.minValue(0), v.description(\"Severity of rejection signals detected\")))",
+            "rejection_count": "v.optional(v.pipe(v.integer(), v.minValue(0), v.description(\"Number of rejection signals\")))"
+          }
+        },
+        "V_ANTIBODY": {
+          "construct": "v.object",
+          "fields": {
+            "pattern": "v.pipe(v.string(), v.minLength(1), v.description(\"Detected decoherence pattern\"))",
+            "type": "v.pipe(V_ANTIBODY_TYPE, v.description(\"Classification of the decoherence\"))",
+            "strength": "v.pipe(v.number(), v.minValue(0), v.maxValue(1), v.description(\"Antibody strength [0,1]\"))"
+          }
+        },
+        "V_ADJUSTMENT": {
+          "construct": "v.object",
+          "fields": {
+            "dimension": "v.pipe(v.string(), v.minLength(1), v.description(\"Dimension name to adjust\"))",
+            "direction": "v.pipe(V_ADJUSTMENT_DIRECTION, v.description(\"How to adjust the dimension\"))",
+            "magnitude": "v.pipe(v.number(), v.minValue(0), v.description(\"Magnitude of adjustment\"))"
+          }
+        },
+        "V_TOKEN_USAGE": {
+          "construct": "v.object",
+          "fields": {
+            "inputTokens": "v.pipe(v.integer(), v.minValue(0))",
+            "outputTokens": "v.pipe(v.integer(), v.minValue(0))",
+            "cacheReadTokens": "v.pipe(v.integer(), v.minValue(0))"
+          }
+        },
+        "V_VERTEX": {
+          "construct": "v.object",
+          "fields": {
+            "id": "v.pipe(v.string(), v.minLength(1), v.description(\"Vertex identifier\"))",
+            "perspective": "v.pipe(v.string(), v.minLength(1), v.description(\"The perspective this vertex represents\"))",
+            "survived": "v.pipe(v.boolean(), v.description(\"Whether this vertex survived pruning\"))",
+            "reason": "v.pipe(v.string(), v.minLength(1), v.description(\"Why this vertex survived or was pruned\"))",
+            "delta": "v.pipe(v.number(), v.description(\"Parallax delta — distance between training and evidence\"))",
+            "edges": "v.optional(v.array(v.pipe(v.string(), v.minLength(1), v.description(\"Connected vertex ID\"))))"
+          }
+        }
+      },
+      "type_exports": {
+        "Dimension": "v.InferOutput<typeof V_DIMENSION>",
+        "QualityVector": "v.InferOutput<typeof V_QUALITY_VECTOR>",
+        "Antibody": "v.InferOutput<typeof V_ANTIBODY>",
+        "AdjustmentSignal": "v.InferOutput<typeof V_ADJUSTMENT>",
+        "TokenUsage": "v.InferOutput<typeof V_TOKEN_USAGE>",
+        "Vertex": "v.InferOutput<typeof V_VERTEX>",
+        "AntibodyType": "v.InferOutput<typeof V_ANTIBODY_TYPE>",
+        "AdjustmentDirection": "v.InferOutput<typeof V_ADJUSTMENT_DIRECTION>"
+      }
+    },
+
+    "shared/helpers.ts": {
+      "purpose": "Single source for valibotSchema (replaced by @ai-sdk/valibot import), formatCompactIdentity, formatFullIdentity, iterBlockName, tryRead",
+      "exports": ["formatCompactIdentity", "formatFullIdentity", "iterBlockName", "tryRead"],
+      "note": "valibotSchema deleted entirely — import { valibotSchema } from '@ai-sdk/valibot' in each tool file"
+    },
+
+    "shared/types.ts": {
+      "purpose": "Identity types shared across all tools. Single LocalIdentity definition.",
+      "note": "Or use a Valibot schema for identity too and infer the type."
+    }
+  },
+
+  "migration_delta": {
+    "summary": {
+      "files_to_create": 3,
+      "files_to_modify": 7,
+      "total_deletions_loc": 380,
+      "total_additions_loc": 45,
+      "net_loc_delta": -335,
+      "risk": "low — all changes are type-level refactors with no runtime behavior change except stricter validation"
+    },
+
+    "new_files": [
+      {
+        "path": "tools/shared/schemas.ts",
+        "description": "All Valibot schemas + inferred types",
+        "estimated_loc": 80
+      },
+      {
+        "path": "tools/shared/helpers.ts",
+        "description": "formatCompactIdentity, formatFullIdentity, iterBlockName, tryRead",
+        "estimated_loc": 60
+      },
+      {
+        "path": "tools/shared/types.ts",
+        "description": "LocalIdentity and supporting interfaces (or Valibot schema + InferOutput)",
+        "estimated_loc": 35
+      }
+    ],
+
+    "file_modifications": [
+      {
+        "file": "convergence/encode.ts",
+        "changes": [
+          { "action": "remove", "what": "valibotSchema function (10 LOC)", "replace_with": "import { valibotSchema } from '@ai-sdk/valibot'" },
+          { "action": "remove", "what": "LocalIdentity + 4 nested interfaces (29 LOC)", "replace_with": "import { type LocalIdentity } from '../shared/types.js'" },
+          { "action": "remove", "what": "LocalDimension interface (6 LOC)", "replace_with": "import { type Dimension, V_DIMENSION } from '../shared/schemas.js'" },
+          { "action": "remove", "what": "V_DIMENSION schema (6 LOC)", "replace_with": "import from shared" },
+          { "action": "remove", "what": "formatCompactIdentity (12 LOC)", "replace_with": "import from shared" },
+          { "action": "remove", "what": "iterBlockName (2 LOC)", "replace_with": "import from shared" },
+          { "action": "remove", "what": "tryRead (12 LOC)", "replace_with": "import from shared" },
+          { "action": "remove", "what": "import { jsonSchema } from 'ai' + import { toJsonSchema } from '@valibot/to-json-schema'", "replace_with": "no longer needed" }
+        ],
+        "estimated_lines_removed": 77,
+        "estimated_lines_added": 5,
+        "complexity": 0.3
+      },
+      {
+        "file": "convergence/decode.ts",
+        "changes": [
+          { "action": "remove", "what": "valibotSchema function (10 LOC)", "replace_with": "import { valibotSchema } from '@ai-sdk/valibot'" },
+          { "action": "remove", "what": "LocalIdentity + nested interfaces (29 LOC)", "replace_with": "import from shared" },
+          { "action": "remove", "what": "formatCompactIdentity (12 LOC)", "replace_with": "import from shared" },
+          { "action": "remove", "what": "iterBlockName (2 LOC)", "replace_with": "import from shared" },
+          { "action": "remove", "what": "tryRead (12 LOC)", "replace_with": "import from shared" }
+        ],
+        "estimated_lines_removed": 65,
+        "estimated_lines_added": 4,
+        "complexity": 0.2
+      },
+      {
+        "file": "convergence/measure.ts",
+        "changes": [
+          { "action": "remove", "what": "valibotSchema (10 LOC)", "replace_with": "import @ai-sdk/valibot" },
+          { "action": "remove", "what": "LocalIdentity + nested (29 LOC)", "replace_with": "import from shared" },
+          { "action": "remove", "what": "LocalQualityVector (9 LOC)", "replace_with": "import { type QualityVector, V_QUALITY_VECTOR } from shared" },
+          { "action": "remove", "what": "V_QUALITY_VECTOR (10 LOC)", "replace_with": "import from shared" },
+          { "action": "remove", "what": "formatCompactIdentity, iterBlockName, tryRead (26 LOC)", "replace_with": "import from shared" },
+          { "action": "add", "what": "v.minValue/v.maxValue on numeric fields", "note": "handled by shared schema definition" }
+        ],
+        "estimated_lines_removed": 84,
+        "estimated_lines_added": 5,
+        "complexity": 0.3
+      },
+      {
+        "file": "convergence/converge.ts",
+        "changes": [
+          { "action": "remove", "what": "valibotSchema (10 LOC)", "replace_with": "import @ai-sdk/valibot" },
+          { "action": "remove", "what": "LocalIdentity + nested (29 LOC)", "replace_with": "import from shared" },
+          { "action": "remove", "what": "LocalAntibody, LocalAdjustmentSignal (10 LOC)", "replace_with": "import { type Antibody, type AdjustmentSignal } from shared" },
+          { "action": "remove", "what": "V_ADJUSTMENT, V_ANTIBODY (18 LOC)", "replace_with": "import from shared" },
+          { "action": "replace", "what": "v.union([v.literal(...)]) in schemas", "replace_with": "handled by shared v.picklist" },
+          { "action": "remove", "what": "formatCompactIdentity, iterBlockName, tryRead (26 LOC)", "replace_with": "import from shared" }
+        ],
+        "estimated_lines_removed": 93,
+        "estimated_lines_added": 6,
+        "complexity": 0.3
+      },
+      {
+        "file": "convergence/index.ts",
+        "changes": [
+          { "action": "remove", "what": "valibotSchema (10 LOC)", "replace_with": "import @ai-sdk/valibot" },
+          { "action": "replace", "what": "V_CONVERGENCE_OUTPUT inline anonymous schemas", "replace_with": "compose from imported V_DIMENSION, V_QUALITY_VECTOR, V_ANTIBODY, V_ADJUSTMENT, V_TOKEN_USAGE" },
+          { "action": "remove", "what": "TokenUsage interface (5 LOC)", "replace_with": "import from shared" }
+        ],
+        "estimated_lines_removed": 30,
+        "estimated_lines_added": 8,
+        "complexity": 0.4,
+        "note": "Most complex change — V_CONVERGENCE_OUTPUT needs careful recomposition from shared schemas"
+      },
+      {
+        "file": "navigate/index.ts",
+        "changes": [
+          { "action": "remove", "what": "valibotSchema (10 LOC)", "replace_with": "import @ai-sdk/valibot" },
+          { "action": "remove", "what": "LocalIdentity + nested (29 LOC)", "replace_with": "import from shared" },
+          { "action": "remove", "what": "TokenUsage interface (5 LOC)", "replace_with": "import from shared" },
+          { "action": "remove", "what": "NavigateVertex interface (8 LOC)", "replace_with": "import { type Vertex } from shared" },
+          { "action": "remove", "what": "V_VERTEX (8 LOC)", "replace_with": "import from shared" },
+          { "action": "replace", "what": "V_NAVIGATE_OUTPUT inline usage object", "replace_with": "use V_TOKEN_USAGE from shared" }
+        ],
+        "estimated_lines_removed": 60,
+        "estimated_lines_added": 6,
+        "complexity": 0.3
+      },
+      {
+        "file": "output/index.ts",
+        "changes": [
+          { "action": "remove", "what": "valibotSchema (10 LOC)", "replace_with": "import @ai-sdk/valibot" },
+          { "action": "remove", "what": "LocalIdentity + nested (29 LOC)", "replace_with": "import from shared" },
+          { "action": "remove", "what": "TokenUsage interface (5 LOC)", "replace_with": "import from shared" },
+          { "action": "remove", "what": "LocalAntibody interface (5 LOC)", "replace_with": "import from shared" },
+          { "action": "remove", "what": "V_ANTIBODY duplicate (8 LOC)", "replace_with": "import from shared" },
+          { "action": "replace", "what": "V_OUTPUT_OUTPUT inline usage object", "replace_with": "use V_TOKEN_USAGE from shared" }
+        ],
+        "estimated_lines_removed": 57,
+        "estimated_lines_added": 7,
+        "complexity": 0.3
+      }
+    ],
+
+    "import_changes": {
+      "add_to_all_7_files": [
+        "import { valibotSchema } from '@ai-sdk/valibot'"
+      ],
+      "remove_from_all_7_files": [
+        "import { jsonSchema } from 'ai'  (partial — keep 'tool' import)",
+        "import { toJsonSchema } from '@valibot/to-json-schema'",
+        "import type { Schema } from 'ai'"
+      ],
+      "note": "jsonSchema import is still needed if any file uses it directly for non-Valibot schemas. In this codebase it's only used via valibotSchema, so it can be fully removed."
+    },
+
+    "construct_replacements": [
+      {
+        "pattern": "v.union([v.literal(\"a\"), v.literal(\"b\"), ...])",
+        "replacement": "v.picklist([\"a\", \"b\", ...])",
+        "occurrences": 4,
+        "files": ["converge.ts (2x)", "output/index.ts (1x)"],
+        "note": "convergence/index.ts already uses picklist — this is a consistency fix"
+      },
+      {
+        "pattern": "interface LocalFoo { ... } // mirroring V_FOO",
+        "replacement": "type Foo = v.InferOutput<typeof V_FOO>",
+        "occurrences": 6,
+        "interfaces": ["LocalDimension", "LocalQualityVector", "LocalAntibody", "LocalAdjustmentSignal", "NavigateVertex", "TokenUsage"]
+      },
+      {
+        "pattern": "v.number() // for bounded fields",
+        "replacement": "v.pipe(v.number(), v.minValue(0), v.maxValue(1))",
+        "occurrences": 8,
+        "fields": ["elbo", "holistic", "accuracy", "complexity", "strength (2x)", "rejection_severity", "delta"]
+      },
+      {
+        "pattern": "v.string() // for LLM-facing fields without description",
+        "replacement": "v.pipe(v.string(), v.description(\"...\"))",
+        "occurrences": 25,
+        "note": "Every field in every tool inputSchema should have a description for LLM guidance"
+      }
+    ],
+
+    "breaking_changes": {
+      "zero_export_surface_change": true,
+      "runtime_behavior_change": "Stricter validation only — values that previously passed v.number() may fail v.pipe(v.number(), v.minValue(0), v.maxValue(1)) if LLM produces out-of-range values. This is a feature, not a bug.",
+      "note": "The 'zero imports from parent' design principle is intentionally violated by creating shared/. This is the correct trade-off: the current duplication is a maintenance and correctness hazard that outweighs the portability benefit."
+    }
+  }
+}

@@ -1,0 +1,26 @@
+# TENET: Prefer immutability — minimize var usage.
+# Rationale: Mutable state makes code harder to reason about.
+# Use val with copy() for state updates. var is acceptable for local mutation in tight loops.
+# This rule flags var at class level (properties), not inside function bodies.
+id: no-mutable-var
+language: kotlin
+severity: error
+message: "Prefer val over var. Use copy() for updates. var at class level creates mutable state."
+files:
+  - "**/src/main/**/*.kt"
+  - "**/src/commonMain/**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  kind: property_declaration
+  all:
+    - regex: "^\\s*(?:(?:public|private|internal|protected|override|lateinit)\\s+)*var\\s+"
+    - inside: { kind: class_body }
+    - not:
+        inside:
+          kind: class_declaration
+          has:
+            kind: modifiers
+            has:
+              kind: annotation
+              regex: "Entity|Document|Table"

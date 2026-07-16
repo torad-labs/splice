@@ -1,0 +1,20 @@
+# TENET: No mutable state in object singletons.
+# Rationale: Object singletons with mutable state create hidden global state.
+# Use dependency injection for stateful components.
+id: no-object-singleton-state
+language: kotlin
+severity: error
+message: "Objects with mutable state are hidden globals. Use DI for stateful components."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  kind: object_declaration
+  has:
+    kind: class_body
+    has:
+      kind: property_declaration
+      has:
+        kind: binding_pattern_kind
+        regex: "^var$"

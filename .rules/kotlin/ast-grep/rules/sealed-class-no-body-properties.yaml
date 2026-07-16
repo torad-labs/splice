@@ -1,0 +1,17 @@
+# TENET: No val/var directly in sealed class/interface body.
+# Rationale: Shared properties belong in the sealed class constructor as open val.
+# Variants override them in their constructors. Body properties break exhaustive matching.
+id: sealed-class-no-body-properties
+language: kotlin
+severity: error
+message: "Put shared properties in the sealed class constructor, not in the body. Variants override them."
+files:
+  - "**/*.kt"
+rule:
+  kind: class_body > property_declaration
+  all:
+    - has: {kind: binding_pattern_kind, regex: "^(val|var)$"}
+    - inside:
+        kind: class_declaration
+        regex: "\\bsealed\\s+(class|interface)\\b"
+        stopBy: {kind: class_declaration}

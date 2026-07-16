@@ -1,0 +1,22 @@
+# TENET: UI state must be immutable.
+# Rationale: UI state data classes should use val properties only.
+# Mutable state in UI leads to inconsistent renders and race conditions.
+# Use copy() for state updates, never mutate in place.
+id: immutable-ui-state
+language: kotlin
+severity: error
+message: "UI state must be immutable — use val properties and Persistent/Immutable collections."
+files:
+  - "**/*State.kt"
+  - "**/*UiState.kt"
+ignores:
+  - "**/test/**"
+rule:
+  kind: class_declaration
+  all:
+    - has: { regex: "^data\\s+class" }
+    - has:
+        kind: primary_constructor
+        has:
+          kind: class_parameter
+          regex: "\\bvar\\b"

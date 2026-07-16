@@ -1,0 +1,21 @@
+# TENET: No invented architecture layers.
+# Rationale: Controller / Presenter / Contract are invented layers from other frameworks.
+# Use ViewModel, UseCase, or a named component from the established architecture.
+id: no-invented-layer
+language: kotlin
+severity: error
+message: "Controller/Presenter/Contract are invented layers. Use ViewModel, UseCase, or established components."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  any:
+    - kind: class_declaration
+      has:
+        kind: type_identifier
+        regex: "(Controller|Presenter|Contract)$"
+    - kind: object_declaration
+      has:
+        kind: type_identifier
+        regex: "(Controller|Presenter|Contract)$"

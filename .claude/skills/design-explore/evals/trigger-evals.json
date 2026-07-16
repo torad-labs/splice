@@ -1,0 +1,82 @@
+[
+  {
+    "query": "I want to explore the design space for our new onboarding flow — not converge on one answer, just map what's possible",
+    "should_trigger": true
+  },
+  {
+    "query": "help me explore different design directions for the dashboard before we commit to one",
+    "should_trigger": true
+  },
+  {
+    "query": "run a design-explore on the checkout experience — I want to see what's possible before we start wireframing",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to think about this design problem from 5 completely different angles before we narrow down",
+    "should_trigger": true
+  },
+  {
+    "query": "we're stuck in one frame for how the notification system should work — can you help us explore outside it?",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to explore what the settings page could be if we threw out all our current assumptions about what settings pages are",
+    "should_trigger": true
+  },
+  {
+    "query": "help me map the design space for mobile navigation patterns — I want breadth first, not a recommendation yet",
+    "should_trigger": true
+  },
+  {
+    "query": "do a design exploration on our empty states — what could they do besides just say 'nothing here yet'",
+    "should_trigger": true
+  },
+  {
+    "query": "before we design the reporting feature I want to explore what reporting even means for our users — not mockups, just conceptual exploration",
+    "should_trigger": true
+  },
+  {
+    "query": "I want to explore the design of our pricing page from scratch — treat it as a blank canvas",
+    "should_trigger": true
+  },
+  {
+    "query": "which of our current design options is the right call? just pick one and tell me why",
+    "should_trigger": false
+  },
+  {
+    "query": "deep-analysis on why our conversion rate on the pricing page is stalling",
+    "should_trigger": false
+  },
+  {
+    "query": "explore the conceptual space between cathedral architecture and API design — find the structural parallels",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to run a GMR navigation on the idea of negative space in product design",
+    "should_trigger": false
+  },
+  {
+    "query": "build me a Figma component for our design system's button states",
+    "should_trigger": false
+  },
+  {
+    "query": "write a design brief for the new feature — target users, constraints, success criteria",
+    "should_trigger": false
+  },
+  {
+    "query": "audit our current design system for consistency issues",
+    "should_trigger": false
+  },
+  {
+    "query": "pressure test our UX decisions — will they survive real-world use?",
+    "should_trigger": false
+  },
+  {
+    "query": "I want to understand deeply why most enterprise software UX is bad — what's the structural reason?",
+    "should_trigger": false
+  },
+  {
+    "query": "evaluate this specific design decision: should the action button be on the left or the right?",
+    "should_trigger": false
+  }
+]

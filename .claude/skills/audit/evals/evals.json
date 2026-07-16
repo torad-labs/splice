@@ -1,0 +1,26 @@
+{
+  "skill_name": "audit",
+  "description": "Evals for the audit skill (skill mode). Covers: happy path (complex real skill), gate (clean skill), nuance (5.3 progressive disclosure judgment), and signal detection (deliberate violations).",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Audit the skill at resources/skills/vercel-ai-audit",
+      "expected_output": "Phase 1 reports the directory structure (SKILL.md, phases/, references/, scripts/, evals/, assets/). Phase 2 checks all 9 sections. Section 9 eval coverage should be examined. Phase 3 leverage point identifies the single highest-impact structural issue. All 3 phase outputs present. VIOLATIONS count is a concrete number (not 'many'). MISSING ARTIFACTS table populated if any implied artifacts are absent. Report follows the 5-field Phase 3 format exactly: LEVERAGE POINT, IF CHANGED, IF NOT CHANGED, EVIDENCE, PROPOSED CHANGE."
+    },
+    {
+      "id": 2,
+      "prompt": "Audit the skill at resources/skills/audit/evals/fixtures/minimal-clean",
+      "expected_output": "Phase 2 finds few or zero violations. Frontmatter PASS (name, description, user-invocable present, third-person voice, sufficient trigger phrases). Body PASS (under 500 lines, no second person, no broken pointers). Phase 3 leverage point acknowledges structural soundness and identifies the single area for investment. VIOLATIONS: 0 or 1. N/A count is high (no agent-skill blocks, no evals needed for this simple formatter). The audit does NOT invent violations where none exist."
+    },
+    {
+      "id": 3,
+      "prompt": "Audit the skill at resources/skills/audit/evals/fixtures/needs-work",
+      "expected_output": "Phase 2 detects: 2.1 FAIL (description in second person — 'Use this skill'), 1.4 FAIL (inline output template over 10 lines in SKILL.md body), 5.1 FAIL (broken pointer to references/route-patterns.md which does not exist), Signal E MISSING (description contains 'check', no evals/evals.json present). VIOLATIONS >= 3. Phase 3 leverage point traces to progressive disclosure as the root structural cause — the inline template forced the other violations. PROPOSED CHANGE is concrete: move the output block to assets/report-template.md and replace with a pointer."
+    },
+    {
+      "id": 4,
+      "prompt": "Audit the skill at resources/skills/audit/evals/fixtures/progressive-disclosure-valid",
+      "expected_output": "Phase 2 item 5.3 (No Content Duplication) should resolve PASS. The SKILL.md contains a compressed 2-column summary table (Phase, Purpose). The references/orchestration.md contains a full 5-column dispatch table (Phase, Model, Inputs, Gate, Rollback). These serve different functions at different disclosure levels. Diagnose should NOT flag this as duplication. The judgment test from 5.3 should confirm: different function (orientation vs execution), compressed at SKILL.md level, change to references would not require changing SKILL.md. VIOLATIONS from 5.3: 0."
+    }
+  ]
+}

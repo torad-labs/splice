@@ -1,0 +1,27 @@
+# TENET: ViewModel delegates to composed UseCases — no heavy logic.
+# Rationale: ViewModel is a state holder that composes UseCases via Flow.
+# Heavy logic and hard-to-test private methods are a smell pointing at not-yet-extracted UseCases.
+# Pattern: ViewModel calls UseCases, combines their Flows, exposes state to UI.
+id: no-logic-in-viewmodel
+language: kotlin
+severity: error
+message: "ViewModel should compose UseCases, not contain heavy logic. Extract complex logic to UseCases."
+files:
+  - "**/*ViewModel.kt"
+ignores:
+  - "**/test/**"
+rule:
+  kind: function_declaration
+  all:
+    - has:
+        kind: modifiers
+        has:
+          kind: visibility_modifier
+          regex: "^private$"
+    - inside:
+        kind: class_body
+        inside:
+          kind: class_declaration
+          has:
+            kind: type_identifier
+            regex: "ViewModel$"

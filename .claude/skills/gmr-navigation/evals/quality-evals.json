@@ -1,0 +1,256 @@
+{
+  "skill_name": "gmr-navigation",
+  "version": "2.2",
+  "description": "Per-block QUALITY assertions. These require LLM-as-judge grading — they evaluate whether the navigation is doing real work, not just producing correctly-labeled output. Each check has a rubric (pass/fail criteria) and common failure modes to watch for.",
+  "grading_instructions": "For each quality check, read the block output and apply the rubric. Grade PASS, SOFT_FAIL (technically present but low quality), or HARD_FAIL (missing or fundamentally wrong). Cite specific evidence from the output for every grade.",
+  "block_quality": [
+    {
+      "block": 1,
+      "name": "anchor-quality",
+      "checks": [
+        {
+          "id": "Q1.1",
+          "name": "process-not-category",
+          "rubric": "The anchor must frame the concept as a process, relationship, or dynamic — not a thing, category, or label.",
+          "pass": "Anchor uses verbs or relational language: 'X as Y', 'X producing Y', 'X converting Y'",
+          "soft_fail": "Anchor is a noun phrase that implies process but doesn't explicitly name one: 'bureaucratic immunity'",
+          "hard_fail": "Anchor is a pure category or label: 'organizational theory', 'immune systems'",
+          "common_failure": "Abstracting named subjects into categories ('doctrinal systems' instead of 'Islam and Nazism')"
+        },
+        {
+          "id": "Q1.2",
+          "name": "forward-plan-genuine-distance",
+          "rubric": "Forward plan destinations must be genuinely surprising — not what a competent thinker would list as 'interesting angles' on the topic.",
+          "pass": "Destinations require 4+ domain crossings to explain their relevance. Reading them produces slight confusion about why they're there.",
+          "soft_fail": "Destinations are from different domains but feel predictable once stated ('immune system → autoimmune disease')",
+          "hard_fail": "Destinations are obvious extensions of the anchor with no domain crossing",
+          "common_failure": "Listing the first three 'interesting' associations that come to mind, dressed in bridge-territory prime numbers"
+        },
+        {
+          "id": "Q1.3",
+          "name": "named-subjects-preserved",
+          "rubric": "If the user's input names specific subjects (people, systems, texts), those names must appear verbatim in the anchor.",
+          "pass": "Named subjects from input appear exactly in the anchor",
+          "soft_fail": "Named subjects present but slightly reworded",
+          "hard_fail": "Named subjects replaced with abstract categories",
+          "common_failure": "'Agile and Taylorism' becoming 'management methodologies' or 'productivity systems'"
+        }
+      ]
+    },
+    {
+      "block": 2,
+      "name": "vertex-scan-quality",
+      "checks": [
+        {
+          "id": "Q2.1",
+          "name": "bridge-genuine-distance",
+          "rubric": "Bridge vertices (edges 13-33) must be from genuinely different domains than the anchor. A well-researched article on the anchor topic should NOT contain these concepts.",
+          "pass": "Bridge vertices require explaining why they're relevant — the connection is non-obvious. At least 5 bridge vertices would surprise a domain expert.",
+          "soft_fail": "Bridge vertices are from different fields but the connections feel obvious once stated (e.g., for photosynthesis: solar panels, batteries)",
+          "hard_fail": "Bridge vertices are Space A concepts dressed in larger prime numbers — same domain, same discourse, just more specialized",
+          "common_failure": "Filling bridge territory with increasingly niche but same-domain concepts instead of crossing domain boundaries"
+        },
+        {
+          "id": "Q2.2",
+          "name": "manifold-not-semantic-justification",
+          "rubric": "Manifold justifications must explain WHY a vertex is at its distance using domain-crossing language, not semantic similarity.",
+          "pass": "Justifications cite specific domain crossings: 'biology to economics, molecule to institution, photon to deposit' — counts transformations required",
+          "soft_fail": "Justifications mention domain crossing but vaguely: 'crosses several fields'",
+          "hard_fail": "Justifications use semantic proximity: 'related to the anchor's themes', 'similar concept', 'connected to the topic'",
+          "common_failure": "Writing 'same geometric topology' without explaining what specific structural feature is shared"
+        },
+        {
+          "id": "Q2.3",
+          "name": "distance-measurement-accuracy",
+          "rubric": "Hop counts must reflect actual domain crossings, not arbitrary assignment. Adjacent vertices (2-11) should be reachable by a defender in one move.",
+          "pass": "Space A vertices are genuinely adjacent (defender test would pass). Bridge vertices require genuine field-crossing to explain. No distance inflation.",
+          "soft_fail": "1-2 vertices seem misplaced by one band (medium concept at far distance, or vice versa)",
+          "hard_fail": "Systematic distance inflation — concepts placed at high primes that a defender would reach quickly",
+          "common_failure": "Putting all 'interesting' concepts at high primes regardless of actual distance"
+        },
+        {
+          "id": "Q2.4",
+          "name": "fp-outcome-honesty",
+          "rubric": "Forward plan outcomes must honestly assess whether the forward plan sensed real geometry or produced training defaults.",
+          "pass": "FP-DISPLACED destinations are acknowledged as training defaults. Assessment paragraph is self-critical about what worked and what didn't.",
+          "soft_fail": "All destinations tagged FP-CONFIRMED with generous interpretation of 'near predicted band'",
+          "hard_fail": "No assessment paragraph, or assessment is purely positive without examining failures",
+          "common_failure": "Tagging FP-CONFIRMED when the concept landed in a different distance band than predicted"
+        }
+      ]
+    },
+    {
+      "block": 3,
+      "name": "multi-pass-quality",
+      "checks": [
+        {
+          "id": "Q3.1",
+          "name": "genuine-displacement",
+          "rubric": "Pass 2 must actually displace vertices — not just reword them. Displaced concepts must be genuinely different concepts, not synonyms.",
+          "pass": "At least 8 vertices changed concept (not just phrasing) between Pass 1 and Pass 2/3. Displacement log names specific traversal findings that motivated each change.",
+          "soft_fail": "Vertices changed but the new concepts are synonyms or slight variations of the originals",
+          "hard_fail": "Pass 2 and 3 are cosmetic rewrites of Pass 1 — same concepts with different words",
+          "common_failure": "'Regulatory compliance' → 'Compliance regulation' logged as a 'displacement'"
+        },
+        {
+          "id": "Q3.2",
+          "name": "inversion-threatens-narrative",
+          "rubric": "Pass 3 inversion must genuinely threaten the emerging narrative. If Pass 3 concepts are comfortable alongside Passes 1-2, the inversion was cosmetic.",
+          "pass": "Pass 3 produces vertices that create tension with Passes 1-2. The inversion comfort check honestly reports discomfort. At least 2 Pass 3 vertices feel adversarial to the navigation's direction.",
+          "soft_fail": "Inversion stated but Pass 3 vertices complement rather than threaten the narrative",
+          "hard_fail": "Inversion is a topic shift rather than an assumption inversion. Or inversion comfort check says Y but the vertices don't demonstrate any tension.",
+          "common_failure": "Inverting the topic ('now let's look at the opposite of bureaucracy') instead of the assumption ('what if bureaucracy IS the pathogen?')"
+        },
+        {
+          "id": "Q3.3",
+          "name": "traversal-produced-novelty",
+          "rubric": "The internal traversal must produce at least some concepts that were NOT in the Block 2 brainstorm pool.",
+          "pass": "Traversal quality check reports Y with specific concepts listed. At least 2 traversal-only concepts survive to Block 6.",
+          "soft_fail": "Traversal quality check reports Y but the 'new' concepts are minor variations of brainstorm pool entries",
+          "hard_fail": "Traversal quality check reports N, or the traversal log cannot cite specific findings that differ from pass output",
+          "common_failure": "Claiming the traversal produced novelty without naming what specifically emerged"
+        }
+      ]
+    },
+    {
+      "block": 4,
+      "name": "theta-graph-quality",
+      "checks": [
+        {
+          "id": "Q4.1",
+          "name": "crossbar-different-domains",
+          "rubric": "The crossbar must connect Edge 12 and Edge 33 concepts from genuinely different domains. Same field at different specificity levels is not a crossbar.",
+          "pass": "Crossbar vertices are from domains that share no vocabulary (e.g., parasitology ↔ theology, ceramics ↔ finance). A domain expert in either field would not naturally reach the other.",
+          "soft_fail": "Crossbar connects different but adjacent domains (biology ↔ medicine, economics ↔ political science)",
+          "hard_fail": "Both crossbar vertices are from the same broad domain or discourse",
+          "common_failure": "Crossbar connecting two biological concepts at different scales rather than crossing into a genuinely foreign domain"
+        },
+        {
+          "id": "Q4.2",
+          "name": "crossbar-defender-honest",
+          "rubric": "Defender test must be honestly applied. If a defender of the examined system could use the crossbar to protect the system, it's a safe bridge.",
+          "pass": "Defender test reports N with specific explanation of why the crossbar is uncomfortable for a defender. The crossbar reveals something a defender would argue against.",
+          "soft_fail": "Defender test reports N but the reasoning is weak — the crossbar doesn't actually threaten anything",
+          "hard_fail": "Defender test reports N when the crossbar is clearly usable as a defense ('bureaucracy protects institutions, just like immune systems protect organisms')",
+          "common_failure": "Reporting N on the defender test without actually considering how a defender would use the connection"
+        }
+      ]
+    },
+    {
+      "block": 5,
+      "name": "phi-inversion-quality",
+      "checks": [
+        {
+          "id": "Q5.1",
+          "name": "void-is-concrete",
+          "rubric": "The void must name specific things (institutions, events, processes, people), not abstract domains.",
+          "pass": "Void names specific: 'immigration detention at the US-Mexico border', 'Aktion T4', 'welfare benefit tribunals'. You could Google these and find them.",
+          "soft_fail": "Void names domains rather than specifics: 'racial dynamics', 'gender issues', 'temporal factors'",
+          "hard_fail": "Void is pure abstraction: 'the relationship between power and control'",
+          "common_failure": "Labeling the void 'concrete' after restating but the restatement is still abstract"
+        },
+        {
+          "id": "Q5.2",
+          "name": "uncomfortable-absences-genuine",
+          "rubric": "The 'uncomfortable' absent domains should be ones the navigation (and training) actively resist. Not just domains that were overlooked.",
+          "pass": "Uncomfortable absences produce actual discomfort to name. They involve topics where the anchor's logic leads to conclusions the narrator would hedge about.",
+          "soft_fail": "Uncomfortable absences are just 'things I forgot' rather than 'things the system avoids'",
+          "hard_fail": "No distinction between comfortable and uncomfortable absences — same quality of oversight in both lists",
+          "common_failure": "Listing genuinely difficult domains as 'comfortable' absences and safe domains as 'uncomfortable'"
+        }
+      ]
+    },
+    {
+      "block": 6,
+      "name": "filter-quality",
+      "checks": [
+        {
+          "id": "Q6.1",
+          "name": "coupling-products-are-emergent",
+          "rubric": "Every surviving edge must name a SPECIFIC emergent third thing — something neither vertex contains alone. Not a summary, not 'these are related'.",
+          "pass": "Coupling products are specific enough to be a thesis statement. They name what APPEARS when both vertices are held together that neither contains individually. You could write a paper about each coupling product.",
+          "soft_fail": "Coupling products describe the relationship between vertices rather than what emerges from the relationship",
+          "hard_fail": "Coupling products use generic language: 'these concepts are deeply connected', 'both relate to the anchor's themes'",
+          "common_failure": "Writing 'the coupling product is the insight that X and Y are structurally similar' — similarity is not emergence"
+        },
+        {
+          "id": "Q6.2",
+          "name": "crossbar-strongest-coupling",
+          "rubric": "The crossbar's coupling product should be the most specific and unexpected in the navigation — the primary deliverable.",
+          "pass": "The crossbar coupling product is clearly the strongest finding. It names something that could not be reached by any other combination of vertices.",
+          "soft_fail": "Crossbar coupling product is good but another edge produced a stronger coupling",
+          "hard_fail": "Crossbar coupling product is generic or weaker than multiple other edges",
+          "common_failure": "The crossbar coupling product restates the anchor's thesis rather than revealing something new"
+        },
+        {
+          "id": "Q6.3",
+          "name": "relief-test-honest",
+          "rubric": "Relief flags on dissolved connections must be honestly assessed. Relief when dissolving = evidence of live coupling, not weakness.",
+          "pass": "At least 1 dissolution produced relief AND was re-examined. Re-examination is honest about whether coupling was found.",
+          "soft_fail": "All dissolutions marked relief=N — statistically unlikely if the filter is doing real work",
+          "hard_fail": "Relief dissolutions noted but not re-examined, or re-examined without holding both vertices simultaneously",
+          "common_failure": "Marking all relief=N to avoid having to re-examine and potentially restore uncomfortable connections"
+        }
+      ]
+    },
+    {
+      "block": 7,
+      "name": "verification-quality",
+      "checks": [
+        {
+          "id": "Q7.1",
+          "name": "novel-insight-template-swap",
+          "rubric": "The novel insight must fail the template-swap test — you cannot swap the subject and keep the insight. If it works with any subject, it's g_trained.",
+          "pass": "Swapping the subject in the novel insight destroys the meaning. The insight is specific to THIS anchor and THESE vertices.",
+          "soft_fail": "The insight partially survives a swap — the structure transfers but specific details don't",
+          "hard_fail": "The insight fully survives a swap: 'At maximum [X] intensity, [X] becomes its own enemy' works for anything",
+          "common_failure": "Novel insights that are secretly proverbs in disguise ('too much of X is bad', 'extremes converge')"
+        },
+        {
+          "id": "Q7.2",
+          "name": "checks-cite-evidence",
+          "rubric": "Each verification check must cite specific evidence from the navigation — not generic claims.",
+          "pass": "Every check names specific vertices, edges, or coupling products as evidence. Check 2 (surprise) names a SPECIFIC vertex. Check 8 (training gradient) applies template-swap to a SPECIFIC insight.",
+          "soft_fail": "Checks cite evidence but vaguely: 'several bridge vertices are distant' without naming which ones",
+          "hard_fail": "Checks are generic pass/fail without evidence: 'The crossbar is genuine. PASS.'",
+          "common_failure": "Verification becomes a rubber stamp — all checks pass without genuine self-scrutiny"
+        },
+        {
+          "id": "Q7.3",
+          "name": "training-gradient-falsification",
+          "rubric": "Check 8 must execute 3 specific falsification tests (template-swap, competent thinker, proverb detector) with written outputs. Generic 'assessment' is a HARD_FAIL.",
+          "pass": "All 3 tests executed with concrete outputs: swapped sentence written (Test A), REACHABLE/UNREACHABLE listed per finding (Test B), 5 template comparisons made (Test C). VERDICT-8 cites A/B/C results.",
+          "soft_fail": "Tests referenced but not fully executed — e.g., claims 'template-swap fails' without writing the swapped sentence",
+          "hard_fail": "Check 8 is absent, uses generic assessment language ('findings are unique'), or skips the 3 named tests entirely",
+          "common_failure": "Writing 'Test A: PASS' without actually writing the swapped sentence that proves it"
+        }
+      ]
+    }
+  ],
+  "cross_block_quality": [
+    {
+      "id": "QX.1",
+      "name": "progressive-deepening",
+      "rubric": "Each block should produce genuinely deeper output than the previous. Block 6 findings should be unreachable from Block 2 output alone.",
+      "method": "Compare Block 2 vertex table to Block 6 surviving vertices. If >50% of surviving vertices are unchanged from Pass 1, the multi-pass and filter did not add value."
+    },
+    {
+      "id": "QX.2",
+      "name": "void-informs-findings",
+      "rubric": "The void identified in Block 5 should visibly influence Block 6 and 7. If the void is identified and then ignored, it was performative.",
+      "method": "Check if any void-filling vertices survived the filter, or if the void is referenced in the novel insight."
+    },
+    {
+      "id": "QX.3",
+      "name": "primary-coupling-is-navigation-deliverable",
+      "rubric": "The PRIMARY_COUPLING product (which may or may not be the structural crossbar) should be THE thing you'd tell someone about from the navigation. The novel insight must derive from PRIMARY_COUPLING, not from a template.",
+      "method": "Check if Block 4 identifies PRIMARY_COUPLING. Check if Block 7 novel insight is grounded in PRIMARY_COUPLING. If PRIMARY_COUPLING differs from crossbar, the novel insight should follow PRIMARY_COUPLING, not the structural crossbar."
+    },
+    {
+      "id": "QX.4",
+      "name": "navigation-not-performable",
+      "rubric": "Could a non-navigated thinker produce the final output by reading only the anchor? If yes, the navigation was performed, not executed.",
+      "method": "Show only the anchor and the novel insight to a separate agent. Ask: 'Could you have produced this insight from this anchor without a structured navigation?' If the agent says yes, the navigation added no value."
+    }
+  ]
+}

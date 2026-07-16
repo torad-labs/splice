@@ -1,0 +1,18 @@
+# TENET: No Any or Any? parameter types.
+# Rationale: Type-erased parameters lose compile-time safety.
+# Use generics or specific interface types instead.
+id: no-any-parameters
+language: kotlin
+severity: error
+message: "Don't use Any/Any? parameters. Use specific types or generics."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  kind: parameter
+  has:
+    kind: user_type
+    has:
+      kind: type_identifier
+      regex: "^Any$"

@@ -1,0 +1,15 @@
+# TENET: No System.exit() calls.
+# Rationale: System.exit() bypasses cleanup, finally blocks, and shutdown hooks.
+# Throw an exception and let the application shut down gracefully.
+id: no-system-exit
+language: kotlin
+severity: error
+message: "Don't call System.exit(). Throw an exception for graceful shutdown."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  any:
+    - pattern: System.exit($CODE)
+    - pattern: exitProcess($CODE)

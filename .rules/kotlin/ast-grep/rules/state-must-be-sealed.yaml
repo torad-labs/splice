@@ -1,0 +1,25 @@
+# TENET: State-driven UI via sealed classes.
+# Rationale: UI state should be a sealed class hierarchy with data class variants.
+# This ensures exhaustive when-expressions and compile-time safety when adding states.
+# The sealed class should have nested data classes for each state variant.
+id: state-must-be-sealed
+language: kotlin
+severity: error
+message: "UI state should be a sealed class with data class variants for exhaustive handling."
+files:
+  - "**/*State.kt"
+  - "**/*UiState.kt"
+ignores:
+  - "**/test/**"
+rule:
+  kind: class_declaration
+  all:
+    - has:
+        kind: type_identifier
+        regex: "(State|UiState)$"
+    - not:
+        has:
+          kind: modifiers
+          has:
+            kind: class_modifier
+            regex: "^sealed$"

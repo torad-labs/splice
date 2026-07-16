@@ -1,0 +1,30 @@
+# TENET: No name shadowing in lambdas.
+# Rationale: A lambda parameter must not shadow a name bound in an enclosing scope.
+# Shadowing hides which binding the body reads and creates subtle bugs.
+id: no-name-shadowing
+language: kotlin
+severity: error
+message: "Lambda parameter shadows a name from enclosing scope. Rename to something distinct."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  kind: lambda_literal
+  all:
+    - has:
+        kind: lambda_parameters
+        has: {kind: variable_declaration, has: {kind: simple_identifier, pattern: $NAME}}
+    - any:
+        - inside:
+            stopBy: end
+            kind: function_declaration
+            has: {kind: function_value_parameters, has: {kind: parameter, has: {kind: simple_identifier, pattern: $NAME}}}
+        - inside:
+            stopBy: end
+            kind: lambda_literal
+            has: {kind: lambda_parameters, has: {kind: variable_declaration, has: {kind: simple_identifier, pattern: $NAME}}}
+        - inside:
+            stopBy: end
+            kind: class_declaration
+            has: {kind: primary_constructor, has: {kind: class_parameter, has: {kind: simple_identifier, pattern: $NAME}}}

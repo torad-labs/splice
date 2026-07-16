@@ -1,0 +1,29 @@
+# TENET: Repository injection discipline — data-source primitives only.
+# Rationale: Repositories inject DataSources, Daos, and infrastructure (dispatchers, serializers).
+# They never depend upward on UseCases or ViewModels.
+# Allowed: DataSource, Dao, HttpClient, Database, dispatchers, Clock, Json serializers.
+# Forbidden: UseCase, ViewModel, UiState, any presentation layer.
+id: repository-injection-discipline
+language: kotlin
+severity: error
+message: "Repositories inject data-source primitives only. Never inject UseCase or ViewModel."
+files:
+  - "**/*Repository.kt"
+  - "**/*RepositoryImpl.kt"
+ignores:
+  - "**/test/**"
+rule:
+  kind: class_parameter
+  all:
+    - inside:
+        kind: primary_constructor
+        inside:
+          kind: class_declaration
+          has:
+            kind: type_identifier
+            regex: "Repository(Impl)?$"
+    - has:
+        kind: user_type
+        has:
+          kind: type_identifier
+          regex: "(UseCase|ViewModel|UiState)$"

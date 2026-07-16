@@ -1,0 +1,25 @@
+# TENET: Flow over suspend — even for fire-and-forget operations.
+# Rationale: Flow is composable, suspend is single-shot. Composition makes refactoring smaller scope.
+# Even single-value operations should return Flow when consistency with the rest of the stack matters.
+# This rule catches `suspend fun` returning Flow, which is always wrong (Flow is already lazy).
+id: flow-over-suspend
+language: kotlin
+severity: error
+message: "A `suspend fun` returning Flow is redundant — Flow is already lazy. Drop `suspend` or return the value directly."
+rule:
+  kind: function_declaration
+  all:
+    - has:
+        kind: modifiers
+        has:
+          kind: function_modifier
+          regex: '^suspend$'
+    - has:
+        kind: user_type
+        all:
+          - has:
+              kind: type_identifier
+              regex: '^Flow$'
+          - follows:
+              kind: function_value_parameters
+              stopBy: end

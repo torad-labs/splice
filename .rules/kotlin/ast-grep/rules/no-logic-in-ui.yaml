@@ -1,0 +1,19 @@
+# TENET: Extract UI logic out of the UI — converters pre-compute everything.
+# Rationale: Composable UI files render *UiState and emit actions.
+# Domain logic (UseCases, Repositories, DataSources) belongs in ViewModel/conductor.
+# UI should react to data, not compute it. Pre-compute booleans (showEmptyState, buttonEnabled) in converters.
+id: no-logic-in-ui
+language: kotlin
+severity: error
+message: "Composable UI renders UiState and emits actions. Wire UseCases/Repositories/DataSources in ViewModel, not UI."
+files:
+  - "**/ui/**/*.kt"
+  - "**/presentation/**/*.kt"
+  - "**/compose/**/*.kt"
+ignores:
+  - "**/test/**"
+  - "**/*ViewModel.kt"
+  - "**/*Conductor.kt"
+rule:
+  kind: type_identifier
+  regex: "\\w+(UseCase|Repository|RepositoryImpl|DataSource|Dao)$"

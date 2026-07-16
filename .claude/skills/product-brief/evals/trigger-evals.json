@@ -1,0 +1,19 @@
+{
+  "skill_name": "product-brief",
+  "trigger_evals": [
+    {"id": 1, "prompt": "Write me a product brief for X", "should_trigger": true},
+    {"id": 2, "prompt": "Create a one-pager for this idea", "should_trigger": true},
+    {"id": 3, "prompt": "PR/FAQ for this product concept", "should_trigger": true},
+    {"id": 4, "prompt": "Help me think through this product idea", "should_trigger": true},
+    {"id": 5, "prompt": "I need a product one-pager", "should_trigger": true},
+    {"id": 6, "prompt": "Brief this concept for investors", "should_trigger": true},
+    {"id": 7, "prompt": "Can you make an intelligent brief for this concept?", "should_trigger": true},
+    {"id": 8, "prompt": "I have a product idea, help me structure it", "should_trigger": true},
+    {"id": 9, "prompt": "Write a blog post about X", "should_trigger": false},
+    {"id": 10, "prompt": "Create a pitch deck", "should_trigger": false},
+    {"id": 11, "prompt": "Draft an email to investors", "should_trigger": false},
+    {"id": 12, "prompt": "Write a PRD for this feature", "should_trigger": false},
+    {"id": 13, "prompt": "Help me write a business plan", "should_trigger": false},
+    {"id": 14, "prompt": "Create a landing page for X", "should_trigger": false}
+  ]
+}

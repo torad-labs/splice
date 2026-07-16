@@ -1,0 +1,17 @@
+# TENET: LazyColumn/LazyRow items need key parameter.
+# Rationale: Without key, Compose can't track item identity across recompositions.
+# This causes animations to break and state to be lost.
+# Always: items(list, key = { it.id }) { ... }
+id: lazy-items-need-key
+language: kotlin
+severity: error
+message: "Provide key parameter to items() for stable identity: items(list, key = { it.id })"
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  pattern: items($LIST) { $$$BODY }
+  not:
+    has:
+      pattern: key = $KEY

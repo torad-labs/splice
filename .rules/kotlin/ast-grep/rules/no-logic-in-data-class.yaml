@@ -1,0 +1,33 @@
+# TENET: Data classes carry data, not behavior.
+# Rationale: No function declarations and no custom/computed accessors in data class body.
+# Logic belongs in a UseCase or converter where it is injectable and testable.
+id: no-logic-in-data-class
+language: kotlin
+severity: error
+message: "Data classes carry data, not behavior. Move functions and computed getters to a UseCase or converter."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  any:
+    - kind: function_declaration
+      inside:
+        kind: class_body
+        inside:
+          kind: class_declaration
+          has:
+            kind: modifiers
+            has:
+              kind: class_modifier
+              regex: "^data$"
+    - kind: getter
+      inside:
+        kind: class_body
+        inside:
+          kind: class_declaration
+          has:
+            kind: modifiers
+            has:
+              kind: class_modifier
+              regex: "^data$"

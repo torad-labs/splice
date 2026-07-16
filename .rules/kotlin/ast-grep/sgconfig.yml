@@ -1,0 +1,6 @@
+# ast-grep configuration for Torad Kotlin rules
+# Install: copy to project root or .rules/kotlin/ast-grep/
+# Run: ast-grep scan --config .rules/kotlin/ast-grep/sgconfig.yml
+
+ruleDirs:
+  - rules

@@ -1,0 +1,20 @@
+# TENET: Prefer immutable collections.
+# Rationale: Mutable collections in public APIs allow uncontrolled mutation.
+# Use listOf/setOf/mapOf and return immutable views.
+id: prefer-immutable-collections
+language: kotlin
+severity: error
+message: "Avoid mutableListOf/mutableSetOf/mutableMapOf in return types. Return immutable collections."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  kind: function_declaration
+  has:
+    kind: function_body
+    has:
+      any:
+        - pattern: return mutableListOf($$$ARGS)
+        - pattern: return mutableSetOf($$$ARGS)
+        - pattern: return mutableMapOf($$$ARGS)

@@ -1,0 +1,14 @@
+# TENET: Flow composition over collect + logic.
+# Rationale: .collect {} should be a thin terminal. Logic belongs in upstream operators (map, filter, flatMapLatest).
+# Heavy collect blocks are hard to test, hard to compose, and often hide state mutation.
+# Move branching/multi-step logic into flow operators.
+id: no-logic-in-collect
+language: kotlin
+severity: error
+message: "Keep .collect {} as a thin terminal. Move branching/multi-step logic into flow operators (map, filter, flatMapLatest)."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  pattern: $FLOW.collect { $$$BODY }

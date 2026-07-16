@@ -1,0 +1,17 @@
+# TENET: No Compose in core/domain modules.
+# Rationale: Core and domain modules are pure Kotlin — no UI framework dependencies.
+# Compose imports break cross-platform builds and violate UI/domain separation.
+# Customize the file patterns to match your core module structure.
+id: no-compose-in-core
+language: kotlin
+severity: error
+message: "This module is pure Kotlin. Move Compose code to a UI/feature module."
+files:
+  - "**/core/**/*.kt"
+  - "**/domain/**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  any:
+    - pattern: import androidx.compose.$$$REST
+    - pattern: import org.jetbrains.compose.$$$REST

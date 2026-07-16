@@ -1,0 +1,27 @@
+# TENET: Discriminate with sealed type or enum, not raw strings.
+# Rationale: String-based dispatch compiles typos and hides missing cases.
+# Model the discriminant as a sealed type or enum for compile-time safety.
+id: sealed-over-stringly
+language: kotlin
+severity: error
+message: "Stringly dispatch hides missing cases. Model the discriminant as a sealed type or enum."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  any:
+    - kind: when_entry
+      all:
+        - has:
+            kind: when_condition
+            has:
+              kind: string_literal
+        - precedes:
+            kind: when_entry
+            has:
+              kind: when_condition
+              has:
+                kind: string_literal
+    - kind: call_expression
+      pattern: 'mapOf($$$, "$A" to $TYPE($$$), $$$, "$B" to $TYPE2($$$), $$$, "$C" to $TYPE3($$$), $$$)'

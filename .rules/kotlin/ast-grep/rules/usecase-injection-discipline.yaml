@@ -1,0 +1,28 @@
+# TENET: UseCase injection discipline — depend downward only.
+# Rationale: UseCases depend on other UseCases and data primitives (Repository, DataSource).
+# They never depend upward on ViewModels or UI state.
+# Allowed: other UseCases, Repository, DataSource, Dao, dispatchers, Clock, Json.
+# Forbidden: ViewModel, UiState, Composable, UI-layer dependencies.
+id: usecase-injection-discipline
+language: kotlin
+severity: error
+message: "UseCases depend downward (other UseCases, Repositories). Never inject ViewModel or UI state."
+files:
+  - "**/*UseCase.kt"
+ignores:
+  - "**/test/**"
+rule:
+  kind: class_parameter
+  all:
+    - inside:
+        kind: primary_constructor
+        inside:
+          kind: class_declaration
+          has:
+            kind: type_identifier
+            regex: "UseCase$"
+    - has:
+        kind: user_type
+        has:
+          kind: type_identifier
+          regex: "(ViewModel|UiState|Composable)$"

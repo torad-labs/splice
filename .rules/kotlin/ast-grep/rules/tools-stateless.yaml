@@ -1,0 +1,25 @@
+# TENET: Tool files are stateless val-shaped tool() declarations.
+# Rationale: *Tool.kt files should contain only tool() or dynamicTool() declarations.
+# No classes, no mutable state, no ViewModel imports. Tools are pure data + behavior.
+id: tools-stateless
+language: kotlin
+severity: error
+message: "Tool files should be stateless tool() declarations, not classes or state holders."
+files:
+  - "**/*Tool.kt"
+ignores:
+  - "**/test/**"
+rule:
+  any:
+    - kind: class_declaration
+      has: {kind: type_identifier, regex: "^\\w+Tool$"}
+    - kind: property_declaration
+      all:
+        - inside: {kind: source_file}
+        - regex: "\\bvar\\b"
+    - kind: property_declaration
+      all:
+        - inside: {kind: source_file}
+        - regex: "=\\s*(MutableStateFlow|MutableSharedFlow|Channel|mutableListOf|mutableSetOf|mutableMapOf)\\s*\\("
+    - kind: import_header
+      regex: "^import\\s+[\\w.]+\\.\\w*ViewModel\\b"

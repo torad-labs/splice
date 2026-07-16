@@ -2,3 +2,9 @@ node_modules/
 __pycache__/
 *.pyc
 .claude/hooks/log/
+
+# >>> torad-managed (auto-generated; do not edit inside) >>>
+.torad.state.json
+.torad.lock
+# <<< torad-managed <<<
+.DS_Store

@@ -1,0 +1,22 @@
+# TENET: No computed logic in UiState data classes.
+# Rationale: UiState is pure data — pre-computed by converters before reaching UI.
+# Don't put methods that compute derived values inside UiState.
+# Compute everything during domain→UI conversion, store the results as val properties.
+id: no-logic-in-uistate
+language: kotlin
+severity: error
+message: "UiState should be pure data. Move computed logic to domain→UI converters."
+files:
+  - "**/*UiState.kt"
+  - "**/*State.kt"
+ignores:
+  - "**/test/**"
+rule:
+  kind: function_declaration
+  inside:
+    kind: class_body
+    inside:
+      kind: class_declaration
+      has:
+        kind: type_identifier
+        regex: "(UiState|State)$"

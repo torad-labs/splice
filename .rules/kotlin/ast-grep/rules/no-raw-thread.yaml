@@ -1,0 +1,17 @@
+# TENET: No raw Thread creation.
+# Rationale: Use coroutines for async work. Raw threads bypass structured concurrency,
+# can't be cancelled, and don't propagate context.
+id: no-raw-thread
+language: kotlin
+severity: error
+message: "Use coroutines instead of raw Thread. Threads bypass structured concurrency."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  any:
+    - pattern: Thread($$$ARGS)
+    - pattern: Thread { $$$BODY }
+    - pattern: thread($$$ARGS)
+    - pattern: thread { $$$BODY }

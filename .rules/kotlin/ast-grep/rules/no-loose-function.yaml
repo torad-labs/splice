@@ -1,0 +1,27 @@
+# TENET: No loose top-level functions — behavior belongs ON a type.
+# Rationale: Loose functions are the TypeScript-module smell. Put behavior on the class/object/UseCase that owns it.
+# Use `class X { operator fun invoke(...) }` for single-purpose behavior.
+# EXCEPTIONS:
+#   - @Composable functions (Compose requires top-level composables)
+#   - `fun main(...)` (entry point)
+#   - `fun interface` SAM declarations (tree-sitter mis-parses these)
+id: no-loose-function
+language: kotlin
+severity: error
+message: "Put behavior on the type that owns it (method or `class X { operator fun invoke(...) }`), not a loose top-level function. @Composable and main() are exempt."
+files:
+  - "**/src/main/**/*.kt"
+  - "**/src/commonMain/**/*.kt"
+  - "**/src/androidMain/**/*.kt"
+  - "**/src/iosMain/**/*.kt"
+  - "**/src/jvmMain/**/*.kt"
+ignores:
+  - "**/test/**"
+  - "**/*Test.kt"
+rule:
+  kind: function_declaration
+  all:
+    - inside: {kind: source_file}
+    - not: {has: {kind: modifiers, has: {kind: annotation, regex: "Composable"}}}
+    - not: {has: {kind: simple_identifier, regex: "^main$"}}
+    - not: {regex: "^\\s*(?:\\w+\\s+)*fun\\s+interface\\b"}

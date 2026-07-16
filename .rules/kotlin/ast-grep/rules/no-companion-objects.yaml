@@ -1,0 +1,14 @@
+# TENET: No companion objects — move members to top-level declarations.
+# Rationale: Companion objects hide top-level helpers behind a class body and encourage god classes.
+# Every companion member can be a top-level declaration in the same file, before the class.
+# Pattern: Instead of `class X { companion object { fun create() } }` use `fun createX()` at top level.
+id: no-companion-objects
+language: kotlin
+severity: error
+message: "Move companion object members to top-level declarations in the same file, before the class."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  kind: companion_object

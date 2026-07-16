@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Eval Set Review — __SKILL_NAME_PLACEHOLDER__</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f5; color: #1a1a1a; padding-bottom: 80px; }
+  .header { background: #1a1a1a; color: white; padding: 16px 24px; }
+  .header h1 { font-size: 18px; font-weight: 600; }
+  .header .subtitle { font-size: 13px; color: #aaa; margin-top: 4px; }
+  .desc-card { max-width: 800px; margin: 20px auto 0; padding: 0 24px; }
+  .desc-box { background: white; border: 1px solid #e5e5e5; border-radius: 8px; padding: 16px; }
+  .desc-box h3 { font-size: 13px; font-weight: 600; color: #666; margin-bottom: 8px; }
+  .desc-box p { font-size: 14px; line-height: 1.5; }
+  .container { max-width: 800px; margin: 20px auto; padding: 0 24px; }
+  .section-title { font-size: 15px; font-weight: 600; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; }
+  .btn-add { padding: 6px 14px; background: #0070f3; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+  .btn-add:hover { background: #0051b3; }
+  .eval-list { display: flex; flex-direction: column; gap: 8px; }
+  .eval-item { background: white; border: 1px solid #e5e5e5; border-radius: 6px; padding: 12px 14px; display: flex; gap: 12px; align-items: flex-start; }
+  .eval-item.should-trigger { border-left: 3px solid #22c55e; }
+  .eval-item.should-not-trigger { border-left: 3px solid #ef4444; }
+  .eval-query { flex: 1; font-size: 13px; line-height: 1.5; cursor: text; }
+  .eval-query[contenteditable] { outline: none; }
+  .eval-query[contenteditable]:focus { background: #fafff5; border-radius: 2px; }
+  .toggle-btn { padding: 4px 10px; border-radius: 4px; cursor: pointer; font-size: 11px; font-weight: 600; border: none; white-space: nowrap; }
+  .trigger-yes { background: #dcfce7; color: #166534; }
+  .trigger-no { background: #fee2e2; color: #991b1b; }
+  .remove-btn { padding: 4px 8px; background: none; border: 1px solid #ddd; border-radius: 4px; cursor: pointer; font-size: 11px; color: #999; }
+  .remove-btn:hover { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+  .stats { font-size: 12px; color: #666; }
+  .submit-bar { position: fixed; bottom: 0; left: 0; right: 0; background: white; border-top: 1px solid #e5e5e5; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; }
+  .submit-bar .info { font-size: 13px; color: #666; }
+  .btn-export { background: #1a1a1a; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 500; }
+  .btn-export:hover { background: #333; }
+  .divider { border-top: 1px solid #e5e5e5; margin: 8px 0; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Eval Set Review — __SKILL_NAME_PLACEHOLDER__</h1>
+  <div class="subtitle">Review and edit trigger eval queries before running the optimization loop</div>
+</div>
+
+<div class="desc-card">
+  <div class="desc-box">
+    <h3>CURRENT DESCRIPTION</h3>
+    <p>__SKILL_DESCRIPTION_PLACEHOLDER__</p>
+  </div>
+</div>
+
+<div class="container">
+  <div class="section-title">
+    <span>Should Trigger <span id="triggerCount" class="stats"></span></span>
+    <button class="btn-add" onclick="addItem(true)">+ Add</button>
+  </div>
+  <div class="eval-list" id="triggerList"></div>
+
+  <div class="divider" style="margin: 20px 0;"></div>
+
+  <div class="section-title">
+    <span>Should Not Trigger <span id="noTriggerCount" class="stats"></span></span>
+    <button class="btn-add" onclick="addItem(false)">+ Add</button>
+  </div>
+  <div class="eval-list" id="noTriggerList"></div>
+</div>
+
+<div class="submit-bar">
+  <span class="info" id="totalCount"></span>
+  <button class="btn-export" onclick="exportEvalSet()">Export Eval Set</button>
+</div>
+
+<script>
+const SKILL_NAME = "__SKILL_NAME_PLACEHOLDER__";
+let evalData = __EVAL_DATA_PLACEHOLDER__;
+
+function renderAll() {
+  const triggerList = document.getElementById('triggerList');
+  const noTriggerList = document.getElementById('noTriggerList');
+  triggerList.innerHTML = '';
+  noTriggerList.innerHTML = '';
+
+  const triggers = evalData.filter(e => e.should_trigger);
+  const noTriggers = evalData.filter(e => !e.should_trigger);
+
+  triggers.forEach(item => triggerList.appendChild(createItem(item)));
+  noTriggers.forEach(item => noTriggerList.appendChild(createItem(item)));
+
+  document.getElementById('triggerCount').textContent = `(${triggers.length})`;
+  document.getElementById('noTriggerCount').textContent = `(${noTriggers.length})`;
+  document.getElementById('totalCount').textContent = `${evalData.length} queries total`;
+}
+
+function createItem(item) {
+  const div = document.createElement('div');
+  div.className = `eval-item ${item.should_trigger ? 'should-trigger' : 'should-not-trigger'}`;
+  div.dataset.id = item.id;
+
+  const queryDiv = document.createElement('div');
+  queryDiv.className = 'eval-query';
+  queryDiv.contentEditable = 'true';
+  queryDiv.textContent = item.query;
+  queryDiv.addEventListener('blur', () => {
+    const idx = evalData.findIndex(e => e.id === item.id);
+    if (idx >= 0) evalData[idx].query = queryDiv.textContent.trim();
+  });
+
+  const toggleBtn = document.createElement('button');
+  toggleBtn.className = `toggle-btn ${item.should_trigger ? 'trigger-yes' : 'trigger-no'}`;
+  toggleBtn.textContent = item.should_trigger ? 'TRIGGER' : 'NO TRIGGER';
+  toggleBtn.onclick = () => {
+    const idx = evalData.findIndex(e => e.id === item.id);
+    if (idx >= 0) {
+      evalData[idx].should_trigger = !evalData[idx].should_trigger;
+      renderAll();
+    }
+  };
+
+  const removeBtn = document.createElement('button');
+  removeBtn.className = 'remove-btn';
+  removeBtn.textContent = '✕';
+  removeBtn.onclick = () => {
+    evalData = evalData.filter(e => e.id !== item.id);
+    renderAll();
+  };
+
+  div.appendChild(queryDiv);
+  div.appendChild(toggleBtn);
+  div.appendChild(removeBtn);
+  return div;
+}
+
+function addItem(shouldTrigger) {
+  const newId = Math.max(0, ...evalData.map(e => e.id || 0)) + 1;
+  evalData.push({
+    id: newId,
+    query: 'New query — click to edit',
+    should_trigger: shouldTrigger,
+  });
+  renderAll();
+  // Focus the new item
+  const list = shouldTrigger
+    ? document.getElementById('triggerList')
+    : document.getElementById('noTriggerList');
+  const lastItem = list.lastElementChild;
+  if (lastItem) {
+    const queryDiv = lastItem.querySelector('.eval-query');
+    if (queryDiv) {
+      queryDiv.focus();
+      // Select all text
+      const range = document.createRange();
+      range.selectNodeContents(queryDiv);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+  }
+}
+
+function exportEvalSet() {
+  // Capture any unsaved edits
+  document.querySelectorAll('.eval-query[contenteditable]').forEach(div => {
+    const id = parseInt(div.closest('[data-id]').dataset.id);
+    const idx = evalData.findIndex(e => e.id === id);
+    if (idx >= 0) evalData[idx].query = div.textContent.trim();
+  });
+
+  const blob = new Blob([JSON.stringify(evalData, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `eval_set.json`;
+  a.click();
+}
+
+renderAll();
+</script>
+</body>
+</html>

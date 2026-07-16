@@ -1,0 +1,14 @@
+# TENET: No println in production code.
+# Rationale: Use a logging framework for structured, leveled logging.
+# println bypasses log aggregation, has no context, and can't be filtered.
+id: no-println-in-production
+language: kotlin
+severity: error
+message: "Use a logging framework instead of println. println bypasses structured logging."
+files:
+  - "**/main/**/*.kt"
+ignores:
+  - "**/test/**"
+  - "**/debug/**"
+rule:
+  pattern: println($$$ARGS)

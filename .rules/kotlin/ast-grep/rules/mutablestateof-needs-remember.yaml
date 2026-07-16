@@ -1,0 +1,17 @@
+# TENET: mutableStateOf() must be wrapped in remember {}.
+# Rationale: Without remember, state is recreated on every recomposition.
+# Always: val state = remember { mutableStateOf(...) }
+# Never: val state = mutableStateOf(...) directly in a Composable.
+id: mutablestateof-needs-remember
+language: kotlin
+severity: error
+message: "Wrap mutableStateOf() in remember {} to survive recomposition."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  pattern: val $NAME = mutableStateOf($$$ARGS)
+  not:
+    inside:
+      pattern: remember { $$$BODY }

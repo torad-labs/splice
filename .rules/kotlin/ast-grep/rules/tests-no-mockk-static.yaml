@@ -1,0 +1,18 @@
+# TENET: No static/global mocking in tests.
+# Rationale: mockkStatic/Object/Constructor re-instrument JVM classes globally.
+# Stale mocks leak between test classes, parallel execution shuffles them, rescanning is slow.
+# Build hand-rolled fakes instead — they're explicit and don't leak.
+id: tests-no-mockk-static
+language: kotlin
+severity: error
+message: "Static/global mocking leaks between tests and breaks parallelism. Write a hand-rolled fake."
+files:
+  - "**/test/**/*.kt"
+  - "**/*Test.kt"
+rule:
+  any:
+    - pattern: mockkStatic($$$A)
+    - pattern: mockkObject($$$A)
+    - pattern: mockkConstructor($$$A)
+    - pattern: unmockkStatic($$$A)
+    - pattern: unmockkObject($$$A)

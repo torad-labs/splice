@@ -1,0 +1,16 @@
+# TENET: Avoid unsafe casts (as).
+# Rationale: Unsafe casts throw ClassCastException at runtime.
+# Use safe cast (as?) with null handling or smart casts via is checks.
+id: no-unsafe-cast
+language: kotlin
+severity: error
+message: "Avoid unsafe cast `as`. Use `as?` (safe cast) or smart cast via `is` check."
+files:
+  - "**/*.kt"
+ignores:
+  - "**/test/**"
+rule:
+  kind: as_expression
+  not:
+    has:
+      kind: nullable_type

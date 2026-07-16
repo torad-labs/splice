@@ -35,6 +35,42 @@
           }
         ]
       }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/marcos/dev/infra/splice/.claude/hooks/orchestrator/posttooluse.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/marcos/dev/infra/splice/.claude/hooks/orchestrator/sessionstart.py",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Users/marcos/dev/infra/splice/.claude/hooks/orchestrator/userpromptsubmit.py",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }

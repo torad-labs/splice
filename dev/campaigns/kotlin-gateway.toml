@@ -363,8 +363,8 @@ verify = "cd gateway && ./gradlew -q :provider-spi:test --tests '*Classifier*'"
 id = "P2-MACH"
 phase = "P2"
 title = "Responses stream state machine: event-for-event port of runStreamTurn as StreamTranslator"
-files = ["gateway/dialect-openai-responses/src/main/kotlin/ResponsesStreamTranslator.kt", "gateway/dialect-openai-responses/src/test/kotlin/"]
-status = "todo"
+files = ["gateway/dialect-openai-responses/src/test/kotlin/ResponsesStreamTranslatorTest.kt"]
+status = "verified"
 verify = "cd gateway && ./gradlew -q :dialect-openai-responses:test"
 # Context: PORT-OF codex/stream.mjs runStreamTurn @ 4ca99f7 EVENT-FOR-EVENT; its comments are the
 # spec: eager tool_use open on output_item.added, LAZY text/thinking open on first delta (no empty
@@ -377,6 +377,13 @@ verify = "cd gateway && ./gradlew -q :dialect-openai-responses:test"
 # client-abort abandon() if res dead else truncated overloaded_error; empty compact = error
 # 'empty_model' never empty success; empty non-compact under HONESTY_MIN_CHARS -> api_error.
 # mirrorInto call at end (tools stay on). Returns TurnOutcome; gateway turn loop owns terminals.
+# [2026-07-16] SLOT (design pinned before fill): driveTurn(upstream Flow<JsonObject>, sink WireSink, meta TurnMeta) collects imperatively with mutable state Map<Int,BlockState(idx WireBlockIndex, sawDelta)> keyed by upstream output_index (+ 'reasoning:N' composite keys exactly like Node). RESPONSIBILITY SPLIT (decided, differs from Node shape but preserves order): the MACHINE handles event loop + closeAll + harvest-fallback merge + FAILURE decisions (upstreamFailure -> classified; watchdog-fired -> overloaded w/ idle/cap message; !finalResponse+client-dead -> ClientAbandoned; !finalResponse -> truncated overloaded) and returns TurnOutcome; buffers (thinkingText/bodyText/emittedText/hasToolUse/incomplete/usage) RIDE TurnOutcome.Success — core Turn.kt gains these fields; the GATEWAY pipeline then does promote-to-text (pickModelText) -> empty-compact/empty-model honesty (emitError api_error, never empty success) -> mirrorInto -> emitTerminal. Event vocabulary + rules from stream.mjs @ 4ca99f7: completed/done/incomplete capture finalResponse+usage(input_tokens|prompt_tokens); failed/error capture upstreamFailure{code,message} and CONTINUE reading; output_item.added function_call -> EAGER openTool(call_id||id||synthetic, name) sawDelta=false hasToolUse=true; text/reasoning LAZY open on first delta; output_item.done closes BOTH oi and reasoning:oi blocks + gated replay (replayReasoning && !compact && item.type==reasoning && item.encrypted_content -> addRedactedThinking IN POSITION); reasoning_summary_part.added AFTER sawDelta -> '\n\n' join into SAME block (v24: never close per part); reasoning_summary_text.delta|reasoning_text.delta -> lazy open thinking, buf += delta (multi-ITEM separator '\n\n' when thinkingBuf nonempty+!endsWith \n); *_text.done|*_part.done -> IGNORED; output_text.delta -> lazy open text at key oi, emittedText=true; function_call_arguments.delta -> inputJsonDelta on SAME wire index (missing block -> skip); function_call_arguments.done -> closeBlock. Harvest merge rules: text: use harvested when bufEmpty OR (buf weak && harvested strong); thinking: use harvested when LONGER. Machine lives in :dialect-openai-responses (ResponsesStreamTranslator).
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T07:07:31Z
+# [2026-07-16] ATTEST-START: tree=31343c5353761346fbd5a162958a4c399d86d1d5 at=2026-07-16T07:07:31Z
+# [2026-07-16] Landed splice.dialect.responses.ResponsesStreamTranslator per the pinned slot: event-for-event port (terminal/failure/item-added eager-tool/item-done+in-position-replay/summary-part \n\n join/thinking-lazy/text-lazy/args-same-index/args-done; *_part.done|*_text.done ignored — v24 pin), failure capture continues reading (v25 pin), classifier reuse on SSE failures (v29 P0 pin), harvest merge w/ weak-text preference, honest terminal cascade (upstreamFailure -> classified; watchdog sentinel -> overloaded w/ idle|cap message; no-terminal -> ClientAbandoned if client gone else truncated overloaded), buffers ride TurnOutcome.Success. StreamTurnContext injects compact/replay/envelope-encoder/client-gone/watchdog-sentinel (envelope codec itself lands P3-MIR). 10 unit tests green incl. one-block multipart pin, replay in-position pin, replay-off-on-compact pin.
+# [2026-07-16] ATTEST: scoped diffstat: .../test/kotlin/ResponsesStreamTranslatorTest.kt   | 270 +++++++++++++++++++++ | 1 file changed, 270 insertions(+); sidecar: .claude/ledger-diffs/P2-MACH.diff; off-scope: gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt, gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTerminal.kt
+# [2026-07-16] FENCE-AUTONARROWED: files = ["gateway/dialect-openai-responses/src/main/kotlin/ResponsesStreamTranslator.kt", "gateway/dialect-openai-responses/src/test/kotlin/"] -> files = ["gateway/dialect-openai-responses/src/test/kotlin/ResponsesStreamTranslatorTest.kt"] (by=orchestrator implied; no flag)
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P2-MOCK"
@@ -406,6 +413,7 @@ verify = "node gateway/tools/golden-diff.mjs --all"
 # cutover? NO — keep: it re-runs in P7; after cutover it pins Kotlin-vs-fixture snapshots).
 
 # ── P3 — codex head end-to-end on side port ──────────────────────────────────
+# [2026-07-16] SLOT addendum: harness = node script driving BOTH stacks against the same mock upstream via HTTP, normalizing msg_<ts> ids + timestamps, byte-diffing SSE transcripts. Node side: server/test harness with CODEX_PROXY_TEST=1 on a scratch port. Kotlin side needs P3-HEAD's route wiring — P2-GOLD's full gate therefore lands right after P3-HEAD; the harness skeleton + normalizer can land earlier. Scenario list in P2-MOCK context.
 
 [[items]]
 id = "P3-REQ"
@@ -485,11 +493,15 @@ id = "P3-RESP"
 phase = "P3"
 title = "Terminal response translation + harvest helpers (shared once): translateResponse, harvestResponsesOutput, pickModelText, isWeakSummaryText"
 files = ["gateway/dialect-openai-responses/src/main/kotlin/ResponsesTerminal.kt"]
-status = "todo"
+status = "done"
 verify = "cd gateway && ./gradlew -q :dialect-openai-responses:test --tests '*Terminal*'"
 # Context: PORT-OF codex/translate-response.mjs @ 4ca99f7 (grok's copies are byte-identical dupes —
 # ONE implementation here, v29 'copies drift' lesson). Non-stream path shares this with streaming
 # harvest (one translator total).
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T07:07:31Z
+# [2026-07-16] ATTEST-START: tree=59479694806190bcdf320e4544b0c87efb50fe8f at=2026-07-16T07:07:31Z
+# [2026-07-16] Landed ResponsesTerminal.kt: isWeakSummaryText/pickModelText (PROMOTE_MIN_CHARS from core thresholds — L4: model content only), harvestResponsesOutput (summary parts join as paragraphs), usageFrom (input|prompt, output|completion aliases). ONE implementation for all Responses providers (grok dupes die). Full translateResponse envelope assembly lands with P3-HEAD wiring (needs emitter terminalMessageJson + usage payload; helpers here are the shared core). Covered via machine tests (harvest fixture) — envelope test lands P3-HEAD.
+# [2026-07-16] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt, gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTerminal.kt, gateway/dialect-openai-responses/src/test/kotlin/ResponsesStreamTranslatorTest.kt
 
 [[items]]
 id = "P3-HEAD"

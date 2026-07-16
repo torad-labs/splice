@@ -1,0 +1,5 @@
+{
+  "scoped_paths": [
+    "gateway/dialect-openai-responses/src/test/kotlin/ResponsesStreamTranslatorTest.kt"
+  ]
+}

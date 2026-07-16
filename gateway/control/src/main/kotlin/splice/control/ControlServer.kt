@@ -117,17 +117,23 @@ public class ControlServer(
         putJsonArray("heads") { heads.values.forEach { add(headStatus(it)) } }
     }.toString()
 
+    // PORT-OF server/launcher/heads.mjs status shape @ 4ca99f7. In the single daemon the head is
+    // in-process, so healthy/version are authoritative and versionMatch is always true when up.
     private fun headStatus(m: ManagedHead) = buildJsonObject {
         val h = m.head.healthSnapshot()
         put("key", m.head.key)
         put("label", m.head.label)
         put("name", m.head.key)
         put("port", m.head.port)
+        put("authKind", m.authKind)
+        put("wantVersion", GATEWAY_VERSION)
         put("running", h.running)
         put("healthy", h.ok)
         put("version", if (h.running) GATEWAY_VERSION else null as String?)
+        put("versionMatch", if (h.running) true else null as Boolean?)
         put("mode", null as String?)
-        put("gate", null as String?)
+        put("gate", null as String?) // gate snapshot is nullable in the contract; heads self-report when wired
+        put("maxInflight", null as Int?)
         putJsonArray("pids") {}
     }
 
@@ -194,38 +200,59 @@ public class ControlServer(
         )
     }
 
-    private fun usageJson(): String = buildJsonObject {
-        putJsonArray("heads") {
-            heads.values.forEach { m ->
-                val rl = m.usage.ratelimit()?.let { RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens) }
-                val warn = computeUsageWarn(m.usage.outputTokens5h(), rl, m.warnPct, m.warnTokens5h)
-                addJsonObject {
-                    put("key", m.head.key)
-                    put("output_tokens_5h", m.usage.outputTokens5h())
-                    put("entries", m.usage.entries())
-                    putJsonObject("warn") {
-                        put("level", warn.level)
-                        put("pct", warn.pct)
-                        put("source", warn.source)
-                        put("reset", warn.reset)
+    // PORT-OF server/src/control/api.mjs usage payload @ 4ca99f7: top-level window/warn knobs +
+    // per-head {key,label,usage:{output_tokens_5h,entries,ratelimit,warn}} (webui UsagePayload).
+    private fun usageJson(): String {
+        val cfg = config.getConfig()
+        return buildJsonObject {
+            put("window_hours", USAGE_WINDOW_HOURS)
+            put("warn_pct", cfg.usageWarnPct)
+            put("warn_tokens_5h", cfg.usageWarnTokens5h)
+            putJsonArray("heads") {
+                heads.values.forEach { m ->
+                    val rlView = m.usage.ratelimit()
+                    val rl = rlView?.let { RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens) }
+                    val warn = computeUsageWarn(m.usage.outputTokens5h(), rl, m.warnPct, m.warnTokens5h)
+                    addJsonObject {
+                        put("key", m.head.key)
+                        put("label", m.head.label)
+                        putJsonObject("usage") {
+                            put("output_tokens_5h", m.usage.outputTokens5h())
+                            put("entries", m.usage.entries())
+                            if (rlView != null) {
+                                putJsonObject("ratelimit") {
+                                    put("limit_tokens", rlView.limitTokens)
+                                    put("remaining_tokens", rlView.remainingTokens)
+                                    put("reset_tokens", rlView.resetTokens)
+                                }
+                            } else {
+                                put("ratelimit", null as String?)
+                            }
+                            putJsonObject("warn") {
+                                put("level", warn.level)
+                                put("pct", warn.pct)
+                                put("source", warn.source)
+                                put("reset", warn.reset)
+                            }
+                        }
                     }
                 }
             }
-        }
-    }.toString()
+        }.toString()
+    }
 
+    // PORT-OF server/src/control/api.mjs auth payload @ 4ca99f7: keyed by head (Node hardcodes
+    // `codex`; multi-head keys each), value = {kind, login, present, ...describe fields}. The webui
+    // AuthPayload reads `.codex`. login = automated for oauth, manual for api-key.
     private suspend fun authJson(): String {
-        // describe() is suspend — resolve all descriptions before the JSON builder lambda.
         val described = heads.values.map { m -> m to m.auth.describe() }
         return buildJsonObject {
-            putJsonArray("heads") {
-                described.forEach { (m, desc) ->
-                    addJsonObject {
-                        put("key", m.head.key)
-                        put("present", desc.present)
-                        put("kind", desc.kind)
-                        putJsonObject("fields") { desc.fields.forEach { (k, v) -> put(k, v) } }
-                    }
+            described.forEach { (m, desc) ->
+                putJsonObject(m.head.key) {
+                    put("kind", desc.kind)
+                    put("login", if (desc.kind.contains("oauth")) "automated" else "manual")
+                    put("present", desc.present)
+                    desc.fields.forEach { (k, v) -> put(k, v) }
                 }
             }
         }.toString()
@@ -257,16 +284,17 @@ public class ControlServer(
         }
     }
 
+    // PORT-OF server/src/control/api.mjs compact payload @ 4ca99f7: a FLAT {stats:[...]} of the
+    // recent compaction rows (webui CompactPayload). Node reads codex's file; multi-head flattens
+    // every head's tail (each row tagged with its head key) newest-last.
     private fun compactJson(): String = buildJsonObject {
-        putJsonArray("heads") {
+        putJsonArray("stats") {
             heads.values.forEach { m ->
                 val s = m.compact.summary(COMPACT_TAIL)
-                addJsonObject {
-                    put("key", m.head.key)
-                    put("total", s.total)
-                    putJsonObject("by_outcome") { s.byOutcome.forEach { (k, v) -> put(k, v) } }
-                    putJsonArray("tail") {
-                        s.tail.forEach { row -> addJsonObject { row.forEach { (k, v) -> put(k, v) } } }
+                s.tail.forEach { row ->
+                    addJsonObject {
+                        put("head", m.head.key)
+                        row.forEach { (k, v) -> put(k, v) }
                     }
                 }
             }
@@ -281,11 +309,15 @@ public class ControlServer(
             call.respondText(errorJson("unknown head"), ContentType.Application.Json, HttpStatusCode.NotFound)
             return
         }
+        // PORT-OF server/src/control/api.mjs logs payload @ 4ca99f7: {key, path, lines:[...]}
+        // (webui LogsPayload) — lines is an ARRAY (tail split), not one blob.
+        val lines = managed.logs.tail(tail).split("\n").filter { it.isNotEmpty() }
         respond(
             call,
             buildJsonObject {
-                put("head", key)
-                put("log", managed.logs.tail(tail))
+                put("key", key)
+                put("path", managed.logs.path())
+                putJsonArray("lines") { lines.forEach { add(it) } }
             }.toString(),
         )
     }
@@ -345,5 +377,6 @@ public class ControlServer(
         const val STOP_TIMEOUT_MS = 500L
         const val COMPACT_TAIL = 50
         const val DEFAULT_LOG_TAIL = 200
+        const val USAGE_WINDOW_HOURS = 5
     }
 }

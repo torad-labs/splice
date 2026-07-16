@@ -84,6 +84,7 @@ class ControlServerTest {
             },
             logs = object : HeadLogSource {
                 override fun tail(lines: Int) = "[codex] line one\n[codex] line two\n"
+                override fun path() = "/tmp/codex.log"
             },
             warnPct = 80,
             warnTokens5h = 0,
@@ -191,20 +192,25 @@ class ControlServerTest {
 
     @Test
     fun `usage soft-warn fires from a 90 percent ratelimit`() = runTest {
-        val u = json.parseToJsonElement(authed("/api/usage")).jsonObject["heads"]!!.jsonArray.first().jsonObject
-        val warn = u["warn"]!!.jsonObject
+        // Node shape: {window_hours, warn_pct, warn_tokens_5h, heads:[{key,label,usage:{...,warn}}]}
+        val payload = json.parseToJsonElement(authed("/api/usage")).jsonObject
+        assertEquals("5", payload["window_hours"]?.jsonPrimitive?.content)
+        val warn = payload["heads"]!!.jsonArray.first().jsonObject["usage"]!!.jsonObject["warn"]!!.jsonObject
         assertEquals("warn", warn["level"]?.jsonPrimitive?.content)
         assertEquals("ratelimit", warn["source"]?.jsonPrimitive?.content)
     }
 
     @Test
     fun `auth is masked, compact summarized, logs tailed`() = runTest {
-        val auth = json.parseToJsonElement(authed("/api/auth")).jsonObject["heads"]!!.jsonArray.first().jsonObject
-        assertEquals("acct…5678", auth["fields"]!!.jsonObject["account_id_masked"]?.jsonPrimitive?.content)
-        val compact = json.parseToJsonElement(authed("/api/compact")).jsonObject["heads"]!!.jsonArray.first().jsonObject
-        assertEquals("2", compact["total"]?.jsonPrimitive?.content)
+        // Node shape: auth keyed by head; compact flat {stats}; logs {key,path,lines[]}
+        val auth = json.parseToJsonElement(authed("/api/auth")).jsonObject["codex"]!!.jsonObject
+        assertEquals("acct…5678", auth["account_id_masked"]?.jsonPrimitive?.content)
+        assertEquals("automated", auth["login"]?.jsonPrimitive?.content) // oauth -> automated
+        val compact = json.parseToJsonElement(authed("/api/compact")).jsonObject["stats"]!!.jsonArray
+        assertTrue(compact.isNotEmpty())
         val logs = json.parseToJsonElement(authed("/api/logs/codex?tail=10")).jsonObject
-        assertTrue(logs["log"]?.jsonPrimitive?.content.orEmpty().contains("line one"))
+        assertEquals("codex", logs["key"]?.jsonPrimitive?.content)
+        assertTrue(logs["lines"]!!.jsonArray.any { it.jsonPrimitive.content.contains("line one") })
     }
 
     @Test

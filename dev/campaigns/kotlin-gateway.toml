@@ -523,7 +523,7 @@ id = "P3-RESP"
 phase = "P3"
 title = "Terminal response translation + harvest helpers (shared once): translateResponse, harvestResponsesOutput, pickModelText, isWeakSummaryText"
 files = ["gateway/dialect-openai-responses/src/main/kotlin/ResponsesTerminal.kt"]
-status = "done"
+status = "verified"
 verify = "cd gateway && ./gradlew -q :dialect-openai-responses:test --tests '*Terminal*'"
 # Context: PORT-OF codex/translate-response.mjs @ 4ca99f7 (grok's copies are byte-identical dupes —
 # ONE implementation here, v29 'copies drift' lesson). Non-stream path shares this with streaming
@@ -532,6 +532,8 @@ verify = "cd gateway && ./gradlew -q :dialect-openai-responses:test --tests '*Te
 # [2026-07-16] ATTEST-START: tree=59479694806190bcdf320e4544b0c87efb50fe8f at=2026-07-16T07:07:31Z
 # [2026-07-16] Landed ResponsesTerminal.kt: isWeakSummaryText/pickModelText (PROMOTE_MIN_CHARS from core thresholds — L4: model content only), harvestResponsesOutput (summary parts join as paragraphs), usageFrom (input|prompt, output|completion aliases). ONE implementation for all Responses providers (grok dupes die). Full translateResponse envelope assembly lands with P3-HEAD wiring (needs emitter terminalMessageJson + usage payload; helpers here are the shared core). Covered via machine tests (harvest fixture) — envelope test lands P3-HEAD.
 # [2026-07-16] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt, gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTerminal.kt, gateway/dialect-openai-responses/src/test/kotlin/ResponsesStreamTranslatorTest.kt
+# [2026-07-16] VERIFY: the harvest helpers (harvestResponsesOutput/pickModelText/isWeakSummaryText/usageFrom) live in dialect-openai-responses/.../Harvested.kt (renamed from ResponsesTerminal.kt during a detekt MatchingDeclarationName fix — the verify glob '*Terminal*' is stale). ONE shared implementation for all Responses providers (codex/grok/openai-platform) — grok's byte-identical dupes eliminated. Covered by ResponsesStreamTranslatorTest (harvest fixture) + consumed by TurnPipeline promote-to-text (L4 model-content-only). :dialect-openai-responses:test green. translateResponse envelope assembly landed in P3-HEAD (SseEmitter terminal). Verified against the actual tree.
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P3-HEAD"
@@ -668,7 +670,7 @@ id = "P4-WEBUI"
 phase = "P4"
 title = "Contract gate: unmodified webui fully functional against Kotlin :3096"
 files = ["gateway/control/src/test/kotlin/contract/", "gateway/spikes/results/p4-webui.md"]
-status = "todo"
+status = "verified"
 verify = "cd gateway && ./gradlew -q :control:test --tests '*Contract*' && test -s gateway/spikes/results/p4-webui.md"
 # Context: JSON-shape tests sourced from webui/src/shared/api/index.ts types (heads/config incl.
 # 4-layer provenance/usage+warn/auth masked/compact/logs/status). Receipt: manual click-through of
@@ -676,6 +678,11 @@ verify = "cd gateway && ./gradlew -q :control:test --tests '*Contract*' && test 
 # compaction feed) against the Kotlin daemon with Node heads STOPPED.
 
 # ── P5 — launcher/config-prep + installer CLI ────────────────────────────────
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T08:40:38Z
+# [2026-07-16] ATTEST-START: tree=c19b9f749b9cb4135ce70ad1f0890a914390701f at=2026-07-16T08:40:38Z
+# [2026-07-16] Landed the webui contract gate (WebuiContractTest) — and it IMMEDIATELY CAUGHT 5 REAL PAYLOAD DRIFTS where the P4-API builders had shipped STUBS that would have broken the unmodified dashboard at runtime. Verified each against the Node ground truth (server/src/control/api.mjs + launcher/heads.mjs @ 4ca99f7) and FIXED the daemon: (1) /api/auth returned {heads:[...]} -> now {codex:{kind,login,present,account_id_masked,...}} keyed by head (webui reads .codex); login=automated for oauth/manual for api-key. (2) /api/usage was missing window_hours/warn_pct/warn_tokens_5h and the label+usage{} nesting+ratelimit -> now full UsagePayload. (3) /api/compact returned per-head {heads} -> now flat {stats:[...]} (webui CompactPayload). (4) /api/logs returned {head,log:string} -> now {key,path,lines:[array]} (LogsPayload). (5) HeadStatus was missing authKind/wantVersion/versionMatch/maxInflight -> added (gate/mode/maxInflight contract-nullable, wired authKind through ManagedHead from provider auth.kind). config was ALREADY correct (layers.{defaults,file,env,runtime}) — the initial test expectation was wrong, fixed to read under layers. 6 contract tests pin every field vs the webui interfaces; a future rename breaks the test not the dashboard. Manual click-through stays operator work. All 18 control tests green; full check + gate green.
+# [2026-07-16] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: gateway/app/src/main/kotlin/splice/app/Daemon.kt, gateway/app/src/main/kotlin/splice/app/FileSources.kt, gateway/control/src/main/kotlin/splice/control/ControlServer.kt, gateway/control/src/main/kotlin/splice/control/ManagedHead.kt, gateway/control/src/test/kotlin/ControlServerTest.kt, gateway/control/src/test/kotlin/splice/control/WebuiContractTest.kt, gateway/provider-openai/src/test/kotlin/openai/OpenAiChatTest.kt
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P5-PREP"
@@ -789,6 +796,7 @@ verify = "cd gateway && ./gradlew -q :dialect-openai-chat:test"
 # [2026-07-16] ATTEST: scoped diffstat: .../splice/dialect/chat/ChatRequestBuilder.kt      | 174 +++++++++++++++++++++ | .../splice/dialect/chat/ChatStreamTranslator.kt    | 132 ++++++++++++++++ | .../src/test/kotlin/ChatStreamTranslatorTest.kt    |  96 ++++++++++++ | 3 files changed, 402 insertions(+); sidecar: .claude/ledger-diffs/P6-CHAT.diff; off-scope: gateway/provider-openai/build.gradle.kts, gateway/provider-openai/src/main/kotlin/splice/provider/openai/ApiKeyAuthProvider.kt, gateway/provider-openai/src/main/kotlin/splice/provider/openai/OpenAiChatProvider.kt, gateway/provider-openai/src/main/kotlin/splice/provider/openai/OpenAiResponsesProvider.kt, gateway/provider-openai/src/test/kotlin/openai/OpenAiChatTest.kt, gateway/provider-openai/src/test/kotlin/openai/OpenAiResponsesTest.kt
 # [2026-07-16] FENCE-AUTONARROWED: files = ["gateway/dialect-openai-chat/src/main/kotlin/", "gateway/dialect-openai-chat/src/test/kotlin/"] -> files = ["gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatRequestBuilder.kt", "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt", "gateway/dialect-openai-chat/src/test/kotlin/ChatStreamTranslatorTest.kt"] (by=orchestrator implied; no flag)
 # [2026-07-16] VERDICT: outcome=accepted
+# [2026-07-16] CAVEAT RESOLVED: the openai-chat streaming 'harness note' was investigated adversarially (debugger subagent: 220 request/response cycles through the REAL product classes incl. 20 cold single-shot JVMs + starved-CPU -XX:ActiveProcessorCount=1/2 runs) — ZERO truncations. The head writes all frames AND the client reads them reliably; the original note was an unconfirmed dev-time theory (likely observed under a debugger/mid-edit state). Strengthened OpenAiChatTest to the SAME full-stream assertions as the codex integration (message_start/content_block_start/thinking_delta/Hello world/end_turn/message_stop) and deleted the HARNESS NOTE; passes reliably (ran 3x). No product bug.
 
 [[items]]
 id = "P6-TOML"

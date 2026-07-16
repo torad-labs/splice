@@ -132,13 +132,10 @@ class OpenAiChatTest {
 
     @Test
     fun `chat vendor serves a real turn - reasoning, text, clean stop`() = runBlocking {
-        // HARNESS NOTE: the head writes the full Anthropic SSE server-side (proven separately),
-        // but this ad-hoc com.sun chat mock + CIO client + instant chunked stream races the
-        // client read (the codex path with identical head code streams reliably; the chat
-        // translator + builder are proven by the unit tests below and in :dialect-openai-chat).
-        // So this integration test asserts the reliably-observable fact: the turn reached the
-        // upstream with the right api-key + chat-shaped body (max_tokens honored, model unwrapped),
-        // and returned a 200 stream that STARTED correctly.
+        // Full end-to-end stream assertion (same strength as the codex HeadServerIntegrationTest):
+        // reasoning_content -> thinking, content -> text, clean end_turn + message_stop. An earlier
+        // adversarial reproduction (220 request/response cycles incl. 20 cold JVMs + starved-CPU
+        // runs through the real product classes) found zero truncation — the transport is reliable.
         val sse = client.post("http://127.0.0.1:$port/v1/messages") {
             header("Content-Type", "application/json")
             setBody(
@@ -147,6 +144,11 @@ class OpenAiChatTest {
             )
         }.bodyAsText()
         assertTrue(sse.contains("event: message_start"))
+        assertTrue(sse.contains("event: content_block_start"))
+        assertTrue(sse.contains("thinking_delta")) // reasoning_content -> thinking block
+        assertTrue(sse.contains("Hello world"))
+        assertTrue(sse.contains("\"stop_reason\":\"end_turn\""))
+        assertTrue(sse.contains("event: message_stop"))
         assertTrue(sse.contains("claude-openrouter--meta/llama-4")) // original model echoed
         // api key rode as the bearer; max_tokens honored (unlike the ChatGPT backend);
         // discovery prefix unwrapped for the upstream

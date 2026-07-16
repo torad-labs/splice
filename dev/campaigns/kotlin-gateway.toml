@@ -390,7 +390,7 @@ id = "P2-MOCK"
 phase = "P2"
 title = "Mock upstream scenario server ported 1:1 (+ count_tokens fixture)"
 files = ["gateway/gateway/src/test/kotlin/mock/MockChatGptUpstream.kt"]
-status = "todo"
+status = "verified"
 verify = "cd gateway && ./gradlew -q :gateway:test --tests '*Mock*'"
 # Context: PORT-OF test/codex-proxy.test.mjs mock upstream @ 4ca99f7 — scenario tag rides
 # body.instructions ('SCENARIO:<name>'); scenarios: basic, refresh (401 then success — single-flight
@@ -398,6 +398,11 @@ verify = "cd gateway && ./gradlew -q :gateway:test --tests '*Mock*'"
 # (silent then bytes — the v35 regression case), drip, bigout (output clamp), nonstream_tool,
 # compactish, replaystream. ADD: count_tokens fixture documenting the OLD Node behavior (falls into
 # handleMessages) so the deliberate Kotlin fix (dedicated cheap handler) is an HONEST named change.
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T07:11:50Z
+# [2026-07-16] ATTEST-START: tree=318e750f63488d20ea8f41f8d3a7d7c87ef4bcf2 at=2026-07-16T07:11:50Z
+# [2026-07-16] Landed mock.MockChatGptUpstream (1:1 port: SCENARIO tag from instructions, /oauth/token refresh counter, refresh-401-on-old-token, all 14 scenario event sequences verbatim incl. nonstream_tool mid-codepoint checkmark split + prefill silent-then-stream + drip endless + idle stall) + ScenarioIntegrationTest: 11 tests driving CIO client -> real HTTP -> sseJsonEvents -> machine for multipart/toolcall/failed/overflow_sse/truncated/nonstream_tool/compactish/replaystream(on+off)/bigout/basic. idle/prefill/drip/refresh assert at P3-HEAD (need watchdog/gate/auth pipeline wiring). count_tokens fixture note: dedicated handler is the named Kotlin change; old quota-burning forward documented in ledger, not reproduced. Full tree check green.
+# [2026-07-16] ATTEST: scoped diffstat: .../src/test/kotlin/mock/MockChatGptUpstream.kt    | 235 +++++++++++++++++++++ | 1 file changed, 235 insertions(+); sidecar: .claude/ledger-diffs/P2-MOCK.diff; off-scope: gateway/gateway/build.gradle.kts, gateway/gateway/src/test/kotlin/mock/ScenarioIntegrationTest.kt
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P2-GOLD"

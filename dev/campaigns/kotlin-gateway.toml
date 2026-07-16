@@ -576,7 +576,7 @@ id = "P4-SUP"
 phase = "P4"
 title = "Daemon assembly: Head supervision scopes, daemon.lock single-flight startup, version handshake, graceful shutdown"
 files = ["gateway/app/src/main/kotlin/Daemon.kt", "gateway/control/src/main/kotlin/lifecycle/"]
-status = "in_flight"
+status = "verified"
 verify = "cd gateway && ./gradlew -q :app:test --tests '*Daemon*'"
 # Context: one JVM: control :3096 + each enabled head as its own embedded server in a supervised
 # child scope (crash of one head's scope never kills siblings; restart = stop+start the scope).
@@ -585,6 +585,9 @@ verify = "cd gateway && ./gradlew -q :app:test --tests '*Daemon*'"
 # all heads together — cutover note). POST /mgmt/shutdown for the shim's stale-version path.
 # [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T07:44:30Z
 # [2026-07-16] ATTEST-START: tree=b187e4742133ecc503991213e1df3b7af5f9734b at=2026-07-16T07:44:30Z
+# [2026-07-16] Landed the daemon (P4-SUP) — the whole stack is now a RUNNABLE artifact. :app: TopologyLoader (ktoml decode of ~/.config/splice/splice.toml with jar-default materialization on first run, XDG-aware, ~/ expansion), DaemonLock (flock single-flight; JVM-wide FileLock semantics handled — OverlappingFileLockException caught as held), Daemon (builds each head from topology: CodexProvider+dialect+auth+stores wired, control :3096 + head ports started, suspend all the way — the runBlocking wall forced start/stop suspend), CodexRefresh (the real token-refresh HTTP POST injected into CodexAuthProvider — keeps provider HTTP-agnostic), FileSources (UsageStore/CompactStats/log-file adapters -> control read interfaces), Main (the ONLY runBlocking, wall-exempt; lock->topology->start->shutdown hook), cli/ doctor+version. WALLS FIRED CORRECTLY: runBlocking-in-daemon (fixed by suspend), no-println (updated the rule to exempt :app as the terminal/CLI layer, rule-test kept green), PORT-OF header (DaemonLock missing the colon). MockChatGptUpstream promoted to :gateway testFixtures so :app tests reuse it. 5 daemon tests green incl. A REAL TURN through the fully-assembled head to the mock upstream (bearer+account-id reached upstream), control status lists the head, head health on its own port, lock single-flight, topology materialization. BUG CAUGHT: Daemon read controlPort from ConfigService (3096) ignoring topology.daemon.control_port — fixed to prefer topology. Full ./gradlew check + gate:rules green.
+# [2026-07-16] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: .rules/kotlin-splice/kt-no-println.yml, gateway/app/build.gradle.kts, gateway/app/src/main/kotlin/splice/app/CodexRefresh.kt, gateway/app/src/main/kotlin/splice/app/Daemon.kt, gateway/app/src/main/kotlin/splice/app/DaemonLock.kt, gateway/app/src/main/kotlin/splice/app/FileSources.kt, gateway/app/src/main/kotlin/splice/app/Main.kt, gateway/app/src/main/kotlin/splice/app/TopologyLoader.kt, ... 21 more
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P4-API"

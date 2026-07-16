@@ -8,10 +8,10 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
+import splice.core.parse.AnthropicTurnBody
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.WatchdogBudget
-import splice.core.parse.AnthropicTurnBody
 
 /** A per-turn stream state machine: drives the WireSink from upstream events, returns an outcome
  *  AFTER the loop (cross-event state + harvest). Imperative, not a Flow operator (see the dialect). */

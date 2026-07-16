@@ -1,6 +1,7 @@
 plugins {
     id("splice.kotlin-common")
     id("splice.module-law")
+    application
 }
 
 dependencies {
@@ -13,4 +14,16 @@ dependencies {
     implementation(project(":provider-openai"))
     implementation(project(":gateway"))
     implementation(project(":control"))
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.ktoml.core)
+    implementation(libs.ktor.client.cio)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.ktor.client.cio)
+    testImplementation(testFixtures(project(":gateway")))
+}
+
+application {
+    applicationName = "splice"
+    mainClass.set("splice.app.MainKt")
 }

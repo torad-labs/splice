@@ -11,11 +11,11 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.usage.RateLimitState
+import splice.core.usage.computeUsageWarn
 import splice.gateway.usage.TurnUsage
 import splice.gateway.usage.UsageStore
 import splice.gateway.usage.buildUsagePayload
 import splice.gateway.usage.cacheLogLine
-import splice.core.usage.computeUsageWarn
 import splice.gateway.usage.makeOutputClamp
 import java.nio.file.Path
 

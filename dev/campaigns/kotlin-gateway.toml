@@ -1,0 +1,651 @@
+# kotlin-gateway.toml — rewrite the splice proxy stack as a Kotlin multi-provider gateway (2026-07-16).
+# LAW: concept #945 — this manifest IS the memory; access ONLY via dev/campaigns/manifest.py
+# (`python3 dev/campaigns/manifest.py dev/campaigns/kotlin-gateway.toml <verb>`).
+# Statuses: todo|in_flight|done|verified. Wrong claims get honesty-reconcile notes, never edits.
+#
+# PLAN OF RECORD: the approved rewrite plan (2026-07-16) — module graph, provider SPI, enforcement
+# rings, phases P0-P8 with gates. Item contexts below carry the slot essentials inline (survival:
+# the manifest must be sufficient after any compaction). Named sources are server/src/*.mjs @ 4ca99f7.
+# LEDGER CLI LINEAGE: dev/campaigns/manifest.py vendored verbatim from torad-fleet @ ec913a7d
+# (TWO HOMES law: the ledger CLI is a toolkit distributable; adapt only with a dated note here).
+#
+# LAW [2026-07-16]: SLOT AUTHORING (operator law, brain #963): every work unit is DECLARED as a
+# fully-specified slot (item context: inputs, outputs, dataflow, NAMED SOURCES) before implementation.
+# No body from priors — a spec that cannot be grounded premise-blocks (note) rather than improvises.
+# By fill time there is no design freedom left to get wrong. File-level grammar: every ported .kt file
+# opens `// PORT-OF: <source> @ <sha> — invariants: ...` or `// NEW: <reason>` (Konsist-checked).
+# LAW [2026-07-16]: PORT, DON'T INVENT (kandi handoff law): read the proven neighbor first. The Node
+# source comments ARE the spec — every one documents a shipped bug (v24 multipart, v25 honesty,
+# v27 effort, v29 leak, v35 prefill). Deviation = premise-block note, never silent improvement.
+# LAW [2026-07-16]: WALLS BEFORE BUILDINGS (brain #960): every guard (module-law plugin, ast-grep
+# wall, Konsist law, ledger gate) is red/green-proven against a SYNTHETIC violation before the first
+# real artifact it protects exists.
+# LAW [2026-07-16]: L2/L3/L4 CARRY OVER AS TYPES (splice AGENTS.md): ONE mirrorInto (L2); SseEmitter
+# is the SOLE terminal emitter — providers hold a WireSink that CANNOT terminate the wire (L3 as
+# compile-time capability); no fabricated content ever (L4). ast-grep walls back the literals.
+# LAW [2026-07-16]: PARITY BEFORE CUTOVER (operator decision: big-bang): server/ Node code is deleted
+# ONLY after the golden differential gate (normalized byte-identical SSE across all scenarios), the
+# webui contract gate, live side-port receipts, and the ledger check (every load-bearing item
+# verified) are ALL green. Until then Node stays the production path on :3099.
+# LAW [2026-07-16]: VERIFIED-COMMITS-IMMEDIATELY (kandi V3 wipe): the commit of verified work is the
+# NEXT action after verification — note -> set-status -> commit -> push as one chain, never
+# interleaved with another item's landing.
+# LAW [2026-07-16]: ENUMERATED DESTRUCTION (kandi V3 wipe): any brief that deletes/moves ENUMERATES
+# exact paths. "Stragglers"/"leftovers" characterizations are banned in destructive mandates.
+# LAW [2026-07-16]: FIX-THE-GATE vs FIX-THE-CODE: wrongly-blocking gate -> fix the gate with a
+# red/green proof; rightly-blocking gate -> fix the code. Never bypass, never rename-to-dodge; the
+# decision is explicit in a ledger note either way.
+# LAW [2026-07-16]: SAME-CHECKER-TWICE (splice .rules doctrine): every wall runs at write time (hook)
+# AND at the gate/CI from ONE rule source. A weakened hook still fails the build.
+# LAW [2026-07-16]: HONEST STATUS (brain #959): set-status done requires the item's OWN verify command
+# green + a dated evidence note; verified requires review against the ACTUAL diff (rg the tree,
+# re-run gates), never the report alone.
+
+[campaign]
+name = "kotlin-gateway"
+created = "2026-07-16"
+goal = "Replace the Node splice stack with a Kotlin multi-provider gateway (single daemon, N heads, TOML topology, provider SPI) at full behavioral parity — then cut over and delete server/"
+next = ["P1-CAMP", "P1-HOOKS", "P1-GRADLE", "P0-ENG", "P0-TOML", "P0-POOL", "P0-XAI", "P1-WALLS", "P1-KONSIST", "P1-CORE", "P1-CONF"]
+
+# ── P0 — spikes (each lands a receipt in gateway/spikes/results/) ─────────────
+
+[[items]]
+id = "P0-ENG"
+phase = "P0"
+title = "Spike: Ktor server engine SSE flush — Netty vs CIO, raw-TCP timestamped against a slow-drip route"
+files = ["gateway/spikes/src/main/kotlin/SseFlushSpike.kt", "gateway/spikes/results/sse-flush.md"]
+status = "todo"
+verify = "test -s gateway/spikes/results/sse-flush.md"
+# Context: plan doctrine says Netty inbound (CIO server has documented SSE flush-buffering history:
+# ktor#1199 chunked encoder ignored flushes; KTOR-7324). PROVE empirically: embeddedServer route
+# drips 1 SSE frame/500ms via respondBytesWriter+flush; raw java.net.Socket client timestamps
+# arrival per frame. PASS = each frame arrives <100ms after send on the chosen engine. Receipt
+# records both engines' timings + the decision. Blocks P2-EMIT engine choice.
+
+[[items]]
+id = "P0-TOML"
+phase = "P0"
+title = "Spike: ktoml decodes the real topology shape — [[providers.x.models]] array-of-tables + inline quirks tables"
+files = ["gateway/spikes/src/test/kotlin/KtomlShapeSpike.kt", "gateway/spikes/results/ktoml.md"]
+status = "todo"
+verify = "test -s gateway/spikes/results/ktoml.md"
+# Context: decode the plan's exact splice.toml sketch (daemon/providers/heads incl. [[models]],
+# inline auth/quirks tables, [heads.x.overrides]) into @Serializable data classes with ktoml.
+# FAIL -> fallback candidates in order: tomlj (parse to tree, hand-map), Hoplite-toml. Receipt
+# records library verdict + any shape adjustments. Blocks P1-CORE config schema.
+
+[[items]]
+id = "P0-POOL"
+phase = "P0"
+title = "Spike: Ktor CIO client pool stays bounded under 500 mid-stream cancellations"
+files = ["gateway/spikes/src/test/kotlin/PoolCancelSpike.kt", "gateway/spikes/results/pool-cancel.md"]
+status = "todo"
+verify = "test -s gateway/spikes/results/pool-cancel.md"
+# Context: the exact bug class Node shipped ("55 inflight, 2 agents" leak). Loop 500x: open a
+# streaming POST to a local slow-drip mock, read a few frames via bodyAsChannel, cancel the
+# coroutine mid-read. Assert: no fd growth (lsof), subsequent requests still serve, wall-clock
+# bounded. Kill criterion: pool exhaustion/hang -> try engine config, then OkHttp client as fallback.
+# Blocks P2-MACH upstream plumbing.
+
+[[items]]
+id = "P0-XAI"
+phase = "P0"
+title = "Spike: xAI anthropic-passthrough fidelity — does api.x.ai /v1/messages stream faithful Anthropic SSE?"
+files = ["gateway/spikes/src/main/kotlin/XaiPassthroughSpike.kt", "gateway/spikes/results/xai-passthrough.md"]
+status = "todo"
+verify = "test -s gateway/spikes/results/xai-passthrough.md"
+# Context: decides P6-GROK dialect. Needs XAI_API_KEY (or key file ~/.local/share/claude-grok/auth.json)
+# — PREMISE-BLOCK with a note if absent, do not fabricate. Probe: streamed request with a tool +
+# thinking; check message_start/content_block_*/message_delta shapes, stop_reason correctness,
+# thinking blocks, tool_use streaming. Faithful -> grok head = near-passthrough (auth + model map +
+# usage instrumentation). Unfaithful -> port the existing Responses-dialect translators
+# (server/src/grok/translate-{request,response}.mjs @ 4ca99f7 — they are the proven fallback).
+
+# ── P1 — foundation: campaign, hooks, skeleton, walls, core ──────────────────
+
+[[items]]
+id = "P1-CAMP"
+phase = "P1"
+title = "Campaign birth: this manifest + vendored CLI round-trip proven"
+files = ["dev/campaigns/kotlin-gateway.toml", "dev/campaigns/manifest.py"]
+status = "verified"
+verify = "python3 dev/campaigns/manifest.py dev/campaigns/kotlin-gateway.toml selftest && python3 dev/campaigns/manifest.py dev/campaigns/kotlin-gateway.toml list"
+# Context: manifest.py vendored verbatim from torad-fleet @ ec913a7d (6632 lines; flock +
+# tomllib-rollback writes; laws/list/get/next/claim/set-status/note/selftest verbs). Birth of this
+# file is the one sanctioned raw Write; everything after goes through the CLI. Evidence for done:
+# selftest green on this manifest + list shows all items.
+# [2026-07-16] Birth complete: manifest.py vendored verbatim from torad-fleet @ ec913a7d (6632 lines); this manifest authored with 44 items across P0-P8, laws header, next queue. Evidence: selftest OK (add/set-status/note/verdict/add-law/edit-fence/edit-verify/packet/claim/release-stale/events round-trip + valid TOML); list renders all items; aggregate laws verb returns the 11 LAW lines. Selftest handover reminders reference mcp__torad-fleet__sendMessage — fleet seat machinery, inert here (no seats); acceptable vendored behavior, noted per TWO HOMES.
+# [2026-07-16] Attribution unavailable: missing in_flight tree snapshot
+
+[[items]]
+id = "P1-HOOKS"
+phase = "P1"
+title = "Vendor fleet hook modules: laws injection, in-flight re-anchor, inflight note, beacon, manifest single-channel wall"
+files = [".claude/hooks/modules/sessionstart/10_laws.py", ".claude/hooks/modules/sessionstart/12_inflight_reanchor.py", ".claude/hooks/modules/stop/05_campaign_inflight_note.py", ".claude/hooks/modules/stop/06_inflight_beacon.py", ".claude/hooks/modules/pretooluse/08_manifest_single_channel.py", ".claude/hooks/lib/astgrep_gate.py", ".claude/hooks/lib/tool_input.py", ".claude/hooks/orchestrator/result.py", ".claude/settings.json"]
+status = "todo"
+verify = "python3 -c \"import json,subprocess;print(subprocess.run(['python3','.claude/hooks/orchestrator/sessionstart.py'],input=json.dumps({'hook_event_name':'SessionStart','source':'compact','session_id':'t','cwd':'.'}),capture_output=True,text=True).stdout)\" | grep -qi 'law'"
+# Context: WALL-GATED (SPLICE_WALLS_OK grant required — .claude/hooks + settings.json are wall paths).
+# Sources: torad-fleet @ ec913a7d .claude/hooks/{modules/...,lib/...,orchestrator/result.py}. The
+# installed toolkit runner (dict contract) differs from fleet's HookResult runner — vendor fleet's
+# runner.py TOO if module returns require it (record the decision in a note; PORT, DON'T INVENT).
+# settings.json: append Stop entry for the module runner alongside the legacy orchestrator.py stop;
+# PreToolUse likewise. Existing kotlin_rules.py module must keep working (adapt its return if the
+# runner changes; note it). Skip fleet's 11_session_registry (seat machinery, not needed).
+
+[[items]]
+id = "P1-GRADLE"
+phase = "P1"
+title = "Gradle skeleton: multi-module tree + build-logic convention plugins with the dependency law + version catalog + wrapper"
+files = ["gateway/settings.gradle.kts", "gateway/build-logic/", "gateway/gradle/libs.versions.toml", "gateway/core/build.gradle.kts", "gateway/provider-spi/build.gradle.kts", "gateway/dialect-openai-responses/build.gradle.kts", "gateway/dialect-openai-chat/build.gradle.kts", "gateway/provider-codex/build.gradle.kts", "gateway/provider-grok/build.gradle.kts", "gateway/provider-openai/build.gradle.kts", "gateway/gateway/build.gradle.kts", "gateway/control/build.gradle.kts", "gateway/app/build.gradle.kts", "gateway/spikes/build.gradle.kts", "gateway/arch-tests/build.gradle.kts"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q help && ./gradlew -q :app:dependencies --configuration runtimeClasspath >/dev/null"
+# Context: module graph per plan (app -> all; control -> core; gateway -> core,spi; providers ->
+# core,spi,dialect(s); dialects -> core,spi; spi -> core; core -> kotlinx.serialization only).
+# build-logic/ included build; one convention plugin per module kind OWNING its allowed project-dep
+# allowlist, failing configuration on violation (pattern: grailseeker torad.block.ui law). JDK 21
+# toolchain, Kotlin 2.x, explicitApi() on library modules. Wrapper committed (brew gradle to
+# generate once). WALLS BEFORE BUILDINGS: a planted illegal dep (test fixture in build-logic tests
+# or a scripted red/green) must FAIL before any real code lands.
+
+[[items]]
+id = "P1-WALLS"
+phase = "P1"
+title = "Kotlin ast-grep walls: splice rules + rule-tests; prune Android kit; wire sgconfig + gate"
+files = [".rules/kotlin/", "sgconfig.yml", "package.json"]
+status = "todo"
+verify = "npm run gate:rules"
+# Context: WALL-GATED (grant). Author with red/green rule-tests: (1) message_stop/message_delta
+# literals only in SseEmitter.kt; (2) end_turn literal only in SseEmitter.kt; (3) loopback binds:
+# host must be literal 127.0.0.1; (4) mirrorInto defined once (outside Mirror.kt = error);
+# (5) catch(Exception|Throwable) not rethrowing CancellationException = error; (6) no GlobalScope /
+# runBlocking outside main+tests; (7) no literal \".claude-codex\" outside StatePaths.kt; (8) no
+# System.getenv outside config loader. Prune kit rules that fight Ktor (no-companion-objects,
+# no-extension-functions, Compose/ViewModel/MVVM set); keep no-println, no-hardcoded-secrets,
+# no-else-in-sealed-when, no-delay-literal, no-hardcoded-dispatchers, no-empty-catch. Same rules in
+# write-time hook AND npm run gate:rules (same-checker-twice).
+
+[[items]]
+id = "P1-KONSIST"
+phase = "P1"
+title = "Konsist architecture laws in :arch-tests incl. PORT-OF/NEW header check; detekt pruned to backend reality"
+files = ["gateway/arch-tests/src/test/kotlin/", "gateway/detekt.yml"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :arch-tests:test"
+# Context: laws: every .kt in port-scope modules opens with '// PORT-OF: <source> @ <sha>' or
+# '// NEW: <reason>'; :core types @Serializable; no ktor imports in :core; providers import no
+# concrete sibling provider; SseEmitter internal. Red/green: plant a violating fixture file, prove
+# the test fails, remove it. detekt.yml starts from .rules/kotlin/detekt.yml, pruned.
+
+[[items]]
+id = "P1-CORE"
+phase = "P1"
+title = ":core — canonical domain: Anthropic wire model, Head, TurnOutcome/ErrorType, catalog types, topology config schema"
+files = ["gateway/core/src/main/kotlin/", "gateway/core/src/test/kotlin/"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :core:check"
+# Context: sealed Anthropic content blocks/events (unknown-field-preserving via JsonObject
+# passthrough), value classes UpstreamItemIndex/WireBlockIndex, kotlin.time.Duration timeouts,
+# Head interface {key,label,start,stop,healthSnapshot}, sealed TurnOutcome{Success,Failure,
+# ClientAbandoned}, sealed Credentials, ModelCatalog (exact -> ordered startsWith prefix rules ->
+# default; wrap/unwrap discovery prefix). Topology schema = P0-TOML's proven data classes.
+# Config KEYS as sealed set with restartRequired property. NAMED SOURCES: anthropic/sse.mjs event
+# shapes, models/codex-models.mjs CONTEXT_WINDOW_PREFIX_RULES + DISCOVERY_PREFIX semantics.
+
+[[items]]
+id = "P1-CONF"
+phase = "P1"
+title = "Hot-knob config layering: defaults <- head TOML overrides <- state config.json <- env <- runtime PATCH, fresh per read"
+files = ["gateway/core/src/main/kotlin/config/", "gateway/core/src/test/kotlin/config/"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :core:test --tests '*Config*'"
+# Context: PORT-OF server/src/config.mjs @ 4ca99f7 — keep ENV_MAP alias names (CLAUDEX_*/CODEX_*),
+# coercion rules (bool regex, maxInflight unlimited aliases), normalization floors (idle >= 30s
+# except test floor, authCache >= 5s...), showReasoning folding, RESTART_REQUIRED_KEYS
+# [port,grokPort,controlPort,upstreamTimeoutMs], PATCH persists to state config.json (stays JSON),
+# mtime-cached file layer, configLayers() provenance view for /mgmt/config. NEW layer: per-head TOML
+# overrides between defaults and state file. Port config.test.mjs semantics.
+
+# ── P2 — the riskiest slice: emitter + stream machine + golden parity ────────
+
+[[items]]
+id = "P2-EMIT"
+phase = "P2"
+title = "SseEmitter (L3-as-types): sole terminal emitter, raw frames with per-frame flush; WireSink capability split"
+files = ["gateway/gateway/src/main/kotlin/wire/SseEmitter.kt", "gateway/provider-spi/src/main/kotlin/WireSink.kt", "gateway/gateway/src/test/kotlin/wire/"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :gateway:test --tests '*Emitter*'"
+# Context: PORT-OF server/src/anthropic/sse.mjs @ 4ca99f7 — invariants: message_start lazy on first
+# block (ensureStart), ping after start, block index ownership, emitTerminal derives stop_reason
+# tool_use > max_tokens(incomplete) > end_turn INTERNALLY, emitError = SSE error event, abandon()
+# seals silently, ended-idempotence, endResponse drains before terminal chunk (cork lesson ->
+# explicit flush ordering). internal visibility; providers see WireSink only (openText/openThinking/
+# openTool eager, deltas, closeBlock/closeAll, addTextBlock, addRedactedThinking — NO terminals).
+# usage payload fields via buildUsagePayload port (P3-USE supplies; stub here).
+
+[[items]]
+id = "P2-READ"
+phase = "P2"
+title = "Upstream SSE line reader: ByteReadChannel -> Flow<JsonObject>, multi-byte-safe, [DONE]-tolerant, onBytes touch"
+files = ["gateway/provider-spi/src/main/kotlin/SseReader.kt", "gateway/provider-spi/src/test/kotlin/SseReaderTest.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :provider-spi:test --tests '*SseReader*'"
+# Context: PORT-OF stream.mjs sseEvents @ 4ca99f7 — UTF-8 across chunk boundaries (streaming
+# decoder), partial-last-line carry, 'data: ' prefix only, skip empty/[DONE], skip malformed JSON
+# frames, onBytes callback fires ON READ (watchdog touch — NEVER after downstream write; plan
+# footgun #2). Test: multibyte char split across chunks (port of the existing UTF-8 split test).
+
+[[items]]
+id = "P2-DOG"
+phase = "P2"
+title = "Two-tier watchdog: firstByteTimeout before first byte, streamIdle after, total cap; sibling poller + typed cancel sentinel"
+files = ["gateway/provider-spi/src/main/kotlin/Watchdog.kt", "gateway/provider-spi/src/test/kotlin/WatchdogTest.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :provider-spi:test --tests '*Watchdog*'"
+# Context: PORT-OF stream.mjs idleTimer block @ 4ca99f7 — the v35 fix IS the spec: before first
+# byte the limit is firstByteTimeoutMs (prefill legitimately silent for minutes), after it's
+# streamIdleMs, plus upstreamTimeoutMs total cap; poll interval min(15s, max(250ms, idle/3)).
+# Sibling coroutine polling AtomicLong lastByteAt + sawFirstByte; on breach set typed sentinel
+# (WatchdogFired reason incl. which tier) THEN cancel the upstream job. Tests: slow-prefill-not-
+# reaped regression (prefill silent > streamIdleMs but < firstByteTimeout survives), idle-after-
+# first-byte reaped, total-cap reaped, teardown idempotent.
+
+[[items]]
+id = "P2-GATE"
+phase = "P2"
+title = "Inflight gate: hand-rolled FIFO with hot-resizable maxInflight and queued-cancellation"
+files = ["gateway/provider-spi/src/main/kotlin/InflightGate.kt", "gateway/provider-spi/src/test/kotlin/InflightGateTest.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :provider-spi:test --tests '*Gate*'"
+# Context: PORT-OF upstream/gate.mjs @ 4ca99f7. kotlinx Semaphore banned (can't hot-resize;
+# maxInflight is live-PATCHable, 0 = unlimited). ArrayDeque<CancellableContinuation<Unit>> +
+# invokeOnCancellation removes queued waiters (STRICT IMPROVEMENT over Node — its queued promise
+# has no cancellation path; invisible to golden fixtures). Slot carries idleFor()/touch() for the
+# watchdog. Tests: FIFO order, resize mid-queue, cancel-while-queued frees the slot, release
+# idempotence.
+
+[[items]]
+id = "P2-ERR"
+phase = "P2"
+title = "UpstreamFailureClassifier: ONE classifier for HTTP + SSE failure paths, ordered regexes, 502->529"
+files = ["gateway/provider-spi/src/main/kotlin/UpstreamFailureClassifier.kt", "gateway/provider-spi/src/test/kotlin/UpstreamFailureClassifierTest.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :provider-spi:test --tests '*Classifier*'"
+# Context: PORT-OF codex/errors.mjs @ 4ca99f7 — REGEX ORDER IS THE SPEC (overflow before auth: the
+# v29 bug); context-overflow rewrites to \"prompt is too long\" (Claude Code then compacts);
+# 502 -> 529 overloaded remap; provider extra-pattern injection point (grok/openai add theirs).
+# Port errors.test.mjs ordering + parity cases.
+
+[[items]]
+id = "P2-MACH"
+phase = "P2"
+title = "Responses stream state machine: event-for-event port of runStreamTurn as StreamTranslator"
+files = ["gateway/dialect-openai-responses/src/main/kotlin/ResponsesStreamTranslator.kt", "gateway/dialect-openai-responses/src/test/kotlin/"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :dialect-openai-responses:test"
+# Context: PORT-OF codex/stream.mjs runStreamTurn @ 4ca99f7 EVENT-FOR-EVENT; its comments are the
+# spec: eager tool_use open on output_item.added, LAZY text/thinking open on first delta (no empty
+# widgets), reasoning parts join with \\n\\n into ONE thinking block (v24: never close on
+# part/text.done — only output_item.done or end sweep), args stream input_json_delta on same wire
+# index, replay emits redacted_thinking IN POSITION after summary close (gated replayReasoning &&
+# !compact), terminal/failure/usage accumulation, harvest fallback from response.completed when
+# deltas sparse (weak-summary preference rules), promote-to-text when no text+no tools, honesty
+# gates: upstreamFailure -> classified emitError; idleAborted -> overloaded_error; !finalResponse ->
+# client-abort abandon() if res dead else truncated overloaded_error; empty compact = error
+# 'empty_model' never empty success; empty non-compact under HONESTY_MIN_CHARS -> api_error.
+# mirrorInto call at end (tools stay on). Returns TurnOutcome; gateway turn loop owns terminals.
+
+[[items]]
+id = "P2-MOCK"
+phase = "P2"
+title = "Mock upstream scenario server ported 1:1 (+ count_tokens fixture)"
+files = ["gateway/gateway/src/test/kotlin/mock/MockChatGptUpstream.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :gateway:test --tests '*Mock*'"
+# Context: PORT-OF test/codex-proxy.test.mjs mock upstream @ 4ca99f7 — scenario tag rides
+# body.instructions ('SCENARIO:<name>'); scenarios: basic, refresh (401 then success — single-flight
+# refresh), multipart (reasoning parts), toolcall, failed, overflow_sse, truncated, idle, prefill
+# (silent then bytes — the v35 regression case), drip, bigout (output clamp), nonstream_tool,
+# compactish, replaystream. ADD: count_tokens fixture documenting the OLD Node behavior (falls into
+# handleMessages) so the deliberate Kotlin fix (dedicated cheap handler) is an HONEST named change.
+
+[[items]]
+id = "P2-GOLD"
+phase = "P2"
+title = "Golden differential harness: same scenario through Node and Kotlin, normalized SSE byte-compare"
+files = ["gateway/tools/golden-diff.mjs", "gateway/tools/normalize-sse.mjs"]
+status = "todo"
+verify = "node gateway/tools/golden-diff.mjs --all"
+# Context: drives both stacks against the SAME mock upstream (Node: CODEX_PROXY_TEST harness on a
+# scratch port; Kotlin: test host or side port), normalizes volatile fields (msg_<ts> ids,
+# timestamps), byte-compares the SSE transcript. GATE for P2: all scenarios byte-identical.
+# Node side reuses server/test harness pieces; the harness lives in gateway/tools (dies with
+# cutover? NO — keep: it re-runs in P7; after cutover it pins Kotlin-vs-fixture snapshots).
+
+# ── P3 — codex head end-to-end on side port ──────────────────────────────────
+
+[[items]]
+id = "P3-REQ"
+phase = "P3"
+title = "Responses request builder + Quirks: one translator core for codex/xai/openai-platform"
+files = ["gateway/dialect-openai-responses/src/main/kotlin/ResponsesRequestBuilder.kt", "gateway/dialect-openai-responses/src/main/kotlin/Quirks.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :dialect-openai-responses:test --tests '*RequestBuilder*'"
+# Context: PORT-OF codex/translate-request.mjs @ 4ca99f7 with grok/translate-request.mjs diffed in
+# as Quirks: effort ceiling+aliases (codex none..max incl. ultracode->max; grok low|medium|high,
+# can't disable), summary field (codex yes default detailed + visibility floor; grok none),
+# cache_key strategy (first-message-hash 'splice-<sha256[:32]>' vs session-id 'claude-grok:<sid>'),
+# compact_effort (codex INHERITS session effort — THE cache law; grok pins low), tool_choice/
+# parallel_tool_calls/strict (grok), spark-drops-summary regex, store:false, include
+# reasoning.encrypted_content iff replay && !compact, images (base64/url; in-tool_result ride-along
+# user message), document markers, compact: tools stripped + forced instructions verbatim + model
+# fallthrough body.model when compactModel empty. PURITY: {req,meta}, never mutate body (no-magic-
+# props wall analog). Port buildRequest purity/determinism/effort-precedence tests.
+
+[[items]]
+id = "P3-AUTH"
+phase = "P3"
+title = "chatgpt-oauth AuthProvider: PKCE login (callback :1455), cached read, single-flight refresh, masked describe"
+files = ["gateway/provider-codex/src/main/kotlin/auth/", "gateway/provider-codex/src/test/kotlin/auth/"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :provider-codex:test --tests '*Auth*'"
+# Context: PORT-OF auth/codex-login.mjs + codex-oauth.mjs @ 4ca99f7 — codex CLI public client id,
+# authorize URL param ORDER + literal %20 (never '+'), state CSRF, token exchange + best-effort
+# api-key token-exchange grant, ~/.codex/auth.json shape byte-compatible (drop-in for real codex
+# CLI), 0600, account_id from id_token JWT claim, mtime+TTL cached read (authCacheMs), single-
+# flight refresh (Mutex + shared Deferred in :provider-spi helper), masked introspection.
+# Port codex-login.test.mjs PKCE/URL/JWT/shape cases.
+
+[[items]]
+id = "P3-COMP"
+phase = "P3"
+title = "Compaction: positive-marker classify, shadow classifier on every request, stats JSONL"
+files = ["gateway/gateway/src/main/kotlin/compact/", "gateway/gateway/src/test/kotlin/compact/"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :gateway:test --tests '*Compact*'"
+# Context: PORT-OF codex/compact.mjs @ 4ca99f7 — the 5 verbatim COMPACT_MARKERS (system prompt or
+# last user message), NEVER size/content heuristics (v13/v24 misfire class), shadow classifier logs
+# {has_marker, tool_count, sys_len} unconditionally, marker CANARY test pins the sentence,
+# recordCompactStat/readCompactStats JSONL at the configured compact_stats path (Marcos pin:
+# claudex-compact-stats.jsonl).
+
+[[items]]
+id = "P3-MIR"
+phase = "P3"
+title = "Mirror (L2) + replay envelope: one mirrorInto; splice-reasoning v1 byte-compatible"
+files = ["gateway/gateway/src/main/kotlin/reasoning/Mirror.kt", "gateway/gateway/src/main/kotlin/reasoning/Replay.kt", "gateway/gateway/src/test/kotlin/reasoning/"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :gateway:test --tests '*Mirror*' --tests '*Replay*'"
+# Context: PORT-OF reasoning/mirror.mjs + replay.mjs @ 4ca99f7 — mirror wire format
+# '\\n[reasoning summary]\\n<text>\\n' EXACT, thresholds mirror>=20 promote>=40 honesty<20 (named
+# consts), never on compact, gated showReasoning=='text'; replay envelope tag 'splice-reasoning' v1
+# encode/decode PAIRED (a tag/version bump strands in-flight transcripts — byte-compat test against
+# a captured Node envelope). ONE mirrorInto called by stream + non-stream paths (invariant test
+# greps call sites — port of invariants.test.mjs L2 block).
+
+[[items]]
+id = "P3-USE"
+phase = "P3"
+title = "Usage: buildUsagePayload extra fields, output clamp, 5h window persistence, ratelimit capture, computeUsageWarn"
+files = ["gateway/gateway/src/main/kotlin/usage/", "gateway/gateway/src/test/kotlin/usage/"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :gateway:test --tests '*Usage*'"
+# Context: PORT-OF usage/hud.mjs + warn.mjs @ 4ca99f7 — non-standard usage fields Claude Code reads
+# from gateways (context_window, context_window_size, used_percentage) sized from the HEAD's real
+# window (272k/500k/1M), makeOutputClamp (backend rejects cap params; reasoning tokens count toward
+# output — clamp REPORTED output to client max_tokens except compact), fire-and-forget persistence
+# to <head>-usage.json/<head>-ratelimit.json (Marcos pin: codex-*.json names), computeUsageWarn
+# pure (ratelimit headers preferred, 5h fallback, never blocks) shared by /statusline + dashboard.
+
+[[items]]
+id = "P3-RESP"
+phase = "P3"
+title = "Terminal response translation + harvest helpers (shared once): translateResponse, harvestResponsesOutput, pickModelText, isWeakSummaryText"
+files = ["gateway/dialect-openai-responses/src/main/kotlin/ResponsesTerminal.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :dialect-openai-responses:test --tests '*Terminal*'"
+# Context: PORT-OF codex/translate-response.mjs @ 4ca99f7 (grok's copies are byte-identical dupes —
+# ONE implementation here, v29 'copies drift' lesson). Non-stream path shares this with streaming
+# harvest (one translator total).
+
+[[items]]
+id = "P3-HEAD"
+phase = "P3"
+title = "codex Head assembled: POST /v1/messages exact-route, /v1/models discovery-wrapped, /health, /mgmt/*, on :3097"
+files = ["gateway/gateway/src/main/kotlin/head/", "gateway/gateway/src/main/kotlin/mgmt/", "gateway/app/src/main/kotlin/Main.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :gateway:test :app:test"
+# Context: PORT-OF codex-proxy.mjs routing + mgmt/api.mjs @ 4ca99f7. Route EXACTLY POST /v1/messages
+# (named change: count_tokens gets a dedicated cheap handler + log counter — old Node forwarded it
+# as a REAL turn, burning quota; golden fixture documents old behavior; live-verify in P3-LIVE).
+# /v1/models: catalog wrapped in discovery prefix, pinned model EXCLUDED (rides
+# ANTHROPIC_CUSTOM_MODEL_OPTION). claude-* model ids -> honest 400. /health {ok,port,version}.
+# /mgmt: status/config GET+PATCH/usage/compact/auth+refresh/logs/models, bearer via state mgmt-key
+# (minted EAGERLY before port opens), loopback-only, 401 without key. Turn pipeline wiring:
+# classify -> shadow -> build -> gate slot -> upstream w/ retries + single-flight-refresh-on-401 ->
+# watchdogged stream -> translator -> outcome -> emitter terminals; teardown idempotent
+# (NonCancellable cleanup; abort upstream on client close; never cancel a locked body — undici
+# lesson maps to: close channel via job cancellation only).
+
+[[items]]
+id = "P3-LIVE"
+phase = "P3"
+title = "Live side-port smoke: real claudex session on :3097 with an observed real compaction"
+files = ["gateway/spikes/results/p3-live.md"]
+status = "todo"
+verify = "test -s gateway/spikes/results/p3-live.md"
+# Context: env CODEX_PROXY_PORT=3097-style launch against the Kotlin head (dev shim), real ChatGPT
+# backend, real OAuth file. Receipt records: turns served, tool calls round-tripped, mirror visible,
+# compaction observed with cache-warm evidence (logTurnCache line), count_tokens counter reading,
+# zero watchdog false-fires. PARITY LAW: production :3099 stays Node throughout.
+
+# ── P4 — control plane + daemon ──────────────────────────────────────────────
+
+[[items]]
+id = "P4-SUP"
+phase = "P4"
+title = "Daemon assembly: Head supervision scopes, daemon.lock single-flight startup, version handshake, graceful shutdown"
+files = ["gateway/app/src/main/kotlin/Daemon.kt", "gateway/control/src/main/kotlin/lifecycle/"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :app:test --tests '*Daemon*'"
+# Context: one JVM: control :3096 + each enabled head as its own embedded server in a supervised
+# child scope (crash of one head's scope never kills siblings; restart = stop+start the scope).
+# flock ~/.../state/daemon.lock replaces per-port EADDRINUSE trick (loser waits, health-checks
+# winner, exits 0 LOUD). /health version = daemon version (NAMED behavior change: a bump restarts
+# all heads together — cutover note). POST /mgmt/shutdown for the shim's stale-version path.
+
+[[items]]
+id = "P4-API"
+phase = "P4"
+title = "/api/* aggregation: heads lifecycle, config (NO fanout — one in-process patch), usage+warn, auth incl. headless login spawn, compact, logs"
+files = ["gateway/control/src/main/kotlin/api/", "gateway/control/src/test/kotlin/api/"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :control:test"
+# Context: PORT-OF control/api.mjs @ 4ca99f7 MINUS patchConfigFanout (single JVM: /api/config and
+# /mgmt/config call the SAME patchConfig; fanout deleted-not-ported, plan decision). FILE-BASED
+# TRUTH preserved: auth/usage/compact read from disk so a DOWN head still shows last-known state.
+# Same bearer key as /mgmt. Routes/JSON shapes must match webui/src/shared/api/index.ts EXACTLY
+# (P4-WEBUI generates shape tests from it).
+
+[[items]]
+id = "P4-DASH"
+phase = "P4"
+title = "Dashboard serving: committed webui/dist/index.html at / with mtime cache"
+files = ["gateway/control/src/main/kotlin/api/Dashboard.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :control:test --tests '*Dashboard*'"
+# Context: PORT-OF mgmt/dashboard.mjs @ 4ca99f7. Zero frontend toolchain in the daemon.
+
+[[items]]
+id = "P4-LAUNCH"
+phase = "P4"
+title = "/launch endpoint (exec-recipe assembly) + /statusline endpoint (ANSI render from stdin JSON + state files)"
+files = ["gateway/control/src/main/kotlin/launchpad/", "gateway/control/src/test/kotlin/launchpad/"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :control:test --tests '*Launch*' --tests '*Statusline*'"
+# Context: /launch POST {head,args} -> runs env assembly (PORT-OF launcher/assemble-env.mjs incl.
+# reading Codex CLI ~/.codex/config.toml section-aware) + Claude config prep (P5-PREP materializer)
+# -> returns {env:{...},unset:[...],argv:[...]} incl. --dangerously-skip-permissions default unless
+# SAFE, default --model. DO NOT port the wantMode/patchMode dead branch (confirmed latent
+# ReferenceError — enumerated non-port). /statusline POST body = Claude Code stdin JSON, query
+# ?head= -> ANSI line PORT-OF statusline/claudex-statusline.mjs (model dot, context used/window/pct
+# with real head window, cache-hit %, warn glyph via computeUsageWarn, repo+branch dim; degrade to
+# shorter line on missing fields, bare marker on parse failure).
+
+[[items]]
+id = "P4-SHIM"
+phase = "P4"
+title = "bin shims: argv0-dispatched launch script (dev mode) — health/version handshake, cold-start jar, POST /launch, exec"
+files = ["bin/claudex", "bin/splice-launch"]
+status = "todo"
+verify = "bash -n bin/claudex && bash -n bin/splice-launch"
+# Context: replaces ensure-proxy exec-recipe flow. bin/claudex (dev shim) = argv0 wrapper calling
+# bin/splice-launch with head inferred from $0. splice-launch: GET :3096/health -> version vs jar
+# VERSION -> mismatch/down: POST /mgmt/shutdown (bearer) then spawn java -jar detached, wait
+# healthy -> POST /launch -> exec env recipe. Statusline shim line for settings.json: curl -s
+# --data-binary @- with dim static fallback when daemon down (fate-shared with the proxy itself).
+# login/dashboard subcommands. Until P8 cutover the dev shim targets :3097 (Node owns :3099).
+
+[[items]]
+id = "P4-WEBUI"
+phase = "P4"
+title = "Contract gate: unmodified webui fully functional against Kotlin :3096"
+files = ["gateway/control/src/test/kotlin/contract/", "gateway/spikes/results/p4-webui.md"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :control:test --tests '*Contract*' && test -s gateway/spikes/results/p4-webui.md"
+# Context: JSON-shape tests sourced from webui/src/shared/api/index.ts types (heads/config incl.
+# 4-layer provenance/usage+warn/auth masked/compact/logs/status). Receipt: manual click-through of
+# all 5 pages (fleet, auth incl. refresh, config edit PATCH + restart-required flags, logs tail,
+# compaction feed) against the Kotlin daemon with Node heads STOPPED.
+
+# ── P5 — launcher/config-prep + installer CLI ────────────────────────────────
+
+[[items]]
+id = "P5-PREP"
+phase = "P5"
+title = "Claude-config materializer: literal prepare-config port generalized to share/isolate policy per item"
+files = ["gateway/control/src/main/kotlin/launchpad/ClaudeConfigMaterializer.kt", "gateway/control/src/test/kotlin/launchpad/MaterializerTest.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :control:test --tests '*Materializer*'"
+# Context: PORT-OF launcher/prepare-config.mjs @ 4ca99f7 as TRANSLITERATION (symlink-break-before-
+# write ordering, never-delete-real-dir guard, PORT_KEYS allowlist for ~/.claude.json inheritance,
+# availableModels + enforceAvailableModels + statusLine injection, additionalModelOptionsCache,
+# hasCompletedOnboarding). THEN generalize: [claude] share/isolate policy per item (settings, mcps,
+# skills, hooks, agents, commands, plugins, claude_md); shared = symlink/selective-inherit (today's
+# behavior = all-shared), isolated = seeded copy. Gate: fixture-HOME diff vs Node's generated tree
+# byte-identical in the all-shared case (port launcher.test.mjs non-destructiveness cases).
+
+[[items]]
+id = "P5-CLI"
+phase = "P5"
+title = "splice CLI: init, doctor, install/uninstall (argv0 symlinks + policy materialize), login, daemon, config"
+files = ["gateway/app/src/main/kotlin/cli/", "gateway/app/src/test/kotlin/cli/"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :app:test --tests '*Cli*'"
+# Context: subcommands on the fat jar. install: ~/.local/bin/<command> symlink -> shared launch
+# shim at ~/.local/share/splice/launch (argv0 dispatch; command name from [heads.x.claude].command);
+# materialize head config dir per policy; PATH hint if ~/.local/bin absent. init: materialize
+# ~/.config/splice/splice.toml from jar defaults (XDG; Marcos pins legacy dirs in his own file).
+# doctor: java/claude bin/ports/auth/dirs. login/daemon/config = mgmt-API clients.
+
+[[items]]
+id = "P5-INST"
+phase = "P5"
+title = "install.sh + release layout: jar to ~/.local/share/splice, shims installed, clean-HOME round-trip"
+files = ["install.sh", "gateway/spikes/results/p5-install.md"]
+status = "todo"
+verify = "bash -n install.sh && test -s gateway/spikes/results/p5-install.md"
+# Context: curl|bash installer downloading the release jar (checksummed) + invoking splice install.
+# Receipt: round-trip on a scratch HOME (HOME=$(mktemp -d)) producing a working claudex wrapper
+# against a mock daemon. No binaries in the repo (OSS posture).
+
+# ── P6 — providers beyond codex ──────────────────────────────────────────────
+
+[[items]]
+id = "P6-GROK"
+phase = "P6"
+title = "grok/xAI provider per P0-XAI verdict + api-key AuthProvider + head entry + stat files; live turn receipt"
+files = ["gateway/provider-grok/src/main/kotlin/", "gateway/spikes/results/p6-grok.md"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :provider-grok:test && test -s gateway/spikes/results/p6-grok.md"
+# Context: dialect per P0-XAI (anthropic-passthrough if faithful, else Responses translators
+# PORT-OF grok/translate-{request,response}.mjs @ 4ca99f7 with Quirks {session-id cache key,
+# effort clamp low|medium|high floor-at-low, no summary field, compact_effort=low as written,
+# tool_choice/parallel/strict}). api-key auth: env XAI_API_KEY > key file. Stat files
+# grok-usage.json/grok-ratelimit.json/claude-grok-compact-stats.jsonl (Marcos pins). Head :3100,
+# discovery prefix claude-grok--.
+
+[[items]]
+id = "P6-OAI"
+phase = "P6"
+title = "OpenAI platform provider: Responses dialect reuse, api-key auth, catalog"
+files = ["gateway/provider-openai/src/main/kotlin/"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :provider-openai:test"
+# Context: proof the shared-dialect bet pays: quirks {store allowed?, no account header, first-
+# message-hash cache key, platform effort set}, base api.openai.com/v1, OPENAI_API_KEY. NEW (no
+# Node source) — slot spec lands at claim time from OpenAI Responses docs + codex translator.
+
+[[items]]
+id = "P6-CHAT"
+phase = "P6"
+title = "openai-chat dialect: Chat Completions request builder + stream translator (genuinely new work)"
+files = ["gateway/dialect-openai-chat/src/main/kotlin/", "gateway/dialect-openai-chat/src/test/kotlin/"]
+status = "todo"
+verify = "cd gateway && ./gradlew -q :dialect-openai-chat:test"
+# Context: NEW — no Node source. Anthropic messages -> chat messages (system/user/assistant/tool),
+# tool_calls streaming -> tool_use blocks via the SAME WireSink grammar, delta.content -> text,
+# reasoning_content (DeepSeek-style) -> thinking when present, finish_reason mapping, usage mapping.
+# Same honesty gates as Responses (empty compact = error etc.). Scenario tests mirror P2-MOCK
+# shapes for the chat dialect.
+
+[[items]]
+id = "P6-TOML"
+phase = "P6"
+title = "TOML-only vendor proof: OpenRouter or Ollama head with ZERO new Kotlin; live turn receipt"
+files = ["config/examples/openrouter.toml", "gateway/spikes/results/p6-toml-vendor.md"]
+status = "todo"
+verify = "test -s gateway/spikes/results/p6-toml-vendor.md"
+# Context: the configuration-over-convention payoff: [providers.openrouter] dialect=openai-chat +
+# base_url + api-key env + [[models]] + [heads.openrouter]; splice install openrouter; one live
+# turn through Claude Code. Receipt names the zero-code diff (git show --stat of the config-only
+# commit).
+
+# ── P7/P8 — parity + cutover ─────────────────────────────────────────────────
+
+[[items]]
+id = "P7-PAR"
+phase = "P7"
+title = "Full parity gate: golden differential re-run all scenarios+heads, webui click-through, full workday on Kotlin side ports"
+files = ["gateway/spikes/results/p7-parity.md"]
+status = "todo"
+verify = "node gateway/tools/golden-diff.mjs --all && test -s gateway/spikes/results/p7-parity.md"
+# Context: receipt: scenario matrix all byte-identical, dashboard pass, one FULL real workday
+# (sessions, compactions, tool storms, 12+ concurrent streams) on Kotlin :3097/:3096 with Node
+# still owning :3099. Any deviation -> items cut, fixed, re-run. This is the last gate before P8.
+
+[[items]]
+id = "P8-CHECK"
+phase = "P8"
+title = "Cutover ledger gate: checks script asserting every load-bearing item verified (write-time + CI, same checker twice)"
+files = ["checks/cutover_ledger_gate.py", ".github/workflows/ci.yml"]
+status = "todo"
+verify = "python3 checks/cutover_ledger_gate.py --dry-run"
+# Context: reads THIS manifest via manifest.py list; load-bearing = every P0-P7 item + P8-CHECK
+# itself; asserts all verified (with evidence notes present) before the cutover commit may land;
+# wired into CI and runnable at write time. The tracker is an INPUT to the system.
+
+[[items]]
+id = "P8-CUT"
+phase = "P8"
+title = "The cutover commit: delete server/ (enumerated), rewire bin to :3099, package.json/CI/README/AGENTS.md, release workflow, capture scrub, Marcos config pin"
+files = ["server/", "bin/claudex", "package.json", ".github/workflows/ci.yml", "README.md", "AGENTS.md", ".github/workflows/release.yml", "experiments/cache-replay/capture/"]
+status = "todo"
+verify = "python3 checks/cutover_ledger_gate.py && npm run gate:rules && cd gateway && ./gradlew -q check"
+# Context: ENUMERATED DESTRUCTION: server/ (whole tree), bin/claudex-next, server-mjs rules in
+# .rules/rules/ (l2-single-mirror, l3-*, launcher-no-pkill, no-claudex-magic-props — the webui rules
+# STAY), root package.json workspaces -> ["webui"], CI server steps -> gradlew check + JDK21.
+# Marcos personal ~/.config/splice/splice.toml pins state_dir=~/.claude-codex + legacy stat
+# filenames (HUD contract). README: install story + sharpened ToS disclaimer; AGENTS.md: invariants
+# restated in Kotlin terms + named changes (daemon version blast radius, count_tokens fix, fanout
+# deletion). Release workflow: tag -> fat jar + checksums. Capture fixtures: regenerate synthetic
+# or scrub (real transcripts in turn-*.json). Gate: P8-CHECK green + full CI + one more real session.

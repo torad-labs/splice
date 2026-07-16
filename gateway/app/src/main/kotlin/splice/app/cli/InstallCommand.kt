@@ -44,7 +44,15 @@ public object InstallCommand {
         for ((key, head) in heads) {
             linkOne(key, head.claude.command ?: key, launchShim)
         }
+        installSelf()
         println("splice: ensure ${localBin()} is on your PATH to use the wrappers")
+    }
+
+    /** Link the `splice` admin command itself (so `splice dashboard/status/...` work as commands). */
+    public fun installSelf() {
+        val launchShim = shareDir().resolve("splice-launch")
+        Files.createDirectories(localBin())
+        linkOne("splice", "splice", launchShim)
     }
 
     @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException")

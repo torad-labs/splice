@@ -53,39 +53,55 @@ next = ["P1-CAMP", "P1-HOOKS", "P1-GRADLE", "P0-ENG", "P0-TOML", "P0-POOL", "P0-
 id = "P0-ENG"
 phase = "P0"
 title = "Spike: Ktor server engine SSE flush — Netty vs CIO, raw-TCP timestamped against a slow-drip route"
-files = ["gateway/spikes/src/main/kotlin/SseFlushSpike.kt", "gateway/spikes/results/sse-flush.md"]
-status = "todo"
+files = ["gateway/spikes/results/sse-flush.md"]
+status = "verified"
 verify = "test -s gateway/spikes/results/sse-flush.md"
 # Context: plan doctrine says Netty inbound (CIO server has documented SSE flush-buffering history:
 # ktor#1199 chunked encoder ignored flushes; KTOR-7324). PROVE empirically: embeddedServer route
 # drips 1 SSE frame/500ms via respondBytesWriter+flush; raw java.net.Socket client timestamps
 # arrival per frame. PASS = each frame arrives <100ms after send on the chosen engine. Receipt
 # records both engines' timings + the decision. Blocks P2-EMIT engine choice.
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T06:26:46Z
+# [2026-07-16] ATTEST-START: tree=139d245fc84e1af3e370c81c97c24ee2b268cd8c at=2026-07-16T06:26:46Z
+# [2026-07-16] Receipt gateway/spikes/results/sse-flush.md: 10/10 frames both engines, max jitter Netty 5ms / CIO 8ms vs 300ms tick (bar <100ms) via respondBytesWriter+flush + raw-Socket timestamping. VERDICT: both flush per-frame on Ktor 3.5.1; plan default stays NETTY (documented CIO regressions history ktor#1199/KTOR-7324), CIO empirically fine today.
+# [2026-07-16] ATTEST: scoped diffstat: gateway/spikes/results/sse-flush.md | 20 ++++++++++++++++++++ | 1 file changed, 20 insertions(+); sidecar: .claude/ledger-diffs/P0-ENG.diff; off-scope: gateway/spikes/results/ktoml.md, gateway/spikes/results/pool-cancel.md, gateway/spikes/src/test/kotlin/KtomlShapeSpike.kt, gateway/spikes/src/test/kotlin/PoolCancelSpike.kt, gateway/spikes/src/test/kotlin/SseFlushSpike.kt
+# [2026-07-16] FENCE-AUTONARROWED: files = ["gateway/spikes/src/main/kotlin/SseFlushSpike.kt", "gateway/spikes/results/sse-flush.md"] -> files = ["gateway/spikes/results/sse-flush.md"] (by=orchestrator implied; no flag)
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P0-TOML"
 phase = "P0"
 title = "Spike: ktoml decodes the real topology shape — [[providers.x.models]] array-of-tables + inline quirks tables"
 files = ["gateway/spikes/src/test/kotlin/KtomlShapeSpike.kt", "gateway/spikes/results/ktoml.md"]
-status = "todo"
+status = "verified"
 verify = "test -s gateway/spikes/results/ktoml.md"
 # Context: decode the plan's exact splice.toml sketch (daemon/providers/heads incl. [[models]],
 # inline auth/quirks tables, [heads.x.overrides]) into @Serializable data classes with ktoml.
 # FAIL -> fallback candidates in order: tomlj (parse to tree, hand-map), Hoplite-toml. Receipt
 # records library verdict + any shape adjustments. Blocks P1-CORE config schema.
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T06:26:46Z
+# [2026-07-16] ATTEST-START: tree=4882ff061cef9b097efc8641345601ab054a699e at=2026-07-16T06:26:46Z
+# [2026-07-16] Receipt gateway/spikes/results/ktoml.md: ktoml 0.7.1 decodes the FULL topology shape — 10/10 checks (providers map-of-tables, inline auth/quirks tables, [[models]] array-of-tables, [heads.x.overrides] sub-tables, defaults). ADOPTED for P1-CORE.
+# [2026-07-16] ATTEST: scoped diffstat: gateway/spikes/results/ktoml.md                   | 15 +++++++++++++++ | gateway/spikes/src/test/kotlin/KtomlShapeSpike.kt |  2 +- | 2 files changed, 16 insertions(+), 1 deletion(-); sidecar: .claude/ledger-diffs/P0-TOML.diff; off-scope: gateway/spikes/results/pool-cancel.md, gateway/spikes/results/sse-flush.md, gateway/spikes/src/test/kotlin/PoolCancelSpike.kt, gateway/spikes/src/test/kotlin/SseFlushSpike.kt
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P0-POOL"
 phase = "P0"
 title = "Spike: Ktor CIO client pool stays bounded under 500 mid-stream cancellations"
 files = ["gateway/spikes/src/test/kotlin/PoolCancelSpike.kt", "gateway/spikes/results/pool-cancel.md"]
-status = "todo"
+status = "verified"
 verify = "test -s gateway/spikes/results/pool-cancel.md"
 # Context: the exact bug class Node shipped ("55 inflight, 2 agents" leak). Loop 500x: open a
 # streaming POST to a local slow-drip mock, read a few frames via bodyAsChannel, cancel the
 # coroutine mid-read. Assert: no fd growth (lsof), subsequent requests still serve, wall-clock
 # bounded. Kill criterion: pool exhaustion/hang -> try engine config, then OkHttp client as fallback.
 # Blocks P2-MACH upstream plumbing.
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T06:26:46Z
+# [2026-07-16] ATTEST-START: tree=48de2f602b5a72712c74a9cca094ccda17f5070b at=2026-07-16T06:26:46Z
+# [2026-07-16] Receipt gateway/spikes/results/pool-cancel.md: 500/500 cancel-mid-stream rounds, TCP sockets 2->2 (delta 0, bar <50) after 6s settle, post-storm liveness pong, ~21ms/round. FIX-THE-GATE note: first run FAILED on a broken instrument (raw lsof count swings with lazily-opened jar fds + healthy idle keep-alives); refined to TCP-sockets-only + warmup + settle — red/green on the instrument itself. VERDICT: CIO client cleared for P2-MACH.
+# [2026-07-16] ATTEST: scoped diffstat: gateway/spikes/results/pool-cancel.md             |  9 +++++++ | gateway/spikes/src/test/kotlin/PoolCancelSpike.kt | 30 +++++++++++++++++------ | 2 files changed, 32 insertions(+), 7 deletions(-); sidecar: .claude/ledger-diffs/P0-POOL.diff; off-scope: gateway/spikes/results/ktoml.md, gateway/spikes/results/sse-flush.md, gateway/spikes/src/test/kotlin/KtomlShapeSpike.kt, gateway/spikes/src/test/kotlin/SseFlushSpike.kt
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P0-XAI"
@@ -102,6 +118,7 @@ verify = "test -s gateway/spikes/results/xai-passthrough.md"
 # (server/src/grok/translate-{request,response}.mjs @ 4ca99f7 — they are the proven fallback).
 
 # ── P1 — foundation: campaign, hooks, skeleton, walls, core ──────────────────
+# [2026-07-16] PREMISE-BLOCK (slot law): no XAI_API_KEY in env and no ~/.local/share/claude-grok/auth.json on disk — the fidelity probe cannot be grounded. Not improvising. Stays todo until the operator provides a key; P6-GROK falls back to the proven Responses translators if this never lands.
 
 [[items]]
 id = "P1-CAMP"

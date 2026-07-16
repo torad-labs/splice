@@ -21,3 +21,15 @@ public data class AuthDescription(
     val kind: String,
     val fields: Map<String, String> = emptyMap(),
 )
+
+/** Provider auth SPI: resolve credentials (cached) + masked introspection. */
+public interface AuthProvider {
+    public suspend fun credentials(): Credentials?
+
+    public suspend fun describe(): AuthDescription
+}
+
+/** An AuthProvider that can refresh its credentials (single-flight at the impl). */
+public interface RefreshableAuthProvider : AuthProvider {
+    public suspend fun refresh(): Credentials?
+}

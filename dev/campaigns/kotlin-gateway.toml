@@ -448,7 +448,7 @@ id = "P3-AUTH"
 phase = "P3"
 title = "chatgpt-oauth AuthProvider: PKCE login (callback :1455), cached read, single-flight refresh, masked describe"
 files = ["gateway/provider-codex/src/main/kotlin/auth/", "gateway/provider-codex/src/test/kotlin/auth/"]
-status = "todo"
+status = "verified"
 verify = "cd gateway && ./gradlew -q :provider-codex:test --tests '*Auth*'"
 # Context: PORT-OF auth/codex-login.mjs + codex-oauth.mjs @ 4ca99f7 — codex CLI public client id,
 # authorize URL param ORDER + literal %20 (never '+'), state CSRF, token exchange + best-effort
@@ -456,6 +456,11 @@ verify = "cd gateway && ./gradlew -q :provider-codex:test --tests '*Auth*'"
 # CLI), 0600, account_id from id_token JWT claim, mtime+TTL cached read (authCacheMs), single-
 # flight refresh (Mutex + shared Deferred in :provider-spi helper), masked introspection.
 # Port codex-login.test.mjs PKCE/URL/JWT/shape cases.
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T07:27:37Z
+# [2026-07-16] ATTEST-START: tree=0dde6fdb679c2c67b61ad49d5e6379248216e08b at=2026-07-16T07:27:37Z
+# [2026-07-16] Landed OAuth: :core gained AuthProvider/RefreshableAuthProvider interfaces (were only in the plan sketch — added when the codex impl needed them); :provider-spi SingleFlight<T> (Mutex+CompletableDeferred, shared refresh dedup; the Throwable catch carries an ast-grep-ignore justification — it rethrows unconditionally so cancellation propagates); :provider-codex CodexOAuth.kt (public client id + endpoints w/ env overrides, PKCE S256, buildAuthorizeUrl with EXACT param order + RFC3986 %20-not-plus encoding, JWT claim extraction, CLI-compatible authJsonFromTokens) + CodexAuthProvider (cached read path+mtime+TTL, single-flight refresh preserving other fields + 0600 write + cache invalidation, masked describe) implementing RefreshableAuthProvider; refreshCall injected as a seam. TEST-DESIGN CATCH: single-flight dedup can't be proven by scheduler timing under runTest (each coroutine ran to completion → 5 calls); fixed with a CompletableDeferred gate so all 5 register before the leader completes → deterministic 1-call assertion. 8 test groups green; full ./gradlew check green. NOT YET: interactive browser login server (:1455) — lands with P4-LAUNCH (needs the daemon's Ktor host + /api/auth/login orchestration).
+# [2026-07-16] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: gateway/core/src/main/kotlin/splice/core/auth/Credentials.kt, gateway/provider-codex/build.gradle.kts, gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt, gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexOAuth.kt, gateway/provider-codex/src/test/kotlin/CodexAuthTest.kt, gateway/provider-spi/src/main/kotlin/splice/spi/SingleFlight.kt
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P3-COMP"

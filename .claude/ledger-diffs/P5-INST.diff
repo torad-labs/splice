@@ -1,0 +1,61 @@
+diff --git a/install.sh b/install.sh
+new file mode 100755
+index 0000000..7829a46
+--- /dev/null
++++ b/install.sh
+@@ -0,0 +1,55 @@
++#!/usr/bin/env bash
++# splice installer (P5-INST) — no binaries in the repo; fetches the release jar to
++# ~/.local/share/splice/, installs the launch shim, and links wrapper commands.
++# Usage:
++#   ./install.sh                 # from a checkout: build the jar, install from it
++#   SPLICE_JAR=/path/to.jar ./install.sh   # install a prebuilt jar
++#   curl -fsSL <raw>/install.sh | bash     # (release mode: downloads from GitHub Releases)
++set -euo pipefail
++
++SHARE_DIR="${SPLICE_SHARE_DIR:-$HOME/.local/share/splice}"
++BIN_DIR="${SPLICE_BIN_DIR:-$HOME/.local/bin}"
++REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
++JAR_DST="${SHARE_DIR}/splice.jar"
++SHIM_SRC="${REPO_ROOT}/bin/splice-launch"
++
++mkdir -p "$SHARE_DIR" "$BIN_DIR"
++
++# 1. Obtain the jar. Prefer an explicit SPLICE_JAR, else build from the checkout, else (release
++#    mode) download from GitHub Releases — the repo intentionally ships no binaries.
++if [ -n "${SPLICE_JAR:-}" ]; then
++  echo "splice: installing jar from $SPLICE_JAR"
++  cp "$SPLICE_JAR" "$JAR_DST"
++elif [ -f "${REPO_ROOT}/gateway/settings.gradle.kts" ]; then
++  echo "splice: building the fat jar (./gradlew :app:shadowJar)…"
++  ( cd "${REPO_ROOT}/gateway" && ./gradlew -q :app:shadowJar )
++  BUILT="$(find "${REPO_ROOT}/gateway/app/build/libs" -name '*-all.jar' | head -1)"
++  [ -n "$BUILT" ] || { echo "splice: build produced no fat jar" >&2; exit 1; }
++  cp "$BUILT" "$JAR_DST"
++else
++  TAG="${SPLICE_VERSION:-latest}"
++  URL="https://github.com/marcospaulo/splice/releases/${TAG}/download/splice.jar"
++  echo "splice: downloading $URL"
++  curl -fsSL "$URL" -o "$JAR_DST"
++fi
++
++# 2. Install the shared launch shim.
++if [ -f "$SHIM_SRC" ]; then
++  install -m 0755 "$SHIM_SRC" "${SHARE_DIR}/splice-launch"
++else
++  echo "splice: warning — launch shim not found at $SHIM_SRC" >&2
++fi
++
++# 3. Materialize the topology + link wrapper commands via the CLI (argv[0] symlinks).
++java -jar "$JAR_DST" init || true
++SPLICE_JAR="$JAR_DST" java -jar "$JAR_DST" install --all || true
++
++echo
++echo "splice: installed."
++echo "  jar:    $JAR_DST"
++echo "  shim:   ${SHARE_DIR}/splice-launch"
++echo "  config: ~/.config/splice/splice.toml"
++case ":$PATH:" in
++  *":$BIN_DIR:"*) : ;;
++  *) echo "  NOTE: add $BIN_DIR to your PATH to use the wrappers (e.g. claudex)." ;;
++esac

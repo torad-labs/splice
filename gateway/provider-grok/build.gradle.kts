@@ -8,4 +8,7 @@ dependencies {
     implementation(project(":provider-spi"))
     implementation(project(":dialect-openai-responses"))
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(project(":gateway"))
+    testImplementation(libs.ktor.client.cio)
+    testImplementation(testFixtures(project(":gateway")))
 }

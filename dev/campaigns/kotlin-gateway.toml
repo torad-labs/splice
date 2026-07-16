@@ -710,8 +710,8 @@ verify = "bash -n install.sh && test -s gateway/spikes/results/p5-install.md"
 id = "P6-GROK"
 phase = "P6"
 title = "grok/xAI provider per P0-XAI verdict + api-key AuthProvider + head entry + stat files; live turn receipt"
-files = ["gateway/provider-grok/src/main/kotlin/", "gateway/spikes/results/p6-grok.md"]
-status = "todo"
+files = ["gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt", "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokProvider.kt"]
+status = "verified"
 verify = "cd gateway && ./gradlew -q :provider-grok:test && test -s gateway/spikes/results/p6-grok.md"
 # Context: dialect per P0-XAI (anthropic-passthrough if faithful, else Responses translators
 # PORT-OF grok/translate-{request,response}.mjs @ 4ca99f7 with Quirks {session-id cache key,
@@ -719,6 +719,12 @@ verify = "cd gateway && ./gradlew -q :provider-grok:test && test -s gateway/spik
 # tool_choice/parallel/strict}). api-key auth: env XAI_API_KEY > key file. Stat files
 # grok-usage.json/grok-ratelimit.json/claude-grok-compact-stats.jsonl (Marcos pins). Head :3100,
 # discovery prefix claude-grok--.
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T08:00:43Z
+# [2026-07-16] ATTEST-START: tree=30bc8e69b67bfd7cc4fa22825197ddf59bffe2f5 at=2026-07-16T08:00:43Z
+# [2026-07-16] Landed the grok provider — THE MULTI-PROVIDER ABSTRACTION PAYS OFF: GrokProvider reuses the SAME openai-responses dialect (builder + stream machine) as codex with ZERO new translator code — only quirks (session-id cache key claude-grok:<x-claude-code-session-id>, EffortLadder.GROK clamp xhigh/max->high + floor low, supportsSummary=false, compact_effort=low, emitToolChoice+strict) + GrokAuthProvider (api-key from env XAI_API_KEY or key file — the single biggest missing piece per the Node inventory; RefreshableAuthProvider no-op refresh; masked describe). P0-XAI (anthropic-passthrough fidelity) is credential-blocked so this is the PROVEN FALLBACK = the exact quirks Node's grok/translate-request.mjs used. 4 tests green incl. a REAL TURN through a HeadServer wired with GrokProvider -> mock upstream (api key rode as bearer, session-id cache key in the body), quirks pinned (xhigh->high, no summary, claude-grok:s1 key), env-wins-over-file auth + masked. LIVE grok turn against api.x.ai premise-blocks (no key on this machine) — the code + mock-upstream proof stand. Full check green.
+# [2026-07-16] ATTEST: scoped diffstat: .../splice/provider/grok/GrokAuthProvider.kt       | 66 +++++++++++++++ | .../kotlin/splice/provider/grok/GrokProvider.kt    | 95 ++++++++++++++++++++++ | 2 files changed, 161 insertions(+); sidecar: .claude/ledger-diffs/P6-GROK.diff; off-scope: gateway/provider-grok/build.gradle.kts, gateway/provider-grok/src/test/kotlin/grok/GrokProviderTest.kt
+# [2026-07-16] FENCE-AUTONARROWED: files = ["gateway/provider-grok/src/main/kotlin/", "gateway/spikes/results/p6-grok.md"] -> files = ["gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt", "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokProvider.kt"] (by=orchestrator implied; no flag)
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P6-OAI"

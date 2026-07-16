@@ -1,0 +1,173 @@
+diff --git a/gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt b/gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt
+new file mode 100644
+index 0000000..0ceb802
+--- /dev/null
++++ b/gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt
+@@ -0,0 +1,66 @@
++// NEW: xAI api-key auth (the grok single biggest missing piece per the Node inventory — codex
++// had OAuth, grok had only a config path). Flat API key from env (XAI_API_KEY) or a key file
++// (~/.local/share/claude-grok/auth.json, {"api_key": "..."} or a bare key line). No refresh —
++// api keys don't expire like OAuth tokens; refresh() is a no-op returning the same key.
++package splice.provider.grok
++
++import kotlinx.serialization.json.Json
++import kotlinx.serialization.json.jsonObject
++import kotlinx.serialization.json.jsonPrimitive
++import splice.core.auth.AuthDescription
++import splice.core.auth.Credentials
++import splice.core.auth.RefreshableAuthProvider
++import java.nio.file.Files
++import java.nio.file.Path
++
++public class GrokAuthProvider(
++    private val keyFile: Path?,
++    private val envReader: (String) -> String? = System::getenv,
++    private val envVar: String = "XAI_API_KEY",
++) : RefreshableAuthProvider {
++
++    private val json = Json { ignoreUnknownKeys = true }
++
++    override suspend fun credentials(): Credentials? {
++        val key = readKey() ?: return null
++        return Credentials.ApiKey(key)
++    }
++
++    override suspend fun refresh(): Credentials? = credentials() // api keys don't refresh
++
++    override suspend fun describe(): AuthDescription {
++        val key = readKey()
++        val masked = key?.let { if (it.length > MASK_MIN) "${it.take(MASK_KEEP)}…${it.takeLast(MASK_KEEP)}" else "set" }
++        return AuthDescription(
++            present = key != null,
++            kind = "api-key",
++            fields = buildMap {
++                put("source", if (envReader(envVar) != null) "env:$envVar" else keyFile?.toString().orEmpty())
++                masked?.let { put("api_key_masked", it) }
++            },
++        )
++    }
++
++    @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException", "ReturnCount") // missing/garbled key -> null
++    private fun readKey(): String? {
++        envReader(envVar)?.takeIf { it.isNotEmpty() }?.let { return it }
++        val file = keyFile ?: return null
++        return try {
++            if (!Files.exists(file)) return null
++            val text = Files.readString(file).trim()
++            if (text.startsWith("{")) {
++                (json.parseToJsonElement(text).jsonObject["api_key"])?.jsonPrimitive?.content
++            } else {
++                text.takeIf { it.isNotEmpty() }
++            }
++        } catch (e: Exception) {
++            if (e is java.util.concurrent.CancellationException) throw e
++            null
++        }
++    }
++
++    private companion object {
++        const val MASK_MIN = 8
++        const val MASK_KEEP = 4
++    }
++}
+diff --git a/gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokProvider.kt b/gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokProvider.kt
+new file mode 100644
+index 0000000..fdeaf1d
+--- /dev/null
++++ b/gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokProvider.kt
+@@ -0,0 +1,95 @@
++// NEW: the grok Provider — the SAME openai-responses dialect as codex (verified in the Node
++// inventory: grok's translators were Responses-dialect, not chat), with grok quirks: api-key
++// auth (Authorization: Bearer <key>), session-id cache key (claude-grok:<x-claude-code-session-
++// id>), effort ceiling high (clamps xhigh/max → high, floors to low, can't disable), NO summary
++// field (grok auto-exposes summaries via the stream), compact effort low, tool_choice emitted.
++// P0-XAI (anthropic-passthrough fidelity) is credential-blocked, so this is the proven fallback:
++// the exact quirks the Node grok/translate-request.mjs used. Reuses the shared dialect + machine
++// — the multi-provider abstraction pays off (zero new translator code, only quirks + auth).
++package splice.provider.grok
++
++import splice.core.auth.Credentials
++import splice.core.auth.RefreshableAuthProvider
++import splice.core.model.ModelCatalog
++import splice.core.parse.AnthropicTurnBody
++import splice.core.turn.TurnMeta
++import splice.core.turn.WatchdogBudget
++import splice.dialect.responses.BuildOptions
++import splice.dialect.responses.CacheKeyStrategy
++import splice.dialect.responses.EffortLadder
++import splice.dialect.responses.ResponsesQuirks
++import splice.dialect.responses.ResponsesRequestBuilder
++import splice.dialect.responses.ResponsesStreamTranslator
++import splice.dialect.responses.StreamTurnContext
++import splice.spi.BuiltTurn
++import splice.spi.Provider
++import splice.spi.StreamTranslator
++import splice.spi.WatchdogFired
++
++@Suppress("LongParameterList") // a provider bundles catalog+auth+quirks+config
++public class GrokProvider(
++    override val key: String,
++    override val label: String,
++    override val catalog: ModelCatalog,
++    override val pinnedModel: String,
++    override val auth: RefreshableAuthProvider,
++    baseUrl: String,
++    override val watchdog: WatchdogBudget,
++    override val showReasoning: String,
++    override val replayReasoning: Boolean,
++    private val configEffort: String?,
++) : Provider {
++
++    override val upstreamUrl: String = "$baseUrl/responses"
++
++    private val quirks = ResponsesQuirks(
++        providerTag = "claude-grok",
++        store = false,
++        cacheKeyStrategy = CacheKeyStrategy.SESSION_ID,
++        effortLadder = EffortLadder.GROK,
++        supportsSummary = false,
++        summaryRejectModelRegex = null,
++        compactEffortPin = "low",
++        emitToolChoice = true,
++        emitStrict = true,
++    )
++    private val builder = ResponsesRequestBuilder(quirks)
++
++    override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
++        val upstreamModel = catalog.stripSuffixes(body.typed.model)
++        val built = builder.build(
++            body.typed,
++            body.raw,
++            BuildOptions(
++                compact = compact,
++                originalModel = body.typed.model,
++                upstreamModel = upstreamModel,
++                configEffort = configEffort,
++                configSummary = null,
++                showReasoning = showReasoning,
++                replayReasoning = replayReasoning,
++                sessionId = sessionId,
++                decodeReasoningEnvelope = { splice.core.reasoning.decodeReasoningEnvelope(it) },
++            ),
++        )
++        return BuiltTurn(built.req, built.meta)
++    }
++
++    override fun streamTranslator(meta: TurnMeta, watchdogFired: () -> WatchdogFired?): StreamTranslator =
++        ResponsesStreamTranslator(
++            StreamTurnContext(
++                compact = meta.compact,
++                replayReasoning = replayReasoning,
++                encodeReasoningEnvelope = { splice.core.reasoning.encodeReasoningEnvelope(it) },
++                clientGone = { false },
++                watchdogFired = watchdogFired,
++                streamIdleMsForMessage = watchdog.streamIdle.inWholeMilliseconds,
++                upstreamTimeoutMsForMessage = watchdog.totalCap.inWholeMilliseconds,
++            ),
++        )
++
++    override fun extraHeaders(creds: Credentials): Map<String, String> = buildMap {
++        put("Accept", "text/event-stream")
++        // xAI api key rides as the standard bearer; the session-id cache key is in the body
++    }
++}

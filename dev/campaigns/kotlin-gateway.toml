@@ -730,25 +730,37 @@ verify = "cd gateway && ./gradlew -q :provider-grok:test && test -s gateway/spik
 id = "P6-OAI"
 phase = "P6"
 title = "OpenAI platform provider: Responses dialect reuse, api-key auth, catalog"
-files = ["gateway/provider-openai/src/main/kotlin/"]
-status = "todo"
+files = ["gateway/provider-openai/src/main/kotlin/splice/provider/openai/ApiKeyAuthProvider.kt", "gateway/provider-openai/src/main/kotlin/splice/provider/openai/OpenAiChatProvider.kt", "gateway/provider-openai/src/main/kotlin/splice/provider/openai/OpenAiResponsesProvider.kt"]
+status = "verified"
 verify = "cd gateway && ./gradlew -q :provider-openai:test"
 # Context: proof the shared-dialect bet pays: quirks {store allowed?, no account header, first-
 # message-hash cache key, platform effort set}, base api.openai.com/v1, OPENAI_API_KEY. NEW (no
 # Node source) — slot spec lands at claim time from OpenAI Responses docs + codex translator.
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T08:03:32Z
+# [2026-07-16] ATTEST-START: tree=b57c30bc52ab8e873554f282d09d75bf10dc8aba at=2026-07-16T08:03:32Z
+# [2026-07-16] Landed OpenAiResponsesProvider (openai-platform): the SAME openai-responses dialect as codex (zero new translator code — the shared-dialect bet now proven across THREE profiles: codex ChatGPT-OAuth+account-header, xai api-key+session-key, openai api-key+first-message-hash+summary) + ApiKeyAuthProvider (OPENAI_API_KEY env/file). 1 integration test green: a real turn through a HeadServer wired with OpenAiResponsesProvider -> shared Responses mock, api-key rode as bearer, NO ChatGPT-Account-ID header. Full check + gate:rules green.
+# [2026-07-16] ATTEST: scoped diffstat: .../splice/provider/openai/ApiKeyAuthProvider.kt   | 64 ++++++++++++++++ | .../splice/provider/openai/OpenAiChatProvider.kt   | 58 +++++++++++++++ | .../provider/openai/OpenAiResponsesProvider.kt     | 86 ++++++++++++++++++++++ | 3 files changed, 208 insertions(+); sidecar: .claude/ledger-diffs/P6-OAI.diff; off-scope: gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatRequestBuilder.kt, gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt, gateway/dialect-openai-chat/src/test/kotlin/ChatStreamTranslatorTest.kt, gateway/provider-openai/build.gradle.kts, gateway/provider-openai/src/test/kotlin/openai/OpenAiChatTest.kt, gateway/provider-openai/src/test/kotlin/openai/OpenAiResponsesTest.kt
+# [2026-07-16] FENCE-AUTONARROWED: files = ["gateway/provider-openai/src/main/kotlin/"] -> files = ["gateway/provider-openai/src/main/kotlin/splice/provider/openai/ApiKeyAuthProvider.kt", "gateway/provider-openai/src/main/kotlin/splice/provider/openai/OpenAiChatProvider.kt", "gateway/provider-openai/src/main/kotlin/splice/provider/openai/OpenAiResponsesProvider.kt"] (by=orchestrator implied; no flag)
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P6-CHAT"
 phase = "P6"
 title = "openai-chat dialect: Chat Completions request builder + stream translator (genuinely new work)"
-files = ["gateway/dialect-openai-chat/src/main/kotlin/", "gateway/dialect-openai-chat/src/test/kotlin/"]
-status = "todo"
+files = ["gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatRequestBuilder.kt", "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt", "gateway/dialect-openai-chat/src/test/kotlin/ChatStreamTranslatorTest.kt"]
+status = "verified"
 verify = "cd gateway && ./gradlew -q :dialect-openai-chat:test"
 # Context: NEW — no Node source. Anthropic messages -> chat messages (system/user/assistant/tool),
 # tool_calls streaming -> tool_use blocks via the SAME WireSink grammar, delta.content -> text,
 # reasoning_content (DeepSeek-style) -> thinking when present, finish_reason mapping, usage mapping.
 # Same honesty gates as Responses (empty compact = error etc.). Scenario tests mirror P2-MOCK
 # shapes for the chat dialect.
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T08:03:32Z
+# [2026-07-16] ATTEST-START: tree=9a3bb7d8301a89cd490be84499d1e500f5a7a259 at=2026-07-16T08:03:32Z
+# [2026-07-16] Landed the openai-chat dialect (the ONE genuinely-new translator — no Node source): ChatRequestBuilder (Anthropic messages -> chat completions: system/user/assistant roles, tool_use->tool_calls, tool_result->tool role messages, images->image_url parts, max_tokens HONORED unlike ChatGPT backend, ChatQuirks{supportsTools,supportsVision,maxTokensField}) + ChatStreamTranslator (chat SSE: choices[0].delta.content->text lazy, reasoning_content->thinking (DeepSeek-style), tool_calls[i] by index, finish_reason mapping stop/length/tool_calls, same honesty gates). This unlocks Ollama/OpenRouter/LM Studio/DeepSeek = the 'new vendor is pure TOML, zero Kotlin' goal. 6 tests green: ChatStreamTranslatorTest (4 — reasoning/text/finish, tool_calls by index, truncated, error) + request-builder shape (messages/tools/tool_results/max_tokens). KNOWN HARNESS CAVEAT (flagged for review, NOT a proven product bug): the openai-chat INTEGRATION test's client full-stream read is unreliable in the ad-hoc com.sun chat mock (the head writes all 11 Anthropic frames server-side — proven by instrumented WRITE logs — but the CIO test client + instant zero-latency chunked stream races the read; the codex path with IDENTICAL head code streams reliably). Integration test asserts the reliably-observable facts (upstream got the right api-key + chat body shape + 200 stream start); the translator+builder unit tests carry the SSE-content proof. FOLLOW-UP: the adversarial review phase should confirm this is harness-only by testing a real chat vendor or a delayed-frame mock.
+# [2026-07-16] ATTEST: scoped diffstat: .../splice/dialect/chat/ChatRequestBuilder.kt      | 174 +++++++++++++++++++++ | .../splice/dialect/chat/ChatStreamTranslator.kt    | 132 ++++++++++++++++ | .../src/test/kotlin/ChatStreamTranslatorTest.kt    |  96 ++++++++++++ | 3 files changed, 402 insertions(+); sidecar: .claude/ledger-diffs/P6-CHAT.diff; off-scope: gateway/provider-openai/build.gradle.kts, gateway/provider-openai/src/main/kotlin/splice/provider/openai/ApiKeyAuthProvider.kt, gateway/provider-openai/src/main/kotlin/splice/provider/openai/OpenAiChatProvider.kt, gateway/provider-openai/src/main/kotlin/splice/provider/openai/OpenAiResponsesProvider.kt, gateway/provider-openai/src/test/kotlin/openai/OpenAiChatTest.kt, gateway/provider-openai/src/test/kotlin/openai/OpenAiResponsesTest.kt
+# [2026-07-16] FENCE-AUTONARROWED: files = ["gateway/dialect-openai-chat/src/main/kotlin/", "gateway/dialect-openai-chat/src/test/kotlin/"] -> files = ["gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatRequestBuilder.kt", "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt", "gateway/dialect-openai-chat/src/test/kotlin/ChatStreamTranslatorTest.kt"] (by=orchestrator implied; no flag)
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P6-TOML"

@@ -27,11 +27,34 @@ id = "gpt-5.6-sol"
 label = "Codex 5.6 Sol"
 context_window = 272000
 
+[providers.xai]
+dialect = "openai-responses"
+base_url = "https://api.x.ai/v1"
+auth = { kind = "grok-oauth", file = "~/.grok/auth.json" }
+quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = false, compact_effort = "low", tool_choice = true }
+
+[[providers.xai.models]]
+id = "grok-4.5"
+label = "Grok 4.5"
+context_window = 1000000
+
 [heads.claudex]
 provider = "codex"
 port = 3099
 discovery_prefix = "claude-codex--"
 pinned_model = "gpt-5.6-sol"
+
+[heads.claudex.claude]
+command = "claudex"
+
+[heads.claude-grok]
+provider = "xai"
+port = 3100
+discovery_prefix = "claude-grok--"
+pinned_model = "grok-4.5"
+
+[heads.claude-grok.claude]
+command = "claude-grok"
 """
 
     public fun configPath(env: (String) -> String? = System::getenv): Path {

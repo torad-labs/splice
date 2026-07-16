@@ -3,6 +3,7 @@
 // to stdout. Subcommands: doctor, version. install/init/login land with P5.
 package splice.app.cli
 
+import kotlinx.coroutines.runBlocking
 import splice.app.TopologyLoader
 import splice.core.config.StatePaths
 import java.nio.file.Files
@@ -14,7 +15,8 @@ public fun runCli(args: Array<String>) {
         "init" -> InstallCommand.init()
         "install" -> InstallCommand.install(args.getOrNull(1))
         "uninstall" -> InstallCommand.uninstall(args.getOrNull(1))
-        else -> System.err.println("usage: splice [daemon|doctor|version|init|install|uninstall]")
+        "login" -> runBlocking { LoginCommand.login(args.getOrNull(1)) }
+        else -> System.err.println("usage: splice [daemon|doctor|version|init|install|uninstall|login <head>]")
     }
 }
 

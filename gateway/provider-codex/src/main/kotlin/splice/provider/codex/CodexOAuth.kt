@@ -1,0 +1,131 @@
+// PORT-OF: server/src/auth/codex-oauth.mjs + codex-login.mjs @ 4ca99f7 — invariants: the PUBLIC
+// codex CLI client id + issuer (reusing them is what mints a ChatGPT-subscription token with no
+// separate codex binary); auth.json is byte-shape-compatible with the real codex CLI (shared
+// credential, shared refresh path); PKCE S256; authorize URL param ORDER + %20 encoding matched
+// to the CLI (URLSearchParams' `+`-for-space mangles the scope into missing_required_parameter);
+// account_id from the id_token JWT claim https://api.openai.com/auth.chatgpt_account_id; cached
+// read keyed on path+mtime+TTL; single-flight refresh; introspection never exposes token
+// material (masked account id). SEAM: the HTTP client + env reader + clock are injected.
+package splice.provider.codex
+
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import java.security.MessageDigest
+import java.security.SecureRandom
+import java.util.Base64
+
+public object CodexOAuthEndpoints {
+    public const val DEFAULT_CLIENT_ID: String = "app_EMoamEEZ73f0CkXaXp7hrann"
+    public const val REDIRECT_PORT: Int = 1455
+    public const val REDIRECT_URI: String = "http://localhost:1455/auth/callback"
+    public const val SCOPE: String =
+        "openid profile email offline_access api.connectors.read api.connectors.invoke"
+
+    public fun issuer(env: (String) -> String?): String =
+        (env("CODEX_OAUTH_ISSUER") ?: "https://auth.openai.com").trimEnd('/')
+
+    public fun tokenUrl(env: (String) -> String?): String =
+        env("CODEX_OAUTH_TOKEN_URL") ?: "${issuer(env)}/oauth/token"
+
+    public fun authorizeUrl(env: (String) -> String?): String =
+        env("CODEX_OAUTH_AUTHORIZE_URL") ?: "${issuer(env)}/oauth/authorize"
+
+    public fun clientId(env: (String) -> String?): String =
+        env("CODEX_OAUTH_CLIENT_ID") ?: DEFAULT_CLIENT_ID
+
+    public fun originator(env: (String) -> String?): String =
+        env("CODEX_OAUTH_ORIGINATOR") ?: "codex_cli_rs"
+}
+
+public data class Pkce(val verifier: String, val challenge: String)
+
+private fun base64url(bytes: ByteArray): String =
+    Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+
+@Suppress("MagicNumber") // 32 = PKCE verifier byte length per RFC 7636
+public fun makePkce(random: SecureRandom = SecureRandom()): Pkce {
+    val verifier = base64url(ByteArray(32).also { random.nextBytes(it) })
+    val challenge = base64url(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray()))
+    return Pkce(verifier, challenge)
+}
+
+/** Authorize URL with the codex-CLI param set, ORDER, and %20 (not +) encoding. */
+public fun buildAuthorizeUrl(
+    challenge: String,
+    state: String,
+    clientId: String,
+    env: (String) -> String?,
+    redirectUri: String = CodexOAuthEndpoints.REDIRECT_URI,
+): String {
+    val params = listOf(
+        "response_type" to "code",
+        "client_id" to clientId,
+        "redirect_uri" to redirectUri,
+        "scope" to CodexOAuthEndpoints.SCOPE,
+        "code_challenge" to challenge,
+        "code_challenge_method" to "S256",
+        "id_token_add_organizations" to "true",
+        "codex_cli_simplified_flow" to "true",
+        "state" to state,
+        "originator" to CodexOAuthEndpoints.originator(env),
+    )
+    val query = params.joinToString("&") { (k, v) -> "$k=${percentEncode(v)}" }
+    return "${CodexOAuthEndpoints.authorizeUrl(env)}?$query"
+}
+
+/** RFC 3986 percent-encoding — spaces become %20, never + (the CLI-parity gotcha). */
+@Suppress("MagicNumber", "ComplexCondition") // byte-masking is inherent to the encoder
+private fun percentEncode(value: String): String = buildString {
+    for (b in value.toByteArray(Charsets.UTF_8)) {
+        val c = b.toInt() and 0xFF
+        val ch = c.toChar()
+        if (ch.isLetterOrDigit() && c < 0x80 || ch in "-_.~") append(ch) else append("%%%02X".format(c))
+    }
+}
+
+private val jwtJson = Json { ignoreUnknownKeys = true }
+
+public fun decodeJwtClaims(jwt: String?): JsonObject {
+    val payload = jwt.orEmpty().split(".").getOrNull(1) ?: return JsonObject(emptyMap())
+    return runCatching {
+        val decoded = Base64.getUrlDecoder().decode(payload.padBase64()).toString(Charsets.UTF_8)
+        jwtJson.parseToJsonElement(decoded).jsonObject
+    }.getOrDefault(JsonObject(emptyMap()))
+}
+
+@Suppress("MagicNumber") // 4 = base64 quantum
+private fun String.padBase64(): String {
+    val normalized = replace('-', '+').replace('_', '/')
+    val pad = (4 - normalized.length % 4) % 4
+    return normalized + "=".repeat(pad)
+}
+
+public fun accountIdFromIdToken(idToken: String?): String? =
+    (decodeJwtClaims(idToken)["https://api.openai.com/auth"] as? JsonObject)
+        ?.get("chatgpt_account_id")?.jsonPrimitive?.content
+
+/** Token strings -> the ~/.codex/auth.json object CodexAuthProvider reads (CLI-compatible shape). */
+public fun authJsonFromTokens(
+    idToken: String?,
+    accessToken: String,
+    refreshToken: String?,
+    apiKey: String?,
+    nowIso: String,
+): JsonObject {
+    val accountId = accountIdFromIdToken(idToken)
+    return kotlinx.serialization.json.buildJsonObject {
+        if (apiKey != null) put("OPENAI_API_KEY", kotlinx.serialization.json.JsonPrimitive(apiKey))
+        put(
+            "tokens",
+            kotlinx.serialization.json.buildJsonObject {
+                if (idToken != null) put("id_token", kotlinx.serialization.json.JsonPrimitive(idToken))
+                put("access_token", kotlinx.serialization.json.JsonPrimitive(accessToken))
+                if (refreshToken != null) put("refresh_token", kotlinx.serialization.json.JsonPrimitive(refreshToken))
+                if (accountId != null) put("account_id", kotlinx.serialization.json.JsonPrimitive(accountId))
+            },
+        )
+        put("last_refresh", kotlinx.serialization.json.JsonPrimitive(nowIso))
+    }
+}

@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# claudex (Kotlin gateway dev shim) — launches Claude Code against the codex head via the daemon.
+# The installed version is an argv[0] symlink to splice-launch; this is the in-repo dev entry.
+# Renamed to claudex-kt during development so it never collides with the live Node bin/claudex.
+exec env SPLICE_HEAD=claudex "$(dirname "$0")/splice-launch" "$@"

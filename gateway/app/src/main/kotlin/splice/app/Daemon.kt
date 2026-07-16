@@ -5,12 +5,17 @@
 // documented change).
 package splice.app
 
+import kotlinx.serialization.json.buildJsonObject
 import splice.control.ControlServer
+import splice.control.LaunchService
+import splice.control.LaunchSpec
 import splice.control.ManagedHead
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.SpliceConfig
 import splice.core.config.StatePaths
+import splice.core.launch.ClaudeConfigMaterializer
+import splice.core.launch.ClaudePolicy
 import splice.core.model.ModelCatalog
 import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
@@ -66,7 +71,10 @@ public class Daemon(
         // topology owns the control port (loaded once at start, restart-required); the
         // ConfigService knob is only the hot-knob default when topology omits it.
         val controlPort = topology.daemon.controlPort.takeIf { it > 0 } ?: cfg.controlPort
-        val srv = ControlServer(controlPort, heads, config, mgmtKey, dashboardHtml, log)
+        val statuslineCmd = "curl -sS --data-binary @- http://127.0.0.1:$controlPort/statusline/"
+        val materializerHome = statePaths.rootDir.parent ?: statePaths.rootDir
+        val launchService = LaunchService(ClaudeConfigMaterializer(materializerHome, statuslineCmd))
+        val srv = ControlServer(controlPort, heads, config, mgmtKey, dashboardHtml, log, launchService)
         control = srv
         srv.start()
         heads.values.forEach { it.head.start() }
@@ -78,7 +86,7 @@ public class Daemon(
         control?.stop()
     }
 
-    @Suppress("LongParameterList")
+    @Suppress("LongParameterList", "LongMethod")
     private fun buildCodexHead(
         key: String,
         head: HeadConfig,
@@ -123,6 +131,20 @@ public class Daemon(
                 log = log,
             ),
         )
+        val configDir = java.nio.file.Paths.get(
+            TopologyLoader.expandHome(head.claude.configDir ?: "~/.claude-$key"),
+        )
+        val launchSpec = LaunchSpec(
+            configDir = configDir,
+            pinnedModel = head.pinnedModel,
+            availableModelIds = catalog.availableModelIds(),
+            modelOptionsCache = buildJsonObject { },
+            policy = ClaudePolicy(
+                share = topology.claude.share.toSet(),
+                isolate = head.claude.isolate.toSet(),
+            ),
+            port = head.port,
+        )
         return ManagedHead(
             head = server,
             auth = auth,
@@ -131,6 +153,7 @@ public class Daemon(
             logs = LogFileSource(logFile),
             warnPct = cfg.usageWarnPct,
             warnTokens5h = cfg.usageWarnTokens5h,
+            launchSpec = launchSpec,
         )
     }
 

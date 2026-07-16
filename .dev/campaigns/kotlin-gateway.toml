@@ -627,7 +627,7 @@ id = "P4-LAUNCH"
 phase = "P4"
 title = "/launch endpoint (exec-recipe assembly) + /statusline endpoint (ANSI render from stdin JSON + state files)"
 files = ["gateway/control/src/main/kotlin/launchpad/", "gateway/control/src/test/kotlin/launchpad/"]
-status = "in_flight"
+status = "verified"
 verify = "cd gateway && ./gradlew -q :control:test --tests '*Launch*' --tests '*Statusline*'"
 # Context: /launch POST {head,args} -> runs env assembly (PORT-OF launcher/assemble-env.mjs incl.
 # reading Codex CLI ~/.codex/config.toml section-aware) + Claude config prep (P5-PREP materializer)
@@ -639,13 +639,16 @@ verify = "cd gateway && ./gradlew -q :control:test --tests '*Launch*' --tests '*
 # shorter line on missing fields, bare marker on parse failure).
 # [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T08:21:27Z
 # [2026-07-16] ATTEST-START: tree=097326d31d24dcbeea76f2674249e374c514faa5 at=2026-07-16T08:21:27Z
+# [2026-07-16] Landed the launch + statusline endpoints: LaunchService (materializes the head's Claude config via P5-PREP, builds the exec recipe: env sets ANTHROPIC_BASE_URL=head-port + dummy key + CLAUDE_CONFIG_DIR, env unsets ANTHROPIC_AUTH_TOKEN/MODEL/DEFAULT_MODEL, argv=claude [--dangerously-skip-permissions unless SAFE] --model <pinned> + extra args; wantMode/patchMode dead branch NOT ported), StatuslineRenderer (PORT-OF claudex-statusline.mjs compact: model dot+name, context used/window/pct colored by compaction proximity using the head's REAL window, cache-hit %, warn glyph via shared computeUsageWarn; dim-marker fallback on parse failure). ControlServer wired: POST /launch/:head (bearer, returns env/unset/argv recipe), POST+GET /statusline/:head (no bearer — stdin-piped per tick). Daemon supplies LaunchService + per-head LaunchSpec (configDir ~/.claude-<head>, availableModelIds, share/isolate policy). 12 control tests (2 new): launch recipe shape (head env + skip-perms + model + extra args), statusline renders model from stdin JSON no-bearer.
+# [2026-07-16] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: bin/claudex-kt, bin/splice-launch, gateway/app/src/main/kotlin/splice/app/Daemon.kt, gateway/control/src/main/kotlin/splice/control/ControlServer.kt, gateway/control/src/main/kotlin/splice/control/LaunchService.kt, gateway/control/src/main/kotlin/splice/control/ManagedHead.kt, gateway/control/src/main/kotlin/splice/control/StatuslineRenderer.kt, gateway/control/src/test/kotlin/ControlServerTest.kt, ... 2 more
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P4-SHIM"
 phase = "P4"
 title = "bin shims: argv0-dispatched launch script (dev mode) — health/version handshake, cold-start jar, POST /launch, exec"
-files = ["bin/claudex", "bin/splice-launch"]
-status = "in_flight"
+files = ["bin/splice-launch"]
+status = "verified"
 verify = "bash -n bin/claudex && bash -n bin/splice-launch"
 # Context: replaces ensure-proxy exec-recipe flow. bin/claudex (dev shim) = argv0 wrapper calling
 # bin/splice-launch with head inferred from $0. splice-launch: GET :3096/health -> version vs jar
@@ -655,6 +658,10 @@ verify = "bash -n bin/claudex && bash -n bin/splice-launch"
 # login/dashboard subcommands. Until P8 cutover the dev shim targets :3097 (Node owns :3099).
 # [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T08:21:27Z
 # [2026-07-16] ATTEST-START: tree=73dc19fe51e1ad221a357e9b634318e70fbe4fb7 at=2026-07-16T08:21:27Z
+# [2026-07-16] Landed bin/splice-launch (the argv0-dispatched wrapper: head from basename/$SPLICE_HEAD, GET /health handshake, cold-start java -jar if down + wait-for-health, read mgmt-key, POST /launch with passthrough args, parse recipe via python3, exec env <unsets> <sets> claude <argv>) + bin/claudex-kt (dev shim, SPLICE_HEAD=claudex; named -kt so it never collides with the LIVE Node bin/claudex until cutover). bash -n clean. The installed form is a ~/.local/bin/<command> symlink to splice-launch (P5-CLI install materializes it).
+# [2026-07-16] ATTEST: scoped diffstat: bin/splice-launch | 52 ++++++++++++++++++++++++++++++++++++++++++++++++++++ | 1 file changed, 52 insertions(+); sidecar: .claude/ledger-diffs/P4-SHIM.diff; off-scope: bin/claudex-kt, gateway/app/src/main/kotlin/splice/app/Daemon.kt, gateway/control/src/main/kotlin/splice/control/ControlServer.kt, gateway/control/src/main/kotlin/splice/control/LaunchService.kt, gateway/control/src/main/kotlin/splice/control/ManagedHead.kt, gateway/control/src/main/kotlin/splice/control/StatuslineRenderer.kt, gateway/control/src/test/kotlin/ControlServerTest.kt, gateway/core/src/main/kotlin/splice/core/launch/ClaudeConfigMaterializer.kt, ... 1 more
+# [2026-07-16] FENCE-AUTONARROWED: files = ["bin/claudex", "bin/splice-launch"] -> files = ["bin/splice-launch"] (by=orchestrator implied; no flag)
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P4-WEBUI"

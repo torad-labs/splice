@@ -1,6 +1,7 @@
 plugins {
     id("splice.kotlin-common")
     id("splice.module-law")
+    `java-test-fixtures`
 }
 
 dependencies {
@@ -15,4 +16,5 @@ dependencies {
     testImplementation(project(":dialect-openai-responses"))
     testImplementation(project(":provider-codex"))
     testImplementation(libs.kotlinx.coroutines.test)
+    testFixturesImplementation(libs.kotlinx.serialization.json)
 }

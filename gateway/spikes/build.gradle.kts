@@ -15,3 +15,14 @@ dependencies {
     implementation(libs.ktor.client.cio)
     testImplementation(libs.kotlinx.coroutines.test)
 }
+
+// Spikes are experiments with receipts, not CI tests: run explicitly with
+//   ./gradlew :spikes:test -PrunSpikes [--tests '<Spike>*']
+// Each spike writes its own results file under spikes/results/ (the receipt).
+tasks.withType<Test>().configureEach {
+    enabled = providers.gradleProperty("runSpikes").isPresent
+    systemProperty("spike.results.dir", layout.projectDirectory.dir("results").asFile.absolutePath)
+    testLogging {
+        showStandardStreams = true
+    }
+}

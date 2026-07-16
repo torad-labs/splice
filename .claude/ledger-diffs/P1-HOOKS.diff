@@ -1,0 +1,698 @@
+diff --git a/.claude/hooks/lib/astgrep_gate.py b/.claude/hooks/lib/astgrep_gate.py
+new file mode 100644
+index 0000000..944963b
+--- /dev/null
++++ b/.claude/hooks/lib/astgrep_gate.py
+@@ -0,0 +1,148 @@
++"""Shared helpers for the write-time architecture gates (campaign kotlin-hardening D2).
++
++Ported from proof-main .claude/hooks/orchestrator/_lib.py (the north-star repo) and
++re-anchored to torad-fleet: root detection uses CLAUDE_PROJECT_DIR (set by both
++.claude/settings.json and .codex/hooks.json) with a marker-walk fallback, because
++fleet's sgconfig.yml does not exist until campaign item C1 lands — the gates that
++depend on it self-arm at that point.
++"""
++from __future__ import annotations
++
++import json
++import os
++import pathlib
++import shutil
++import subprocess
++import tempfile
++
++# Suffixes the architecture gate scans. Kotlin backend campaign first; TS is
++# included so C2's ported frontend-boundary tenets fire on write when they land.
++GATE_LANG_EXTS = {".kt", ".ts", ".tsx", ".mts", ".cts"}
++
++
++def target_file_path(tool_input: dict) -> str | None:
++    return tool_input.get("file_path") or tool_input.get("path")
++
++
++def find_project_root(*starts: str | None) -> pathlib.Path | None:
++    """Resolve the fleet repo root: CLAUDE_PROJECT_DIR first (validated), then a
++    walk up from each start to the dir holding settings.gradle.kts + .claude/."""
++    candidates = [os.environ.get("CLAUDE_PROJECT_DIR"), *starts]
++    for start in candidates:
++        if not start:
++            continue
++        p = pathlib.Path(start)
++        try:
++            p = p.resolve()
++        except OSError:
++            continue
++        if p.is_file():
++            p = p.parent
++        for cur in [p, *p.parents]:
++            if (cur / "sgconfig.yml").exists() and (cur / ".claude").is_dir():  # splice adaptation 2026-07-16: root marker is sgconfig.yml (settings.gradle.kts lives under gateway/)
++                return cur
++    return None
++
++
++def proposed_file_content(tool_name: str, tool_input: dict) -> str:
++    """The full proposed FILE content after the write — what a real `ast-grep scan`
++    sees, so the write-time gate matches the Gradle/CI gate exactly. For Edit/
++    MultiEdit the replacement is applied to the CURRENT file (a method edit must be
++    scanned WITH its enclosing class). Falls back to the raw new text when the file
++    can't be read or an edit anchor is absent (new file / unmatched old_string)."""
++    if tool_name == "Write":
++        return tool_input.get("content", "") or ""
++
++    path = target_file_path(tool_input)
++    current = ""
++    if path:
++        try:
++            current = pathlib.Path(path).read_text(encoding="utf-8")
++        except OSError:
++            current = ""
++
++    if tool_name == "Edit":
++        old = tool_input.get("old_string", "") or ""
++        new = tool_input.get("new_string", "") or ""
++        if current and old and old in current:
++            return current.replace(old, new) if tool_input.get("replace_all") else current.replace(old, new, 1)
++        return new
++
++    if tool_name == "MultiEdit":
++        text, applied = current, False
++        for e in tool_input.get("edits", []):
++            old = e.get("old_string", "") or ""
++            new = e.get("new_string", "") or ""
++            if old and old in text:
++                text = text.replace(old, new) if e.get("replace_all") else text.replace(old, new, 1)
++                applied = True
++        return text if applied else "\n".join(e.get("new_string", "") or "" for e in tool_input.get("edits", []))
++
++    return ""
++
++
++def astgrep_scan_proposed(root: pathlib.Path, file_path: str, content: str) -> list[dict]:
++    """Scan PROPOSED content against the repo rules (sgconfig.yml at root), with the
++    file's real relative path so each rule's files:/ignores globs resolve exactly as
++    in a normal `ast-grep scan`.
++
++    Strategy (MIRRORED SCRATCH ROOT — supersedes the proof sibling-probe pattern,
++    D2 amendment 2026-07-02): write the content at its TRUE relative path under a
++    temp root with sgconfig.yml + .rules/ copied in, and scan there. The sibling
++    .fleet-gate-<pid>/ probe dir broke rules whose ignores: name EXACT file paths
++    (e.g. the persistence-boundary allowlist): the inserted dir segment defeated
++    the ignore and every edit to an allowlisted file was falsely blocked. At the
++    true relpath, files:/ignores globs resolve byte-identically to a real scan.
++    Plain file I/O (not the Edit tool) so it cannot re-trigger the hook chain.
++    Raises on subprocess/JSON errors — the caller declares FAIL_CLOSED, so a
++    broken scanner blocks instead of waving violations through."""
++    abs_fp = pathlib.Path(file_path)
++    if not abs_fp.is_absolute():
++        abs_fp = root / file_path
++    try:
++        abs_fp = abs_fp.resolve()
++    except OSError:
++        return []
++    if abs_fp.suffix not in GATE_LANG_EXTS:
++        return []
++    try:
++        rel = abs_fp.relative_to(root)
++    except ValueError:
++        return []  # outside the repo — not ours to gate
++
++    matches: list[dict] = []
++    tmp = tempfile.mkdtemp(prefix="fleet-gate-")
++    try:
++        tmp_root = pathlib.Path(tmp)
++        sgconfig = root / "sgconfig.yml"
++        if not sgconfig.exists():
++            return []
++        shutil.copy(sgconfig, tmp_root / "sgconfig.yml")
++        rules_dir = root / ".rules"
++        if rules_dir.is_dir():
++            shutil.copytree(rules_dir, tmp_root / ".rules")
++        probe = tmp_root / rel
++        probe.parent.mkdir(parents=True, exist_ok=True)
++        probe.write_text(content, encoding="utf-8")
++        proc = subprocess.run(
++            ["ast-grep", "scan", "--json=compact", str(probe)],
++            cwd=str(tmp_root),
++            capture_output=True,
++            text=True,
++            timeout=30,
++        )
++        out = (proc.stdout or "").strip()
++        if out:
++            for m in json.loads(out):
++                if m.get("severity", "error") in ("error", "warning"):
++                    rng = m.get("range", {}).get("start", {})
++                    matches.append(
++                        {
++                            "ruleId": m.get("ruleId", "?"),
++                            "severity": m.get("severity", "error"),
++                            "line": rng.get("line", 0) + 1,
++                        }
++                    )
++    finally:
++        shutil.rmtree(tmp, ignore_errors=True)
++    return matches
+diff --git a/.claude/hooks/lib/tool_input.py b/.claude/hooks/lib/tool_input.py
+new file mode 100644
+index 0000000..4225a24
+--- /dev/null
++++ b/.claude/hooks/lib/tool_input.py
+@@ -0,0 +1,156 @@
++"""Helpers for reading the PreToolUse / Bash data envelope.
++
++Adapted from kandi/qgre lib/tool_input.py for torad-fleet: the brain is
++TypeScript under src/ + the Kotlin :domain source sets (both compile into the
++scanned dist/); host/ is the unscanned process-exec seam. No Android/iOS source
++sets. Tool data shapes (Claude Code hook contract):
++
++  Write     -> tool_input.file_path, tool_input.content
++  Edit      -> tool_input.file_path, tool_input.old_string, tool_input.new_string
++  MultiEdit -> tool_input.file_path, tool_input.edits[].old_string / new_string
++  Bash      -> tool_input.command
++"""
++from __future__ import annotations
++
++import re
++from typing import Iterator
++
++# D16: a shell command's quoted spans are DATA (prose, a note's text, a commit -m, a script
++# literal), not command structure. Guards that match tool/marker tokens must run on the skeleton
++# (quoted spans blanked) so prose naming a line-editor or a write verb never triggers them — the
++# D13 family, shared by module 11 (astgrep-first) and module 07 (enforcement-layer Bash scan).
++_QUOTED_SPAN = re.compile(r"'[^']*'|\"[^\"]*\"")
++
++
++def unquoted_skeleton(command: str) -> str:
++    """`command` with single/double-quoted spans replaced by spaces. Imperfect on nested/escaped
++    quotes (rare in guarded shapes); the same-checker commit re-run backstops the exotic."""
++    return _QUOTED_SPAN.sub(" ", command)
++
++
++def file_path_of(data: dict) -> str:
++    tool_input = data.get("tool_input") or {}
++    if isinstance(tool_input, dict):
++        return str(tool_input.get("file_path") or "")
++    return ""
++
++
++def command_of(data: dict) -> str:
++    tool_input = data.get("tool_input") or {}
++    if isinstance(tool_input, dict):
++        return str(tool_input.get("command") or "")
++    return ""
++
++
++def proposed_contents(data: dict) -> Iterator[str]:
++    """Yield each post-edit content fragment proposed by the tool call."""
++    tool_name = data.get("tool_name") or ""
++    tool_input = data.get("tool_input") or {}
++    if not isinstance(tool_input, dict):
++        return
++
++    if tool_name == "Write":
++        content = tool_input.get("content")
++        if isinstance(content, str):
++            yield content
++    elif tool_name == "Edit":
++        new_s = tool_input.get("new_string")
++        if isinstance(new_s, str):
++            yield new_s
++    elif tool_name == "MultiEdit":
++        edits = tool_input.get("edits") or []
++        if isinstance(edits, list):
++            for edit in edits:
++                if isinstance(edit, dict):
++                    new_s = edit.get("new_string")
++                    if isinstance(new_s, str):
++                        yield new_s
++
++
++def is_write_or_edit(data: dict) -> bool:
++    return data.get("tool_name") in ("Write", "Edit", "MultiEdit")
++
++
++def is_bash(data: dict) -> bool:
++    return data.get("tool_name") == "Bash"
++
++
++def has_kt_extension(file_path: str) -> bool:
++    return file_path.endswith(".kt")
++
++
++def has_ts_extension(file_path: str) -> bool:
++    return file_path.endswith((".ts", ".mts", ".cts", ".tsx"))
++
++
++# Source that compiles / bundles into the scanned dist/ (TS brain + Kotlin).
++_COMPILED_SOURCE_EXT: tuple[str, ...] = (
++    ".ts", ".mts", ".cts", ".tsx", ".js", ".mjs", ".cjs", ".jsx", ".kt",
++)
++
++
++def has_compiled_source_ext(file_path: str) -> bool:
++    return file_path.endswith(_COMPILED_SOURCE_EXT)
++
++
++def _seg(file_path: str) -> str:
++    """Guarantee a leading slash so `/host/`-style segment fragments match both
++    absolute paths (/…/host/x) and relative ones (host/x)."""
++    return file_path if file_path.startswith("/") else "/" + file_path
++
++
++def _project_relative_parts(file_path: str) -> list[str]:
++    parts = [part for part in file_path.replace("\\", "/").split("/") if part]
++    for index in range(len(parts) - 1):
++        if parts[index : index + 2] == ["plugins", "fleet"]:
++            return parts[index + 2 :]
++    return parts
++
++
++# Generated / vendored — the whole hook chain skips these (mirrors kandi's
++# is_path_exempt, repurposed: build artifacts, not an AI-SDK port).
++_EXEMPT_PATH_FRAGMENTS: tuple[str, ...] = (
++    "/dist/", "/build/", "/node_modules/", "/.gradle/",
++)
++
++
++def is_path_exempt(file_path: str) -> bool:
++    return any(frag in _seg(file_path) for frag in _EXEMPT_PATH_FRAGMENTS)
++
++
++# Test source sets — the scan-clean seam rules target production source that
++# ships in dist/, not test fakes/fixtures.
++_TEST_PATH_FRAGMENTS: tuple[str, ...] = (
++    "/test/", "/commonTest/", "/jvmTest/", "/jsTest/",
++)
++
++
++def is_test_path(file_path: str) -> bool:
++    return any(frag in _seg(file_path) for frag in _TEST_PATH_FRAGMENTS)
++
++
++# The host/ helper is a standalone, NEVER-scanned Node process — the one place
++# child_process is legal. It is the seam the scan-clean rules exempt.
++_HOST_SEAM_FRAGMENTS: tuple[str, ...] = (
++    "/host/",
++)
++
++
++def is_host_seam(file_path: str) -> bool:
++    return any(frag in _seg(file_path) for frag in _HOST_SEAM_FRAGMENTS)
++
++
++def targets_scanned_dist(data: dict) -> bool:
++    """True iff this Write/Edit lands in source that compiles into the scanned
++    dist/ — i.e. production TS/JS under the plugin src/ seam or production
++    Kotlin source sets, not host/, scripts, e2e, tests, or generated files."""
++    file_path = file_path_of(data)
++    if not (is_write_or_edit(data) and has_compiled_source_ext(file_path)):
++        return False
++    if is_path_exempt(file_path) or is_test_path(file_path) or is_host_seam(file_path):
++        return False
++
++    rel_parts = _project_relative_parts(file_path)
++    if has_kt_extension(file_path):
++        return "src" in rel_parts and ("commonMain" in rel_parts or "jsMain" in rel_parts)
++    return bool(rel_parts) and rel_parts[0] == "src"
+diff --git a/.claude/hooks/modules/pretooluse/08_manifest_single_channel.py b/.claude/hooks/modules/pretooluse/08_manifest_single_channel.py
+new file mode 100644
+index 0000000..1d1658b
+--- /dev/null
++++ b/.claude/hooks/modules/pretooluse/08_manifest_single_channel.py
+@@ -0,0 +1,63 @@
++"""§manifest-single-channel — campaign ledgers are updated via manifest.py, never raw-edited.
++
++Concept #945 §1b: dev/campaigns/manifest.py is the ONE sanctioned channel for
++touching dev/campaigns/*.toml. Raw Edit/Write on an existing manifest collides
++with concurrent agents (the CLI takes an flock), risks stripping the # comment
++notes where decisions and resume pointers live, and dodges the tomllib
++well-formedness gate that rolls back broken writes.
++
++Creating a NEW campaign file via Write is allowed (that's how campaigns start);
++everything after birth goes through the CLI. Style/discipline gate — fail-open.
++"""
++from __future__ import annotations
++
++import pathlib
++import sys
++from typing import Optional
++
++sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent.parent))
++from orchestrator.result import HookResult  # noqa: E402  # pyright: ignore[reportMissingImports]
++from lib.tool_input import file_path_of, is_write_or_edit  # noqa: E402  # pyright: ignore[reportMissingImports]
++from lib.astgrep_gate import find_project_root  # noqa: E402  # pyright: ignore[reportMissingImports]
++
++MODULE_NAME = "08_manifest_single_channel"
++
++
++def applies(data: dict) -> bool:
++    return is_write_or_edit(data) and file_path_of(data).endswith(".toml")
++
++
++def run(data: dict) -> Optional[HookResult]:
++    file_path = file_path_of(data)
++    root = find_project_root(file_path, data.get("cwd"))
++    if root is None:
++        return None
++
++    p = pathlib.Path(file_path)
++    if not p.is_absolute():
++        p = root / file_path
++    try:
++        rel = p.resolve().relative_to(root).as_posix()
++    except (OSError, ValueError):
++        return None
++    if not rel.startswith("dev/campaigns/"):
++        return None
++
++    if data.get("tool_name") == "Write" and not p.exists():
++        return None  # birth of a new campaign manifest — allowed
++
++    return HookResult(
++        kind="block",
++        payload=(
++            "§manifest-single-channel — raw edit of a campaign ledger blocked\n\n"
++            f"  target: {rel}\n\n"
++            "The manifest is updated ONLY via the CLI (#945 §1b):\n"
++            "  python3 dev/campaigns/manifest.py get <ID> | note <ID> \"text\" | "
++            "set-status <ID> <todo|in_flight|done|verified> | add --id ... \n\n"
++            "Raw edits collide with concurrent agents (the CLI flocks), can strip the "
++            "# comment notes that carry decisions/resume pointers, and skip the tomllib "
++            "rollback gate. If you need an operation the CLI lacks, extend manifest.py "
++            "(that file is enforcement-layer, grant-gated) — do not hand-edit the ledger."
++        ),
++        module_name=MODULE_NAME,
++    )
+diff --git a/.claude/hooks/modules/sessionstart/10_laws.py b/.claude/hooks/modules/sessionstart/10_laws.py
+new file mode 100644
+index 0000000..d18147d
+--- /dev/null
++++ b/.claude/hooks/modules/sessionstart/10_laws.py
+@@ -0,0 +1,36 @@
++#!/usr/bin/env python3
++"""Inject campaign laws through the shared SessionStart module runner."""
++from __future__ import annotations
++
++import pathlib
++import subprocess
++import sys
++
++sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent.parent))
++from orchestrator.result import HookResult  # noqa: E402  # pyright: ignore[reportMissingImports]
++from lib.astgrep_gate import find_project_root  # noqa: E402  # pyright: ignore[reportMissingImports]
++
++MODULE_NAME = "10_laws"
++
++
++def applies(data: dict) -> bool:
++    return True
++
++
++def run(data: dict) -> HookResult | None:
++    project_root = find_project_root(data.get("cwd") or data.get("project_dir") or ".")
++    manifest = project_root / "dev" / "campaigns" / "manifest.py"
++    if not manifest.exists():
++        return None
++
++    result = subprocess.run(
++        ["python3", str(manifest), "laws"],
++        cwd=project_root,
++        capture_output=True,
++        text=True,
++        check=False,
++    )
++    payload = result.stdout.strip()
++    if result.returncode != 0 or not payload:
++        return None
++    return HookResult(kind="inject", payload=payload, module_name=MODULE_NAME)
+diff --git a/.claude/hooks/modules/sessionstart/12_inflight_reanchor.py b/.claude/hooks/modules/sessionstart/12_inflight_reanchor.py
+new file mode 100644
+index 0000000..6084528
+--- /dev/null
++++ b/.claude/hooks/modules/sessionstart/12_inflight_reanchor.py
+@@ -0,0 +1,138 @@
++"""§in-flight re-anchor — surface in-flight work at SessionStart.
++
++If the current session already claimed an item, inject that single item back
++into the seat. Otherwise, surface the current in-flight campaign items with the
++same short report-back contract used at turn end.
++"""
++from __future__ import annotations
++
++import json
++import pathlib
++import re
++import sys
++import tomllib
++from typing import Optional
++
++sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent.parent))
++from orchestrator.result import HookResult  # noqa: E402  # pyright: ignore[reportMissingImports]
++from lib.astgrep_gate import find_project_root  # noqa: E402  # pyright: ignore[reportMissingImports]
++
++MODULE_NAME = "12_inflight_reanchor"
++SESSIONSTART_SOURCES = {"startup", "resume", "clear", "compact"}
++LINE_ONE = "§in-flight re-anchor — in_flight at session start:"
++GUIDANCE = (
++    "If YOURS: note progress via python3 dev/campaigns/manifest.py <path> note <ID> ...; "
++    "set-status done only after its verify passes; then reply ONE line: <ID> done — see ledger. "
++    "Laws: manifest.py laws"
++)
++MAX_PAYLOAD_CHARS = 500
++MAX_ITEMS = 3
++TITLE_LIMIT = 60
++
++
++def _safe_id(value: object) -> str:
++    raw = str(value or "default")
++    return re.sub(r"[^a-zA-Z0-9._-]", "_", raw)[:128] or "default"
++
++
++def _read_json(path: pathlib.Path) -> dict:
++    try:
++        data = json.loads(path.read_text(encoding="utf-8"))
++    except (OSError, json.JSONDecodeError):
++        return {}
++    return data if isinstance(data, dict) else {}
++
++
++def _read_toml(path: pathlib.Path) -> dict:
++    try:
++        data = tomllib.loads(path.read_text(encoding="utf-8"))
++    except (OSError, tomllib.TOMLDecodeError):
++        return {}
++    return data if isinstance(data, dict) else {}
++
++
++def _pointer_path(root: pathlib.Path, session_id: object) -> pathlib.Path:
++    return root / ".claude" / "state" / f"ledger-active-{_safe_id(session_id)}.json"
++
++
++def _manifest_path(root: pathlib.Path, raw_path: object) -> pathlib.Path | None:
++    if not isinstance(raw_path, str) or not raw_path:
++        return None
++    path = pathlib.Path(raw_path)
++    if not path.is_absolute():
++        path = root / path
++    try:
++        return path.resolve(strict=False)
++    except OSError:
++        return None
++
++
++def _campaign_inflight_items(campaigns: pathlib.Path) -> list[dict[str, str]]:
++    items: list[dict[str, str]] = []
++    if not campaigns.is_dir():
++        return items
++
++    for manifest in sorted(campaigns.glob("*.toml")):
++        doc = _read_toml(manifest)
++        for item in doc.get("items", []):
++            if item.get("status") != "in_flight":
++                continue
++            items.append(
++                {
++                    "id": str(item.get("id", "?")),
++                    "stem": manifest.stem,
++                    "title": str(item.get("title", ""))[:TITLE_LIMIT],
++                }
++            )
++    return items
++
++
++def _pointer_item(root: pathlib.Path, session_id: object) -> dict[str, str] | None:
++    pointer = _read_json(_pointer_path(root, session_id))
++    item_id = pointer.get("item_id")
++    ledger_path = _manifest_path(root, pointer.get("ledger_path"))
++    if not isinstance(item_id, str) or not item_id or ledger_path is None or not ledger_path.is_file():
++        return None
++
++    doc = _read_toml(ledger_path)
++    for item in doc.get("items", []):
++        if item.get("id") == item_id and item.get("status") == "in_flight":
++            return {
++                "id": item_id,
++                "stem": ledger_path.stem,
++                "title": str(item.get("title", ""))[:TITLE_LIMIT],
++            }
++    return None
++
++
++def _payload(items: list[dict[str, str]]) -> str:
++    lines = [LINE_ONE]
++    for item in items[:MAX_ITEMS]:
++        lines.append(f"- {item['id']} [{item['stem']}] {item['title']}")
++    if len(items) > MAX_ITEMS:
++        lines.append(f"… +{len(items) - MAX_ITEMS} more")
++    lines.append(GUIDANCE)
++    payload = "\n".join(lines)
++    if len(payload) > MAX_PAYLOAD_CHARS:
++        return payload[:MAX_PAYLOAD_CHARS]
++    return payload
++
++
++def applies(data: dict) -> bool:
++    source = data.get("source")
++    return source is None or source in SESSIONSTART_SOURCES
++
++
++def run(data: dict) -> Optional[HookResult]:
++    root = find_project_root(data.get("cwd"))
++    if root is None:
++        return None
++
++    pointer_item = _pointer_item(root, data.get("session_id"))
++    if pointer_item is not None:
++        return HookResult(kind="inject", payload=_payload([pointer_item]), module_name=MODULE_NAME)
++
++    items = _campaign_inflight_items(root / "dev" / "campaigns")
++    if not items:
++        return None
++    return HookResult(kind="inject", payload=_payload(items), module_name=MODULE_NAME)
+diff --git a/.claude/hooks/modules/stop/05_campaign_inflight_note.py b/.claude/hooks/modules/stop/05_campaign_inflight_note.py
+new file mode 100644
+index 0000000..7bf0d5d
+--- /dev/null
++++ b/.claude/hooks/modules/stop/05_campaign_inflight_note.py
+@@ -0,0 +1,62 @@
++"""§campaign-inflight — the ledger is the memory; surface in-flight items at turn end.
++
++Concept #945: agents die, sessions compact — durable state lives in
++dev/campaigns/*.toml. At Stop, list items still marked in_flight so the session
++either (a) records what it just finished (`manifest.py set-status <ID> done` +
++`note`), or (b) consciously confirms the item is running on a PEER session
++(fleet-builder) and turn-end is expected.
++
++WARN, not block, by design: this orchestration model dispatches work to peer
++sessions and legitimately ends turns while items are in flight — a block here
++would fight the async workflow. The deliberate exception to block-preferred.
++"""
++from __future__ import annotations
++
++import pathlib
++import sys
++import tomllib
++from typing import Optional
++
++sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent.parent))
++from orchestrator.result import HookResult  # noqa: E402  # pyright: ignore[reportMissingImports]
++from lib.astgrep_gate import find_project_root  # noqa: E402  # pyright: ignore[reportMissingImports]
++
++MODULE_NAME = "05_campaign_inflight_note"
++
++
++def applies(data: dict) -> bool:
++    return not data.get("stop_hook_active", False)
++
++
++def run(data: dict) -> Optional[HookResult]:
++    root = find_project_root(data.get("cwd"))
++    if root is None:
++        return None
++    campaigns = root / "dev" / "campaigns"
++    if not campaigns.is_dir():
++        return None
++
++    inflight: list[str] = []
++    for manifest in sorted(campaigns.glob("*.toml")):
++        try:
++            doc = tomllib.loads(manifest.read_text(encoding="utf-8"))
++        except (OSError, tomllib.TOMLDecodeError):
++            continue
++        for item in doc.get("items", []):
++            if item.get("status") == "in_flight":
++                title = str(item.get("title", ""))[:70]
++                inflight.append(f"{item.get('id', '?')} [{manifest.stem}] {title}")
++
++    if not inflight:
++        return None
++
++    return HookResult(
++        kind="warn",
++        payload=(
++            "§campaign-inflight — items still in_flight at turn end:\n  - "
++            + "\n  - ".join(inflight)
++            + "\n  If YOU finished one: python3 dev/campaigns/manifest.py set-status <ID> done "
++            "(+ note the evidence). If it runs on a peer (fleet-builder), this is expected."
++        ),
++        module_name=MODULE_NAME,
++    )
+diff --git a/.claude/hooks/orchestrator/result.py b/.claude/hooks/orchestrator/result.py
+new file mode 100755
+index 0000000..afa1e86
+--- /dev/null
++++ b/.claude/hooks/orchestrator/result.py
+@@ -0,0 +1,18 @@
++"""Hook module result type — drives the runner state machine.
++
++Stolen verbatim from kandi-main / qgre-agent
++.claude/hooks/orchestrator/result.py.
++"""
++from __future__ import annotations
++
++from dataclasses import dataclass
++from typing import Literal
++
++ResultKind = Literal["block", "inject", "warn", "pass"]
++
++
++@dataclass(frozen=True)
++class HookResult:
++    kind: ResultKind
++    payload: str
++    module_name: str
+diff --git a/.claude/settings.json b/.claude/settings.json
+index a702e0b..f4cbf6a 100644
+--- a/.claude/settings.json
++++ b/.claude/settings.json
+@@ -8,6 +8,11 @@
+             "type": "command",
+             "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator.py pretooluse",
+             "timeout": 30
++          },
++          {
++            "type": "command",
++            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/pretooluse.py",
++            "timeout": 10
+           }
+         ]
+       }
+@@ -20,6 +25,11 @@
+             "type": "command",
+             "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator.py stop",
+             "timeout": 30
++          },
++          {
++            "type": "command",
++            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/stop.py",
++            "timeout": 10
+           }
+         ]
+       }
+@@ -73,4 +83,4 @@
+       }
+     ]
+   }
+-}
+\ No newline at end of file
++}

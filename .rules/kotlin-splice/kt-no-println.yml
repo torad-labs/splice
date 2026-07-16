@@ -1,0 +1,10 @@
+# Logging discipline — daemon output goes through the per-head logger (log tail
+# endpoints + files depend on the format); println is invisible to /mgmt/logs.
+id: kt-no-println
+language: kotlin
+severity: error
+message: "No println in daemon code — use the head logger (the log-tail contract depends on it)."
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  pattern: println($$$A)

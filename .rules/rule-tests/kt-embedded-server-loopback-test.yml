@@ -1,0 +1,7 @@
+id: kt-embedded-server-loopback
+valid:
+  - 'embeddedServer(Netty, port = p, host = "127.0.0.1") { module() }'
+invalid:
+  - 'embeddedServer(Netty, port = p) { module() }'
+  - 'embeddedServer(Netty, port = p, host = bindHost) { module() }'
+  - 'embeddedServer(Netty, port = p, host = "0.0.0.0") { module() }'

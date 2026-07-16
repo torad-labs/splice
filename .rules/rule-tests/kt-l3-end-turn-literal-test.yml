@@ -1,0 +1,6 @@
+id: kt-l3-end-turn-literal
+valid:
+  - 'val reason = StopReason.TOOL_USE'
+  - '// end_turn named in a comment is fine'
+invalid:
+  - 'val reason = "end_turn"'

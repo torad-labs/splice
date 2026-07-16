@@ -1,0 +1,7 @@
+id: kt-l3-sole-wire-terminals
+valid:
+  - 'val evt = "content_block_delta"'
+  - '// comment naming message_stop is fine (PORT-OF headers cite invariants)'
+invalid:
+  - 'write("event: message_stop\ndata: {}\n\n")'
+  - 'val kind = "message_delta"'

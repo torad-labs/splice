@@ -1,0 +1,5 @@
+id: kt-no-runblocking-in-daemon
+valid:
+  - 'suspend fun serve() = coroutineScope { }'
+invalid:
+  - 'fun handle() = runBlocking { upstream() }'

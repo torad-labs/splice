@@ -1,0 +1,5 @@
+id: kt-no-println
+valid:
+  - 'log.info("head started")'
+invalid:
+  - 'println("head started")'

@@ -1,0 +1,11 @@
+id: kt-catch-swallows-cancellation
+valid:
+  - |
+    try { work() } catch (e: Exception) {
+        if (e is CancellationException) throw e
+        log(e)
+    }
+  - 'try { work() } catch (e: IOException) { log(e) }'
+invalid:
+  - 'try { work() } catch (e: Exception) { log(e) }'
+  - 'try { work() } catch (t: Throwable) { report(t) }'

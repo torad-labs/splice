@@ -1,0 +1,14 @@
+# Invariant L3 (Kotlin) — SseEmitter.kt is the ONLY file that may hold the
+# Anthropic wire terminal literals. Anything else holding message_stop or
+# message_delta is a second wire emitter in the making (fake-end_turn bug class).
+id: kt-l3-sole-wire-terminals
+language: kotlin
+severity: error
+message: "L3: only gateway/gateway/src/main/kotlin/wire/SseEmitter.kt may hold `message_stop`/`message_delta` literals."
+files:
+  - gateway/*/src/main/**/*.kt
+ignores:
+  - gateway/gateway/src/main/kotlin/wire/SseEmitter.kt
+rule:
+  kind: string_content
+  regex: \b(message_stop|message_delta)\b

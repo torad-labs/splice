@@ -1,0 +1,6 @@
+id: kt-l2-single-mirror-definition
+valid:
+  - 'fun mirrorText(sink: WireSink) {}'
+  - 'mirrorInto(sink, thinking, opts)'
+invalid:
+  - 'fun mirrorInto(sink: WireSink, thinking: String) {}'

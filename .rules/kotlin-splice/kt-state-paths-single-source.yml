@@ -1,0 +1,13 @@
+# External contract protection — the byte-identical state paths (~/.claude-codex/*)
+# resolve in ONE place (StatePaths.kt); a second literal is a drift seed.
+id: kt-state-paths-single-source
+language: kotlin
+severity: error
+message: "State paths resolve only in StatePaths.kt — no `.claude-codex` literals elsewhere."
+files:
+  - gateway/*/src/main/**/*.kt
+ignores:
+  - gateway/core/src/main/kotlin/config/StatePaths.kt
+rule:
+  kind: string_content
+  regex: \.claude-codex

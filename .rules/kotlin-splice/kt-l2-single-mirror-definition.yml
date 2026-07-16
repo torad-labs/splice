@@ -1,0 +1,12 @@
+# Invariant L2 (Kotlin) — exactly ONE mirrorInto lives in reasoning/Mirror.kt.
+# v29 shipped two drifting copies; this wall makes a second definition unwritable.
+id: kt-l2-single-mirror-definition
+language: kotlin
+severity: error
+message: "L2: mirrorInto is defined once, in gateway/gateway/src/main/kotlin/reasoning/Mirror.kt."
+files:
+  - gateway/**/*.kt
+ignores:
+  - gateway/gateway/src/main/kotlin/reasoning/Mirror.kt
+rule:
+  pattern: fun mirrorInto($$$P)

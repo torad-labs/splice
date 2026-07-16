@@ -1,0 +1,13 @@
+# Config discipline — env access goes through the layered config service (the
+# Kotlin analog of webui's fetch-only-in-api). Scattered System.getenv reads
+# bypass provenance, coercion, and the /mgmt/config layer view.
+id: kt-no-system-getenv
+language: kotlin
+severity: error
+message: "System.getenv only inside core/config — everything else reads the layered ConfigService."
+files:
+  - gateway/*/src/main/**/*.kt
+ignores:
+  - gateway/core/src/main/kotlin/config/**
+rule:
+  pattern: System.getenv($$$A)

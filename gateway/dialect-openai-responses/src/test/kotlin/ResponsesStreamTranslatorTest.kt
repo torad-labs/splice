@@ -84,6 +84,18 @@ private val completed = ev(
 class ResponsesStreamTranslatorTest {
 
     @Test
+    fun `a completed response beats a late watchdog fire - Success not Failure`() = runTest {
+        // The watchdog can trip while the reader is suspended on socket-EOF AFTER response.completed
+        // was parsed. A fully-received turn must NOT be discarded as OVERLOADED (that retries a
+        // successful compaction — the quota waste the watchdog exists to prevent).
+        val outcome = ResponsesStreamTranslator(
+            ctx(fired = WatchdogFired.Idle(idleMs = 200_000, sawFirstByte = true)),
+        ).driveTurn(listOf(completed).asFlow(), RecordingSink())
+        val success = outcome as TurnOutcome.Success
+        assertEquals(100, success.usage.inputTokens)
+    }
+
+    @Test
     fun `multipart reasoning joins into ONE thinking block with paragraph breaks`() = runTest {
         val sink = RecordingSink()
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(

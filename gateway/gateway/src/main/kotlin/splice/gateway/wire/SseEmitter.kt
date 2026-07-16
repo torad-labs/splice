@@ -83,6 +83,10 @@ public class SseEmitter internal constructor(
     }
 
     private suspend fun delta(index: WireBlockIndex, deltaObj: JsonObject) {
+        // Symmetric with closeBlock's guard: never write a delta to a block that isn't open (a
+        // delta after content_block_stop would corrupt the wire). Makes L3 block-pairing a property
+        // of THIS emitter, not of caller discipline.
+        if (index.value !in open) return
         frame(
             "content_block_delta",
             buildJsonObject {

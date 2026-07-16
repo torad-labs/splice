@@ -2,7 +2,7 @@
 // statusline endpoint and the control-server usage API share THIS logic, never forked);
 // soft-warn NEVER blocks; ratelimit headers are the real signal, the 5h output-token count
 // is the fallback (warnTokens5h = 0 disables it); critical at remaining<=0 or >=98% used.
-package splice.gateway.usage
+package splice.core.usage
 
 import kotlin.math.roundToInt
 

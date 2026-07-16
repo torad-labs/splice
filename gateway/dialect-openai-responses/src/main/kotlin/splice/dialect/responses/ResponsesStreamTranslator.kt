@@ -26,8 +26,8 @@ import splice.core.turn.Usage
 import splice.core.turn.isWeakSummaryText
 import splice.spi.ClassifiedFailure
 import splice.spi.FailureSource
-import splice.spi.UpstreamFailureClassifier
 import splice.spi.StreamTranslator
+import splice.spi.UpstreamFailureClassifier
 import splice.spi.WatchdogFired
 import splice.spi.WireSink
 import java.util.concurrent.CancellationException

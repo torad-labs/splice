@@ -6,7 +6,6 @@
 package splice.dialect.responses
 
 import kotlinx.serialization.json.JsonObject
-import splice.core.turn.isWeakSummaryText
 
 public data class Harvested(val text: String, val thinking: String)
 

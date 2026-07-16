@@ -1,0 +1,5 @@
+id: kt-state-paths-single-source
+valid:
+  - 'val dir = statePaths.stateDir'
+invalid:
+  - 'val dir = home.resolve(".claude-codex/state")'

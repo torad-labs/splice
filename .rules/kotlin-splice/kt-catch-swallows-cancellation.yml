@@ -1,0 +1,16 @@
+# Structured-concurrency honesty — a broad catch that does not rethrow
+# CancellationException silently eats coroutine cancellation (watchdog aborts,
+# client disconnects) and resurrects the Node-era zombie-stream bug class.
+id: kt-catch-swallows-cancellation
+language: kotlin
+severity: error
+message: "catch (Exception|Throwable) must rethrow CancellationException (`if (e is CancellationException) throw e`) before handling."
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  kind: catch_block
+  regex: ':\s*(kotlin\.)?(Exception|Throwable)\b'
+  not:
+    has:
+      regex: CancellationException
+      stopBy: end

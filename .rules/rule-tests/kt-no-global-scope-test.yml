@@ -1,0 +1,5 @@
+id: kt-no-global-scope
+valid:
+  - 'scope.launch { drive() }'
+invalid:
+  - 'GlobalScope.launch { drive() }'

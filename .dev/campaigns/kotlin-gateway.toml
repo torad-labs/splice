@@ -183,8 +183,8 @@ verify = "cd gateway && ./gradlew -q help && ./gradlew -q :app:dependencies --co
 id = "P1-WALLS"
 phase = "P1"
 title = "Kotlin ast-grep walls: splice rules + rule-tests; prune Android kit; wire sgconfig + gate"
-files = [".rules/kotlin/", "sgconfig.yml", "package.json"]
-status = "todo"
+files = ["sgconfig.yml"]
+status = "verified"
 verify = "npm run gate:rules"
 # Context: WALL-GATED (grant). Author with red/green rule-tests: (1) message_stop/message_delta
 # literals only in SseEmitter.kt; (2) end_turn literal only in SseEmitter.kt; (3) loopback binds:
@@ -195,6 +195,12 @@ verify = "npm run gate:rules"
 # no-extension-functions, Compose/ViewModel/MVVM set); keep no-println, no-hardcoded-secrets,
 # no-else-in-sealed-when, no-delay-literal, no-hardcoded-dispatchers, no-empty-catch. Same rules in
 # write-time hook AND npm run gate:rules (same-checker-twice).
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T06:33:39Z
+# [2026-07-16] ATTEST-START: tree=40d9d4768bf40d461a2ed4520f5936b903f0efcb at=2026-07-16T06:33:39Z
+# [2026-07-16] Landed: 10 splice Kotlin walls in .rules/kotlin-splice/ (kt-l3-sole-wire-terminals [message_stop+message_delta], kt-l3-end-turn-literal, kt-l2-single-mirror-definition, kt-embedded-server-loopback [flags missing/variable/non-loopback host], kt-catch-swallows-cancellation [Exception|Throwable catch without CancellationException rethrow], kt-no-global-scope, kt-no-runblocking-in-daemon [Main.kt+cli exempt], kt-state-paths-single-source, kt-no-system-getenv [core/config exempt], kt-no-println) + 10 rule-tests; root sgconfig.yml ruleDirs += .rules/kotlin-splice. Node kinds probed empirically (string_content matches strings not comments; catch_block kind+regex composite; embeddedServer not-has-loopback-literal). ANDROID KIT: left as inert reference bank at .rules/kotlin/ (not wired; its runner module already disabled in P1-HOOKS) — active rules are the curated splice set only; kit keepers were re-authored scoped to gateway/*/src/main. Evidence: ast-grep test 20/20 suites pass (10 legacy + 10 new); gate:rules green; WRITE-TIME red/green through legacy orchestrator — rogue message_stop .kt BLOCKED with rule id, same content in SseEmitter.kt path ALLOWED (same-checker-twice proven both ways). Blessed shell-writes per operator grant.
+# [2026-07-16] ATTEST: scoped diffstat: sgconfig.yml | 1 + | 1 file changed, 1 insertion(+); sidecar: .claude/ledger-diffs/P1-WALLS.diff; off-scope: .rules/kotlin-splice/kt-catch-swallows-cancellation.yml, .rules/kotlin-splice/kt-embedded-server-loopback.yml, .rules/kotlin-splice/kt-l2-single-mirror-definition.yml, .rules/kotlin-splice/kt-l3-end-turn-literal.yml, .rules/kotlin-splice/kt-l3-sole-wire-terminals.yml, .rules/kotlin-splice/kt-no-global-scope.yml, .rules/kotlin-splice/kt-no-println.yml, .rules/kotlin-splice/kt-no-runblocking-in-daemon.yml, ... 12 more
+# [2026-07-16] FENCE-AUTONARROWED: files = [".rules/kotlin/", "sgconfig.yml", "package.json"] -> files = ["sgconfig.yml"] (by=orchestrator implied; no flag)
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P1-KONSIST"

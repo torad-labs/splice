@@ -40,4 +40,6 @@ public class LogFileSource(private val logFile: Path) : HeadLogSource {
         if (e is java.util.concurrent.CancellationException) throw e
         ""
     }
+
+    override fun path(): String = logFile.toString()
 }

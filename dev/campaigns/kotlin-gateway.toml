@@ -475,7 +475,7 @@ id = "P3-MIR"
 phase = "P3"
 title = "Mirror (L2) + replay envelope: one mirrorInto; splice-reasoning v1 byte-compatible"
 files = ["gateway/gateway/src/main/kotlin/reasoning/Mirror.kt", "gateway/gateway/src/main/kotlin/reasoning/Replay.kt", "gateway/gateway/src/test/kotlin/reasoning/"]
-status = "todo"
+status = "verified"
 verify = "cd gateway && ./gradlew -q :gateway:test --tests '*Mirror*' --tests '*Replay*'"
 # Context: PORT-OF reasoning/mirror.mjs + replay.mjs @ 4ca99f7 — mirror wire format
 # '\\n[reasoning summary]\\n<text>\\n' EXACT, thresholds mirror>=20 promote>=40 honesty<20 (named
@@ -483,6 +483,11 @@ verify = "cd gateway && ./gradlew -q :gateway:test --tests '*Mirror*' --tests '*
 # encode/decode PAIRED (a tag/version bump strands in-flight transcripts — byte-compat test against
 # a captured Node envelope). ONE mirrorInto called by stream + non-stream paths (invariant test
 # greps call sites — port of invariants.test.mjs L2 block).
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T07:19:27Z
+# [2026-07-16] ATTEST-START: tree=ef3bd2e048200d256a5eb75f187374ad4eaf2fd0 at=2026-07-16T07:19:27Z
+# [2026-07-16] Landed splice.gateway.reasoning: Mirror.kt (ONE mirrorInto — L2 wall pins the definition here; wire format '\n[reasoning summary]\n<t>\n' exact; gates compact/showReasoning!=text/<MIRROR_MIN; extractThinking join) + Replay.kt (envelope tag splice-reasoning v1; encode preserves JSON.stringify key order + omits empty summary; decode rejects foreign/garbled/incomplete -> null, always emits summary array). BYTE-COMPAT PROVEN THE STRONG WAY: fixtures generated from the LIVE Node encodeReasoningEnvelope this session (with + without summary) and pinned as equality tests — Kotlin encode reproduces both base64 strings byte-for-byte; decode round-trips them. 5 test groups green; gateway + arch checks green.
+# [2026-07-16] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: gateway/gateway/src/main/kotlin/splice/gateway/reasoning/Mirror.kt, gateway/gateway/src/main/kotlin/splice/gateway/reasoning/Replay.kt, gateway/gateway/src/test/kotlin/ReplayMirrorTest.kt
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P3-USE"

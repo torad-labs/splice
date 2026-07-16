@@ -8,6 +8,11 @@
             "type": "command",
             "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator.py pretooluse",
             "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/pretooluse.py",
+            "timeout": 10
           }
         ]
       }
@@ -20,6 +25,11 @@
             "type": "command",
             "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator.py stop",
             "timeout": 30
+          },
+          {
+            "type": "command",
+            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/stop.py",
+            "timeout": 10
           }
         ]
       }

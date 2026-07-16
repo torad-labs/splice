@@ -70,6 +70,48 @@ class SingleFlightTest {
         }
 
     @Test
+    fun `a null leader result is a real value, not a re-elect signal`() = runTest(UnconfinedTestDispatcher()) {
+        // SingleFlight<Credentials?> legitimately returns null (no refresh possible). Box<T> keeps
+        // "leader returned null" distinct from "leader aborted → re-elect": every follower must get
+        // null, and the block must run exactly once (no spurious re-election).
+        val sf = SingleFlight<String?>()
+        val runs = AtomicInteger(0)
+        val gate = CompletableDeferred<Unit>()
+        val jobs = (1..4).map {
+            async {
+                sf.run {
+                    runs.incrementAndGet()
+                    gate.await()
+                    null
+                }
+            }
+        }
+        gate.complete(Unit)
+        val results = jobs.map { it.await() }
+        assertEquals(1, runs.get()) // exactly one run — null did NOT trigger re-election
+        assertTrue(results.all { it == null })
+    }
+
+    @Test
+    fun `a follower's own cancellation propagates, does not re-elect`() = runTest(UnconfinedTestDispatcher()) {
+        val sf = SingleFlight<String>()
+        val leaderEntered = CompletableDeferred<Unit>()
+        val leaderRelease = CompletableDeferred<String>()
+        val leader = launch {
+            sf.run {
+                leaderEntered.complete(Unit)
+                leaderRelease.await() // hold leadership so the follower stays a follower
+            }
+        }
+        leaderEntered.await()
+        val follower = launch { sf.run { "never" } } // coalesces behind the leader, then suspends
+        follower.cancel() // the FOLLOWER's own client disconnects
+        assertTrue(follower.isCancelled)
+        leaderRelease.complete("leader-done") // leader finishes cleanly, unaffected
+        leader.join()
+    }
+
+    @Test
     fun `a genuine block failure propagates to every awaiter`() = runTest(UnconfinedTestDispatcher()) {
         val sf = SingleFlight<Int>()
         val gate = CompletableDeferred<Unit>()

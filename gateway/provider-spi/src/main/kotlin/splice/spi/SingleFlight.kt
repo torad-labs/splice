@@ -14,8 +14,10 @@ package splice.spi
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
 public class SingleFlight<T> {
     private val mutex = Mutex()
@@ -59,8 +61,15 @@ public class SingleFlight<T> {
             deferred.completeExceptionally(if (t is CancellationException) LeaderAborted() else t)
             throw t
         } finally {
-            // clear only if still ours — a re-elected leader may already own inflight
-            mutex.withLock { if (inflight === deferred) inflight = null }
+            // NonCancellable is LOAD-BEARING: this cleanup runs during the leader's cancellation
+            // unwind, and re-election depends on `inflight` being cleared. A bare `mutex.withLock`
+            // here would throw at its suspension point if the mutex is contended (a follower
+            // re-electing at the same instant) while we're already cancelled — skipping the clear,
+            // stranding `inflight` on a dead deferred, and looping followers forever. (Doctrine #3.)
+            withContext(NonCancellable) {
+                // clear only if still ours — a re-elected leader may already own inflight
+                mutex.withLock { if (inflight === deferred) inflight = null }
+            }
         }
 
     // Boxes the leader's result so `null` can mean "re-elect" distinctly from a nullable T value.

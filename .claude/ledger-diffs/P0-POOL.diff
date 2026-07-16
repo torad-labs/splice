@@ -1,0 +1,85 @@
+diff --git a/gateway/spikes/results/pool-cancel.md b/gateway/spikes/results/pool-cancel.md
+new file mode 100644
+index 0000000..933701d
+--- /dev/null
++++ b/gateway/spikes/results/pool-cancel.md
+@@ -0,0 +1,9 @@
++# P0-POOL receipt: CIO client cancel-mid-stream x500 (2026-07-16)
++
++- rounds completed: 500/500
++- wall time: 1211ms (2ms/round)
++- TCP sockets before/after (post 6s settle): 2 / 2 (delta 0, bar < 50)
++- post-storm liveness GET: pong
++
++## Verdict
++PASS — CIO client returns/discards connections cleanly on coroutine cancellation; pool bounded, liveness intact. Cleared for P2-MACH plumbing.
+diff --git a/gateway/spikes/src/test/kotlin/PoolCancelSpike.kt b/gateway/spikes/src/test/kotlin/PoolCancelSpike.kt
+index 1a64633..763fb96 100644
+--- a/gateway/spikes/src/test/kotlin/PoolCancelSpike.kt
++++ b/gateway/spikes/src/test/kotlin/PoolCancelSpike.kt
+@@ -23,18 +23,22 @@ import kotlinx.coroutines.launch
+ import kotlinx.coroutines.runBlocking
+ import kotlinx.coroutines.withTimeout
+ import kotlin.system.measureTimeMillis
+-import kotlin.test.Test
++import org.junit.jupiter.api.Test
+ 
+ private const val ROUNDS = 500
+ private const val PORT = 39233
+ 
+ class PoolCancelSpike {
+ 
+-    private fun fdCount(): Int {
++    // TCP-sockets-only count: a raw `lsof -p` count is a broken instrument here —
++    // it swings with lazily-opened jar/class fds and counts healthy idle keep-alive
++    // pool connections. Leaks we care about are lingering TCP sockets to the drip port.
++    private fun tcpSocketCount(): Int {
+         val pid = ProcessHandle.current().pid()
+         return try {
+-            val p = ProcessBuilder("lsof", "-p", "$pid").redirectErrorStream(true).start()
+-            val n = p.inputStream.bufferedReader().readLines().size
++            val p = ProcessBuilder("lsof", "-a", "-p", "$pid", "-i", "TCP")
++                .redirectErrorStream(true).start()
++            val n = p.inputStream.bufferedReader().readLines().count { it.contains("TCP") }
+             p.waitFor()
+             n
+         } catch (e: Exception) {
+@@ -62,7 +66,18 @@ class PoolCancelSpike {
+         Thread.sleep(600)
+ 
+         val client = HttpClient(CIO)
+-        val fdBefore = fdCount()
++        // Warmup: exercise the full request path once so class-loading fds and the
++        // pool's baseline exist BEFORE the measurement window.
++        runBlocking {
++            val warm: Job = launch {
++                client.prepareGet("http://127.0.0.1:$PORT/slow-drip").execute { resp ->
++                    resp.bodyAsChannel().readUTF8Line()
++                    delay(Long.MAX_VALUE)
++                }
++            }
++            delay(50); warm.cancel(); warm.join()
++        }
++        val fdBefore = tcpSocketCount()
+         var completed = 0
+         val wallMs = measureTimeMillis {
+             runBlocking {
+@@ -81,7 +96,8 @@ class PoolCancelSpike {
+                 }
+             }
+         }
+-        val fdAfter = fdCount()
++        Thread.sleep(6_000) // let keep-alive idle connections expire/settle
++        val fdAfter = tcpSocketCount()
+ 
+         // liveness: the pool must still serve a normal request promptly
+         val liveness = runBlocking {
+@@ -100,7 +116,7 @@ class PoolCancelSpike {
+                 appendLine()
+                 appendLine("- rounds completed: $completed/$ROUNDS")
+                 appendLine("- wall time: ${wallMs}ms (${wallMs / ROUNDS}ms/round)")
+-                appendLine("- fd count before/after: $fdBefore / $fdAfter (delta $fdDelta, bar < 50)")
++                appendLine("- TCP sockets before/after (post 6s settle): $fdBefore / $fdAfter (delta $fdDelta, bar < 50)")
+                 appendLine("- post-storm liveness GET: $liveness")
+                 appendLine()
+                 appendLine("## Verdict")

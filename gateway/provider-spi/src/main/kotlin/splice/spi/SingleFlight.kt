@@ -30,7 +30,10 @@ public class SingleFlight<T>(
     // is only the production default for a background auth refresh.
     context: CoroutineContext = Dispatchers.Default,
 ) {
-    private val scope = CoroutineScope(SupervisorJob() + context)
+    // SupervisorJob on the RIGHT so it unconditionally wins the Job key — even if a caller passes a
+    // context that carries its own Job (e.g. someScope.coroutineContext), isolation is preserved and
+    // the injected context can't tie this scope's lifetime/failure-propagation to a caller's Job.
+    private val scope = CoroutineScope(context + SupervisorJob())
     private val mutex = Mutex()
     private var inflight: Deferred<T>? = null
 

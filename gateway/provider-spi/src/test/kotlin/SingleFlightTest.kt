@@ -4,6 +4,7 @@
 // per follower). UnconfinedTestDispatcher = eager execution so callers actually coalesce before the
 // gate opens.
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -112,6 +113,16 @@ class SingleFlightTest {
         val outcomes = jobs.map { it.await() }
         assertTrue(outcomes.all { it.isFailure })
         assertTrue(outcomes.all { it.exceptionOrNull()?.message == "refresh failed" })
+    }
+
+    @Test
+    fun `a Job-carrying context does not defeat SupervisorJob isolation`() = runTest(UnconfinedTestDispatcher()) {
+        // Constructor contract: even if the injected context carries its own Job, the internal
+        // SupervisorJob must win so one wave's failure can't poison the instance for the next wave.
+        val sf = SingleFlight<Int>(UnconfinedTestDispatcher(testScheduler) + Job())
+        val boom = runCatching { sf.run { error("wave1 boom") } }
+        assertTrue(boom.isFailure)
+        assertEquals(7, sf.run { 7 }) // a fresh wave still works — the instance is not poisoned
     }
 
     @Test

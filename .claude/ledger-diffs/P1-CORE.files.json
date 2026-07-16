@@ -1,0 +1,14 @@
+{
+  "scoped_paths": [
+    "gateway/core/src/main/kotlin/splice/core/auth/Credentials.kt",
+    "gateway/core/src/main/kotlin/splice/core/head/Head.kt",
+    "gateway/core/src/main/kotlin/splice/core/index/Indexes.kt",
+    "gateway/core/src/main/kotlin/splice/core/model/ModelCatalog.kt",
+    "gateway/core/src/main/kotlin/splice/core/parse/AnthropicParse.kt",
+    "gateway/core/src/main/kotlin/splice/core/topology/Topology.kt",
+    "gateway/core/src/main/kotlin/splice/core/turn/Turn.kt",
+    "gateway/core/src/main/kotlin/splice/core/wire/AnthropicRequest.kt",
+    "gateway/core/src/test/kotlin/AnthropicParseTest.kt",
+    "gateway/core/src/test/kotlin/ModelCatalogTest.kt"
+  ]
+}

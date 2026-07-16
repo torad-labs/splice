@@ -499,7 +499,7 @@ id = "P3-USE"
 phase = "P3"
 title = "Usage: buildUsagePayload extra fields, output clamp, 5h window persistence, ratelimit capture, computeUsageWarn"
 files = ["gateway/gateway/src/main/kotlin/usage/", "gateway/gateway/src/test/kotlin/usage/"]
-status = "todo"
+status = "verified"
 verify = "cd gateway && ./gradlew -q :gateway:test --tests '*Usage*'"
 # Context: PORT-OF usage/hud.mjs + warn.mjs @ 4ca99f7 — non-standard usage fields Claude Code reads
 # from gateways (context_window, context_window_size, used_percentage) sized from the HEAD's real
@@ -507,6 +507,11 @@ verify = "cd gateway && ./gradlew -q :gateway:test --tests '*Usage*'"
 # output — clamp REPORTED output to client max_tokens except compact), fire-and-forget persistence
 # to <head>-usage.json/<head>-ratelimit.json (Marcos pin: codex-*.json names), computeUsageWarn
 # pure (ratelimit headers preferred, 5h fallback, never blocks) shared by /statusline + dashboard.
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T07:24:14Z
+# [2026-07-16] ATTEST-START: tree=ad7ba83b0f94e57cbbdf0cda8f27d36eb3c58ba2 at=2026-07-16T07:24:14Z
+# [2026-07-16] Landed splice.gateway.usage: UsageWarn (pure computeUsageWarn — ratelimit priority w/ critical at remaining<=0 or >=98%, tokens5h fallback, none; shared by statusline + dashboard by construction), UsageHud (TurnUsage alias resolution incl. input_tokens_details.cached_tokens; buildUsagePayload with the NON-STANDARD context_window/context_window_size/used_percentage fields; cacheLogLine EXACT format pinned; makeOutputClamp w/ exact log line; UsageStore 5h-window JSON + x-ratelimit-* persistence + readState). REAL BUG CAUGHT BY TEST: JsonObjectBuilder.put returns the PREVIOUS value — an elvis on it double-puts null over good values; fixed with explicit branches + a NB comment (bug class recorded). 6 test groups green; injected log/clock seams.
+# [2026-07-16] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: gateway/gateway/src/main/kotlin/splice/gateway/usage/UsageHud.kt, gateway/gateway/src/main/kotlin/splice/gateway/usage/UsageWarn.kt, gateway/gateway/src/test/kotlin/UsageTest.kt
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P3-RESP"

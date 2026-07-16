@@ -10,5 +10,7 @@ dependencies {
     implementation(libs.ktor.server.netty)
     implementation(libs.ktor.server.sse)
     testImplementation(libs.ktor.server.test.host)
+    testImplementation(libs.ktor.client.cio)
+    testImplementation(project(":dialect-openai-responses"))
     testImplementation(libs.kotlinx.coroutines.test)
 }

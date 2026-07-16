@@ -23,9 +23,11 @@ import kotlinx.serialization.json.JsonPrimitive
 import splice.core.index.WireBlockIndex
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.turn.isWeakSummaryText
 import splice.spi.ClassifiedFailure
 import splice.spi.FailureSource
 import splice.spi.UpstreamFailureClassifier
+import splice.spi.StreamTranslator
 import splice.spi.WatchdogFired
 import splice.spi.WireSink
 import java.util.concurrent.CancellationException
@@ -54,7 +56,7 @@ private class BlockState(val index: WireBlockIndex, var sawDelta: Boolean)
     "ComplexCondition", // gating conditions are quoted verbatim from stream.mjs
     "StringLiteralDuplication", // upstream event names/fields are inherently repeated literals
 )
-public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) {
+public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : StreamTranslator {
 
     private val blocks = HashMap<String, BlockState>()
     private var hasToolUse = false
@@ -70,7 +72,7 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) {
 
     @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException", "ReturnCount")
     // stream read errors surface via the outcome, never a crash; the terminal cascade returns
-    public suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome {
+    override suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome {
         try {
             upstream.collect { evt -> onEvent(evt, sink) }
         } catch (e: Exception) {

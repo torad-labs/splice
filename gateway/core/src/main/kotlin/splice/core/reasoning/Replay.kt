@@ -7,7 +7,7 @@
 // non-empty id + encrypted_content; decoded items ALWAYS carry a summary array.
 @file:Suppress("StringLiteralDuplication") // envelope field names are the wire contract
 
-package splice.gateway.reasoning
+package splice.core.reasoning
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray

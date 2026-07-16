@@ -538,7 +538,7 @@ id = "P3-HEAD"
 phase = "P3"
 title = "codex Head assembled: POST /v1/messages exact-route, /v1/models discovery-wrapped, /health, /mgmt/*, on :3097"
 files = ["gateway/gateway/src/main/kotlin/head/", "gateway/gateway/src/main/kotlin/mgmt/", "gateway/app/src/main/kotlin/Main.kt"]
-status = "todo"
+status = "verified"
 verify = "cd gateway && ./gradlew -q :gateway:test :app:test"
 # Context: PORT-OF codex-proxy.mjs routing + mgmt/api.mjs @ 4ca99f7. Route EXACTLY POST /v1/messages
 # (named change: count_tokens gets a dedicated cheap handler + log counter — old Node forwarded it
@@ -551,6 +551,11 @@ verify = "cd gateway && ./gradlew -q :gateway:test :app:test"
 # watchdogged stream -> translator -> outcome -> emitter terminals; teardown idempotent
 # (NonCancellable cleanup; abort upstream on client close; never cancel a locked body — undici
 # lesson maps to: close channel via job cancellation only).
+# [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T07:33:57Z
+# [2026-07-16] ATTEST-START: tree=af67993a434625fdf25b5ae898517cf4c8faa57b at=2026-07-16T07:33:57Z
+# [2026-07-16] Landed the codex head END-TO-END, and the module law FORCED the right architecture: :provider-spi gained Provider + StreamTranslator SPI interfaces; :gateway HeadServer is GENERIC over Provider (never sees a concrete dialect — the wall rejected the first concrete CodexHead draft); :provider-codex CodexProvider wires the dialect+quirks+auth+reasoning-codec; UpstreamClient (retry loop + single-flight 401 refresh + HttpTimeout first-byte/total) in spi; TurnPipeline (promote-to-text + honesty gates + mirror + sole terminal) in gateway; pickModelText/isWeakSummaryText + reasoning envelope codec moved to :core (provider-neutral). Routes: POST /v1/messages EXACT, /v1/models (pinned excluded), /health, count_tokens dedicated cheap handler (the named change). ALSO the loopback wall blocked host=LOOPBACK const → inlined literal 127.0.0.1 (wall correct: a const could drift). 10 end-to-end integration tests over real HTTP (CodexProvider + mock upstream): health/models shapes, basic clean SSE sequence ending in message_stop, toolcall stop_reason, multipart mirror [reasoning summary], overflow_sse→error prompt-is-too-long no clean stop, truncated→overloaded, compactish promote-to-text, count_tokens makes NO upstream turn, claude-model 400. Full ./gradlew check + npm gate:rules green.
+# [2026-07-16] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: gateway/core/src/main/kotlin/splice/core/Versions.kt, gateway/core/src/main/kotlin/splice/core/reasoning/Replay.kt, gateway/core/src/main/kotlin/splice/core/turn/PickedText.kt, gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt, gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTerminal.kt, gateway/gateway/build.gradle.kts, gateway/gateway/src/main/kotlin/splice/gateway/head/HeadServer.kt, gateway/gateway/src/main/kotlin/splice/gateway/pipeline/TurnPipeline.kt, ... 7 more
+# [2026-07-16] VERDICT: outcome=accepted
 
 [[items]]
 id = "P3-LIVE"

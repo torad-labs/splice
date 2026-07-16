@@ -1,0 +1,7 @@
+{
+  "scoped_paths": [
+    "gateway/provider-openai/src/main/kotlin/splice/provider/openai/ApiKeyAuthProvider.kt",
+    "gateway/provider-openai/src/main/kotlin/splice/provider/openai/OpenAiChatProvider.kt",
+    "gateway/provider-openai/src/main/kotlin/splice/provider/openai/OpenAiResponsesProvider.kt"
+  ]
+}

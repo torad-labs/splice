@@ -16,12 +16,23 @@ KEY_FILE="${STATE_DIR}/mgmt-key"
 SAFE="false"
 [ "${CLAUDEX_SAFE:-0}" = "1" ] && SAFE="true"
 
-# `<command> login` runs the OAuth browser flow for this head directly (no daemon needed).
-if [ "${1:-}" = "login" ]; then
+need_jar() {
   if [ ! -f "$JAR" ]; then
-    echo "splice: daemon jar not found at $JAR (run: splice install, or set SPLICE_JAR)" >&2
+    echo "splice: jar not found at $JAR (run: splice install, or set SPLICE_JAR)" >&2
     exit 1
   fi
+}
+
+# Invoked as `splice` (the admin command): pass every subcommand straight to the CLI
+# (setup, status, dashboard, login <head>, install, …). The CLI self-manages the daemon.
+if [ "$HEAD" = "splice" ]; then
+  need_jar
+  exec java -jar "$JAR" "$@"
+fi
+
+# `<command> login` runs the OAuth browser flow for this head directly (no daemon needed).
+if [ "${1:-}" = "login" ]; then
+  need_jar
   exec java -jar "$JAR" login "$HEAD"
 fi
 

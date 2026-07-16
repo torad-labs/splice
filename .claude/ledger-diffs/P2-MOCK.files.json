@@ -1,0 +1,5 @@
+{
+  "scoped_paths": [
+    "gateway/gateway/src/test/kotlin/mock/MockChatGptUpstream.kt"
+  ]
+}

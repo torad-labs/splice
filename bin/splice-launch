@@ -16,6 +16,15 @@ KEY_FILE="${STATE_DIR}/mgmt-key"
 SAFE="false"
 [ "${CLAUDEX_SAFE:-0}" = "1" ] && SAFE="true"
 
+# `<command> login` runs the OAuth browser flow for this head directly (no daemon needed).
+if [ "${1:-}" = "login" ]; then
+  if [ ! -f "$JAR" ]; then
+    echo "splice: daemon jar not found at $JAR (run: splice install, or set SPLICE_JAR)" >&2
+    exit 1
+  fi
+  exec java -jar "$JAR" login "$HEAD"
+fi
+
 health() { curl -sS -m 2 "${CONTROL}/health" 2>/dev/null || true; }
 
 # Cold-start the daemon if it isn't answering.

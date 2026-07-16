@@ -6,7 +6,7 @@
 # THE POINT: a new vendor is added HERE, in TOML — no Kotlin. The daemon dispatches on
 # (dialect, auth.kind) to the right built-in provider:
 #   openai-responses + chatgpt-oauth        → codex (ChatGPT backend)
-#   openai-responses + api-key + session-id → grok / xAI
+#   openai-responses + grok-oauth           → grok / xAI (SuperGrok / X Premium+)
 #   openai-responses + api-key (hash key)   → OpenAI platform
 #   openai-chat      + api-key              → ANY OpenAI-compatible vendor (Ollama/OpenRouter/…)
 
@@ -24,11 +24,11 @@ id = "gpt-5.6-sol"
 label = "Codex 5.6 Sol"
 context_window = 272000
 
-# ── xAI / grok: same Responses dialect, api-key auth, session-scoped cache key ──
+# ── xAI / grok: same Responses dialect, OAuth (SuperGrok/X Premium+), session cache key ──
 [providers.xai]
 dialect = "openai-responses"
 base_url = "https://api.x.ai/v1"
-auth = { kind = "api-key", env = "XAI_API_KEY", file = "~/.local/share/claude-grok/auth.json" }
+auth = { kind = "grok-oauth", file = "~/.grok/auth.json" }  # browser login: `claude-grok login`
 quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = false, compact_effort = "low", tool_choice = true }
 [[providers.xai.models]]
 id = "grok-4.5"
@@ -59,13 +59,13 @@ pinned_model = "gpt-5.6-sol"
 [heads.claudex.claude]
 command = "claudex"
 
-[heads.grok]
+[heads.claude-grok]
 provider = "xai"
 port = 3100
 discovery_prefix = "claude-grok--"
 pinned_model = "grok-4.5"
-[heads.grok.claude]
-command = "clagrok"
+[heads.claude-grok.claude]
+command = "claude-grok"
 isolate = ["commands"]         # this head gets its own commands/, everything else shared
 
 [heads.openrouter]

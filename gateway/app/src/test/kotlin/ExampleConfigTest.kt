@@ -25,16 +25,16 @@ class ExampleConfigTest {
     @Test
     fun `example topology parses into the three documented heads`() {
         val topology = TopologyLoader.parse(exampleToml())
-        assertEquals(setOf("claudex", "grok", "openrouter"), topology.heads.keys)
+        assertEquals(setOf("claudex", "claude-grok", "openrouter"), topology.heads.keys)
         assertEquals(3096, topology.daemon.controlPort)
 
         val codex = topology.providers[topology.heads["claudex"]!!.provider]!!
         assertEquals(Dialect.OPENAI_RESPONSES, codex.dialect)
         assertEquals("chatgpt-oauth", codex.auth.kind)
 
-        val xai = topology.providers[topology.heads["grok"]!!.provider]!!
+        val xai = topology.providers[topology.heads["claude-grok"]!!.provider]!!
         assertEquals(Dialect.OPENAI_RESPONSES, xai.dialect)
-        assertEquals("api-key", xai.auth.kind)
+        assertEquals("grok-oauth", xai.auth.kind)
         assertEquals("session-id", xai.quirks.cacheKey)
 
         val openrouter = topology.providers[topology.heads["openrouter"]!!.provider]!!
@@ -42,7 +42,7 @@ class ExampleConfigTest {
         assertEquals("api-key", openrouter.auth.kind)
 
         // the isolate override survives the round-trip
-        assertTrue(topology.heads["grok"]!!.claude.isolate.contains("commands"))
+        assertTrue(topology.heads["claude-grok"]!!.claude.isolate.contains("commands"))
         assertEquals("claudex", topology.heads["claudex"]!!.claude.command)
     }
 }

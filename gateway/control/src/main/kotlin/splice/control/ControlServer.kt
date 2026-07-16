@@ -57,6 +57,9 @@ public class ControlServer(
         mgmtKey.get() // mint eagerly BEFORE the port opens — a dashboard load must not race it
         val engine = embeddedServer(Netty, port = port, host = "127.0.0.1") {
             routing {
+                // Unauthenticated liveness probe: the launch shim polls this to tell a running
+                // daemon from a cold start (it must NOT need the mgmt-key). No head/config detail.
+                get("/health") { call.respondText(controlHealthJson(), ContentType.Application.Json) }
                 get("/") { call.respondText(dashboardHtml(), ContentType.Text.Html) }
                 get("/dashboard") { call.respondText(dashboardHtml(), ContentType.Text.Html) }
                 get("/api/status") { guarded(call) { respond(call, statusJson()) } }
@@ -97,6 +100,12 @@ public class ControlServer(
 
     private suspend fun respond(call: ApplicationCall, body: String) =
         call.respondText(body, ContentType.Application.Json)
+
+    private fun controlHealthJson(): String = buildJsonObject {
+        put("ok", true)
+        put("version", GATEWAY_VERSION)
+        put("heads", heads.size)
+    }.toString()
 
     private fun statusJson(): String = buildJsonObject {
         put("server", "control")

@@ -84,7 +84,15 @@ public class CodexAuthProvider(
         }
         val tokens = raw["tokens"] as? JsonObject ?: return null
         val refreshToken = tokens["refresh_token"]?.jsonPrimitive?.content ?: return null
-        val fresh = refreshCall(refreshToken) ?: return null
+        // Guard the network hop too (Node wrapped the whole read+fetch): the refreshCall param's
+        // type doesn't promise "never throws", so a caller-supplied hop that throws must degrade to
+        // a null refresh (→ UpstreamFailed → re-prompt), not blow through SingleFlight uncaught.
+        val fresh = try {
+            refreshCall(refreshToken)
+        } catch (e: Exception) {
+            if (e is CancellationException) throw e
+            null
+        } ?: return null
         val access = fresh.accessToken ?: return null
 
         val nextTokens = kotlinx.serialization.json.buildJsonObject {

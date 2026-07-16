@@ -90,10 +90,10 @@ public class UpstreamClient(
 
     private fun applyAuth(creds: Credentials, extra: Map<String, String>): Map<String, String> {
         val base = when (creds) {
-            is Credentials.Bearer -> buildMap {
-                put("Authorization", "Bearer ${creds.token}")
-                creds.accountId?.let { put("ChatGPT-Account-ID", it) }
-            }
+            // NB: the account-id header is NOT added here — the PROVIDER's extraHeaders is its sole
+            // controller (CodexProvider gates it on the account_id_header quirk). Adding it here too
+            // made `account_id_header = false` a no-op, since `base + extra` can add but never remove.
+            is Credentials.Bearer -> mapOf("Authorization" to "Bearer ${creds.token}")
             is Credentials.ApiKey -> mapOf(creds.header to "${creds.prefix}${creds.key}")
         }
         return base + extra

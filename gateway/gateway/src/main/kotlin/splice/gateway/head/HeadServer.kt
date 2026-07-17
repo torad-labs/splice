@@ -120,8 +120,11 @@ public class HeadServer(
     }.toString()
 
     private fun modelsJson(): String {
-        val pinnedWrapped = provider.catalog.wrap(provider.pinnedModel)
-        val rows = provider.catalog.discoveryRows().filter { it.id != pinnedWrapped }
+        // EVERY catalog model gets a discovery row, including the pinned one — Claude Code needs
+        // each id present so its display_name supplies the /model picker + status label (the pinned
+        // model is otherwise missing from the picker). Which rows actually show is curated by the
+        // availableModels allowlist in settings.json, not here.
+        val rows = provider.catalog.discoveryRows()
         return buildJsonObject {
             put("object", "list")
             put(

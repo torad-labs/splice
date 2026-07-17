@@ -254,6 +254,8 @@ public class Daemon(
             configDir = configDir,
             pinnedModel = head.pinnedModel,
             availableModelIds = catalog.availableModelIds(),
+            modelLabels = providerCfg.models.associate { it.id to (it.label.ifEmpty { it.id }) },
+            contextWindow = catalog.contextWindowFor(head.pinnedModel).toInt(),
             modelOptionsCache = buildJsonObject { },
             policy = ClaudePolicy(share = topology.claude.share.toSet(), isolate = head.claude.isolate.toSet()),
             port = head.port,

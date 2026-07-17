@@ -26,6 +26,30 @@ quirks = { store = false, account_id_header = true, cache_key = "first-message-h
 id = "gpt-5.6-sol"
 label = "Codex 5.6 Sol"
 context_window = 272000
+[[providers.codex.models]]
+id = "gpt-5.6-terra"
+label = "Codex 5.6 Terra"
+context_window = 272000
+[[providers.codex.models]]
+id = "gpt-5.6-luna"
+label = "Codex 5.6 Luna"
+context_window = 272000
+[[providers.codex.models]]
+id = "gpt-5.5"
+label = "Codex 5.5"
+context_window = 272000
+[[providers.codex.models]]
+id = "gpt-5.4"
+label = "Codex 5.4"
+context_window = 272000
+[[providers.codex.models]]
+id = "gpt-5.4-mini"
+label = "Codex 5.4 Mini"
+context_window = 272000
+[[providers.codex.models]]
+id = "gpt-5.3-codex-spark"
+label = "Codex Spark"
+context_window = 128000
 
 [providers.xai]
 dialect = "openai-responses"

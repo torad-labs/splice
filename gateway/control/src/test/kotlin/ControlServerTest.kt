@@ -19,6 +19,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -93,7 +94,9 @@ class ControlServerTest {
         val launchSpec = LaunchSpec(
             configDir = configDir,
             pinnedModel = "gpt-5.6-sol",
-            availableModelIds = listOf("gpt-5.6-sol"),
+            availableModelIds = listOf("gpt-5.6-sol", "gpt-5.4-mini"),
+            modelLabels = mapOf("gpt-5.6-sol" to "Codex 5.6 Sol", "gpt-5.4-mini" to "Codex 5.4 Mini"),
+            contextWindow = 272000,
             modelOptionsCache = kotlinx.serialization.json.buildJsonObject { },
             policy = splice.core.launch.ClaudePolicy(share = emptySet(), isolate = emptySet()),
             port = 3099,
@@ -236,10 +239,19 @@ class ControlServerTest {
             setBody("""{"safe":"false","args":["-c"]}""")
         }.bodyAsText()
         val obj = json.parseToJsonElement(body).jsonObject
-        assertEquals("http://127.0.0.1:3099", obj["env"]!!.jsonObject["ANTHROPIC_BASE_URL"]?.jsonPrimitive?.content)
+        val env = obj["env"]!!.jsonObject
+        assertEquals("http://127.0.0.1:3099", env["ANTHROPIC_BASE_URL"]?.jsonPrimitive?.content)
+        // the two fixes: a bearer AUTH_TOKEN (no /login), and gateway model discovery (all models show)
+        assertEquals("splice-local", env["ANTHROPIC_AUTH_TOKEN"]?.jsonPrimitive?.content)
+        assertEquals("1", env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"]?.jsonPrimitive?.content)
+        assertEquals("gpt-5.6-sol", env["ANTHROPIC_MODEL"]?.jsonPrimitive?.content)
+        assertEquals("272000", env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"]?.jsonPrimitive?.content)
+        // ANTHROPIC_API_KEY is UNSET (else Claude Code's custom-key approval dead-ends at /login)
+        assertTrue(obj["unset"]!!.jsonArray.any { it.jsonPrimitive.content == "ANTHROPIC_API_KEY" })
         val argv = obj["argv"]!!.jsonArray.map { it.jsonPrimitive.content }
         assertTrue(argv.contains("--dangerously-skip-permissions"))
-        assertTrue(argv.contains("--model") && argv.contains("gpt-5.6-sol") && argv.contains("-c"))
+        assertTrue(argv.contains("-c")) // extra args passed through
+        assertFalse(argv.contains("--model")) // model comes from env + picker, not a locked flag
     }
 
     @Test

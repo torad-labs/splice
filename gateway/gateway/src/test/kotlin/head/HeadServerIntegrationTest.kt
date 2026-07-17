@@ -122,10 +122,11 @@ class HeadServerIntegrationTest {
     }
 
     @Test
-    fun `models are discovery-wrapped and exclude the pinned model`() = runTest {
+    fun `models are discovery-wrapped and include the pinned model`() = runTest {
         val body = client.get("http://127.0.0.1:$port/v1/models").bodyAsText()
         assertTrue(body.contains("claude-codex--gpt-5.4"))
-        assertFalse(body.contains("claude-codex--gpt-5.6-sol")) // pinned excluded
+        // the pinned model IS discovered too — else it's missing from the /model picker
+        assertTrue(body.contains("claude-codex--gpt-5.6-sol"))
     }
 
     @Test

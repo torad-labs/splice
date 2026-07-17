@@ -58,10 +58,15 @@ RECIPE="$(curl -sS -X POST "${CONTROL}/launch/${HEAD}" \
   -H "Authorization: Bearer ${KEY}" -H 'Content-Type: application/json' \
   --data "{\"safe\":\"${SAFE}\",\"args\":${ARGS_JSON}}")"
 
-# Parse the recipe into env/unset/argv and exec.
-eval "$(printf '%s' "$RECIPE" | python3 - <<'PY'
-import sys, json, shlex
-r = json.load(sys.stdin)
+# Parse the recipe into env/unset/argv and exec. The recipe rides in $RECIPE (env), NOT stdin —
+# the heredoc is python's stdin (the script), so piping the recipe in would be swallowed.
+CMD="$(SPLICE_RECIPE="$RECIPE" python3 <<'PY'
+import os, json, shlex, sys
+raw = os.environ.get("SPLICE_RECIPE", "")
+try:
+    r = json.loads(raw)
+except Exception:
+    sys.stderr.write("splice: launch failed (no recipe from daemon): " + (raw or "<empty>") + "\n"); sys.exit(1)
 if "argv" not in r:
     sys.stderr.write("splice: launch failed: " + json.dumps(r) + "\n"); sys.exit(1)
 sets = " ".join(f"{k}={shlex.quote(v)}" for k, v in r.get("env", {}).items())
@@ -69,4 +74,5 @@ unsets = " ".join(f"-u {shlex.quote(k)}" for k in r.get("unset", []))
 argv = " ".join(shlex.quote(a) for a in r["argv"])
 print(f"exec env {unsets} {sets} {argv}")
 PY
-)"
+)" || exit 1
+eval "$CMD"

@@ -32,6 +32,10 @@ val coreExternalGroups = setOf("org.jetbrains.kotlin", "org.jetbrains.kotlinx")
 /** Modules exempt from explicitApi (executables and test harnesses, not libraries). */
 val nonLibrary = setOf(":app", ":spikes", ":arch-tests")
 
+// The module law is a MAIN-source architecture rule. Test configs are intentionally NOT covered:
+// integration tests legitimately wire sibling modules (e.g. :gateway tests use
+// :dialect-openai-responses), and the one genuinely-illegal test dep — a cycle — is already a
+// Gradle build error. (The plan's "cover test configs" was reverted for this reason.)
 val lawChecked = setOf("api", "implementation", "compileOnly", "runtimeOnly")
 
 if (project.path !in nonLibrary) {

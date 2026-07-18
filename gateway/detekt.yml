@@ -41,7 +41,6 @@ complexity:
     constructorThreshold: 8
     ignoreDefaultParameters: true
     ignoreDataClasses: true
-    ignoreAnnotated: ['Composable']
   TooManyFunctions:
     active: true
     thresholdInFiles: 15
@@ -177,7 +176,6 @@ naming:
   FunctionNaming:
     active: true
     functionPattern: '[a-z][a-zA-Z0-9]*'
-    ignoreAnnotated: ['Composable']
   PackageNaming:
     active: true
     packagePattern: '[a-z]+(\.[a-z][a-zA-Z0-9_]*)*'
@@ -221,7 +219,6 @@ potential-bugs:
     active: true
   LateinitUsage:
     active: true
-    ignoreAnnotated: ['Inject']
   MapGetWithNotNullAssertionOperator:
     active: true
   NullableToStringCall:

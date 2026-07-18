@@ -10,7 +10,8 @@ import java.io.File
  *  `// PORT-OF: <source> @ <sha> — invariants: ...` or `// NEW: <reason>`. */
 private val PORT_SCOPE_MODULES = listOf(
     "core", "provider-spi", "dialect-openai-responses", "dialect-openai-chat",
-    "provider-codex", "provider-grok", "provider-openai", "gateway", "control", "app",
+    "dialect-anthropic-passthrough", "provider-codex", "provider-grok", "provider-openai",
+    "provider-kimi", "gateway", "control", "app",
 )
 
 class ArchitectureLawsTest {

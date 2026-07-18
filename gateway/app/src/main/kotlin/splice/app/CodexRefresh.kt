@@ -12,14 +12,15 @@ import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import splice.core.util.runCatchingCancellable
 import splice.provider.codex.CodexOAuthEndpoints
 import splice.provider.codex.RefreshedTokens
 
 private val refreshClient by lazy { HttpClient(CIO) }
 private val json = Json { ignoreUnknownKeys = true }
 
-@Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException") // refresh failure -> null (caller re-prompts)
-public suspend fun codexRefresh(tokenUrl: String, refreshToken: String): RefreshedTokens? = try {
+// refresh failure -> null (caller re-prompts)
+public suspend fun codexRefresh(tokenUrl: String, refreshToken: String): RefreshedTokens? = runCatchingCancellable {
     val resp = refreshClient.submitForm(
         url = tokenUrl,
         formParameters = Parameters.build {
@@ -43,7 +44,4 @@ public suspend fun codexRefresh(tokenUrl: String, refreshToken: String): Refresh
             )
         }
     }
-} catch (e: Exception) {
-    if (e is kotlinx.coroutines.CancellationException) throw e
-    null
-}
+}.getOrNull()

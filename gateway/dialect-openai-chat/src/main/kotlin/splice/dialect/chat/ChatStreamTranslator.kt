@@ -8,7 +8,9 @@
 package splice.dialect.chat
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.index.WireBlockIndex
@@ -18,6 +20,7 @@ import splice.core.turn.Usage
 import splice.spi.StreamTranslator
 import splice.spi.WatchdogFired
 import splice.spi.WireSink
+import java.io.IOException
 import java.util.concurrent.CancellationException
 
 public data class ChatTurnContext(
@@ -27,7 +30,6 @@ public data class ChatTurnContext(
     val totalCapMs: Long,
 )
 
-@Suppress("TooManyFunctions")
 public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTranslator {
 
     private var textBlock: WireBlockIndex? = null
@@ -43,35 +45,48 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     private var outputTokens = 0L
     private var failure: String? = null
 
-    @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException", "ReturnCount")
     override suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome {
         try {
             upstream.collect { evt -> onEvent(evt, sink) }
-        } catch (e: Exception) {
-            if (e is CancellationException && ctx.watchdogFired() == null) throw e
+        } catch (e: CancellationException) {
+            // Only a watchdog fire may swallow cancellation; a real cancel propagates.
+            if (ctx.watchdogFired() == null) throw e
+        } catch (ignored: IOException) {
+            // stream read error: surface via the honest terminal decision, never a crash
+        } catch (ignored: SerializationException) {
+            // malformed upstream frame: surface via the honest terminal decision
+        } catch (ignored: IllegalArgumentException) {
+            // malformed value in a frame: surface via the honest terminal decision
         }
         sink.closeAll()
+        return terminalOutcome()
+    }
 
-        failure?.let { return TurnOutcome.Failure(ErrorType.API_ERROR, "chat backend: $it") }
-        ctx.watchdogFired()?.let {
-            return TurnOutcome.Failure(ErrorType.OVERLOADED, "chat: upstream stalled — aborted; retry")
-        }
-        if (!finished) {
-            if (ctx.clientGone()) return TurnOutcome.ClientAbandoned
-            return TurnOutcome.Failure(
+    private fun terminalOutcome(): TurnOutcome =
+        failure?.let { TurnOutcome.Failure(ErrorType.API_ERROR, "chat backend: $it") }
+            ?: ctx.watchdogFired()?.let {
+                TurnOutcome.Failure(ErrorType.OVERLOADED, "chat: upstream stalled — aborted; retry")
+            }
+            ?: if (!finished) unfinishedOutcome() else successOutcome()
+
+    private fun unfinishedOutcome(): TurnOutcome =
+        if (ctx.clientGone()) {
+            TurnOutcome.ClientAbandoned
+        } else {
+            TurnOutcome.Failure(
                 ErrorType.OVERLOADED,
                 "chat: stream ended without a finish_reason (truncated); retry",
             )
         }
-        return TurnOutcome.Success(
-            hasToolUse = hasToolUse,
-            incomplete = incomplete,
-            usage = Usage(inputTokens, outputTokens),
-            thinkingText = thinkingBuf.toString(),
-            bodyText = textBuf.toString(),
-            emittedText = emittedText,
-        )
-    }
+
+    private fun successOutcome(): TurnOutcome = TurnOutcome.Success(
+        hasToolUse = hasToolUse,
+        incomplete = incomplete,
+        usage = Usage(inputTokens, outputTokens),
+        thinkingText = thinkingBuf.toString(),
+        bodyText = textBuf.toString(),
+        emittedText = emittedText,
+    )
 
     private suspend fun onEvent(evt: JsonObject, sink: WireSink) {
         (evt["error"] as? JsonObject)?.let {
@@ -128,5 +143,5 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         (u["completion_tokens"] as? JsonPrimitive)?.content?.toLongOrNull()?.let { outputTokens = it }
     }
 
-    private fun str(el: kotlinx.serialization.json.JsonElement?): String = (el as? JsonPrimitive)?.content ?: ""
+    private fun str(el: JsonElement?): String = (el as? JsonPrimitive)?.content ?: ""
 }

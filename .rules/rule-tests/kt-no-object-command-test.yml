@@ -1,0 +1,16 @@
+id: kt-no-object-command
+valid:
+  - 'object AdminSupport { fun help() {} }'
+  - |
+    sealed class Command {
+        data object Doctor : Command()
+    }
+invalid:
+  - |
+    object InstallCommand {
+        fun install() {}
+    }
+  - |
+    public object LoginCommand {
+        fun login() {}
+    }

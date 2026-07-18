@@ -2,8 +2,6 @@
 // api key. Mirrors CodexAuthProvider: cached ~/.grok/auth.json read (path+mtime+TTL), single-flight
 // 401 refresh (grant_type=refresh_token, 0600 write, cache invalidation), masked introspection.
 // Grok tokens carry no account id (no ChatGPT-Account-ID header), so Bearer.accountId is null.
-@file:Suppress("StringLiteralDuplication") // token/auth field names are the wire contract
-
 package splice.provider.grok
 
 import kotlinx.serialization.json.Json
@@ -15,12 +13,12 @@ import kotlinx.serialization.json.jsonPrimitive
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.util.runCatchingCancellable
 import splice.spi.SingleFlight
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
 import java.time.Instant
-import java.util.concurrent.CancellationException
 
 /** Parsed result of the grok token-endpoint refresh POST. */
 public data class GrokRefreshedTokens(val accessToken: String?, val refreshToken: String?)
@@ -44,23 +42,20 @@ public class GrokAuthProvider(
 
     override suspend fun credentials(): Credentials? = readCached()
 
-    @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException", "ReturnCount")
-    private fun readCached(): Credentials? {
-        try {
-            if (!Files.exists(authPath)) return null
-            val mtime = Files.getLastModifiedTime(authPath).toMillis()
-            val now = clock()
-            cache?.let { c ->
-                if (c.mtimeMs == mtime && (now - c.loadedAt) < authCacheMs) return Credentials.Bearer(c.token, null)
+    private fun readCached(): Credentials? = runCatchingCancellable {
+        if (!Files.exists(authPath)) return@runCatchingCancellable null
+        val mtime = Files.getLastModifiedTime(authPath).toMillis()
+        val now = clock()
+        cache?.let { c ->
+            if (c.mtimeMs == mtime && (now - c.loadedAt) < authCacheMs) {
+                return@runCatchingCancellable Credentials.Bearer(c.token, null)
             }
-            val access = tokensOf()?.get("access_token")?.jsonPrimitive?.content ?: return null
-            cache = Cache(access, mtime, now)
-            return Credentials.Bearer(access, null)
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            return null
         }
-    }
+        tokensOf()?.get("access_token")?.jsonPrimitive?.content?.let { access ->
+            cache = Cache(access, mtime, now)
+            Credentials.Bearer(access, null)
+        }
+    }.getOrNull()
 
     private fun tokensOf(): JsonObject? =
         json.parseToJsonElement(Files.readString(authPath)).jsonObject["tokens"] as? JsonObject
@@ -71,45 +66,34 @@ public class GrokAuthProvider(
 
     override suspend fun refresh(): Credentials? = singleFlight.run { doRefresh() }
 
-    @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException", "ReturnCount", "CyclomaticComplexMethod")
     private suspend fun doRefresh(): Credentials? {
-        val existing = try {
-            tokensOf()
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            return null
-        } ?: return null
-        val refreshToken = existing["refresh_token"]?.jsonPrimitive?.content ?: return null
-        val fresh = try {
-            refreshCall(refreshToken)
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            null
-        } ?: return null
-        val access = fresh.accessToken ?: return null
-        val next = buildJsonObject {
-            put(
-                "tokens",
-                buildJsonObject {
-                    put("access_token", JsonPrimitive(access))
-                    put("refresh_token", JsonPrimitive(fresh.refreshToken ?: refreshToken))
-                },
-            )
-            put("last_refresh", JsonPrimitive(nowIso()))
+        val refreshToken = runCatchingCancellable { tokensOf() }.getOrNull()
+            ?.get("refresh_token")?.jsonPrimitive?.content ?: return null
+        // Guard the network hop (the refreshCall param's type doesn't promise "never throws"): a
+        // caller-supplied hop that throws must degrade to a null refresh (→ re-prompt), not blow
+        // through SingleFlight uncaught. The write/reload below stays unguarded, as before.
+        val fresh = runCatchingCancellable { refreshCall(refreshToken) }.getOrNull() ?: return null
+        return fresh.accessToken?.let { access ->
+            val next = buildJsonObject {
+                put(
+                    "tokens",
+                    buildJsonObject {
+                        put("access_token", JsonPrimitive(access))
+                        put("refresh_token", JsonPrimitive(fresh.refreshToken ?: refreshToken))
+                    },
+                )
+                put("last_refresh", JsonPrimitive(nowIso()))
+            }
+            writeSecure(authPath, next.toString())
+            invalidateCache()
+            readCached()
         }
-        writeSecure(authPath, next.toString())
-        invalidateCache()
-        return readCached()
     }
 
-    @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException")
     override suspend fun describe(): AuthDescription {
-        val present = try {
+        val present = runCatchingCancellable {
             Files.exists(authPath) && tokensOf()?.get("access_token") != null
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            false
-        }
+        }.getOrDefault(false)
         return AuthDescription(
             present = present,
             kind = "grok-oauth",
@@ -123,7 +107,7 @@ public class GrokAuthProvider(
     private fun writeSecure(path: Path, content: String) {
         Files.createDirectories(path.parent)
         Files.writeString(path, content)
-        runCatching { Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------")) }
+        runCatchingCancellable { Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------")) }
     }
 
     private companion object {

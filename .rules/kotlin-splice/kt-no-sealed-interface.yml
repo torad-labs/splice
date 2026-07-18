@@ -1,0 +1,13 @@
+# Project convention: closed hierarchies are `sealed class`, never `sealed interface`. A sealed
+# class gives one canonical hierarchy with cases as `data class`/`data object`, a real constructor
+# seam if shared state is ever needed, and the same exhaustive-`when` guarantee. (Plain `interface`,
+# `fun interface`, and capability interfaces are unaffected — this bans only `sealed interface`.)
+id: kt-no-sealed-interface
+language: kotlin
+severity: error
+message: "Use `sealed class`, not `sealed interface` (project convention for closed hierarchies)."
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  kind: class_declaration
+  regex: '^(public |internal |private |protected )*sealed interface\b'

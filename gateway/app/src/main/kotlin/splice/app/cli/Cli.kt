@@ -3,30 +3,21 @@
 // to stdout. Subcommands: doctor, version. install/init/login land with P5.
 package splice.app.cli
 
-import kotlinx.coroutines.runBlocking
 import splice.app.TopologyLoader
 import splice.core.config.StatePaths
 import java.nio.file.Files
 
-@Suppress("CyclomaticComplexMethod") // a flat subcommand dispatch
 public fun runCli(args: Array<String>) {
-    when (args.firstOrNull()) {
-        "doctor" -> doctor()
-        "version" -> println("splice kt-1")
-        "init" -> InstallCommand.init()
-        "install" -> InstallCommand.install(args.getOrNull(1))
-        "uninstall" -> InstallCommand.uninstall(args.getOrNull(1))
-        "login" -> runBlocking { LoginCommand.login(args.getOrNull(1)) }
-        "setup" -> runBlocking { SetupCommand.setup() }
-        "status" -> StatusCommand.status()
-        "dashboard" -> DashboardCommand.dashboard()
-        else -> System.err.println(
+    val command = Command.parse(args) ?: run {
+        System.err.println(
             "usage: splice [setup|status|dashboard|login <head>|install|uninstall|init|doctor|daemon|version]",
         )
+        return
     }
+    command.run()
 }
 
-private fun doctor() {
+internal fun doctor() {
     val statePaths = StatePaths()
     val topologyPath = TopologyLoader.configPath()
     fun present(exists: Boolean) = if (exists) "present" else "absent"

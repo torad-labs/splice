@@ -51,6 +51,8 @@ public class ApiKeyAuthProvider(
             } else {
                 text.takeIf { it.isNotEmpty() }
             }
+        }.onFailure {
+            System.err.println("[api-key-auth] failed to read $file: $it — treating as no key configured")
         }.getOrNull()
     }
 

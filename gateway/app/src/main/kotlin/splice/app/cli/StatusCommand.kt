@@ -4,6 +4,7 @@
 package splice.app.cli
 
 import splice.app.TopologyLoader
+import splice.core.topology.AuthKind
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
@@ -47,8 +48,8 @@ private fun row(key: String, head: HeadConfig, provider: ProviderConfig): String
     val command = head.claude.command ?: key
     val authed = authPresent(provider)
     val auth = when {
-        provider.auth.kind.endsWith("oauth") && authed -> "$GREEN✓ signed in$RESET"
-        provider.auth.kind.endsWith("oauth") -> "$YELLOW— $command login$RESET"
+        AuthKind.isOAuth(provider.auth.kind) && authed -> "$GREEN✓ signed in$RESET"
+        AuthKind.isOAuth(provider.auth.kind) -> "$YELLOW— $command login$RESET"
         authed -> "$GREEN✓ key set$RESET"
         else -> "$YELLOW— set key$RESET"
     }
@@ -64,14 +65,8 @@ private fun backendLabel(provider: ProviderConfig): String = when (provider.auth
 }
 
 private fun authPresent(provider: ProviderConfig): Boolean {
-    val file = provider.auth.file ?: defaultAuthFile(provider.auth.kind) ?: return provider.auth.env != null
+    val file = provider.auth.file ?: AuthKind.defaultAuthFileFor(provider.auth.kind) ?: return provider.auth.env != null
     return Files.exists(Paths.get(TopologyLoader.expandHome(file)))
-}
-
-private fun defaultAuthFile(kind: String): String? = when (kind) {
-    "chatgpt-oauth" -> "~/.codex/auth.json"
-    "grok-oauth" -> "~/.grok/auth.json"
-    else -> null
 }
 
 private fun wrapperInstalled(command: String): Boolean =
@@ -82,7 +77,7 @@ private fun printNextSteps(topology: Topology) {
     println("  ${DIM}Launch $RESET " + launchable.joinToString("$DIM · $RESET") { "$CYAN$it$RESET" })
     val needLogin = topology.heads.entries.filter { (_, h) ->
         val p = topology.providers[h.provider]
-        p != null && p.auth.kind.endsWith("oauth") && !authPresent(p)
+        p != null && AuthKind.isOAuth(p.auth.kind) && !authPresent(p)
     }.map { (k, h) -> h.claude.command ?: k }
     if (needLogin.isNotEmpty()) {
         println("  ${DIM}Sign in$RESET " + needLogin.joinToString("$DIM · $RESET") { "$CYAN$it login$RESET" })

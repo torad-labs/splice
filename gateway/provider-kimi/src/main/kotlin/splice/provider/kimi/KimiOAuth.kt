@@ -11,12 +11,13 @@ package splice.provider.kimi
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import splice.core.util.FormEncoding
 import splice.core.util.SecureFile
+import splice.core.util.long
+import splice.core.util.str
 import java.nio.file.Path
 
 public object KimiOAuthEndpoints {
@@ -81,14 +82,14 @@ public data class KimiDeviceAuthorization(
 public fun parseKimiDeviceAuthorization(responseBody: String): KimiDeviceAuthorization {
     val obj = kimiJson.parseToJsonElement(responseBody).jsonObjectOrEmpty()
     return KimiDeviceAuthorization(
-        userCode = obj.kimiString("user_code").orEmpty(),
-        deviceCode = obj.kimiString("device_code").orEmpty(),
-        verificationUri = obj.kimiString("verification_uri").orEmpty(),
-        verificationUriComplete = obj.kimiString("verification_uri_complete").orEmpty(),
-        expiresInS = obj.kimiLong("expires_in") ?: KimiOAuthEndpoints.DEFAULT_EXPIRES_IN_S,
+        userCode = obj.str("user_code").orEmpty(),
+        deviceCode = obj.str("device_code").orEmpty(),
+        verificationUri = obj.str("verification_uri").orEmpty(),
+        verificationUriComplete = obj.str("verification_uri_complete").orEmpty(),
+        expiresInS = obj.long("expires_in") ?: KimiOAuthEndpoints.DEFAULT_EXPIRES_IN_S,
         intervalS = maxOf(
             KimiOAuthEndpoints.MIN_INTERVAL_S,
-            obj.kimiLong("interval") ?: KimiOAuthEndpoints.DEFAULT_INTERVAL_S,
+            obj.long("interval") ?: KimiOAuthEndpoints.DEFAULT_INTERVAL_S,
         ),
     )
 }
@@ -101,11 +102,11 @@ public fun parseKimiDeviceAuthorization(responseBody: String): KimiDeviceAuthori
 public fun kimiAuthJsonFromTokenResponse(responseBody: String, nowMs: Long): JsonObject {
     val obj = kimiJson.parseToJsonElement(responseBody).jsonObjectOrEmpty()
     val tokens = KimiRefreshedTokens(
-        accessToken = obj.kimiString(F_ACCESS_TOKEN) ?: error("kimi token response missing access_token"),
-        refreshToken = obj.kimiString(F_REFRESH_TOKEN) ?: error("kimi token response missing refresh_token"),
-        expiresIn = obj.kimiLong(F_EXPIRES_IN) ?: error("kimi token response missing expires_in"),
-        scope = obj.kimiString("scope").orEmpty(),
-        tokenType = obj.kimiString("token_type") ?: "Bearer",
+        accessToken = obj.str(F_ACCESS_TOKEN) ?: error("kimi token response missing access_token"),
+        refreshToken = obj.str(F_REFRESH_TOKEN) ?: error("kimi token response missing refresh_token"),
+        expiresIn = obj.long(F_EXPIRES_IN) ?: error("kimi token response missing expires_in"),
+        scope = obj.str("scope").orEmpty(),
+        tokenType = obj.str("token_type") ?: "Bearer",
     )
     return kimiAuthJson(tokens, nowMs)
 }
@@ -136,10 +137,6 @@ internal const val MS_PER_S: Long = 1000
 internal val kimiJson: Json = Json { ignoreUnknownKeys = true }
 
 // JsonNull IS a JsonPrimitive with content "null"; every string extraction must filter it.
-internal fun JsonObject.kimiString(key: String): String? =
-    (this[key] as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content
-
-internal fun JsonObject.kimiLong(key: String): Long? = kimiString(key)?.toLongOrNull()
 
 internal fun JsonElement.jsonObjectOrEmpty(): JsonObject =
     this as? JsonObject ?: JsonObject(emptyMap())

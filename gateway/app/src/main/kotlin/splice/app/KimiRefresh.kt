@@ -7,8 +7,6 @@
 // on the refresh POST too. JsonNull-safe extraction throughout.
 package splice.app
 
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -111,5 +109,5 @@ private fun isInvalidGrant(body: String): Boolean = runCatchingCancellable {
 
 // JsonNull IS a JsonPrimitive whose content is "null"; treat an explicit null as absent.
 
-private val kimiRefreshClient by lazy { HttpClient(CIO) }
+private val kimiRefreshClient by lazy { authHttpClient() }
 private val kimiRefreshJson = Json { ignoreUnknownKeys = true }

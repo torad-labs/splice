@@ -8,7 +8,6 @@
 package splice.app
 
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.HttpRequestBuilder
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -76,7 +75,7 @@ public object DeviceLoginFlow {
     }
 
     private suspend fun attempt(spec: DeviceLoginSpec): Outcome {
-        val client = HttpClient(CIO)
+        val client = authHttpClient()
         return try {
             runCatchingCancellable {
                 val auth = requestDeviceAuth(client, spec) ?: return@runCatchingCancellable Outcome.ABORT

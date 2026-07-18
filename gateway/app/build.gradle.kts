@@ -19,7 +19,7 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
     implementation(libs.ktoml.core)
-    implementation(libs.ktor.client.cio)
+    implementation(libs.ktor.client.java)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.ktor.client.cio)
     testImplementation(testFixtures(project(":gateway")))

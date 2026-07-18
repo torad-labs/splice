@@ -7,6 +7,8 @@
 // until manual re-login. Like KimiAuthProvider: when the file's `expires` (ms epoch, written by
 // the official grok CLI and by us) is within the proactive window, refresh BEFORE serving; a
 // failed refresh on a not-yet-expired token still serves the current one.
+// Failure visibility (discipline L1): every auth-critical Result collapse consumes the failure
+// with a stderr line first — a corrupt auth file must never masquerade as "not logged in".
 package splice.provider.grok
 
 import kotlinx.serialization.json.Json
@@ -56,8 +58,8 @@ public class GrokAuthProvider(
         val snap = readSnapshot() ?: return null
         val current = Credentials.Bearer(snap.access, null)
         val expiresAt = snap.expiresAtMs
-        // serve as-is when the file carries no expiry, or we're still outside the proactive window
-        if (expiresAt == null || expiresAt - clock() >= PROACTIVE_WINDOW_MS) return current
+            ?: return current // no expiry on file: serve as-is
+        if (expiresAt - clock() >= PROACTIVE_WINDOW_MS) return current
         // proactive window: single-flight refresh; on failure serve the current token if still valid.
         val refreshed = singleFlight.run { doRefresh() }
         return refreshed ?: (if (clock() < expiresAt) current else null)
@@ -77,6 +79,8 @@ public class GrokAuthProvider(
             ?.get(FIELD_ACCESS_TOKEN)?.jsonPrimitive?.content ?: return@runCatchingCancellable null
         val expires = (onDisk[FIELD_EXPIRES] as? JsonPrimitive)?.content?.toLongOrNull()
         Snapshot(access, expires).also { cache = Cache(it, mtime, now) }
+    }.onFailure {
+        System.err.println("[grok-auth] failed to read $authPath: $it — treating as not logged in")
     }.getOrNull()
 
     private fun tokensOf(): JsonObject? =
@@ -89,12 +93,16 @@ public class GrokAuthProvider(
     override suspend fun refresh(): Credentials? = singleFlight.run { doRefresh() }
 
     private suspend fun doRefresh(): Credentials? {
-        val refreshToken = runCatchingCancellable { tokensOf() }.getOrNull()
+        val refreshToken = runCatchingCancellable { tokensOf() }
+            .onFailure { System.err.println("[grok-auth] refresh-token read from $authPath failed: $it") }
+            .getOrNull()
             ?.get(FIELD_REFRESH_TOKEN)?.jsonPrimitive?.content ?: return null
         // Guard the network hop (the refreshCall param's type doesn't promise "never throws"): a
         // caller-supplied hop that throws must degrade to a null refresh (→ re-prompt), not blow
         // through SingleFlight uncaught. The write/reload below stays unguarded, as before.
-        val fresh = runCatchingCancellable { refreshCall(refreshToken) }.getOrNull()
+        val fresh = runCatchingCancellable { refreshCall(refreshToken) }
+            .onFailure { System.err.println("[grok-auth] token refresh call threw: $it") }
+            .getOrNull()
         val access = fresh?.accessToken ?: return null
         val expiresAtMs = fresh.expiresIn?.let { clock() + it * MS_PER_S }
         writeSecure(authPath, mergedAuthJson(access, fresh.refreshToken ?: refreshToken, expiresAtMs).toString())
@@ -110,6 +118,8 @@ public class GrokAuthProvider(
     private fun mergedAuthJson(access: String, refresh: String, expiresAtMs: Long?): JsonObject {
         val onDisk = runCatchingCancellable {
             json.parseToJsonElement(Files.readString(authPath)).jsonObject
+        }.onFailure {
+            System.err.println("[grok-auth] re-read of $authPath for merge failed: $it — writing tokens-only file")
         }.getOrNull() ?: JsonObject(emptyMap())
         val oldTokens = onDisk[FIELD_TOKENS] as? JsonObject ?: JsonObject(emptyMap())
         return buildJsonObject {
@@ -133,6 +143,7 @@ public class GrokAuthProvider(
         }
 
     override suspend fun describe(): AuthDescription {
+        // ast-grep-ignore: kt-no-silent-result-collapse -- introspection display only: a read failure renders as present=false, which is the displayed truth
         val present = runCatchingCancellable {
             Files.exists(authPath) && tokensOf()?.get(FIELD_ACCESS_TOKEN) != null
         }.getOrDefault(false)

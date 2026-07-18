@@ -1,0 +1,19 @@
+{
+    "model": "kimi-k2",
+    "messages": [
+        {
+            "role": "system",
+            "content": "You are Splice, a contract fixture."
+        },
+        {
+            "role": "user",
+            "content": "Ping."
+        }
+    ],
+    "stream": true,
+    "reasoning_effort": "high",
+    "reasoning": {
+        "effort": "high"
+    },
+    "max_tokens": 1024
+}

@@ -52,6 +52,31 @@ class ArchitectureLawsTest {
             .assertTrue { cls -> cls.annotations.any { it.name.endsWith("Serializable") } }
     }
 
+    // C3 coverage-by-law (#924 Phase 1): the request-byte contract is not opt-in. Every module that
+    // ships a *RequestBuilder must also ship at least one contract/<name>.json golden — so a new
+    // dialect arrives WITH its exact-request-bytes fixture (the stream_options / gzip incident class
+    // becomes a failing unit test) rather than un-pinned. The receipt-binding half (a changed golden
+    // must match a live-200 receipt) activates on traffic; see gateway/CONTRACT.md.
+    @Test
+    fun `every RequestBuilder module ships a request-byte contract fixture`() {
+        val builderModules = PORT_SCOPE_MODULES.filter { module ->
+            val mainDir = File(root, "$module/src/main/kotlin")
+            mainDir.isDirectory && mainDir.walkTopDown().any { it.isFile && it.name.endsWith("RequestBuilder.kt") }
+        }
+        org.junit.jupiter.api.Assertions.assertTrue(
+            builderModules.isNotEmpty(),
+            "expected at least one *RequestBuilder module — did the scope list or module layout change?",
+        )
+        val missing = builderModules.filter { module ->
+            val contractDir = File(root, "$module/src/test/resources/contract")
+            !contractDir.isDirectory || contractDir.listFiles { f -> f.extension == "json" }.isNullOrEmpty()
+        }
+        org.junit.jupiter.api.Assertions.assertTrue(missing.isEmpty()) {
+            "RequestBuilder modules missing a request-byte contract fixture (#924 Phase 1): $missing — " +
+                "add src/test/resources/contract/<name>.json + a *ContractTest. See gateway/CONTRACT.md."
+        }
+    }
+
     private companion object {
         const val SLOT_HEADER_LAW =
             "Slot-authoring law (#963): first line must be '// PORT-OF: <source> @ <sha> — invariants: ...' " +

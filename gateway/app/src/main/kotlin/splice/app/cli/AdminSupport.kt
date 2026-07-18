@@ -5,7 +5,7 @@ package splice.app.cli
 
 import splice.app.TopologyLoader
 import splice.core.config.StatePaths
-import java.io.IOException
+import splice.core.util.runCatchingCancellable
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.file.Files
@@ -40,24 +40,34 @@ internal object AdminSupport {
     }
 
     /** Cold-start the daemon detached (survives this CLI exiting) and wait until it answers. */
-    @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException", "SwallowedException", "ReturnCount")
     fun ensureDaemon(port: Int = controlPort()): Boolean {
         if (daemonUp(port)) return true
-        val jar = selfJar() ?: run {
+        val jar = selfJar()
+        if (jar == null) {
             println("splice: can't find the splice jar to start the daemon (run: splice install).")
             return false
         }
         println("splice: starting the daemon…")
-        try {
+        return spawnDaemon(jar) && waitUntilUp(port)
+    }
+
+    /** Spawn the detached daemon process; false (with a message) if it can't be launched. */
+    private fun spawnDaemon(jar: Path): Boolean =
+        runCatchingCancellable {
             ProcessBuilder("sh", "-c", "nohup java -jar '$jar' daemon >/dev/null 2>&1 &")
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
                 .start()
-        } catch (e: Exception) {
-            if (e is kotlinx.coroutines.CancellationException) throw e
-            println("splice: failed to start the daemon: ${e.message}")
-            return false
-        }
+        }.fold(
+            onSuccess = { true },
+            onFailure = { e ->
+                println("splice: failed to start the daemon: ${e.message}")
+                false
+            },
+        )
+
+    /** Poll until the daemon answers on [port], or the startup budget runs out. */
+    private fun waitUntilUp(port: Int): Boolean {
         repeat(STARTUP_POLLS) {
             if (daemonUp(port)) return true
             Thread.sleep(POLL_INTERVAL_MS)
@@ -65,8 +75,7 @@ internal object AdminSupport {
         return daemonUp(port)
     }
 
-    @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException", "SwallowedException")
-    fun openUrl(url: String): Boolean = try {
+    fun openUrl(url: String): Boolean = runCatchingCancellable {
         val os = System.getProperty("os.name").lowercase()
         val cmd = when {
             os.contains("mac") -> listOf("open", url)
@@ -76,10 +85,7 @@ internal object AdminSupport {
         ProcessBuilder(cmd).redirectOutput(ProcessBuilder.Redirect.DISCARD)
             .redirectError(ProcessBuilder.Redirect.DISCARD).start()
         true
-    } catch (e: Exception) {
-        if (e is kotlinx.coroutines.CancellationException) throw e
-        false
-    }
+    }.getOrDefault(false)
 
     fun mgmtKey(): String? =
         runCatching { Files.readString(StatePaths().mgmtKeyFile).trim() }.getOrNull()?.takeIf { it.isNotEmpty() }
@@ -90,15 +96,10 @@ internal object AdminSupport {
         runCatching { Files.exists(Paths.get(TopologyLoader.expandHome(authFile))) }.getOrDefault(false)
 
     /** Read a y/n from the terminal; returns [default] when there's no TTY (piped/CI). */
-    @Suppress("SwallowedException")
     fun confirm(prompt: String, default: Boolean = true): Boolean {
         if (System.console() == null) return default
         print("$prompt ${if (default) "[Y/n]" else "[y/N]"} ")
-        val line = try {
-            readlnOrNull()?.trim()?.lowercase()
-        } catch (e: IOException) {
-            null
-        }
+        val line = runCatchingCancellable { readlnOrNull()?.trim()?.lowercase() }.getOrNull()
         return when (line) {
             null, "" -> default
             "y", "yes" -> true

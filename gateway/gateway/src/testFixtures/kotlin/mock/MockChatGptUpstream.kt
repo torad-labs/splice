@@ -12,12 +12,12 @@ import com.sun.net.httpserver.HttpServer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.io.IOException
 import java.net.InetSocketAddress
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 
-@Suppress("TooGenericExceptionCaught", "MagicNumber", "LongMethod", "CyclomaticComplexMethod")
 class MockChatGptUpstream {
     val upstreamAuths = CopyOnWriteArrayList<Pair<String, String?>>()
     val upstreamBodies = CopyOnWriteArrayList<Pair<String, String>>()
@@ -72,9 +72,10 @@ class MockChatGptUpstream {
         ex.sendResponseHeaders(200, 0)
         try {
             streamScenario(scenario, ex)
-        } catch (@Suppress("SwallowedException", "UNUSED_PARAMETER") e: Exception) {
-            // client abort mid-stream is the drip scenario's EXPECTED exit
+        } catch (abort: IOException) {
+            // a broken pipe mid-stream is the drip scenario's EXPECTED client-abort exit
             if (scenario == "drip") abortedScenarios.add("drip")
+            check(scenario == "drip") { "unexpected mid-stream I/O failure in scenario '$scenario': ${abort.message}" }
         } finally {
             runCatching { ex.responseBody.close() }
             runCatching { ex.close() }

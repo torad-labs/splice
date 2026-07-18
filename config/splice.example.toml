@@ -57,7 +57,15 @@ quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = fa
 [[providers.xai.models]]
 id = "grok-4.5"
 label = "Grok 4.5"
+context_window = 500000       # grok-4.5 is 500k; grok-4.3 is 1M; grok-build is 256k
+[[providers.xai.models]]
+id = "grok-4.3"
+label = "Grok 4.3"
 context_window = 1000000
+[[providers.xai.models]]
+id = "grok-build-latest"
+label = "Grok Build"
+context_window = 256000
 
 # ── openrouter: the "new vendor = pure TOML, zero code" proof (Chat Completions) ─
 # Swap base_url + env for Ollama (http://localhost:11434/v1), LM Studio, DeepSeek, etc.

@@ -6,33 +6,25 @@
 package splice.provider.openai
 
 import splice.core.auth.Credentials
-import splice.core.auth.RefreshableAuthProvider
-import splice.core.model.ModelCatalog
 import splice.core.parse.AnthropicTurnBody
 import splice.core.turn.TurnMeta
-import splice.core.turn.WatchdogBudget
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.ChatRequestBuilder
 import splice.dialect.chat.ChatStreamTranslator
 import splice.dialect.chat.ChatTurnContext
 import splice.spi.BuiltTurn
 import splice.spi.Provider
+import splice.spi.ProviderIdentity
+import splice.spi.ProviderTuning
 import splice.spi.StreamTranslator
 import splice.spi.WatchdogFired
 
-@Suppress("LongParameterList") // a provider bundles catalog+auth+quirks+config
 public class OpenAiChatProvider(
-    override val key: String,
-    override val label: String,
-    override val catalog: ModelCatalog,
-    override val pinnedModel: String,
-    override val auth: RefreshableAuthProvider,
-    baseUrl: String,
-    override val watchdog: WatchdogBudget,
+    private val tuning: ProviderTuning,
     private val quirks: ChatQuirks,
-) : Provider {
+) : Provider, ProviderIdentity by tuning {
 
-    override val upstreamUrl: String = "$baseUrl/chat/completions"
+    override val upstreamUrl: String = "${tuning.baseUrl}/chat/completions"
     override val showReasoning: String = "text"
     override val replayReasoning: Boolean = false // chat dialect has no encrypted-reasoning replay
 

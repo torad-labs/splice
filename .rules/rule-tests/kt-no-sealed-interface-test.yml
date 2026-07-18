@@ -1,0 +1,9 @@
+id: kt-no-sealed-interface
+valid:
+  - 'sealed class Foo'
+  - 'sealed class Bar { data object A : Bar() }'
+  - 'fun interface Sink { fun x() }'
+  - 'interface Plain'
+invalid:
+  - 'sealed interface Foo'
+  - 'public sealed interface TurnOutcome { }'

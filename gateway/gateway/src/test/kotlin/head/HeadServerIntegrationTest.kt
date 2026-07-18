@@ -35,6 +35,7 @@ import splice.gateway.head.HeadServer
 import splice.gateway.usage.UsageStore
 import splice.provider.codex.CodexProvider
 import splice.spi.InflightGate
+import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
 import java.nio.file.Files
 import kotlin.time.Duration.Companion.seconds
@@ -68,13 +69,15 @@ class HeadServerIntegrationTest {
     fun setUp() = runTest {
         val tmp = Files.createTempDirectory("head-it")
         val provider = CodexProvider(
-            key = "codex",
-            label = "claudex",
-            catalog = catalog,
-            pinnedModel = "gpt-5.6-sol",
-            auth = FakeAuth(),
-            baseUrl = mock.baseUrl,
-            watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
+            tuning = ProviderTuning(
+                key = "codex",
+                label = "claudex",
+                catalog = catalog,
+                pinnedModel = "gpt-5.6-sol",
+                auth = FakeAuth(),
+                baseUrl = mock.baseUrl,
+                watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
+            ),
             showReasoning = "text",
             replayReasoning = false,
             configEffort = "high",

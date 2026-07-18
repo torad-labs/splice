@@ -27,6 +27,7 @@ import splice.gateway.usage.UsageStore
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.provider.openai.OpenAiResponsesProvider
 import splice.spi.InflightGate
+import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
 import java.nio.file.Files
 import kotlin.time.Duration.Companion.seconds
@@ -43,17 +44,19 @@ class OpenAiResponsesTest {
     fun setUp() = runBlocking {
         val tmp = Files.createTempDirectory("oai-it")
         val provider = OpenAiResponsesProvider(
-            key = "openai",
-            label = "openai",
-            catalog = ModelCatalog(
-                discoveryPrefix = "claude-openai--",
-                models = listOf(ModelEntry("gpt-5-pro", "GPT-5 Pro", contextWindow = 400_000)),
-                defaultContextWindow = 400_000,
+            tuning = ProviderTuning(
+                key = "openai",
+                label = "openai",
+                catalog = ModelCatalog(
+                    discoveryPrefix = "claude-openai--",
+                    models = listOf(ModelEntry("gpt-5-pro", "GPT-5 Pro", contextWindow = 400_000)),
+                    defaultContextWindow = 400_000,
+                ),
+                pinnedModel = "gpt-5-pro",
+                auth = ApiKeyAuthProvider("OPENAI_API_KEY", envReader = { "sk-openai-key-abcdef" }),
+                baseUrl = mock.baseUrl,
+                watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             ),
-            pinnedModel = "gpt-5-pro",
-            auth = ApiKeyAuthProvider("OPENAI_API_KEY", envReader = { "sk-openai-key-abcdef" }),
-            baseUrl = mock.baseUrl,
-            watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             showReasoning = "text",
             replayReasoning = false,
             configEffort = "high",

@@ -36,6 +36,7 @@ import splice.provider.grok.GrokAuthProvider
 import splice.provider.grok.GrokProvider
 import splice.provider.grok.GrokRefreshedTokens
 import splice.spi.InflightGate
+import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
 import java.nio.file.Files
 import java.nio.file.Path
@@ -57,13 +58,15 @@ class GrokProviderTest {
     )
 
     private fun provider(auth: splice.core.auth.RefreshableAuthProvider) = GrokProvider(
-        key = "grok",
-        label = "grok",
-        catalog = catalog,
-        pinnedModel = "grok-4.5",
-        auth = auth,
-        baseUrl = mock.baseUrl,
-        watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
+        tuning = ProviderTuning(
+            key = "grok",
+            label = "grok",
+            catalog = catalog,
+            pinnedModel = "grok-4.5",
+            auth = auth,
+            baseUrl = mock.baseUrl,
+            watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
+        ),
         showReasoning = "text",
         replayReasoning = false,
         configEffort = "high",

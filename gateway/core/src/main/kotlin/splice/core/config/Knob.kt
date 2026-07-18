@@ -86,7 +86,9 @@ public enum class Knob(
         "upstreamRetries",
         KnobKind.NUMBER,
         listOf("CLAUDEX_UPSTREAM_RETRIES"),
-        2L,
+        // 4 attempts matches the surveyed harness floor (codex 4, gemini/Claude Code higher);
+        // the old default of 2 with ~200ms total backoff still failed turns on 2-3s blips (G4b).
+        4L,
         restartRequired = true,
     ),
     UPSTREAM_TIMEOUT_MS(

@@ -12,6 +12,8 @@ note: >
   requests, gate it per-provider behind a quirk AND prove it with a live >=2KiB turn — never a
   blanket default. Response decompression (GZIPInputStream) is unaffected by this rule.
 files:
-  - gateway/provider-spi/src/main/**/*.kt
+  # DEFAULT-DENY (#924 Phase 0.5): request-body gzip is forbidden gateway-wide, not just where it
+  # first shipped. GZIPOutputStream on the request path is the fingerprint (response GZIPInputStream ok).
+  - gateway/*/src/main/**/*.kt
 rule:
   pattern: GZIPOutputStream($$$ARGS)

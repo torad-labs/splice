@@ -12,8 +12,9 @@ note: >
   vendor accepts it with a live turn (checks/e2e/heads-e2e.sh --tier 1) before merging — mocks
   cannot see a 400 the real backend returns.
 files:
-  - gateway/dialect-openai-responses/src/main/**/*.kt
-  - gateway/dialect-openai-chat/src/main/**/*.kt
+  # DEFAULT-DENY (#924 Phase 0.5): a NEW dialect/provider must not be able to reopen the incident
+  # by sitting outside an enumerated list. No legitimate stream_options exists anywhere in the tree.
+  - gateway/*/src/main/**/*.kt
 rule:
   kind: string_literal
   regex: '^"stream_options"$'

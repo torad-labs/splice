@@ -16,7 +16,7 @@
 package splice.spi
 
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
+import io.ktor.client.engine.java.Java
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.headers
 import io.ktor.client.request.preparePost
@@ -305,36 +305,24 @@ public class UpstreamClient(
         private const val JITTER_HI = 1.1
 
         public fun defaultClient(firstByteTimeoutMs: Long, totalTimeoutMs: Long): HttpClient =
-            HttpClient(CIO) {
+            HttpClient(Java) {
                 install(HttpTimeout) {
                     connectTimeoutMillis = firstByteTimeoutMs
                     requestTimeoutMillis = totalTimeoutMs
                     socketTimeoutMillis = firstByteTimeoutMs
                 }
                 engine {
-                    requestTimeout = totalTimeoutMs
-                    maxConnectionsCount = MAX_CONNECTIONS
-                    // ALL of a head's turns hit ONE upstream host, and CIO's per-route default
-                    // (100) quietly caps concurrency far below maxConnectionsCount — the
-                    // 1000-stream target needs the per-route limit raised in lockstep
-                    // (HeadServerLoadTest pins the end-to-end ceiling).
-                    endpoint.maxConnectionsPerRoute = MAX_CONNECTIONS
-                    // One stream owns its connection (cancel-safe). Shorter keepAlive than many
-                    // LBs (~60–100s) so we don't reuse a socket the edge already dropped
-                    // (Grok Build pool_idle_timeout lesson).
-                    endpoint.pipelineMaxSize = 1
-                    endpoint.keepAliveTime = KEEP_ALIVE_MS
-                    endpoint.connectAttempts = CONNECT_ATTEMPTS
+                    // JDK HttpClient (async NIO), replacing ktor CIO. CIO's socket writer busy-spun
+                    // on a non-writable upstream socket (macOS/kqueue) and melted CPU under
+                    // concurrent large-body streams — 9 writer coroutines pegged cores and starved
+                    // the coroutine dispatcher to 103 workers (busy-loop jstack, 2026-07-18). The
+                    // JDK engine parks on write backpressure and drives the 1000-stream target on a
+                    // shared selector, not a thread-per-write. HTTP/1.1 only — parity with the CIO
+                    // lineage (undici allowH2:false): one stream per connection, cancel-safe; the
+                    // app-level retry loop already owns connect retries.
+                    protocolVersion = java.net.http.HttpClient.Version.HTTP_1_1
                 }
             }
-
-        // 2x the 1000-concurrent-stream design target (one upstream connection per live turn).
-        private const val MAX_CONNECTIONS = 2048
-
-        // Grok Build uses 30s pool idle; Node used 60s. Prefer the shorter window so a
-        // Cloudflare/LB silent drop is less likely to poison the next turn.
-        private const val KEEP_ALIVE_MS = 30_000L
-        private const val CONNECT_ATTEMPTS = 3
 
         private const val CLIENT_ERROR_MIN = 400
         private const val CLIENT_ERROR_MAX = 499

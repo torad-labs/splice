@@ -9,6 +9,8 @@ package splice.spi
 
 import io.ktor.utils.io.ByteReadChannel
 import io.ktor.utils.io.readAvailable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
@@ -29,6 +31,10 @@ private val lenient = Json {
 private const val DATA_PREFIX = "data: "
 private const val DONE_SENTINEL = "[DONE]"
 private const val READ_BUFFER_BYTES = 16384
+
+// A healthy channel never reports content it cannot deliver; a run of consecutive torn wakeups
+// means the upstream is broken — end the stream honestly rather than pin a core (600%-CPU incident).
+private const val MAX_SPURIOUS_WAKEUPS = 1024
 
 // UTF-8 codepoints are at most 4 bytes; carry never needs more than that across a chunk edge.
 private const val UTF8_MAX_BYTES = 4
@@ -63,11 +69,29 @@ private class DecodeScratch {
     private val carry = ByteArray(UTF8_MAX_BYTES)
     private var carryLen = 0
 
-    /** Read the next chunk, skipping empty (n == 0) reads; returns byte count or -1 at end of stream. */
+    /**
+     * Read the next chunk; returns byte count (> 0) or -1 at end of stream.
+     *
+     * On a healthy channel `readAvailable` suspends inside `awaitContent` when the buffer is empty,
+     * so the guarded branch below is never reached. It exists for the TORN case — a half-closed /
+     * degenerate upstream where `readAvailable` returns 0 WITHOUT suspending. The old
+     * `while (readAvailable() == 0)` loop had no suspension or cancellation point there, so a turn
+     * whose client already disconnected (turnJob cancelled by the pinger/watchdog) could not exit
+     * it: the coroutine hot-spun kqueue syscalls forever, pinning a core per leaked stream — the
+     * 600%-CPU / "connection closed mid-response" incident (2026-07-18). The guards make the loop
+     * cancellation-cooperative and impossible to hot-spin: honor cancellation, then actually WAIT
+     * on `awaitContent` (false == closed → EOF), and bail if the channel keeps claiming content it
+     * cannot deliver (a state a healthy channel never produces).
+     */
     suspend fun readChunk(channel: ByteReadChannel): Int {
+        var spuriousWakeups = 0
         while (true) {
             val n = channel.readAvailable(bytes, 0, bytes.size)
-            if (n != 0) return n
+            if (n != 0) return n // > 0 bytes, or -1 at end of stream
+            // n == 0 on an open channel: readAvailable did NOT suspend (torn/half-closed peer).
+            currentCoroutineContext().ensureActive() // a cancelled turn exits here, never spins
+            if (!channel.awaitContent(1)) return -1 // suspends until content or close; false == closed
+            if (++spuriousWakeups >= MAX_SPURIOUS_WAKEUPS) return -1 // channel lies — end honestly
         }
     }
 

@@ -6,6 +6,7 @@
 package splice.app.cli
 
 import splice.app.TopologyLoader
+import splice.core.topology.AuthKind
 
 private const val BOLD = "\u001B[1m"
 private const val DIM = "\u001B[2m"
@@ -28,7 +29,7 @@ internal suspend fun setup() {
     val pending = topology.heads.entries.mapNotNull { (key, head) ->
         val provider = topology.providers[head.provider] ?: return@mapNotNull null
         val command = head.claude.command ?: key
-        if (provider.auth.kind.endsWith("oauth") && !authPresent(provider.auth.file, provider.auth.kind)) {
+        if (AuthKind.isOAuth(provider.auth.kind) && !authPresent(provider.auth.file, provider.auth.kind)) {
             Triple(key, command, provider.auth.kind)
         } else {
             null
@@ -56,10 +57,6 @@ internal suspend fun setup() {
 }
 
 private fun authPresent(file: String?, kind: String): Boolean {
-    val path = file ?: when (kind) {
-        "chatgpt-oauth" -> "~/.codex/auth.json"
-        "grok-oauth" -> "~/.grok/auth.json"
-        else -> return false
-    }
+    val path = file ?: AuthKind.defaultAuthFileFor(kind) ?: return false
     return AdminSupport.authPresent(path)
 }

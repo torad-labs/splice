@@ -6,6 +6,8 @@
 // refresh: when the token is within max(300, expires_in/2) seconds of expiry, refresh before
 // serving. Rotation is MANDATORY — every refresh response carries a new refresh_token, always
 // persisted. A refresh failure on a not-yet-expired token still serves the current token.
+// Failure visibility (discipline L1): every auth-critical Result collapse consumes the failure
+// with a stderr line first — a corrupt auth file must never masquerade as "not logged in".
 package splice.provider.kimi
 
 import kotlinx.serialization.json.Json
@@ -62,10 +64,14 @@ public class KimiAuthProvider(
     override suspend fun refresh(): Credentials? = singleFlight.run { doRefresh() }
 
     private suspend fun doRefresh(): Credentials? {
-        val refreshToken = runCatchingCancellable { parseSnapshot()?.refresh }.getOrNull() ?: return null
+        val refreshToken = runCatchingCancellable { parseSnapshot()?.refresh }
+            .onFailure { System.err.println("[kimi-auth] refresh-token read from $authPath failed: $it") }
+            .getOrNull() ?: return null
         // Guard the network hop: a caller-supplied refreshCall that throws must degrade to a null
         // refresh (→ re-prompt), not blow through SingleFlight uncaught.
-        val fresh = runCatchingCancellable { refreshCall(refreshToken) }.getOrNull() ?: return null
+        val fresh = runCatchingCancellable { refreshCall(refreshToken) }
+            .onFailure { System.err.println("[kimi-auth] token refresh call threw: $it") }
+            .getOrNull() ?: return null
         writeSecure(authPath, kimiAuthJson(fresh, clock()).toString())
         invalidateCache()
         return apiKey(fresh.accessToken)
@@ -84,6 +90,8 @@ public class KimiAuthProvider(
             }
         }
         parseSnapshot()?.also { cache = Cache(it, mtime, now) }
+    }.onFailure {
+        System.err.println("[kimi-auth] failed to read $authPath: $it — treating as not logged in")
     }.getOrNull()
 
     private fun parseSnapshot(): Snapshot? {
@@ -103,6 +111,7 @@ public class KimiAuthProvider(
     }
 
     override suspend fun describe(): AuthDescription {
+        // ast-grep-ignore: kt-no-silent-result-collapse -- introspection display only: a read failure renders as present=false, which is the displayed truth
         val present = runCatchingCancellable {
             Files.exists(authPath) && parseSnapshot() != null
         }.getOrDefault(false)

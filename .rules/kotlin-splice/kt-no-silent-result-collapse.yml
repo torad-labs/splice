@@ -1,0 +1,35 @@
+# THE SWALLOW-INTO-NULL WALL (discipline L1, 2026-07-18): every incident of the gateway
+# stabilization day shared one shape — a runCatching* Result collapsed to null/default with the
+# failure never consumed (dead auth → HTTP 200 empty stream with zero log; refresh failures
+# indistinguishable from absent files). In the provider auth/transport modules, `.getOrNull()` /
+# `.getOrDefault(...)` on a catching chain MUST either consume the failure first (`.onFailure {…}`)
+# or carry an explicit reviewed exemption (`// ast-grep-ignore: kt-no-silent-result-collapse`
+# with the reason on the same comment). Compiler half: -Xreturn-value-checker flags bare discards;
+# Result.discard(why) is the sanctioned full-drop. Scope is provider-* + provider-spi for now —
+# widening to app/core/control tracked in dev/research/gateway-gaps-tracker.md.
+id: kt-no-silent-result-collapse
+language: kotlin
+severity: error
+message: "Silent Result collapse: consume the failure (.onFailure { log/classify }) before .getOrNull()/.getOrDefault(), or add a reviewed ast-grep-ignore with the reason."
+note: >
+  A collapsed Result made the 2026-07-18 incidents undiagnosable (auth failures identical to
+  missing files). Route the failure somewhere first: .onFailure { log(...) } / classify it /
+  return a sealed outcome. If null truly is the complete story (e.g. optional config probe),
+  keep the collapse and add `// ast-grep-ignore: kt-no-silent-result-collapse -- <reason>`.
+files:
+  - gateway/provider-spi/src/main/**/*.kt
+  - gateway/provider-grok/src/main/**/*.kt
+  - gateway/provider-kimi/src/main/**/*.kt
+  - gateway/provider-codex/src/main/**/*.kt
+  - gateway/provider-openai/src/main/**/*.kt
+rule:
+  any:
+    - pattern: $RECV.getOrNull()
+    - pattern: $RECV.getOrDefault($$$ARGS)
+  has:
+    stopBy: end
+    regex: "\\brunCatching(Cancellable)?\\b"
+  not:
+    has:
+      stopBy: end
+      regex: "\\bonFailure\\b"

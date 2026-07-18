@@ -1,0 +1,10 @@
+id: kt-no-silent-result-collapse
+valid:
+  - 'val x = runCatchingCancellable { read() }.onFailure { log(it) }.getOrNull()'
+  - 'val y = runCatching { read() }.onFailure { System.err.println(it) }.getOrDefault(false)'
+  - 'val z = mapOf("a" to 1).getOrDefault("a", 0)'
+  - 'val w = listOf(1, 2).getOrNull()'
+invalid:
+  - 'val x = runCatchingCancellable { read() }.getOrNull()'
+  - 'val y = runCatching { read() }.getOrDefault(false)'
+  - 'val z = runCatchingCancellable { parse(s) }.getOrNull() ?: return null'

@@ -2,6 +2,8 @@
 // (path+mtime+TTL), single-flight 401 refresh (grant_type=refresh_token, preserves other
 // fields, 0600 write, cache invalidation), masked introspection. Implements the core
 // RefreshableAuthProvider SPI. SEAM: token HTTP POST + clock injected for tests.
+// Failure visibility (discipline L1): every auth-critical Result collapse consumes the failure
+// with a stderr line first — a corrupt auth file must never masquerade as "not logged in".
 package splice.provider.codex
 
 import kotlinx.serialization.json.Json
@@ -61,6 +63,8 @@ public class CodexAuthProvider(
             cache = Cache(access, accountId, mtime, now)
             Credentials.Bearer(access, accountId)
         }
+    }.onFailure {
+        System.err.println("[codex-auth] failed to read $authPath: $it — treating as not logged in")
     }.getOrNull()
 
     public fun invalidateCache() {
@@ -72,6 +76,8 @@ public class CodexAuthProvider(
     private suspend fun doRefresh(): Credentials? {
         val raw = runCatchingCancellable {
             json.parseToJsonElement(Files.readString(authPath)).jsonObject
+        }.onFailure {
+            System.err.println("[codex-auth] auth.json read for refresh failed: $it")
         }.getOrNull() ?: return null
         val tokens = raw[FIELD_TOKENS] as? JsonObject ?: return null
         return refreshAndPersist(raw, tokens)
@@ -82,7 +88,9 @@ public class CodexAuthProvider(
         // Guard the network hop too (Node wrapped the whole read+fetch): the refreshCall param's
         // type doesn't promise "never throws", so a caller-supplied hop that throws must degrade to
         // a null refresh (→ UpstreamFailed → re-prompt), not blow through SingleFlight uncaught.
-        val fresh = runCatchingCancellable { refreshCall(refreshToken) }.getOrNull() ?: return null
+        val fresh = runCatchingCancellable { refreshCall(refreshToken) }
+            .onFailure { System.err.println("[codex-auth] token refresh call threw: $it") }
+            .getOrNull() ?: return null
         return fresh.accessToken?.let { access ->
             writeSecure(authPath, mergedAuthJson(raw, tokens, fresh, access).toString())
             invalidateCache()
@@ -113,6 +121,7 @@ public class CodexAuthProvider(
 
     override suspend fun describe(): AuthDescription {
         val out = mutableMapOf("auth_path" to authPath.toString())
+        // ast-grep-ignore: kt-no-silent-result-collapse -- introspection display only: a read failure renders as present=false, which is the displayed truth
         val present = runCatchingCancellable {
             if (!Files.exists(authPath)) return@runCatchingCancellable false
             val raw = json.parseToJsonElement(Files.readString(authPath)).jsonObject

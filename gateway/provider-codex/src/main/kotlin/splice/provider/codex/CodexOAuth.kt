@@ -101,6 +101,7 @@ private val jwtJson = Json { ignoreUnknownKeys = true }
 
 public fun decodeJwtClaims(jwt: String?): JsonObject {
     val payload = jwt.orEmpty().split(".").getOrNull(1) ?: return JsonObject(emptyMap())
+    // ast-grep-ignore: kt-no-silent-result-collapse -- empty claims IS the contract for a malformed jwt; the absence surfaces loudly as a missing account-id header
     return runCatchingCancellable {
         // STANDARD decoder AFTER normalizing -_ to +/ — padBase64 converts to the standard
         // alphabet, so getUrlDecoder() (which REJECTS +/) failed on virtually every real

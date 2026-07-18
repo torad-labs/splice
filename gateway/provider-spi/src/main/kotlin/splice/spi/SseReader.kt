@@ -167,6 +167,7 @@ private suspend fun FlowCollector<JsonObject>.emitDataLine(buf: StringBuilder, s
     if (pStart >= pEnd || isDoneSentinel(buf, pStart, pEnd)) return
     val payload = buf.substring(pStart, pEnd)
     // skip malformed frame — the terminal sweep handles truncation honestly
+    // ast-grep-ignore: kt-no-silent-result-collapse -- hot-path frame skip is by design; per-turn skip telemetry is tracked as G9 in dev/research/gateway-gaps-tracker.md
     runCatchingCancellable { lenient.parseToJsonElement(payload).jsonObject }
         .getOrNull()
         ?.let { emit(it) }

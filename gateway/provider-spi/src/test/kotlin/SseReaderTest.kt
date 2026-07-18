@@ -73,6 +73,23 @@ class SseReaderTest {
         assertEquals(listOf("ok"), events)
     }
 
+    // REGRESSION (claude-kimi empty-200, 2026-07-18): api.kimi.com/coding emits spec-valid SSE
+    // WITHOUT the space after the colon (`data:{…}`). The old `"data: "` prefix match dropped
+    // every kimi frame — 13KB of SSE in, zero events out, "stream ended without a terminal event".
+    @Test
+    fun `data lines without space after colon parse (kimi wire format)`() {
+        val (events, _) = runReader(
+            (
+                "event:message_start\n" +
+                    "data:{\"v\":\"kimi\"}\n\n" +
+                    "data:[DONE]\n" +
+                    "data:\n" +
+                    "data: {\"v\":\"spaced\"}\n\n"
+                ).toByteArray(),
+        )
+        assertEquals(listOf("kimi", "spaced"), events)
+    }
+
     @Test
     fun `crlf lines parse like lf`() {
         val (events, _) = runReader("data: {\"v\":\"crlf\"}\r\n\r\n".toByteArray())

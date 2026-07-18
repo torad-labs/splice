@@ -1,7 +1,12 @@
 // NEW: xAI Grok OAuth runtime auth — the SuperGrok/X-Premium+ browser login (GrokOAuth), NOT an
 // api key. Mirrors CodexAuthProvider: cached ~/.grok/auth.json read (path+mtime+TTL), single-flight
-// 401 refresh (grant_type=refresh_token, 0600 write, cache invalidation), masked introspection.
+// refresh (grant_type=refresh_token, 0600 write, cache invalidation), masked introspection.
 // Grok tokens carry no account id (no ChatGPT-Account-ID header), so Bearer.accountId is null.
+// PROACTIVE refresh (grok-dead-head incident, 2026-07-18): xAI reports an expired token as 403
+// (not 401), so the reactive 401-refresh path never fired and the head served a dead token
+// until manual re-login. Like KimiAuthProvider: when the file's `expires` (ms epoch, written by
+// the official grok CLI and by us) is within the proactive window, refresh BEFORE serving; a
+// failed refresh on a not-yet-expired token still serves the current one.
 package splice.provider.grok
 
 import kotlinx.serialization.json.Json
@@ -21,7 +26,12 @@ import java.nio.file.Path
 import java.time.Instant
 
 /** Parsed result of the grok token-endpoint refresh POST. */
-public data class GrokRefreshedTokens(val accessToken: String?, val refreshToken: String?)
+public data class GrokRefreshedTokens(
+    val accessToken: String?,
+    val refreshToken: String?,
+    /** Seconds until the new access token expires; null when the endpoint omits it. */
+    val expiresIn: Long? = null,
+)
 
 public class GrokAuthProvider(
     private val authPath: Path,
@@ -38,23 +48,34 @@ public class GrokAuthProvider(
     @Volatile
     private var cache: Cache? = null
 
-    private data class Cache(val token: String, val mtimeMs: Long, val loadedAt: Long)
+    private data class Cache(val snapshot: Snapshot, val mtimeMs: Long, val loadedAt: Long)
 
-    override suspend fun credentials(): Credentials? = readCached()
+    private data class Snapshot(val access: String, val expiresAtMs: Long?)
 
-    private fun readCached(): Credentials? = runCatchingCancellable {
+    override suspend fun credentials(): Credentials? {
+        val snap = readSnapshot() ?: return null
+        val expiresAt = snap.expiresAtMs
+            ?: return Credentials.Bearer(snap.access, null) // no expiry on file: serve as-is
+        if (expiresAt - clock() >= PROACTIVE_WINDOW_MS) return Credentials.Bearer(snap.access, null)
+        // proactive window: single-flight refresh; on failure serve the current token if still valid.
+        val refreshed = singleFlight.run { doRefresh() }
+        return refreshed ?: (if (clock() < expiresAt) Credentials.Bearer(snap.access, null) else null)
+    }
+
+    private fun readSnapshot(): Snapshot? = runCatchingCancellable {
         if (!Files.exists(authPath)) return@runCatchingCancellable null
         val mtime = Files.getLastModifiedTime(authPath).toMillis()
         val now = clock()
         cache?.let { c ->
             if (c.mtimeMs == mtime && (now - c.loadedAt) < authCacheMs) {
-                return@runCatchingCancellable Credentials.Bearer(c.token, null)
+                return@runCatchingCancellable c.snapshot
             }
         }
-        tokensOf()?.get(FIELD_ACCESS_TOKEN)?.jsonPrimitive?.content?.let { access ->
-            cache = Cache(access, mtime, now)
-            Credentials.Bearer(access, null)
-        }
+        val onDisk = json.parseToJsonElement(Files.readString(authPath)).jsonObject
+        val access = (onDisk[FIELD_TOKENS] as? JsonObject)
+            ?.get(FIELD_ACCESS_TOKEN)?.jsonPrimitive?.content ?: return@runCatchingCancellable null
+        val expires = (onDisk[FIELD_EXPIRES] as? JsonPrimitive)?.content?.toLongOrNull()
+        Snapshot(access, expires).also { cache = Cache(it, mtime, now) }
     }.getOrNull()
 
     private fun tokensOf(): JsonObject? =
@@ -74,21 +95,28 @@ public class GrokAuthProvider(
         // through SingleFlight uncaught. The write/reload below stays unguarded, as before.
         val fresh = runCatchingCancellable { refreshCall(refreshToken) }.getOrNull()
         val access = fresh?.accessToken ?: return null
-        writeSecure(authPath, mergedAuthJson(access, fresh.refreshToken ?: refreshToken).toString())
+        val expiresAtMs = fresh.expiresIn?.let { clock() + it * MS_PER_S }
+        writeSecure(authPath, mergedAuthJson(access, fresh.refreshToken ?: refreshToken, expiresAtMs).toString())
         invalidateCache()
-        return readCached()
+        return Credentials.Bearer(access, null)
     }
 
     // MERGE into the on-disk object — a from-scratch rewrite dropped `expires` and every field the
     // official grok CLI stores beside ours, corrupting the shared file for it (audit 2026-07-18;
-    // the codex twin already merged correctly).
-    private fun mergedAuthJson(access: String, refresh: String): JsonObject {
+    // the codex twin already merged correctly). `expires` is OVERWRITTEN when the refresh response
+    // carried expires_in — keeping the old value would leave a stale past expiry that re-triggers
+    // the proactive refresh on every turn.
+    private fun mergedAuthJson(access: String, refresh: String, expiresAtMs: Long?): JsonObject {
         val onDisk = runCatchingCancellable {
             json.parseToJsonElement(Files.readString(authPath)).jsonObject
         }.getOrNull() ?: JsonObject(emptyMap())
         val oldTokens = onDisk[FIELD_TOKENS] as? JsonObject ?: JsonObject(emptyMap())
         return buildJsonObject {
-            onDisk.forEach { (k, v) -> if (k != FIELD_TOKENS && k != FIELD_LAST_REFRESH) put(k, v) }
+            onDisk.forEach { (k, v) ->
+                val replaced = k == FIELD_TOKENS || k == FIELD_LAST_REFRESH ||
+                    (k == FIELD_EXPIRES && expiresAtMs != null)
+                if (!replaced) put(k, v)
+            }
             put(
                 FIELD_TOKENS,
                 buildJsonObject {
@@ -97,6 +125,7 @@ public class GrokAuthProvider(
                     put(FIELD_REFRESH_TOKEN, JsonPrimitive(refresh))
                 },
             )
+            expiresAtMs?.let { put(FIELD_EXPIRES, JsonPrimitive(it)) }
             put(FIELD_LAST_REFRESH, JsonPrimitive(nowIso()))
         }
     }
@@ -122,9 +151,13 @@ public class GrokAuthProvider(
 
     private companion object {
         const val DEFAULT_CACHE_MS = 30_000L
+        const val MS_PER_S = 1000L
+        /** Refresh this long before `expires` — well inside a 6h grok token, generous vs clock skew. */
+        const val PROACTIVE_WINDOW_MS = 300_000L
         const val FIELD_TOKENS = "tokens"
         const val FIELD_ACCESS_TOKEN = "access_token"
         const val FIELD_REFRESH_TOKEN = "refresh_token"
         const val FIELD_LAST_REFRESH = "last_refresh"
+        const val FIELD_EXPIRES = "expires"
     }
 }

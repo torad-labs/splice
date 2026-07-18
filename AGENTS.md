@@ -127,9 +127,11 @@ this), not the clean snapshot.
 | failure class | tier that now stops it |
 |---|---|
 | illegal module dependency | T1 config-time `check{}` (`splice.module-law.gradle.kts`) — build error |
-| `stream_options` / request-body gzip (vendor 400s) | T2 ast-grep walls, now **default-deny** across all modules (`kt-no-stream-options-request`, `kt-no-request-body-gzip`) |
+| `stream_options` / request-body gzip (vendor 400s) | T2 ast-grep walls, now **default-deny** across all modules (`kt-no-stream-options-request`, `kt-no-request-body-gzip`) + T2 transport-shape test (`UpstreamClientTransportTest` pins body == `UTF-8(json)`, no `Content-Encoding` — the CLASS, not just the `GZIPOutputStream` name) |
 | non-atomic 0600 credential write (kimi world-readable window) | T1 single primitive `core/util/SecureFile.writeAtomic0600` — the only writer |
 | duplicated percent-encoder / form body | T1 single `core/util/FormEncoding` |
+| JSON null read as the literal `"null"` (null auth token → live-looking bearer `"null"`) | T1 `core/util/JsonScalars.str`/`str(key)` (JsonNull-filtering) + T2 wall `kt-json-scalars-single-source` (provider-scoped: a new provider re-deriving `?.jsonPrimitive?.content` fails the build) |
+| duplicated JSONL append + tail reader (perf/compact drift; `:perf` reached into `:compact`) | T1 `core/util/JsonlSink.appendLine`/`readTail` + wall `kt-jsonl-sink-single-source` |
 | `runCatching` swallowing cancellation → leaked turn (600% CPU) | T2 wall `kt-no-runcatching-in-coroutine` on the turn/stream path |
 | god class suppressed instead of split | T2 detekt `ForbiddenSuppress` + wall `kt-no-quality-suppress` |
 | config weakened to hide findings | T2 `checks/config-guard.sh` (no baseline, maxIssues:0, walls stay `severity:error`) |

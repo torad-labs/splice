@@ -31,4 +31,7 @@ dependencies {
 
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
+    // Gradle's 512m worker default intermittently kills the 1000-stream load test mid-gate
+    // (worker dies -> bare java.io.EOFException, 2026-07-18 x2); 1g is bounded and sufficient.
+    maxHeapSize = "1g"
 }

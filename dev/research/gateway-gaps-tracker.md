@@ -25,10 +25,10 @@ column as work lands (`todo` / `in-progress` / `done <commit>` / `wontfix <reaso
 
 | ID | Gap | Fix (short) | Status |
 |---|---|---|---|
-| G3 | Retry-After / server pushback never read | `retryAfterMs` on `RetryOutcome.Failed`; backoff floor; absurd → GIVE_UP | todo |
-| G4a | RETRYABLE_STATUSES misses 500/504/408 | `429 ‖ 408 ‖ 500..599 − 501`, keep carve-outs | todo |
-| G4b | Default budget 2 attempts / ~200ms vs codex 4+5, gemini 10 | default 4-5 attempts, ~10s delay cap | todo |
-| G4c | No jitter | `* Random.nextDouble(0.9, 1.1)` | todo |
+| G3 | Retry-After / server pushback never read | floor + absurd-pushback give-up | done (retry batch) |
+| G4a | RETRYABLE_STATUSES misses 500/504/408 | widened | done (retry batch) |
+| G4b | Default budget 2 attempts / ~200ms | 4 attempts, 10s cap | done (retry batch) |
+| G4c | No jitter | ±10% | done (retry batch) |
 | G4d | No cross-attempt wall-clock deadline | t0 in `post()`, budget check before each attempt/sleep | todo |
 | G5 | Stream-reconnect: handed-off ≠ client-saw-output; torn-before-first-frame fails turn needlessly | gate on `clientFrameEmitted()`; small reissue budget; hard no-retry after any frame | todo |
 | G6 | Codex head: zero expiry awareness (grok bug's latent twin) | JWT `exp` via existing `decodeJwtClaims` + grok proactive-window block | todo |

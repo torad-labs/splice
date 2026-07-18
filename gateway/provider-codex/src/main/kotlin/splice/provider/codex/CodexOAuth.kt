@@ -14,6 +14,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import splice.core.util.FormEncoding
 import splice.core.util.runCatchingCancellable
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -76,7 +77,7 @@ public fun buildAuthorizeUrl(
         "state" to state,
         "originator" to CodexOAuthEndpoints.originator(env),
     )
-    val query = params.joinToString("&") { (k, v) -> "$k=${percentEncode(v)}" }
+    val query = params.joinToString("&") { (k, v) -> "$k=${FormEncoding.percentEncode(v)}" }
     return "${CodexOAuthEndpoints.authorizeUrl(env)}?$query"
 }
 
@@ -88,30 +89,13 @@ public fun codexCodeExchangeForm(
     verifier: String,
     clientId: String,
     redirectUri: String,
-): String = codexFormEncode(
+): String = FormEncoding.formEncode(
     "grant_type" to "authorization_code",
     "code" to code,
     "redirect_uri" to redirectUri,
     "client_id" to clientId,
     "code_verifier" to verifier,
 )
-
-private fun codexFormEncode(vararg pairs: Pair<String, String>): String =
-    pairs.joinToString("&") { (k, v) -> "$k=${percentEncode(v)}" }
-
-// byte-masking is inherent to the encoder: 0xFF keeps the low byte, 0x80 is the ASCII ceiling.
-private const val BYTE_MASK = 0xFF
-private const val ASCII_LIMIT = 0x80
-
-/** RFC 3986 percent-encoding — spaces become %20, never + (the CLI-parity gotcha). */
-private fun percentEncode(value: String): String = buildString {
-    for (b in value.toByteArray(Charsets.UTF_8)) {
-        val c = b.toInt() and BYTE_MASK
-        val ch = c.toChar()
-        val unreserved = ch.isLetterOrDigit() && c < ASCII_LIMIT
-        if (unreserved || ch in "-_.~") append(ch) else append("%%%02X".format(c))
-    }
-}
 
 private val jwtJson = Json { ignoreUnknownKeys = true }
 

@@ -16,12 +16,13 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.SecureFile
+import splice.core.util.long
 import splice.core.util.runCatchingCancellable
+import splice.core.util.str
 import splice.spi.SingleFlight
 import java.nio.file.Files
 import java.nio.file.Path
@@ -76,8 +77,8 @@ public class GrokAuthProvider(
         }
         val onDisk = json.parseToJsonElement(Files.readString(authPath)).jsonObject
         val access = (onDisk[FIELD_TOKENS] as? JsonObject)
-            ?.get(FIELD_ACCESS_TOKEN)?.jsonPrimitive?.content ?: return@runCatchingCancellable null
-        val expires = (onDisk[FIELD_EXPIRES] as? JsonPrimitive)?.content?.toLongOrNull()
+            ?.get(FIELD_ACCESS_TOKEN).str() ?: return@runCatchingCancellable null
+        val expires = onDisk.long(FIELD_EXPIRES)
         Snapshot(access, expires).also { cache = Cache(it, mtime, now) }
     }.onFailure {
         System.err.println("[grok-auth] failed to read $authPath: $it — treating as not logged in")
@@ -96,7 +97,7 @@ public class GrokAuthProvider(
         val refreshToken = runCatchingCancellable { tokensOf() }
             .onFailure { System.err.println("[grok-auth] refresh-token read from $authPath failed: $it") }
             .getOrNull()
-            ?.get(FIELD_REFRESH_TOKEN)?.jsonPrimitive?.content ?: return null
+            ?.get(FIELD_REFRESH_TOKEN).str() ?: return null
         // Guard the network hop (the refreshCall param's type doesn't promise "never throws"): a
         // caller-supplied hop that throws must degrade to a null refresh (→ re-prompt), not blow
         // through SingleFlight uncaught. The write/reload below stays unguarded, as before.

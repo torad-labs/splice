@@ -9,9 +9,9 @@ column as work lands (`todo` / `in-progress` / `done <commit>` / `wontfix <reaso
 
 | Level | Item | Status |
 |---|---|---|
-| L1 | ast-grep wall: no `.getOrNull()`/`.getOrDefault()` on `runCatching*` without `.onFailure` consumption or `// silent-ok:` annotation | todo |
-| L2 | `-Xreturn-value-checker` in `splice.kotlin-common.gradle.kts`; triage findings; later promote to error | todo |
-| L3 | Sealed outcome types on failure paths (start: auth refresh grok/kimi/codex), exhaustive `when` expression-form | todo |
+| L1 | ast-grep wall `kt-no-silent-result-collapse` (provider-*+spi scope; 18 sites swept: 11 now log, 7 annotated). Widen to app/core/control next | done 097e750 |
+| L2 | `-Xreturn-value-checker` on; 19 sites triaged via `Result.discard(why)`. Promote to error later | done 890ef35 |
+| L3 | Sealed outcome types on failure paths (start: auth refresh grok/kimi/codex), exhaustive `when` expression-form | paused: tree broken by in-flight ReasoningDisplay refactor (other session); resume when it compiles |
 | L4 | FIR compiler plugin: `@MustConsume` discard = compile error (build AFTER L3 types exist) | todo |
 
 ## HIGH

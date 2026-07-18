@@ -6,8 +6,6 @@ package splice.app
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -223,7 +221,7 @@ public object OAuthLoginFlow {
         s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 
     private suspend fun exchangeAndPersist(spec: LoginSpec, code: String): Boolean {
-        val client = HttpClient(CIO)
+        val client = authHttpClient()
         return try {
             runCatchingCancellable {
                 val resp: HttpResponse = client.post(spec.tokenUrl) {

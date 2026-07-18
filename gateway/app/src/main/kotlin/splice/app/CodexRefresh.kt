@@ -3,8 +3,6 @@
 // unit-testable with a fake refreshCall.
 package splice.app
 
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.forms.submitForm
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.Parameters
@@ -16,7 +14,7 @@ import splice.core.util.str
 import splice.provider.codex.CodexOAuthEndpoints
 import splice.provider.codex.RefreshedTokens
 
-private val refreshClient by lazy { HttpClient(CIO) }
+private val refreshClient by lazy { authHttpClient() }
 private val json = Json { ignoreUnknownKeys = true }
 
 // refresh failure -> null (caller re-prompts), with the CAUSE on stderr — a silent null left

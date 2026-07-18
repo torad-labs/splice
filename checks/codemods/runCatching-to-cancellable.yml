@@ -1,0 +1,17 @@
+# CODEMOD (not a gate wall — an on-demand deterministic rewrite). runCatching {} swallows
+# CancellationException, resurrecting the zombie-stream bug class the repo forbids; the safe
+# wrapper is runCatchingCancellable {} (core.util). The existing kt-catch-swallows-cancellation
+# WALL only sees literal `catch (e: Exception)` blocks — it is blind to runCatching, which is the
+# same bug as a stdlib call. This codemod fills that gap with a FIX, not just a block.
+#
+# MODE: run-once + review the diff (NOT a blind Stop-hook auto-apply) — the rewrite is
+# semantics-CHANGING (it makes cancellation propagate) and context-dependent (a runCatching in
+# genuinely non-coroutine sync code may not want it / may not import the helper). Dry-run:
+#   npx ast-grep scan --rule checks/codemods/runCatching-to-cancellable.yml         (shows diffs)
+# Apply after reviewing:
+#   npx ast-grep scan --rule checks/codemods/runCatching-to-cancellable.yml --update-all
+id: codemod-runcatching-to-cancellable
+language: kotlin
+rule:
+  pattern: runCatching { $$$BODY }
+fix: 'runCatchingCancellable { $$$BODY }'

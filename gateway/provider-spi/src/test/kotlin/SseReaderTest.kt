@@ -126,6 +126,6 @@ class SseReaderTest {
         override val isClosedForRead: Boolean = false
         override val readBuffer: Source = Buffer() // always empty -> readAvailable returns 0
         override suspend fun awaitContent(min: Int): Boolean = true // lies: claims content, delivers none
-        override fun cancel(cause: Throwable?) {}
+        override fun cancel(cause: Throwable?) { /* test double: nothing to cancel */ }
     }
 }

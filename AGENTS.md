@@ -101,6 +101,7 @@ RUNNING heads over `/mgmt` for live status + config.
 ## Gates
 
 ```
+npm run gate          # checks/gate.sh: gradle check + ast-grep walls + hook tests, ONE PASS/FAIL
 npm run gate:rules    # ast-grep scan (tree) + rule red/green tests
 npm run test:hooks    # orchestrator routing tests
 npm test -w server    # 103 node --test behavior/invariant tests
@@ -109,7 +110,13 @@ npm test -w webui     # vitest
 npm run build -w webui# tsc strict + single-file dist (commit dist/index.html)
 ```
 
-Green means all of them. A wall block means fix the code, not the wall.
+The Kotlin gateway tier runs under `./gradlew check` (from `gateway/`, JDK 21): module-law
+(config-time), detekt (`maxIssues:0`), the Konsist arch-tests, every unit test, and the
+1000-stream load test. It runs in CI (`gateway-gradle` job) and inside `npm run gate`. Before this
+existed it was authored but NEVER executed by automation — only the ast-grep walls ran.
+
+Green means all of them. A wall block means fix the code, not the wall — never trust a filtered
+`gradle | grep` exit; read the real `BUILD SUCCESSFUL` / `GATE: PASS`.
 
 ## Compaction doctrine
 

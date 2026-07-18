@@ -7,6 +7,7 @@
     "webui"
   ],
   "scripts": {
+    "gate": "bash checks/gate.sh",
     "gate:rules": "ast-grep scan && ast-grep test --skip-snapshot-tests",
     "test:hooks": "python3 .claude/hooks/tests/test_orchestrator.py",
     "e2e:heads": "bash checks/e2e/heads-e2e.sh",

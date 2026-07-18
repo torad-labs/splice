@@ -10,12 +10,20 @@ import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.security.Security
 import java.nio.file.StandardOpenOption.APPEND
 import java.nio.file.StandardOpenOption.CREATE
 import java.time.LocalTime
 import java.time.temporal.ChronoUnit
 
 public fun main(args: Array<String>) {
+    // Kill JVM negative-DNS caching BEFORE any lookup (kimi 07:00 burst, 2026-07-18): the JVM
+    // caches a FAILED lookup for 10s by default, so one resolver timeout for api.kimi.com poisoned
+    // every following request — 37 turn failures from one blip, including 5ms "failures" that never
+    // touched the network. A long-lived proxy must re-ask on each miss; successful-lookup caching
+    // (30s) stays as is. Retry backoff (200-800ms) only works against real lookups, not a poison
+    // window three times its whole budget.
+    Security.setProperty("networkaddress.cache.negative.ttl", "0")
     when (args.firstOrNull()) {
         null, "daemon", "start" -> runDaemon()
         else -> splice.app.cli.runCli(args)

@@ -48,9 +48,14 @@ def main():
     if not kt_changed():
         passthrough()
 
-    java_home = os.environ.get("JAVA_HOME") or JDK21_DEFAULT
-    if not pathlib.Path(java_home, "bin", "java").exists():
-        passthrough()  # no JDK 21 -> fail-open, never block
+    # Prefer the KNOWN JDK 21 over an inherited JAVA_HOME: a shell exporting JDK 26 exists on
+    # disk (so no fail-open) but cannot resolve the languageVersion=21 toolchain, and gradle's
+    # "Cannot find a Java installation ... BUILD FAILED" then read as a red tree (two false
+    # blocks with EMPTY error lists, 2026-07-18).
+    env_home = os.environ.get("JAVA_HOME", "")
+    java_home = JDK21_DEFAULT if pathlib.Path(JDK21_DEFAULT, "bin", "java").exists() else env_home
+    if not java_home or not pathlib.Path(java_home, "bin", "java").exists():
+        passthrough()  # no usable JDK -> fail-open, never block
     if not (GRADLE_DIR / "gradlew").exists():
         passthrough()  # no wrapper -> fail-open
 
@@ -68,8 +73,11 @@ def main():
 
     out = (proc.stdout or "") + (proc.stderr or "")
     errs = [ln for ln in out.splitlines() if ln.startswith("e: ")]
-    if not errs and "BUILD FAILED" not in out:
-        passthrough()  # non-definitive (infra) -> fail-open
+    if not errs:
+        # Toolchain/dependency/config failures also print BUILD FAILED with zero `e:` lines;
+        # blocking on them contradicts the fail-open doctrine above. Definitive compile errors
+        # ALWAYS carry `e:` lines — that is the only evidence worth blocking a turn on.
+        passthrough()
 
     reason = (
         "Kotlin main source does not compile — a turn must not end on a red tree (#924 0c, light "

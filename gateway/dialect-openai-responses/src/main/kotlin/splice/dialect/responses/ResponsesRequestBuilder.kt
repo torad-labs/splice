@@ -161,28 +161,27 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         input: JsonArray,
         instructions: String,
         reasoning: JsonObject?,
-    ): JsonObject = buildJsonObject {
-        put("model", opts.upstreamModel)
-        put("input", input)
-        put("store", quirks.store)
-        put("stream", true)
-        // NB: stream_options.include_usage is a CHAT-completions knob — the ChatGPT Responses
-        // backend 400s on it ("Unknown parameter", verified live 2026-07-18). Responses delivers
-        // usage on response.completed already; never send it here.
-        // Request encrypted CoT handle without necessarily replaying prior ones into input.
-        if (!opts.compact && opts.includeEncryptedReasoning) {
-            put("include", buildJsonArray { add("reasoning.encrypted_content") })
-        }
-        cacheKey(body, opts)?.let { put("prompt_cache_key", it) }
-        put("instructions", instructions)
-        if (!opts.compact && body.tools.isNotEmpty()) {
-            put("tools", toolsArray(body))
-            if (quirks.emitToolChoice) {
-                put("tool_choice", toolChoice(body))
-                put("parallel_tool_calls", body.toolChoice?.disableParallelToolUse != true)
-            }
-        }
-        reasoning?.let { put(FIELD_REASONING, it) }
+    ): JsonObject {
+        // TIER-1 (#924): the request is a CLOSED DTO, not a hand-assembled JsonObject. A Chat-only
+        // knob (stream_options.include_usage — the codex-breaking incident) cannot be added without a
+        // field on ResponsesRequest, a reviewable type change. Byte-identical to the old put() set
+        // (ResponsesRequestBuilderTest pins it): fields in declaration order, null optionals omitted.
+        val tools = if (!opts.compact && body.tools.isNotEmpty()) toolsArray(body) else null
+        val emitToolChoice = tools != null && quirks.emitToolChoice
+        val dto = ResponsesRequest(
+            model = opts.upstreamModel,
+            input = input,
+            store = quirks.store,
+            stream = true,
+            include = if (!opts.compact && opts.includeEncryptedReasoning) listOf(ENCRYPTED_CONTENT_INCLUDE) else null,
+            promptCacheKey = cacheKey(body, opts),
+            instructions = instructions,
+            tools = tools,
+            toolChoice = if (emitToolChoice) toolChoice(body) else null,
+            parallelToolCalls = if (emitToolChoice) body.toolChoice?.disableParallelToolUse != true else null,
+            reasoning = reasoning,
+        )
+        return responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), dto) as JsonObject
     }
 
     // ── tools ────────────────────────────────────────────────────────────────

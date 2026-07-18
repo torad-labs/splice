@@ -31,6 +31,7 @@ echo "══ splice gate ══  (JAVA_HOME=$JAVA_HOME)"
 run "gradle check"   bash -c 'cd gateway && ./gradlew check'
 run "ast-grep walls" npm run --silent gate:rules
 run "hook tests"     npm run --silent test:hooks
+run "config guard"   bash checks/config-guard.sh
 
 echo
 if [ "$fail" -eq 0 ]; then

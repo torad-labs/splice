@@ -22,6 +22,8 @@ jobs:
         run: npm run gate:rules
       - name: hook orchestrator tests
         run: npm run test:hooks
+      - name: config surface guard (rules that guard the rules)
+        run: bash checks/config-guard.sh
       - name: server tests
         run: npm test -w server
       - name: webui lint (FSD boundaries are a hard gate)

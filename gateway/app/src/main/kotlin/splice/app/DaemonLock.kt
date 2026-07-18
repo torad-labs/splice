@@ -4,13 +4,13 @@
 // startup gate — the loser waits briefly, health-checks the winner, exits 0 LOUD (never a loop).
 package splice.app
 
+import splice.core.util.discard
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
 import java.nio.channels.OverlappingFileLockException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
-import splice.core.util.discard
 
 public class DaemonLock(private val lockFile: Path) : AutoCloseable {
     private var channel: FileChannel? = null

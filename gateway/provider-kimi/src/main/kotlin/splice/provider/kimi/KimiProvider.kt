@@ -11,6 +11,7 @@ package splice.provider.kimi
 
 import splice.core.auth.Credentials
 import splice.core.parse.AnthropicTurnBody
+import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.dialect.passthrough.PassthroughQuirks
 import splice.dialect.passthrough.PassthroughRequestBuilder
@@ -33,7 +34,7 @@ public class KimiProvider(
 
     // Passthrough emits native thinking blocks, so the transcript text-mirror stays off and there is
     // no encrypted-reasoning replay on the Anthropic surface.
-    override val showReasoning: String = "off"
+    override val showReasoning: ReasoningDisplay = ReasoningDisplay.OFF
     override val replayReasoning: Boolean = false
 
     private val builder = PassthroughRequestBuilder(PassthroughQuirks(providerTag = tuning.key))

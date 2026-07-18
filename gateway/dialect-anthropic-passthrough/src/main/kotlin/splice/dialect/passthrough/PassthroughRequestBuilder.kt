@@ -19,6 +19,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.parse.AnthropicTurnBody
+import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.wire.AnthropicRequest
 
@@ -67,7 +68,7 @@ public class PassthroughRequestBuilder(private val quirks: PassthroughQuirks) {
             compact = compact,
             // Passthrough emits REAL thinking blocks; the text mirror must NOT double-render them,
             // so pick the showReasoning value that makes mirrorInto a no-op (any value != "text").
-            showReasoning = MIRROR_OFF,
+            showReasoning = ReasoningDisplay.THINKING,
             stream = typed.stream,
             originalModel = originalModel,
             upstreamModel = upstreamModel,
@@ -229,7 +230,6 @@ public class PassthroughRequestBuilder(private val quirks: PassthroughQuirks) {
         const val TYPE_TOOL_RESULT = "tool_result"
 
         // Passthrough emits native thinking blocks, so the transcript text-mirror stays off.
-        const val MIRROR_OFF = TYPE_THINKING
 
         const val EFFORT_LOW = "low"
         const val EFFORT_HIGH = "high"

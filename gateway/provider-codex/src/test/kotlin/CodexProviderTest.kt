@@ -12,6 +12,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.provider.codex.CodexProvider
 import splice.spi.ProviderTuning
@@ -39,7 +40,7 @@ class CodexProviderTest {
             baseUrl = "https://x",
             watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
         ),
-        showReasoning = "text",
+        showReasoning = ReasoningDisplay.TEXT,
         replayReasoning = false,
         configEffort = "high",
         configSummary = "detailed",

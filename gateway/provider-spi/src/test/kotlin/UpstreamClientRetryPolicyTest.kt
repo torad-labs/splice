@@ -48,11 +48,19 @@ class UpstreamClientRetryPolicyTest {
 
     @Test
     fun `500 and 504 and 408 retry then succeed`() = runTest {
-        for (status in listOf(HttpStatusCode.InternalServerError, HttpStatusCode.GatewayTimeout, HttpStatusCode.RequestTimeout)) {
+        val retryable = listOf(
+            HttpStatusCode.InternalServerError,
+            HttpStatusCode.GatewayTimeout,
+            HttpStatusCode.RequestTimeout,
+        )
+        for (status in retryable) {
             val calls = AtomicInteger()
             val engine = MockEngine {
-                if (calls.incrementAndGet() == 1) respond("boom", status, headersOf())
-                else respond("fine", HttpStatusCode.OK, headersOf())
+                if (calls.incrementAndGet() == 1) {
+                    respond("boom", status, headersOf())
+                } else {
+                    respond("fine", HttpStatusCode.OK, headersOf())
+                }
             }
             assertEquals("ok", postOnce(clientOver(engine)), "status $status should be retryable")
             assertEquals(2, calls.get())
@@ -104,7 +112,11 @@ class UpstreamClientRetryPolicyTest {
         val capture = Capture()
         val engine = MockEngine {
             if (calls.incrementAndGet() == 1) {
-                respond("busy", HttpStatusCode.ServiceUnavailable, headersOf("Retry-After", "Wed, 21 Oct 2026 07:28:00 GMT"))
+                respond(
+                    "busy",
+                    HttpStatusCode.ServiceUnavailable,
+                    headersOf("Retry-After", "Wed, 21 Oct 2026 07:28:00 GMT"),
+                )
             } else {
                 respond("fine", HttpStatusCode.OK, headersOf())
             }

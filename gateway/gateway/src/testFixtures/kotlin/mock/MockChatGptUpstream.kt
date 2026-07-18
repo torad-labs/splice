@@ -17,6 +17,7 @@ import java.net.InetSocketAddress
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
+import splice.core.util.discard
 
 class MockChatGptUpstream {
     val upstreamAuths = CopyOnWriteArrayList<Pair<String, String?>>()
@@ -77,8 +78,8 @@ class MockChatGptUpstream {
             if (scenario == "drip") abortedScenarios.add("drip")
             check(scenario == "drip") { "unexpected mid-stream I/O failure in scenario '$scenario': ${abort.message}" }
         } finally {
-            runCatching { ex.responseBody.close() }
-            runCatching { ex.close() }
+            runCatching { ex.responseBody.close() }.discard("test-server teardown")
+            runCatching { ex.close() }.discard("test-server teardown")
         }
     }
 

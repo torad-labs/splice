@@ -34,9 +34,10 @@ public object SecureFile {
             Files.writeString(tmp, content)
             Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         }.onFailure {
-            runCatching { Files.deleteIfExists(tmp) }
+            runCatching { Files.deleteIfExists(tmp) }.discard("tmp cleanup is best-effort; the write failure rethrows")
             throw it
         }
         runCatching { Files.setPosixFilePermissions(path, OWNER_ONLY) }
+            .discard("POSIX perms unsupported on this filesystem → keep the completed write")
     }
 }

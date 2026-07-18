@@ -7,6 +7,7 @@ import splice.core.util.SecureFile
 import java.nio.file.Files
 import java.security.MessageDigest
 import java.security.SecureRandom
+import splice.core.util.discard
 
 public class MgmtKey(private val statePaths: StatePaths) {
     private val value: String by lazy { ensure() }
@@ -20,7 +21,7 @@ public class MgmtKey(private val statePaths: StatePaths) {
                 val existing = Files.readString(path).trim()
                 if (existing.isNotEmpty()) return existing
             }
-        }
+        }.discard("unreadable/empty key file falls through to regeneration below")
         val bytes = ByteArray(KEY_BYTES).also { SecureRandom().nextBytes(it) }
         val key = bytes.joinToString("") { "%02x".format(it) }
         // Atomic 0600 write via the shared primitive (was an inline temp→chmod→move copy).

@@ -42,6 +42,7 @@ import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.util.concurrent.Executors
 import kotlin.time.Duration.Companion.seconds
+import splice.core.util.discard
 
 /** A minimal OpenAI Chat Completions mock (different SSE shape from Responses). */
 private const val REASONING_FRAME = """{"choices":[{"delta":{"reasoning_content":"thinking hard"}}]}"""
@@ -79,8 +80,8 @@ private class MockChatUpstream {
         sse(ex, CONTENT_FRAME)
         sse(ex, FINISH_FRAME)
         ex.responseBody.write("data: [DONE]\n\n".toByteArray())
-        runCatching { ex.responseBody.close() }
-        runCatching { ex.close() }
+        runCatching { ex.responseBody.close() }.discard("test-server teardown")
+        runCatching { ex.close() }.discard("test-server teardown")
     }
 }
 

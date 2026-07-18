@@ -10,6 +10,7 @@ import java.nio.channels.OverlappingFileLockException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
+import splice.core.util.discard
 
 public class DaemonLock(private val lockFile: Path) : AutoCloseable {
     private var channel: FileChannel? = null
@@ -41,7 +42,7 @@ public class DaemonLock(private val lockFile: Path) : AutoCloseable {
     }
 
     override fun close() {
-        runCatching { lock?.release() }
-        runCatching { channel?.close() }
+        runCatching { lock?.release() }.discard("process-exit cleanup; the OS reclaims the lock regardless")
+        runCatching { channel?.close() }.discard("process-exit cleanup; the OS reclaims the fd regardless")
     }
 }

@@ -17,4 +17,5 @@ dependencies {
     testImplementation(project(":provider-codex"))
     testImplementation(libs.kotlinx.coroutines.test)
     testFixturesImplementation(libs.kotlinx.serialization.json)
+    testFixturesImplementation(project(":core")) // Result.discard on best-effort test-server teardown
 }

@@ -24,3 +24,14 @@ public inline fun <R> runCatchingCancellable(block: () -> R): Result<R> =
     } catch (e: IllegalArgumentException) {
         Result.failure(e)
     }
+
+/**
+ * The ONLY sanctioned way to drop a [Result] on the floor. [why] is not read at runtime — it exists
+ * so the call site states the justification and the discard is greppable/wall-checkable. Anything
+ * that cannot articulate a one-line reason should be handling the failure instead (the
+ * swallow-into-null incidents of 2026-07-18 are what this fences off; `-Xreturn-value-checker`
+ * flags the bare form).
+ */
+public fun Result<*>.discard(why: String) {
+    require(why.isNotBlank()) { "discard() requires a stated reason" }
+}

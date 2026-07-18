@@ -59,6 +59,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import kotlin.time.Duration.Companion.milliseconds
+import splice.core.util.discard
 
 public class Daemon(
     private val topology: Topology,
@@ -125,7 +126,9 @@ public class Daemon(
     }
 
     public suspend fun stop() {
-        heads.values.forEach { runCatching { it.head.stop() } }
+        heads.values.forEach {
+            runCatching { it.head.stop() }.discard("shutdown: one head failing to stop must not block the rest")
+        }
         control?.stop()
     }
 

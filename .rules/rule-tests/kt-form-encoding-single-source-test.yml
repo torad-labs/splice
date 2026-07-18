@@ -1,0 +1,6 @@
+id: kt-form-encoding-single-source
+valid:
+  - 'FormEncoding.percentEncode(value)'
+  - 'append("%02X".format(c))'
+invalid:
+  - 'append("%%%02X".format(c))'

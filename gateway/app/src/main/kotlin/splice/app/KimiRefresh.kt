@@ -17,10 +17,9 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import splice.core.util.runCatchingCancellable
+import splice.core.util.str
 import splice.provider.kimi.KimiRefreshedTokens
 import splice.provider.kimi.kimiRefreshForm
 
@@ -94,25 +93,23 @@ private suspend fun postRefresh(
 /** Rotation is mandatory: a response missing access_token OR refresh_token → null (re-prompt). */
 private fun parseKimiRefresh(body: String): KimiRefreshedTokens? = runCatchingCancellable {
     val obj = kimiRefreshJson.parseToJsonElement(body) as? JsonObject ?: return@runCatchingCancellable null
-    val access = obj.jsonStr("access_token") ?: return@runCatchingCancellable null
-    val refresh = obj.jsonStr("refresh_token") ?: return@runCatchingCancellable null
-    val expiresIn = obj.jsonStr("expires_in")?.toLongOrNull() ?: return@runCatchingCancellable null
+    val access = obj.str("access_token") ?: return@runCatchingCancellable null
+    val refresh = obj.str("refresh_token") ?: return@runCatchingCancellable null
+    val expiresIn = obj.str("expires_in")?.toLongOrNull() ?: return@runCatchingCancellable null
     KimiRefreshedTokens(
         accessToken = access,
         refreshToken = refresh,
         expiresIn = expiresIn,
-        scope = obj.jsonStr("scope").orEmpty(),
-        tokenType = obj.jsonStr("token_type") ?: "Bearer",
+        scope = obj.str("scope").orEmpty(),
+        tokenType = obj.str("token_type") ?: "Bearer",
     )
 }.getOrNull()
 
 private fun isInvalidGrant(body: String): Boolean = runCatchingCancellable {
-    (kimiRefreshJson.parseToJsonElement(body) as? JsonObject)?.jsonStr("error") == "invalid_grant"
+    (kimiRefreshJson.parseToJsonElement(body) as? JsonObject)?.str("error") == "invalid_grant"
 }.getOrDefault(false)
 
 // JsonNull IS a JsonPrimitive whose content is "null"; treat an explicit null as absent.
-private fun JsonObject.jsonStr(key: String): String? =
-    (this[key] as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content
 
 private val kimiRefreshClient by lazy { HttpClient(CIO) }
 private val kimiRefreshJson = Json { ignoreUnknownKeys = true }

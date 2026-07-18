@@ -14,7 +14,9 @@ import kotlinx.serialization.json.Json
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.util.long
 import splice.core.util.runCatchingCancellable
+import splice.core.util.str
 import splice.spi.SingleFlight
 import java.nio.file.Files
 import java.nio.file.Path
@@ -97,12 +99,12 @@ public class KimiAuthProvider(
     private fun parseSnapshot(): Snapshot? {
         if (!Files.exists(authPath)) return null
         val obj = json.parseToJsonElement(Files.readString(authPath)).jsonObjectOrEmpty()
-        val access = obj.kimiString("access_token") ?: return null
+        val access = obj.str("access_token") ?: return null
         return Snapshot(
             access = access,
-            refresh = obj.kimiString("refresh_token"),
-            expiresAtS = obj.kimiLong("expires_at") ?: 0L,
-            expiresInS = obj.kimiLong("expires_in") ?: 0L,
+            refresh = obj.str("refresh_token"),
+            expiresAtS = obj.long("expires_at") ?: 0L,
+            expiresInS = obj.long("expires_in") ?: 0L,
         )
     }
 

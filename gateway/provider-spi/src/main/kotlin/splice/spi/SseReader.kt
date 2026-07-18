@@ -1,6 +1,8 @@
 // PORT-OF: server/src/codex/stream.mjs sseEvents @ 4ca99f7 — invariants: multi-byte-safe UTF-8
 // across chunk boundaries (streaming decoder, never split a codepoint); partial last line
-// carries to the next chunk; only `data: `-prefixed lines yield; empty payloads and [DONE]
+// carries to the next chunk; only `data:`-prefixed lines yield (the space after the colon is
+// OPTIONAL per the SSE spec — kimi emits `data:{…}` bare, Anthropic/OpenAI emit `data: {…}`;
+// requiring the space silently dropped every kimi frame); empty payloads and [DONE]
 // skipped; malformed JSON frames skipped (never crash the stream); onBytes fires ON RAW READ
 // with the chunk size (the watchdog touch + byte telemetry — never after downstream write; a
 // slow client must not fake idleness). Hot-path shape: one reused decode scratch per stream
@@ -28,7 +30,9 @@ private val lenient = Json {
     isLenient = true
 }
 
-private const val DATA_PREFIX = "data: "
+// no space: SSE field syntax is `data:` + optional single space + value (WHATWG spec); the
+// leading-ws trim in emitDataLine absorbs the space when present.
+private const val DATA_PREFIX = "data:"
 private const val DONE_SENTINEL = "[DONE]"
 private const val READ_BUFFER_BYTES = 16384
 

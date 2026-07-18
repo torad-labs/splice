@@ -13,7 +13,9 @@ package splice.provider.kimi
 import kotlinx.serialization.json.Json
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
+import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.auth.credentialsOrNull
 import splice.core.util.long
 import splice.core.util.runCatchingCancellable
 import splice.core.util.str
@@ -59,24 +61,28 @@ public class KimiAuthProvider(
         val threshold = maxOf(MIN_PROACTIVE_S, snap.expiresInS / 2)
         if (snap.expiresAtS - nowS >= threshold) return apiKey(snap.access)
         // proactive window: single-flight refresh; on failure serve the current token if still valid.
-        val refreshed = singleFlight.run { doRefresh() }
+        val refreshed = singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG) }
         return refreshed ?: (if (nowS < snap.expiresAtS) apiKey(snap.access) else null)
     }
 
-    override suspend fun refresh(): Credentials? = singleFlight.run { doRefresh() }
+    override suspend fun refresh(): Credentials? =
+        singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG) }
 
-    private suspend fun doRefresh(): Credentials? {
+    // Sealed per-mode outcome (discipline L3): a dead refresh token, a transport blip, and a
+    // corrupt file are DIFFERENT stories; credentialsOrNull is the single logging flatten.
+    private suspend fun doRefresh(): RefreshOutcome {
+        if (!Files.exists(authPath)) return RefreshOutcome.NoCredentialsFile
         val refreshToken = runCatchingCancellable { parseSnapshot()?.refresh }
-            .onFailure { System.err.println("[kimi-auth] refresh-token read from $authPath failed: $it") }
-            .getOrNull() ?: return null
-        // Guard the network hop: a caller-supplied refreshCall that throws must degrade to a null
-        // refresh (→ re-prompt), not blow through SingleFlight uncaught.
+            .getOrElse { return RefreshOutcome.ReadFailed(it) }
+            ?: return RefreshOutcome.NoRefreshToken
+        // Guard the network hop: a thrown refreshCall must degrade to a typed outcome, not blow
+        // through SingleFlight uncaught. Rotation is mandatory — a null response means no grant.
         val fresh = runCatchingCancellable { refreshCall(refreshToken) }
-            .onFailure { System.err.println("[kimi-auth] token refresh call threw: $it") }
-            .getOrNull() ?: return null
+            .getOrElse { return RefreshOutcome.TransportFailed(it) }
+            ?: return RefreshOutcome.Rejected("token endpoint returned no rotated tokens")
         writeSecure(authPath, kimiAuthJson(fresh, clock()).toString())
         invalidateCache()
-        return apiKey(fresh.accessToken)
+        return RefreshOutcome.Refreshed(apiKey(fresh.accessToken))
     }
 
     private fun apiKey(token: String): Credentials =
@@ -128,6 +134,7 @@ public class KimiAuthProvider(
     }
 
     private companion object {
+        const val LOG_TAG = "kimi-auth"
         const val DEFAULT_CACHE_MS = 30_000L
 
         // proactive-refresh floor: never let a token get within 5 minutes of expiry.

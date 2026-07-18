@@ -13,7 +13,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
+import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.auth.credentialsOrNull
 import splice.core.util.SecureFile
 import splice.core.util.runCatchingCancellable
 import splice.core.util.str
@@ -71,31 +73,33 @@ public class CodexAuthProvider(
         cache = null
     }
 
-    override suspend fun refresh(): Credentials? = singleFlight.run { doRefresh() }
+    override suspend fun refresh(): Credentials? =
+        singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG) }
 
-    private suspend fun doRefresh(): Credentials? {
+    // Sealed per-mode outcome (discipline L3): a dead refresh token, a transport blip, and a
+    // corrupt file are DIFFERENT stories; credentialsOrNull is the single logging flatten.
+    private suspend fun doRefresh(): RefreshOutcome {
+        if (!Files.exists(authPath)) return RefreshOutcome.NoCredentialsFile
         val raw = runCatchingCancellable {
             json.parseToJsonElement(Files.readString(authPath)).jsonObject
-        }.onFailure {
-            System.err.println("[codex-auth] auth.json read for refresh failed: $it")
-        }.getOrNull() ?: return null
-        val tokens = raw[FIELD_TOKENS] as? JsonObject ?: return null
+        }.getOrElse { return RefreshOutcome.ReadFailed(it) }
+        val tokens = raw[FIELD_TOKENS] as? JsonObject ?: return RefreshOutcome.NoRefreshToken
         return refreshAndPersist(raw, tokens)
     }
 
-    private suspend fun refreshAndPersist(raw: JsonObject, tokens: JsonObject): Credentials? {
-        val refreshToken = tokens.str(FIELD_REFRESH_TOKEN) ?: return null
-        // Guard the network hop too (Node wrapped the whole read+fetch): the refreshCall param's
-        // type doesn't promise "never throws", so a caller-supplied hop that throws must degrade to
-        // a null refresh (→ UpstreamFailed → re-prompt), not blow through SingleFlight uncaught.
+    private suspend fun refreshAndPersist(raw: JsonObject, tokens: JsonObject): RefreshOutcome {
+        val refreshToken = tokens.str(FIELD_REFRESH_TOKEN) ?: return RefreshOutcome.NoRefreshToken
+        // Guard the network hop too (Node wrapped the whole read+fetch): a thrown hop must degrade
+        // to a typed outcome (→ UpstreamFailed → re-prompt), not blow through SingleFlight uncaught.
         val fresh = runCatchingCancellable { refreshCall(refreshToken) }
-            .onFailure { System.err.println("[codex-auth] token refresh call threw: $it") }
-            .getOrNull() ?: return null
-        return fresh.accessToken?.let { access ->
-            writeSecure(authPath, mergedAuthJson(raw, tokens, fresh, access).toString())
-            invalidateCache()
-            readCached()
-        }
+            .getOrElse { return RefreshOutcome.TransportFailed(it) }
+            ?: return RefreshOutcome.Rejected("token endpoint returned no tokens")
+        val access = fresh.accessToken
+            ?: return RefreshOutcome.Rejected("refresh response missing access_token")
+        writeSecure(authPath, mergedAuthJson(raw, tokens, fresh, access).toString())
+        invalidateCache()
+        return readCached()?.let { RefreshOutcome.Refreshed(it) }
+            ?: RefreshOutcome.PersistFailed("auth.json unreadable after rotated-token write")
     }
 
     /** Merge the freshly refreshed tokens onto the existing auth.json, preserving every field the
@@ -142,6 +146,7 @@ public class CodexAuthProvider(
     }
 
     private companion object {
+        const val LOG_TAG = "codex-auth"
         const val KIND = "chatgpt-oauth"
         const val MASK_KEEP = 4
         const val FIELD_TOKENS = "tokens"

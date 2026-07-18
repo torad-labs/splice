@@ -18,7 +18,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
+import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.auth.credentialsOrNull
 import splice.core.util.SecureFile
 import splice.core.util.long
 import splice.core.util.runCatchingCancellable
@@ -62,7 +64,7 @@ public class GrokAuthProvider(
         // serve as-is when the file carries no expiry, or we're still outside the proactive window
         if (expiresAt == null || expiresAt - clock() >= PROACTIVE_WINDOW_MS) return current
         // proactive window: single-flight refresh; on failure serve the current token if still valid.
-        val refreshed = singleFlight.run { doRefresh() }
+        val refreshed = singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG) }
         return refreshed ?: (if (clock() < expiresAt) current else null)
     }
 
@@ -91,24 +93,28 @@ public class GrokAuthProvider(
         cache = null
     }
 
-    override suspend fun refresh(): Credentials? = singleFlight.run { doRefresh() }
+    override suspend fun refresh(): Credentials? =
+        singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG) }
 
-    private suspend fun doRefresh(): Credentials? {
-        val refreshToken = runCatchingCancellable { tokensOf() }
-            .onFailure { System.err.println("[grok-auth] refresh-token read from $authPath failed: $it") }
-            .getOrNull()
-            ?.get(FIELD_REFRESH_TOKEN).str() ?: return null
+    // Sealed per-mode outcome (discipline L3): a dead refresh token, a transport blip, and a
+    // corrupt file are DIFFERENT stories; credentialsOrNull is the single logging flatten.
+    private suspend fun doRefresh(): RefreshOutcome {
+        if (!Files.exists(authPath)) return RefreshOutcome.NoCredentialsFile
+        val tokens = runCatchingCancellable { tokensOf() }
+            .getOrElse { return RefreshOutcome.ReadFailed(it) }
+        val refreshToken = tokens?.get(FIELD_REFRESH_TOKEN).str()
+            ?: return RefreshOutcome.NoRefreshToken
         // Guard the network hop (the refreshCall param's type doesn't promise "never throws"): a
-        // caller-supplied hop that throws must degrade to a null refresh (→ re-prompt), not blow
-        // through SingleFlight uncaught. The write/reload below stays unguarded, as before.
+        // thrown hop must degrade to a typed outcome, not blow through SingleFlight uncaught.
         val fresh = runCatchingCancellable { refreshCall(refreshToken) }
-            .onFailure { System.err.println("[grok-auth] token refresh call threw: $it") }
-            .getOrNull()
-        val access = fresh?.accessToken ?: return null
+            .getOrElse { return RefreshOutcome.TransportFailed(it) }
+            ?: return RefreshOutcome.Rejected("token endpoint returned no rotated tokens")
+        val access = fresh.accessToken
+            ?: return RefreshOutcome.Rejected("refresh response missing access_token")
         val expiresAtMs = fresh.expiresIn?.let { clock() + it * MS_PER_S }
         writeSecure(authPath, mergedAuthJson(access, fresh.refreshToken ?: refreshToken, expiresAtMs).toString())
         invalidateCache()
-        return Credentials.Bearer(access, null)
+        return RefreshOutcome.Refreshed(Credentials.Bearer(access, null))
     }
 
     // MERGE into the on-disk object — a from-scratch rewrite dropped `expires` and every field the
@@ -164,6 +170,7 @@ public class GrokAuthProvider(
     }
 
     private companion object {
+        const val LOG_TAG = "grok-auth"
         const val DEFAULT_CACHE_MS = 30_000L
         const val MS_PER_S = 1000L
 

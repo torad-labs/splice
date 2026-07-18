@@ -53,15 +53,41 @@ private fun runDaemon() {
     }
 }
 
-// Timestamps every log line and tees it to a persistent, append-only daemon.log (so failures and
-// slow turns survive restarts and are `tail -f`-able) in addition to stderr. Best-effort file I/O.
+// Timestamps every log line and tees it to a persistent daemon.log (so failures and slow turns
+// survive restarts and are `tail -f`-able) in addition to stderr. Best-effort file I/O. The writer
+// stays OPEN for the daemon's lifetime (open/close per line was 2 syscalls + a channel alloc on
+// the turn path); flush-per-line keeps the tail -f contract. A failed write drops the writer so the
+// next line reopens. SIZE-ROTATION (audit 2026-07-18: daemon.log grew forever, ~1KB/turn): at
+// MAX_LOG_BYTES the file is moved to daemon.log.1 (one generation kept) and a fresh file opened.
 private fun persistentLogger(logsDir: Path): (String) -> Unit {
     runCatchingCancellable { Files.createDirectories(logsDir) }
     val file = logsDir.resolve("daemon.log")
+    val rolled = logsDir.resolve("daemon.log.1")
     val gate = Any()
+    var writer: java.io.Writer? = null
+    var written = runCatchingCancellable { if (Files.exists(file)) Files.size(file) else 0L }.getOrDefault(0L)
     return { msg ->
         val line = "[${LocalTime.now().truncatedTo(ChronoUnit.SECONDS)}] $msg"
         System.err.print(line)
-        synchronized(gate) { runCatchingCancellable { Files.writeString(file, line, CREATE, APPEND) } }
+        synchronized(gate) {
+            runCatchingCancellable {
+                if (written >= MAX_LOG_BYTES) {
+                    writer?.close()
+                    Files.move(file, rolled, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
+                    writer = null
+                    written = 0L
+                }
+                val w = writer ?: Files.newBufferedWriter(file, CREATE, APPEND).also { writer = it }
+                w.write(line)
+                w.flush()
+                written += line.length
+            }.onFailure {
+                runCatchingCancellable { writer?.close() }
+                writer = null
+            }
+        }
     }
 }
+
+// One rolled generation at 64MB caps daemon.log disk at ~128MB — plenty of tail history, bounded.
+private const val MAX_LOG_BYTES = 64L * 1024 * 1024

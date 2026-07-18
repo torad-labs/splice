@@ -129,10 +129,20 @@ public class CodexAuthProvider(
 
     private fun writeSecure(path: Path, content: String) {
         Files.createDirectories(path.parent)
-        Files.writeString(path, content)
+        // 0600 BEFORE content, then ATOMIC move — write-then-chmod exposed the token world-readable
+        // for a window, and a truncating in-place write could tear the file under a concurrent
+        // reader (the exact gap OAuthLoginFlow already fixed; audit 2026-07-18).
+        val tmp = Files.createTempFile(path.parent, ".auth", ".tmp")
         runCatchingCancellable {
-            Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------"))
+            Files.setPosixFilePermissions(tmp, PosixFilePermissions.fromString("rw-------"))
         }
+        Files.writeString(tmp, content)
+        Files.move(
+            tmp,
+            path,
+            java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+            java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+        )
     }
 
     private companion object {

@@ -31,6 +31,11 @@ public interface HeadLogSource {
     public fun path(): String
 }
 
+/** Reads the head's per-turn perf rows (file truth, numeric fields only, newest last). */
+public fun interface HeadPerfSource {
+    public fun tailNumeric(n: Int): List<Map<String, Long>>
+}
+
 public data class ManagedHead(
     val head: Head,
     val auth: AuthProvider,
@@ -43,4 +48,6 @@ public data class ManagedHead(
     val authKind: String = "unknown",
     /** Present when this head can be launched as a Claude Code wrapper (P4-LAUNCH). */
     val launchSpec: LaunchSpec? = null,
+    /** Per-turn perf telemetry rows for /api/perf; null = head has no perf sink wired. */
+    val perf: HeadPerfSource? = null,
 )

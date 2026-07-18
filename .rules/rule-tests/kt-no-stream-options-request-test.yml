@@ -1,0 +1,6 @@
+id: kt-no-stream-options-request
+valid:
+  - 'put("stream", true)'
+  - 'put("include", buildJsonArray { add("reasoning.encrypted_content") })'
+invalid:
+  - 'put("stream_options", buildJsonObject { put("include_usage", true) })'

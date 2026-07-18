@@ -31,6 +31,19 @@ design constraint, 2026-07-13).
 | webui-no-emdash-ui-text | webui/src *.tsx | locked copy gate |
 | webui-css-tokens-only | webui/src *.css | --space/--text token scales only |
 
+Kotlin walls (`.rules/kotlin-splice/`) mirror the above for the gateway port. The 2026-07-18
+additions are the **preventive walls** distilled from that day's incidents:
+
+| rule | scope | wall |
+|---|---|---|
+| kt-no-quality-suppress | gateway/*/src | no @Suppress of detekt structural rules — fix the code, not the gate |
+| kt-no-stream-options-request | responses/chat dialect src/main | vendor-contract: stream_options 400s the backend (shipped, broke codex) |
+| kt-no-request-body-gzip | provider-spi src/main | vendor-contract: gzipped request body 400s xAI (shipped, broke grok) |
+
+The two vendor-contract walls are the **write-time half**; `checks/e2e/heads-e2e.sh` (live head
+probes over real backends) is the **run-time half** — a mock suite cannot see a 400 the real
+vendor returns, which is exactly how both shipped.
+
 L1 (no reasoning replay) was RETIRED 2026-07-14: encrypted reasoning replay is
 now a supported, default-on, config-gated behavior (`replayReasoning`), paired
 with `prompt_cache_key` for Codex-parity prompt-cache warmth. The mirror (L2)

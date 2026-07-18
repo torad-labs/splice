@@ -15,3 +15,6 @@ gateway/**/.gradle/
 gateway/**/build/
 gateway/.kotlin/
 gateway/build-logic/.kotlin/
+
+# agent worktrees (scratch repo copies)
+.claude/worktrees/

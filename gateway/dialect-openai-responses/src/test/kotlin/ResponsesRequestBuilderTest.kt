@@ -26,7 +26,7 @@ private val GROK = ResponsesQuirks(
     providerTag = "claude-grok",
     cacheKeyStrategy = CacheKeyStrategy.SESSION_ID,
     effortLadder = EffortLadder.GROK,
-    supportsSummary = false,
+    supportsSummary = true,
     summaryRejectModelRegex = null,
     compactEffortPin = "low",
     emitToolChoice = true,
@@ -39,6 +39,7 @@ private fun opts(
     summary: String? = null,
     show: String = "text",
     replay: Boolean = false,
+    includeEncrypted: Boolean? = null,
     model: String = "gpt-5.6-sol",
     sessionId: String? = null,
 ) = BuildOptions(
@@ -49,6 +50,8 @@ private fun opts(
     configSummary = summary,
     showReasoning = show,
     replayReasoning = replay,
+    // Default: include when reasoning is shown (independent of input-replay).
+    includeEncryptedReasoning = includeEncrypted ?: (show != "off" && !compact),
     sessionId = sessionId,
     decodeReasoningEnvelope = { data ->
         buildJsonObject {
@@ -96,6 +99,19 @@ class ResponsesRequestBuilderTest {
             options = opts(show = "text", summary = "concise"),
         )
         assertEquals("medium", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        // configSummary is operator-controlled — concise stays concise when TOML/env says so.
+        assertEquals("concise", req["reasoning"]?.jsonObject?.get("summary")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `request-level weak summary is floored to detailed when reasoning is visible`() {
+        // The MODEL/Claude Code asking for concise must not defeat operator-visible reasoning
+        // (v27 fold); an operator-set concise still wins (pinned in the visibility-floor test).
+        val req = build(
+            """{"model":"m","reasoning":{"summary":"concise"},"messages":[{"role":"user","content":"x"}]}""",
+            options = opts(show = "text"),
+        )
+        assertEquals("detailed", req["reasoning"]?.jsonObject?.get("summary")?.jsonPrimitive?.content)
     }
 
     @Test
@@ -162,14 +178,23 @@ class ResponsesRequestBuilderTest {
     }
 
     @Test
-    fun `replay gating - include field and decoded reasoning items only when on`() {
+    fun `include and input-replay are independent knobs`() {
         val body = """{"model":"m","messages":[{"role":"assistant","content":[
             {"type":"redacted_thinking","data":"ZW52ZWxvcGU="}]},
             {"role":"user","content":"next"}]}"""
-        val on = build(body, options = opts(replay = true))
-        assertTrue(on["include"].toString().contains("reasoning.encrypted_content"))
-        assertTrue(on["input"]!!.jsonArray.any { it.jsonObject["decoded"] != null })
-        val off = build(body, options = opts(replay = false))
+        // include ON, replay OFF (the deep-reasoning default): fetch handle, do not inject prior.
+        val includeOnly = build(body, options = opts(replay = false, includeEncrypted = true))
+        assertTrue(includeOnly["include"].toString().contains("reasoning.encrypted_content"))
+        assertFalse(includeOnly["input"]!!.jsonArray.any { it.jsonObject["decoded"] != null })
+        // NB: no stream_options on Responses — the ChatGPT backend 400s "Unknown parameter"
+        // on stream_options.include_usage (verified live 2026-07-18); usage rides response.completed.
+        assertNull(includeOnly["stream_options"])
+        // both ON: inject prior redacted_thinking into input AND request new encrypted handle.
+        val both = build(body, options = opts(replay = true, includeEncrypted = true))
+        assertTrue(both["include"].toString().contains("reasoning.encrypted_content"))
+        assertTrue(both["input"]!!.jsonArray.any { it.jsonObject["decoded"] != null })
+        // both OFF: neither include nor inject.
+        val off = build(body, options = opts(replay = false, includeEncrypted = false))
         assertNull(off["include"])
         assertFalse(off["input"]!!.jsonArray.any { it.jsonObject["decoded"] != null })
     }
@@ -196,7 +221,9 @@ class ResponsesRequestBuilderTest {
             options = opts(model = "grok-4.5"),
         )
         assertEquals("high", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
-        assertNull(req["reasoning"]?.jsonObject?.get("summary"))
+        // Full reasoning visibility: detailed summary is requested so the stream fills the
+        // thinking channel (xAI's public form of "full" reasoning text).
+        assertEquals("detailed", req["reasoning"]?.jsonObject?.get("summary")?.jsonPrimitive?.content)
         assertEquals("required", req["tool_choice"]?.jsonPrimitive?.content)
         assertEquals(true, req["parallel_tool_calls"]?.jsonPrimitive?.content?.toBoolean())
         // disabled thinking does NOT disable grok reasoning — the default chain applies

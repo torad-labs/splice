@@ -6,6 +6,10 @@
 // (first block/terminal), followed by ping. Frames are `event: X\ndata: {json}\n\n` exactly —
 // the golden differential diffs bytes. The non-stream terminal message builder lives HERE for
 // the same reason (its stop_reason literal). Ended-idempotence guards double terminals.
+//
+// Hot path: the three per-token delta shapes (text / thinking / input_json) are hand-built into
+// a reused StringBuilder so a long stream does not allocate a JsonObject map + toString per token.
+// Structural frames (start/stop/terminal/error) still use buildJsonObject — they fire O(blocks).
 package splice.gateway.wire
 
 import kotlinx.serialization.json.JsonObject
@@ -47,11 +51,23 @@ public class SseEmitter internal constructor(
     private var nextBlockIndex = 0
     private val open = LinkedHashSet<Int>()
 
+    // Reused for every frame assembly — never escapes the emitter; not concurrent.
+    private val frameBuf = StringBuilder(FRAME_BUF_CAPACITY)
+
     public val hasStarted: Boolean get() = started
     public val hasEnded: Boolean get() = ended.get()
 
     private suspend fun frame(event: String, data: JsonObject) {
-        write("event: $event\ndata: $data\n\n")
+        frameBuf.setLength(0)
+        frameBuf.append("event: ").append(event).append("\ndata: ").append(data).append("\n\n")
+        write(frameBuf.toString())
+    }
+
+    /** Hand-built SSE frame for a fixed-shape hot frame (content_block_stop) — no JsonObject map. */
+    private suspend fun writeRawFrame(event: String, dataJson: String) {
+        frameBuf.setLength(0)
+        frameBuf.append("event: ").append(event).append("\ndata: ").append(dataJson).append("\n\n")
+        write(frameBuf.toString())
     }
 
     public suspend fun ensureStart() {
@@ -91,19 +107,31 @@ public class SseEmitter internal constructor(
         return WireBlockIndex(idx)
     }
 
-    private suspend fun delta(index: WireBlockIndex, deltaObj: JsonObject) {
-        // Symmetric with closeBlock's guard: never write a delta to a block that isn't open (a
-        // delta after content_block_stop would corrupt the wire). Makes L3 block-pairing a property
-        // of THIS emitter, not of caller discipline.
+    /**
+     * Hot-path delta: hand-build
+     * `{"type":"content_block_delta","index":N,"delta":{"type":"<deltaType>","<field>":"<escaped>"}}`
+     * without a JsonObject map. JSON string escaping is applied to [value] only. Guard symmetric
+     * with closeBlock: never write a delta to a block that isn't open (a delta after
+     * content_block_stop would corrupt the wire) — L3 block-pairing stays a property of THIS
+     * emitter, not of caller discipline.
+     */
+    private suspend fun hotDelta(index: WireBlockIndex, deltaType: String, field: String, value: String) {
         if (index.value !in open) return
-        frame(
-            "content_block_delta",
-            buildJsonObject {
-                put(TYPE, "content_block_delta")
-                put("index", index.value)
-                put("delta", deltaObj)
-            },
-        )
+        // Assemble the WHOLE frame directly into the reused frameBuf — one toString() per token, no
+        // throwaway builder/String (the old path built the payload in a fresh buildString THEN copied
+        // it into frameBuf and toString()'d again — two Strings/token on the hottest path, defeating
+        // the "one reused StringBuilder" the file header promises).
+        frameBuf.setLength(0)
+        frameBuf.append("event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":")
+            .append(index.value)
+            .append(",\"delta\":{\"type\":\"")
+            .append(deltaType)
+            .append("\",\"")
+            .append(field)
+            .append("\":\"")
+            .appendJsonEscaped(value)
+            .append("\"}}\n\n")
+        write(frameBuf.toString())
     }
 
     override suspend fun openText(): WireBlockIndex =
@@ -133,43 +161,29 @@ public class SseEmitter internal constructor(
         )
 
     override suspend fun textDelta(index: WireBlockIndex, text: String) {
-        delta(
-            index,
-            buildJsonObject {
-                put(TYPE, "text_delta")
-                put("text", text)
-            },
-        )
+        hotDelta(index, "text_delta", "text", text)
     }
 
     override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) {
-        delta(
-            index,
-            buildJsonObject {
-                put(TYPE, "thinking_delta")
-                put("thinking", thinking)
-            },
-        )
+        hotDelta(index, "thinking_delta", "thinking", thinking)
     }
 
     override suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String) {
-        delta(
-            index,
-            buildJsonObject {
-                put(TYPE, "input_json_delta")
-                put("partial_json", partialJson)
-            },
-        )
+        hotDelta(index, "input_json_delta", "partial_json", partialJson)
+    }
+
+    // signature_delta rides the content_block_delta frame like the token deltas; hotDelta's
+    // open-block guard makes a delta to a closed/unknown index a no-op (L3 block-pairing).
+    override suspend fun signatureDelta(index: WireBlockIndex, signature: String) {
+        hotDelta(index, "signature_delta", "signature", signature)
     }
 
     override suspend fun closeBlock(index: WireBlockIndex) {
         if (!open.remove(index.value)) return
-        frame(
+        // Fixed shape, no user content — hand-built, no JsonObject.
+        writeRawFrame(
             "content_block_stop",
-            buildJsonObject {
-                put(TYPE, "content_block_stop")
-                put("index", index.value)
-            },
+            "{\"type\":\"content_block_stop\",\"index\":${index.value}}",
         )
     }
 
@@ -179,19 +193,8 @@ public class SseEmitter internal constructor(
 
     override suspend fun addTextBlock(text: String) {
         if (text.isEmpty()) return
-        val idx = openBlock(
-            buildJsonObject {
-                put(TYPE, "text")
-                put("text", "")
-            },
-        )
-        delta(
-            idx,
-            buildJsonObject {
-                put(TYPE, "text_delta")
-                put("text", text)
-            },
-        )
+        val idx = openText()
+        textDelta(idx, text)
         closeBlock(idx)
     }
 
@@ -248,6 +251,10 @@ public class SseEmitter internal constructor(
         private const val TYPE = "type"
         private const val MESSAGE = "message"
 
+        // Reused frame buffer: sized to hold a typical delta frame without a regrow; it keeps
+        // whatever capacity the largest frame needed, so steady-state hot-delta writes never realloc.
+        private const val FRAME_BUF_CAPACITY = 256
+
         public fun create(
             write: suspend (String) -> Unit,
             model: String,
@@ -275,4 +282,53 @@ public class SseEmitter internal constructor(
             else -> "end_turn"
         }
     }
+}
+
+// JSON string-escape shapes (RFC 8259): controls below 0x20 escape as \u four-hex-digits.
+private const val CONTROL_CHAR_BOUND = 0x20
+private const val HEX_RADIX = 16
+private const val UNICODE_ESCAPE_DIGITS = 4
+
+/** RFC 8259 string escape into [this] builder — only the value payload of a hot delta.
+ *  MUST stay byte-identical to kotlinx-serialization's escaper (L3: the golden differential
+ *  diffs bytes): kotlinx emits the SHORT forms for backspace (0x08) and form feed (0x0C);
+ *  the \uXXXX forms would be valid JSON but a byte divergence (audit 2026-07-18; the whole
+ *  control range is pinned by SseEscapingParityTest). */
+private fun StringBuilder.appendJsonEscaped(s: String): StringBuilder {
+    for (i in s.indices) {
+        val c = s[i]
+        val shortEsc = shortEscape(c)
+        when {
+            shortEsc != null -> append(shortEsc)
+            c.code < CONTROL_CHAR_BOUND -> appendUnicodeEscape(c)
+            else -> append(c)
+        }
+    }
+    return this
+}
+
+// Control-char code points kotlinx short-escapes (named so the escaper carries no magic numbers).
+private const val CH_BACKSPACE = 0x08
+private const val CH_TAB = 0x09
+private const val CH_NEWLINE = 0x0A
+private const val CH_FORMFEED = 0x0C
+private const val CH_RETURN = 0x0D
+
+/** The six two-char JSON escapes kotlinx emits; null = not a short-escaped char. */
+private fun shortEscape(c: Char): String? = when (c.code) {
+    '\\'.code -> "\\\\"
+    '"'.code -> "\\\""
+    CH_NEWLINE -> "\\n"
+    CH_RETURN -> "\\r"
+    CH_TAB -> "\\t"
+    CH_BACKSPACE -> "\\b"
+    CH_FORMFEED -> "\\f"
+    else -> null
+}
+
+private fun StringBuilder.appendUnicodeEscape(c: Char) {
+    append("\\u")
+    val hex = c.code.toString(HEX_RADIX)
+    repeat(UNICODE_ESCAPE_DIGITS - hex.length) { append('0') }
+    append(hex)
 }

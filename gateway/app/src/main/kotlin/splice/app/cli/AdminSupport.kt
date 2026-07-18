@@ -51,10 +51,17 @@ internal object AdminSupport {
         return spawnDaemon(jar) && waitUntilUp(port)
     }
 
-    /** Spawn the detached daemon process; false (with a message) if it can't be launched. */
+    /** Spawn the detached daemon process; false (with a message) if it can't be launched.
+     *  JVM opts (bounded heap by default) ride $SPLICE_JVM_OPTS, expanded BY THE SHELL so the
+     *  wall keeping System.getenv out of non-config code stays intact — splice-launch exports the
+     *  same default, so both cold-start paths agree (audit 2026-07-18: no -Xmx → 1000-stream OOM). */
     private fun spawnDaemon(jar: Path): Boolean =
         runCatchingCancellable {
-            ProcessBuilder("sh", "-c", "nohup java -jar '$jar' daemon >/dev/null 2>&1 &")
+            ProcessBuilder(
+                "sh",
+                "-c",
+                "nohup java \${SPLICE_JVM_OPTS:-$DEFAULT_JVM_OPTS} -jar '$jar' daemon >/dev/null 2>&1 &",
+            )
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
                 .start()
@@ -111,4 +118,8 @@ internal object AdminSupport {
     private const val PROBE_TIMEOUT_MS = 400
     private const val STARTUP_POLLS = 60
     private const val POLL_INTERVAL_MS = 250L
+
+    // Bounded heap + string-dedup: safe for hundreds of concurrent streams, small for a laptop.
+    // The shell `${SPLICE_JVM_OPTS:-...}` lets an operator override without touching code.
+    private const val DEFAULT_JVM_OPTS = "-Xmx1024m -XX:+UseStringDeduplication"
 }

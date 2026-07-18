@@ -33,7 +33,7 @@ class CompactTest {
     fun `every marker detects in the system prompt and in the last user message`() {
         for (marker in compactMarkers) {
             assertTrue(
-                classifyCompact(body("""{"model":"m","system":"You are $marker now.","messages":[]}""")),
+                classifyCompact(body("""{"model":"m","system":"You are $marker now.","messages":[]}""")).compact,
                 "system: $marker",
             )
             assertTrue(
@@ -41,7 +41,7 @@ class CompactTest {
                     body(
                         """{"model":"m","messages":[{"role":"user","content":"Please: ${marker.uppercase()}"}]}""",
                     ),
-                ),
+                ).compact,
                 "last user: $marker",
             )
         }
@@ -55,7 +55,7 @@ class CompactTest {
                     """{"model":"m","system":"$COMPACT_MARKER",
                         "tools":[{"name":"Read","input_schema":{"type":"object"}}],"messages":[]}""",
                 ),
-            ),
+            ).compact,
         )
     }
 
@@ -66,7 +66,7 @@ class CompactTest {
             append("x".repeat(50_000))
             append(""""}]}""")
         }
-        assertFalse(classifyCompact(body(bigResume)))
+        assertFalse(classifyCompact(body(bigResume)).compact)
     }
 
     @Test
@@ -78,7 +78,7 @@ class CompactTest {
                 {"role":"user","content":"now do normal work"}
             ]}""",
         )
-        assertFalse(classifyCompact(quoted))
+        assertFalse(classifyCompact(quoted).compact)
         assertFalse(markerPresent(quoted))
     }
 
@@ -90,7 +90,7 @@ class CompactTest {
                     """{"model":"m","messages":[
                         {"role":"user","content":"The compaction agent should only produce TEXT."}]}""",
                 ),
-            ),
+            ).compact,
         )
         assertTrue(
             classifyCompact(
@@ -98,7 +98,7 @@ class CompactTest {
                     """{"model":"m","messages":[
                         {"role":"user","content":"Tool use is not allowed during compaction."}]}""",
                 ),
-            ),
+            ).compact,
         )
     }
 

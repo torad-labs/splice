@@ -18,6 +18,9 @@ import kotlinx.serialization.json.put
 import splice.core.util.runCatchingCancellable
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.TextBlock
+import java.nio.ByteBuffer
+import java.nio.channels.FileChannel
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
@@ -39,6 +42,13 @@ public val compactMarkers: List<String> = listOf(
 private val compactionTextOnlyRe = Regex("compaction agent should only produce text", RegexOption.IGNORE_CASE)
 private val compactionNoToolsRe = Regex("tool use is not allowed during compaction", RegexOption.IGNORE_CASE)
 
+/** One-shot probe of a request for the compact classifier + shadow instrument. */
+public data class CompactProbe(
+    val compact: Boolean,
+    val hasMarker: Boolean,
+    val sysLen: Int,
+)
+
 public fun systemText(body: AnthropicRequest): String = body.system.orEmpty()
 
 public fun lastUserTextOf(body: AnthropicRequest): String {
@@ -54,17 +64,27 @@ public fun lastUserTextOf(body: AnthropicRequest): String {
 }
 
 /** Marker in the system prompt OR the LAST user message — never the whole transcript. */
-public fun markerPresent(body: AnthropicRequest): Boolean {
-    val hay = (systemText(body) + "\n" + lastUserTextOf(body)).lowercase()
-    return compactMarkers.any { hay.contains(it) }
-}
+public fun markerPresent(body: AnthropicRequest): Boolean = classifyCompact(body).hasMarker
 
-/** Detect Claude Code's /compact summarization call (auto + manual). Positive marker only. */
-public fun classifyCompact(body: AnthropicRequest): Boolean {
-    if (markerPresent(body)) return true
-    val lastUserText = lastUserTextOf(body)
-    return compactionTextOnlyRe.containsMatchIn(lastUserText) ||
-        compactionNoToolsRe.containsMatchIn(lastUserText)
+/**
+ * Detect Claude Code's /compact summarization call (auto + manual). Positive marker only.
+ * Returns the full probe so the shadow classifier can reuse sysLen/hasMarker without a second
+ * scan of the system prompt + last user message.
+ */
+public fun classifyCompact(body: AnthropicRequest): CompactProbe {
+    val system = systemText(body)
+    val lastUser = lastUserTextOf(body)
+    // Lowercase once; markers are already lowercase contract strings.
+    val hay = buildString(system.length + lastUser.length + 1) {
+        append(system)
+        append('\n')
+        append(lastUser)
+    }.lowercase()
+    val hasMarker = compactMarkers.any { hay.contains(it) }
+    val compact = hasMarker ||
+        compactionTextOnlyRe.containsMatchIn(lastUser) ||
+        compactionNoToolsRe.containsMatchIn(lastUser)
+    return CompactProbe(compact = compact, hasMarker = hasMarker, sysLen = system.length)
 }
 
 public data class ShadowRow(
@@ -84,13 +104,17 @@ public class ShadowClassifier(
     private val ring = ArrayDeque<ShadowRow>()
     private val lock = Any()
 
-    public fun record(body: AnthropicRequest, compact: Boolean): ShadowRow {
+    /** Convenience for callers that only have the boolean; one classifyCompact scan, then override. */
+    public fun record(body: AnthropicRequest, compact: Boolean): ShadowRow =
+        record(body, classifyCompact(body).copy(compact = compact))
+
+    public fun record(body: AnthropicRequest, probe: CompactProbe): ShadowRow {
         val row = ShadowRow(
             ts = clock(),
-            compact = compact,
-            hasMarker = markerPresent(body),
+            compact = probe.compact,
+            hasMarker = probe.hasMarker,
             toolCount = body.tools.size,
-            sysLen = systemText(body).length,
+            sysLen = probe.sysLen,
             model = body.model,
         )
         synchronized(lock) {
@@ -151,10 +175,13 @@ public class CompactStats(private val file: Path, private val clock: () -> Long 
 
     // read is best-effort by design: a missing/corrupt file yields an empty summary, and a single
     // unparseable line is skipped — cancellation still propagates via runCatchingCancellable.
+    // Large files are tail-read (last READ_TAIL_BYTES) so a multi-MB JSONL never becomes a full
+    // heap load just to render the HUD; total/byOutcome then reflect the tailed window, not the
+    // full history (acceptable for a drift instrument — the file itself is still append-only).
     public fun read(tailN: Int = DEFAULT_TAIL): CompactStatsSummary {
         if (!Files.exists(file)) return CompactStatsSummary(0, emptyMap(), emptyList())
         val rows = runCatchingCancellable {
-            Files.readString(file).trim().lines().filter { it.isNotEmpty() }.mapNotNull { line ->
+            readJsonlTail(file, READ_TAIL_BYTES).mapNotNull { line ->
                 runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
             }
         }.getOrDefault(emptyList())
@@ -166,5 +193,30 @@ public class CompactStats(private val file: Path, private val clock: () -> Long 
 
     private companion object {
         const val DEFAULT_TAIL = 50
+
+        // ~256 KiB of trailing JSONL is plenty for the HUD window and bounds parse cost.
+        const val READ_TAIL_BYTES = 256 * 1024
     }
 }
+
+/**
+ * Read the trailing [maxBytes] of [file] as UTF-8 lines. If the file is larger, the first
+ * (possibly partial) line in the window is dropped so every returned line is complete.
+ */
+internal fun readJsonlTail(file: Path, maxBytes: Int): List<String> =
+    FileChannel.open(file, StandardOpenOption.READ).use { ch ->
+        val size = ch.size()
+        if (size <= 0L) return@use emptyList()
+        val readFrom = (size - maxBytes.toLong()).coerceAtLeast(0L)
+        val len = (size - readFrom).toInt()
+        val buf = ByteBuffer.allocate(len)
+        ch.position(readFrom)
+        while (buf.hasRemaining()) {
+            if (ch.read(buf) < 0) break
+        }
+        buf.flip()
+        val text = StandardCharsets.UTF_8.decode(buf).toString()
+        // Mid-file start: drop the leading partial line (no newline at all -> nothing complete).
+        val complete = if (readFrom > 0L) text.substringAfter('\n', missingDelimiterValue = "") else text
+        complete.lineSequence().filter { it.isNotEmpty() }.toList()
+    }

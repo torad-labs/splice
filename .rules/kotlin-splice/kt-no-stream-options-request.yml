@@ -1,0 +1,19 @@
+# VENDOR-CONTRACT WALL (2026-07-18): stream_options is a CHAT-COMPLETIONS-only knob. The ChatGPT
+# Responses backend AND xAI 400 on it ("Unknown parameter: 'stream_options.include_usage'") — it
+# SHIPPED and broke every codex turn until caught by a live smoke turn. Usage already rides
+# response.completed; there is never a reason to send stream_options from these dialects. This is
+# the write-time half of the vendor-contract wall; checks/e2e/heads-e2e.sh is the live half.
+id: kt-no-stream-options-request
+language: kotlin
+severity: error
+message: "Never send stream_options — the Responses/xAI backends 400 on it (shipped & broke codex 2026-07-18). Usage rides response.completed."
+note: >
+  Delete the stream_options field. If a NEW top-level request field is genuinely needed, prove the
+  vendor accepts it with a live turn (checks/e2e/heads-e2e.sh --tier 1) before merging — mocks
+  cannot see a 400 the real backend returns.
+files:
+  - gateway/dialect-openai-responses/src/main/**/*.kt
+  - gateway/dialect-openai-chat/src/main/**/*.kt
+rule:
+  kind: string_literal
+  regex: '^"stream_options"$'

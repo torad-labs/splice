@@ -23,6 +23,7 @@ import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
+import splice.gateway.perf.PerfStats
 import splice.gateway.usage.UsageStore
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.provider.openai.OpenAiResponsesProvider
@@ -71,6 +72,7 @@ class OpenAiResponsesTest {
                 shadow = ShadowClassifier(log = {}),
                 compactStats = CompactStats(tmp.resolve("c.jsonl")),
                 usageStore = UsageStore(tmp.resolve("u.json"), tmp.resolve("r.json")),
+                perfStats = PerfStats(tmp.resolve("p.jsonl")),
                 log = {},
             ),
         )

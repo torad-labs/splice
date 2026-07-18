@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
 import splice.gateway.wire.SseEmitter
+import splice.gateway.wire.TerminalMessage
 
 class SseEmitterTest {
 
@@ -127,12 +128,14 @@ class SseEmitterTest {
     @Test
     fun `non-stream terminal message derives the same stop reasons`() {
         val msg = SseEmitter.terminalMessageJson(
-            id = "msg_1",
-            model = "m",
-            content = emptyList(),
-            hasToolUse = false,
-            incomplete = true,
-            usagePayload = buildJsonObject { put("input_tokens", 1) },
+            TerminalMessage(
+                id = "msg_1",
+                model = "m",
+                content = emptyList(),
+                hasToolUse = false,
+                incomplete = true,
+                usagePayload = buildJsonObject { put("input_tokens", 1) },
+            ),
         )
         assertEquals("\"max_tokens\"", msg["stop_reason"].toString())
     }

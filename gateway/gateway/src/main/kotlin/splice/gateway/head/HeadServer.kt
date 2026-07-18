@@ -35,8 +35,10 @@ import splice.core.head.Head
 import splice.core.head.HeadHealth
 import splice.core.model.DiscoveryRow
 import splice.core.parse.parseAnthropicBody
+import splice.core.turn.ErrorType
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
+import splice.core.util.runCatchingCancellable
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.compact.classifyCompact
@@ -47,11 +49,17 @@ import splice.gateway.usage.buildUsagePayload
 import splice.gateway.usage.cacheLogLine
 import splice.gateway.usage.makeOutputClamp
 import splice.gateway.wire.SseEmitter
+import splice.spi.BuiltTurn
+import splice.spi.FailureSource
 import splice.spi.InflightGate
 import splice.spi.Provider
 import splice.spi.TurnWatchdog
+import splice.spi.UpstreamAuthMissing
 import splice.spi.UpstreamClient
+import splice.spi.UpstreamFailed
+import splice.spi.UpstreamFailureClassifier
 import splice.spi.sseJsonEvents
+import java.io.IOException
 
 /** Collaborators the head needs, bundled to keep the constructor lean. */
 public data class HeadDeps(
@@ -62,6 +70,19 @@ public data class HeadDeps(
     val usageStore: UsageStore,
     val log: (String) -> Unit,
     val clock: () -> Long = System::currentTimeMillis,
+)
+
+/** The per-turn collaborators + data driveOneTurn needs, grouped so the drive signature stays one
+ *  cohesive argument (they are all created together per request inside the SSE writer). */
+private data class TurnDrive(
+    val bodyJson: String,
+    val meta: TurnMeta,
+    val emitter: SseEmitter,
+    val watchdog: TurnWatchdog,
+    val slot: InflightGate.Slot,
+    val pipeline: TurnPipeline,
+    val t0: Long,
+    val upstreamModel: String,
 )
 
 public class HeadServer(
@@ -134,19 +155,11 @@ public class HeadServer(
         }.toString()
     }
 
-    @Suppress(
-        "LongMethod",
-        "CyclomaticComplexMethod",
-        "ReturnCount",
-        "TooGenericExceptionCaught",
-        "InstanceOfCheckForException",
-    ) // the ported handleMessages; body-parse failure is a client 400, not a crash
+    // the ported handleMessages; body-parse failure is a client 400, not a crash (runCatchingCancellable
+    // captures the malformed-body failure yet still lets coroutine cancellation propagate).
     private suspend fun handleMessages(call: ApplicationCall) {
         val raw = call.receiveText()
-        val parsed = try {
-            parseAnthropicBody(raw)
-        } catch (e: Exception) {
-            if (e is kotlinx.coroutines.CancellationException) throw e
+        val parsed = runCatchingCancellable { parseAnthropicBody(raw) }.getOrElse {
             call.respondText(
                 errorBodyJson("invalid_request_error", "invalid request body"),
                 ContentType.Application.Json,
@@ -166,73 +179,130 @@ public class HeadServer(
         shadow.record(parsed.typed, compact)
         val sessionId = call.request.headers["x-claude-code-session-id"]
         val built = provider.buildTurn(parsed, compact, sessionId)
-        val meta = built.meta
-        val upstreamModel = meta.upstreamModel
         val t0 = clock()
         val slot = gate.acquire()
 
         try {
-            call.respondTextWriter(ContentType.Text.EventStream) {
-                val emitter = SseEmitter.create(
-                    write = { frame ->
-                        write(frame)
-                        flush()
-                    },
-                    model = meta.originalModel,
-                    usagePayload = { usage ->
-                        buildUsagePayload(
-                            TurnUsage(usage?.inputTokens ?: 0, usage?.outputTokens ?: 0, 0, 0),
-                            provider.catalog.contextWindowFor(upstreamModel),
-                        )
-                    },
-                )
-                val watchdog = TurnWatchdog(provider.watchdog, clock)
-                val pipeline = TurnPipeline(
-                    compactStats,
-                    log,
-                    makeOutputClamp(meta.clientMaxTokens, meta.compact, provider.key, log),
-                )
-                driveOneTurn(built.requestBody.toString(), meta, emitter, watchdog, slot, pipeline, t0, upstreamModel)
-            }
+            streamTurn(call, built, slot, t0)
         } finally {
             withContext(NonCancellable) { slot.release() }
         }
     }
 
-    @Suppress("LongParameterList", "LongMethod")
-    private suspend fun driveOneTurn(
-        bodyJson: String,
-        meta: TurnMeta,
-        emitter: SseEmitter,
-        watchdog: TurnWatchdog,
-        slot: InflightGate.Slot,
-        pipeline: TurnPipeline,
-        t0: Long,
-        upstreamModel: String,
-    ) = withContext(Job()) {
+    /** Open the SSE writer, wire up the per-turn collaborators, and run the single turn. */
+    private suspend fun streamTurn(call: ApplicationCall, built: BuiltTurn, slot: InflightGate.Slot, t0: Long) {
+        val meta = built.meta
+        val upstreamModel = meta.upstreamModel
+        call.respondTextWriter(ContentType.Text.EventStream) {
+            val emitter = SseEmitter.create(
+                write = { frame ->
+                    write(frame)
+                    flush()
+                },
+                model = meta.originalModel,
+                usagePayload = { usage ->
+                    // Anthropic convention (what Claude Code's HUD/autocompact expects): input_tokens
+                    // and cache_read_input_tokens are DISJOINT. OpenAI's input_tokens INCLUDES the
+                    // cached portion, so subtract it — else input+cache_read double-counts and the
+                    // context bar/autocompact fire ~2x early (the "compaction ate my quota" class).
+                    val cached = usage?.cachedTokens ?: 0
+                    val nonCachedInput = ((usage?.inputTokens ?: 0) - cached).coerceAtLeast(0)
+                    buildUsagePayload(
+                        TurnUsage(nonCachedInput, usage?.outputTokens ?: 0, 0, cached),
+                        provider.catalog.contextWindowFor(upstreamModel),
+                    )
+                },
+            )
+            val watchdog = TurnWatchdog(provider.watchdog, clock)
+            val pipeline = TurnPipeline(
+                compactStats,
+                log,
+                makeOutputClamp(meta.clientMaxTokens, meta.compact, provider.key, log),
+            )
+            driveOrEmitError(
+                TurnDrive(
+                    bodyJson = built.requestBody.toString(),
+                    meta = meta,
+                    emitter = emitter,
+                    watchdog = watchdog,
+                    slot = slot,
+                    pipeline = pipeline,
+                    t0 = t0,
+                    upstreamModel = upstreamModel,
+                ),
+            )
+        }
+    }
+
+    // The 200 + SSE headers are already committed once respondTextWriter opens, so any exception
+    // upstream.post throws (retries exhausted, missing creds, a mid-request socket reset/timeout)
+    // must become an honest `event: error` frame — NOT escape and leave the client an empty/truncated
+    // 200 or a connection reset (the "empty or malformed response (HTTP 200)" / ECONNRESET class).
+    // emitError is a no-op if the terminal already fired, so a partial stream still ends cleanly.
+    private suspend fun driveOrEmitError(drive: TurnDrive) {
+        try {
+            driveOneTurn(drive)
+        } catch (e: UpstreamAuthMissing) {
+            log(errTurn("auth-missing", drive, ": ${e.message}"))
+            drive.emitter.emitError(ErrorType.AUTHENTICATION, "claudex: no upstream credentials — run: claudex login")
+        } catch (e: UpstreamFailed) {
+            val failure = UpstreamFailureClassifier.classify(FailureSource.HTTP, e.body)
+            val detail = "type=${failure.type.wireName} msg=${failure.message.take(ERR_SNIPPET)}"
+            log(errTurn("upstream-failed", drive, detail))
+            drive.emitter.emitError(failure.type, failure.message)
+        } catch (e: IOException) {
+            log(errTurn("conn-reset", drive, ": ${e.message}"))
+            drive.emitter.emitError(ErrorType.OVERLOADED, "claudex: upstream connection failed (${e.message}) — retry")
+        }
+    }
+
+    private fun errTurn(kind: String, drive: TurnDrive, detail: String): String =
+        "[${provider.key}] turn ERROR $kind compact=${drive.meta.compact} latency=${clock() - drive.t0}ms $detail\n"
+
+    // Per-turn telemetry: outcome + latency (+ tokens/type). The compaction-stall and API-error
+    // signals live here — a compact turn that FAILUREs or runs many seconds is now visible.
+    private fun turnLine(key: String, meta: TurnMeta, model: String, outcome: TurnOutcome, latencyMs: Long): String {
+        val base = "[$key] turn compact=${meta.compact} model=$model latency=${latencyMs}ms"
+        return base + when (outcome) {
+            is TurnOutcome.Success ->
+                " ok out=${outcome.usage.outputTokens} tool=${outcome.hasToolUse} incomplete=${outcome.incomplete}\n"
+            is TurnOutcome.Failure ->
+                " FAILURE type=${outcome.type.wireName} msg=${outcome.message.take(ERR_SNIPPET)}\n"
+            TurnOutcome.ClientAbandoned -> " client-abandoned\n"
+        }
+    }
+
+    private suspend fun driveOneTurn(drive: TurnDrive) = withContext(Job()) {
         val self = this
         val turnJob: Job = self.coroutineContext[Job]!!
         upstream.post(
             url = provider.upstreamUrl,
-            bodyJson = bodyJson,
+            bodyJson = drive.bodyJson,
             auth = provider.auth,
             extraHeaders = { creds -> provider.extraHeaders(creds) },
             onRetry = { log("[${provider.key}] $it\n") },
         ) { resp ->
-            slot.touch()
-            val poller = watchdog.launchIn(self, slot, turnJob)
+            drive.slot.touch()
+            val poller = drive.watchdog.launchIn(self, drive.slot, turnJob)
             val events = sseJsonEvents(resp.bodyChannel()) {
-                slot.touch()
-                watchdog.markByte()
+                drive.slot.touch()
+                drive.watchdog.markByte()
             }
-            val outcome = provider.streamTranslator(meta) { watchdog.fired }.driveTurn(events, emitter)
+            val outcome = provider.streamTranslator(drive.meta) { drive.watchdog.fired }
+                .driveTurn(events, drive.emitter)
             poller.cancel()
             (outcome as? TurnOutcome.Success)?.let { s ->
                 usageStore.appendOutputTokens(s.usage.outputTokens)
-                val usageObj = buildJsonObject { put("input_tokens", s.usage.inputTokens) }
-                log(cacheLogLine(provider.key, upstreamModel, usageObj, meta.compact))
+                val usageObj = buildJsonObject {
+                    put("input_tokens", s.usage.inputTokens)
+                    put("output_tokens", s.usage.outputTokens)
+                    put("input_tokens_details", buildJsonObject { put("cached_tokens", s.usage.cachedTokens) })
+                }
+                log(cacheLogLine(provider.key, drive.upstreamModel, usageObj, drive.meta.compact))
             }
-            pipeline.finishStream(emitter, outcome, meta, clock() - t0)
+            val latencyMs = clock() - drive.t0
+            log(turnLine(provider.key, drive.meta, drive.upstreamModel, outcome, latencyMs))
+            drive.pipeline.finishStream(drive.emitter, outcome, drive.meta, latencyMs)
         }
     }
 
@@ -259,5 +329,6 @@ public class HeadServer(
         const val STOP_GRACE_MS = 100L
         const val STOP_TIMEOUT_MS = 500L
         const val CHARS_PER_TOKEN = 4
+        const val ERR_SNIPPET = 200
     }
 }

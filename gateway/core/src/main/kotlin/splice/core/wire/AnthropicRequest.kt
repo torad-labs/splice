@@ -14,9 +14,11 @@ import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.descriptors.buildClassSerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonContentPolymorphicSerializer
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -43,40 +45,40 @@ public data class AnthropicMessage(
 )
 
 @Serializable(with = ContentBlockSerializer::class)
-public sealed interface ContentBlock
+public sealed class ContentBlock
 
 @Serializable
-public data class TextBlock(val text: String = "") : ContentBlock
+public data class TextBlock(val text: String = "") : ContentBlock()
 
 @Serializable
-public data class ImageBlock(val source: MediaSource? = null) : ContentBlock
+public data class ImageBlock(val source: MediaSource? = null) : ContentBlock()
 
 @Serializable
-public data class DocumentBlock(val source: MediaSource? = null) : ContentBlock
+public data class DocumentBlock(val source: MediaSource? = null) : ContentBlock()
 
 @Serializable
-public data class ThinkingBlock(val thinking: String = "") : ContentBlock
+public data class ThinkingBlock(val thinking: String = "") : ContentBlock()
 
 @Serializable
-public data class RedactedThinkingBlock(val data: String = "") : ContentBlock
+public data class RedactedThinkingBlock(val data: String = "") : ContentBlock()
 
 @Serializable
 public data class ToolUseBlock(
     val id: String = "",
     val name: String = "",
     val input: JsonObject = JsonObject(emptyMap()),
-) : ContentBlock
+) : ContentBlock()
 
 @Serializable
 public data class ToolResultBlock(
     @SerialName("tool_use_id") val toolUseId: String = "",
     @Serializable(with = ContentSerializer::class)
     val content: List<ContentBlock> = emptyList(),
-) : ContentBlock
+) : ContentBlock()
 
 /** Unknown block kinds decode losslessly instead of throwing (forward compatibility). */
 @Serializable(with = UnknownBlockSerializer::class)
-public data class UnknownBlock(val raw: JsonObject) : ContentBlock {
+public data class UnknownBlock(val raw: JsonObject) : ContentBlock() {
     public val type: String get() = raw["type"]?.let { (it as? JsonPrimitive)?.content } ?: ""
 }
 
@@ -146,7 +148,7 @@ public object SystemTextSerializer : KSerializer<String?> {
     }
 
     private fun JsonElement.jsonObjectListTexts(): String? {
-        val arr = this as? kotlinx.serialization.json.JsonArray ?: return null
+        val arr = this as? JsonArray ?: return null
         return arr.mapNotNull { el ->
             val obj = el as? JsonObject ?: return@mapNotNull null
             if (obj["type"]?.jsonPrimitive?.content == "text") obj["text"]?.jsonPrimitive?.content else null
@@ -177,6 +179,6 @@ public object UnknownBlockSerializer : KSerializer<UnknownBlock> {
     }
 
     override fun serialize(encoder: Encoder, value: UnknownBlock) {
-        (encoder as kotlinx.serialization.json.JsonEncoder).encodeJsonElement(value.raw)
+        (encoder as JsonEncoder).encodeJsonElement(value.raw)
     }
 }

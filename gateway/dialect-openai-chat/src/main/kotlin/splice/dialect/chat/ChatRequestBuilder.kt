@@ -5,7 +5,9 @@
 // max_tokens IS honored (unlike the ChatGPT backend); reasoning is a plain field where supported.
 package splice.dialect.chat
 
+import kotlinx.serialization.json.JsonArrayBuilder
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -29,7 +31,6 @@ public data class ChatQuirks(
 
 public data class BuiltChatRequest(val req: JsonObject, val meta: TurnMeta)
 
-@Suppress("StringLiteralDuplication") // chat wire field names are inherently repeated
 public class ChatRequestBuilder(private val quirks: ChatQuirks) {
 
     public fun build(
@@ -41,19 +42,19 @@ public class ChatRequestBuilder(private val quirks: ChatQuirks) {
         val messages = buildJsonArray {
             body.system?.let { sys ->
                 addJsonObject {
-                    put("role", "system")
-                    put("content", sys)
+                    put(ROLE, "system")
+                    put(CONTENT, sys)
                 }
             }
             body.messages.forEach { msg -> appendMessage(this, msg.role, msg.content) }
         }
+        val emitTools = quirks.supportsTools && !compact && body.tools.isNotEmpty()
         val req = buildJsonObject {
             put("model", upstreamModel)
             put("messages", messages)
             put("stream", true)
             body.maxTokens?.takeIf { it > 0 }?.let { put(quirks.maxTokensField, it) }
-            @Suppress("ComplexCondition")
-            if (quirks.supportsTools && !compact && body.tools.isNotEmpty()) {
+            if (emitTools) {
                 put("tools", toolsArray(body))
             }
         }
@@ -72,9 +73,8 @@ public class ChatRequestBuilder(private val quirks: ChatQuirks) {
     }
 
     // the content-block split is the mapping contract
-    @Suppress("CyclomaticComplexMethod", "ComplexCondition", "LongMethod")
     private fun appendMessage(
-        sink: kotlinx.serialization.json.JsonArrayBuilder,
+        sink: JsonArrayBuilder,
         role: String,
         content: List<splice.core.wire.ContentBlock>,
     ) {
@@ -85,58 +85,82 @@ public class ChatRequestBuilder(private val quirks: ChatQuirks) {
         val images = content.filterIsInstance<ImageBlock>().mapNotNull { imagePart(it.source) }
 
         if (toolUses.isNotEmpty()) {
-            sink.addJsonObject {
-                put("role", "assistant")
-                if (texts.isNotEmpty()) put("content", texts) else put("content", null as String?)
+            appendAssistantToolCalls(sink, toolUses, texts)
+        } else if (texts.isNotEmpty() || images.isNotEmpty()) {
+            appendUserContent(sink, role, texts, images)
+        }
+        appendToolResults(sink, toolResults)
+    }
+
+    private fun appendAssistantToolCalls(
+        sink: JsonArrayBuilder,
+        toolUses: List<ToolUseBlock>,
+        texts: String,
+    ) {
+        sink.addJsonObject {
+            put(ROLE, "assistant")
+            if (texts.isNotEmpty()) put(CONTENT, texts) else put(CONTENT, null as String?)
+            put(
+                "tool_calls",
+                buildJsonArray {
+                    toolUses.forEach { tu ->
+                        addJsonObject {
+                            put("id", tu.id)
+                            put(TYPE, FUNCTION)
+                            putFunction(tu.name, tu.input.toString())
+                        }
+                    }
+                },
+            )
+        }
+    }
+
+    private fun appendUserContent(
+        sink: JsonArrayBuilder,
+        role: String,
+        texts: String,
+        images: List<JsonObject>,
+    ) {
+        sink.addJsonObject {
+            put(ROLE, role)
+            if (images.isEmpty()) {
+                put(CONTENT, texts)
+            } else {
                 put(
-                    "tool_calls",
+                    CONTENT,
                     buildJsonArray {
-                        toolUses.forEach { tu ->
+                        if (texts.isNotEmpty()) {
                             addJsonObject {
-                                put("id", tu.id)
-                                put("type", "function")
-                                putFunction(tu.name, tu.input.toString())
+                                put(TYPE, TEXT)
+                                put(TEXT, texts)
                             }
                         }
+                        images.forEach { add(it) }
                     },
                 )
-            }
-        } else if (texts.isNotEmpty() || images.isNotEmpty()) {
-            sink.addJsonObject {
-                put("role", role)
-                if (images.isEmpty()) {
-                    put("content", texts)
-                } else {
-                    put(
-                        "content",
-                        buildJsonArray {
-                            if (texts.isNotEmpty()) {
-                                addJsonObject {
-                                    put("type", "text")
-                                    put("text", texts)
-                                }
-                            }
-                            images.forEach { add(it) }
-                        },
-                    )
-                }
-            }
-        }
-        toolResults.forEach { tr ->
-            val out = tr.content.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
-            sink.addJsonObject {
-                put("role", "tool")
-                put("tool_call_id", tr.toolUseId)
-                put("content", out)
             }
         }
     }
 
-    private fun kotlinx.serialization.json.JsonObjectBuilder.putFunction(name: String, args: String) {
+    private fun appendToolResults(
+        sink: JsonArrayBuilder,
+        toolResults: List<ToolResultBlock>,
+    ) {
+        toolResults.forEach { tr ->
+            val out = tr.content.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
+            sink.addJsonObject {
+                put(ROLE, "tool")
+                put("tool_call_id", tr.toolUseId)
+                put(CONTENT, out)
+            }
+        }
+    }
+
+    private fun JsonObjectBuilder.putFunction(name: String, args: String) {
         put(
-            "function",
+            FUNCTION,
             buildJsonObject {
-                put("name", name)
+                put(NAME, name)
                 put("arguments", args)
             },
         )
@@ -145,13 +169,13 @@ public class ChatRequestBuilder(private val quirks: ChatQuirks) {
     private fun toolsArray(body: AnthropicRequest) = buildJsonArray {
         body.tools.forEach { t ->
             addJsonObject {
-                put("type", "function")
+                put(TYPE, FUNCTION)
                 put(
-                    "function",
+                    FUNCTION,
                     buildJsonObject {
-                        put("name", t.name)
+                        put(NAME, t.name)
                         put("description", t.description ?: "")
-                        put("parameters", t.inputSchema ?: buildJsonObject { put("type", "object") })
+                        put("parameters", t.inputSchema ?: buildJsonObject { put(TYPE, "object") })
                     },
                 )
             }
@@ -161,14 +185,26 @@ public class ChatRequestBuilder(private val quirks: ChatQuirks) {
     private fun imagePart(source: MediaSource?): JsonObject? = when {
         source == null || !quirks.supportsVision -> null
         source.type == "base64" && !source.data.isNullOrEmpty() -> buildJsonObject {
-            put("type", "image_url")
+            put(TYPE, IMAGE_URL)
             val dataUrl = "data:${source.mediaType ?: "image/png"};base64,${source.data}"
-            put("image_url", buildJsonObject { put("url", dataUrl) })
+            put(IMAGE_URL, buildJsonObject { put(URL, dataUrl) })
         }
         source.type == "url" && !source.url.isNullOrEmpty() -> buildJsonObject {
-            put("type", "image_url")
-            put("image_url", buildJsonObject { put("url", source.url) })
+            put(TYPE, IMAGE_URL)
+            put(IMAGE_URL, buildJsonObject { put(URL, source.url) })
         }
         else -> null
+    }
+
+    private companion object {
+        // Chat wire field names — repeated across the message/tool/image mappings.
+        const val ROLE = "role"
+        const val CONTENT = "content"
+        const val TYPE = "type"
+        const val NAME = "name"
+        const val TEXT = "text"
+        const val URL = "url"
+        const val FUNCTION = "function"
+        const val IMAGE_URL = "image_url"
     }
 }

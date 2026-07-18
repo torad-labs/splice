@@ -7,19 +7,24 @@
 // /v1/models. Both are set here now, plus the alias slots, context sizing, and the loopback NO_PROXY.
 package splice.control
 
-import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonElement
 import splice.core.launch.ClaudeConfigMaterializer
 import splice.core.launch.ClaudePolicy
+import splice.core.launch.MaterializeSpec
+import java.nio.file.Path
 import kotlin.math.max
 
 /** What a head needs to produce a launch recipe (supplied by :app at wiring time). */
 public data class LaunchSpec(
-    val configDir: java.nio.file.Path,
+    val configDir: Path,
     val pinnedModel: String,
     val availableModelIds: List<String>,
     val modelLabels: Map<String, String>, // id -> display label (for the alias slot names)
     val contextWindow: Int,
-    val modelOptionsCache: JsonObject,
+    val modelOptionsCache: JsonElement, // the /model picker option list
+    val statuslineCommand: String, // per-head statusline command (…/statusline/<head>)
+    val loginCommand: String, // shell command that runs THIS head's provider sign-in (e.g. `claudex login`)
+    val signInLabel: String, // provider label for the /login UX ("Codex (ChatGPT)", "Grok (xAI)")
     val policy: ClaudePolicy,
     val port: Int,
 )
@@ -37,11 +42,16 @@ public class LaunchService(
     /** Materialize the head's config + build the exec recipe. safe=true drops the skip-perms flag. */
     public fun launch(spec: LaunchSpec, extraArgs: List<String>, safe: Boolean): LaunchRecipe {
         materializer.materialize(
-            spec.configDir,
-            spec.policy,
-            spec.availableModelIds,
-            spec.pinnedModel,
-            spec.modelOptionsCache,
+            MaterializeSpec(
+                configDir = spec.configDir,
+                policy = spec.policy,
+                availableModelIds = spec.availableModelIds,
+                defaultModel = spec.pinnedModel,
+                modelOptionsCache = spec.modelOptionsCache,
+                statuslineCommand = spec.statuslineCommand,
+                loginCommand = spec.loginCommand,
+                signInLabel = spec.signInLabel,
+            ),
         )
         val env = buildEnv(spec)
         // Clear anything ambient that would override the proxy or a stale Anthropic session.
@@ -82,18 +92,26 @@ public class LaunchService(
             put("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "85")
             put("MAX_THINKING_TOKENS", "128000")
             put("NO_PROXY", "127.0.0.1,localhost")
+            // Hide Claude Code's built-in Anthropic-account commands: in a gateway head, auth is the
+            // proxy bearer above, so /login (a local-jsx command hardwired to platform.claude.com —
+            // no hook or base-url override can reach it) and /logout are dead doors. These are the
+            // CLI's own boolean env flags (Pe.bool over process.env), so the commands never register.
+            put("DISABLE_LOGIN_COMMAND", "1")
+            put("DISABLE_LOGOUT_COMMAND", "1")
             put("SPLICE", "1")
         }
     }
 
     // opus/sonnet/haiku/fable → distinct models when the catalog offers them (else the pinned one).
+    // haiku is the "fast" tier, so it prefers a mini/fast model rather than whatever sorts last.
     private fun aliasSlots(spec: LaunchSpec): List<Pair<String, String>> {
         val ids = (listOf(spec.pinnedModel) + spec.availableModelIds).distinct()
         fun at(i: Int) = ids.getOrElse(i) { spec.pinnedModel }
+        val fast = ids.firstOrNull { it.contains("mini") || it.contains("fast") } ?: at(1)
         return listOf(
             "OPUS" to ids.first(),
             "SONNET" to at(1),
-            "HAIKU" to ids.last(),
+            "HAIKU" to fast,
             "FABLE" to at(2),
         )
     }

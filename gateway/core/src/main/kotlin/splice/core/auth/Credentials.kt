@@ -2,17 +2,17 @@
 // unmasked — introspection surfaces (/mgmt/auth, /api/auth) consume AuthDescription only.
 package splice.core.auth
 
-public sealed interface Credentials {
+public sealed class Credentials {
     public data class Bearer(
         val token: String,
         val accountId: String? = null,
-    ) : Credentials
+    ) : Credentials()
 
     public data class ApiKey(
         val key: String,
         val header: String = "Authorization",
         val prefix: String = "Bearer ",
-    ) : Credentials
+    ) : Credentials()
 }
 
 /** Masked, wire-safe view of an auth state (never a secret). */

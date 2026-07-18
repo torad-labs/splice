@@ -3,6 +3,8 @@
 // instruction forcing + same-model/effort inheritance, cache-key stability, tool mapping,
 // replay gating, grok ladder clamps, purity/determinism.
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -49,9 +51,9 @@ private fun opts(
     replayReasoning = replay,
     sessionId = sessionId,
     decodeReasoningEnvelope = { data ->
-        kotlinx.serialization.json.buildJsonObject {
-            put("type", kotlinx.serialization.json.JsonPrimitive("reasoning"))
-            put("decoded", kotlinx.serialization.json.JsonPrimitive(data))
+        buildJsonObject {
+            put("type", JsonPrimitive("reasoning"))
+            put("decoded", JsonPrimitive(data))
         }
     },
 )

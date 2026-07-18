@@ -7,6 +7,7 @@
 // had no cancellation path and a dead request still consumed its FIFO turn.
 package splice.spi
 
+import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.suspendCancellableCoroutine
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
@@ -21,11 +22,13 @@ public class InflightGate(
     private var inflight = 0
     private val queue = ArrayDeque<Waiter>()
 
-    @Suppress("UseDataClass") // mutable continuation holder, not a value
-    private class Waiter(val id: Long) {
-        var resumed = false
-        var continuation: kotlinx.coroutines.CancellableContinuation<Unit>? = null
-    }
+    // A resumable FIFO cell: `id` is a unique tie-break that keeps structural equality identity-safe
+    // for queue.remove(); `resumed` + `continuation` are the mutable coordination state.
+    private data class Waiter(
+        val id: Long,
+        var resumed: Boolean = false,
+        var continuation: CancellableContinuation<Unit>? = null,
+    )
 
     private var nextWaiterId = 0L
 
@@ -84,15 +87,16 @@ public class InflightGate(
         toResume.forEach { it.continuation?.resume(Unit) }
     }
 
-    @Suppress("LoopWithTooManyJumpStatements") // ported drain loop: skip-resumed + capacity guard
+    // ported drain loop: skip-resumed + capacity guard
     private fun drainAdmissibleLocked(): List<Waiter> {
         val admitted = mutableListOf<Waiter>()
         while (queue.isNotEmpty() && hasCapacityLocked()) {
             val next = queue.pollFirst() ?: break
-            if (next.resumed) continue
-            next.resumed = true
-            inflight += 1
-            admitted.add(next)
+            if (!next.resumed) {
+                next.resumed = true
+                inflight += 1
+                admitted.add(next)
+            }
         }
         return admitted
     }

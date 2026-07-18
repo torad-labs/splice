@@ -22,10 +22,12 @@
 //   - spark rejects reasoning.summary (openai/codex#31846) — omitted via quirk regex;
 //   - ChatGPT backend rejects token-limit params: max_output_tokens is NEVER sent; the clamp
 //     applies to REPORTED usage (P3-USE).
-@file:Suppress("StringLiteralDuplication") // effort/summary alias tables are inherently literal
 
 package splice.dialect.responses
 
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonArrayBuilder
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
@@ -35,12 +37,14 @@ import kotlinx.serialization.json.put
 import splice.core.turn.TurnMeta
 import splice.core.wire.AnthropicMessage
 import splice.core.wire.AnthropicRequest
+import splice.core.wire.ContentBlock
 import splice.core.wire.DocumentBlock
 import splice.core.wire.ImageBlock
 import splice.core.wire.MediaSource
 import splice.core.wire.RedactedThinkingBlock
 import splice.core.wire.TextBlock
 import splice.core.wire.ThinkingBlock
+import splice.core.wire.ToolDefinition
 import splice.core.wire.ToolResultBlock
 import splice.core.wire.ToolUseBlock
 import splice.core.wire.UnknownBlock
@@ -78,20 +82,14 @@ public data class BuildOptions(
     val decodeReasoningEnvelope: (String) -> JsonObject?,
 )
 
-@Suppress(
-    "TooManyFunctions", // one helper per input-item family — the ported shape
-    "StringLiteralDuplication", // wire fields are inherently literal
-    "CyclomaticComplexMethod", // the knob cascades are quoted from translate-request.mjs
-    "LongMethod", // build() mirrors the single build function of the source
-    "NestedBlockDepth", // message/block walk is the literal port
-    "ComplexCondition", // gating conditions quoted verbatim
-)
 public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
+
+    private val inputBuilder = ResponsesInputBuilder(quirks)
 
     public fun build(body: AnthropicRequest, raw: JsonObject, opts: BuildOptions): BuiltRequest {
         val input = buildJsonArray {
             for (msg in body.messages) {
-                appendMessage(this, msg, opts)
+                inputBuilder.appendMessage(this, msg, opts)
             }
         }
         val instructions = compactAwareInstructions(body.system, opts.compact)
@@ -99,43 +97,10 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         val summary = resolveSummary(raw, opts, effort)
         val reasoning = reasoningBlock(effort, summary, opts)
 
-        val req = buildJsonObject {
-            put("model", opts.upstreamModel)
-            put("input", input)
-            put("store", quirks.store)
-            put("stream", true)
-            if (!opts.compact && opts.replayReasoning) {
-                put("include", buildJsonArray { add("reasoning.encrypted_content") })
-            }
-            cacheKey(body, opts)?.let { put("prompt_cache_key", it) }
-            put("instructions", instructions)
-            if (!opts.compact && body.tools.isNotEmpty()) {
-                put(
-                    "tools",
-                    buildJsonArray {
-                        body.tools.forEach { t ->
-                            add(
-                                buildJsonObject {
-                                    put("type", "function")
-                                    put("name", t.name)
-                                    put("description", t.description ?: "")
-                                    put("parameters", t.inputSchema ?: buildJsonObject { put("type", "object") })
-                                    if (quirks.emitStrict && t.strict == true) put("strict", true)
-                                },
-                            )
-                        }
-                    },
-                )
-                if (quirks.emitToolChoice) {
-                    put("tool_choice", toolChoice(body))
-                    put("parallel_tool_calls", body.toolChoice?.disableParallelToolUse != true)
-                }
-            }
-            reasoning?.let { put("reasoning", it) }
-        }
+        val req = buildRequestObject(body, opts, input, instructions, reasoning)
         // meta.summary reflects what was ACTUALLY sent (spark drops it → "none"), like Node's
         // `req.reasoning?.summary ?? 'none'` — not the computed-but-maybe-dropped value.
-        val sentSummary = (reasoning?.get("summary") as? JsonPrimitive)?.content ?: "none"
+        val sentSummary = (reasoning?.get(FIELD_SUMMARY) as? JsonPrimitive)?.content ?: "none"
 
         val meta = TurnMeta(
             compact = opts.compact,
@@ -151,121 +116,58 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         return BuiltRequest(req, meta)
     }
 
-    // ── input items ──────────────────────────────────────────────────────────
-
-    private fun appendMessage(
-        sink: kotlinx.serialization.json.JsonArrayBuilder,
-        msg: AnthropicMessage,
+    private fun buildRequestObject(
+        body: AnthropicRequest,
         opts: BuildOptions,
-    ) {
-        for (block in msg.content) {
-            when (block) {
-                is TextBlock -> sink.add(roleText(msg.role, block.text))
-                is ImageBlock -> appendImage(sink, block, opts)
-                is DocumentBlock -> if (!opts.compact) {
-                    sink.add(
-                        roleText(
-                            "user",
-                            "[document omitted by ${quirks.providerTag} proxy: " +
-                                "${block.source?.mediaType ?: "unknown type"}]",
-                        ),
-                    )
-                }
-                is RedactedThinkingBlock -> if (!opts.compact && opts.replayReasoning) {
-                    opts.decodeReasoningEnvelope(block.data)?.let { sink.add(it) }
-                }
-                is ToolUseBlock -> if (!opts.compact) {
-                    sink.add(
-                        buildJsonObject {
-                            put("type", "function_call")
-                            put("call_id", block.id)
-                            put("name", block.name)
-                            put("arguments", block.input.toString())
-                        },
-                    )
-                }
-                is ToolResultBlock -> appendToolResult(sink, block, opts)
-                is ThinkingBlock -> Unit // visible thinking never rides back upstream
-                is UnknownBlock -> Unit // unknown client blocks are dropped, never crash
+        input: JsonArray,
+        instructions: String,
+        reasoning: JsonObject?,
+    ): JsonObject = buildJsonObject {
+        put("model", opts.upstreamModel)
+        put("input", input)
+        put("store", quirks.store)
+        put("stream", true)
+        if (!opts.compact && opts.replayReasoning) {
+            put("include", buildJsonArray { add("reasoning.encrypted_content") })
+        }
+        cacheKey(body, opts)?.let { put("prompt_cache_key", it) }
+        put("instructions", instructions)
+        if (!opts.compact && body.tools.isNotEmpty()) {
+            put("tools", toolsArray(body))
+            if (quirks.emitToolChoice) {
+                put("tool_choice", toolChoice(body))
+                put("parallel_tool_calls", body.toolChoice?.disableParallelToolUse != true)
             }
         }
+        reasoning?.let { put(FIELD_REASONING, it) }
     }
 
-    private fun appendImage(sink: kotlinx.serialization.json.JsonArrayBuilder, block: ImageBlock, opts: BuildOptions) {
-        if (opts.compact) return // compact is a text-only summarizer
-        val part = imagePart(block.source)
-        if (part != null) {
-            sink.add(
-                buildJsonObject {
-                    put("role", "user")
-                    put("content", buildJsonArray { add(part) })
-                },
-            )
-        } else {
-            sink.add(roleText("user", "[image omitted by ${quirks.providerTag} proxy: unsupported source]"))
-        }
+    // ── tools ────────────────────────────────────────────────────────────────
+
+    private fun toolsArray(body: AnthropicRequest) = buildJsonArray {
+        for (t in body.tools) add(toolObject(t))
     }
 
-    private fun appendToolResult(
-        sink: kotlinx.serialization.json.JsonArrayBuilder,
-        block: ToolResultBlock,
-        opts: BuildOptions,
-    ) {
-        val text = block.content.filterIsInstance<TextBlock>().joinToString("") { it.text }
-        if (opts.compact) {
-            // fold tool results into plain user text so the summarizer still sees them
-            if (text.isNotEmpty()) sink.add(roleText("user", "[tool_result ${block.toolUseId}] $text"))
-            return
-        }
-        sink.add(
-            buildJsonObject {
-                put("type", "function_call_output")
-                put("call_id", block.toolUseId)
-                put("output", text)
-            },
-        )
-        // v25: images inside tool_result (Read on a PNG, screenshots) used to vanish —
-        // function_call_output.output is string-only, so ride them in a follow-up user message.
-        val imageParts = block.content.filterIsInstance<ImageBlock>().mapNotNull { imagePart(it.source) }
-        if (imageParts.isNotEmpty()) {
-            sink.add(
-                buildJsonObject {
-                    put("role", "user")
-                    put(
-                        "content",
-                        buildJsonArray {
-                            add(
-                                buildJsonObject {
-                                    put("type", "input_text")
-                                    put("text", "[images from tool_result ${block.toolUseId}]")
-                                },
-                            )
-                            imageParts.forEach { add(it) }
-                        },
-                    )
-                },
-            )
-        }
+    private fun toolObject(t: ToolDefinition): JsonObject = buildJsonObject {
+        put("type", FIELD_FUNCTION)
+        put("name", t.name)
+        put("description", t.description ?: "")
+        put("parameters", t.inputSchema ?: buildJsonObject { put("type", "object") })
+        if (quirks.emitStrict && t.strict == true) put("strict", true)
     }
 
-    private fun imagePart(source: MediaSource?): JsonObject? = when {
-        source == null -> null
-        source.type == "base64" && !source.data.isNullOrEmpty() -> buildJsonObject {
-            put("type", "input_image")
-            // Node `src.media_type || 'image/png'` falls back on empty string too, not just null.
-            val mime = source.mediaType?.takeIf { it.isNotEmpty() } ?: "image/png"
-            put("image_url", "data:$mime;base64,${source.data}")
+    private fun toolChoice(body: AnthropicRequest): JsonElement {
+        val choice = body.toolChoice
+        return when {
+            choice == null || choice.type == "auto" -> JsonPrimitive("auto")
+            choice.type == "none" -> JsonPrimitive("none")
+            choice.type == "any" -> JsonPrimitive("required")
+            choice.type == "tool" && choice.name != null -> buildJsonObject {
+                put("type", FIELD_FUNCTION)
+                put(FIELD_FUNCTION, buildJsonObject { put("name", choice.name) })
+            }
+            else -> JsonPrimitive("auto")
         }
-        source.type == "url" && !source.url.isNullOrEmpty() -> buildJsonObject {
-            put("type", "input_image")
-            put("image_url", source.url)
-        }
-        else -> null
-    }
-
-    private fun roleText(role: String, text: String): JsonObject = buildJsonObject {
-        put("role", role)
-        put("content", text)
     }
 
     // ── knobs ────────────────────────────────────────────────────────────────
@@ -297,33 +199,26 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         if (opts.compact) quirks.compactEffortPin?.let { return it }
         if (body.thinking?.disabled == true && quirks.effortLadder == EffortLadder.CODEX) return null
         var effort = looseEffort(raw)
-        val budgetEffort = body.thinking
-            ?.takeIf { !it.disabled }
-            ?.budgetTokens
-            ?.let { effortFromBudget(it, quirks.effortLadder) }
         if (effort == null) {
             // v27: the /effort picker (budget) WINS over the config/env fallback
+            val budgetEffort = body.thinking
+                ?.takeIf { !it.disabled }
+                ?.budgetTokens
+                ?.let { effortFromBudget(it, quirks.effortLadder) }
             effort = budgetEffort ?: normalizeEffort(opts.configEffort, quirks.effortLadder) ?: "high"
         }
-        if (opts.showReasoning != "off" && (effort == "minimal" || effort == "none")) {
-            // visibility guarantee, NOT an override: never raise a deliberate low/medium/high pick
-            effort = "low"
-        }
-        if (quirks.effortLadder == EffortLadder.GROK) {
-            // grok reasoning cannot be disabled — floor at low
-            effort = effort.takeIf { it in GROK_EFFORTS } ?: "low"
-        }
-        return effort
+        effort = flooredForVisibility(effort, opts.showReasoning)
+        return flooredForGrok(effort, quirks.effortLadder)
     }
 
     // NB: `as? JsonObject` NOT `?.jsonObject` — the latter THROWS on a non-object (e.g. a client
     // sending `"reasoning":"high"` as a bare string); Node's optional chaining degrades to default.
     private fun looseEffort(raw: JsonObject): String? = sequenceOf(
-        raw["effort"],
+        raw[FIELD_EFFORT],
         raw["reasoning_effort"],
-        (raw["output_config"] as? JsonObject)?.get("effort"),
-        (raw["metadata"] as? JsonObject)?.get("effort"),
-        (raw["reasoning"] as? JsonObject)?.get("effort"),
+        (raw["output_config"] as? JsonObject)?.get(FIELD_EFFORT),
+        (raw["metadata"] as? JsonObject)?.get(FIELD_EFFORT),
+        (raw[FIELD_REASONING] as? JsonObject)?.get(FIELD_EFFORT),
     ).mapNotNull { (it as? JsonPrimitive)?.content }
         .mapNotNull { normalizeEffort(it, quirks.effortLadder) }
         .firstOrNull()
@@ -331,16 +226,16 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
     private fun resolveSummary(raw: JsonObject, opts: BuildOptions, effort: String?): String? {
         if (!quirks.supportsSummary || effort == null) return null
         var summary = sequenceOf(
-            (raw["reasoning"] as? JsonObject)?.get("summary"),
+            (raw[FIELD_REASONING] as? JsonObject)?.get(FIELD_SUMMARY),
             raw["reasoning_summary"],
             (raw["output_config"] as? JsonObject)?.get("reasoning_summary"),
         ).mapNotNull { (it as? JsonPrimitive)?.content }
             .mapNotNull { normalizeSummary(it) }
             .firstOrNull()
             ?: normalizeSummary(opts.configSummary)
-            ?: "detailed"
-        if (opts.showReasoning != "off" && summary in setOf("none", "auto", "concise")) {
-            summary = "detailed" // reliably fills summary_text; effort alone can leave it empty
+            ?: SUMMARY_DETAILED
+        if (opts.showReasoning != "off" && summary in setOf("none", "auto", SUMMARY_CONCISE)) {
+            summary = SUMMARY_DETAILED // reliably fills summary_text; effort alone can leave it empty
         }
         return summary
     }
@@ -350,29 +245,198 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         val dropSummary = quirks.summaryRejectModelRegex?.containsMatchIn(opts.upstreamModel) == true ||
             summary == null || summary == "none"
         return buildJsonObject {
-            put("effort", effort)
-            if (!dropSummary) put("summary", summary)
+            put(FIELD_EFFORT, effort)
+            if (!dropSummary) put(FIELD_SUMMARY, summary)
         }
-    }
-
-    private fun toolChoice(body: AnthropicRequest): kotlinx.serialization.json.JsonElement {
-        val choice = body.toolChoice
-        return when {
-            choice == null || choice.type == "auto" -> JsonPrimitive("auto")
-            choice.type == "none" -> JsonPrimitive("none")
-            choice.type == "any" -> JsonPrimitive("required")
-            choice.type == "tool" && choice.name != null -> buildJsonObject {
-                put("type", "function")
-                put("function", buildJsonObject { put("name", choice.name) })
-            }
-            else -> JsonPrimitive("auto")
-        }
-    }
-
-    private companion object {
-        val GROK_EFFORTS = setOf("low", "medium", "high")
     }
 }
+
+private val GROK_EFFORTS = setOf("low", EFFORT_MEDIUM, "high")
+
+/**
+ * Visibility floor: never RAISES a deliberate low/medium/high pick, only floors none/minimal to
+ * low so a hidden reasoning knob still surfaces something when showReasoning != off.
+ */
+private fun flooredForVisibility(effort: String?, showReasoning: String): String? {
+    if (showReasoning == "off") return effort
+    val hidden = effort == EFFORT_MINIMAL || effort == "none"
+    return if (hidden) "low" else effort
+}
+
+/** grok reasoning cannot be disabled — floor anything off the grok ladder to low. */
+private fun flooredForGrok(effort: String?, ladder: EffortLadder): String? {
+    if (ladder != EffortLadder.GROK) return effort
+    return effort?.takeIf { it in GROK_EFFORTS } ?: "low"
+}
+
+/**
+ * Anthropic content blocks → Responses input items. One private helper per input-item family —
+ * the ported shape of translate-request.mjs's message/block walk, kept flat so no single handler
+ * nests the whole cascade.
+ */
+private class ResponsesInputBuilder(private val quirks: ResponsesQuirks) {
+
+    fun appendMessage(
+        sink: JsonArrayBuilder,
+        msg: AnthropicMessage,
+        opts: BuildOptions,
+    ) {
+        for (block in msg.content) {
+            appendBlock(sink, msg.role, block, opts)
+        }
+    }
+
+    private fun appendBlock(
+        sink: JsonArrayBuilder,
+        role: String,
+        block: ContentBlock,
+        opts: BuildOptions,
+    ) {
+        when (block) {
+            is TextBlock -> sink.add(roleText(role, block.text))
+            is ImageBlock -> appendImage(sink, block, opts)
+            is DocumentBlock -> appendDocument(sink, block, opts)
+            is RedactedThinkingBlock -> appendRedactedThinking(sink, block, opts)
+            is ToolUseBlock -> appendToolUse(sink, block, opts)
+            is ToolResultBlock -> appendToolResult(sink, block, opts)
+            is ThinkingBlock -> Unit // visible thinking never rides back upstream
+            is UnknownBlock -> Unit // unknown client blocks are dropped, never crash
+        }
+    }
+
+    private fun appendDocument(
+        sink: JsonArrayBuilder,
+        block: DocumentBlock,
+        opts: BuildOptions,
+    ) {
+        if (opts.compact) return
+        sink.add(
+            roleText(
+                "user",
+                "[document omitted by ${quirks.providerTag} proxy: " +
+                    "${block.source?.mediaType ?: "unknown type"}]",
+            ),
+        )
+    }
+
+    private fun appendRedactedThinking(
+        sink: JsonArrayBuilder,
+        block: RedactedThinkingBlock,
+        opts: BuildOptions,
+    ) {
+        if (!opts.compact && opts.replayReasoning) {
+            opts.decodeReasoningEnvelope(block.data)?.let { sink.add(it) }
+        }
+    }
+
+    private fun appendToolUse(
+        sink: JsonArrayBuilder,
+        block: ToolUseBlock,
+        opts: BuildOptions,
+    ) {
+        if (opts.compact) return
+        sink.add(
+            buildJsonObject {
+                put("type", "function_call")
+                put("call_id", block.id)
+                put("name", block.name)
+                put("arguments", block.input.toString())
+            },
+        )
+    }
+
+    private fun appendImage(sink: JsonArrayBuilder, block: ImageBlock, opts: BuildOptions) {
+        if (opts.compact) return // compact is a text-only summarizer
+        val part = imagePart(block.source)
+        if (part != null) {
+            sink.add(
+                buildJsonObject {
+                    put("role", "user")
+                    put(FIELD_CONTENT, buildJsonArray { add(part) })
+                },
+            )
+        } else {
+            sink.add(roleText("user", "[image omitted by ${quirks.providerTag} proxy: unsupported source]"))
+        }
+    }
+
+    private fun appendToolResult(
+        sink: JsonArrayBuilder,
+        block: ToolResultBlock,
+        opts: BuildOptions,
+    ) {
+        val text = block.content.filterIsInstance<TextBlock>().joinToString("") { it.text }
+        if (opts.compact) {
+            // fold tool results into plain user text so the summarizer still sees them
+            if (text.isNotEmpty()) sink.add(roleText("user", "[tool_result ${block.toolUseId}] $text"))
+            return
+        }
+        sink.add(
+            buildJsonObject {
+                put("type", "function_call_output")
+                put("call_id", block.toolUseId)
+                put("output", text)
+            },
+        )
+        // v25: images inside tool_result (Read on a PNG, screenshots) used to vanish —
+        // function_call_output.output is string-only, so ride them in a follow-up user message.
+        val imageParts = block.content.filterIsInstance<ImageBlock>().mapNotNull { imagePart(it.source) }
+        if (imageParts.isNotEmpty()) {
+            sink.add(toolResultImageMessage(block.toolUseId, imageParts))
+        }
+    }
+
+    private fun toolResultImageMessage(toolUseId: String, imageParts: List<JsonObject>): JsonObject =
+        buildJsonObject {
+            put("role", "user")
+            put(
+                FIELD_CONTENT,
+                buildJsonArray {
+                    add(
+                        buildJsonObject {
+                            put("type", "input_text")
+                            put("text", "[images from tool_result $toolUseId]")
+                        },
+                    )
+                    imageParts.forEach { add(it) }
+                },
+            )
+        }
+
+    private fun imagePart(source: MediaSource?): JsonObject? = when {
+        source == null -> null
+        source.type == "base64" && !source.data.isNullOrEmpty() -> buildJsonObject {
+            put("type", "input_image")
+            // Node `src.media_type || 'image/png'` falls back on empty string too, not just null.
+            val mime = source.mediaType?.takeIf { it.isNotEmpty() } ?: "image/png"
+            put("image_url", "data:$mime;base64,${source.data}")
+        }
+        source.type == "url" && !source.url.isNullOrEmpty() -> buildJsonObject {
+            put("type", "input_image")
+            put("image_url", source.url)
+        }
+        else -> null
+    }
+
+    private fun roleText(role: String, text: String): JsonObject = buildJsonObject {
+        put("role", role)
+        put(FIELD_CONTENT, text)
+    }
+}
+
+// Wire field names that repeat across the request/knob builders.
+private const val FIELD_CONTENT = "content"
+private const val FIELD_EFFORT = "effort"
+private const val FIELD_SUMMARY = "summary"
+private const val FIELD_REASONING = "reasoning"
+private const val FIELD_FUNCTION = "function"
+
+// Effort/summary tokens shared by the alias tables and the resolvers.
+private const val EFFORT_MEDIUM = "medium"
+private const val EFFORT_XHIGH = "xhigh"
+private const val EFFORT_MINIMAL = "minimal"
+private const val SUMMARY_DETAILED = "detailed"
+private const val SUMMARY_CONCISE = "concise"
 
 /** Compact-mode model+effort pinning helper: empty compactModel = session model (the cache law). */
 public fun compactUpstreamModel(compact: Boolean, compactModel: String?, sessionModel: String): String =
@@ -389,59 +453,65 @@ public fun stablePromptCacheKey(body: AnthropicRequest): String? {
 
 private const val HASH_PREFIX_LEN = 32
 
-@Suppress("CyclomaticComplexMethod") // the alias table IS the contract
+// the alias table IS the contract
 public fun normalizeEffort(raw: String?, ladder: EffortLadder): String? {
     val s = raw?.trim()?.lowercase().orEmpty()
     if (s.isEmpty()) return null
     return when (ladder) {
-        EffortLadder.CODEX -> when (s) {
-            "ultracode", "ultra" -> "max"
-            "extra_high", "extra-high", "extrahigh" -> "xhigh"
-            "standard", "normal" -> "medium"
-            "light", "fast" -> "low"
-            "heavy", "extended" -> "high"
-            in CODEX_EFFORTS -> s
-            else -> null
-        }
-        EffortLadder.GROK -> when (s) {
-            "high", "xhigh", "max", "ultra", "ultracode", "extra_high", "extra-high",
-            "extrahigh", "heavy", "extended",
-            -> "high"
-            "medium", "standard", "normal" -> "medium"
-            "low", "minimal", "none", "off", "fast", "light" -> "low"
-            else -> null
-        }
+        EffortLadder.CODEX -> normalizeCodexEffort(s)
+        EffortLadder.GROK -> normalizeGrokEffort(s)
     }
 }
 
-private val CODEX_EFFORTS = setOf("none", "minimal", "low", "medium", "high", "xhigh", "max")
+private fun normalizeCodexEffort(s: String): String? = when (s) {
+    "ultracode", "ultra" -> "max"
+    "extra_high", "extra-high", "extrahigh" -> EFFORT_XHIGH
+    "standard", "normal" -> EFFORT_MEDIUM
+    "light", "fast" -> "low"
+    "heavy", "extended" -> "high"
+    in CODEX_EFFORTS -> s
+    else -> null
+}
+
+private fun normalizeGrokEffort(s: String): String? = when (s) {
+    "high", EFFORT_XHIGH, "max", "ultra", "ultracode", "extra_high", "extra-high",
+    "extrahigh", "heavy", "extended",
+    -> "high"
+    EFFORT_MEDIUM, "standard", "normal" -> EFFORT_MEDIUM
+    "low", EFFORT_MINIMAL, "none", "off", "fast", "light" -> "low"
+    else -> null
+}
+
+private val CODEX_EFFORTS = setOf("none", EFFORT_MINIMAL, "low", EFFORT_MEDIUM, "high", EFFORT_XHIGH, "max")
 
 public fun normalizeSummary(raw: String?): String? {
     val s = raw?.trim()?.lowercase().orEmpty()
     return when {
         s.isEmpty() -> null
-        s in setOf("auto", "concise", "detailed", "none") -> s
-        s in setOf("full", "verbose", "long") -> "detailed"
-        s in setOf("short", "brief") -> "concise"
+        s in setOf("auto", SUMMARY_CONCISE, SUMMARY_DETAILED, "none") -> s
+        s in setOf("full", "verbose", "long") -> SUMMARY_DETAILED
+        s in setOf("short", "brief") -> SUMMARY_CONCISE
         s in setOf("off", "false", "0") -> "none"
         else -> null
     }
 }
 
-@Suppress("CyclomaticComplexMethod") // tier table
+// tier table
 public fun effortFromBudget(budget: Long, ladder: EffortLadder): String? = when (ladder) {
-    EffortLadder.CODEX -> when {
-        budget >= BUDGET_MAX -> "max"
-        budget >= BUDGET_XHIGH -> "xhigh"
-        budget >= BUDGET_HIGH -> "high"
-        budget >= BUDGET_MEDIUM -> "medium"
-        else -> "low"
-    }
+    EffortLadder.CODEX -> codexBudgetEffort(budget)
     EffortLadder.GROK -> when {
         budget >= BUDGET_HIGH -> "high"
-        budget >= BUDGET_MEDIUM -> "medium"
+        budget >= BUDGET_MEDIUM -> EFFORT_MEDIUM
         else -> "low"
     }
+}
+
+private fun codexBudgetEffort(budget: Long): String = when {
+    budget >= BUDGET_MAX -> "max"
+    budget >= BUDGET_XHIGH -> EFFORT_XHIGH
+    budget >= BUDGET_HIGH -> "high"
+    budget >= BUDGET_MEDIUM -> EFFORT_MEDIUM
+    else -> "low"
 }
 
 private const val BUDGET_MAX = 64_000L

@@ -30,6 +30,7 @@ import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.Executors
+import splice.core.util.discard
 
 /** A minimal OpenAI Chat Completions upstream (records the auth header the daemon sent). */
 private class ChatUpstream {
@@ -51,7 +52,7 @@ private class ChatUpstream {
 
     private fun handle(ex: HttpExchange) {
         ex.requestHeaders.getFirst("Authorization")?.let { auths.add(it) }
-        ex.requestBody.readBytes()
+        val _ = ex.requestBody.readBytes() // drain the request; content is irrelevant
         ex.responseHeaders.add("Content-Type", "text/event-stream")
         ex.sendResponseHeaders(200, 0)
         ex.responseBody.write("""data: {"choices":[{"delta":{"content":"hi from chat"}}]}""".toByteArray())
@@ -61,8 +62,8 @@ private class ChatUpstream {
                 .toByteArray(),
         )
         ex.responseBody.write("\n\n".toByteArray())
-        runCatching { ex.responseBody.close() }
-        runCatching { ex.close() }
+        runCatching { ex.responseBody.close() }.discard("test-server teardown")
+        runCatching { ex.close() }.discard("test-server teardown")
     }
 }
 

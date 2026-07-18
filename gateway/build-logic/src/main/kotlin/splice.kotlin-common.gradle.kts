@@ -8,6 +8,12 @@ plugins {
 
 kotlin {
     jvmToolchain(21)
+    compilerOptions {
+        // Unused-return-value checker (experimental, Kotlin 2.2+): a discarded non-Unit return is a
+        // warning — the compiler-level half of the swallow-into-null discipline (the ast-grep wall
+        // in checks/ is the write-time half). Promote to error once the codebase is clean.
+        freeCompilerArgs.add("-Xreturn-value-checker=check")
+    }
 }
 
 detekt {

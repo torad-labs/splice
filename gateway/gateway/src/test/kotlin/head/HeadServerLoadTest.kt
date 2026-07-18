@@ -55,6 +55,7 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.seconds
+import splice.core.util.discard
 
 /**
  * Minimal HTTP/1.1 + SSE upstream built for CONCURRENCY, not scenarios: each connection gets a
@@ -78,8 +79,8 @@ private class HoldingSseUpstream {
             while (!closed.get()) {
                 val sock = runCatching { server.accept() }.getOrNull() ?: break
                 Thread.ofVirtual().start {
-                    runCatching { serve(sock) }
-                    runCatching { sock.close() }
+                    runCatching { serve(sock) }.discard("load-test peer: serve errors are the scenario")
+                    runCatching { sock.close() }.discard("test-socket teardown")
                 }
             }
         }
@@ -88,7 +89,7 @@ private class HoldingSseUpstream {
     fun stop() {
         closed.set(true)
         release.countDown()
-        runCatching { server.close() }
+        runCatching { server.close() }.discard("test-server teardown")
     }
 
     /** Consume the request head + body; returns false when the socket closed early. */

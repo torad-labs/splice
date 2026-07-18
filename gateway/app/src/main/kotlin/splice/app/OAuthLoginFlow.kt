@@ -23,6 +23,7 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import splice.core.util.discard
 
 /** Everything the flow needs for one provider's login (built by LoginCommand per head). */
 public data class LoginSpec(
@@ -117,6 +118,7 @@ public object OAuthLoginFlow {
         // genuine provider redirect can still land — a stray request can't abort the flow.
         if (params["state"] != spec.expectedState) {
             runCatching { respondPage(ex, ok = false, head = spec.head, error = "unexpected callback") }
+                .discard("reply to a stray request is cosmetic; the flow keeps waiting either way")
             return
         }
         try {
@@ -127,6 +129,7 @@ public object OAuthLoginFlow {
                 else -> codeRef.set(params["code"])
             }
             runCatching { respondPage(ex, ok = codeRef.get() != null, head = spec.head, error = errRef.get()) }
+                .discard("browser page is cosmetic; code/error refs are already recorded for the flow")
         } finally {
             latch.countDown()
         }

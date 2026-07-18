@@ -1,0 +1,6 @@
+id: kt-secure-file-single-source
+valid:
+  - 'SecureFile.writeAtomic0600(path, content)'
+  - 'Files.setPosixFilePermissions(script, PosixFilePermissions.fromString("rwx------"))'
+invalid:
+  - 'Files.setPosixFilePermissions(p, PosixFilePermissions.fromString("rw-------"))'

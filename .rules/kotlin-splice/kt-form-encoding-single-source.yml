@@ -1,0 +1,14 @@
+# WALL (#924 Phase 3): RFC-3986 percent-encoding lives ONCE, in core/util/FormEncoding. codex/grok/
+# kimi each carried a byte-identical copy; the %%%02X hex-escape is the fingerprint. Use
+# FormEncoding.percentEncode / formEncode instead of re-deriving it.
+id: kt-form-encoding-single-source
+language: kotlin
+severity: error
+message: "Use FormEncoding.percentEncode/formEncode (core/util) — the percent-encoder lives in one place; don't re-derive it."
+files:
+  - gateway/*/src/main/**/*.kt
+ignores:
+  - gateway/core/src/main/kotlin/splice/core/util/FormEncoding.kt
+rule:
+  kind: string_literal
+  regex: '%%%02X'

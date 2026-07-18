@@ -1,0 +1,13 @@
+# WALL (#924 Phase 3): the atomic-0600 credential write lives ONCE, in core/util/SecureFile. Five
+# modules used to re-derive it and one (kimi) drifted into the world-readable write-then-chmod bug.
+# The 0600 permission literal is the fingerprint — use SecureFile.writeAtomic0600 instead.
+id: kt-secure-file-single-source
+language: kotlin
+severity: error
+message: "Use SecureFile.writeAtomic0600 (core/util) — the 0600 credential-write primitive lives in one place; re-deriving it is how kimi drifted into a world-readable window."
+files:
+  - gateway/*/src/main/**/*.kt
+ignores:
+  - gateway/core/src/main/kotlin/splice/core/util/SecureFile.kt
+rule:
+  pattern: PosixFilePermissions.fromString("rw-------")

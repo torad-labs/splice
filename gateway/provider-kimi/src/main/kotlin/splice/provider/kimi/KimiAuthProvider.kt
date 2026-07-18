@@ -70,11 +70,15 @@ public class KimiAuthProvider(
 
     // Sealed per-mode outcome (discipline L3): a dead refresh token, a transport blip, and a
     // corrupt file are DIFFERENT stories; credentialsOrNull is the single logging flatten.
+    // Staged (read → exchange), each stage owning its own failure branches.
     private suspend fun doRefresh(): RefreshOutcome {
         if (!Files.exists(authPath)) return RefreshOutcome.NoCredentialsFile
         val refreshToken = runCatchingCancellable { parseSnapshot()?.refresh }
             .getOrElse { return RefreshOutcome.ReadFailed(it) }
-            ?: return RefreshOutcome.NoRefreshToken
+        return if (refreshToken == null) RefreshOutcome.NoRefreshToken else exchangeRefreshToken(refreshToken)
+    }
+
+    private suspend fun exchangeRefreshToken(refreshToken: String): RefreshOutcome {
         // Guard the network hop: a thrown refreshCall must degrade to a typed outcome, not blow
         // through SingleFlight uncaught. Rotation is mandatory — a null response means no grant.
         val fresh = runCatchingCancellable { refreshCall(refreshToken) }

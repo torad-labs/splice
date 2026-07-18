@@ -3,8 +3,6 @@
 // unit-testable with a fake refreshCall (mirrors CodexRefresh).
 package splice.app
 
-import io.ktor.client.HttpClient
-import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.forms.submitForm
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.Parameters
@@ -50,7 +48,7 @@ public suspend fun grokRefresh(tokenUrl: String, refreshToken: String): GrokRefr
     }
 }.getOrNull()
 
-private val grokRefreshClient by lazy { HttpClient(CIO) }
+private val grokRefreshClient by lazy { authHttpClient() }
 private val grokRefreshJson = Json { ignoreUnknownKeys = true }
 
 private const val ERR_BODY_SNIPPET = 200

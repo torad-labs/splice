@@ -43,6 +43,7 @@ public suspend fun grokRefresh(tokenUrl: String, refreshToken: String): GrokRefr
             GrokRefreshedTokens(
                 accessToken = access,
                 refreshToken = obj["refresh_token"]?.jsonPrimitive?.content,
+                expiresIn = obj["expires_in"]?.jsonPrimitive?.content?.toLongOrNull(),
             )
         }
     }

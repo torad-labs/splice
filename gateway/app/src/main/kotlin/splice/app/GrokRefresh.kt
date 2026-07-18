@@ -11,8 +11,9 @@ import io.ktor.http.Parameters
 import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
+import splice.core.util.long
 import splice.core.util.runCatchingCancellable
+import splice.core.util.str
 import splice.provider.grok.GrokOAuthEndpoints
 import splice.provider.grok.GrokRefreshedTokens
 
@@ -36,14 +37,14 @@ public suspend fun grokRefresh(tokenUrl: String, refreshToken: String): GrokRefr
         null
     } else {
         val obj = grokRefreshJson.parseToJsonElement(resp.bodyAsText()).jsonObject
-        val access = obj["access_token"]?.jsonPrimitive?.content
+        val access = obj.str("access_token")
         if (access == null) {
             null
         } else {
             GrokRefreshedTokens(
                 accessToken = access,
-                refreshToken = obj["refresh_token"]?.jsonPrimitive?.content,
-                expiresIn = obj["expires_in"]?.jsonPrimitive?.content?.toLongOrNull(),
+                refreshToken = obj.str("refresh_token"),
+                expiresIn = obj.long("expires_in"),
             )
         }
     }

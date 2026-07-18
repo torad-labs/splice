@@ -25,6 +25,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.content.ByteArrayContent
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -76,7 +77,27 @@ public class UpstreamClient(
         while (attempt < maxRetries) {
             val creds = perf.timedOr(PerfKeys.AUTH_MS) { auth.credentials() } ?: throw UpstreamAuthMissing()
             perf?.add(PerfKeys.ATTEMPTS, 1)
-            when (val outcome = attemptRequest(ctx, bodyBytes, creds, block)) {
+            var streamHandedOff = false
+            val outcome = try {
+                attemptRequest(ctx, bodyBytes, creds, onStreamStart = { streamHandedOff = true }, block)
+            } catch (e: Throwable) {
+                // Transport failures BEFORE the stream is handed to the turn (DNS resolution,
+                // connect reset/timeout) retry on the normal backoff budget — a 2s DNS blip must
+                // cost one silent retry, not a user-visible turn failure (kimi 07:00 burst,
+                // 2026-07-18: 37 UnresolvedAddressException turns, attempts=1 on every one).
+                // Once block has the stream a retry would duplicate output: always rethrow.
+                if (e is CancellationException || streamHandedOff || !isRetryableTransport(e)) throw e
+                ctx.onRetry(
+                    "transport ${e::class.simpleName} attempt ${attempt + 1}/$maxRetries: " +
+                        e.message.orEmpty().take(ERR_SNIPPET),
+                )
+                if (attempt == maxRetries - 1) throw e
+                perf?.add(PerfKeys.RETRIES, 1)
+                perf.timedOr(PerfKeys.BACKOFF_MS) { backoff(attempt) }
+                attempt += 1
+                continue
+            }
+            when (outcome) {
                 is RetryOutcome.Done -> return outcome.value
                 is RetryOutcome.Failed -> {
                     lastErr = outcome
@@ -106,6 +127,7 @@ public class UpstreamClient(
         ctx: PostContext,
         bodyBytes: ByteArray,
         creds: Credentials,
+        onStreamStart: () -> Unit,
         block: suspend (UpstreamResponse) -> T,
     ): RetryOutcome<T> {
         val allHeaders = applyAuth(creds, ctx.extraHeaders(creds))
@@ -117,6 +139,7 @@ public class UpstreamClient(
         return statement.execute { resp ->
             ctx.perf?.mark(PerfKeys.HEADERS)
             if (resp.status.isSuccess()) {
+                onStreamStart() // block owns the stream from here — transport errors stop retrying
                 RetryOutcome.Done(block(UpstreamResponse(resp)))
             } else {
                 RetryOutcome.Failed(resp.status.value, resp.bodyText())
@@ -188,6 +211,36 @@ public class UpstreamClient(
         /** Does this upstream failure warrant the single-flight token refresh? */
         internal fun isAuthRefreshableFailure(status: Int, body: String): Boolean =
             status == UNAUTHORIZED || (status == FORBIDDEN && authBodyRe.containsMatchIn(body))
+
+        private const val MAX_CAUSE_DEPTH = 8
+
+        /**
+         * Connection-phase failures worth a silent retry: name resolution, TCP connect/reset,
+         * socket timeouts. Deliberately conservative — everything else (TLS trust failures,
+         * protocol errors, the HttpTimeout plugin's overall budget) still fails the turn.
+         * Walks the cause chain because Ktor wraps engine exceptions.
+         */
+        internal fun isRetryableTransport(e: Throwable): Boolean {
+            var t: Throwable? = e
+            var depth = 0
+            while (t != null && depth < MAX_CAUSE_DEPTH) {
+                when (t) {
+                    is java.nio.channels.UnresolvedAddressException,
+                    is java.net.UnknownHostException,
+                    is java.net.ConnectException,
+                    is java.net.SocketException,
+                    is java.net.SocketTimeoutException,
+                    is io.ktor.client.network.sockets.ConnectTimeoutException,
+                    is io.ktor.client.network.sockets.SocketTimeoutException,
+                    -> return true
+                    else -> {
+                        t = t.cause
+                        depth++
+                    }
+                }
+            }
+            return false
+        }
         private val RETRYABLE_STATUSES = setOf(502, 503, 529, 429)
 
         public fun defaultClient(firstByteTimeoutMs: Long, totalTimeoutMs: Long): HttpClient =

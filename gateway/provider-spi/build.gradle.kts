@@ -9,4 +9,5 @@ dependencies {
     api(libs.ktor.client.core)
     implementation(libs.ktor.client.cio)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.ktor.client.mock)
 }

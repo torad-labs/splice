@@ -50,9 +50,9 @@ public abstract class ResponsesProvider(
                 showReasoning = showReasoning,
                 // INPUT injection of prior encrypted CoT — operator opt-in ONLY (default OFF; it
                 // thins fresh reasoning ~4x). Never derived from showReasoning.
-                replayReasoning = replayReasoning,
+                replayReasoning = InjectPriorReasoning(replayReasoning),
                 // Ask for the opaque encrypted handle whenever reasoning is visible.
-                includeEncryptedReasoning = showOn && !compact,
+                includeEncryptedReasoning = RequestEncryptedReasoning(showOn && !compact),
                 sessionId = sessionId,
                 decodeReasoningEnvelope = { decodeReasoningEnvelope(it) },
             ),
@@ -66,7 +66,7 @@ public abstract class ResponsesProvider(
                 compact = meta.compact,
                 // STREAM-side emission of redacted_thinking wire blocks (so Claude Code stores the
                 // handle). Distinct from BuildOptions.replayReasoning (input injection).
-                emitEncryptedReasoning = showOn(),
+                emitEncryptedReasoning = EmitEncryptedReasoning(showOn()),
                 encodeReasoningEnvelope = { encodeReasoningEnvelope(it) },
                 clientGone = signals.clientGone,
                 watchdogFired = signals.watchdogFired,

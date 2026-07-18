@@ -11,8 +11,8 @@ import io.ktor.http.Parameters
 import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import splice.core.util.runCatchingCancellable
+import splice.core.util.str
 import splice.provider.codex.CodexOAuthEndpoints
 import splice.provider.codex.RefreshedTokens
 
@@ -37,14 +37,14 @@ public suspend fun codexRefresh(tokenUrl: String, refreshToken: String): Refresh
         null
     } else {
         val obj = json.parseToJsonElement(resp.bodyAsText()).jsonObject
-        val access = obj["access_token"]?.jsonPrimitive?.content
+        val access = obj.str("access_token")
         if (access == null) {
             null
         } else {
             RefreshedTokens(
                 accessToken = access,
-                refreshToken = obj["refresh_token"]?.jsonPrimitive?.content,
-                idToken = obj["id_token"]?.jsonPrimitive?.content,
+                refreshToken = obj.str("refresh_token"),
+                idToken = obj.str("id_token"),
             )
         }
     }

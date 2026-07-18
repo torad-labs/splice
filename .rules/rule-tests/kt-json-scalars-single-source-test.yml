@@ -1,0 +1,10 @@
+id: kt-json-scalars-single-source
+valid:
+  # the reconciled JsonNull-safe readers
+  - 'obj.str("access_token")'
+  - 'element.str()'
+  # non-content jsonPrimitive access (numbers) is a different concern, not the null-string leak
+  - 'obj["n"]?.jsonPrimitive?.long'
+invalid:
+  - 'tokens?.get(FIELD_ACCESS_TOKEN)?.jsonPrimitive?.content'
+  - 'obj["access_token"]!!.jsonPrimitive.content'

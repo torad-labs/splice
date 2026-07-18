@@ -6,7 +6,6 @@ package splice.app.cli
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import splice.app.DeviceLoginFlow
 import splice.app.DeviceLoginSpec
 import splice.app.LoginSpec
@@ -14,6 +13,7 @@ import splice.app.OAuthLoginFlow
 import splice.app.TopologyLoader
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
+import splice.core.util.str
 import splice.provider.codex.CodexOAuthEndpoints
 import splice.provider.codex.authJsonFromTokens
 import splice.provider.codex.buildAuthorizeUrl
@@ -114,7 +114,7 @@ private fun codexSpec(head: String): LoginSpec {
 
 private fun codexAuthJson(body: String): String {
     val obj = json.parseToJsonElement(body).jsonObject
-    fun s(k: String) = obj[k]?.jsonPrimitive?.content
+    fun s(k: String) = obj.str(k)
     return authJsonFromTokens(
         idToken = s("id_token"),
         accessToken = s("access_token").orEmpty(),

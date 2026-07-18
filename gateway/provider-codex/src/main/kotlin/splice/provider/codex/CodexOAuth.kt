@@ -13,9 +13,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import splice.core.util.FormEncoding
 import splice.core.util.runCatchingCancellable
+import splice.core.util.str
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
@@ -122,7 +122,7 @@ private fun String.padBase64(): String {
 
 public fun accountIdFromIdToken(idToken: String?): String? =
     (decodeJwtClaims(idToken)["https://api.openai.com/auth"] as? JsonObject)
-        ?.get("chatgpt_account_id")?.jsonPrimitive?.content
+        ?.str("chatgpt_account_id")
 
 /** Token strings -> the ~/.codex/auth.json object CodexAuthProvider reads (CLI-compatible shape). */
 public fun authJsonFromTokens(

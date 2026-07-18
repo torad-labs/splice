@@ -11,12 +11,12 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.SecureFile
 import splice.core.util.runCatchingCancellable
+import splice.core.util.str
 import splice.spi.SingleFlight
 import java.nio.file.Files
 import java.nio.file.Path
@@ -58,8 +58,8 @@ public class CodexAuthProvider(
             }
         }
         val tokens = json.parseToJsonElement(Files.readString(authPath)).jsonObject[FIELD_TOKENS] as? JsonObject
-        tokens?.get(FIELD_ACCESS_TOKEN)?.jsonPrimitive?.content?.let { access ->
-            val accountId = tokens[FIELD_ACCOUNT_ID]?.jsonPrimitive?.content
+        tokens?.str(FIELD_ACCESS_TOKEN)?.let { access ->
+            val accountId = tokens.str(FIELD_ACCOUNT_ID)
             cache = Cache(access, accountId, mtime, now)
             Credentials.Bearer(access, accountId)
         }
@@ -84,7 +84,7 @@ public class CodexAuthProvider(
     }
 
     private suspend fun refreshAndPersist(raw: JsonObject, tokens: JsonObject): Credentials? {
-        val refreshToken = tokens[FIELD_REFRESH_TOKEN]?.jsonPrimitive?.content ?: return null
+        val refreshToken = tokens.str(FIELD_REFRESH_TOKEN) ?: return null
         // Guard the network hop too (Node wrapped the whole read+fetch): the refreshCall param's
         // type doesn't promise "never throws", so a caller-supplied hop that throws must degrade to
         // a null refresh (→ UpstreamFailed → re-prompt), not blow through SingleFlight uncaught.
@@ -126,11 +126,11 @@ public class CodexAuthProvider(
             if (!Files.exists(authPath)) return@runCatchingCancellable false
             val raw = json.parseToJsonElement(Files.readString(authPath)).jsonObject
             val tokens = raw[FIELD_TOKENS] as? JsonObject
-            val hasAccess = tokens?.get(FIELD_ACCESS_TOKEN)?.jsonPrimitive?.content?.isNotEmpty() == true
-            val acct = tokens?.get(FIELD_ACCOUNT_ID)?.jsonPrimitive?.content.orEmpty()
+            val hasAccess = tokens?.str(FIELD_ACCESS_TOKEN)?.isNotEmpty() == true
+            val acct = tokens?.str(FIELD_ACCOUNT_ID).orEmpty()
             out["account_id_masked"] =
                 if (acct.isNotEmpty()) "${acct.take(MASK_KEEP)}…${acct.takeLast(MASK_KEEP)}" else ""
-            raw[FIELD_LAST_REFRESH]?.jsonPrimitive?.content?.let { out[FIELD_LAST_REFRESH] = it }
+            raw.str(FIELD_LAST_REFRESH)?.let { out[FIELD_LAST_REFRESH] = it }
             hasAccess
         }.getOrDefault(false)
         return AuthDescription(present = present, kind = KIND, fields = out)

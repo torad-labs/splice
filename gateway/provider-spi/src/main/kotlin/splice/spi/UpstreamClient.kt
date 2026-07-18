@@ -138,7 +138,7 @@ public class UpstreamClient(
             )
             return RetryPlan(RetryDecision.GIVE_UP, refreshedOnce)
         }
-        val refreshable = failed.status == UNAUTHORIZED && !refreshedOnce
+        val refreshable = isAuthRefreshableFailure(failed.status, failed.text) && !refreshedOnce
         if (refreshable) ctx.perf?.add(PerfKeys.REFRESHES, 1)
         if (refreshable && ctx.perf.timedOr(PerfKeys.REFRESH_MS) { ctx.auth.refresh() } != null) {
             return RetryPlan(RetryDecision.RETRY, refreshedOnce = true)
@@ -172,7 +172,22 @@ public class UpstreamClient(
     public companion object {
         private const val BACKOFF_BASE_MS = 200L
         private const val UNAUTHORIZED = 401
+        private const val FORBIDDEN = 403
         private const val ERR_SNIPPET = 160
+
+        // xAI reports an expired/revoked OAuth token as 403 `unauthenticated:bad-credentials`,
+        // NOT 401 (grok-dead-head incident, 2026-07-18: refresh never fired, the head 403'd every
+        // turn until manual re-login). 401 is always refreshable; 403 only when the body says
+        // auth — a plan/permission 403 must not spend the single refresh.
+        private val authBodyRe = Regex(
+            "unauthenticated|bad-credentials|token (is )?(invalid|expired)|" +
+                "(access|oauth2?) token could not be validated",
+            RegexOption.IGNORE_CASE,
+        )
+
+        /** Does this upstream failure warrant the single-flight token refresh? */
+        internal fun isAuthRefreshableFailure(status: Int, body: String): Boolean =
+            status == UNAUTHORIZED || (status == FORBIDDEN && authBodyRe.containsMatchIn(body))
         private val RETRYABLE_STATUSES = setOf(502, 503, 529, 429)
 
         public fun defaultClient(firstByteTimeoutMs: Long, totalTimeoutMs: Long): HttpClient =

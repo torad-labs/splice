@@ -13,6 +13,13 @@
 [daemon]
 control_port = 3096          # loopback-only control plane + dashboard
 
+# Reasoning display — edit here, restart daemon. No code change.
+# Env aliases (CLAUDEX_SHOW_REASONING etc.) and runtime PATCH still override these.
+show_reasoning = "text"      # "text" | "thinking" | "off"  — stream thinking into Claude Code
+summary        = "detailed"  # "detailed" | "concise" | "auto" | "none"
+# effort       = "high"      # optional; omit → high (Grok floors invalid values to low)
+replay_reasoning = false     # NEVER turn on lightly: replaying prior encrypted CoT thins fresh reasoning
+
 # ── codex: ChatGPT Codex subscription via OAuth ────────────────────────────────
 [providers.codex]
 dialect = "openai-responses"
@@ -53,7 +60,9 @@ context_window = 128000
 dialect = "openai-responses"
 base_url = "https://api.x.ai/v1"
 auth = { kind = "grok-oauth", file = "~/.grok/auth.json" }  # browser login: `claude-grok login`
-quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = false, compact_effort = "low", tool_choice = true }
+# summary_field=true enables the reasoning.summary field (value comes from [daemon].summary).
+# Raw CoT stays encrypted by xAI; public form is summary/reasoning_text only.
+quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = true, tool_choice = true }
 [[providers.xai.models]]
 id = "grok-4.5"
 label = "Grok 4.5"
@@ -77,6 +86,35 @@ auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }
 id = "meta/llama-4"
 label = "Llama 4"
 context_window = 128000
+
+# ── kimi / Moonshot: anthropic-passthrough dialect, device-flow OAuth (x-api-key) ─
+# api.kimi.com/coding speaks the Anthropic Messages wire natively. Browser device login:
+# `claude-kimi login` (RFC 8628 — enter a code, no loopback redirect). The wire id sent upstream
+# is the BARE model (the `[1m]` suffix is stripped); the 1M context tier is a plan entitlement,
+# not a distinct model. Moonshot's pay-per-token anthropic base (api.moonshot.ai/anthropic) works
+# too — set auth = { kind = "api-key", env = "MOONSHOT_API_KEY" } and it authenticates via Bearer.
+[providers.kimi]
+dialect = "anthropic-passthrough"
+base_url = "https://api.kimi.com/coding"
+auth = { kind = "kimi-oauth", file = "~/.kimi/credentials/kimi-code.json" }
+# Window lookups happen on the STRIPPED id ("k3"), while the picker entry below keeps the "[1m]"
+# hint — this exact-match row keeps K3's 1M window independent of model-list order.
+[[providers.kimi.extra_windows]]
+id = "k3"
+context_window = 1048576
+[[providers.kimi.models]]
+id = "k3[1m]"                  # sent upstream as bare `k3`; [1m] is a display/context-tier hint
+label = "Kimi K3 (1M)"
+description = "1M context needs the Allegretto plan or higher — Moderato serves 256K."
+context_window = 1048576
+[[providers.kimi.models]]
+id = "kimi-for-coding"
+label = "Kimi K2.7 Code"
+context_window = 262144
+[[providers.kimi.models]]
+id = "kimi-for-coding-highspeed"
+label = "Kimi K2.7 Code (highspeed)"
+context_window = 262144
 
 # ── heads: each is a Claude Code wrapper on its own loopback port ───────────────
 # `command` names the installed wrapper (`splice install` links ~/.local/bin/<command>).
@@ -107,3 +145,11 @@ discovery_prefix = "claude-openrouter--"
 pinned_model = "meta/llama-4"
 [heads.openrouter.claude]
 command = "claudeor"
+
+[heads.claude-kimi]
+provider = "kimi"
+port = 3102
+discovery_prefix = "claude-kimi--"
+pinned_model = "k3[1m]"
+[heads.claude-kimi.claude]
+command = "claude-kimi"

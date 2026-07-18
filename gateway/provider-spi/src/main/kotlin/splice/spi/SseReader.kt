@@ -2,7 +2,9 @@
 // across chunk boundaries (streaming decoder, never split a codepoint); partial last line
 // carries to the next chunk; only `data: `-prefixed lines yield; empty payloads and [DONE]
 // skipped; malformed JSON frames skipped (never crash the stream); onBytes fires ON RAW READ
-// (the watchdog touch — never after downstream write; a slow client must not fake idleness).
+// with the chunk size (the watchdog touch + byte telemetry — never after downstream write; a
+// slow client must not fake idleness). Hot-path shape: one reused decode scratch per stream
+// (no per-chunk buffer allocs) and index-scanned lines (no per-line StringBuilder churn).
 package splice.spi
 
 import io.ktor.utils.io.ByteReadChannel
@@ -23,79 +25,136 @@ private val lenient = Json {
     ignoreUnknownKeys = true
     isLenient = true
 }
+
 private const val DATA_PREFIX = "data: "
+private const val DONE_SENTINEL = "[DONE]"
 private const val READ_BUFFER_BYTES = 16384
 
+// UTF-8 codepoints are at most 4 bytes; carry never needs more than that across a chunk edge.
+private const val UTF8_MAX_BYTES = 4
+
 // the chunk/line/skip walk is the literal port; malformed frames must never crash the stream
-public fun sseJsonEvents(channel: ByteReadChannel, onBytes: () -> Unit = {}): Flow<JsonObject> = flow {
-    val decoder = Charsets.UTF_8.newDecoder()
+public fun sseJsonEvents(channel: ByteReadChannel, onBytes: (Int) -> Unit = {}): Flow<JsonObject> = flow {
+    val scratch = DecodeScratch()
+    val lineBuffer = StringBuilder(READ_BUFFER_BYTES)
+    while (true) {
+        val n = scratch.readChunk(channel)
+        if (n == -1) break
+        onBytes(n)
+        scratch.decodeInto(n, lineBuffer)
+        emitCompleteLines(lineBuffer)
+    }
+}
+
+/**
+ * Reused per-stream decode state: the read buffer, the UTF-8 streaming decoder, its input/output
+ * buffers, and the undecoded carry tail (CharsetDecoder does NOT buffer partial codepoints across
+ * decode() calls the way Node's streaming TextDecoder does). One allocation per stream, zero per
+ * chunk — input capacity is bytes(READ_BUFFER_BYTES) + carry(UTF8_MAX_BYTES), so carry + a full
+ * read always fits and no overflow branch is needed.
+ */
+private class DecodeScratch {
+    private val decoder: CharsetDecoder = Charsets.UTF_8.newDecoder()
         .onMalformedInput(CodingErrorAction.REPLACE)
         .onUnmappableCharacter(CodingErrorAction.REPLACE)
-    val bytes = ByteArray(READ_BUFFER_BYTES)
-    var lineBuffer = StringBuilder()
-    // CharsetDecoder does NOT buffer partial codepoints across decode() calls (Node's
-    // streaming TextDecoder does) — undecoded tail bytes must be carried explicitly.
-    var carry = ByteArray(0)
+    private val bytes = ByteArray(READ_BUFFER_BYTES)
+    private val inputBuf: ByteBuffer = ByteBuffer.wrap(ByteArray(READ_BUFFER_BYTES + UTF8_MAX_BYTES))
+    private val charBuf: CharBuffer = CharBuffer.allocate(READ_BUFFER_BYTES)
+    private val carry = ByteArray(UTF8_MAX_BYTES)
+    private var carryLen = 0
 
-    while (true) {
-        val n = readChunk(channel, bytes)
-        if (n == -1) break
-        onBytes()
-        carry = decodeChunk(decoder, carry, bytes, n, lineBuffer)
-        lineBuffer = emitCompleteLines(lineBuffer)
+    /** Read the next chunk, skipping empty (n == 0) reads; returns byte count or -1 at end of stream. */
+    suspend fun readChunk(channel: ByteReadChannel): Int {
+        while (true) {
+            val n = channel.readAvailable(bytes, 0, bytes.size)
+            if (n != 0) return n
+        }
+    }
+
+    /** Decode carry + the fresh [n] read bytes into [lineBuffer]; retains the new UTF-8 tail. */
+    fun decodeInto(n: Int, lineBuffer: StringBuilder) {
+        inputBuf.clear()
+        if (carryLen > 0) inputBuf.put(carry, 0, carryLen)
+        inputBuf.put(bytes, 0, n)
+        inputBuf.flip()
+        while (true) {
+            charBuf.clear()
+            val result = decoder.decode(inputBuf, charBuf, false)
+            charBuf.flip()
+            if (charBuf.hasRemaining()) lineBuffer.append(charBuf)
+            if (!result.isOverflow) break
+        }
+        saveCarry()
+    }
+
+    private fun saveCarry() {
+        // Remaining is always a partial codepoint (<= 3 bytes) under UTF-8; clamp defensively.
+        val keep = inputBuf.remaining().coerceAtMost(carry.size)
+        if (keep > 0) {
+            inputBuf.position(inputBuf.limit() - keep)
+            inputBuf.get(carry, 0, keep)
+        }
+        carryLen = keep
     }
 }
 
-/** Read the next chunk, skipping empty (n == 0) reads; returns byte count or -1 at end of stream. */
-private suspend fun readChunk(channel: ByteReadChannel, bytes: ByteArray): Int {
-    while (true) {
-        val n = channel.readAvailable(bytes, 0, bytes.size)
-        if (n != 0) return n
+/**
+ * Emit every complete `\n`-terminated line in [lineBuffer], compacting the trailing partial
+ * in place. No per-line StringBuilder realloc — the same builder is reused for the whole stream.
+ */
+private suspend fun FlowCollector<JsonObject>.emitCompleteLines(lineBuffer: StringBuilder) {
+    var start = 0
+    var i = 0
+    val end = lineBuffer.length
+    while (i < end) {
+        if (lineBuffer[i] != '\n') {
+            i++
+            continue
+        }
+        var lineEnd = i
+        if (lineEnd > start && lineBuffer[lineEnd - 1] == '\r') lineEnd--
+        // Blank separator lines between SSE frames never allocate.
+        if (lineEnd > start) {
+            emitDataLine(lineBuffer, start, lineEnd)
+        }
+        i++
+        start = i
+    }
+    if (start == 0) return
+    if (start >= end) {
+        lineBuffer.setLength(0)
+    } else {
+        // Compact the trailing partial line to the front of the same builder.
+        lineBuffer.delete(0, start)
     }
 }
 
-/** Decode carry + the fresh [n] bytes into [lineBuffer]; returns the undecoded tail to carry forward. */
-private fun decodeChunk(
-    decoder: CharsetDecoder,
-    carry: ByteArray,
-    bytes: ByteArray,
-    n: Int,
-    lineBuffer: StringBuilder,
-): ByteArray {
-    val input = ByteBuffer.allocate(carry.size + n)
-    input.put(carry)
-    input.put(bytes, 0, n)
-    input.flip()
-    val charBuffer = CharBuffer.allocate(READ_BUFFER_BYTES)
-    while (true) {
-        charBuffer.clear()
-        val result = decoder.decode(input, charBuffer, false)
-        charBuffer.flip()
-        lineBuffer.append(charBuffer)
-        if (!result.isOverflow) break
-    }
-    return ByteArray(input.remaining()).also { input.get(it) }
-}
-
-/** Emit every complete `\n`-terminated line in [lineBuffer]; returns the trailing partial line. */
-private suspend fun FlowCollector<JsonObject>.emitCompleteLines(lineBuffer: StringBuilder): StringBuilder {
-    var buffer = lineBuffer
-    var newlineAt = buffer.indexOf("\n")
-    while (newlineAt >= 0) {
-        val line = buffer.substring(0, newlineAt).removeSuffix("\r")
-        buffer = StringBuilder(buffer.substring(newlineAt + 1))
-        newlineAt = buffer.indexOf("\n")
-        emitDataLine(line)
-    }
-    return buffer
-}
-
-private suspend fun FlowCollector<JsonObject>.emitDataLine(line: String) {
-    if (!line.startsWith(DATA_PREFIX)) return
-    val payload = line.substring(DATA_PREFIX.length).trim()
-    if (payload.isEmpty() || payload == "[DONE]") return
+private suspend fun FlowCollector<JsonObject>.emitDataLine(buf: StringBuilder, start: Int, end: Int) {
+    if (!buf.matchesAt(start, end, DATA_PREFIX)) return
+    // trim ASCII whitespace at both ends (SSE payloads are JSON — no full Unicode trim needed)
+    var pStart = start + DATA_PREFIX.length
+    var pEnd = end
+    while (pStart < pEnd && buf[pStart].isAsciiWs()) pStart++
+    while (pEnd > pStart && buf[pEnd - 1].isAsciiWs()) pEnd--
+    if (pStart >= pEnd || isDoneSentinel(buf, pStart, pEnd)) return
+    val payload = buf.substring(pStart, pEnd)
     // skip malformed frame — the terminal sweep handles truncation honestly
     runCatchingCancellable { lenient.parseToJsonElement(payload).jsonObject }
         .getOrNull()
         ?.let { emit(it) }
 }
+
+/** [literal] present at [start] within [start, end)? Char-wise — no substring allocation. */
+private fun StringBuilder.matchesAt(start: Int, end: Int, literal: String): Boolean {
+    if (end - start < literal.length) return false
+    for (j in literal.indices) {
+        if (this[start + j] != literal[j]) return false
+    }
+    return true
+}
+
+private fun isDoneSentinel(buf: StringBuilder, start: Int, end: Int): Boolean =
+    end - start == DONE_SENTINEL.length && buf.matchesAt(start, end, DONE_SENTINEL)
+
+private fun Char.isAsciiWs(): Boolean =
+    this == ' ' || this == '\t' || this == '\r' || this == '\n'

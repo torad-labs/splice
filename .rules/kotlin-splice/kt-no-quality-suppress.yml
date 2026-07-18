@@ -1,0 +1,32 @@
+# THE ANTI-BYPASS WALL (2026-07-18): a detekt quality finding is fixed by FIXING THE CODE —
+# never by @Suppress. An agent that suppresses a structural rule (god class, long method,
+# complexity, magic numbers, swallowed exceptions...) ships the debt invisibly; that is the
+# fix-the-gate-not-the-code failure this repo legislates against (FIX-THE-GATE vs FIX-THE-CODE
+# law: a wrongly-blocking gate gets a RULE change with rationale, reviewed — not an inline
+# suppression). Same-checker-twice: detekt's ForbiddenSuppress (gateway/detekt.yml) enforces
+# the same set at the gate. Compiler-diagnostic suppressions (e.g. "UNCHECKED_CAST") are not
+# matched — this wall targets the detekt quality rules only.
+id: kt-no-quality-suppress
+language: kotlin
+severity: error
+message: "No @Suppress of detekt quality rules — fix the code, not the gate."
+note: >
+  Refactor until the rule passes (split the class, extract the method, name the constant).
+  If the RULE itself is wrong for a legitimate pattern, change gateway/detekt.yml with a
+  written rationale so the exception is reviewable — never an inline @Suppress.
+files:
+  - gateway/*/src/main/**/*.kt
+  - gateway/*/src/test/**/*.kt
+rule:
+  kind: string_literal
+  regex: "^\"(TooManyFunctions|LongMethod|LargeClass|CyclomaticComplexMethod|ComplexCondition|LongParameterList|ReturnCount|NestedBlockDepth|MagicNumber|MaxLineLength|TooGenericExceptionCaught|SwallowedException|StringLiteralDuplication|UnusedPrivateMember|UnusedPrivateProperty|UnusedParameter)\"$"
+  inside:
+    kind: value_argument
+    stopBy: end
+    inside:
+      kind: annotation
+      stopBy: end
+      has:
+        stopBy: end
+        kind: user_type
+        regex: "^Suppress$"

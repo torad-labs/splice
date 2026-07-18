@@ -1,7 +1,7 @@
 // NEW: grok provider — the multi-provider abstraction proof, now on OAuth (SuperGrok/X-Premium+).
 // A HeadServer wired with GrokProvider + GrokAuthProvider (reading ~/.grok/auth.json) serves a real
 // turn (same dialect + machine as codex, only quirks + oauth-vs-chatgpt-oauth differ). Plus grok
-// quirks pinned (session-id cache key, effort clamp, no summary) and the OAuth Bearer + refresh.
+// quirks pinned (session-id cache key, effort clamp, detailed summary for full thinking) and OAuth.
 package grok
 
 import io.ktor.client.HttpClient
@@ -12,6 +12,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import mock.MockChatGptUpstream
@@ -31,6 +32,7 @@ import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
+import splice.gateway.perf.PerfStats
 import splice.gateway.usage.UsageStore
 import splice.provider.grok.GrokAuthProvider
 import splice.provider.grok.GrokProvider
@@ -99,6 +101,7 @@ class GrokProviderTest {
                 shadow = ShadowClassifier(log = {}),
                 compactStats = CompactStats(tmp.resolve("c.jsonl")),
                 usageStore = UsageStore(tmp.resolve("u.json"), tmp.resolve("r.json")),
+                perfStats = PerfStats(tmp.resolve("p.jsonl")),
                 log = {},
             ),
         )
@@ -132,7 +135,7 @@ class GrokProviderTest {
     }
 
     @Test
-    fun `grok quirks - effort clamps to high, no summary field, session cache key`() = runBlocking {
+    fun `grok quirks - effort clamps to high, detailed summary for full thinking, session cache key`() = runBlocking {
         val parsed = parseAnthropicBody(
             """{"model":"grok-4.5","effort":"xhigh","messages":[{"role":"user","content":"first"}]}""",
         )
@@ -140,8 +143,36 @@ class GrokProviderTest {
         val built = grokProvider.buildTurn(parsed, compact = false, sessionId = "s1")
         val reasoning = built.requestBody["reasoning"]!!.jsonObject
         assertEquals("high", reasoning["effort"]?.jsonPrimitive?.content) // xhigh clamped to high
-        assertNull(reasoning["summary"]) // grok has no summary field
+        // detailed summary is the fullest public form of Grok reasoning Claude Code can display
+        assertEquals("detailed", reasoning["summary"]?.jsonPrimitive?.content)
         assertEquals("claude-grok:s1", built.requestBody["prompt_cache_key"]?.jsonPrimitive?.content)
+        // include encrypted handle is ON for display; input-replay stays OFF (replayReasoning=false)
+        assertTrue(built.requestBody["include"].toString().contains("reasoning.encrypted_content"))
+        // NB: stream_options is a CHAT-completions knob — the ChatGPT Responses backend 400s on it
+        // ("Unknown parameter: 'stream_options.include_usage'", verified live 2026-07-18). Never sent.
+        assertNull(built.requestBody["stream_options"])
+        // no prior redacted_thinking in this body — just confirm input has the user message only
+        assertEquals(1, built.requestBody["input"]!!.jsonArray.size)
+    }
+
+    @Test
+    fun `conv-id affinity rides the per-turn BuiltTurn, never shared provider state`() {
+        // A @Volatile lastSessionId raced concurrent sessions into each other's affinity header
+        // (audit 2026-07-18) — the header now travels with the turn it belongs to.
+        val parsed = parseAnthropicBody(
+            """{"model":"grok-4.5","messages":[{"role":"user","content":"hi"}]}""",
+        )
+        val grokProvider = provider(oauthAuth(Files.createTempDirectory("hdr")))
+        val turnA = grokProvider.buildTurn(parsed, compact = false, sessionId = "conv-abc")
+        val turnB = grokProvider.buildTurn(parsed, compact = false, sessionId = "conv-xyz")
+        assertEquals("conv-abc", turnA.extraHeaders["x-grok-conv-id"])
+        assertEquals("conv-xyz", turnB.extraHeaders["x-grok-conv-id"])
+        // provider-level headers stay session-free
+        val headers = grokProvider.extraHeaders(
+            splice.core.auth.Credentials.Bearer("tok", accountId = null),
+        )
+        assertEquals(null, headers["x-grok-conv-id"])
+        assertEquals("text/event-stream", headers["Accept"])
     }
 
     @Test

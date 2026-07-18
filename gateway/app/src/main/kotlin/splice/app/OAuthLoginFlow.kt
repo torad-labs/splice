@@ -18,10 +18,7 @@ import splice.core.util.runCatchingCancellable
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.URLDecoder
-import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
-import java.nio.file.attribute.PosixFilePermissions
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -252,28 +249,6 @@ public object OAuthLoginFlow {
         }
     }
 
-    // Write credentials with owner-only perms from the instant the file exists — no world-readable
-    // window (the old write-then-chmod left a 0644 gap, and swallowed a failed chmod). Temp file at
-    // 0600 + ATOMIC_MOVE onto the target; falls back gracefully on a non-POSIX filesystem.
-    private fun writeCredentialFile(path: Path, content: String) {
-        val parent = path.parent
-        Files.createDirectories(parent)
-        val perms = PosixFilePermissions.fromString("rw-------")
-        val tmp = try {
-            Files.createTempFile(parent, ".auth", ".tmp", PosixFilePermissions.asFileAttribute(perms))
-        } catch (_: UnsupportedOperationException) {
-            Files.createTempFile(parent, ".auth", ".tmp")
-        }
-        runCatchingCancellable {
-            Files.writeString(tmp, content)
-            Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-        }.onFailure {
-            runCatching { Files.deleteIfExists(tmp) }
-            throw it
-        }
-        runCatching { Files.setPosixFilePermissions(path, perms) }
-    }
-
     private fun decode(s: String): String =
         runCatching { URLDecoder.decode(s, Charsets.UTF_8) }.getOrDefault(s)
 
@@ -282,16 +257,4 @@ public object OAuthLoginFlow {
             val i = part.indexOf('=')
             if (i < 0) decode(part) to "" else decode(part.substring(0, i)) to decode(part.substring(i + 1))
         }
-
-    private fun openBrowser(url: String): Boolean = runCatchingCancellable {
-        val os = System.getProperty("os.name").lowercase()
-        val cmd = when {
-            os.contains("mac") -> listOf("open", url)
-            os.contains("nux") || os.contains("nix") -> listOf("xdg-open", url)
-            else -> return false
-        }
-        ProcessBuilder(cmd).redirectOutput(ProcessBuilder.Redirect.DISCARD)
-            .redirectError(ProcessBuilder.Redirect.DISCARD).start()
-        true
-    }.getOrDefault(false)
 }

@@ -118,6 +118,26 @@ existed it was authored but NEVER executed by automation — only the ast-grep w
 Green means all of them. A wall block means fix the code, not the wall — never trust a filtered
 `gradle | grep` exit; read the real `BUILD SUCCESSFUL` / `GATE: PASS`.
 
+## Enforcement tiers (#924: make drift not compile)
+
+Each failure class this codebase hit is now stopped by the STRONGEST tier that can express it —
+CLAUDE.md/review are the last resort, not the first. Measure the generator (agents keep writing
+this), not the clean snapshot.
+
+| failure class | tier that now stops it |
+|---|---|
+| illegal module dependency | T1 config-time `check{}` (`splice.module-law.gradle.kts`) — build error |
+| `stream_options` / request-body gzip (vendor 400s) | T2 ast-grep walls, now **default-deny** across all modules (`kt-no-stream-options-request`, `kt-no-request-body-gzip`) |
+| non-atomic 0600 credential write (kimi world-readable window) | T1 single primitive `core/util/SecureFile.writeAtomic0600` — the only writer |
+| duplicated percent-encoder / form body | T1 single `core/util/FormEncoding` |
+| `runCatching` swallowing cancellation → leaked turn (600% CPU) | T2 wall `kt-no-runcatching-in-coroutine` on the turn/stream path |
+| god class suppressed instead of split | T2 detekt `ForbiddenSuppress` + wall `kt-no-quality-suppress` |
+| config weakened to hide findings | T2 `checks/config-guard.sh` (no baseline, maxIssues:0, walls stay `severity:error`) |
+| the tiers never running | T0 `gateway-gradle` CI job + `bash checks/gate.sh` — everything above actually executes |
+
+The gate reads **real** exit codes (`checks/gate.sh` → `GATE: PASS/FAIL`); a filtered `gradle|grep`
+exit masked BUILD FAILED twice — never trust one.
+
 ## Compaction doctrine
 
 Detection is a POSITIVE marker only: the verbatim v2.1.207 summarizer prompt

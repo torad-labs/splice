@@ -4,11 +4,9 @@
 // exact same secure-write pattern instead of re-deriving it. :app is wall-exempt.
 package splice.app
 
+import splice.core.util.SecureFile
 import splice.core.util.runCatchingCancellable
-import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
-import java.nio.file.attribute.PosixFilePermissions
 
 /** Best-effort open of a URL in the operator's default browser; false when unsupported/failed. */
 internal fun openBrowser(url: String): Boolean = runCatchingCancellable {
@@ -23,24 +21,8 @@ internal fun openBrowser(url: String): Boolean = runCatchingCancellable {
     true
 }.getOrDefault(false)
 
-// Write credentials with owner-only perms from the instant the file exists — no world-readable
-// window (the old write-then-chmod left a 0644 gap, and swallowed a failed chmod). Temp file at
-// 0600 + ATOMIC_MOVE onto the target; falls back gracefully on a non-POSIX filesystem.
+// Write credentials atomically at 0600 — routes to the shared primitive. This file held the
+// canonical copy SecureFile was lifted from; delegating keeps a single source of truth.
 internal fun writeCredentialFile(path: Path, content: String) {
-    val parent = path.parent
-    Files.createDirectories(parent)
-    val perms = PosixFilePermissions.fromString("rw-------")
-    val tmp = try {
-        Files.createTempFile(parent, ".auth", ".tmp", PosixFilePermissions.asFileAttribute(perms))
-    } catch (_: UnsupportedOperationException) {
-        Files.createTempFile(parent, ".auth", ".tmp")
-    }
-    runCatchingCancellable {
-        Files.writeString(tmp, content)
-        Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
-    }.onFailure {
-        runCatching { Files.deleteIfExists(tmp) }
-        throw it
-    }
-    runCatching { Files.setPosixFilePermissions(path, perms) }
+    SecureFile.writeAtomic0600(path, content)
 }

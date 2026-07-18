@@ -171,7 +171,12 @@ private class StaticAuth : RefreshableAuthProvider {
 class HeadServerLoadTest {
 
     private val n = System.getenv("SPLICE_LOAD_N")?.toIntOrNull() ?: 1000
-    private val port = 39777
+
+    // Ephemeral port, not a fixed one: a hardcoded port BindExceptions when a prior run's socket is
+    // still in TIME_WAIT or a leftover head process holds it — the exact re-run flake this hardens.
+    // ServerSocket(0) leases a free port and frees it immediately (a listener with no live conns
+    // never enters TIME_WAIT), so Netty rebinds it cleanly — the pattern the mock upstream uses.
+    private val port = ServerSocket(0).use { it.localPort }
     private lateinit var mock: HoldingSseUpstream
     private lateinit var head: HeadServer
     private val gate = InflightGate({ 0 })

@@ -15,15 +15,12 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import splice.core.util.JsonlSink
 import splice.core.util.runCatchingCancellable
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.TextBlock
-import java.nio.ByteBuffer
-import java.nio.channels.FileChannel
-import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardOpenOption
 
 /** Primary summarizer marker (kept for the canary test + shadow key). */
 public const val COMPACT_MARKER: String = "tasked with summarizing conversations"
@@ -164,12 +161,7 @@ public class CompactStats(private val file: Path, private val clock: () -> Long 
                     }
                 }
             }
-            Files.writeString(
-                file,
-                row.toString() + "\n",
-                StandardOpenOption.CREATE,
-                StandardOpenOption.APPEND,
-            )
+            JsonlSink.appendLine(file, row.toString())
         }
     }
 
@@ -181,7 +173,7 @@ public class CompactStats(private val file: Path, private val clock: () -> Long 
     public fun read(tailN: Int = DEFAULT_TAIL): CompactStatsSummary {
         if (!Files.exists(file)) return CompactStatsSummary(0, emptyMap(), emptyList())
         val rows = runCatchingCancellable {
-            readJsonlTail(file, READ_TAIL_BYTES).mapNotNull { line ->
+            JsonlSink.readTail(file, READ_TAIL_BYTES).mapNotNull { line ->
                 runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
             }
         }.getOrDefault(emptyList())
@@ -198,25 +190,3 @@ public class CompactStats(private val file: Path, private val clock: () -> Long 
         const val READ_TAIL_BYTES = 256 * 1024
     }
 }
-
-/**
- * Read the trailing [maxBytes] of [file] as UTF-8 lines. If the file is larger, the first
- * (possibly partial) line in the window is dropped so every returned line is complete.
- */
-internal fun readJsonlTail(file: Path, maxBytes: Int): List<String> =
-    FileChannel.open(file, StandardOpenOption.READ).use { ch ->
-        val size = ch.size()
-        if (size <= 0L) return@use emptyList()
-        val readFrom = (size - maxBytes.toLong()).coerceAtLeast(0L)
-        val len = (size - readFrom).toInt()
-        val buf = ByteBuffer.allocate(len)
-        ch.position(readFrom)
-        while (buf.hasRemaining()) {
-            if (ch.read(buf) < 0) break
-        }
-        buf.flip()
-        val text = StandardCharsets.UTF_8.decode(buf).toString()
-        // Mid-file start: drop the leading partial line (no newline at all -> nothing complete).
-        val complete = if (readFrom > 0L) text.substringAfter('\n', missingDelimiterValue = "") else text
-        complete.lineSequence().filter { it.isNotEmpty() }.toList()
-    }

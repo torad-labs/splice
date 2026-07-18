@@ -1,0 +1,20 @@
+# WALL (#924 Phase 3): append-only JSONL sinks live ONCE, in core/util/JsonlSink. PerfStats and
+# CompactStats each carried the same one-shot `Files.writeString(f, line+"\n", CREATE, APPEND)`
+# append plus a FileChannel tail-reader (readJsonlTail even lived in :compact, so :perf reached
+# across a package boundary for it). Route through JsonlSink.appendLine / JsonlSink.readTail.
+# A long-lived Files.newBufferedWriter log stream (e.g. Main's stderr tee) is a DIFFERENT lifecycle
+# and is intentionally not matched — the fingerprint is a writeString call carrying APPEND.
+id: kt-jsonl-sink-single-source
+language: kotlin
+severity: error
+message: "Append-only JSONL sink lives once in core/util/JsonlSink — use JsonlSink.appendLine/readTail, don't re-derive writeString(..., CREATE, APPEND)."
+note: "PerfStats/CompactStats append one JSON line per record and tail-read a bounded window; both routes live in splice.core.util.JsonlSink (appendLine, readTail). Re-deriving the append/tail here re-seeds the drift the extraction removed."
+files:
+  - gateway/*/src/main/**/*.kt
+ignores:
+  - gateway/core/src/main/kotlin/splice/core/util/JsonlSink.kt
+rule:
+  pattern: Files.writeString($$$)
+  has:
+    pattern: StandardOpenOption.APPEND
+    stopBy: end

@@ -1,0 +1,10 @@
+id: kt-jsonl-sink-single-source
+valid:
+  # correct routing — no writeString at all
+  - 'JsonlSink.appendLine(file, row.toString())'
+  # a long-lived buffered-writer log stream (Main's tee) is a different lifecycle, not a JSONL sink
+  - 'val w = Files.newBufferedWriter(file, CREATE, APPEND)'
+  # a plain (non-append) writeString is fine — the fingerprint is APPEND specifically
+  - 'Files.writeString(file, text)'
+invalid:
+  - 'Files.writeString(file, row.toString() + "\n", StandardOpenOption.CREATE, StandardOpenOption.APPEND)'

@@ -14,11 +14,10 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import splice.core.perf.PerfSnapshot
+import splice.core.util.JsonlSink
 import splice.core.util.runCatchingCancellable
-import splice.gateway.compact.readJsonlTail
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardOpenOption
 
 /** The string facts a perf row carries beside the numeric snapshot. */
 public data class PerfRowMeta(
@@ -44,12 +43,7 @@ public class PerfStats(private val file: Path, private val clock: () -> Long = S
                 snap.marks.forEach { (k, v) -> put(k, v) }
                 snap.counters.forEach { (k, v) -> put(k, v) }
             }
-            Files.writeString(
-                file,
-                row.toString() + "\n",
-                StandardOpenOption.CREATE,
-                StandardOpenOption.APPEND,
-            )
+            JsonlSink.appendLine(file, row.toString())
         }
     }
 
@@ -58,7 +52,7 @@ public class PerfStats(private val file: Path, private val clock: () -> Long = S
     public fun tailNumeric(tailN: Int = DEFAULT_TAIL): List<Map<String, Long>> {
         if (!Files.exists(file)) return emptyList()
         val rows = runCatchingCancellable {
-            readJsonlTail(file, READ_TAIL_BYTES).mapNotNull { line ->
+            JsonlSink.readTail(file, READ_TAIL_BYTES).mapNotNull { line ->
                 runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
             }
         }.getOrDefault(emptyList())

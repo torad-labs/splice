@@ -5,9 +5,11 @@
 // max_tokens IS honored (unlike the ChatGPT backend); reasoning is a plain field where supported.
 package splice.dialect.chat
 
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonArrayBuilder
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -56,17 +58,9 @@ public class ChatRequestBuilder(private val quirks: ChatQuirks) {
         }
         val emitTools = quirks.supportsTools && !compact && body.tools.isNotEmpty()
         val effort = chatReasoningEffort(body, compact)
-        val req = buildJsonObject {
-            put("model", upstreamModel)
-            put("messages", messages)
-            put("stream", true)
-            body.maxTokens?.takeIf { it > 0 }?.let { put(quirks.maxTokensField, it) }
-            if (emitTools) {
-                put("tools", toolsArray(body))
-            }
-            // Ask chat backends that support it to return cleartext CoT on reasoning_content.
-            putReasoningEffort(effort)
-        }
+        // TIER-1 (#924): the request is a CLOSED ChatRequest DTO (see chatRequestObject) — a knob
+        // that doesn't belong can't be added without a field.
+        val req = chatRequestObject(upstreamModel, messages, emitTools, effort, body)
         val meta = TurnMeta(
             compact = compact,
             showReasoning = "text",
@@ -81,11 +75,31 @@ public class ChatRequestBuilder(private val quirks: ChatQuirks) {
         return BuiltChatRequest(req, meta)
     }
 
-    private fun JsonObjectBuilder.putReasoningEffort(effort: String?) {
-        if (!quirks.emitReasoningEffort || effort == null) return
-        put("reasoning_effort", effort)
-        // Some OpenRouter/vLLM stacks want the nested form too.
-        put("reasoning", buildJsonObject { put("effort", effort) })
+    // The CLOSED request object: the fixed fields via the ChatRequest DTO, plus max_tokens injected
+    // by its vendor-dynamic key (max_tokens vs max_completion_tokens) — the one field a fixed DTO
+    // can't name. Extracted so build() stays under the complexity gate.
+    private fun chatRequestObject(
+        upstreamModel: String,
+        messages: JsonArray,
+        emitTools: Boolean,
+        effort: String?,
+        body: AnthropicRequest,
+    ): JsonObject {
+        val dto = ChatRequest(
+            model = upstreamModel,
+            messages = messages,
+            stream = true,
+            tools = if (emitTools) toolsArray(body) else null,
+            reasoningEffort = if (quirks.emitReasoningEffort) effort else null,
+            reasoning = if (quirks.emitReasoningEffort && effort != null) {
+                buildJsonObject { put("effort", effort) }
+            } else {
+                null
+            },
+        )
+        val fields = (chatRequestJson.encodeToJsonElement(ChatRequest.serializer(), dto) as JsonObject).toMutableMap()
+        body.maxTokens?.takeIf { it > 0 }?.let { fields[quirks.maxTokensField] = JsonPrimitive(it) }
+        return JsonObject(fields)
     }
 
     // the content-block split is the mapping contract

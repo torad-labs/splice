@@ -98,19 +98,29 @@ public class GrokAuthProvider(
 
     // Sealed per-mode outcome (discipline L3): a dead refresh token, a transport blip, and a
     // corrupt file are DIFFERENT stories; credentialsOrNull is the single logging flatten.
+    // Staged (read → exchange → persist), each stage owning its own failure branches.
     private suspend fun doRefresh(): RefreshOutcome {
         if (!Files.exists(authPath)) return RefreshOutcome.NoCredentialsFile
         val tokens = runCatchingCancellable { tokensOf() }
             .getOrElse { return RefreshOutcome.ReadFailed(it) }
         val refreshToken = tokens?.get(FIELD_REFRESH_TOKEN).str()
-            ?: return RefreshOutcome.NoRefreshToken
+        return if (refreshToken == null) RefreshOutcome.NoRefreshToken else exchangeRefreshToken(refreshToken)
+    }
+
+    private suspend fun exchangeRefreshToken(refreshToken: String): RefreshOutcome {
         // Guard the network hop (the refreshCall param's type doesn't promise "never throws"): a
         // thrown hop must degrade to a typed outcome, not blow through SingleFlight uncaught.
         val fresh = runCatchingCancellable { refreshCall(refreshToken) }
             .getOrElse { return RefreshOutcome.TransportFailed(it) }
-            ?: return RefreshOutcome.Rejected("token endpoint returned no rotated tokens")
-        val access = fresh.accessToken
-            ?: return RefreshOutcome.Rejected("refresh response missing access_token")
+        val access = fresh?.accessToken
+        return when {
+            fresh == null -> RefreshOutcome.Rejected("token endpoint returned no rotated tokens")
+            access == null -> RefreshOutcome.Rejected("refresh response missing access_token")
+            else -> persistRotation(refreshToken, fresh, access)
+        }
+    }
+
+    private fun persistRotation(refreshToken: String, fresh: GrokRefreshedTokens, access: String): RefreshOutcome {
         val expiresAtMs = fresh.expiresIn?.let { clock() + it * MS_PER_S }
         writeSecure(authPath, mergedAuthJson(access, fresh.refreshToken ?: refreshToken, expiresAtMs).toString())
         invalidateCache()

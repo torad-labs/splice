@@ -190,7 +190,16 @@ public class UpstreamClient(
             "upstream ${failed.status} attempt ${attempt + 1}/$maxRetries: " +
                 failed.text.take(ERR_SNIPPET),
         )
-        val nextRefreshed = refreshedOnce || refreshable
+        return statusPlan(ctx, failed, attempt, refreshedOnce || refreshable)
+    }
+
+    /** Status/pushback half of the retry decision (split from planRetry: complexity wall). */
+    private fun statusPlan(
+        ctx: PostContext,
+        failed: RetryOutcome.Failed,
+        attempt: Int,
+        nextRefreshed: Boolean,
+    ): RetryPlan {
         // gRPC-A6-style negative pushback: a server explicitly asking us to wait longer than the
         // interactive budget means "go away", not "hammer me on a curve" — give up honestly.
         val pushback = failed.retryAfterMs
@@ -277,6 +286,7 @@ public class UpstreamClient(
             }
             return false
         }
+
         // Every surveyed harness (codex, gemini-cli, Claude Code) retries ALL 5xx; 501 stays
         // terminal (Not Implemented never heals) and 4xx stays terminal except 408/429 (G4a).
         private const val RATE_LIMITED = 429

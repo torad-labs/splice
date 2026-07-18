@@ -39,7 +39,8 @@ class UpstreamClientTransportTest {
         totalTimeoutMs = 5_000,
         maxRetries = 3,
         client = HttpClient(engine),
-        backoff = { _, _ -> /* no real sleep in tests */ },
+        // no real sleep in tests
+        backoff = { _, _ -> },
     )
 
     @Test

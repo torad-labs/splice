@@ -1,0 +1,19 @@
+# WALL (#924 Phase 3): provider JSON scalar reads go through JsonScalars (core/util) — never the raw
+# `?.jsonPrimitive?.content` chain. JsonNull IS a JsonPrimitive whose content is the literal string
+# "null", so `obj["access_token"]?.jsonPrimitive?.content` leaks a JSON-null token through as the
+# STRING "null" — a null access_token becomes a live-looking bearer "null". kimi/grok/codex each
+# hand-rolled this read; the reconciled reader is JsonElement?.str() / JsonObject.str(key), which
+# filters JsonNull. Provider-scoped because a NEW provider is exactly where the copy re-appears.
+id: kt-json-scalars-single-source
+language: kotlin
+severity: error
+message: "Read JSON scalars via JsonScalars .str()/.str(key) (core/util) — a raw jsonPrimitive.content leaks a JSON null as the string \"null\"."
+note: "JsonNull is a JsonPrimitive whose content is \"null\". Use element.str() or obj.str(key) from splice.core.util (they filter JsonNull) instead of ?.jsonPrimitive?.content — the null-token-becomes-\"null\" bug the extraction closed."
+files:
+  - gateway/provider-*/src/main/**/*.kt
+rule:
+  any:
+    - pattern: $X?.jsonPrimitive?.content
+    - pattern: $X.jsonPrimitive.content
+    - pattern: $X?.jsonPrimitive?.contentOrNull
+    - pattern: $X.jsonPrimitive.contentOrNull

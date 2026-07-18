@@ -25,6 +25,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.parseAnthropicBody
 import splice.core.turn.WatchdogBudget
+import splice.core.util.discard
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.ChatRequestBuilder
 import splice.gateway.compact.CompactStats
@@ -42,7 +43,6 @@ import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.util.concurrent.Executors
 import kotlin.time.Duration.Companion.seconds
-import splice.core.util.discard
 
 /** A minimal OpenAI Chat Completions mock (different SSE shape from Responses). */
 private const val REASONING_FRAME = """{"choices":[{"delta":{"reasoning_content":"thinking hard"}}]}"""

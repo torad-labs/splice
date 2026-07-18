@@ -14,6 +14,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
+import splice.core.util.discard
 import splice.core.util.runCatchingCancellable
 import java.io.IOException
 import java.net.InetSocketAddress
@@ -23,7 +24,6 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
-import splice.core.util.discard
 
 /** Everything the flow needs for one provider's login (built by LoginCommand per head). */
 public data class LoginSpec(

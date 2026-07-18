@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
@@ -58,7 +59,7 @@ class OpenAiResponsesTest {
                 baseUrl = mock.baseUrl,
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             ),
-            showReasoning = "text",
+            showReasoning = ReasoningDisplay.TEXT,
             replayReasoning = false,
             configEffort = "high",
             configSummary = "detailed",

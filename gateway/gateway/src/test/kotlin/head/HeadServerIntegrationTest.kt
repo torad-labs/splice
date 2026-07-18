@@ -27,6 +27,7 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.model.WindowRule
+import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
@@ -80,7 +81,7 @@ class HeadServerIntegrationTest {
                 baseUrl = mock.baseUrl,
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             ),
-            showReasoning = "text",
+            showReasoning = ReasoningDisplay.TEXT,
             replayReasoning = false,
             configEffort = "high",
             configSummary = "detailed",

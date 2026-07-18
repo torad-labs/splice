@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.parseAnthropicBody
+import splice.core.turn.ReasoningDisplay
 import splice.dialect.responses.BuildOptions
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.EffortLadder
@@ -50,7 +51,7 @@ private fun opts(
     upstreamModel = model,
     configEffort = effort,
     configSummary = summary,
-    showReasoning = show,
+    showReasoning = ReasoningDisplay.from(show),
     replayReasoning = InjectPriorReasoning(replay),
     // Default: include when reasoning is shown (independent of input-replay).
     includeEncryptedReasoning = RequestEncryptedReasoning(includeEncrypted ?: (show != "off" && !compact)),

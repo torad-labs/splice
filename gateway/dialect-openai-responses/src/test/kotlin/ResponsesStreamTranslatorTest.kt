@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
+import splice.dialect.responses.EmitEncryptedReasoning
 import splice.dialect.responses.ResponsesStreamTranslator
 import splice.dialect.responses.StreamTurnContext
 import splice.spi.WatchdogFired
@@ -67,7 +68,7 @@ private fun ctx(
     fired: WatchdogFired? = null,
 ) = StreamTurnContext(
     compact = compact,
-    emitEncryptedReasoning = emit,
+    emitEncryptedReasoning = EmitEncryptedReasoning(emit),
     encodeReasoningEnvelope = { "env:" + it["id"]?.toString().orEmpty() },
     clientGone = { clientGone },
     watchdogFired = { fired },

@@ -109,13 +109,13 @@ public data class BuildOptions(
      * Inject prior redacted_thinking envelopes into the request input (multi-turn continuity).
      * Independent of [includeEncryptedReasoning]. Keep OFF for deepest fresh reasoning.
      */
-    val replayReasoning: Boolean,
+    val replayReasoning: InjectPriorReasoning,
     /**
      * Ask the server to return `reasoning.encrypted_content` on this turn's output.
      * Does NOT inject prior blobs into input. ON when reasoning is shown so we can store the
      * opaque handle for optional later replay (Grok Build / Codex always request this).
      */
-    val includeEncryptedReasoning: Boolean = true,
+    val includeEncryptedReasoning: RequestEncryptedReasoning = RequestEncryptedReasoning(true),
     val sessionId: String? = null,
     /** Decodes a redacted_thinking envelope back into a Responses reasoning input item. */
     val decodeReasoningEnvelope: (String) -> JsonObject?,
@@ -168,12 +168,14 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         // (ResponsesRequestBuilderTest pins it): fields in declaration order, null optionals omitted.
         val tools = if (!opts.compact && body.tools.isNotEmpty()) toolsArray(body) else null
         val emitToolChoice = tools != null && quirks.emitToolChoice
+        val include =
+            if (!opts.compact && opts.includeEncryptedReasoning.v) listOf(ENCRYPTED_CONTENT_INCLUDE) else null
         val dto = ResponsesRequest(
             model = opts.upstreamModel,
             input = input,
             store = quirks.store,
             stream = true,
-            include = if (!opts.compact && opts.includeEncryptedReasoning) listOf(ENCRYPTED_CONTENT_INCLUDE) else null,
+            include = include,
             promptCacheKey = cacheKey(body, opts),
             instructions = instructions,
             tools = tools,
@@ -379,7 +381,7 @@ private class ResponsesInputBuilder(private val quirks: ResponsesQuirks) {
         block: RedactedThinkingBlock,
         opts: BuildOptions,
     ) {
-        if (!opts.compact && opts.replayReasoning) {
+        if (!opts.compact && opts.replayReasoning.v) {
             opts.decodeReasoningEnvelope(block.data)?.let { sink.add(it) }
         }
     }

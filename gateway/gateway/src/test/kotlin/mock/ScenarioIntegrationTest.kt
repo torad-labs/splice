@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
+import splice.dialect.responses.EmitEncryptedReasoning
 import splice.dialect.responses.ResponsesStreamTranslator
 import splice.dialect.responses.StreamTurnContext
 import splice.spi.sseJsonEvents
@@ -36,7 +37,7 @@ class ScenarioIntegrationTest {
 
     private fun ctx(emit: Boolean = false) = StreamTurnContext(
         compact = false,
-        emitEncryptedReasoning = emit,
+        emitEncryptedReasoning = EmitEncryptedReasoning(emit),
         encodeReasoningEnvelope = { "env:${it["id"]?.jsonPrimitive?.content}" },
         clientGone = { false },
         watchdogFired = { null },

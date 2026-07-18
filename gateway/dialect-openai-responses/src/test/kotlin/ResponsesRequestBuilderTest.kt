@@ -17,6 +17,8 @@ import splice.core.parse.parseAnthropicBody
 import splice.dialect.responses.BuildOptions
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.EffortLadder
+import splice.dialect.responses.InjectPriorReasoning
+import splice.dialect.responses.RequestEncryptedReasoning
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesRequestBuilder
 import splice.dialect.responses.stablePromptCacheKey
@@ -49,9 +51,9 @@ private fun opts(
     configEffort = effort,
     configSummary = summary,
     showReasoning = show,
-    replayReasoning = replay,
+    replayReasoning = InjectPriorReasoning(replay),
     // Default: include when reasoning is shown (independent of input-replay).
-    includeEncryptedReasoning = includeEncrypted ?: (show != "off" && !compact),
+    includeEncryptedReasoning = RequestEncryptedReasoning(includeEncrypted ?: (show != "off" && !compact)),
     sessionId = sessionId,
     decodeReasoningEnvelope = { data ->
         buildJsonObject {

@@ -6,11 +6,15 @@
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.content.OutgoingContent
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.Assertions.assertArrayEquals
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -111,6 +115,35 @@ class UpstreamClientTransportTest {
             ) { throw ConnectException("mid-stream reset") } // retryable TYPE, but block owns it
         }
         assertEquals(1, calls.get())
+    }
+
+    @Test
+    fun `post sends the body as exact UTF-8 bytes with no content-encoding`() = runTest {
+        // B4 (#924 Phase 4): the gzip-request-body incident (xAI 400'd a gzipped body, 2026-07-18)
+        // as a transport-SHAPE assertion — this catches the CLASS (ANY request-body compression),
+        // where the kt-no-request-body-gzip ast-grep wall only catches the GZIPOutputStream NAME.
+        // The body must ride as the pre-encoded UTF-8 bytes post() computes once; the non-ASCII
+        // payload proves it is genuine UTF-8, not an accidental ASCII pass-through.
+        val bodyJson = """{"model":"x","content":"héllo-世界"}"""
+        var sentBody: ByteArray? = null
+        var contentEncoding: String? = "UNSET" // sentinel: a null here must mean "no header", not "handler never ran"
+        val engine = MockEngine { request ->
+            sentBody = (request.body as OutgoingContent.ByteArrayContent).bytes()
+            contentEncoding = request.headers[HttpHeaders.ContentEncoding]
+            respond("ok", HttpStatusCode.OK, headersOf())
+        }
+        clientOver(engine).post(
+            url = "https://api.example.test/v1",
+            bodyJson = bodyJson,
+            auth = fakeAuth,
+            extraHeaders = { emptyMap() },
+        ) { "done" }
+        assertNull(contentEncoding, "request body must not be content-encoded (no gzip)")
+        assertArrayEquals(
+            bodyJson.toByteArray(Charsets.UTF_8),
+            sentBody,
+            "body must be the exact UTF-8(bodyJson) bytes",
+        )
     }
 
     @Test

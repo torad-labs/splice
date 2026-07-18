@@ -54,12 +54,13 @@ public class GrokAuthProvider(
 
     override suspend fun credentials(): Credentials? {
         val snap = readSnapshot() ?: return null
+        val current = Credentials.Bearer(snap.access, null)
         val expiresAt = snap.expiresAtMs
-            ?: return Credentials.Bearer(snap.access, null) // no expiry on file: serve as-is
-        if (expiresAt - clock() >= PROACTIVE_WINDOW_MS) return Credentials.Bearer(snap.access, null)
+        // serve as-is when the file carries no expiry, or we're still outside the proactive window
+        if (expiresAt == null || expiresAt - clock() >= PROACTIVE_WINDOW_MS) return current
         // proactive window: single-flight refresh; on failure serve the current token if still valid.
         val refreshed = singleFlight.run { doRefresh() }
-        return refreshed ?: (if (clock() < expiresAt) Credentials.Bearer(snap.access, null) else null)
+        return refreshed ?: (if (clock() < expiresAt) current else null)
     }
 
     private fun readSnapshot(): Snapshot? = runCatchingCancellable {
@@ -112,23 +113,24 @@ public class GrokAuthProvider(
         }.getOrNull() ?: JsonObject(emptyMap())
         val oldTokens = onDisk[FIELD_TOKENS] as? JsonObject ?: JsonObject(emptyMap())
         return buildJsonObject {
-            onDisk.forEach { (k, v) ->
-                val replaced = k == FIELD_TOKENS || k == FIELD_LAST_REFRESH ||
-                    (k == FIELD_EXPIRES && expiresAtMs != null)
-                if (!replaced) put(k, v)
-            }
-            put(
-                FIELD_TOKENS,
-                buildJsonObject {
-                    oldTokens.forEach { (k, v) -> if (k != FIELD_ACCESS_TOKEN && k != FIELD_REFRESH_TOKEN) put(k, v) }
-                    put(FIELD_ACCESS_TOKEN, JsonPrimitive(access))
-                    put(FIELD_REFRESH_TOKEN, JsonPrimitive(refresh))
-                },
-            )
+            onDisk.forEach { (k, v) -> if (!replacedTopLevel(k, expiresAtMs)) put(k, v) }
+            put(FIELD_TOKENS, mergedTokens(oldTokens, access, refresh))
             expiresAtMs?.let { put(FIELD_EXPIRES, JsonPrimitive(it)) }
             put(FIELD_LAST_REFRESH, JsonPrimitive(nowIso()))
         }
     }
+
+    // Top-level keys overwritten rather than carried over: the tokens object, last_refresh, and
+    // expires (only when the refresh response carried a new expiry).
+    private fun replacedTopLevel(key: String, expiresAtMs: Long?): Boolean =
+        key == FIELD_TOKENS || key == FIELD_LAST_REFRESH || (key == FIELD_EXPIRES && expiresAtMs != null)
+
+    private fun mergedTokens(oldTokens: JsonObject, access: String, refresh: String): JsonObject =
+        buildJsonObject {
+            oldTokens.forEach { (k, v) -> if (k != FIELD_ACCESS_TOKEN && k != FIELD_REFRESH_TOKEN) put(k, v) }
+            put(FIELD_ACCESS_TOKEN, JsonPrimitive(access))
+            put(FIELD_REFRESH_TOKEN, JsonPrimitive(refresh))
+        }
 
     override suspend fun describe(): AuthDescription {
         val present = runCatchingCancellable {
@@ -152,6 +154,7 @@ public class GrokAuthProvider(
     private companion object {
         const val DEFAULT_CACHE_MS = 30_000L
         const val MS_PER_S = 1000L
+
         /** Refresh this long before `expires` — well inside a 6h grok token, generous vs clock skew. */
         const val PROACTIVE_WINDOW_MS = 300_000L
         const val FIELD_TOKENS = "tokens"

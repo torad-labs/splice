@@ -15,6 +15,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import splice.core.util.FormEncoding
 import splice.core.util.SecureFile
 import java.nio.file.Path
 
@@ -49,11 +50,11 @@ private const val F_EXPIRES_IN = "expires_in"
 
 /** Device-authorization request body: `client_id=<id>` — NO scope param. */
 public fun kimiDeviceAuthorizationForm(clientId: String = KimiOAuthEndpoints.CLIENT_ID): String =
-    formEncode(F_CLIENT_ID to clientId)
+    FormEncoding.formEncode(F_CLIENT_ID to clientId)
 
 /** Token-poll body: client_id + device_code + the percent-encoded device-code grant_type. */
 public fun kimiTokenPollForm(deviceCode: String, clientId: String = KimiOAuthEndpoints.CLIENT_ID): String =
-    formEncode(
+    FormEncoding.formEncode(
         F_CLIENT_ID to clientId,
         "device_code" to deviceCode,
         F_GRANT_TYPE to KimiOAuthEndpoints.DEVICE_CODE_GRANT_TYPE,
@@ -61,7 +62,7 @@ public fun kimiTokenPollForm(deviceCode: String, clientId: String = KimiOAuthEnd
 
 /** Refresh body: `client_id=<id>&grant_type=refresh_token&refresh_token=<rt>`. */
 public fun kimiRefreshForm(refreshToken: String, clientId: String = KimiOAuthEndpoints.CLIENT_ID): String =
-    formEncode(
+    FormEncoding.formEncode(
         F_CLIENT_ID to clientId,
         F_GRANT_TYPE to F_REFRESH_TOKEN,
         F_REFRESH_TOKEN to refreshToken,
@@ -133,22 +134,6 @@ public fun isPlanTierRejection(body: String): Boolean {
 internal const val MS_PER_S: Long = 1000
 
 internal val kimiJson: Json = Json { ignoreUnknownKeys = true }
-
-// byte-masking is inherent to RFC3986 encoding: 0xFF keeps the low byte, 0x80 is the ASCII ceiling.
-private const val BYTE_MASK = 0xFF
-private const val ASCII_LIMIT = 0x80
-
-internal fun formEncode(vararg pairs: Pair<String, String>): String =
-    pairs.joinToString("&") { (k, v) -> "$k=${kimiPercentEncode(v)}" }
-
-private fun kimiPercentEncode(value: String): String = buildString {
-    for (b in value.toByteArray(Charsets.UTF_8)) {
-        val c = b.toInt() and BYTE_MASK
-        val ch = c.toChar()
-        val unreserved = ch.isLetterOrDigit() && c < ASCII_LIMIT
-        if (unreserved || ch in "-_.~") append(ch) else append("%%%02X".format(c))
-    }
-}
 
 // JsonNull IS a JsonPrimitive with content "null"; every string extraction must filter it.
 internal fun JsonObject.kimiString(key: String): String? =

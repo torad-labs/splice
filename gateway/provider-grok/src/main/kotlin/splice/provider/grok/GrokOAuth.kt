@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import splice.core.util.FormEncoding
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
@@ -70,21 +71,8 @@ public fun buildGrokAuthorizeUrl(
         "plan" to "generic",
         "referrer" to "splice",
     )
-    val query = params.joinToString("&") { (k, v) -> "$k=${grokPercentEncode(v)}" }
+    val query = params.joinToString("&") { (k, v) -> "$k=${FormEncoding.percentEncode(v)}" }
     return "${GrokOAuthEndpoints.authorizeUrl(env)}?$query"
-}
-
-// byte-masking is inherent to RFC3986 encoding: 0xFF keeps the low byte, 0x80 is the ASCII ceiling.
-private const val BYTE_MASK = 0xFF
-private const val ASCII_LIMIT = 0x80
-
-private fun grokPercentEncode(value: String): String = buildString {
-    for (b in value.toByteArray(Charsets.UTF_8)) {
-        val c = b.toInt() and BYTE_MASK
-        val ch = c.toChar()
-        val unreserved = ch.isLetterOrDigit() && c < ASCII_LIMIT
-        if (unreserved || ch in "-_.~") append(ch) else append("%%%02X".format(c))
-    }
 }
 
 /** Form body for the authorization-code exchange (x-www-form-urlencoded). */
@@ -95,7 +83,7 @@ public fun grokCodeExchangeForm(
     clientId: String,
     redirectUri: String,
 ): String =
-    formEncode(
+    FormEncoding.formEncode(
         "grant_type" to "authorization_code",
         "code" to code,
         "redirect_uri" to redirectUri,
@@ -110,14 +98,11 @@ private const val WIRE_REFRESH_TOKEN = "refresh_token"
 
 /** Form body for the refresh-token grant. */
 public fun grokRefreshForm(refreshToken: String, clientId: String): String =
-    formEncode(
+    FormEncoding.formEncode(
         "grant_type" to WIRE_REFRESH_TOKEN,
         "client_id" to clientId,
         WIRE_REFRESH_TOKEN to refreshToken,
     )
-
-private fun formEncode(vararg pairs: Pair<String, String>): String =
-    pairs.joinToString("&") { (k, v) -> "$k=${grokPercentEncode(v)}" }
 
 private val grokJson = Json { ignoreUnknownKeys = true }
 

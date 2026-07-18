@@ -24,6 +24,7 @@ public class KimiDeviceIdentity(
 
     /** Read-or-create the persisted device_id (uuid, 0600). */
     public fun deviceId(): String {
+        // ast-grep-ignore: kt-no-silent-result-collapse -- unreadable device-id file regenerates a fresh uuid below; identity continuity is best-effort
         val existing = runCatchingCancellable {
             if (Files.exists(deviceIdPath)) Files.readString(deviceIdPath).trim() else null
         }.getOrNull()
@@ -49,6 +50,7 @@ public class KimiDeviceIdentity(
             value.filter { it.code < ASCII_CEILING }.ifEmpty { "unknown" }
 
         fun defaultHostname(): String =
+            // ast-grep-ignore: kt-no-silent-result-collapse -- hostname is cosmetic header data; "unknown" is the designed fallback
             runCatchingCancellable { InetAddress.getLocalHost().hostName }.getOrNull() ?: "unknown"
     }
 }

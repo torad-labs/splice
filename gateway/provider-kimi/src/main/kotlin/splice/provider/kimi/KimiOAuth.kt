@@ -15,10 +15,8 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
-import splice.core.util.runCatchingCancellable
-import java.nio.file.Files
+import splice.core.util.SecureFile
 import java.nio.file.Path
-import java.nio.file.attribute.PosixFilePermissions
 
 public object KimiOAuthEndpoints {
     // public, shared with Moonshot's own CLIs — reused verbatim (no secret exists).
@@ -161,11 +159,9 @@ internal fun JsonObject.kimiLong(key: String): Long? = kimiString(key)?.toLongOr
 internal fun JsonElement.jsonObjectOrEmpty(): JsonObject =
     this as? JsonObject ?: JsonObject(emptyMap())
 
-/** Atomic-enough 0600 write with parent dirs created (auth file + device_id file). */
+// Atomic 0600 write (auth + device_id files) — routes to the shared primitive. The old body here
+// was write-then-chmod, which left the token world-readable for a window and could tear under a
+// concurrent reader (the exact gap the other providers' comments call out); SecureFile closes it.
 internal fun writeSecure(path: Path, content: String) {
-    Files.createDirectories(path.parent)
-    Files.writeString(path, content)
-    runCatchingCancellable {
-        Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------"))
-    }
+    SecureFile.writeAtomic0600(path, content)
 }

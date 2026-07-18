@@ -13,11 +13,11 @@ import kotlinx.serialization.json.jsonPrimitive
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.util.SecureFile
 import splice.core.util.runCatchingCancellable
 import splice.spi.SingleFlight
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.attribute.PosixFilePermissions
 import java.time.Instant
 
 /** Result of the token endpoint's refresh POST (only the fields we persist). */
@@ -127,22 +127,9 @@ public class CodexAuthProvider(
         return AuthDescription(present = present, kind = KIND, fields = out)
     }
 
+    // Atomic 0600 credential write — routes to the shared primitive (was an inline temp→chmod→move).
     private fun writeSecure(path: Path, content: String) {
-        Files.createDirectories(path.parent)
-        // 0600 BEFORE content, then ATOMIC move — write-then-chmod exposed the token world-readable
-        // for a window, and a truncating in-place write could tear the file under a concurrent
-        // reader (the exact gap OAuthLoginFlow already fixed; audit 2026-07-18).
-        val tmp = Files.createTempFile(path.parent, ".auth", ".tmp")
-        runCatchingCancellable {
-            Files.setPosixFilePermissions(tmp, PosixFilePermissions.fromString("rw-------"))
-        }
-        Files.writeString(tmp, content)
-        Files.move(
-            tmp,
-            path,
-            java.nio.file.StandardCopyOption.ATOMIC_MOVE,
-            java.nio.file.StandardCopyOption.REPLACE_EXISTING,
-        )
+        SecureFile.writeAtomic0600(path, content)
     }
 
     private companion object {

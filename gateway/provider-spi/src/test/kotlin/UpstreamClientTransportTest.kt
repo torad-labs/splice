@@ -82,7 +82,7 @@ class UpstreamClientTransportTest {
         val calls = AtomicInteger()
         val engine = MockEngine {
             calls.incrementAndGet()
-            throw IllegalStateException("bug, not weather")
+            error("bug, not weather")
         }
         assertThrows<IllegalStateException> {
             clientOver(engine).post(

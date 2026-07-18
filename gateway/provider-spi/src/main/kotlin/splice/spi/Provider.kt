@@ -9,6 +9,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.parse.AnthropicTurnBody
+import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.WatchdogBudget
@@ -64,7 +65,7 @@ public data class ProviderTuning(
 /** Everything the generic head needs to serve one provider. */
 public interface Provider : ProviderIdentity {
     public val upstreamUrl: String
-    public val showReasoning: String
+    public val showReasoning: ReasoningDisplay
     public val replayReasoning: Boolean
 
     public fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn

@@ -26,11 +26,11 @@ import splice.app.Daemon
 import splice.app.TopologyLoader
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
+import splice.core.util.discard
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.Executors
-import splice.core.util.discard
 
 /** A minimal OpenAI Chat Completions upstream (records the auth header the daemon sent). */
 private class ChatUpstream {

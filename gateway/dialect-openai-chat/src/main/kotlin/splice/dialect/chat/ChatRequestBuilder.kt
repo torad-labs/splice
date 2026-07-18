@@ -15,6 +15,7 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.DocumentBlock
@@ -63,7 +64,7 @@ public class ChatRequestBuilder(private val quirks: ChatQuirks) {
         val req = chatRequestObject(upstreamModel, messages, emitTools, effort, body)
         val meta = TurnMeta(
             compact = compact,
-            showReasoning = "text",
+            showReasoning = ReasoningDisplay.TEXT,
             stream = body.stream,
             originalModel = originalModel,
             upstreamModel = upstreamModel,

@@ -28,6 +28,7 @@ import splice.core.topology.Topology
 import splice.core.topology.catalogFor
 import splice.core.topology.configOverrides
 import splice.core.turn.WatchdogBudget
+import splice.core.util.discard
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.withToml
@@ -59,7 +60,6 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import kotlin.time.Duration.Companion.milliseconds
-import splice.core.util.discard
 
 public class Daemon(
     private val topology: Topology,

@@ -5,6 +5,7 @@
 package splice.provider.openai
 
 import splice.core.auth.Credentials
+import splice.core.turn.ReasoningDisplay
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.EffortLadder
 import splice.dialect.responses.ResponsesProvider
@@ -13,7 +14,7 @@ import splice.spi.ProviderTuning
 
 public class OpenAiResponsesProvider(
     tuning: ProviderTuning,
-    showReasoning: String,
+    showReasoning: ReasoningDisplay,
     replayReasoning: Boolean,
     configEffort: String?,
     configSummary: String?,

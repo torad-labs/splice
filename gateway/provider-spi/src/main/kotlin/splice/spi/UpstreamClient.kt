@@ -32,14 +32,19 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.timedOr
 import splice.core.util.runCatchingCancellable
+import kotlin.random.Random
 
 public class UpstreamClient(
     private val firstByteTimeoutMs: Long,
     private val totalTimeoutMs: Long,
     private val maxRetries: Int,
     private val client: HttpClient = defaultClient(firstByteTimeoutMs, totalTimeoutMs),
-    private val backoff: suspend (attempt: Int) -> Unit = { attempt ->
-        delay(BACKOFF_BASE_MS * (1L shl attempt))
+    // Exponential backoff, ±10% jitter (codex shape — synchronized retry herds re-collide without
+    // it), capped at MAX_BACKOFF_MS; a server Retry-After rides in as a FLOOR via minDelayMs (G3).
+    private val backoff: suspend (attempt: Int, minDelayMs: Long) -> Unit = { attempt, minDelayMs ->
+        val base = minOf(BACKOFF_BASE_MS shl attempt, MAX_BACKOFF_MS)
+        val jittered = (base * Random.nextDouble(JITTER_LO, JITTER_HI)).toLong()
+        delay(maxOf(jittered, minDelayMs))
     },
 ) {
     /** The per-post collaborators threaded through every attempt (grouped: one cohesive argument). */
@@ -89,7 +94,7 @@ public class UpstreamClient(
             if (transportError != null) {
                 rethrowUnlessRetryableTransport(transportError, ctx, streamHandedOff, attempt)
                 perf?.add(PerfKeys.RETRIES, 1)
-                perf.timedOr(PerfKeys.BACKOFF_MS) { backoff(attempt) }
+                perf.timedOr(PerfKeys.BACKOFF_MS) { backoff(attempt, 0L) }
                 attempt += 1
                 continue
             }
@@ -103,7 +108,7 @@ public class UpstreamClient(
                 RetryDecision.RETRY -> Unit // refresh succeeded — does not consume a normal attempt
                 RetryDecision.BACKOFF -> {
                     perf?.add(PerfKeys.RETRIES, 1)
-                    perf.timedOr(PerfKeys.BACKOFF_MS) { backoff(attempt) }
+                    perf.timedOr(PerfKeys.BACKOFF_MS) { backoff(attempt, plan.minDelayMs) }
                     attempt += 1
                 }
                 RetryDecision.GIVE_UP -> return giveUp(lastErr)
@@ -153,10 +158,14 @@ public class UpstreamClient(
                 onStreamStart() // block owns the stream from here — transport errors stop retrying
                 RetryOutcome.Done(block(UpstreamResponse(resp)))
             } else {
-                RetryOutcome.Failed(resp.status.value, resp.bodyText())
+                RetryOutcome.Failed(resp.status.value, resp.bodyText(), retryAfterMs(resp.headers["Retry-After"]))
             }
         }
     }
+
+    /** Seconds-form Retry-After → ms; HTTP-date form and garbage → null (backoff curve decides). */
+    private fun retryAfterMs(header: String?): Long? =
+        header?.trim()?.toLongOrNull()?.takeIf { it >= 0 }?.times(MS_PER_S)
 
     private suspend fun planRetry(
         ctx: PostContext,
@@ -181,12 +190,24 @@ public class UpstreamClient(
             "upstream ${failed.status} attempt ${attempt + 1}/$maxRetries: " +
                 failed.text.take(ERR_SNIPPET),
         )
-        val retryable = failed.status in RETRYABLE_STATUSES
+        val nextRefreshed = refreshedOnce || refreshable
+        // gRPC-A6-style negative pushback: a server explicitly asking us to wait longer than the
+        // interactive budget means "go away", not "hammer me on a curve" — give up honestly.
+        val pushback = failed.retryAfterMs
+        if (pushback != null && pushback > RETRY_AFTER_GIVE_UP_MS) {
+            ctx.onRetry("upstream ${failed.status} Retry-After ${pushback}ms exceeds interactive budget (no retry)")
+            return RetryPlan(RetryDecision.GIVE_UP, nextRefreshed)
+        }
+        val retryable = isRetryableStatus(failed.status)
         val decision = if (!retryable || attempt == maxRetries - 1) RetryDecision.GIVE_UP else RetryDecision.BACKOFF
-        return RetryPlan(decision, refreshedOnce = refreshedOnce || refreshable)
+        return RetryPlan(decision, refreshedOnce = nextRefreshed, minDelayMs = pushback ?: 0L)
     }
 
-    private data class RetryPlan(val decision: RetryDecision, val refreshedOnce: Boolean)
+    private data class RetryPlan(
+        val decision: RetryDecision,
+        val refreshedOnce: Boolean,
+        val minDelayMs: Long = 0L,
+    )
 
     private fun applyAuth(creds: Credentials, extra: Map<String, String>): Map<String, String> {
         val base = when (creds) {
@@ -200,7 +221,11 @@ public class UpstreamClient(
 
     private sealed class RetryOutcome<out T> {
         data class Done<T>(val value: T) : RetryOutcome<T>()
-        data class Failed(val status: Int, val text: String) : RetryOutcome<Nothing>()
+        data class Failed(
+            val status: Int,
+            val text: String,
+            val retryAfterMs: Long? = null,
+        ) : RetryOutcome<Nothing>()
     }
 
     public companion object {
@@ -252,7 +277,22 @@ public class UpstreamClient(
             }
             return false
         }
-        private val RETRYABLE_STATUSES = setOf(502, 503, 529, 429)
+        // Every surveyed harness (codex, gemini-cli, Claude Code) retries ALL 5xx; 501 stays
+        // terminal (Not Implemented never heals) and 4xx stays terminal except 408/429 (G4a).
+        private const val RATE_LIMITED = 429
+        private const val REQUEST_TIMEOUT = 408
+        private const val NOT_IMPLEMENTED = 501
+        private val SERVER_ERRORS = 500..599
+
+        private fun isRetryableStatus(status: Int): Boolean =
+            status == RATE_LIMITED || status == REQUEST_TIMEOUT ||
+                (status in SERVER_ERRORS && status != NOT_IMPLEMENTED)
+
+        private const val MS_PER_S = 1000L
+        private const val MAX_BACKOFF_MS = 10_000L
+        private const val RETRY_AFTER_GIVE_UP_MS = 60_000L
+        private const val JITTER_LO = 0.9
+        private const val JITTER_HI = 1.1
 
         public fun defaultClient(firstByteTimeoutMs: Long, totalTimeoutMs: Long): HttpClient =
             HttpClient(CIO) {

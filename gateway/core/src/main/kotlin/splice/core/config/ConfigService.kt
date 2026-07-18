@@ -17,6 +17,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
+import splice.core.turn.ReasoningDisplay
 import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
 import java.nio.file.Path
@@ -254,7 +255,7 @@ public class SpliceConfig internal constructor(private val m: Map<String, Any?>)
     public val compactModel: String? get() = string(Knob.COMPACT_MODEL)
     public val effort: String? get() = string(Knob.EFFORT)
     public val summary: String? get() = string(Knob.SUMMARY)
-    public val showReasoning: String get() = string(Knob.SHOW_REASONING).orEmpty()
+    public val showReasoning: ReasoningDisplay get() = ReasoningDisplay.from(string(Knob.SHOW_REASONING))
     public val replayReasoning: Boolean get() = bool(Knob.REPLAY_REASONING)
     public val maxInflight: Int get() = long(Knob.MAX_INFLIGHT).toInt()
     public val upstreamRetries: Int get() = long(Knob.UPSTREAM_RETRIES).toInt()

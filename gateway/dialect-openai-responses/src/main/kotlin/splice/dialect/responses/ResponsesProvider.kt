@@ -10,6 +10,7 @@ package splice.dialect.responses
 import splice.core.parse.AnthropicTurnBody
 import splice.core.reasoning.decodeReasoningEnvelope
 import splice.core.reasoning.encodeReasoningEnvelope
+import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.spi.BuiltTurn
 import splice.spi.Provider
@@ -20,7 +21,7 @@ import splice.spi.TurnSignals
 
 public abstract class ResponsesProvider(
     tuning: ProviderTuning,
-    final override val showReasoning: String,
+    final override val showReasoning: ReasoningDisplay,
     final override val replayReasoning: Boolean,
     private val configEffort: String?,
     private val configSummary: String?,
@@ -36,7 +37,7 @@ public abstract class ResponsesProvider(
 
     final override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
         val upstreamModel = catalog.stripSuffixes(body.typed.model)
-        val showOn = showReasoning != "off"
+        val showOn = !showReasoning.isOff
         val built = builder.build(
             body.typed,
             body.raw,
@@ -75,5 +76,5 @@ public abstract class ResponsesProvider(
             ),
         )
 
-    private fun showOn(): Boolean = showReasoning != "off"
+    private fun showOn(): Boolean = !showReasoning.isOff
 }

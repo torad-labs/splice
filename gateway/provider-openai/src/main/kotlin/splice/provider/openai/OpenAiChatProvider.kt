@@ -7,6 +7,7 @@ package splice.provider.openai
 
 import splice.core.auth.Credentials
 import splice.core.parse.AnthropicTurnBody
+import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.ChatRequestBuilder
@@ -25,7 +26,7 @@ public class OpenAiChatProvider(
 ) : Provider, ProviderIdentity by tuning {
 
     override val upstreamUrl: String = "${tuning.baseUrl}/chat/completions"
-    override val showReasoning: String = "text"
+    override val showReasoning: ReasoningDisplay = ReasoningDisplay.TEXT
     override val replayReasoning: Boolean = false // chat dialect has no encrypted-reasoning replay
 
     private val builder = ChatRequestBuilder(quirks)

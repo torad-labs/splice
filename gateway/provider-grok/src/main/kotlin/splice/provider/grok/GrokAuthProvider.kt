@@ -58,8 +58,8 @@ public class GrokAuthProvider(
         val snap = readSnapshot() ?: return null
         val current = Credentials.Bearer(snap.access, null)
         val expiresAt = snap.expiresAtMs
-            ?: return current // no expiry on file: serve as-is
-        if (expiresAt - clock() >= PROACTIVE_WINDOW_MS) return current
+        // serve as-is when the file carries no expiry, or we're still outside the proactive window
+        if (expiresAt == null || expiresAt - clock() >= PROACTIVE_WINDOW_MS) return current
         // proactive window: single-flight refresh; on failure serve the current token if still valid.
         val refreshed = singleFlight.run { doRefresh() }
         return refreshed ?: (if (clock() < expiresAt) current else null)

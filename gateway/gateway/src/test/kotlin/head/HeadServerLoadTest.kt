@@ -33,7 +33,9 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
+import splice.core.util.discard
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.HeadDeps
@@ -55,7 +57,6 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.time.Duration.Companion.seconds
-import splice.core.util.discard
 
 /**
  * Minimal HTTP/1.1 + SSE upstream built for CONCURRENCY, not scenarios: each connection gets a
@@ -209,7 +210,7 @@ class HeadServerLoadTest {
                     baseUrl = mock.baseUrl,
                     watchdog = WatchdogBudget(120.seconds, 120.seconds, 200.seconds),
                 ),
-                showReasoning = "text",
+                showReasoning = ReasoningDisplay.TEXT,
                 replayReasoning = false,
                 configEffort = "high",
                 configSummary = "detailed",

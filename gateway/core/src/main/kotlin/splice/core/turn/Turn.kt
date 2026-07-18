@@ -49,7 +49,7 @@ public sealed class TurnOutcome {
  *  the v29 body.__claudex* side channel — pure data, never smuggled on the request). */
 public data class TurnMeta(
     val compact: Boolean,
-    val showReasoning: String,
+    val showReasoning: ReasoningDisplay,
     val stream: Boolean,
     val originalModel: String,
     val upstreamModel: String,

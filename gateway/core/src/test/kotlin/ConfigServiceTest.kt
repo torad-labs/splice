@@ -9,6 +9,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.config.normalizeShowReasoning
+import splice.core.turn.ReasoningDisplay
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.readText
@@ -32,7 +33,7 @@ class ConfigServiceTest {
         val cfg = service().getConfig()
         assertEquals(3099, cfg.port)
         assertEquals("https://chatgpt.com/backend-api/codex", cfg.chatgptApiBase)
-        assertEquals("text", cfg.showReasoning)
+        assertEquals(ReasoningDisplay.TEXT, cfg.showReasoning)
         assertEquals(false, cfg.replayReasoning)
         assertEquals(0, cfg.maxInflight)
         assertEquals(3096, cfg.controlPort)

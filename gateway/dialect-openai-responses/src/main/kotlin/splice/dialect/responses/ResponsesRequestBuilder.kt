@@ -37,6 +37,7 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.wire.AnthropicMessage
 import splice.core.wire.AnthropicRequest
@@ -104,7 +105,7 @@ public data class BuildOptions(
     val upstreamModel: String,
     val configEffort: String?,
     val configSummary: String?,
-    val showReasoning: String,
+    val showReasoning: ReasoningDisplay,
     /**
      * Inject prior redacted_thinking envelopes into the request input (multi-turn continuity).
      * Independent of [includeEncryptedReasoning]. Keep OFF for deepest fresh reasoning.
@@ -280,7 +281,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         // Operator-controlled via TOML/env/state (Knob.SUMMARY default = "detailed").
         // Precedence: request body fields > configSummary > default detailed.
         // showReasoning=off still suppresses the field (summary "none").
-        if (opts.showReasoning == "off") return "none"
+        if (opts.showReasoning.isOff) return "none"
         val requested = sequenceOf(
             (raw[FIELD_REASONING] as? JsonObject)?.get(FIELD_SUMMARY),
             raw["reasoning_summary"],
@@ -314,8 +315,8 @@ private val GROK_EFFORTS = setOf("low", EFFORT_MEDIUM, "high")
  * Visibility floor: never RAISES a deliberate low/medium/high pick, only floors none/minimal to
  * low so a hidden reasoning knob still surfaces something when showReasoning != off.
  */
-private fun flooredForVisibility(effort: String?, showReasoning: String): String? {
-    if (showReasoning == "off") return effort
+private fun flooredForVisibility(effort: String?, showReasoning: ReasoningDisplay): String? {
+    if (showReasoning.isOff) return effort
     val hidden = effort == EFFORT_MINIMAL || effort == "none"
     return if (hidden) "low" else effort
 }

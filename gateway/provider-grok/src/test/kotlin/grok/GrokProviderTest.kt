@@ -27,6 +27,7 @@ import splice.core.auth.Credentials
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.parseAnthropicBody
+import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
@@ -69,7 +70,7 @@ class GrokProviderTest {
             baseUrl = mock.baseUrl,
             watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
         ),
-        showReasoning = "text",
+        showReasoning = ReasoningDisplay.TEXT,
         replayReasoning = false,
         configEffort = "high",
     )

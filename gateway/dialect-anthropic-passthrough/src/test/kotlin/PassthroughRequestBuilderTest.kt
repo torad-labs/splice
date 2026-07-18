@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import splice.core.parse.parseAnthropicBody
+import splice.core.turn.ReasoningDisplay
 import splice.dialect.passthrough.BuiltPassthroughRequest
 import splice.dialect.passthrough.PassthroughQuirks
 import splice.dialect.passthrough.PassthroughRequestBuilder
@@ -253,7 +254,8 @@ class PassthroughRequestBuilderTest {
             """{"model":"claude-sonnet","messages":[{"role":"user","content":"hi"}],
                 "max_tokens":512,"thinking":{"type":"enabled","budget_tokens":9000}}""",
         ).meta
-        assertFalse(meta.showReasoning == "text") // mirror must be a no-op — passthrough emits real thinking
+        // mirror must be a no-op — passthrough emits real thinking blocks
+        assertFalse(meta.showReasoning == ReasoningDisplay.TEXT)
         assertEquals("k3", meta.upstreamModel)
         assertEquals("claude-kimi--k3[1m]", meta.originalModel)
         assertEquals("high", meta.effort)

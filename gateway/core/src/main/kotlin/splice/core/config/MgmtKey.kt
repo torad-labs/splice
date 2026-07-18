@@ -4,10 +4,10 @@
 package splice.core.config
 
 import splice.core.util.SecureFile
+import splice.core.util.discard
 import java.nio.file.Files
 import java.security.MessageDigest
 import java.security.SecureRandom
-import splice.core.util.discard
 
 public class MgmtKey(private val statePaths: StatePaths) {
     private val value: String by lazy { ensure() }

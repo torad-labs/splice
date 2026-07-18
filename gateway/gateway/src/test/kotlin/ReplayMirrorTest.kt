@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.reasoning.decodeReasoningEnvelope
 import splice.core.reasoning.encodeReasoningEnvelope
+import splice.core.turn.ReasoningDisplay
 import splice.core.wire.TextBlock
 import splice.core.wire.ThinkingBlock
 import splice.gateway.reasoning.extractThinking
@@ -73,10 +74,10 @@ class ReplayMirrorTest {
     fun `mirror gates - compact off, non-text off, short off, emits wire format`() = runTest {
         val texts = mutableListOf<String>()
         val sink = sinkCapturing(texts)
-        assertFalse(mirrorInto(sink, "long enough reasoning summary", "text", compact = true))
-        assertFalse(mirrorInto(sink, "long enough reasoning summary", "thinking", compact = false))
-        assertFalse(mirrorInto(sink, "too short", "text", compact = false))
-        assertTrue(mirrorInto(sink, "  long enough reasoning summary  ", "text", compact = false))
+        assertFalse(mirrorInto(sink, "long enough reasoning summary", ReasoningDisplay.TEXT, compact = true))
+        assertFalse(mirrorInto(sink, "long enough reasoning summary", ReasoningDisplay.THINKING, compact = false))
+        assertFalse(mirrorInto(sink, "too short", ReasoningDisplay.TEXT, compact = false))
+        assertTrue(mirrorInto(sink, "  long enough reasoning summary  ", ReasoningDisplay.TEXT, compact = false))
         assertEquals(listOf("\n[reasoning summary]\nlong enough reasoning summary\n"), texts)
         assertEquals("\n[reasoning summary]\nx\n", mirrorWireText(" x "))
     }

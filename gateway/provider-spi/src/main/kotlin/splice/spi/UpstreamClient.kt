@@ -25,13 +25,13 @@ import io.ktor.http.ContentType
 import io.ktor.http.content.ByteArrayContent
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.timedOr
+import splice.core.util.runCatchingCancellable
 
 public class UpstreamClient(
     private val firstByteTimeoutMs: Long,
@@ -78,41 +78,35 @@ public class UpstreamClient(
             val creds = perf.timedOr(PerfKeys.AUTH_MS) { auth.credentials() } ?: throw UpstreamAuthMissing()
             perf?.add(PerfKeys.ATTEMPTS, 1)
             var streamHandedOff = false
-            val outcome = try {
+            // runCatchingCancellable rethrows CancellationException (a cancelled turn aborts cleanly);
+            // a failure here is a TRANSPORT error thrown BEFORE stream handoff — retryable on the
+            // backoff budget (a 2s DNS blip costs one silent retry, not a turn failure: the kimi
+            // 07:00 burst, 37 UnresolvedAddressException turns, attempts=1 on every one).
+            val attempted = runCatchingCancellable {
                 attemptRequest(ctx, bodyBytes, creds, onStreamStart = { streamHandedOff = true }, block)
-            } catch (e: Throwable) {
-                // Transport failures BEFORE the stream is handed to the turn (DNS resolution,
-                // connect reset/timeout) retry on the normal backoff budget — a 2s DNS blip must
-                // cost one silent retry, not a user-visible turn failure (kimi 07:00 burst,
-                // 2026-07-18: 37 UnresolvedAddressException turns, attempts=1 on every one).
-                // Once block has the stream a retry would duplicate output: always rethrow.
-                if (e is CancellationException || streamHandedOff || !isRetryableTransport(e)) throw e
-                ctx.onRetry(
-                    "transport ${e::class.simpleName} attempt ${attempt + 1}/$maxRetries: " +
-                        e.message.orEmpty().take(ERR_SNIPPET),
-                )
-                if (attempt == maxRetries - 1) throw e
+            }
+            val transportError = attempted.exceptionOrNull()
+            if (transportError != null) {
+                rethrowUnlessRetryableTransport(transportError, ctx, streamHandedOff, attempt)
                 perf?.add(PerfKeys.RETRIES, 1)
                 perf.timedOr(PerfKeys.BACKOFF_MS) { backoff(attempt) }
                 attempt += 1
                 continue
             }
-            when (outcome) {
-                is RetryOutcome.Done -> return outcome.value
-                is RetryOutcome.Failed -> {
-                    lastErr = outcome
-                    val plan = planRetry(ctx, outcome, attempt, refreshedOnce)
-                    refreshedOnce = plan.refreshedOnce
-                    when (plan.decision) {
-                        RetryDecision.RETRY -> Unit // refresh succeeded — does not consume a normal attempt
-                        RetryDecision.BACKOFF -> {
-                            perf?.add(PerfKeys.RETRIES, 1)
-                            perf.timedOr(PerfKeys.BACKOFF_MS) { backoff(attempt) }
-                            attempt += 1
-                        }
-                        RetryDecision.GIVE_UP -> return giveUp(lastErr)
-                    }
+            val outcome = attempted.getOrThrow()
+            if (outcome is RetryOutcome.Done) return outcome.value
+            check(outcome is RetryOutcome.Failed) // sealed: Done or Failed, and Done returned above
+            lastErr = outcome
+            val plan = planRetry(ctx, outcome, attempt, refreshedOnce)
+            refreshedOnce = plan.refreshedOnce
+            when (plan.decision) {
+                RetryDecision.RETRY -> Unit // refresh succeeded — does not consume a normal attempt
+                RetryDecision.BACKOFF -> {
+                    perf?.add(PerfKeys.RETRIES, 1)
+                    perf.timedOr(PerfKeys.BACKOFF_MS) { backoff(attempt) }
+                    attempt += 1
                 }
+                RetryDecision.GIVE_UP -> return giveUp(lastErr)
             }
         }
         return giveUp(lastErr)
@@ -122,6 +116,23 @@ public class UpstreamClient(
      *  429/401/5xx floors actually fire (body-text-only classification left them dead code). */
     private fun giveUp(last: RetryOutcome.Failed?): Nothing =
         throw UpstreamFailed(last?.text.orEmpty(), last?.status)
+
+    // A transport error thrown BEFORE stream handoff (DNS/connect/timeout, per isRetryableTransport)
+    // retries on the backoff budget; once the stream is handed off, the error is non-transport, or
+    // it is the last attempt, rethrow — a retry would duplicate output or mask a real failure.
+    private fun rethrowUnlessRetryableTransport(
+        e: Throwable,
+        ctx: PostContext,
+        streamHandedOff: Boolean,
+        attempt: Int,
+    ) {
+        val mustRethrow = streamHandedOff || !isRetryableTransport(e)
+        if (mustRethrow || attempt == maxRetries - 1) throw e
+        ctx.onRetry(
+            "transport ${e::class.simpleName} attempt ${attempt + 1}/$maxRetries: " +
+                e.message.orEmpty().take(ERR_SNIPPET),
+        )
+    }
 
     private suspend fun <T> attemptRequest(
         ctx: PostContext,

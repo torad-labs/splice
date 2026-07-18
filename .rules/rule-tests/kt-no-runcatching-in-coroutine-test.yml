@@ -1,0 +1,7 @@
+id: kt-no-runcatching-in-coroutine
+valid:
+  - 'runCatchingCancellable { parse(payload) }'
+  - 'val x = runCatchingCancellable { risky() }.getOrNull()'
+invalid:
+  - 'runCatching { parse(payload) }'
+  - 'val x = runCatching { risky() }.getOrNull()'

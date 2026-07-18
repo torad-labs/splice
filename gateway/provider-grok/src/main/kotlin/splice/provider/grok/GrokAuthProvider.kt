@@ -51,14 +51,14 @@ public class GrokAuthProvider(
                 return@runCatchingCancellable Credentials.Bearer(c.token, null)
             }
         }
-        tokensOf()?.get("access_token")?.jsonPrimitive?.content?.let { access ->
+        tokensOf()?.get(FIELD_ACCESS_TOKEN)?.jsonPrimitive?.content?.let { access ->
             cache = Cache(access, mtime, now)
             Credentials.Bearer(access, null)
         }
     }.getOrNull()
 
     private fun tokensOf(): JsonObject? =
-        json.parseToJsonElement(Files.readString(authPath)).jsonObject["tokens"] as? JsonObject
+        json.parseToJsonElement(Files.readString(authPath)).jsonObject[FIELD_TOKENS] as? JsonObject
 
     public fun invalidateCache() {
         cache = null
@@ -68,31 +68,42 @@ public class GrokAuthProvider(
 
     private suspend fun doRefresh(): Credentials? {
         val refreshToken = runCatchingCancellable { tokensOf() }.getOrNull()
-            ?.get("refresh_token")?.jsonPrimitive?.content ?: return null
+            ?.get(FIELD_REFRESH_TOKEN)?.jsonPrimitive?.content ?: return null
         // Guard the network hop (the refreshCall param's type doesn't promise "never throws"): a
         // caller-supplied hop that throws must degrade to a null refresh (→ re-prompt), not blow
         // through SingleFlight uncaught. The write/reload below stays unguarded, as before.
-        val fresh = runCatchingCancellable { refreshCall(refreshToken) }.getOrNull() ?: return null
-        return fresh.accessToken?.let { access ->
-            val next = buildJsonObject {
-                put(
-                    "tokens",
-                    buildJsonObject {
-                        put("access_token", JsonPrimitive(access))
-                        put("refresh_token", JsonPrimitive(fresh.refreshToken ?: refreshToken))
-                    },
-                )
-                put("last_refresh", JsonPrimitive(nowIso()))
-            }
-            writeSecure(authPath, next.toString())
-            invalidateCache()
-            readCached()
+        val fresh = runCatchingCancellable { refreshCall(refreshToken) }.getOrNull()
+        val access = fresh?.accessToken ?: return null
+        writeSecure(authPath, mergedAuthJson(access, fresh.refreshToken ?: refreshToken).toString())
+        invalidateCache()
+        return readCached()
+    }
+
+    // MERGE into the on-disk object — a from-scratch rewrite dropped `expires` and every field the
+    // official grok CLI stores beside ours, corrupting the shared file for it (audit 2026-07-18;
+    // the codex twin already merged correctly).
+    private fun mergedAuthJson(access: String, refresh: String): JsonObject {
+        val onDisk = runCatchingCancellable {
+            json.parseToJsonElement(Files.readString(authPath)).jsonObject
+        }.getOrNull() ?: JsonObject(emptyMap())
+        val oldTokens = onDisk[FIELD_TOKENS] as? JsonObject ?: JsonObject(emptyMap())
+        return buildJsonObject {
+            onDisk.forEach { (k, v) -> if (k != FIELD_TOKENS && k != FIELD_LAST_REFRESH) put(k, v) }
+            put(
+                FIELD_TOKENS,
+                buildJsonObject {
+                    oldTokens.forEach { (k, v) -> if (k != FIELD_ACCESS_TOKEN && k != FIELD_REFRESH_TOKEN) put(k, v) }
+                    put(FIELD_ACCESS_TOKEN, JsonPrimitive(access))
+                    put(FIELD_REFRESH_TOKEN, JsonPrimitive(refresh))
+                },
+            )
+            put(FIELD_LAST_REFRESH, JsonPrimitive(nowIso()))
         }
     }
 
     override suspend fun describe(): AuthDescription {
         val present = runCatchingCancellable {
-            Files.exists(authPath) && tokensOf()?.get("access_token") != null
+            Files.exists(authPath) && tokensOf()?.get(FIELD_ACCESS_TOKEN) != null
         }.getOrDefault(false)
         return AuthDescription(
             present = present,
@@ -106,11 +117,27 @@ public class GrokAuthProvider(
 
     private fun writeSecure(path: Path, content: String) {
         Files.createDirectories(path.parent)
-        Files.writeString(path, content)
-        runCatchingCancellable { Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------")) }
+        // 0600 BEFORE content, then ATOMIC move — write-then-chmod exposed the token world-readable
+        // for a window, and a truncating in-place write could tear the file under a concurrent
+        // reader (the exact gap OAuthLoginFlow already fixed; audit 2026-07-18).
+        val tmp = Files.createTempFile(path.parent, ".auth", ".tmp")
+        runCatchingCancellable {
+            Files.setPosixFilePermissions(tmp, PosixFilePermissions.fromString("rw-------"))
+        }
+        Files.writeString(tmp, content)
+        Files.move(
+            tmp,
+            path,
+            java.nio.file.StandardCopyOption.ATOMIC_MOVE,
+            java.nio.file.StandardCopyOption.REPLACE_EXISTING,
+        )
     }
 
     private companion object {
         const val DEFAULT_CACHE_MS = 30_000L
+        const val FIELD_TOKENS = "tokens"
+        const val FIELD_ACCESS_TOKEN = "access_token"
+        const val FIELD_REFRESH_TOKEN = "refresh_token"
+        const val FIELD_LAST_REFRESH = "last_refresh"
     }
 }

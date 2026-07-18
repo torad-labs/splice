@@ -4,6 +4,7 @@
 package splice.core.config
 
 import java.nio.file.Files
+import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermissions
 import java.security.MessageDigest
 import java.security.SecureRandom
@@ -24,8 +25,12 @@ public class MgmtKey(private val statePaths: StatePaths) {
         val bytes = ByteArray(KEY_BYTES).also { SecureRandom().nextBytes(it) }
         val key = bytes.joinToString("") { "%02x".format(it) }
         Files.createDirectories(path.parent)
-        Files.writeString(path, "$key\n")
-        runCatching { Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------")) }
+        // 0600 BEFORE content exists, then an atomic move — write-then-chmod left a window where
+        // the bearer sat world-readable, and a torn write could serve a half-key (audit 2026-07-18).
+        val tmp = Files.createTempFile(path.parent, ".mgmt-key", ".tmp")
+        runCatching { Files.setPosixFilePermissions(tmp, PosixFilePermissions.fromString("rw-------")) }
+        Files.writeString(tmp, "$key\n")
+        Files.move(tmp, path, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
         return key
     }
 

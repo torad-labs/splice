@@ -72,7 +72,9 @@ class ConfigServiceTest {
         val result = svc.patch(mapOf("port" to 4000, "effort" to "high", "bogus" to 1, "maxInflight" to "unlimited"))
         assertEquals(setOf("port", "effort", "maxInflight"), result.applied.keys)
         assertEquals(mapOf("bogus" to "unknown key"), result.rejected)
-        assertEquals(listOf("port"), result.restartRequired)
+        // effort is snapshotted into providers at Daemon.start — honestly restart-required
+        // (audit 2026-07-18); maxInflight stays the one hot knob.
+        assertEquals(listOf("port", "effort"), result.restartRequired)
         assertEquals(4000, result.effective.port)
         assertEquals(0, result.effective.maxInflight)
         val persisted = tmp.resolve("state/config.json").readText()

@@ -25,11 +25,22 @@ public class StatePaths(
 
     public val daemonLockFile: Path = stateDir.resolve("daemon.lock")
 
-    /** Per-head stat files. The codex/grok names are the frozen legacy contract;
-     *  new heads derive `<head>-usage.json` / `<head>-ratelimit.json`. */
-    public fun usageFile(headKey: String): Path = stateDir.resolve("$headKey-usage.json")
+    /** Per-head stat files. The codex/grok names are the frozen legacy contract (the header's
+     *  own words — the out-of-repo HUD reads codex-usage.json / grok-usage.json byte-identically);
+     *  new heads derive `<head>-usage.json` / `<head>-ratelimit.json`. The claudex/claude-grok
+     *  topology keys MAP to the legacy names (audit 2026-07-18: key-derived names froze the HUD). */
+    public fun usageFile(headKey: String): Path = stateDir.resolve("${legacyStatKey(headKey)}-usage.json")
 
-    public fun ratelimitFile(headKey: String): Path = stateDir.resolve("$headKey-ratelimit.json")
+    public fun ratelimitFile(headKey: String): Path = stateDir.resolve("${legacyStatKey(headKey)}-ratelimit.json")
+
+    private fun legacyStatKey(headKey: String): String = when (headKey) {
+        "codex", "claudex" -> "codex"
+        "grok", "claude-grok" -> "grok"
+        else -> headKey
+    }
+
+    /** Per-turn perf telemetry JSONL (bottleneck instrument) — additive, not a frozen HUD name. */
+    public fun perfStatsFile(headKey: String): Path = stateDir.resolve("$headKey-perf.jsonl")
 
     /** Compact-stats JSONL lives in the ROOT dir (not state/) — HUD contract. The two legacy
      *  names are irregular on purpose (claudex-…, claude-grok-…); overridable per head. */

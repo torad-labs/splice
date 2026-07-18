@@ -62,12 +62,12 @@ private class RecordingSink : WireSink {
 
 private fun ctx(
     compact: Boolean = false,
-    replay: Boolean = false,
+    emit: Boolean = false,
     clientGone: Boolean = false,
     fired: WatchdogFired? = null,
 ) = StreamTurnContext(
     compact = compact,
-    replayReasoning = replay,
+    emitEncryptedReasoning = emit,
     encodeReasoningEnvelope = { "env:" + it["id"]?.toString().orEmpty() },
     clientGone = { clientGone },
     watchdogFired = { fired },
@@ -241,7 +241,7 @@ class ResponsesStreamTranslatorTest {
     @Test
     fun `replay emits redacted thinking in position when gated on`() = runTest {
         val sink = RecordingSink()
-        ResponsesStreamTranslator(ctx(replay = true)).driveTurn(
+        ResponsesStreamTranslator(ctx(emit = true)).driveTurn(
             listOf(
                 ev("""{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"sum"}"""),
                 ev(
@@ -267,7 +267,7 @@ class ResponsesStreamTranslatorTest {
     @Test
     fun `replay stays off on compact turns even when enabled`() = runTest {
         val sink = RecordingSink()
-        ResponsesStreamTranslator(ctx(replay = true, compact = true)).driveTurn(
+        ResponsesStreamTranslator(ctx(emit = true, compact = true)).driveTurn(
             listOf(
                 ev(
                     """{"type":"response.output_item.done","output_index":0,

@@ -19,10 +19,12 @@ rootProject.name = "splice-gateway"
 include(
     ":core",
     ":provider-spi",
+    ":dialect-anthropic-passthrough",
     ":dialect-openai-responses",
     ":dialect-openai-chat",
     ":provider-codex",
     ":provider-grok",
+    ":provider-kimi",
     ":provider-openai",
     ":gateway",
     ":control",

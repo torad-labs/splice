@@ -21,8 +21,17 @@ public data class Topology(
 
 @Serializable
 public data class DaemonConfig(
-    @SerialName("control_port") val controlPort: Int = 3096,
+    // Nullable: an ABSENT control_port defers to env/state/knob default. A non-null default here
+    // made SPLICE_CONTROL_PORT dead and let /api/config report a port nothing listens on
+    // (audit 2026-07-18).
+    @SerialName("control_port") val controlPort: Int? = null,
     @SerialName("state_dir") val stateDir: String? = null,
+    // Reasoning display — edit these in ~/.config/splice/splice.toml (no code change).
+    // Precedence: env > state config.json > [daemon] / [defaults] TOML > knob defaults.
+    @SerialName("show_reasoning") val showReasoning: String? = null,
+    val summary: String? = null,
+    val effort: String? = null,
+    @SerialName("replay_reasoning") val replayReasoning: Boolean? = null,
 )
 
 @Serializable
@@ -112,5 +121,19 @@ public fun ProviderConfig.catalogFor(head: HeadConfig): ModelCatalog =
             models.firstOrNull()?.contextWindow ?: DEFAULT_WINDOW_FLOOR
         },
     )
+
+/**
+ * Flat knob map from topology TOML for ConfigService's headOverrides layer.
+ * Order: free-form [defaults] first, then explicit [daemon] fields (win on conflict).
+ * Values are strings because ConfigService coerces by KnobKind.
+ */
+public fun Topology.configOverrides(): Map<String, String> {
+    val out = LinkedHashMap(defaults)
+    daemon.showReasoning?.let { out["showReasoning"] = it }
+    daemon.summary?.let { out["summary"] = it }
+    daemon.effort?.let { out["effort"] = it }
+    daemon.replayReasoning?.let { out["replayReasoning"] = it.toString() }
+    return out
+}
 
 private const val DEFAULT_WINDOW_FLOOR: Long = 200_000

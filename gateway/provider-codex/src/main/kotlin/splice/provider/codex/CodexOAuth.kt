@@ -118,7 +118,10 @@ private val jwtJson = Json { ignoreUnknownKeys = true }
 public fun decodeJwtClaims(jwt: String?): JsonObject {
     val payload = jwt.orEmpty().split(".").getOrNull(1) ?: return JsonObject(emptyMap())
     return runCatchingCancellable {
-        val decoded = Base64.getUrlDecoder().decode(payload.padBase64()).toString(Charsets.UTF_8)
+        // STANDARD decoder AFTER normalizing -_ to +/ — padBase64 converts to the standard
+        // alphabet, so getUrlDecoder() (which REJECTS +/) failed on virtually every real
+        // id_token and ChatGPT-Account-ID was never sent (audit 2026-07-18, JVM-repro'd).
+        val decoded = Base64.getDecoder().decode(payload.padBase64()).toString(Charsets.UTF_8)
         jwtJson.parseToJsonElement(decoded).jsonObject
     }.getOrDefault(JsonObject(emptyMap()))
 }

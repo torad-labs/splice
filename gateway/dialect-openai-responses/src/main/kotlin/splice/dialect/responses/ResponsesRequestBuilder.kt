@@ -12,8 +12,11 @@
 //   - images ride as input_image (base64 data URL or url); documents become honest markers;
 //     images inside tool_result ride in a follow-up user message (function_call_output is
 //     string-only on these backends — v25: screenshots silently vanished);
-//   - replay (gated, never on compact): redacted_thinking decodes back into a reasoning input
-//     item IN POSITION; include=['reasoning.encrypted_content'] requested;
+//   - include vs replay are SEPARATE (Grok Build / Node measured lesson):
+//       includeEncryptedReasoning → ask the server to RETURN encrypted_content (opaque handle)
+//       replayReasoning → inject prior redacted_thinking into the NEXT input
+//     Default for deep thinking: include ON when reasoning is shown, replay OFF (replaying
+//     prior encrypted CoT makes the model reuse thin thinking instead of re-deriving).
 //   - cache key: first-message-hash 'splice-<sha256(first user text)[:32]>' (codex — stable
 //     across per-turn system-reminder drift) or session-id 'claude-grok:<sid>' (grok);
 //   - effort precedence (v27): explicit body fields > /effort picker (thinking.budget_tokens)
@@ -65,6 +68,32 @@ public data class ResponsesQuirks(
 
 public enum class CacheKeyStrategy { FIRST_MESSAGE_HASH, SESSION_ID, OFF }
 
+/**
+ * Overlay the TOML `[providers.*.quirks]` primitives onto a provider's base profile so the parsed
+ * table is REAL, not decorative (audit 2026-07-18: five of seven quirks were hard-coded and
+ * ignored). Unset TOML fields keep the base value.
+ */
+// NB: TOML's effort_ceiling is deliberately NOT an overlay input — the effort LADDER (CODEX/GROK)
+// already clamps the ceiling per provider; accepting a dead parameter here would just lie.
+public fun ResponsesQuirks.withToml(
+    store: Boolean? = null,
+    cacheKey: String? = null,
+    summaryField: Boolean? = null,
+    compactEffort: String? = null,
+    toolChoice: Boolean? = null,
+): ResponsesQuirks = copy(
+    store = store ?: this.store,
+    cacheKeyStrategy = when (cacheKey) {
+        "session-id" -> CacheKeyStrategy.SESSION_ID
+        "off" -> CacheKeyStrategy.OFF
+        "first-message-hash" -> CacheKeyStrategy.FIRST_MESSAGE_HASH
+        else -> this.cacheKeyStrategy
+    },
+    supportsSummary = summaryField ?: this.supportsSummary,
+    compactEffortPin = compactEffort ?: this.compactEffortPin,
+    emitToolChoice = toolChoice ?: this.emitToolChoice,
+)
+
 public enum class EffortLadder { CODEX, GROK }
 
 public data class BuiltRequest(val req: JsonObject, val meta: TurnMeta)
@@ -76,7 +105,17 @@ public data class BuildOptions(
     val configEffort: String?,
     val configSummary: String?,
     val showReasoning: String,
+    /**
+     * Inject prior redacted_thinking envelopes into the request input (multi-turn continuity).
+     * Independent of [includeEncryptedReasoning]. Keep OFF for deepest fresh reasoning.
+     */
     val replayReasoning: Boolean,
+    /**
+     * Ask the server to return `reasoning.encrypted_content` on this turn's output.
+     * Does NOT inject prior blobs into input. ON when reasoning is shown so we can store the
+     * opaque handle for optional later replay (Grok Build / Codex always request this).
+     */
+    val includeEncryptedReasoning: Boolean = true,
     val sessionId: String? = null,
     /** Decodes a redacted_thinking envelope back into a Responses reasoning input item. */
     val decodeReasoningEnvelope: (String) -> JsonObject?,
@@ -127,7 +166,11 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         put("input", input)
         put("store", quirks.store)
         put("stream", true)
-        if (!opts.compact && opts.replayReasoning) {
+        // NB: stream_options.include_usage is a CHAT-completions knob — the ChatGPT Responses
+        // backend 400s on it ("Unknown parameter", verified live 2026-07-18). Responses delivers
+        // usage on response.completed already; never send it here.
+        // Request encrypted CoT handle without necessarily replaying prior ones into input.
+        if (!opts.compact && opts.includeEncryptedReasoning) {
             put("include", buildJsonArray { add("reasoning.encrypted_content") })
         }
         cacheKey(body, opts)?.let { put("prompt_cache_key", it) }
@@ -152,7 +195,15 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         put("type", FIELD_FUNCTION)
         put("name", t.name)
         put("description", t.description ?: "")
-        put("parameters", t.inputSchema ?: buildJsonObject { put("type", "object") })
+        // Both Node references send `properties:{}` on a bare object schema; some strict
+        // validators reject an object schema without it (audit 2026-07-18).
+        put(
+            "parameters",
+            t.inputSchema ?: buildJsonObject {
+                put("type", "object")
+                put("properties", buildJsonObject { })
+            },
+        )
         if (quirks.emitStrict && t.strict == true) put("strict", true)
     }
 
@@ -225,19 +276,24 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
 
     private fun resolveSummary(raw: JsonObject, opts: BuildOptions, effort: String?): String? {
         if (!quirks.supportsSummary || effort == null) return null
-        var summary = sequenceOf(
+        // Operator-controlled via TOML/env/state (Knob.SUMMARY default = "detailed").
+        // Precedence: request body fields > configSummary > default detailed.
+        // showReasoning=off still suppresses the field (summary "none").
+        if (opts.showReasoning == "off") return "none"
+        val requested = sequenceOf(
             (raw[FIELD_REASONING] as? JsonObject)?.get(FIELD_SUMMARY),
             raw["reasoning_summary"],
             (raw["output_config"] as? JsonObject)?.get("reasoning_summary"),
         ).mapNotNull { (it as? JsonPrimitive)?.content }
             .mapNotNull { normalizeSummary(it) }
             .firstOrNull()
-            ?: normalizeSummary(opts.configSummary)
-            ?: SUMMARY_DETAILED
-        if (opts.showReasoning != "off" && summary in setOf("none", "auto", SUMMARY_CONCISE)) {
-            summary = SUMMARY_DETAILED // reliably fills summary_text; effort alone can leave it empty
-        }
-        return summary
+        // v27 visibility fold (the header's "folds summary to detailed" clause — was unimplemented,
+        // audit 2026-07-18): when reasoning is VISIBLE, a REQUEST-level weak summary (none/auto/
+        // concise from the model/Claude Code) is floored to detailed so `summary_text` actually
+        // fills. The OPERATOR's configSummary stays authoritative (a deliberate `concise` in
+        // TOML/env is respected) — the fold defends against the request, not the operator.
+        val folded = requested?.let { if (it in SUMMARY_FLOOR_TO_DETAILED) SUMMARY_DETAILED else it }
+        return folded ?: normalizeSummary(opts.configSummary) ?: SUMMARY_DETAILED
     }
 
     private fun reasoningBlock(effort: String?, summary: String?, opts: BuildOptions): JsonObject? {
@@ -405,11 +461,18 @@ private class ResponsesInputBuilder(private val quirks: ResponsesQuirks) {
 
     private fun imagePart(source: MediaSource?): JsonObject? = when {
         source == null -> null
-        source.type == "base64" && !source.data.isNullOrEmpty() -> buildJsonObject {
-            put("type", "input_image")
-            // Node `src.media_type || 'image/png'` falls back on empty string too, not just null.
+        source.type == "base64" && !source.data.isNullOrEmpty() -> {
+            // Build the data URL once into a capacity-sized buffer — the base64 payload is often
+            // multi-MB for screenshots; avoid intermediate template concat copies.
             val mime = source.mediaType?.takeIf { it.isNotEmpty() } ?: "image/png"
-            put("image_url", "data:$mime;base64,${source.data}")
+            val data = source.data!!
+            val url = StringBuilder(DATA_URL_PREFIX.length + mime.length + BASE64_SEPARATOR.length + data.length)
+                .append(DATA_URL_PREFIX).append(mime).append(BASE64_SEPARATOR).append(data)
+                .toString()
+            buildJsonObject {
+                put("type", "input_image")
+                put("image_url", url)
+            }
         }
         source.type == "url" && !source.url.isNullOrEmpty() -> buildJsonObject {
             put("type", "input_image")
@@ -431,6 +494,10 @@ private const val FIELD_SUMMARY = "summary"
 private const val FIELD_REASONING = "reasoning"
 private const val FIELD_FUNCTION = "function"
 
+// Data-URL pieces for base64 image parts (capacity math uses their lengths — no magic numbers).
+private const val DATA_URL_PREFIX = "data:"
+private const val BASE64_SEPARATOR = ";base64,"
+
 // Effort/summary tokens shared by the alias tables and the resolvers.
 private const val EFFORT_MEDIUM = "medium"
 private const val EFFORT_XHIGH = "xhigh"
@@ -447,11 +514,29 @@ public fun stablePromptCacheKey(body: AnthropicRequest): String? {
     val first = body.messages.firstOrNull { it.role == "user" } ?: return null
     val seed = first.content.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
     if (seed.isEmpty()) return null
-    val hash = MessageDigest.getInstance("SHA-256").digest(seed.toByteArray())
-    return "splice-" + hash.joinToString("") { "%02x".format(it) }.take(HASH_PREFIX_LEN)
+    val md = SHA256.get()
+    md.reset()
+    val digest = md.digest(seed.toByteArray(Charsets.UTF_8))
+    // Only the first HASH_PREFIX_LEN/2 bytes → HASH_PREFIX_LEN hex chars ("splice-" + 32).
+    val hexChars = CharArray(HASH_PREFIX_LEN)
+    var hi = 0
+    for (i in 0 until HASH_PREFIX_BYTES) {
+        val b = digest[i].toInt() and BYTE_MASK
+        hexChars[hi++] = HEX_DIGITS[b ushr NIBBLE_BITS]
+        hexChars[hi++] = HEX_DIGITS[b and NIBBLE_MASK]
+    }
+    return "splice-" + String(hexChars)
 }
 
 private const val HASH_PREFIX_LEN = 32
+private const val HASH_PREFIX_BYTES = HASH_PREFIX_LEN / 2
+private const val BYTE_MASK = 0xff
+private const val NIBBLE_BITS = 4
+private const val NIBBLE_MASK = 0x0f
+private val HEX_DIGITS = "0123456789abcdef".toCharArray()
+
+// MessageDigest is not thread-safe; a ThreadLocal avoids the provider lookup per turn without sharing.
+private val SHA256 = ThreadLocal.withInitial { MessageDigest.getInstance("SHA-256") }
 
 // the alias table IS the contract
 public fun normalizeEffort(raw: String?, ladder: EffortLadder): String? {
@@ -484,14 +569,23 @@ private fun normalizeGrokEffort(s: String): String? = when (s) {
 
 private val CODEX_EFFORTS = setOf("none", EFFORT_MINIMAL, "low", EFFORT_MEDIUM, "high", EFFORT_XHIGH, "max")
 
+// Hoisted so resolvers never allocate a fresh set per call on the request-build path.
+private val SUMMARY_CANONICAL = setOf("auto", SUMMARY_CONCISE, SUMMARY_DETAILED, "none")
+
+// v27 visibility fold: these weak/absent summaries floor to detailed when reasoning is shown.
+private val SUMMARY_FLOOR_TO_DETAILED = setOf("none", "auto", SUMMARY_CONCISE)
+private val SUMMARY_AS_DETAILED = setOf("full", "verbose", "long")
+private val SUMMARY_AS_CONCISE = setOf("short", "brief")
+private val SUMMARY_AS_NONE = setOf("off", "false", "0")
+
 public fun normalizeSummary(raw: String?): String? {
     val s = raw?.trim()?.lowercase().orEmpty()
     return when {
         s.isEmpty() -> null
-        s in setOf("auto", SUMMARY_CONCISE, SUMMARY_DETAILED, "none") -> s
-        s in setOf("full", "verbose", "long") -> SUMMARY_DETAILED
-        s in setOf("short", "brief") -> SUMMARY_CONCISE
-        s in setOf("off", "false", "0") -> "none"
+        s in SUMMARY_CANONICAL -> s
+        s in SUMMARY_AS_DETAILED -> SUMMARY_DETAILED
+        s in SUMMARY_AS_CONCISE -> SUMMARY_CONCISE
+        s in SUMMARY_AS_NONE -> "none"
         else -> null
     }
 }

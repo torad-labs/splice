@@ -34,9 +34,9 @@ class ScenarioIntegrationTest {
         mock.stop()
     }
 
-    private fun ctx(replay: Boolean = false) = StreamTurnContext(
+    private fun ctx(emit: Boolean = false) = StreamTurnContext(
         compact = false,
-        replayReasoning = replay,
+        emitEncryptedReasoning = emit,
         encodeReasoningEnvelope = { "env:${it["id"]?.jsonPrimitive?.content}" },
         clientGone = { false },
         watchdogFired = { null },

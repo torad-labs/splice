@@ -1,0 +1,22 @@
+# WALL (#924 Phase 5): raw runCatching swallows CancellationException. On the turn/stream coroutine
+# path that means a cancelled turn keeps running upstream — the leaked-spinner / 600%-CPU class
+# (2026-07-18). Use runCatchingCancellable (splice.core.util), which rethrows CancellationException.
+# This is the runCatching complement to kt-catch-swallows-cancellation (which only sees try/catch).
+# Scoped to the coroutine-heavy modules; core/app/control keep raw runCatching for synchronous
+# best-effort work where there is no coroutine to cancel.
+id: kt-no-runcatching-in-coroutine
+language: kotlin
+severity: error
+message: "Use runCatchingCancellable, not raw runCatching, on the turn/stream path — runCatching swallows CancellationException and leaks cancelled turns."
+note: >
+  Replace runCatching { ... } with runCatchingCancellable { ... } (splice.core.util) — it rethrows
+  CancellationException so a cancelled coroutine actually stops. A swallowed cancellation here is how
+  a cancelled turn kept spinning upstream (the 600%-CPU incident).
+files:
+  - gateway/provider-spi/src/main/**/*.kt
+  - gateway/dialect-openai-responses/src/main/**/*.kt
+  - gateway/dialect-openai-chat/src/main/**/*.kt
+  - gateway/dialect-anthropic-passthrough/src/main/**/*.kt
+  - gateway/gateway/src/main/**/*.kt
+rule:
+  pattern: runCatching { $$$BODY }

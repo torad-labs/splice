@@ -1,0 +1,12 @@
+{
+    "max_tokens": 1024,
+    "model": "k3",
+    "stream": true,
+    "system": "You are Splice, a contract fixture.",
+    "messages": [
+        {
+            "role": "user",
+            "content": "Ping."
+        }
+    ]
+}

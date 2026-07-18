@@ -45,6 +45,29 @@ pass()  { PASS+=("$1"); note "  ✓ $1"; }
 fail()  { FAIL+=("$1: $2"); note "  ✗ $1 — $2"; }
 skip()  { SKIP+=("$1: $2"); note "  - $1 SKIP — $2"; }
 
+# request-byte contract receipt (#924 Phase 1). On a tier-1 200, drop a receipt beside the goldens.
+# The FULL binding — sha256 of the exact UPSTREAM request bytes the head sent, checked against
+# sha256(builderOutput) so a blind golden-regenerate can't go green — needs a head-side
+# upstream-request tap that does NOT exist yet (the head doesn't surface the bytes its
+# RequestBuilder produced). Until that lands, this records what IS observable client-side and marks
+# contract_bound=false. See gateway/CONTRACT.md for the tap + the enforcement it unlocks. This makes
+# the receipt file + emission point real, not the binding — so wiring the tap is a localized change.
+RECEIPT_DIR="$ROOT/checks/e2e/receipts"
+emit_receipt() { # key model http_status
+  mkdir -p "$RECEIPT_DIR"
+  cat > "$RECEIPT_DIR/$1.json" <<JSON
+{
+  "head": "$1",
+  "model": "$2",
+  "http_status": $3,
+  "observed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "contract_bound": false,
+  "note": "upstream-request-bytes tap not wired; sha256(builderOutput)==receipt.hash inactive — see gateway/CONTRACT.md"
+}
+JSON
+  note "    receipt: checks/e2e/receipts/$1.json (contract_bound=false — see gateway/CONTRACT.md)"
+}
+
 # ── preflight ────────────────────────────────────────────────────────────────
 if ! curl -sS -m 3 "$CONTROL/health" >/dev/null 2>&1; then
   note "daemon down — cold-starting (same recipe as the CLI)"
@@ -96,6 +119,7 @@ tier1() {
       --total-ms "${E2E_TOTAL_MS:-120000}" --gap-ms "${E2E_GAP_MS:-30000}")"; then
     note "    $summary"
     pass "$key/wire"
+    emit_receipt "$key" "$model" 200
   else
     note "    ${summary:-<no output>}"
     fail "$key/wire" "$(printf '%s' "$summary" | python3 -c 'import json,sys

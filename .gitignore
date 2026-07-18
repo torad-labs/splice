@@ -18,3 +18,6 @@ gateway/build-logic/.kotlin/
 
 # agent worktrees (scratch repo copies)
 .claude/worktrees/
+
+# #924 Phase 1: live contract receipts are per-run artifacts, not source
+checks/e2e/receipts/

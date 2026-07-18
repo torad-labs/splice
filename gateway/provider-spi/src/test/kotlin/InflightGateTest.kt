@@ -8,6 +8,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import splice.spi.InflightGate
 
 class InflightGateTest {
@@ -73,6 +74,7 @@ class InflightGateTest {
     }
 
     @Test
+    @Timeout(TEST_LIVENESS_S) // hard backstop: a genuine leak hangs, and must FAIL the suite, never wedge it
     fun `cancel racing admission never leaks the permit`() {
         // Real threads on purpose: the leak window is BETWEEN admission (under the gate lock)
         // and resume delivery (outside it) — unreachable from runTest's single thread. Old code:
@@ -90,9 +92,12 @@ class InflightGateTest {
                 releaser.join()
                 canceller.join()
                 waiter.join()
-                // whatever the race outcome, exactly zero or one delivery happened and the
-                // permit must be re-acquirable immediately — a leak hangs right here.
-                kotlinx.coroutines.withTimeout(5_000) { gate.acquire().release() }
+                // whatever the race outcome, exactly zero or one delivery happened and the permit
+                // must be re-acquirable — a real (permanent) leak hangs here forever. The bound is
+                // generous on purpose: a leaked permit is PERMANENT, so any finite wait catches it,
+                // whereas a tight bound produced false failures under host/CI load (scheduler
+                // starvation of the racing Default-dispatcher coroutines), NOT leaks.
+                kotlinx.coroutines.withTimeout(REACQUIRE_LIVENESS_MS) { gate.acquire().release() }
                 assertEquals(0, gate.snapshot().inflight, "leaked at iteration $it")
             }
         }
@@ -122,5 +127,10 @@ class InflightGateTest {
 
     private companion object {
         const val RACE_ITERATIONS = 500
+
+        // Generous liveness bound: a leaked permit is PERMANENT, so any finite wait catches it;
+        // a tight bound only adds false failures under host load. @Timeout backstops a true hang.
+        const val REACQUIRE_LIVENESS_MS = 15_000L
+        const val TEST_LIVENESS_S = 60L
     }
 }

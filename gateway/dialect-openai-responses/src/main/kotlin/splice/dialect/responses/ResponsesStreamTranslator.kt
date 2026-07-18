@@ -39,7 +39,11 @@ import java.util.concurrent.CancellationException
 /** Per-turn inputs the machine needs beyond the event flow. */
 public data class StreamTurnContext(
     val compact: Boolean,
-    val replayReasoning: Boolean,
+    /** EMIT redacted_thinking wire blocks when encrypted_content arrives (so Claude Code can
+     *  store the opaque handle). NB: this is the STREAM-side emission flag — distinct from and
+     *  opposite to BuildOptions.replayReasoning, which INJECTS prior reasoning into the request
+     *  input. Same concept split into two honestly-named flags (craft review). */
+    val emitEncryptedReasoning: Boolean,
     /** Encodes a reasoning item into the redacted_thinking envelope (gateway supplies; the
      *  envelope codec is splice-reasoning v1 and lands with P3-MIR). */
     val encodeReasoningEnvelope: (JsonObject) -> String?,
@@ -125,7 +129,9 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
     private fun harvestFallback(reducer: ResponsesEventReducer) {
         val resp = reducer.finalResponse ?: return
         val harvested = harvestResponsesOutput(resp)
-        if (shouldPreferHarvestedText(reducer.textBuf.toString(), harvested.text)) {
+        // CharSequence checks avoid an intermediate toString() when the streamed buffer is large
+        // and the harvest path is a no-op (the common case once deltas have been flowing).
+        if (shouldPreferHarvestedText(reducer.textBuf, harvested.text)) {
             reducer.textBuf = StringBuilder(harvested.text)
         }
         if (harvested.thinking.length > reducer.thinkingBuf.length) {
@@ -145,7 +151,10 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
  */
 private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
 
-    val blocks = HashMap<String, BlockState>()
+    // Int keys: message/tool blocks use the upstream output_index directly; reasoning blocks
+    // use REASONING_KEY_BASE + output_index so the two families never collide and we never
+    // allocate "reasoning:$oi" / oi.toString() strings on the hot path.
+    val blocks = HashMap<Int, BlockState>()
     var hasToolUse = false
     var emittedText = false
     var incomplete = false
@@ -157,6 +166,11 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     var outputTokens = 0L
     var cachedTokens = 0L
     private var toolSynthCounter = 0
+
+    // Late-reasoning items already emitted, keyed by their reasoning block index. Substring
+    // dedup on thinkingBuf dropped a DISTINCT item whose text happened to be a substring of an
+    // earlier one, diverging wire from mirror (audit 2026-07-18); track per item instead.
+    private val emittedReasoningKeys = HashSet<Int>()
 
     suspend fun onEvent(evt: JsonObject, sink: WireSink) {
         when (str(evt["type"])) {
@@ -211,7 +225,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
             val id = str(item["call_id"]).ifEmpty { str(item["id"]) }
                 .ifEmpty { "toolu_synth_${toolSynthCounter++}_$oi" }
             val idx = sink.openTool(id = id, name = str(item["name"]))
-            blocks[oi.toString()] = BlockState(idx, sawDelta = false)
+            blocks[oi] = BlockState(idx, sawDelta = false)
             hasToolUse = true
         }
         // reasoning + message (text) blocks open lazily on their first delta —
@@ -221,22 +235,64 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     private suspend fun onItemDone(evt: JsonObject, sink: WireSink) {
         val item = evt["item"] as? JsonObject
         val oi = intOr(evt[OUTPUT_INDEX]) ?: intOr(item?.get("index"))
+        // Some backends only attach readable reasoning on the completed item (no per-token
+        // summary deltas). Surface that text NOW so Claude Code's thinking UI fills live,
+        // not only via the end-of-turn harvest fallback.
+        maybeEmitLateReasoning(item, oi, sink)
         if (oi != null) {
-            blocks[oi.toString()]?.let { sink.closeBlock(it.index) }
-            blocks["reasoning:$oi"]?.let { sink.closeBlock(it.index) }
+            blocks[oi]?.let { sink.closeBlock(it.index) }
+            blocks[reasoningKey(oi)]?.let { sink.closeBlock(it.index) }
         }
         // Replay (gated): emit the encrypted reasoning IN POSITION — right after its summary
         // closes and before the tool_use it preceded — so the round-trip preserves cache order.
-        if (item != null && shouldReplayReasoning(ctx, item)) {
+        if (item != null && shouldEmitReasoning(ctx, item)) {
             ctx.encodeReasoningEnvelope(item)?.let { sink.addRedactedThinking(it) }
         }
+    }
+
+    private suspend fun maybeEmitLateReasoning(item: JsonObject?, oi: Int?, sink: WireSink) {
+        if (item == null || oi == null) return
+        if (str(item["type"]) != "reasoning") return
+        emitReasoningItemText(item, oi, sink)
+    }
+
+    /**
+     * If the completed reasoning item carries human-readable text we have not already streamed
+     * as deltas, open/append a thinking block with it. Prefer free-form content fields, then
+     * structured summary parts (see [reasoningReadableText]).
+     */
+    private suspend fun emitReasoningItemText(item: JsonObject, outputIndex: Int, sink: WireSink) {
+        val text = reasoningReadableText(item)
+        if (text.isEmpty()) return
+        val existing = blocks[reasoningKey(outputIndex)]
+        // Already streamed this item's text via deltas — don't double-emit.
+        if (existing != null && existing.sawDelta) return
+        // Per-ITEM dedup (not substring-on-thinkingBuf, which dropped a distinct item whose text
+        // was a substring of an earlier one — wire/mirror divergence, audit 2026-07-18).
+        if (!emittedReasoningKeys.add(reasoningKey(outputIndex))) return
+        appendLateReasoning(existing, outputIndex, text, sink)
+    }
+
+    /** Open (or reuse) the item's thinking block and append [text] with a paragraph separator. */
+    private suspend fun appendLateReasoning(existing: BlockState?, outputIndex: Int, text: String, sink: WireSink) {
+        val b = existing ?: run {
+            if (thinkingBuf.isNotEmpty() && !thinkingBuf.endsWith("\n")) thinkingBuf.append("\n\n")
+            val idx = sink.openThinking()
+            BlockState(idx, sawDelta = false).also { blocks[reasoningKey(outputIndex)] = it }
+        }
+        if (thinkingBuf.isNotEmpty() && !thinkingBuf.endsWith("\n")) {
+            thinkingBuf.append("\n\n")
+            sink.thinkingDelta(b.index, "\n\n")
+        }
+        thinkingBuf.append(text)
+        sink.thinkingDelta(b.index, text)
+        b.sawDelta = true
     }
 
     private suspend fun onSummaryPartAdded(evt: JsonObject, sink: WireSink) {
         // New summary part = new paragraph in the SAME thinking block (v24: closing per part
         // truncated multi-part summaries — protocol violation, deltas after content_block_stop).
-        val key = "reasoning:${intOr(evt[OUTPUT_INDEX]) ?: 0}"
-        val b = blocks[key]
+        val b = blocks[reasoningKey(intOr(evt[OUTPUT_INDEX]) ?: 0)]
         if (b != null && b.sawDelta) {
             thinkingBuf.append("\n\n")
             sink.thinkingDelta(b.index, "\n\n")
@@ -253,7 +309,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     }
 
     private suspend fun ensureThinkingBlock(evt: JsonObject, sink: WireSink): BlockState {
-        val key = "reasoning:${intOr(evt[OUTPUT_INDEX]) ?: 0}"
+        val key = reasoningKey(intOr(evt[OUTPUT_INDEX]) ?: 0)
         blocks[key]?.let { return it }
         // separate multiple reasoning ITEMS in the mirror buffer
         if (thinkingBuf.isNotEmpty() && !thinkingBuf.endsWith("\n")) thinkingBuf.append("\n\n")
@@ -266,7 +322,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     private suspend fun onTextDelta(evt: JsonObject, sink: WireSink) {
         val delta = str(evt[DELTA])
         if (delta.isEmpty()) return
-        val key = (intOr(evt[OUTPUT_INDEX]) ?: 0).toString()
+        val key = intOr(evt[OUTPUT_INDEX]) ?: 0
         val b = blocks[key] ?: BlockState(sink.openText(), sawDelta = false).also { blocks[key] = it }
         emittedText = true
         textBuf.append(delta)
@@ -275,7 +331,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
 
     // tool args stream as input_json_delta on the SAME wire block index; the .done frame closes it.
     private suspend fun onArgs(evt: JsonObject, sink: WireSink) {
-        val b = blocks[(intOr(evt[OUTPUT_INDEX]) ?: return).toString()] ?: return
+        val b = blocks[intOr(evt[OUTPUT_INDEX]) ?: return] ?: return
         if (str(evt["type"]) == "response.function_call_arguments.done") {
             sink.closeBlock(b.index)
         } else {
@@ -287,21 +343,26 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     private companion object {
         const val OUTPUT_INDEX = "output_index"
         const val DELTA = "delta"
+
+        // Leave the positive int space for message/tool output_index; reasoning lives above.
+        const val REASONING_KEY_BASE = 1_000_000
+
+        fun reasoningKey(outputIndex: Int): Int = REASONING_KEY_BASE + outputIndex
     }
 }
 
-/** Gated encrypted-reasoning replay predicate — kept out of the handler so its condition stays flat. */
-private fun shouldReplayReasoning(ctx: StreamTurnContext, item: JsonObject): Boolean =
-    ctx.replayReasoning && !ctx.compact &&
+/** Gated encrypted-reasoning EMISSION predicate — kept out of the handler so its condition stays flat. */
+private fun shouldEmitReasoning(ctx: StreamTurnContext, item: JsonObject): Boolean =
+    ctx.emitEncryptedReasoning && !ctx.compact &&
         str(item["type"]) == "reasoning" && str(item["encrypted_content"]).isNotEmpty()
 
 /**
  * The terminal object's text replaces the streamed buffer when the stream produced nothing, or
  * when it produced only weak "no model text returned" filler that the harvested text improves on.
  */
-private fun shouldPreferHarvestedText(current: String, harvested: String): Boolean {
+private fun shouldPreferHarvestedText(current: CharSequence, harvested: String): Boolean {
     if (harvested.isEmpty()) return false
-    return current.isEmpty() || (isWeakSummaryText(current) && !isWeakSummaryText(harvested))
+    return current.isEmpty() || (isWeakSummaryText(current.toString()) && !isWeakSummaryText(harvested))
 }
 
 private fun str(el: JsonElement?): String =

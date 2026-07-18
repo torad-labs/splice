@@ -63,6 +63,30 @@ complexity:
 # Consistent formatting and idioms.
 style:
   active: true
+  # THE ANTI-BYPASS WALL (2026-07-18): quality findings are fixed, never suppressed. An agent
+  # (any model) that @Suppress-es its way past a structural rule ships the debt invisibly — the
+  # exact fix-the-gate-not-the-code failure this repo legislates against. Same-checker-twice:
+  # .rules/kotlin-splice/kt-no-quality-suppress.yml blocks the annotation at WRITE time; this
+  # rule fails the GATE if one slips through anyway.
+  ForbiddenSuppress:
+    active: true
+    rules:
+      - 'TooManyFunctions'
+      - 'LongMethod'
+      - 'LargeClass'
+      - 'CyclomaticComplexMethod'
+      - 'ComplexCondition'
+      - 'LongParameterList'
+      - 'ReturnCount'
+      - 'NestedBlockDepth'
+      - 'MagicNumber'
+      - 'MaxLineLength'
+      - 'TooGenericExceptionCaught'
+      - 'SwallowedException'
+      - 'StringLiteralDuplication'
+      - 'UnusedPrivateMember'
+      - 'UnusedPrivateProperty'
+      - 'UnusedParameter'
   MagicNumber:
     active: true
     ignoreNumbers: ['-1', '0', '1', '2', '100', '1000']

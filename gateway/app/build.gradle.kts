@@ -12,6 +12,7 @@ dependencies {
     implementation(project(":dialect-openai-chat"))
     implementation(project(":provider-codex"))
     implementation(project(":provider-grok"))
+    implementation(project(":provider-kimi"))
     implementation(project(":provider-openai"))
     implementation(project(":gateway"))
     implementation(project(":control"))

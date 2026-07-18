@@ -65,6 +65,13 @@ class ControlServerTest {
     private val json = Json { ignoreUnknownKeys = true }
     private val head = FakeHead("codex", 3099)
 
+    private val fakePerf = splice.control.HeadPerfSource { n ->
+        listOf(
+            mapOf("ts" to 1L, "headers" to 100L, "total" to 400L),
+            mapOf("ts" to 2L, "headers" to 300L, "total" to 800L),
+        ).takeLast(n)
+    }
+
     @BeforeAll
     fun setUp() {
         val tmp = Files.createTempDirectory("control-test")
@@ -89,6 +96,7 @@ class ControlServerTest {
             },
             warnPct = 80,
             warnTokens5h = 0,
+            perf = fakePerf,
         )
         val configDir = tmp.resolve(".claude-codex-test")
         val launchSpec = LaunchSpec(
@@ -169,6 +177,20 @@ class ControlServerTest {
     }
 
     @Test
+    fun `perf aggregates stages with p50 p95 max over the tail`() = runTest {
+        val obj = json.parseToJsonElement(authed("/api/perf")).jsonObject
+        val head = obj["heads"]!!.jsonArray.first().jsonObject
+        assertEquals("codex", head["key"]?.jsonPrimitive?.content)
+        assertEquals("2", head["count"]?.jsonPrimitive?.content)
+        val headers = head["stages"]!!.jsonObject["headers"]!!.jsonObject
+        assertEquals("100", headers["p50"]?.jsonPrimitive?.content)
+        assertEquals("300", headers["p95"]?.jsonPrimitive?.content)
+        assertEquals("300", headers["max"]?.jsonPrimitive?.content)
+        // ts is excluded from aggregation
+        assertTrue("ts" !in head["stages"]!!.jsonObject)
+    }
+
+    @Test
     fun `head lifecycle - stop then start flips running`() = runTest {
         val stopped = client.post("http://127.0.0.1:$port/api/heads/codex/stop") {
             header("Authorization", "Bearer $key")
@@ -181,12 +203,12 @@ class ControlServerTest {
     }
 
     @Test
-    fun `config exposes effective plus four layers plus restart keys`() = runTest {
+    fun `config exposes effective plus five layers plus restart keys`() = runTest {
         val obj = json.parseToJsonElement(authed("/api/config")).jsonObject
         assertTrue(obj.containsKey("effective"))
         val layers = obj["layers"]!!.jsonObject
         assertTrue(
-            layers.containsKey("defaults") && layers.containsKey("file") &&
+            layers.containsKey("defaults") && layers.containsKey("toml") && layers.containsKey("file") &&
                 layers.containsKey("env") && layers.containsKey("runtime"),
         )
         assertTrue(obj["restart_required_keys"]!!.jsonArray.any { it.jsonPrimitive.content == "port" })

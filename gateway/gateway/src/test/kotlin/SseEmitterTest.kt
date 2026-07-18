@@ -6,6 +6,7 @@ import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
 import splice.gateway.wire.SseEmitter
@@ -123,6 +124,36 @@ class SseEmitterTest {
         val stops = frames.filter { it.startsWith("event: content_block_stop") }
         assertEquals(2, stops.size)
         assertTrue(stops[1].contains("\"index\":${b.value}"))
+    }
+
+    @Test
+    fun `signature delta rides content_block_delta between thinking deltas and block stop`() = runTest {
+        val (frames, e) = collector()
+        val t = e.openThinking()
+        e.thinkingDelta(t, "reason")
+        e.signatureDelta(t, "sig-abc")
+        e.closeBlock(t)
+        val sig = frames.single { it.contains("signature_delta") }
+        assertTrue(sig.startsWith("event: content_block_delta"))
+        assertTrue(sig.contains("\"index\":${t.value}"))
+        assertTrue(sig.contains("\"signature\":\"sig-abc\""))
+        // ordering: thinking_delta before signature_delta before content_block_stop
+        val idxThinking = frames.indexOfFirst { it.contains("thinking_delta") }
+        val idxSig = frames.indexOfFirst { it.contains("signature_delta") }
+        val idxStop = frames.indexOfFirst { it.startsWith("event: content_block_stop") }
+        assertTrue(idxThinking < idxSig && idxSig < idxStop)
+    }
+
+    @Test
+    fun `signature delta to a closed or unknown index is a no-op`() = runTest {
+        val (frames, e) = collector()
+        val t = e.openThinking()
+        e.closeBlock(t)
+        val before = frames.size
+        e.signatureDelta(t, "late-sig") // block already closed
+        e.signatureDelta(WireBlockIndex(99), "never-opened") // unknown index
+        assertEquals(before, frames.size)
+        assertTrue(frames.none { it.contains("signature_delta") })
     }
 
     @Test

@@ -15,6 +15,10 @@ public object TopologyLoader {
     private const val DEFAULT_TOML = """
 [daemon]
 control_port = 3096
+# Reasoning display (edit + restart; env/PATCH still override):
+show_reasoning = "text"
+summary = "detailed"
+replay_reasoning = false
 
 [providers.codex]
 dialect = "openai-responses"
@@ -55,7 +59,7 @@ context_window = 128000
 dialect = "openai-responses"
 base_url = "https://api.x.ai/v1"
 auth = { kind = "grok-oauth", file = "~/.grok/auth.json" }
-quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = false, compact_effort = "low", tool_choice = true }
+quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = true, tool_choice = true }
 
 [[providers.xai.models]]
 id = "grok-4.5"

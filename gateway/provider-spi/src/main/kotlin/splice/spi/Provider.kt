@@ -19,8 +19,22 @@ public fun interface StreamTranslator {
     public suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome
 }
 
-/** The upstream request the provider built from an Anthropic body: wire JSON + per-turn meta. */
-public data class BuiltTurn(val requestBody: JsonObject, val meta: TurnMeta)
+/** The upstream request the provider built from an Anthropic body: wire JSON + per-turn meta +
+ *  per-turn extra HTTP headers (e.g. grok's x-grok-conv-id — PER TURN, never provider-shared
+ *  state: a shared field races concurrent sessions into each other's affinity headers). */
+public data class BuiltTurn(
+    val requestBody: JsonObject,
+    val meta: TurnMeta,
+    val extraHeaders: Map<String, String> = emptyMap(),
+)
+
+/** Per-turn liveness signals the gateway hands the translator: the watchdog's typed sentinel and
+ *  a REAL client-liveness probe (flipped when a downstream write fails — the head owns it; a
+ *  provider must never hardcode it, that makes ClientAbandoned unreachable dead code). */
+public data class TurnSignals(
+    val watchdogFired: () -> WatchdogFired?,
+    val clientGone: () -> Boolean,
+)
 
 /** The dialect-invariant identity a provider exposes: which head it is, its catalog, auth, budget.
  *  Every concrete provider shares this exact cluster, so it's grouped (see [ProviderTuning]) and
@@ -55,7 +69,7 @@ public interface Provider : ProviderIdentity {
 
     public fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn
 
-    public fun streamTranslator(meta: TurnMeta, watchdogFired: () -> WatchdogFired?): StreamTranslator
+    public fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator
 
     public fun extraHeaders(creds: Credentials): Map<String, String>
 }

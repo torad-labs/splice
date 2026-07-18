@@ -19,17 +19,21 @@ import splice.provider.codex.RefreshedTokens
 private val refreshClient by lazy { HttpClient(CIO) }
 private val json = Json { ignoreUnknownKeys = true }
 
-// refresh failure -> null (caller re-prompts)
+// refresh failure -> null (caller re-prompts), with the CAUSE on stderr — a silent null left
+// the operator staring at persistent 401s with zero evidence (audit 2026-07-18).
 public suspend fun codexRefresh(tokenUrl: String, refreshToken: String): RefreshedTokens? = runCatchingCancellable {
     val resp = refreshClient.submitForm(
         url = tokenUrl,
         formParameters = Parameters.build {
             append("grant_type", "refresh_token")
             append("refresh_token", refreshToken)
-            append("client_id", CodexOAuthEndpoints.DEFAULT_CLIENT_ID)
+            append("client_id", CodexOAuthEndpoints.clientId(System::getenv))
         },
     )
     if (!resp.status.isSuccess()) {
+        System.err.println(
+            "[codex] token refresh failed: HTTP ${resp.status.value} ${resp.bodyAsText().take(ERR_BODY_SNIPPET)}",
+        )
         null
     } else {
         val obj = json.parseToJsonElement(resp.bodyAsText()).jsonObject
@@ -45,3 +49,5 @@ public suspend fun codexRefresh(tokenUrl: String, refreshToken: String): Refresh
         }
     }
 }.getOrNull()
+
+private const val ERR_BODY_SNIPPET = 200

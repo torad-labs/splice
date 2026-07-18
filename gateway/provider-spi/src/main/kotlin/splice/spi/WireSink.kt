@@ -19,6 +19,11 @@ public interface WireSink {
 
     public suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String)
 
+    /** Thinking-block signature delta: providers that receive or synthesize a reasoning
+     *  signature forward it here; sinks that don't render signatures ignore it. Default no-op
+     *  keeps existing implementors (test Recs, fixtures) source-compatible. */
+    public suspend fun signatureDelta(index: WireBlockIndex, signature: String) {}
+
     public suspend fun closeBlock(index: WireBlockIndex)
 
     public suspend fun closeAll()

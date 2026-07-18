@@ -1,0 +1,6 @@
+id: kt-no-request-body-gzip
+valid:
+  - 'val decompressed = GZIPInputStream(resp.body())'
+  - 'val bodyBytes = bodyJson.toByteArray(Charsets.UTF_8)'
+invalid:
+  - 'GZIPOutputStream(out).use { it.write(bytes) }'

@@ -1,87 +1,46 @@
-// NEW: the grok Provider — the SAME openai-responses dialect as codex (verified in the Node
-// inventory: grok's translators were Responses-dialect, not chat), with grok quirks: api-key
-// auth (Authorization: Bearer <key>), session-id cache key (claude-grok:<x-claude-code-session-
-// id>), effort ceiling high (clamps xhigh/max → high, floors to low, can't disable), NO summary
-// field (grok auto-exposes summaries via the stream), compact effort low, tool_choice emitted.
-// P0-XAI (anthropic-passthrough fidelity) is credential-blocked, so this is the proven fallback:
-// the exact quirks the Node grok/translate-request.mjs used. Reuses the shared dialect + machine
-// — the multi-provider abstraction pays off (zero new translator code, only quirks + auth).
+// NEW: the grok Provider — the shared openai-responses base (ResponsesProvider) with grok quirks:
+// api-key OR oauth Bearer, session-id cache key (claude-grok:<session>) + a PER-TURN x-grok-conv-id
+// header (Grok Build stickiness), effort ceiling high, reasoning.summary from config, compact effort
+// inherited, tool_choice emitted. The reasoning-policy wiring lives in the base; this class adds ONLY
+// the per-turn conv-id header and the grok quirk profile.
 package splice.provider.grok
 
 import splice.core.auth.Credentials
-import splice.core.parse.AnthropicTurnBody
-import splice.core.turn.TurnMeta
-import splice.dialect.responses.BuildOptions
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.EffortLadder
+import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
-import splice.dialect.responses.ResponsesRequestBuilder
-import splice.dialect.responses.ResponsesStreamTranslator
-import splice.dialect.responses.StreamTurnContext
-import splice.spi.BuiltTurn
-import splice.spi.Provider
-import splice.spi.ProviderIdentity
 import splice.spi.ProviderTuning
-import splice.spi.StreamTranslator
-import splice.spi.WatchdogFired
 
 public class GrokProvider(
-    private val tuning: ProviderTuning,
-    override val showReasoning: String,
-    override val replayReasoning: Boolean,
-    private val configEffort: String?,
-) : Provider, ProviderIdentity by tuning {
+    tuning: ProviderTuning,
+    showReasoning: String,
+    replayReasoning: Boolean,
+    configEffort: String?,
+    configSummary: String? = null,
+    quirks: ResponsesQuirks = defaultQuirks(),
+) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks) {
 
-    override val upstreamUrl: String = "${tuning.baseUrl}/responses"
+    // Grok Build sets both the body prompt_cache_key AND x-grok-conv-id for sticky routing. The
+    // header rides the PER-TURN BuiltTurn (via the base's perTurnHeaders hook) — a shared provider
+    // field raced concurrent sessions into each other's affinity header (audit 2026-07-18).
+    override fun perTurnHeaders(sessionId: String?): Map<String, String> =
+        sessionId?.takeIf { it.isNotEmpty() }?.let { mapOf("x-grok-conv-id" to it) } ?: emptyMap()
 
-    private val quirks = ResponsesQuirks(
-        providerTag = "claude-grok",
-        store = false,
-        cacheKeyStrategy = CacheKeyStrategy.SESSION_ID,
-        effortLadder = EffortLadder.GROK,
-        supportsSummary = false,
-        summaryRejectModelRegex = null,
-        compactEffortPin = "low",
-        emitToolChoice = true,
-        emitStrict = true,
-    )
-    private val builder = ResponsesRequestBuilder(quirks)
+    override fun extraHeaders(creds: Credentials): Map<String, String> = mapOf("Accept" to "text/event-stream")
 
-    override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
-        val upstreamModel = catalog.stripSuffixes(body.typed.model)
-        val built = builder.build(
-            body.typed,
-            body.raw,
-            BuildOptions(
-                compact = compact,
-                originalModel = body.typed.model,
-                upstreamModel = upstreamModel,
-                configEffort = configEffort,
-                configSummary = null,
-                showReasoning = showReasoning,
-                replayReasoning = replayReasoning,
-                sessionId = sessionId,
-                decodeReasoningEnvelope = { splice.core.reasoning.decodeReasoningEnvelope(it) },
-            ),
+    public companion object {
+        /** The grok quirk profile — injectable so the TOML [providers.*.quirks] table is REAL. */
+        public fun defaultQuirks(): ResponsesQuirks = ResponsesQuirks(
+            providerTag = "claude-grok",
+            store = false,
+            cacheKeyStrategy = CacheKeyStrategy.SESSION_ID,
+            effortLadder = EffortLadder.GROK,
+            supportsSummary = true,
+            summaryRejectModelRegex = null,
+            compactEffortPin = null, // inherit session effort on compact (v27 cache law — no pins)
+            emitToolChoice = true,
+            emitStrict = true,
         )
-        return BuiltTurn(built.req, built.meta)
-    }
-
-    override fun streamTranslator(meta: TurnMeta, watchdogFired: () -> WatchdogFired?): StreamTranslator =
-        ResponsesStreamTranslator(
-            StreamTurnContext(
-                compact = meta.compact,
-                replayReasoning = replayReasoning,
-                encodeReasoningEnvelope = { splice.core.reasoning.encodeReasoningEnvelope(it) },
-                clientGone = { false },
-                watchdogFired = watchdogFired,
-                streamIdleMsForMessage = watchdog.streamIdle.inWholeMilliseconds,
-                upstreamTimeoutMsForMessage = watchdog.totalCap.inWholeMilliseconds,
-            ),
-        )
-
-    override fun extraHeaders(creds: Credentials): Map<String, String> = buildMap {
-        put("Accept", "text/event-stream")
-        // xAI api key rides as the standard bearer; the session-id cache key is in the body
     }
 }

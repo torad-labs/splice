@@ -22,6 +22,8 @@ import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
@@ -35,9 +37,14 @@ import splice.core.GATEWAY_VERSION
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.MgmtKey
+import splice.core.perf.PerfKeys
 import splice.core.usage.RateLimitState
 import splice.core.usage.computeUsageWarn
 import splice.core.util.runCatchingCancellable
+
+// the two identifier literals every payload row repeats — named once for the whole file
+private const val KEY = "key"
+private const val LABEL = "label"
 
 public class ControlServer(
     private val port: Int,
@@ -69,6 +76,12 @@ public class ControlServer(
                 get("/api/config") { guarded(call) { respond(call, payloads.configJson()) } }
                 patch("/api/config") { guarded(call) { patchConfig(call) } }
                 get("/api/usage") { guarded(call) { respond(call, payloads.usageJson()) } }
+                get("/api/perf") {
+                    guarded(call) {
+                        val tail = call.request.queryParameters["tail"]?.toIntOrNull() ?: DEFAULT_PERF_TAIL
+                        respond(call, payloads.perfJson(tail))
+                    }
+                }
                 get("/api/auth") { guarded(call) { respond(call, payloads.authJson()) } }
                 post("/api/auth/{head}/{action}") { guarded(call) { authAction(call) } }
                 get("/api/compact") { guarded(call) { respond(call, payloads.compactJson()) } }
@@ -140,16 +153,24 @@ public class ControlServer(
             )
             return
         }
-        val map = partial.mapValues { (_, v) ->
-            (v as? JsonPrimitive)?.content
+        // JsonNull must map to Kotlin null (= DELETE) — `(v as? JsonPrimitive)?.content` turned
+        // it into the 4-char string "null" and PERSISTED it (audit 2026-07-18). Objects/arrays
+        // are rejected outright instead of being silently stringified or deleted.
+        val nonScalar = partial.filterValues { it !is JsonPrimitive }.keys
+        val map = (partial - nonScalar).mapValues { (_, v) ->
+            (v as JsonPrimitive).takeUnless { it is JsonNull }?.content
         }
-        // NO fanout: one in-process patch (single JVM). Heads read getConfig() fresh per request.
+        // NO per-head fanout needed (single JVM) — but NOTE: most knobs are snapshotted at
+        // Daemon.start (restart-required); only the genuinely hot ones apply to the next request.
         val result = config.patch(map)
         respond(
             call,
             buildJsonObject {
                 put("applied", payloads.mapToJson(result.applied))
-                putJsonObject("rejected") { result.rejected.forEach { (k, v) -> put(k, v) } }
+                putJsonObject("rejected") {
+                    result.rejected.forEach { (k, v) -> put(k, v) }
+                    nonScalar.forEach { put(it, "invalid value (must be a scalar or null)") }
+                }
                 putJsonArray("restart_required") { result.restartRequired.forEach { add(it) } }
                 putJsonArray("targets") {} // no per-head fanout targets in single-daemon
                 put("persisted", "state/config.json")
@@ -163,12 +184,16 @@ public class ControlServer(
         val managed = heads[key]
         val refreshable = managed?.auth as? splice.core.auth.RefreshableAuthProvider
         if (action == "refresh" && refreshable != null) {
-            refreshable.refresh()
+            // The dashboard's primary remediation control must not lie: a failed refresh
+            // (null credentials back) reports ok:false so the operator re-logins instead of
+            // staring at a green button while 401s continue (audit 2026-07-18).
+            val refreshed = refreshable.refresh()
             respond(
                 call,
                 buildJsonObject {
-                    put("ok", true)
+                    put("ok", refreshed != null)
                     put("head", key)
+                    if (refreshed == null) put("note", "refresh failed — check daemon.log; re-login likely required")
                 }.toString(),
             )
         } else {
@@ -197,7 +222,7 @@ public class ControlServer(
         respond(
             call,
             buildJsonObject {
-                put("key", key)
+                put(KEY, key)
                 put("path", managed.logs.path())
                 putJsonArray("lines") { lines.forEach { add(it) } }
             }.toString(),
@@ -249,6 +274,7 @@ public class ControlServer(
         const val STOP_GRACE_MS = 100L
         const val STOP_TIMEOUT_MS = 500L
         const val DEFAULT_LOG_TAIL = 200
+        const val DEFAULT_PERF_TAIL = 200
     }
 }
 
@@ -272,8 +298,8 @@ private class ControlPayloads(
         putJsonArray("registry") {
             heads.values.forEach { m ->
                 addJsonObject {
-                    put("key", m.head.key)
-                    put("label", m.head.label)
+                    put(KEY, m.head.key)
+                    put(LABEL, m.head.label)
                     put("authKind", m.auth.let { "provider" })
                 }
             }
@@ -288,8 +314,8 @@ private class ControlPayloads(
     // in-process, so healthy/version are authoritative and versionMatch is always true when up.
     fun headStatus(m: ManagedHead) = buildJsonObject {
         val h = m.head.healthSnapshot()
-        put("key", m.head.key)
-        put("label", m.head.label)
+        put(KEY, m.head.key)
+        put(LABEL, m.head.label)
         put("name", m.head.key)
         put("port", m.head.port)
         put("authKind", m.authKind)
@@ -311,6 +337,10 @@ private class ControlPayloads(
             put("effective", mapToJson(effective))
             putJsonObject("layers") {
                 put("defaults", mapToJson(layers.defaults))
+                // The operator-facing layer: ~/.config/splice/splice.toml [daemon]/[defaults].
+                // Shown in precedence position (beats defaults, loses to file/env/runtime) so
+                // "why is this knob X?" is answerable from the payload alone.
+                put("toml", mapToJson(layers.headOverrides))
                 put("file", mapToJson(layers.file))
                 put("env", mapToJson(layers.env))
                 put("runtime", mapToJson(layers.runtime))
@@ -334,8 +364,8 @@ private class ControlPayloads(
                     val rl = rlView?.let { RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens) }
                     val warn = computeUsageWarn(m.usage.outputTokens5h(), rl, m.warnPct, m.warnTokens5h)
                     addJsonObject {
-                        put("key", m.head.key)
-                        put("label", m.head.label)
+                        put(KEY, m.head.key)
+                        put(LABEL, m.head.label)
                         putJsonObject("usage") {
                             put("output_tokens_5h", m.usage.outputTokens5h())
                             put("entries", m.usage.entries())
@@ -395,6 +425,53 @@ private class ControlPayloads(
         }
     }.toString()
 
+    // NEW (bottleneck instrument): per-head stage aggregation over the recent perf rows.
+    // {heads:[{key,label,count,stages:{<field>:{count,p50,p95,max}}}]} — fields are the TurnPerf
+    // marks/counters (PerfKeys names), marks first in pipeline order, counters after.
+    fun perfJson(tailN: Int): String = buildJsonObject {
+        put("window", tailN)
+        putJsonArray(HEADS) {
+            heads.values.forEach { m ->
+                val rows = m.perf?.tailNumeric(tailN).orEmpty()
+                addJsonObject {
+                    put(KEY, m.head.key)
+                    put(LABEL, m.head.label)
+                    put("count", rows.size)
+                    putJsonObject("stages") {
+                        orderedPerfFields(rows).forEach { field ->
+                            val values = rows.mapNotNull { it[field] }
+                            if (values.isNotEmpty()) put(field, statsJson(values))
+                        }
+                    }
+                }
+            }
+        }
+    }.toString()
+
+    /** PerfKeys.markOrder first (pipeline order), then every other seen field alphabetically. */
+    private fun orderedPerfFields(rows: List<Map<String, Long>>): List<String> {
+        val seen = rows.flatMapTo(LinkedHashSet()) { it.keys } - "ts"
+        val marks = PerfKeys.markOrder.filter { it in seen }
+        val rest = (seen - PerfKeys.markOrder.toSet()).sorted()
+        return marks + rest
+    }
+
+    private fun statsJson(values: List<Long>): JsonObject {
+        val sorted = values.sorted()
+        return buildJsonObject {
+            put("count", sorted.size)
+            put("p50", percentile(sorted, P50))
+            put("p95", percentile(sorted, P95))
+            put("max", sorted.last())
+        }
+    }
+
+    /** Nearest-rank percentile on a pre-sorted list. */
+    private fun percentile(sorted: List<Long>, q: Double): Long {
+        val rank = kotlin.math.ceil(q * sorted.size).toInt().coerceIn(1, sorted.size)
+        return sorted[rank - 1]
+    }
+
     fun errorJson(message: String): String = buildJsonObject { put("error", message) }.toString()
 
     fun mapToJson(m: Map<String, Any?>) = buildJsonObject {
@@ -412,5 +489,7 @@ private class ControlPayloads(
         const val HEADS = "heads"
         const val COMPACT_TAIL = 50
         const val USAGE_WINDOW_HOURS = 5
+        const val P50 = 0.50
+        const val P95 = 0.95
     }
 }

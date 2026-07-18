@@ -73,6 +73,32 @@ class InflightGateTest {
     }
 
     @Test
+    fun `cancel racing admission never leaks the permit`() {
+        // Real threads on purpose: the leak window is BETWEEN admission (under the gate lock)
+        // and resume delivery (outside it) — unreachable from runTest's single thread. Old code:
+        // a waiter cancelled in that window kept the inflight increment forever, so the follow-up
+        // acquire below hung once any iteration lost the race. tryResume hands the permit back.
+        kotlinx.coroutines.runBlocking {
+            repeat(RACE_ITERATIONS) {
+                val gate = InflightGate({ 1 })
+                val holder = gate.acquire()
+                val waiter = launch(kotlinx.coroutines.Dispatchers.Default) { gate.acquire().release() }
+                // let the waiter reach the queue
+                while (gate.snapshot().queued == 0 && waiter.isActive) yield()
+                val releaser = launch(kotlinx.coroutines.Dispatchers.Default) { holder.release() }
+                val canceller = launch(kotlinx.coroutines.Dispatchers.Default) { waiter.cancel() }
+                releaser.join()
+                canceller.join()
+                waiter.join()
+                // whatever the race outcome, exactly zero or one delivery happened and the
+                // permit must be re-acquirable immediately — a leak hangs right here.
+                kotlinx.coroutines.withTimeout(5_000) { gate.acquire().release() }
+                assertEquals(0, gate.snapshot().inflight, "leaked at iteration $it")
+            }
+        }
+    }
+
+    @Test
     fun `release is idempotent`() = runTest {
         val gate = InflightGate({ 1 })
         val slot = gate.acquire()
@@ -92,5 +118,9 @@ class InflightGateTest {
         slot.touch()
         assertEquals(0, slot.idleForMs())
         slot.release()
+    }
+
+    private companion object {
+        const val RACE_ITERATIONS = 500
     }
 }

@@ -15,6 +15,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.turn.TurnMeta
 import splice.core.wire.AnthropicRequest
+import splice.core.wire.DocumentBlock
 import splice.core.wire.ImageBlock
 import splice.core.wire.MediaSource
 import splice.core.wire.TextBlock
@@ -27,6 +28,11 @@ public data class ChatQuirks(
     val supportsVision: Boolean = true,
     /** Some vendors want `max_completion_tokens`, most want `max_tokens`. */
     val maxTokensField: String = "max_tokens",
+    /**
+     * When true, emit `reasoning_effort` (and/or `reasoning`) from Anthropic thinking budget so
+     * DeepSeek/xAI-compatible chat backends return `reasoning_content` in the stream.
+     */
+    val emitReasoningEffort: Boolean = true,
 )
 
 public data class BuiltChatRequest(val req: JsonObject, val meta: TurnMeta)
@@ -49,6 +55,7 @@ public class ChatRequestBuilder(private val quirks: ChatQuirks) {
             body.messages.forEach { msg -> appendMessage(this, msg.role, msg.content) }
         }
         val emitTools = quirks.supportsTools && !compact && body.tools.isNotEmpty()
+        val effort = chatReasoningEffort(body, compact)
         val req = buildJsonObject {
             put("model", upstreamModel)
             put("messages", messages)
@@ -57,6 +64,8 @@ public class ChatRequestBuilder(private val quirks: ChatQuirks) {
             if (emitTools) {
                 put("tools", toolsArray(body))
             }
+            // Ask chat backends that support it to return cleartext CoT on reasoning_content.
+            putReasoningEffort(effort)
         }
         val meta = TurnMeta(
             compact = compact,
@@ -65,11 +74,18 @@ public class ChatRequestBuilder(private val quirks: ChatQuirks) {
             originalModel = originalModel,
             upstreamModel = upstreamModel,
             clientMaxTokens = body.maxTokens?.takeIf { it > 0 },
-            effort = "n/a",
-            summary = null,
+            effort = effort ?: "n/a",
+            summary = if (effort != null) "detailed" else null,
             budgetTokens = body.thinking?.budgetTokens,
         )
         return BuiltChatRequest(req, meta)
+    }
+
+    private fun JsonObjectBuilder.putReasoningEffort(effort: String?) {
+        if (!quirks.emitReasoningEffort || effort == null) return
+        put("reasoning_effort", effort)
+        // Some OpenRouter/vLLM stacks want the nested form too.
+        put("reasoning", buildJsonObject { put("effort", effort) })
     }
 
     // the content-block split is the mapping contract
@@ -81,15 +97,40 @@ public class ChatRequestBuilder(private val quirks: ChatQuirks) {
         // tool_result blocks become their own `tool` role messages; text/images fold into one.
         val toolResults = content.filterIsInstance<ToolResultBlock>()
         val toolUses = content.filterIsInstance<ToolUseBlock>()
-        val texts = content.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
+        // Dropped media leaves an HONEST MARKER (the v25 doctrine: screenshots silently
+        // vanishing is the regression class; the model must know something was omitted).
+        val markers = omissionMarkers(content)
+        val textsRaw = content.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
+        val texts = (listOf(textsRaw) + markers).filter { it.isNotEmpty() }.joinToString("\n")
         val images = content.filterIsInstance<ImageBlock>().mapNotNull { imagePart(it.source) }
 
         if (toolUses.isNotEmpty()) {
             appendAssistantToolCalls(sink, toolUses, texts)
-        } else if (texts.isNotEmpty() || images.isNotEmpty()) {
+        }
+        // A `tool` message must immediately follow the assistant message that carries its
+        // tool_call_ids. Claude Code packs [tool_result, text] into one user message, so emit the
+        // tool results BEFORE any sibling user text/images — an interposed `user` message is a 400
+        // on strict OpenAI-compatible validators (and reorders the turn semantically everywhere).
+        appendToolResults(sink, toolResults)
+        val hasUserPayload = texts.isNotEmpty() || images.isNotEmpty()
+        if (toolUses.isEmpty() && hasUserPayload) {
             appendUserContent(sink, role, texts, images)
         }
-        appendToolResults(sink, toolResults)
+    }
+
+    /** Honest markers for content this dialect cannot carry: documents always; images when the
+     *  vendor has no vision. An image-only message still yields a marker — silently dropping the
+     *  whole message breaks role alternation AND hides the omission from the model. */
+    private fun omissionMarkers(content: List<splice.core.wire.ContentBlock>): List<String> {
+        val out = mutableListOf<String>()
+        content.filterIsInstance<DocumentBlock>().forEach { _ ->
+            out.add("[document omitted by ${quirks.providerTag} proxy: unsupported on this backend]")
+        }
+        if (!quirks.supportsVision) {
+            val n = content.count { it is ImageBlock }
+            if (n > 0) out.add("[$n image(s) omitted by ${quirks.providerTag} proxy: backend has no vision]")
+        }
+        return out
     }
 
     private fun appendAssistantToolCalls(
@@ -148,13 +189,26 @@ public class ChatRequestBuilder(private val quirks: ChatQuirks) {
     ) {
         toolResults.forEach { tr ->
             val out = tr.content.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
+            val images = tr.content.filterIsInstance<ImageBlock>().mapNotNull { imagePart(it.source) }
+            val imageCount = tr.content.count { it is ImageBlock }
             sink.addJsonObject {
                 put(ROLE, "tool")
                 put("tool_call_id", tr.toolUseId)
-                put(CONTENT, out)
+                // string-only channel: dropped images (no vision) are declared IN the output.
+                put(CONTENT, if (imageCount > 0 && images.isEmpty()) markerFold(out, imageCount) else out)
+            }
+            // v25 doctrine: chat `tool` messages are string-only, so tool_result images ride a
+            // follow-up user message right after the tool output (same as the Responses builder).
+            if (images.isNotEmpty()) {
+                appendUserContent(sink, "user", "[images from tool_result ${tr.toolUseId}]", images)
             }
         }
     }
+
+    private fun markerFold(out: String, imageCount: Int): String =
+        (listOf(out) + "[$imageCount image(s) omitted by ${quirks.providerTag} proxy: backend has no vision]")
+            .filter { it.isNotEmpty() }
+            .joinToString("\n")
 
     private fun JsonObjectBuilder.putFunction(name: String, args: String) {
         put(
@@ -184,10 +238,16 @@ public class ChatRequestBuilder(private val quirks: ChatQuirks) {
 
     private fun imagePart(source: MediaSource?): JsonObject? = when {
         source == null || !quirks.supportsVision -> null
-        source.type == "base64" && !source.data.isNullOrEmpty() -> buildJsonObject {
-            put(TYPE, IMAGE_URL)
-            val dataUrl = "data:${source.mediaType ?: "image/png"};base64,${source.data}"
-            put(IMAGE_URL, buildJsonObject { put(URL, dataUrl) })
+        source.type == "base64" && !source.data.isNullOrEmpty() -> {
+            val mime = source.mediaType ?: "image/png"
+            val data = source.data!!
+            val dataUrl = StringBuilder(DATA_URL_PREFIX.length + mime.length + BASE64_SEPARATOR.length + data.length)
+                .append(DATA_URL_PREFIX).append(mime).append(BASE64_SEPARATOR).append(data)
+                .toString()
+            buildJsonObject {
+                put(TYPE, IMAGE_URL)
+                put(IMAGE_URL, buildJsonObject { put(URL, dataUrl) })
+            }
         }
         source.type == "url" && !source.url.isNullOrEmpty() -> buildJsonObject {
             put(TYPE, IMAGE_URL)
@@ -206,5 +266,28 @@ public class ChatRequestBuilder(private val quirks: ChatQuirks) {
         const val URL = "url"
         const val FUNCTION = "function"
         const val IMAGE_URL = "image_url"
+        const val DATA_URL_PREFIX = "data:"
+        const val BASE64_SEPARATOR = ";base64,"
     }
 }
+
+/**
+ * Map Anthropic thinking budget → chat `reasoning_effort`. Default high so backends that
+ * support cleartext CoT actually emit `reasoning_content`. Compact turns stay low-cost.
+ */
+private fun chatReasoningEffort(body: AnthropicRequest, compact: Boolean): String? {
+    if (body.thinking?.disabled == true) return null
+    if (compact) return "low"
+    val budget = body.thinking?.budgetTokens
+    return when {
+        budget == null -> "high"
+        budget >= HIGH_BUDGET_FLOOR -> "high"
+        budget >= MEDIUM_BUDGET_FLOOR -> "medium"
+        budget > 0L -> "low"
+        else -> "high"
+    }
+}
+
+// /effort picker budget_tokens -> chat reasoning_effort tier floors
+private const val HIGH_BUDGET_FLOOR = 32_000L
+private const val MEDIUM_BUDGET_FLOOR = 8_000L

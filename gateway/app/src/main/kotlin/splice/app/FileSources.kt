@@ -5,10 +5,12 @@ package splice.app
 import splice.control.CompactView
 import splice.control.HeadCompactSource
 import splice.control.HeadLogSource
+import splice.control.HeadPerfSource
 import splice.control.HeadUsageSource
 import splice.control.RateLimitView
 import splice.core.util.runCatchingCancellable
 import splice.gateway.compact.CompactStats
+import splice.gateway.perf.PerfStats
 import splice.gateway.usage.UsageStore
 import java.nio.file.Files
 import java.nio.file.Path
@@ -27,6 +29,10 @@ public class CompactStatsSource(private val stats: CompactStats) : HeadCompactSo
         val tail = s.tail.map { row -> row.mapValues { (_, v) -> v.toString() } }
         return CompactView(s.total, s.byOutcome, tail)
     }
+}
+
+public class PerfStatsSource(private val stats: PerfStats) : HeadPerfSource {
+    override fun tailNumeric(n: Int): List<Map<String, Long>> = stats.tailNumeric(n)
 }
 
 public class LogFileSource(private val logFile: Path) : HeadLogSource {

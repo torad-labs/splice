@@ -14,10 +14,12 @@ import org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension
 val moduleLaw: Map<String, Set<String>> = mapOf(
     ":core" to emptySet(),
     ":provider-spi" to setOf(":core"),
+    ":dialect-anthropic-passthrough" to setOf(":core", ":provider-spi"),
     ":dialect-openai-responses" to setOf(":core", ":provider-spi"),
     ":dialect-openai-chat" to setOf(":core", ":provider-spi"),
     ":provider-codex" to setOf(":core", ":provider-spi", ":dialect-openai-responses"),
     ":provider-grok" to setOf(":core", ":provider-spi", ":dialect-openai-responses"),
+    ":provider-kimi" to setOf(":core", ":provider-spi", ":dialect-anthropic-passthrough"),
     ":provider-openai" to setOf(":core", ":provider-spi", ":dialect-openai-responses", ":dialect-openai-chat"),
     ":gateway" to setOf(":core", ":provider-spi"),
     ":control" to setOf(":core"),

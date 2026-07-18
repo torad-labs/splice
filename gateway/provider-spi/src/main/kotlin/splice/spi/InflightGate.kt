@@ -22,15 +22,16 @@ public class InflightGate(
     private var inflight = 0
     private val queue = ArrayDeque<Waiter>()
 
-    // A resumable FIFO cell: `id` is a unique tie-break that keeps structural equality identity-safe
-    // for queue.remove(); `resumed` + `continuation` are the mutable coordination state.
-    private data class Waiter(
-        val id: Long,
+    // A resumable FIFO cell. MUST be a plain class: queue.remove() matches by reference IDENTITY,
+    // which is the whole point — a data class gives structural equality over mutable fields, which
+    // is exactly why the prior version bolted on a synthetic `id` to undo it (craft review). So
+    // UseDataClass is a FALSE POSITIVE here (a data class would reintroduce the bug); suppressed
+    // with rationale, never a debt-hiding suppression. `resumed`/`continuation` are coordination.
+    @Suppress("UseDataClass")
+    private class Waiter(
         var resumed: Boolean = false,
         var continuation: CancellableContinuation<Unit>? = null,
     )
-
-    private var nextWaiterId = 0L
 
     public data class Snapshot(val inflight: Int, val queued: Int, val limit: Int)
 
@@ -57,7 +58,7 @@ public class InflightGate(
     }
 
     private suspend fun awaitTurn() {
-        val waiter = Waiter(nextWaiterId++)
+        val waiter = Waiter()
         suspendCancellableCoroutine { cont ->
             synchronized(lock) {
                 // capacity may have appeared between the fast path and here
@@ -74,7 +75,11 @@ public class InflightGate(
                 return@suspendCancellableCoroutine
             }
             cont.invokeOnCancellation {
-                synchronized(lock) { queue.remove(waiter) }
+                // A queued (un-admitted) waiter just leaves the queue. An ADMITTED waiter's
+                // inflight increment is compensated by the tryResume path in release() — the
+                // admission and the hand-off race is decided there, never here (both sides run
+                // under [lock]/tryResume atomicity, so exactly one compensator fires).
+                synchronized(lock) { if (!waiter.resumed) queue.remove(waiter) }
             }
         }
     }
@@ -84,7 +89,15 @@ public class InflightGate(
             inflight -= 1
             drainAdmissibleLocked()
         }
-        toResume.forEach { it.continuation?.resume(Unit) }
+        for (w in toResume) {
+            val cont = w.continuation ?: continue
+            // The admitted permit transfers ONLY if the waiter actually uses the resumption.
+            // A waiter cancelled between admission and delivery would otherwise leak its
+            // inflight slot permanently (each race shrinking the head's capacity by one until
+            // it admits nothing). The onCancellation hook fires exactly in that case — hand
+            // the permit back (the kotlinx Semaphore hand-off pattern).
+            cont.resume(Unit) { _, _, _ -> release() }
+        }
     }
 
     // ported drain loop: skip-resumed + capacity guard

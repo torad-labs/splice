@@ -1,0 +1,17 @@
+# VENDOR-CONTRACT WALL (2026-07-18): NEVER gzip the upstream REQUEST body. xAI 400s on a gzipped
+# body ("Failed to parse the request body as JSON: expected value at line 1 column 1") — it SHIPPED
+# and broke every real-sized grok turn (bodies >=2KiB) until a live smoke turn caught it; small
+# smoke turns passed, which is exactly why mocks missed it. GZIPOutputStream on the request path is
+# the fingerprint (response DEcompression would use GZIPInputStream, which this rule does not touch).
+id: kt-no-request-body-gzip
+language: kotlin
+severity: error
+message: "Never gzip the upstream request body — xAI 400s on it (shipped & broke grok 2026-07-18)."
+note: >
+  Send the body as plain UTF-8 bytes. If a vendor documents accepting Content-Encoding: gzip on
+  requests, gate it per-provider behind a quirk AND prove it with a live >=2KiB turn — never a
+  blanket default. Response decompression (GZIPInputStream) is unaffected by this rule.
+files:
+  - gateway/provider-spi/src/main/**/*.kt
+rule:
+  pattern: GZIPOutputStream($$$ARGS)

@@ -26,12 +26,16 @@ import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.topology.catalogFor
+import splice.core.topology.configOverrides
 import splice.core.turn.WatchdogBudget
 import splice.dialect.chat.ChatQuirks
+import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.withToml
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
+import splice.gateway.perf.PerfStats
 import splice.gateway.usage.UsageStore
 import splice.provider.codex.CodexAuthProvider
 import splice.provider.codex.CodexOAuthEndpoints
@@ -40,6 +44,10 @@ import splice.provider.codex.RefreshedTokens
 import splice.provider.grok.GrokAuthProvider
 import splice.provider.grok.GrokOAuthEndpoints
 import splice.provider.grok.GrokProvider
+import splice.provider.kimi.KimiAuthProvider
+import splice.provider.kimi.KimiDeviceIdentity
+import splice.provider.kimi.KimiOAuthEndpoints
+import splice.provider.kimi.KimiProvider
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.provider.openai.OpenAiChatProvider
 import splice.provider.openai.OpenAiResponsesProvider
@@ -59,7 +67,9 @@ public class Daemon(
     private val log: (String) -> Unit = { System.err.print(it) },
     private val refreshCall: suspend (tokenUrl: String, refreshToken: String) -> RefreshedTokens? = ::codexRefresh,
 ) {
-    private val config = ConfigService(statePaths)
+    // Topology TOML ([daemon] + [defaults]) feeds the headOverrides layer so reasoning
+    // display is operator-editable without recompiling. Env and runtime PATCH still win.
+    private val config = ConfigService(statePaths, headOverrides = topology.configOverrides())
     private val mgmtKey = MgmtKey(statePaths)
 
     // set once in start(); the daemon is not usable before it
@@ -76,20 +86,42 @@ public class Daemon(
         // topology owns the control port (loaded once at start, restart-required); the
         // ConfigService knob is only the hot-knob default when topology omits it. Resolved before
         // the head loop so each head's launch spec can point its statusline at this port.
-        val controlPort = topology.daemon.controlPort.takeIf { it > 0 } ?: cfg.controlPort
+        val controlPort = topology.daemon.controlPort?.takeIf { it > 0 } ?: cfg.controlPort
+        // PER-HEAD BOOT ISOLATION (audit 2026-07-18): one head that fails to assemble (a valid
+        // TOML the builder can't wire, e.g. a not-yet-supported dialect) must NOT abort the whole
+        // daemon with a stack trace to /dev/null. Log the degraded head and serve the rest.
+        val failed = LinkedHashMap<String, String>()
         for ((key, head) in topology.heads) {
-            val providerCfg = topology.providers[head.provider] ?: continue
-            val catalog = providerCfg.catalogFor(head)
-            val ctx = ProviderBuild(key, head, providerCfg, catalog, watchdog, cfg)
-            heads[key] = assembleHead(ctx, controlPort)
+            val providerCfg = topology.providers[head.provider]
+            if (providerCfg == null) {
+                failed[key] = "unknown provider '${head.provider}'"
+                log("[daemon] head '$key' SKIPPED: unknown provider '${head.provider}'\n")
+                continue
+            }
+            runCatching {
+                val catalog = providerCfg.catalogFor(head)
+                val ctx = ProviderBuild(key, head, providerCfg, catalog, watchdog, cfg)
+                assembleHead(ctx, controlPort)
+            }.onSuccess { heads[key] = it }
+                .onFailure {
+                    failed[key] = it.message ?: it.javaClass.simpleName
+                    log("[daemon] head '$key' SKIPPED (build failed): ${it.message}\n")
+                }
         }
         val materializerHome = statePaths.rootDir.parent ?: statePaths.rootDir
         val launchService = LaunchService(ClaudeConfigMaterializer(materializerHome))
         val srv = ControlServer(controlPort, heads, config, mgmtKey, dashboardHtml, log, launchService)
         control = srv
         srv.start()
-        heads.values.forEach { it.head.start() }
-        log("[daemon] up: control :$controlPort, heads ${heads.keys}\n")
+        // Start each head in isolation too — a listen() failure on one port must not sink the others.
+        heads.forEach { (key, m) ->
+            runCatching { m.head.start() }.onFailure {
+                failed[key] = "start failed: ${it.message}"
+                log("[daemon] head '$key' failed to start: ${it.message}\n")
+            }
+        }
+        val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
+        log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
     }
 
     public suspend fun stop() {
@@ -143,10 +175,73 @@ public class Daemon(
                     auth,
                 )
             }
-            // anthropic-passthrough is the P0-XAI fidelity probe path — not built (credential-gated).
-            Dialect.ANTHROPIC_PASSTHROUGH -> error("head $key: anthropic-passthrough dialect not wired")
+            // anthropic-passthrough: kimi (device-oauth, x-api-key) or ANY anthropic-compatible
+            // vendor (api-key Bearer, e.g. Moonshot's pay-per-token https://api.moonshot.ai/anthropic).
+            Dialect.ANTHROPIC_PASSTHROUGH -> passthroughProvider(ctx, label)
         }
     }
+
+    // anthropic-passthrough dispatch: kimi-oauth (device flow, x-api-key, proactive refresh) vs any
+    // other kind (ApiKeyAuthProvider → Bearer, correct for Moonshot's anthropic pay-per-token base).
+    // Both instantiate the SAME KimiProvider — the passthrough dialect and X-Msh-* identity headers
+    // are shared; only the auth differs.
+    private fun passthroughProvider(ctx: ProviderBuild, label: String): Wired {
+        val key = ctx.key
+        val providerCfg = ctx.providerCfg
+        val cfg = ctx.cfg
+        return when (providerCfg.auth.kind) {
+            "kimi-oauth" -> {
+                val authPath = Paths.get(
+                    TopologyLoader.expandHome(providerCfg.auth.file ?: "~/.kimi/credentials/kimi-code.json"),
+                )
+                val identity = KimiDeviceIdentity(deviceIdPath = authPath.resolveSibling("device_id"))
+                val identityHeaders = identity.headers()
+                val tokenUrl = KimiOAuthEndpoints.tokenUrl(System::getenv)
+                val auth = KimiAuthProvider(
+                    authPath = authPath,
+                    authCacheMs = cfg.authCacheMs,
+                    refreshCall = { rt -> kimiRefresh(tokenUrl, rt, identityHeaders) },
+                )
+                Wired(kimiProvider(ctx, label, auth, identity), auth)
+            }
+            else -> {
+                val auth = ApiKeyAuthProvider(
+                    envVar = providerCfg.auth.env ?: "${key.uppercase()}_API_KEY",
+                    keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
+                )
+                val identity = KimiDeviceIdentity(deviceIdPath = statePaths.stateDir.resolve("$key-device_id"))
+                Wired(kimiProvider(ctx, label, auth, identity), auth)
+            }
+        }
+    }
+
+    private fun kimiProvider(
+        ctx: ProviderBuild,
+        label: String,
+        auth: RefreshableAuthProvider,
+        identity: KimiDeviceIdentity,
+    ): Provider = KimiProvider(
+        tuning = ProviderTuning(
+            key = ctx.key,
+            label = label,
+            catalog = ctx.catalog,
+            pinnedModel = ctx.head.pinnedModel,
+            auth = auth,
+            baseUrl = ctx.providerCfg.baseUrl,
+            watchdog = ctx.watchdog,
+        ),
+        identity = identity,
+    )
+
+    /** Overlay the head's TOML [providers.*.quirks] onto a provider's base quirk profile. */
+    // quirks.effortCeiling is intentionally not passed: the effort ladder clamps per provider.
+    private fun ProviderConfig.responsesQuirks(base: ResponsesQuirks): ResponsesQuirks = base.withToml(
+        store = quirks.store,
+        cacheKey = quirks.cacheKey,
+        summaryField = quirks.summaryField,
+        compactEffort = quirks.compactEffort,
+        toolChoice = quirks.toolChoice,
+    )
 
     private fun responsesProvider(ctx: ProviderBuild, label: String): Wired {
         val key = ctx.key
@@ -179,6 +274,7 @@ public class Daemon(
                         replayReasoning = cfg.replayReasoning,
                         configEffort = cfg.effort,
                         configSummary = cfg.summary,
+                        quirks = providerCfg.responsesQuirks(CodexProvider.defaultQuirks()),
                         accountIdHeader = providerCfg.quirks.accountIdHeader,
                     ),
                     auth,
@@ -218,13 +314,15 @@ public class Daemon(
                 showReasoning = cfg.showReasoning,
                 replayReasoning = cfg.replayReasoning,
                 configEffort = cfg.effort,
+                configSummary = cfg.summary,
+                quirks = providerCfg.responsesQuirks(GrokProvider.defaultQuirks()),
             ),
             auth,
         )
     }
 
-    // api-key + responses: grok (session-id cache key, effort-clamped, no summary) vs openai
-    // platform (first-message-hash, summary). The TOML cache_key quirk selects the profile.
+    // api-key + responses: grok (session-id cache key) vs openai platform (first-message-hash).
+    // Reasoning display knobs come from ConfigService (TOML [daemon] / env / state).
     private fun apiKeyResponsesProvider(ctx: ProviderBuild, label: String): Wired {
         val key = ctx.key
         val head = ctx.head
@@ -250,6 +348,8 @@ public class Daemon(
                 showReasoning = cfg.showReasoning,
                 replayReasoning = cfg.replayReasoning,
                 configEffort = cfg.effort,
+                configSummary = cfg.summary,
+                quirks = providerCfg.responsesQuirks(GrokProvider.defaultQuirks()),
             )
         } else {
             OpenAiResponsesProvider(
@@ -266,6 +366,7 @@ public class Daemon(
                 replayReasoning = cfg.replayReasoning,
                 configEffort = cfg.effort,
                 configSummary = cfg.summary,
+                quirks = providerCfg.responsesQuirks(OpenAiResponsesProvider.defaultQuirks()),
             )
         }
         return Wired(provider, auth)
@@ -292,6 +393,7 @@ public class Daemon(
         val label = when (providerCfg.auth.kind) {
             "chatgpt-oauth" -> "Codex (ChatGPT)"
             "grok-oauth" -> "Grok (xAI)"
+            "kimi-oauth" -> "Kimi (Moonshot)"
             else -> ""
         }
         val command = if (label.isEmpty()) "" else "${head.claude.command ?: key} login"
@@ -301,12 +403,11 @@ public class Daemon(
     private fun assembleHead(ctx: ProviderBuild, controlPort: Int): ManagedHead {
         val key = ctx.key
         val head = ctx.head
-        val providerCfg = ctx.providerCfg
-        val catalog = ctx.catalog
         val cfg = ctx.cfg
         val wired = buildProvider(ctx)
         val usageStore = UsageStore(statePaths.usageFile(key), statePaths.ratelimitFile(key))
         val compactStats = CompactStats(statePaths.compactStatsFile(key))
+        val perfStats = PerfStats(statePaths.perfStatsFile(key))
         val logFile = statePaths.logsDir.resolve("$key-${head.port}.log")
         val server = HeadServer(
             provider = wired.provider,
@@ -317,25 +418,9 @@ public class Daemon(
                 shadow = ShadowClassifier(log = log),
                 compactStats = compactStats,
                 usageStore = usageStore,
+                perfStats = perfStats,
                 log = log,
             ),
-        )
-        val configDir = Paths.get(TopologyLoader.expandHome(head.claude.configDir ?: "~/.claude-$key"))
-        val (loginCommand, signInLabel) = loginInterception(providerCfg, head, key)
-        val launchSpec = LaunchSpec(
-            configDir = configDir,
-            pinnedModel = head.pinnedModel,
-            availableModelIds = catalog.availableModelIds(),
-            modelLabels = providerCfg.models.associate { it.id to it.label.ifEmpty { it.id } },
-            contextWindow = catalog.contextWindowFor(head.pinnedModel).toInt(),
-            modelOptionsCache = modelOptionsCache(providerCfg),
-            statuslineCommand = "curl -sS --data-binary @- http://127.0.0.1:$controlPort/statusline/$key",
-            // The installed wrapper (`<command> login`) runs this head's provider sign-in; the
-            // materialized /login command + UserPromptSubmit hook route the user here.
-            loginCommand = loginCommand,
-            signInLabel = signInLabel,
-            policy = ClaudePolicy(share = topology.claude.share.toSet(), isolate = head.claude.isolate.toSet()),
-            port = head.port,
         )
         return ManagedHead(
             head = server,
@@ -345,8 +430,32 @@ public class Daemon(
             logs = LogFileSource(logFile),
             warnPct = cfg.usageWarnPct,
             warnTokens5h = cfg.usageWarnTokens5h,
-            authKind = providerCfg.auth.kind,
-            launchSpec = launchSpec,
+            authKind = ctx.providerCfg.auth.kind,
+            launchSpec = launchSpecFor(ctx, controlPort),
+            perf = PerfStatsSource(perfStats),
+        )
+    }
+
+    private fun launchSpecFor(ctx: ProviderBuild, controlPort: Int): LaunchSpec {
+        val key = ctx.key
+        val head = ctx.head
+        val providerCfg = ctx.providerCfg
+        val configDir = Paths.get(TopologyLoader.expandHome(head.claude.configDir ?: "~/.claude-$key"))
+        val (loginCommand, signInLabel) = loginInterception(providerCfg, head, key)
+        return LaunchSpec(
+            configDir = configDir,
+            pinnedModel = head.pinnedModel,
+            availableModelIds = ctx.catalog.availableModelIds(),
+            modelLabels = providerCfg.models.associate { it.id to it.label.ifEmpty { it.id } },
+            contextWindow = ctx.catalog.contextWindowFor(head.pinnedModel).toInt(),
+            modelOptionsCache = modelOptionsCache(providerCfg),
+            statuslineCommand = "curl -sS --data-binary @- http://127.0.0.1:$controlPort/statusline/$key",
+            // The installed wrapper (`<command> login`) runs this head's provider sign-in; the
+            // materialized /login command + UserPromptSubmit hook route the user here.
+            loginCommand = loginCommand,
+            signInLabel = signInLabel,
+            policy = ClaudePolicy(share = topology.claude.share.toSet(), isolate = head.claude.isolate.toSet()),
+            port = head.port,
         )
     }
 

@@ -17,7 +17,7 @@ import splice.spi.Provider
 import splice.spi.ProviderIdentity
 import splice.spi.ProviderTuning
 import splice.spi.StreamTranslator
-import splice.spi.WatchdogFired
+import splice.spi.TurnSignals
 
 public class OpenAiChatProvider(
     private val tuning: ProviderTuning,
@@ -36,11 +36,11 @@ public class OpenAiChatProvider(
         return BuiltTurn(built.req, built.meta)
     }
 
-    override fun streamTranslator(meta: TurnMeta, watchdogFired: () -> WatchdogFired?): StreamTranslator =
+    override fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator =
         ChatStreamTranslator(
             ChatTurnContext(
-                clientGone = { false },
-                watchdogFired = watchdogFired,
+                clientGone = signals.clientGone,
+                watchdogFired = signals.watchdogFired,
                 idleCapMs = watchdog.streamIdle.inWholeMilliseconds,
                 totalCapMs = watchdog.totalCap.inWholeMilliseconds,
             ),

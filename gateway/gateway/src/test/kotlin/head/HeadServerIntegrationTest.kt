@@ -32,6 +32,7 @@ import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
+import splice.gateway.perf.PerfStats
 import splice.gateway.usage.UsageStore
 import splice.provider.codex.CodexProvider
 import splice.spi.InflightGate
@@ -54,6 +55,7 @@ class HeadServerIntegrationTest {
     private val port = 39240
     private lateinit var head: HeadServer
     private val logs = mutableListOf<String>()
+    private lateinit var tmp: java.nio.file.Path
 
     private val catalog = ModelCatalog(
         discoveryPrefix = "claude-codex--",
@@ -67,7 +69,7 @@ class HeadServerIntegrationTest {
 
     @BeforeAll
     fun setUp() = runTest {
-        val tmp = Files.createTempDirectory("head-it")
+        tmp = Files.createTempDirectory("head-it")
         val provider = CodexProvider(
             tuning = ProviderTuning(
                 key = "codex",
@@ -92,6 +94,7 @@ class HeadServerIntegrationTest {
                 shadow = ShadowClassifier(log = { logs.add(it) }),
                 compactStats = CompactStats(tmp.resolve("compact.jsonl")),
                 usageStore = UsageStore(tmp.resolve("usage.json"), tmp.resolve("ratelimit.json")),
+                perfStats = PerfStats(tmp.resolve("perf.jsonl")),
                 log = { logs.add(it) },
             ),
         )
@@ -142,6 +145,24 @@ class HeadServerIntegrationTest {
         assertTrue(sse.contains("ok after auth"))
         assertTrue(sse.contains("\"stop_reason\":\"end_turn\""))
         assertTrue(sse.trimEnd().endsWith("event: message_stop\ndata: {\"type\":\"message_stop\"}"))
+    }
+
+    @Test
+    fun `turn records perf telemetry - log line and JSONL row with pipeline marks`() = runTest {
+        messages("basic")
+        val perfLine = logs.lastOrNull { it.contains("] perf outcome=ok") }
+        assertTrue(perfLine != null, "expected a perf line in the log, got: $logs")
+        val expectedFields = listOf(
+            "recv=", "parse=", "build=", "gate=", "headers=", "first_byte=",
+            "first_frame=", "first_delta=", "stream_end=", "finish=", "total=",
+        )
+        for (field in expectedFields) {
+            assertTrue(perfLine!!.contains(field), "perf line missing $field: $perfLine")
+        }
+        val rows = Files.readString(tmp.resolve("perf.jsonl")).trim().lines()
+        assertTrue(rows.isNotEmpty(), "expected at least one perf JSONL row")
+        val last = rows.last()
+        assertTrue(last.contains("\"outcome\":\"ok\"") && last.contains("\"total\":"), "bad row: $last")
     }
 
     @Test

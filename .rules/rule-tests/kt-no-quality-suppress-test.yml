@@ -1,0 +1,8 @@
+id: kt-no-quality-suppress
+valid:
+  - 'val x = listOf("TooManyFunctions")'
+  - '@Suppress("UNCHECKED_CAST") val y = z as Map<String, String>'
+invalid:
+  - '@Suppress("TooManyFunctions") class HeadServer'
+  - '@Suppress("LongMethod") fun drive() {}'
+  - '@Suppress("TooGenericExceptionCaught") fun f() {}'

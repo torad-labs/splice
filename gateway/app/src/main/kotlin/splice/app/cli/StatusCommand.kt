@@ -20,7 +20,7 @@ private val ansi = Regex("\\u001B\\[[0-9;]*m")
 
 internal fun status() {
     val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath())
-    val port = topology.daemon.controlPort.takeIf { it > 0 } ?: DEFAULT_PORT
+    val port = topology.daemon.controlPort?.takeIf { it > 0 } ?: DEFAULT_PORT
     val up = AdminSupport.daemonUp(port)
 
     println("${BOLD}splice$RESET $DIM— Claude Code, wrapped$RESET")

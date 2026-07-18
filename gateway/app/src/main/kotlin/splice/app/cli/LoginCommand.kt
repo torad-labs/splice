@@ -7,9 +7,12 @@ package splice.app.cli
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import splice.app.DeviceLoginFlow
+import splice.app.DeviceLoginSpec
 import splice.app.LoginSpec
 import splice.app.OAuthLoginFlow
 import splice.app.TopologyLoader
+import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.provider.codex.CodexOAuthEndpoints
 import splice.provider.codex.authJsonFromTokens
@@ -21,6 +24,9 @@ import splice.provider.grok.buildGrokAuthorizeUrl
 import splice.provider.grok.grokAuthJsonFromTokenResponse
 import splice.provider.grok.grokCodeExchangeForm
 import splice.provider.grok.makeGrokPkce
+import splice.provider.kimi.KimiDeviceIdentity
+import splice.provider.kimi.KimiOAuthEndpoints
+import splice.provider.kimi.kimiAuthJsonFromTokenResponse
 import java.nio.file.Paths
 import java.security.SecureRandom
 import java.time.Instant
@@ -32,11 +38,22 @@ private val env: (String) -> String? = System::getenv
 internal suspend fun login(headArg: String?): Boolean {
     val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath())
     val headKey = resolveHeadKey(headArg, topology) ?: return false
-    val spec = specFor(headKey, topology) ?: return false
-    val ok = OAuthLoginFlow.run(spec)
+    val provider = topology.heads[headKey]?.let { topology.providers[it.provider] }
+    if (provider == null) {
+        println("splice: unknown head '$headKey' (heads: ${topology.heads.keys})")
+        return false
+    }
+    val ok = runLoginFlow(headKey, provider, topology)
     if (!ok) println("splice: login for '$headKey' did not complete.")
     return ok
 }
+
+// kimi uses the RFC 8628 device flow (no loopback); codex/grok use the browser-loopback flow.
+private suspend fun runLoginFlow(headKey: String, provider: ProviderConfig, topology: Topology): Boolean =
+    when (provider.auth.kind) {
+        "kimi-oauth" -> DeviceLoginFlow.run(kimiDeviceSpec(headKey, provider))
+        else -> specFor(headKey, topology)?.let { OAuthLoginFlow.run(it) } ?: false
+    }
 
 private fun resolveHeadKey(headArg: String?, topology: Topology): String? {
     // No arg: pick the sole browser-login head, else make the user choose — never silently
@@ -137,6 +154,20 @@ private fun grokSpec(head: String): LoginSpec {
                 nowIso = Instant.now().toString(),
             ).toString()
         },
+    )
+}
+
+private fun kimiDeviceSpec(head: String, provider: ProviderConfig): DeviceLoginSpec {
+    val authPath = Paths.get(TopologyLoader.expandHome(provider.auth.file ?: "~/.kimi/credentials/kimi-code.json"))
+    val identity = KimiDeviceIdentity(deviceIdPath = authPath.resolveSibling("device_id"))
+    return DeviceLoginSpec(
+        head = head,
+        clientId = KimiOAuthEndpoints.CLIENT_ID,
+        deviceAuthUrl = KimiOAuthEndpoints.deviceAuthorizationUrl(env),
+        tokenUrl = KimiOAuthEndpoints.tokenUrl(env),
+        authPath = authPath,
+        identityHeaders = identity.headers(),
+        toAuthJson = { body -> kimiAuthJsonFromTokenResponse(body, System.currentTimeMillis()).toString() },
     )
 }
 

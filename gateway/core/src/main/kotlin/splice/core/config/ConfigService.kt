@@ -27,6 +27,10 @@ public class ConfigService(
     private val envReader: (String) -> String? = System::getenv,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+
+    // PATCH mutates on control-plane threads while every request thread merges — guard every
+    // touch with [runtimeLock] and hand out COPIES only (audit 2026-07-18: CME risk + torn reads).
+    private val runtimeLock = Any()
     private val runtimeLayer = LinkedHashMap<String, Any?>()
 
     @Volatile
@@ -39,7 +43,7 @@ public class ConfigService(
         headOverrides = coerceAll(headOverrides),
         file = fileLayer(),
         env = envLayer(),
-        runtime = runtimeLayer.toMap(),
+        runtime = synchronized(runtimeLock) { runtimeLayer.toMap() },
     )
 
     // The guard cascade is the literal port of config.mjs's patch loop (each `when` arm is one of
@@ -53,7 +57,7 @@ public class ConfigService(
                 knob == null -> rejected[key] = "unknown key"
                 raw == null -> {
                     applied[key] = null
-                    runtimeLayer.remove(key)
+                    synchronized(runtimeLock) { runtimeLayer.remove(key) }
                 }
                 else -> {
                     val coerced = coerce(knob, raw)
@@ -61,7 +65,7 @@ public class ConfigService(
                         rejected[key] = "invalid value"
                     } else {
                         applied[key] = coerced
-                        runtimeLayer[key] = coerced
+                        synchronized(runtimeLock) { runtimeLayer[key] = coerced }
                     }
                 }
             }
@@ -72,7 +76,7 @@ public class ConfigService(
     }
 
     public fun resetRuntimeForTests() {
-        runtimeLayer.clear()
+        synchronized(runtimeLock) { runtimeLayer.clear() }
         fileCache = null
     }
 
@@ -82,7 +86,7 @@ public class ConfigService(
         coerceAll(headOverrides).forEach { (k, v) -> merged[k] = v }
         fileLayer().forEach { (k, v) -> merged[k] = v }
         envLayer().forEach { (k, v) -> merged[k] = v }
-        runtimeLayer.forEach { (k, v) -> merged[k] = v }
+        synchronized(runtimeLock) { runtimeLayer.forEach { (k, v) -> merged[k] = v } }
         return merged
     }
 
@@ -175,6 +179,15 @@ public class ConfigService(
         out[Knob.STREAM_IDLE_MS.key] = clampLong(out, Knob.STREAM_IDLE_MS, floor = idleFloor)
         out[Knob.AUTH_CACHE_MS.key] = clampLong(out, Knob.AUTH_CACHE_MS, floor = MIN_AUTH_CACHE_MS)
         out[Knob.SHOW_REASONING.key] = normalizeShowReasoning(str(out, Knob.SHOW_REASONING))
+        // Summary is operator-controlled (TOML [daemon].summary / env / state). Empty/absent
+        // falls through to Knob.SUMMARY default ("detailed"). Do not rewrite concise/auto —
+        // the operator may want a thinner public form.
+        val summaryRaw = str(out, Knob.SUMMARY)?.trim()?.lowercase().orEmpty()
+        if (summaryRaw.isEmpty()) {
+            out[Knob.SUMMARY.key] = Knob.SUMMARY.default
+        } else {
+            out[Knob.SUMMARY.key] = summaryRaw
+        }
         out[Knob.CONTEXT_WINDOW_OVERRIDE.key] = positiveLong(out, Knob.CONTEXT_WINDOW_OVERRIDE)
         out[Knob.USAGE_WARN_PCT.key] = (num(out, Knob.USAGE_WARN_PCT) ?: 0L).coerceIn(0L, 100L)
         out[Knob.USAGE_WARN_TOKENS_5H.key] = clampLong(out, Knob.USAGE_WARN_TOKENS_5H, floor = 0L)

@@ -23,9 +23,9 @@ class ExampleConfigTest {
     }
 
     @Test
-    fun `example topology parses into the three documented heads`() {
+    fun `example topology parses into the documented heads`() {
         val topology = TopologyLoader.parse(exampleToml())
-        assertEquals(setOf("claudex", "claude-grok", "openrouter"), topology.heads.keys)
+        assertEquals(setOf("claudex", "claude-grok", "openrouter", "claude-kimi"), topology.heads.keys)
         assertEquals(3096, topology.daemon.controlPort)
 
         val codex = topology.providers[topology.heads["claudex"]!!.provider]!!
@@ -40,6 +40,11 @@ class ExampleConfigTest {
         val openrouter = topology.providers[topology.heads["openrouter"]!!.provider]!!
         assertEquals(Dialect.OPENAI_CHAT, openrouter.dialect)
         assertEquals("api-key", openrouter.auth.kind)
+
+        val kimi = topology.providers[topology.heads["claude-kimi"]!!.provider]!!
+        assertEquals(Dialect.ANTHROPIC_PASSTHROUGH, kimi.dialect)
+        assertEquals("kimi-oauth", kimi.auth.kind)
+        assertEquals("k3[1m]", topology.heads["claude-kimi"]!!.pinnedModel)
 
         // the isolate override survives the round-trip
         assertTrue(topology.heads["claude-grok"]!!.claude.isolate.contains("commands"))

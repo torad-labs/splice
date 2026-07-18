@@ -73,16 +73,16 @@ public fun buildUsagePayload(usage: TurnUsage, contextWindow: Long?): JsonObject
     }
 }
 
-/** One concise line per completed turn so the cache hit rate is watchable live. */
+/** One concise line per completed turn so the cache hit rate is watchable live. Parses via the
+ *  SAME [TurnUsage.from] the payload uses — a second inline parser here had drifted to the OPPOSITE
+ *  cached-token precedence, so the logged hit-rate could disagree with the wire (craft review). */
 public fun cacheLogLine(headTag: String, model: String, usage: JsonObject?, compact: Boolean): String {
-    val u = usage ?: JsonObject(emptyMap())
-    val input = u.firstNum("input_tokens", "prompt_tokens") ?: 0
-    val cached = (u["input_tokens_details"] as? JsonObject)?.let { num(it["cached_tokens"]) }
-        ?: num(u["cache_read_input_tokens"]) ?: 0
-    val output = u.firstNum(OUTPUT_TOKENS, "completion_tokens") ?: 0
-    val pct = if (input > 0) (cached.toDouble() / input * FULL_PCT).toInt() else 0
+    val u = TurnUsage.from(usage)
+    val cached = u.cacheReadInputTokens
+    val pct = if (u.inputTokens > 0) (cached.toDouble() / u.inputTokens * FULL_PCT).toInt() else 0
     val compactSuffix = if (compact) " compact" else ""
-    return "[$headTag] cache: input=$input cached=$cached hit=$pct% output=$output$compactSuffix model=$model\n"
+    return "[$headTag] cache: input=${u.inputTokens} cached=$cached hit=$pct% " +
+        "output=${u.outputTokens}$compactSuffix model=$model\n"
 }
 
 /** Clamp REPORTED output_tokens to the client's max_tokens (v26). */
@@ -119,23 +119,29 @@ public class UsageStore(
     private val json = Json { ignoreUnknownKeys = true }
 
     // best-effort by design: I/O failure leaves the last-known window untouched; cancellation
-    // still propagates via runCatchingCancellable.
+    // still propagates via runCatchingCancellable. In-memory ring keeps the 5h window so a
+    // busy head does not rewrite+reparse the whole JSON array on every completed turn. ALL ring
+    // mutation/iteration happens under ringLock (append vs statusline reads raced a CME and
+    // dropped counts — audit 2026-07-18); the file write happens OUTSIDE the lock from an
+    // immutable snapshot so slow disks never block the statusline tick.
     public fun appendOutputTokens(outputTokens: Long) {
         if (outputTokens <= 0) return
         runCatchingCancellable {
             Files.createDirectories(usageFile.parent)
-            val cutoff = clock() - FIVE_HOURS_MS
-            val kept = readEntries().filter { (num(it["timestamp"]) ?: 0) > cutoff }
-            val next = buildJsonArray {
-                kept.forEach { add(it) }
-                add(
+            val now = clock()
+            val snapshot = synchronized(ringLock) {
+                val ring = loadRingUnderLock(now - FIVE_HOURS_MS)
+                ring.addLast(
                     buildJsonObject {
-                        put("timestamp", clock())
+                        put("timestamp", now)
                         put(OUTPUT_TOKENS, outputTokens)
                     },
                 )
+                // Cap ring growth even if the clock stalls (defensive).
+                while (ring.size > MAX_RING_ENTRIES) ring.removeFirst()
+                ring.toList()
             }
-            Files.writeString(usageFile, next.toString())
+            Files.writeString(usageFile, buildJsonArray { snapshot.forEach { add(it) } }.toString())
         }
     }
 
@@ -161,11 +167,14 @@ public class UsageStore(
 
     public fun readState(): UsageState {
         val cutoff = clock() - FIVE_HOURS_MS
-        val window = readEntries().filter { (num(it["timestamp"]) ?: 0) > cutoff }
+        val (entries, tokens) = synchronized(ringLock) {
+            val ring = loadRingUnderLock(cutoff)
+            ring.size to ring.sumOf { num(it[OUTPUT_TOKENS]) ?: 0 }
+        }
         return UsageState(
             windowHours = 5,
-            entries = window.size,
-            outputTokens5h = window.sumOf { num(it[OUTPUT_TOKENS]) ?: 0 },
+            entries = entries,
+            outputTokens5h = tokens,
             ratelimit = readRateLimit(),
         )
     }
@@ -185,12 +194,50 @@ public class UsageStore(
         }
     }.getOrNull()
 
+    /**
+     * Return the live 5h ring, loading from disk only on first use (or after a process restart).
+     * Entries older than [cutoff] are dropped. CALLERS HOLD [ringLock] — the deque itself must
+     * never escape the lock (mutation + iteration outside it was the audit's CME finding).
+     */
+    private fun loadRingUnderLock(cutoff: Long): ArrayDeque<JsonObject> {
+        if (!ringLoaded) {
+            cachedRing.clear()
+            cachedRing.addAll(readEntriesFromDisk())
+            ringLoaded = true
+        }
+        while (cachedRing.isNotEmpty() && (num(cachedRing.first()["timestamp"]) ?: 0) <= cutoff) {
+            cachedRing.removeFirst()
+        }
+        return cachedRing
+    }
+
     // best-effort by design: a missing/corrupt usage file reads as empty; cancellation propagates.
-    private fun readEntries(): List<JsonObject> = runCatchingCancellable {
+    // The file is a JSON array rewritten on every append (not JSONL). Growth is bounded by the
+    // 5h window filter + MAX_RING_ENTRIES; oversize files are treated as empty.
+    private fun readEntriesFromDisk(): List<JsonObject> = runCatchingCancellable {
         if (!Files.exists(usageFile)) {
             emptyList()
         } else {
-            json.parseToJsonElement(Files.readString(usageFile)).jsonArray.mapNotNull { it as? JsonObject }
+            val size = Files.size(usageFile)
+            if (size > MAX_USAGE_FILE_BYTES) {
+                emptyList()
+            } else {
+                json.parseToJsonElement(Files.readString(usageFile)).jsonArray.mapNotNull { it as? JsonObject }
+            }
         }
     }.getOrDefault(emptyList())
+
+    private val ringLock = Any()
+    private val cachedRing = ArrayDeque<JsonObject>()
+    private var ringLoaded = false
+
+    private companion object {
+        // MUST comfortably exceed MAX_RING_ENTRIES x ~50 bytes/row — at 2MB the reader treated a
+        // legitimately capped ring file (~2.25MB) as corrupt and DROPPED the whole live window on
+        // restart (audit 2026-07-18). 8MB keeps the corrupt-file guard with real headroom.
+        const val MAX_USAGE_FILE_BYTES = 8L * 1024 * 1024
+
+        // ~1 entry/sec for 5h would be 18k; 50k is a hard safety cap against clock stalls.
+        const val MAX_RING_ENTRIES = 50_000
+    }
 }

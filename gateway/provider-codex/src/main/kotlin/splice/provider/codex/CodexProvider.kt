@@ -1,69 +1,23 @@
-// NEW: the codex Provider — wires the shared openai-responses dialect (builder + stream
-// translator) with codex quirks (chatgpt-oauth, account_id header, first-message-hash cache key,
-// max effort ceiling, summary supported, spark drops summary) and the reasoning-envelope codec.
-// This is the concrete impl the module law keeps out of :gateway; :app instantiates it.
+// NEW: the codex Provider — the shared openai-responses base (ResponsesProvider) with codex quirks
+// (chatgpt-oauth, account_id header, first-message-hash cache key, max effort ceiling, summary
+// supported, spark drops summary). The reasoning-policy wiring lives in the base; this class adds
+// ONLY the ChatGPT-Account-ID header and the codex quirk profile.
 package splice.provider.codex
 
 import splice.core.auth.Credentials
-import splice.core.parse.AnthropicTurnBody
-import splice.core.turn.TurnMeta
-import splice.dialect.responses.BuildOptions
+import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
-import splice.dialect.responses.ResponsesRequestBuilder
-import splice.dialect.responses.ResponsesStreamTranslator
-import splice.dialect.responses.StreamTurnContext
-import splice.spi.BuiltTurn
-import splice.spi.Provider
-import splice.spi.ProviderIdentity
 import splice.spi.ProviderTuning
-import splice.spi.StreamTranslator
-import splice.spi.WatchdogFired
 
 public class CodexProvider(
-    private val tuning: ProviderTuning,
-    override val showReasoning: String,
-    override val replayReasoning: Boolean,
-    private val configEffort: String?,
-    private val configSummary: String?,
-    private val quirks: ResponsesQuirks = ResponsesQuirks(providerTag = "claudex"),
+    tuning: ProviderTuning,
+    showReasoning: String,
+    replayReasoning: Boolean,
+    configEffort: String?,
+    configSummary: String?,
+    quirks: ResponsesQuirks = defaultQuirks(),
     private val accountIdHeader: Boolean = true,
-) : Provider, ProviderIdentity by tuning {
-
-    override val upstreamUrl: String = "${tuning.baseUrl}/responses"
-    private val builder = ResponsesRequestBuilder(quirks)
-
-    override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
-        val upstreamModel = catalog.stripSuffixes(body.typed.model)
-        val built = builder.build(
-            body.typed,
-            body.raw,
-            BuildOptions(
-                compact = compact,
-                originalModel = body.typed.model,
-                upstreamModel = upstreamModel,
-                configEffort = configEffort,
-                configSummary = configSummary,
-                showReasoning = showReasoning,
-                replayReasoning = replayReasoning,
-                sessionId = sessionId,
-                decodeReasoningEnvelope = { splice.core.reasoning.decodeReasoningEnvelope(it) },
-            ),
-        )
-        return BuiltTurn(built.req, built.meta)
-    }
-
-    override fun streamTranslator(meta: TurnMeta, watchdogFired: () -> WatchdogFired?): StreamTranslator =
-        ResponsesStreamTranslator(
-            StreamTurnContext(
-                compact = meta.compact,
-                replayReasoning = replayReasoning,
-                encodeReasoningEnvelope = { splice.core.reasoning.encodeReasoningEnvelope(it) },
-                clientGone = { false },
-                watchdogFired = watchdogFired,
-                streamIdleMsForMessage = watchdog.streamIdle.inWholeMilliseconds,
-                upstreamTimeoutMsForMessage = watchdog.totalCap.inWholeMilliseconds,
-            ),
-        )
+) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks) {
 
     override fun extraHeaders(creds: Credentials): Map<String, String> = buildMap {
         put("Accept", "text/event-stream")
@@ -71,5 +25,10 @@ public class CodexProvider(
         if (accountIdHeader && accountId != null) {
             put("ChatGPT-Account-ID", accountId)
         }
+    }
+
+    public companion object {
+        /** The codex quirk profile — injectable so the TOML [providers.*.quirks] table is REAL. */
+        public fun defaultQuirks(): ResponsesQuirks = ResponsesQuirks(providerTag = "claudex")
     }
 }

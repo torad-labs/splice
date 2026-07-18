@@ -8,9 +8,9 @@ package splice.spi
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import splice.core.turn.ErrorType
 import splice.core.util.runCatchingCancellable
+import splice.core.util.str
 
 public data class ClassifiedFailure(val type: ErrorType, val message: String)
 
@@ -54,11 +54,11 @@ public object UpstreamFailureClassifier {
         val parsed = runCatchingCancellable {
             val j = lenient.parseToJsonElement(raw).jsonObject
             val err = j["error"]?.jsonObject
-            message = err?.get("message")?.jsonPrimitive?.content
-                ?: j["message"]?.jsonPrimitive?.content
+            message = err?.str("message")
+                ?: j.str("message")
                 ?: raw
-            code = err?.get("type")?.jsonPrimitive?.content
-                ?: err?.get("code")?.jsonPrimitive?.content
+            code = err?.str("type")
+                ?: err?.str("code")
                 ?: ""
         }
         if (parsed.isFailure && gatewayHtmlRe.containsMatchIn(message)) {

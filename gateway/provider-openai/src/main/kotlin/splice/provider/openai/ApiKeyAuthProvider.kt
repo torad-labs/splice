@@ -5,11 +5,11 @@ package splice.provider.openai
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.runCatchingCancellable
+import splice.core.util.str
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -47,7 +47,7 @@ public class ApiKeyAuthProvider(
             if (!Files.exists(file)) return@runCatchingCancellable null
             val text = Files.readString(file).trim()
             if (text.startsWith("{")) {
-                json.parseToJsonElement(text).jsonObject["api_key"]?.jsonPrimitive?.content
+                json.parseToJsonElement(text).jsonObject.str("api_key")
             } else {
                 text.takeIf { it.isNotEmpty() }
             }

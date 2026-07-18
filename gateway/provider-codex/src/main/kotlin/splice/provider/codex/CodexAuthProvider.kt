@@ -78,24 +78,36 @@ public class CodexAuthProvider(
 
     // Sealed per-mode outcome (discipline L3): a dead refresh token, a transport blip, and a
     // corrupt file are DIFFERENT stories; credentialsOrNull is the single logging flatten.
+    // Staged (read → exchange → persist), each stage owning its own failure branches.
     private suspend fun doRefresh(): RefreshOutcome {
         if (!Files.exists(authPath)) return RefreshOutcome.NoCredentialsFile
         val raw = runCatchingCancellable {
             json.parseToJsonElement(Files.readString(authPath)).jsonObject
         }.getOrElse { return RefreshOutcome.ReadFailed(it) }
-        val tokens = raw[FIELD_TOKENS] as? JsonObject ?: return RefreshOutcome.NoRefreshToken
-        return refreshAndPersist(raw, tokens)
+        val tokens = raw[FIELD_TOKENS] as? JsonObject
+        return if (tokens == null) RefreshOutcome.NoRefreshToken else exchangeRefreshToken(raw, tokens)
     }
 
-    private suspend fun refreshAndPersist(raw: JsonObject, tokens: JsonObject): RefreshOutcome {
+    private suspend fun exchangeRefreshToken(raw: JsonObject, tokens: JsonObject): RefreshOutcome {
         val refreshToken = tokens.str(FIELD_REFRESH_TOKEN) ?: return RefreshOutcome.NoRefreshToken
         // Guard the network hop too (Node wrapped the whole read+fetch): a thrown hop must degrade
         // to a typed outcome (→ UpstreamFailed → re-prompt), not blow through SingleFlight uncaught.
         val fresh = runCatchingCancellable { refreshCall(refreshToken) }
             .getOrElse { return RefreshOutcome.TransportFailed(it) }
-            ?: return RefreshOutcome.Rejected("token endpoint returned no tokens")
-        val access = fresh.accessToken
-            ?: return RefreshOutcome.Rejected("refresh response missing access_token")
+        val access = fresh?.accessToken
+        return when {
+            fresh == null -> RefreshOutcome.Rejected("token endpoint returned no tokens")
+            access == null -> RefreshOutcome.Rejected("refresh response missing access_token")
+            else -> persistRotation(raw, tokens, fresh, access)
+        }
+    }
+
+    private fun persistRotation(
+        raw: JsonObject,
+        tokens: JsonObject,
+        fresh: RefreshedTokens,
+        access: String,
+    ): RefreshOutcome {
         writeSecure(authPath, mergedAuthJson(raw, tokens, fresh, access).toString())
         invalidateCache()
         return readCached()?.let { RefreshOutcome.Refreshed(it) }

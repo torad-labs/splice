@@ -6,8 +6,6 @@
 // (first block/terminal), followed by ping. Frames are `event: X\ndata: {json}\n\n` exactly —
 // the golden differential diffs bytes. The non-stream terminal message builder lives HERE for
 // the same reason (its stop_reason literal). Ended-idempotence guards double terminals.
-@file:Suppress("StringLiteralDuplication") // a wire emitter IS its literals; extraction would hurt frame readability
-
 package splice.gateway.wire
 
 import kotlinx.serialization.json.JsonObject
@@ -25,6 +23,17 @@ import java.util.concurrent.atomic.AtomicBoolean
 /** Builds the (non-standard) usage payload Claude Code reads from gateways — injected so the
  *  emitter stays hud-agnostic; the real builder lands with the usage port (P3-USE). */
 public typealias UsagePayloadBuilder = (Usage?) -> JsonObject
+
+/** The fields of the non-stream terminal message envelope, grouped so its builder
+ *  ([SseEmitter.terminalMessageJson]) keeps a single cohesive argument (L3 wire mirror). */
+public data class TerminalMessage(
+    val id: String,
+    val model: String,
+    val content: List<JsonObject>,
+    val hasToolUse: Boolean,
+    val incomplete: Boolean,
+    val usagePayload: JsonObject,
+)
 
 public class SseEmitter internal constructor(
     private val write: suspend (String) -> Unit,
@@ -52,9 +61,9 @@ public class SseEmitter internal constructor(
             "message_start",
             buildJsonObject {
                 put(TYPE, "message_start")
-                putJsonObject("message") {
+                putJsonObject(MESSAGE) {
                     put("id", messageId)
-                    put(TYPE, "message")
+                    put(TYPE, MESSAGE)
                     put("role", "assistant")
                     putJsonArray("content") {}
                     put("model", model)
@@ -224,7 +233,7 @@ public class SseEmitter internal constructor(
                 put(TYPE, "error")
                 putJsonObject("error") {
                     put(TYPE, type.wireName)
-                    put("message", message)
+                    put(MESSAGE, message)
                 }
             },
         )
@@ -237,6 +246,7 @@ public class SseEmitter internal constructor(
 
     public companion object {
         private const val TYPE = "type"
+        private const val MESSAGE = "message"
 
         public fun create(
             write: suspend (String) -> Unit,
@@ -246,24 +256,17 @@ public class SseEmitter internal constructor(
         ): SseEmitter = SseEmitter(write, model, usagePayload, messageId)
 
         /** Non-stream terminal message (translateResponse envelope) — built HERE because the
-         *  stop_reason derivation and its literals are walled to this file (L3). */
-        @Suppress("LongParameterList") // wire envelope mirror — all fields are the contract
-        public fun terminalMessageJson(
-            id: String,
-            model: String,
-            content: List<JsonObject>,
-            hasToolUse: Boolean,
-            incomplete: Boolean,
-            usagePayload: JsonObject,
-        ): JsonObject = buildJsonObject {
-            put("id", id)
-            put(TYPE, "message")
+         *  stop_reason derivation and its literals are walled to this file (L3). The envelope
+         *  fields are grouped into [TerminalMessage] so the builder stays a single L3 argument. */
+        public fun terminalMessageJson(msg: TerminalMessage): JsonObject = buildJsonObject {
+            put("id", msg.id)
+            put(TYPE, MESSAGE)
             put("role", "assistant")
-            put("content", buildJsonArray { content.forEach { add(it) } })
-            put("model", model)
-            put("stop_reason", deriveStopReason(hasToolUse, incomplete))
+            put("content", buildJsonArray { msg.content.forEach { add(it) } })
+            put("model", msg.model)
+            put("stop_reason", deriveStopReason(msg.hasToolUse, msg.incomplete))
             put("stop_sequence", null as String?)
-            put("usage", usagePayload)
+            put("usage", msg.usagePayload)
         }
 
         private fun deriveStopReason(hasToolUse: Boolean, incomplete: Boolean): String = when {

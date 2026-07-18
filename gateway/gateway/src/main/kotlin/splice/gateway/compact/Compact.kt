@@ -11,22 +11,24 @@ package splice.gateway.compact
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import splice.core.util.runCatchingCancellable
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.TextBlock
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.CancellationException
+import java.nio.file.StandardOpenOption
 
 /** Primary summarizer marker (kept for the canary test + shadow key). */
 public const val COMPACT_MARKER: String = "tasked with summarizing conversations"
 
 /** Every verbatim summarizer instruction Claude Code 2.1.207 emits (binary-traced).
- *  On drift: add the new verbatim sentence here + a fixture. */
-@Suppress("TopLevelPropertyNaming") // ported constant list — SCREAMING_CASE is the contract name
-public val COMPACT_MARKERS: List<String> = listOf(
+ *  On drift: add the new verbatim sentence here + a fixture. The values are the ported contract;
+ *  the identifier is camelCase per Kotlin convention (only the singular `const` stays UPPER_SNAKE). */
+public val compactMarkers: List<String> = listOf(
     "tasked with summarizing conversations",
     "your task is to create a detailed summary of this conversation",
     "your task is to create a detailed summary of the conversation",
@@ -54,7 +56,7 @@ public fun lastUserTextOf(body: AnthropicRequest): String {
 /** Marker in the system prompt OR the LAST user message — never the whole transcript. */
 public fun markerPresent(body: AnthropicRequest): Boolean {
     val hay = (systemText(body) + "\n" + lastUserTextOf(body)).lowercase()
-    return COMPACT_MARKERS.any { hay.contains(it) }
+    return compactMarkers.any { hay.contains(it) }
 }
 
 /** Detect Claude Code's /compact summarization call (auto + manual). Positive marker only. */
@@ -121,9 +123,10 @@ public class CompactStats(private val file: Path, private val clock: () -> Long 
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException") // append is best-effort by design
+    // append is best-effort by design: I/O failure must not kill the turn (runCatchingCancellable
+    // captures IOException etc. yet still lets coroutine cancellation propagate).
     public fun record(fields: Map<String, Any?>) {
-        try {
+        runCatchingCancellable {
             Files.createDirectories(file.parent)
             val row = buildJsonObject {
                 put("ts", clock())
@@ -140,32 +143,23 @@ public class CompactStats(private val file: Path, private val clock: () -> Long 
             Files.writeString(
                 file,
                 row.toString() + "\n",
-                java.nio.file.StandardOpenOption.CREATE,
-                java.nio.file.StandardOpenOption.APPEND,
+                StandardOpenOption.CREATE,
+                StandardOpenOption.APPEND,
             )
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
         }
     }
 
-    @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException") // read is best-effort by design
+    // read is best-effort by design: a missing/corrupt file yields an empty summary, and a single
+    // unparseable line is skipped — cancellation still propagates via runCatchingCancellable.
     public fun read(tailN: Int = DEFAULT_TAIL): CompactStatsSummary {
         if (!Files.exists(file)) return CompactStatsSummary(0, emptyMap(), emptyList())
-        val rows = try {
+        val rows = runCatchingCancellable {
             Files.readString(file).trim().lines().filter { it.isNotEmpty() }.mapNotNull { line ->
-                try {
-                    json.parseToJsonElement(line).jsonObject
-                } catch (e: Exception) {
-                    if (e is CancellationException) throw e
-                    null
-                }
+                runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
             }
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            emptyList()
-        }
+        }.getOrDefault(emptyList())
         val byOutcome = rows.groupingBy {
-            (it["outcome"] as? kotlinx.serialization.json.JsonPrimitive)?.content ?: "unknown"
+            (it["outcome"] as? JsonPrimitive)?.content ?: "unknown"
         }.eachCount()
         return CompactStatsSummary(rows.size, byOutcome, rows.takeLast(tailN))
     }

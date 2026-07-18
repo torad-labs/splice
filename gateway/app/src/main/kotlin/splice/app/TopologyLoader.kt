@@ -60,7 +60,15 @@ quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = fa
 [[providers.xai.models]]
 id = "grok-4.5"
 label = "Grok 4.5"
+context_window = 500000
+[[providers.xai.models]]
+id = "grok-4.3"
+label = "Grok 4.3"
 context_window = 1000000
+[[providers.xai.models]]
+id = "grok-build-latest"
+label = "Grok Build"
+context_window = 256000
 
 [heads.claudex]
 provider = "codex"

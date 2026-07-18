@@ -6,11 +6,10 @@
 // params; reasoning tokens count in output — v26); logTurnCache's exact line format is
 // watchable via log tail; usage/ratelimit state files are the HUD contract. SEAM (recorded):
 // log lines are injected writers; appends are synchronous best-effort (Node used microtasks).
-@file:Suppress("StringLiteralDuplication") // usage field names are the wire contract
-
 package splice.gateway.usage
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
@@ -19,15 +18,23 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.usage.RateLimitState
+import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.CancellationException
 
 private const val FIVE_HOURS_MS: Long = 5 * 60 * 60 * 1000
 private const val FULL_PCT = 100.0
 
-private fun num(el: kotlinx.serialization.json.JsonElement?): Long? =
+// output_tokens is the one usage field name written from several sites; naming it once keeps the
+// wire contract single-sourced (the others stay inline — they don't repeat enough to warrant it).
+private const val OUTPUT_TOKENS = "output_tokens"
+
+private fun num(el: JsonElement?): Long? =
     (el as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong()
+
+/** First key whose value parses as a number — the ported alias-fallback chain, single-sourced. */
+private fun JsonObject.firstNum(vararg keys: String): Long? =
+    keys.firstNotNullOfOrNull { num(this[it]) }
 
 /** Usage aliases: Anthropic names + OpenAI Responses names + cached-token detail. */
 public data class TurnUsage(
@@ -37,13 +44,12 @@ public data class TurnUsage(
     val cacheReadInputTokens: Long,
 ) {
     public companion object {
-        @Suppress("CyclomaticComplexMethod") // the alias fallback chain is the ported contract
         public fun from(usage: JsonObject?): TurnUsage {
             val u = usage ?: JsonObject(emptyMap())
             val cachedDetail = (u["input_tokens_details"] as? JsonObject)?.let { num(it["cached_tokens"]) }
             return TurnUsage(
-                inputTokens = num(u["input_tokens"]) ?: num(u["prompt_tokens"]) ?: 0,
-                outputTokens = num(u["output_tokens"]) ?: num(u["completion_tokens"]) ?: 0,
+                inputTokens = u.firstNum("input_tokens", "prompt_tokens") ?: 0,
+                outputTokens = u.firstNum(OUTPUT_TOKENS, "completion_tokens") ?: 0,
                 cacheCreationInputTokens = num(u["cache_creation_input_tokens"]) ?: 0,
                 cacheReadInputTokens = num(u["cache_read_input_tokens"]) ?: cachedDetail ?: 0,
             )
@@ -56,7 +62,7 @@ public fun buildUsagePayload(usage: TurnUsage, contextWindow: Long?): JsonObject
     val totalInput = usage.inputTokens + usage.cacheCreationInputTokens + usage.cacheReadInputTokens
     return buildJsonObject {
         put("input_tokens", usage.inputTokens)
-        put("output_tokens", usage.outputTokens)
+        put(OUTPUT_TOKENS, usage.outputTokens)
         put("cache_creation_input_tokens", usage.cacheCreationInputTokens)
         put("cache_read_input_tokens", usage.cacheReadInputTokens)
         if (contextWindow != null && contextWindow > 0) {
@@ -68,13 +74,12 @@ public fun buildUsagePayload(usage: TurnUsage, contextWindow: Long?): JsonObject
 }
 
 /** One concise line per completed turn so the cache hit rate is watchable live. */
-@Suppress("CyclomaticComplexMethod") // alias fallbacks
 public fun cacheLogLine(headTag: String, model: String, usage: JsonObject?, compact: Boolean): String {
     val u = usage ?: JsonObject(emptyMap())
-    val input = num(u["input_tokens"]) ?: num(u["prompt_tokens"]) ?: 0
+    val input = u.firstNum("input_tokens", "prompt_tokens") ?: 0
     val cached = (u["input_tokens_details"] as? JsonObject)?.let { num(it["cached_tokens"]) }
         ?: num(u["cache_read_input_tokens"]) ?: 0
-    val output = num(u["output_tokens"]) ?: num(u["completion_tokens"]) ?: 0
+    val output = u.firstNum(OUTPUT_TOKENS, "completion_tokens") ?: 0
     val pct = if (input > 0) (cached.toDouble() / input * FULL_PCT).toInt() else 0
     val compactSuffix = if (compact) " compact" else ""
     return "[$headTag] cache: input=$input cached=$cached hit=$pct% output=$output$compactSuffix model=$model\n"
@@ -113,10 +118,11 @@ public class UsageStore(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException") // best-effort by design
+    // best-effort by design: I/O failure leaves the last-known window untouched; cancellation
+    // still propagates via runCatchingCancellable.
     public fun appendOutputTokens(outputTokens: Long) {
         if (outputTokens <= 0) return
-        try {
+        runCatchingCancellable {
             Files.createDirectories(usageFile.parent)
             val cutoff = clock() - FIVE_HOURS_MS
             val kept = readEntries().filter { (num(it["timestamp"]) ?: 0) > cutoff }
@@ -125,20 +131,18 @@ public class UsageStore(
                 add(
                     buildJsonObject {
                         put("timestamp", clock())
-                        put("output_tokens", outputTokens)
+                        put(OUTPUT_TOKENS, outputTokens)
                     },
                 )
             }
             Files.writeString(usageFile, next.toString())
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
         }
     }
 
     /** Parses x-ratelimit-limit-tokens / -remaining-tokens / -reset-tokens; no-op without a limit. */
-    @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException") // best-effort by design
+    // best-effort by design: header/write failures are swallowed; cancellation propagates.
     public fun persistRateLimit(header: (String) -> String?) {
-        try {
+        runCatchingCancellable {
             val limit = header("x-ratelimit-limit-tokens")?.toLongOrNull() ?: return
             val remaining = header("x-ratelimit-remaining-tokens")?.toLongOrNull()
             val reset = header("x-ratelimit-reset-tokens")?.takeIf { it.isNotEmpty() }
@@ -152,8 +156,6 @@ public class UsageStore(
                 put("updated_at", clock())
             }
             Files.writeString(ratelimitFile, payload.toString() + "\n")
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
         }
     }
 
@@ -163,13 +165,13 @@ public class UsageStore(
         return UsageState(
             windowHours = 5,
             entries = window.size,
-            outputTokens5h = window.sumOf { num(it["output_tokens"]) ?: 0 },
+            outputTokens5h = window.sumOf { num(it[OUTPUT_TOKENS]) ?: 0 },
             ratelimit = readRateLimit(),
         )
     }
 
-    @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException") // best-effort by design
-    public fun readRateLimit(): RateLimitState? = try {
+    // best-effort by design: a missing/corrupt ratelimit file reads as null; cancellation propagates.
+    public fun readRateLimit(): RateLimitState? = runCatchingCancellable {
         if (!Files.exists(ratelimitFile)) {
             null
         } else {
@@ -181,20 +183,14 @@ public class UsageStore(
                 updatedAt = num(obj["updated_at"]),
             )
         }
-    } catch (e: Exception) {
-        if (e is CancellationException) throw e
-        null
-    }
+    }.getOrNull()
 
-    @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException") // best-effort by design
-    private fun readEntries(): List<JsonObject> = try {
+    // best-effort by design: a missing/corrupt usage file reads as empty; cancellation propagates.
+    private fun readEntries(): List<JsonObject> = runCatchingCancellable {
         if (!Files.exists(usageFile)) {
             emptyList()
         } else {
             json.parseToJsonElement(Files.readString(usageFile)).jsonArray.mapNotNull { it as? JsonObject }
         }
-    } catch (e: Exception) {
-        if (e is CancellationException) throw e
-        emptyList()
-    }
+    }.getOrDefault(emptyList())
 }

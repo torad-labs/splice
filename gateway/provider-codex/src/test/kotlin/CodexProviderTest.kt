@@ -14,6 +14,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.WatchdogBudget
 import splice.provider.codex.CodexProvider
+import splice.spi.ProviderTuning
 import kotlin.time.Duration.Companion.seconds
 
 class CodexProviderTest {
@@ -25,17 +26,19 @@ class CodexProviderTest {
     }
 
     private fun provider(accountIdHeader: Boolean) = CodexProvider(
-        key = "codex",
-        label = "claudex",
-        catalog = ModelCatalog(
-            discoveryPrefix = "claude-codex--",
-            models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272000L)),
-            defaultContextWindow = 272000L,
+        tuning = ProviderTuning(
+            key = "codex",
+            label = "claudex",
+            catalog = ModelCatalog(
+                discoveryPrefix = "claude-codex--",
+                models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272000L)),
+                defaultContextWindow = 272000L,
+            ),
+            pinnedModel = "gpt-5.6-sol",
+            auth = fakeAuth,
+            baseUrl = "https://x",
+            watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
         ),
-        pinnedModel = "gpt-5.6-sol",
-        auth = fakeAuth,
-        baseUrl = "https://x",
-        watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
         showReasoning = "text",
         replayReasoning = false,
         configEffort = "high",

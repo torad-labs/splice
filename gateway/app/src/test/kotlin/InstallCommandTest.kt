@@ -7,8 +7,10 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.cli.InstallCommand
+import splice.app.cli.install
+import splice.app.cli.uninstall
 import java.nio.file.Files
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 import kotlin.io.path.isSymbolicLink
 import kotlin.io.path.readSymbolicLink
@@ -64,7 +66,7 @@ class InstallCommandTest {
     fun `install links each head command to the shared shim`(@TempDir home: Path) {
         withHome(home) {
             seedTopology(home)
-            InstallCommand.install("--all")
+            install("--all")
             val bin = home.resolve(".local").resolve("bin")
             val claudex = bin.resolve("claudex")
             val grok = bin.resolve("grok")
@@ -78,10 +80,10 @@ class InstallCommandTest {
     fun `install a single head only`(@TempDir home: Path) {
         withHome(home) {
             seedTopology(home)
-            InstallCommand.install("claudex")
+            install("claudex")
             val bin = home.resolve(".local").resolve("bin")
             assertTrue(bin.resolve("claudex").isSymbolicLink())
-            assertFalse(Files.exists(bin.resolve("grok"), java.nio.file.LinkOption.NOFOLLOW_LINKS))
+            assertFalse(Files.exists(bin.resolve("grok"), NOFOLLOW_LINKS))
         }
     }
 
@@ -89,13 +91,13 @@ class InstallCommandTest {
     fun `install is idempotent and never clobbers a real file`(@TempDir home: Path) {
         withHome(home) {
             seedTopology(home)
-            InstallCommand.install("claudex")
-            InstallCommand.install("claudex") // re-run: replaces the symlink, no error
+            install("claudex")
+            install("claudex") // re-run: replaces the symlink, no error
             assertTrue(home.resolve(".local/bin/claudex").isSymbolicLink())
             // a REAL file where the link would go is left alone
             val bin = home.resolve(".local").resolve("bin")
             bin.resolve("grok").writeString("real file")
-            InstallCommand.install("grok")
+            install("grok")
             assertFalse(bin.resolve("grok").isSymbolicLink())
             assertEquals("real file", Files.readString(bin.resolve("grok")))
         }
@@ -105,11 +107,11 @@ class InstallCommandTest {
     fun `uninstall removes the links`(@TempDir home: Path) {
         withHome(home) {
             seedTopology(home)
-            InstallCommand.install("--all")
-            InstallCommand.uninstall("--all")
+            install("--all")
+            uninstall("--all")
             val bin = home.resolve(".local").resolve("bin")
-            assertFalse(Files.exists(bin.resolve("claudex"), java.nio.file.LinkOption.NOFOLLOW_LINKS))
-            assertFalse(Files.exists(bin.resolve("grok"), java.nio.file.LinkOption.NOFOLLOW_LINKS))
+            assertFalse(Files.exists(bin.resolve("claudex"), NOFOLLOW_LINKS))
+            assertFalse(Files.exists(bin.resolve("grok"), NOFOLLOW_LINKS))
         }
     }
 }

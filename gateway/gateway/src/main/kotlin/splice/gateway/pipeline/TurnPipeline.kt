@@ -26,7 +26,6 @@ public class TurnPipeline(
      * Finish a streamed turn: apply promote/honesty/mirror to the machine's outcome and drive
      * the emitter to its SOLE terminal. Returns a short outcome tag for the debug log.
      */
-    @Suppress("CyclomaticComplexMethod", "ReturnCount", "LongMethod") // the honesty cascade is the ported contract
     public suspend fun finishStream(
         emitter: SseEmitter,
         outcome: TurnOutcome,
@@ -49,7 +48,6 @@ public class TurnPipeline(
         }
     }
 
-    @Suppress("ReturnCount")
     private suspend fun finishSuccess(
         emitter: SseEmitter,
         outcome: TurnOutcome.Success,
@@ -91,7 +89,11 @@ public class TurnPipeline(
         emitter.emitTerminal(
             hasToolUse = outcome.hasToolUse,
             incomplete = outcome.incomplete,
-            usage = Usage(outcome.usage.inputTokens, clampOutput(outcome.usage.outputTokens)),
+            usage = Usage(
+                outcome.usage.inputTokens,
+                clampOutput(outcome.usage.outputTokens),
+                outcome.usage.cachedTokens,
+            ),
         )
         return "ok"
     }

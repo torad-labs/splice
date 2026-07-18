@@ -9,6 +9,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -39,22 +40,18 @@ public class ApiKeyAuthProvider(
         )
     }
 
-    @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException", "ReturnCount")
     private fun readKey(): String? {
         envReader(envVar)?.takeIf { it.isNotEmpty() }?.let { return it }
         val file = keyFile ?: return null
-        return try {
-            if (!Files.exists(file)) return null
+        return runCatchingCancellable {
+            if (!Files.exists(file)) return@runCatchingCancellable null
             val text = Files.readString(file).trim()
             if (text.startsWith("{")) {
                 json.parseToJsonElement(text).jsonObject["api_key"]?.jsonPrimitive?.content
             } else {
                 text.takeIf { it.isNotEmpty() }
             }
-        } catch (e: Exception) {
-            if (e is java.util.concurrent.CancellationException) throw e
-            null
-        }
+        }.getOrNull()
     }
 
     private companion object {

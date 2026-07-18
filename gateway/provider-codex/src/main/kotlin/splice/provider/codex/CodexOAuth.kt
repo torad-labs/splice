@@ -10,8 +10,11 @@ package splice.provider.codex
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import splice.core.util.runCatchingCancellable
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
@@ -44,9 +47,11 @@ public data class Pkce(val verifier: String, val challenge: String)
 private fun base64url(bytes: ByteArray): String =
     Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
 
-@Suppress("MagicNumber") // 32 = PKCE verifier byte length per RFC 7636
+// 32 = PKCE verifier byte length per RFC 7636.
+private const val PKCE_VERIFIER_BYTES = 32
+
 public fun makePkce(random: SecureRandom = SecureRandom()): Pkce {
-    val verifier = base64url(ByteArray(32).also { random.nextBytes(it) })
+    val verifier = base64url(ByteArray(PKCE_VERIFIER_BYTES).also { random.nextBytes(it) })
     val challenge = base64url(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray()))
     return Pkce(verifier, challenge)
 }
@@ -75,13 +80,36 @@ public fun buildAuthorizeUrl(
     return "${CodexOAuthEndpoints.authorizeUrl(env)}?$query"
 }
 
+/** Form body for the authorization-code exchange (x-www-form-urlencoded, RFC3986-encoded values).
+ *  Mirrors the Node reference's URLSearchParams body; the real code is encoded at exchange time so a
+ *  code containing reserved chars (`&`, `=`, `+`, `%`) can never corrupt or inject into the body. */
+public fun codexCodeExchangeForm(
+    code: String,
+    verifier: String,
+    clientId: String,
+    redirectUri: String,
+): String = codexFormEncode(
+    "grant_type" to "authorization_code",
+    "code" to code,
+    "redirect_uri" to redirectUri,
+    "client_id" to clientId,
+    "code_verifier" to verifier,
+)
+
+private fun codexFormEncode(vararg pairs: Pair<String, String>): String =
+    pairs.joinToString("&") { (k, v) -> "$k=${percentEncode(v)}" }
+
+// byte-masking is inherent to the encoder: 0xFF keeps the low byte, 0x80 is the ASCII ceiling.
+private const val BYTE_MASK = 0xFF
+private const val ASCII_LIMIT = 0x80
+
 /** RFC 3986 percent-encoding — spaces become %20, never + (the CLI-parity gotcha). */
-@Suppress("MagicNumber", "ComplexCondition") // byte-masking is inherent to the encoder
 private fun percentEncode(value: String): String = buildString {
     for (b in value.toByteArray(Charsets.UTF_8)) {
-        val c = b.toInt() and 0xFF
+        val c = b.toInt() and BYTE_MASK
         val ch = c.toChar()
-        if (ch.isLetterOrDigit() && c < 0x80 || ch in "-_.~") append(ch) else append("%%%02X".format(c))
+        val unreserved = ch.isLetterOrDigit() && c < ASCII_LIMIT
+        if (unreserved || ch in "-_.~") append(ch) else append("%%%02X".format(c))
     }
 }
 
@@ -89,16 +117,18 @@ private val jwtJson = Json { ignoreUnknownKeys = true }
 
 public fun decodeJwtClaims(jwt: String?): JsonObject {
     val payload = jwt.orEmpty().split(".").getOrNull(1) ?: return JsonObject(emptyMap())
-    return runCatching {
+    return runCatchingCancellable {
         val decoded = Base64.getUrlDecoder().decode(payload.padBase64()).toString(Charsets.UTF_8)
         jwtJson.parseToJsonElement(decoded).jsonObject
     }.getOrDefault(JsonObject(emptyMap()))
 }
 
-@Suppress("MagicNumber") // 4 = base64 quantum
+// 4 = base64 quantum (encoded length is always a multiple of 4).
+private const val BASE64_QUANTUM = 4
+
 private fun String.padBase64(): String {
     val normalized = replace('-', '+').replace('_', '/')
-    val pad = (4 - normalized.length % 4) % 4
+    val pad = (BASE64_QUANTUM - normalized.length % BASE64_QUANTUM) % BASE64_QUANTUM
     return normalized + "=".repeat(pad)
 }
 
@@ -115,17 +145,17 @@ public fun authJsonFromTokens(
     nowIso: String,
 ): JsonObject {
     val accountId = accountIdFromIdToken(idToken)
-    return kotlinx.serialization.json.buildJsonObject {
-        if (apiKey != null) put("OPENAI_API_KEY", kotlinx.serialization.json.JsonPrimitive(apiKey))
+    return buildJsonObject {
+        if (apiKey != null) put("OPENAI_API_KEY", JsonPrimitive(apiKey))
         put(
             "tokens",
-            kotlinx.serialization.json.buildJsonObject {
-                if (idToken != null) put("id_token", kotlinx.serialization.json.JsonPrimitive(idToken))
-                put("access_token", kotlinx.serialization.json.JsonPrimitive(accessToken))
-                if (refreshToken != null) put("refresh_token", kotlinx.serialization.json.JsonPrimitive(refreshToken))
-                if (accountId != null) put("account_id", kotlinx.serialization.json.JsonPrimitive(accountId))
+            buildJsonObject {
+                if (idToken != null) put("id_token", JsonPrimitive(idToken))
+                put("access_token", JsonPrimitive(accessToken))
+                if (refreshToken != null) put("refresh_token", JsonPrimitive(refreshToken))
+                if (accountId != null) put("account_id", JsonPrimitive(accountId))
             },
         )
-        put("last_refresh", kotlinx.serialization.json.JsonPrimitive(nowIso))
+        put("last_refresh", JsonPrimitive(nowIso))
     }
 }

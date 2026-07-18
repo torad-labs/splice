@@ -5,8 +5,6 @@
 // fanout (deleted, not ported). File-based truth (auth/usage/compact/logs) so a DOWN head still
 // shows last-known state. JSON payload shapes match webui/src/shared/api/index.ts so the
 // unmodified dashboard runs against this daemon (the P4-WEBUI contract).
-@file:Suppress("StringLiteralDuplication", "TooManyFunctions") // route handlers + wire field names
-
 package splice.control
 
 import io.ktor.http.ContentType
@@ -23,6 +21,7 @@ import io.ktor.server.routing.patch
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.addJsonObject
@@ -38,6 +37,7 @@ import splice.core.config.Knob
 import splice.core.config.MgmtKey
 import splice.core.usage.RateLimitState
 import splice.core.usage.computeUsageWarn
+import splice.core.util.runCatchingCancellable
 
 public class ControlServer(
     private val port: Int,
@@ -49,6 +49,7 @@ public class ControlServer(
     private val launchService: LaunchService? = null,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+    private val payloads = ControlPayloads(heads, config)
 
     @Volatile
     private var server: EmbeddedServer<NettyApplicationEngine, *>? = null
@@ -59,18 +60,18 @@ public class ControlServer(
             routing {
                 // Unauthenticated liveness probe: the launch shim polls this to tell a running
                 // daemon from a cold start (it must NOT need the mgmt-key). No head/config detail.
-                get("/health") { call.respondText(controlHealthJson(), ContentType.Application.Json) }
+                get("/health") { call.respondText(payloads.controlHealthJson(), ContentType.Application.Json) }
                 get("/") { call.respondText(dashboardHtml(), ContentType.Text.Html) }
                 get("/dashboard") { call.respondText(dashboardHtml(), ContentType.Text.Html) }
-                get("/api/status") { guarded(call) { respond(call, statusJson()) } }
-                get("/api/heads") { guarded(call) { respond(call, headsJson()) } }
+                get("/api/status") { guarded(call) { respond(call, payloads.statusJson()) } }
+                get("/api/heads") { guarded(call) { respond(call, payloads.headsJson()) } }
                 post("/api/heads/{head}/{action}") { guarded(call) { headAction(call) } }
-                get("/api/config") { guarded(call) { respond(call, configJson()) } }
+                get("/api/config") { guarded(call) { respond(call, payloads.configJson()) } }
                 patch("/api/config") { guarded(call) { patchConfig(call) } }
-                get("/api/usage") { guarded(call) { respond(call, usageJson()) } }
-                get("/api/auth") { guarded(call) { respond(call, authJson()) } }
+                get("/api/usage") { guarded(call) { respond(call, payloads.usageJson()) } }
+                get("/api/auth") { guarded(call) { respond(call, payloads.authJson()) } }
                 post("/api/auth/{head}/{action}") { guarded(call) { authAction(call) } }
-                get("/api/compact") { guarded(call) { respond(call, compactJson()) } }
+                get("/api/compact") { guarded(call) { respond(call, payloads.compactJson()) } }
                 get("/api/logs/{head}") { guarded(call) { logsJson(call) } }
                 post("/launch/{head}") { guarded(call) { launch(call) } }
                 post("/statusline/{head}") { statusline(call) } // stdin-piped per tick; no bearer
@@ -101,16 +102,173 @@ public class ControlServer(
     private suspend fun respond(call: ApplicationCall, body: String) =
         call.respondText(body, ContentType.Application.Json)
 
-    private fun controlHealthJson(): String = buildJsonObject {
+    private suspend fun headAction(call: ApplicationCall) {
+        val key = call.parameters["head"].orEmpty()
+        val action = call.parameters["action"].orEmpty()
+        val managed = heads[key]
+        if (managed == null) {
+            call.respondText(payloads.errorJson("unknown head"), ContentType.Application.Json, HttpStatusCode.NotFound)
+            return
+        }
+        when (action) {
+            "start" -> managed.head.start()
+            "stop" -> managed.head.stop()
+            "restart" -> {
+                managed.head.stop()
+                managed.head.start()
+            }
+            else -> {
+                call.respondText(
+                    payloads.errorJson("unknown action"),
+                    ContentType.Application.Json,
+                    HttpStatusCode.BadRequest,
+                )
+                return
+            }
+        }
+        log("[control] head $key -> $action\n")
+        respond(call, payloads.headStatus(managed).toString())
+    }
+
+    private suspend fun patchConfig(call: ApplicationCall) {
+        val partial = runCatchingCancellable { json.parseToJsonElement(call.receiveText()).jsonObject }.getOrNull()
+        if (partial == null) {
+            call.respondText(
+                payloads.errorJson("invalid body"),
+                ContentType.Application.Json,
+                HttpStatusCode.BadRequest,
+            )
+            return
+        }
+        val map = partial.mapValues { (_, v) ->
+            (v as? JsonPrimitive)?.content
+        }
+        // NO fanout: one in-process patch (single JVM). Heads read getConfig() fresh per request.
+        val result = config.patch(map)
+        respond(
+            call,
+            buildJsonObject {
+                put("applied", payloads.mapToJson(result.applied))
+                putJsonObject("rejected") { result.rejected.forEach { (k, v) -> put(k, v) } }
+                putJsonArray("restart_required") { result.restartRequired.forEach { add(it) } }
+                putJsonArray("targets") {} // no per-head fanout targets in single-daemon
+                put("persisted", "state/config.json")
+            }.toString(),
+        )
+    }
+
+    private suspend fun authAction(call: ApplicationCall) {
+        val key = call.parameters["head"].orEmpty()
+        val action = call.parameters["action"].orEmpty()
+        val managed = heads[key]
+        val refreshable = managed?.auth as? splice.core.auth.RefreshableAuthProvider
+        if (action == "refresh" && refreshable != null) {
+            refreshable.refresh()
+            respond(
+                call,
+                buildJsonObject {
+                    put("ok", true)
+                    put("head", key)
+                }.toString(),
+            )
+        } else {
+            // browser login lands with the launcher (P4-LAUNCH); ack for now
+            respond(
+                call,
+                buildJsonObject {
+                    put("ok", false)
+                    put("note", "not supported in-process")
+                }.toString(),
+            )
+        }
+    }
+
+    private suspend fun logsJson(call: ApplicationCall) {
+        val key = call.parameters["head"].orEmpty()
+        val tail = call.request.queryParameters["tail"]?.toIntOrNull() ?: DEFAULT_LOG_TAIL
+        val managed = heads[key]
+        if (managed == null) {
+            call.respondText(payloads.errorJson("unknown head"), ContentType.Application.Json, HttpStatusCode.NotFound)
+            return
+        }
+        // PORT-OF server/src/control/api.mjs logs payload @ 4ca99f7: {key, path, lines:[...]}
+        // (webui LogsPayload) — lines is an ARRAY (tail split), not one blob.
+        val lines = managed.logs.tail(tail).split("\n").filter { it.isNotEmpty() }
+        respond(
+            call,
+            buildJsonObject {
+                put("key", key)
+                put("path", managed.logs.path())
+                putJsonArray("lines") { lines.forEach { add(it) } }
+            }.toString(),
+        )
+    }
+
+    private suspend fun launch(call: ApplicationCall) {
+        val key = call.parameters["head"].orEmpty()
+        val managed = heads[key]
+        val spec = managed?.launchSpec
+        if (spec == null || launchService == null) {
+            call.respondText(
+                payloads.errorJson("head not launchable"),
+                ContentType.Application.Json,
+                HttpStatusCode.NotFound,
+            )
+            return
+        }
+        val body = runCatchingCancellable { json.parseToJsonElement(call.receiveText()).jsonObject }.getOrNull()
+        val safe = body?.get("safe")?.jsonPrimitive?.content == "true"
+        val extraArgs = (body?.get("args") as? JsonArray)
+            ?.mapNotNull { (it as? JsonPrimitive)?.content } ?: emptyList()
+        val recipe = launchService.launch(spec, extraArgs, safe)
+        log("[control] launch $key -> ${recipe.argv}\n")
+        respond(
+            call,
+            buildJsonObject {
+                putJsonObject("env") { recipe.env.forEach { (k, v) -> put(k, v) } }
+                putJsonArray("unset") { recipe.unset.forEach { add(it) } }
+                putJsonArray("argv") { recipe.argv.forEach { add(it) } }
+            }.toString(),
+        )
+    }
+
+    private suspend fun statusline(call: ApplicationCall) {
+        val key = call.parameters["head"].orEmpty()
+        val managed = heads[key]
+        if (managed == null) {
+            call.respondText(managed?.head?.label ?: key, ContentType.Text.Plain)
+            return
+        }
+        val stdin = runCatchingCancellable { call.receiveText() }.getOrDefault("")
+        val line = StatuslineRenderer(managed.head.label)
+            .render(stdin, managed.usage, managed.warnPct, managed.warnTokens5h)
+        call.respondText(line, ContentType.Text.Plain)
+    }
+
+    private companion object {
+        const val STOP_GRACE_MS = 100L
+        const val STOP_TIMEOUT_MS = 500L
+        const val DEFAULT_LOG_TAIL = 200
+    }
+}
+
+// PORT-OF server/src/control/api.mjs payload shapes @ 4ca99f7 — the read-only JSON builders for the
+// control API, split out of ControlServer so the server class stays focused on routing/lifecycle.
+// The P4-WEBUI wire field names (the dashboard contract) live here.
+private class ControlPayloads(
+    private val heads: Map<String, ManagedHead>,
+    private val config: ConfigService,
+) {
+    fun controlHealthJson(): String = buildJsonObject {
         put("ok", true)
         put("version", GATEWAY_VERSION)
-        put("heads", heads.size)
+        put(HEADS, heads.size)
     }.toString()
 
-    private fun statusJson(): String = buildJsonObject {
+    fun statusJson(): String = buildJsonObject {
         put("server", "control")
         put("version", GATEWAY_VERSION)
-        putJsonArray("heads") { heads.keys.forEach { add(it) } }
+        putJsonArray(HEADS) { heads.keys.forEach { add(it) } }
         putJsonArray("registry") {
             heads.values.forEach { m ->
                 addJsonObject {
@@ -122,13 +280,13 @@ public class ControlServer(
         }
     }.toString()
 
-    private fun headsJson(): String = buildJsonObject {
-        putJsonArray("heads") { heads.values.forEach { add(headStatus(it)) } }
+    fun headsJson(): String = buildJsonObject {
+        putJsonArray(HEADS) { heads.values.forEach { add(headStatus(it)) } }
     }.toString()
 
     // PORT-OF server/launcher/heads.mjs status shape @ 4ca99f7. In the single daemon the head is
     // in-process, so healthy/version are authoritative and versionMatch is always true when up.
-    private fun headStatus(m: ManagedHead) = buildJsonObject {
+    fun headStatus(m: ManagedHead) = buildJsonObject {
         val h = m.head.healthSnapshot()
         put("key", m.head.key)
         put("label", m.head.label)
@@ -146,31 +304,7 @@ public class ControlServer(
         putJsonArray("pids") {}
     }
 
-    private suspend fun headAction(call: ApplicationCall) {
-        val key = call.parameters["head"].orEmpty()
-        val action = call.parameters["action"].orEmpty()
-        val managed = heads[key]
-        if (managed == null) {
-            call.respondText(errorJson("unknown head"), ContentType.Application.Json, HttpStatusCode.NotFound)
-            return
-        }
-        when (action) {
-            "start" -> managed.head.start()
-            "stop" -> managed.head.stop()
-            "restart" -> {
-                managed.head.stop()
-                managed.head.start()
-            }
-            else -> {
-                call.respondText(errorJson("unknown action"), ContentType.Application.Json, HttpStatusCode.BadRequest)
-                return
-            }
-        }
-        log("[control] head $key -> $action\n")
-        respond(call, headStatus(managed).toString())
-    }
-
-    private fun configJson(): String {
+    fun configJson(): String {
         val layers = config.layers()
         val effective = config.getConfig().asMap()
         return buildJsonObject {
@@ -186,38 +320,15 @@ public class ControlServer(
         }.toString()
     }
 
-    private suspend fun patchConfig(call: ApplicationCall) {
-        val partial = runCatching { json.parseToJsonElement(call.receiveText()).jsonObject }.getOrNull()
-        if (partial == null) {
-            call.respondText(errorJson("invalid body"), ContentType.Application.Json, HttpStatusCode.BadRequest)
-            return
-        }
-        val map = partial.mapValues { (_, v) ->
-            (v as? JsonPrimitive)?.content
-        }
-        // NO fanout: one in-process patch (single JVM). Heads read getConfig() fresh per request.
-        val result = config.patch(map)
-        respond(
-            call,
-            buildJsonObject {
-                put("applied", mapToJson(result.applied))
-                putJsonObject("rejected") { result.rejected.forEach { (k, v) -> put(k, v) } }
-                putJsonArray("restart_required") { result.restartRequired.forEach { add(it) } }
-                putJsonArray("targets") {} // no per-head fanout targets in single-daemon
-                put("persisted", "state/config.json")
-            }.toString(),
-        )
-    }
-
     // PORT-OF server/src/control/api.mjs usage payload @ 4ca99f7: top-level window/warn knobs +
     // per-head {key,label,usage:{output_tokens_5h,entries,ratelimit,warn}} (webui UsagePayload).
-    private fun usageJson(): String {
+    fun usageJson(): String {
         val cfg = config.getConfig()
         return buildJsonObject {
             put("window_hours", USAGE_WINDOW_HOURS)
             put("warn_pct", cfg.usageWarnPct)
             put("warn_tokens_5h", cfg.usageWarnTokens5h)
-            putJsonArray("heads") {
+            putJsonArray(HEADS) {
                 heads.values.forEach { m ->
                     val rlView = m.usage.ratelimit()
                     val rl = rlView?.let { RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens) }
@@ -253,7 +364,7 @@ public class ControlServer(
     // PORT-OF server/src/control/api.mjs auth payload @ 4ca99f7: keyed by head (Node hardcodes
     // `codex`; multi-head keys each), value = {kind, login, present, ...describe fields}. The webui
     // AuthPayload reads `.codex`. login = automated for oauth, manual for api-key.
-    private suspend fun authJson(): String {
+    suspend fun authJson(): String {
         val described = heads.values.map { m -> m to m.auth.describe() }
         return buildJsonObject {
             described.forEach { (m, desc) ->
@@ -267,36 +378,10 @@ public class ControlServer(
         }.toString()
     }
 
-    private suspend fun authAction(call: ApplicationCall) {
-        val key = call.parameters["head"].orEmpty()
-        val action = call.parameters["action"].orEmpty()
-        val managed = heads[key]
-        val refreshable = managed?.auth as? splice.core.auth.RefreshableAuthProvider
-        if (action == "refresh" && refreshable != null) {
-            refreshable.refresh()
-            respond(
-                call,
-                buildJsonObject {
-                    put("ok", true)
-                    put("head", key)
-                }.toString(),
-            )
-        } else {
-            // browser login lands with the launcher (P4-LAUNCH); ack for now
-            respond(
-                call,
-                buildJsonObject {
-                    put("ok", false)
-                    put("note", "not supported in-process")
-                }.toString(),
-            )
-        }
-    }
-
     // PORT-OF server/src/control/api.mjs compact payload @ 4ca99f7: a FLAT {stats:[...]} of the
     // recent compaction rows (webui CompactPayload). Node reads codex's file; multi-head flattens
     // every head's tail (each row tagged with its head key) newest-last.
-    private fun compactJson(): String = buildJsonObject {
+    fun compactJson(): String = buildJsonObject {
         putJsonArray("stats") {
             heads.values.forEach { m ->
                 val s = m.compact.summary(COMPACT_TAIL)
@@ -310,67 +395,9 @@ public class ControlServer(
         }
     }.toString()
 
-    private suspend fun logsJson(call: ApplicationCall) {
-        val key = call.parameters["head"].orEmpty()
-        val tail = call.request.queryParameters["tail"]?.toIntOrNull() ?: DEFAULT_LOG_TAIL
-        val managed = heads[key]
-        if (managed == null) {
-            call.respondText(errorJson("unknown head"), ContentType.Application.Json, HttpStatusCode.NotFound)
-            return
-        }
-        // PORT-OF server/src/control/api.mjs logs payload @ 4ca99f7: {key, path, lines:[...]}
-        // (webui LogsPayload) — lines is an ARRAY (tail split), not one blob.
-        val lines = managed.logs.tail(tail).split("\n").filter { it.isNotEmpty() }
-        respond(
-            call,
-            buildJsonObject {
-                put("key", key)
-                put("path", managed.logs.path())
-                putJsonArray("lines") { lines.forEach { add(it) } }
-            }.toString(),
-        )
-    }
+    fun errorJson(message: String): String = buildJsonObject { put("error", message) }.toString()
 
-    private suspend fun launch(call: ApplicationCall) {
-        val key = call.parameters["head"].orEmpty()
-        val managed = heads[key]
-        val spec = managed?.launchSpec
-        if (spec == null || launchService == null) {
-            call.respondText(errorJson("head not launchable"), ContentType.Application.Json, HttpStatusCode.NotFound)
-            return
-        }
-        val body = runCatching { json.parseToJsonElement(call.receiveText()).jsonObject }.getOrNull()
-        val safe = body?.get("safe")?.jsonPrimitive?.content == "true"
-        val extraArgs = (body?.get("args") as? kotlinx.serialization.json.JsonArray)
-            ?.mapNotNull { (it as? JsonPrimitive)?.content } ?: emptyList()
-        val recipe = launchService.launch(spec, extraArgs, safe)
-        log("[control] launch $key -> ${recipe.argv}\n")
-        respond(
-            call,
-            buildJsonObject {
-                putJsonObject("env") { recipe.env.forEach { (k, v) -> put(k, v) } }
-                putJsonArray("unset") { recipe.unset.forEach { add(it) } }
-                putJsonArray("argv") { recipe.argv.forEach { add(it) } }
-            }.toString(),
-        )
-    }
-
-    private suspend fun statusline(call: ApplicationCall) {
-        val key = call.parameters["head"].orEmpty()
-        val managed = heads[key]
-        if (managed == null) {
-            call.respondText(managed?.head?.label ?: key, ContentType.Text.Plain)
-            return
-        }
-        val stdin = runCatching { call.receiveText() }.getOrDefault("")
-        val line = StatuslineRenderer(managed.head.label)
-            .render(stdin, managed.usage, managed.warnPct, managed.warnTokens5h)
-        call.respondText(line, ContentType.Text.Plain)
-    }
-
-    private fun errorJson(message: String): String = buildJsonObject { put("error", message) }.toString()
-
-    private fun mapToJson(m: Map<String, Any?>) = buildJsonObject {
+    fun mapToJson(m: Map<String, Any?>) = buildJsonObject {
         m.forEach { (k, v) ->
             when (v) {
                 null -> put(k, null as String?)
@@ -382,10 +409,8 @@ public class ControlServer(
     }
 
     private companion object {
-        const val STOP_GRACE_MS = 100L
-        const val STOP_TIMEOUT_MS = 500L
+        const val HEADS = "heads"
         const val COMPACT_TAIL = 50
-        const val DEFAULT_LOG_TAIL = 200
         const val USAGE_WINDOW_HOURS = 5
     }
 }

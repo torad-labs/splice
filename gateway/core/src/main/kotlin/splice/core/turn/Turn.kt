@@ -8,6 +8,9 @@ import kotlin.time.Duration
 public data class Usage(
     val inputTokens: Long = 0,
     val outputTokens: Long = 0,
+    // Prompt-cache read: input_tokens_details.cached_tokens (Responses) / cache_read_input_tokens.
+    // The whole point of prompt_cache_key — surfaced so the HUD and log can report the real hit rate.
+    val cachedTokens: Long = 0,
 )
 
 /** Anthropic error-event taxonomy the wire understands (error literals are not L3-gated). */
@@ -21,7 +24,7 @@ public enum class ErrorType(public val wireName: String) {
     OVERLOADED("overloaded_error"),
 }
 
-public sealed interface TurnOutcome {
+public sealed class TurnOutcome {
     /** Buffers ride the outcome (pinned P2-MACH slot): the gateway pipeline runs
      *  promote-to-text -> honesty gates -> mirror -> terminal AFTER the machine returns. */
     public data class Success(
@@ -31,15 +34,15 @@ public sealed interface TurnOutcome {
         val thinkingText: String = "",
         val bodyText: String = "",
         val emittedText: Boolean = false,
-    ) : TurnOutcome
+    ) : TurnOutcome()
 
     public data class Failure(
         val type: ErrorType,
         val message: String,
-    ) : TurnOutcome
+    ) : TurnOutcome()
 
     /** Client vanished mid-stream: nothing to emit, seal quietly (never an error frame). */
-    public data object ClientAbandoned : TurnOutcome
+    public data object ClientAbandoned : TurnOutcome()
 }
 
 /** Per-turn facts the pipeline threads through translation and streaming (meta replaces

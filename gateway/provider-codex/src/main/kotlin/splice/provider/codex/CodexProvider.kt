@@ -5,11 +5,8 @@
 package splice.provider.codex
 
 import splice.core.auth.Credentials
-import splice.core.auth.RefreshableAuthProvider
-import splice.core.model.ModelCatalog
 import splice.core.parse.AnthropicTurnBody
 import splice.core.turn.TurnMeta
-import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.BuildOptions
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesRequestBuilder
@@ -17,27 +14,22 @@ import splice.dialect.responses.ResponsesStreamTranslator
 import splice.dialect.responses.StreamTurnContext
 import splice.spi.BuiltTurn
 import splice.spi.Provider
+import splice.spi.ProviderIdentity
+import splice.spi.ProviderTuning
 import splice.spi.StreamTranslator
 import splice.spi.WatchdogFired
 
-@Suppress("LongParameterList") // a provider bundles catalog+auth+quirks+config — all load-bearing
 public class CodexProvider(
-    override val key: String,
-    override val label: String,
-    override val catalog: ModelCatalog,
-    override val pinnedModel: String,
-    override val auth: RefreshableAuthProvider,
-    baseUrl: String,
-    override val watchdog: WatchdogBudget,
+    private val tuning: ProviderTuning,
     override val showReasoning: String,
     override val replayReasoning: Boolean,
     private val configEffort: String?,
     private val configSummary: String?,
     private val quirks: ResponsesQuirks = ResponsesQuirks(providerTag = "claudex"),
     private val accountIdHeader: Boolean = true,
-) : Provider {
+) : Provider, ProviderIdentity by tuning {
 
-    override val upstreamUrl: String = "$baseUrl/responses"
+    override val upstreamUrl: String = "${tuning.baseUrl}/responses"
     private val builder = ResponsesRequestBuilder(quirks)
 
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {

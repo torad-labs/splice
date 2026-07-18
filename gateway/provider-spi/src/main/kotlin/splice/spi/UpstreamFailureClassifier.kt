@@ -10,6 +10,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import splice.core.turn.ErrorType
+import splice.core.util.runCatchingCancellable
 
 public data class ClassifiedFailure(val type: ErrorType, val message: String)
 
@@ -32,55 +33,75 @@ public object UpstreamFailureClassifier {
 
     private const val MAX_MESSAGE = 2000
 
-    @Suppress(
-        "ReturnCount",
-        "CyclomaticComplexMethod",
-        "TooGenericExceptionCaught",
-        "InstanceOfCheckForException",
-    ) // the ordered cascade IS the ported contract; body parse is best-effort by design
     public fun classify(source: FailureSource, text: String?, status: Int? = null): ClassifiedFailure {
-        var msg = text.orEmpty()
-        var code = ""
-        if (source == FailureSource.HTTP) {
-            try {
-                val j = lenient.parseToJsonElement(msg).jsonObject
-                val err = j["error"]?.jsonObject
-                msg = err?.get("message")?.jsonPrimitive?.content
-                    ?: j["message"]?.jsonPrimitive?.content
-                    ?: msg
-                code = err?.get("type")?.jsonPrimitive?.content
-                    ?: err?.get("code")?.jsonPrimitive?.content
-                    ?: ""
-            } catch (e: Exception) {
-                if (e is java.util.concurrent.CancellationException) throw e
-                if (gatewayHtmlRe.containsMatchIn(msg)) {
-                    return ClassifiedFailure(ErrorType.API_ERROR, "ChatGPT backend $status (gateway)")
-                }
-            }
+        val raw = text.orEmpty()
+        val extracted = if (source == FailureSource.HTTP) {
+            extractHttpError(raw, status)
+        } else {
+            ExtractResult.Fields(raw, "")
         }
-        val blob = "$code $msg"
+        return when (extracted) {
+            is ExtractResult.Gateway -> extracted.failure
+            is ExtractResult.Fields -> classifyContent(extracted, status)
+        }
+    }
 
-        if (overflowRe.containsMatchIn(blob)) {
-            val message = if (promptTooLongRe.containsMatchIn(msg)) msg else "prompt is too long: $msg"
-            return ClassifiedFailure(ErrorType.INVALID_REQUEST, message.take(MAX_MESSAGE))
+    // body parse is best-effort by design: a malformed/HTML body keeps the raw text (and, when it
+    // looks like a gateway page, short-circuits to a gateway error) rather than crashing classify.
+    private fun extractHttpError(raw: String, status: Int?): ExtractResult {
+        var message = raw
+        var code = ""
+        val parsed = runCatchingCancellable {
+            val j = lenient.parseToJsonElement(raw).jsonObject
+            val err = j["error"]?.jsonObject
+            message = err?.get("message")?.jsonPrimitive?.content
+                ?: j["message"]?.jsonPrimitive?.content
+                ?: raw
+            code = err?.get("type")?.jsonPrimitive?.content
+                ?: err?.get("code")?.jsonPrimitive?.content
+                ?: ""
         }
-        if (status == RATE_LIMIT_STATUS || rateRe.containsMatchIn(blob)) {
-            return ClassifiedFailure(ErrorType.RATE_LIMIT, msg.take(MAX_MESSAGE))
+        if (parsed.isFailure && gatewayHtmlRe.containsMatchIn(message)) {
+            return ExtractResult.Gateway(
+                ClassifiedFailure(ErrorType.API_ERROR, "ChatGPT backend $status (gateway)"),
+            )
         }
-        if (status == AUTH_STATUS || authRe.containsMatchIn(blob)) {
-            return ClassifiedFailure(ErrorType.AUTHENTICATION, msg.take(MAX_MESSAGE))
+        return ExtractResult.Fields(message, code)
+    }
+
+    // the ordered cascade IS the ported contract — overflow, then rate, then auth, then status floors.
+    private fun classifyContent(fields: ExtractResult.Fields, status: Int?): ClassifiedFailure {
+        val msg = fields.message
+        val blob = "${fields.code} ${fields.message}"
+        return when {
+            overflowRe.containsMatchIn(blob) -> overflowFailure(msg)
+            status == RATE_LIMIT_STATUS || rateRe.containsMatchIn(blob) ->
+                ClassifiedFailure(ErrorType.RATE_LIMIT, msg.take(MAX_MESSAGE))
+            status == AUTH_STATUS || authRe.containsMatchIn(blob) ->
+                ClassifiedFailure(ErrorType.AUTHENTICATION, msg.take(MAX_MESSAGE))
+            else -> statusFallback(status, msg)
         }
-        if (status != null && status >= SERVER_ERROR_FLOOR) {
-            return ClassifiedFailure(ErrorType.API_ERROR, msg.take(MAX_MESSAGE))
-        }
-        if (status != null && status >= CLIENT_ERROR_FLOOR) {
-            return ClassifiedFailure(ErrorType.INVALID_REQUEST, msg.take(MAX_MESSAGE))
-        }
-        return ClassifiedFailure(ErrorType.API_ERROR, msg.take(MAX_MESSAGE))
+    }
+
+    private fun overflowFailure(msg: String): ClassifiedFailure {
+        val message = if (promptTooLongRe.containsMatchIn(msg)) msg else "prompt is too long: $msg"
+        return ClassifiedFailure(ErrorType.INVALID_REQUEST, message.take(MAX_MESSAGE))
+    }
+
+    private fun statusFallback(status: Int?, msg: String): ClassifiedFailure = when {
+        status != null && status >= SERVER_ERROR_FLOOR -> ClassifiedFailure(ErrorType.API_ERROR, msg.take(MAX_MESSAGE))
+        status != null && status >= CLIENT_ERROR_FLOOR ->
+            ClassifiedFailure(ErrorType.INVALID_REQUEST, msg.take(MAX_MESSAGE))
+        else -> ClassifiedFailure(ErrorType.API_ERROR, msg.take(MAX_MESSAGE))
     }
 
     /** 502 from the ChatGPT gateway is transient — surface as 529 so Claude Code retries. */
     public fun mapOutStatus(status: Int): Int = if (status == BAD_GATEWAY) OVERLOADED_STATUS else status
+
+    private sealed class ExtractResult {
+        data class Fields(val message: String, val code: String) : ExtractResult()
+        data class Gateway(val failure: ClassifiedFailure) : ExtractResult()
+    }
 
     private const val RATE_LIMIT_STATUS = 429
     private const val AUTH_STATUS = 401

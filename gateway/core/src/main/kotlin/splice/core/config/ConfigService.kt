@@ -10,15 +10,16 @@
 package splice.core.config
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
+import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.concurrent.CancellationException
 
 public class ConfigService(
     private val statePaths: StatePaths,
@@ -41,29 +42,29 @@ public class ConfigService(
         runtime = runtimeLayer.toMap(),
     )
 
-    // The guard-chain continues are the literal port of config.mjs's patch loop.
-    @Suppress("LoopWithTooManyJumpStatements")
+    // The guard cascade is the literal port of config.mjs's patch loop (each `when` arm is one of
+    // its `continue`s): unknown key -> reject; null -> delete; uncoercible -> reject; else -> apply.
     public fun patch(partial: Map<String, Any?>): PatchResult {
         val applied = LinkedHashMap<String, Any?>()
         val rejected = LinkedHashMap<String, String>()
         for ((key, raw) in partial) {
             val knob = Knob.byKey[key]
-            if (knob == null) {
-                rejected[key] = "unknown key"
-                continue
+            when {
+                knob == null -> rejected[key] = "unknown key"
+                raw == null -> {
+                    applied[key] = null
+                    runtimeLayer.remove(key)
+                }
+                else -> {
+                    val coerced = coerce(knob, raw)
+                    if (coerced == null) {
+                        rejected[key] = "invalid value"
+                    } else {
+                        applied[key] = coerced
+                        runtimeLayer[key] = coerced
+                    }
+                }
             }
-            if (raw == null) {
-                applied[key] = null
-                runtimeLayer.remove(key)
-                continue
-            }
-            val coerced = coerce(knob, raw)
-            if (coerced == null) {
-                rejected[key] = "invalid value"
-                continue
-            }
-            applied[key] = coerced
-            runtimeLayer[key] = coerced
         }
         if (applied.isNotEmpty()) persistApplied(applied)
         val restartRequired = applied.keys.filter { it in Knob.restartRequiredKeys }
@@ -93,32 +94,27 @@ public class ConfigService(
 
     // Best-effort by design (port fidelity): a broken/absent state file yields {} — the daemon
     // must never crash on config reads. Complexity is the flat coercion walk.
-    @Suppress(
-        "TooGenericExceptionCaught",
-        "InstanceOfCheckForException",
-        "CyclomaticComplexMethod",
-        "LoopWithTooManyJumpStatements",
-    )
-    private fun fileLayer(): Map<String, Any?> {
+    private fun fileLayer(): Map<String, Any?> =
+        runCatchingCancellable { readFileLayer() }.getOrDefault(emptyMap())
+
+    private fun readFileLayer(): Map<String, Any?> {
         val path = statePaths.configFile
-        return try {
-            if (!Files.exists(path)) return emptyMap()
-            val mtime = Files.getLastModifiedTime(path).toMillis()
-            fileCache?.let { (p, m, data) -> if (p == path && m == mtime) return data }
-            val parsed = json.parseToJsonElement(Files.readString(path)).jsonObject
-            val data = LinkedHashMap<String, Any?>()
-            for (knob in Knob.entries) {
-                val el = parsed[knob.key] ?: continue
-                val scalar = jsonScalar(el) ?: continue
-                val v = coerce(knob, scalar)
-                if (v != null) data[knob.key] = v
-            }
-            fileCache = Triple(path, mtime, data)
-            data
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            emptyMap()
+        if (!Files.exists(path)) return emptyMap()
+        val mtime = Files.getLastModifiedTime(path).toMillis()
+        fileCache?.let { (p, m, data) -> if (p == path && m == mtime) return data }
+        val parsed = json.parseToJsonElement(Files.readString(path)).jsonObject
+        val data = LinkedHashMap<String, Any?>()
+        for (knob in Knob.entries) {
+            fileScalar(parsed, knob)?.let { data[knob.key] = it }
         }
+        fileCache = Triple(path, mtime, data)
+        return data
+    }
+
+    private fun fileScalar(parsed: JsonObject, knob: Knob): Any? {
+        val el = parsed[knob.key] ?: return null
+        val scalar = jsonScalar(el) ?: return null
+        return coerce(knob, scalar)
     }
 
     private fun envLayer(): Map<String, Any?> {
@@ -130,85 +126,59 @@ public class ConfigService(
         return data
     }
 
-    private fun jsonScalar(el: kotlinx.serialization.json.JsonElement): Any? = when (el) {
-        is JsonPrimitive -> el.booleanOrNull ?: el.longOrNull ?: el.content
-        else -> null
-    }
-
-    private fun coerce(knob: Knob, raw: Any?): Any? = when (knob.kind) {
-        KnobKind.BOOL -> when (raw) {
-            is Boolean -> raw
-            else -> Regex("^(1|true|yes|on)$", RegexOption.IGNORE_CASE).matches(raw.toString().trim())
-        }
-        KnobKind.NUMBER -> {
-            val s = raw.toString().trim().lowercase()
-            if (knob == Knob.MAX_INFLIGHT && s in setOf("", "unlimited", "off", "none")) {
-                0L
-            } else {
-                s.toDoubleOrNull()?.toLong()
-            }
-        }
-        KnobKind.STRING -> raw.toString().trim().ifEmpty { null }
-    }
-
     // Best-effort by design (port fidelity): persistence failure must not undo the applied
     // runtime layer. Env still wins at next boot — the launcher is the boot authority.
-    @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException", "CyclomaticComplexMethod")
     private fun persistApplied(applied: Map<String, Any?>) {
-        try {
+        // persistence is best-effort; the runtime layer already applied
+        runCatchingCancellable {
             Files.createDirectories(statePaths.stateDir)
             val path = statePaths.configFile
-            val onDisk = try {
-                if (Files.exists(path)) {
-                    json.parseToJsonElement(Files.readString(path)).jsonObject
-                } else {
-                    JsonObject(emptyMap())
-                }
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                JsonObject(emptyMap())
-            }
-            val next = buildJsonObject {
-                onDisk.forEach { (k, v) -> if (k !in applied) put(k, v) }
-                applied.forEach { (k, v) ->
-                    when (v) {
-                        null -> Unit // deletion = omission from the persisted file
-                        is Boolean -> put(k, JsonPrimitive(v))
-                        is Long -> put(k, JsonPrimitive(v))
-                        else -> put(k, JsonPrimitive(v.toString()))
-                    }
-                }
-            }
+            val onDisk = runCatchingCancellable { readOnDisk(path) }.getOrDefault(JsonObject(emptyMap()))
+            val next = mergePersisted(onDisk, applied)
             Files.writeString(path, json.encodeToString(JsonObject.serializer(), next) + "\n")
             fileCache = null
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            // persistence is best-effort; the runtime layer already applied
         }
     }
 
+    private fun readOnDisk(path: Path): JsonObject =
+        if (Files.exists(path)) {
+            json.parseToJsonElement(Files.readString(path)).jsonObject
+        } else {
+            JsonObject(emptyMap())
+        }
+
+    private fun mergePersisted(onDisk: JsonObject, applied: Map<String, Any?>): JsonObject =
+        buildJsonObject {
+            onDisk.forEach { (k, v) -> if (k !in applied) put(k, v) }
+            applied.forEach { (k, v) ->
+                when (v) {
+                    null -> Unit // deletion = omission from the persisted file
+                    is Boolean -> put(k, JsonPrimitive(v))
+                    is Long -> put(k, JsonPrimitive(v))
+                    else -> put(k, JsonPrimitive(v.toString()))
+                }
+            }
+        }
+
     // A flat table of floors/clamps — splitting it would scatter the contract (port fidelity).
-    @Suppress("CyclomaticComplexMethod")
     private fun normalize(raw: Map<String, Any?>): Map<String, Any?> {
         val out = LinkedHashMap(raw)
-        fun str(k: Knob) = out[k.key]?.toString()
-        fun num(k: Knob) = (out[k.key] as? Long) ?: str(k)?.toLongOrNull()
 
         listOf(Knob.CHATGPT_API_BASE, Knob.XAI_API_BASE).forEach { k ->
-            out[k.key] = str(k)?.trimEnd('/')
+            out[k.key] = str(out, k)?.trimEnd('/')
         }
-        out[Knob.MAX_INFLIGHT.key] = maxOf(0L, num(Knob.MAX_INFLIGHT) ?: 0L)
-        out[Knob.UPSTREAM_RETRIES.key] = maxOf(1L, num(Knob.UPSTREAM_RETRIES) ?: 2L)
-        out[Knob.UPSTREAM_TIMEOUT_MS.key] = maxOf(MIN_UPSTREAM_TIMEOUT_MS, num(Knob.UPSTREAM_TIMEOUT_MS) ?: 0L)
-        out[Knob.FIRST_BYTE_TIMEOUT_MS.key] = maxOf(MIN_FIRST_BYTE_MS, num(Knob.FIRST_BYTE_TIMEOUT_MS) ?: 0L)
+        out[Knob.MAX_INFLIGHT.key] = clampLong(out, Knob.MAX_INFLIGHT, floor = 0L)
+        out[Knob.UPSTREAM_RETRIES.key] = clampLong(out, Knob.UPSTREAM_RETRIES, floor = 1L, default = 2L)
+        out[Knob.UPSTREAM_TIMEOUT_MS.key] = clampLong(out, Knob.UPSTREAM_TIMEOUT_MS, floor = MIN_UPSTREAM_TIMEOUT_MS)
+        out[Knob.FIRST_BYTE_TIMEOUT_MS.key] = clampLong(out, Knob.FIRST_BYTE_TIMEOUT_MS, floor = MIN_FIRST_BYTE_MS)
         val idleFloor = if (envReader("CODEX_PROXY_TEST") == "1") TEST_IDLE_FLOOR_MS else MIN_STREAM_IDLE_MS
-        out[Knob.STREAM_IDLE_MS.key] = maxOf(idleFloor, num(Knob.STREAM_IDLE_MS) ?: 0L)
-        out[Knob.AUTH_CACHE_MS.key] = maxOf(MIN_AUTH_CACHE_MS, num(Knob.AUTH_CACHE_MS) ?: 0L)
-        out[Knob.SHOW_REASONING.key] = normalizeShowReasoning(str(Knob.SHOW_REASONING))
-        out[Knob.CONTEXT_WINDOW_OVERRIDE.key] = num(Knob.CONTEXT_WINDOW_OVERRIDE)?.takeIf { it > 0 }
-        out[Knob.USAGE_WARN_PCT.key] = (num(Knob.USAGE_WARN_PCT) ?: 0L).coerceIn(0L, 100L)
-        out[Knob.USAGE_WARN_TOKENS_5H.key] = maxOf(0L, num(Knob.USAGE_WARN_TOKENS_5H) ?: 0L)
-        out[Knob.CONTROL_PORT.key] = num(Knob.CONTROL_PORT)?.takeIf { it > 0 } ?: Knob.CONTROL_PORT.default
+        out[Knob.STREAM_IDLE_MS.key] = clampLong(out, Knob.STREAM_IDLE_MS, floor = idleFloor)
+        out[Knob.AUTH_CACHE_MS.key] = clampLong(out, Knob.AUTH_CACHE_MS, floor = MIN_AUTH_CACHE_MS)
+        out[Knob.SHOW_REASONING.key] = normalizeShowReasoning(str(out, Knob.SHOW_REASONING))
+        out[Knob.CONTEXT_WINDOW_OVERRIDE.key] = positiveLong(out, Knob.CONTEXT_WINDOW_OVERRIDE)
+        out[Knob.USAGE_WARN_PCT.key] = (num(out, Knob.USAGE_WARN_PCT) ?: 0L).coerceIn(0L, 100L)
+        out[Knob.USAGE_WARN_TOKENS_5H.key] = clampLong(out, Knob.USAGE_WARN_TOKENS_5H, floor = 0L)
+        out[Knob.CONTROL_PORT.key] = positiveLong(out, Knob.CONTROL_PORT) ?: Knob.CONTROL_PORT.default
         return out
     }
 
@@ -218,6 +188,38 @@ public class ConfigService(
         const val MIN_STREAM_IDLE_MS = 30_000L
         const val TEST_IDLE_FLOOR_MS = 250L
         const val MIN_AUTH_CACHE_MS = 5_000L
+
+        fun jsonScalar(el: JsonElement): Any? = when (el) {
+            is JsonPrimitive -> el.booleanOrNull ?: el.longOrNull ?: el.content
+            else -> null
+        }
+
+        fun coerce(knob: Knob, raw: Any?): Any? = when (knob.kind) {
+            KnobKind.BOOL -> when (raw) {
+                is Boolean -> raw
+                else -> Regex("^(1|true|yes|on)$", RegexOption.IGNORE_CASE).matches(raw.toString().trim())
+            }
+            KnobKind.NUMBER -> {
+                val s = raw.toString().trim().lowercase()
+                if (knob == Knob.MAX_INFLIGHT && s in setOf("", "unlimited", "off", "none")) {
+                    0L
+                } else {
+                    s.toDoubleOrNull()?.toLong()
+                }
+            }
+            KnobKind.STRING -> raw.toString().trim().ifEmpty { null }
+        }
+
+        // Shared reads over the merged map — one place each so `normalize` stays a flat clamp table.
+        fun str(out: Map<String, Any?>, k: Knob): String? = out[k.key]?.toString()
+
+        fun num(out: Map<String, Any?>, k: Knob): Long? = (out[k.key] as? Long) ?: str(out, k)?.toLongOrNull()
+
+        // Read [k] as a long, substitute [default] when absent, then apply the [floor].
+        fun clampLong(out: Map<String, Any?>, k: Knob, floor: Long, default: Long = 0L): Long =
+            maxOf(floor, num(out, k) ?: default)
+
+        fun positiveLong(out: Map<String, Any?>, k: Knob): Long? = num(out, k)?.takeIf { it > 0 }
     }
 }
 

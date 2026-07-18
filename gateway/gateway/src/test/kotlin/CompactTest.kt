@@ -9,10 +9,10 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.parse.parseAnthropicBody
 import splice.gateway.compact.COMPACT_MARKER
-import splice.gateway.compact.COMPACT_MARKERS
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.compact.classifyCompact
+import splice.gateway.compact.compactMarkers
 import splice.gateway.compact.markerPresent
 import java.nio.file.Path
 
@@ -22,16 +22,16 @@ class CompactTest {
 
     @Test
     fun `marker canary - the verbatim v2 1 207 sentence is pinned`() {
-        // If this breaks, Claude Code drifted the summarizer prompt: update COMPACT_MARKERS
+        // If this breaks, Claude Code drifted the summarizer prompt: update compactMarkers
         // AND the fixture together (the doctrine).
         assertEquals("tasked with summarizing conversations", COMPACT_MARKER)
-        assertTrue(COMPACT_MARKERS.contains(COMPACT_MARKER))
-        assertEquals(5, COMPACT_MARKERS.size)
+        assertTrue(compactMarkers.contains(COMPACT_MARKER))
+        assertEquals(5, compactMarkers.size)
     }
 
     @Test
     fun `every marker detects in the system prompt and in the last user message`() {
-        for (marker in COMPACT_MARKERS) {
+        for (marker in compactMarkers) {
             assertTrue(
                 classifyCompact(body("""{"model":"m","system":"You are $marker now.","messages":[]}""")),
                 "system: $marker",

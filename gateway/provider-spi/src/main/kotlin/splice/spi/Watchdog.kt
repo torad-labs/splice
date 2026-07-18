@@ -20,10 +20,10 @@ import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.milliseconds
 
-public sealed interface WatchdogFired {
-    public data class Idle(val idleMs: Long, val sawFirstByte: Boolean) : WatchdogFired
+public sealed class WatchdogFired {
+    public data class Idle(val idleMs: Long, val sawFirstByte: Boolean) : WatchdogFired()
 
-    public data class TotalCap(val elapsedMs: Long) : WatchdogFired
+    public data class TotalCap(val elapsedMs: Long) : WatchdogFired()
 }
 
 public class TurnWatchdog(

@@ -9,11 +9,8 @@
 package splice.provider.grok
 
 import splice.core.auth.Credentials
-import splice.core.auth.RefreshableAuthProvider
-import splice.core.model.ModelCatalog
 import splice.core.parse.AnthropicTurnBody
 import splice.core.turn.TurnMeta
-import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.BuildOptions
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.EffortLadder
@@ -23,24 +20,19 @@ import splice.dialect.responses.ResponsesStreamTranslator
 import splice.dialect.responses.StreamTurnContext
 import splice.spi.BuiltTurn
 import splice.spi.Provider
+import splice.spi.ProviderIdentity
+import splice.spi.ProviderTuning
 import splice.spi.StreamTranslator
 import splice.spi.WatchdogFired
 
-@Suppress("LongParameterList") // a provider bundles catalog+auth+quirks+config
 public class GrokProvider(
-    override val key: String,
-    override val label: String,
-    override val catalog: ModelCatalog,
-    override val pinnedModel: String,
-    override val auth: RefreshableAuthProvider,
-    baseUrl: String,
-    override val watchdog: WatchdogBudget,
+    private val tuning: ProviderTuning,
     override val showReasoning: String,
     override val replayReasoning: Boolean,
     private val configEffort: String?,
-) : Provider {
+) : Provider, ProviderIdentity by tuning {
 
-    override val upstreamUrl: String = "$baseUrl/responses"
+    override val upstreamUrl: String = "${tuning.baseUrl}/responses"
 
     private val quirks = ResponsesQuirks(
         providerTag = "claude-grok",

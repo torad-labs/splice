@@ -7,6 +7,7 @@ import splice.control.HeadCompactSource
 import splice.control.HeadLogSource
 import splice.control.HeadUsageSource
 import splice.control.RateLimitView
+import splice.core.util.runCatchingCancellable
 import splice.gateway.compact.CompactStats
 import splice.gateway.usage.UsageStore
 import java.nio.file.Files
@@ -29,17 +30,13 @@ public class CompactStatsSource(private val stats: CompactStats) : HeadCompactSo
 }
 
 public class LogFileSource(private val logFile: Path) : HeadLogSource {
-    @Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException")
-    override fun tail(lines: Int): String = try {
+    override fun tail(lines: Int): String = runCatchingCancellable {
         if (!Files.exists(logFile)) {
             ""
         } else {
             Files.readAllLines(logFile).takeLast(lines).joinToString("\n")
         }
-    } catch (e: Exception) {
-        if (e is java.util.concurrent.CancellationException) throw e
-        ""
-    }
+    }.getOrDefault("")
 
     override fun path(): String = logFile.toString()
 }

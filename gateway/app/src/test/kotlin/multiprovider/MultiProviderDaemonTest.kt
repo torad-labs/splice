@@ -28,6 +28,7 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import java.net.InetSocketAddress
 import java.nio.file.Files
+import java.nio.file.Path
 import java.util.concurrent.Executors
 
 /** A minimal OpenAI Chat Completions upstream (records the auth header the daemon sent). */
@@ -79,7 +80,6 @@ class MultiProviderDaemonTest {
     private val grokPort = 39322
     private val chatPort = 39323
 
-    @Suppress("LongMethod") // three-vendor topology + fixture files inline
     @BeforeAll
     fun setUp() {
         val tmp = Files.createTempDirectory("multi")
@@ -92,58 +92,8 @@ class MultiProviderDaemonTest {
         val statePaths = StatePaths(baseOverride = tmp.resolve("state"))
         key = MgmtKey(statePaths).get()
 
-        // THE POINT: grok + openrouter are NEW vendors added as pure TOML — no new Kotlin.
-        val toml = """
-            [daemon]
-            control_port = $controlPort
-
-            [providers.codex]
-            dialect = "openai-responses"
-            base_url = "${codexMock.baseUrl}"
-            auth = { kind = "chatgpt-oauth", file = "${codexAuth.esc()}" }
-            quirks = { account_id_header = true, cache_key = "first-message-hash", summary_field = true }
-            [[providers.codex.models]]
-            id = "gpt-5.6-sol"
-            context_window = 272000
-
-            [providers.xai]
-            dialect = "openai-responses"
-            base_url = "${grokMock.baseUrl}"
-            auth = { kind = "api-key", file = "${grokKey.esc()}" }
-            quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = false }
-            [[providers.xai.models]]
-            id = "grok-4.5"
-            context_window = 1000000
-
-            [providers.openrouter]
-            dialect = "openai-chat"
-            base_url = "${chatMock.baseUrl}"
-            auth = { kind = "api-key", file = "${orKey.esc()}" }
-            [[providers.openrouter.models]]
-            id = "meta/llama-4"
-            context_window = 128000
-
-            [heads.claudex]
-            provider = "codex"
-            port = $codexPort
-            discovery_prefix = "claude-codex--"
-            pinned_model = "gpt-5.6-sol"
-
-            [heads.grok]
-            provider = "xai"
-            port = $grokPort
-            discovery_prefix = "claude-grok--"
-            pinned_model = "grok-4.5"
-
-            [heads.openrouter]
-            provider = "openrouter"
-            port = $chatPort
-            discovery_prefix = "claude-openrouter--"
-            pinned_model = "meta/llama-4"
-        """.trimIndent()
-
         daemon = Daemon(
-            topology = TopologyLoader.parse(toml),
+            topology = TopologyLoader.parse(topologyToml(codexAuth, grokKey, orKey)),
             statePaths = statePaths,
             dashboardHtml = { "<!doctype html>" },
             log = {},
@@ -152,6 +102,56 @@ class MultiProviderDaemonTest {
         runBlocking { daemon.start() }
         Thread.sleep(1100) // three Netty heads + control warm up
     }
+
+    // THE POINT: grok + openrouter are NEW vendors added as pure TOML — no new Kotlin per vendor.
+    private fun topologyToml(codexAuth: Path, grokKey: Path, orKey: Path): String = """
+        [daemon]
+        control_port = $controlPort
+
+        [providers.codex]
+        dialect = "openai-responses"
+        base_url = "${codexMock.baseUrl}"
+        auth = { kind = "chatgpt-oauth", file = "${codexAuth.esc()}" }
+        quirks = { account_id_header = true, cache_key = "first-message-hash", summary_field = true }
+        [[providers.codex.models]]
+        id = "gpt-5.6-sol"
+        context_window = 272000
+
+        [providers.xai]
+        dialect = "openai-responses"
+        base_url = "${grokMock.baseUrl}"
+        auth = { kind = "api-key", file = "${grokKey.esc()}" }
+        quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = false }
+        [[providers.xai.models]]
+        id = "grok-4.5"
+        context_window = 1000000
+
+        [providers.openrouter]
+        dialect = "openai-chat"
+        base_url = "${chatMock.baseUrl}"
+        auth = { kind = "api-key", file = "${orKey.esc()}" }
+        [[providers.openrouter.models]]
+        id = "meta/llama-4"
+        context_window = 128000
+
+        [heads.claudex]
+        provider = "codex"
+        port = $codexPort
+        discovery_prefix = "claude-codex--"
+        pinned_model = "gpt-5.6-sol"
+
+        [heads.grok]
+        provider = "xai"
+        port = $grokPort
+        discovery_prefix = "claude-grok--"
+        pinned_model = "grok-4.5"
+
+        [heads.openrouter]
+        provider = "openrouter"
+        port = $chatPort
+        discovery_prefix = "claude-openrouter--"
+        pinned_model = "meta/llama-4"
+    """.trimIndent()
 
     @AfterAll
     fun tearDown() {
@@ -205,4 +205,4 @@ class MultiProviderDaemonTest {
     }
 }
 
-private fun java.nio.file.Path.esc() = toString().replace("\\", "/")
+private fun Path.esc() = toString().replace("\\", "/")

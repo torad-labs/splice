@@ -18,12 +18,12 @@ public fun mirrorWireText(thinking: String): String = "\n[reasoning summary]\n${
  * Mirror the turn's thinking into the transcript as a visible text block.
  * Returns true when the mirror was emitted.
  */
-@Suppress("ReturnCount") // the gate cascade is the ported contract
 public suspend fun mirrorInto(sink: WireSink, thinkingText: String?, showReasoning: String, compact: Boolean): Boolean {
     if (compact) return false // compact is a text-only summarizer turn
-    if (showReasoning != "text") return false
+    // Gate cascade (ported contract): only when reasoning is shown as text AND the trimmed
+    // summary clears the wire threshold; order preserved (showReasoning gate before length gate).
     val t = thinkingText.orEmpty().trim()
-    if (t.length < MIRROR_MIN_CHARS) return false
+    if (showReasoning != "text" || t.length < MIRROR_MIN_CHARS) return false
     sink.addTextBlock(mirrorWireText(t))
     return true
 }

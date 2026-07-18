@@ -22,15 +22,34 @@ public fun interface StreamTranslator {
 /** The upstream request the provider built from an Anthropic body: wire JSON + per-turn meta. */
 public data class BuiltTurn(val requestBody: JsonObject, val meta: TurnMeta)
 
-/** Everything the generic head needs to serve one provider. */
-public interface Provider {
+/** The dialect-invariant identity a provider exposes: which head it is, its catalog, auth, budget.
+ *  Every concrete provider shares this exact cluster, so it's grouped (see [ProviderTuning]) and
+ *  delegated instead of re-threaded through each constructor. */
+public interface ProviderIdentity {
     public val key: String
     public val label: String
     public val catalog: ModelCatalog
     public val pinnedModel: String
     public val auth: RefreshableAuthProvider
-    public val upstreamUrl: String
     public val watchdog: WatchdogBudget
+}
+
+/** The construction bundle every concrete provider takes: its [ProviderIdentity] plus the upstream
+ *  base URL each provider turns into its own [Provider.upstreamUrl]. One cohesive param in place of
+ *  the seven knobs that were identical across codex/grok/openai. */
+public data class ProviderTuning(
+    override val key: String,
+    override val label: String,
+    override val catalog: ModelCatalog,
+    override val pinnedModel: String,
+    override val auth: RefreshableAuthProvider,
+    val baseUrl: String,
+    override val watchdog: WatchdogBudget,
+) : ProviderIdentity
+
+/** Everything the generic head needs to serve one provider. */
+public interface Provider : ProviderIdentity {
+    public val upstreamUrl: String
     public val showReasoning: String
     public val replayReasoning: Boolean
 

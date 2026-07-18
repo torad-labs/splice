@@ -3,6 +3,8 @@
 // preserved-allowed-model + statusline, shared items symlinked, a real operator DIRECTORY never
 // deleted, .claude.json gets modelOptionsCache + MCP inherit + PORT_KEYS + onboarding, isolate
 // overrides share.
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -16,7 +18,9 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.launch.ClaudeConfigMaterializer
 import splice.core.launch.ClaudePolicy
+import splice.core.launch.MaterializeSpec
 import java.nio.file.Files
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 import kotlin.io.path.isSymbolicLink
 import kotlin.io.path.readText
@@ -29,9 +33,21 @@ class ClaudeConfigMaterializerTest {
         isolate = emptySet(),
     )
     private val optionsCache = buildJsonObject { put("cache", "codex-models") }
+    private val statusline = "\"/usr/bin/curl\" -s :3096/statusline"
 
-    private fun materializer(home: Path) =
-        ClaudeConfigMaterializer(home, statuslineCommand = "\"/usr/bin/curl\" -s :3096/statusline")
+    private fun materializer(home: Path) = ClaudeConfigMaterializer(home)
+
+    // Test shim: materialize() now takes a MaterializeSpec; supply a fixed statusline so the
+    // existing positional call sites read unchanged.
+    private fun ClaudeConfigMaterializer.materialize(
+        configDir: Path,
+        policy: ClaudePolicy,
+        availableModelIds: List<String>,
+        defaultModel: String,
+        modelOptionsCache: JsonElement,
+    ) = materialize(
+        MaterializeSpec(configDir, policy, availableModelIds, defaultModel, modelOptionsCache, statusline),
+    )
 
     private fun seedGlobal(home: Path) {
         val g = home.resolve(".claude")
@@ -64,7 +80,7 @@ class ClaudeConfigMaterializerTest {
         materializer(tmp).materialize(dir, allPolicy, listOf("gpt-5.6-sol", "gpt-5.4"), "gpt-5.6-sol", optionsCache)
         val settings = dir.resolve("settings.json")
         assertFalse(settings.isSymbolicLink()) // never a symlink (would clobber global)
-        val obj = kotlinx.serialization.json.Json.parseToJsonElement(settings.readText()).jsonObject
+        val obj = Json.parseToJsonElement(settings.readText()).jsonObject
         assertEquals(
             listOf("gpt-5.6-sol", "gpt-5.4"),
             obj["availableModels"]!!.jsonArray.map { it.jsonPrimitive.content },
@@ -82,12 +98,12 @@ class ClaudeConfigMaterializerTest {
         Files.createDirectories(dir)
         dir.resolve("settings.json").writeText("""{"model":"gpt-5.4"}""")
         materializer(tmp).materialize(dir, allPolicy, listOf("gpt-5.6-sol", "gpt-5.4"), "gpt-5.6-sol", optionsCache)
-        val obj = kotlinx.serialization.json.Json.parseToJsonElement(dir.resolve("settings.json").readText()).jsonObject
+        val obj = Json.parseToJsonElement(dir.resolve("settings.json").readText()).jsonObject
         assertEquals("gpt-5.4", obj["model"]?.jsonPrimitive?.content) // preserved (still allowed)
         // a disallowed saved choice falls back to default
         dir.resolve("settings.json").writeText("""{"model":"gpt-4o"}""")
         materializer(tmp).materialize(dir, allPolicy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
-        val obj2 = kotlinx.serialization.json.Json
+        val obj2 = Json
             .parseToJsonElement(dir.resolve("settings.json").readText())
             .jsonObject
         assertEquals("gpt-5.6-sol", obj2["model"]?.jsonPrimitive?.content)
@@ -110,7 +126,7 @@ class ClaudeConfigMaterializerTest {
         val dir = tmp.resolve(".claude-codex")
         val result = materializer(tmp).materialize(dir, allPolicy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
         assertEquals(1, result.mcpServers)
-        val obj = kotlinx.serialization.json.Json.parseToJsonElement(dir.resolve(".claude.json").readText()).jsonObject
+        val obj = Json.parseToJsonElement(dir.resolve(".claude.json").readText()).jsonObject
         assertTrue(obj["additionalModelOptionsCache"]!!.jsonObject.containsKey("cache"))
         assertTrue(obj["mcpServers"]!!.jsonObject.containsKey("fs"))
         assertEquals("true", obj["verbose"]?.jsonPrimitive?.content) // PORT_KEY inherited
@@ -123,7 +139,7 @@ class ClaudeConfigMaterializerTest {
         val dir = tmp.resolve(".claude-codex")
         val policy = ClaudePolicy(share = allPolicy.share, isolate = setOf("commands"))
         materializer(tmp).materialize(dir, policy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
-        assertFalse(Files.exists(dir.resolve("commands"), java.nio.file.LinkOption.NOFOLLOW_LINKS)) // isolated: no link
+        assertFalse(Files.exists(dir.resolve("commands"), NOFOLLOW_LINKS)) // isolated: no link
         assertTrue(dir.resolve("agents").isSymbolicLink()) // still shared
     }
 
@@ -141,7 +157,7 @@ class ClaudeConfigMaterializerTest {
         assertTrue(dir.resolve("CLAUDE.md").isSymbolicLink())
         assertTrue(dir.resolve("agents").isSymbolicLink())
         // settings merged (the global theme survives alongside the allowlist)
-        val settings = kotlinx.serialization.json.Json
+        val settings = Json
             .parseToJsonElement(dir.resolve("settings.json").readText()).jsonObject
         assertEquals("dark", settings["theme"]?.jsonPrimitive?.content)
         // MCP servers inherited via the "mcps" alias
@@ -154,7 +170,50 @@ class ClaudeConfigMaterializerTest {
         val dir = tmp.resolve(".claude-codex")
         val policy = ClaudePolicy(share = setOf("claude_md", "mcps"), isolate = setOf("claude_md"))
         val result = materializer(tmp).materialize(dir, policy, listOf("m"), "m", optionsCache)
-        assertFalse(Files.exists(dir.resolve("CLAUDE.md"), java.nio.file.LinkOption.NOFOLLOW_LINKS)) // isolated
+        assertFalse(Files.exists(dir.resolve("CLAUDE.md"), NOFOLLOW_LINKS)) // isolated
         assertEquals(1, result.mcpServers) // mcps still shared
+    }
+
+    @Test
+    fun `login interception wires custom command, hook script, and settings hook`(@TempDir tmp: Path) {
+        seedGlobal(tmp)
+        tmp.resolve(".claude/commands/foo.md").writeText("a global command") // to assert it survives
+        val dir = tmp.resolve(".claude-codex")
+        materializer(tmp).materialize(
+            MaterializeSpec(
+                configDir = dir,
+                policy = allPolicy,
+                availableModelIds = listOf("gpt-5.6-sol"),
+                defaultModel = "gpt-5.6-sol",
+                modelOptionsCache = optionsCache,
+                statuslineCommand = statusline,
+                loginCommand = "claude-grok login",
+                signInLabel = "Grok (xAI)",
+            ),
+        )
+        // commands is now a REAL dir (a whole-dir symlink can't hold login.md), with the sentinel
+        // command AND the operator's global command re-linked in.
+        val commands = dir.resolve("commands")
+        assertFalse(commands.isSymbolicLink())
+        assertTrue(commands.resolve("login.md").readText().contains("SPLICE_CODEX_LOGIN"))
+        assertTrue(commands.resolve("login.md").readText().contains("Grok (xAI)")) // provider-correct UX
+        assertTrue(commands.resolve("foo.md").isSymbolicLink())
+        // hook script written, carries the head's login command + provider label
+        val hookText = dir.resolve("splice-login-hook.sh").readText()
+        assertTrue(hookText.contains("claude-grok login"))
+        assertTrue(hookText.contains("Grok (xAI)"))
+        // settings.json wires the UserPromptSubmit hook at the script
+        val settings = Json.parseToJsonElement(dir.resolve("settings.json").readText()).jsonObject
+        val ups = settings["hooks"]!!.jsonObject["UserPromptSubmit"]!!.jsonArray
+        assertTrue(ups.toString().contains("splice-login-hook.sh"))
+    }
+
+    @Test
+    fun `no login interception when loginCommand is blank`(@TempDir tmp: Path) {
+        seedGlobal(tmp)
+        val dir = tmp.resolve(".claude-codex")
+        materializer(tmp).materialize(dir, allPolicy, listOf("m"), "m", optionsCache) // shim: loginCommand=""
+        assertFalse(Files.exists(dir.resolve("splice-login-hook.sh")))
+        assertTrue(dir.resolve("commands").isSymbolicLink()) // stays a plain shared symlink
     }
 }

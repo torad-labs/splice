@@ -4,11 +4,10 @@
 // exactly like codex — only the endpoints/client-id/scope differ. Credentials land in
 // ~/.grok/auth.json (shape-compatible enough to interop with the official CLI's tokens). The public
 // desktop client id is not a secret (it's the CLI's, reused so no separate grok binary is needed).
-@file:Suppress("StringLiteralDuplication") // OAuth grant/param names are the wire contract
-
 package splice.provider.grok
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
@@ -36,9 +35,11 @@ public object GrokOAuthEndpoints {
         env("GROK_OAUTH_CLIENT_ID") ?: DEFAULT_CLIENT_ID
 }
 
-@Suppress("MagicNumber") // 48 = PKCE verifier byte length used by the grok CLI (base64url ~64 chars)
+// 48 = PKCE verifier byte length used by the grok CLI (base64url ~64 chars).
+private const val PKCE_VERIFIER_BYTES = 48
+
 public fun makeGrokPkce(random: SecureRandom = SecureRandom()): Pkce {
-    val verifier = grokBase64Url(ByteArray(48).also { random.nextBytes(it) })
+    val verifier = grokBase64Url(ByteArray(PKCE_VERIFIER_BYTES).also { random.nextBytes(it) })
     val challenge = grokBase64Url(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray()))
     return Pkce(verifier, challenge)
 }
@@ -73,12 +74,16 @@ public fun buildGrokAuthorizeUrl(
     return "${GrokOAuthEndpoints.authorizeUrl(env)}?$query"
 }
 
-@Suppress("MagicNumber", "ComplexCondition") // byte-masking is inherent to RFC3986 encoding
+// byte-masking is inherent to RFC3986 encoding: 0xFF keeps the low byte, 0x80 is the ASCII ceiling.
+private const val BYTE_MASK = 0xFF
+private const val ASCII_LIMIT = 0x80
+
 private fun grokPercentEncode(value: String): String = buildString {
     for (b in value.toByteArray(Charsets.UTF_8)) {
-        val c = b.toInt() and 0xFF
+        val c = b.toInt() and BYTE_MASK
         val ch = c.toChar()
-        if (ch.isLetterOrDigit() && c < 0x80 || ch in "-_.~") append(ch) else append("%%%02X".format(c))
+        val unreserved = ch.isLetterOrDigit() && c < ASCII_LIMIT
+        if (unreserved || ch in "-_.~") append(ch) else append("%%%02X".format(c))
     }
 }
 
@@ -100,12 +105,15 @@ public fun grokCodeExchangeForm(
         "code_challenge_method" to "S256",
     )
 
+// The refresh-token grant name doubles as the persisted token field key (the wire contract).
+private const val WIRE_REFRESH_TOKEN = "refresh_token"
+
 /** Form body for the refresh-token grant. */
 public fun grokRefreshForm(refreshToken: String, clientId: String): String =
     formEncode(
-        "grant_type" to "refresh_token",
+        "grant_type" to WIRE_REFRESH_TOKEN,
         "client_id" to clientId,
-        "refresh_token" to refreshToken,
+        WIRE_REFRESH_TOKEN to refreshToken,
     )
 
 private fun formEncode(vararg pairs: Pair<String, String>): String =
@@ -122,14 +130,14 @@ public fun grokAuthJsonFromTokenResponse(
 ): JsonObject {
     val obj = grokJson.parseToJsonElement(responseBody).jsonObjectOrEmpty()
     val access = (obj["access_token"] as? JsonPrimitive)?.content.orEmpty()
-    val refresh = (obj["refresh_token"] as? JsonPrimitive)?.content ?: fallbackRefresh
+    val refresh = (obj[WIRE_REFRESH_TOKEN] as? JsonPrimitive)?.content ?: fallbackRefresh
     val expiresIn = (obj["expires_in"] as? JsonPrimitive)?.content?.toLongOrNull()
     return buildJsonObject {
         put(
             "tokens",
             buildJsonObject {
                 put("access_token", JsonPrimitive(access))
-                if (refresh != null) put("refresh_token", JsonPrimitive(refresh))
+                if (refresh != null) put(WIRE_REFRESH_TOKEN, JsonPrimitive(refresh))
             },
         )
         if (expiresIn != null) put("expires", JsonPrimitive(nowMs + expiresIn * MS_PER_S))
@@ -139,5 +147,5 @@ public fun grokAuthJsonFromTokenResponse(
 
 private const val MS_PER_S = 1000L
 
-private fun kotlinx.serialization.json.JsonElement.jsonObjectOrEmpty(): JsonObject =
+private fun JsonElement.jsonObjectOrEmpty(): JsonObject =
     this as? JsonObject ?: JsonObject(emptyMap())

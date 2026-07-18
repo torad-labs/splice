@@ -34,7 +34,6 @@ public class UpstreamClient(
      * request builder; [auth] supplies + refreshes them. Cancelling the calling coroutine
      * aborts the in-flight body (the lock-safe kill).
      */
-    @Suppress("LongParameterList", "CyclomaticComplexMethod", "NestedBlockDepth", "LoopWithTooManyJumpStatements")
     public suspend fun <T> post(
         url: String,
         bodyJson: String,
@@ -48,45 +47,69 @@ public class UpstreamClient(
         var attempt = 0
         while (attempt < maxRetries) {
             val creds = auth.credentials() ?: throw UpstreamAuthMissing()
-            val allHeaders = applyAuth(creds, extraHeaders(creds)) // resolve suspend fn outside the builder
-            val statement = client.preparePost(url) {
-                contentType(ContentType.Application.Json)
-                headers { allHeaders.forEach { (k, v) -> append(k, v) } }
-                setBody(bodyJson)
-            }
-            val outcome = statement.execute { resp ->
-                if (resp.status.isSuccess()) {
-                    RetryOutcome.Done(block(UpstreamResponse(resp)))
-                } else {
-                    val text = resp.bodyText()
-                    lastErrText = text
-                    RetryOutcome.Failed(resp.status.value, text)
-                }
-            }
-            when (outcome) {
-                is RetryOutcome.Done<*> -> {
-                    @Suppress("UNCHECKED_CAST")
-                    return outcome.value as T
-                }
+            when (val outcome = attemptRequest(url, bodyJson, creds, extraHeaders, block)) {
+                is RetryOutcome.Done -> return outcome.value
                 is RetryOutcome.Failed -> {
-                    if (outcome.status == UNAUTHORIZED && !refreshedOnce) {
-                        refreshedOnce = true
-                        // refresh persists the new token; the loop re-reads auth.credentials()
-                        if (auth.refresh() != null) continue // does not consume a normal attempt
+                    lastErrText = outcome.text
+                    val plan = planRetry(outcome, attempt, refreshedOnce, auth, onRetry)
+                    refreshedOnce = plan.refreshedOnce
+                    when (plan.decision) {
+                        RetryDecision.RETRY -> Unit // refresh succeeded — does not consume a normal attempt
+                        RetryDecision.BACKOFF -> {
+                            backoff(attempt)
+                            attempt += 1
+                        }
+                        RetryDecision.GIVE_UP -> break
                     }
-                    val retryable = outcome.status in RETRYABLE_STATUSES
-                    onRetry(
-                        "upstream ${outcome.status} attempt ${attempt + 1}/$maxRetries: " +
-                            outcome.text.take(ERR_SNIPPET),
-                    )
-                    if (!retryable || attempt == maxRetries - 1) break
-                    backoff(attempt)
                 }
             }
-            attempt += 1
         }
         throw UpstreamFailed(lastErrText)
     }
+
+    private suspend fun <T> attemptRequest(
+        url: String,
+        bodyJson: String,
+        creds: Credentials,
+        extraHeaders: suspend (Credentials) -> Map<String, String>,
+        block: suspend (UpstreamResponse) -> T,
+    ): RetryOutcome<T> {
+        val allHeaders = applyAuth(creds, extraHeaders(creds)) // resolve suspend fn outside the builder
+        val statement = client.preparePost(url) {
+            contentType(ContentType.Application.Json)
+            headers { allHeaders.forEach { (k, v) -> append(k, v) } }
+            setBody(bodyJson)
+        }
+        return statement.execute { resp ->
+            if (resp.status.isSuccess()) {
+                RetryOutcome.Done(block(UpstreamResponse(resp)))
+            } else {
+                RetryOutcome.Failed(resp.status.value, resp.bodyText())
+            }
+        }
+    }
+
+    private suspend fun planRetry(
+        failed: RetryOutcome.Failed,
+        attempt: Int,
+        refreshedOnce: Boolean,
+        auth: RefreshableAuthProvider,
+        onRetry: (String) -> Unit,
+    ): RetryPlan {
+        // a 401 spends the single refresh regardless of result; a non-401 leaves it unused
+        val refreshable = failed.status == UNAUTHORIZED && !refreshedOnce
+        // refresh persists the new token; the loop re-reads auth.credentials()
+        if (refreshable && auth.refresh() != null) return RetryPlan(RetryDecision.RETRY, refreshedOnce = true)
+        onRetry(
+            "upstream ${failed.status} attempt ${attempt + 1}/$maxRetries: " +
+                failed.text.take(ERR_SNIPPET),
+        )
+        val retryable = failed.status in RETRYABLE_STATUSES
+        val decision = if (!retryable || attempt == maxRetries - 1) RetryDecision.GIVE_UP else RetryDecision.BACKOFF
+        return RetryPlan(decision, refreshedOnce = refreshedOnce || refreshable)
+    }
+
+    private data class RetryPlan(val decision: RetryDecision, val refreshedOnce: Boolean)
 
     private fun applyAuth(creds: Credentials, extra: Map<String, String>): Map<String, String> {
         val base = when (creds) {
@@ -99,9 +122,11 @@ public class UpstreamClient(
         return base + extra
     }
 
-    private sealed interface RetryOutcome {
-        data class Done<T>(val value: T) : RetryOutcome
-        data class Failed(val status: Int, val text: String) : RetryOutcome
+    private enum class RetryDecision { RETRY, BACKOFF, GIVE_UP }
+
+    private sealed class RetryOutcome<out T> {
+        data class Done<T>(val value: T) : RetryOutcome<T>()
+        data class Failed(val status: Int, val text: String) : RetryOutcome<Nothing>()
     }
 
     public companion object {
@@ -113,16 +138,33 @@ public class UpstreamClient(
         public fun defaultClient(firstByteTimeoutMs: Long, totalTimeoutMs: Long): HttpClient =
             HttpClient(CIO) {
                 install(HttpTimeout) {
-                    // headers-phase = first byte; the stream watchdog governs the body phase
-                    connectTimeoutMillis = CONNECT_TIMEOUT_MS
+                    // A reasoning turn can be SILENT for minutes before the first token, and a big
+                    // prefill likewise. A short connect/first-response cap here was cutting those at
+                    // ~10s → "stream ended without response.completed". The stream watchdog (not this
+                    // plugin) does the granular first-byte/idle enforcement, so keep these generous.
+                    connectTimeoutMillis = firstByteTimeoutMs
                     requestTimeoutMillis = totalTimeoutMs
                     socketTimeoutMillis = firstByteTimeoutMs
                 }
-                engine { maxConnectionsCount = MAX_CONNECTIONS }
+                engine {
+                    // CIO's engine requestTimeout DEFAULTS to 15s — it does NOT inherit the plugin's
+                    // 900s and was cutting every long turn. Match the total cap; watchdog does the rest.
+                    requestTimeout = totalTimeoutMs
+                    maxConnectionsCount = MAX_CONNECTIONS
+                    // PARITY with Node's undici Agent (pipelining:1, keepAlive 60s). CIO's default
+                    // pipelineMaxSize is 20 — up to 20 requests share one connection, so ONE cancelled
+                    // SSE stream (Claude Code supersedes/cancels turns constantly) corrupts its siblings
+                    // → "stream ended without response.completed" + resets. Pin to 1: a stream owns its
+                    // connection; a cancel can only hurt itself.
+                    endpoint.pipelineMaxSize = 1
+                    endpoint.keepAliveTime = KEEP_ALIVE_MS
+                    endpoint.connectAttempts = CONNECT_ATTEMPTS
+                }
             }
 
-        private const val CONNECT_TIMEOUT_MS = 10_000L
         private const val MAX_CONNECTIONS = 256
+        private const val KEEP_ALIVE_MS = 60_000L
+        private const val CONNECT_ATTEMPTS = 3
     }
 }
 

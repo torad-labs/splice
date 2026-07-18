@@ -1,0 +1,13 @@
+# Commands are cases of a `sealed class Command` with typed args + a total `run()`, NOT singleton
+# `object …Command` namespaces dispatched by a stringly-typed map. An `object <Name>Command` is the
+# banned shape; model it as `data class`/`data object … : Command()` instead. (Stateless helper
+# namespaces like `object AdminSupport` are fine — only names ending in `Command` are flagged.)
+id: kt-no-object-command
+language: kotlin
+severity: error
+message: "A command must be a `sealed class Command` case, not an `object …Command` singleton."
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  kind: object_declaration
+  regex: 'object\s+\w*Command\b'

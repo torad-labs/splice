@@ -35,6 +35,7 @@ import splice.gateway.usage.UsageStore
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.provider.openai.OpenAiChatProvider
 import splice.spi.InflightGate
+import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
 import java.net.InetSocketAddress
 import java.nio.file.Files
@@ -94,17 +95,19 @@ class OpenAiChatTest {
     fun setUp() = runBlocking {
         val tmp = Files.createTempDirectory("chat-it")
         val provider = OpenAiChatProvider(
-            key = "openrouter",
-            label = "openrouter",
-            catalog = ModelCatalog(
-                discoveryPrefix = "claude-openrouter--",
-                models = listOf(ModelEntry("meta/llama-4", "Llama 4", contextWindow = 128_000)),
-                defaultContextWindow = 128_000,
+            tuning = ProviderTuning(
+                key = "openrouter",
+                label = "openrouter",
+                catalog = ModelCatalog(
+                    discoveryPrefix = "claude-openrouter--",
+                    models = listOf(ModelEntry("meta/llama-4", "Llama 4", contextWindow = 128_000)),
+                    defaultContextWindow = 128_000,
+                ),
+                pinnedModel = "meta/llama-4",
+                auth = ApiKeyAuthProvider("OPENROUTER_API_KEY", envReader = { "or-key-123456" }),
+                baseUrl = mock.baseUrl,
+                watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             ),
-            pinnedModel = "meta/llama-4",
-            auth = ApiKeyAuthProvider("OPENROUTER_API_KEY", envReader = { "or-key-123456" }),
-            baseUrl = mock.baseUrl,
-            watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             quirks = ChatQuirks(providerTag = "openrouter"),
         )
         head = HeadServer(

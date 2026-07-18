@@ -98,6 +98,9 @@ class ControlServerTest {
             modelLabels = mapOf("gpt-5.6-sol" to "Codex 5.6 Sol", "gpt-5.4-mini" to "Codex 5.4 Mini"),
             contextWindow = 272000,
             modelOptionsCache = kotlinx.serialization.json.buildJsonObject { },
+            statuslineCommand = "\"/bin/curl\" -s :3096/statusline",
+            loginCommand = "claudex login",
+            signInLabel = "Codex (ChatGPT)",
             policy = splice.core.launch.ClaudePolicy(share = emptySet(), isolate = emptySet()),
             port = 3099,
         )
@@ -109,7 +112,7 @@ class ControlServerTest {
             dashboardHtml = { "<!doctype html><title>splice</title>" },
             log = {},
             launchService = LaunchService(
-                splice.core.launch.ClaudeConfigMaterializer(tmp, "\"/bin/curl\" -s :3096/statusline"),
+                splice.core.launch.ClaudeConfigMaterializer(tmp),
             ),
         )
         control.start()

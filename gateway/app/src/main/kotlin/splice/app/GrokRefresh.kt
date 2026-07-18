@@ -3,17 +3,21 @@
 // unit-testable with a fake refreshCall (mirrors CodexRefresh).
 package splice.app
 
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.forms.submitForm
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.Parameters
 import io.ktor.http.isSuccess
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import splice.core.util.runCatchingCancellable
 import splice.provider.grok.GrokOAuthEndpoints
 import splice.provider.grok.GrokRefreshedTokens
 
-@Suppress("TooGenericExceptionCaught", "InstanceOfCheckForException") // refresh failure -> null (re-prompt)
-public suspend fun grokRefresh(tokenUrl: String, refreshToken: String): GrokRefreshedTokens? = try {
+// refresh failure -> null (re-prompt)
+public suspend fun grokRefresh(tokenUrl: String, refreshToken: String): GrokRefreshedTokens? = runCatchingCancellable {
     val resp = grokRefreshClient.submitForm(
         url = tokenUrl,
         formParameters = Parameters.build {
@@ -36,10 +40,7 @@ public suspend fun grokRefresh(tokenUrl: String, refreshToken: String): GrokRefr
             )
         }
     }
-} catch (e: Exception) {
-    if (e is kotlinx.coroutines.CancellationException) throw e
-    null
-}
+}.getOrNull()
 
-private val grokRefreshClient by lazy { io.ktor.client.HttpClient(io.ktor.client.engine.cio.CIO) }
-private val grokRefreshJson = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+private val grokRefreshClient by lazy { HttpClient(CIO) }
+private val grokRefreshJson = Json { ignoreUnknownKeys = true }

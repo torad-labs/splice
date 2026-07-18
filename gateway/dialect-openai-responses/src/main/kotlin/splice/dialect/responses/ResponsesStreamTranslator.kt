@@ -43,7 +43,7 @@ public data class StreamTurnContext(
      *  store the opaque handle). NB: this is the STREAM-side emission flag — distinct from and
      *  opposite to BuildOptions.replayReasoning, which INJECTS prior reasoning into the request
      *  input. Same concept split into two honestly-named flags (craft review). */
-    val emitEncryptedReasoning: Boolean,
+    val emitEncryptedReasoning: EmitEncryptedReasoning,
     /** Encodes a reasoning item into the redacted_thinking envelope (gateway supplies; the
      *  envelope codec is splice-reasoning v1 and lands with P3-MIR). */
     val encodeReasoningEnvelope: (JsonObject) -> String?,
@@ -353,7 +353,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
 
 /** Gated encrypted-reasoning EMISSION predicate — kept out of the handler so its condition stays flat. */
 private fun shouldEmitReasoning(ctx: StreamTurnContext, item: JsonObject): Boolean =
-    ctx.emitEncryptedReasoning && !ctx.compact &&
+    ctx.emitEncryptedReasoning.v && !ctx.compact &&
         str(item["type"]) == "reasoning" && str(item["encrypted_content"]).isNotEmpty()
 
 /**

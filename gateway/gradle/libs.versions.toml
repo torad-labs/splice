@@ -23,6 +23,10 @@ ktor-server-sse = { module = "io.ktor:ktor-server-sse", version.ref = "ktor" }
 ktor-server-test-host = { module = "io.ktor:ktor-server-test-host", version.ref = "ktor" }
 ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
 ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
+# Upstream streaming client engine. JDK HttpClient (async NIO) — CIO's socket writer busy-spins on a
+# non-writable upstream socket (macOS/kqueue especially), melting CPU under concurrent large-body
+# streams; the JDK engine parks correctly and scales to the 1000-stream target on a few threads.
+ktor-client-java = { module = "io.ktor:ktor-client-java", version.ref = "ktor" }
 ktor-client-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
 konsist = { module = "com.lemonappdev:konsist", version.ref = "konsist" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }

@@ -32,6 +32,9 @@ dependencies {
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     // Gradle's 512m worker default intermittently kills the 1000-stream load test mid-gate
-    // (worker dies -> bare java.io.EOFException, 2026-07-18 x2); 1g is bounded and sufficient.
-    maxHeapSize = "1g"
+    // (worker dies -> bare java.io.EOFException, 2026-07-18 x2). 2g since the upstream client moved
+    // from ktor CIO to the JDK HttpClient engine (CIO busy-spun the CPU) — the JDK engine holds more
+    // per-connection state, so the 1000-stream CEILING test needs the extra heap. Real load is tens
+    // of streams (far under 1g either way); this only funds the stress ceiling.
+    maxHeapSize = "2g"
 }

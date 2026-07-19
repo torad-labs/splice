@@ -5,6 +5,7 @@
 package splice.app.cli
 
 import splice.app.TopologyLoader
+import splice.core.SHIM_VERSION
 import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
@@ -16,6 +17,7 @@ import kotlin.io.path.isSymbolicLink
 private fun home(): Path = Paths.get(System.getProperty("user.home"))
 private fun localBin(): Path = home().resolve(".local").resolve("bin")
 private fun shareDir(): Path = home().resolve(".local").resolve("share").resolve("splice")
+private fun launchShimPath(): Path = shareDir().resolve("splice-launch")
 
 internal fun init() {
     val path = TopologyLoader.configPath()
@@ -26,7 +28,7 @@ internal fun init() {
 
 internal fun install(headArg: String?) {
     val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath())
-    val launchShim = shareDir().resolve("splice-launch")
+    val launchShim = launchShimPath()
     if (!Files.exists(launchShim)) {
         println("splice: warning — launch shim not found at $launchShim (install.sh installs it)")
     }
@@ -49,7 +51,7 @@ internal fun install(headArg: String?) {
 
 /** Link the `splice` admin command itself (so `splice dashboard/status/...` work as commands). */
 internal fun installSelf() {
-    val launchShim = shareDir().resolve("splice-launch")
+    val launchShim = launchShimPath()
     Files.createDirectories(localBin())
     linkOne("splice", "splice", launchShim)
 }
@@ -92,7 +94,7 @@ internal fun uninstall(headArg: String?) {
 /** Copy the repo's launch shim into the share dir (used by install.sh / dev). */
 internal fun installShim(repoShim: Path) {
     Files.createDirectories(shareDir())
-    val dst = shareDir().resolve("splice-launch")
+    val dst = launchShimPath()
     runCatchingCancellable {
         Files.copy(repoShim, dst, StandardCopyOption.REPLACE_EXISTING)
         dst.toFile().setExecutable(true)
@@ -100,4 +102,26 @@ internal fun installShim(repoShim: Path) {
     }.onFailure { e ->
         println("splice: failed to install shim: ${e.message}")
     }
+}
+
+private val SHIM_VERSION_LINE = Regex("""^SPLICE_SHIM_VERSION="([^"]*)"""", RegexOption.MULTILINE)
+
+/** The SPLICE_SHIM_VERSION marker embedded in the installed shim, or null if none/unreadable. */
+internal fun installedShimVersion(): String? {
+    val shim = launchShimPath()
+    if (!Files.exists(shim)) return null
+    return runCatchingCancellable {
+        SHIM_VERSION_LINE.find(Files.readString(shim))?.groupValues?.get(1)
+    }.getOrNull()
+}
+
+/** Non-fatal staleness message for the installed shim, or null when absent/current. */
+internal fun shimStalenessWarning(): String? {
+    val shim = launchShimPath()
+    if (!Files.exists(shim)) return null
+    val installed = installedShimVersion()
+    if (installed == SHIM_VERSION) return null
+    return "splice: WARNING — installed launch shim at $shim is STALE " +
+        "(marker=${installed ?: "<missing>"}, expected=$SHIM_VERSION). " +
+        "Run: splice install (or ./install.sh) to refresh it."
 }

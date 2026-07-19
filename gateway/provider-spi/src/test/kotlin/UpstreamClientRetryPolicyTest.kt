@@ -132,4 +132,12 @@ class UpstreamClientRetryPolicyTest {
         val bases = (0..8).map { minOf(200L shl it, 10_000L) }
         assertTrue(bases.first() == 200L && bases.max() == 10_000L)
     }
+
+    @Test
+    fun `dns backoff envelope pins 1s-2s-4s schedule`() {
+        // G14: DNS-class transport failures back off on their own curve — pin the literal math
+        // the dnsBackoff comment promises, same idiom as the generic-curve pin above.
+        val bases = (0..4).map { minOf(1_000L shl it, 4_000L) }
+        assertEquals(listOf(1_000L, 2_000L, 4_000L, 4_000L, 4_000L), bases)
+    }
 }

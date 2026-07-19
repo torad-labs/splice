@@ -119,6 +119,93 @@ class UpstreamClientTransportTest {
     }
 
     @Test
+    fun `stream torn before first client frame reissues within its own budget`() = runTest {
+        // G5: 2xx received (handoff) but the client saw no byte (clientFrameEmitted = false), so a
+        // torn connection is provably safe to re-issue. The block throws on its first 2 handoffs,
+        // then returns a sentinel on the 3rd — proving the reissue re-POSTs (a fresh engine call).
+        val engineCalls = AtomicInteger()
+        val blockCalls = AtomicInteger()
+        val engine = MockEngine {
+            engineCalls.incrementAndGet()
+            respond("ok-body", HttpStatusCode.OK, headersOf())
+        }
+        val retries = mutableListOf<String>()
+        val out = clientOver(engine).post(
+            url = "https://api.example.test/v1",
+            bodyJson = "{}",
+            auth = fakeAuth,
+            extraHeaders = { emptyMap() },
+            onRetry = { retries.add(it) },
+            clientFrameEmitted = { false },
+        ) {
+            if (blockCalls.incrementAndGet() <= 2) throw ConnectException("torn before first frame")
+            "sentinel"
+        }
+        assertEquals("sentinel", out)
+        assertEquals(3, blockCalls.get())
+        assertEquals(3, engineCalls.get())
+        assertTrue(retries.any { it.contains("reissue") })
+    }
+
+    @Test
+    fun `stream torn before first client frame exhausts its reissue budget and rethrows`() = runTest {
+        val blockCalls = AtomicInteger()
+        val engine = MockEngine { respond("ok-body", HttpStatusCode.OK, headersOf()) }
+        assertThrows<ConnectException> {
+            clientOver(engine).post(
+                url = "https://api.example.test/v1",
+                bodyJson = "{}",
+                auth = fakeAuth,
+                extraHeaders = { emptyMap() },
+                clientFrameEmitted = { false },
+            ) {
+                blockCalls.incrementAndGet()
+                throw ConnectException("torn before first frame")
+            }
+        }
+        assertEquals(3, blockCalls.get()) // 1 initial + MAX_STREAM_REISSUES=2 reissues, then rethrow
+    }
+
+    @Test
+    fun `once client has seen a frame a torn stream never reissues`() = runTest {
+        val blockCalls = AtomicInteger()
+        val engine = MockEngine { respond("ok-body", HttpStatusCode.OK, headersOf()) }
+        assertThrows<ConnectException> {
+            clientOver(engine).post(
+                url = "https://api.example.test/v1",
+                bodyJson = "{}",
+                auth = fakeAuth,
+                extraHeaders = { emptyMap() },
+                clientFrameEmitted = { true }, // explicit: the hard no-retry-after-output case
+            ) {
+                blockCalls.incrementAndGet()
+                throw ConnectException("torn after a frame")
+            }
+        }
+        assertEquals(1, blockCalls.get())
+    }
+
+    @Test
+    fun `canReissueStream predicate requires handoff, no client frame, retryable transport class, and remaining budget`() {
+        assertTrue(
+            UpstreamClient.canReissueStream(true, ConnectException("torn"), { false }, 0),
+        )
+        assertFalse(
+            UpstreamClient.canReissueStream(false, ConnectException("torn"), { false }, 0),
+        )
+        assertFalse(
+            UpstreamClient.canReissueStream(true, ConnectException("torn"), { true }, 0),
+        )
+        assertFalse(
+            UpstreamClient.canReissueStream(true, IllegalStateException("bug"), { false }, 0),
+        )
+        // budget spent — the literal 2 mirrors MAX_STREAM_REISSUES (kept private, like maxRetries).
+        assertFalse(
+            UpstreamClient.canReissueStream(true, ConnectException("torn"), { false }, 2),
+        )
+    }
+
+    @Test
     fun `post sends the body as exact UTF-8 bytes with no content-encoding`() = runTest {
         // B4 (#924 Phase 4): the gzip-request-body incident (xAI 400'd a gzipped body, 2026-07-18)
         // as a transport-SHAPE assertion — this catches the CLASS (ANY request-body compression),

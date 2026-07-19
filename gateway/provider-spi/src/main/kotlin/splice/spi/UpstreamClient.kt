@@ -55,6 +55,7 @@ public class UpstreamClient(
         val extraHeaders: suspend (Credentials) -> Map<String, String>,
         val onRetry: (String) -> Unit,
         val perf: TurnPerf?,
+        val clientFrameEmitted: () -> Boolean,
     )
 
     /**
@@ -72,9 +73,14 @@ public class UpstreamClient(
         extraHeaders: suspend (Credentials) -> Map<String, String>,
         onRetry: (String) -> Unit = {},
         perf: TurnPerf? = null,
+        // Defaults to { true } — "assume the client already saw output" — so any caller that does
+        // NOT wire this (there are none today besides TurnDriver, but keep the safe default) keeps
+        // the pre-G5 commitment rule: never retry once handed off. Only TurnDriver, which can prove
+        // FIRST_FRAME hasn't fired, passes a real probe.
+        clientFrameEmitted: () -> Boolean = { true },
         block: suspend (UpstreamResponse) -> T,
     ): T {
-        val ctx = PostContext(url, auth, extraHeaders, onRetry, perf)
+        val ctx = PostContext(url, auth, extraHeaders, onRetry, perf, clientFrameEmitted)
         // Encode ONCE; retries resend the same bytes (no per-attempt string re-encode). Never gzip.
         val bodyBytes = bodyJson.toByteArray(Charsets.UTF_8)
         val state = RetryState()
@@ -94,6 +100,11 @@ public class UpstreamClient(
         var attempt: Int = 0
         var refreshedOnce: Boolean = false
         var lastErr: RetryOutcome.Failed? = null
+
+        // G5: a small budget for re-issuing a stream torn BEFORE the client saw a byte. Spans the
+        // whole turn (declared once here, never reset per handoff) and is deliberately smaller than
+        // and independent of `maxRetries` — re-POSTing after a 2xx is a costlier, riskier act.
+        var streamReissues: Int = 0
     }
 
     private sealed class LoopStep<out T> {
@@ -132,11 +143,7 @@ public class UpstreamClient(
         }
         val transportError = attempted.exceptionOrNull()
         if (transportError != null) {
-            rethrowUnlessRetryableTransport(transportError, ctx, streamHandedOff, state.attempt, t0)
-            ctx.perf?.add(PerfKeys.RETRIES, 1)
-            ctx.perf.timedOr(PerfKeys.BACKOFF_MS) { backoff(state.attempt, 0L) }
-            state.attempt += 1
-            return LoopStep.Continue
+            return onTransportError(transportError, ctx, streamHandedOff, state, t0)
         }
         val outcome = attempted.getOrThrow()
         if (outcome is RetryOutcome.Done) return LoopStep.Done(outcome.value)
@@ -149,6 +156,34 @@ public class UpstreamClient(
             RetryDecision.BACKOFF -> applyBackoff(ctx, plan, state, t0)
             RetryDecision.GIVE_UP -> giveUp(state.lastErr)
         }
+    }
+
+    /** The transport-error half of one attempt (split so [runAttempt] stays under the complexity
+     *  ceiling — same reasoning as planRetry/statusPlan). G5: a stream torn BEFORE the client saw a
+     *  byte re-issues on its own small budget (does NOT consume `attempt`); otherwise the pre-G5
+     *  rule holds — retry on the backoff budget only before handoff, else rethrow. */
+    private suspend fun onTransportError(
+        e: Throwable,
+        ctx: PostContext,
+        streamHandedOff: Boolean,
+        state: RetryState,
+        t0: Long,
+    ): LoopStep<Nothing> {
+        if (canReissueStream(streamHandedOff, e, ctx.clientFrameEmitted, state.streamReissues)) {
+            state.streamReissues += 1
+            ctx.onRetry(
+                "stream torn before first client frame, reissue ${state.streamReissues}/$MAX_STREAM_REISSUES: " +
+                    "${e::class.simpleName} ${e.message.orEmpty().take(ERR_SNIPPET)}",
+            )
+            ctx.perf?.add(PerfKeys.RETRIES, 1)
+            ctx.perf.timedOr(PerfKeys.BACKOFF_MS) { backoff(state.attempt, 0L) }
+            return LoopStep.Continue // does NOT increment `attempt` — this budget is separate
+        }
+        rethrowUnlessRetryableTransport(e, ctx, streamHandedOff, state.attempt, t0)
+        ctx.perf?.add(PerfKeys.RETRIES, 1)
+        ctx.perf.timedOr(PerfKeys.BACKOFF_MS) { backoff(state.attempt, 0L) }
+        state.attempt += 1
+        return LoopStep.Continue
     }
 
     /** The BACKOFF half of the retry decision: re-checks the deadline (G4d) before the sleep so a
@@ -179,7 +214,8 @@ public class UpstreamClient(
 
     // A transport error thrown BEFORE stream handoff (DNS/connect/timeout, per isRetryableTransport)
     // retries on the backoff budget; once the stream is handed off, the error is non-transport, or
-    // it is the last attempt, rethrow — a retry would duplicate output or mask a real failure.
+    // it is the last attempt, rethrow — a retry would duplicate output or mask a real failure —
+    // unless the stream was torn before the client saw any output — see canReissueStream (G5).
     private fun rethrowUnlessRetryableTransport(
         e: Throwable,
         ctx: PostContext,
@@ -345,6 +381,23 @@ public class UpstreamClient(
             }
             return false
         }
+
+        private const val MAX_STREAM_REISSUES = 2
+
+        /** G5: a torn stream re-issues the request iff it was already handed off (2xx received),
+         *  the client has NOT yet seen a byte (FIRST_FRAME unmarked — duplicate-output risk starts
+         *  the instant it has), the failure is a retryable transport class, and the small dedicated
+         *  budget isn't spent. Separate from the connect-phase `attempt`/`maxRetries` budget on
+         *  purpose: re-issuing after a 2xx is a costlier, riskier act than a pre-handoff retry. */
+        internal fun canReissueStream(
+            streamHandedOff: Boolean,
+            e: Throwable,
+            clientFrameEmitted: () -> Boolean,
+            streamReissues: Int,
+        ): Boolean = streamHandedOff &&
+            !clientFrameEmitted() &&
+            isRetryableTransport(e) &&
+            streamReissues < MAX_STREAM_REISSUES
 
         // Every surveyed harness (codex, gemini-cli, Claude Code) retries ALL 5xx; 501 stays
         // terminal (Not Implemented never heals) and 4xx stays terminal except 408/429 (G4a).

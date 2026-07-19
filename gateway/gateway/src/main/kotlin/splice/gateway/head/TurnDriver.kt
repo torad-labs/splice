@@ -253,6 +253,7 @@ internal class TurnDriver(
             extraHeaders = { creds -> provider.extraHeaders(creds) + drive.turnHeaders },
             onRetry = { log("[${provider.key}] $it\n") },
             perf = drive.perf,
+            clientFrameEmitted = { drive.perf.hasMark(PerfKeys.FIRST_FRAME) },
         ) { resp ->
             drive.slot.touch()
             val poller = drive.watchdog.launchIn(self, drive.slot, turnJob)

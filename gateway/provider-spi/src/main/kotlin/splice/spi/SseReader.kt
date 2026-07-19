@@ -1,12 +1,17 @@
-// PORT-OF: server/src/codex/stream.mjs sseEvents @ 4ca99f7 — invariants: multi-byte-safe UTF-8
-// across chunk boundaries (streaming decoder, never split a codepoint); partial last line
-// carries to the next chunk; only `data:`-prefixed lines yield (the space after the colon is
-// OPTIONAL per the SSE spec — kimi emits `data:{…}` bare, Anthropic/OpenAI emit `data: {…}`;
-// requiring the space silently dropped every kimi frame); empty payloads and [DONE]
-// skipped; malformed JSON frames skipped (never crash the stream); onBytes fires ON RAW READ
-// with the chunk size (the watchdog touch + byte telemetry — never after downstream write; a
-// slow client must not fake idleness). Hot-path shape: one reused decode scratch per stream
-// (no per-chunk buffer allocs) and index-scanned lines (no per-line StringBuilder churn).
+// NEW: line/event assembly per WHATWG HTML §9.2 event-stream-interpretation (blank-line dispatch,
+// multi-line `data:` joined with \n, CR/CRLF/LF terminators, leading BOM stripped once, pending
+// event discarded at EOF) — reference impl: rexxars/eventsource-parser. This file WAS a literal port
+// of server/src/codex/stream.mjs's sseEvents, but that JS function is itself pre-WHATWG per-line
+// dispatch (each `data:` line parsed+emitted on its own) and is NOT the reference here anymore.
+// Still-true invariants carried over: multi-byte-safe UTF-8 across chunk boundaries (streaming
+// decoder, never split a codepoint); partial last line carries to the next chunk; only `data:`-
+// prefixed lines yield (the space after the colon is OPTIONAL per the SSE spec — kimi emits
+// `data:{…}` bare, Anthropic/OpenAI emit `data: {…}`; requiring the space silently dropped every
+// kimi frame); empty payloads and [DONE] skipped; malformed JSON frames skipped (never crash the
+// stream); onBytes fires ON RAW READ with the chunk size (the watchdog touch + byte telemetry —
+// never after downstream write; a slow client must not fake idleness). Hot-path shape: one reused
+// decode scratch + one event assembler per stream (no per-chunk buffer allocs) and index-scanned
+// lines (no per-line StringBuilder churn).
 package splice.spi
 
 import io.ktor.utils.io.ByteReadChannel
@@ -31,7 +36,7 @@ private val lenient = Json {
 }
 
 // no space: SSE field syntax is `data:` + optional single space + value (WHATWG spec); the
-// leading-ws trim in emitDataLine absorbs the space when present.
+// leading-ws trim in processLine absorbs the space when present.
 private const val DATA_PREFIX = "data:"
 private const val DONE_SENTINEL = "[DONE]"
 private const val READ_BUFFER_BYTES = 16384
@@ -56,16 +61,25 @@ public fun sseJsonEvents(
 ): Flow<JsonObject> = flow {
     val scratch = DecodeScratch()
     val lineBuffer = StringBuilder(READ_BUFFER_BYTES)
+    val assembler = SseEventAssembler(onMalformed)
+    var bomChecked = false
     while (true) {
         val n = scratch.readChunk(channel)
         if (n == -1) break
         onBytes(n)
         val before = lineBuffer.length
         scratch.decodeInto(n, lineBuffer)
+        // Strip a leading UTF-8 BOM exactly once, only after real characters exist (a first chunk
+        // that decodes to zero chars — all bytes still UTF-8 carry — must not falsely mark the
+        // check done); never re-checked mid-stream (a later U+FEFF is an ordinary character).
+        if (!bomChecked && lineBuffer.isNotEmpty()) {
+            if (lineBuffer[0] == '\uFEFF') lineBuffer.deleteCharAt(0)
+            bomChecked = true
+        }
         if (onRawText != null && lineBuffer.length > before) {
             onRawText(lineBuffer.subSequence(before, lineBuffer.length))
         }
-        emitCompleteLines(lineBuffer, onMalformed)
+        emitCompleteLines(lineBuffer, assembler)
     }
 }
 
@@ -140,57 +154,100 @@ private class DecodeScratch {
 }
 
 /**
- * Emit every complete `\n`-terminated line in [lineBuffer], compacting the trailing partial
- * in place. No per-line StringBuilder realloc — the same builder is reused for the whole stream.
+ * Reused per-stream event-assembly state that must persist ACROSS [emitCompleteLines] calls (i.e.
+ * across chunk boundaries), mirroring how [DecodeScratch] carries decode state across chunks. One
+ * allocation per stream. Implements the WHATWG blank-line-dispatch model: `data:` field values
+ * accumulate into [dataBuffer] and are only turned into an event on a blank line ([dispatch]); a
+ * pending buffer at EOF is discarded (the outer loop never flushes).
+ */
+private class SseEventAssembler(private val onMalformed: (String) -> Unit) {
+    // Joined `data:` field values for the event not yet dispatched. A single `data:` line with an
+    // EMPTY value is a no-op append (spec-literal "append then strip one trailing LF" is skipped):
+    // since every real payload is JSON-parsed and JSON treats leading/trailing/inner whitespace and
+    // newlines as insignificant, both bookkeeping styles yield identical parse results, and an
+    // empty-only buffer fails `parseToJsonElement("")` identically either way (no emitted event).
+    val dataBuffer = StringBuilder()
+
+    // True when the most recently scanned char was a bare `\r` whose following byte hadn't arrived
+    // yet — the CRLF-vs-lone-CR chunk-boundary case (a `\n` opening the next chunk completes a CRLF).
+    var pendingCR = false
+
+    /** Dispatch the pending event (WHATWG): empty buffer aborts; [DONE_SENTINEL] and malformed JSON never emit. */
+    suspend fun dispatch(collector: FlowCollector<JsonObject>) {
+        if (dataBuffer.isEmpty()) return
+        val payload = dataBuffer.toString()
+        dataBuffer.setLength(0)
+        if (payload == DONE_SENTINEL) return
+        runCatchingCancellable { lenient.parseToJsonElement(payload).jsonObject }
+            .onFailure { onMalformed(payload) }
+            .getOrNull()
+            ?.let { collector.emit(it) }
+    }
+}
+
+/**
+ * Scan [lineBuffer] for complete lines (terminated by `\n`, `\r`, or `\r\n`) and feed each to
+ * [processLine], compacting the trailing partial in place. No per-line StringBuilder realloc — the
+ * same builder is reused for the whole stream. Line/event state ([SseEventAssembler.pendingCR],
+ * [SseEventAssembler.dataBuffer]) persists across calls so terminators split across chunk boundaries
+ * resolve correctly. An unterminated trailing partial is LEFT untouched — that IS the discard-at-EOF
+ * behavior (no flush anywhere on channel close).
  */
 private suspend fun FlowCollector<JsonObject>.emitCompleteLines(
     lineBuffer: StringBuilder,
-    onMalformed: (String) -> Unit,
+    assembler: SseEventAssembler,
 ) {
     var start = 0
     var i = 0
     val end = lineBuffer.length
     while (i < end) {
-        if (lineBuffer[i] != '\n') {
+        val c = lineBuffer[i]
+        if (assembler.pendingCR) {
+            assembler.pendingCR = false
+            if (c == '\n') {
+                // CRLF: the CR already terminated the line (this call or the previous chunk); eat the LF.
+                i++
+                start = i
+                continue
+            }
+        }
+        if (c == '\n' || c == '\r') {
+            processLine(lineBuffer, start, i, assembler)
+            assembler.pendingCR = c == '\r' // a lone CR may still be the CR of a CRLF split next
             i++
-            continue
+            start = i
+        } else {
+            i++
         }
-        var lineEnd = i
-        if (lineEnd > start && lineBuffer[lineEnd - 1] == '\r') lineEnd--
-        // Blank separator lines between SSE frames never allocate.
-        if (lineEnd > start) {
-            emitDataLine(lineBuffer, start, lineEnd, onMalformed)
-        }
-        i++
-        start = i
     }
     if (start == 0) return
-    if (start >= end) {
-        lineBuffer.setLength(0)
-    } else {
-        // Compact the trailing partial line to the front of the same builder.
-        lineBuffer.delete(0, start)
-    }
+    if (start >= end) lineBuffer.setLength(0) else lineBuffer.delete(0, start)
 }
 
-private suspend fun FlowCollector<JsonObject>.emitDataLine(
+/**
+ * Interpret one complete line [start, end) (WHATWG field parsing, `data:` only): a blank line
+ * dispatches the pending event; a `data:`-prefixed line trims its value (ASCII-ws, kimi-space-safe)
+ * and appends it to the assembler's dataBuffer joined by `\n`; every other line shape (comments,
+ * `event:`/`id:`/`retry:`, anything not matching [DATA_PREFIX]) is silently ignored.
+ */
+private suspend fun FlowCollector<JsonObject>.processLine(
     buf: StringBuilder,
     start: Int,
     end: Int,
-    onMalformed: (String) -> Unit,
+    assembler: SseEventAssembler,
 ) {
+    if (end == start) {
+        assembler.dispatch(this)
+        return
+    }
     if (!buf.matchesAt(start, end, DATA_PREFIX)) return
     // trim ASCII whitespace at both ends (SSE payloads are JSON — no full Unicode trim needed)
     var pStart = start + DATA_PREFIX.length
     var pEnd = end
     while (pStart < pEnd && buf[pStart].isAsciiWs()) pStart++
     while (pEnd > pStart && buf[pEnd - 1].isAsciiWs()) pEnd--
-    if (pStart >= pEnd || isDoneSentinel(buf, pStart, pEnd)) return
-    val payload = buf.substring(pStart, pEnd)
-    runCatchingCancellable { lenient.parseToJsonElement(payload).jsonObject }
-        .onFailure { onMalformed(payload) }
-        .getOrNull()
-        ?.let { emit(it) }
+    if (assembler.dataBuffer.isNotEmpty()) assembler.dataBuffer.append('\n')
+    assembler.dataBuffer.append(buf, pStart, pEnd)
 }
 
 /** [literal] present at [start] within [start, end)? Char-wise — no substring allocation. */
@@ -201,9 +258,6 @@ private fun StringBuilder.matchesAt(start: Int, end: Int, literal: String): Bool
     }
     return true
 }
-
-private fun isDoneSentinel(buf: StringBuilder, start: Int, end: Int): Boolean =
-    end - start == DONE_SENTINEL.length && buf.matchesAt(start, end, DONE_SENTINEL)
 
 private fun Char.isAsciiWs(): Boolean =
     this == ' ' || this == '\t' || this == '\r' || this == '\n'

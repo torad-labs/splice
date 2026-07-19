@@ -156,6 +156,73 @@ class CodexAuthTest {
         )
     }
 
+    // G1: a peer process (or the official codex CLI) rotated the token on disk while we were about to
+    // refresh. The freshly-read access token differs from what we last served, so the POST is skipped
+    // and the peer's token is served — no wasted refresh, no double token burn.
+    @Test
+    fun `peer already rotated while we were about to refresh - POST skipped, peer token served`(@TempDir tmp: Path) =
+        runTest {
+            val calls = AtomicInteger(0)
+            val (auth, path) = provider(tmp, { 1_000L }) {
+                calls.incrementAndGet()
+                null
+            }
+            Files.createDirectories(path.parent)
+            path.writeText("""{"tokens":{"access_token":"token-A","refresh_token":"R1","account_id":"acct-1"}}""")
+            assertEquals("token-A", (auth.credentials() as Credentials.Bearer).token) // cache holds A
+            // a concurrent process rotates the file to token B.
+            Thread.sleep(5)
+            path.writeText("""{"tokens":{"access_token":"token-B","refresh_token":"R1","account_id":"acct-1"}}""")
+            val beforeContent = path.readText()
+            val served = auth.refresh() as Credentials.Bearer
+            assertEquals("token-B", served.token) // adopts B, no POST
+            assertEquals("acct-1", served.accountId)
+            assertEquals(0, calls.get())
+            assertEquals(beforeContent, path.readText()) // no extra write
+        }
+
+    // G1: the endpoint rejects R1, but disk shows a rotation to R2 landed underneath us — retry ONCE
+    // against R2, which succeeds. Exactly two POSTs, no more.
+    @Test
+    fun `refresh rejected once but the disk-fresh refresh token succeeds - one bounded retry`(@TempDir tmp: Path) =
+        runTest {
+            val seen = mutableListOf<String>()
+            val path = tmp.resolve(".codex/auth.json")
+            val (auth, _) = provider(tmp, { 1_000L }) { token ->
+                seen.add(token)
+                if (token == "R1") {
+                    // another process's rotation lands on disk between our read and the POST.
+                    path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"R2"}}""")
+                    null
+                } else {
+                    RefreshedTokens(accessToken = "tok-new", refreshToken = "R3", idToken = null)
+                }
+            }
+            Files.createDirectories(path.parent)
+            path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"R1"}}""")
+            assertEquals("tok-new", (auth.refresh() as Credentials.Bearer).token)
+            assertEquals(listOf("R1", "R2"), seen)
+            val onDisk = kotlinx.serialization.json.Json.parseToJsonElement(path.readText()).jsonObject
+            assertEquals("R3", onDisk["tokens"]!!.jsonObject["refresh_token"]?.jsonPrimitive?.content)
+        }
+
+    // G1: the retry is bounded even when the disk token keeps rotating and every POST is rejected —
+    // exactly two POSTs, then it gives up (the retry POSTs with allowRereadRetry=false, never loops).
+    @Test
+    fun `refresh genuinely dead - bounded to two POSTs, no infinite retry`(@TempDir tmp: Path) = runTest {
+        val calls = AtomicInteger(0)
+        val path = tmp.resolve(".codex/auth.json")
+        val (auth, _) = provider(tmp, { 1_000L }) {
+            val n = calls.incrementAndGet()
+            path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"R${n + 1}"}}""")
+            null
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"R1"}}""")
+        assertNull(auth.refresh())
+        assertEquals(2, calls.get())
+    }
+
     @Test
     fun `describe masks the account id and never exposes tokens`(@TempDir tmp: Path) = runTest {
         val (auth, path) = provider(tmp, { 1L }) { null }

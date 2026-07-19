@@ -105,6 +105,74 @@ class GrokAuthProviderTest {
         assertNull(auth.credentials())
     }
 
+    // G1: a peer process (or the official grok CLI) rotated the token on disk while we were about to
+    // refresh. The freshly-read access token differs from what we last served, so the POST is skipped
+    // and the peer's token is served — no wasted refresh, no double token burn.
+    @Test
+    fun `peer already rotated while we were about to refresh - POST skipped, peer token served`() = runTest {
+        val dir = Files.createTempDirectory("grok-peer")
+        val now = 1_000_000L
+        // prime the in-memory cache with token A (expiry outside the window so no refresh on read).
+        val file = authFile(dir, access = "token-A", expiresAtMs = now + 3_600_000)
+        val calls = AtomicInteger()
+        val auth = GrokAuthProvider(authPath = file, clock = { now }, refreshCall = {
+            calls.incrementAndGet()
+            null
+        })
+        assertEquals("token-A", bearerToken(auth.credentials())) // cache now holds A
+        // a concurrent process rotates the file to token B underneath us.
+        Files.writeString(
+            file,
+            """{"tokens":{"access_token":"token-B","refresh_token":"grok-refresh"},
+                "expires":${now + 3_600_000},"cli_field":"keep-me"}""",
+        )
+        val beforeContent = Files.readString(file)
+        assertEquals("token-B", bearerToken(auth.refresh())) // adopts B, no POST
+        assertEquals(0, calls.get())
+        assertEquals(beforeContent, Files.readString(file)) // no extra write
+    }
+
+    // G1: the endpoint rejects R1, but disk shows a rotation to R2 landed underneath us between our
+    // read and the POST — retry ONCE against R2, which succeeds. Exactly two POSTs, no more.
+    @Test
+    fun `refresh rejected once but the disk-fresh refresh token succeeds - one bounded retry`() = runTest {
+        val dir = Files.createTempDirectory("grok-retry")
+        val file = authFile(dir, access = "acc", refresh = "R1")
+        val seen = mutableListOf<String>()
+        val auth = GrokAuthProvider(authPath = file, clock = { 1_000_000L }, refreshCall = { token ->
+            seen.add(token)
+            if (token == "R1") {
+                // another process's rotation lands on disk between our read and the POST reaching xAI.
+                Files.writeString(file, """{"tokens":{"access_token":"acc","refresh_token":"R2"}}""")
+                null // xAI rejected R1
+            } else {
+                GrokRefreshedTokens("new-access", "new-refresh", expiresIn = 21_600)
+            }
+        })
+        assertEquals("new-access", bearerToken(auth.refresh()))
+        assertEquals(listOf("R1", "R2"), seen) // exactly two POSTs, R1 then the disk-fresh R2
+        val onDisk = Json.parseToJsonElement(Files.readString(file)).jsonObject
+        assertEquals("new-refresh", onDisk["tokens"]!!.jsonObject["refresh_token"]!!.jsonPrimitive.content)
+    }
+
+    // G1: the retry is bounded even when the disk token keeps rotating and every POST is rejected —
+    // exactly two POSTs, then it gives up (the retry POSTs with allowRereadRetry=false, never loops).
+    @Test
+    fun `refresh genuinely dead - bounded to two POSTs, no infinite retry`() = runTest {
+        val dir = Files.createTempDirectory("grok-bounded")
+        val file = authFile(dir, access = "acc", refresh = "R1")
+        val calls = AtomicInteger()
+        val auth = GrokAuthProvider(authPath = file, clock = { 1_000_000L }, refreshCall = {
+            val n = calls.incrementAndGet()
+            // rotate to a NEW distinct token on every call, and always reject — proves the retry is
+            // capped, not driven-forever by continuous disk changes.
+            Files.writeString(file, """{"tokens":{"access_token":"acc","refresh_token":"R${n + 1}"}}""")
+            null
+        })
+        assertNull(auth.refresh())
+        assertEquals(2, calls.get())
+    }
+
     @Test
     fun `refresh response without expires_in keeps the old expires field`() = runTest {
         val dir = Files.createTempDirectory("grok-noexp")

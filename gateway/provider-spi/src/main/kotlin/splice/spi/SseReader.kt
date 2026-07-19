@@ -51,6 +51,7 @@ private const val UTF8_MAX_BYTES = 4
 public fun sseJsonEvents(
     channel: ByteReadChannel,
     onBytes: (Int) -> Unit = {},
+    onMalformed: (String) -> Unit = {},
     onRawText: ((CharSequence) -> Unit)? = null,
 ): Flow<JsonObject> = flow {
     val scratch = DecodeScratch()
@@ -64,7 +65,7 @@ public fun sseJsonEvents(
         if (onRawText != null && lineBuffer.length > before) {
             onRawText(lineBuffer.subSequence(before, lineBuffer.length))
         }
-        emitCompleteLines(lineBuffer)
+        emitCompleteLines(lineBuffer, onMalformed)
     }
 }
 
@@ -142,7 +143,10 @@ private class DecodeScratch {
  * Emit every complete `\n`-terminated line in [lineBuffer], compacting the trailing partial
  * in place. No per-line StringBuilder realloc — the same builder is reused for the whole stream.
  */
-private suspend fun FlowCollector<JsonObject>.emitCompleteLines(lineBuffer: StringBuilder) {
+private suspend fun FlowCollector<JsonObject>.emitCompleteLines(
+    lineBuffer: StringBuilder,
+    onMalformed: (String) -> Unit,
+) {
     var start = 0
     var i = 0
     val end = lineBuffer.length
@@ -155,7 +159,7 @@ private suspend fun FlowCollector<JsonObject>.emitCompleteLines(lineBuffer: Stri
         if (lineEnd > start && lineBuffer[lineEnd - 1] == '\r') lineEnd--
         // Blank separator lines between SSE frames never allocate.
         if (lineEnd > start) {
-            emitDataLine(lineBuffer, start, lineEnd)
+            emitDataLine(lineBuffer, start, lineEnd, onMalformed)
         }
         i++
         start = i
@@ -169,7 +173,12 @@ private suspend fun FlowCollector<JsonObject>.emitCompleteLines(lineBuffer: Stri
     }
 }
 
-private suspend fun FlowCollector<JsonObject>.emitDataLine(buf: StringBuilder, start: Int, end: Int) {
+private suspend fun FlowCollector<JsonObject>.emitDataLine(
+    buf: StringBuilder,
+    start: Int,
+    end: Int,
+    onMalformed: (String) -> Unit,
+) {
     if (!buf.matchesAt(start, end, DATA_PREFIX)) return
     // trim ASCII whitespace at both ends (SSE payloads are JSON — no full Unicode trim needed)
     var pStart = start + DATA_PREFIX.length
@@ -178,9 +187,8 @@ private suspend fun FlowCollector<JsonObject>.emitDataLine(buf: StringBuilder, s
     while (pEnd > pStart && buf[pEnd - 1].isAsciiWs()) pEnd--
     if (pStart >= pEnd || isDoneSentinel(buf, pStart, pEnd)) return
     val payload = buf.substring(pStart, pEnd)
-    // skip malformed frame — the terminal sweep handles truncation honestly
-    // ast-grep-ignore: kt-no-silent-result-collapse -- hot-path frame skip is by design; per-turn skip telemetry is tracked as G9 in dev/research/gateway-gaps-tracker.md
     runCatchingCancellable { lenient.parseToJsonElement(payload).jsonObject }
+        .onFailure { onMalformed(payload) }
         .getOrNull()
         ?.let { emit(it) }
 }

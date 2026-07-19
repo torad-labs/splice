@@ -259,6 +259,7 @@ internal class TurnDriver(
             val poller = drive.watchdog.launchIn(self, drive.slot, turnJob)
             val pinger = self.launchClientPinger(drive, turnJob)
             var sawEvent = false
+            var malformedLogged = false
             val zeroEventSnippet = StringBuilder(ZERO_EVENT_SNIPPET_CHARS)
             val events = sseJsonEvents(
                 resp.bodyChannel(),
@@ -268,6 +269,7 @@ internal class TurnDriver(
                     drive.perf.markOnce(PerfKeys.FIRST_BYTE)
                     drive.perf.add(PerfKeys.SSE_BYTES_IN, chunkBytes.toLong())
                 },
+                onMalformed = { snippet -> malformedLogged = onMalformedFrame(drive, snippet, malformedLogged) },
                 onRawText = { text ->
                     val room = ZERO_EVENT_SNIPPET_CHARS - zeroEventSnippet.length
                     if (!sawEvent && room > 0) {
@@ -290,6 +292,16 @@ internal class TurnDriver(
             val outcome = classifyZeroEventFailure(drive, rawOutcome, zeroEventSnippet.toString())
             finishTurn(drive, outcome)
         }
+    }
+
+    /** G9: malformed SSE frames were dropped with zero telemetry. Counts every skip; logs the
+     *  first offending snippet once per turn (truncated) — never influences [TurnOutcome], the
+     *  skip stays silent to the client (L3 stays intact). Returns the updated logged flag. */
+    private fun onMalformedFrame(drive: TurnDrive, snippet: String, alreadyLogged: Boolean): Boolean {
+        drive.perf.add(PerfKeys.FRAMES_SKIPPED, 1)
+        if (alreadyLogged) return true
+        log("[${provider.key}] malformed SSE frame skipped: ${snippet.take(ERR_SNIPPET)}\n")
+        return true
     }
 
     /** G2: a zero-event HTTP-200 stream was hardcoded OVERLOADED — undiagnosable, and Claude Code

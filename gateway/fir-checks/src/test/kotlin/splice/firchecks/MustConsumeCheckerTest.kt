@@ -17,18 +17,62 @@ class MustConsumeCheckerTest {
 
     @Test
     fun `a discarded MustConsume value is a compile error`() {
-        val result = compileFixture("red/DiscardedMustConsume.kt.txt", "DiscardedMustConsume.kt")
+        assertFixtureRed("red/DiscardedMustConsume.kt.txt", "DiscardedMustConsume.kt")
+    }
+
+    @Test
+    fun `a statement-position if branch tail is a compile error`() {
+        assertFixtureRed("red/StatementIfBranchTail.kt.txt", "StatementIfBranchTail.kt")
+    }
+
+    @Test
+    fun `a statement-position when branch tail is a compile error`() {
+        assertFixtureRed("red/StatementWhenBranchTail.kt.txt", "StatementWhenBranchTail.kt")
+    }
+
+    @Test
+    fun `a non-tail discard inside a consumed branch is a compile error`() {
+        assertFixtureRed("red/MidBranchDiscard.kt.txt", "MidBranchDiscard.kt")
+    }
+
+    @Test
+    fun `a bare safe-call statement discard is a compile error`() {
+        assertFixtureRed("red/SafeCallStatementDiscard.kt.txt", "SafeCallStatementDiscard.kt")
+    }
+
+    @Test
+    fun `a bare elvis statement discards its lhs call - compile error`() {
+        assertFixtureRed("red/ElvisLhsStatementDiscard.kt.txt", "ElvisLhsStatementDiscard.kt")
+    }
+
+    @Test
+    fun `a bare elvis statement discards its rhs call - compile error`() {
+        assertFixtureRed("red/ElvisRhsStatementDiscard.kt.txt", "ElvisRhsStatementDiscard.kt")
+    }
+
+    @Test
+    fun `a loop body tail discard is a compile error`() {
+        assertFixtureRed("red/LoopBodyTailDiscard.kt.txt", "LoopBodyTailDiscard.kt")
+    }
+
+    @Test
+    fun `a finally tail discard fires even under a consumed try`() {
+        assertFixtureRed("red/FinallyTailDiscard.kt.txt", "FinallyTailDiscard.kt")
+    }
+
+    @Test
+    fun `consumed values, consumed branch tails, safe-call and elvis, and lambda tails all compile clean`() {
+        val result = compileFixture("green/ConsumedMustConsume.kt.txt", "ConsumedMustConsume.kt")
+        assertEquals(ExitCode.OK, result.exitCode, result.output)
+    }
+
+    private fun assertFixtureRed(resource: String, fileName: String) {
+        val result = compileFixture(resource, fileName)
         assertEquals(ExitCode.COMPILATION_ERROR, result.exitCode, result.output)
         assertTrue(
             result.output.contains("MustConsume"),
             "the diagnostic should name @MustConsume, was:\n${result.output}",
         )
-    }
-
-    @Test
-    fun `a consumed value and an unannotated discard both compile clean`() {
-        val result = compileFixture("green/ConsumedMustConsume.kt.txt", "ConsumedMustConsume.kt")
-        assertEquals(ExitCode.OK, result.exitCode, result.output)
     }
 
     private data class CompileResult(val exitCode: ExitCode, val output: String)

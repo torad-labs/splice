@@ -1,0 +1,13 @@
+// RED fixture (.kt.txt so it is NOT part of :fir-checks' own src/test compile). A bare
+// `cached ?: produce()` statement: the @MustConsume call sits under FirElvisExpression's rhs, and
+// the elvis value itself flows nowhere — discarded whenever `cached` is null. COMPILATION_ERROR.
+package fixtures.red
+
+import splice.core.annotation.MustConsume
+
+@MustConsume
+fun produce(): Int = 1
+
+fun caller(cached: Int?) {
+    cached ?: produce()
+}

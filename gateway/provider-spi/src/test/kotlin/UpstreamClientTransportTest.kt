@@ -24,6 +24,7 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.spi.UpstreamClient
 import java.net.ConnectException
 import java.net.SocketException
+import java.net.SocketTimeoutException
 import java.net.UnknownHostException
 import java.nio.channels.UnresolvedAddressException
 import java.util.concurrent.atomic.AtomicInteger
@@ -311,6 +312,73 @@ class UpstreamClientTransportTest {
             sentBody,
             "body must be the exact UTF-8(bodyJson) bytes",
         )
+    }
+
+    @Test
+    fun `post-send SocketException logs a distinct possible-duplicate class`() = runTest {
+        // G16: a reset AFTER bytes may have left the client is not the same risk as a DNS blip
+        // that fires before any byte leaves — the log class must say so.
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            if (calls.incrementAndGet() <= 2) throw SocketException("Connection reset")
+            respond("ok-body", HttpStatusCode.OK, headersOf())
+        }
+        val retries = mutableListOf<String>()
+        val out = clientOver(engine).post(
+            url = "https://api.example.test/v1",
+            bodyJson = "{}",
+            auth = fakeAuth,
+            extraHeaders = { emptyMap() },
+            onRetry = { retries.add(it) },
+        ) { "reached-block" }
+        assertEquals("reached-block", out)
+        assertEquals(2, retries.size)
+        assertTrue(retries.all { it.startsWith("transport-possible-duplicate SocketException") })
+    }
+
+    @Test
+    fun `connect-phase ConnectException keeps the plain transport log class`() = runTest {
+        // Regression guard: CONNECT-phase classification must not drift into the G16 label.
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            if (calls.incrementAndGet() <= 1) throw ConnectException("refused")
+            respond("ok-body", HttpStatusCode.OK, headersOf())
+        }
+        val retries = mutableListOf<String>()
+        val out = clientOver(engine).post(
+            url = "https://api.example.test/v1",
+            bodyJson = "{}",
+            auth = fakeAuth,
+            extraHeaders = { emptyMap() },
+            onRetry = { retries.add(it) },
+        ) { "reached-block" }
+        assertEquals("reached-block", out)
+        assertEquals(1, retries.size)
+        retries.forEach {
+            assertTrue(it.startsWith("transport ConnectException"))
+            assertFalse(it.startsWith("transport-possible-duplicate"))
+        }
+    }
+
+    @Test
+    fun `post-send SocketTimeoutException also logs the possible-duplicate class`() = runTest {
+        // Second ambiguous type named in the evidence doc — same phase as SocketException.
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            if (calls.incrementAndGet() <= 1) throw SocketTimeoutException("read timed out")
+            respond("ok-body", HttpStatusCode.OK, headersOf())
+        }
+        val retries = mutableListOf<String>()
+        val out = clientOver(engine).post(
+            url = "https://api.example.test/v1",
+            bodyJson = "{}",
+            auth = fakeAuth,
+            extraHeaders = { emptyMap() },
+            onRetry = { retries.add(it) },
+        ) { "reached-block" }
+        assertEquals("reached-block", out)
+        assertEquals(1, retries.size)
+        assertTrue(retries.all { it.startsWith("transport-possible-duplicate SocketTimeoutException") })
     }
 
     @Test

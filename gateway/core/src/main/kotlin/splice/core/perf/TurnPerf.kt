@@ -36,6 +36,7 @@ public object PerfKeys {
     public const val SSE_BYTES_IN: String = "sse_bytes_in"
     public const val EVENTS_IN: String = "events_in"
     public const val FRAMES_OUT: String = "frames_out"
+    public const val FRAMES_SKIPPED: String = "frames_skipped"
     public const val BYTES_OUT: String = "bytes_out"
     public const val OUT_TOKENS: String = "out_tokens"
     public const val IN_TOKENS: String = "in_tokens"

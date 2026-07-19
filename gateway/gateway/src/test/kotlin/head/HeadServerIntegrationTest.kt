@@ -149,6 +149,19 @@ class HeadServerIntegrationTest {
     }
 
     @Test
+    fun `malformed SSE frame is skipped with FRAMES_SKIPPED telemetry and one snippet log`() = runTest {
+        val before = logs.size
+        val sse = messages("malformed_sse")
+        assertTrue(sse.contains("\"stop_reason\":\"end_turn\""))
+        val scoped = logs.drop(before)
+        val malformedLines = scoped.filter { it.contains("malformed SSE frame skipped: {not-json}") }
+        assertEquals(1, malformedLines.size, "expected exactly one malformed-frame log line, got: $scoped")
+        val perfLine = scoped.lastOrNull { it.contains("] perf outcome=ok") }
+        assertTrue(perfLine != null, "expected a perf line in the log, got: $scoped")
+        assertTrue(perfLine!!.contains("frames_skipped=1"), "expected frames_skipped=1 in: $perfLine")
+    }
+
+    @Test
     fun `turn records perf telemetry - log line and JSONL row with pipeline marks`() = runTest {
         messages("basic")
         val perfLine = logs.lastOrNull { it.contains("] perf outcome=ok") }

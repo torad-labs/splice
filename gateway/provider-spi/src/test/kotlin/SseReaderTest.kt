@@ -20,9 +20,10 @@ import splice.spi.sseJsonEvents
 
 class SseReaderTest {
 
-    private fun runReader(vararg chunks: ByteArray): Pair<List<String>, Int> {
+    private fun runReader(vararg chunks: ByteArray): Triple<List<String>, Int, List<String>> {
         var touches = 0
         var texts: List<String> = emptyList()
+        val malformed = mutableListOf<String>()
         runTest {
             val channel = ByteChannel()
             launch {
@@ -32,11 +33,11 @@ class SseReaderTest {
                 }
                 channel.close(null)
             }
-            texts = sseJsonEvents(channel) { touches++ }
+            texts = sseJsonEvents(channel, onBytes = { touches++ }, onMalformed = { malformed.add(it) })
                 .toList()
                 .map { it["v"]?.jsonPrimitive?.content ?: it.toString() }
         }
-        return texts to touches
+        return Triple(texts, touches, malformed)
     }
 
     @Test
@@ -71,6 +72,15 @@ class SseReaderTest {
                 ).toByteArray(),
         )
         assertEquals(listOf("ok"), events)
+    }
+
+    @Test
+    fun `onMalformed fires with the raw payload for a bad frame, valid frames still emit`() {
+        val (events, _, malformed) = runReader(
+            ("data: {not-json}\n" + "data: {\"v\":\"ok\"}\n\n").toByteArray(),
+        )
+        assertEquals(listOf("ok"), events)
+        assertEquals(listOf("{not-json}"), malformed)
     }
 
     // REGRESSION (claude-kimi empty-200, 2026-07-18): api.kimi.com/coding emits spec-valid SSE

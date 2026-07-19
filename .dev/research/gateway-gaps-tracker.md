@@ -45,7 +45,7 @@ column as work lands (`todo` / `in-progress` / `done <commit>` / `wontfix <reaso
 
 | ID | Gap | Fix (short) | Status |
 |---|---|---|---|
-| G14 | Transport backoff (200/400ms) shorter than real resolver blip | DNS-class failures → 1s/2s/4s schedule | todo |
+| G14 | Transport backoff (200/400ms) shorter than real resolver blip | DNS-class failures → 1s/2s/4s schedule | done e498974 |
 | G15 | No terminal invalid_grant latch (dead token re-POSTed every turn) | latch until file content changes (needs G7) | todo |
 | G16 | Post-send SocketException retried like connect-phase (double token burn risk) | distinct "possible-duplicate" log class on post-send retries | todo |
 | G17 | Proactive refresh blocks request path | two-tier: async prefetch above stale floor, blocking below | todo |

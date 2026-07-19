@@ -233,6 +233,7 @@ public class Daemon(
                     authPath = authPath,
                     authCacheMs = cfg.authCacheMs,
                     refreshCall = { rt -> kimiRefresh(tokenUrl, rt, identityHeaders) },
+                    prefetchScope = probeScope,
                 )
                 Wired(kimiProvider(ctx, label, auth, identity), auth)
             }

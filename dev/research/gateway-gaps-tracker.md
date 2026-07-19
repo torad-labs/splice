@@ -32,7 +32,7 @@ column as work lands (`todo` / `in-progress` / `done <commit>` / `wontfix <reaso
 | G4c | No jitter | ±10% | done (retry batch) |
 | G4d | No cross-attempt wall-clock deadline | t0 in `post()`, budget check before each attempt/sleep | done b70e8c1 |
 | G5 | Stream-reconnect: handed-off ≠ client-saw-output; torn-before-first-frame fails turn needlessly | gate on `clientFrameEmitted()`; small reissue budget; hard no-retry after any frame | done 3e50126 |
-| G6 | Codex head: zero expiry awareness (grok bug's latent twin) | JWT `exp` via existing `decodeJwtClaims` + grok proactive-window block | todo |
+| G6 | Codex head: zero expiry awareness (grok bug's latent twin) | JWT `exp` via existing `decodeJwtClaims` + grok proactive-window block | done 81fa9f5 |
 | G7 | Grok/codex refresh: no error classification / transient retry (kimi has the right loop) | extract KimiRefresh classify/retry to shared `:app` helper | done 66befaf |
 | G8 | No pre-traffic auth/health probe loop | per-head coroutine ~60s, cheap auth probe, log transitions, trigger single-flight refresh | todo |
 | G9 | Malformed SSE frames dropped, zero telemetry | `onMalformed` hook → FRAMES_SKIPPED perf key + first-snippet log | todo |

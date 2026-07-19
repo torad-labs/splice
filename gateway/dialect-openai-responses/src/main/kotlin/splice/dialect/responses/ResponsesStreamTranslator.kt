@@ -285,16 +285,21 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
      * structured summary parts (see [reasoningReadableText]).
      */
     private suspend fun emitReasoningItemText(item: JsonObject, outputIndex: Int, sink: WireSink) {
-        // The sequential_cutoff recap arrives through THIS path too (completed items restate all
-        // prior parts) — same seen-set as the delta path, at part granularity (2026-07-19).
-        val text = dedupSummaryParts(reasoningReadableText(item), seenSummaryParts, ctx.dedupeRepeatedSummaryParts)
-        if (text.isEmpty()) return
+        val raw = reasoningReadableText(item)
         val existing = blocks[reasoningKey(outputIndex)]
-        // Already streamed this item's text via deltas — don't double-emit.
-        if (existing != null && existing.sawDelta) return
-        // Per-ITEM dedup (not substring-on-thinkingBuf, which dropped a distinct item whose text
-        // was a substring of an earlier one — wire/mirror divergence, audit 2026-07-18).
+        // Already streamed via deltas — don't double-emit (per-ITEM key dedup, not substring —
+        // a distinct item whose text substring-matched an earlier one was dropped, audit 2026-07-18).
+        val streamedByDeltas = existing != null && existing.sawDelta
+        if (raw.isEmpty() || streamedByDeltas) return
         if (!emittedReasoningKeys.add(reasoningKey(outputIndex))) return
+        // sequential_cutoff recap arrives through THIS path too (completed items restate prior
+        // parts) — same seen-set as the delta path, at part granularity. MUST run AFTER every
+        // early-return above: the backend can deliver item.done BEFORE the item's remaining deltas
+        // (openai/codex#16801 ordering anomaly), and filtering first seeded the seen-set with parts
+        // whose deltas hadn't arrived — suppressing them both late (sawDelta return) and live
+        // (seen-set match): total summary starvation (found live 2026-07-19).
+        val text = dedupSummaryParts(raw, seenSummaryParts, ctx.dedupeRepeatedSummaryParts)
+        if (text.isEmpty()) return
         appendLateReasoning(existing, outputIndex, text, sink)
     }
 

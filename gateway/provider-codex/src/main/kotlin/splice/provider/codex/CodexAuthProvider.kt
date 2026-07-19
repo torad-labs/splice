@@ -19,6 +19,7 @@ import splice.core.auth.credentialsOrNull
 import splice.core.util.SecureFile
 import splice.core.util.runCatchingCancellable
 import splice.core.util.str
+import splice.spi.CredentialLock
 import splice.spi.SingleFlight
 import java.nio.file.Files
 import java.nio.file.Path
@@ -79,16 +80,42 @@ public class CodexAuthProvider(
     // Sealed per-mode outcome (discipline L3): a dead refresh token, a transport blip, and a
     // corrupt file are DIFFERENT stories; credentialsOrNull is the single logging flatten.
     // Staged (read → exchange → persist), each stage owning its own failure branches.
+    // G1: capture what THIS process last served BEFORE the lock, then re-read authoritatively INSIDE
+    // it — so a peer's rotation (landed while we waited on the lock) is seen, not overwritten.
     private suspend fun doRefresh(): RefreshOutcome {
         if (!Files.exists(authPath)) return RefreshOutcome.NoCredentialsFile
+        val priorAccess = cache?.token
+        return CredentialLock.withLock(authPath) { refreshLocked(priorAccess) }
+    }
+
+    // Runs holding the cross-process lock: re-read fresh, short-circuit if a peer already rotated,
+    // else exchange. Split out of doRefresh so withLock's lambda stays a single call.
+    private suspend fun refreshLocked(priorAccess: String?): RefreshOutcome {
         val raw = runCatchingCancellable {
             json.parseToJsonElement(Files.readString(authPath)).jsonObject
         }.getOrElse { return RefreshOutcome.ReadFailed(it) }
         val tokens = raw[FIELD_TOKENS] as? JsonObject
+        peerRotation(priorAccess, tokens)?.let { return it }
         return if (tokens == null) RefreshOutcome.NoRefreshToken else exchangeRefreshToken(raw, tokens)
     }
 
-    private suspend fun exchangeRefreshToken(raw: JsonObject, tokens: JsonObject): RefreshOutcome {
+    // A peer (another process, or the official codex CLI) may have rotated the token while we waited
+    // on the lock: if the freshly-read access token differs from what THIS process last served, adopt
+    // it and skip the POST. Token identity — codex carries no expiry field — is the unambiguous signal.
+    private fun peerRotation(priorAccess: String?, tokens: JsonObject?): RefreshOutcome? {
+        val freshAccess = tokens?.str(FIELD_ACCESS_TOKEN)
+        if (priorAccess == null || freshAccess == null) return null
+        if (freshAccess == priorAccess) return null
+        val accountId = tokens.str(FIELD_ACCOUNT_ID)
+        cache = Cache(freshAccess, accountId, Files.getLastModifiedTime(authPath).toMillis(), clock())
+        return RefreshOutcome.Refreshed(Credentials.Bearer(freshAccess, accountId))
+    }
+
+    private suspend fun exchangeRefreshToken(
+        raw: JsonObject,
+        tokens: JsonObject,
+        allowRereadRetry: Boolean = true,
+    ): RefreshOutcome {
         val refreshToken = tokens.str(FIELD_REFRESH_TOKEN) ?: return RefreshOutcome.NoRefreshToken
         // Guard the network hop too (Node wrapped the whole read+fetch): a thrown hop must degrade
         // to a typed outcome (→ UpstreamFailed → re-prompt), not blow through SingleFlight uncaught.
@@ -96,9 +123,33 @@ public class CodexAuthProvider(
             .getOrElse { return RefreshOutcome.TransportFailed(it) }
         val access = fresh?.accessToken
         return when {
-            fresh == null -> RefreshOutcome.Rejected("token endpoint returned no tokens")
-            access == null -> RefreshOutcome.Rejected("refresh response missing access_token")
+            fresh == null -> rejectedOrRetry(refreshToken, allowRereadRetry, "token endpoint returned no tokens")
+            access == null ->
+                rejectedOrRetry(refreshToken, allowRereadRetry, "refresh response missing access_token")
             else -> persistRotation(raw, tokens, fresh, access)
+        }
+    }
+
+    // Bounded one-shot retry: an endpoint rejection MIGHT be a stale-token race — if disk now shows a
+    // DIFFERENT refresh token (a peer rotated between our read and the POST landing), retry once
+    // against it. Capped at exactly one extra POST (the retry passes allowRereadRetry=false); never
+    // loops, and never re-POSTs the identical dead token (the disk-differs gate).
+    private suspend fun rejectedOrRetry(
+        usedRefreshToken: String,
+        allowRereadRetry: Boolean,
+        reason: String,
+    ): RefreshOutcome {
+        if (!allowRereadRetry) return RefreshOutcome.Rejected(reason)
+        val fresh = runCatchingCancellable {
+            json.parseToJsonElement(Files.readString(authPath)).jsonObject
+        }.getOrElse { return RefreshOutcome.Rejected(reason) }
+        val newTokens = fresh[FIELD_TOKENS] as? JsonObject
+        val newToken = newTokens?.str(FIELD_REFRESH_TOKEN)
+        val rotated = newToken != null && newToken != usedRefreshToken
+        return if (rotated && newTokens != null) {
+            exchangeRefreshToken(fresh, newTokens, allowRereadRetry = false)
+        } else {
+            RefreshOutcome.Rejected(reason)
         }
     }
 

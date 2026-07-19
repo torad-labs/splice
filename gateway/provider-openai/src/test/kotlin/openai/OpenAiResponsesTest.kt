@@ -11,6 +11,8 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.runBlocking
 import mock.MockChatGptUpstream
+import mock.awaitListening
+import mock.freshPort
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
@@ -39,7 +41,7 @@ class OpenAiResponsesTest {
 
     private val mock = MockChatGptUpstream()
     private val client = HttpClient(CIO)
-    private val port = 39290
+    private val port = freshPort()
     private lateinit var head: HeadServer
 
     @BeforeAll
@@ -78,7 +80,7 @@ class OpenAiResponsesTest {
             ),
         )
         head.start()
-        Thread.sleep(700)
+        awaitListening(port)
     }
 
     @AfterAll

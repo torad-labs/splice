@@ -119,7 +119,7 @@ context_window = 262144
 # ── heads: each is a Claude Code wrapper on its own loopback port ───────────────
 # `command` names the installed wrapper (`splice install` links ~/.local/bin/<command>).
 [claude]                       # global config-sharing policy for every wrapper
-share = ["settings", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE.md"]
+share = ["settings", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE.md", "mcps"]
 
 [heads.claudex]
 provider = "codex"

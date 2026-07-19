@@ -40,7 +40,10 @@ public data class ChatQuirks(
 
 public data class BuiltChatRequest(val req: JsonObject, val meta: TurnMeta)
 
-public class ChatRequestBuilder(private val quirks: ChatQuirks) {
+public class ChatRequestBuilder(
+    private val quirks: ChatQuirks,
+    private val showReasoning: ReasoningDisplay = ReasoningDisplay.TEXT,
+) {
 
     public fun build(
         body: AnthropicRequest,
@@ -64,7 +67,7 @@ public class ChatRequestBuilder(private val quirks: ChatQuirks) {
         val req = chatRequestObject(upstreamModel, messages, emitTools, effort, body)
         val meta = TurnMeta(
             compact = compact,
-            showReasoning = ReasoningDisplay.TEXT,
+            showReasoning = showReasoning,
             stream = body.stream,
             originalModel = originalModel,
             upstreamModel = upstreamModel,

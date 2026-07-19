@@ -4,6 +4,10 @@
 // RefreshableAuthProvider SPI. SEAM: token HTTP POST + clock injected for tests.
 // Failure visibility (discipline L1): every auth-critical Result collapse consumes the failure
 // with a stderr line first — a corrupt auth file must never masquerade as "not logged in".
+// PROACTIVE refresh (grok-dead-head incident's latent codex twin, 2026-07-18): mirrors
+// GrokAuthProvider's proactive-window shape, but codex's access_token is itself a JWT — the
+// expiry comes from its own `exp` claim (decodeJwtClaims), not a stored `expires` field, so
+// auth.json's shape stays byte-identical to the real codex CLI's.
 package splice.provider.codex
 
 import kotlinx.serialization.json.Json
@@ -17,6 +21,7 @@ import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.auth.credentialsOrNull
 import splice.core.util.SecureFile
+import splice.core.util.long
 import splice.core.util.runCatchingCancellable
 import splice.core.util.str
 import splice.spi.CredentialLock
@@ -47,24 +52,37 @@ public class CodexAuthProvider(
     @Volatile
     private var cache: Cache? = null
 
-    private data class Cache(val token: String, val accountId: String?, val mtimeMs: Long, val loadedAt: Long)
+    private data class Cache(val snapshot: Snapshot, val mtimeMs: Long, val loadedAt: Long)
 
-    override suspend fun credentials(): Credentials? = readCached()
+    private data class Snapshot(val access: String, val accountId: String?, val expiresAtMs: Long?)
 
-    private fun readCached(): Credentials? = runCatchingCancellable {
+    override suspend fun credentials(): Credentials? {
+        val snap = readSnapshot() ?: return null
+        val current = Credentials.Bearer(snap.access, snap.accountId)
+        val expiresAt = snap.expiresAtMs
+        // serve as-is when the token carries no `exp` claim, or we're still outside the proactive window
+        if (expiresAt == null || expiresAt - clock() >= PROACTIVE_WINDOW_MS) return current
+        // proactive window: single-flight refresh; on failure serve the current token if still valid.
+        val refreshed = singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG) }
+        return refreshed ?: (if (clock() < expiresAt) current else null)
+    }
+
+    private fun readSnapshot(): Snapshot? = runCatchingCancellable {
         if (!Files.exists(authPath)) return@runCatchingCancellable null
         val mtime = Files.getLastModifiedTime(authPath).toMillis()
         val now = clock()
         cache?.let { c ->
             if (c.mtimeMs == mtime && (now - c.loadedAt) < authCacheMs) {
-                return@runCatchingCancellable Credentials.Bearer(c.token, c.accountId)
+                return@runCatchingCancellable c.snapshot
             }
         }
         val tokens = json.parseToJsonElement(Files.readString(authPath)).jsonObject[FIELD_TOKENS] as? JsonObject
         tokens?.str(FIELD_ACCESS_TOKEN)?.let { access ->
             val accountId = tokens.str(FIELD_ACCOUNT_ID)
-            cache = Cache(access, accountId, mtime, now)
-            Credentials.Bearer(access, accountId)
+            val expiresAtMs = decodeJwtClaims(access).long(FIELD_EXP)?.let { it * MS_PER_S }
+            val snapshot = Snapshot(access, accountId, expiresAtMs)
+            cache = Cache(snapshot, mtime, now)
+            snapshot
         }
     }.onFailure {
         System.err.println("[codex-auth] failed to read $authPath: $it — treating as not logged in")
@@ -84,7 +102,7 @@ public class CodexAuthProvider(
     // it — so a peer's rotation (landed while we waited on the lock) is seen, not overwritten.
     private suspend fun doRefresh(): RefreshOutcome {
         if (!Files.exists(authPath)) return RefreshOutcome.NoCredentialsFile
-        val priorAccess = cache?.token
+        val priorAccess = cache?.snapshot?.access
         return CredentialLock.withLock(authPath) { refreshLocked(priorAccess) }
     }
 
@@ -101,13 +119,15 @@ public class CodexAuthProvider(
 
     // A peer (another process, or the official codex CLI) may have rotated the token while we waited
     // on the lock: if the freshly-read access token differs from what THIS process last served, adopt
-    // it and skip the POST. Token identity — codex carries no expiry field — is the unambiguous signal.
+    // it and skip the POST. Token identity — not the `exp` claim — is the unambiguous signal.
     private fun peerRotation(priorAccess: String?, tokens: JsonObject?): RefreshOutcome? {
         val freshAccess = tokens?.str(FIELD_ACCESS_TOKEN)
         if (priorAccess == null || freshAccess == null) return null
         if (freshAccess == priorAccess) return null
         val accountId = tokens.str(FIELD_ACCOUNT_ID)
-        cache = Cache(freshAccess, accountId, Files.getLastModifiedTime(authPath).toMillis(), clock())
+        val expiresAtMs = decodeJwtClaims(freshAccess).long(FIELD_EXP)?.let { it * MS_PER_S }
+        val snapshot = Snapshot(freshAccess, accountId, expiresAtMs)
+        cache = Cache(snapshot, Files.getLastModifiedTime(authPath).toMillis(), clock())
         return RefreshOutcome.Refreshed(Credentials.Bearer(freshAccess, accountId))
     }
 
@@ -161,7 +181,7 @@ public class CodexAuthProvider(
     ): RefreshOutcome {
         writeSecure(authPath, mergedAuthJson(raw, tokens, fresh, access).toString())
         invalidateCache()
-        return readCached()?.let { RefreshOutcome.Refreshed(it) }
+        return readSnapshot()?.let { RefreshOutcome.Refreshed(Credentials.Bearer(it.access, it.accountId)) }
             ?: RefreshOutcome.PersistFailed("auth.json unreadable after rotated-token write")
     }
 
@@ -212,11 +232,17 @@ public class CodexAuthProvider(
         const val LOG_TAG = "codex-auth"
         const val KIND = "chatgpt-oauth"
         const val MASK_KEEP = 4
+        const val MS_PER_S = 1000L
+
+        // Refresh this long before the JWT `exp` claim — codex reference
+        // (CHATGPT_ACCESS_TOKEN_REFRESH_WINDOW_MINUTES) uses 5 minutes; mirrors grok's PROACTIVE_WINDOW_MS.
+        const val PROACTIVE_WINDOW_MS = 300_000L
         const val FIELD_TOKENS = "tokens"
         const val FIELD_ACCESS_TOKEN = "access_token"
         const val FIELD_REFRESH_TOKEN = "refresh_token"
         const val FIELD_ID_TOKEN = "id_token"
         const val FIELD_ACCOUNT_ID = "account_id"
         const val FIELD_LAST_REFRESH = "last_refresh"
+        const val FIELD_EXP = "exp"
     }
 }

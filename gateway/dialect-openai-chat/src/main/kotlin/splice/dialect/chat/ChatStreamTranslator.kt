@@ -76,11 +76,15 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     // finish_reason already arrived — discarding a delivered turn retries a successful
     // generation, the exact quota waste the watchdog exists to prevent).
     private fun terminalOutcome(): TurnOutcome = when {
-        failure != null -> TurnOutcome.Failure(ErrorType.API_ERROR, "chat backend: $failure")
+        failure != null ->
+            TurnOutcome.Failure(ErrorType.API_ERROR, "chat backend: $failure", providerReported = true)
         // finish_reason=content_filter is a CENSORED turn — a clean end_turn would let a blocked
         // generation masquerade as complete (honesty invariant). Retry an api_error honestly.
-        contentFiltered ->
-            TurnOutcome.Failure(ErrorType.API_ERROR, "chat backend: generation stopped by content filter")
+        contentFiltered -> TurnOutcome.Failure(
+            ErrorType.API_ERROR,
+            "chat backend: generation stopped by content filter",
+            providerReported = true, // finish_reason the backend sent, not a local verdict (G20)
+        )
         finished -> successOutcome()
         ctx.watchdogFired() != null ->
             TurnOutcome.Failure(ErrorType.OVERLOADED, "chat: upstream stalled — aborted; retry")

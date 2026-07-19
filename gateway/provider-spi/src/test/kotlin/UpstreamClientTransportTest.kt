@@ -21,6 +21,7 @@ import org.junit.jupiter.api.assertThrows
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.spi.StreamTornBeforeClient
 import splice.spi.UpstreamClient
 import java.net.ConnectException
 import java.net.SocketException
@@ -219,6 +220,38 @@ class UpstreamClientTransportTest {
             clientFrameEmitted = { false },
         ) {
             if (blockCalls.incrementAndGet() <= 2) throw ConnectException("torn before first frame")
+            "sentinel"
+        }
+        assertEquals("sentinel", out)
+        assertEquals(3, blockCalls.get())
+        assertEquals(3, engineCalls.get())
+        assertTrue(retries.any { it.contains("reissue") })
+    }
+
+    // Review 2026-07-19 (G5 reachability): in production the tear reaches post() wrapped as
+    // StreamTornBeforeClient — a plain RuntimeException thrown THROUGH the translator by the turn
+    // driver (the translators swallow raw IOException). It must drive the same reissue machinery
+    // via its IOException cause, not blow through post() uncaught.
+    @Test
+    fun `StreamTornBeforeClient thrown through the translator drives the reissue machinery`() = runTest {
+        val engineCalls = AtomicInteger()
+        val blockCalls = AtomicInteger()
+        val engine = MockEngine {
+            engineCalls.incrementAndGet()
+            respond("ok-body", HttpStatusCode.OK, headersOf())
+        }
+        val retries = mutableListOf<String>()
+        val out = clientOver(engine).post(
+            url = "https://api.example.test/v1",
+            bodyJson = "{}",
+            auth = fakeAuth,
+            extraHeaders = { emptyMap() },
+            onRetry = { retries.add(it) },
+            clientFrameEmitted = { false },
+        ) {
+            if (blockCalls.incrementAndGet() <= 2) {
+                throw StreamTornBeforeClient(ConnectException("torn before first frame"))
+            }
             "sentinel"
         }
         assertEquals("sentinel", out)

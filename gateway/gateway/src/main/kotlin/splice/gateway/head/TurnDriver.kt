@@ -8,10 +8,12 @@ package splice.gateway.head
 import io.ktor.http.ContentType
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondTextWriter
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -39,11 +41,13 @@ import splice.spi.BuiltTurn
 import splice.spi.FailureSource
 import splice.spi.InflightGate
 import splice.spi.Provider
+import splice.spi.StreamTornBeforeClient
 import splice.spi.TurnSignals
 import splice.spi.TurnWatchdog
 import splice.spi.UpstreamAuthMissing
 import splice.spi.UpstreamFailed
 import splice.spi.UpstreamFailureClassifier
+import splice.spi.UpstreamResponse
 import splice.spi.sseJsonEvents
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -121,9 +125,9 @@ internal class TurnDriver(
     }
 
     /** The per-turn error boundary — catches exactly the failure classes [emitFailure] dispatches
-     *  on (custom transport signals + I/O) as a [Result]; anything else, including
-     *  CancellationException, propagates uncaught (structured concurrency: a cancelled turn must
-     *  actually stop, not get funneled into an error frame). */
+     *  on: the custom transport signals, I/O, and the two documented gateway-bug classes
+     *  (IllegalArgument/IllegalState — a bad base_url parse, a Ktor internal state error), which
+     *  previously escaped as a truncated 200 with no error frame (review 2026-07-19). */
     private inline fun <R> catchingTurnFailure(block: () -> R): Result<R> =
         try {
             Result.success(block())
@@ -132,6 +136,17 @@ internal class TurnDriver(
         } catch (e: UpstreamFailed) {
             Result.failure(e)
         } catch (e: IOException) {
+            Result.failure(e)
+        } catch (e: CancellationException) {
+            // CancellationException extends IllegalStateException — rethrown BEFORE it so a
+            // cancelled turn actually stops instead of becoming an error frame.
+            throw e
+        } catch (e: IllegalArgumentException) {
+            // e.g. a URL-parse error from a bad base_url (review 2026-07-19: previously escaped
+            // as a truncated 200 with no error frame — emitFailure's branch was unreachable)
+            Result.failure(e)
+        } catch (e: IllegalStateException) {
+            // e.g. an IllegalState out of Ktor internals — same escape class as above
             Result.failure(e)
         }
 
@@ -217,7 +232,7 @@ internal class TurnDriver(
                 log(telemetry.errTurn("auth-missing", drive, ": ${e.message}"))
                 drive.emitter.emitError(
                     ErrorType.AUTHENTICATION,
-                    "claudex: no upstream credentials — run: claudex login",
+                    "${provider.key}: no upstream credentials${provider.loginHint()}",
                 )
                 telemetry.recordPerf(drive, "error:auth-missing")
                 health.local() // no upstream call ever happened: missing local credentials
@@ -235,15 +250,11 @@ internal class TurnDriver(
                 telemetry.recordPerf(drive, "error:upstream-failed")
                 health.provider() // e.status/e.body are the literal HTTP response the upstream host gave
             }
-            is IOException -> {
-                log(telemetry.errTurn("conn-reset", drive, ": ${e.message}"))
-                drive.emitter.emitError(
-                    ErrorType.OVERLOADED,
-                    "claudex: upstream connection failed (${e.message}) — retry",
-                )
-                telemetry.recordPerf(drive, "error:conn-reset")
-                health.local() // post-handoff socket failure: our side of the wire
-            }
+            // reissue budget exhausted (or non-retryable tear) before any client frame — an
+            // upstream connection failure, honestly retryable; never "internal gateway error".
+            is StreamTornBeforeClient -> emitConnReset(drive, e.cause?.message)
+            // post-handoff socket failure: our side of the wire
+            is IOException -> emitConnReset(drive, e.message)
             is RuntimeException -> {
                 // e.g. a URL-parse error from a bad base_url, an IllegalState out of Ktor
                 // internals. Previously ESCAPED: truncated 200, no error frame, no perf row.
@@ -289,51 +300,77 @@ internal class TurnDriver(
             drive.slot.touch()
             val poller = drive.watchdog.launchIn(self, drive.slot, turnJob)
             val pinger = self.launchClientPinger(drive, turnJob)
-            var sawEvent = false
-            var malformedLogged = false
-            val zeroEventSnippet = StringBuilder(ZERO_EVENT_SNIPPET_CHARS)
-            val events = sseJsonEvents(
-                resp.bodyChannel(),
-                onBytes = { chunkBytes ->
-                    drive.slot.touch()
-                    drive.watchdog.markByte()
-                    drive.perf.markOnce(PerfKeys.FIRST_BYTE)
-                    drive.perf.add(PerfKeys.SSE_BYTES_IN, chunkBytes.toLong())
-                },
-                onMalformed = { snippet -> malformedLogged = onMalformedFrame(drive, snippet, malformedLogged) },
-                onRawText = { text ->
-                    val room = ZERO_EVENT_SNIPPET_CHARS - zeroEventSnippet.length
-                    if (!sawEvent && room > 0) {
-                        zeroEventSnippet.append(text, 0, minOf(text.length, room))
-                    }
-                },
-            ).onEach {
-                sawEvent = true
-                drive.perf.add(PerfKeys.EVENTS_IN, 1)
+            // Leak wall (review 2026-07-19): the attempt's poller/pinger die on EVERY exit of this
+            // block — a torn-then-reissued stream used to leak them into `self`, pinning the
+            // admission slot ~streamIdle past turn completion and keepalive-pinging after stop.
+            try {
+                val capture = ZeroEventCapture()
+                val events = tearAwareEvents(drive, resp, capture)
+                val signals = TurnSignals(
+                    watchdogFired = { drive.watchdog.fired },
+                    clientGone = { drive.channel.clientGone.get() },
+                )
+                val rawOutcome = provider.streamTranslator(drive.meta, signals)
+                    .driveTurn(events, drive.emitter)
+                drive.perf.mark(PerfKeys.STREAM_END)
+                val outcome = classifyZeroEventFailure(drive, rawOutcome, capture.snippet.toString())
+                finishTurn(drive, outcome)
+            } finally {
+                poller.cancel()
+                pinger.cancel()
             }
-            val signals = TurnSignals(
-                watchdogFired = { drive.watchdog.fired },
-                clientGone = { drive.channel.clientGone.get() },
-            )
-            val rawOutcome = provider.streamTranslator(drive.meta, signals)
-                .driveTurn(events, drive.emitter)
-            poller.cancel()
-            pinger.cancel()
-            drive.perf.mark(PerfKeys.STREAM_END)
-            val outcome = classifyZeroEventFailure(drive, rawOutcome, zeroEventSnippet.toString())
-            finishTurn(drive, outcome)
         }
     }
 
-    /** G9: malformed SSE frames were dropped with zero telemetry. Counts every skip; logs the
-     *  first offending snippet once per turn (truncated) — never influences [TurnOutcome], the
-     *  skip stays silent to the client (L3 stays intact). Returns the updated logged flag. */
-    private fun onMalformedFrame(drive: TurnDrive, snippet: String, alreadyLogged: Boolean): Boolean {
-        drive.perf.add(PerfKeys.FRAMES_SKIPPED, 1)
-        if (alreadyLogged) return true
-        log("[${provider.key}] malformed SSE frame skipped: ${snippet.take(ERR_SNIPPET)}\n")
-        return true
+    /** Raw-body capture for the G2 zero-event classifier, threaded through [tearAwareEvents]. */
+    private class ZeroEventCapture {
+        var sawEvent = false
+        var malformedLogged = false
+        val snippet = StringBuilder(ZERO_EVENT_SNIPPET_CHARS)
     }
+
+    /** The upstream SSE event flow with instrumentation + the G5 pre-frame tear rethrow: a
+     *  transport tear BEFORE any client frame must reach the reissue machinery in UpstreamClient.
+     *  The translators swallow IOException into the honest terminal — right for every post-frame
+     *  case, but it made the pre-frame reissue unreachable (review 2026-07-19). Rethrown as
+     *  [StreamTornBeforeClient] (plain RuntimeException) so no translator catch matches. */
+    private suspend fun tearAwareEvents(
+        drive: TurnDrive,
+        resp: UpstreamResponse,
+        capture: ZeroEventCapture,
+    ) =
+        sseJsonEvents(
+            resp.bodyChannel(),
+            onBytes = { chunkBytes ->
+                drive.slot.touch()
+                drive.watchdog.markByte()
+                drive.perf.markOnce(PerfKeys.FIRST_BYTE)
+                drive.perf.add(PerfKeys.SSE_BYTES_IN, chunkBytes.toLong())
+            },
+            // G9: count every skipped malformed frame; log the first snippet once per turn —
+            // never influences [TurnOutcome] (L3 stays intact; the skip is silent to the client).
+            onMalformed = { sn ->
+                drive.perf.add(PerfKeys.FRAMES_SKIPPED, 1)
+                if (!capture.malformedLogged) {
+                    log("[${provider.key}] malformed SSE frame skipped: ${sn.take(ERR_SNIPPET)}\n")
+                }
+                capture.malformedLogged = true
+            },
+            onRawText = { text ->
+                val room = ZERO_EVENT_SNIPPET_CHARS - capture.snippet.length
+                if (!capture.sawEvent && room > 0) {
+                    capture.snippet.append(text, 0, minOf(text.length, room))
+                }
+            },
+        ).onEach {
+            capture.sawEvent = true
+            drive.perf.add(PerfKeys.EVENTS_IN, 1)
+        }.catch { e ->
+            if (e is IOException && !drive.perf.hasMark(PerfKeys.FIRST_FRAME)) {
+                throw StreamTornBeforeClient(e)
+            }
+            throw e
+        }
 
     /** G2: a zero-event HTTP-200 stream was hardcoded OVERLOADED — undiagnosable, and Claude Code
      *  retries a dead head forever. When the SSE reader parsed literally zero JSON frames from the
@@ -359,11 +396,12 @@ internal class TurnDriver(
             ),
         )
         val message = if (classified.type == ErrorType.AUTHENTICATION) {
-            "${classified.message} — run: claudex login"
+            "${classified.message}${provider.loginHint()}"
         } else {
             classified.message
         }
-        return TurnOutcome.Failure(classified.type, message)
+        // classified from a body the provider actually sent — a provider-reported failure (G20)
+        return TurnOutcome.Failure(classified.type, message, providerReported = true)
     }
 
     /** Terminal frames FIRST (finishStream), stats after: the usage-file rewrite and the cache
@@ -385,12 +423,12 @@ internal class TurnDriver(
             }
             log(cacheLogLine(provider.key, drive.upstreamModel, usageObj, drive.meta.compact))
         }
-        // G20: OVERLOADED is the existing tag for watchdog-stall / truncated-without-terminal —
-        // the two passive/local cases across all three dialect translators — so it stands in for
-        // "we gave up waiting", never a provider-reported failure. Any other ErrorType means the
-        // reducer/translator parsed a genuine upstream error field.
+        // G20 (corrected, review 2026-07-19): attribution rides the outcome's provenance flag, not
+        // the ErrorType — the old OVERLOADED-implies-local heuristic misfiled a passthrough
+        // provider's genuine overloaded_error as local-origin. providerReported is set ONLY where a
+        // translator parsed an error the upstream actually sent.
         if (outcome is TurnOutcome.Failure) {
-            if (outcome.type == ErrorType.OVERLOADED) health.local() else health.provider()
+            if (outcome.providerReported) health.provider() else health.local()
         }
         telemetry.recordPerf(drive, outcomeTag)
     }
@@ -414,6 +452,21 @@ internal class TurnDriver(
             }
         }
 
+    /** One conn-reset surface for raw tears and reissue-exhausted [StreamTornBeforeClient]. */
+    private suspend fun emitConnReset(drive: TurnDrive, detail: String?) {
+        log(telemetry.errTurn("conn-reset", drive, ": $detail"))
+        drive.emitter.emitError(
+            ErrorType.OVERLOADED,
+            "${provider.key}: upstream connection failed ($detail) — retry",
+        )
+        telemetry.recordPerf(drive, "error:conn-reset")
+        health.local()
+    }
+
+    /** Head restart = fresh diagnostic baseline (the HeadHealth doc's promised behavior; the
+     *  counters lived through control-plane restarts before — review 2026-07-19). */
+    internal fun resetHealth() = health.reset()
+
     private companion object {
         const val ERR_SNIPPET = 200
 
@@ -430,6 +483,11 @@ internal class TurnDriver(
         const val CLIENT_PING_INTERVAL_MS = 10_000L
     }
 }
+
+/** G19-consistent per-head hint — every AUTHENTICATION surface uses the SAME provider-threaded
+ *  command (review 2026-07-19: two paths still hardcoded "claudex login" on non-codex heads). */
+private fun Provider.loginHint(): String =
+    if (loginCommand.isNotEmpty()) " — run: $loginCommand" else ""
 
 /** Renders the per-turn observability: the turn line, error lines, and the perf row+line.
  *  Split out so the driver stays drive-only (the audit's god-file finding). */

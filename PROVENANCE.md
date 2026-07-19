@@ -76,26 +76,26 @@ The recommended mechanism is a `NOTICES` / `THIRD-PARTY-LICENSES` file (or an
 appended section in `LICENSE`) carrying the upstream MIT block attributed to
 Yusang Park, referenced from this document.
 
-## UNRESOLVED - operator action required
+## RESOLVED - fork source pinned (2026-07-19)
 
-Package identity and license class are resolved; the following remain open:
+All previously-open items are closed; the evidence is the operator's original
+fork working copy, recovered at a local path outside this repository:
 
-1. Exact forked version/revision. The local fork diverged on 2026-07-13; the
-   upstream npm history spans 0.1.0-0.2.6 (Apr 2026). The precise upstream
-   version the operator forked is not pinned in local evidence. ACTION: confirm
-   the forked version (install history / lockfile / the fork commit), then
-   retain THAT version's `LICENSE` verbatim.
-2. License stability across versions. ACTION: verify the MIT terms and copyright
-   holder are unchanged at the forked version (the current release is MIT ©
-   Yusang Park; confirm no relicensing at the pinned version).
-3. Notice retention. ACTION: add the upstream MIT block to a `NOTICES` /
-   `THIRD-PARTY-LICENSES` file with attribution to Yusang Park.
+1. Exact forked revision: upstream commit
+   `d66dd54d7baed0059d2fc34280b409ee6c6730df` ("docs: add npm badges to
+   README", `git describe` = `v0.2.6-1-gd66dd54`), package.json version
+   `0.2.6`, cloned from
+   `https://github.com/yusang-park/codex-for-claude-code.git`. The inherited
+   single-file proxy (`scripts/codex-proxy.mjs`) is present at that revision.
+2. License at the pinned revision: verified verbatim — `MIT License,
+   Copyright (c) 2026 Yusang Park`.
+3. Notice retention: discharged — `THIRD_PARTY_NOTICES.md` carries the
+   upstream MIT block with attribution and this pinned revision.
 
-Counsel recommendation: before public release, have counsel confirm that MIT
-attribution plus notice retention (actions 1-3 above) satisfies the license for
-the inherited single-file proxy lineage; the v30 decomposition and the Kotlin
-port are derivative works of MIT-licensed code and inherit the same notice
-obligation, which retaining the upstream MIT notice discharges.
+Residual counsel note: MIT attribution plus notice retention discharges the
+license obligation for the inherited lineage (the v30 decomposition and the
+Kotlin port are derivative works of the same MIT code); a counsel
+confirmation of that standard reading remains a reasonable pre-1.0 checkbox.
 
 ## MIT LICENSE scope statement
 

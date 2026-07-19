@@ -70,7 +70,7 @@ the MIT License:
 ```
 MIT License
 
-Copyright (c) Yusang Park
+Copyright (c) 2026 Yusang Park
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -91,5 +91,5 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-The exact forked revision is pending confirmation; see `PROVENANCE.md` for the
-authoritative fork/commit record once established.
+Forked at upstream commit `d66dd54d7baed0059d2fc34280b409ee6c6730df`
+(v0.2.6; see `PROVENANCE.md` for the full fork record).

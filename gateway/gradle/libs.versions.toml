@@ -28,6 +28,10 @@ ktor-client-cio = { module = "io.ktor:ktor-client-cio", version.ref = "ktor" }
 # streams; the JDK engine parks correctly and scales to the 1000-stream target on a few threads.
 ktor-client-java = { module = "io.ktor:ktor-client-java", version.ref = "ktor" }
 ktor-client-mock = { module = "io.ktor:ktor-client-mock", version.ref = "ktor" }
+# Kotlin compiler internals — the :fir-checks compiler-plugin module compiles against these
+# (compileOnly: the compiler provides them at plugin-load time) and drives K2JVMCompiler in tests.
+# Pinned to the toolchain version: FIR/checker API is internal and version-locked, no stability guarantee.
+kotlin-compiler-embeddable = { module = "org.jetbrains.kotlin:kotlin-compiler-embeddable", version.ref = "kotlin" }
 konsist = { module = "com.lemonappdev:konsist", version.ref = "konsist" }
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }

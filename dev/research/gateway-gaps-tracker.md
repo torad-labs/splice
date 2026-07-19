@@ -53,7 +53,7 @@ column as work lands (`todo` / `in-progress` / `done <commit>` / `wontfix <reaso
 | G18 | Grok file without `expires` = never-expiring | synthesize mtime + 4h TTL | done 7339b4d |
 | G19 | AUTHENTICATION errors lack "run: <head> login" hint | append per-head instruction when classified AUTHENTICATION | done 0784fab |
 | G20 | No per-head passive health counters / cooling state | local-origin vs provider-error split counters | done fec1f41 |
-| G21 | Unbounded admission queue; shed load invisible | bound waiters; 529 "gateway at capacity" | todo |
+| G21 | Unbounded admission queue; shed load invisible | bound waiters; 529 "gateway at capacity" | done 939ef55 |
 | G22 | No aggregate retry budget across turns | only if fan-out grows | todo |
 | G23 | CIO selector/writer-spin class — **FIRED LIVE 2026-07-18 (~700% CPU, daemon killed)**; the write-side twin of the read-side spin | ROOT FIX: client engine CIO → JDK HttpClient so the class can't occur — streaming `0e0dccb` + all 5 auth/refresh/login clients via `authHttpClient()`. The proposed detect-and-recycle watchdog is now moot (a generic wedged-client sampler remains possible defense-in-depth, separate concern) | done (root) 2026-07-18 |
 | G24 | Positive JVM DNS TTL not pinned | one-liner next to negative-ttl in Main.kt | todo |

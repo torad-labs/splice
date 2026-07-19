@@ -449,7 +449,10 @@ public class Daemon(
             listenPort = head.port,
             deps = HeadDeps(
                 upstream = UpstreamClient(cfg.firstByteTimeoutMs, cfg.upstreamTimeoutMs, cfg.upstreamRetries),
-                gate = InflightGate({ config.getConfig().maxInflight }),
+                gate = InflightGate(
+                    maxInflight = { config.getConfig().maxInflight },
+                    maxQueued = { config.getConfig().maxQueued },
+                ),
                 shadow = ShadowClassifier(log = log),
                 compactStats = compactStats,
                 usageStore = usageStore,

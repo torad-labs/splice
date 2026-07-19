@@ -117,6 +117,28 @@ class ResponsesRequestBuilderTest {
         assertEquals("detailed", req["reasoning"]?.jsonObject?.get("summary")?.jsonPrimitive?.content)
     }
 
+    // stream_options.reasoning_summary_delivery (2026-07-19): rides ONLY with a codex-style
+    // summaryDelivery quirk AND an actual summary request — grok/default quirks omit the field.
+    @Test
+    fun `summary delivery rides with the quirk and an actual summary, never otherwise`() {
+        val body = """{"model":"m","thinking":{"type":"enabled","budget_tokens":32000},
+            "messages":[{"role":"user","content":"x"}]}"""
+        val withDelivery = CODEX.copy(summaryDelivery = "sequential_cutoff")
+        var req = build(body, quirks = withDelivery)
+        assertEquals(
+            "sequential_cutoff",
+            req["stream_options"]?.jsonObject?.get("reasoning_summary_delivery")?.jsonPrimitive?.content,
+        )
+        // no quirk -> omitted (grok/openai-platform)
+        req = build(body, quirks = GROK)
+        assertNull(req["stream_options"])
+        // quirk set but no summary requested (disabled thinking) -> omitted, codex-rs parity
+        val disabled = """{"model":"m","thinking":{"type":"disabled"},
+            "messages":[{"role":"user","content":"x"}]}"""
+        req = build(disabled, quirks = withDelivery)
+        assertNull(req["stream_options"])
+    }
+
     @Test
     fun `disabled thinking emits no reasoning block on codex`() {
         val req = build(

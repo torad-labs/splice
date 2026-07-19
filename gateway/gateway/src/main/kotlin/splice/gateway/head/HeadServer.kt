@@ -24,6 +24,7 @@ import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.sse.SSE
+import io.netty.channel.socket.SocketChannelConfig
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
@@ -48,6 +49,7 @@ import splice.spi.GatewayAtCapacityException
 import splice.spi.InflightGate
 import splice.spi.Provider
 import splice.spi.UpstreamClient
+import java.util.concurrent.atomic.AtomicBoolean
 
 /** Collaborators the head needs, bundled to keep the constructor lean. */
 public data class HeadDeps(
@@ -84,6 +86,9 @@ public class HeadServer(
 
     override suspend fun start() {
         if (server != null) return
+        // G26: local (not a class field) so a control-plane restart (POST /api/heads/:head/restart)
+        // re-arms verification instead of going permanently silent after the first restart.
+        val nodelayLogged = AtomicBoolean(false)
         val engine = embeddedServer(
             Netty,
             serverConfig {
@@ -114,6 +119,15 @@ public class HeadServer(
             // 52/1000 truncated) — a write that waits on a busy client/kernel buffer is not a
             // dead stream. The watchdog owns real staleness; keep this as a last-resort cap.
             responseWriteTimeoutSeconds = WRITE_TIMEOUT_S
+            // G26: verification-only (never sets a socket option) — fires on the first ACCEPTED
+            // client connection with a real, already-connected socket (NettyChannelInitializer
+            // .initChannel), logged once per start() so N connections don't spam the log.
+            channelPipelineConfig = { pipeline ->
+                if (nodelayLogged.compareAndSet(false, true)) {
+                    val noDelay = (pipeline.channel().config() as? SocketChannelConfig)?.isTcpNoDelay
+                    log("[${provider.key}] tcp_nodelay(server)=${noDelay ?: "unknown"}\n")
+                }
+            }
         }
         engine.start(wait = false)
         server = engine

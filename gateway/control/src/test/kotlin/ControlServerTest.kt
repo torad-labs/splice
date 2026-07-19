@@ -176,6 +176,7 @@ class ControlServerTest {
         assertEquals("3099", h["port"]?.jsonPrimitive?.content)
         assertEquals("true", h["running"]?.jsonPrimitive?.content)
         assertTrue(h.containsKey("gate") && h.containsKey("pids") && h.containsKey("healthy"))
+        assertTrue(h.containsKey("health"))
     }
 
     @Test

@@ -86,6 +86,11 @@ internal class TurnDriver(
     private val clock get() = deps.clock
 
     private val telemetry = TurnTelemetry(provider.key, deps.perfStats, deps.log, deps.clock)
+    private val health = HeadHealthCounters()
+
+    /** G20: passive health snapshot for HeadServer.healthSnapshot() — the control-plane's
+     *  /api/heads aggregation, never the per-head /health liveness route (external contract). */
+    internal fun healthCounters(): HeadHealthCounts = health.snapshot()
 
     /** Open the SSE writer, wire the per-turn collaborators, run the single turn. */
     suspend fun stream(call: ApplicationCall, built: BuiltTurn, slot: InflightGate.Slot, t0: Long, perf: TurnPerf) {
@@ -214,6 +219,7 @@ internal class TurnDriver(
                     "claudex: no upstream credentials — run: claudex login",
                 )
                 telemetry.recordPerf(drive, "error:auth-missing")
+                health.local() // no upstream call ever happened: missing local credentials
             }
             is UpstreamFailed -> {
                 val failure = UpstreamFailureClassifier.classify(FailureSource.HTTP, e.body, e.status)
@@ -226,6 +232,7 @@ internal class TurnDriver(
                 }
                 drive.emitter.emitError(failure.type, message)
                 telemetry.recordPerf(drive, "error:upstream-failed")
+                health.provider() // e.status/e.body are the literal HTTP response the upstream host gave
             }
             is IOException -> {
                 log(telemetry.errTurn("conn-reset", drive, ": ${e.message}"))
@@ -234,6 +241,7 @@ internal class TurnDriver(
                     "claudex: upstream connection failed (${e.message}) — retry",
                 )
                 telemetry.recordPerf(drive, "error:conn-reset")
+                health.local() // post-handoff socket failure: our side of the wire
             }
             is RuntimeException -> {
                 // e.g. a URL-parse error from a bad base_url, an IllegalState out of Ktor
@@ -241,6 +249,7 @@ internal class TurnDriver(
                 log(telemetry.errTurn("unexpected", drive, ": ${e.javaClass.simpleName} ${e.message}"))
                 drive.emitter.emitError(ErrorType.API_ERROR, "claudex: internal gateway error (${e.message}) — retry")
                 telemetry.recordPerf(drive, "error:unexpected")
+                health.local() // internal gateway bug (e.g. bad base_url parse)
             }
             else -> throw e // Errors (OOM etc.) are not turn failures — never masked
         }
@@ -374,6 +383,13 @@ internal class TurnDriver(
                 put("input_tokens_details", buildJsonObject { put("cached_tokens", s.usage.cachedTokens) })
             }
             log(cacheLogLine(provider.key, drive.upstreamModel, usageObj, drive.meta.compact))
+        }
+        // G20: OVERLOADED is the existing tag for watchdog-stall / truncated-without-terminal —
+        // the two passive/local cases across all three dialect translators — so it stands in for
+        // "we gave up waiting", never a provider-reported failure. Any other ErrorType means the
+        // reducer/translator parsed a genuine upstream error field.
+        if (outcome is TurnOutcome.Failure) {
+            if (outcome.type == ErrorType.OVERLOADED) health.local() else health.provider()
         }
         telemetry.recordPerf(drive, outcomeTag)
     }

@@ -115,10 +115,11 @@ class WebuiContractTest {
             // HeadStatus (server/launcher/heads.mjs) — gate/mode/maxInflight are contract-nullable.
             listOf(
                 "key", "label", "name", "port", "authKind", "wantVersion",
-                "running", "healthy", "version", "versionMatch", "mode", "gate", "maxInflight", "pids",
+                "running", "healthy", "version", "versionMatch", "mode", "gate", "maxInflight", "health", "pids",
             ),
             "HeadStatus",
         )
+        assertFields(head["health"]!!.jsonObject, listOf("localOriginErrors", "providerErrors"), "HeadHealthCounters")
     }
 
     @Test

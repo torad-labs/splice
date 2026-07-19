@@ -101,6 +101,12 @@ export interface GateSnapshot {
   stream_idle_ms: number;
 }
 
+/** G20: passive per-head health counters, local-origin vs provider-error split (diagnosis only). */
+export interface HeadHealthCounters {
+  localOriginErrors: number;
+  providerErrors: number;
+}
+
 export interface HeadStatus {
   key: string;
   label: string;
@@ -115,6 +121,7 @@ export interface HeadStatus {
   mode: string | null;
   gate: GateSnapshot | null;
   maxInflight: number | null;
+  health: HeadHealthCounters;
   pids: number[];
 }
 

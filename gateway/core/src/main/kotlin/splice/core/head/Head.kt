@@ -19,4 +19,8 @@ public data class HeadHealth(
     val running: Boolean,
     val port: Int,
     val version: String,
+    // G20: cheap in-memory passive health counters, local-origin vs provider-error (Envoy
+    // split_external_local_origin_errors shape). Reset on head restart — diagnosis, not telemetry.
+    val localOriginErrors: Long = 0,
+    val providerErrors: Long = 0,
 )

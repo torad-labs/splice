@@ -213,6 +213,24 @@ class HeadServerIntegrationTest {
     }
 
     @Test
+    fun `local-origin failure increments localOriginErrors, not providerErrors`() = runTest {
+        val before = head.healthSnapshot()
+        messages("truncated") // stream ended without a terminal event -> ErrorType.OVERLOADED -> LOCAL
+        val after = head.healthSnapshot()
+        assertEquals(before.localOriginErrors + 1, after.localOriginErrors)
+        assertEquals(before.providerErrors, after.providerErrors)
+    }
+
+    @Test
+    fun `provider-error failure increments providerErrors, not localOriginErrors`() = runTest {
+        val before = head.healthSnapshot()
+        messages("overflow_sse") // invalid_request_error from upstream -> ErrorType.INVALID_REQUEST -> PROVIDER
+        val after = head.healthSnapshot()
+        assertEquals(before.providerErrors + 1, after.providerErrors)
+        assertEquals(before.localOriginErrors, after.localOriginErrors)
+    }
+
+    @Test
     fun `zero-event auth-shaped body classifies as authentication with a login hint`() = runTest {
         val sse = messages("zero_event_auth")
         assertTrue(sse.contains("event: error"))
@@ -223,10 +241,16 @@ class HeadServerIntegrationTest {
 
     @Test
     fun `AUTHENTICATION via UpstreamFailed appends the per-head login hint`() = runTest {
+        val before = head.healthSnapshot()
         val sse = messages("authfail")
         assertTrue(sse.contains("event: error"))
         assertTrue(sse.contains("authentication_error"))
         assertTrue(sse.contains("run: claudex login"))
+        // UpstreamFailed's status/body are the literal HTTP response the retry loop gave up on
+        // after exhausting retries -- the upstream host responded, so this is PROVIDER, not LOCAL.
+        val after = head.healthSnapshot()
+        assertEquals(before.providerErrors + 1, after.providerErrors)
+        assertEquals(before.localOriginErrors, after.localOriginErrors)
     }
 
     @Test

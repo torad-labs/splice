@@ -5,6 +5,10 @@
 // documented change).
 package splice.app
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -77,6 +81,11 @@ public class Daemon(
     private var control: ControlServer? = null
     private val heads = LinkedHashMap<String, ManagedHead>()
 
+    // G8: per-head auth/health probe. SupervisorJob so one head's probe failure can't cancel
+    // another's — same isolation shape as SingleFlight.kt:33-36.
+    private val probeScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val authProbes = LinkedHashMap<String, AuthProbeLoop>()
+
     public suspend fun start() {
         val cfg = config.getConfig()
         val watchdog = WatchdogBudget(
@@ -120,12 +129,16 @@ public class Daemon(
                 failed[key] = "start failed: ${it.message}"
                 log("[daemon] head '$key' failed to start: ${it.message}\n")
             }
+            // Auth probing is orthogonal to port-bind success — probe even a head whose start() failed.
+            startAuthProbeIfRefreshable(key, m.auth, probeScope, log, authProbes)
         }
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
     }
 
     public suspend fun stop() {
+        authProbes.values.forEach { it.stop() }
+        probeScope.cancel()
         heads.values.forEach {
             runCatching { it.head.stop() }.discard("shutdown: one head failing to stop must not block the rest")
         }

@@ -329,6 +329,12 @@ private class ControlPayloads(
         put("mode", null as String?)
         put("gate", null as String?) // gate snapshot is nullable in the contract; heads self-report when wired
         put("maxInflight", null as Int?)
+        // G20: passive per-head health counters, local-origin vs provider-error split — diagnosis
+        // only, surfaced through this aggregation (never the per-head /health liveness route).
+        putJsonObject("health") {
+            put("localOriginErrors", h.localOriginErrors)
+            put("providerErrors", h.providerErrors)
+        }
         putJsonArray("pids") {}
     }
 

@@ -16,7 +16,7 @@
 //       includeEncryptedReasoning → ask the server to RETURN encrypted_content (opaque handle)
 //       replayReasoning → inject prior redacted_thinking into the NEXT input
 //     Default for deep thinking: include ON when reasoning is shown, replay OFF (replaying
-//     prior encrypted CoT makes the model reuse thin thinking instead of re-deriving).
+//     prior opaque encrypted reasoning items make the model reuse thin thinking instead of re-deriving).
 //   - cache key: first-message-hash 'splice-<sha256(first user text)[:32]>' (codex — stable
 //     across per-turn system-reminder drift) or session-id 'claude-grok:<sid>' (grok);
 //   - effort precedence (v27): explicit body fields > /effort picker (thinking.budget_tokens)

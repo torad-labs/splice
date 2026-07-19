@@ -3,6 +3,10 @@
 // unit-testable with a fake refreshCall. G7: classify/retry now goes through the shared
 // RefreshRetry.kt loop (same shape as kimiRefresh) instead of a single attempt collapsing every
 // non-2xx status AND any thrown exception straight to null.
+// G15: classifyCodex's terminal branches now carry a RefreshAttempt so a confirmed invalid_grant
+// (401/403/explicit invalid_grant body) is distinguishable from any other rejection at the
+// CodexAuthProvider boundary — refreshWithRetry itself is untouched (still generic T?); only the T
+// it's instantiated with here changed, from RefreshedTokens to RefreshAttempt<...>.
 package splice.app
 
 import io.ktor.client.HttpClient
@@ -13,6 +17,7 @@ import io.ktor.http.Parameters
 import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
+import splice.core.auth.RefreshAttempt
 import splice.core.util.runCatchingCancellable
 import splice.core.util.str
 import splice.provider.codex.CodexOAuthEndpoints
@@ -25,10 +30,10 @@ public suspend fun codexRefresh(
     tokenUrl: String,
     refreshToken: String,
     client: HttpClient = refreshClient,
-): RefreshedTokens? = refreshWithRetry(
+): RefreshAttempt<RefreshedTokens> = refreshWithRetry(
     call = { postCodexRefresh(client, tokenUrl, refreshToken) },
     classify = ::classifyCodex,
-)
+) ?: RefreshAttempt.Denied("refresh retries exhausted")
 
 private suspend fun postCodexRefresh(client: HttpClient, tokenUrl: String, refreshToken: String): HttpResponse =
     client.submitForm(
@@ -40,18 +45,28 @@ private suspend fun postCodexRefresh(client: HttpClient, tokenUrl: String, refre
         },
     )
 
-// refresh failure -> null (caller re-prompts), with the CAUSE on stderr — a silent null left
-// the operator staring at persistent 401s with zero evidence (audit 2026-07-18). Logged per
-// attempt now that a transient failure retries instead of terminating immediately.
-private suspend fun classifyCodex(resp: HttpResponse): RefreshStep<RefreshedTokens> {
-    if (resp.status.isSuccess()) return RefreshStep.Terminal(parseCodexRefresh(resp.bodyAsText()))
+// refresh failure -> Denied/InvalidGrant (caller re-prompts), with the CAUSE on stderr — a silent
+// null left the operator staring at persistent 401s with zero evidence (audit 2026-07-18). Logged
+// per attempt now that a transient failure retries instead of terminating immediately.
+private suspend fun classifyCodex(resp: HttpResponse): RefreshStep<RefreshAttempt<RefreshedTokens>> {
+    if (resp.status.isSuccess()) {
+        val tokens = parseCodexRefresh(resp.bodyAsText())
+        return RefreshStep.Terminal(
+            if (tokens == null) {
+                RefreshAttempt.Denied("refresh response missing access_token")
+            } else {
+                RefreshAttempt.Granted(tokens)
+            },
+        )
+    }
     val status = resp.status.value
     val body = resp.bodyAsText()
     System.err.println("[codex] token refresh failed: HTTP $status ${body.take(ERR_BODY_SNIPPET)}")
     return when {
-        isTerminalRefreshFailure(status, body, json) -> RefreshStep.Terminal(null)
+        isTerminalRefreshFailure(status, body, json) ->
+            RefreshStep.Terminal(RefreshAttempt.InvalidGrant("HTTP $status"))
         status in refreshRetryableStatus -> RefreshStep.Retry
-        else -> RefreshStep.Terminal(null)
+        else -> RefreshStep.Terminal(RefreshAttempt.Denied("HTTP $status"))
     }
 }
 

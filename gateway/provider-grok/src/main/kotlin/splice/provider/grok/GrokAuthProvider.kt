@@ -18,6 +18,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
+import splice.core.auth.INVALID_GRANT_REASON
+import splice.core.auth.InvalidGrantLatch
+import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.auth.credentialsOrNull
@@ -44,12 +47,13 @@ public class GrokAuthProvider(
     private val authCacheMs: Long = DEFAULT_CACHE_MS,
     private val clock: () -> Long = System::currentTimeMillis,
     private val nowIso: () -> String = { Instant.ofEpochMilli(System.currentTimeMillis()).toString() },
-    /** POST grant_type=refresh_token to auth.x.ai's token URL; returns the parsed tokens or null. */
-    private val refreshCall: suspend (refreshToken: String) -> GrokRefreshedTokens?,
+    /** POST grant_type=refresh_token to auth.x.ai's token URL; returns the classified attempt. */
+    private val refreshCall: suspend (refreshToken: String) -> RefreshAttempt<GrokRefreshedTokens>,
 ) : RefreshableAuthProvider {
 
     private val json = Json { ignoreUnknownKeys = true }
     private val singleFlight = SingleFlight<Credentials?>()
+    private val invalidGrantLatch = InvalidGrantLatch()
 
     @Volatile
     private var cache: Cache? = null
@@ -107,10 +111,19 @@ public class GrokAuthProvider(
     // Staged (read → exchange → persist), each stage owning its own failure branches.
     // G1: capture what THIS process last served BEFORE the lock, then re-read authoritatively INSIDE
     // it — so a peer's rotation (landed while we waited on the lock) is seen, not overwritten.
+    // G15: gate on a latched confirmed invalid_grant BEFORE any file-content read or network call —
+    // a dead token no longer gets re-POSTed every turn. The gate gives way the instant the file's
+    // mtime changes (re-login), so a genuinely stale latch never outlives the credentials it named.
     private suspend fun doRefresh(): RefreshOutcome {
         if (!Files.exists(authPath)) return RefreshOutcome.NoCredentialsFile
+        val mtime = grokAuthMtimeOrNull(authPath)
+        if (invalidGrantLatch.isLatched(mtime)) return RefreshOutcome.Rejected(INVALID_GRANT_REASON)
         val priorAccess = cache?.snapshot?.access
-        return CredentialLock.withLock(authPath) { refreshLocked(priorAccess) }
+        val outcome = CredentialLock.withLock(authPath) { refreshLocked(priorAccess) }
+        if (outcome is RefreshOutcome.Rejected && outcome.reason == INVALID_GRANT_REASON) {
+            invalidGrantLatch.latch(mtime)
+        }
+        return outcome
     }
 
     // Runs holding the cross-process lock: re-read fresh, short-circuit if a peer already rotated,
@@ -133,21 +146,28 @@ public class GrokAuthProvider(
         return RefreshOutcome.Refreshed(Credentials.Bearer(snap.access, null))
     }
 
+    // G15: InvalidGrant flows through the SAME rejectedOrRetry() G1 reread-once dance as any other
+    // rejection — a "confirmed" invalid_grant (the one doRefresh() latches on) is one that survived
+    // that race check, exactly matching the gap's "post-G1 re-read" requirement.
     private suspend fun exchangeRefreshToken(
         refreshToken: String,
         allowRereadRetry: Boolean = true,
     ): RefreshOutcome {
         // Guard the network hop (the refreshCall param's type doesn't promise "never throws"): a
         // thrown hop must degrade to a typed outcome, not blow through SingleFlight uncaught.
-        val fresh = runCatchingCancellable { refreshCall(refreshToken) }
+        val attempt = runCatchingCancellable { refreshCall(refreshToken) }
             .getOrElse { return RefreshOutcome.TransportFailed(it) }
-        val access = fresh?.accessToken
-        return when {
-            fresh == null ->
-                rejectedOrRetry(refreshToken, allowRereadRetry, "token endpoint returned no rotated tokens")
-            access == null ->
-                rejectedOrRetry(refreshToken, allowRereadRetry, "refresh response missing access_token")
-            else -> persistRotation(refreshToken, fresh, access)
+        return when (attempt) {
+            is RefreshAttempt.Granted -> {
+                val access = attempt.tokens.accessToken
+                if (access == null) {
+                    rejectedOrRetry(refreshToken, allowRereadRetry, "refresh response missing access_token")
+                } else {
+                    persistRotation(refreshToken, attempt.tokens, access)
+                }
+            }
+            is RefreshAttempt.InvalidGrant -> rejectedOrRetry(refreshToken, allowRereadRetry, INVALID_GRANT_REASON)
+            is RefreshAttempt.Denied -> rejectedOrRetry(refreshToken, allowRereadRetry, attempt.detail)
         }
     }
 
@@ -214,12 +234,14 @@ public class GrokAuthProvider(
         val present = runCatchingCancellable {
             Files.exists(authPath) && tokensOf()?.get(FIELD_ACCESS_TOKEN) != null
         }.getOrDefault(false)
+        val mtime = grokAuthMtimeOrNull(authPath)
         return AuthDescription(
             present = present,
             kind = "grok-oauth",
             fields = buildMap {
                 put("auth_path", authPath.toString())
                 put("login", "browser")
+                if (invalidGrantLatch.isLatched(mtime)) put("refresh_latched", INVALID_GRANT_REASON)
             },
         )
     }
@@ -243,3 +265,13 @@ public class GrokAuthProvider(
         const val FIELD_EXPIRES = "expires"
     }
 }
+
+// G15: best-effort mtime probe for the invalid_grant latch gate. Top-level (not a class member) so
+// GrokAuthProvider stays under the TooManyFunctions ceiling; shared by doRefresh() and describe().
+// The failure is logged, not swallowed, before collapsing to null — a stat failure is "unknown",
+// which InvalidGrantLatch treats as fail-open (never suppresses), NOT "file unchanged".
+private fun grokAuthMtimeOrNull(authPath: Path): Long? = runCatchingCancellable {
+    Files.getLastModifiedTime(authPath).toMillis()
+}.onFailure {
+    System.err.println("[grok-auth] failed to stat $authPath mtime: $it — invalid_grant latch check skipped")
+}.getOrNull()

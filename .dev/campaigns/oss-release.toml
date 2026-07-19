@@ -178,6 +178,8 @@ id = "OSS-M"
 phase = "P2"
 title = "CI-hermetic test ports: every fixed test port (39290 OpenAiResponsesTest, 39320-39323 MultiProviderDaemonTest, any other 39xxx constant) sits INSIDE the Linux ephemeral range 32768-60999 — any transient outbound source port on a busy runner collides and throws BindException at @BeforeAll (observed run 29706210520); convert to bind-port-0 + report-actual-port (MockChatGptUpstream already does this correctly), or move constants below 32768; ALSO replace MultiProviderDaemonTest's fixed 1100ms warm-up sleep with readiness polling (flaked twice on loaded hosts 2026-07-19)"
 files = ["gateway test files with fixed ports", "HeadServer bind surface if needed"]
-status = "todo"
+status = "verified"
 verify = "bash checks/oss/verify-OSS-M.sh"
 # [2026-07-19] VERIFY-EDITED: verify = "bash -c 'true'" -> verify = "bash checks/oss/verify-OSS-M.sh" (by=orchestrator implied; no flag)
+# [2026-07-19] Attribution unavailable: missing in_flight tree snapshot
+# [2026-07-19] done+verified: full gradle check green, oracle green; landed with the rule narrowing

@@ -21,6 +21,10 @@ import kotlin.io.path.readSymbolicLink
 
 class InstallCommandTest {
 
+    // Hermetic env: the first real CI run failed on the runner's ambient XDG_CONFIG_HOME steering
+    // configPath away from the swapped user.home. Every command call pins env to nothing.
+    private val noEnv: (String) -> String? = { null }
+
     private fun withHome(home: Path, block: () -> Unit) {
         val prev = System.getProperty("user.home")
         System.setProperty("user.home", home.toString())
@@ -70,7 +74,7 @@ class InstallCommandTest {
     fun `install links each head command to the shared shim`(@TempDir home: Path) {
         withHome(home) {
             seedTopology(home)
-            install("--all")
+            install("--all", env = noEnv)
             val bin = home.resolve(".local").resolve("bin")
             val claudex = bin.resolve("claudex")
             val grok = bin.resolve("grok")
@@ -84,7 +88,7 @@ class InstallCommandTest {
     fun `install a single head only`(@TempDir home: Path) {
         withHome(home) {
             seedTopology(home)
-            install("claudex")
+            install("claudex", env = noEnv)
             val bin = home.resolve(".local").resolve("bin")
             assertTrue(bin.resolve("claudex").isSymbolicLink())
             assertFalse(Files.exists(bin.resolve("grok"), NOFOLLOW_LINKS))
@@ -95,13 +99,13 @@ class InstallCommandTest {
     fun `install is idempotent and never clobbers a real file`(@TempDir home: Path) {
         withHome(home) {
             seedTopology(home)
-            install("claudex")
-            install("claudex") // re-run: replaces the symlink, no error
+            install("claudex", env = noEnv)
+            install("claudex", env = noEnv) // re-run: replaces the symlink, no error
             assertTrue(home.resolve(".local/bin/claudex").isSymbolicLink())
             // a REAL file where the link would go is left alone
             val bin = home.resolve(".local").resolve("bin")
             bin.resolve("grok").writeString("real file")
-            install("grok")
+            install("grok", env = noEnv)
             assertFalse(bin.resolve("grok").isSymbolicLink())
             assertEquals("real file", Files.readString(bin.resolve("grok")))
         }
@@ -111,8 +115,8 @@ class InstallCommandTest {
     fun `uninstall removes the links`(@TempDir home: Path) {
         withHome(home) {
             seedTopology(home)
-            install("--all")
-            uninstall("--all")
+            install("--all", env = noEnv)
+            uninstall("--all", env = noEnv)
             val bin = home.resolve(".local").resolve("bin")
             assertFalse(Files.exists(bin.resolve("claudex"), NOFOLLOW_LINKS))
             assertFalse(Files.exists(bin.resolve("grok"), NOFOLLOW_LINKS))
@@ -131,7 +135,7 @@ class InstallCommandTest {
     @Test
     fun `installedShimVersion returns null when no shim is installed`(@TempDir home: Path) {
         withHome(home) {
-            assertNull(installedShimVersion())
+            assertNull(installedShimVersion(env = noEnv))
         }
     }
 
@@ -147,7 +151,7 @@ class InstallCommandTest {
                 echo hi
                 """.trimIndent(),
             )
-            assertEquals("shim-1", installedShimVersion())
+            assertEquals("shim-1", installedShimVersion(env = noEnv))
         }
     }
 
@@ -155,7 +159,7 @@ class InstallCommandTest {
     fun `shimStalenessWarning is null when the marker matches SHIM_VERSION`(@TempDir home: Path) {
         withHome(home) {
             writeShim(home, "#!/usr/bin/env bash\nSPLICE_SHIM_VERSION=\"$SHIM_VERSION\"\n")
-            assertNull(shimStalenessWarning())
+            assertNull(shimStalenessWarning(env = noEnv))
         }
     }
 
@@ -163,12 +167,12 @@ class InstallCommandTest {
     fun `shimStalenessWarning warns when the marker is stale or missing`(@TempDir home: Path) {
         withHome(home) {
             writeShim(home, "#!/usr/bin/env bash\nSPLICE_SHIM_VERSION=\"shim-0\"\n")
-            val stale = shimStalenessWarning()
+            val stale = shimStalenessWarning(env = noEnv)
             assertTrue(stale != null && stale.contains("STALE") && stale.contains("splice install"))
         }
         withHome(home) {
             writeShim(home, "#!/usr/bin/env bash\necho no marker here\n")
-            val missing = shimStalenessWarning()
+            val missing = shimStalenessWarning(env = noEnv)
             assertTrue(missing != null && missing.contains("STALE") && missing.contains("splice install"))
         }
     }
@@ -176,7 +180,7 @@ class InstallCommandTest {
     @Test
     fun `shimStalenessWarning is null when no shim file exists at all`(@TempDir home: Path) {
         withHome(home) {
-            assertNull(shimStalenessWarning())
+            assertNull(shimStalenessWarning(env = noEnv))
         }
     }
 }

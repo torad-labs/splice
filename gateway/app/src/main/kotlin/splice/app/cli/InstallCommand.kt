@@ -15,25 +15,28 @@ import java.nio.file.StandardCopyOption
 import kotlin.io.path.isSymbolicLink
 
 // SPLICE_BIN_DIR / SPLICE_SHARE_DIR honored via core/config (System.getenv is walled there),
-// so `splice install` and install.sh always agree on where wrappers and the shim land.
-private fun localBin(): Path = InstallPaths().binDir
-private fun shareDir(): Path = InstallPaths().shareDir
-private fun launchShimPath(): Path = shareDir().resolve("splice-launch")
+// so `splice install` and install.sh always agree on where wrappers and the shim land. The env
+// reader threads through every entry point (TopologyLoader.configPath idiom) so tests can pin a
+// hermetic environment — the first real CI run failed on the runner's ambient XDG_CONFIG_HOME.
+private fun localBin(env: (String) -> String?): Path = InstallPaths(envReader = env).binDir
+private fun shareDir(env: (String) -> String?): Path = InstallPaths(envReader = env).shareDir
+private fun launchShimPath(env: (String) -> String?): Path = shareDir(env).resolve("splice-launch")
 
-internal fun init() {
-    val path = TopologyLoader.configPath()
+internal fun init(env: (String) -> String? = System::getenv) {
+    val path = TopologyLoader.configPath(env)
     val existed = Files.exists(path)
     TopologyLoader.loadOrMaterialize(path)
     println(if (existed) "splice: topology already at $path" else "splice: wrote starter topology to $path")
 }
 
-internal fun install(headArg: String?) {
-    val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath())
-    val launchShim = launchShimPath()
+internal fun install(headArg: String?, env: (String) -> String? = System::getenv) {
+    val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath(env))
+    val launchShim = launchShimPath(env)
     if (!Files.exists(launchShim)) {
         println("splice: warning — launch shim not found at $launchShim (install.sh installs it)")
     }
-    Files.createDirectories(localBin())
+    val bin = localBin(env)
+    Files.createDirectories(bin)
     val heads = if (headArg == null || headArg == "--all") {
         topology.heads
     } else {
@@ -44,21 +47,22 @@ internal fun install(headArg: String?) {
         return
     }
     for ((key, head) in heads) {
-        linkOne(key, head.claude.command ?: key, launchShim)
+        linkOne(bin, key, head.claude.command ?: key, launchShim)
     }
-    installSelf()
-    println("splice: ensure ${localBin()} is on your PATH to use the wrappers")
+    installSelf(env)
+    println("splice: ensure $bin is on your PATH to use the wrappers")
 }
 
 /** Link the `splice` admin command itself (so `splice dashboard/status/...` work as commands). */
-internal fun installSelf() {
-    val launchShim = launchShimPath()
-    Files.createDirectories(localBin())
-    linkOne("splice", "splice", launchShim)
+internal fun installSelf(env: (String) -> String? = System::getenv) {
+    val launchShim = launchShimPath(env)
+    val bin = localBin(env)
+    Files.createDirectories(bin)
+    linkOne(bin, "splice", "splice", launchShim)
 }
 
-private fun linkOne(headKey: String, command: String, launchShim: Path) {
-    val link = localBin().resolve(command)
+private fun linkOne(bin: Path, headKey: String, command: String, launchShim: Path) {
+    val link = bin.resolve(command)
     runCatchingCancellable {
         if (Files.exists(link, NOFOLLOW_LINKS)) {
             if (link.isSymbolicLink()) {
@@ -75,12 +79,13 @@ private fun linkOne(headKey: String, command: String, launchShim: Path) {
     }
 }
 
-internal fun uninstall(headArg: String?) {
-    val topology = runCatching { TopologyLoader.parse(Files.readString(TopologyLoader.configPath())) }.getOrNull()
+internal fun uninstall(headArg: String?, env: (String) -> String? = System::getenv) {
+    val topology = runCatching { TopologyLoader.parse(Files.readString(TopologyLoader.configPath(env))) }.getOrNull()
     val commands = topology?.heads?.filterKeys { headArg == null || headArg == "--all" || it == headArg }
         ?.map { (k, h) -> h.claude.command ?: k } ?: listOfNotNull(headArg)
+    val bin = localBin(env)
     for (command in commands) {
-        val link = localBin().resolve(command)
+        val link = bin.resolve(command)
         runCatchingCancellable {
             if (link.isSymbolicLink()) {
                 Files.delete(link)
@@ -93,9 +98,9 @@ internal fun uninstall(headArg: String?) {
 }
 
 /** Copy the repo's launch shim into the share dir (used by install.sh / dev). */
-internal fun installShim(repoShim: Path) {
-    Files.createDirectories(shareDir())
-    val dst = launchShimPath()
+internal fun installShim(repoShim: Path, env: (String) -> String? = System::getenv) {
+    Files.createDirectories(shareDir(env))
+    val dst = launchShimPath(env)
     runCatchingCancellable {
         Files.copy(repoShim, dst, StandardCopyOption.REPLACE_EXISTING)
         dst.toFile().setExecutable(true)
@@ -108,8 +113,8 @@ internal fun installShim(repoShim: Path) {
 private val SHIM_VERSION_LINE = Regex("""^SPLICE_SHIM_VERSION="([^"]*)"""", RegexOption.MULTILINE)
 
 /** The SPLICE_SHIM_VERSION marker embedded in the installed shim, or null if none/unreadable. */
-internal fun installedShimVersion(): String? {
-    val shim = launchShimPath()
+internal fun installedShimVersion(env: (String) -> String? = System::getenv): String? {
+    val shim = launchShimPath(env)
     if (!Files.exists(shim)) return null
     return runCatchingCancellable {
         SHIM_VERSION_LINE.find(Files.readString(shim))?.groupValues?.get(1)
@@ -117,10 +122,10 @@ internal fun installedShimVersion(): String? {
 }
 
 /** Non-fatal staleness message for the installed shim, or null when absent/current. */
-internal fun shimStalenessWarning(): String? {
-    val shim = launchShimPath()
+internal fun shimStalenessWarning(env: (String) -> String? = System::getenv): String? {
+    val shim = launchShimPath(env)
     if (!Files.exists(shim)) return null
-    val installed = installedShimVersion()
+    val installed = installedShimVersion(env)
     if (installed == SHIM_VERSION) return null
     return "splice: WARNING — installed launch shim at $shim is STALE " +
         "(marker=${installed ?: "<missing>"}, expected=$SHIM_VERSION). " +

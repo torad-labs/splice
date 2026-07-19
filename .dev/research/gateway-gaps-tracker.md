@@ -56,7 +56,7 @@ column as work lands (`todo` / `in-progress` / `done <commit>` / `wontfix <reaso
 | G21 | Unbounded admission queue; shed load invisible | bound waiters; 529 "gateway at capacity" | done 939ef55 |
 | G22 | No aggregate retry budget across turns | only if fan-out grows | todo |
 | G23 | CIO selector/writer-spin class — **FIRED LIVE 2026-07-18 (~700% CPU, daemon killed)**; the write-side twin of the read-side spin | ROOT FIX: client engine CIO → JDK HttpClient so the class can't occur — streaming `0e0dccb` + all 5 auth/refresh/login clients via `authHttpClient()`. The proposed detect-and-recycle watchdog is now moot (a generic wedged-client sampler remains possible defense-in-depth, separate concern) | done (root) 2026-07-18 |
-| G24 | Positive JVM DNS TTL not pinned | one-liner next to negative-ttl in Main.kt | todo |
+| G24 | Positive JVM DNS TTL not pinned | one-liner next to negative-ttl in Main.kt | done 431bc2f |
 | G25 | No idle heap uncommit | `-XX:G1PeriodicGCInterval=60000` in shim + AdminSupport | todo |
 | G26 | TCP_NODELAY unverified on either hop | one-time verification | todo |
 | G27 | Non-goals (documented, not built): stream resumption cursor, cross-head mid-session failover, hedging, multi-endpoint redispatch, GraalVM/KMP/Bun migration | — | wontfix (by design) |

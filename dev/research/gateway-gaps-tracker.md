@@ -30,7 +30,7 @@ column as work lands (`todo` / `in-progress` / `done <commit>` / `wontfix <reaso
 | G4a | RETRYABLE_STATUSES misses 500/504/408 | widened | done (retry batch) |
 | G4b | Default budget 2 attempts / ~200ms | 4 attempts, 10s cap | done (retry batch) |
 | G4c | No jitter | ±10% | done (retry batch) |
-| G4d | No cross-attempt wall-clock deadline | t0 in `post()`, budget check before each attempt/sleep | todo |
+| G4d | No cross-attempt wall-clock deadline | t0 in `post()`, budget check before each attempt/sleep | done b70e8c1 |
 | G5 | Stream-reconnect: handed-off ≠ client-saw-output; torn-before-first-frame fails turn needlessly | gate on `clientFrameEmitted()`; small reissue budget; hard no-retry after any frame | todo |
 | G6 | Codex head: zero expiry awareness (grok bug's latent twin) | JWT `exp` via existing `decodeJwtClaims` + grok proactive-window block | todo |
 | G7 | Grok/codex refresh: no error classification / transient retry (kimi has the right loop) | extract KimiRefresh classify/retry to shared `:app` helper | done 66befaf |

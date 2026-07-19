@@ -223,6 +223,73 @@ class CodexAuthTest {
         assertEquals(2, calls.get())
     }
 
+    // G6: codex's access_token is itself a JWT, so proactive-expiry awareness comes from its own
+    // `exp` claim (decodeJwtClaims) rather than a stored `expires` field. Mirrors
+    // GrokAuthProviderTest's proactive-window idiom.
+    @Test
+    fun `token outside the proactive window serves without refreshing`(@TempDir tmp: Path) = runTest {
+        val now = 1_000_000L
+        val access = jwt("""{"exp":${(now + 3_600_000) / 1000}}""")
+        val calls = AtomicInteger(0)
+        val (auth, path) = provider(tmp, { now }) {
+            calls.incrementAndGet()
+            null
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"$access","account_id":"acct-1"}}""")
+        assertEquals(access, (auth.credentials() as Credentials.Bearer).token)
+        assertEquals(0, calls.get())
+    }
+
+    @Test
+    fun `access token without an exp claim serves as-is (legacy - non-JWT shape)`(@TempDir tmp: Path) = runTest {
+        val calls = AtomicInteger(0)
+        val (auth, path) = provider(tmp, { 1_000_000L }) {
+            calls.incrementAndGet()
+            null
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"tok-1","account_id":"acct-1"}}""")
+        assertEquals("tok-1", (auth.credentials() as Credentials.Bearer).token)
+        assertEquals(0, calls.get())
+    }
+
+    @Test
+    fun `expired token refreshes proactively and persists rotation`(@TempDir tmp: Path) = runTest {
+        val now = 1_000_000L
+        val access = jwt("""{"exp":${(now - 1) / 1000}}""")
+        val newAccess = jwt("""{"exp":${(now + 3_600_000) / 1000}}""")
+        val (auth, path) = provider(tmp, { now }) {
+            RefreshedTokens(accessToken = newAccess, refreshToken = "refresh-2", idToken = null)
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"$access","refresh_token":"refresh-1","account_id":"acct-1"}}""")
+        assertEquals(newAccess, (auth.credentials() as Credentials.Bearer).token)
+        val onDisk = kotlinx.serialization.json.Json.parseToJsonElement(path.readText()).jsonObject
+        assertEquals(newAccess, onDisk["tokens"]!!.jsonObject["access_token"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `inside window but not expired a failed refresh still serves the current token`(@TempDir tmp: Path) =
+        runTest {
+            val now = 1_000_000L
+            val access = jwt("""{"exp":${(now + 60_000) / 1000}}""") // < 5 min window, still future
+            val (auth, path) = provider(tmp, { now }) { null }
+            Files.createDirectories(path.parent)
+            path.writeText("""{"tokens":{"access_token":"$access","refresh_token":"refresh-1"}}""")
+            assertEquals(access, (auth.credentials() as Credentials.Bearer).token)
+        }
+
+    @Test
+    fun `fully expired token with dead refresh yields null`(@TempDir tmp: Path) = runTest {
+        val now = 1_000_000L
+        val access = jwt("""{"exp":${(now - 1) / 1000}}""")
+        val (auth, path) = provider(tmp, { now }) { null }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"$access","refresh_token":"refresh-1"}}""")
+        assertNull(auth.credentials())
+    }
+
     @Test
     fun `describe masks the account id and never exposes tokens`(@TempDir tmp: Path) = runTest {
         val (auth, path) = provider(tmp, { 1L }) { null }

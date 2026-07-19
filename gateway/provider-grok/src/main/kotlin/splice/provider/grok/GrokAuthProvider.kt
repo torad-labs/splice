@@ -25,6 +25,7 @@ import splice.core.util.SecureFile
 import splice.core.util.long
 import splice.core.util.runCatchingCancellable
 import splice.core.util.str
+import splice.spi.CredentialLock
 import splice.spi.SingleFlight
 import java.nio.file.Files
 import java.nio.file.Path
@@ -77,14 +78,19 @@ public class GrokAuthProvider(
                 return@runCatchingCancellable c.snapshot
             }
         }
-        val onDisk = json.parseToJsonElement(Files.readString(authPath)).jsonObject
-        val access = (onDisk[FIELD_TOKENS] as? JsonObject)
-            ?.get(FIELD_ACCESS_TOKEN).str() ?: return@runCatchingCancellable null
-        val expires = onDisk.long(FIELD_EXPIRES)
-        Snapshot(access, expires).also { cache = Cache(it, mtime, now) }
+        parseSnapshot()?.also { cache = Cache(it, mtime, now) }
     }.onFailure {
         System.err.println("[grok-auth] failed to read $authPath: $it — treating as not logged in")
     }.getOrNull()
+
+    // Fresh, uncached parse (mirrors KimiAuthProvider.parseSnapshot): the authoritative read used
+    // both under readSnapshot's cache check and inside the refresh lock.
+    private fun parseSnapshot(): Snapshot? {
+        if (!Files.exists(authPath)) return null
+        val onDisk = json.parseToJsonElement(Files.readString(authPath)).jsonObject
+        val access = (onDisk[FIELD_TOKENS] as? JsonObject)?.get(FIELD_ACCESS_TOKEN).str() ?: return null
+        return Snapshot(access, onDisk.long(FIELD_EXPIRES))
+    }
 
     private fun tokensOf(): JsonObject? =
         json.parseToJsonElement(Files.readString(authPath)).jsonObject[FIELD_TOKENS] as? JsonObject
@@ -99,24 +105,68 @@ public class GrokAuthProvider(
     // Sealed per-mode outcome (discipline L3): a dead refresh token, a transport blip, and a
     // corrupt file are DIFFERENT stories; credentialsOrNull is the single logging flatten.
     // Staged (read → exchange → persist), each stage owning its own failure branches.
+    // G1: capture what THIS process last served BEFORE the lock, then re-read authoritatively INSIDE
+    // it — so a peer's rotation (landed while we waited on the lock) is seen, not overwritten.
     private suspend fun doRefresh(): RefreshOutcome {
         if (!Files.exists(authPath)) return RefreshOutcome.NoCredentialsFile
-        val tokens = runCatchingCancellable { tokensOf() }
-            .getOrElse { return RefreshOutcome.ReadFailed(it) }
-        val refreshToken = tokens?.get(FIELD_REFRESH_TOKEN).str()
+        val priorAccess = cache?.snapshot?.access
+        return CredentialLock.withLock(authPath) { refreshLocked(priorAccess) }
+    }
+
+    // Runs holding the cross-process lock: re-read fresh, short-circuit if a peer already rotated,
+    // else exchange. Split out of doRefresh so withLock's lambda stays a single call.
+    private suspend fun refreshLocked(priorAccess: String?): RefreshOutcome {
+        val (snap, refreshToken) = runCatchingCancellable {
+            parseSnapshot() to tokensOf()?.get(FIELD_REFRESH_TOKEN).str()
+        }.getOrElse { return RefreshOutcome.ReadFailed(it) }
+        peerRotation(priorAccess, snap)?.let { return it }
         return if (refreshToken == null) RefreshOutcome.NoRefreshToken else exchangeRefreshToken(refreshToken)
     }
 
-    private suspend fun exchangeRefreshToken(refreshToken: String): RefreshOutcome {
+    // A peer (another process, or the official grok CLI) may have rotated the token while we waited on
+    // the lock: if the freshly-read access token differs from what THIS process last served, adopt it
+    // and skip the POST. Token identity — not the expiry-window heuristic — is the unambiguous signal.
+    private fun peerRotation(priorAccess: String?, snap: Snapshot?): RefreshOutcome? {
+        if (priorAccess == null || snap == null) return null
+        if (snap.access == priorAccess) return null
+        cache = Cache(snap, Files.getLastModifiedTime(authPath).toMillis(), clock())
+        return RefreshOutcome.Refreshed(Credentials.Bearer(snap.access, null))
+    }
+
+    private suspend fun exchangeRefreshToken(
+        refreshToken: String,
+        allowRereadRetry: Boolean = true,
+    ): RefreshOutcome {
         // Guard the network hop (the refreshCall param's type doesn't promise "never throws"): a
         // thrown hop must degrade to a typed outcome, not blow through SingleFlight uncaught.
         val fresh = runCatchingCancellable { refreshCall(refreshToken) }
             .getOrElse { return RefreshOutcome.TransportFailed(it) }
         val access = fresh?.accessToken
         return when {
-            fresh == null -> RefreshOutcome.Rejected("token endpoint returned no rotated tokens")
-            access == null -> RefreshOutcome.Rejected("refresh response missing access_token")
+            fresh == null ->
+                rejectedOrRetry(refreshToken, allowRereadRetry, "token endpoint returned no rotated tokens")
+            access == null ->
+                rejectedOrRetry(refreshToken, allowRereadRetry, "refresh response missing access_token")
             else -> persistRotation(refreshToken, fresh, access)
+        }
+    }
+
+    // Bounded one-shot retry: an endpoint rejection MIGHT be a stale-token race — if disk now shows a
+    // DIFFERENT refresh token (a peer rotated between our read and the POST landing), retry once
+    // against it. Capped at exactly one extra POST (the retry passes allowRereadRetry=false); never
+    // loops, and never re-POSTs the identical dead token (the disk-differs gate).
+    private suspend fun rejectedOrRetry(
+        usedRefreshToken: String,
+        allowRereadRetry: Boolean,
+        reason: String,
+    ): RefreshOutcome {
+        if (!allowRereadRetry) return RefreshOutcome.Rejected(reason)
+        val newToken = runCatchingCancellable { tokensOf()?.get(FIELD_REFRESH_TOKEN).str() }
+            .getOrElse { return RefreshOutcome.Rejected(reason) }
+        return if (newToken != null && newToken != usedRefreshToken) {
+            exchangeRefreshToken(newToken, allowRereadRetry = false)
+        } else {
+            RefreshOutcome.Rejected(reason)
         }
     }
 

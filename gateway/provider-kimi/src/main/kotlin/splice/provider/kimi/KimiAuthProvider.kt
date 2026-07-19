@@ -19,6 +19,7 @@ import splice.core.auth.credentialsOrNull
 import splice.core.util.long
 import splice.core.util.runCatchingCancellable
 import splice.core.util.str
+import splice.spi.CredentialLock
 import splice.spi.SingleFlight
 import java.nio.file.Files
 import java.nio.file.Path
@@ -71,22 +72,65 @@ public class KimiAuthProvider(
     // Sealed per-mode outcome (discipline L3): a dead refresh token, a transport blip, and a
     // corrupt file are DIFFERENT stories; credentialsOrNull is the single logging flatten.
     // Staged (read → exchange), each stage owning its own failure branches.
+    // G1: capture what THIS process last served BEFORE the lock, then re-read authoritatively INSIDE
+    // it — so a peer's rotation (landed while we waited on the lock) is seen, not overwritten.
     private suspend fun doRefresh(): RefreshOutcome {
         if (!Files.exists(authPath)) return RefreshOutcome.NoCredentialsFile
-        val refreshToken = runCatchingCancellable { parseSnapshot()?.refresh }
+        val priorAccess = cache?.snapshot?.access
+        return CredentialLock.withLock(authPath) { refreshLocked(priorAccess) }
+    }
+
+    // Runs holding the cross-process lock: re-read fresh, short-circuit if a peer already rotated,
+    // else exchange. Split out of doRefresh so withLock's lambda stays a single call.
+    private suspend fun refreshLocked(priorAccess: String?): RefreshOutcome {
+        val snap = runCatchingCancellable { parseSnapshot() }
             .getOrElse { return RefreshOutcome.ReadFailed(it) }
+        peerRotation(priorAccess, snap)?.let { return it }
+        val refreshToken = snap?.refresh
         return if (refreshToken == null) RefreshOutcome.NoRefreshToken else exchangeRefreshToken(refreshToken)
     }
 
-    private suspend fun exchangeRefreshToken(refreshToken: String): RefreshOutcome {
+    // A peer process may have rotated the token while we waited on the lock: if the freshly-read
+    // access token differs from what THIS process last served, adopt it and skip the POST. Token
+    // identity — not the expiry-window heuristic — is the unambiguous signal.
+    private fun peerRotation(priorAccess: String?, snap: Snapshot?): RefreshOutcome? {
+        if (priorAccess == null || snap == null) return null
+        if (snap.access == priorAccess) return null
+        cache = Cache(snap, Files.getLastModifiedTime(authPath).toMillis(), clock())
+        return RefreshOutcome.Refreshed(apiKey(snap.access))
+    }
+
+    private suspend fun exchangeRefreshToken(
+        refreshToken: String,
+        allowRereadRetry: Boolean = true,
+    ): RefreshOutcome {
         // Guard the network hop: a thrown refreshCall must degrade to a typed outcome, not blow
         // through SingleFlight uncaught. Rotation is mandatory — a null response means no grant.
         val fresh = runCatchingCancellable { refreshCall(refreshToken) }
             .getOrElse { return RefreshOutcome.TransportFailed(it) }
-            ?: return RefreshOutcome.Rejected("token endpoint returned no rotated tokens")
+            ?: return rejectedOrRetry(refreshToken, allowRereadRetry, "token endpoint returned no rotated tokens")
         writeSecure(authPath, kimiAuthJson(fresh, clock()).toString())
         invalidateCache()
         return RefreshOutcome.Refreshed(apiKey(fresh.accessToken))
+    }
+
+    // Bounded one-shot retry: an endpoint rejection MIGHT be a stale-token race — if disk now shows a
+    // DIFFERENT refresh token (a peer rotated between our read and the POST landing), retry once
+    // against it. Capped at exactly one extra POST (the retry passes allowRereadRetry=false); never
+    // loops, and never re-POSTs the identical dead token (the disk-differs gate).
+    private suspend fun rejectedOrRetry(
+        usedRefreshToken: String,
+        allowRereadRetry: Boolean,
+        reason: String,
+    ): RefreshOutcome {
+        if (!allowRereadRetry) return RefreshOutcome.Rejected(reason)
+        val newToken = runCatchingCancellable { parseSnapshot()?.refresh }
+            .getOrElse { return RefreshOutcome.Rejected(reason) }
+        return if (newToken != null && newToken != usedRefreshToken) {
+            exchangeRefreshToken(newToken, allowRereadRetry = false)
+        } else {
+            RefreshOutcome.Rejected(reason)
+        }
     }
 
     private fun apiKey(token: String): Credentials =

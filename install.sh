@@ -75,9 +75,11 @@ fi
 java -jar "$JAR_DST" init
 SPLICE_JAR="$JAR_DST" java -jar "$JAR_DST" install --all
 
-# 4. Fail loudly rather than report success when nothing actually landed.
-if [ "$(find "$BIN_DIR" -maxdepth 1 -type l 2>/dev/null | wc -l)" -eq 0 ]; then
-  echo "splice: install failed — no wrapper commands landed in $BIN_DIR" >&2
+# 4. Fail loudly rather than report success when nothing actually landed. `install --all`
+#    always links the `splice` admin command itself, so its absence means the install failed
+#    (counting arbitrary symlinks would false-pass on unrelated tools already in BIN_DIR).
+if [ ! -L "$BIN_DIR/splice" ]; then
+  echo "splice: install failed — $BIN_DIR/splice was not created" >&2
   exit 1
 fi
 

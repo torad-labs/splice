@@ -5,19 +5,22 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   gates:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: npm
-      - name: install ast-grep
-        run: npm install -g @ast-grep/cli
       - name: install workspaces
         run: npm ci
+      - name: ast-grep available (devDependency, via npx; pinned by OSS-I)
+        run: npx --yes ast-grep --version
       - name: walls (same rules the write-time hook runs)
         run: npm run gate:rules
       - name: hook orchestrator tests
@@ -33,7 +36,8 @@ jobs:
       - name: webui build (single-file artifact must build clean)
         run: npm run build -w webui
       - name: committed dist is current
-        run: git diff --exit-code -- webui/dist/index.html || (echo 'webui/dist/index.html is stale: rebuild and commit it' && exit 1)
+        run: |
+          git diff --exit-code -- webui/dist/index.html || (echo 'webui/dist/index.html is stale: rebuild and commit it' && exit 1)
 
   # The Kotlin gateway tier. Until this job existed, module-law (config-time check), detekt
   # (maxIssues:0), the Konsist arch-tests, and ~60 unit tests were authored + wired into Gradle but
@@ -43,8 +47,8 @@ jobs:
   gateway-gradle:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.8.0
         with:
           distribution: temurin
           java-version: '21'

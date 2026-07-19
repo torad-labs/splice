@@ -21,6 +21,7 @@ column as work lands (`todo` / `in-progress` / `done <commit>` / `wontfix <reaso
 |---|---|---|---|
 | G1 | Cross-process credential-file races (no lock, no re-read-before-refresh, no re-read-on-invalid_grant) — likely killed the kimi-code token 2026-07-18 | re-read before POST; re-read-once on invalid_grant; then FileLock on `<authPath>.lock` | done e970691 |
 | G2 | Zero-event 200 stream undiagnosable, hardcoded OVERLOADED → Claude Code retries a dead head forever | buffer first ~1KB; on zero-event end log snippet + classify via UpstreamFailureClassifier (auth-shaped → AUTHENTICATION + login hint) | done a207e2f |
+| G28 | 2026-07-19, found while landing G19: `TurnDriver.stream()` funneled `driveOneTurn` failures through `runCatchingCancellable` (`splice.core.util`), whose catch list is I/O + (de)serialization only — it never caught `UpstreamFailed`/`UpstreamAuthMissing`, so those turn failures (401/429/5xx exhausted after retries, no-credentials) silently killed the SSE connection with **zero** `event: error` frame instead of reaching `emitFailure`'s honest terminal. An L3 violation nothing had exercised end-to-end before (all existing failure-path tests only cover the SSE-body `TurnOutcome.Failure` route via `classifyZeroEventFailure`, never a genuine HTTP-status-based give-up through the full retry loop). | added `catchingTurnFailure`, a narrowly-scoped local combinator in `TurnDriver.kt` catching exactly `{UpstreamAuthMissing, UpstreamFailed, IOException}` (detekt's `TooGenericExceptionCaught` + `ForbiddenSuppress` block a broader catch; widening the shared `runCatchingCancellable` was rejected — 30+ unrelated call sites, wrong blast radius for this fix). **Remaining gap, NOT fixed**: `emitFailure`'s 4th `is RuntimeException ->` fallback branch (arbitrary unexpected RuntimeExceptions, e.g. a bad-base_url URL-parse error) is still unreachable the same way — closing it needs a deliberate call on relaxing/narrowing the detekt `TooGenericExceptionCaught` config or a new sanctioned wide-catch primitive, a design decision above this fix's scope. | done 0784fab (partial — UpstreamFailed/UpstreamAuthMissing/IOException only) |
 
 ## MEDIUM
 
@@ -50,7 +51,7 @@ column as work lands (`todo` / `in-progress` / `done <commit>` / `wontfix <reaso
 | G16 | Post-send SocketException retried like connect-phase (double token burn risk) | distinct "possible-duplicate" log class on post-send retries | done 29c0d0d |
 | G17 | Proactive refresh blocks request path | two-tier: async prefetch above stale floor, blocking below | done — kimi 99c3316, grok 8a470f4, codex 3b78d46 (all three providers) |
 | G18 | Grok file without `expires` = never-expiring | synthesize mtime + 4h TTL | done 7339b4d |
-| G19 | AUTHENTICATION errors lack "run: <head> login" hint | append per-head instruction when classified AUTHENTICATION | todo |
+| G19 | AUTHENTICATION errors lack "run: <head> login" hint | append per-head instruction when classified AUTHENTICATION | done 0784fab |
 | G20 | No per-head passive health counters / cooling state | local-origin vs provider-error split counters | todo |
 | G21 | Unbounded admission queue; shed load invisible | bound waiters; 529 "gateway at capacity" | todo |
 | G22 | No aggregate retry budget across turns | only if fan-out grows | todo |

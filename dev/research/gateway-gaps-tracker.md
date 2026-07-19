@@ -12,7 +12,7 @@ column as work lands (`todo` / `in-progress` / `done <commit>` / `wontfix <reaso
 | L1 | ast-grep wall `kt-no-silent-result-collapse` (provider-*+spi scope; 18 sites swept: 11 now log, 7 annotated). Widen to app/core/control next | done 097e750 |
 | L2 | `-Xreturn-value-checker` on; 19 sites triaged via `Result.discard(why)`. Promote to error later | done 890ef35 |
 | L3 | Sealed `RefreshOutcome` on grok/kimi/codex doRefresh; `credentialsOrNull(tag)` single flatten, per-branch logging pinned by test. SPI-wide consumption with G7 | done (phase 1) |
-| L3-phase-2 | 2026-07-18: evaluated during G7 and deliberately deferred, NOT a fallout of the classify/retry extraction — widening `refreshCall` to carry `RefreshStep`/`RefreshOutcome`-level granularity means changing that constructor param's TYPE across `GrokAuthProvider.kt`/`CodexAuthProvider.kt`/`KimiAuthProvider.kt` AND their existing test fakes (`refreshCall = { null }` style), a breaking 3-module signature change, not code motion. Left as a follow-up (see G15, which already notes "needs G7"). | todo |
+| L3-phase-2 | 2026-07-18: evaluated during G7 and deliberately deferred, NOT a fallout of the classify/retry extraction — widening `refreshCall` to carry `RefreshStep`/`RefreshOutcome`-level granularity means changing that constructor param's TYPE across `GrokAuthProvider.kt`/`CodexAuthProvider.kt`/`KimiAuthProvider.kt` AND their existing test fakes (`refreshCall = { null }` style), a breaking 3-module signature change, not code motion. Left as a follow-up (see G15, which already notes "needs G7"). 2026-07-19: landed as G15's prerequisite (`RefreshAttempt<T>`, not the full `RefreshOutcome`-level widening this row originally scoped — Granted/InvalidGrant/Denied was the minimal slice G15 actually needed). | done 1605d2e |
 | L4 | FIR compiler plugin: `@MustConsume` discard = compile error (build AFTER L3 types exist) | todo |
 
 ## HIGH
@@ -46,7 +46,7 @@ column as work lands (`todo` / `in-progress` / `done <commit>` / `wontfix <reaso
 | ID | Gap | Fix (short) | Status |
 |---|---|---|---|
 | G14 | Transport backoff (200/400ms) shorter than real resolver blip | DNS-class failures → 1s/2s/4s schedule | done e498974 |
-| G15 | No terminal invalid_grant latch (dead token re-POSTed every turn) | latch until file content changes (needs G7) | todo |
+| G15 | No terminal invalid_grant latch (dead token re-POSTed every turn) | latch until file content changes (needs G7) | done 1605d2e |
 | G16 | Post-send SocketException retried like connect-phase (double token burn risk) | distinct "possible-duplicate" log class on post-send retries | todo |
 | G17 | Proactive refresh blocks request path | two-tier: async prefetch above stale floor, blocking below | todo |
 | G18 | Grok file without `expires` = never-expiring | synthesize mtime + 4h TTL | todo |

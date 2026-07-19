@@ -66,6 +66,7 @@ private fun ctx(
     emit: Boolean = false,
     clientGone: Boolean = false,
     fired: WatchdogFired? = null,
+    collect: Boolean = false,
 ) = StreamTurnContext(
     compact = compact,
     emitEncryptedReasoning = EmitEncryptedReasoning(emit),
@@ -74,6 +75,7 @@ private fun ctx(
     watchdogFired = { fired },
     streamIdleMsForMessage = 180_000,
     upstreamTimeoutMsForMessage = 900_000,
+    collectReasoningEnvelopes = collect,
 )
 
 private fun ev(json: String): JsonObject = Json.parseToJsonElement(json).jsonObject
@@ -263,6 +265,43 @@ class ResponsesStreamTranslatorTest {
             redactedAt in 1 until toolAt,
             "replay block must land after summary close, before tool: ${sink.calls}",
         )
+    }
+
+    @Test
+    fun `fold-eligible turn collects reasoning envelopes and reasoning_tokens`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx(collect = true)).driveTurn(
+            listOf(
+                ev("""{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"deep"}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,
+                       "item":{"type":"reasoning","id":"rs_1","encrypted_content":"blob"}}""",
+                ),
+                ev(
+                    """{"type":"response.completed","response":{"usage":{"input_tokens":100,
+                       "output_tokens":600,"output_tokens_details":{"reasoning_tokens":516}}}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val success = outcome as TurnOutcome.Success
+        assertEquals(516, success.usage.reasoningTokens)
+        assertEquals(1, success.reasoningEnvelopes.size)
+        assertTrue(success.reasoningEnvelopes.first().contains("rs_1"))
+    }
+
+    @Test
+    fun `non-fold turn never collects envelopes - reasoningEnvelopes stays empty (parity)`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx(collect = false)).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,
+                       "item":{"type":"reasoning","id":"rs_1","encrypted_content":"blob"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertTrue((outcome as TurnOutcome.Success).reasoningEnvelopes.isEmpty())
     }
 
     @Test

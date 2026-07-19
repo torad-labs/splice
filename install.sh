@@ -27,10 +27,41 @@ elif [ -f "${REPO_ROOT}/gateway/settings.gradle.kts" ]; then
   [ -n "$BUILT" ] || { echo "splice: build produced no fat jar" >&2; exit 1; }
   cp "$BUILT" "$JAR_DST"
 else
-  TAG="${SPLICE_VERSION:-latest}"
-  URL="https://github.com/marcospaulo/splice/releases/${TAG}/download/splice.jar"
-  echo "splice: downloading $URL"
-  curl -fsSL "$URL" -o "$JAR_DST"
+  REPO="torad-labs/splice"
+  if [ -n "${SPLICE_VERSION:-}" ]; then
+    JAR_URL="https://github.com/${REPO}/releases/download/${SPLICE_VERSION}/splice.jar"
+    SUMS_URL="https://github.com/${REPO}/releases/download/${SPLICE_VERSION}/sha256sums.txt"
+  else
+    JAR_URL="https://github.com/${REPO}/releases/latest/download/splice.jar"
+    SUMS_URL="https://github.com/${REPO}/releases/latest/download/sha256sums.txt"
+  fi
+  echo "splice: downloading $JAR_URL"
+  curl -fsSL "$JAR_URL" -o "$JAR_DST"
+
+  echo "splice: verifying sha256 against $SUMS_URL"
+  SUMS_TMP="$(mktemp)"
+  curl -fsSL "$SUMS_URL" -o "$SUMS_TMP"
+  if ! JAR_SUM_LINE="$(grep -E '[[:space:]]splice\.jar$' "$SUMS_TMP")"; then
+    echo "splice: no splice.jar entry in sha256sums.txt — aborting" >&2
+    exit 1
+  fi
+  if command -v sha256sum >/dev/null 2>&1; then
+    if ! ( cd "$SHARE_DIR" && echo "$JAR_SUM_LINE" | sha256sum -c - ); then
+      echo "splice: sha256 verification FAILED for $JAR_DST" >&2
+      exit 1
+    fi
+  elif command -v shasum >/dev/null 2>&1; then
+    EXPECTED="$(echo "$JAR_SUM_LINE" | awk '{print $1}')"
+    ACTUAL="$(shasum -a 256 "$JAR_DST" | awk '{print $1}')"
+    if [ "$EXPECTED" != "$ACTUAL" ]; then
+      echo "splice: sha256 verification FAILED for $JAR_DST (expected $EXPECTED, got $ACTUAL)" >&2
+      exit 1
+    fi
+  else
+    echo "splice: no sha256sum or shasum available — cannot verify jar integrity" >&2
+    exit 1
+  fi
+  rm -f "$SUMS_TMP"
 fi
 
 # 2. Install the shared launch shim.
@@ -41,8 +72,14 @@ else
 fi
 
 # 3. Materialize the topology + link the wrapper commands (+ the `splice` command).
-java -jar "$JAR_DST" init || true
-SPLICE_JAR="$JAR_DST" java -jar "$JAR_DST" install --all || true
+java -jar "$JAR_DST" init
+SPLICE_JAR="$JAR_DST" java -jar "$JAR_DST" install --all
+
+# 4. Fail loudly rather than report success when nothing actually landed.
+if [ "$(find "$BIN_DIR" -maxdepth 1 -type l 2>/dev/null | wc -l)" -eq 0 ]; then
+  echo "splice: install failed — no wrapper commands landed in $BIN_DIR" >&2
+  exit 1
+fi
 
 echo
 echo "splice: installed  (jar: $JAR_DST)"

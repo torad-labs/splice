@@ -81,6 +81,7 @@ class HeadServerIntegrationTest {
                 auth = FakeAuth(),
                 baseUrl = mock.baseUrl,
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
+                loginCommand = "claudex login",
             ),
             showReasoning = ReasoningDisplay.TEXT,
             replayReasoning = false,
@@ -218,6 +219,14 @@ class HeadServerIntegrationTest {
         assertTrue(sse.contains("authentication_error"))
         assertTrue(sse.contains("run: claudex login"))
         assertFalse(sse.contains("overloaded_error"))
+    }
+
+    @Test
+    fun `AUTHENTICATION via UpstreamFailed appends the per-head login hint`() = runTest {
+        val sse = messages("authfail")
+        assertTrue(sse.contains("event: error"))
+        assertTrue(sse.contains("authentication_error"))
+        assertTrue(sse.contains("run: claudex login"))
     }
 
     @Test

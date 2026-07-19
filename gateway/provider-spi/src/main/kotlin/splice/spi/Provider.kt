@@ -47,6 +47,11 @@ public interface ProviderIdentity {
     public val pinnedModel: String
     public val auth: RefreshableAuthProvider
     public val watchdog: WatchdogBudget
+
+    /** The per-head `<command> login` instruction (empty when the provider has no OAuth login
+     *  flow, e.g. api-key-only heads) — surfaced by [splice.gateway.head.TurnDriver] as an
+     *  operator hint on AUTHENTICATION-classified failures. */
+    public val loginCommand: String
 }
 
 /** The construction bundle every concrete provider takes: its [ProviderIdentity] plus the upstream
@@ -60,6 +65,7 @@ public data class ProviderTuning(
     override val auth: RefreshableAuthProvider,
     val baseUrl: String,
     override val watchdog: WatchdogBudget,
+    override val loginCommand: String = "",
 ) : ProviderIdentity
 
 /** Everything the generic head needs to serve one provider. */

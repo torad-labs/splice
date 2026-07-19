@@ -69,6 +69,16 @@ class MockChatGptUpstream {
             return
         }
 
+        // Unconditional 401 (unlike "refresh" above, fires regardless of the Authorization header)
+        // so the request exhausts UpstreamClient's one single-flight refresh and terminates in a
+        // real UpstreamFailed(status=401) — the G19 login-hint path.
+        if (scenario == "authfail") {
+            val err = """{"error":{"message":"invalid_api_key: Unauthorized"}}"""
+            ex.sendResponseHeaders(401, err.length.toLong())
+            ex.responseBody.use { it.write(err.toByteArray()) }
+            return
+        }
+
         ex.responseHeaders.add("Content-Type", "text/event-stream")
         ex.sendResponseHeaders(200, 0)
         try {

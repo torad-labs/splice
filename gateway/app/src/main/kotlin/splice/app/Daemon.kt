@@ -112,7 +112,8 @@ public class Daemon(
             }
             runCatching {
                 val catalog = providerCfg.catalogFor(head)
-                val ctx = ProviderBuild(key, head, providerCfg, catalog, watchdog, cfg)
+                val loginCommand = loginInterception(providerCfg, head, key).first
+                val ctx = ProviderBuild(key, head, providerCfg, catalog, watchdog, cfg, loginCommand)
                 assembleHead(ctx, controlPort)
             }.onSuccess { heads[key] = it }
                 .onFailure {
@@ -158,6 +159,7 @@ public class Daemon(
         val catalog: ModelCatalog,
         val watchdog: WatchdogBudget,
         val cfg: SpliceConfig,
+        val loginCommand: String,
     )
 
     // The dispatch that makes the daemon genuinely multi-provider: codex (responses+oauth), grok
@@ -205,6 +207,7 @@ public class Daemon(
                     auth = auth,
                     baseUrl = providerCfg.baseUrl,
                     watchdog = ctx.watchdog,
+                    loginCommand = ctx.loginCommand,
                 ),
                 quirks = ChatQuirks(providerTag = key),
                 showReasoning = ctx.cfg.showReasoning,
@@ -262,6 +265,7 @@ public class Daemon(
             auth = auth,
             baseUrl = ctx.providerCfg.baseUrl,
             watchdog = ctx.watchdog,
+            loginCommand = ctx.loginCommand,
         ),
         identity = identity,
     )
@@ -302,6 +306,7 @@ public class Daemon(
                             auth = auth,
                             baseUrl = providerCfg.baseUrl,
                             watchdog = watchdog,
+                            loginCommand = ctx.loginCommand,
                         ),
                         showReasoning = cfg.showReasoning,
                         replayReasoning = cfg.replayReasoning,
@@ -343,6 +348,7 @@ public class Daemon(
                     auth = auth,
                     baseUrl = providerCfg.baseUrl,
                     watchdog = watchdog,
+                    loginCommand = ctx.loginCommand,
                 ),
                 showReasoning = cfg.showReasoning,
                 replayReasoning = cfg.replayReasoning,
@@ -367,17 +373,21 @@ public class Daemon(
             envVar = providerCfg.auth.env ?: "${key.uppercase()}_API_KEY",
             keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
         )
+        // Identical in both branches — factored out so adding loginCommand didn't push this past
+        // detekt's LongMethod ceiling with a second duplicated ProviderTuning block.
+        val tuning = ProviderTuning(
+            key = key,
+            label = label,
+            catalog = catalog,
+            pinnedModel = head.pinnedModel,
+            auth = auth,
+            baseUrl = providerCfg.baseUrl,
+            watchdog = watchdog,
+            loginCommand = ctx.loginCommand,
+        )
         val provider = if (providerCfg.quirks.cacheKey == "session-id") {
             GrokProvider(
-                tuning = ProviderTuning(
-                    key = key,
-                    label = label,
-                    catalog = catalog,
-                    pinnedModel = head.pinnedModel,
-                    auth = auth,
-                    baseUrl = providerCfg.baseUrl,
-                    watchdog = watchdog,
-                ),
+                tuning = tuning,
                 showReasoning = cfg.showReasoning,
                 replayReasoning = cfg.replayReasoning,
                 configEffort = cfg.effort,
@@ -386,15 +396,7 @@ public class Daemon(
             )
         } else {
             OpenAiResponsesProvider(
-                tuning = ProviderTuning(
-                    key = key,
-                    label = label,
-                    catalog = catalog,
-                    pinnedModel = head.pinnedModel,
-                    auth = auth,
-                    baseUrl = providerCfg.baseUrl,
-                    watchdog = watchdog,
-                ),
+                tuning = tuning,
                 showReasoning = cfg.showReasoning,
                 replayReasoning = cfg.replayReasoning,
                 configEffort = cfg.effort,

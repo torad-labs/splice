@@ -26,7 +26,6 @@ import splice.core.perf.perfLine
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
-import splice.core.util.runCatchingCancellable
 import splice.gateway.perf.PerfRowMeta
 import splice.gateway.perf.PerfStats
 import splice.gateway.pipeline.TurnPipeline
@@ -103,9 +102,11 @@ internal class TurnDriver(
                 // The 200 + SSE headers are committed once respondTextWriter opens, so any failure
                 // must become an honest `event: error` frame — NOT escape and leave the client an
                 // empty/truncated 200 (the "empty or malformed response (HTTP 200)" class).
-                // runCatchingCancellable rethrows CancellationException (the repo's blessed
-                // pattern — no generic catch in this file).
-                runCatchingCancellable { driveOneTurn(drive) }
+                // catchingTurnFailure rethrows CancellationException (the repo's blessed
+                // pattern — no generic catch in this file); runCatchingCancellable (splice.core.util)
+                // doesn't fit here — its catch list is I/O + (de)serialization for local best-effort
+                // work, not the turn-transport failure classes emitFailure's `when` dispatches on.
+                catchingTurnFailure { driveOneTurn(drive) }
                     .onFailure { e -> emitFailure(drive, e) }
             } finally {
                 // Terminal frames force-flush already; this covers abandon / exception paths.
@@ -113,6 +114,21 @@ internal class TurnDriver(
             }
         }
     }
+
+    /** The per-turn error boundary — catches exactly the failure classes [emitFailure] dispatches
+     *  on (custom transport signals + I/O) as a [Result]; anything else, including
+     *  CancellationException, propagates uncaught (structured concurrency: a cancelled turn must
+     *  actually stop, not get funneled into an error frame). */
+    private inline fun <R> catchingTurnFailure(block: () -> R): Result<R> =
+        try {
+            Result.success(block())
+        } catch (e: UpstreamAuthMissing) {
+            Result.failure(e)
+        } catch (e: UpstreamFailed) {
+            Result.failure(e)
+        } catch (e: IOException) {
+            Result.failure(e)
+        }
 
     private fun buildTurnDrive(
         built: BuiltTurn,
@@ -203,7 +219,12 @@ internal class TurnDriver(
                 val failure = UpstreamFailureClassifier.classify(FailureSource.HTTP, e.body, e.status)
                 val detail = "type=${failure.type.wireName} status=${e.status} msg=${failure.message.take(ERR_SNIPPET)}"
                 log(telemetry.errTurn("upstream-failed", drive, detail))
-                drive.emitter.emitError(failure.type, failure.message)
+                val message = if (failure.type == ErrorType.AUTHENTICATION && provider.loginCommand.isNotEmpty()) {
+                    "${failure.message} — run: ${provider.loginCommand}"
+                } else {
+                    failure.message
+                }
+                drive.emitter.emitError(failure.type, message)
                 telemetry.recordPerf(drive, "error:upstream-failed")
             }
             is IOException -> {

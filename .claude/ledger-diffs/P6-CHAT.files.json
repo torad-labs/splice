@@ -1,7 +1,0 @@
-{
-  "scoped_paths": [
-    "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatRequestBuilder.kt",
-    "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt",
-    "gateway/dialect-openai-chat/src/test/kotlin/ChatStreamTranslatorTest.kt"
-  ]
-}

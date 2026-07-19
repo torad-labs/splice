@@ -1,1 +1,0 @@
-Use the eli agent (subagent_type: "eli") to handle this task. Pass the user's full message as the prompt. Run in foreground.

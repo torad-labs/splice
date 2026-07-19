@@ -26,7 +26,7 @@ import kotlin.system.measureTimeMillis
 import org.junit.jupiter.api.Test
 
 private const val ROUNDS = 500
-private const val PORT = 39233
+private val PORT = java.net.ServerSocket(0).use { it.localPort }
 
 class PoolCancelSpike {
 

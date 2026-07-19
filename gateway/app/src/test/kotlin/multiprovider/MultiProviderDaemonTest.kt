@@ -17,6 +17,8 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.runBlocking
 import mock.MockChatGptUpstream
+import mock.awaitListening
+import mock.freshPort
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
@@ -77,10 +79,10 @@ class MultiProviderDaemonTest {
     private val client = HttpClient(CIO)
     private lateinit var daemon: Daemon
     private lateinit var key: String
-    private val controlPort = 39320
-    private val codexPort = 39321
-    private val grokPort = 39322
-    private val chatPort = 39323
+    private val controlPort = freshPort()
+    private val codexPort = freshPort()
+    private val grokPort = freshPort()
+    private val chatPort = freshPort()
 
     @BeforeAll
     fun setUp() {
@@ -102,7 +104,7 @@ class MultiProviderDaemonTest {
             refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
         )
         runBlocking { daemon.start() }
-        Thread.sleep(1100) // three Netty heads + control warm up
+        awaitListening(controlPort, codexPort, grokPort, chatPort)
     }
 
     // THE POINT: grok + openrouter are NEW vendors added as pure TOML — no new Kotlin per vendor.

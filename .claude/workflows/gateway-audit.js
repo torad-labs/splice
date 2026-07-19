@@ -32,8 +32,8 @@ Locked invariants (violations are CRITICAL findings):
 - L4: no fake summaries — empty in, empty out; promote-to-text promotes MODEL content only.
 - Honest failures: a failed/truncated stream must never masquerade as clean end_turn.
 
-Review the CURRENT on-disk state (parallel sessions may be co-editing — `git diff`, `git log
---oneline -10`, and `git status` are available). SCOPE: ${args && args.scope === 'diff'
+Review the CURRENT on-disk state (parallel sessions may be co-editing — \`git diff\`, \`git log
+--oneline -10\`, and \`git status\` are available). SCOPE: ${args && args.scope === 'diff'
   ? 'concentrate on files changed vs the base branch (git diff --name-only origin/main...HEAD or the working tree) — this is a pre-merge review of recent work.'
   : 'the whole gateway/ tree.'}${args && args.focus ? ' EXTRA FOCUS: ' + args.focus : ''}
 

@@ -1,0 +1,18 @@
+// RED fixture (.kt.txt so it is NOT part of :fir-checks' own src/test compile). The enclosing `try`
+// IS consumed (assigned to a val), but a `finally` block never yields a value — the @MustConsume
+// call at its tail is discarded regardless. Must stay a COMPILATION_ERROR.
+package fixtures.red
+
+import splice.core.annotation.MustConsume
+
+@MustConsume
+fun produce(): Int = 1
+
+fun caller(): Int {
+    val x = try {
+        1
+    } finally {
+        produce()
+    }
+    return x
+}

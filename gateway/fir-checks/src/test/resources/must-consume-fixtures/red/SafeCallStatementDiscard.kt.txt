@@ -1,0 +1,16 @@
+// RED fixture (.kt.txt so it is NOT part of :fir-checks' own src/test compile). A bare
+// `holder?.produceMember()` statement: the call is nested under FirSafeCallExpression (never a
+// direct block statement), but its result is genuinely discarded whenever the receiver is non-null —
+// the exact swallowed-via-nullable-chain shape. Must be a COMPILATION_ERROR.
+package fixtures.red
+
+import splice.core.annotation.MustConsume
+
+class Holder {
+    @MustConsume
+    fun produceMember(): Int = 3
+}
+
+fun caller(holder: Holder?) {
+    holder?.produceMember()
+}

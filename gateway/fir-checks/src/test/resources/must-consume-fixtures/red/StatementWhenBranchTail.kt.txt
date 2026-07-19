@@ -1,0 +1,16 @@
+// RED fixture (.kt.txt so it is NOT part of :fir-checks' own src/test compile). A `when` in
+// STATEMENT position: the branch tail discards the @MustConsume result — the exact swallowed
+// sealed-result shape the L4 wall exists to catch. Must be a COMPILATION_ERROR.
+package fixtures.red
+
+import splice.core.annotation.MustConsume
+
+@MustConsume
+fun produce(): Int = 1
+
+fun caller(flag: Boolean) {
+    when (flag) {
+        true -> produce()
+        false -> println("side effect")
+    }
+}

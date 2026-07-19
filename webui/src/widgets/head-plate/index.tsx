@@ -68,6 +68,12 @@ function HeadPlate({ head, lastUpdated }: { head: HeadStatus; lastUpdated: numbe
         {head.running && head.gate ? (
           <Metric label="gate inflight / queued" value={`${head.gate.inflight} / ${head.gate.queued}`} />
         ) : null}
+        {head.running ? (
+          <Metric
+            label="errors (local / provider)"
+            value={`${head.health.localOriginErrors} / ${head.health.providerErrors}`}
+          />
+        ) : null}
       </div>
 
       <div className="myx-plate-usage">

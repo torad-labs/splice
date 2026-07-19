@@ -123,8 +123,17 @@ public class HeadServer(
         server = null
     }
 
-    override fun healthSnapshot(): HeadHealth =
-        HeadHealth(ok = server != null, running = server != null, port = listenPort, version = GATEWAY_VERSION)
+    override fun healthSnapshot(): HeadHealth {
+        val counts = driver.healthCounters()
+        return HeadHealth(
+            ok = server != null,
+            running = server != null,
+            port = listenPort,
+            version = GATEWAY_VERSION,
+            localOriginErrors = counts.localOrigin,
+            providerErrors = counts.providerError,
+        )
+    }
 
     private fun healthJson(): String = buildJsonObject {
         put("ok", true)

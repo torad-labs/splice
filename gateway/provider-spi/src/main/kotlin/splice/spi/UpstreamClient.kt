@@ -46,6 +46,7 @@ public class UpstreamClient(
         val jittered = (base * Random.nextDouble(JITTER_LO, JITTER_HI)).toLong()
         delay(maxOf(jittered, minDelayMs))
     },
+    private val clock: () -> Long = System::currentTimeMillis,
 ) {
     /** The per-post collaborators threaded through every attempt (grouped: one cohesive argument). */
     private data class PostContext(
@@ -76,45 +77,99 @@ public class UpstreamClient(
         val ctx = PostContext(url, auth, extraHeaders, onRetry, perf)
         // Encode ONCE; retries resend the same bytes (no per-attempt string re-encode). Never gzip.
         val bodyBytes = bodyJson.toByteArray(Charsets.UTF_8)
-        var refreshedOnce = false
-        var lastErr: RetryOutcome.Failed? = null
-        var attempt = 0
-        while (attempt < maxRetries) {
-            val creds = perf.timedOr(PerfKeys.AUTH_MS) { auth.credentials() } ?: throw UpstreamAuthMissing()
-            perf?.add(PerfKeys.ATTEMPTS, 1)
-            var streamHandedOff = false
-            // runCatchingCancellable rethrows CancellationException (a cancelled turn aborts cleanly);
-            // a failure here is a TRANSPORT error thrown BEFORE stream handoff — retryable on the
-            // backoff budget (a 2s DNS blip costs one silent retry, not a turn failure: the kimi
-            // 07:00 burst, 37 UnresolvedAddressException turns, attempts=1 on every one).
-            val attempted = runCatchingCancellable {
-                attemptRequest(ctx, bodyBytes, creds, onStreamStart = { streamHandedOff = true }, block)
-            }
-            val transportError = attempted.exceptionOrNull()
-            if (transportError != null) {
-                rethrowUnlessRetryableTransport(transportError, ctx, streamHandedOff, attempt)
-                perf?.add(PerfKeys.RETRIES, 1)
-                perf.timedOr(PerfKeys.BACKOFF_MS) { backoff(attempt, 0L) }
-                attempt += 1
-                continue
-            }
-            val outcome = attempted.getOrThrow()
-            if (outcome is RetryOutcome.Done) return outcome.value
-            check(outcome is RetryOutcome.Failed) // sealed: Done or Failed, and Done returned above
-            lastErr = outcome
-            val plan = planRetry(ctx, outcome, attempt, refreshedOnce)
-            refreshedOnce = plan.refreshedOnce
-            when (plan.decision) {
-                RetryDecision.RETRY -> Unit // refresh succeeded — does not consume a normal attempt
-                RetryDecision.BACKOFF -> {
-                    perf?.add(PerfKeys.RETRIES, 1)
-                    perf.timedOr(PerfKeys.BACKOFF_MS) { backoff(attempt, plan.minDelayMs) }
-                    attempt += 1
-                }
-                RetryDecision.GIVE_UP -> return giveUp(lastErr)
+        val state = RetryState()
+        val t0 = clock()
+        while (state.attempt < maxRetries) {
+            when (val step = runAttempt(ctx, bodyBytes, state, t0, block)) {
+                is LoopStep.Done -> return step.value
+                LoopStep.Continue -> Unit
             }
         }
-        return giveUp(lastErr)
+        return giveUp(state.lastErr)
+    }
+
+    /** Mutable loop state threaded through [runAttempt] — extracted (with it) so `post()` stays
+     *  under detekt's LongMethod/CyclomaticComplexMethod ceilings (G4d follow-up to bb8553f). */
+    private class RetryState {
+        var attempt: Int = 0
+        var refreshedOnce: Boolean = false
+        var lastErr: RetryOutcome.Failed? = null
+    }
+
+    private sealed class LoopStep<out T> {
+        data class Done<T>(val value: T) : LoopStep<T>()
+        data object Continue : LoopStep<Nothing>()
+    }
+
+    /** One retry-loop iteration: a deadline check, the request attempt, and the retry/backoff
+     *  decision. Split out of `post()` (same reasoning as planRetry/statusPlan) so the added
+     *  cross-attempt deadline checks (G4d) don't push `post()` over the complexity ceiling.
+     *  Deadline give-ups fall straight through [giveUp] (a `Nothing`-returning call, not a
+     *  `return`) rather than signalling the loop to break — same funnel, no extra ReturnCount. */
+    private suspend fun <T> runAttempt(
+        ctx: PostContext,
+        bodyBytes: ByteArray,
+        state: RetryState,
+        t0: Long,
+        block: suspend (UpstreamResponse) -> T,
+    ): LoopStep<T> {
+        if (deadlineExceeded(t0)) {
+            ctx.onRetry(
+                "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before attempt " +
+                    "${state.attempt + 1}/$maxRetries",
+            )
+            giveUp(state.lastErr)
+        }
+        val creds = ctx.perf.timedOr(PerfKeys.AUTH_MS) { ctx.auth.credentials() } ?: throw UpstreamAuthMissing()
+        ctx.perf?.add(PerfKeys.ATTEMPTS, 1)
+        var streamHandedOff = false
+        // runCatchingCancellable rethrows CancellationException (a cancelled turn aborts cleanly);
+        // a failure here is a TRANSPORT error thrown BEFORE stream handoff — retryable on the
+        // backoff budget (a 2s DNS blip costs one silent retry, not a turn failure: the kimi
+        // 07:00 burst, 37 UnresolvedAddressException turns, attempts=1 on every one).
+        val attempted = runCatchingCancellable {
+            attemptRequest(ctx, bodyBytes, creds, onStreamStart = { streamHandedOff = true }, block)
+        }
+        val transportError = attempted.exceptionOrNull()
+        if (transportError != null) {
+            rethrowUnlessRetryableTransport(transportError, ctx, streamHandedOff, state.attempt, t0)
+            ctx.perf?.add(PerfKeys.RETRIES, 1)
+            ctx.perf.timedOr(PerfKeys.BACKOFF_MS) { backoff(state.attempt, 0L) }
+            state.attempt += 1
+            return LoopStep.Continue
+        }
+        val outcome = attempted.getOrThrow()
+        if (outcome is RetryOutcome.Done) return LoopStep.Done(outcome.value)
+        check(outcome is RetryOutcome.Failed) // sealed: Done or Failed, and Done returned above
+        state.lastErr = outcome
+        val plan = planRetry(ctx, outcome, state.attempt, state.refreshedOnce)
+        state.refreshedOnce = plan.refreshedOnce
+        return when (plan.decision) {
+            RetryDecision.RETRY -> LoopStep.Continue // refresh succeeded — no normal attempt spent
+            RetryDecision.BACKOFF -> applyBackoff(ctx, plan, state, t0)
+            RetryDecision.GIVE_UP -> giveUp(state.lastErr)
+        }
+    }
+
+    /** The BACKOFF half of the retry decision: re-checks the deadline (G4d) before the sleep so a
+     *  budget that expired mid-curve doesn't pay for one more real delay it can't use. */
+    private suspend fun applyBackoff(
+        ctx: PostContext,
+        plan: RetryPlan,
+        state: RetryState,
+        t0: Long,
+    ): LoopStep<Nothing> {
+        ctx.perf?.add(PerfKeys.RETRIES, 1)
+        if (deadlineExceeded(t0)) {
+            ctx.onRetry(
+                "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before backoff, " +
+                    "attempt ${state.attempt + 1}/$maxRetries",
+            )
+            giveUp(state.lastErr)
+        }
+        ctx.perf.timedOr(PerfKeys.BACKOFF_MS) { backoff(state.attempt, plan.minDelayMs) }
+        state.attempt += 1
+        return LoopStep.Continue
     }
 
     /** The sole failure exit of the retry loop — carries the HTTP status so the classifier's
@@ -130,8 +185,9 @@ public class UpstreamClient(
         ctx: PostContext,
         streamHandedOff: Boolean,
         attempt: Int,
+        t0: Long,
     ) {
-        val mustRethrow = streamHandedOff || !isRetryableTransport(e)
+        val mustRethrow = streamHandedOff || !isRetryableTransport(e) || deadlineExceeded(t0)
         if (mustRethrow || attempt == maxRetries - 1) throw e
         ctx.onRetry(
             "transport ${e::class.simpleName} attempt ${attempt + 1}/$maxRetries: " +
@@ -166,6 +222,9 @@ public class UpstreamClient(
     /** Seconds-form Retry-After → ms; HTTP-date form and garbage → null (backoff curve decides). */
     private fun retryAfterMs(header: String?): Long? =
         header?.trim()?.toLongOrNull()?.takeIf { it >= 0 }?.times(MS_PER_S)
+
+    /** Cross-attempt wall-clock budget (route-timeout analog to the per-try [firstByteTimeoutMs]). */
+    private fun deadlineExceeded(t0: Long): Boolean = clock() - t0 >= totalTimeoutMs
 
     private suspend fun planRetry(
         ctx: PostContext,

@@ -117,6 +117,20 @@ class DaemonTest {
     }
 
     @Test
+    fun `AUTHENTICATION failure surfaces the per-head login hint`() = runBlocking {
+        val sse = client.post("http://127.0.0.1:$headPort/v1/messages") {
+            header("Content-Type", "application/json")
+            setBody(
+                """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":8000,
+                    "system":"You are a test. SCENARIO:authfail","messages":[{"role":"user","content":"go"}]}""",
+            )
+        }.bodyAsText()
+        assertTrue(sse.contains("event: error"))
+        assertTrue(sse.contains("authentication_error"))
+        assertTrue(sse.contains("run: claudex login"))
+    }
+
+    @Test
     fun `daemon lock is single-flight`() {
         val lock1 = DaemonLock(statePaths.daemonLockFile)
         assertTrue(lock1.tryAcquire())

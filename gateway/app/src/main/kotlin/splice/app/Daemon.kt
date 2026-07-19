@@ -146,42 +146,56 @@ public class Daemon(
     )
 
     // The dispatch that makes the daemon genuinely multi-provider: codex (responses+oauth), grok
-    // (responses+api-key, session cache key), openai-platform (responses+api-key, hash cache key),
+    // (responses or chat + grok-oauth), openai-platform (responses+api-key, hash cache key),
     // and ANY openai-compatible vendor (chat dialect + api-key) — the last is pure TOML, zero code.
     private fun buildProvider(ctx: ProviderBuild): Wired {
-        val key = ctx.key
-        val head = ctx.head
-        val providerCfg = ctx.providerCfg
-        val catalog = ctx.catalog
-        val watchdog = ctx.watchdog
-        val label = head.claude.command ?: key
-        return when (providerCfg.dialect) {
+        val label = ctx.head.claude.command ?: ctx.key
+        return when (ctx.providerCfg.dialect) {
             Dialect.OPENAI_RESPONSES -> responsesProvider(ctx, label)
-            Dialect.OPENAI_CHAT -> {
-                val auth = ApiKeyAuthProvider(
-                    envVar = providerCfg.auth.env ?: "${key.uppercase()}_API_KEY",
-                    keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
-                )
-                Wired(
-                    OpenAiChatProvider(
-                        tuning = ProviderTuning(
-                            key = key,
-                            label = label,
-                            catalog = catalog,
-                            pinnedModel = head.pinnedModel,
-                            auth = auth,
-                            baseUrl = providerCfg.baseUrl,
-                            watchdog = watchdog,
-                        ),
-                        quirks = ChatQuirks(providerTag = key),
-                    ),
-                    auth,
-                )
-            }
+            Dialect.OPENAI_CHAT -> chatProvider(ctx, label)
             // anthropic-passthrough: kimi (device-oauth, x-api-key) or ANY anthropic-compatible
             // vendor (api-key Bearer, e.g. Moonshot's pay-per-token https://api.moonshot.ai/anthropic).
             Dialect.ANTHROPIC_PASSTHROUGH -> passthroughProvider(ctx, label)
         }
+    }
+
+    // openai-chat dispatch: grok-oauth (SuperGrok Bearer + refresh, same auth as the Responses
+    // path) vs any api-key vendor. grok rides this dialect because xAI's /v1/chat/completions
+    // streams the full readable CoT (`reasoning_content`) where the Responses summary channel
+    // stops mid-reasoning (measured 2026-07-18; grok CLI / OpenCode parity).
+    private fun chatProvider(ctx: ProviderBuild, label: String): Wired {
+        val key = ctx.key
+        val providerCfg = ctx.providerCfg
+        val auth = when (providerCfg.auth.kind) {
+            "grok-oauth" -> {
+                val tokenUrl = GrokOAuthEndpoints.tokenUrl(System::getenv)
+                GrokAuthProvider(
+                    authPath = Paths.get(TopologyLoader.expandHome(providerCfg.auth.file ?: "~/.grok/auth.json")),
+                    authCacheMs = ctx.cfg.authCacheMs,
+                    refreshCall = { rt -> grokRefresh(tokenUrl, rt) },
+                )
+            }
+            else -> ApiKeyAuthProvider(
+                envVar = providerCfg.auth.env ?: "${key.uppercase()}_API_KEY",
+                keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
+            )
+        }
+        return Wired(
+            OpenAiChatProvider(
+                tuning = ProviderTuning(
+                    key = key,
+                    label = label,
+                    catalog = ctx.catalog,
+                    pinnedModel = ctx.head.pinnedModel,
+                    auth = auth,
+                    baseUrl = providerCfg.baseUrl,
+                    watchdog = ctx.watchdog,
+                ),
+                quirks = ChatQuirks(providerTag = key),
+                showReasoning = ctx.cfg.showReasoning,
+            ),
+            auth,
+        )
     }
 
     // anthropic-passthrough dispatch: kimi-oauth (device flow, x-api-key, proactive refresh) vs any

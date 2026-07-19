@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.auth.Credentials
+import splice.core.auth.RefreshAttempt
 import splice.provider.grok.GrokAuthProvider
 import splice.provider.grok.GrokRefreshedTokens
 import java.nio.file.Files
@@ -53,7 +54,7 @@ class GrokAuthProviderTest {
         val calls = AtomicInteger()
         val auth = GrokAuthProvider(authPath = file, clock = { now }, refreshCall = {
             calls.incrementAndGet()
-            null
+            RefreshAttempt.Denied("test-denied")
         })
         assertEquals("grok-access", bearerToken(auth.credentials()))
         assertEquals(0, calls.get())
@@ -63,7 +64,11 @@ class GrokAuthProviderTest {
     fun `file without expires serves as-is (legacy shape)`() = runTest {
         val dir = Files.createTempDirectory("grok-legacy")
         val file = authFile(dir, expiresAtMs = null)
-        val auth = GrokAuthProvider(authPath = file, clock = { 1_000_000L }, refreshCall = { null })
+        val auth = GrokAuthProvider(
+            authPath = file,
+            clock = { 1_000_000L },
+            refreshCall = { RefreshAttempt.Denied("test-denied") },
+        )
         assertEquals("grok-access", bearerToken(auth.credentials()))
     }
 
@@ -76,7 +81,9 @@ class GrokAuthProviderTest {
             authPath = file,
             clock = { now },
             nowIso = { "iso-now" },
-            refreshCall = { GrokRefreshedTokens("new-access", "new-refresh", expiresIn = 21_600) },
+            refreshCall = {
+                RefreshAttempt.Granted(GrokRefreshedTokens("new-access", "new-refresh", expiresIn = 21_600))
+            },
         )
         assertEquals("new-access", bearerToken(auth.credentials()))
         val onDisk = Json.parseToJsonElement(Files.readString(file)).jsonObject
@@ -92,7 +99,11 @@ class GrokAuthProviderTest {
         val dir = Files.createTempDirectory("grok-graceful")
         val now = 1_000_000L
         val file = authFile(dir, expiresAtMs = now + 60_000) // < 5 min window, > now
-        val auth = GrokAuthProvider(authPath = file, clock = { now }, refreshCall = { null })
+        val auth = GrokAuthProvider(
+            authPath = file,
+            clock = { now },
+            refreshCall = { RefreshAttempt.Denied("test-denied") },
+        )
         assertEquals("grok-access", bearerToken(auth.credentials()))
     }
 
@@ -101,7 +112,11 @@ class GrokAuthProviderTest {
         val dir = Files.createTempDirectory("grok-dead")
         val now = 1_000_000L
         val file = authFile(dir, expiresAtMs = now - 1)
-        val auth = GrokAuthProvider(authPath = file, clock = { now }, refreshCall = { null })
+        val auth = GrokAuthProvider(
+            authPath = file,
+            clock = { now },
+            refreshCall = { RefreshAttempt.Denied("test-denied") },
+        )
         assertNull(auth.credentials())
     }
 
@@ -117,7 +132,7 @@ class GrokAuthProviderTest {
         val calls = AtomicInteger()
         val auth = GrokAuthProvider(authPath = file, clock = { now }, refreshCall = {
             calls.incrementAndGet()
-            null
+            RefreshAttempt.Denied("test-denied")
         })
         assertEquals("token-A", bearerToken(auth.credentials())) // cache now holds A
         // a concurrent process rotates the file to token B underneath us.
@@ -144,9 +159,9 @@ class GrokAuthProviderTest {
             if (token == "R1") {
                 // another process's rotation lands on disk between our read and the POST reaching xAI.
                 Files.writeString(file, """{"tokens":{"access_token":"acc","refresh_token":"R2"}}""")
-                null // xAI rejected R1
+                RefreshAttempt.Denied("xAI rejected R1")
             } else {
-                GrokRefreshedTokens("new-access", "new-refresh", expiresIn = 21_600)
+                RefreshAttempt.Granted(GrokRefreshedTokens("new-access", "new-refresh", expiresIn = 21_600))
             }
         })
         assertEquals("new-access", bearerToken(auth.refresh()))
@@ -167,7 +182,7 @@ class GrokAuthProviderTest {
             // rotate to a NEW distinct token on every call, and always reject — proves the retry is
             // capped, not driven-forever by continuous disk changes.
             Files.writeString(file, """{"tokens":{"access_token":"acc","refresh_token":"R${n + 1}"}}""")
-            null
+            RefreshAttempt.Denied("test-denied")
         })
         assertNull(auth.refresh())
         assertEquals(2, calls.get())
@@ -182,10 +197,67 @@ class GrokAuthProviderTest {
         val auth = GrokAuthProvider(
             authPath = file,
             clock = { now },
-            refreshCall = { GrokRefreshedTokens("new-access", "new-refresh", expiresIn = null) },
+            refreshCall = {
+                RefreshAttempt.Granted(GrokRefreshedTokens("new-access", "new-refresh", expiresIn = null))
+            },
         )
         assertEquals("new-access", bearerToken(auth.credentials()))
         val onDisk = Json.parseToJsonElement(Files.readString(file)).jsonObject
         assertEquals(oldExpires, onDisk["expires"]!!.jsonPrimitive.content.toLong())
+    }
+
+    // G15: a confirmed invalid_grant (post-G1 re-read: disk untouched, so the retry-once check
+    // finds no rotation and gives up) latches — the SECOND call must not re-POST the dead token.
+    @Test
+    fun `latched invalid_grant skips the network POST on the next call`() = runTest {
+        val dir = Files.createTempDirectory("grok-latch")
+        val file = authFile(dir, refresh = "dead-refresh")
+        val calls = AtomicInteger()
+        val auth = GrokAuthProvider(authPath = file, clock = { 1_000_000L }, refreshCall = {
+            calls.incrementAndGet()
+            RefreshAttempt.InvalidGrant("dead")
+        })
+        assertNull(auth.refresh())
+        assertEquals(1, calls.get())
+        assertNull(auth.refresh()) // file untouched: gate short-circuits before the lock/network
+        assertEquals(1, calls.get())
+    }
+
+    // G15: the latch is keyed on the auth file's mtime — a re-login rewrite (fresh refresh token,
+    // new mtime) clears it automatically, so the very next call attempts a real refresh again.
+    @Test
+    fun `latch clears when the auth file's mtime changes`() = runTest {
+        val dir = Files.createTempDirectory("grok-unlatch")
+        val file = authFile(dir, refresh = "dead-refresh")
+        val calls = AtomicInteger()
+        var granted = false
+        val auth = GrokAuthProvider(authPath = file, clock = { 1_000_000L }, refreshCall = {
+            calls.incrementAndGet()
+            if (granted) {
+                RefreshAttempt.Granted(GrokRefreshedTokens("rotated-access", "rotated-refresh", expiresIn = 21_600))
+            } else {
+                RefreshAttempt.InvalidGrant("dead")
+            }
+        })
+        assertNull(auth.refresh())
+        assertEquals(1, calls.get())
+        Thread.sleep(5) // guarantee the mtime actually advances on coarse-grained filesystems
+        authFile(dir, access = "grok-access", refresh = "fresh-refresh") // re-login rewrites the file
+        granted = true
+        assertEquals("rotated-access", bearerToken(auth.refresh()))
+        assertEquals(2, calls.get()) // the real POST fired — the latch did not suppress it
+    }
+
+    // G15: /mgmt/auth and /api/auth surface the suppressed state via describe().
+    @Test
+    fun `describe surfaces refresh_latched after a confirmed invalid_grant`() = runTest {
+        val dir = Files.createTempDirectory("grok-latch-desc")
+        val file = authFile(dir, refresh = "dead-refresh")
+        val auth = GrokAuthProvider(authPath = file, clock = { 1_000_000L }, refreshCall = {
+            RefreshAttempt.InvalidGrant("dead")
+        })
+        assertNull(auth.describe().fields["refresh_latched"])
+        assertNull(auth.refresh())
+        assertEquals("invalid_grant", auth.describe().fields["refresh_latched"])
     }
 }

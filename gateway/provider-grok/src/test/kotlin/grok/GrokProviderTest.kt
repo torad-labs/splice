@@ -24,6 +24,7 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import splice.core.auth.Credentials
+import splice.core.auth.RefreshAttempt
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.parseAnthropicBody
@@ -86,7 +87,7 @@ class GrokProviderTest {
         Files.writeString(authFile, """{"tokens":{"access_token":"$access","refresh_token":"$refresh"}}""")
         return GrokAuthProvider(
             authPath = authFile,
-            refreshCall = { GrokRefreshedTokens("refreshed-access", "refreshed-refresh") },
+            refreshCall = { RefreshAttempt.Granted(GrokRefreshedTokens("refreshed-access", "refreshed-refresh")) },
         )
     }
 
@@ -191,7 +192,11 @@ class GrokProviderTest {
         assertEquals("grok-oauth", desc.kind)
         // no token material in the introspection
         assertTrue(desc.fields.values.none { it.contains("access") })
-        assertNull((GrokAuthProvider(authPath = dir.resolve("missing.json"), refreshCall = { null })).credentials())
+        val missingFileAuth = GrokAuthProvider(
+            authPath = dir.resolve("missing.json"),
+            refreshCall = { RefreshAttempt.Denied("test-denied") },
+        )
+        assertNull(missingFileAuth.credentials())
     }
 
     @Test

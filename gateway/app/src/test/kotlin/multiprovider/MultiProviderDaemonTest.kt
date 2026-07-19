@@ -24,6 +24,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import splice.app.Daemon
 import splice.app.TopologyLoader
+import splice.core.auth.RefreshAttempt
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.util.discard
@@ -98,7 +99,7 @@ class MultiProviderDaemonTest {
             statePaths = statePaths,
             dashboardHtml = { "<!doctype html>" },
             log = {},
-            refreshCall = { _, _ -> null },
+            refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
         )
         runBlocking { daemon.start() }
         Thread.sleep(1100) // three Netty heads + control warm up

@@ -13,6 +13,9 @@ package splice.provider.kimi
 import kotlinx.serialization.json.Json
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
+import splice.core.auth.INVALID_GRANT_REASON
+import splice.core.auth.InvalidGrantLatch
+import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.auth.credentialsOrNull
@@ -37,12 +40,13 @@ public class KimiAuthProvider(
     private val authPath: Path,
     private val authCacheMs: Long = DEFAULT_CACHE_MS,
     private val clock: () -> Long = System::currentTimeMillis,
-    /** POST grant_type=refresh_token to auth.kimi.com's token URL; returns rotated tokens or null. */
-    private val refreshCall: suspend (refreshToken: String) -> KimiRefreshedTokens?,
+    /** POST grant_type=refresh_token to auth.kimi.com's token URL; returns the classified attempt. */
+    private val refreshCall: suspend (refreshToken: String) -> RefreshAttempt<KimiRefreshedTokens>,
 ) : RefreshableAuthProvider {
 
     private val json = Json { ignoreUnknownKeys = true }
     private val singleFlight = SingleFlight<Credentials?>()
+    private val invalidGrantLatch = InvalidGrantLatch()
 
     @Volatile
     private var cache: Cache? = null
@@ -74,10 +78,19 @@ public class KimiAuthProvider(
     // Staged (read → exchange), each stage owning its own failure branches.
     // G1: capture what THIS process last served BEFORE the lock, then re-read authoritatively INSIDE
     // it — so a peer's rotation (landed while we waited on the lock) is seen, not overwritten.
+    // G15: gate on a latched confirmed invalid_grant BEFORE any file-content read or network call —
+    // a dead token no longer gets re-POSTed every turn. The gate gives way the instant the file's
+    // mtime changes (re-login), so a genuinely stale latch never outlives the credentials it named.
     private suspend fun doRefresh(): RefreshOutcome {
         if (!Files.exists(authPath)) return RefreshOutcome.NoCredentialsFile
+        val mtime = kimiAuthMtimeOrNull(authPath)
+        if (invalidGrantLatch.isLatched(mtime)) return RefreshOutcome.Rejected(INVALID_GRANT_REASON)
         val priorAccess = cache?.snapshot?.access
-        return CredentialLock.withLock(authPath) { refreshLocked(priorAccess) }
+        val outcome = CredentialLock.withLock(authPath) { refreshLocked(priorAccess) }
+        if (outcome is RefreshOutcome.Rejected && outcome.reason == INVALID_GRANT_REASON) {
+            invalidGrantLatch.latch(mtime)
+        }
+        return outcome
     }
 
     // Runs holding the cross-process lock: re-read fresh, short-circuit if a peer already rotated,
@@ -100,18 +113,26 @@ public class KimiAuthProvider(
         return RefreshOutcome.Refreshed(apiKey(snap.access))
     }
 
+    // G15: InvalidGrant flows through the SAME rejectedOrRetry() G1 reread-once dance as any other
+    // rejection — a "confirmed" invalid_grant (the one doRefresh() latches on) is one that survived
+    // that race check, exactly matching the gap's "post-G1 re-read" requirement.
     private suspend fun exchangeRefreshToken(
         refreshToken: String,
         allowRereadRetry: Boolean = true,
     ): RefreshOutcome {
         // Guard the network hop: a thrown refreshCall must degrade to a typed outcome, not blow
-        // through SingleFlight uncaught. Rotation is mandatory — a null response means no grant.
-        val fresh = runCatchingCancellable { refreshCall(refreshToken) }
+        // through SingleFlight uncaught. Rotation is mandatory — a Denied response means no grant.
+        val attempt = runCatchingCancellable { refreshCall(refreshToken) }
             .getOrElse { return RefreshOutcome.TransportFailed(it) }
-            ?: return rejectedOrRetry(refreshToken, allowRereadRetry, "token endpoint returned no rotated tokens")
-        writeSecure(authPath, kimiAuthJson(fresh, clock()).toString())
-        invalidateCache()
-        return RefreshOutcome.Refreshed(apiKey(fresh.accessToken))
+        return when (attempt) {
+            is RefreshAttempt.Granted -> {
+                writeSecure(authPath, kimiAuthJson(attempt.tokens, clock()).toString())
+                invalidateCache()
+                RefreshOutcome.Refreshed(apiKey(attempt.tokens.accessToken))
+            }
+            is RefreshAttempt.InvalidGrant -> rejectedOrRetry(refreshToken, allowRereadRetry, INVALID_GRANT_REASON)
+            is RefreshAttempt.Denied -> rejectedOrRetry(refreshToken, allowRereadRetry, attempt.detail)
+        }
     }
 
     // Bounded one-shot retry: an endpoint rejection MIGHT be a stale-token race — if disk now shows a
@@ -171,12 +192,14 @@ public class KimiAuthProvider(
         val present = runCatchingCancellable {
             Files.exists(authPath) && parseSnapshot() != null
         }.getOrDefault(false)
+        val mtime = kimiAuthMtimeOrNull(authPath)
         return AuthDescription(
             present = present,
             kind = "kimi-oauth",
             fields = buildMap {
                 put("auth_path", authPath.toString())
                 put("login", "device")
+                if (invalidGrantLatch.isLatched(mtime)) put("refresh_latched", INVALID_GRANT_REASON)
             },
         )
     }
@@ -189,3 +212,13 @@ public class KimiAuthProvider(
         const val MIN_PROACTIVE_S = 300L
     }
 }
+
+// G15: best-effort mtime probe for the invalid_grant latch gate. Top-level (not a class member) so
+// KimiAuthProvider stays under the TooManyFunctions ceiling; shared by doRefresh() and describe().
+// The failure is logged, not swallowed, before collapsing to null — a stat failure is "unknown",
+// which InvalidGrantLatch treats as fail-open (never suppresses), NOT "file unchanged".
+private fun kimiAuthMtimeOrNull(authPath: Path): Long? = runCatchingCancellable {
+    Files.getLastModifiedTime(authPath).toMillis()
+}.onFailure {
+    System.err.println("[kimi-auth] failed to stat $authPath mtime: $it — invalid_grant latch check skipped")
+}.getOrNull()

@@ -24,7 +24,7 @@ splice - codex-proxy v30 (this repo)
         |  Kotlin port (PORT-OF headers @ 4ca99f7)
         v
 gateway/ Kotlin gateway
-  53 PORT-OF-marked .kt files citing server/src modules @ 4ca99f7 (SELF-inheritance)
+  51 PORT-OF-marked .kt files citing server/src modules @ 4ca99f7 (SELF-inheritance)
 ```
 
 Two distinct kinds of inheritance appear in the tree and MUST NOT be conflated:
@@ -109,63 +109,62 @@ originate. Original work and inherited work coexist; both notices apply.
 
 ## PORT-OF Kotlin inventory (SELF-inheritance @ 4ca99f7)
 
-53 Kotlin files carry `PORT-OF` headers citing this repo's own `server/src`
+51 Kotlin files carry `PORT-OF` headers citing this repo's own `server/src`
 modules at revision `4ca99f7`. Regenerate with:
 
-    grep -rn "PORT-OF" gateway/ --include=*.kt -l | sort
+    for f in $(grep -rl 'PORT-OF' gateway/ --include='*.kt' | sort); do
+      head -1 "$f" | grep -q '^// PORT-OF:' && echo "$f"; done
 
 | # | File |
 | --- | --- |
 | 1 | gateway/app/src/main/kotlin/splice/app/DaemonLock.kt |
-| 2 | gateway/arch-tests/src/test/kotlin/ArchitectureLawsTest.kt |
-| 3 | gateway/control/src/main/kotlin/splice/control/ControlServer.kt |
-| 4 | gateway/control/src/main/kotlin/splice/control/LaunchService.kt |
-| 5 | gateway/control/src/main/kotlin/splice/control/StatuslineRenderer.kt |
-| 6 | gateway/control/src/test/kotlin/ControlServerTest.kt |
-| 7 | gateway/core/src/main/kotlin/splice/core/config/ConfigService.kt |
-| 8 | gateway/core/src/main/kotlin/splice/core/config/Knob.kt |
-| 9 | gateway/core/src/main/kotlin/splice/core/config/MgmtKey.kt |
-| 10 | gateway/core/src/main/kotlin/splice/core/config/StatePaths.kt |
-| 11 | gateway/core/src/main/kotlin/splice/core/launch/ClaudeConfigMaterializer.kt |
-| 12 | gateway/core/src/main/kotlin/splice/core/model/ModelCatalog.kt |
-| 13 | gateway/core/src/main/kotlin/splice/core/reasoning/Replay.kt |
-| 14 | gateway/core/src/main/kotlin/splice/core/turn/PickedText.kt |
-| 15 | gateway/core/src/main/kotlin/splice/core/turn/ReasoningThresholds.kt |
-| 16 | gateway/core/src/main/kotlin/splice/core/usage/UsageWarn.kt |
-| 17 | gateway/core/src/main/kotlin/splice/core/Versions.kt |
-| 18 | gateway/core/src/main/kotlin/splice/core/wire/AnthropicRequest.kt |
-| 19 | gateway/core/src/test/kotlin/AnthropicParseTest.kt |
-| 20 | gateway/core/src/test/kotlin/ClaudeConfigMaterializerTest.kt |
-| 21 | gateway/core/src/test/kotlin/ConfigServiceTest.kt |
-| 22 | gateway/core/src/test/kotlin/ModelCatalogTest.kt |
-| 23 | gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/Harvested.kt |
-| 24 | gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesRequestBuilder.kt |
-| 25 | gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt |
-| 26 | gateway/dialect-openai-responses/src/test/kotlin/ResponsesRequestBuilderTest.kt |
-| 27 | gateway/dialect-openai-responses/src/test/kotlin/ResponsesStreamTranslatorTest.kt |
-| 28 | gateway/gateway/src/main/kotlin/splice/gateway/compact/Compact.kt |
-| 29 | gateway/gateway/src/main/kotlin/splice/gateway/head/HeadServer.kt |
-| 30 | gateway/gateway/src/main/kotlin/splice/gateway/pipeline/TurnPipeline.kt |
-| 31 | gateway/gateway/src/main/kotlin/splice/gateway/reasoning/Mirror.kt |
-| 32 | gateway/gateway/src/main/kotlin/splice/gateway/usage/UsageHud.kt |
-| 33 | gateway/gateway/src/main/kotlin/splice/gateway/wire/SseEmitter.kt |
-| 34 | gateway/gateway/src/testFixtures/kotlin/mock/MockChatGptUpstream.kt |
-| 35 | gateway/gateway/src/test/kotlin/CompactTest.kt |
-| 36 | gateway/gateway/src/test/kotlin/head/HeadServerIntegrationTest.kt |
-| 37 | gateway/gateway/src/test/kotlin/mock/ScenarioIntegrationTest.kt |
-| 38 | gateway/gateway/src/test/kotlin/ReplayMirrorTest.kt |
-| 39 | gateway/gateway/src/test/kotlin/SseEmitterTest.kt |
-| 40 | gateway/gateway/src/test/kotlin/UsageTest.kt |
-| 41 | gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt |
-| 42 | gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexOAuth.kt |
-| 43 | gateway/provider-codex/src/test/kotlin/CodexAuthTest.kt |
-| 44 | gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt |
-| 45 | gateway/provider-spi/src/main/kotlin/splice/spi/InflightGate.kt |
-| 46 | gateway/provider-spi/src/main/kotlin/splice/spi/SingleFlight.kt |
-| 47 | gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamClient.kt |
-| 48 | gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt |
-| 49 | gateway/provider-spi/src/main/kotlin/splice/spi/Watchdog.kt |
-| 50 | gateway/provider-spi/src/test/kotlin/InflightGateTest.kt |
-| 51 | gateway/provider-spi/src/test/kotlin/SseReaderTest.kt |
-| 52 | gateway/provider-spi/src/test/kotlin/UpstreamFailureClassifierTest.kt |
-| 53 | gateway/provider-spi/src/test/kotlin/WatchdogTest.kt |
+| 2 | gateway/control/src/main/kotlin/splice/control/ControlServer.kt |
+| 3 | gateway/control/src/main/kotlin/splice/control/LaunchService.kt |
+| 4 | gateway/control/src/main/kotlin/splice/control/StatuslineRenderer.kt |
+| 5 | gateway/control/src/test/kotlin/ControlServerTest.kt |
+| 6 | gateway/core/src/main/kotlin/splice/core/config/ConfigService.kt |
+| 7 | gateway/core/src/main/kotlin/splice/core/config/Knob.kt |
+| 8 | gateway/core/src/main/kotlin/splice/core/config/MgmtKey.kt |
+| 9 | gateway/core/src/main/kotlin/splice/core/config/StatePaths.kt |
+| 10 | gateway/core/src/main/kotlin/splice/core/launch/ClaudeConfigMaterializer.kt |
+| 11 | gateway/core/src/main/kotlin/splice/core/model/ModelCatalog.kt |
+| 12 | gateway/core/src/main/kotlin/splice/core/reasoning/Replay.kt |
+| 13 | gateway/core/src/main/kotlin/splice/core/turn/PickedText.kt |
+| 14 | gateway/core/src/main/kotlin/splice/core/turn/ReasoningThresholds.kt |
+| 15 | gateway/core/src/main/kotlin/splice/core/usage/UsageWarn.kt |
+| 16 | gateway/core/src/main/kotlin/splice/core/Versions.kt |
+| 17 | gateway/core/src/main/kotlin/splice/core/wire/AnthropicRequest.kt |
+| 18 | gateway/core/src/test/kotlin/AnthropicParseTest.kt |
+| 19 | gateway/core/src/test/kotlin/ClaudeConfigMaterializerTest.kt |
+| 20 | gateway/core/src/test/kotlin/ConfigServiceTest.kt |
+| 21 | gateway/core/src/test/kotlin/ModelCatalogTest.kt |
+| 22 | gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/Harvested.kt |
+| 23 | gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesRequestBuilder.kt |
+| 24 | gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt |
+| 25 | gateway/dialect-openai-responses/src/test/kotlin/ResponsesRequestBuilderTest.kt |
+| 26 | gateway/dialect-openai-responses/src/test/kotlin/ResponsesStreamTranslatorTest.kt |
+| 27 | gateway/gateway/src/main/kotlin/splice/gateway/compact/Compact.kt |
+| 28 | gateway/gateway/src/main/kotlin/splice/gateway/head/HeadServer.kt |
+| 29 | gateway/gateway/src/main/kotlin/splice/gateway/pipeline/TurnPipeline.kt |
+| 30 | gateway/gateway/src/main/kotlin/splice/gateway/reasoning/Mirror.kt |
+| 31 | gateway/gateway/src/main/kotlin/splice/gateway/usage/UsageHud.kt |
+| 32 | gateway/gateway/src/main/kotlin/splice/gateway/wire/SseEmitter.kt |
+| 33 | gateway/gateway/src/testFixtures/kotlin/mock/MockChatGptUpstream.kt |
+| 34 | gateway/gateway/src/test/kotlin/CompactTest.kt |
+| 35 | gateway/gateway/src/test/kotlin/head/HeadServerIntegrationTest.kt |
+| 36 | gateway/gateway/src/test/kotlin/mock/ScenarioIntegrationTest.kt |
+| 37 | gateway/gateway/src/test/kotlin/ReplayMirrorTest.kt |
+| 38 | gateway/gateway/src/test/kotlin/SseEmitterTest.kt |
+| 39 | gateway/gateway/src/test/kotlin/UsageTest.kt |
+| 40 | gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt |
+| 41 | gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexOAuth.kt |
+| 42 | gateway/provider-codex/src/test/kotlin/CodexAuthTest.kt |
+| 43 | gateway/provider-spi/src/main/kotlin/splice/spi/InflightGate.kt |
+| 44 | gateway/provider-spi/src/main/kotlin/splice/spi/SingleFlight.kt |
+| 45 | gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamClient.kt |
+| 46 | gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt |
+| 47 | gateway/provider-spi/src/main/kotlin/splice/spi/Watchdog.kt |
+| 48 | gateway/provider-spi/src/test/kotlin/InflightGateTest.kt |
+| 49 | gateway/provider-spi/src/test/kotlin/SseReaderTest.kt |
+| 50 | gateway/provider-spi/src/test/kotlin/UpstreamFailureClassifierTest.kt |
+| 51 | gateway/provider-spi/src/test/kotlin/WatchdogTest.kt |

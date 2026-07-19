@@ -15,8 +15,8 @@ path") is reachable from public `main` on `torad-labs/splice`. It added:
   operator's private global `CLAUDE.md` instructions and `/home/<user>/...`
   filesystem paths.
 - `experiments/cache-replay/capture/ab-results.log` — a run log with the same
-  `/home/<user>/...` path exposure (e.g.
-  `capture_env=/home/<user>/.claude/jobs/fb8f646c/tmp/cacheab/capture`).
+  `/home/<user>/...` path exposure (a `capture_env=` line naming the
+  operator's local job directory).
 
 Scanned for API keys/bearer tokens (`sk-ant-`, `Bearer `, `api_key`) — none
 found in either. The exposure is operator identity/path/instruction content,

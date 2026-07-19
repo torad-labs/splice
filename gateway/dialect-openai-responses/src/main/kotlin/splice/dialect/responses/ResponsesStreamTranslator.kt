@@ -53,6 +53,10 @@ public data class StreamTurnContext(
     val watchdogFired: () -> WatchdogFired?,
     val streamIdleMsForMessage: Long,
     val upstreamTimeoutMsForMessage: Long,
+    /** sequential_cutoff delivery restates earlier summary parts on every new reasoning item
+     *  (probed 2026-07-19: part(1,0) byte-identical to part(0,0)); codex-rs dedups client-side.
+     *  Gated to the delivery quirk so genuine token-granular streams are never touched. */
+    val dedupeRepeatedSummaryParts: Boolean = false,
 )
 
 /** Drop paragraph-parts already streamed this turn (sequential_cutoff recap noise); parts under
@@ -189,6 +193,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     // dedup on thinkingBuf dropped a DISTINCT item whose text happened to be a substring of an
     // earlier one, diverging wire from mirror (audit 2026-07-18); track per item instead.
     private val emittedReasoningKeys = HashSet<Int>()
+    private val seenSummaryParts = HashSet<String>()
 
     suspend fun onEvent(evt: JsonObject, sink: WireSink) {
         when (str(evt["type"])) {
@@ -322,6 +327,12 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     private suspend fun onThinkingDelta(evt: JsonObject, sink: WireSink) {
         val delta = str(evt[DELTA])
         if (delta.isEmpty()) return
+        // sequential_cutoff restatement dedup: whole parts arrive as single deltas in this mode;
+        // an exact repeat of an already-streamed part (>= min length; shorter deltas are plausibly
+        // genuine token fragments) is upstream recap noise, not new thinking.
+        if (ctx.dedupeRepeatedSummaryParts && delta.length >= SUMMARY_PART_DEDUP_MIN_CHARS) {
+            if (!seenSummaryParts.add(delta)) return
+        }
         val b = ensureThinkingBlock(evt, sink)
         b.sawDelta = true
         thinkingBuf.append(delta)

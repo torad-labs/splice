@@ -49,7 +49,7 @@ public abstract class ResponsesProvider(
                 configEffort = configEffort,
                 configSummary = if (showOn) configSummary else "none",
                 showReasoning = showReasoning,
-                // INPUT injection of prior encrypted CoT — operator opt-in ONLY (default OFF; it
+                // INPUT injection of prior opaque encrypted reasoning items — operator opt-in ONLY (default OFF; it
                 // thins fresh reasoning ~4x). Never derived from showReasoning.
                 replayReasoning = InjectPriorReasoning(replayReasoning),
                 // Ask for the opaque encrypted handle whenever reasoning is visible.
@@ -73,6 +73,7 @@ public abstract class ResponsesProvider(
                 watchdogFired = signals.watchdogFired,
                 streamIdleMsForMessage = watchdog.streamIdle.inWholeMilliseconds,
                 upstreamTimeoutMsForMessage = watchdog.totalCap.inWholeMilliseconds,
+                dedupeRepeatedSummaryParts = quirks.summaryDelivery != null,
             ),
         )
 

@@ -2,7 +2,7 @@ plugins {
     id("splice.kotlin-common")
     id("splice.module-law")
     application
-    id("com.gradleup.shadow") version "8.3.5"
+    id("com.gradleup.shadow") version "8.3.9"
 }
 
 dependencies {

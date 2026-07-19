@@ -19,7 +19,7 @@ column as work lands (`todo` / `in-progress` / `done <commit>` / `wontfix <reaso
 
 | ID | Gap | Fix (short) | Status |
 |---|---|---|---|
-| G1 | Cross-process credential-file races (no lock, no re-read-before-refresh, no re-read-on-invalid_grant) — likely killed the kimi-code token 2026-07-18 | re-read before POST; re-read-once on invalid_grant; then FileLock on `<authPath>.lock` | todo |
+| G1 | Cross-process credential-file races (no lock, no re-read-before-refresh, no re-read-on-invalid_grant) — likely killed the kimi-code token 2026-07-18 | re-read before POST; re-read-once on invalid_grant; then FileLock on `<authPath>.lock` | done e970691 |
 | G2 | Zero-event 200 stream undiagnosable, hardcoded OVERLOADED → Claude Code retries a dead head forever | buffer first ~1KB; on zero-event end log snippet + classify via UpstreamFailureClassifier (auth-shaped → AUTHENTICATION + login hint) | todo |
 
 ## MEDIUM

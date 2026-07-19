@@ -21,6 +21,9 @@ public class TurnPipeline(
     private val compactStats: CompactStats,
     private val log: (String) -> Unit,
     private val clampOutput: (Long) -> Long,
+    // Operator knob (mirror_reasoning): false stops the transcript mirror while text-mode
+    // display is unaffected. Default true = the measured codex distillation-loop doctrine.
+    private val mirrorReasoning: Boolean = true,
 ) {
     /**
      * Finish a streamed turn: apply promote/honesty/mirror to the machine's outcome and drive
@@ -84,7 +87,7 @@ public class TurnPipeline(
         }
 
         // Reasoning mirror (L2): one mirrorInto for both paths; tools stay on.
-        mirrorInto(emitter, outcome.thinkingText, meta.showReasoning, meta.compact)
+        mirrorGated(emitter, outcome.thinkingText, meta)
 
         emitter.emitTerminal(
             hasToolUse = outcome.hasToolUse,
@@ -107,5 +110,11 @@ public class TurnPipeline(
                 error?.let { put("error", it) }
             },
         )
+    }
+
+    // The mirror_reasoning knob gates the CALL — mirrorInto stays the single L2 definition
+    // (the ast-grep wall pins it to Mirror.kt); off = no transcript reinjection, display untouched.
+    private suspend fun mirrorGated(sink: splice.spi.WireSink, thinkingText: String?, meta: TurnMeta) {
+        if (mirrorReasoning) mirrorInto(sink, thinkingText, meta.showReasoning, meta.compact)
     }
 }

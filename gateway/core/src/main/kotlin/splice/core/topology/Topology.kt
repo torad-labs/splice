@@ -32,6 +32,7 @@ public data class DaemonConfig(
     val summary: String? = null,
     val effort: String? = null,
     @SerialName("replay_reasoning") val replayReasoning: Boolean? = null,
+    @SerialName("mirror_reasoning") val mirrorReasoning: Boolean? = null,
 )
 
 @Serializable
@@ -133,6 +134,7 @@ public fun Topology.configOverrides(): Map<String, String> {
     daemon.summary?.let { out["summary"] = it }
     daemon.effort?.let { out["effort"] = it }
     daemon.replayReasoning?.let { out["replayReasoning"] = it.toString() }
+    daemon.mirrorReasoning?.let { out["mirrorReasoning"] = it.toString() }
     return out
 }
 

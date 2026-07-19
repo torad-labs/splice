@@ -79,6 +79,11 @@ public class TurnPerf(private val clock: () -> Long = System::currentTimeMillis)
         synchronized(lock) { if (stage !in marks) marks[stage] = at }
     }
 
+    /** True once [stage] has been marked — G5 reads this on FIRST_FRAME to distinguish "handed
+     *  off to the block" from "client actually saw a byte", gating stream-torn-before-first-frame
+     *  reissue from the hard no-retry-after-output rule. */
+    public fun hasMark(stage: String): Boolean = synchronized(lock) { stage in marks }
+
     public fun add(counter: String, delta: Long) {
         if (delta == 0L) return
         synchronized(lock) { counters[counter] = (counters[counter] ?: 0L) + delta }

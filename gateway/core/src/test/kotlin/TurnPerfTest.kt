@@ -3,6 +3,7 @@
 // pipeline order with counters after the bar.
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.perf.PerfKeys
@@ -42,6 +43,15 @@ class TurnPerfTest {
         clock.tick(100)
         perf.markOnce(PerfKeys.FIRST_BYTE)
         assertEquals(7L, perf.snapshot().marks[PerfKeys.FIRST_BYTE])
+    }
+
+    @Test
+    fun `hasMark reflects whether a stage has been recorded`() {
+        val perf = TurnPerf { 0L }
+        assertFalse(perf.hasMark(PerfKeys.FIRST_FRAME))
+        perf.markOnce(PerfKeys.FIRST_FRAME)
+        assertTrue(perf.hasMark(PerfKeys.FIRST_FRAME))
+        assertFalse(perf.hasMark(PerfKeys.FIRST_DELTA))
     }
 
     @Test

@@ -22,6 +22,7 @@ dependencies {
     implementation(libs.ktor.client.java)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.ktor.client.cio)
+    testImplementation(libs.ktor.client.mock)
     testImplementation(testFixtures(project(":gateway")))
 }
 

@@ -10,6 +10,8 @@ package mock
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.IOException
@@ -82,7 +84,7 @@ class MockChatGptUpstream {
         ex.responseHeaders.add("Content-Type", "text/event-stream")
         ex.sendResponseHeaders(200, 0)
         try {
-            streamScenario(scenario, ex)
+            streamScenario(scenario, ex, body)
         } catch (abort: IOException) {
             // a broken pipe mid-stream is the drip scenario's EXPECTED client-abort exit
             if (scenario == "drip") abortedScenarios.add("drip")
@@ -93,8 +95,50 @@ class MockChatGptUpstream {
         }
     }
 
-    private fun streamScenario(scenario: String, ex: HttpExchange) {
+    // Reasoning-continuation fold scenarios (codex 518n-2). A round is a CONTINUATION when its input
+    // carries a replayed reasoning item; "fold" then serves a clean round, "foldcap" always truncates
+    // so the head hits its continuation cap.
+    private fun isContinuationRound(body: JsonObject?): Boolean =
+        body?.get("input")?.jsonArray?.any {
+            (it as? JsonObject)?.get("type")?.jsonPrimitive?.content == "reasoning"
+        } ?: false
+
+    private fun foldTruncatedRound(ex: HttpExchange) {
+        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""")
+        sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Thinking round one."}""")
+        sse(
+            ex,
+            """{"type":"response.output_item.done","output_index":0,""" +
+                """"item":{"type":"reasoning","id":"rs_trunc","encrypted_content":"ENC-TRUNC"}}""",
+        )
+        sse(ex, """{"type":"response.output_item.added","output_index":1,"item":{"type":"message"}}""")
+        sse(ex, """{"type":"response.output_text.delta","output_index":1,"delta":"TENTATIVE ANSWER"}""")
+        sse(ex, """{"type":"response.output_item.done","output_index":1}""")
+        sse(
+            ex,
+            """{"type":"response.completed","response":{"id":"rt","status":"completed","output":[],""" +
+                """"usage":{"input_tokens":100,"output_tokens":600,"output_tokens_details":{"reasoning_tokens":516}}}}""",
+        )
+    }
+
+    private fun foldCleanRound(ex: HttpExchange) {
+        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""")
+        sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Thinking round two."}""")
+        sse(ex, """{"type":"response.output_item.done","output_index":0}""")
+        sse(ex, """{"type":"response.output_item.added","output_index":1,"item":{"type":"message"}}""")
+        sse(ex, """{"type":"response.output_text.delta","output_index":1,"delta":"FINAL ANSWER"}""")
+        sse(ex, """{"type":"response.output_item.done","output_index":1}""")
+        sse(
+            ex,
+            """{"type":"response.completed","response":{"id":"rf","status":"completed","output":[],""" +
+                """"usage":{"input_tokens":150,"output_tokens":800,"output_tokens_details":{"reasoning_tokens":800}}}}""",
+        )
+    }
+
+    private fun streamScenario(scenario: String, ex: HttpExchange, body: JsonObject?) {
         when (scenario) {
+            "fold" -> if (isContinuationRound(body)) foldCleanRound(ex) else foldTruncatedRound(ex)
+            "foldcap" -> foldTruncatedRound(ex)
             "multipart" -> {
                 sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""")
                 sse(ex, """{"type":"response.reasoning_summary_part.added","output_index":0}""")

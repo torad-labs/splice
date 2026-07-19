@@ -35,6 +35,7 @@ import splice.core.topology.configOverrides
 import splice.core.turn.WatchdogBudget
 import splice.core.util.discard
 import splice.dialect.chat.ChatQuirks
+import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.withToml
 import splice.gateway.compact.CompactStats
@@ -65,6 +66,15 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import kotlin.time.Duration.Companion.milliseconds
+
+// Reasoning-continuation folding config (codex 518n-2), threaded from ConfigService like the other
+// reasoning knobs. Top-level (off Daemon's function count); an empty model set = feature off.
+private fun foldConfigFrom(cfg: SpliceConfig): FoldConfig = FoldConfig(
+    models = cfg.foldReasoningModels,
+    maxContinue = cfg.foldMaxContinue,
+    markerText = cfg.foldMarkerText.ifEmpty { FoldConfig.DEFAULT_MARKER_TEXT },
+    maxTierN = cfg.foldMaxTier,
+)
 
 public class Daemon(
     private val topology: Topology,
@@ -320,6 +330,9 @@ public class Daemon(
                         configEffort = cfg.effort,
                         configSummary = cfg.summary,
                         quirks = providerCfg.responsesQuirks(CodexProvider.defaultQuirks()),
+                        // Reasoning-continuation folding (codex 518n-2) — codex head ONLY; grok/openai
+                        // never receive a fold config, so they stay pure passthrough.
+                        foldConfig = foldConfigFrom(cfg),
                         accountIdHeader = providerCfg.quirks.accountIdHeader,
                     ),
                     auth,

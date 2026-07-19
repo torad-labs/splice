@@ -11,7 +11,18 @@ public data class Usage(
     // Prompt-cache read: input_tokens_details.cached_tokens (Responses) / cache_read_input_tokens.
     // The whole point of prompt_cache_key — surfaced so the HUD and log can report the real hit rate.
     val cachedTokens: Long = 0,
-)
+    // output_tokens_details.reasoning_tokens (Responses). Drives reasoning-continuation fold
+    // detection (the 518n-2 truncation fingerprint); NEVER part of the client usage payload.
+    val reasoningTokens: Long = 0,
+) {
+    /** Sum two rounds' usage — reasoning-continuation folding accumulates across hidden rounds. */
+    public operator fun plus(other: Usage): Usage = Usage(
+        inputTokens = inputTokens + other.inputTokens,
+        outputTokens = outputTokens + other.outputTokens,
+        cachedTokens = cachedTokens + other.cachedTokens,
+        reasoningTokens = reasoningTokens + other.reasoningTokens,
+    )
+}
 
 /** Anthropic error-event taxonomy the wire understands (error literals are not L3-gated). */
 public enum class ErrorType(public val wireName: String) {
@@ -34,6 +45,11 @@ public sealed class TurnOutcome {
         val thinkingText: String = "",
         val bodyText: String = "",
         val emittedText: Boolean = false,
+        /** splice-reasoning envelopes (base64) of THIS round's encrypted reasoning items, for
+         *  reasoning-continuation replay. Populated only when the turn is fold-eligible; empty
+         *  otherwise (opaque handles — the gateway forwards them to the provider's fold controller,
+         *  never reads them). */
+        val reasoningEnvelopes: List<String> = emptyList(),
     ) : TurnOutcome()
 
     public data class Failure(

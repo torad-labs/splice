@@ -33,6 +33,12 @@ public data class DaemonConfig(
     val effort: String? = null,
     @SerialName("replay_reasoning") val replayReasoning: Boolean? = null,
     @SerialName("mirror_reasoning") val mirrorReasoning: Boolean? = null,
+    // Reasoning-continuation folding (codex 518n-2). A TOML array of upstream model ids that truncate
+    // their chain-of-thought (default luna/terra/5.5); the caps + marker text tune the loop.
+    @SerialName("fold_reasoning_models") val foldReasoningModels: List<String>? = null,
+    @SerialName("fold_max_continue") val foldMaxContinue: Int? = null,
+    @SerialName("fold_marker_text") val foldMarkerText: String? = null,
+    @SerialName("fold_max_tier") val foldMaxTier: Int? = null,
 )
 
 @Serializable
@@ -135,7 +141,17 @@ public fun Topology.configOverrides(): Map<String, String> {
     daemon.effort?.let { out["effort"] = it }
     daemon.replayReasoning?.let { out["replayReasoning"] = it.toString() }
     daemon.mirrorReasoning?.let { out["mirrorReasoning"] = it.toString() }
+    daemon.putFoldOverrides(out)
     return out
+}
+
+/** Reasoning-continuation fold knobs, split out so [configOverrides] stays under the complexity cap.
+ *  The comma-joined model list is what the STRING knob coerces (SpliceConfig splits it back). */
+private fun DaemonConfig.putFoldOverrides(out: MutableMap<String, String>) {
+    foldReasoningModels?.let { out["foldReasoningModels"] = it.joinToString(",") }
+    foldMaxContinue?.let { out["foldMaxContinue"] = it.toString() }
+    foldMarkerText?.let { out["foldMarkerText"] = it }
+    foldMaxTier?.let { out["foldMaxTier"] = it.toString() }
 }
 
 private const val DEFAULT_WINDOW_FLOOR: Long = 200_000

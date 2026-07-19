@@ -20,6 +20,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.perf.PerfKeys
@@ -28,6 +29,7 @@ import splice.core.perf.perfLine
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
+import splice.core.turn.Usage
 import splice.gateway.perf.PerfRowMeta
 import splice.gateway.perf.PerfStats
 import splice.gateway.pipeline.TurnPipeline
@@ -35,10 +37,13 @@ import splice.gateway.usage.TurnUsage
 import splice.gateway.usage.buildUsagePayload
 import splice.gateway.usage.cacheLogLine
 import splice.gateway.usage.makeOutputClamp
+import splice.gateway.wire.BufferingWireSink
 import splice.gateway.wire.ImmediateSseWriter
 import splice.gateway.wire.SseEmitter
 import splice.spi.BuiltTurn
 import splice.spi.FailureSource
+import splice.spi.FoldController
+import splice.spi.FoldRound
 import splice.spi.InflightGate
 import splice.spi.Provider
 import splice.spi.StreamTornBeforeClient
@@ -48,6 +53,7 @@ import splice.spi.UpstreamAuthMissing
 import splice.spi.UpstreamFailed
 import splice.spi.UpstreamFailureClassifier
 import splice.spi.UpstreamResponse
+import splice.spi.WireSink
 import splice.spi.sseJsonEvents
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -56,6 +62,9 @@ import java.util.concurrent.atomic.AtomicBoolean
  *  cohesive argument (they are all created together per request inside the SSE writer). */
 internal data class TurnDrive(
     val bodyJson: String,
+    /** The same request as [bodyJson], kept typed so reasoning-continuation folding can extend its
+     *  `input` and re-POST without re-parsing (non-fold turns never read it). */
+    val requestBody: JsonObject,
     val meta: TurnMeta,
     val emitter: SseEmitter,
     val watchdog: TurnWatchdog,
@@ -182,6 +191,7 @@ internal class TurnDriver(
         perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, bodyJson.length.toLong())
         return TurnDrive(
             bodyJson = bodyJson,
+            requestBody = built.requestBody,
             meta = meta,
             emitter = emitter,
             watchdog = TurnWatchdog(provider.watchdog, clock),
@@ -279,18 +289,41 @@ internal class TurnDriver(
         val turnJob = Job(parent)
         try {
             withContext(turnJob) {
-                driveWithinTurnJob(drive, this)
+                val self = this
+                // Folding is null for sol / every non-codex head → the single-round path is
+                // byte-for-byte the pre-fold behaviour (drive straight to the real emitter, finish
+                // once). A fold-eligible turn hands the loop to FoldRunner (per-round buffering).
+                val fold = provider.foldController(drive.meta)
+                if (fold == null) {
+                    finishTurn(drive, postRound(drive, drive.bodyJson, drive.emitter, self, turnJob))
+                } else {
+                    FoldRunner(
+                        emitter = drive.emitter,
+                        key = provider.key,
+                        log = log,
+                        postRound = { bodyJson, sink -> postRound(drive, bodyJson, sink, self, turnJob) },
+                        finish = { outcome -> finishTurn(drive, outcome) },
+                    ).run(drive.requestBody, fold)
+                }
             }
         } finally {
             turnJob.complete()
         }
     }
 
-    private suspend fun driveWithinTurnJob(drive: TurnDrive, self: CoroutineScope) {
-        val turnJob: Job = self.coroutineContext[Job]!!
+    /** One upstream round driven into [sink]: POST → watchdog/pinger → translator → zero-event
+     *  classify. The non-fold path and every fold round share this; [finishTurn] runs at the caller
+     *  so the fold loop emits exactly ONE terminal across all rounds (L3). */
+    private suspend fun postRound(
+        drive: TurnDrive,
+        bodyJson: String,
+        sink: WireSink,
+        self: CoroutineScope,
+        turnJob: Job,
+    ): TurnOutcome =
         upstream.post(
             url = provider.upstreamUrl,
-            bodyJson = drive.bodyJson,
+            bodyJson = bodyJson,
             auth = provider.auth,
             extraHeaders = { creds -> provider.extraHeaders(creds) + drive.turnHeaders },
             onRetry = { log("[${provider.key}] $it\n") },
@@ -310,17 +343,14 @@ internal class TurnDriver(
                     watchdogFired = { drive.watchdog.fired },
                     clientGone = { drive.channel.clientGone.get() },
                 )
-                val rawOutcome = provider.streamTranslator(drive.meta, signals)
-                    .driveTurn(events, drive.emitter)
+                val rawOutcome = provider.streamTranslator(drive.meta, signals).driveTurn(events, sink)
                 drive.perf.mark(PerfKeys.STREAM_END)
-                val outcome = classifyZeroEventFailure(drive, rawOutcome, capture.snippet.toString())
-                finishTurn(drive, outcome)
+                classifyZeroEventFailure(drive, rawOutcome, capture.snippet.toString())
             } finally {
                 poller.cancel()
                 pinger.cancel()
             }
         }
-    }
 
     /** Raw-body capture for the G2 zero-event classifier, threaded through [tearAwareEvents]. */
     private class ZeroEventCapture {
@@ -488,6 +518,53 @@ internal class TurnDriver(
  *  command (review 2026-07-19: two paths still hardcoded "claudex login" on non-codex heads). */
 private fun Provider.loginHint(): String =
     if (loginCommand.isNotEmpty()) " — run: $loginCommand" else ""
+
+/** The reasoning-continuation fold state machine (codex 518n-2), split from TurnDriver (its function
+ *  budget). Drives rounds via [postRound], BUFFERING each round's tentative final output while
+ *  reasoning streams live; a truncated round's output is DISCARDED and the next round re-POSTed with
+ *  its reasoning replayed; the terminal round's output is FLUSHED and [finish] called exactly ONCE
+ *  with usage summed across every round — one honest terminal downstream (L3). */
+internal class FoldRunner(
+    private val emitter: SseEmitter,
+    private val key: String,
+    private val log: (String) -> Unit,
+    private val postRound: suspend (bodyJson: String, sink: WireSink) -> TurnOutcome,
+    private val finish: suspend (TurnOutcome) -> Unit,
+) {
+    suspend fun run(initialBody: JsonObject, fold: FoldController) {
+        var body = initialBody
+        var summed = Usage()
+        var roundIndex = 0
+        while (true) {
+            val buffer = BufferingWireSink(emitter)
+            val outcome = postRound(body.toString(), buffer)
+            val success = outcome as? TurnOutcome.Success
+            if (success != null) summed += success.usage
+            val next = success?.let { fold.continuation(FoldRound(body, it, roundIndex)) }
+            if (next == null) {
+                finalize(outcome, buffer, summed)
+                return
+            }
+            buffer.discard()
+            val reasoningTokens = success?.usage?.reasoningTokens ?: 0
+            log("[$key] fold round ${roundIndex + 1}: reasoning truncated at $reasoningTokens tokens, continuing\n")
+            body = next
+            roundIndex++
+        }
+    }
+
+    private suspend fun finalize(outcome: TurnOutcome, buffer: BufferingWireSink, summed: Usage) {
+        if (outcome is TurnOutcome.Success) {
+            buffer.flush()
+            finish(outcome.copy(usage = summed))
+        } else {
+            // a failed/abandoned round has no honest final output to flush — drop the buffer, then
+            // emit the round's real (error/abandon) outcome. Never a fabricated clean stop (L3).
+            buffer.discard()
+            finish(outcome)
+        }
+    }
+}
 
 /** Renders the per-turn observability: the turn line, error lines, and the perf row+line.
  *  Split out so the driver stays drive-only (the audit's god-file finding). */

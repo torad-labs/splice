@@ -57,6 +57,10 @@ public data class StreamTurnContext(
      *  (probed 2026-07-19: part(1,0) byte-identical to part(0,0)); codex-rs dedups client-side.
      *  Gated to the delivery quirk so genuine token-granular streams are never touched. */
     val dedupeRepeatedSummaryParts: Boolean = false,
+    /** Encode this round's encrypted reasoning items into splice-reasoning envelopes on the
+     *  Success outcome (for fold replay). True ONLY when the turn is fold-eligible — off keeps the
+     *  reducer byte-identical to the pre-fold path (no collection, empty envelopes). */
+    val collectReasoningEnvelopes: Boolean = false,
 )
 
 /** Drop paragraph-parts already streamed this turn (sequential_cutoff recap noise); parts under
@@ -142,10 +146,16 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
     private fun successOutcome(reducer: ResponsesEventReducer): TurnOutcome = TurnOutcome.Success(
         hasToolUse = reducer.hasToolUse,
         incomplete = reducer.incomplete,
-        usage = Usage(reducer.inputTokens, reducer.outputTokens, reducer.cachedTokens),
+        usage = Usage(
+            reducer.inputTokens,
+            reducer.outputTokens,
+            reducer.cachedTokens,
+            reducer.reasoningTokens,
+        ),
         thinkingText = reducer.thinkingBuf.toString(),
         bodyText = reducer.textBuf.toString(),
         emittedText = reducer.emittedText,
+        reasoningEnvelopes = reducer.reasoningEnvelopes.toList(),
     )
 
     private fun harvestFallback(reducer: ResponsesEventReducer) {
@@ -187,6 +197,11 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     var inputTokens = 0L
     var outputTokens = 0L
     var cachedTokens = 0L
+    var reasoningTokens = 0L
+
+    // splice-reasoning envelopes of this round's encrypted reasoning items (fold replay). Collected
+    // only when ctx.collectReasoningEnvelopes — otherwise stays empty, pre-fold behaviour intact.
+    val reasoningEnvelopes = mutableListOf<String>()
     private var toolSynthCounter = 0
 
     // Late-reasoning items already emitted, keyed by their reasoning block index. Substring
@@ -228,6 +243,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
         if (u.inputTokens > 0) inputTokens = u.inputTokens
         if (u.outputTokens > 0) outputTokens = u.outputTokens
         if (u.cachedTokens > 0) cachedTokens = u.cachedTokens
+        if (u.reasoningTokens > 0) reasoningTokens = u.reasoningTokens
     }
 
     private fun onFailure(evt: JsonObject) {
@@ -266,11 +282,15 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
             blocks[oi]?.let { sink.closeBlock(it.index) }
             blocks[reasoningKey(oi)]?.let { sink.closeBlock(it.index) }
         }
-        // Replay (gated): emit the encrypted reasoning IN POSITION — right after its summary
-        // closes and before the tool_use it preceded — so the round-trip preserves cache order.
-        if (item != null && shouldEmitReasoning(ctx, item)) {
-            ctx.encodeReasoningEnvelope(item)?.let { sink.addRedactedThinking(it) }
-        }
+        if (item == null) return
+        // Replay (gated): emit the encrypted reasoning IN POSITION — right after its summary closes
+        // and before the tool_use it preceded — so the round-trip preserves cache order. The SAME
+        // envelope also feeds fold replay (collectReasoningEnvelopes, independent of the emit flag).
+        // encodeReasoningEnvelope is non-null ONLY for a reasoning item carrying id +
+        // encrypted_content — so it doubles as the "is this a replayable reasoning item?" filter.
+        val envelope = ctx.encodeReasoningEnvelope(item) ?: return
+        if (shouldEmitReasoning(ctx, item)) sink.addRedactedThinking(envelope)
+        if (ctx.collectReasoningEnvelopes) reasoningEnvelopes.add(envelope)
     }
 
     private suspend fun maybeEmitLateReasoning(item: JsonObject?, oi: Int?, sink: WireSink) {

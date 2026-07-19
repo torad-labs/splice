@@ -164,24 +164,31 @@ test('prepareClaudexConfig: writes a claudex-only availableModels allowlist, NEV
 
 // ── claude arg policy ────────────────────────────────────────────────────────
 
-test('buildClaudeArgs: skip-permissions default, CLAUDEX_SAFE opt-out, model injection', () => {
+test('buildClaudeArgs: safe by default, CLAUDEX_DANGEROUSLY_SKIP_PERMISSIONS opt-in, model injection', () => {
   assert.deepEqual(
     buildClaudeArgs(['-c'], { defaultModel: 'gpt-5.6-sol', env: {} }),
-    ['--model', 'gpt-5.6-sol', '--dangerously-skip-permissions', '-c'],
+    ['--model', 'gpt-5.6-sol', '-c'],
+    'default is safe — no skip-permissions flag',
   );
   assert.deepEqual(
-    buildClaudeArgs([], { defaultModel: 'gpt-5.6-sol', env: { CLAUDEX_SAFE: '1' } }),
-    ['--model', 'gpt-5.6-sol'],
+    buildClaudeArgs([], { defaultModel: 'gpt-5.6-sol', env: { CLAUDEX_DANGEROUSLY_SKIP_PERMISSIONS: '1' } }),
+    ['--model', 'gpt-5.6-sol', '--dangerously-skip-permissions'],
+    'explicit opt-in engages the flag',
   );
   assert.deepEqual(
-    buildClaudeArgs(['--model', 'gpt-5.4'], { defaultModel: 'gpt-5.6-sol', env: { CLAUDEX_SAFE: '1' } }),
+    buildClaudeArgs(['--model', 'gpt-5.4'], { defaultModel: 'gpt-5.6-sol', env: {} }),
     ['--model', 'gpt-5.4'],
     'user model wins',
   );
   assert.deepEqual(
     buildClaudeArgs(['--dangerously-skip-permissions'], { env: {} }),
     ['--dangerously-skip-permissions'],
-    'no duplicate skip flag',
+    'literal passthrough kept, no duplicate skip flag',
+  );
+  assert.deepEqual(
+    buildClaudeArgs([], { env: { CLAUDEX_SAFE: '1' } }),
+    [],
+    'legacy CLAUDEX_SAFE is now a no-op — safe is already the default',
   );
 });
 

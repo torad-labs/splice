@@ -1,2 +1,6 @@
 trace-*.json
-# capture/ is intentionally kept in-repo (the A/B fixture). Do not ignore it.
+# capture/RESULTS.md is intentionally kept in-repo (the A/B findings summary).
+# The raw per-turn request bodies and run log formerly here were removed
+# (private paths + instruction text) and are ignored repo-wide — see the
+# root .gitignore capture/*.json|*.log block and
+# dev/release/history-rewrite-runbook.md.

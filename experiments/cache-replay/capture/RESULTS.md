@@ -45,4 +45,4 @@ back through the proxy twice — Arm A ON / Arm B OFF. First-user text salted
   prior thinking, thinning the wall), not by a measured cache penalty on this
   path.
 
-Raw run log: `ab-results.log`. Bodies: `turn-001.json` … `turn-010.json`.
+Raw run log and per-turn request bodies were captured locally for this run but are not tracked in the repo (removed post-review — they carried operator-local paths and private instruction text).

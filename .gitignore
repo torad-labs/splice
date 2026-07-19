@@ -21,3 +21,35 @@ gateway/build-logic/.kotlin/
 
 # #924 Phase 1: live contract receipts are per-run artifacts, not source
 checks/e2e/receipts/
+
+# secrets / credential stores (OSS-A defensive baseline)
+.env
+.env.*
+!.env.example
+auth.json
+credentials.json
+*.pem
+*.key
+
+# live capture output (raw request/response dumps — see dev/release/history-rewrite-runbook.md)
+**/capture/*.json
+**/capture/*.log
+
+# logs and dumps
+*.log
+*.dump
+
+# --- OSS-K: internal-material untrack ignores (per-file, never blanket) ---
+.claude/skills/
+.claude/ledger-diffs/
+.claude/agents/
+.claude/workflows/
+.claude/commands/
+.claude/mcp.json
+/torad.json
+/goals/924-enforcement.md
+/dev/session-review-2026-07-18.md
+/dev/research/gateway-best-practices-2026-07-18.md
+/dev/research/gateway-gaps-tracker.md
+/PRODUCT.md
+# --- end OSS-K entries ---

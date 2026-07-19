@@ -37,7 +37,7 @@ column as work lands (`todo` / `in-progress` / `done <commit>` / `wontfix <reaso
 | G8 | No pre-traffic auth/health probe loop | per-head coroutine ~60s, cheap auth probe, log transitions, trigger single-flight refresh | done 5d21bea |
 | G9 | Malformed SSE frames dropped, zero telemetry | `onMalformed` hook → FRAMES_SKIPPED perf key + first-snippet log | done 543f614 |
 | G10 | Installed launch shim stale — no JVM opts on cold start | synced 2026-07-18; shim version marker verified at startup | done (sync 275ce48) / done 9f18bbb (marker, G10m) |
-| G11 | TCP connect timeout = 5-min firstByteTimeout | `connectTimeoutMillis = 10_000` own knob | todo |
+| G11 | TCP connect timeout = 5-min firstByteTimeout | `connectTimeoutMillis = 10_000` own knob | done 674eee2 |
 | G12 | SSE parser incident-driven, not WHATWG-derived (multi-line data drops; lone-CR; BOM; EOF-pending) | blank-line event assembly, `\n` join, CR terminator, BOM strip, discard-pending-at-EOF | todo |
 | G13 | Pre-stream rejections return HTTP 200 + error JSON | real 4xx status, keep Anthropic-shaped body | todo |
 

@@ -6,7 +6,10 @@
 // yields null; foreign fields the official grok CLI stores beside ours survive the merge.
 package grok
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.yield
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -94,17 +97,66 @@ class GrokAuthProviderTest {
         assertEquals("keep-me", onDisk["cli_field"]!!.jsonPrimitive.content) // CLI fields survive
     }
 
+    // G17: 60s remaining is inside the 5-minute proactive window but above the 30s stale floor, so
+    // this lands in the prefetch tier — the background refresh is fire-and-forget, so a failed
+    // refreshCall never affects the return value; the current token comes back immediately either way.
     @Test
-    fun `inside window but not expired a failed refresh still serves the current token`() = runTest {
+    fun `above the stale floor (prefetch tier), a failed background refresh still serves the current token`() = runTest {
         val dir = Files.createTempDirectory("grok-graceful")
         val now = 1_000_000L
-        val file = authFile(dir, expiresAtMs = now + 60_000) // < 5 min window, > now
+        val file = authFile(dir, expiresAtMs = now + 60_000) // < 5 min window, >= 30s floor
         val auth = GrokAuthProvider(
             authPath = file,
             clock = { now },
             refreshCall = { RefreshAttempt.Denied("test-denied") },
         )
         assertEquals("grok-access", bearerToken(auth.credentials()))
+    }
+
+    // G17: 10s remaining is below the 30s stale floor — too close to hard expiry to risk serving a
+    // token that might not survive the request, so credentials() still blocks synchronously and
+    // returns the FRESH token. The old single-tier suite only exercised blocking via already-past-
+    // expiry fixtures; this isolates the "still valid but below the floor" case.
+    @Test
+    fun `below the stale floor, credentials() blocks and returns the refreshed token`() = runTest {
+        val dir = Files.createTempDirectory("grok-floor")
+        val now = 1_000_000L
+        val file = authFile(dir, expiresAtMs = now + 10_000) // < 30s floor
+        val auth = GrokAuthProvider(
+            authPath = file,
+            clock = { now },
+            refreshCall = {
+                RefreshAttempt.Granted(GrokRefreshedTokens("new-access", "new-refresh", expiresIn = 21_600))
+            },
+        )
+        assertEquals("new-access", bearerToken(auth.credentials()))
+    }
+
+    // G17: proves the prefetch tier is truly fire-and-forget on a real dispatcher — if credentials()
+    // still awaited the refresh synchronously, this would deadlock/timeout on the un-completed gate.
+    // Mirrors KimiAuthProviderTest's "two concurrent refreshes coalesce" idiom (runBlocking, not
+    // runTest, for deterministic real-dispatcher async proof).
+    @Test
+    fun `prefetch tier does not block on a slow background refresh`() = runBlocking {
+        val dir = Files.createTempDirectory("grok-prefetch-async")
+        val now = 1_000_000L
+        val file = authFile(dir, expiresAtMs = now + 120_000) // inside window, above the floor
+        val calls = AtomicInteger()
+        val gate = CompletableDeferred<GrokRefreshedTokens?>()
+        val auth = GrokAuthProvider(
+            authPath = file,
+            clock = { now },
+            refreshCall = {
+                calls.incrementAndGet()
+                val tokens = gate.await()
+                if (tokens == null) RefreshAttempt.Denied("test-denied") else RefreshAttempt.Granted(tokens)
+            },
+        )
+        // returns WITHOUT the gate ever completing — direct proof the background refresh isn't awaited.
+        assertEquals("grok-access", bearerToken(auth.credentials()))
+        while (calls.get() == 0) yield() // observe the background call actually started
+        gate.complete(GrokRefreshedTokens("new-access", "new-refresh", expiresIn = 21_600)) // let it finish cleanly
+        assertEquals(1, calls.get())
     }
 
     @Test

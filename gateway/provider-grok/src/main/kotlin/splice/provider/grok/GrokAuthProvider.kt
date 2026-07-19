@@ -7,10 +7,20 @@
 // until manual re-login. Like KimiAuthProvider: when the file's `expires` (ms epoch, written by
 // the official grok CLI and by us) is within the proactive window, refresh BEFORE serving; a
 // failed refresh on a not-yet-expired token still serves the current one.
+// TWO-TIER proactive refresh (G17, 2026-07-19): a blocking refresh inside the whole 5-minute
+// window stalls every request that lands in it (UpstreamClient.post() calls credentials()
+// synchronously per attempt). Above STALE_FLOOR_MS, kick a single-flight refresh on an owned
+// background scope and serve the current token immediately; only below the floor — close enough
+// to hard expiry that risking a stale token is worse than the wait — do we still block, exactly
+// as before.
 // Failure visibility (discipline L1): every auth-critical Result collapse consumes the failure
 // with a stderr line first — a corrupt auth file must never masquerade as "not logged in".
 package splice.provider.grok
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -55,6 +65,11 @@ public class GrokAuthProvider(
     private val singleFlight = SingleFlight<Credentials?>()
     private val invalidGrantLatch = InvalidGrantLatch()
 
+    // ast-grep-ignore: main-no-hardcoded-dispatchers — this IS the injection seam: an owned
+    // background scope, decoupled from any single request's coroutine, for the G17 async-prefetch
+    // tier. Mirrors SingleFlight's own internal scope (same PORT-OF pattern, SingleFlight.kt:36).
+    private val prefetchScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+
     @Volatile
     private var cache: Cache? = null
 
@@ -62,15 +77,29 @@ public class GrokAuthProvider(
 
     private data class Snapshot(val access: String, val expiresAtMs: Long?)
 
+    // Three tiers by remaining time-to-expiry, as a single if/else-if/else expression (not `when`,
+    // not extra member functions — GrokAuthProvider is already at its detekt function-count budget):
+    // outside the proactive window, serve as-is; above the stale floor, prefetch in the background
+    // and serve the current token (G17); below the floor, block for a confirmed-fresh token exactly
+    // as before G17 (on a failed refresh still serve the current token if it hasn't actually expired).
     override suspend fun credentials(): Credentials? {
         val snap = readSnapshot() ?: return null
         val current = Credentials.Bearer(snap.access, null)
         val expiresAt = snap.expiresAtMs
-        // serve as-is when the file carries no expiry, or we're still outside the proactive window
-        if (expiresAt == null || expiresAt - clock() >= PROACTIVE_WINDOW_MS) return current
-        // proactive window: single-flight refresh; on failure serve the current token if still valid.
-        val refreshed = singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG) }
-        return refreshed ?: (if (clock() < expiresAt) current else null)
+        return if (expiresAt == null || expiresAt - clock() >= PROACTIVE_WINDOW_MS) {
+            current
+        } else if (expiresAt - clock() >= STALE_FLOOR_MS) {
+            // prefetch tier (G17): kick a single-flight refresh in the background, serve the CURRENT
+            // token now. singleFlight still dedups concurrent entrants to one network call;
+            // credentialsOrNull still owns the one logging flatten (discipline L3).
+            prefetchScope.launch { singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG) } }
+            current
+        } else {
+            // stale floor: too close to hard expiry to risk it — block for a confirmed-fresh token,
+            // same as pre-G17 behavior.
+            val refreshed = singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG) }
+            refreshed ?: (if (clock() < expiresAt) current else null)
+        }
     }
 
     private fun readSnapshot(): Snapshot? = runCatchingCancellable {
@@ -258,6 +287,10 @@ public class GrokAuthProvider(
 
         /** Refresh this long before `expires` — well inside a 6h grok token, generous vs clock skew. */
         const val PROACTIVE_WINDOW_MS = 300_000L
+
+        /** Below this, block instead of prefetching: comfortably above the refreshCall's measured
+         *  RTT (sub-second) and well below the 300s window, so most of the window stays non-blocking. */
+        const val STALE_FLOOR_MS = 30_000L
         const val FIELD_TOKENS = "tokens"
         const val FIELD_ACCESS_TOKEN = "access_token"
         const val FIELD_REFRESH_TOKEN = "refresh_token"

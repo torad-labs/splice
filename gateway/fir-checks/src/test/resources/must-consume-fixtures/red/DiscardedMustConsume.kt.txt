@@ -1,0 +1,13 @@
+// RED fixture (kept as .kt.txt so it is NOT part of :fir-checks' own src/test compile — the test
+// copies it to a real .kt and drives K2JVMCompiler against it). A bare @MustConsume call whose
+// result is thrown away: the plugin must reject it with COMPILATION_ERROR.
+package fixtures.red
+
+import splice.core.annotation.MustConsume
+
+@MustConsume
+fun produce(): Int = 1
+
+fun caller() {
+    produce()
+}

@@ -24,13 +24,16 @@ val moduleLaw: Map<String, Set<String>> = mapOf(
     ":gateway" to setOf(":core", ":provider-spi"),
     ":control" to setOf(":core"),
     ":arch-tests" to emptySet(),
+    // :fir-checks is a Kotlin-compiler plugin: zero project deps in main (it talks to the compiler,
+    // not our modules), wired into every build only via the -Xplugin classpath (see gateway/build.gradle.kts).
+    ":fir-checks" to emptySet(),
 )
 
 /** :core may only reach the kotlin/kotlinx ecosystem — the domain stays framework-free. */
 val coreExternalGroups = setOf("org.jetbrains.kotlin", "org.jetbrains.kotlinx")
 
 /** Modules exempt from explicitApi (executables and test harnesses, not libraries). */
-val nonLibrary = setOf(":app", ":spikes", ":arch-tests")
+val nonLibrary = setOf(":app", ":spikes", ":arch-tests", ":fir-checks")
 
 // The module law is a MAIN-source architecture rule. Test configs are intentionally NOT covered:
 // integration tests legitimately wire sibling modules (e.g. :gateway tests use

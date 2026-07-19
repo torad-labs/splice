@@ -31,4 +31,5 @@ include(
     ":app",
     ":spikes",
     ":arch-tests",
+    ":fir-checks",
 )

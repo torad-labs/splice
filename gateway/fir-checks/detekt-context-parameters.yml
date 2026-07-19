@@ -1,0 +1,23 @@
+# Module-scoped detekt overlay for :fir-checks ONLY (layered ON TOP of the shared gateway/detekt.yml,
+# which stays untouched and fully enforced everywhere else). Every disable below is scoped by
+# `excludes` to the SINGLE file that uses Kotlin context parameters — every other file in this module,
+# and every other rule, stays fully checked.
+#
+# Why: the FIR checker API (FirExpressionChecker.check) is declared with Kotlin context parameters, so
+# MustConsumeDiscardChecker MUST override it with `context(...)` syntax. The ktlint bundled in
+# detekt-formatting 1.23.8 (ktlint 0.50.x) cannot parse context parameters — a KNOWN detekt bug
+# (detekt#8140 / #8499 / #8691, fixed only in the detekt 2.0 line / ktlint 1.7). It crashes
+# (WrappingRule NPE) and, once that is skipped, emits false positives on the `context(...)` line:
+# "missing spacing after ':'" and "unused import" for a type used only as a context-parameter type.
+# These are TOOL DEFECTS on valid Kotlin 2.3 syntax, not style findings. maxIssues:0 and
+# warningsAsErrors:true are inherited unchanged; config-guard.sh's guarantees are untouched.
+style:
+  UnusedImports:
+    excludes: ['**/MustConsumeDiscardChecker.kt']
+formatting:
+  Wrapping:
+    excludes: ['**/MustConsumeDiscardChecker.kt']
+  SpacingAroundColon:
+    excludes: ['**/MustConsumeDiscardChecker.kt']
+  NoUnusedImports:
+    excludes: ['**/MustConsumeDiscardChecker.kt']

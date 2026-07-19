@@ -1,0 +1,19 @@
+// GREEN fixture: two cases that must BOTH compile clean (ExitCode.OK).
+//  1. `val x = produce()` — the @MustConsume result is consumed, so no diagnostic.
+//  2. `unannotated()` discarded — negative control: an UNannotated discard must NOT fire, proving
+//     the checker does not over-fire (this is the guard for the tree-wide -Xplugin wiring, where a
+//     false positive would break every module's build).
+package fixtures.green
+
+import splice.core.annotation.MustConsume
+
+@MustConsume
+fun produce(): Int = 1
+
+fun unannotated(): Int = 2
+
+fun caller() {
+    val x = produce()
+    println(x)
+    unannotated()
+}

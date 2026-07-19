@@ -17,6 +17,7 @@ import splice.control.ControlServer
 import splice.control.LaunchService
 import splice.control.LaunchSpec
 import splice.control.ManagedHead
+import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
@@ -70,7 +71,8 @@ public class Daemon(
     private val statePaths: StatePaths,
     private val dashboardHtml: () -> String,
     private val log: (String) -> Unit = { System.err.print(it) },
-    private val refreshCall: suspend (tokenUrl: String, refreshToken: String) -> RefreshedTokens? = ::codexRefresh,
+    private val refreshCall: suspend (tokenUrl: String, refreshToken: String) -> RefreshAttempt<RefreshedTokens> =
+        ::codexRefresh,
 ) {
     // Topology TOML ([daemon] + [defaults]) feeds the headOverrides layer so reasoning
     // display is operator-editable without recompiling. Env and runtime PATCH still win.

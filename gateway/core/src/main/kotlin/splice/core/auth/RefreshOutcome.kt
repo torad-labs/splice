@@ -63,7 +63,10 @@ public fun RefreshOutcome.credentialsOrNull(
         null
     }
     is RefreshOutcome.PersistFailed -> {
-        log("[$tag] refresh rotated upstream but local persist failed: $reason — old token may be dead, re-login if errors persist")
+        log(
+            "[$tag] refresh rotated upstream but local persist failed: $reason — " +
+                "old token may be dead, re-login if errors persist",
+        )
         null
     }
 }

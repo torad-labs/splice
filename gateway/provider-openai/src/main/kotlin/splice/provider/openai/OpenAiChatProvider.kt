@@ -23,13 +23,13 @@ import splice.spi.TurnSignals
 public class OpenAiChatProvider(
     private val tuning: ProviderTuning,
     private val quirks: ChatQuirks,
+    override val showReasoning: ReasoningDisplay = ReasoningDisplay.TEXT,
 ) : Provider, ProviderIdentity by tuning {
 
     override val upstreamUrl: String = "${tuning.baseUrl}/chat/completions"
-    override val showReasoning: ReasoningDisplay = ReasoningDisplay.TEXT
     override val replayReasoning: Boolean = false // chat dialect has no encrypted-reasoning replay
 
-    private val builder = ChatRequestBuilder(quirks)
+    private val builder = ChatRequestBuilder(quirks, showReasoning)
 
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
         val upstreamModel = catalog.stripSuffixes(body.typed.model)

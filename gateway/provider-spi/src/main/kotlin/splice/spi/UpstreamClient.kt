@@ -152,8 +152,15 @@ public class UpstreamClient(
         // a failure here is a TRANSPORT error thrown BEFORE stream handoff — retryable on the
         // backoff budget (a 2s DNS blip costs one silent retry, not a turn failure: the kimi
         // 07:00 burst, 37 UnresolvedAddressException turns, attempts=1 on every one).
-        val attempted = runCatchingCancellable {
-            attemptRequest(ctx, bodyBytes, creds, onStreamStart = { streamHandedOff = true }, block)
+        val attempted = try {
+            runCatchingCancellable {
+                attemptRequest(ctx, bodyBytes, creds, onStreamStart = { streamHandedOff = true }, block)
+            }
+        } catch (e: StreamTornBeforeClient) {
+            // thrown by the turn driver through the translator (G5 reachability); a transport
+            // failure like any other for the decision below — runCatchingCancellable's I/O-only
+            // catch list can't see a RuntimeException, so it is folded in here.
+            Result.failure(e)
         }
         val transportError = attempted.exceptionOrNull()
         if (transportError != null) {
@@ -548,6 +555,14 @@ public class UpstreamClient(
 }
 
 public class UpstreamAuthMissing : RuntimeException("no upstream credentials")
+
+/** G5 reachability (review 2026-07-19): a transport tear BEFORE any client frame, rethrown by the
+ *  turn driver THROUGH the translators (whose catch lists deliberately swallow IOException into
+ *  the honest terminal — correct post-frame, but it made the reissue unreachable). Plain
+ *  RuntimeException so no translator catch matches; the original tear rides as [cause] so
+ *  isRetryableTransport's cause-chain walk classifies it. */
+public class StreamTornBeforeClient(cause: Throwable) :
+    RuntimeException("stream torn before first client frame", cause)
 
 public class UpstreamFailed(
     public val body: String,

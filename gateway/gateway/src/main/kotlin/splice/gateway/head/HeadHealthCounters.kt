@@ -18,6 +18,12 @@ internal class HeadHealthCounters {
     }
 
     fun snapshot(): HeadHealthCounts = HeadHealthCounts(localOrigin.get(), providerError.get())
+
+    /** Fresh diagnostic baseline on head restart — the documented contract (review 2026-07-19). */
+    fun reset() {
+        localOrigin.set(0)
+        providerError.set(0)
+    }
 }
 
 internal data class HeadHealthCounts(val localOrigin: Long, val providerError: Long)

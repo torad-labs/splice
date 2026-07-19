@@ -77,7 +77,10 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
     }
 
     private fun terminalOutcome(): TurnOutcome =
-        failureType?.let { TurnOutcome.Failure(it, "kimi: $failureMessage") }
+        failureType?.let {
+            // a genuine upstream SSE error event (e.g. overloaded_error) — provider-reported (G20)
+            TurnOutcome.Failure(it, "kimi: $failureMessage", providerReported = true)
+        }
             ?: ctx.watchdogFired()?.let {
                 TurnOutcome.Failure(ErrorType.OVERLOADED, "kimi: upstream stalled — aborted; retry")
             }

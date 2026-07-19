@@ -18,12 +18,15 @@ control_port = 3096          # loopback-only control plane + dashboard
 show_reasoning = "text"      # "text" | "thinking" | "off"  — stream thinking into Claude Code
 summary        = "detailed"  # "detailed" | "concise" | "auto" | "none"
 # effort       = "high"      # optional; omit → high (Grok floors invalid values to low)
-replay_reasoning = false     # NEVER turn on lightly: replaying prior encrypted CoT thins fresh reasoning
+replay_reasoning = false     # NEVER turn on lightly: replaying prior opaque encrypted reasoning items thins fresh reasoning
 
 # ── codex: ChatGPT Codex subscription via OAuth ────────────────────────────────
 [providers.codex]
 dialect = "openai-responses"
 base_url = "https://chatgpt.com/backend-api/codex"
+# EXPERIMENTAL: reuses the Codex CLI's public OAuth client identity — NOT a vendor-documented
+# third-party integration. auth.json is password-equivalent; splice reads AND refreshes it in place.
+# Documented alternative: OpenAI Platform API keys (kind = "api-key", env = "OPENAI_API_KEY").
 auth = { kind = "chatgpt-oauth", file = "~/.codex/auth.json" }
 quirks = { store = false, account_id_header = true, cache_key = "first-message-hash", effort_ceiling = "max", summary_field = true }
 [[providers.codex.models]]
@@ -59,9 +62,12 @@ context_window = 128000
 [providers.xai]
 dialect = "openai-responses"
 base_url = "https://api.x.ai/v1"
+# EXPERIMENTAL: reuses the Grok CLI's public OAuth client identity — NOT a vendor-documented
+# third-party integration. auth.json is password-equivalent; splice reads AND refreshes it in place.
+# Documented alternative: an OpenRouter API key (kind = "api-key", env = "OPENROUTER_API_KEY").
 auth = { kind = "grok-oauth", file = "~/.grok/auth.json" }  # browser login: `claude-grok login`
 # summary_field=true enables the reasoning.summary field (value comes from [daemon].summary).
-# Raw CoT stays encrypted by xAI; public form is summary/reasoning_text only.
+# Raw reasoning items stay encrypted by xAI; public form is summary/reasoning_text only.
 quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = true, tool_choice = true }
 [[providers.xai.models]]
 id = "grok-4.5"
@@ -96,6 +102,9 @@ context_window = 128000
 [providers.kimi]
 dialect = "anthropic-passthrough"
 base_url = "https://api.kimi.com/coding"
+# EXPERIMENTAL: reuses the Kimi CLI's public OAuth client identity — NOT a vendor-documented
+# third-party integration. kimi-code.json is password-equivalent; splice reads AND refreshes it in place.
+# Documented alternative: a Moonshot API key (kind = "api-key", env = "MOONSHOT_API_KEY").
 auth = { kind = "kimi-oauth", file = "~/.kimi/credentials/kimi-code.json" }
 # Window lookups happen on the STRIPPED id ("k3"), while the picker entry below keeps the "[1m]"
 # hint — this exact-match row keeps K3's 1M window independent of model-list order.

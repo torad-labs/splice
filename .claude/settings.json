@@ -57,7 +57,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/marcos/dev/infra/splice/.claude/hooks/orchestrator/posttooluse.py",
+            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/posttooluse.py",
             "timeout": 10
           }
         ]
@@ -69,7 +69,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/marcos/dev/infra/splice/.claude/hooks/orchestrator/sessionstart.py",
+            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/sessionstart.py",
             "timeout": 10
           }
         ]
@@ -81,7 +81,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "/Users/marcos/dev/infra/splice/.claude/hooks/orchestrator/userpromptsubmit.py",
+            "command": "python3 $CLAUDE_PROJECT_DIR/.claude/hooks/orchestrator/userpromptsubmit.py",
             "timeout": 10
           }
         ]

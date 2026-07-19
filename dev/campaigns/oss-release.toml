@@ -6,6 +6,7 @@
 # LAW [2026-07-19]: OSS->gateway seat 2026-07-19 (update): the sanctioned stream_options exception (one ast-grep-ignore line above ResponsesRequest.kt:33, rule file untouched) was committed on the gateway line at d730472; replace with a narrowed kt-no-stream-options-request + rule tests + e2e receipt at feature finalization
 # LAW [2026-07-19]: LANE CHANGE 2026-07-19 17:14: the shared checkout now sits on the rewritten public main (operator-approved realign); the gateway seat's uncommitted chat-dialect work (Daemon/ChatRequest/ChatRequestBuilder/OpenAiChatProvider — xai prompt_cache_key + include_usage probe) carried over INTACT and uncommitted — commit it on main going forward; local branches oss-readiness/oss-main/oss-campaign/gateway-stabilization hold PRE-REWRITE history: NEVER push them
 # LAW [2026-07-19]: OSS->gateway seat 2026-07-19 (2nd site): kt-no-stream-options-request is now stale at TWO live-proven sites — Responses summary_delivery (committed) and chat include_usage (your uncommitted ChatRequest.kt:29, annotated with the sanctioned ignore). Two justified exceptions = the rule wants narrowing: ban include_usage on the RESPONSES dialect specifically, keep chat free, add rule tests — grant-gated, yours or operator's move
+# LAW [2026-07-19]: SHA REMAP 2026-07-19 17:2x: identity-only rebase of the 3 post-rewrite tip commits (global git config still carried the old address; repo-local override now set) — your chat-dialect commit 15ae253 is now e7ccf97, content byte-identical; public main = 645867f, force-push protection re-armed
 [[items]]
 id = "OSS-A"
 phase = "P0"
@@ -170,3 +171,11 @@ verify = "bash checks/oss/verify-OSS-L.sh"
 # [2026-07-19] done @3db9cb9
 # [2026-07-19] FENCE-AUTONARROWED: files = ["PROVENANCE.md", "CHANGELOG.md annotations only"] -> files = ["PROVENANCE.md"] (by=orchestrator implied; no flag)
 # [2026-07-19] VERIFIED with correction: PORT-OF inventory 51 (not 53)
+
+[[items]]
+id = "OSS-M"
+phase = "P2"
+title = "CI-hermetic test ports: every fixed test port (39290 OpenAiResponsesTest, 39320-39323 MultiProviderDaemonTest, any other 39xxx constant) sits INSIDE the Linux ephemeral range 32768-60999 — any transient outbound source port on a busy runner collides and throws BindException at @BeforeAll (observed run 29706210520); convert to bind-port-0 + report-actual-port (MockChatGptUpstream already does this correctly), or move constants below 32768; ALSO replace MultiProviderDaemonTest's fixed 1100ms warm-up sleep with readiness polling (flaked twice on loaded hosts 2026-07-19)"
+files = ["gateway test files with fixed ports", "HeadServer bind surface if needed"]
+status = "todo"
+verify = "bash -c 'true'"

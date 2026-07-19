@@ -16,6 +16,9 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.Arguments
+import org.junit.jupiter.params.provider.MethodSource
 import splice.spi.sseJsonEvents
 
 class SseReaderTest {
@@ -50,34 +53,45 @@ class SseReaderTest {
         assertTrue(touches >= 1) // reads may coalesce flushed chunks — same property as Node data events
     }
 
+    // Restructured for G12 (WHATWG blank-line dispatch): the property under test is a data VALUE
+    // split across a chunk boundary (`a` + `b"}` -> `ab`), but the old fixture relied on per-line
+    // dispatch — two contiguous data lines now join into one event and never dispatch without a blank
+    // line. Blank-line terminators restore two events; the split-value carry is still what's exercised.
     @Test
     fun `partial line carries across chunks`() {
         val (events, _) = runReader(
             "data: {\"v\":\"a".toByteArray(),
-            "b\"}\ndata: {\"v\":\"c\"}\n".toByteArray(),
+            "b\"}\n\ndata: {\"v\":\"c\"}\n\n".toByteArray(),
         )
         assertEquals(listOf("ab", "c"), events)
     }
 
+    // Restructured for G12 (WHATWG blank-line dispatch): the old fixture crammed [DONE]/empty/
+    // malformed/comment/ok into ONE event with no blank-line separators — that only ever parsed
+    // under the pre-WHATWG per-line-dispatch model. Each case is now its own blank-line-terminated
+    // event; the observable outcome (only "ok" survives) is unchanged.
     @Test
     fun `done empty malformed and non-data lines are skipped`() {
         val (events, _) = runReader(
             (
-                "event: response.output_text.delta\n" +
-                    "data: [DONE]\n" +
-                    "data: \n" +
-                    "data: {not-json}\n" +
-                    ": keepalive comment\n" +
+                "data: [DONE]\n\n" +
+                    "data: \n\n" +
+                    "data: {not-json}\n\n" +
+                    ": keepalive comment\n\n" +
                     "data: {\"v\":\"ok\"}\n\n"
                 ).toByteArray(),
         )
         assertEquals(listOf("ok"), events)
     }
 
+    // Restructured for G12 (WHATWG blank-line dispatch): the two data lines must be SEPARATE
+    // blank-line-terminated events — under WHATWG, contiguous data lines join into one event, so the
+    // old fixture would have produced a single malformed event. Observable outcome (onMalformed sees
+    // "{not-json}", "ok" still emits) is unchanged.
     @Test
     fun `onMalformed fires with the raw payload for a bad frame, valid frames still emit`() {
         val (events, _, malformed) = runReader(
-            ("data: {not-json}\n" + "data: {\"v\":\"ok\"}\n\n").toByteArray(),
+            ("data: {not-json}\n\n" + "data: {\"v\":\"ok\"}\n\n").toByteArray(),
         )
         assertEquals(listOf("ok"), events)
         assertEquals(listOf("{not-json}"), malformed)
@@ -86,14 +100,17 @@ class SseReaderTest {
     // REGRESSION (claude-kimi empty-200, 2026-07-18): api.kimi.com/coding emits spec-valid SSE
     // WITHOUT the space after the colon (`data:{…}`). The old `"data: "` prefix match dropped
     // every kimi frame — 13KB of SSE in, zero events out, "stream ended without a terminal event".
+    // Restructured for G12 (WHATWG blank-line dispatch): [DONE]/empty/spaced are now SEPARATE
+    // blank-line-terminated events (they were crammed into one, valid only under per-line dispatch);
+    // the no-space-after-colon parse and the [DONE]/empty skips are still exactly what's exercised.
     @Test
     fun `data lines without space after colon parse (kimi wire format)`() {
         val (events, _) = runReader(
             (
                 "event:message_start\n" +
                     "data:{\"v\":\"kimi\"}\n\n" +
-                    "data:[DONE]\n" +
-                    "data:\n" +
+                    "data:[DONE]\n\n" +
+                    "data:\n\n" +
                     "data: {\"v\":\"spaced\"}\n\n"
                 ).toByteArray(),
         )
@@ -137,8 +154,61 @@ class SseReaderTest {
         assertEquals(0, emitted) // no frames, and — critically — it RETURNED
     }
 
+    // G12 (WHATWG HTML §9.2 event-stream assembly): table-driven coverage of the behaviors the old
+    // incident-driven parser mishandled — multi-line data joined with LF, lone-CR terminators, a CRLF
+    // split exactly across a chunk boundary, a leading BOM, and discard-pending-at-EOF. Each row is
+    // (name, chunks, expected event "v" values); reuses runReader so it exercises the real read loop.
+    @ParameterizedTest(name = "{0}")
+    @MethodSource("whatwgCases")
+    fun `whatwg event-stream assembly`(name: String, chunks: List<ByteArray>, expected: List<String>) {
+        val (events, _) = runReader(*chunks.toTypedArray())
+        assertEquals(expected, events, name)
+    }
+
     private companion object {
         const val TORN_CHANNEL_TIMEOUT_MS = 5_000L
+
+        @JvmStatic
+        fun whatwgCases(): List<Arguments> = listOf(
+            // two data lines each holding a JSON fragment invalid alone, joined with LF into one event
+            Arguments.of(
+                "multi-line data joined with LF merges to one JSON event",
+                listOf("data: {\"v\":\ndata: \"merged\"}\n\n".toByteArray()),
+                listOf("merged"),
+            ),
+            // lone CR as BOTH the line terminator and (a second CR) the blank-line event terminator
+            Arguments.of(
+                "lone-CR terminates both line and event, two independent events",
+                listOf("data: {\"v\":\"one\"}\r\rdata: {\"v\":\"two\"}\r\r".toByteArray()),
+                listOf("one", "two"),
+            ),
+            // the CR ends chunk 1, the LF opens chunk 2 — pendingCR must carry the CRLF across the edge
+            Arguments.of(
+                "CRLF split exactly across two chunks yields exactly one event",
+                listOf("data: {\"v\":\"split\"}\r".toByteArray(), "\n\r\n".toByteArray()),
+                listOf("split"),
+            ),
+            Arguments.of(
+                "leading BOM on the first chunk is stripped and the event parses",
+                listOf("\uFEFFdata: {\"v\":\"bom\"}\n\n".toByteArray()),
+                listOf("bom"),
+            ),
+            // Deliberate behavior change from the old per-line-dispatch code (WHATWG discard-pending-
+            // at-EOF): a complete data line with NO trailing blank line before close is an INCOMPLETE
+            // event and must not emit — a torn connection's trailing fragment can never masquerade as
+            // a finished frame (AGENTS.md L3, honest failures; this is what the old code got wrong).
+            Arguments.of(
+                "pending buffer discarded at EOF, no trailing blank line emits nothing",
+                listOf("data: {\"v\":\"lost\"}\n".toByteArray()),
+                emptyList<String>(),
+            ),
+            // an empty data line contributes nothing, locking in the dataBuffer-emptiness simplification
+            Arguments.of(
+                "interleaved empty and non-empty data in one event ignores the empty line",
+                listOf("data: \ndata: {\"v\":\"ok\"}\n\n".toByteArray()),
+                listOf("ok"),
+            ),
+        )
     }
 
     /**

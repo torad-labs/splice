@@ -22,8 +22,11 @@ public fun main(args: Array<String>) {
     // every following request — 37 turn failures from one blip, including 5ms "failures" that never
     // touched the network. A long-lived proxy must re-ask on each miss; successful-lookup caching
     // (30s) stays as is. Retry backoff (200-800ms) only works against real lookups, not a poison
-    // window three times its whole budget.
+    // window three times its whole budget. Pin it explicitly too — the positive TTL's vendor
+    // default is unspecified/-1 without a SecurityManager, so leaving it implicit is the same
+    // latent-default trap G10 (stale shim) already burned once.
     Security.setProperty("networkaddress.cache.negative.ttl", "0")
+    Security.setProperty("networkaddress.cache.ttl", "30")
     when (args.firstOrNull()) {
         null, "daemon", "start" -> runDaemon()
         else -> splice.app.cli.runCli(args)

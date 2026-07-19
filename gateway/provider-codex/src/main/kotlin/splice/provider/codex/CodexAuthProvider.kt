@@ -7,9 +7,14 @@
 // PROACTIVE refresh (grok-dead-head incident's latent codex twin, 2026-07-18): mirrors
 // GrokAuthProvider's proactive-window shape, but codex's access_token is itself a JWT — the
 // expiry comes from its own `exp` claim (decodeJwtClaims), not a stored `expires` field, so
-// auth.json's shape stays byte-identical to the real codex CLI's.
+// auth.json's shape stays byte-identical to the real codex CLI's. G17 two-tier as in grok/kimi:
+// above the stale floor the request never waits on the refresh round trip.
 package splice.provider.codex
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -51,6 +56,11 @@ public class CodexAuthProvider(
 
     private val json = Json { ignoreUnknownKeys = true }
     private val singleFlight = SingleFlight<Credentials?>()
+
+    // ast-grep-ignore: main-no-hardcoded-dispatchers — this IS the injection seam: an owned
+    // background scope, decoupled from any single request's coroutine, for the G17 async-prefetch
+    // tier. Mirrors GrokAuthProvider's identical property.
+    private val prefetchScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val invalidGrantLatch = InvalidGrantLatch()
 
     @Volatile
@@ -60,15 +70,25 @@ public class CodexAuthProvider(
 
     private data class Snapshot(val access: String, val accountId: String?, val expiresAtMs: Long?)
 
+    // Three tiers by remaining time-to-expiry, same shape as GrokAuthProvider (G17): outside the
+    // proactive window serve as-is; above the stale floor prefetch in the background and serve the
+    // current token; below the floor block for a confirmed-fresh token exactly as before G17.
     override suspend fun credentials(): Credentials? {
         val snap = readSnapshot() ?: return null
         val current = Credentials.Bearer(snap.access, snap.accountId)
         val expiresAt = snap.expiresAtMs
-        // serve as-is when the token carries no `exp` claim, or we're still outside the proactive window
-        if (expiresAt == null || expiresAt - clock() >= PROACTIVE_WINDOW_MS) return current
-        // proactive window: single-flight refresh; on failure serve the current token if still valid.
-        val refreshed = singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG) }
-        return refreshed ?: (if (clock() < expiresAt) current else null)
+        return if (expiresAt == null || expiresAt - clock() >= PROACTIVE_WINDOW_MS) {
+            current
+        } else if (expiresAt - clock() >= STALE_FLOOR_MS) {
+            // prefetch tier (G17): kick a single-flight refresh in the background, serve the CURRENT
+            // token now. singleFlight still dedups concurrent entrants to one network call.
+            prefetchScope.launch { singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG) } }
+            current
+        } else {
+            // stale floor: too close to hard expiry to risk it — block for a confirmed-fresh token.
+            val refreshed = singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG) }
+            refreshed ?: (if (clock() < expiresAt) current else null)
+        }
     }
 
     private fun readSnapshot(): Snapshot? = runCatchingCancellable {
@@ -260,6 +280,9 @@ public class CodexAuthProvider(
         // Refresh this long before the JWT `exp` claim — codex reference
         // (CHATGPT_ACCESS_TOKEN_REFRESH_WINDOW_MINUTES) uses 5 minutes; mirrors grok's PROACTIVE_WINDOW_MS.
         const val PROACTIVE_WINDOW_MS = 300_000L
+
+        // G17 stale floor: below this the refresh blocks the request (mirrors grok's STALE_FLOOR_MS).
+        const val STALE_FLOOR_MS = 30_000L
         const val FIELD_TOKENS = "tokens"
         const val FIELD_ACCESS_TOKEN = "access_token"
         const val FIELD_REFRESH_TOKEN = "refresh_token"

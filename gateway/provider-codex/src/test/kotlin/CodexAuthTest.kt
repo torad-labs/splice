@@ -246,6 +246,36 @@ class CodexAuthTest {
         assertEquals(0, calls.get())
     }
 
+    // G17: 60s remaining is inside the 5-minute proactive window but above the 30s stale floor —
+    // prefetch tier: the background refresh is fire-and-forget, so a failed refreshCall never
+    // affects the return value; the current token comes back immediately. Mirrors grok's test.
+    @Test
+    fun `above the stale floor (prefetch tier), a failed background refresh still serves the current token`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val now = 1_000_000L
+        val access = jwt("""{"exp":${(now + 60_000) / 1000}}""")
+        val (auth, path) = provider(tmp, { now }) { RefreshAttempt.Denied("test-denied") }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"$access","account_id":"acct-1"}}""")
+        assertEquals(access, (auth.credentials() as Credentials.Bearer).token)
+    }
+
+    // G17: 10s remaining is below the 30s stale floor — too close to hard expiry to risk serving a
+    // token that might not survive the request; credentials() still blocks and returns the FRESH one.
+    @Test
+    fun `below the stale floor, credentials() blocks and returns the refreshed token`(@TempDir tmp: Path) = runTest {
+        val now = 1_000_000L
+        val access = jwt("""{"exp":${(now + 10_000) / 1000}}""")
+        val newAccess = jwt("""{"exp":${(now + 3_600_000) / 1000}}""")
+        val (auth, path) = provider(tmp, { now }) {
+            RefreshAttempt.Granted(RefreshedTokens(newAccess, "new-refresh", idToken = null))
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"$access","refresh_token":"old-r","account_id":"acct-1"}}""")
+        assertEquals(newAccess, (auth.credentials() as Credentials.Bearer).token)
+    }
+
     @Test
     fun `access token without an exp claim serves as-is (legacy - non-JWT shape)`(@TempDir tmp: Path) = runTest {
         val calls = AtomicInteger(0)

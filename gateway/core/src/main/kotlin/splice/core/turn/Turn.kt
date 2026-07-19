@@ -39,6 +39,11 @@ public sealed class TurnOutcome {
     public data class Failure(
         val type: ErrorType,
         val message: String,
+        /** True when a genuine upstream-reported error produced this failure (an error event/body
+         *  the provider actually sent); false for locally-synthesized verdicts (watchdog stall,
+         *  truncation-without-terminal). Drives the G20 health split — the old OVERLOADED-implies-
+         *  local heuristic misattributed passthrough overloaded_error (review 2026-07-19). */
+        val providerReported: Boolean = false,
     ) : TurnOutcome()
 
     /** Client vanished mid-stream: nothing to emit, seal quietly (never an error frame). */

@@ -12,6 +12,7 @@ column as work lands (`todo` / `in-progress` / `done <commit>` / `wontfix <reaso
 | L1 | ast-grep wall `kt-no-silent-result-collapse` (provider-*+spi scope; 18 sites swept: 11 now log, 7 annotated). Widen to app/core/control next | done 097e750 |
 | L2 | `-Xreturn-value-checker` on; 19 sites triaged via `Result.discard(why)`. Promote to error later | done 890ef35 |
 | L3 | Sealed `RefreshOutcome` on grok/kimi/codex doRefresh; `credentialsOrNull(tag)` single flatten, per-branch logging pinned by test. SPI-wide consumption with G7 | done (phase 1) |
+| L3-phase-2 | 2026-07-18: evaluated during G7 and deliberately deferred, NOT a fallout of the classify/retry extraction — widening `refreshCall` to carry `RefreshStep`/`RefreshOutcome`-level granularity means changing that constructor param's TYPE across `GrokAuthProvider.kt`/`CodexAuthProvider.kt`/`KimiAuthProvider.kt` AND their existing test fakes (`refreshCall = { null }` style), a breaking 3-module signature change, not code motion. Left as a follow-up (see G15, which already notes "needs G7"). | todo |
 | L4 | FIR compiler plugin: `@MustConsume` discard = compile error (build AFTER L3 types exist) | todo |
 
 ## HIGH
@@ -32,7 +33,7 @@ column as work lands (`todo` / `in-progress` / `done <commit>` / `wontfix <reaso
 | G4d | No cross-attempt wall-clock deadline | t0 in `post()`, budget check before each attempt/sleep | todo |
 | G5 | Stream-reconnect: handed-off ≠ client-saw-output; torn-before-first-frame fails turn needlessly | gate on `clientFrameEmitted()`; small reissue budget; hard no-retry after any frame | todo |
 | G6 | Codex head: zero expiry awareness (grok bug's latent twin) | JWT `exp` via existing `decodeJwtClaims` + grok proactive-window block | todo |
-| G7 | Grok/codex refresh: no error classification / transient retry (kimi has the right loop) | extract KimiRefresh classify/retry to shared `:app` helper | todo |
+| G7 | Grok/codex refresh: no error classification / transient retry (kimi has the right loop) | extract KimiRefresh classify/retry to shared `:app` helper | done 66befaf |
 | G8 | No pre-traffic auth/health probe loop | per-head coroutine ~60s, cheap auth probe, log transitions, trigger single-flight refresh | todo |
 | G9 | Malformed SSE frames dropped, zero telemetry | `onMalformed` hook → FRAMES_SKIPPED perf key + first-snippet log | todo |
 | G10 | Installed launch shim stale — no JVM opts on cold start | synced 2026-07-18; TODO: shim version marker verified at startup | done (sync) / marker todo |

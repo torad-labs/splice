@@ -1,5 +1,0 @@
-{
-  "scoped_paths": [
-    "gateway/provider-spi/src/test/kotlin/UpstreamFailureClassifierTest.kt"
-  ]
-}

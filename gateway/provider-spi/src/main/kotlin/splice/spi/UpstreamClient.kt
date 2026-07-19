@@ -34,6 +34,7 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.timedOr
 import splice.core.util.runCatchingCancellable
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.random.Random
 
 public class UpstreamClient(
@@ -493,8 +494,31 @@ public class UpstreamClient(
         // socketTimeoutMillis, not TCP connect.
         private const val CONNECT_TIMEOUT_MS = 10_000L
 
-        public fun defaultClient(firstByteTimeoutMs: Long, totalTimeoutMs: Long): HttpClient =
-            HttpClient(Java) {
+        // G26: java.net.http.HttpClient/Builder expose no public API to read or set TCP_NODELAY per
+        // connection (confirmed via javap on ktor-client-java-jvm; JDK-8338681 is an open
+        // enhancement request for exactly this, still unresolved). Reflecting into
+        // jdk.internal.net.http internals is fragile/module-encapsulated and disproportionate for a
+        // LOW one-time diagnostic — the honest move is to log that verification is impossible via
+        // public API, once per JVM (a JVM-wide guard so N heads sharing one daemon log it once, not
+        // N times each time a head is assembled). Injectable (same pattern as backoff/dnsBackoff/
+        // clock above) so a test can pin its own guard instead of sharing process-wide state with
+        // every other direct defaultClient() caller (UpstreamClientConnectTimeoutTest calls it too,
+        // for its own unrelated real-socket connect-timeout probe).
+        private val nodelayLogged = AtomicBoolean(false)
+
+        public fun defaultClient(
+            firstByteTimeoutMs: Long,
+            totalTimeoutMs: Long,
+            log: (String) -> Unit = {},
+            noDelayGuard: AtomicBoolean = nodelayLogged,
+        ): HttpClient {
+            if (noDelayGuard.compareAndSet(false, true)) {
+                log(
+                    "[upstream] tcp_nodelay(client)=unverifiable: java.net.http.HttpClient exposes " +
+                        "no public API to read or set TCP_NODELAY per connection (JDK-8338681, open)\n",
+                )
+            }
+            return HttpClient(Java) {
                 install(HttpTimeout) {
                     connectTimeoutMillis = CONNECT_TIMEOUT_MS
                     requestTimeoutMillis = totalTimeoutMs
@@ -512,6 +536,7 @@ public class UpstreamClient(
                     protocolVersion = java.net.http.HttpClient.Version.HTTP_1_1
                 }
             }
+        }
 
         private const val CLIENT_ERROR_MIN = 400
         private const val CLIENT_ERROR_MAX = 499

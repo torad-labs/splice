@@ -141,6 +141,15 @@ class MockChatGptUpstream {
                 sse(ex, """{"type":"response.output_text.delta","output_index":0,"delta":"partial"}""")
                 Thread.sleep(5_000)
             }
+            "zero_event_auth" -> {
+                ex.responseBody.write(
+                    "<html><body>401 Unauthorized: your session token has expired, please sign in again.</body></html>"
+                        .toByteArray(),
+                )
+            }
+            "zero_event_empty" -> {
+                // deliberately nothing written — a true stall, not a diagnosable auth-shaped body
+            }
             "prefill" -> {
                 Thread.sleep(1_500) // silent past streamIdle — governed by firstByteTimeout
                 sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")

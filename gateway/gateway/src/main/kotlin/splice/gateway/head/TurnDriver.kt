@@ -257,23 +257,69 @@ internal class TurnDriver(
             drive.slot.touch()
             val poller = drive.watchdog.launchIn(self, drive.slot, turnJob)
             val pinger = self.launchClientPinger(drive, turnJob)
-            val events = sseJsonEvents(resp.bodyChannel()) { chunkBytes ->
-                drive.slot.touch()
-                drive.watchdog.markByte()
-                drive.perf.markOnce(PerfKeys.FIRST_BYTE)
-                drive.perf.add(PerfKeys.SSE_BYTES_IN, chunkBytes.toLong())
-            }.onEach { drive.perf.add(PerfKeys.EVENTS_IN, 1) }
+            var sawEvent = false
+            val zeroEventSnippet = StringBuilder(ZERO_EVENT_SNIPPET_CHARS)
+            val events = sseJsonEvents(
+                resp.bodyChannel(),
+                onBytes = { chunkBytes ->
+                    drive.slot.touch()
+                    drive.watchdog.markByte()
+                    drive.perf.markOnce(PerfKeys.FIRST_BYTE)
+                    drive.perf.add(PerfKeys.SSE_BYTES_IN, chunkBytes.toLong())
+                },
+                onRawText = { text ->
+                    val room = ZERO_EVENT_SNIPPET_CHARS - zeroEventSnippet.length
+                    if (!sawEvent && room > 0) {
+                        zeroEventSnippet.append(text, 0, minOf(text.length, room))
+                    }
+                },
+            ).onEach {
+                sawEvent = true
+                drive.perf.add(PerfKeys.EVENTS_IN, 1)
+            }
             val signals = TurnSignals(
                 watchdogFired = { drive.watchdog.fired },
                 clientGone = { drive.channel.clientGone.get() },
             )
-            val outcome = provider.streamTranslator(drive.meta, signals)
+            val rawOutcome = provider.streamTranslator(drive.meta, signals)
                 .driveTurn(events, drive.emitter)
             poller.cancel()
             pinger.cancel()
             drive.perf.mark(PerfKeys.STREAM_END)
+            val outcome = classifyZeroEventFailure(drive, rawOutcome, zeroEventSnippet.toString())
             finishTurn(drive, outcome)
         }
+    }
+
+    /** G2: a zero-event HTTP-200 stream was hardcoded OVERLOADED — undiagnosable, and Claude Code
+     *  retries a dead head forever. When the SSE reader parsed literally zero JSON frames from the
+     *  body (events_in == 0) and non-blank raw text was captured before that, classify it via
+     *  UpstreamFailureClassifier instead of trusting the translator's generic truncation verdict —
+     *  an auth-shaped dead-head body (HTML login page, "unauthorized"/"token expired" JSON) now
+     *  surfaces AUTHENTICATION with a login hint instead of a retryable OVERLOADED that spins
+     *  forever. A genuinely empty body (no bytes at all — a real stall) has nothing to classify and
+     *  keeps the translator's original verdict. */
+    private fun classifyZeroEventFailure(drive: TurnDrive, outcome: TurnOutcome, snippet: String): TurnOutcome {
+        if (outcome !is TurnOutcome.Failure) return outcome
+        // events_in == 0 means zero JSON frames parsed; a blank body is a true stall (nothing to
+        // classify) — either case keeps the translator's original verdict.
+        val eventsIn = drive.perf.snapshot().counters[PerfKeys.EVENTS_IN] ?: 0L
+        if (eventsIn != 0L || snippet.isBlank()) return outcome
+        val classified = UpstreamFailureClassifier.classify(FailureSource.SSE, snippet)
+        log(
+            telemetry.errTurn(
+                "zero-event",
+                drive,
+                "was=${outcome.type.wireName} classified=${classified.type.wireName} " +
+                    "snippet=\"${snippet.take(ERR_SNIPPET).replace("\n", "\\n").replace("\r", "")}\"",
+            ),
+        )
+        val message = if (classified.type == ErrorType.AUTHENTICATION) {
+            "${classified.message} — run: claudex login"
+        } else {
+            classified.message
+        }
+        return TurnOutcome.Failure(classified.type, message)
     }
 
     /** Terminal frames FIRST (finishStream), stats after: the usage-file rewrite and the cache
@@ -319,6 +365,9 @@ internal class TurnDriver(
 
     private companion object {
         const val ERR_SNIPPET = 200
+
+        // G2: cap the raw pre-JSON body buffered for zero-event classification (~1KB).
+        const val ZERO_EVENT_SNIPPET_CHARS = 1024
 
         // first_delta detection reads the frame prefix — the emitter's event name, not a literal
         // stop-reason (L3 walls stay intact; this only OBSERVES the already-built frame).

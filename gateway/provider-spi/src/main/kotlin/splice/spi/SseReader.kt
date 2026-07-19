@@ -43,15 +43,27 @@ private const val MAX_SPURIOUS_WAKEUPS = 1024
 // UTF-8 codepoints are at most 4 bytes; carry never needs more than that across a chunk edge.
 private const val UTF8_MAX_BYTES = 4
 
-// the chunk/line/skip walk is the literal port; malformed frames must never crash the stream
-public fun sseJsonEvents(channel: ByteReadChannel, onBytes: (Int) -> Unit = {}): Flow<JsonObject> = flow {
+// the chunk/line/skip walk is the literal port; malformed frames must never crash the stream.
+// onRawText (opt-in, null for every hot-path caller) exposes the FULL decoded body text as it
+// arrives — not just `data:`-prefixed lines — so a zero-event terminal can classify a non-SSE
+// dead-head body (HTML/JSON login page). Null-callback matches the `perf: TurnPerf? = null` idiom:
+// when null the added cost is one null check per chunk, preserving the no-per-chunk-alloc invariant.
+public fun sseJsonEvents(
+    channel: ByteReadChannel,
+    onBytes: (Int) -> Unit = {},
+    onRawText: ((CharSequence) -> Unit)? = null,
+): Flow<JsonObject> = flow {
     val scratch = DecodeScratch()
     val lineBuffer = StringBuilder(READ_BUFFER_BYTES)
     while (true) {
         val n = scratch.readChunk(channel)
         if (n == -1) break
         onBytes(n)
+        val before = lineBuffer.length
         scratch.decodeInto(n, lineBuffer)
+        if (onRawText != null && lineBuffer.length > before) {
+            onRawText(lineBuffer.subSequence(before, lineBuffer.length))
+        }
         emitCompleteLines(lineBuffer)
     }
 }

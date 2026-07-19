@@ -72,7 +72,7 @@ public enum class Knob(
         restartRequired = true,
     ),
 
-    // OFF for every head (codex/grok/openai). Input-injecting prior encrypted CoT thins fresh
+    // OFF for every head (codex/grok/openai). Input-injecting prior opaque encrypted reasoning items thins fresh
     // reasoning depth (~4x measured). Include-encrypted handle is separate and still ON when
     // showReasoning is on. Opt in only with CLAUDEX_REPLAY_REASONING=1.
     REPLAY_REASONING(

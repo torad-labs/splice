@@ -264,7 +264,7 @@ class ControlServerTest {
         val body = client.post("http://127.0.0.1:$port/launch/codex") {
             header("Authorization", "Bearer $key")
             header("Content-Type", "application/json")
-            setBody("""{"safe":"false","args":["-c"]}""")
+            setBody("""{"dangerouslySkipPermissions":"true","args":["-c"]}""")
         }.bodyAsText()
         val obj = json.parseToJsonElement(body).jsonObject
         val env = obj["env"]!!.jsonObject
@@ -280,6 +280,20 @@ class ControlServerTest {
         assertTrue(argv.contains("--dangerously-skip-permissions"))
         assertTrue(argv.contains("-c")) // extra args passed through
         assertFalse(argv.contains("--model")) // model comes from env + picker, not a locked flag
+    }
+
+    @Test
+    fun `launch defaults to safe when dangerouslySkipPermissions is omitted`() = runTest {
+        val body = client.post("http://127.0.0.1:$port/launch/codex") {
+            header("Authorization", "Bearer $key")
+            header("Content-Type", "application/json")
+            setBody("""{"args":["-c"]}""")
+        }.bodyAsText()
+        val obj = json.parseToJsonElement(body).jsonObject
+        val argv = obj["argv"]!!.jsonArray.map { it.jsonPrimitive.content }
+        assertFalse(argv.contains("--dangerously-skip-permissions"))
+        assertTrue(argv.contains("-c"))
+        assertFalse(obj.containsKey("warning"))
     }
 
     @Test

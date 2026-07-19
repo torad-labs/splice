@@ -11,9 +11,31 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-# Splice requires JDK 21 (module law + toolchain). Default to the Homebrew openjdk@21 if the caller
-# hasn't pinned JAVA_HOME (CI sets it via setup-java).
-: "${JAVA_HOME:=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home}"
+# Splice requires JDK 21 (module law + toolchain). Resolve JAVA_HOME so a caller override always
+# wins, any other JDK 21 already on PATH is picked up automatically, and the historical
+# Apple-Silicon Homebrew default still works where it exists — only fail if none of those exist.
+homebrew_prefix="/opt/homebrew/opt"
+homebrew_jdk21="${homebrew_prefix}/openjdk@21/libexec/openjdk.jdk/Contents/Home"
+
+path_java_major() { # major version reported by `java` on PATH, or empty if there is none
+  command -v java >/dev/null 2>&1 || return 0
+  java -version 2>&1 | awk -F'"' '/ version "/ { print $2; exit }' | cut -d. -f1
+}
+
+if [ -n "${JAVA_HOME:-}" ] && [ -x "${JAVA_HOME}/bin/java" ]; then
+  : # caller-provided JAVA_HOME wins
+elif [ "$(path_java_major)" = "21" ]; then
+  JAVA_HOME="$(dirname "$(dirname "$(readlink -f "$(command -v java)")")")"
+elif [ -x "${homebrew_jdk21}/bin/java" ]; then
+  JAVA_HOME="$homebrew_jdk21"
+else
+  echo "GATE: FAIL — JDK 21 required, none found (checked \$JAVA_HOME, PATH java, Homebrew openjdk@21)." >&2
+  echo "  Install a JDK 21 and re-run, e.g.:" >&2
+  echo "    macOS:  brew install openjdk@21" >&2
+  echo "    Debian/Ubuntu: sudo apt install openjdk-21-jdk" >&2
+  echo "    or download from https://adoptium.net/temurin/releases/?version=21" >&2
+  exit 1
+fi
 export JAVA_HOME
 
 fail=0

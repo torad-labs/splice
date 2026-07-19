@@ -10,6 +10,8 @@
 // with a stderr line first — a corrupt auth file must never masquerade as "not logged in".
 package splice.provider.kimi
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
@@ -42,6 +44,8 @@ public class KimiAuthProvider(
     private val clock: () -> Long = System::currentTimeMillis,
     /** POST grant_type=refresh_token to auth.kimi.com's token URL; returns the classified attempt. */
     private val refreshCall: suspend (refreshToken: String) -> RefreshAttempt<KimiRefreshedTokens>,
+    /** G17: scope for background prefetch in the proactive window; null keeps the blocking path. */
+    private val prefetchScope: CoroutineScope? = null,
 ) : RefreshableAuthProvider {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -63,9 +67,20 @@ public class KimiAuthProvider(
     override suspend fun credentials(): Credentials? {
         val snap = readSnapshot() ?: return null
         val nowS = clock() / MS_PER_S
-        val threshold = maxOf(MIN_PROACTIVE_S, snap.expiresInS / 2)
-        if (snap.expiresAtS - nowS >= threshold) return apiKey(snap.access)
-        // proactive window: single-flight refresh; on failure serve the current token if still valid.
+        val remainingS = snap.expiresAtS - nowS
+        if (remainingS >= maxOf(MIN_PROACTIVE_S, snap.expiresInS / 2)) return apiKey(snap.access)
+        return proactiveWindowCredentials(snap, nowS, remainingS)
+    }
+
+    // G17 two-tier: above the hard floor the request never waits — serve the current token and
+    // rotate in the background (SingleFlight dedupes concurrent kicks; measured p90 802ms of
+    // request-path stall when this blocked, 2026-07-18). At/below the floor block as before:
+    // a nearly-dead token risks a mid-stream 401, which costs more than the wait.
+    private suspend fun proactiveWindowCredentials(snap: Snapshot, nowS: Long, remainingS: Long): Credentials? {
+        if (prefetchScope != null && remainingS > HARD_FLOOR_S) {
+            prefetchScope.launch { singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG) } }
+            return apiKey(snap.access)
+        }
         val refreshed = singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG) }
         return refreshed ?: (if (nowS < snap.expiresAtS) apiKey(snap.access) else null)
     }
@@ -210,6 +225,9 @@ public class KimiAuthProvider(
 
         // proactive-refresh floor: never let a token get within 5 minutes of expiry.
         const val MIN_PROACTIVE_S = 300L
+
+        // G17 hard floor: below this many seconds of validity the refresh blocks the request.
+        const val HARD_FLOOR_S = 60L
     }
 }
 

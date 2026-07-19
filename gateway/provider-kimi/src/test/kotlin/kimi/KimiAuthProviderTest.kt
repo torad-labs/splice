@@ -5,6 +5,10 @@
 package kimi
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
@@ -133,6 +137,74 @@ class KimiAuthProviderTest {
         assertEquals("rotated-access", onDisk["access_token"]?.jsonPrimitive?.content)
         assertEquals("rotated-refresh", onDisk["refresh_token"]?.jsonPrimitive?.content)
         assertEquals("${nowS + 3600}", onDisk["expires_at"]?.jsonPrimitive?.content)
+    }
+
+    // G17 two-tier: in the proactive window with a prefetch scope, the REQUEST never waits — the
+    // current token returns immediately and the rotation lands in the background.
+    @Test
+    fun `proactive window with a prefetch scope serves the current token and rotates in background`() = runTest {
+        val dir = Files.createTempDirectory("kimi-prefetch")
+        val nowMs = 1_000_000_000_000L
+        val nowS = nowMs / 1000
+        val file = authFile(dir, access = "current", expiresAtS = nowS + 400, expiresInS = 1000)
+        val calls = AtomicInteger(0)
+        // a real dispatcher scope, as in production (probeScope) — virtual time cannot drive a
+        // prefetch that crosses Dispatchers.IO inside CredentialLock.
+        val prefetch = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        try {
+            val auth = KimiAuthProvider(
+                authPath = file,
+                clock = { nowMs },
+                refreshCall = {
+                    calls.incrementAndGet()
+                    RefreshAttempt.Granted(
+                        KimiRefreshedTokens(
+                            accessToken = "rotated-access",
+                            refreshToken = "rotated-refresh",
+                            expiresIn = 3600,
+                        ),
+                    )
+                },
+                prefetchScope = prefetch,
+            )
+            // request path: current token, no waiting on the exchange
+            assertEquals("current", (auth.credentials() as Credentials.ApiKey).key)
+            // background: poll real time for the rotation to land on disk
+            val deadline = System.nanoTime() + 5_000_000_000L
+            while (!Files.readString(file).contains("rotated-access") && System.nanoTime() < deadline) {
+                Thread.sleep(10)
+            }
+            assertEquals(1, calls.get())
+            val onDisk = Json.parseToJsonElement(Files.readString(file)).jsonObject
+            assertEquals("rotated-access", onDisk["access_token"]?.jsonPrimitive?.content)
+        } finally {
+            prefetch.cancel()
+        }
+    }
+
+    // G17 hard floor: <=60s of validity left -> the refresh still BLOCKS the request even with a
+    // prefetch scope (serving a nearly-dead token risks a mid-stream 401).
+    @Test
+    fun `below the hard floor the refresh blocks even with a prefetch scope`() = runTest {
+        val dir = Files.createTempDirectory("kimi-floor")
+        val nowMs = 1_000_000_000_000L
+        val nowS = nowMs / 1000
+        val file = authFile(dir, access = "current", expiresAtS = nowS + 30, expiresInS = 1000)
+        val auth = KimiAuthProvider(
+            authPath = file,
+            clock = { nowMs },
+            refreshCall = {
+                RefreshAttempt.Granted(
+                    KimiRefreshedTokens(
+                        accessToken = "rotated-access",
+                        refreshToken = "rotated-refresh",
+                        expiresIn = 3600,
+                    ),
+                )
+            },
+            prefetchScope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
+        )
+        assertEquals("rotated-access", (auth.credentials() as Credentials.ApiKey).key)
     }
 
     @Test

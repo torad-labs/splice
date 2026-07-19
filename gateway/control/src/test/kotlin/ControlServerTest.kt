@@ -33,6 +33,7 @@ import splice.control.LaunchService
 import splice.control.LaunchSpec
 import splice.control.ManagedHead
 import splice.control.RateLimitView
+import splice.core.SHIM_VERSION
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
 import splice.core.config.ConfigService
@@ -143,6 +144,7 @@ class ControlServerTest {
         val body = json.parseToJsonElement(resp.bodyAsText()).jsonObject
         assertEquals("true", body["ok"]?.jsonPrimitive?.content)
         assertTrue(body.containsKey("version"))
+        assertEquals(SHIM_VERSION, body["wantShimVersion"]?.jsonPrimitive?.content)
     }
 
     @Test

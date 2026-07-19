@@ -34,6 +34,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.core.GATEWAY_VERSION
+import splice.core.SHIM_VERSION
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.MgmtKey
@@ -288,6 +289,7 @@ private class ControlPayloads(
     fun controlHealthJson(): String = buildJsonObject {
         put("ok", true)
         put("version", GATEWAY_VERSION)
+        put("wantShimVersion", SHIM_VERSION)
         put(HEADS, heads.size)
     }.toString()
 

@@ -40,11 +40,13 @@ private fun runDaemon() {
     val topologyPath = TopologyLoader.configPath()
     val topology = TopologyLoader.loadOrMaterialize(topologyPath)
     val distPath = Paths.get(System.getProperty("user.dir"), "..", "webui", "dist", "index.html")
+    val log = persistentLogger(statePaths.logsDir)
+    splice.app.cli.shimStalenessWarning()?.let { log("$it\n") }
     val daemon = Daemon(
         topology,
         statePaths,
         Daemon.dashboardFrom(distPath),
-        log = persistentLogger(statePaths.logsDir),
+        log = log,
     )
 
     Runtime.getRuntime().addShutdownHook(

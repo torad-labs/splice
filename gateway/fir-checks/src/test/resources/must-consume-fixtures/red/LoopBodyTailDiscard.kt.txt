@@ -1,0 +1,17 @@
+// RED fixture (.kt.txt so it is NOT part of :fir-checks' own src/test compile). The @MustConsume
+// call is the TAIL statement of a while-loop body: loop bodies never yield a value, so the tail is
+// a discard (the walk's FirLoop terminal, not the non-tail-statement one). COMPILATION_ERROR.
+package fixtures.red
+
+import splice.core.annotation.MustConsume
+
+@MustConsume
+fun produce(): Int = 1
+
+fun caller(times: Int) {
+    var i = 0
+    while (i < times) {
+        i += 1
+        produce()
+    }
+}

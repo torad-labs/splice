@@ -1,0 +1,17 @@
+// RED fixture (.kt.txt so it is NOT part of :fir-checks' own src/test compile). An `if` in STATEMENT
+// position (its own value unused): the then-branch tail discards the @MustConsume result, so the
+// plugin must reject it — the walk climbs branch-tail -> when -> function-body tail (no value).
+package fixtures.red
+
+import splice.core.annotation.MustConsume
+
+@MustConsume
+fun produce(): Int = 1
+
+fun caller(flag: Boolean) {
+    if (flag) {
+        produce()
+    } else {
+        println("side effect")
+    }
+}

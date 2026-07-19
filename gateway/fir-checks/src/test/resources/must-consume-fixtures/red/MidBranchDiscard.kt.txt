@@ -1,0 +1,19 @@
+// RED fixture (.kt.txt so it is NOT part of :fir-checks' own src/test compile). The enclosing `if`
+// IS consumed (assigned to a val), but the @MustConsume call is a NON-TAIL statement inside the
+// branch block — its value flows nowhere regardless of the if's fate. Must stay a COMPILATION_ERROR.
+package fixtures.red
+
+import splice.core.annotation.MustConsume
+
+@MustConsume
+fun produce(): Int = 1
+
+fun caller(flag: Boolean): Int {
+    val x = if (flag) {
+        produce()
+        1
+    } else {
+        0
+    }
+    return x
+}

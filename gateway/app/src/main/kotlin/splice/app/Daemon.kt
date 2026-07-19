@@ -184,7 +184,7 @@ public class Daemon(
         val key = ctx.key
         val providerCfg = ctx.providerCfg
         val auth = when (providerCfg.auth.kind) {
-            "grok-oauth" -> {
+            GROK_OAUTH -> {
                 val tokenUrl = GrokOAuthEndpoints.tokenUrl(System::getenv)
                 GrokAuthProvider(
                     authPath = Paths.get(TopologyLoader.expandHome(providerCfg.auth.file ?: "~/.grok/auth.json")),
@@ -209,7 +209,14 @@ public class Daemon(
                     watchdog = ctx.watchdog,
                     loginCommand = ctx.loginCommand,
                 ),
-                quirks = ChatQuirks(providerTag = key),
+                // grok-oauth rides session-pinned prompt caching + opt-in usage frames (probed
+                // 2026-07-19: 135k tokens, 1.7-2.8s TTFB, 99.97% cached — the two gaps that sank
+                // the 07-18 chat-dialect attempt). Unknown api-key vendors keep the bare quirks.
+                quirks = if (providerCfg.auth.kind == GROK_OAUTH) {
+                    ChatQuirks(providerTag = key, sessionCacheKeyPrefix = label, emitUsageInStream = true)
+                } else {
+                    ChatQuirks(providerTag = key)
+                },
                 showReasoning = ctx.cfg.showReasoning,
             ),
             auth,
@@ -318,7 +325,7 @@ public class Daemon(
                     auth,
                 )
             }
-            "grok-oauth" -> grokOAuthProvider(ctx, label)
+            GROK_OAUTH -> grokOAuthProvider(ctx, label)
             else -> apiKeyResponsesProvider(ctx, label)
         }
     }
@@ -427,7 +434,7 @@ public class Daemon(
     private fun loginInterception(providerCfg: ProviderConfig, head: HeadConfig, key: String): Pair<String, String> {
         val label = when (providerCfg.auth.kind) {
             "chatgpt-oauth" -> "Codex (ChatGPT)"
-            "grok-oauth" -> "Grok (xAI)"
+            GROK_OAUTH -> "Grok (xAI)"
             "kimi-oauth" -> "Kimi (Moonshot)"
             else -> ""
         }
@@ -504,6 +511,8 @@ public class Daemon(
     }
 
     public companion object {
+        private const val GROK_OAUTH = "grok-oauth"
+
         public fun dashboardFrom(distPath: Path): () -> String = {
             runCatching { Files.readString(distPath) }
                 .getOrDefault("<!doctype html><title>splice</title><p>dashboard build missing</p>")

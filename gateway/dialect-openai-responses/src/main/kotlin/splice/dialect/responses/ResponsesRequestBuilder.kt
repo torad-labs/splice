@@ -65,6 +65,11 @@ public data class ResponsesQuirks(
     val compactEffortPin: String? = null, // null = inherit session effort (the cache law)
     val emitToolChoice: Boolean = false,
     val emitStrict: Boolean = false,
+    /** stream_options.reasoning_summary_delivery, sent only when a summary is requested. The
+     *  ChatGPT backend serves ~2.3x more titled summary sections with "sequential_cutoff"
+     *  (probed 2026-07-19: 30 parts/1546ch vs 14/646 on the same prompt) — the same value
+     *  codex-rs sends. null = field omitted (grok/openai-platform). */
+    val summaryDelivery: String? = null,
 )
 
 public enum class CacheKeyStrategy { FIRST_MESSAGE_HASH, SESSION_ID, OFF }
@@ -183,6 +188,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
             toolChoice = if (emitToolChoice) toolChoice(body) else null,
             parallelToolCalls = if (emitToolChoice) body.toolChoice?.disableParallelToolUse != true else null,
             reasoning = reasoning,
+            streamOptions = summaryDeliveryOptions(reasoning),
         )
         return responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), dto) as JsonObject
     }
@@ -296,6 +302,13 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         // TOML/env is respected) — the fold defends against the request, not the operator.
         val folded = requested?.let { if (it in SUMMARY_FLOOR_TO_DETAILED) SUMMARY_DETAILED else it }
         return folded ?: normalizeSummary(opts.configSummary) ?: SUMMARY_DETAILED
+    }
+
+    /** codex-rs parity: delivery rides ONLY alongside an actual summary request. */
+    private fun summaryDeliveryOptions(reasoning: JsonObject?): JsonObject? {
+        val delivery = quirks.summaryDelivery ?: return null
+        if (reasoning?.get("summary") == null) return null
+        return buildJsonObject { put("reasoning_summary_delivery", delivery) }
     }
 
     private fun reasoningBlock(effort: String?, summary: String?, opts: BuildOptions): JsonObject? {

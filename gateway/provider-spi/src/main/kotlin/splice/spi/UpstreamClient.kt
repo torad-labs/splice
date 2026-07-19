@@ -247,10 +247,17 @@ public class UpstreamClient(
         attempt: Int,
         t0: Long,
     ) {
-        val mustRethrow = streamHandedOff || !isRetryableTransport(e) || deadlineExceeded(t0)
+        val phase = classifyTransport(e)
+        val mustRethrow = streamHandedOff || phase == null || deadlineExceeded(t0)
         if (mustRethrow || attempt == maxRetries - 1) throw e
+        // G16: SocketException/SocketTimeoutException can fire AFTER the request body has begun
+        // or finished writing — the upstream may already have the POST and be processing/billing
+        // it — unlike DNS/connect failures, which fire strictly before any byte leaves the client.
+        // Same retry budget/backoff either way (diagnostics-only); the label makes a double-token-
+        // burn incident greppable in the turn log instead of indistinguishable from a DNS blip.
+        val label = if (phase == TransportFailurePhase.POST_SEND) "transport-possible-duplicate" else "transport"
         ctx.onRetry(
-            "transport ${e::class.simpleName} attempt ${attempt + 1}/$maxRetries: " +
+            "$label ${e::class.simpleName} attempt ${attempt + 1}/$maxRetries: " +
                 e.message.orEmpty().take(ERR_SNIPPET),
         )
     }
@@ -392,21 +399,48 @@ public class UpstreamClient(
             return false
         }
 
+        /** G16: which side of the request write the transport failure happened on — CONNECT never
+         *  got a byte onto the wire (DNS/refused/connect-timeout); POST_SEND may have already
+         *  handed the upstream a full request (SocketException reset, socket-level timeout) —
+         *  retrying that one risks a double token burn, so it needs a distinct log class. */
+        private enum class TransportFailurePhase { CONNECT, POST_SEND }
+
+        /** Per-node classification, split out of [classifyTransport] so the loop shape and the
+         *  allowlist `when` each stay under detekt's CyclomaticComplexMethod ceiling. */
+        private fun transportPhaseOf(t: Throwable): TransportFailurePhase? = when {
+            t is java.nio.channels.UnresolvedAddressException ||
+                t is java.net.UnknownHostException ||
+                t is java.net.ConnectException ||
+                t is io.ktor.client.network.sockets.ConnectTimeoutException -> TransportFailurePhase.CONNECT
+            t is java.net.SocketException ||
+                t is java.net.SocketTimeoutException ||
+                t is io.ktor.client.network.sockets.SocketTimeoutException -> TransportFailurePhase.POST_SEND
+            else -> null
+        }
+
+        /** Walks the cause chain (Ktor wraps engine exceptions), same shape as [causeChainMatches],
+         *  classifying the retryable set by phase instead of a bare Boolean. Deliberately
+         *  conservative — everything else (TLS trust failures, protocol errors, the HttpTimeout
+         *  plugin's overall budget) still fails the turn. Not an added/removed exception type —
+         *  a pure reclassification of the existing retryable set (G16). */
+        private fun classifyTransport(e: Throwable): TransportFailurePhase? {
+            var t: Throwable? = e
+            var depth = 0
+            while (t != null && depth < MAX_CAUSE_DEPTH) {
+                transportPhaseOf(t)?.let { return it }
+                t = t.cause
+                depth++
+            }
+            return null
+        }
+
         /**
          * Connection-phase failures worth a silent retry: name resolution, TCP connect/reset,
          * socket timeouts. Deliberately conservative — everything else (TLS trust failures,
          * protocol errors, the HttpTimeout plugin's overall budget) still fails the turn.
          * Walks the cause chain because Ktor wraps engine exceptions.
          */
-        internal fun isRetryableTransport(e: Throwable): Boolean = causeChainMatches(e) { t ->
-            t is java.nio.channels.UnresolvedAddressException ||
-                t is java.net.UnknownHostException ||
-                t is java.net.ConnectException ||
-                t is java.net.SocketException ||
-                t is java.net.SocketTimeoutException ||
-                t is io.ktor.client.network.sockets.ConnectTimeoutException ||
-                t is io.ktor.client.network.sockets.SocketTimeoutException
-        }
+        internal fun isRetryableTransport(e: Throwable): Boolean = classifyTransport(e) != null
 
         /** DNS-class only (name resolution never got an address) — a real resolver blip runs
          *  closer to 1-4s than a TCP refusal, so it gets its own schedule instead of racing the

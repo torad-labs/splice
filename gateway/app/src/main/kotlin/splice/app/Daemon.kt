@@ -448,7 +448,12 @@ public class Daemon(
             provider = wired.provider,
             listenPort = head.port,
             deps = HeadDeps(
-                upstream = UpstreamClient(cfg.firstByteTimeoutMs, cfg.upstreamTimeoutMs, cfg.upstreamRetries),
+                upstream = UpstreamClient(
+                    cfg.firstByteTimeoutMs,
+                    cfg.upstreamTimeoutMs,
+                    cfg.upstreamRetries,
+                    client = UpstreamClient.defaultClient(cfg.firstByteTimeoutMs, cfg.upstreamTimeoutMs, log),
+                ),
                 gate = InflightGate(
                     maxInflight = { config.getConfig().maxInflight },
                     maxQueued = { config.getConfig().maxQueued },

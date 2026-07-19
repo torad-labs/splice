@@ -131,6 +131,14 @@ class HeadServerIntegrationTest {
     }
 
     @Test
+    fun `server tcp_nodelay is verified and logged on the accepted connection`() = runTest {
+        // G26: reuses the already-started head/port/client/logs from @BeforeAll (HeadServerLoadTest's
+        // ephemeral-port fix, commit 449772e, documents why a second server is not spun up here).
+        client.get("http://127.0.0.1:$port/health")
+        assertTrue(logs.any { it.contains("tcp_nodelay(server)=") })
+    }
+
+    @Test
     fun `models are discovery-wrapped and include the pinned model`() = runTest {
         val body = client.get("http://127.0.0.1:$port/v1/models").bodyAsText()
         assertTrue(body.contains("claude-codex--gpt-5.4"))

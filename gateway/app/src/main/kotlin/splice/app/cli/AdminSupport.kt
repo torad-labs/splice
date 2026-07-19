@@ -121,5 +121,7 @@ internal object AdminSupport {
 
     // Bounded heap + string-dedup: safe for hundreds of concurrent streams, small for a laptop.
     // The shell `${SPLICE_JVM_OPTS:-...}` lets an operator override without touching code.
-    private const val DEFAULT_JVM_OPTS = "-Xmx1024m -XX:+UseStringDeduplication"
+    // G1PeriodicGCInterval: idle heap uncommit — a daemon that goes quiet still returns freed
+    // pages to the OS instead of holding them until the next GC is triggered by allocation.
+    internal const val DEFAULT_JVM_OPTS = "-Xmx1024m -XX:+UseStringDeduplication -XX:G1PeriodicGCInterval=60000"
 }

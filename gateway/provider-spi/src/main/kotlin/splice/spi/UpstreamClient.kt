@@ -416,10 +416,16 @@ public class UpstreamClient(
         private const val JITTER_LO = 0.9
         private const val JITTER_HI = 1.1
 
+        // G11: a blackholed/dead address must fail fast into the existing transport-retry loop
+        // (isRetryableTransport) instead of stalling to the OS SYN timeout x maxRetries. Decoupled
+        // from firstByteTimeoutMs (5min default), which governs headers-wait/body phase via
+        // socketTimeoutMillis, not TCP connect.
+        private const val CONNECT_TIMEOUT_MS = 10_000L
+
         public fun defaultClient(firstByteTimeoutMs: Long, totalTimeoutMs: Long): HttpClient =
             HttpClient(Java) {
                 install(HttpTimeout) {
-                    connectTimeoutMillis = firstByteTimeoutMs
+                    connectTimeoutMillis = CONNECT_TIMEOUT_MS
                     requestTimeoutMillis = totalTimeoutMs
                     socketTimeoutMillis = firstByteTimeoutMs
                 }

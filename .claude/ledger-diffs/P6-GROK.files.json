@@ -1,6 +1,0 @@
-{
-  "scoped_paths": [
-    "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt",
-    "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokProvider.kt"
-  ]
-}

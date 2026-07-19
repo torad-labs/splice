@@ -1,20 +1,26 @@
-# VENDOR-CONTRACT WALL (2026-07-18): stream_options is a CHAT-COMPLETIONS-only knob. The ChatGPT
-# Responses backend AND xAI 400 on it ("Unknown parameter: 'stream_options.include_usage'") — it
-# SHIPPED and broke every codex turn until caught by a live smoke turn. Usage already rides
-# response.completed; there is never a reason to send stream_options from these dialects. This is
-# the write-time half of the vendor-contract wall; checks/e2e/heads-e2e.sh is the live half.
+# VENDOR-CONTRACT WALL (2026-07-18, narrowed 2026-07-19): stream_options.include_usage is a
+# CHAT-COMPLETIONS-only knob. The ChatGPT Responses backend AND xAI's Responses surface 400 on it
+# ("Unknown parameter: 'stream_options.include_usage'") — it SHIPPED and broke every codex turn
+# until caught by a live smoke turn. Usage rides response.completed on the Responses dialect.
+# NARROWED after two live-proven legitimate uses (2026-07-19): the Responses dialect sends
+# stream_options.reasoning_summary_delivery (probed; codex-rs sends it), and the CHAT dialect
+# REQUIRES stream_options.include_usage for its usage frame (xAI /chat/completions, probed).
+# The wall now bans the include_usage LITERAL outside the chat dialect — the exact incident —
+# instead of the whole stream_options field. Live half: checks/e2e/heads-e2e.sh.
 id: kt-no-stream-options-request
 language: kotlin
 severity: error
-message: "Never send stream_options — the Responses/xAI backends 400 on it (shipped & broke codex 2026-07-18). Usage rides response.completed."
+message: "Never send stream_options.include_usage from a Responses-dialect request — the backends 400 on it (broke codex 2026-07-18). Usage rides response.completed; include_usage belongs to the chat dialect only."
 note: >
-  Delete the stream_options field. If a NEW top-level request field is genuinely needed, prove the
+  Drop the include_usage subfield. If a NEW stream_options subfield is genuinely needed, prove the
   vendor accepts it with a live turn (checks/e2e/heads-e2e.sh --tier 1) before merging — mocks
   cannot see a 400 the real backend returns.
 files:
-  # DEFAULT-DENY (#924 Phase 0.5): a NEW dialect/provider must not be able to reopen the incident
-  # by sitting outside an enumerated list. No legitimate stream_options exists anywhere in the tree.
+  # DEFAULT-DENY (#924 Phase 0.5): every main source EXCEPT the chat dialect, where include_usage
+  # is the documented usage-frame knob — a NEW dialect/provider must not reopen the incident.
   - gateway/*/src/main/**/*.kt
+ignores:
+  - gateway/dialect-openai-chat/**
 rule:
   kind: string_literal
-  regex: '^"stream_options"$'
+  regex: '^"include_usage"$'

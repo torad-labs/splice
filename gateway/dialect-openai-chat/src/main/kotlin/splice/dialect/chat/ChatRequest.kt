@@ -26,7 +26,6 @@ internal data class ChatRequest(
     @SerialName("prompt_cache_key") val promptCacheKey: String? = null,
     /** {"include_usage": true} — without it xAI's chat stream carries NO usage frame at all
      *  (the in_tokens=0 blindness of the 2026-07-18 chat-dialect attempt). */
-    // ast-grep-ignore: kt-no-stream-options-request — include_usage needed on chat (probed 2026-07-19)
     @SerialName("stream_options") val streamOptions: JsonObject? = null,
 )
 

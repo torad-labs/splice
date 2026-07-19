@@ -2,5 +2,8 @@ id: kt-no-stream-options-request
 valid:
   - 'put("stream", true)'
   - 'put("include", buildJsonArray { add("reasoning.encrypted_content") })'
+  - 'put("stream_options", buildJsonObject { put("reasoning_summary_delivery", "sequential_cutoff") })'
+  - '@SerialName("stream_options") val streamOptions: JsonObject? = null'
 invalid:
   - 'put("stream_options", buildJsonObject { put("include_usage", true) })'
+  - 'val opts = buildJsonObject { put("include_usage", true) }'

@@ -6,17 +6,18 @@ package splice.app.cli
 
 import splice.app.TopologyLoader
 import splice.core.SHIM_VERSION
+import splice.core.config.InstallPaths
 import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
-import java.nio.file.Paths
 import java.nio.file.StandardCopyOption
 import kotlin.io.path.isSymbolicLink
 
-private fun home(): Path = Paths.get(System.getProperty("user.home"))
-private fun localBin(): Path = home().resolve(".local").resolve("bin")
-private fun shareDir(): Path = home().resolve(".local").resolve("share").resolve("splice")
+// SPLICE_BIN_DIR / SPLICE_SHARE_DIR honored via core/config (System.getenv is walled there),
+// so `splice install` and install.sh always agree on where wrappers and the shim land.
+private fun localBin(): Path = InstallPaths().binDir
+private fun shareDir(): Path = InstallPaths().shareDir
 private fun launchShimPath(): Path = shareDir().resolve("splice-launch")
 
 internal fun init() {

@@ -10,14 +10,17 @@ HEAD="${SPLICE_HEAD:-$(basename "$0")}"
 
 CONTROL_PORT="${SPLICE_CONTROL_PORT:-3096}"
 CONTROL="http://127.0.0.1:${CONTROL_PORT}"
-JAR="${SPLICE_JAR:-$HOME/.local/share/splice/splice.jar}"
+JAR="${SPLICE_JAR:-${SPLICE_SHARE_DIR:-$HOME/.local/share/splice}/splice.jar}"
 # Bounded heap by default (a 1000-stream fleet with unbounded per-stream buffers OOMs the JVM
 # default); override with SPLICE_JVM_OPTS. Used for every daemon cold-start below.
 SPLICE_JVM_OPTS="${SPLICE_JVM_OPTS:--Xmx1024m -XX:+UseStringDeduplication -XX:G1PeriodicGCInterval=60000}"
 STATE_DIR="${CLAUDEX_STATE_DIR:-$HOME/.claude-codex/state}"
 KEY_FILE="${STATE_DIR}/mgmt-key"
-SAFE="false"
-[ "${CLAUDEX_SAFE:-0}" = "1" ] && SAFE="true"
+# Safe by default: the daemon never adds --dangerously-skip-permissions unless explicitly told to.
+# CLAUDEX_DANGEROUSLY_SKIP_PERMISSIONS=1 is the named opt-in here AND on the legacy Node shim —
+# both paths are safe-by-default now; the old CLAUDEX_SAFE is accepted as a harmless no-op.
+DANGEROUS="false"
+[ "${CLAUDEX_DANGEROUSLY_SKIP_PERMISSIONS:-0}" = "1" ] && DANGEROUS="true"
 # Hand-paired with splice.core.SHIM_VERSION (gateway/core/src/main/kotlin/splice/core/Versions.kt)
 # — bump both together whenever this shim's behavior changes. No code generation.
 SPLICE_SHIM_VERSION="shim-1"
@@ -77,7 +80,7 @@ if [ -z "$KEY" ]; then echo "splice: mgmt-key not found at $KEY_FILE" >&2; exit 
 ARGS_JSON="$(printf '%s\n' "$@" | python3 -c 'import sys,json; print(json.dumps([l.rstrip("\n") for l in sys.stdin if l.strip()!=""]))' 2>/dev/null || echo '[]')"
 RECIPE="$(curl -sS -X POST "${CONTROL}/launch/${HEAD}" \
   -H "Authorization: Bearer ${KEY}" -H 'Content-Type: application/json' \
-  --data "{\"safe\":\"${SAFE}\",\"args\":${ARGS_JSON}}")"
+  --data "{\"dangerouslySkipPermissions\":\"${DANGEROUS}\",\"args\":${ARGS_JSON}}")"
 
 # Parse the recipe into env/unset/argv and exec. The recipe rides in $RECIPE (env), NOT stdin —
 # the heredoc is python's stdin (the script), so piping the recipe in would be swallowed.
@@ -93,6 +96,8 @@ if "argv" not in r:
 sets = " ".join(f"{k}={shlex.quote(v)}" for k, v in r.get("env", {}).items())
 unsets = " ".join(f"-u {shlex.quote(k)}" for k in r.get("unset", []))
 argv = " ".join(shlex.quote(a) for a in r["argv"])
+if r.get("warning"):
+    sys.stderr.write("splice: " + r["warning"] + "\n")
 print(f"exec env {unsets} {sets} {argv}")
 PY
 )" || exit 1

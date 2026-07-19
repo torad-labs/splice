@@ -33,14 +33,22 @@ public data class LaunchRecipe(
     val env: Map<String, String>,
     val unset: List<String>,
     val argv: List<String>,
+    // Non-null only when dangerouslySkipPermissions was engaged — surfaced to the operator via the
+    // control log and the /launch response so the danger is never silent.
+    val warning: String? = null,
 )
 
 public class LaunchService(
     private val materializer: ClaudeConfigMaterializer,
     private val claudeBinary: String = "claude",
 ) {
-    /** Materialize the head's config + build the exec recipe. safe=true drops the skip-perms flag. */
-    public fun launch(spec: LaunchSpec, extraArgs: List<String>, safe: Boolean): LaunchRecipe {
+    /** Materialize the head's config + build the exec recipe. Safe by default: the flag is added
+     *  ONLY when [dangerouslySkipPermissions] is true, and doing so returns a non-null warning. */
+    public fun launch(
+        spec: LaunchSpec,
+        extraArgs: List<String>,
+        dangerouslySkipPermissions: Boolean,
+    ): LaunchRecipe {
         materializer.materialize(
             MaterializeSpec(
                 configDir = spec.configDir,
@@ -62,12 +70,18 @@ public class LaunchService(
         )
         val argv = buildList {
             add(claudeBinary)
-            if (!safe) add("--dangerously-skip-permissions")
+            if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by gateway discovery) can freely switch. Forcing --model locked it.
             addAll(extraArgs)
         }
-        return LaunchRecipe(env, unset, argv)
+        val warning = if (dangerouslySkipPermissions) {
+            "dangerouslySkipPermissions engaged for ${spec.configDir} — Claude Code runs with " +
+                "--dangerously-skip-permissions (no permission prompts)."
+        } else {
+            null
+        }
+        return LaunchRecipe(env, unset, argv, warning)
     }
 
     private fun buildEnv(spec: LaunchSpec): Map<String, String> {

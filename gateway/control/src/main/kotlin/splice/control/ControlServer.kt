@@ -243,17 +243,21 @@ public class ControlServer(
             return
         }
         val body = runCatchingCancellable { json.parseToJsonElement(call.receiveText()).jsonObject }.getOrNull()
-        val safe = body?.get("safe")?.jsonPrimitive?.content == "true"
+        // Safe by default: the caller must explicitly opt in with {"dangerouslySkipPermissions":"true"}
+        // to get the flag; a missing key, malformed body, or any other value stays safe.
+        val dangerouslySkipPermissions = body?.get("dangerouslySkipPermissions")?.jsonPrimitive?.content == "true"
         val extraArgs = (body?.get("args") as? JsonArray)
             ?.mapNotNull { (it as? JsonPrimitive)?.content } ?: emptyList()
-        val recipe = launchService.launch(spec, extraArgs, safe)
+        val recipe = launchService.launch(spec, extraArgs, dangerouslySkipPermissions)
         log("[control] launch $key -> ${recipe.argv}\n")
+        if (recipe.warning != null) log("[control] ${recipe.warning}\n")
         respond(
             call,
             buildJsonObject {
                 putJsonObject("env") { recipe.env.forEach { (k, v) -> put(k, v) } }
                 putJsonArray("unset") { recipe.unset.forEach { add(it) } }
                 putJsonArray("argv") { recipe.argv.forEach { add(it) } }
+                if (recipe.warning != null) put("warning", recipe.warning)
             }.toString(),
         )
     }

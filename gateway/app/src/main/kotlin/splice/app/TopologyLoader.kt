@@ -23,6 +23,8 @@ replay_reasoning = false
 [providers.codex]
 dialect = "openai-responses"
 base_url = "https://chatgpt.com/backend-api/codex"
+# EXPERIMENTAL: reuses the Codex CLI's public OAuth client identity, not a vendor-documented
+# integration; auth.json is password-equivalent (splice reads + refreshes it). API-key alt: OpenAI Platform key.
 auth = { kind = "chatgpt-oauth", file = "~/.codex/auth.json" }
 quirks = { store = false, account_id_header = true, cache_key = "first-message-hash", effort_ceiling = "max", summary_field = true }
 
@@ -58,6 +60,8 @@ context_window = 128000
 [providers.xai]
 dialect = "openai-responses"
 base_url = "https://api.x.ai/v1"
+# EXPERIMENTAL: reuses the Grok CLI's public OAuth client identity, not a vendor-documented
+# integration; auth.json is password-equivalent (splice reads + refreshes it). API-key alt: OpenRouter key.
 auth = { kind = "grok-oauth", file = "~/.grok/auth.json" }
 quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = true, tool_choice = true }
 

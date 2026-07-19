@@ -177,9 +177,12 @@ export function assembleClaudexEnv({ env = process.env, tomlPath, cachePath } = 
 
 // ── claude arg policy ────────────────────────────────────────────────────────
 
-export function buildClaudeArgs(userArgs, { defaultModel = null, safeEnvVar = 'CLAUDEX_SAFE', env = process.env } = {}) {
+export function buildClaudeArgs(userArgs, { defaultModel = null, dangerousEnvVar = 'CLAUDEX_DANGEROUSLY_SKIP_PERMISSIONS', env = process.env } = {}) {
   const args = [...userArgs];
-  if (env[safeEnvVar] !== '1' && !args.includes('--dangerously-skip-permissions')) {
+  // Safe by default: --dangerously-skip-permissions is added ONLY when explicitly requested via
+  // dangerousEnvVar or already present in userArgs (deduped, not doubled). The legacy CLAUDEX_SAFE
+  // opt-out is now a no-op — safe is the default, so there is nothing left to opt out of.
+  if (env[dangerousEnvVar] === '1' && !args.includes('--dangerously-skip-permissions')) {
     args.unshift('--dangerously-skip-permissions');
   }
   if (defaultModel) {

@@ -12,6 +12,7 @@ import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.test.runTest
 import mock.MockChatGptUpstream
 import org.junit.jupiter.api.AfterAll
@@ -248,8 +249,45 @@ class HeadServerIntegrationTest {
 
     @Test
     fun `claude model ids are rejected with a 400-shaped error`() = runTest {
-        val sse = messages("basic", model = "claude-3-opus")
-        assertTrue(sse.contains("invalid_request_error"))
-        assertTrue(sse.contains("proxies its own models only"))
+        val response = client.post("http://127.0.0.1:$port/v1/messages") {
+            header("Content-Type", "application/json")
+            setBody(
+                """{"model":"claude-3-opus","stream":true,"max_tokens":8000,
+                    "system":"You are a test. SCENARIO:basic",
+                    "messages":[{"role":"user","content":"go"}]}""",
+            )
+        }
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains("invalid_request_error"))
+        assertTrue(body.contains("proxies its own models only"))
+    }
+
+    @Test
+    fun `non-streaming requests are pre-stream rejected with a 400-shaped error`() = runTest {
+        val response = client.post("http://127.0.0.1:$port/v1/messages") {
+            header("Content-Type", "application/json")
+            setBody(
+                """{"model":"claude-codex--gpt-5.6-sol","stream":false,"max_tokens":8000,
+                    "system":"You are a test. SCENARIO:basic",
+                    "messages":[{"role":"user","content":"go"}]}""",
+            )
+        }
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains("invalid_request_error"))
+        assertTrue(body.contains("serves streaming clients only"))
+    }
+
+    @Test
+    fun `malformed request body is pre-stream rejected with a 400-shaped error`() = runTest {
+        val response = client.post("http://127.0.0.1:$port/v1/messages") {
+            header("Content-Type", "application/json")
+            setBody("not json")
+        }
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+        val body = response.bodyAsText()
+        assertTrue(body.contains("invalid_request_error"))
+        assertTrue(body.contains("invalid request body"))
     }
 }

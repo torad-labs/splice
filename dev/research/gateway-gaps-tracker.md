@@ -48,7 +48,7 @@ column as work lands (`todo` / `in-progress` / `done <commit>` / `wontfix <reaso
 | G14 | Transport backoff (200/400ms) shorter than real resolver blip | DNS-class failures → 1s/2s/4s schedule | done e498974 |
 | G15 | No terminal invalid_grant latch (dead token re-POSTed every turn) | latch until file content changes (needs G7) | done 1605d2e |
 | G16 | Post-send SocketException retried like connect-phase (double token burn risk) | distinct "possible-duplicate" log class on post-send retries | done 29c0d0d |
-| G17 | Proactive refresh blocks request path | two-tier: async prefetch above stale floor, blocking below | todo |
+| G17 | Proactive refresh blocks request path | two-tier: async prefetch above stale floor, blocking below | done (kimi) 99c3316 — grok/codex same pattern next |
 | G18 | Grok file without `expires` = never-expiring | synthesize mtime + 4h TTL | todo |
 | G19 | AUTHENTICATION errors lack "run: <head> login" hint | append per-head instruction when classified AUTHENTICATION | todo |
 | G20 | No per-head passive health counters / cooling state | local-origin vs provider-error split counters | todo |

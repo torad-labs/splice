@@ -177,6 +177,8 @@ self-update + network call per launch), `bin/claude-codex`.
 
 ## Inherited history (codex-for-claude-code local fork)
 
+> Provenance + external upstream license clearance for this inherited lineage: see [PROVENANCE.md](PROVENANCE.md).
+
 ## local codex-proxy v29 - 2026-07-13
 
 ### Fixed

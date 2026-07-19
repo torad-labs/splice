@@ -175,6 +175,7 @@ internal class TurnDriver(
                 compactStats,
                 log,
                 makeOutputClamp(meta.clientMaxTokens, meta.compact, provider.key, log),
+                mirrorReasoning = deps.mirrorReasoning,
             ),
             t0 = t0,
             upstreamModel = meta.upstreamModel,

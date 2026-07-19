@@ -460,6 +460,7 @@ public class Daemon(
                 ),
                 shadow = ShadowClassifier(log = log),
                 compactStats = compactStats,
+                mirrorReasoning = cfg.mirrorReasoning,
                 usageStore = usageStore,
                 perfStats = perfStats,
                 log = log,

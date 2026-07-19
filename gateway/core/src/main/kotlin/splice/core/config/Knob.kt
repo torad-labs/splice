@@ -82,6 +82,18 @@ public enum class Knob(
         false,
         restartRequired = true,
     ),
+
+    // The transcript mirror ("[reasoning summary]" text block, L2). ON is the measured codex
+    // distillation-loop default. Turning it OFF stops the summary riding back upstream in the
+    // transcript (token cost) while reasoning still displays as thinking blocks — the operator
+    // accepts the cross-step continuity trade consciously (2026-07-19).
+    MIRROR_REASONING(
+        "mirrorReasoning",
+        KnobKind.BOOL,
+        listOf("CLAUDEX_MIRROR_REASONING"),
+        true,
+        restartRequired = true,
+    ),
     MAX_INFLIGHT("maxInflight", KnobKind.NUMBER, listOf("CLAUDEX_MAX_INFLIGHT"), 0L),
     MAX_QUEUED("maxQueued", KnobKind.NUMBER, listOf("CLAUDEX_MAX_QUEUED"), 0L),
     UPSTREAM_RETRIES(

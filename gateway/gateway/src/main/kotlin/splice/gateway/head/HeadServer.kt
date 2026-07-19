@@ -44,6 +44,7 @@ import splice.gateway.compact.ShadowClassifier
 import splice.gateway.compact.classifyCompact
 import splice.gateway.perf.PerfStats
 import splice.gateway.usage.UsageStore
+import splice.spi.GatewayAtCapacityException
 import splice.spi.InflightGate
 import splice.spi.Provider
 import splice.spi.UpstreamClient
@@ -192,7 +193,17 @@ public class HeadServer(
         val built = provider.buildTurn(parsed, compactProbe.compact, call.request.headers["x-claude-code-session-id"])
         perf.mark(PerfKeys.BUILD)
         val t0 = clock()
-        val slot = gate.acquire()
+        val slot = try {
+            gate.acquire()
+        } catch (_: GatewayAtCapacityException) {
+            log("[${provider.key}] admission rejected: gateway at capacity (queued=${gate.snapshot().queued})\n")
+            call.respondText(
+                errorBodyJson("overloaded_error", "gateway at capacity"),
+                ContentType.Application.Json,
+                HttpStatusCode(GATEWAY_CAPACITY_STATUS, "Gateway At Capacity"),
+            )
+            return
+        }
         perf.mark(PerfKeys.GATE)
         perf.setCount(PerfKeys.INFLIGHT, gate.snapshot().inflight.toLong())
 
@@ -232,5 +243,9 @@ public class HeadServer(
 
         // Response-write stall cap — generous: the two-tier watchdog owns liveness enforcement.
         const val WRITE_TIMEOUT_S = 60
+
+        // Same numeric convention as UpstreamFailureClassifier's OVERLOADED_STATUS (kept as its
+        // own const here to avoid a cross-module const import and satisfy detekt MagicNumber).
+        const val GATEWAY_CAPACITY_STATUS = 529
     }
 }

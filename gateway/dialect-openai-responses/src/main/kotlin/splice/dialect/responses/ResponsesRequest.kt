@@ -30,6 +30,7 @@ internal data class ResponsesRequest(
     /** Responses-native summary delivery (codex-rs sends it whenever a summary is requested);
      *  NOT the Chat-only stream_options.include_usage that broke codex 2026-07-18 — this named
      *  field is exactly the reviewable type change the closed DTO exists to force. */
+    // ast-grep-ignore: kt-no-stream-options-request — summary_delivery live-proven (19cd9fd); not include_usage
     @SerialName("stream_options") val streamOptions: JsonObject? = null,
 )
 

@@ -1,0 +1,98 @@
+
+# LAW [2026-07-19]: OSS campaign 2026-07-19: agents NEVER push, NEVER rewrite history, NEVER change GitHub settings, NEVER run gradle or npm builds during parallel implement (serial gate is orchestrator-only); fences are exclusive — every file has exactly ONE owner slot
+# LAW [2026-07-19]: OSS campaign 2026-07-19: .claude/hooks + hook configs are grant-gated — builders and sweepers REPORT, never edit; a blocked write means fix the code or report BLOCKED, never bypass or rename-to-dodge
+[[items]]
+id = "OSS-A"
+phase = "P0"
+title = "Purge live capture artifacts from tip: git rm tracked experiments/cache-replay/capture/turn-001..010.json + ab-results.log (2.7MB of live Anthropic request bodies carrying private global instructions + /home/<user> paths); RESULTS.md sanitized (keep findings table, strip private paths); sole owner of .gitignore — defensive ignores (.env and .env.*, allow-list .env.example, capture dirs, auth stores like auth.json/credentials, key formats, logs, dumps) plus untrack entries fed from OSS-K plan; author dev/release/history-rewrite-runbook.md (NOT executed; covers commit 4ca99f7 reachable from public main, mailmap limits, clones/forks/caches caveat, no-force-push-until-operator-decides) and .mailmap mapping the personal Gmail identity"
+files = ["experiments/cache-replay/capture/*", ".gitignore", "dev/release/history-rewrite-runbook.md", ".mailmap"]
+status = "todo"
+verify = "bash checks/oss/verify-OSS-A.sh"
+
+[[items]]
+id = "OSS-B"
+phase = "P0"
+title = "Safe-by-default launch: default LaunchRecipe argv must NOT contain --dangerously-skip-permissions; danger becomes an explicit opt-in named for the danger (passthrough of the literal flag via extraArgs or a dangerous parameter), warning surfaced when engaged; safe-mode plumbing (safe: Boolean at LaunchService.kt:43,65) inverted at every call site; unit test proves default argv clean + opt-in test proves passthrough"
+files = ["gateway/control/src/main/kotlin/splice/control/LaunchService.kt", "gateway/control/src/test/kotlin/splice/control/LaunchServiceTest.kt", "call sites enumerated by plan"]
+status = "todo"
+verify = "bash checks/oss/verify-OSS-B.sh"
+
+[[items]]
+id = "OSS-C"
+phase = "P0"
+title = "CI parses and runs: fix ci.yml:36 unquoted colon-in-plain-scalar (proven red: yaml ScannerError 36:100) with a block scalar; add least-privilege permissions contents read; SHA-pin actions/checkout setup-node setup-java to full commit SHAs with version comments; replace global npm install -g @ast-grep/cli with the repo devDependency via npx (dep itself pinned by OSS-I); keep job names gates and gateway-gradle stable for future branch protection"
+files = [".github/workflows/ci.yml"]
+status = "todo"
+verify = "bash checks/oss/verify-OSS-C.sh"
+
+[[items]]
+id = "OSS-D"
+phase = "P0"
+title = "Honest install + release pipeline: install.sh points at torad-labs/splice with correct /releases/download/TAG/ and /releases/latest/download/ forms, drops both failure-suppressing pipe-pipe-true on init and install --all, fails loudly when no launcher lands, verifies sha256 of downloaded jar against published sha256sums; new .github/workflows/release.yml tag-triggered: shadowJar, sha256sums.txt, license/SBOM artifacts, uploads jar + install.sh + splice-launch, SHA-pinned actions, least-privilege perms; gradle-wrapper.properties gains distributionSha256Sum for gradle-9.6.1-bin"
+files = ["install.sh", ".github/workflows/release.yml", "gateway/gradle/wrapper/gradle-wrapper.properties"]
+status = "todo"
+verify = "bash checks/oss/verify-OSS-D.sh"
+
+[[items]]
+id = "OSS-E"
+phase = "P0"
+title = "README + legacy-path truth: rewrite README around the Kotlin daemon (spliced jar, bin/splice-launch, splice init/install/setup/status), prerequisites (Node 24, Java 21, Python 3, curl, bash, Claude Code on PATH), credential file locations + password-equivalence warnings, provider support matrix (api-key routes = supported: OpenRouter + Moonshot pay-per-token; OAuth-identity-reuse routes = experimental pending vendor clarification: codex chatgpt-oauth, grok-oauth, kimi-oauth), reasoning terminology corrected everywhere (provider-generated summaries, readable fields explicitly supplied, opaque encrypted reasoning-item replay — never encrypted CoT or exact reasoning), Codex backend described as ChatGPT/Codex backend with Responses-STYLE protocol not the public OpenAI Responses API, conspicuous no-affiliation statement (Anthropic, OpenAI, xAI, Moonshot, OpenRouter), Claude Code custom-gateway support caveat (Anthropic identifies non-Claude routing as unsupported), link config/splice.example.toml as the sample topology; bin/claudex + bin/claudex-next get deprecation banners with portable repo-root resolution note (no hardcoded developer path, no mapfile on macOS bash 3.2 claim removed or fixed), ensure-proxy.mjs undefined wantMode/patchMode guard (lines 64-65) deleted or defined; legacy Node path stays runnable but undocumented as primary"
+files = ["README.md", "bin/claudex", "bin/claudex-next", "server/launcher/ensure-proxy.mjs"]
+status = "todo"
+verify = "bash checks/oss/verify-OSS-E.sh"
+
+[[items]]
+id = "OSS-F"
+phase = "P0"
+title = "Provider-auth honesty in the product surface: config/splice.example.toml line 21 encrypted-CoT wording replaced with opaque encrypted reasoning-item replay language; auth file comments state password-equivalence and that splice reads AND refreshes them; codex/xai/kimi OAuth provider stanzas labeled experimental (vendor OAuth client identity reuse, not a documented third-party integration; api-key alternatives named); TopologyLoader DEFAULT_TOML starter (lines 15-94) gains the same experimental banner comments — starter stays functional (removal of codex/grok from default is an operator decision recorded in the runbook, not made by agents); setup/login user-facing strings surface the experimental label where cheaply reachable"
+files = ["config/splice.example.toml", "gateway/app/src/main/kotlin/splice/app/TopologyLoader.kt", "minimal login/setup strings per plan"]
+status = "todo"
+verify = "bash checks/oss/verify-OSS-F.sh"
+
+[[items]]
+id = "OSS-G"
+phase = "P0"
+title = "Governance surface: SECURITY.md (GitHub Security Advisories private reporting, response expectations, do-not-attach-tokens-or-live-logs warning, supported = main pre-1.0), CONTRIBUTING.md (toolchain prereqs, the exact gates: npm run gate, gate:rules, test:hooks, config-guard, gradlew check, walls doctrine pointer to .rules/README.md, no-CLA statement MIT-in-MIT-out), CODE_OF_CONDUCT.md (Contributor Covenant 2.1 with reporting contact), .github/ISSUE_TEMPLATE bug + feature + config.yml routing security to advisories, .github/PULL_REQUEST_TEMPLATE.md (gates checklist), SUPPORT.md (best-effort personal project); versioning policy documented (SemVer 0.x pre-release; root version field owned by OSS-I)"
+files = ["SECURITY.md", "CONTRIBUTING.md", "CODE_OF_CONDUCT.md", "SUPPORT.md", ".github/ISSUE_TEMPLATE/*", ".github/PULL_REQUEST_TEMPLATE.md"]
+status = "todo"
+verify = "bash checks/oss/verify-OSS-G.sh"
+
+[[items]]
+id = "OSS-H"
+phase = "P0"
+title = "Third-party notices: THIRD_PARTY_NOTICES.md covering IBM Plex Mono woff2 x3 (SIL OFL 1.1 + IBM copyright, full OFL text placed at webui/src/shared/fonts/OFL.txt), gradle-wrapper.jar provenance (Gradle Inc, Apache-2.0, version + expected checksum note), webui bundled runtime deps (React 19 et al MIT — enumerate from webui/package.json dependencies, note banner preservation in dist), shaded-JAR dependency enumeration method (gradle dependencies of :app runtimeClasspath documented as release step), Torad design tokens statement (tokens.css plate recipe ported from torad-world.css — same-author Torad material, authorized, MIT here)"
+files = ["THIRD_PARTY_NOTICES.md", "webui/src/shared/fonts/OFL.txt"]
+status = "todo"
+verify = "bash checks/oss/verify-OSS-H.sh"
+
+[[items]]
+id = "OSS-I"
+phase = "P0"
+title = "Dependency hygiene: single owner of all package manifests + lockfile — root package.json gains version 0.1.0, engines.node >=24, packageManager pin, @ast-grep/cli devDependency pinned (feeds OSS-C npx usage); resolve the root-graph critical (eslint-plugin-boundaries to handlebars chain — locate owning workspace, upgrade or override with rationale); DELETE agents/crystallize-agent entirely (45 tracked files, separate internal npm project unrelated to splice — enumerated by git ls-files agents/crystallize-agent); add .github/dependabot.yml (npm root, gradle gateway, github-actions); regenerate package-lock.json once at the end; npm audit critical must exit 0"
+files = ["package.json", "package-lock.json", "webui/package.json", "server/package.json", ".github/dependabot.yml", "agents/crystallize-agent/**"]
+status = "todo"
+verify = "bash checks/oss/verify-OSS-I.sh"
+
+[[items]]
+id = "OSS-J"
+phase = "P1"
+title = "Portable gate: checks/gate.sh:16 stops forcing the Apple-Silicon Homebrew JAVA_HOME on every platform — respect a caller JAVA_HOME, else probe PATH java for major 21, else try the Homebrew path only where it exists, else fail with a named prerequisite message; proof is the full gate passing on this Linux host with JAVA_HOME unset"
+files = ["checks/gate.sh"]
+status = "todo"
+verify = "bash checks/oss/verify-OSS-J.sh"
+
+[[items]]
+id = "OSS-K"
+phase = "P1"
+title = "Internal-material sweep: UNTRACK (git rm --cached, files stay on disk, ignores land via OSS-A fence) .claude/skills 372 files, .claude/ledger-diffs 40, .claude/agents 6 incl gmr-agent.md internal production context, .claude/workflows 2 incl gateway-audit.js private workstation paths, .claude/commands, .claude/mcp.json; KEEP tracked: .claude/settings.json (sanitize-check) and .claude/hooks (CI test:hooks dependency python3 .claude/hooks/tests/test_orchestrator.py) — hooks are grant-gated infrastructure: sweep REPORTS private paths/hostnames in hooks, never edits them; classify with rationale: dev/research, dev/session-review-2026-07-18.md, goals/, PRODUCT.md, torad.json (untrack internal, keep contributor-relevant); dev/campaigns stays tracked (ledger doctrine) with contents privacy-swept report-only"
+files = [".claude/** index-only", "dev/research/*", "dev/session-review-2026-07-18.md", "goals/*", "PRODUCT.md", "torad.json"]
+status = "todo"
+verify = "bash checks/oss/verify-OSS-K.sh"
+
+[[items]]
+id = "OSS-L"
+phase = "P0"
+title = "Provenance dossier: PROVENANCE.md — document the inheritance chain (CHANGELOG 114-119 forked npm package; CHANGELOG 178-184 codex-for-claude-code local fork; server/src/codex-proxy.mjs v30 decomposition of 1783-line v29; Kotlin PORT-OF headers citing server modules at 4ca99f7); web-research the exact upstream package/repo + license at the forked revision (search codex-for-claude-code npm/github); if identified: pin URL + version + license + required notices; if not conclusively identified: explicit UNRESOLVED section with operator action + counsel recommendation and a statement that the MIT LICENSE covers original splice work, inherited material pending clearance; inventory PORT-OF-marked Kotlin files mechanically"
+files = ["PROVENANCE.md", "CHANGELOG.md annotations only"]
+status = "todo"
+verify = "bash checks/oss/verify-OSS-L.sh"

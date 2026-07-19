@@ -61,6 +61,8 @@ public data class HeadDeps(
     val perfStats: PerfStats,
     val log: (String) -> Unit,
     val clock: () -> Long = System::currentTimeMillis,
+    // mirror_reasoning knob, threaded to TurnPipeline (restart-required like the other reasoning knobs)
+    val mirrorReasoning: Boolean = true,
 )
 
 public class HeadServer(

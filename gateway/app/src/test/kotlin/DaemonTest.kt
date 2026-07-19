@@ -11,6 +11,8 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.runBlocking
 import mock.MockChatGptUpstream
+import mock.awaitListening
+import mock.freshPort
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -35,8 +37,8 @@ class DaemonTest {
     private lateinit var daemon: Daemon
     private lateinit var statePaths: StatePaths
     private lateinit var key: String
-    private val controlPort = 39260
-    private val headPort = 39261
+    private val controlPort = freshPort()
+    private val headPort = freshPort()
 
     private fun topologyToml() = """
         [daemon]
@@ -76,7 +78,7 @@ class DaemonTest {
             refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
         )
         runBlocking { daemon.start() }
-        Thread.sleep(900) // both Netty servers warm up
+        awaitListening(controlPort, headPort)
     }
 
     @AfterAll

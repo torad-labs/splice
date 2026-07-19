@@ -16,6 +16,8 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import mock.MockChatGptUpstream
+import mock.awaitListening
+import mock.freshPort
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -51,7 +53,7 @@ class GrokProviderTest {
 
     private val mock = MockChatGptUpstream()
     private val client = HttpClient(CIO)
-    private val port = 39270
+    private val port = freshPort()
     private lateinit var head: HeadServer
     private lateinit var tmp: Path
 
@@ -108,7 +110,7 @@ class GrokProviderTest {
             ),
         )
         head.start()
-        Thread.sleep(700)
+        awaitListening(port)
     }
 
     @AfterAll

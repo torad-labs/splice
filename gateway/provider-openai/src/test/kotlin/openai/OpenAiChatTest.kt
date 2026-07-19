@@ -15,6 +15,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import mock.awaitListening
+import mock.freshPort
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -90,7 +92,7 @@ class OpenAiChatTest {
 
     private val mock = MockChatUpstream()
     private val client = HttpClient(CIO)
-    private val port = 39280
+    private val port = freshPort()
     private lateinit var head: HeadServer
 
     @BeforeAll
@@ -126,7 +128,7 @@ class OpenAiChatTest {
             ),
         )
         head.start()
-        Thread.sleep(700)
+        awaitListening(port)
     }
 
     @AfterAll

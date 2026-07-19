@@ -15,6 +15,8 @@ import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.test.runTest
 import mock.MockChatGptUpstream
+import mock.awaitListening
+import mock.freshPort
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -54,7 +56,7 @@ class HeadServerIntegrationTest {
 
     private val mock = MockChatGptUpstream()
     private val client = HttpClient(CIO)
-    private val port = 39240
+    private val port = freshPort()
     private lateinit var head: HeadServer
     private val logs = mutableListOf<String>()
     private lateinit var tmp: java.nio.file.Path
@@ -102,7 +104,7 @@ class HeadServerIntegrationTest {
             ),
         )
         head.start()
-        Thread.sleep(700) // Netty warmup
+        awaitListening(port)
     }
 
     @AfterAll

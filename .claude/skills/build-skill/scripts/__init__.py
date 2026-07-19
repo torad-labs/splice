@@ -1,1 +1,0 @@
-# build-skill scripts package

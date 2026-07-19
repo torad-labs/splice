@@ -15,6 +15,10 @@
 // as before.
 // Failure visibility (discipline L1): every auth-critical Result collapse consumes the failure
 // with a stderr line first — a corrupt auth file must never masquerade as "not logged in".
+// Synthesized expiry for missing `expires` (G18, 2026-07-19): a file without a top-level `expires`
+// (legacy shape, or a foreign CLI write that stripped it) was treated as never-expiring — no
+// proactive refresh, no eventual expiry. readSnapshot() now synthesizes expiresAtMs = mtime + 4h
+// so those files still age out and re-refresh through the same tiers above.
 package splice.provider.grok
 
 import kotlinx.coroutines.CoroutineScope
@@ -86,6 +90,9 @@ public class GrokAuthProvider(
         val snap = readSnapshot() ?: return null
         val current = Credentials.Bearer(snap.access, null)
         val expiresAt = snap.expiresAtMs
+        // expiresAt is always populated now (real, or synthesized off mtime by readSnapshot — G18);
+        // still outside the proactive window means serve as-is. The null branch below stays as
+        // defensive-only dead code for a future caller that constructs Snapshot directly.
         return if (expiresAt == null || expiresAt - clock() >= PROACTIVE_WINDOW_MS) {
             current
         } else if (expiresAt - clock() >= STALE_FLOOR_MS) {
@@ -111,7 +118,12 @@ public class GrokAuthProvider(
                 return@runCatchingCancellable c.snapshot
             }
         }
-        parseSnapshot()?.also { cache = Cache(it, mtime, now) }
+        // G18: a file with no top-level `expires` (legacy shape, or a foreign CLI write that
+        // stripped it) is otherwise never-expiring — synthesize a ceiling off the mtime already
+        // read above, no new I/O.
+        parseSnapshot()
+            ?.let { it.copy(expiresAtMs = it.expiresAtMs ?: (mtime + SYNTHETIC_EXPIRY_TTL_MS)) }
+            ?.also { cache = Cache(it, mtime, now) }
     }.onFailure {
         System.err.println("[grok-auth] failed to read $authPath: $it — treating as not logged in")
     }.getOrNull()
@@ -291,6 +303,10 @@ public class GrokAuthProvider(
         /** Below this, block instead of prefetching: comfortably above the refreshCall's measured
          *  RTT (sub-second) and well below the 300s window, so most of the window stays non-blocking. */
         const val STALE_FLOOR_MS = 30_000L
+
+        /** 4h ceiling synthesized for auth files with no `expires` field (legacy/foreign CLI writes,
+         *  G18) — otherwise readSnapshot() would treat them as never-expiring. */
+        const val SYNTHETIC_EXPIRY_TTL_MS = 4 * 60 * 60 * 1000L
         const val FIELD_TOKENS = "tokens"
         const val FIELD_ACCESS_TOKEN = "access_token"
         const val FIELD_REFRESH_TOKEN = "refresh_token"

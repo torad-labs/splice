@@ -23,6 +23,7 @@ import splice.provider.grok.GrokAuthProvider
 import splice.provider.grok.GrokRefreshedTokens
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 import java.util.concurrent.atomic.AtomicInteger
 
 class GrokAuthProviderTest {
@@ -73,6 +74,69 @@ class GrokAuthProviderTest {
             refreshCall = { RefreshAttempt.Denied("test-denied") },
         )
         assertEquals("grok-access", bearerToken(auth.credentials()))
+    }
+
+    // G18: a file with no top-level `expires` (legacy shape, or a foreign CLI write that stripped
+    // it) is no longer never-expiring — readSnapshot() synthesizes expiresAtMs = mtime + 4h. These
+    // three tests pin mtime directly (Files.setLastModifiedTime) to land the synthesized value in
+    // each of the three credentials() tiers.
+    @Test
+    fun `synthesized expiry from mtime outside proactive window serves as-is`() = runTest {
+        val dir = Files.createTempDirectory("grok-synth-fresh")
+        val now = 1_000_000L
+        val file = authFile(dir, expiresAtMs = null)
+        // mtime + 4h lands far outside the 5-minute proactive window.
+        Files.setLastModifiedTime(file, FileTime.fromMillis(now - 1_000_000))
+        val calls = AtomicInteger()
+        val auth = GrokAuthProvider(authPath = file, clock = { now }, refreshCall = {
+            calls.incrementAndGet()
+            RefreshAttempt.Denied("test-denied")
+        })
+        assertEquals("grok-access", bearerToken(auth.credentials()))
+        assertEquals(0, calls.get())
+    }
+
+    // G18: mtime placed so the synthesized expiry (mtime + 4h) has 10s left — below the 30s stale
+    // floor (G17), so credentials() blocks for a confirmed-fresh token instead of only prefetching.
+    // `now` is scaled up from the 1_000_000L convention used elsewhere so subtracting most of the
+    // 4h TTL doesn't push mtime before the epoch.
+    @Test
+    fun `synthesized expiry from mtime inside proactive window triggers proactive refresh`() = runTest {
+        val dir = Files.createTempDirectory("grok-synth-inside")
+        val now = 100_000_000L
+        val file = authFile(dir, expiresAtMs = null)
+        Files.setLastModifiedTime(file, FileTime.fromMillis(now - (4 * 3_600_000L - 10_000)))
+        val auth = GrokAuthProvider(
+            authPath = file,
+            clock = { now },
+            nowIso = { "iso-now" },
+            refreshCall = {
+                RefreshAttempt.Granted(GrokRefreshedTokens("new-access", "new-refresh", expiresIn = 21_600))
+            },
+        )
+        assertEquals("new-access", bearerToken(auth.credentials()))
+        val onDisk = Json.parseToJsonElement(Files.readString(file)).jsonObject
+        val tokens = onDisk["tokens"]!!.jsonObject
+        assertEquals("new-access", tokens["access_token"]!!.jsonPrimitive.content)
+        assertEquals("new-refresh", tokens["refresh_token"]!!.jsonPrimitive.content)
+        assertEquals(now + 21_600 * 1000, onDisk["expires"]!!.jsonPrimitive.content.toLong())
+    }
+
+    // G18: mtime placed so the 4h TTL has already fully elapsed (synthesized expiry is 1ms in the
+    // past) and the refresh comes back dead — mirrors `fully expired token with dead refresh yields
+    // null` but for the synthesized-TTL path instead of an explicit `expires` field.
+    @Test
+    fun `synthesized expiry fully elapsed with dead refresh yields null`() = runTest {
+        val dir = Files.createTempDirectory("grok-synth-dead")
+        val now = 100_000_000L
+        val file = authFile(dir, expiresAtMs = null)
+        Files.setLastModifiedTime(file, FileTime.fromMillis(now - (4 * 3_600_000L + 1)))
+        val auth = GrokAuthProvider(
+            authPath = file,
+            clock = { now },
+            refreshCall = { RefreshAttempt.Denied("test-denied") },
+        )
+        assertNull(auth.credentials())
     }
 
     @Test

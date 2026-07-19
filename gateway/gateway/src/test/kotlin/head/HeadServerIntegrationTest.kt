@@ -198,6 +198,22 @@ class HeadServerIntegrationTest {
     }
 
     @Test
+    fun `zero-event auth-shaped body classifies as authentication with a login hint`() = runTest {
+        val sse = messages("zero_event_auth")
+        assertTrue(sse.contains("event: error"))
+        assertTrue(sse.contains("authentication_error"))
+        assertTrue(sse.contains("run: claudex login"))
+        assertFalse(sse.contains("overloaded_error"))
+    }
+
+    @Test
+    fun `zero-event empty body still falls back to the honest overloaded error`() = runTest {
+        val sse = messages("zero_event_empty")
+        assertTrue(sse.contains("event: error"))
+        assertTrue(sse.contains("overloaded_error"))
+    }
+
+    @Test
     fun `compactish turn promotes reasoning to text (mirror + promote)`() = runTest {
         // a compact-shaped SCENARIO won't trigger classifyCompact (no marker), so this proves
         // promote-to-text on a reasoning-only turn with an empty text channel.

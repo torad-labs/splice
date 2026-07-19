@@ -259,6 +259,14 @@ public class SpliceConfig internal constructor(private val m: Map<String, Any?>)
     public val showReasoning: ReasoningDisplay get() = ReasoningDisplay.from(string(Knob.SHOW_REASONING))
     public val replayReasoning: Boolean get() = bool(Knob.REPLAY_REASONING)
     public val mirrorReasoning: Boolean get() = bool(Knob.MIRROR_REASONING)
+
+    // Reasoning-continuation folding (codex 518n-2). Models is a comma list → set; empty = feature off.
+    public val foldReasoningModels: Set<String>
+        get() = string(Knob.FOLD_REASONING_MODELS).orEmpty()
+            .split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+    public val foldMaxContinue: Int get() = long(Knob.FOLD_MAX_CONTINUE).toInt()
+    public val foldMarkerText: String get() = string(Knob.FOLD_MARKER_TEXT).orEmpty()
+    public val foldMaxTier: Int get() = long(Knob.FOLD_MAX_TIER).toInt()
     public val maxInflight: Int get() = long(Knob.MAX_INFLIGHT).toInt()
     public val maxQueued: Int get() = long(Knob.MAX_QUEUED).toInt()
     public val upstreamRetries: Int get() = long(Knob.UPSTREAM_RETRIES).toInt()

@@ -13,6 +13,7 @@ import splice.core.reasoning.encodeReasoningEnvelope
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.spi.BuiltTurn
+import splice.spi.FoldController
 import splice.spi.Provider
 import splice.spi.ProviderIdentity
 import splice.spi.ProviderTuning
@@ -26,6 +27,9 @@ public abstract class ResponsesProvider(
     private val configEffort: String?,
     private val configSummary: String?,
     protected val quirks: ResponsesQuirks,
+    // Reasoning-continuation folding (codex 518n-2). null = the feature is off for this provider —
+    // grok/openai-platform pass nothing → pure passthrough. Only CodexProvider wires a real config.
+    private val foldConfig: FoldConfig? = null,
 ) : Provider, ProviderIdentity by tuning {
 
     final override val upstreamUrl: String = "${tuning.baseUrl}/responses"
@@ -74,8 +78,20 @@ public abstract class ResponsesProvider(
                 streamIdleMsForMessage = watchdog.streamIdle.inWholeMilliseconds,
                 upstreamTimeoutMsForMessage = watchdog.totalCap.inWholeMilliseconds,
                 dedupeRepeatedSummaryParts = quirks.summaryDelivery != null,
+                // Collect this round's encrypted reasoning envelopes ONLY when folding is active for
+                // the turn — off keeps the reducer byte-identical for sol / every non-fold turn.
+                collectReasoningEnvelopes = foldController(meta) != null,
             ),
         )
+
+    // Non-null ONLY when folding is configured AND the turn's model is fold-eligible AND it is not a
+    // compaction (a text summarizer requests no encrypted_content). Sol and every non-codex head get
+    // null here → the gateway never buffers or loops → pure passthrough.
+    final override fun foldController(meta: TurnMeta): FoldController? {
+        val cfg = foldConfig ?: return null
+        if (meta.compact || meta.upstreamModel !in cfg.models) return null
+        return ResponsesFoldController(cfg, decodeReasoningEnvelope = { decodeReasoningEnvelope(it) })
+    }
 
     private fun showOn(): Boolean = !showReasoning.isOff
 }

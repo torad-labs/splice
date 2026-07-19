@@ -30,6 +30,10 @@ public class CodexProvider(
 
     public companion object {
         /** The codex quirk profile — injectable so the TOML [providers.*.quirks] table is REAL. */
-        public fun defaultQuirks(): ResponsesQuirks = ResponsesQuirks(providerTag = "claudex")
+        public fun defaultQuirks(): ResponsesQuirks = ResponsesQuirks(
+            providerTag = "claudex",
+            // richer titled reasoning sections from the ChatGPT backend (probed 2026-07-19)
+            summaryDelivery = "sequential_cutoff",
+        )
     }
 }

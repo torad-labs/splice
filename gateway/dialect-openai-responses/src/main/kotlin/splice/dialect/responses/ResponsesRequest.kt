@@ -27,6 +27,10 @@ internal data class ResponsesRequest(
     @SerialName("tool_choice") val toolChoice: JsonElement? = null,
     @SerialName("parallel_tool_calls") val parallelToolCalls: Boolean? = null,
     val reasoning: JsonObject? = null,
+    /** Responses-native summary delivery (codex-rs sends it whenever a summary is requested);
+     *  NOT the Chat-only stream_options.include_usage that broke codex 2026-07-18 — this named
+     *  field is exactly the reviewable type change the closed DTO exists to force. */
+    @SerialName("stream_options") val streamOptions: JsonObject? = null,
 )
 
 // explicitNulls=false: a null optional field is OMITTED, exactly matching the builder's conditional

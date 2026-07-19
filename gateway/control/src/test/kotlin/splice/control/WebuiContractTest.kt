@@ -29,6 +29,8 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.head.Head
 import splice.core.head.HeadHealth
+import java.net.ServerSocket
+import java.net.Socket
 import java.nio.file.Files
 
 private class ContractHead(override val key: String, override val port: Int) : Head {
@@ -42,7 +44,7 @@ private class ContractHead(override val key: String, override val port: Int) : H
 class WebuiContractTest {
 
     private val client = HttpClient(CIO)
-    private val port = 39610
+    private val port = freshPort()
     private lateinit var key: String
     private lateinit var control: ControlServer
     private val json = Json { ignoreUnknownKeys = true }
@@ -86,7 +88,7 @@ class WebuiContractTest {
             log = {},
         )
         runBlocking { control.start() }
-        Thread.sleep(500)
+        awaitListening(port)
     }
 
     @AfterAll
@@ -165,5 +167,21 @@ class WebuiContractTest {
     @Test
     fun `logs payload matches LogsPayload`() = runBlocking {
         assertFields(api("/api/logs/codex"), listOf("key", "path", "lines"), "LogsPayload")
+    }
+}
+
+// OSS-M: fixed test ports lived in the Linux ephemeral range — transient outbound source ports
+// collide at bind time on busy hosts; ports are OS-assigned and readiness is polled, not slept.
+private fun freshPort(): Int = ServerSocket(0).use { it.localPort }
+
+private fun awaitListening(vararg ports: Int) {
+    for (p in ports) awaitOne(p)
+}
+
+private fun awaitOne(port: Int) {
+    val deadline = System.currentTimeMillis() + 10_000
+    while (runCatching { Socket("127.0.0.1", port).use { } }.isFailure) {
+        check(System.currentTimeMillis() < deadline) { "nothing listening on :$port" }
+        Thread.sleep(50)
     }
 }

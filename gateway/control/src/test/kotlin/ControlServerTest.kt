@@ -41,6 +41,8 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.head.Head
 import splice.core.head.HeadHealth
+import java.net.ServerSocket
+import java.net.Socket
 import java.nio.file.Files
 
 private class FakeHead(override val key: String, override val port: Int) : Head {
@@ -61,7 +63,7 @@ class ControlServerTest {
 
     private lateinit var control: ControlServer
     private lateinit var key: String
-    private val port = 39250
+    private val port = freshPort()
     private val client = HttpClient(CIO) { expectSuccess = false }
     private val json = Json { ignoreUnknownKeys = true }
     private val head = FakeHead("codex", 3099)
@@ -125,7 +127,7 @@ class ControlServerTest {
             ),
         )
         control.start()
-        Thread.sleep(600)
+        awaitListening(port)
     }
 
     @AfterAll
@@ -305,5 +307,21 @@ class ControlServerTest {
             )
         }.bodyAsText()
         assertTrue(line.contains("Codex 5.6 Sol"))
+    }
+}
+
+// OSS-M: fixed test ports lived in the Linux ephemeral range — transient outbound source ports
+// collide at bind time on busy hosts; ports are OS-assigned and readiness is polled, not slept.
+private fun freshPort(): Int = ServerSocket(0).use { it.localPort }
+
+private fun awaitListening(vararg ports: Int) {
+    for (p in ports) awaitOne(p)
+}
+
+private fun awaitOne(port: Int) {
+    val deadline = System.currentTimeMillis() + 10_000
+    while (runCatching { Socket("127.0.0.1", port).use { } }.isFailure) {
+        check(System.currentTimeMillis() < deadline) { "nothing listening on :$port" }
+        Thread.sleep(50)
     }
 }

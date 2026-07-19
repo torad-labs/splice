@@ -96,6 +96,23 @@ class SseReaderTest {
         assertEquals(listOf("crlf"), events)
     }
 
+    // G2 (zero-event classification): onRawText must expose the FULL decoded body — even a non-SSE
+    // page with no `data:` prefix (the empty-200 dead-head shape) — reassembled across chunk edges.
+    @Test
+    fun `onRawText captures the full decoded body text across chunk boundaries`() = runTest {
+        val channel = ByteChannel()
+        val captured = StringBuilder()
+        launch {
+            channel.writeFully("<html><body>Unauthor".toByteArray())
+            channel.flush()
+            channel.writeFully("ized</body></html>".toByteArray())
+            channel.flush()
+            channel.close(null)
+        }
+        sseJsonEvents(channel, onRawText = { captured.append(it) }).toList()
+        assertEquals("<html><body>Unauthorized</body></html>", captured.toString())
+    }
+
     // REGRESSION (600%-CPU incident, 2026-07-18): a torn/half-closed upstream where readAvailable
     // returns 0 WITHOUT suspending. The old `while (readAvailable() == 0)` loop had no suspension or
     // cancellation point on that path — it hot-spun a core forever and could not be cancelled when

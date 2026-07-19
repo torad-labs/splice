@@ -18,6 +18,7 @@ verify = "bash checks/oss/verify-OSS-A.sh"
 # [2026-07-19] done @17229bb (gate PASS + oracle OK)
 # [2026-07-19] FENCE-AUTONARROWED: files = ["experiments/cache-replay/capture/*", ".gitignore", "dev/release/history-rewrite-runbook.md", ".mailmap"] -> files = [".gitignore", ".mailmap", "dev/release/history-rewrite-runbook.md", "experiments/cache-replay/capture/RESULTS.md", "experiments/cache-replay/capture/ab-results.log", "experiments/cache-replay/capture/turn-001.json", "experiments/cache-replay/capture/turn-002.json", "experiments/cache-replay/capture/turn-003.json", "experiments/cache-replay/capture/turn-004.json", "experiments/cache-replay/capture/turn-005.json", "experiments/cache-replay/capture/turn-006.json", "experiments/cache-replay/capture/turn-007.json", "experiments/cache-replay/capture/turn-008.json", "experiments/cache-replay/capture/turn-009.json", "experiments/cache-replay/capture/turn-010.json"] (by=orchestrator implied; no flag)
 # [2026-07-19] VERIFIED: 2 full serial gates + post-fix oracle; runbook redaction landed in review commit
+# [2026-07-19] SUPERSEDED: .mailmap removed from tip AND stripped from history — the filter-repo rewrite bakes the identity mapping into every commit object, so the mailmap (which必 carries the old address to function) became both pointless and the last re-leak of the scrubbed string; oracle updated accordingly
 
 [[items]]
 id = "OSS-B"

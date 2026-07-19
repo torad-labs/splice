@@ -5,5 +5,4 @@ set -euo pipefail
 grep -qE "^\.env" .gitignore
 grep -q "\.env\.example" .gitignore
 test -f dev/release/history-rewrite-runbook.md
-test -f .mailmap
 echo "VERIFY OSS-A: OK"

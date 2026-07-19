@@ -9,9 +9,10 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.app.kimiRefresh
+import splice.core.auth.RefreshAttempt
 import java.util.concurrent.atomic.AtomicInteger
 
 class KimiRefreshTest {
@@ -42,8 +43,9 @@ class KimiRefreshTest {
             identityHeaders,
             clientOver(engine),
         )
-        assertEquals("new-access", result?.accessToken)
-        assertEquals("new-refresh", result?.refreshToken)
+        val granted = result as RefreshAttempt.Granted
+        assertEquals("new-access", granted.tokens.accessToken)
+        assertEquals("new-refresh", granted.tokens.refreshToken)
         assertEquals(2, calls.get())
         assertEquals(listOf("device-123", "device-123"), seenDeviceHeaders)
     }
@@ -55,7 +57,8 @@ class KimiRefreshTest {
             calls.incrementAndGet()
             respond("unauthorized", HttpStatusCode.Unauthorized, headersOf())
         }
-        assertNull(kimiRefresh("https://auth.kimi.com/token", "dead-refresh", identityHeaders, clientOver(engine)))
+        val result = kimiRefresh("https://auth.kimi.com/token", "dead-refresh", identityHeaders, clientOver(engine))
+        assertTrue(result is RefreshAttempt.InvalidGrant)
         assertEquals(1, calls.get())
     }
 
@@ -66,18 +69,20 @@ class KimiRefreshTest {
             calls.incrementAndGet()
             respond("""{"error":"invalid_grant"}""", HttpStatusCode.BadRequest, headersOf())
         }
-        assertNull(kimiRefresh("https://auth.kimi.com/token", "dead-refresh", identityHeaders, clientOver(engine)))
+        val result = kimiRefresh("https://auth.kimi.com/token", "dead-refresh", identityHeaders, clientOver(engine))
+        assertTrue(result is RefreshAttempt.InvalidGrant)
         assertEquals(1, calls.get())
     }
 
     @Test
-    fun `all attempts 503 exhausts retries and returns null`() = runTest {
+    fun `all attempts 503 exhausts retries and returns Denied`() = runTest {
         val calls = AtomicInteger()
         val engine = MockEngine {
             calls.incrementAndGet()
             respond("down", HttpStatusCode.ServiceUnavailable, headersOf())
         }
-        assertNull(kimiRefresh("https://auth.kimi.com/token", "refresh", identityHeaders, clientOver(engine)))
+        val result = kimiRefresh("https://auth.kimi.com/token", "refresh", identityHeaders, clientOver(engine))
+        assertTrue(result is RefreshAttempt.Denied)
         assertEquals(3, calls.get())
     }
 }

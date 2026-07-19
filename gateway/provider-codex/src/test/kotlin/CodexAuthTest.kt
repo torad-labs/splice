@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.Credentials
+import splice.core.auth.RefreshAttempt
 import splice.provider.codex.CodexAuthProvider
 import splice.provider.codex.RefreshedTokens
 import splice.provider.codex.accountIdFromIdToken
@@ -89,7 +90,7 @@ class CodexAuthTest {
     private fun provider(
         tmp: Path,
         clock: () -> Long,
-        refresh: suspend (String) -> RefreshedTokens?,
+        refresh: suspend (String) -> RefreshAttempt<RefreshedTokens>,
     ): Pair<CodexAuthProvider, Path> {
         val authPath = tmp.resolve(".codex/auth.json")
         return CodexAuthProvider(
@@ -104,7 +105,7 @@ class CodexAuthTest {
     @Test
     fun `cached read keys on mtime and ttl`(@TempDir tmp: Path) = runTest {
         var now = 1_000L
-        val (auth, path) = provider(tmp, { now }) { null }
+        val (auth, path) = provider(tmp, { now }) { RefreshAttempt.Denied("test-denied") }
         Files.createDirectories(path.parent)
         path.writeText("""{"tokens":{"access_token":"tok-1","account_id":"acct-1"}}""")
         val first = auth.credentials() as Credentials.Bearer
@@ -125,7 +126,9 @@ class CodexAuthTest {
         val (auth, path) = provider(tmp, { 1_000L }) {
             calls.incrementAndGet()
             gate.await()
-            RefreshedTokens(accessToken = "tok-new", refreshToken = "refresh-2", idToken = "id-2")
+            RefreshAttempt.Granted(
+                RefreshedTokens(accessToken = "tok-new", refreshToken = "refresh-2", idToken = "id-2"),
+            )
         }
         Files.createDirectories(path.parent)
         path.writeText(
@@ -165,7 +168,7 @@ class CodexAuthTest {
             val calls = AtomicInteger(0)
             val (auth, path) = provider(tmp, { 1_000L }) {
                 calls.incrementAndGet()
-                null
+                RefreshAttempt.Denied("test-denied")
             }
             Files.createDirectories(path.parent)
             path.writeText("""{"tokens":{"access_token":"token-A","refresh_token":"R1","account_id":"acct-1"}}""")
@@ -193,9 +196,11 @@ class CodexAuthTest {
                 if (token == "R1") {
                     // another process's rotation lands on disk between our read and the POST.
                     path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"R2"}}""")
-                    null
+                    RefreshAttempt.Denied("codex rejected R1")
                 } else {
-                    RefreshedTokens(accessToken = "tok-new", refreshToken = "R3", idToken = null)
+                    RefreshAttempt.Granted(
+                        RefreshedTokens(accessToken = "tok-new", refreshToken = "R3", idToken = null),
+                    )
                 }
             }
             Files.createDirectories(path.parent)
@@ -215,7 +220,7 @@ class CodexAuthTest {
         val (auth, _) = provider(tmp, { 1_000L }) {
             val n = calls.incrementAndGet()
             path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"R${n + 1}"}}""")
-            null
+            RefreshAttempt.Denied("test-denied")
         }
         Files.createDirectories(path.parent)
         path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"R1"}}""")
@@ -233,7 +238,7 @@ class CodexAuthTest {
         val calls = AtomicInteger(0)
         val (auth, path) = provider(tmp, { now }) {
             calls.incrementAndGet()
-            null
+            RefreshAttempt.Denied("test-denied")
         }
         Files.createDirectories(path.parent)
         path.writeText("""{"tokens":{"access_token":"$access","account_id":"acct-1"}}""")
@@ -246,7 +251,7 @@ class CodexAuthTest {
         val calls = AtomicInteger(0)
         val (auth, path) = provider(tmp, { 1_000_000L }) {
             calls.incrementAndGet()
-            null
+            RefreshAttempt.Denied("test-denied")
         }
         Files.createDirectories(path.parent)
         path.writeText("""{"tokens":{"access_token":"tok-1","account_id":"acct-1"}}""")
@@ -260,7 +265,7 @@ class CodexAuthTest {
         val access = jwt("""{"exp":${(now - 1) / 1000}}""")
         val newAccess = jwt("""{"exp":${(now + 3_600_000) / 1000}}""")
         val (auth, path) = provider(tmp, { now }) {
-            RefreshedTokens(accessToken = newAccess, refreshToken = "refresh-2", idToken = null)
+            RefreshAttempt.Granted(RefreshedTokens(accessToken = newAccess, refreshToken = "refresh-2", idToken = null))
         }
         Files.createDirectories(path.parent)
         path.writeText("""{"tokens":{"access_token":"$access","refresh_token":"refresh-1","account_id":"acct-1"}}""")
@@ -274,7 +279,7 @@ class CodexAuthTest {
         runTest {
             val now = 1_000_000L
             val access = jwt("""{"exp":${(now + 60_000) / 1000}}""") // < 5 min window, still future
-            val (auth, path) = provider(tmp, { now }) { null }
+            val (auth, path) = provider(tmp, { now }) { RefreshAttempt.Denied("test-denied") }
             Files.createDirectories(path.parent)
             path.writeText("""{"tokens":{"access_token":"$access","refresh_token":"refresh-1"}}""")
             assertEquals(access, (auth.credentials() as Credentials.Bearer).token)
@@ -284,7 +289,7 @@ class CodexAuthTest {
     fun `fully expired token with dead refresh yields null`(@TempDir tmp: Path) = runTest {
         val now = 1_000_000L
         val access = jwt("""{"exp":${(now - 1) / 1000}}""")
-        val (auth, path) = provider(tmp, { now }) { null }
+        val (auth, path) = provider(tmp, { now }) { RefreshAttempt.Denied("test-denied") }
         Files.createDirectories(path.parent)
         path.writeText("""{"tokens":{"access_token":"$access","refresh_token":"refresh-1"}}""")
         assertNull(auth.credentials())
@@ -292,7 +297,7 @@ class CodexAuthTest {
 
     @Test
     fun `describe masks the account id and never exposes tokens`(@TempDir tmp: Path) = runTest {
-        val (auth, path) = provider(tmp, { 1L }) { null }
+        val (auth, path) = provider(tmp, { 1L }) { RefreshAttempt.Denied("test-denied") }
         assertFalse(auth.describe().present)
         Files.createDirectories(path.parent)
         path.writeText("""{"tokens":{"access_token":"secret","account_id":"acct12345678"},"last_refresh":"then"}""")
@@ -302,5 +307,60 @@ class CodexAuthTest {
         assertEquals("acct…5678", d.fields["account_id_masked"])
         assertEquals("then", d.fields["last_refresh"])
         assertFalse(d.fields.values.any { it.contains("secret") })
+    }
+
+    // G15: a confirmed invalid_grant (post-G1 re-read: disk untouched, so the retry-once check
+    // finds no rotation and gives up) latches — the SECOND call must not re-POST the dead token.
+    @Test
+    fun `latched invalid_grant skips the network POST on the next call`(@TempDir tmp: Path) = runTest {
+        val calls = AtomicInteger()
+        val (auth, path) = provider(tmp, { 1_000L }) {
+            calls.incrementAndGet()
+            RefreshAttempt.InvalidGrant("dead")
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"dead-refresh"}}""")
+        assertNull(auth.refresh())
+        assertEquals(1, calls.get())
+        assertNull(auth.refresh()) // file untouched: gate short-circuits before the lock/network
+        assertEquals(1, calls.get())
+    }
+
+    // G15: the latch is keyed on the auth file's mtime — a re-login rewrite (fresh refresh token,
+    // new mtime) clears it automatically, so the very next call attempts a real refresh again.
+    @Test
+    fun `latch clears when the auth file's mtime changes`(@TempDir tmp: Path) = runTest {
+        val calls = AtomicInteger()
+        var granted = false
+        val (auth, path) = provider(tmp, { 1_000L }) {
+            calls.incrementAndGet()
+            if (granted) {
+                RefreshAttempt.Granted(
+                    RefreshedTokens(accessToken = "rotated-access", refreshToken = "rotated-refresh", idToken = null),
+                )
+            } else {
+                RefreshAttempt.InvalidGrant("dead")
+            }
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"dead-refresh"}}""")
+        assertNull(auth.refresh())
+        assertEquals(1, calls.get())
+        Thread.sleep(5) // guarantee the mtime actually advances on coarse-grained filesystems
+        path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"fresh-refresh"}}""") // re-login
+        granted = true
+        assertEquals("rotated-access", (auth.refresh() as Credentials.Bearer).token)
+        assertEquals(2, calls.get()) // the real POST fired — the latch did not suppress it
+    }
+
+    // G15: /mgmt/auth and /api/auth surface the suppressed state via describe().
+    @Test
+    fun `describe surfaces refresh_latched after a confirmed invalid_grant`(@TempDir tmp: Path) = runTest {
+        val (auth, path) = provider(tmp, { 1_000L }) { RefreshAttempt.InvalidGrant("dead") }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"acc","refresh_token":"dead-refresh"}}""")
+        assertNull(auth.describe().fields["refresh_latched"])
+        assertNull(auth.refresh())
+        assertEquals("invalid_grant", auth.describe().fields["refresh_latched"])
     }
 }

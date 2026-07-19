@@ -3,10 +3,14 @@
 // a dead refresh token, a DNS blip, a corrupt auth file, and "not logged in" were literally the
 // same value, so the operator saw identical symptoms for problems with opposite fixes. A sealed
 // type makes the modes distinct and the single null-collapse boundary (credentialsOrNull) is the
-// ONE place they flatten for the SPI — after each branch has logged its own story. Widening the
-// SPI itself to return RefreshOutcome is planned with the shared refresh helper (G7 in
-// dev/research/gateway-gaps-tracker.md).
+// ONE place they flatten for the SPI — after each branch has logged its own story.
+// G15: INVALID_GRANT_REASON is the canonical Rejected.reason marker a confirmed invalid_grant
+// classification (see RefreshAttempt.kt) produces, so InvalidGrantLatch can key its gate on it.
 package splice.core.auth
+
+/** The Rejected.reason marker for a CONFIRMED invalid_grant (401/403/explicit invalid_grant body) —
+ *  as opposed to any other non-retryable refresh rejection. Paired with [InvalidGrantLatch]. */
+public const val INVALID_GRANT_REASON: String = "invalid_grant"
 
 /** Everything a provider's refresh attempt can resolve to — one branch per distinct failure story. */
 public sealed class RefreshOutcome {

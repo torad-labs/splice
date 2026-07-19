@@ -21,6 +21,7 @@ import org.junit.jupiter.api.TestInstance
 import splice.app.Daemon
 import splice.app.DaemonLock
 import splice.app.TopologyLoader
+import splice.core.auth.RefreshAttempt
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import java.nio.file.Files
@@ -72,7 +73,7 @@ class DaemonTest {
             statePaths = statePaths,
             dashboardHtml = { "<!doctype html><title>splice</title>" },
             log = {},
-            refreshCall = { _, _ -> null },
+            refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
         )
         runBlocking { daemon.start() }
         Thread.sleep(900) // both Netty servers warm up

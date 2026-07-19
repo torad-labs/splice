@@ -4,11 +4,15 @@
 // file, and uninstall removes the links.
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.install
+import splice.app.cli.installedShimVersion
+import splice.app.cli.shimStalenessWarning
 import splice.app.cli.uninstall
+import splice.core.SHIM_VERSION
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
@@ -112,6 +116,67 @@ class InstallCommandTest {
             val bin = home.resolve(".local").resolve("bin")
             assertFalse(Files.exists(bin.resolve("claudex"), NOFOLLOW_LINKS))
             assertFalse(Files.exists(bin.resolve("grok"), NOFOLLOW_LINKS))
+        }
+    }
+
+    private fun shimPath(home: Path): Path =
+        home.resolve(".local").resolve("share").resolve("splice").resolve("splice-launch")
+
+    private fun writeShim(home: Path, contents: String) {
+        val shim = shimPath(home)
+        Files.createDirectories(shim.parent)
+        shim.writeString(contents)
+    }
+
+    @Test
+    fun `installedShimVersion returns null when no shim is installed`(@TempDir home: Path) {
+        withHome(home) {
+            assertNull(installedShimVersion())
+        }
+    }
+
+    @Test
+    fun `installedShimVersion extracts the SPLICE_SHIM_VERSION marker`(@TempDir home: Path) {
+        withHome(home) {
+            writeShim(
+                home,
+                """
+                #!/usr/bin/env bash
+                set -euo pipefail
+                SPLICE_SHIM_VERSION="shim-1"
+                echo hi
+                """.trimIndent(),
+            )
+            assertEquals("shim-1", installedShimVersion())
+        }
+    }
+
+    @Test
+    fun `shimStalenessWarning is null when the marker matches SHIM_VERSION`(@TempDir home: Path) {
+        withHome(home) {
+            writeShim(home, "#!/usr/bin/env bash\nSPLICE_SHIM_VERSION=\"$SHIM_VERSION\"\n")
+            assertNull(shimStalenessWarning())
+        }
+    }
+
+    @Test
+    fun `shimStalenessWarning warns when the marker is stale or missing`(@TempDir home: Path) {
+        withHome(home) {
+            writeShim(home, "#!/usr/bin/env bash\nSPLICE_SHIM_VERSION=\"shim-0\"\n")
+            val stale = shimStalenessWarning()
+            assertTrue(stale != null && stale.contains("STALE") && stale.contains("splice install"))
+        }
+        withHome(home) {
+            writeShim(home, "#!/usr/bin/env bash\necho no marker here\n")
+            val missing = shimStalenessWarning()
+            assertTrue(missing != null && missing.contains("STALE") && missing.contains("splice install"))
+        }
+    }
+
+    @Test
+    fun `shimStalenessWarning is null when no shim file exists at all`(@TempDir home: Path) {
+        withHome(home) {
+            assertNull(shimStalenessWarning())
         }
     }
 }

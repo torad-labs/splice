@@ -18,6 +18,9 @@ STATE_DIR="${CLAUDEX_STATE_DIR:-$HOME/.claude-codex/state}"
 KEY_FILE="${STATE_DIR}/mgmt-key"
 SAFE="false"
 [ "${CLAUDEX_SAFE:-0}" = "1" ] && SAFE="true"
+# Hand-paired with splice.core.SHIM_VERSION (gateway/core/src/main/kotlin/splice/core/Versions.kt)
+# — bump both together whenever this shim's behavior changes. No code generation.
+SPLICE_SHIM_VERSION="shim-1"
 
 need_jar() {
   if [ ! -f "$JAR" ]; then
@@ -41,8 +44,10 @@ fi
 
 health() { curl -sS -m 2 "${CONTROL}/health" 2>/dev/null || true; }
 
-# Cold-start the daemon if it isn't answering.
-if [ -z "$(health)" ]; then
+# Cold-start the daemon if it isn't answering. HEALTH_JSON is captured (not just checked) so the
+# staleness check below can read wantShimVersion out of the same body without another round trip.
+HEALTH_JSON="$(health)"
+if [ -z "$HEALTH_JSON" ]; then
   if [ ! -f "$JAR" ]; then
     echo "splice: daemon jar not found at $JAR (run: splice install, or set SPLICE_JAR)" >&2
     exit 1
@@ -50,7 +55,19 @@ if [ -z "$(health)" ]; then
   echo "splice: starting daemon…" >&2
   # shellcheck disable=SC2086 # word-splitting of JVM opts is intentional
   nohup java $SPLICE_JVM_OPTS -jar "$JAR" daemon >/dev/null 2>&1 &
-  for _ in $(seq 1 50); do [ -n "$(health)" ] && break; sleep 0.2; done
+  for _ in $(seq 1 50); do HEALTH_JSON="$(health)"; [ -n "$HEALTH_JSON" ] && break; sleep 0.2; done
+fi
+
+# Non-fatal staleness check: warn (never block) when the installed shim's marker doesn't match
+# what the running daemon expects. Diagnostic only — the actual exec below always proceeds.
+WANT_SHIM="$(printf '%s' "$HEALTH_JSON" | python3 -c 'import sys, json
+try:
+    d = json.loads(sys.stdin.read() or "{}")
+except Exception:
+    d = {}
+print(d.get("wantShimVersion") or "")' 2>/dev/null || true)"
+if [ -n "$WANT_SHIM" ] && [ -n "$SPLICE_SHIM_VERSION" ] && [ "$WANT_SHIM" != "$SPLICE_SHIM_VERSION" ]; then
+  echo "splice: WARNING — installed launch shim ($0) is stale (marker=$SPLICE_SHIM_VERSION, daemon expects=$WANT_SHIM). Run: splice install (or ./install.sh) to refresh it." >&2
 fi
 
 KEY="$(cat "$KEY_FILE" 2>/dev/null || true)"

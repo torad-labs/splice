@@ -5,6 +5,7 @@
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import kotlinx.serialization.json.jsonObject
@@ -274,6 +275,30 @@ class CodexAuthTest {
         Files.createDirectories(path.parent)
         path.writeText("""{"tokens":{"access_token":"$access","refresh_token":"old-r","account_id":"acct-1"}}""")
         assertEquals(newAccess, (auth.credentials() as Credentials.Bearer).token)
+    }
+
+    // G17: proves the prefetch tier is truly fire-and-forget on a real dispatcher — if credentials()
+    // still awaited the refresh synchronously, this would deadlock/timeout on the un-completed gate.
+    // Mirrors GrokAuthProviderTest's "prefetch tier does not block on a slow background refresh"
+    // (runBlocking, not runTest, for deterministic real-dispatcher async proof).
+    @Test
+    fun `prefetch tier does not block on a slow background refresh`(@TempDir tmp: Path) = runBlocking {
+        val now = 1_000_000L
+        val access = jwt("""{"exp":${(now + 120_000) / 1000}}""") // inside window, above the floor
+        val calls = AtomicInteger()
+        val gate = CompletableDeferred<RefreshedTokens?>()
+        val (auth, path) = provider(tmp, { now }) {
+            calls.incrementAndGet()
+            val tokens = gate.await()
+            if (tokens == null) RefreshAttempt.Denied("test-denied") else RefreshAttempt.Granted(tokens)
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"$access","refresh_token":"refresh-1","account_id":"acct-1"}}""")
+        // returns WITHOUT the gate ever completing — direct proof the background refresh isn't awaited.
+        assertEquals(access, (auth.credentials() as Credentials.Bearer).token)
+        while (calls.get() == 0) yield() // observe the background call actually started
+        gate.complete(RefreshedTokens(accessToken = "new-access", refreshToken = "new-refresh", idToken = null))
+        assertEquals(1, calls.get())
     }
 
     @Test

@@ -83,7 +83,10 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
     }
 
     private fun terminalOutcome(reducer: ResponsesEventReducer): TurnOutcome =
-        reducer.upstreamFailure?.let { TurnOutcome.Failure(it.type, "ChatGPT backend: ${it.message}") }
+        reducer.upstreamFailure?.let {
+            // parsed from a response.failed/error event the backend actually sent (G20 provenance)
+            TurnOutcome.Failure(it.type, "ChatGPT backend: ${it.message}", providerReported = true)
+        }
             ?: if (reducer.finalResponse == null) noCompletionOutcome() else successOutcome(reducer)
 
     // A COMPLETED response wins over a late watchdog fire. The watchdog polls the whole

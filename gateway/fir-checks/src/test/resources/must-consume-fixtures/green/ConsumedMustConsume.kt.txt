@@ -1,8 +1,13 @@
-// GREEN fixture: two cases that must BOTH compile clean (ExitCode.OK).
+// GREEN fixture: every case here must compile clean (ExitCode.OK).
 //  1. `val x = produce()` — the @MustConsume result is consumed, so no diagnostic.
 //  2. `unannotated()` discarded — negative control: an UNannotated discard must NOT fire, proving
 //     the checker does not over-fire (this is the guard for the tree-wide -Xplugin wiring, where a
 //     false positive would break every module's build).
+//  3. Consumed branch tails (if / when / try used as expressions, returned if) — the enclosing
+//     expression's value IS used, so the branch-tail call is NOT a discard. These were false
+//     positives before the isDiscarded() walk-up fix.
+//  4. Consumed `?.` selectors and `?:` operands — the wrapper's value is assigned/returned.
+//  5. Lambda tails — consumption belongs to the called function; conservative, never flagged.
 package fixtures.green
 
 import splice.core.annotation.MustConsume
@@ -10,10 +15,73 @@ import splice.core.annotation.MustConsume
 @MustConsume
 fun produce(): Int = 1
 
+@MustConsume
+fun produceOrNull(): Int? = 1
+
+class Holder {
+    @MustConsume
+    fun produceMember(): Int = 3
+}
+
 fun unannotated(): Int = 2
 
 fun caller() {
     val x = produce()
     println(x)
     unannotated()
+}
+
+fun consumedIfTail(flag: Boolean): Int {
+    val a = if (flag) produce() else 0
+    return a
+}
+
+fun consumedWhenTail(flag: Boolean): Int {
+    val w = when (flag) {
+        true -> produce()
+        false -> 0
+    }
+    return w
+}
+
+fun consumedTryTail(): Int {
+    val t = try {
+        produce()
+    } catch (_: IllegalStateException) {
+        0
+    }
+    return t
+}
+
+fun returnedIfTail(flag: Boolean): Int {
+    return if (flag) produce() else 0
+}
+
+fun consumedSafeCall(holder: Holder?): Int? {
+    val y = holder?.produceMember()
+    return y
+}
+
+fun consumedSafeCallInBranch(flag: Boolean, holder: Holder?): Int? {
+    val z = if (flag) holder?.produceMember() else 0
+    return z
+}
+
+fun consumedElvisLhs(): Int {
+    val e = produceOrNull() ?: 0
+    return e
+}
+
+fun consumedElvisRhs(cached: Int?): Int {
+    val e = cached ?: produce()
+    return e
+}
+
+fun consumedLambdaTail(): Int {
+    val r = run { produce() }
+    return r
+}
+
+fun unitLambdaTail(items: List<Int>) {
+    items.forEach { produce() }
 }

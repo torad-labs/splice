@@ -3,8 +3,12 @@
 # testing. The production v29 proxy on :3099 and the old claudex binary are
 # untouched; state/config dirs are shared (same contract paths), so sessions
 # here are directly comparable. Delete after cutover.
+#
+# DEPRECATED — legacy Node launch path (see bin/claudex). Requires bash >= 4
+# (uses `mapfile`).
 set -euo pipefail
-REPO="${CLAUDEX_ROOT:-$HOME/Documents/dev/projects/splice/repo}"
+# Repo root resolves script-relative (this file lives in <repo>/bin/); override with CLAUDEX_ROOT.
+REPO="${CLAUDEX_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
 NODE_BIN="${CLAUDEX_NODE:-$(command -v node)}"
 [[ -n "$NODE_BIN" ]] || { echo "claudex-next: node not found" >&2; exit 1; }
 export CODEX_PROXY_PORT="${CODEX_PROXY_PORT:-3097}"

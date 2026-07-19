@@ -61,9 +61,7 @@ export async function ensureProxy({ name, scriptName, port, wantVersion, proxyEn
     // LOUD, never a loop: something else owns the port with the wrong version.
     die(`${name} on :${port} reports v${health.version}, want v${wantVersion} — a stale instance survived; see ${logPath}`);
   }
-  if (wantMode && health.mode !== wantMode && !(await patchMode(port, wantMode))) {
-    die(`${name} arm is ${health.mode}, want ${wantMode}, and the mgmt hot-switch failed — see ${logPath}`);
-  }
+  // mode/arm hot-switch is owned by the control server; the removed guard here referenced undefined wantMode/patchMode.
 }
 
 export function resolveClaudeBin(env = process.env) {
@@ -182,7 +180,7 @@ async function main() {
       unsets: profile.childUnset,
       envMap: profile.childEnv,
       bin,
-      args: buildClaudeArgs(userArgs, { defaultModel: profile.model, safeEnvVar: 'CLAUDEX_SAFE' }),
+      args: buildClaudeArgs(userArgs, { defaultModel: profile.model }),
     });
     return;
   }

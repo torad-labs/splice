@@ -16,6 +16,8 @@ private const val RESET = "\u001B[0m"
 
 internal suspend fun setup() {
     println("${BOLD}splice setup$RESET $DIM— wrap Claude Code with your own model backends$RESET")
+    println("$DIM  OAuth heads (codex · grok · kimi) reuse each vendor's CLI OAuth identity — experimental,$RESET")
+    println("$DIM  not vendor-documented; api-key routes (OpenRouter/Moonshot/OpenAI) are the supported path.$RESET")
     println()
 
     // 1. topology + wrapper commands (+ the `splice` command itself)

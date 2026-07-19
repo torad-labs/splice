@@ -1,0 +1,66 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+# Least-privilege: the release job only needs to create a GitHub Release + upload assets.
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: setup java
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.8.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: setup node
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 24
+
+      - name: build the fat jar
+        working-directory: gateway
+        run: ./gradlew :app:shadowJar --no-daemon --stacktrace
+
+      - name: stage release assets
+        run: |
+          mkdir -p dist
+          BUILT="$(find gateway/app/build/libs -name '*-all.jar' | head -1)"
+          cp "$BUILT" dist/splice.jar
+          cp bin/splice-launch dist/splice-launch
+          cp install.sh dist/install.sh
+
+      - name: sha256sums
+        working-directory: dist
+        run: sha256sum splice.jar splice-launch install.sh > sha256sums.txt
+
+      # Best-effort license/SBOM artifacts: informational only, never block the release.
+      - name: npm license report (best-effort)
+        continue-on-error: true
+        run: npx --yes license-checker-rseidelsohn --json --out dist/license-report-npm.json
+
+      - name: gradle license report (best-effort)
+        continue-on-error: true
+        working-directory: gateway
+        run: ./gradlew :app:dependencies --configuration runtimeClasspath --no-daemon > ../dist/license-report-gradle-deps.txt
+
+      - name: create release
+        uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
+        with:
+          files: |
+            dist/splice.jar
+            dist/splice-launch
+            dist/install.sh
+            dist/sha256sums.txt
+            dist/license-report-npm.json
+            dist/license-report-gradle-deps.txt

@@ -36,6 +36,7 @@ class ConfigServiceTest {
         assertEquals(ReasoningDisplay.TEXT, cfg.showReasoning)
         assertEquals(false, cfg.replayReasoning)
         assertEquals(0, cfg.maxInflight)
+        assertEquals(0, cfg.maxQueued)
         assertEquals(3096, cfg.controlPort)
     }
 
@@ -104,6 +105,15 @@ class ConfigServiceTest {
         assertEquals(5_000, cfg.authCacheMs)
         assertEquals(100, cfg.usageWarnPct)
         assertEquals("https://example.com/base", cfg.chatgptApiBase)
+
+        val negative = service(env = mapOf("CLAUDEX_MAX_QUEUED" to "-5"))
+        assertEquals(0, negative.getConfig().maxQueued)
+    }
+
+    @Test
+    fun `maxQueued env alias applies`() {
+        val svc = service(env = mapOf("CLAUDEX_MAX_QUEUED" to "50"))
+        assertEquals(50, svc.getConfig().maxQueued)
     }
 
     @Test

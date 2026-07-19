@@ -5,6 +5,9 @@
 // STRICT IMPROVEMENT (recorded in ledger, invisible to golden fixtures): a waiter cancelled
 // while queued frees its queue spot via invokeOnCancellation — the Node gate's queued promise
 // had no cancellation path and a dead request still consumed its FIFO turn.
+// STRICT IMPROVEMENT (G21): the queue itself is now boundable via maxQueued (0 = unlimited,
+// same convention as maxInflight) — overflow is signaled synchronously as
+// GatewayAtCapacityException rather than growing the waiter queue without limit.
 package splice.spi
 
 import kotlinx.coroutines.CancellableContinuation
@@ -13,9 +16,11 @@ import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 public class InflightGate(
     private val maxInflight: () -> Int,
+    private val maxQueued: () -> Int = { 0 },
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private val lock = Any()
@@ -57,21 +62,30 @@ public class InflightGate(
         return limit <= 0 || inflight < limit
     }
 
+    private fun hasQueueCapacityLocked(): Boolean = maxQueued().let { it <= 0 || queue.size < it }
+
     private suspend fun awaitTurn() {
         val waiter = Waiter()
+        var rejected = false
         suspendCancellableCoroutine { cont ->
             synchronized(lock) {
                 // capacity may have appeared between the fast path and here
                 if (hasCapacityLocked() && queue.isEmpty()) {
                     inflight += 1
                     waiter.resumed = true
-                } else {
+                } else if (hasQueueCapacityLocked()) {
                     waiter.continuation = cont
                     queue.addLast(waiter)
+                } else {
+                    rejected = true
                 }
             }
             if (waiter.resumed) {
                 cont.resume(Unit)
+                return@suspendCancellableCoroutine
+            }
+            if (rejected) {
+                cont.resumeWithException(GatewayAtCapacityException())
                 return@suspendCancellableCoroutine
             }
             cont.invokeOnCancellation {
@@ -132,3 +146,5 @@ public class InflightGate(
         }
     }
 }
+
+public class GatewayAtCapacityException : RuntimeException("gateway at capacity")

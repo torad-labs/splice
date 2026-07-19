@@ -9,8 +9,9 @@ public enum class KnobKind { STRING, NUMBER, BOOL }
 
 // HONESTY (audit 2026-07-18): nearly every knob is SNAPSHOTTED at Daemon.start into constructed
 // objects (providers, watchdog budgets, auth caches, warn thresholds) — so nearly every knob is
-// restartRequired. The ONLY genuinely hot knob is maxInflight (read via lambda per admission).
-// If you make a knob live-read, remove its restartRequired flag in the same commit.
+// restartRequired. The genuinely hot knobs are maxInflight and maxQueued (both read via a live
+// lambda per admission, straight into InflightGate). If you make a knob live-read, remove its
+// restartRequired flag in the same commit.
 public enum class Knob(
     public val key: String,
     public val kind: KnobKind,
@@ -82,6 +83,7 @@ public enum class Knob(
         restartRequired = true,
     ),
     MAX_INFLIGHT("maxInflight", KnobKind.NUMBER, listOf("CLAUDEX_MAX_INFLIGHT"), 0L),
+    MAX_QUEUED("maxQueued", KnobKind.NUMBER, listOf("CLAUDEX_MAX_QUEUED"), 0L),
     UPSTREAM_RETRIES(
         "upstreamRetries",
         KnobKind.NUMBER,

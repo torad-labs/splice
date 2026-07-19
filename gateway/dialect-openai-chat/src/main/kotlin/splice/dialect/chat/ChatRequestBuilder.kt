@@ -36,6 +36,11 @@ public data class ChatQuirks(
      * DeepSeek/xAI-compatible chat backends return `reasoning_content` in the stream.
      */
     val emitReasoningEffort: Boolean = true,
+    /** When set, prompt_cache_key = "<prefix>:<sessionId>" rides every request (server-side
+     *  session cache pinning; null = field omitted for vendors of unknown tolerance). */
+    val sessionCacheKeyPrefix: String? = null,
+    /** Emit stream_options.include_usage (usage frames are opt-in on OpenAI-compat streams). */
+    val emitUsageInStream: Boolean = false,
 )
 
 public data class BuiltChatRequest(val req: JsonObject, val meta: TurnMeta)
@@ -50,6 +55,7 @@ public class ChatRequestBuilder(
         upstreamModel: String,
         originalModel: String,
         compact: Boolean,
+        sessionId: String? = null,
     ): BuiltChatRequest {
         val messages = buildJsonArray {
             body.system?.let { sys ->
@@ -64,7 +70,8 @@ public class ChatRequestBuilder(
         val effort = chatReasoningEffort(body, compact)
         // TIER-1 (#924): the request is a CLOSED ChatRequest DTO (see chatRequestObject) — a knob
         // that doesn't belong can't be added without a field.
-        val req = chatRequestObject(upstreamModel, messages, emitTools, effort, body)
+        val cacheKey = quirks.sessionCacheKeyPrefix?.let { prefix -> sessionId?.let { "$prefix:$it" } }
+        val req = chatRequestObject(upstreamModel, messages, emitTools, body, ChatKnobs(effort, cacheKey))
         val meta = TurnMeta(
             compact = compact,
             showReasoning = showReasoning,
@@ -82,13 +89,17 @@ public class ChatRequestBuilder(
     // The CLOSED request object: the fixed fields via the ChatRequest DTO, plus max_tokens injected
     // by its vendor-dynamic key (max_tokens vs max_completion_tokens) — the one field a fixed DTO
     // can't name. Extracted so build() stays under the complexity gate.
+    /** The per-request knob pair threaded to [chatRequestObject] (LongParameterList budget). */
+    private data class ChatKnobs(val effort: String?, val cacheKey: String?)
+
     private fun chatRequestObject(
         upstreamModel: String,
         messages: JsonArray,
         emitTools: Boolean,
-        effort: String?,
         body: AnthropicRequest,
+        knobs: ChatKnobs,
     ): JsonObject {
+        val effort = knobs.effort
         val dto = ChatRequest(
             model = upstreamModel,
             messages = messages,
@@ -97,6 +108,12 @@ public class ChatRequestBuilder(
             reasoningEffort = if (quirks.emitReasoningEffort) effort else null,
             reasoning = if (quirks.emitReasoningEffort && effort != null) {
                 buildJsonObject { put("effort", effort) }
+            } else {
+                null
+            },
+            promptCacheKey = knobs.cacheKey,
+            streamOptions = if (quirks.emitUsageInStream) {
+                buildJsonObject { put("include_usage", true) }
             } else {
                 null
             },

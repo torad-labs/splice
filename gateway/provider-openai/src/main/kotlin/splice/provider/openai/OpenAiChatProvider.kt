@@ -33,7 +33,7 @@ public class OpenAiChatProvider(
 
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
         val upstreamModel = catalog.stripSuffixes(body.typed.model)
-        val built = builder.build(body.typed, upstreamModel, body.typed.model, compact)
+        val built = builder.build(body.typed, upstreamModel, body.typed.model, compact, sessionId)
         return BuiltTurn(built.req, built.meta)
     }
 

@@ -21,6 +21,13 @@ internal data class ChatRequest(
     val tools: JsonArray? = null,
     @SerialName("reasoning_effort") val reasoningEffort: String? = null,
     val reasoning: JsonObject? = null,
+    /** Session-pinned server-side prompt cache (xAI honors it on /chat/completions: 135k tokens
+     *  at 1.7-2.8s TTFB, 99.97% cached — probed 2026-07-19; same knob kimi-cli sends). */
+    @SerialName("prompt_cache_key") val promptCacheKey: String? = null,
+    /** {"include_usage": true} — without it xAI's chat stream carries NO usage frame at all
+     *  (the in_tokens=0 blindness of the 2026-07-18 chat-dialect attempt). */
+    // ast-grep-ignore: kt-no-stream-options-request — include_usage needed on chat (probed 2026-07-19)
+    @SerialName("stream_options") val streamOptions: JsonObject? = null,
 )
 
 // explicitNulls=false: null optionals (tools, reasoning_effort, reasoning) are omitted, exactly like

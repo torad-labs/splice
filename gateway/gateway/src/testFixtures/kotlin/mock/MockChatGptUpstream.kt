@@ -231,6 +231,18 @@ class MockChatGptUpstream {
                         """"output":[],"usage":{"input_tokens":7,"output_tokens":4}}}""",
                 )
             }
+            "malformed_sse" -> {
+                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
+                ex.responseBody.write("data: {not-json}\n\n".toByteArray())
+                ex.responseBody.flush()
+                sse(ex, """{"type":"response.output_text.delta","output_index":0,"delta":"ok after auth"}""")
+                sse(ex, """{"type":"response.output_item.done","output_index":0}""")
+                sse(
+                    ex,
+                    """{"type":"response.completed","response":{"id":"r5","status":"completed",""" +
+                        """"output":[],"usage":{"input_tokens":1,"output_tokens":1}}}""",
+                )
+            }
             else -> { // basic / refresh-after-refresh
                 sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
                 sse(ex, """{"type":"response.output_text.delta","output_index":0,"delta":"ok after auth"}""")

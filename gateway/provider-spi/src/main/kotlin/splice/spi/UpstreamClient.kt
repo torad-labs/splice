@@ -13,6 +13,8 @@
 //     first >=2KiB turn after the gzip experiment deployed); ChatGPT is unproven. The body
 //     still rides as pre-encoded UTF-8 bytes so retries never re-encode the string.
 //   - encrypted_content decrypt 400s are NOT retried (Grok Build)
+//   - DNS-class transport failures (UnresolvedAddressException/UnknownHostException) back off on
+//     their own 1s/2s/4s schedule (dnsBackoff), not the generic 200/400/800ms curve (G14)
 package splice.spi
 
 import io.ktor.client.HttpClient
@@ -41,10 +43,21 @@ public class UpstreamClient(
     private val client: HttpClient = defaultClient(firstByteTimeoutMs, totalTimeoutMs),
     // Exponential backoff, ±10% jitter (codex shape — synchronized retry herds re-collide without
     // it), capped at MAX_BACKOFF_MS; a server Retry-After rides in as a FLOOR via minDelayMs (G3).
+    // DNS-class transport failures use dnsBackoff below instead (G14) — a resolver blip runs
+    // longer than a TCP refusal.
     private val backoff: suspend (attempt: Int, minDelayMs: Long) -> Unit = { attempt, minDelayMs ->
         val base = minOf(BACKOFF_BASE_MS shl attempt, MAX_BACKOFF_MS)
         val jittered = (base * Random.nextDouble(JITTER_LO, JITTER_HI)).toLong()
         delay(maxOf(jittered, minDelayMs))
+    },
+    // DNS-class transport failures (G14) get their own 1s/2s/4s schedule — a real resolver
+    // blip (kimi 07:00 burst: 37 UnresolvedAddressException turns) runs longer than the
+    // generic 200/400/800ms curve above undershoots. No minDelayMs parameter — transport
+    // errors never carry a Retry-After header (no response was received).
+    private val dnsBackoff: suspend (attempt: Int) -> Unit = { attempt ->
+        val base = minOf(DNS_BACKOFF_BASE_MS shl attempt, DNS_MAX_BACKOFF_MS)
+        val jittered = (base * Random.nextDouble(JITTER_LO, JITTER_HI)).toLong()
+        delay(jittered)
     },
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
@@ -176,14 +189,25 @@ public class UpstreamClient(
                     "${e::class.simpleName} ${e.message.orEmpty().take(ERR_SNIPPET)}",
             )
             ctx.perf?.add(PerfKeys.RETRIES, 1)
-            ctx.perf.timedOr(PerfKeys.BACKOFF_MS) { backoff(state.attempt, 0L) }
+            backoffTransportError(ctx.perf, e, state.attempt)
             return LoopStep.Continue // does NOT increment `attempt` — this budget is separate
         }
         rethrowUnlessRetryableTransport(e, ctx, streamHandedOff, state.attempt, t0)
         ctx.perf?.add(PerfKeys.RETRIES, 1)
-        ctx.perf.timedOr(PerfKeys.BACKOFF_MS) { backoff(state.attempt, 0L) }
+        backoffTransportError(ctx.perf, e, state.attempt)
         state.attempt += 1
         return LoopStep.Continue
+    }
+
+    /** Transport-error backoff (G14): DNS-class failures (name resolution never got an address)
+     *  run the dedicated 1s/2s/4s dnsBackoff schedule instead of the generic curve — a resolver
+     *  blip is slower than a TCP refusal or reset. */
+    private suspend fun backoffTransportError(perf: TurnPerf?, error: Throwable, attempt: Int) {
+        if (isDnsFailureTransport(error)) {
+            perf.timedOr(PerfKeys.BACKOFF_MS) { dnsBackoff(attempt) }
+        } else {
+            perf.timedOr(PerfKeys.BACKOFF_MS) { backoff(attempt, 0L) }
+        }
     }
 
     /** The BACKOFF half of the retry decision: re-checks the deadline (G4d) before the sleep so a
@@ -354,32 +378,41 @@ public class UpstreamClient(
 
         private const val MAX_CAUSE_DEPTH = 8
 
+        /** Walks the cause chain (Ktor wraps engine exceptions) looking for a match, bounded by
+         *  MAX_CAUSE_DEPTH. Shared primitive so the retryable-transport and DNS-only predicates
+         *  don't duplicate the loop. */
+        private fun causeChainMatches(e: Throwable, predicate: (Throwable) -> Boolean): Boolean {
+            var t: Throwable? = e
+            var depth = 0
+            while (t != null && depth < MAX_CAUSE_DEPTH) {
+                if (predicate(t)) return true
+                t = t.cause
+                depth++
+            }
+            return false
+        }
+
         /**
          * Connection-phase failures worth a silent retry: name resolution, TCP connect/reset,
          * socket timeouts. Deliberately conservative — everything else (TLS trust failures,
          * protocol errors, the HttpTimeout plugin's overall budget) still fails the turn.
          * Walks the cause chain because Ktor wraps engine exceptions.
          */
-        internal fun isRetryableTransport(e: Throwable): Boolean {
-            var t: Throwable? = e
-            var depth = 0
-            while (t != null && depth < MAX_CAUSE_DEPTH) {
-                when (t) {
-                    is java.nio.channels.UnresolvedAddressException,
-                    is java.net.UnknownHostException,
-                    is java.net.ConnectException,
-                    is java.net.SocketException,
-                    is java.net.SocketTimeoutException,
-                    is io.ktor.client.network.sockets.ConnectTimeoutException,
-                    is io.ktor.client.network.sockets.SocketTimeoutException,
-                    -> return true
-                    else -> {
-                        t = t.cause
-                        depth++
-                    }
-                }
-            }
-            return false
+        internal fun isRetryableTransport(e: Throwable): Boolean = causeChainMatches(e) { t ->
+            t is java.nio.channels.UnresolvedAddressException ||
+                t is java.net.UnknownHostException ||
+                t is java.net.ConnectException ||
+                t is java.net.SocketException ||
+                t is java.net.SocketTimeoutException ||
+                t is io.ktor.client.network.sockets.ConnectTimeoutException ||
+                t is io.ktor.client.network.sockets.SocketTimeoutException
+        }
+
+        /** DNS-class only (name resolution never got an address) — a real resolver blip runs
+         *  closer to 1-4s than a TCP refusal, so it gets its own schedule instead of racing the
+         *  generic curve (G14; Envoy dns_failure_refresh_rate shape). */
+        internal fun isDnsFailureTransport(e: Throwable): Boolean = causeChainMatches(e) { t ->
+            t is java.nio.channels.UnresolvedAddressException || t is java.net.UnknownHostException
         }
 
         private const val MAX_STREAM_REISSUES = 2
@@ -415,6 +448,10 @@ public class UpstreamClient(
         private const val RETRY_AFTER_GIVE_UP_MS = 60_000L
         private const val JITTER_LO = 0.9
         private const val JITTER_HI = 1.1
+
+        // DNS-class transport failures (G14) get their own schedule — 1s/2s/4s.
+        private const val DNS_BACKOFF_BASE_MS = 1_000L
+        private const val DNS_MAX_BACKOFF_MS = 4_000L
 
         // G11: a blackholed/dead address must fail fast into the existing transport-retry loop
         // (isRetryableTransport) instead of stalling to the OS SYN timeout x maxRetries. Decoupled

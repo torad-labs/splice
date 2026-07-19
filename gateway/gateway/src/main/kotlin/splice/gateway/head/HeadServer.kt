@@ -9,6 +9,7 @@
 package splice.gateway.head
 
 import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.install
 import io.ktor.server.application.serverConfig
@@ -169,6 +170,7 @@ public class HeadServer(
             call.respondText(
                 errorBodyJson("invalid_request_error", rejection ?: "invalid request body"),
                 ContentType.Application.Json,
+                HttpStatusCode.BadRequest,
             )
             return
         }

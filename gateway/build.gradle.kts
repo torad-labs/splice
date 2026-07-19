@@ -17,10 +17,10 @@ plugins {
 // `fir-checks.jar`), resolved lazily — referencing the sibling's `jar` task at root-configuration
 // time fails because :fir-checks is not evaluated yet. Ordering is guaranteed by the string
 // task-dependency `:fir-checks:jar` below.
-val firChecksPluginArg =
+val firChecksPluginJar =
     project(":fir-checks").layout.buildDirectory
         .file("libs/fir-checks.jar")
-        .map { "-Xplugin=${it.asFile.absolutePath}" }
+val firChecksPluginArg = firChecksPluginJar.map { "-Xplugin=${it.asFile.absolutePath}" }
 
 subprojects {
     // :fir-checks must NOT compile against its own not-yet-built jar (self-application deadlock).
@@ -28,6 +28,19 @@ subprojects {
     plugins.withId("org.jetbrains.kotlin.jvm") {
         tasks.withType<KotlinCompile>().configureEach {
             dependsOn(":fir-checks:jar")
+            // firChecksPluginArg (below) is a plain -Xplugin=<path> STRING built from a fixed path,
+            // so Gradle tracks it as an opaque value input — byte-identical across builds even when
+            // the jar's content changes, letting this task go UP-TO-DATE against a stale checker.
+            // dependsOn above only orders execution; it does not make this task's up-to-date check
+            // sensitive to the jar's bytes. Register the jar itself as a real file input so editing
+            // fir-checks correctly invalidates every consumer's compile. Deliberately NO
+            // ClasspathNormalizer here: that normalizer treats the jar as an ordinary library
+            // dependency and ignores debug-only bytecode differences (e.g. line numbers) that don't
+            // change public ABI — wrong for a compiler PLUGIN, where the compiler loads and runs the
+            // whole jar, not just its ABI. The default normalizer content-hashes the raw file, so
+            // any byte difference in the jar is a real, tracked input change.
+            inputs.files(firChecksPluginJar)
+                .withPropertyName("firChecksPluginJar")
             compilerOptions.freeCompilerArgs.add(firChecksPluginArg)
         }
     }

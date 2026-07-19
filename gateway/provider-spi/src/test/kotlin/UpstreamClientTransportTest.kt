@@ -23,6 +23,8 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.spi.UpstreamClient
 import java.net.ConnectException
+import java.net.SocketException
+import java.net.UnknownHostException
 import java.nio.channels.UnresolvedAddressException
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -34,13 +36,18 @@ class UpstreamClientTransportTest {
         override suspend fun describe(): AuthDescription = AuthDescription(true, "fake", emptyMap())
     }
 
-    private fun clientOver(engine: MockEngine) = UpstreamClient(
+    private fun clientOver(
+        engine: MockEngine,
+        // no real sleep in tests by default
+        backoff: suspend (Int, Long) -> Unit = { _, _ -> },
+        dnsBackoff: suspend (Int) -> Unit = { _ -> },
+    ) = UpstreamClient(
         firstByteTimeoutMs = 5_000,
         totalTimeoutMs = 5_000,
         maxRetries = 3,
         client = HttpClient(engine),
-        // no real sleep in tests
-        backoff = { _, _ -> },
+        backoff = backoff,
+        dnsBackoff = dnsBackoff,
     )
 
     @Test
@@ -62,6 +69,78 @@ class UpstreamClientTransportTest {
         assertEquals(3, calls.get())
         assertEquals(2, retries.size)
         assertTrue(retries.all { it.startsWith("transport UnresolvedAddressException") })
+    }
+
+    @Test
+    fun `DNS-class failure uses the dnsBackoff schedule, not the generic backoff`() = runTest {
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            if (calls.incrementAndGet() <= 2) throw UnresolvedAddressException()
+            respond("ok-body", HttpStatusCode.OK, headersOf())
+        }
+        val genericAttempts = mutableListOf<Int>()
+        val dnsAttempts = mutableListOf<Int>()
+        val out = clientOver(
+            engine,
+            backoff = { a, _ -> genericAttempts.add(a) },
+            dnsBackoff = { a -> dnsAttempts.add(a) },
+        ).post(
+            url = "https://api.example.test/v1",
+            bodyJson = "{}",
+            auth = fakeAuth,
+            extraHeaders = { emptyMap() },
+        ) { "reached-block" }
+        assertEquals("reached-block", out)
+        assertEquals(listOf(0, 1), dnsAttempts)
+        assertTrue(genericAttempts.isEmpty())
+    }
+
+    @Test
+    fun `UnknownHostException classifies as DNS same as UnresolvedAddressException`() = runTest {
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            if (calls.incrementAndGet() == 1) throw UnknownHostException("dns blip")
+            respond("ok-body", HttpStatusCode.OK, headersOf())
+        }
+        val genericAttempts = mutableListOf<Int>()
+        val dnsAttempts = mutableListOf<Int>()
+        val out = clientOver(
+            engine,
+            backoff = { a, _ -> genericAttempts.add(a) },
+            dnsBackoff = { a -> dnsAttempts.add(a) },
+        ).post(
+            url = "https://api.example.test/v1",
+            bodyJson = "{}",
+            auth = fakeAuth,
+            extraHeaders = { emptyMap() },
+        ) { "reached-block" }
+        assertEquals("reached-block", out)
+        assertEquals(listOf(0), dnsAttempts)
+        assertTrue(genericAttempts.isEmpty())
+    }
+
+    @Test
+    fun `non-DNS transport failure keeps the generic backoff, not dnsBackoff`() = runTest {
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            if (calls.incrementAndGet() <= 2) throw ConnectException("refused")
+            respond("ok-body", HttpStatusCode.OK, headersOf())
+        }
+        val genericAttempts = mutableListOf<Int>()
+        val dnsAttempts = mutableListOf<Int>()
+        val out = clientOver(
+            engine,
+            backoff = { a, _ -> genericAttempts.add(a) },
+            dnsBackoff = { a -> dnsAttempts.add(a) },
+        ).post(
+            url = "https://api.example.test/v1",
+            bodyJson = "{}",
+            auth = fakeAuth,
+            extraHeaders = { emptyMap() },
+        ) { "reached-block" }
+        assertEquals("reached-block", out)
+        assertEquals(listOf(0, 1), genericAttempts)
+        assertTrue(dnsAttempts.isEmpty())
     }
 
     @Test
@@ -240,5 +319,14 @@ class UpstreamClientTransportTest {
         assertTrue(UpstreamClient.isRetryableTransport(RuntimeException(ConnectException("wrapped"))))
         assertFalse(UpstreamClient.isRetryableTransport(IllegalStateException("plain")))
         assertFalse(UpstreamClient.isRetryableTransport(RuntimeException(RuntimeException("no io below"))))
+    }
+
+    @Test
+    fun `dns predicate matches only name-resolution failures`() {
+        assertTrue(UpstreamClient.isDnsFailureTransport(UnresolvedAddressException()))
+        assertTrue(UpstreamClient.isDnsFailureTransport(UnknownHostException()))
+        assertFalse(UpstreamClient.isDnsFailureTransport(ConnectException("refused")))
+        assertFalse(UpstreamClient.isDnsFailureTransport(SocketException("reset")))
+        assertTrue(UpstreamClient.isDnsFailureTransport(RuntimeException(UnknownHostException())))
     }
 }

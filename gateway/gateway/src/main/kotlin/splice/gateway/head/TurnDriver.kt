@@ -290,20 +290,30 @@ internal class TurnDriver(
         try {
             withContext(turnJob) {
                 val self = this
-                // Folding is null for sol / every non-codex head → the single-round path is
-                // byte-for-byte the pre-fold behaviour (drive straight to the real emitter, finish
-                // once). A fold-eligible turn hands the loop to FoldRunner (per-round buffering).
-                val fold = provider.foldController(drive.meta)
-                if (fold == null) {
-                    finishTurn(drive, postRound(drive, drive.bodyJson, drive.emitter, self, turnJob))
-                } else {
-                    FoldRunner(
-                        emitter = drive.emitter,
-                        key = provider.key,
-                        log = log,
-                        postRound = { bodyJson, sink -> postRound(drive, bodyJson, sink, self, turnJob) },
-                        finish = { outcome -> finishTurn(drive, outcome) },
-                    ).run(drive.requestBody, fold)
+                // Whole-turn client-liveness pinger (2026-07-19 storm): launched BEFORE the first
+                // upstream attempt so the headers-wait (minutes on a long prefill) and the retry
+                // backoffs are covered too — the per-attempt scope only started it after upstream
+                // headers, so a client that hung up mid-retry left a zombie turn pinning its gate
+                // slot and re-hammering the rate-limited account for a listener that was gone.
+                val pinger = self.launchClientPinger(drive, turnJob)
+                try {
+                    // Folding is null for sol / every non-codex head → the single-round path is
+                    // byte-for-byte the pre-fold behaviour (drive straight to the real emitter,
+                    // finish once). A fold-eligible turn hands the loop to FoldRunner.
+                    val fold = provider.foldController(drive.meta)
+                    if (fold == null) {
+                        finishTurn(drive, postRound(drive, drive.bodyJson, drive.emitter, self, turnJob))
+                    } else {
+                        FoldRunner(
+                            emitter = drive.emitter,
+                            key = provider.key,
+                            log = log,
+                            postRound = { bodyJson, sink -> postRound(drive, bodyJson, sink, self, turnJob) },
+                            finish = { outcome -> finishTurn(drive, outcome) },
+                        ).run(drive.requestBody, fold)
+                    }
+                } finally {
+                    pinger.cancel()
                 }
             }
         } finally {
@@ -332,10 +342,10 @@ internal class TurnDriver(
         ) { resp ->
             drive.slot.touch()
             val poller = drive.watchdog.launchIn(self, drive.slot, turnJob)
-            val pinger = self.launchClientPinger(drive, turnJob)
-            // Leak wall (review 2026-07-19): the attempt's poller/pinger die on EVERY exit of this
-            // block — a torn-then-reissued stream used to leak them into `self`, pinning the
-            // admission slot ~streamIdle past turn completion and keepalive-pinging after stop.
+            // Leak wall (review 2026-07-19): the attempt's poller dies on EVERY exit of this
+            // block — a torn-then-reissued stream used to leak it into `self`, pinning the
+            // admission slot ~streamIdle past turn completion. (The client pinger is whole-turn
+            // now — launched once in driveOneTurn, cancelled there.)
             try {
                 val capture = ZeroEventCapture()
                 val events = tearAwareEvents(drive, resp, capture)
@@ -348,7 +358,6 @@ internal class TurnDriver(
                 classifyZeroEventFailure(drive, rawOutcome, capture.snippet.toString())
             } finally {
                 poller.cancel()
-                pinger.cancel()
             }
         }
 
@@ -464,8 +473,10 @@ internal class TurnDriver(
     }
 
     // Client-liveness pinger: an SSE COMMENT (spec-legal, ignored by every parser) every interval.
-    // With NO downstream writes flowing (prefill, thinking pause) a dead client is otherwise
-    // invisible — the disconnect load test measured slots pinned for the whole watchdog budget.
+    // With NO downstream writes flowing (headers-wait on a long prefill, retry backoff, thinking
+    // pause) a dead client is otherwise invisible — the disconnect load test measured slots pinned
+    // for the whole watchdog budget, and the 2026-07-19 429 storm stacked ~650 zombie turns whose
+    // clients had re-sent minutes earlier. Whole-turn scope (driveOneTurn), NOT per-attempt.
     // A failed ping flips clientGone and cancels just the turn.
     private fun CoroutineScope.launchClientPinger(drive: TurnDrive, turnJob: Job) =
         launch {

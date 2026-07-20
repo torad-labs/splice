@@ -35,8 +35,9 @@ class ConfigServiceTest {
         assertEquals("https://chatgpt.com/backend-api/codex", cfg.chatgptApiBase)
         assertEquals(ReasoningDisplay.TEXT, cfg.showReasoning)
         assertEquals(false, cfg.replayReasoning)
-        assertEquals(0, cfg.maxInflight)
-        assertEquals(0, cfg.maxQueued)
+        // Bounded by default since the 2026-07-19 storm (0 = unlimited stays an explicit opt-out).
+        assertEquals(48, cfg.maxInflight)
+        assertEquals(512, cfg.maxQueued)
         assertEquals(3096, cfg.controlPort)
     }
 

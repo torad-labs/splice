@@ -1,4 +1,4 @@
-// PORT-OF: server/src/config.mjs statePaths/stateDir/logsDir @ 4ca99f7 — invariants: paths are an
+// PORT-OF: server/src/config.mjs statePaths/stateDir/logsDir @ pre-public-port-baseline — invariants: paths are an
 // EXTERNAL CONTRACT (an out-of-repo HUD reads codex-usage.json / codex-ratelimit.json /
 // claudex-compact-stats.jsonl byte-identically); CLAUDEX_STATE_DIR overrides for hermetic tests
 // only; this file is the ONLY place the `.claude-codex` literal may appear (ast-grep wall).

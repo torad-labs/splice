@@ -7,14 +7,14 @@ import splice.app.TopologyLoader
 import splice.core.config.StatePaths
 import java.nio.file.Files
 
-public fun runCli(args: Array<String>) {
+public fun runCli(args: Array<String>): Int {
     val command = Command.parse(args) ?: run {
         System.err.println(
             "usage: splice [setup|status|dashboard|login <head>|install|uninstall|init|doctor|daemon|version]",
         )
-        return
+        return 2
     }
-    command.run()
+    return command.run()
 }
 
 internal fun doctor() {

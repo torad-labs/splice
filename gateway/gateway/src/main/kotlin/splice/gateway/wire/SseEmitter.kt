@@ -1,4 +1,4 @@
-// PORT-OF: server/src/anthropic/sse.mjs @ 4ca99f7 — invariants (L3, structural): this file is
+// PORT-OF: server/src/anthropic/sse.mjs @ pre-public-port-baseline — invariants (L3, structural): this file is
 // the SOLE Anthropic wire emitter; a clean stop is reachable ONLY via emitTerminal (which owns
 // stop_reason derivation: tool_use > max_tokens(incomplete) > end_turn — no caller ever holds
 // the literal); failures ONLY via emitError (an SSE error event, so Claude Code retries

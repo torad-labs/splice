@@ -1,5 +1,5 @@
 // PORT-OF: server/src/config.mjs layers/coerce/normalize/getConfig/configLayers/patchConfig
-// @ 4ca99f7 — invariants: layers merge FRESH on every read (v29 froze knobs at import; nothing
+// @ pre-public-port-baseline — invariants: layers merge FRESH on every read (v29 froze knobs at import; nothing
 // was hot-tunable); precedence defaults <- headOverrides(TOML, NEW layer) <- state config.json
 // (mtime-cached) <- env (alias order) <- runtime PATCH; PATCH persists to the state file
 // best-effort (env still wins at next boot); normalization floors (upstreamTimeout >= 30s,

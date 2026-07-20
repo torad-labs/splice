@@ -61,15 +61,21 @@ run() { # run <label> <cmd...> — runs the command, records its REAL exit, neve
 }
 
 echo "══ splice gate ══  (JAVA_HOME=$JAVA_HOME)"
-run "gradle check"   bash -c 'cd gateway && ./gradlew check'
+run "gradle clean check" bash -c 'cd gateway && ./gradlew clean check'
 run "ast-grep walls" npm run --silent gate:rules
 run "hook tests"     npm run --silent test:hooks
 run "config guard"   bash checks/config-guard.sh
 run "server tests"   npm test -w server
 run "webui lint"     npm run lint -w webui
 run "webui tests"    npm test -w webui
+webui_dist_before="$(mktemp)"
+if ! cp webui/dist/index.html "$webui_dist_before"; then
+  echo "  ✗ webui dist snapshot (committed bundle missing)"
+  fail=1
+fi
 run "webui build"    npm run build -w webui
-run "webui dist"     git diff --exit-code -- webui/dist/index.html
+run "webui dist"     cmp -s "$webui_dist_before" webui/dist/index.html
+rm -f "$webui_dist_before"
 run "OSS readiness"  bash checks/oss/run.sh
 
 echo

@@ -1,4 +1,4 @@
-// PORT-OF: server/test/codex-login.test.mjs + codex-oauth pins @ 4ca99f7 — PKCE shape,
+// PORT-OF: server/test/codex-login.test.mjs + codex-oauth pins @ pre-public-port-baseline — PKCE shape,
 // authorize-URL param order + %20 (never +) encoding, JWT claim extraction, auth.json shape,
 // cached read (mtime+TTL), single-flight refresh preserving other fields + 0600, masked
 // introspection.

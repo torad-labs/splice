@@ -1,4 +1,4 @@
-// PORT-OF: server/src/usage/warn.mjs @ 4ca99f7 — invariants: PURE, zero heavy imports (the
+// PORT-OF: server/src/usage/warn.mjs @ pre-public-port-baseline — invariants: PURE, zero heavy imports (the
 // statusline endpoint and the control-server usage API share THIS logic, never forked);
 // soft-warn NEVER blocks; ratelimit headers are the real signal, the 5h output-token count
 // is the fallback (warnTokens5h = 0 disables it); critical at remaining<=0 or >=98% used.

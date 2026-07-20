@@ -1,4 +1,4 @@
-// PORT-OF: server/src/codex/compact.mjs @ 4ca99f7 — invariants (the compaction doctrine):
+// PORT-OF: server/src/codex/compact.mjs @ pre-public-port-baseline — invariants (the compaction doctrine):
 // POSITIVE-marker detection ONLY, tools-agnostic (v29 rejected tooled bodies and could never
 // match the real shape); the markers are Claude Code 2.1.207's VERBATIM summarizer
 // instructions, checked in the system prompt OR the LAST user message only (a summary quoted

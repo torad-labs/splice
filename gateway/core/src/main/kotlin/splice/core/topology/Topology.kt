@@ -116,18 +116,28 @@ public data class ClaudeSharingDefaults(
     ),
 )
 
-public fun ProviderConfig.catalogFor(head: HeadConfig): ModelCatalog =
-    ModelCatalog(
+public fun ProviderConfig.catalogFor(head: HeadConfig, contextWindowOverride: Long? = null): ModelCatalog {
+    val override = contextWindowOverride?.takeIf { it > 0 }
+    return ModelCatalog(
         discoveryPrefix = head.discoveryPrefix,
-        models = models,
-        extraWindows = extraWindows,
-        windowRules = windowRules,
-        defaultContextWindow = if (defaultContextWindow > 0) {
+        models = models.map { model ->
+            if (override == null) model else model.copy(contextWindow = override)
+        },
+        extraWindows = extraWindows.map { extra ->
+            if (override == null) extra else extra.copy(contextWindow = override)
+        },
+        windowRules = windowRules.map { rule ->
+            if (override == null) rule else rule.copy(contextWindow = override)
+        },
+        defaultContextWindow = if (override != null) {
+            override
+        } else if (defaultContextWindow > 0) {
             defaultContextWindow
         } else {
             models.firstOrNull()?.contextWindow ?: DEFAULT_WINDOW_FLOOR
         },
     )
+}
 
 /**
  * Flat knob map from topology TOML for ConfigService's headOverrides layer.
@@ -136,13 +146,44 @@ public fun ProviderConfig.catalogFor(head: HeadConfig): ModelCatalog =
  */
 public fun Topology.configOverrides(): Map<String, String> {
     val out = LinkedHashMap(defaults)
+    daemon.controlPort?.let { out["controlPort"] = it.toString() }
     daemon.showReasoning?.let { out["showReasoning"] = it }
     daemon.summary?.let { out["summary"] = it }
     daemon.effort?.let { out["effort"] = it }
     daemon.replayReasoning?.let { out["replayReasoning"] = it.toString() }
     daemon.mirrorReasoning?.let { out["mirrorReasoning"] = it.toString() }
     daemon.putFoldOverrides(out)
+    putLegacyProviderOverrides(out)
     return out
+}
+
+/**
+ * The management API retains the original codex/grok knob names. Seed those knobs from TOML so
+ * their effective values describe the topology, then let state/env/runtime override them through
+ * ConfigService's normal precedence.
+ */
+private fun Topology.putLegacyProviderOverrides(out: MutableMap<String, String>) {
+    val codex = heads.entries.firstOrNull { (_, head) ->
+        providers[head.provider]?.auth?.kind == "chatgpt-oauth"
+    }
+    codex?.let { (_, head) ->
+        val provider = providers.getValue(head.provider)
+        out["port"] = head.port.toString()
+        out["pinnedModel"] = head.pinnedModel
+        out["chatgptApiBase"] = provider.baseUrl
+        provider.auth.file?.let { out["codexAuthPath"] = it }
+    }
+
+    val grok = heads.entries.firstOrNull { (key, head) ->
+        providers[head.provider]?.auth?.kind == "grok-oauth" || key.contains("grok", ignoreCase = true)
+    }
+    grok?.let { (_, head) ->
+        val provider = providers.getValue(head.provider)
+        out["grokPort"] = head.port.toString()
+        out["grokModel"] = head.pinnedModel
+        out["xaiApiBase"] = provider.baseUrl
+        provider.auth.file?.let { out["grokAuthPath"] = it }
+    }
 }
 
 /** Reasoning-continuation fold knobs, split out so [configOverrides] stays under the complexity cap.

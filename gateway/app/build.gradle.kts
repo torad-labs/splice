@@ -51,7 +51,17 @@ val rawLicenses = rawLicenseDir.map { it.file("dependency-licenses.json") }
 val bom = complianceDir.map { it.file("bom.cdx.json") }
 val licenses = complianceDir.map { it.file("dependency-licenses.json") }
 val thirdPartyLicenses = complianceDir.map { it.file("THIRD_PARTY_LICENSES.txt") }
+val thirdPartyNotices = repositoryRoot.file("THIRD_PARTY_NOTICES.md")
 val dashboard = repositoryRoot.file("webui/dist/index.html")
+val allowedReleaseLicenses = setOf(
+    "Apache License, Version 2.0",
+    "Apache Software License - Version 2.0",
+    "Apache-2.0",
+    "Eclipse Public License - Version 1.0",
+    "MIT",
+    "MIT License",
+    "The Apache Software License, Version 2.0",
+)
 
 tasks.cyclonedxDirectBom {
     includeConfigs = listOf("runtimeClasspath")
@@ -166,7 +176,7 @@ val generateThirdPartyLicenses = tasks.register("generateThirdPartyLicenses") {
 
 val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
     dependsOn(normalizeReleaseBom, copyReleaseLicenses, generateThirdPartyLicenses)
-    inputs.files(bom, licenses, thirdPartyLicenses, dashboard)
+    inputs.files(bom, licenses, thirdPartyLicenses, thirdPartyNotices, dashboard)
     doLast {
         val bomJson = JsonSlurper().parse(bom.get().asFile) as Map<*, *>
         val metadata = bomJson["metadata"] as? Map<*, *> ?: emptyMap<Any, Any>()
@@ -195,6 +205,21 @@ val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
             }
         }
         check(unresolved.isEmpty()) { "dependencies with unresolved licenses: $unresolved" }
+        val disallowed = dependencies.mapNotNull { dependency ->
+            val entry = dependency as? Map<*, *> ?: return@mapNotNull dependency.toString()
+            val declared = (entry["moduleLicenses"] as? List<*>).orEmpty().mapNotNull { license ->
+                (license as? Map<*, *>)?.get("moduleLicense")?.toString()?.trim()
+            }
+            val rejected = declared.filterNot(allowedReleaseLicenses::contains)
+            if (rejected.isEmpty()) {
+                null
+            } else {
+                "${entry["moduleName"]}:${entry["moduleVersion"]} ($rejected)"
+            }
+        }
+        check(disallowed.isEmpty()) {
+            "runtime dependencies use licenses outside the release allowlist: $disallowed"
+        }
 
         val licensedCoordinates = dependencies.map { dependency ->
             val entry = dependency as Map<*, *>
@@ -215,6 +240,11 @@ val verifyReleaseCompliance = tasks.register("verifyReleaseCompliance") {
             "SIL OPEN FONT LICENSE",
             "Version 1.1 - 26 February 2007",
         ).forEach { marker -> check(marker in licenseTexts) { "third-party license bundle missing $marker" } }
+        val notices = thirdPartyNotices.asFile.readText()
+        listOf(
+            "Copyright (c) Meta Platforms, Inc. and affiliates.",
+            "Copyright (c) 2019 Paul Henschel",
+        ).forEach { marker -> check(marker in notices) { "third-party notices missing $marker" } }
         check(dashboard.asFile.length() > 100_000L) { "committed dashboard bundle is missing or unexpectedly small" }
     }
 }
@@ -223,7 +253,7 @@ tasks.withType<ShadowJar>().configureEach {
     archiveFileName.set("app-all.jar")
     dependsOn(verifyReleaseCompliance)
     from(repositoryRoot.file("LICENSE")) { into("META-INF"); rename { "LICENSE" } }
-    from(repositoryRoot.file("THIRD_PARTY_NOTICES.md")) { into("META-INF") }
+    from(thirdPartyNotices) { into("META-INF") }
     from(thirdPartyLicenses) { into("META-INF") }
     from(repositoryRoot.file("PROVENANCE.md")) { into("META-INF") }
     from(bom) { into("META-INF") }

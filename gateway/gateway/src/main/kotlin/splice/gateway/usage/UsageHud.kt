@@ -1,4 +1,4 @@
-// PORT-OF: server/src/usage/hud.mjs @ 4ca99f7 — invariants: buildUsagePayload stuffs the
+// PORT-OF: server/src/usage/hud.mjs @ pre-public-port-baseline — invariants: buildUsagePayload stuffs the
 // NON-STANDARD fields Claude Code reads from custom gateways (context_window,
 // context_window_size, used_percentage) sized from the head's REAL window; accepts Anthropic
 // names and OpenAI Responses aliases (prompt/completion, input_tokens_details.cached_tokens);

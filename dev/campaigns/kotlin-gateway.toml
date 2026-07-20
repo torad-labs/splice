@@ -5,7 +5,7 @@
 #
 # PLAN OF RECORD: the approved rewrite plan (2026-07-16) — module graph, provider SPI, enforcement
 # rings, phases P0-P8 with gates. Item contexts below carry the slot essentials inline (survival:
-# the manifest must be sufficient after any compaction). Named sources are server/src/*.mjs @ 4ca99f7.
+# the manifest must be sufficient after any compaction). Named sources are server/src/*.mjs @ pre-public-port-baseline.
 # LEDGER CLI LINEAGE: dev/campaigns/manifest.py vendored verbatim from torad-fleet @ ec913a7d
 # (TWO HOMES law: the ledger CLI is a toolkit distributable; adapt only with a dated note here).
 #
@@ -115,7 +115,7 @@ verify = "test -s gateway/spikes/results/xai-passthrough.md"
 # thinking; check message_start/content_block_*/message_delta shapes, stop_reason correctness,
 # thinking blocks, tool_use streaming. Faithful -> grok head = near-passthrough (auth + model map +
 # usage instrumentation). Unfaithful -> port the existing Responses-dialect translators
-# (server/src/grok/translate-{request,response}.mjs @ 4ca99f7 — they are the proven fallback).
+# (server/src/grok/translate-{request,response}.mjs @ pre-public-port-baseline — they are the proven fallback).
 
 # ── P1 — foundation: campaign, hooks, skeleton, walls, core ──────────────────
 # [2026-07-16] PREMISE-BLOCK (slot law): no XAI_API_KEY in env and no ~/.local/share/claude-grok/auth.json on disk — the fidelity probe cannot be grounded. Not improvising. Stays todo until the operator provides a key; P6-GROK falls back to the proven Responses translators if this never lands.
@@ -248,7 +248,7 @@ title = "Hot-knob config layering: defaults <- head TOML overrides <- state conf
 files = ["gateway/core/src/main/kotlin/config/", "gateway/core/src/test/kotlin/config/"]
 status = "verified"
 verify = "cd gateway && ./gradlew -q :core:test --tests '*Config*'"
-# Context: PORT-OF server/src/config.mjs @ 4ca99f7 — keep ENV_MAP alias names (CLAUDEX_*/CODEX_*),
+# Context: PORT-OF server/src/config.mjs @ pre-public-port-baseline — keep ENV_MAP alias names (CLAUDEX_*/CODEX_*),
 # coercion rules (bool regex, maxInflight unlimited aliases), normalization floors (idle >= 30s
 # except test floor, authCache >= 5s...), showReasoning folding, RESTART_REQUIRED_KEYS
 # [port,grokPort,controlPort,upstreamTimeoutMs], PATCH persists to state config.json (stays JSON),
@@ -269,7 +269,7 @@ title = "SseEmitter (L3-as-types): sole terminal emitter, raw frames with per-fr
 files = ["gateway/gateway/src/main/kotlin/wire/SseEmitter.kt", "gateway/provider-spi/src/main/kotlin/WireSink.kt", "gateway/gateway/src/test/kotlin/wire/"]
 status = "verified"
 verify = "cd gateway && ./gradlew -q :gateway:test --tests '*Emitter*'"
-# Context: PORT-OF server/src/anthropic/sse.mjs @ 4ca99f7 — invariants: message_start lazy on first
+# Context: PORT-OF server/src/anthropic/sse.mjs @ pre-public-port-baseline — invariants: message_start lazy on first
 # block (ensureStart), ping after start, block index ownership, emitTerminal derives stop_reason
 # tool_use > max_tokens(incomplete) > end_turn INTERNALLY, emitError = SSE error event, abandon()
 # seals silently, ended-idempotence, endResponse drains before terminal chunk (cork lesson ->
@@ -289,7 +289,7 @@ title = "Upstream SSE line reader: ByteReadChannel -> Flow<JsonObject>, multi-by
 files = ["gateway/provider-spi/src/test/kotlin/SseReaderTest.kt"]
 status = "verified"
 verify = "cd gateway && ./gradlew -q :provider-spi:test --tests '*SseReader*'"
-# Context: PORT-OF stream.mjs sseEvents @ 4ca99f7 — UTF-8 across chunk boundaries (streaming
+# Context: PORT-OF stream.mjs sseEvents @ pre-public-port-baseline — UTF-8 across chunk boundaries (streaming
 # decoder), partial-last-line carry, 'data: ' prefix only, skip empty/[DONE], skip malformed JSON
 # frames, onBytes callback fires ON READ (watchdog touch — NEVER after downstream write; plan
 # footgun #2). Test: multibyte char split across chunks (port of the existing UTF-8 split test).
@@ -307,7 +307,7 @@ title = "Two-tier watchdog: firstByteTimeout before first byte, streamIdle after
 files = ["gateway/provider-spi/src/test/kotlin/WatchdogTest.kt"]
 status = "verified"
 verify = "cd gateway && ./gradlew -q :provider-spi:test --tests '*Watchdog*'"
-# Context: PORT-OF stream.mjs idleTimer block @ 4ca99f7 — the v35 fix IS the spec: before first
+# Context: PORT-OF stream.mjs idleTimer block @ pre-public-port-baseline — the v35 fix IS the spec: before first
 # byte the limit is firstByteTimeoutMs (prefill legitimately silent for minutes), after it's
 # streamIdleMs, plus upstreamTimeoutMs total cap; poll interval min(15s, max(250ms, idle/3)).
 # Sibling coroutine polling AtomicLong lastByteAt + sawFirstByte; on breach set typed sentinel
@@ -328,7 +328,7 @@ title = "Inflight gate: hand-rolled FIFO with hot-resizable maxInflight and queu
 files = ["gateway/provider-spi/src/test/kotlin/InflightGateTest.kt"]
 status = "verified"
 verify = "cd gateway && ./gradlew -q :provider-spi:test --tests '*Gate*'"
-# Context: PORT-OF upstream/gate.mjs @ 4ca99f7. kotlinx Semaphore banned (can't hot-resize;
+# Context: PORT-OF upstream/gate.mjs @ pre-public-port-baseline. kotlinx Semaphore banned (can't hot-resize;
 # maxInflight is live-PATCHable, 0 = unlimited). ArrayDeque<CancellableContinuation<Unit>> +
 # invokeOnCancellation removes queued waiters (STRICT IMPROVEMENT over Node — its queued promise
 # has no cancellation path; invisible to golden fixtures). Slot carries idleFor()/touch() for the
@@ -348,7 +348,7 @@ title = "UpstreamFailureClassifier: ONE classifier for HTTP + SSE failure paths,
 files = ["gateway/provider-spi/src/test/kotlin/UpstreamFailureClassifierTest.kt"]
 status = "verified"
 verify = "cd gateway && ./gradlew -q :provider-spi:test --tests '*Classifier*'"
-# Context: PORT-OF codex/errors.mjs @ 4ca99f7 — REGEX ORDER IS THE SPEC (overflow before auth: the
+# Context: PORT-OF codex/errors.mjs @ pre-public-port-baseline — REGEX ORDER IS THE SPEC (overflow before auth: the
 # v29 bug); context-overflow rewrites to \"prompt is too long\" (Claude Code then compacts);
 # 502 -> 529 overloaded remap; provider extra-pattern injection point (grok/openai add theirs).
 # Port errors.test.mjs ordering + parity cases.
@@ -366,7 +366,7 @@ title = "Responses stream state machine: event-for-event port of runStreamTurn a
 files = ["gateway/dialect-openai-responses/src/test/kotlin/ResponsesStreamTranslatorTest.kt"]
 status = "verified"
 verify = "cd gateway && ./gradlew -q :dialect-openai-responses:test"
-# Context: PORT-OF codex/stream.mjs runStreamTurn @ 4ca99f7 EVENT-FOR-EVENT; its comments are the
+# Context: PORT-OF codex/stream.mjs runStreamTurn @ pre-public-port-baseline EVENT-FOR-EVENT; its comments are the
 # spec: eager tool_use open on output_item.added, LAZY text/thinking open on first delta (no empty
 # widgets), reasoning parts join with \\n\\n into ONE thinking block (v24: never close on
 # part/text.done — only output_item.done or end sweep), args stream input_json_delta on same wire
@@ -377,7 +377,7 @@ verify = "cd gateway && ./gradlew -q :dialect-openai-responses:test"
 # client-abort abandon() if res dead else truncated overloaded_error; empty compact = error
 # 'empty_model' never empty success; empty non-compact under HONESTY_MIN_CHARS -> api_error.
 # mirrorInto call at end (tools stay on). Returns TurnOutcome; gateway turn loop owns terminals.
-# [2026-07-16] SLOT (design pinned before fill): driveTurn(upstream Flow<JsonObject>, sink WireSink, meta TurnMeta) collects imperatively with mutable state Map<Int,BlockState(idx WireBlockIndex, sawDelta)> keyed by upstream output_index (+ 'reasoning:N' composite keys exactly like Node). RESPONSIBILITY SPLIT (decided, differs from Node shape but preserves order): the MACHINE handles event loop + closeAll + harvest-fallback merge + FAILURE decisions (upstreamFailure -> classified; watchdog-fired -> overloaded w/ idle/cap message; !finalResponse+client-dead -> ClientAbandoned; !finalResponse -> truncated overloaded) and returns TurnOutcome; buffers (thinkingText/bodyText/emittedText/hasToolUse/incomplete/usage) RIDE TurnOutcome.Success — core Turn.kt gains these fields; the GATEWAY pipeline then does promote-to-text (pickModelText) -> empty-compact/empty-model honesty (emitError api_error, never empty success) -> mirrorInto -> emitTerminal. Event vocabulary + rules from stream.mjs @ 4ca99f7: completed/done/incomplete capture finalResponse+usage(input_tokens|prompt_tokens); failed/error capture upstreamFailure{code,message} and CONTINUE reading; output_item.added function_call -> EAGER openTool(call_id||id||synthetic, name) sawDelta=false hasToolUse=true; text/reasoning LAZY open on first delta; output_item.done closes BOTH oi and reasoning:oi blocks + gated replay (replayReasoning && !compact && item.type==reasoning && item.encrypted_content -> addRedactedThinking IN POSITION); reasoning_summary_part.added AFTER sawDelta -> '\n\n' join into SAME block (v24: never close per part); reasoning_summary_text.delta|reasoning_text.delta -> lazy open thinking, buf += delta (multi-ITEM separator '\n\n' when thinkingBuf nonempty+!endsWith \n); *_text.done|*_part.done -> IGNORED; output_text.delta -> lazy open text at key oi, emittedText=true; function_call_arguments.delta -> inputJsonDelta on SAME wire index (missing block -> skip); function_call_arguments.done -> closeBlock. Harvest merge rules: text: use harvested when bufEmpty OR (buf weak && harvested strong); thinking: use harvested when LONGER. Machine lives in :dialect-openai-responses (ResponsesStreamTranslator).
+# [2026-07-16] SLOT (design pinned before fill): driveTurn(upstream Flow<JsonObject>, sink WireSink, meta TurnMeta) collects imperatively with mutable state Map<Int,BlockState(idx WireBlockIndex, sawDelta)> keyed by upstream output_index (+ 'reasoning:N' composite keys exactly like Node). RESPONSIBILITY SPLIT (decided, differs from Node shape but preserves order): the MACHINE handles event loop + closeAll + harvest-fallback merge + FAILURE decisions (upstreamFailure -> classified; watchdog-fired -> overloaded w/ idle/cap message; !finalResponse+client-dead -> ClientAbandoned; !finalResponse -> truncated overloaded) and returns TurnOutcome; buffers (thinkingText/bodyText/emittedText/hasToolUse/incomplete/usage) RIDE TurnOutcome.Success — core Turn.kt gains these fields; the GATEWAY pipeline then does promote-to-text (pickModelText) -> empty-compact/empty-model honesty (emitError api_error, never empty success) -> mirrorInto -> emitTerminal. Event vocabulary + rules from stream.mjs @ pre-public-port-baseline: completed/done/incomplete capture finalResponse+usage(input_tokens|prompt_tokens); failed/error capture upstreamFailure{code,message} and CONTINUE reading; output_item.added function_call -> EAGER openTool(call_id||id||synthetic, name) sawDelta=false hasToolUse=true; text/reasoning LAZY open on first delta; output_item.done closes BOTH oi and reasoning:oi blocks + gated replay (replayReasoning && !compact && item.type==reasoning && item.encrypted_content -> addRedactedThinking IN POSITION); reasoning_summary_part.added AFTER sawDelta -> '\n\n' join into SAME block (v24: never close per part); reasoning_summary_text.delta|reasoning_text.delta -> lazy open thinking, buf += delta (multi-ITEM separator '\n\n' when thinkingBuf nonempty+!endsWith \n); *_text.done|*_part.done -> IGNORED; output_text.delta -> lazy open text at key oi, emittedText=true; function_call_arguments.delta -> inputJsonDelta on SAME wire index (missing block -> skip); function_call_arguments.done -> closeBlock. Harvest merge rules: text: use harvested when bufEmpty OR (buf weak && harvested strong); thinking: use harvested when LONGER. Machine lives in :dialect-openai-responses (ResponsesStreamTranslator).
 # [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T07:07:31Z
 # [2026-07-16] ATTEST-START: tree=31343c5353761346fbd5a162958a4c399d86d1d5 at=2026-07-16T07:07:31Z
 # [2026-07-16] Landed splice.dialect.responses.ResponsesStreamTranslator per the pinned slot: event-for-event port (terminal/failure/item-added eager-tool/item-done+in-position-replay/summary-part \n\n join/thinking-lazy/text-lazy/args-same-index/args-done; *_part.done|*_text.done ignored — v24 pin), failure capture continues reading (v25 pin), classifier reuse on SSE failures (v29 P0 pin), harvest merge w/ weak-text preference, honest terminal cascade (upstreamFailure -> classified; watchdog sentinel -> overloaded w/ idle|cap message; no-terminal -> ClientAbandoned if client gone else truncated overloaded), buffers ride TurnOutcome.Success. StreamTurnContext injects compact/replay/envelope-encoder/client-gone/watchdog-sentinel (envelope codec itself lands P3-MIR). 10 unit tests green incl. one-block multipart pin, replay in-position pin, replay-off-on-compact pin.
@@ -392,7 +392,7 @@ title = "Mock upstream scenario server ported 1:1 (+ count_tokens fixture)"
 files = ["gateway/gateway/src/test/kotlin/mock/MockChatGptUpstream.kt"]
 status = "verified"
 verify = "cd gateway && ./gradlew -q :gateway:test --tests '*Mock*'"
-# Context: PORT-OF test/codex-proxy.test.mjs mock upstream @ 4ca99f7 — scenario tag rides
+# Context: PORT-OF test/codex-proxy.test.mjs mock upstream @ pre-public-port-baseline — scenario tag rides
 # body.instructions ('SCENARIO:<name>'); scenarios: basic, refresh (401 then success — single-flight
 # refresh), multipart (reasoning parts), toolcall, failed, overflow_sse, truncated, idle, prefill
 # (silent then bytes — the v35 regression case), drip, bigout (output clamp), nonstream_tool,
@@ -428,7 +428,7 @@ title = "Responses request builder + Quirks: one translator core for codex/xai/o
 files = ["gateway/dialect-openai-responses/src/main/kotlin/ResponsesRequestBuilder.kt", "gateway/dialect-openai-responses/src/main/kotlin/Quirks.kt"]
 status = "verified"
 verify = "cd gateway && ./gradlew -q :dialect-openai-responses:test --tests '*RequestBuilder*'"
-# Context: PORT-OF codex/translate-request.mjs @ 4ca99f7 with grok/translate-request.mjs diffed in
+# Context: PORT-OF codex/translate-request.mjs @ pre-public-port-baseline with grok/translate-request.mjs diffed in
 # as Quirks: effort ceiling+aliases (codex none..max incl. ultracode->max; grok low|medium|high,
 # can't disable), summary field (codex yes default detailed + visibility floor; grok none),
 # cache_key strategy (first-message-hash 'splice-<sha256[:32]>' vs session-id 'claude-grok:<sid>'),
@@ -451,7 +451,7 @@ title = "chatgpt-oauth AuthProvider: PKCE login (callback :1455), cached read, s
 files = ["gateway/provider-codex/src/main/kotlin/auth/", "gateway/provider-codex/src/test/kotlin/auth/"]
 status = "verified"
 verify = "cd gateway && ./gradlew -q :provider-codex:test --tests '*Auth*'"
-# Context: PORT-OF auth/codex-login.mjs + codex-oauth.mjs @ 4ca99f7 — codex CLI public client id,
+# Context: PORT-OF auth/codex-login.mjs + codex-oauth.mjs @ pre-public-port-baseline — codex CLI public client id,
 # authorize URL param ORDER + literal %20 (never '+'), state CSRF, token exchange + best-effort
 # api-key token-exchange grant, ~/.codex/auth.json shape byte-compatible (drop-in for real codex
 # CLI), 0600, account_id from id_token JWT claim, mtime+TTL cached read (authCacheMs), single-
@@ -470,7 +470,7 @@ title = "Compaction: positive-marker classify, shadow classifier on every reques
 files = ["gateway/gateway/src/main/kotlin/compact/", "gateway/gateway/src/test/kotlin/compact/"]
 status = "verified"
 verify = "cd gateway && ./gradlew -q :gateway:test --tests '*Compact*'"
-# Context: PORT-OF codex/compact.mjs @ 4ca99f7 — the 5 verbatim COMPACT_MARKERS (system prompt or
+# Context: PORT-OF codex/compact.mjs @ pre-public-port-baseline — the 5 verbatim COMPACT_MARKERS (system prompt or
 # last user message), NEVER size/content heuristics (v13/v24 misfire class), shadow classifier logs
 # {has_marker, tool_count, sys_len} unconditionally, marker CANARY test pins the sentence,
 # recordCompactStat/readCompactStats JSONL at the configured compact_stats path (Marcos pin:
@@ -488,7 +488,7 @@ title = "Mirror (L2) + replay envelope: one mirrorInto; splice-reasoning v1 byte
 files = ["gateway/gateway/src/main/kotlin/reasoning/Mirror.kt", "gateway/gateway/src/main/kotlin/reasoning/Replay.kt", "gateway/gateway/src/test/kotlin/reasoning/"]
 status = "verified"
 verify = "cd gateway && ./gradlew -q :gateway:test --tests '*Mirror*' --tests '*Replay*'"
-# Context: PORT-OF reasoning/mirror.mjs + replay.mjs @ 4ca99f7 — mirror wire format
+# Context: PORT-OF reasoning/mirror.mjs + replay.mjs @ pre-public-port-baseline — mirror wire format
 # '\\n[reasoning summary]\\n<text>\\n' EXACT, thresholds mirror>=20 promote>=40 honesty<20 (named
 # consts), never on compact, gated showReasoning=='text'; replay envelope tag 'splice-reasoning' v1
 # encode/decode PAIRED (a tag/version bump strands in-flight transcripts — byte-compat test against
@@ -507,7 +507,7 @@ title = "Usage: buildUsagePayload extra fields, output clamp, 5h window persiste
 files = ["gateway/gateway/src/main/kotlin/usage/", "gateway/gateway/src/test/kotlin/usage/"]
 status = "verified"
 verify = "cd gateway && ./gradlew -q :gateway:test --tests '*Usage*'"
-# Context: PORT-OF usage/hud.mjs + warn.mjs @ 4ca99f7 — non-standard usage fields Claude Code reads
+# Context: PORT-OF usage/hud.mjs + warn.mjs @ pre-public-port-baseline — non-standard usage fields Claude Code reads
 # from gateways (context_window, context_window_size, used_percentage) sized from the HEAD's real
 # window (272k/500k/1M), makeOutputClamp (backend rejects cap params; reasoning tokens count toward
 # output — clamp REPORTED output to client max_tokens except compact), fire-and-forget persistence
@@ -526,7 +526,7 @@ title = "Terminal response translation + harvest helpers (shared once): translat
 files = ["gateway/dialect-openai-responses/src/main/kotlin/ResponsesTerminal.kt"]
 status = "verified"
 verify = "cd gateway && ./gradlew -q :dialect-openai-responses:test --tests '*Terminal*'"
-# Context: PORT-OF codex/translate-response.mjs @ 4ca99f7 (grok's copies are byte-identical dupes —
+# Context: PORT-OF codex/translate-response.mjs @ pre-public-port-baseline (grok's copies are byte-identical dupes —
 # ONE implementation here, v29 'copies drift' lesson). Non-stream path shares this with streaming
 # harvest (one translator total).
 # [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T07:07:31Z
@@ -543,7 +543,7 @@ title = "codex Head assembled: POST /v1/messages exact-route, /v1/models discove
 files = ["gateway/gateway/src/main/kotlin/head/", "gateway/gateway/src/main/kotlin/mgmt/", "gateway/app/src/main/kotlin/Main.kt"]
 status = "verified"
 verify = "cd gateway && ./gradlew -q :gateway:test :app:test"
-# Context: PORT-OF codex-proxy.mjs routing + mgmt/api.mjs @ 4ca99f7. Route EXACTLY POST /v1/messages
+# Context: PORT-OF codex-proxy.mjs routing + mgmt/api.mjs @ pre-public-port-baseline. Route EXACTLY POST /v1/messages
 # (named change: count_tokens gets a dedicated cheap handler + log counter — old Node forwarded it
 # as a REAL turn, burning quota; golden fixture documents old behavior; live-verify in P3-LIVE).
 # /v1/models: catalog wrapped in discovery prefix, pinned model EXCLUDED (rides
@@ -600,7 +600,7 @@ title = "/api/* aggregation: heads lifecycle, config (NO fanout — one in-proce
 files = ["gateway/control/src/main/kotlin/api/", "gateway/control/src/test/kotlin/api/"]
 status = "verified"
 verify = "cd gateway && ./gradlew -q :control:test"
-# Context: PORT-OF control/api.mjs @ 4ca99f7 MINUS patchConfigFanout (single JVM: /api/config and
+# Context: PORT-OF control/api.mjs @ pre-public-port-baseline MINUS patchConfigFanout (single JVM: /api/config and
 # /mgmt/config call the SAME patchConfig; fanout deleted-not-ported, plan decision). FILE-BASED
 # TRUTH preserved: auth/usage/compact read from disk so a DOWN head still shows last-known state.
 # Same bearer key as /mgmt. Routes/JSON shapes must match webui/src/shared/api/index.ts EXACTLY
@@ -618,7 +618,7 @@ title = "Dashboard serving: committed webui/dist/index.html at / with mtime cach
 files = ["gateway/control/src/main/kotlin/api/Dashboard.kt"]
 status = "verified"
 verify = "cd gateway && ./gradlew -q :control:test --tests '*Dashboard*'"
-# Context: PORT-OF mgmt/dashboard.mjs @ 4ca99f7. Zero frontend toolchain in the daemon.
+# Context: PORT-OF mgmt/dashboard.mjs @ pre-public-port-baseline. Zero frontend toolchain in the daemon.
 # [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T07:44:30Z
 # [2026-07-16] ATTEST-START: tree=fc392e5d95a3ffab1228a0edc46489c6571ba5c7 at=2026-07-16T07:44:30Z
 # [2026-07-16] Folded into P4-API: ControlServer serves webui/dist/index.html (the committed single-file build) at / and /dashboard via an injected dashboardHtml() supplier (:app reads the file; test injects a stub). No frontend toolchain in the daemon.
@@ -681,7 +681,7 @@ verify = "cd gateway && ./gradlew -q :control:test --tests '*Contract*' && test 
 # ── P5 — launcher/config-prep + installer CLI ────────────────────────────────
 # [2026-07-16] CLAIM: owner=fable-main at=2026-07-16T08:40:38Z
 # [2026-07-16] ATTEST-START: tree=c19b9f749b9cb4135ce70ad1f0890a914390701f at=2026-07-16T08:40:38Z
-# [2026-07-16] Landed the webui contract gate (WebuiContractTest) — and it IMMEDIATELY CAUGHT 5 REAL PAYLOAD DRIFTS where the P4-API builders had shipped STUBS that would have broken the unmodified dashboard at runtime. Verified each against the Node ground truth (server/src/control/api.mjs + launcher/heads.mjs @ 4ca99f7) and FIXED the daemon: (1) /api/auth returned {heads:[...]} -> now {codex:{kind,login,present,account_id_masked,...}} keyed by head (webui reads .codex); login=automated for oauth/manual for api-key. (2) /api/usage was missing window_hours/warn_pct/warn_tokens_5h and the label+usage{} nesting+ratelimit -> now full UsagePayload. (3) /api/compact returned per-head {heads} -> now flat {stats:[...]} (webui CompactPayload). (4) /api/logs returned {head,log:string} -> now {key,path,lines:[array]} (LogsPayload). (5) HeadStatus was missing authKind/wantVersion/versionMatch/maxInflight -> added (gate/mode/maxInflight contract-nullable, wired authKind through ManagedHead from provider auth.kind). config was ALREADY correct (layers.{defaults,file,env,runtime}) — the initial test expectation was wrong, fixed to read under layers. 6 contract tests pin every field vs the webui interfaces; a future rename breaks the test not the dashboard. Manual click-through stays operator work. All 18 control tests green; full check + gate green.
+# [2026-07-16] Landed the webui contract gate (WebuiContractTest) — and it IMMEDIATELY CAUGHT 5 REAL PAYLOAD DRIFTS where the P4-API builders had shipped STUBS that would have broken the unmodified dashboard at runtime. Verified each against the Node ground truth (server/src/control/api.mjs + launcher/heads.mjs @ pre-public-port-baseline) and FIXED the daemon: (1) /api/auth returned {heads:[...]} -> now {codex:{kind,login,present,account_id_masked,...}} keyed by head (webui reads .codex); login=automated for oauth/manual for api-key. (2) /api/usage was missing window_hours/warn_pct/warn_tokens_5h and the label+usage{} nesting+ratelimit -> now full UsagePayload. (3) /api/compact returned per-head {heads} -> now flat {stats:[...]} (webui CompactPayload). (4) /api/logs returned {head,log:string} -> now {key,path,lines:[array]} (LogsPayload). (5) HeadStatus was missing authKind/wantVersion/versionMatch/maxInflight -> added (gate/mode/maxInflight contract-nullable, wired authKind through ManagedHead from provider auth.kind). config was ALREADY correct (layers.{defaults,file,env,runtime}) — the initial test expectation was wrong, fixed to read under layers. 6 contract tests pin every field vs the webui interfaces; a future rename breaks the test not the dashboard. Manual click-through stays operator work. All 18 control tests green; full check + gate green.
 # [2026-07-16] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: gateway/app/src/main/kotlin/splice/app/Daemon.kt, gateway/app/src/main/kotlin/splice/app/FileSources.kt, gateway/control/src/main/kotlin/splice/control/ControlServer.kt, gateway/control/src/main/kotlin/splice/control/ManagedHead.kt, gateway/control/src/test/kotlin/ControlServerTest.kt, gateway/control/src/test/kotlin/splice/control/WebuiContractTest.kt, gateway/provider-openai/src/test/kotlin/openai/OpenAiChatTest.kt
 # [2026-07-16] VERDICT: outcome=accepted
 
@@ -692,7 +692,7 @@ title = "Claude-config materializer: literal prepare-config port generalized to 
 files = ["gateway/control/src/main/kotlin/launchpad/ClaudeConfigMaterializer.kt", "gateway/control/src/test/kotlin/launchpad/MaterializerTest.kt"]
 status = "verified"
 verify = "cd gateway && ./gradlew -q :control:test --tests '*Materializer*'"
-# Context: PORT-OF launcher/prepare-config.mjs @ 4ca99f7 as TRANSLITERATION (symlink-break-before-
+# Context: PORT-OF launcher/prepare-config.mjs @ pre-public-port-baseline as TRANSLITERATION (symlink-break-before-
 # write ordering, never-delete-real-dir guard, PORT_KEYS allowlist for ~/.claude.json inheritance,
 # availableModels + enforceAvailableModels + statusLine injection, additionalModelOptionsCache,
 # hasCompletedOnboarding). THEN generalize: [claude] share/isolate policy per item (settings, mcps,
@@ -750,7 +750,7 @@ files = ["gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthPro
 status = "verified"
 verify = "cd gateway && ./gradlew -q :provider-grok:test && test -s gateway/spikes/results/p6-grok.md"
 # Context: dialect per P0-XAI (anthropic-passthrough if faithful, else Responses translators
-# PORT-OF grok/translate-{request,response}.mjs @ 4ca99f7 with Quirks {session-id cache key,
+# PORT-OF grok/translate-{request,response}.mjs @ pre-public-port-baseline with Quirks {session-id cache key,
 # effort clamp low|medium|high floor-at-low, no summary field, compact_effort=low as written,
 # tool_choice/parallel/strict}). api-key auth: env XAI_API_KEY > key file. Stat files
 # grok-usage.json/grok-ratelimit.json/claude-grok-compact-stats.jsonl (Marcos pins). Head :3100,

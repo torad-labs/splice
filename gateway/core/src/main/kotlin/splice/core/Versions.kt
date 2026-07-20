@@ -1,4 +1,4 @@
-// PORT-OF: server/src/versions.mjs @ 4ca99f7 — the /health version string is the ENTIRE
+// PORT-OF: server/src/versions.mjs @ pre-public-port-baseline — the /health version string is the ENTIRE
 // staleness-detection mechanism (no PID/lock files; the launcher compares this to a live
 // /health). Single daemon (P4): one version restarts every head together (documented change).
 package splice.core

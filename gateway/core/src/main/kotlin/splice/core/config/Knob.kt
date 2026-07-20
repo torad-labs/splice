@@ -1,5 +1,5 @@
 // PORT-OF: server/src/config.mjs DEFAULTS + ENV_MAP + NUMBER_KEYS/BOOL_KEYS + RESTART_REQUIRED_KEYS
-// @ 4ca99f7 — invariants: env alias order matters (first present name wins); maxInflight accepts
+// @ pre-public-port-baseline — invariants: env alias order matters (first present name wins); maxInflight accepts
 // unlimited/off/none/'' as 0; bool coercion is /^(1|true|yes|on)$/i; RESTART_REQUIRED =
 // [port, grokPort, controlPort, upstreamTimeoutMs]. DELIBERATELY NOT PORTED (plan): the vestigial
 // anthropicUpstream + claudeCredentialsPath keys (nothing read them; claudithos leftovers).

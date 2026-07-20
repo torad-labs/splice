@@ -1,4 +1,4 @@
-// PORT-OF: server/src/upstream/{fetch,gate}.mjs retry loop @ 4ca99f7 — invariants: one shared
+// PORT-OF: server/src/upstream/{fetch,gate}.mjs retry loop @ pre-public-port-baseline — invariants: one shared
 // HTTP/1.1 client (undici allowH2:false → Ktor CIO); headers-phase (first-byte) timeout is the
 // long firstByteTimeout (a near-window prompt / compaction prefills for minutes); the body phase
 // is governed by the stream watchdog, NOT here; retry on 502/503/529/429 with exponential
@@ -343,7 +343,10 @@ public class UpstreamClient(
             )
             return RetryPlan(RetryDecision.GIVE_UP, refreshedOnce)
         }
-        val refreshable = isAuthRefreshableFailure(failed.status, failed.text) && !refreshedOnce
+        val refreshable =
+            isAuthRefreshableFailure(failed.status, failed.text) &&
+                ctx.auth.allowRefreshAfterFailure(failed.status, failed.text) &&
+                !refreshedOnce
         if (refreshable) ctx.perf?.add(PerfKeys.REFRESHES, 1)
         if (refreshable && ctx.perf.timedOr(PerfKeys.REFRESH_MS) { ctx.auth.refresh() } != null) {
             return RetryPlan(RetryDecision.RETRY, refreshedOnce = true)

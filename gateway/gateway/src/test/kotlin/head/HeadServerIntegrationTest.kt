@@ -1,4 +1,4 @@
-// PORT-OF: the end-to-end message tests from server/test/codex-proxy.test.mjs @ 4ca99f7 — a real
+// PORT-OF: the end-to-end message tests from server/test/codex-proxy.test.mjs @ pre-public-port-baseline — a real
 // HeadServer (CodexProvider + mock ChatGPT upstream) exercised over HTTP: SSE wire frames for
 // streamed turns, /health + /v1/models shapes, the honest-failure paths, count_tokens NOT
 // burning a turn, promote-to-text + mirror on a compact-shaped answer. This is the P3-HEAD gate
@@ -7,6 +7,8 @@ package head
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -55,7 +57,9 @@ private class FakeAuth : RefreshableAuthProvider {
 class HeadServerIntegrationTest {
 
     private val mock = MockChatGptUpstream()
-    private val client = HttpClient(CIO)
+    private val client = HttpClient(CIO) {
+        defaultRequest { bearerAuth("test-inference-token") }
+    }
     private val port = freshPort()
     private lateinit var head: HeadServer
     private val logs = mutableListOf<String>()
@@ -95,6 +99,7 @@ class HeadServerIntegrationTest {
             listenPort = port,
             deps = HeadDeps(
                 upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 2),
+                inferenceToken = "test-inference-token",
                 gate = InflightGate({ 0 }),
                 shadow = ShadowClassifier(log = { logs.add(it) }),
                 compactStats = CompactStats(tmp.resolve("compact.jsonl")),
@@ -131,6 +136,25 @@ class HeadServerIntegrationTest {
         assertTrue(body.contains("\"version\""))
         assertTrue(body.contains("\"port\":$port"))
         assertTrue(body.contains("\"ok\":true"))
+    }
+
+    @Test
+    fun `inference routes reject missing and incorrect local credentials`() = runTest {
+        val unauthenticated = HttpClient(CIO)
+        try {
+            val missing = unauthenticated.post("http://127.0.0.1:$port/v1/messages") {
+                header("Content-Type", "application/json")
+                setBody("""{"model":"claude-codex--gpt-5.6-sol","messages":[]}""")
+            }
+            assertEquals(HttpStatusCode.Unauthorized, missing.status)
+            assertTrue(missing.bodyAsText().contains("authentication_error"))
+            val wrong = unauthenticated.get("http://127.0.0.1:$port/v1/models") {
+                header("Authorization", "Bearer definitely-wrong")
+            }
+            assertEquals(HttpStatusCode.Unauthorized, wrong.status)
+        } finally {
+            unauthenticated.close()
+        }
     }
 
     @Test
@@ -227,6 +251,14 @@ class HeadServerIntegrationTest {
     }
 
     @Test
+    fun `oversized upstream SSE frame emits an honest provider error`() = runTest {
+        val sse = messages("oversized_sse")
+        assertTrue(sse.contains("event: error"))
+        assertTrue(sse.contains("oversized streaming event"))
+        assertFalse(sse.contains("event: message_stop"))
+    }
+
+    @Test
     fun `truncated stream emits an honest overloaded error`() = runTest {
         val sse = messages("truncated")
         assertTrue(sse.contains("event: error"))
@@ -299,6 +331,29 @@ class HeadServerIntegrationTest {
         }.bodyAsText()
         assertTrue(body.contains("\"input_tokens\""))
         assertEquals(before, mock.upstreamBodies.size) // NO upstream turn was made
+    }
+
+    @Test
+    fun `count_tokens rejects malformed JSON and does not undercount unicode`() = runTest {
+        val malformed = client.post("http://127.0.0.1:$port/v1/messages/count_tokens") {
+            header("Content-Type", "application/json")
+            setBody("not json")
+        }
+        assertEquals(HttpStatusCode.BadRequest, malformed.status)
+
+        val unicode = "世界🙂".repeat(20)
+        val response = client.post("http://127.0.0.1:$port/v1/messages/count_tokens") {
+            header("Content-Type", "application/json")
+            setBody(
+                """{"model":"claude-codex--gpt-5.6-sol","messages":[{"role":"user","content":"$unicode"}]}""",
+            )
+        }
+        val estimate = Regex("\"input_tokens\":(\\d+)")
+            .find(response.bodyAsText())
+            ?.groupValues
+            ?.get(1)
+            ?.toLong()
+        assertTrue(estimate != null && estimate >= 60, "Unicode estimate must be conservative: $estimate")
     }
 
     @Test

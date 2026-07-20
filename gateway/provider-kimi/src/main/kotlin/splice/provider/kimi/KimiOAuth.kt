@@ -123,8 +123,7 @@ internal fun kimiAuthJson(tokens: KimiRefreshedTokens, nowMs: Long): JsonObject 
 
 /**
  * Plan-tier 401s are entitlement rejections, NOT token expiry — a refresh will not fix them.
- * Provided for future 401 classification (the current single-refresh-then-fail 401 hook is an
- * accepted simplification).
+ * KimiAuthProvider uses this to veto the transport's otherwise-correct single refresh on 401.
  */
 public fun isPlanTierRejection(body: String): Boolean {
     val lower = body.lowercase()

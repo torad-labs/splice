@@ -59,6 +59,31 @@ verify_sum() {
   echo "${name}: OK"
 }
 
+# verify_attestation <file> <asset-name> <release-base> — remote release artifacts must
+# be bound to this repository's GitHub Actions build provenance. Local file:// mirrors are
+# acceptance fixtures assembled from the current checkout and cannot have a GitHub attestation.
+verify_attestation() {
+  local file="$1" name="$2" release_base="$3"
+  case "$release_base" in
+    file://*)
+      echo "splice: local release base — skipping Sigstore attestation for ${name} (dev/acceptance artifact)" >&2
+      ;;
+    *)
+      if ! command -v gh >/dev/null 2>&1; then
+        echo "splice: GitHub CLI (gh) is required to verify remote release provenance — aborting" >&2
+        echo "splice: install gh from https://cli.github.com/ and retry" >&2
+        exit 1
+      fi
+      echo "splice: verifying build provenance attestation for ${name}"
+      if ! gh attestation verify "$file" --repo torad-labs/splice; then
+        echo "splice: attestation verification FAILED for ${name} — aborting" >&2
+        exit 1
+      fi
+      echo "${name} attestation: OK"
+      ;;
+  esac
+}
+
 # 1. Obtain the jar. Prefer an explicit SPLICE_JAR, else build from the checkout, else (release
 #    mode) download from GitHub Releases — the repo intentionally ships no binaries.
 if [ -n "${SPLICE_JAR:-}" ]; then
@@ -95,40 +120,16 @@ else
   curl -fsSL "$SUMS_URL" -o "$SUMS_TMP"
   verify_sum "$JAR_TMP" "$SUMS_TMP" splice.jar
 
-  # Supply-chain: a matching sha256 only proves the jar and sums.txt agree, and a hijacked
-  # release moves both together. Verify the release CI's Sigstore build-provenance attestation
-  # (actions/attest) to bind the candidate jar to the torad-labs/splice workflow. gh is
-  # optional so curl|bash stays usable — verify when present, warn loudly when absent. We
-  # attest the candidate ($JAR_TMP), not $JAR_DST which still holds the previous install here.
-  # Attestation applies ONLY to a genuine remote release artifact: a file:// base is a local
-  # build or acceptance mirror (a dev jar the CI never attested) — sha256 already bound it, and
-  # GitHub has no attestation record for it, so verification there is inapplicable, not skipped
-  # laxly. Real releases install from https://github.com/... and are always verified.
-  case "$RELEASE_BASE" in
-    file://*)
-      echo "splice: local release base — skipping Sigstore attestation (dev/acceptance jar, not CI-released)" >&2
-      ;;
-    *)
-      if command -v gh >/dev/null 2>&1; then
-        echo "splice: verifying build provenance attestation via gh"
-        if ! gh attestation verify "$JAR_TMP" --repo torad-labs/splice; then
-          echo "splice: attestation verification FAILED for splice.jar — aborting" >&2
-          exit 1
-        fi
-        echo "splice.jar attestation: OK"
-      else
-        echo "splice: WARNING — gh not found; skipping Sigstore attestation verification." >&2
-        echo "splice: install the GitHub CLI, then verify the installed jar with:" >&2
-        echo "  gh attestation verify \"$JAR_DST\" --repo torad-labs/splice" >&2
-      fi
-      ;;
-  esac
+  # A checksum binds the asset to sha256sums.txt; the attestation independently binds the
+  # candidate bytes to this repository's release workflow.
+  verify_attestation "$JAR_TMP" splice.jar "$RELEASE_BASE"
 
   # The launch shim is a release asset too — without it every wrapper symlink dangles.
   SHIM_URL="${RELEASE_BASE}/splice-launch"
   echo "splice: downloading $SHIM_URL"
   curl -fsSL "$SHIM_URL" -o "$SHIM_TMP"
   verify_sum "$SHIM_TMP" "$SUMS_TMP" splice-launch
+  verify_attestation "$SHIM_TMP" splice-launch "$RELEASE_BASE"
   SHIM_SRC="$SHIM_TMP"
 fi
 
@@ -142,6 +143,7 @@ if [ ! -f "$SHIM_SRC" ]; then
   curl -fsSL "${RELEASE_BASE}/sha256sums.txt" -o "$SUMS_TMP"
   curl -fsSL "${RELEASE_BASE}/splice-launch" -o "$SHIM_TMP"
   verify_sum "$SHIM_TMP" "$SUMS_TMP" splice-launch
+  verify_attestation "$SHIM_TMP" splice-launch "$RELEASE_BASE"
   SHIM_SRC="$SHIM_TMP"
 fi
 

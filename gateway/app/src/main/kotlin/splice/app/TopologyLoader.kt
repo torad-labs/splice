@@ -52,7 +52,7 @@ command = "claudeor"
 
     public fun loadOrMaterialize(path: Path): Topology {
         if (!Files.exists(path)) {
-            Files.createDirectories(path.parent)
+            path.parent?.let(Files::createDirectories)
             Files.writeString(path, DEFAULT_TOML.trimIndent() + "\n")
         }
         return parse(Files.readString(path))

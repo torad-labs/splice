@@ -23,11 +23,13 @@ fi
 grep -qE 'maxIssues:[[:space:]]*0' "$DETEKT" || err "detekt.yml build.maxIssues must be 0"
 grep -qE 'warningsAsErrors:[[:space:]]*true' "$DETEKT" || err "detekt.yml config.warningsAsErrors must be true"
 
-# 3. Every kotlin-splice wall stays a blocking error (no silent downgrade to warning/hint).
-for f in .rules/kotlin-splice/*.yml; do
-  sev=$(grep -E '^severity:' "$f" | head -1 | awk '{print $2}')
-  [ "$sev" = "error" ] || err "$(basename "$f") severity is '${sev:-unset}', must be 'error'"
-done
+# 3. Every ast-grep rule definition stays a blocking error (no silent downgrade to
+# warning/hint). Rule-test fixtures also have an id but are not rule definitions.
+while IFS= read -r f; do
+  grep -qE '^[[:space:]]*id:' "$f" || continue
+  sev=$(grep -E '^[[:space:]]*severity:' "$f" | head -1 | awk '{print $2}')
+  [ "$sev" = "error" ] || err "$f severity is '${sev:-unset}', must be 'error'"
+done < <(find .rules -path .rules/rule-tests -prune -o -type f -name '*.yml' -print)
 
 if [ "$fail" -eq 0 ]; then echo "config-guard: PASS"; else echo "config-guard: FAIL"; fi
 exit "$fail"

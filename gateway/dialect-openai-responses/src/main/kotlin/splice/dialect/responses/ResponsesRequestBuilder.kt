@@ -1,4 +1,4 @@
-// PORT-OF: server/src/codex/translate-request.mjs + grok/translate-request.mjs @ 4ca99f7 —
+// PORT-OF: server/src/codex/translate-request.mjs + grok/translate-request.mjs @ pre-public-port-baseline —
 // ONE Responses request builder parameterized by Quirks (the two Node files are ~90% identical;
 // the v29 lesson: copies drift). Invariants:
 //   - PURE: {req, meta} from (body, opts); never mutates the body (meta replaced v29's

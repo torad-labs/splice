@@ -1,5 +1,5 @@
 // PORT-OF: the refreshInflight single-flight pattern from server/src/auth/codex-oauth.mjs
-// @ 4ca99f7 — invariant: N concurrent 401s trigger exactly ONE refresh; late callers await the
+// @ pre-public-port-baseline — invariant: N concurrent 401s trigger exactly ONE refresh; late callers await the
 // in-flight result. Shared here so every RefreshableAuthProvider reuses it (the v29
 // copies-drift lesson applied to auth).
 //

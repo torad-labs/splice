@@ -8,13 +8,13 @@ import splice.core.auth.AuthProvider
 import splice.core.head.Head
 
 /** Reads the head's persisted usage/ratelimit (file truth). */
-public interface HeadUsageSource {
-    public fun outputTokens5h(): Long
-    public fun entries(): Int
-    public fun ratelimit(): RateLimitView?
+public fun interface HeadUsageSource {
+    /** One coherent filesystem read per control/statusline request. */
+    public fun snapshot(): UsageView
 }
 
 public data class RateLimitView(val limitTokens: Long?, val remainingTokens: Long?, val resetTokens: String?)
+public data class UsageView(val outputTokens5h: Long, val entries: Int, val ratelimit: RateLimitView?)
 
 /** Reads the head's compaction stats (file truth). */
 public interface HeadCompactSource {

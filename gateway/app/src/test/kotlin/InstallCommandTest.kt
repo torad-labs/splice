@@ -149,6 +149,7 @@ class InstallCommandTest {
             val bin = home.resolve(".local").resolve("bin")
             assertFalse(Files.exists(bin.resolve("claudex"), NOFOLLOW_LINKS))
             assertFalse(Files.exists(bin.resolve("grok"), NOFOLLOW_LINKS))
+            assertFalse(Files.exists(bin.resolve("splice"), NOFOLLOW_LINKS))
         }
     }
 

@@ -1,4 +1,4 @@
-// PORT-OF: server/launcher/prepare-config.mjs @ 4ca99f7 as a TRANSLITERATION (high blast radius —
+// PORT-OF: server/launcher/prepare-config.mjs @ pre-public-port-baseline as a TRANSLITERATION (high blast radius —
 // mutates the operator's ~/.claude* state), generalized to the per-head share/isolate policy.
 // Invariants preserved EXACTLY:
 //   - isolated CLAUDE_CONFIG_DIR (default ~/.claude-<head>); refuse to write outside it;

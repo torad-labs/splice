@@ -82,6 +82,10 @@ private fun foldConfigFrom(cfg: SpliceConfig): FoldConfig = FoldConfig(
     maxTierN = cfg.foldMaxTier,
 )
 
+private const val CHATGPT_OAUTH = "chatgpt-oauth"
+private const val GROK_OAUTH = "grok-oauth"
+private const val KIMI_OAUTH = "kimi-oauth"
+
 /**
  * Best-effort isolation at daemon/head boundaries without turning cancellation or fatal JVM
  * failures into a merely degraded head. Expected I/O and assembly failures become [Result]
@@ -98,6 +102,66 @@ internal inline fun <T> runCatchingDaemonBoundary(block: () -> T): Result<T> = t
 } catch (failure: IllegalStateException) {
     Result.failure(failure)
 }
+
+private fun assembleDaemonHeads(
+    topology: Topology,
+    heads: MutableMap<String, ManagedHead>,
+    log: (String) -> Unit,
+    assemble: (String, HeadConfig, ProviderConfig) -> ManagedHead,
+): LinkedHashMap<String, String> {
+    val failed = LinkedHashMap<String, String>()
+    for ((key, head) in topology.heads) {
+        val providerCfg = topology.providers[head.provider]
+        if (providerCfg == null) {
+            failed[key] = "unknown provider '${head.provider}'"
+            log("[daemon] head '$key' SKIPPED: unknown provider '${head.provider}'\n")
+            continue
+        }
+        runCatchingDaemonBoundary { assemble(key, head, providerCfg) }
+            .onSuccess { heads[key] = it }
+            .onFailure {
+                failed[key] = it.message ?: it.javaClass.simpleName
+                log("[daemon] head '$key' SKIPPED (build failed): ${it.message}\n")
+            }
+    }
+    return failed
+}
+
+private suspend fun startDaemonHeads(
+    heads: Map<String, ManagedHead>,
+    failed: MutableMap<String, String>,
+    probeScope: CoroutineScope,
+    log: (String) -> Unit,
+    authProbes: MutableMap<String, AuthProbeLoop>,
+) {
+    heads.forEach { (key, managed) ->
+        runCatchingDaemonBoundary { managed.head.start() }.onFailure {
+            failed[key] = "start failed: ${it.message}"
+            log("[daemon] head '$key' failed to start: ${it.message}\n")
+        }
+        startAuthProbeIfRefreshable(key, managed.auth, probeScope, log, authProbes)
+    }
+}
+
+private fun resolveHeadConfig(
+    key: String,
+    head: HeadConfig,
+    provider: ProviderConfig,
+    cfg: SpliceConfig,
+): HeadConfig = when {
+    provider.auth.kind == CHATGPT_OAUTH -> head.copy(port = cfg.port, pinnedModel = cfg.pinnedModel)
+    provider.auth.kind == GROK_OAUTH || key.contains("grok", ignoreCase = true) ->
+        head.copy(port = cfg.grokPort, pinnedModel = cfg.grokModel)
+    else -> head
+}
+
+private fun resolveProviderConfig(key: String, provider: ProviderConfig, cfg: SpliceConfig): ProviderConfig =
+    when {
+        provider.auth.kind == CHATGPT_OAUTH -> provider.copy(baseUrl = cfg.chatgptApiBase)
+        provider.auth.kind == GROK_OAUTH || key.contains("grok", ignoreCase = true) ->
+            provider.copy(baseUrl = cfg.xaiApiBase)
+        else -> provider
+    }
 
 public class Daemon(
     private val topology: Topology,
@@ -132,31 +196,27 @@ public class Daemon(
             streamIdle = cfg.streamIdleMs.milliseconds,
             totalCap = cfg.upstreamTimeoutMs.milliseconds,
         )
-        // topology owns the control port (loaded once at start, restart-required); the
-        // ConfigService knob is only the hot-knob default when topology omits it. Resolved before
-        // the head loop so each head's launch spec can point its statusline at this port.
-        val controlPort = topology.daemon.controlPort?.takeIf { it > 0 } ?: cfg.controlPort
+        // TOML feeds ConfigService's topology layer; state/env/runtime override it consistently.
+        // Resolved before the head loop so every launch recipe points at the actual listener.
+        val controlPort = cfg.controlPort
         // PER-HEAD BOOT ISOLATION (audit 2026-07-18): one head that fails to assemble (a valid
         // TOML the builder can't wire, e.g. a not-yet-supported dialect) must NOT abort the whole
         // daemon with a stack trace to /dev/null. Log the degraded head and serve the rest.
-        val failed = LinkedHashMap<String, String>()
-        for ((key, head) in topology.heads) {
-            val providerCfg = topology.providers[head.provider]
-            if (providerCfg == null) {
-                failed[key] = "unknown provider '${head.provider}'"
-                log("[daemon] head '$key' SKIPPED: unknown provider '${head.provider}'\n")
-                continue
-            }
-            runCatchingDaemonBoundary {
-                val catalog = providerCfg.catalogFor(head)
-                val loginCommand = loginInterception(providerCfg, head, key).first
-                val ctx = ProviderBuild(key, head, providerCfg, catalog, watchdog, cfg, loginCommand)
-                assembleHead(ctx, controlPort)
-            }.onSuccess { heads[key] = it }
-                .onFailure {
-                    failed[key] = it.message ?: it.javaClass.simpleName
-                    log("[daemon] head '$key' SKIPPED (build failed): ${it.message}\n")
-                }
+        val failed = assembleDaemonHeads(topology, heads, log) { key, head, providerCfg ->
+            val resolvedHead = resolveHeadConfig(key, head, providerCfg, cfg)
+            val resolvedProvider = resolveProviderConfig(key, providerCfg, cfg)
+            val catalog = resolvedProvider.catalogFor(resolvedHead, cfg.contextWindowOverride)
+            val loginCommand = loginInterception(resolvedProvider, resolvedHead, key).first
+            val ctx = ProviderBuild(
+                key,
+                resolvedHead,
+                resolvedProvider,
+                catalog,
+                watchdog,
+                cfg,
+                loginCommand,
+            )
+            assembleHead(ctx, controlPort)
         }
         val srv = ControlServer(
             controlPort,
@@ -171,14 +231,7 @@ public class Daemon(
         control = srv
         srv.start()
         // Start each head in isolation too — a listen() failure on one port must not sink the others.
-        heads.forEach { (key, m) ->
-            runCatchingDaemonBoundary { m.head.start() }.onFailure {
-                failed[key] = "start failed: ${it.message}"
-                log("[daemon] head '$key' failed to start: ${it.message}\n")
-            }
-            // Auth probing is orthogonal to port-bind success — probe even a head whose start() failed.
-            startAuthProbeIfRefreshable(key, m.auth, probeScope, log, authProbes)
-        }
+        startDaemonHeads(heads, failed, probeScope, log, authProbes)
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
     }
@@ -280,7 +333,7 @@ public class Daemon(
         val providerCfg = ctx.providerCfg
         val cfg = ctx.cfg
         return when (providerCfg.auth.kind) {
-            "kimi-oauth" -> {
+            KIMI_OAUTH -> {
                 val authPath = Paths.get(
                     TopologyLoader.expandHome(providerCfg.auth.file ?: "~/.kimi/credentials/kimi-code.json"),
                 )
@@ -343,11 +396,11 @@ public class Daemon(
         val watchdog = ctx.watchdog
         val cfg = ctx.cfg
         return when (providerCfg.auth.kind) {
-            "chatgpt-oauth" -> {
+            CHATGPT_OAUTH -> {
                 // Refresh hits the OAuth ISSUER's token endpoint (auth.openai.com), not the API base_url.
                 val tokenUrl = CodexOAuthEndpoints.tokenUrl(System::getenv)
                 val auth = CodexAuthProvider(
-                    authPath = Paths.get(TopologyLoader.expandHome(providerCfg.auth.file ?: cfg.codexAuthPath)),
+                    authPath = Paths.get(TopologyLoader.expandHome(cfg.codexAuthPath)),
                     authCacheMs = cfg.authCacheMs,
                     refreshCall = { rt -> refreshCall(tokenUrl, rt) },
                 )
@@ -392,7 +445,7 @@ public class Daemon(
         val cfg = ctx.cfg
         val tokenUrl = GrokOAuthEndpoints.tokenUrl(System::getenv)
         val auth = GrokAuthProvider(
-            authPath = Paths.get(TopologyLoader.expandHome(providerCfg.auth.file ?: "~/.grok/auth.json")),
+            authPath = Paths.get(TopologyLoader.expandHome(cfg.grokAuthPath)),
             authCacheMs = cfg.authCacheMs,
             refreshCall = { rt -> grokRefresh(tokenUrl, rt) },
         )
@@ -484,9 +537,9 @@ public class Daemon(
     // (loginCommand, signInLabel) — both blank when there is no OAuth flow.
     private fun loginInterception(providerCfg: ProviderConfig, head: HeadConfig, key: String): Pair<String, String> {
         val label = when (providerCfg.auth.kind) {
-            "chatgpt-oauth" -> "Codex (ChatGPT)"
+            CHATGPT_OAUTH -> "Codex (ChatGPT)"
             GROK_OAUTH -> "Grok (xAI)"
-            "kimi-oauth" -> "Kimi (Moonshot)"
+            KIMI_OAUTH -> "Kimi (Moonshot)"
             else -> ""
         }
         val command = if (label.isEmpty()) "" else "${head.claude.command ?: key} login"
@@ -512,6 +565,7 @@ public class Daemon(
                     cfg.upstreamRetries,
                     client = UpstreamClient.defaultClient(cfg.firstByteTimeoutMs, cfg.upstreamTimeoutMs, log),
                 ),
+                inferenceToken = mgmtKey.get(),
                 gate = InflightGate(
                     maxInflight = { config.getConfig().maxInflight },
                     maxQueued = { config.getConfig().maxQueued },
@@ -559,12 +613,11 @@ public class Daemon(
             signInLabel = signInLabel,
             policy = ClaudePolicy(share = topology.claude.share.toSet(), isolate = head.claude.isolate.toSet()),
             port = head.port,
+            inferenceToken = mgmtKey.get(),
         )
     }
 
     public companion object {
-        private const val GROK_OAUTH = "grok-oauth"
-
         public fun dashboardFrom(
             distPath: Path,
             classpathHtml: () -> String? = {

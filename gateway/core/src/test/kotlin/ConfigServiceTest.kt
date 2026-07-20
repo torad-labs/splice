@@ -1,4 +1,4 @@
-// PORT-OF: server/test/config.test.mjs semantics @ 4ca99f7 — layer precedence, PATCH persistence
+// PORT-OF: server/test/config.test.mjs semantics @ pre-public-port-baseline — layer precedence, PATCH persistence
 // + restart-required flagging, invalid-value/unknown-key rejection, maxInflight aliases,
 // normalization floors, showReasoning folding, sub-second cache pickup. Env is faked via the
 // injected reader seam (JVM cannot setenv).

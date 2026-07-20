@@ -1,4 +1,4 @@
-// PORT-OF: the mock upstream from server/test/codex-proxy.test.mjs @ 4ca99f7, 1:1 — scenario
+// PORT-OF: the mock upstream from server/test/codex-proxy.test.mjs @ pre-public-port-baseline, 1:1 — scenario
 // picked from a SCENARIO:<name> tag in body.instructions; /oauth/token counts refreshes;
 // 'refresh' 401s on the old token; every streaming scenario's event sequence is verbatim
 // (incl. the nonstream_tool mid-codepoint ✓ split and the prefill silent-then-stream shape).
@@ -186,6 +186,10 @@ class MockChatGptUpstream {
                 """{"type":"response.failed","response":{"error":{"code":"invalid_request_error",""" +
                     """"message":"Your input exceeds the context window of this model. Please reduce the length."}}}""",
             )
+            "oversized_sse" -> {
+                ex.responseBody.write("data: ".toByteArray())
+                ex.responseBody.write("x".repeat(1024 * 1024 + 1).toByteArray())
+            }
             "truncated" -> {
                 sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
                 sse(ex, """{"type":"response.output_text.delta","output_index":0,"delta":"partial answer"}""")

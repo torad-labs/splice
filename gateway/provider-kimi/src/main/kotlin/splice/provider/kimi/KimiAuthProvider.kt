@@ -88,6 +88,9 @@ public class KimiAuthProvider(
     override suspend fun refresh(): Credentials? =
         singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG) }
 
+    override fun allowRefreshAfterFailure(status: Int, body: String): Boolean =
+        !isPlanTierRejection(body)
+
     // Sealed per-mode outcome (discipline L3): a dead refresh token, a transport blip, and a
     // corrupt file are DIFFERENT stories; credentialsOrNull is the single logging flatten.
     // Staged (read → exchange), each stage owning its own failure branches.

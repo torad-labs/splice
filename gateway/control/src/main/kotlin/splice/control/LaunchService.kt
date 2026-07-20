@@ -1,4 +1,4 @@
-// PORT-OF: server/launcher/{assemble-env,ensure-proxy}.mjs exec-recipe @ 4ca99f7, as a daemon
+// PORT-OF: server/launcher/{assemble-env,ensure-proxy}.mjs exec-recipe @ pre-public-port-baseline, as a daemon
 // endpoint (P4-LAUNCH). The bin shim POSTs /launch{head}; the daemon materializes the head's Claude
 // config (P5-PREP) and returns the exec recipe. Env recipe restored to Node fidelity — the minimal
 // version broke two things: (1) Claude Code fell back to Anthropic /login because it saw a custom
@@ -27,6 +27,8 @@ public data class LaunchSpec(
     val signInLabel: String, // provider label for the /login UX ("Codex (ChatGPT)", "Grok (xAI)")
     val policy: ClaudePolicy,
     val port: Int,
+    /** Per-install local gateway credential; shared with the head's inbound verifier. */
+    val inferenceToken: String,
 )
 
 public data class LaunchRecipe(
@@ -41,6 +43,7 @@ public data class LaunchRecipe(
 public class LaunchService(
     private val materializer: ClaudeConfigMaterializer,
     private val claudeBinary: String = "claude",
+    private val envReader: (String) -> String? = System::getenv,
 ) {
     /** Materialize the head's config + build the exec recipe. Safe by default: the flag is added
      *  ONLY when [dangerouslySkipPermissions] is true, and doing so returns a non-null warning. */
@@ -88,9 +91,10 @@ public class LaunchService(
         val slots = aliasSlots(spec)
         return buildMap {
             put("ANTHROPIC_BASE_URL", "http://127.0.0.1:${spec.port}")
-            // AUTH_TOKEN (bearer), NOT API_KEY — the proxy accepts anything; a bearer avoids Claude
-            // Code's custom-api-key approval flow that otherwise dead-ends at Anthropic /login.
-            put("ANTHROPIC_AUTH_TOKEN", "splice-local")
+            // AUTH_TOKEN (bearer), NOT API_KEY — a bearer avoids Claude Code's custom-api-key
+            // approval flow. The head validates this per-install credential before any quota-
+            // consuming work.
+            put("ANTHROPIC_AUTH_TOKEN", spec.inferenceToken)
             put("CLAUDE_CONFIG_DIR", spec.configDir.toString())
             // THE fix for "only one model shows": lets the /model picker list every /v1/models id.
             put("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY", "1")
@@ -105,7 +109,7 @@ public class LaunchService(
             put("CLAUDE_CODE_AUTO_COMPACT_WINDOW", max(AUTO_COMPACT_FLOOR, spec.contextWindow).toString())
             put("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "85")
             put("MAX_THINKING_TOKENS", "128000")
-            put("NO_PROXY", "127.0.0.1,localhost")
+            put("NO_PROXY", mergedNoProxy())
             // Hide Claude Code's built-in Anthropic-account commands: in a gateway head, auth is the
             // proxy bearer above, so /login (a local-jsx command hardwired to platform.claude.com —
             // no hook or base-url override can reach it) and /logout are dead doors. These are the
@@ -115,6 +119,15 @@ public class LaunchService(
             put("SPLICE", "1")
         }
     }
+
+    private fun mergedNoProxy(): String =
+        sequenceOf(envReader("NO_PROXY"), envReader("no_proxy"), "127.0.0.1,localhost")
+            .filterNotNull()
+            .flatMap { it.split(',').asSequence() }
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+            .joinToString(",")
 
     // opus/sonnet/haiku/fable → distinct models when the catalog offers them (else the pinned one).
     // haiku is the "fast" tier, so it prefers a mini/fast model rather than whatever sorts last.

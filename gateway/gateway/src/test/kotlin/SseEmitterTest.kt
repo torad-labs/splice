@@ -1,4 +1,4 @@
-// PORT-OF: server/src/anthropic/sse.mjs behavior pins @ 4ca99f7 — lazy start + ping, frame
+// PORT-OF: server/src/anthropic/sse.mjs behavior pins @ pre-public-port-baseline — lazy start + ping, frame
 // framing bytes, stop_reason derivation order, error path, abandon, ended idempotence.
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject

@@ -1,4 +1,4 @@
-// PORT-OF: server/test/control-server.test.mjs @ 4ca99f7 — bearer guard, /api/status, /api/heads
+// PORT-OF: server/test/control-server.test.mjs @ pre-public-port-baseline — bearer guard, /api/status, /api/heads
 // + lifecycle, /api/config GET+PATCH (single-JVM: no fanout targets), /api/usage soft-warn
 // firing from a seeded 90% ratelimit, /api/auth masked, dashboard serving, 404s. Payload shapes
 // match webui/src/shared/api/index.ts (the contract).
@@ -33,6 +33,7 @@ import splice.control.LaunchService
 import splice.control.LaunchSpec
 import splice.control.ManagedHead
 import splice.control.RateLimitView
+import splice.control.UsageView
 import splice.core.SHIM_VERSION
 import splice.core.auth.AuthDescription
 import splice.core.auth.AuthProvider
@@ -87,9 +88,11 @@ class ControlServerTest {
             head = head,
             auth = FakeAuth(),
             usage = object : HeadUsageSource {
-                override fun outputTokens5h() = 0L
-                override fun entries() = 3
-                override fun ratelimit() = RateLimitView(1000, 100, "6m0s") // 90% used -> warn
+                override fun snapshot() = UsageView(
+                    0L,
+                    3,
+                    RateLimitView(1000, 100, "6m0s"), // 90% used -> warn
+                )
             },
             compact = object : HeadCompactSource {
                 override fun summary(tailN: Int) =
@@ -116,6 +119,7 @@ class ControlServerTest {
             signInLabel = "Codex (ChatGPT)",
             policy = splice.core.launch.ClaudePolicy(share = emptySet(), isolate = emptySet()),
             port = 3099,
+            inferenceToken = mgmt.get(),
         )
         control = ControlServer(
             port = port,
@@ -260,12 +264,12 @@ class ControlServerTest {
 
     @Test
     fun `auth is masked, compact summarized, logs tailed`() = runTest {
-        // Node shape: auth keyed by head; compact flat {stats}; logs {key,path,lines[]}
+        // Auth is keyed by head; compact is aggregate stats + tail; logs {key,path,lines[]}.
         val auth = json.parseToJsonElement(authed("/api/auth")).jsonObject["codex"]!!.jsonObject
         assertEquals("acct…5678", auth["account_id_masked"]?.jsonPrimitive?.content)
         assertEquals("automated", auth["login"]?.jsonPrimitive?.content) // oauth -> automated
-        val compact = json.parseToJsonElement(authed("/api/compact")).jsonObject["stats"]!!.jsonArray
-        assertTrue(compact.isNotEmpty())
+        val compact = json.parseToJsonElement(authed("/api/compact")).jsonObject["stats"]!!.jsonObject
+        assertTrue(compact["tail"]!!.jsonArray.isNotEmpty())
         val logs = json.parseToJsonElement(authed("/api/logs/codex?tail=10")).jsonObject
         assertEquals("codex", logs["key"]?.jsonPrimitive?.content)
         assertTrue(logs["lines"]!!.jsonArray.any { it.jsonPrimitive.content.contains("line one") })
@@ -288,7 +292,7 @@ class ControlServerTest {
         val env = obj["env"]!!.jsonObject
         assertEquals("http://127.0.0.1:3099", env["ANTHROPIC_BASE_URL"]?.jsonPrimitive?.content)
         // the two fixes: a bearer AUTH_TOKEN (no /login), and gateway model discovery (all models show)
-        assertEquals("splice-local", env["ANTHROPIC_AUTH_TOKEN"]?.jsonPrimitive?.content)
+        assertEquals(key, env["ANTHROPIC_AUTH_TOKEN"]?.jsonPrimitive?.content)
         assertEquals("1", env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"]?.jsonPrimitive?.content)
         assertEquals("gpt-5.6-sol", env["ANTHROPIC_MODEL"]?.jsonPrimitive?.content)
         assertEquals("272000", env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"]?.jsonPrimitive?.content)
@@ -315,6 +319,22 @@ class ControlServerTest {
     }
 
     @Test
+    fun `launch refuses to return a recipe for a stopped head`() = runTest {
+        head.running = false
+        try {
+            val response = client.post("http://127.0.0.1:$port/launch/codex") {
+                header("Authorization", "Bearer $key")
+                header("Content-Type", "application/json")
+                setBody("{}")
+            }
+            assertEquals(HttpStatusCode.ServiceUnavailable, response.status)
+            assertTrue(response.bodyAsText().contains("head is not running"))
+        } finally {
+            head.running = true
+        }
+    }
+
+    @Test
     fun `statusline renders the model from stdin json, no bearer needed`() = runTest {
         val line = client.post("http://127.0.0.1:$port/statusline/codex") {
             header("Content-Type", "application/json")
@@ -323,6 +343,15 @@ class ControlServerTest {
             )
         }.bodyAsText()
         assertTrue(line.contains("Codex 5.6 Sol"))
+    }
+
+    @Test
+    fun `statusline rejects oversized input before rendering`() = runTest {
+        val response = client.post("http://127.0.0.1:$port/statusline/codex") {
+            header("Content-Type", "application/json")
+            setBody("x".repeat(70_000))
+        }
+        assertEquals(413, response.status.value)
     }
 }
 

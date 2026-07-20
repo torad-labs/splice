@@ -62,8 +62,17 @@ public abstract class ResponsesProvider(
                 decodeReasoningEnvelope = { decodeReasoningEnvelope(it) },
             ),
         )
-        return BuiltTurn(built.req, built.meta, perTurnHeaders(sessionId))
+        return BuiltTurn(built.req, built.meta, perTurnHeaders(sessionId) + liteHeaders(built.meta))
     }
+
+    /** codex-rs sends this marker header for responses-lite (5.6-family) turns; compact turns keep
+     *  the normal shape so the header stays off there too (mirrors the builder's lite gate). */
+    private fun liteHeaders(meta: TurnMeta): Map<String, String> =
+        if (!meta.compact && quirks.responsesLiteModelRegex?.containsMatchIn(meta.upstreamModel) == true) {
+            mapOf("x-openai-internal-codex-responses-lite" to "true")
+        } else {
+            emptyMap()
+        }
 
     final override fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator =
         ResponsesStreamTranslator(

@@ -147,20 +147,58 @@ class ResponsesRequestBuilderTest {
         assertNull(req["reasoning"])
     }
 
+    // codex-rs responses-lite parity for the gpt-5.6 family (shape read from codex-rs source and
+    // accepted by the live backend 2026-07-19): instructions+tools move INTO input, parallel tool
+    // calls forced off, reasoning context spans the session.
     @Test
-    fun `gpt-5-6 family forces parallel_tool_calls false, others omit the field`() {
-        val tooled = """{"model":"m","tools":[{"name":"Task","input_schema":{"type":"object"}}],
+    fun `gpt-5-6 lite shape - instructions and tools ride as input items`() {
+        val tooled = """{"model":"m","system":"harness prompt",
+            "tools":[{"name":"Task","input_schema":{"type":"object"}}],
             "messages":[{"role":"user","content":"x"}]}"""
-        var req = build(tooled, options = opts(model = "gpt-5.6-sol"))
+        val req = build(tooled, options = opts(model = "gpt-5.6-sol"))
+        assertNull(req["instructions"])
+        assertNull(req["tools"])
         assertEquals("false", req["parallel_tool_calls"]?.jsonPrimitive?.content)
-        req = build(tooled, options = opts(model = "gpt-5.5"))
-        assertNull(req["parallel_tool_calls"])
-        // no tools -> no field even on 5.6
-        req = build(
-            """{"model":"m","messages":[{"role":"user","content":"x"}]}""",
+        assertEquals("all_turns", req["reasoning"]?.jsonObject?.get("context")?.jsonPrimitive?.content)
+        val input = req["input"]!!.jsonArray.map { it.jsonObject }
+        assertEquals("additional_tools", input[0]["type"]?.jsonPrimitive?.content)
+        assertEquals("developer", input[0]["role"]?.jsonPrimitive?.content)
+        assertEquals("Task", input[0]["tools"]!!.jsonArray[0].jsonObject["name"]?.jsonPrimitive?.content)
+        assertEquals("developer", input[1]["role"]?.jsonPrimitive?.content)
+        assertEquals("harness prompt", input[1]["content"]?.jsonPrimitive?.content)
+        assertEquals("x", input[2]["content"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `gpt-5-6 lite without tools - developer instructions only, no additional_tools item`() {
+        val req = build(
+            """{"model":"m","system":"harness prompt","messages":[{"role":"user","content":"x"}]}""",
             options = opts(model = "gpt-5.6-luna"),
         )
+        assertNull(req["instructions"])
+        // the backend REQUIRES an explicit false whenever the lite header rides, tools or not
+        assertEquals("false", req["parallel_tool_calls"]?.jsonPrimitive?.content)
+        val input = req["input"]!!.jsonArray.map { it.jsonObject }
+        assertEquals("developer", input[0]["role"]?.jsonPrimitive?.content)
+        assertEquals("harness prompt", input[0]["content"]?.jsonPrimitive?.content)
+        assertFalse(input.any { it["type"]?.jsonPrimitive?.content == "additional_tools" })
+    }
+
+    @Test
+    fun `non-lite models keep the normal shape - instructions and tools top-level, no context`() {
+        val tooled = """{"model":"m","system":"harness prompt",
+            "tools":[{"name":"Task","input_schema":{"type":"object"}}],
+            "messages":[{"role":"user","content":"x"}]}"""
+        val req = build(tooled, options = opts(model = "gpt-5.5"))
+        assertEquals("harness prompt", req["instructions"]?.jsonPrimitive?.content)
+        assertEquals("Task", req["tools"]!!.jsonArray[0].jsonObject["name"]?.jsonPrimitive?.content)
         assertNull(req["parallel_tool_calls"])
+        assertNull(req["reasoning"]?.jsonObject?.get("context"))
+        assertFalse(
+            req["input"]!!.jsonArray.any {
+                it.jsonObject["type"]?.jsonPrimitive?.content == "additional_tools"
+            },
+        )
     }
 
     @Test

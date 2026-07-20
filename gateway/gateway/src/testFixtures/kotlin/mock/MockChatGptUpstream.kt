@@ -58,8 +58,9 @@ class MockChatGptUpstream {
     private fun handle(ex: HttpExchange) {
         val raw = ex.requestBody.readBytes().decodeToString()
         val body = runCatching { Json.parseToJsonElement(raw).jsonObject }.getOrNull()
-        val instructions = body?.get("instructions")?.jsonPrimitive?.content.orEmpty()
-        val scenario = Regex("SCENARIO:(\\w+)").find(instructions)?.groupValues?.get(1) ?: "basic"
+        // responses-lite turns carry instructions as a developer input item, not the top-level
+        // field — scan the whole raw body so scenarios ride either shape.
+        val scenario = Regex("SCENARIO:(\\w+)").find(raw)?.groupValues?.get(1) ?: "basic"
         val auth = ex.requestHeaders.getFirst("Authorization")
         upstreamAuths.add(scenario to auth)
         upstreamBodies.add(scenario to raw)

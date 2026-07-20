@@ -2,6 +2,10 @@
     "model": "gpt-5.6-sol",
     "input": [
         {
+            "role": "developer",
+            "content": "You are Splice, a contract fixture."
+        },
+        {
             "role": "user",
             "content": "Ping."
         }
@@ -12,9 +16,10 @@
         "reasoning.encrypted_content"
     ],
     "prompt_cache_key": "splice-7d6e0aa0474b35db01b1f13cba38ea78",
-    "instructions": "You are Splice, a contract fixture.",
+    "parallel_tool_calls": false,
     "reasoning": {
         "effort": "high",
-        "summary": "detailed"
+        "summary": "detailed",
+        "context": "all_turns"
     }
 }

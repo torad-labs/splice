@@ -5,10 +5,10 @@
 //     body.__claudex* magic props);
 //   - full fidelity on normal turns: never shrink input, never swap the model;
 //   - COMPACT turns: tools stripped (a tooled compaction can answer with tool_use and empty
-//     the text channel — v29 worst case), forced text-only instructions, model falls through
-//     to body.model when compactModel is empty, and effort INHERITS THE SESSION (codex quirk;
-//     a mismatch on model OR effort invalidates the whole prompt-cache prefix — the
-//     "compaction ate my subscription" bug), unless the quirk pins one (grok: low);
+//     the text channel — v29 worst case), forced text-only instructions, model ALWAYS the
+//     session's own (body.model — no compact-model override exists), and effort INHERITS THE
+//     SESSION (codex quirk; a mismatch on model OR effort invalidates the whole prompt-cache
+//     prefix — the "compaction ate my subscription" bug), unless the quirk pins one (grok: low);
 //   - images ride as input_image (base64 data URL or url); documents become honest markers;
 //     images inside tool_result ride in a follow-up user message (function_call_output is
 //     string-only on these backends — v25: screenshots silently vanished);
@@ -555,10 +555,6 @@ private const val EFFORT_XHIGH = "xhigh"
 private const val EFFORT_MINIMAL = "minimal"
 private const val SUMMARY_DETAILED = "detailed"
 private const val SUMMARY_CONCISE = "concise"
-
-/** Compact-mode model+effort pinning helper: empty compactModel = session model (the cache law). */
-public fun compactUpstreamModel(compact: Boolean, compactModel: String?, sessionModel: String): String =
-    if (compact && !compactModel.isNullOrEmpty()) compactModel else sessionModel
 
 /** Codex-parity cache key: sha256 of the FIRST user message's text, stable per conversation. */
 public fun stablePromptCacheKey(body: AnthropicRequest): String? {

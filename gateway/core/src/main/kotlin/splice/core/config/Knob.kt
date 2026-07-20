@@ -41,13 +41,10 @@ public enum class Knob(
         "gpt-5.6-sol",
         restartRequired = true,
     ),
-    COMPACT_MODEL(
-        "compactModel",
-        KnobKind.STRING,
-        listOf("CLAUDEX_COMPACT_MODEL"),
-        "",
-        restartRequired = true,
-    ),
+
+    // (COMPACT_MODEL removed 2026-07-20: it was dead — never wired to the request builder — AND a
+    //  footgun against the cache law: compaction MUST run on the session's own model+effort or the
+    //  warm prompt-cache prefix is invalidated ("compaction ate my subscription"). Pinned by test.)
     EFFORT(
         "effort",
         KnobKind.STRING,

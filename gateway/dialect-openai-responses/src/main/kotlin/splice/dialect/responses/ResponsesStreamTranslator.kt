@@ -208,7 +208,12 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     // dedup on thinkingBuf dropped a DISTINCT item whose text happened to be a substring of an
     // earlier one, diverging wire from mirror (audit 2026-07-18); track per item instead.
     private val emittedReasoningKeys = HashSet<Int>()
-    private val seenSummaryParts = HashSet<String>()
+
+    // sequential_cutoff restatement dedup, PER reasoning item (keyed by output_index). A turn-global
+    // set silently dropped a genuine paragraph that two DISTINCT reasoning items happened to share
+    // byte-for-byte (2026-07-20) — restatements only recur WITHIN one item's summary stream, so the
+    // set is scoped there. Bounded by the item count per turn.
+    private val seenSummaryPartsByItem = HashMap<Int, MutableSet<String>>()
 
     suspend fun onEvent(evt: JsonObject, sink: WireSink) {
         when (str(evt["type"])) {
@@ -318,7 +323,8 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
         // (openai/codex#16801 ordering anomaly), and filtering first seeded the seen-set with parts
         // whose deltas hadn't arrived — suppressing them both late (sawDelta return) and live
         // (seen-set match): total summary starvation (found live 2026-07-19).
-        val text = dedupSummaryParts(raw, seenSummaryParts, ctx.dedupeRepeatedSummaryParts)
+        val seen = seenSummaryPartsByItem.getOrPut(outputIndex) { HashSet() }
+        val text = dedupSummaryParts(raw, seen, ctx.dedupeRepeatedSummaryParts)
         if (text.isEmpty()) return
         appendLateReasoning(existing, outputIndex, text, sink)
     }
@@ -356,7 +362,8 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
         // an exact repeat of an already-streamed part (>= min length; shorter deltas are plausibly
         // genuine token fragments) is upstream recap noise, not new thinking.
         if (ctx.dedupeRepeatedSummaryParts && delta.length >= SUMMARY_PART_DEDUP_MIN_CHARS) {
-            if (!seenSummaryParts.add(delta)) return
+            val oi = intOr(evt[OUTPUT_INDEX]) ?: 0
+            if (!seenSummaryPartsByItem.getOrPut(oi) { HashSet() }.add(delta)) return
         }
         val b = ensureThinkingBlock(evt, sink)
         b.sawDelta = true

@@ -217,6 +217,20 @@ class ResponsesRequestBuilderTest {
         assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
     }
 
+    // CACHE LAW (2026-07-20): compaction MUST run on the session's own model AND effort, or the
+    // warm prompt-cache prefix is invalidated and the whole ~160k transcript re-reads cold (the
+    // "compaction ate my subscription" bug). Codex has no compact-model override and no
+    // compactEffortPin, so both inherit the session. Pins the removal of the compactModel footgun.
+    @Test
+    fun `compact inherits the session model and effort - codex cache law`() {
+        val body = """{"model":"m","system":"base","messages":[{"role":"user","content":"go"}]}"""
+        val req = build(body, options = opts(compact = true, effort = "high", model = "gpt-5.6-sol"))
+        // model is the session's own upstream model — never swapped for a compaction run
+        assertEquals("gpt-5.6-sol", req["model"]?.jsonPrimitive?.content)
+        // effort is inherited from the session (config "high"), not pinned to low/other on codex
+        assertEquals("high", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+    }
+
     @Test
     fun `spark rejects the summary field`() {
         val req = build(

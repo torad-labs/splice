@@ -356,6 +356,10 @@ internal class TurnDriver(
             clientFrameEmitted = { drive.perf.hasMark(PerfKeys.FIRST_FRAME) },
         ) { resp ->
             drive.slot.touch()
+            // Fresh upstream round/attempt: reset the idle tier so this round's (possibly long,
+            // silent) prefill is judged against firstByteTimeout, not the short streamIdle a prior
+            // round's first byte would otherwise pin it to. totalCap still spans the whole turn.
+            drive.watchdog.resetFirstByte()
             val poller = drive.watchdog.launchIn(self, drive.slot, turnJob)
             // Leak wall (review 2026-07-19): the attempt's poller dies on EVERY exit of this
             // block — a torn-then-reissued stream used to leak it into `self`, pinning the
@@ -604,16 +608,16 @@ internal class FoldRunner(
 ) {
     suspend fun run(initialBody: JsonObject, fold: FoldController) {
         var body = initialBody
-        var summed = Usage()
+        var acc = FoldUsage()
         var roundIndex = 0
         while (true) {
             val buffer = BufferingWireSink(emitter)
             val outcome = postRound(body.toString(), buffer)
             val success = outcome as? TurnOutcome.Success
-            if (success != null) summed += success.usage
+            if (success != null) acc = acc.plusRound(success.usage)
             val next = success?.let { fold.continuation(FoldRound(body, it, roundIndex)) }
             if (next == null) {
-                finalize(outcome, buffer, summed)
+                finalize(outcome, buffer, acc.toUsage())
                 return
             }
             buffer.discard()
@@ -622,6 +626,27 @@ internal class FoldRunner(
             body = next
             roundIndex++
         }
+    }
+
+    /** Fold usage combinator (2026-07-20): each continuation re-sends the ENTIRE conversation, so
+     *  input/cached are CUMULATIVE — round N already includes round N-1's. Summing them (the old
+     *  `Usage.plus`) inflated the client-visible prompt size up to ~Nx, firing the context bar /
+     *  autocompact early on luna/terra/5.5 fold turns. Only output/reasoning genuinely accrue per
+     *  round; input/cached take the LAST round's value. */
+    private data class FoldUsage(
+        val lastInput: Long = 0,
+        val lastCached: Long = 0,
+        val outSum: Long = 0,
+        val reasoningSum: Long = 0,
+    ) {
+        fun plusRound(u: Usage) = FoldUsage(
+            lastInput = u.inputTokens,
+            lastCached = u.cachedTokens,
+            outSum = outSum + u.outputTokens,
+            reasoningSum = reasoningSum + u.reasoningTokens,
+        )
+
+        fun toUsage() = Usage(lastInput, outSum, lastCached, reasoningSum)
     }
 
     private suspend fun finalize(outcome: TurnOutcome, buffer: BufferingWireSink, summed: Usage) {

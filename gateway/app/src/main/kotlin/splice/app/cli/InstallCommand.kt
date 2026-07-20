@@ -21,6 +21,7 @@ import kotlin.io.path.isSymbolicLink
 private fun localBin(env: (String) -> String?): Path = InstallPaths(envReader = env).binDir
 private fun shareDir(env: (String) -> String?): Path = InstallPaths(envReader = env).shareDir
 private fun launchShimPath(env: (String) -> String?): Path = shareDir(env).resolve("splice-launch")
+private const val SELF_COMMAND = "splice"
 
 internal fun init(env: (String) -> String? = System::getenv) {
     val path = TopologyLoader.configPath(env)
@@ -32,9 +33,7 @@ internal fun init(env: (String) -> String? = System::getenv) {
 internal fun install(headArg: String?, env: (String) -> String? = System::getenv) {
     val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath(env))
     val launchShim = launchShimPath(env)
-    if (!Files.exists(launchShim)) {
-        println("splice: warning — launch shim not found at $launchShim (install.sh installs it)")
-    }
+    check(Files.exists(launchShim)) { "launch shim not found at $launchShim (run install.sh)" }
     val bin = localBin(env)
     Files.createDirectories(bin)
     val heads = if (headArg == null || headArg == "--all") {
@@ -46,36 +45,50 @@ internal fun install(headArg: String?, env: (String) -> String? = System::getenv
         println("splice: no matching head '$headArg' in the topology")
         return
     }
-    for ((key, head) in heads) {
-        linkOne(bin, key, head.claude.command ?: key, launchShim)
+    val requested = heads.map { (key, head) -> key to (head.claude.command ?: key) }
+    val commands = requested.map { it.second } + SELF_COMMAND
+    check(commands.distinct().size == commands.size) {
+        val duplicates = commands.groupingBy { it }.eachCount().filterValues { it > 1 }.keys
+        "topology maps multiple heads to the same command: $duplicates"
     }
-    installSelf(env)
+    commands.forEach { command -> requireReplaceableLink(bin.resolve(command)) }
+    requested.forEach { (key, command) -> linkOne(bin, key, command, launchShim) }
+    linkOne(bin, SELF_COMMAND, SELF_COMMAND, launchShim)
     println("splice: ensure $bin is on your PATH to use the wrappers")
 }
 
 /** Link the `splice` admin command itself (so `splice dashboard/status/...` work as commands). */
 internal fun installSelf(env: (String) -> String? = System::getenv) {
     val launchShim = launchShimPath(env)
+    check(Files.exists(launchShim)) { "launch shim not found at $launchShim (run install.sh)" }
     val bin = localBin(env)
     Files.createDirectories(bin)
-    linkOne(bin, "splice", "splice", launchShim)
+    linkOne(bin, SELF_COMMAND, SELF_COMMAND, launchShim)
 }
 
 private fun linkOne(bin: Path, headKey: String, command: String, launchShim: Path) {
     val link = bin.resolve(command)
-    runCatchingCancellable {
-        if (Files.exists(link, NOFOLLOW_LINKS)) {
-            if (link.isSymbolicLink()) {
-                Files.delete(link)
-            } else {
-                println("splice: $link exists and is not a symlink — leaving it")
-                return
-            }
-        }
-        Files.createSymbolicLink(link, launchShim)
+    requireReplaceableLink(link)
+    val candidate = Files.createTempFile(bin, ".$command.", ".link")
+    try {
+        Files.delete(candidate)
+        Files.createSymbolicLink(candidate, launchShim)
+        Files.move(
+            candidate,
+            link,
+            StandardCopyOption.ATOMIC_MOVE,
+            StandardCopyOption.REPLACE_EXISTING,
+        )
         println("splice: installed '$command' -> $launchShim (head=$headKey)")
-    }.onFailure { e ->
-        println("splice: failed to link $command: ${e.message}")
+    } catch (e: java.io.IOException) {
+        Files.deleteIfExists(candidate)
+        throw IllegalStateException("failed to link $command: ${e.message}", e)
+    }
+}
+
+private fun requireReplaceableLink(link: Path) {
+    check(!Files.exists(link, NOFOLLOW_LINKS) || link.isSymbolicLink()) {
+        "$link exists and is not a symlink"
     }
 }
 
@@ -101,13 +114,9 @@ internal fun uninstall(headArg: String?, env: (String) -> String? = System::gete
 internal fun installShim(repoShim: Path, env: (String) -> String? = System::getenv) {
     Files.createDirectories(shareDir(env))
     val dst = launchShimPath(env)
-    runCatchingCancellable {
-        Files.copy(repoShim, dst, StandardCopyOption.REPLACE_EXISTING)
-        dst.toFile().setExecutable(true)
-        println("splice: installed launch shim to $dst")
-    }.onFailure { e ->
-        println("splice: failed to install shim: ${e.message}")
-    }
+    Files.copy(repoShim, dst, StandardCopyOption.REPLACE_EXISTING)
+    check(dst.toFile().setExecutable(true)) { "failed to make launch shim executable: $dst" }
+    println("splice: installed launch shim to $dst")
 }
 
 private val SHIM_VERSION_LINE = Regex("""^SPLICE_SHIM_VERSION="([^"]*)"""", RegexOption.MULTILINE)

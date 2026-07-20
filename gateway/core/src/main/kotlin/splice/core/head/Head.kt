@@ -11,6 +11,11 @@ public interface Head {
 
     public suspend fun stop()
 
+    public suspend fun restart() {
+        stop()
+        start()
+    }
+
     public fun healthSnapshot(): HeadHealth
 }
 

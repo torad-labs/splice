@@ -101,6 +101,7 @@ class HeadServerIntegrationTest {
                 usageStore = UsageStore(tmp.resolve("usage.json"), tmp.resolve("ratelimit.json")),
                 perfStats = PerfStats(tmp.resolve("perf.jsonl")),
                 log = { logs.add(it) },
+                maxRequestBytes = 1_024,
             ),
         )
         head.start()
@@ -130,6 +131,16 @@ class HeadServerIntegrationTest {
         assertTrue(body.contains("\"version\""))
         assertTrue(body.contains("\"port\":$port"))
         assertTrue(body.contains("\"ok\":true"))
+    }
+
+    @Test
+    fun `oversized request is rejected before parsing or upstream work`() = runTest {
+        val response = client.post("http://127.0.0.1:$port/v1/messages") {
+            header("Content-Type", "application/json")
+            setBody("x".repeat(2_048))
+        }
+        assertEquals(413, response.status.value)
+        assertTrue(response.bodyAsText().contains("request body exceeds 1024 bytes"))
     }
 
     @Test

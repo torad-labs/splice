@@ -9,6 +9,7 @@
 package splice.gateway.head
 
 import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.install
@@ -18,14 +19,18 @@ import io.ktor.server.engine.connector
 import io.ktor.server.engine.embeddedServer
 import io.ktor.server.netty.Netty
 import io.ktor.server.netty.NettyApplicationEngine
-import io.ktor.server.request.receiveText
+import io.ktor.server.request.receiveChannel
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.sse.SSE
+import io.ktor.utils.io.ByteReadChannel
+import io.ktor.utils.io.readAvailable
 import io.netty.channel.socket.SocketChannelConfig
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.add
@@ -45,10 +50,12 @@ import splice.gateway.compact.ShadowClassifier
 import splice.gateway.compact.classifyCompact
 import splice.gateway.perf.PerfStats
 import splice.gateway.usage.UsageStore
+import splice.spi.BuiltTurn
 import splice.spi.GatewayAtCapacityException
 import splice.spi.InflightGate
 import splice.spi.Provider
 import splice.spi.UpstreamClient
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Collaborators the head needs, bundled to keep the constructor lean. */
@@ -61,9 +68,15 @@ public data class HeadDeps(
     val perfStats: PerfStats,
     val log: (String) -> Unit,
     val clock: () -> Long = System::currentTimeMillis,
+    val requestMaterializationGate: RequestMaterializationGate = RequestMaterializationGate(),
+    val maxRequestBytes: Int = DEFAULT_MAX_REQUEST_BYTES,
     // mirror_reasoning knob, threaded to TurnPipeline (restart-required like the other reasoning knobs)
     val mirrorReasoning: Boolean = true,
-)
+) {
+    public companion object {
+        public const val DEFAULT_MAX_REQUEST_BYTES: Int = 8 * 1024 * 1024
+    }
+}
 
 public class HeadServer(
     private val provider: Provider,
@@ -81,12 +94,22 @@ public class HeadServer(
 
     @Volatile
     private var server: EmbeddedServer<NettyApplicationEngine, *>? = null
+    private val lifecycle = Mutex()
 
     override val key: String get() = provider.key
     override val label: String get() = provider.label
     override val port: Int get() = listenPort
 
-    override suspend fun start() {
+    override suspend fun start(): Unit = lifecycle.withLock { startLocked() }
+
+    override suspend fun stop(): Unit = lifecycle.withLock { stopLocked() }
+
+    override suspend fun restart(): Unit = lifecycle.withLock {
+        stopLocked()
+        startLocked()
+    }
+
+    private fun startLocked() {
         if (server != null) return
         // G20 contract: a control-plane restart promises a fresh diagnostic baseline; the counters
         // live on the long-lived TurnDriver, so reset them here (review 2026-07-19).
@@ -138,9 +161,10 @@ public class HeadServer(
         server = engine
     }
 
-    override suspend fun stop() {
+    private fun stopLocked() {
         server?.stop(STOP_GRACE_MS, STOP_TIMEOUT_MS)
         server = null
+        deps.usageStore.flushNow()
     }
 
     override fun healthSnapshot(): HeadHealth {
@@ -177,37 +201,18 @@ public class HeadServer(
         }.toString()
     }
 
-    // Admission: parse → validate model/stream → classify compact → build → gate slot, then hand
-    // the turn to the driver. Body-parse failure is a client 400, not a crash
-    // (runCatchingCancellable captures it yet still lets coroutine cancellation propagate).
+    private sealed class Preparation {
+        data class Ready(val built: BuiltTurn, val stream: Boolean) : Preparation()
+        data class Rejected(val message: String) : Preparation()
+    }
+    private data class ReceivedBody(val text: String, val bytes: Int)
+    private class RequestBodyTooLarge(val limit: Int) : RuntimeException()
+
+    // Admission is acquired BEFORE reading the body. Queued calls therefore retain no transcript;
+    // only admitted calls may enter the process-shared materialization gate and hold raw/parsed/built
+    // representations. Body-parse failure is a client 400, not a crash.
     private suspend fun handleMessages(call: ApplicationCall) {
         val perf = TurnPerf(clock)
-        val raw = call.receiveText()
-        perf.mark(PerfKeys.RECV)
-        perf.setCount(PerfKeys.REQ_BYTES, raw.length.toLong())
-        val parsed = runCatchingCancellable { parseAnthropicBody(raw) }.getOrNull()
-        val rejection = when {
-            parsed == null -> "invalid request body"
-            claudeModelRe.containsMatchIn(provider.catalog.unwrap(parsed.typed.model)) ->
-                "this head proxies its own models only; got ${provider.catalog.unwrap(parsed.typed.model)}"
-            else -> null
-        }
-        if (rejection != null || parsed == null) {
-            call.respondText(
-                errorBodyJson("invalid_request_error", rejection ?: "invalid request body"),
-                ContentType.Application.Json,
-                HttpStatusCode.BadRequest,
-            )
-            return
-        }
-
-        // One scan of system + last-user text: classification and the shadow instrument share it
-        // so a long system prompt is not lowercased/scanned twice per request.
-        val compactProbe = classifyCompact(parsed.typed)
-        shadow.record(parsed.typed, compactProbe)
-        perf.mark(PerfKeys.PARSE)
-        val built = provider.buildTurn(parsed, compactProbe.compact, call.request.headers["x-claude-code-session-id"])
-        perf.mark(PerfKeys.BUILD)
         val t0 = clock()
         val slot = try {
             gate.acquire()
@@ -224,23 +229,100 @@ public class HeadServer(
         perf.setCount(PerfKeys.INFLIGHT, gate.snapshot().inflight.toLong())
 
         try {
+            val prepared = try {
+                deps.requestMaterializationGate.withLease { prepareTurn(call, perf) }
+            } catch (tooLarge: RequestBodyTooLarge) {
+                call.respondText(
+                    errorBodyJson("invalid_request_error", "request body exceeds ${tooLarge.limit} bytes"),
+                    ContentType.Application.Json,
+                    HttpStatusCode(CONTENT_TOO_LARGE_STATUS, "Content Too Large"),
+                )
+                return
+            }
+            if (prepared is Preparation.Rejected) {
+                call.respondText(
+                    errorBodyJson("invalid_request_error", prepared.message),
+                    ContentType.Application.Json,
+                    HttpStatusCode.BadRequest,
+                )
+                return
+            }
+            check(prepared is Preparation.Ready)
             // stream:true → SSE (the interactive path); stream:false → one buffered JSON body
             // (Claude Code's internal non-stream calls, served by collecting the same machinery).
-            if (parsed.typed.stream) {
-                driver.stream(call, built, slot, t0, perf)
+            if (prepared.stream) {
+                driver.stream(call, prepared.built, slot, t0, perf)
             } else {
-                driver.collect(call, built, slot, t0, perf)
+                driver.collect(call, prepared.built, slot, t0, perf)
             }
         } finally {
             withContext(NonCancellable) { slot.release() }
         }
     }
 
+    private suspend fun prepareTurn(call: ApplicationCall, perf: TurnPerf): Preparation {
+        val body = receiveBodyBounded(call, deps.maxRequestBytes)
+        perf.mark(PerfKeys.RECV)
+        perf.setCount(PerfKeys.REQ_BYTES, body.bytes.toLong())
+        val parsed = runCatchingCancellable { parseAnthropicBody(body.text) }.getOrNull()
+            ?: return Preparation.Rejected("invalid request body")
+        val unwrappedModel = provider.catalog.unwrap(parsed.typed.model)
+        if (claudeModelRe.containsMatchIn(unwrappedModel)) {
+            return Preparation.Rejected("this head proxies its own models only; got $unwrappedModel")
+        }
+
+        // One scan of system + last-user text: classification and shadow instrumentation share it.
+        val compactProbe = classifyCompact(parsed.typed)
+        shadow.record(parsed.typed, compactProbe)
+        perf.mark(PerfKeys.PARSE)
+        val built = provider.buildTurn(parsed, compactProbe.compact, call.request.headers["x-claude-code-session-id"])
+        perf.mark(PerfKeys.BUILD)
+        return Preparation.Ready(built, parsed.typed.stream)
+    }
+
     private suspend fun handleCountTokens(call: ApplicationCall) {
-        val raw = call.receiveText()
-        val estimate = (raw.length / CHARS_PER_TOKEN).toLong()
+        val body = try {
+            deps.requestMaterializationGate.withLease { receiveBodyBounded(call, deps.maxRequestBytes) }
+        } catch (tooLarge: RequestBodyTooLarge) {
+            call.respondText(
+                errorBodyJson("invalid_request_error", "request body exceeds ${tooLarge.limit} bytes"),
+                ContentType.Application.Json,
+                HttpStatusCode(CONTENT_TOO_LARGE_STATUS, "Content Too Large"),
+            )
+            return
+        }
+        val estimate = (body.text.length / CHARS_PER_TOKEN).toLong()
         log("[${provider.key}] count_tokens estimate=$estimate (local; no upstream turn)\n")
         call.respondText(buildJsonObject { put("input_tokens", estimate) }.toString(), ContentType.Application.Json)
+    }
+
+    private suspend fun receiveBodyBounded(call: ApplicationCall, limit: Int): ReceivedBody {
+        val declared = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
+        if (declared != null && declared > limit) throw RequestBodyTooLarge(limit)
+        val channel = call.receiveChannel()
+        val output = ByteArrayOutputStream(minOf(declared?.toInt() ?: READ_BUFFER_BYTES, limit))
+        val buffer = ByteArray(READ_BUFFER_BYTES)
+        var total = 0
+        var read = readAvailableOrEof(channel, buffer)
+        while (read >= 0) {
+            total += read
+            if (total > limit) throw RequestBodyTooLarge(limit)
+            output.write(buffer, 0, read)
+            read = readAvailableOrEof(channel, buffer)
+        }
+        return ReceivedBody(output.toString(Charsets.UTF_8), total)
+    }
+
+    private suspend fun readAvailableOrEof(
+        channel: ByteReadChannel,
+        buffer: ByteArray,
+    ): Int {
+        var read = channel.readAvailable(buffer, 0, buffer.size)
+        while (read == 0) {
+            if (!channel.awaitContent(1)) return -1
+            read = channel.readAvailable(buffer, 0, buffer.size)
+        }
+        return read
     }
 
     private fun errorBodyJson(type: String, message: String): String = buildJsonObject {
@@ -259,6 +341,8 @@ public class HeadServer(
         const val STOP_GRACE_MS = 100L
         const val STOP_TIMEOUT_MS = 500L
         const val CHARS_PER_TOKEN = 4
+        const val READ_BUFFER_BYTES = 16 * 1024
+        const val CONTENT_TOO_LARGE_STATUS = 413
 
         // Concurrent long-lived SSE turns per head (2x the 1000-stream design target).
         const val RUNNING_LIMIT = 2048

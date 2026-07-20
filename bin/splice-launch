@@ -8,7 +8,21 @@ set -euo pipefail
 HEAD="${SPLICE_HEAD:-$(basename "$0")}"
 [ "$HEAD" = "splice-launch" ] && HEAD="claudex"
 
-CONTROL_PORT="${SPLICE_CONTROL_PORT:-3096}"
+topology_control_port() {
+  local config="${SPLICE_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/splice/splice.toml}"
+  case "$config" in "~/"*) config="$HOME/${config#~/}" ;; esac
+  [ -f "$config" ] || return 0
+  awk '
+    /^[[:space:]]*\[/ { in_daemon = ($0 ~ /^[[:space:]]*\[daemon\][[:space:]]*$/) }
+    in_daemon && /^[[:space:]]*control_port[[:space:]]*=/ {
+      sub(/^[^=]*=[[:space:]]*/, "")
+      sub(/[[:space:]#].*$/, "")
+      if ($0 ~ /^[0-9]+$/) { print; exit }
+    }
+  ' "$config"
+}
+CONTROL_PORT="${SPLICE_CONTROL_PORT:-$(topology_control_port)}"
+CONTROL_PORT="${CONTROL_PORT:-3096}"
 CONTROL="http://127.0.0.1:${CONTROL_PORT}"
 JAR="${SPLICE_JAR:-${SPLICE_SHARE_DIR:-$HOME/.local/share/splice}/splice.jar}"
 # Bounded heap by default (a 1000-stream fleet with unbounded per-stream buffers OOMs the JVM
@@ -25,7 +39,9 @@ DANGEROUS="false"
 [ "${CLAUDEX_DANGEROUSLY_SKIP_PERMISSIONS:-0}" = "1" ] && DANGEROUS="true"
 # Hand-paired with splice.core.SHIM_VERSION (gateway/core/src/main/kotlin/splice/core/Versions.kt)
 # — bump both together whenever this shim's behavior changes. No code generation.
-SPLICE_SHIM_VERSION="shim-1"
+SPLICE_SHIM_VERSION="shim-2"
+# Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
+SPLICE_GATEWAY_VERSION="0.1.1"
 
 need_jar() {
   if [ ! -f "$JAR" ]; then
@@ -48,10 +64,51 @@ if [ "${1:-}" = "login" ]; then
 fi
 
 health() { curl -sS -m 2 "${CONTROL}/health" 2>/dev/null || true; }
+health_field() {
+  local field="$1"
+  printf '%s' "$HEALTH_JSON" | python3 -c 'import sys, json
+field = sys.argv[1]
+try:
+    data = json.loads(sys.stdin.read() or "{}")
+except Exception:
+    data = {}
+print(data.get(field) or "")' "$field" 2>/dev/null || true
+}
 
-# Cold-start the daemon if it isn't answering. HEALTH_JSON is captured (not just checked) so the
-# staleness check below can read wantShimVersion out of the same body without another round trip.
+# A listener is valid only when it is splice and its version matches the installed JAR/shim.
+# New daemons can shut themselves down cleanly for an automatic upgrade. Legacy daemons without
+# that route fail loudly instead of silently serving an incompatible API forever.
 HEALTH_JSON="$(health)"
+if [ -n "$HEALTH_JSON" ]; then
+  RUNNING_VERSION="$(health_field version)"
+  if [ -z "$RUNNING_VERSION" ]; then
+    echo "splice: port $CONTROL_PORT is occupied by a non-splice or malformed health endpoint" >&2
+    exit 1
+  fi
+  if [ "$RUNNING_VERSION" != "$SPLICE_GATEWAY_VERSION" ]; then
+    KEY="$(cat "$KEY_FILE" 2>/dev/null || true)"
+    if [ -z "$KEY" ]; then
+      echo "splice: daemon version $RUNNING_VERSION is stale, but $KEY_FILE is unavailable; stop it and retry" >&2
+      exit 1
+    fi
+    echo "splice: replacing stale daemon $RUNNING_VERSION with $SPLICE_GATEWAY_VERSION…" >&2
+    if ! curl -fsS -m 3 -X POST "${CONTROL}/api/daemon/shutdown" \
+      -H "Authorization: Bearer ${KEY}" >/dev/null; then
+      echo "splice: stale daemon cannot self-stop; terminate it once, then retry" >&2
+      exit 1
+    fi
+    for ((i = 0; i < 50; i++)); do
+      HEALTH_JSON="$(health)"
+      [ -z "$HEALTH_JSON" ] && break
+      sleep 0.2
+    done
+    if [ -n "$HEALTH_JSON" ]; then
+      echo "splice: stale daemon did not stop within 10 seconds" >&2
+      exit 1
+    fi
+  fi
+fi
+
 if [ -z "$HEALTH_JSON" ]; then
   if [ ! -f "$JAR" ]; then
     echo "splice: daemon jar not found at $JAR (run: splice install, or set SPLICE_JAR)" >&2
@@ -60,17 +117,21 @@ if [ -z "$HEALTH_JSON" ]; then
   echo "splice: starting daemon…" >&2
   # shellcheck disable=SC2086 # word-splitting of JVM opts is intentional
   nohup java $SPLICE_JVM_OPTS -jar "$JAR" daemon >/dev/null 2>&1 &
-  for _ in $(seq 1 50); do HEALTH_JSON="$(health)"; [ -n "$HEALTH_JSON" ] && break; sleep 0.2; done
+  for ((i = 0; i < 50; i++)); do
+    HEALTH_JSON="$(health)"
+    [ -n "$HEALTH_JSON" ] && break
+    sleep 0.2
+  done
+fi
+RUNNING_VERSION="$(health_field version)"
+if [ "$RUNNING_VERSION" != "$SPLICE_GATEWAY_VERSION" ]; then
+  echo "splice: daemon failed version handshake (expected $SPLICE_GATEWAY_VERSION, got ${RUNNING_VERSION:-<none>})" >&2
+  exit 1
 fi
 
 # Non-fatal staleness check: warn (never block) when the installed shim's marker doesn't match
 # what the running daemon expects. Diagnostic only — the actual exec below always proceeds.
-WANT_SHIM="$(printf '%s' "$HEALTH_JSON" | python3 -c 'import sys, json
-try:
-    d = json.loads(sys.stdin.read() or "{}")
-except Exception:
-    d = {}
-print(d.get("wantShimVersion") or "")' 2>/dev/null || true)"
+WANT_SHIM="$(health_field wantShimVersion)"
 if [ -n "$WANT_SHIM" ] && [ -n "$SPLICE_SHIM_VERSION" ] && [ "$WANT_SHIM" != "$SPLICE_SHIM_VERSION" ]; then
   echo "splice: WARNING — installed launch shim ($0) is stale (marker=$SPLICE_SHIM_VERSION, daemon expects=$WANT_SHIM). Run: splice install (or ./install.sh) to refresh it." >&2
 fi
@@ -79,7 +140,7 @@ KEY="$(cat "$KEY_FILE" 2>/dev/null || true)"
 if [ -z "$KEY" ]; then echo "splice: mgmt-key not found at $KEY_FILE" >&2; exit 1; fi
 
 # Ask the daemon for the exec recipe (env sets/unsets + argv), passing through extra args.
-ARGS_JSON="$(printf '%s\n' "$@" | python3 -c 'import sys,json; print(json.dumps([l.rstrip("\n") for l in sys.stdin if l.strip()!=""]))' 2>/dev/null || echo '[]')"
+ARGS_JSON="$(python3 -c 'import json,sys; print(json.dumps(sys.argv[1:]))' "$@")"
 RECIPE="$(curl -sS -X POST "${CONTROL}/launch/${HEAD}" \
   -H "Authorization: Bearer ${KEY}" -H 'Content-Type: application/json' \
   --data "{\"dangerouslySkipPermissions\":\"${DANGEROUS}\",\"args\":${ARGS_JSON}}")"

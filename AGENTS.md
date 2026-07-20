@@ -101,7 +101,7 @@ RUNNING heads over `/mgmt` for live status + config.
 ## Gates
 
 ```
-npm run gate          # checks/gate.sh: gradle check + ast-grep walls + hook tests, ONE PASS/FAIL
+npm run gate          # all Kotlin/Node/webui/release/OSS checks, ONE PASS/FAIL
 npm run gate:rules    # ast-grep scan (tree) + rule red/green tests
 npm run test:hooks    # orchestrator routing tests
 npm test -w server    # 103 node --test behavior/invariant tests
@@ -152,5 +152,5 @@ pins the sentence. On drift: update `COMPACT_MARKER` + fixture together.
 ## Out of scope (locked)
 
 No transcript shrinking. No fake summaries (L4). (Reasoning replay was formerly
-out of scope; as of 2026-07-14 it is default-on for the codex head — see
-"L1 — RETIRED" above.)
+out of scope; as of 2026-07-14 it is supported, and as of 2026-07-15 it is
+default-off for the codex head — see "L1 — RETIRED" above.)

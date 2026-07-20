@@ -1,6 +1,6 @@
 // NEW: the per-turn perf JSONL sink + reader (bottleneck instrument, pairs with core TurnPerf).
 // One row per finished turn: {ts, model, outcome, compact, <marks>, <counters>}. Append is
-// synchronous best-effort — I/O failure must never kill a turn (same doctrine as CompactStats).
+// asynchronous best-effort — I/O failure must never kill a turn (same doctrine as CompactStats).
 // Reads are TAIL-BOUNDED (readJsonlTail) so the control-plane aggregation never heap-loads an
 // unbounded history; the file is additive state (a new `<head>-perf.jsonl` beside the HUD
 // contract files, not part of the frozen name set).
@@ -14,6 +14,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import splice.core.perf.PerfSnapshot
+import splice.core.util.AsyncFileIo
 import splice.core.util.JsonlSink
 import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
@@ -30,26 +31,29 @@ public class PerfStats(private val file: Path, private val clock: () -> Long = S
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    // append is best-effort by design: I/O failure must not kill the turn (runCatchingCancellable
-    // captures IOException etc. yet still lets coroutine cancellation propagate).
+    // append is best-effort by design: the turn builds an immutable row and the bounded file lane
+    // owns filesystem latency.
     public fun record(meta: PerfRowMeta, snap: PerfSnapshot) {
-        runCatchingCancellable {
-            Files.createDirectories(file.parent)
-            val row = buildJsonObject {
-                put("ts", clock())
-                put("model", meta.model)
-                put("outcome", meta.outcome)
-                put("compact", meta.compact)
-                snap.marks.forEach { (k, v) -> put(k, v) }
-                snap.counters.forEach { (k, v) -> put(k, v) }
+        val row = buildJsonObject {
+            put("ts", clock())
+            put("model", meta.model)
+            put("outcome", meta.outcome)
+            put("compact", meta.compact)
+            snap.marks.forEach { (k, v) -> put(k, v) }
+            snap.counters.forEach { (k, v) -> put(k, v) }
+        }.toString()
+        AsyncFileIo.submit {
+            runCatchingCancellable {
+                Files.createDirectories(file.parent)
+                JsonlSink.appendLine(file, row)
             }
-            JsonlSink.appendLine(file, row.toString())
         }
     }
 
     /** Numeric fields of the last [tailN] rows, newest last — the aggregation input. */
     // read is best-effort by design: a missing/corrupt file yields empty; a bad line is skipped.
     public fun tailNumeric(tailN: Int = DEFAULT_TAIL): List<Map<String, Long>> {
+        AsyncFileIo.drain()
         if (!Files.exists(file)) return emptyList()
         val rows = runCatchingCancellable {
             JsonlSink.readTail(file, READ_TAIL_BYTES).mapNotNull { line ->

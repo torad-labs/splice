@@ -1,7 +1,6 @@
 // NEW (G3+G4a-c): retry-policy pins against the reference-harness survey — ALL 5xx retry except
-// 501; 408/429 retry; other 4xx are terminal; Retry-After seconds ride into the backoff call as a
-// FLOOR (server hint respected, curve still the minimum); an absurd Retry-After (> interactive
-// budget) is negative pushback and gives up instead of hammering. MockEngine — no network.
+// 501; 408 retries; 429 arms a shared cooldown and terminates without amplifying a retry wave;
+// other 4xx are terminal. Retry-After seconds set the shared cooldown horizon. MockEngine — no network.
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.mock.MockEngine
 import io.ktor.client.engine.mock.respond
@@ -86,18 +85,29 @@ class UpstreamClientRetryPolicyTest {
     }
 
     @Test
-    fun `retry-after seconds becomes the backoff floor in ms`() = runTest {
+    fun `failed response body is capped before classification`() = runTest {
+        val engine = MockEngine {
+            respond("x".repeat(100_000), HttpStatusCode.BadRequest, headersOf())
+        }
+        val failure = assertThrows<UpstreamFailed> { postOnce(clientOver(engine)) }
+        assertTrue(failure.body.length < 70_000)
+        assertTrue(failure.body.endsWith("[… omitted …]"))
+    }
+
+    @Test
+    fun `429 retry-after sets cooldown without consuming a retry budget`() = runTest {
         val calls = AtomicInteger()
         val capture = Capture()
         val engine = MockEngine {
-            if (calls.incrementAndGet() == 1) {
-                respond("slow down", HttpStatusCode.TooManyRequests, headersOf("Retry-After", "7"))
-            } else {
-                respond("fine", HttpStatusCode.OK, headersOf())
-            }
+            calls.incrementAndGet()
+            respond("slow down", HttpStatusCode.TooManyRequests, headersOf("Retry-After", "7"))
         }
-        assertEquals("ok", postOnce(clientOver(engine, capture)))
-        assertEquals(listOf(7_000L), capture.minDelays)
+        val client = clientOver(engine, capture, clock = { 0L })
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(1, calls.get())
+        assertTrue(capture.minDelays.isEmpty())
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(1, calls.get(), "a follower inside Retry-After must not reach upstream")
     }
 
     @Test
@@ -131,8 +141,7 @@ class UpstreamClientRetryPolicyTest {
     }
 
     // Shared 429 cooldown (2026-07-19 storm): one post's rate-limit discovery teaches the whole
-    // client — followers fail fast with a synthesized 429 and ZERO upstream calls; the probe that
-    // observed the 429 keeps its own backoff plan (a blip still heals silently).
+    // client — the observer and all followers terminate without multiplying the retry wave.
     @Test
     fun `429 arms a shared cooldown - followers fail fast with zero upstream calls`() = runTest {
         var now = 0L
@@ -142,18 +151,18 @@ class UpstreamClientRetryPolicyTest {
             respond("""{"detail":"Rate limit exceeded"}""", HttpStatusCode.TooManyRequests, headersOf())
         }
         val client = clientOver(engine, clock = { now })
-        // the probe runs its full own plan (sawRateLimit exemption) and arms the cooldown
+        // the observer arms the cooldown and terminates without retrying
         assertThrows<UpstreamFailed> { postOnce(client) }
-        assertEquals(3, calls.get())
+        assertEquals(1, calls.get())
         // a follower during the cooldown fails fast: 429 body names the cooldown, no upstream call
         val e = assertThrows<UpstreamFailed> { postOnce(client) }
-        assertEquals(3, calls.get())
+        assertEquals(1, calls.get())
         assertEquals(429, e.status)
         assertTrue(e.body.contains("cooldown"))
         // default cooldown (no Retry-After) expires after 20s — traffic is attempted again
         now += 21_000
         assertThrows<UpstreamFailed> { postOnce(client) }
-        assertTrue(calls.get() > 3)
+        assertEquals(2, calls.get())
     }
 
     @Test

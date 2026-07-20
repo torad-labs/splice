@@ -52,6 +52,7 @@ import splice.spi.FoldController
 import splice.spi.FoldRound
 import splice.spi.InflightGate
 import splice.spi.Provider
+import splice.spi.SseFrameTooLargeException
 import splice.spi.StreamTornBeforeClient
 import splice.spi.TurnSignals
 import splice.spi.TurnWatchdog
@@ -101,6 +102,9 @@ internal data class TurnInputs(
     val t0: Long,
     val perf: TurnPerf,
 )
+
+private fun connectionResetMessage(error: Throwable): String? =
+    if (error is StreamTornBeforeClient) error.cause?.message else error.message
 
 /** Drives one streamed turn end-to-end. Owned by HeadServer; one instance per head. */
 internal class TurnDriver(
@@ -266,9 +270,14 @@ internal class TurnDriver(
             }
             // reissue budget exhausted (or non-retryable tear) before any client frame — an
             // upstream connection failure, honestly retryable; never "internal gateway error".
-            is StreamTornBeforeClient -> emitConnReset(drive, e.cause?.message)
             // post-handoff socket failure: our side of the wire
-            is IOException -> emitConnReset(drive, e.message)
+            is StreamTornBeforeClient, is IOException -> emitConnReset(drive, connectionResetMessage(e))
+            is SseFrameTooLargeException -> {
+                log(telemetry.errTurn("upstream-frame-too-large", drive, ": ${e.message}"))
+                drive.emitter.emitError(ErrorType.API_ERROR, "upstream sent an oversized streaming event — retry")
+                telemetry.recordPerf(drive, "error:upstream-frame-too-large")
+                health.provider()
+            }
             is RuntimeException -> {
                 // e.g. a URL-parse error from a bad base_url, an IllegalState out of Ktor
                 // internals. Previously ESCAPED: truncated 200, no error frame, no perf row.
@@ -406,6 +415,7 @@ internal class TurnDriver(
                 if (!capture.sawEvent && room > 0) {
                     capture.snippet.append(text, 0, minOf(text.length, room))
                 }
+                !capture.sawEvent && capture.snippet.length < ZERO_EVENT_SNIPPET_CHARS
             },
         ).onEach {
             capture.sawEvent = true
@@ -607,7 +617,7 @@ internal class FoldRunner(
                 return
             }
             buffer.discard()
-            val reasoningTokens = success?.usage?.reasoningTokens ?: 0
+            val reasoningTokens = success.usage.reasoningTokens
             log("[$key] fold round ${roundIndex + 1}: reasoning truncated at $reasoningTokens tokens, continuing\n")
             body = next
             roundIndex++

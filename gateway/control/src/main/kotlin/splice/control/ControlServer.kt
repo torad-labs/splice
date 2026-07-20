@@ -55,6 +55,7 @@ public class ControlServer(
     private val dashboardHtml: () -> String,
     private val log: (String) -> Unit,
     private val launchService: LaunchService? = null,
+    private val shutdownDaemon: () -> Unit = {},
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val payloads = ControlPayloads(heads, config)
@@ -74,12 +75,23 @@ public class ControlServer(
                 get("/api/status") { guarded(call) { respond(call, payloads.statusJson()) } }
                 get("/api/heads") { guarded(call) { respond(call, payloads.headsJson()) } }
                 post("/api/heads/{head}/{action}") { guarded(call) { headAction(call) } }
+                post("/api/daemon/shutdown") {
+                    guarded(call) {
+                        call.respondText(
+                            buildJsonObject { put("ok", true) }.toString(),
+                            ContentType.Application.Json,
+                            HttpStatusCode.Accepted,
+                        )
+                        shutdownDaemon()
+                    }
+                }
                 get("/api/config") { guarded(call) { respond(call, payloads.configJson()) } }
                 patch("/api/config") { guarded(call) { patchConfig(call) } }
                 get("/api/usage") { guarded(call) { respond(call, payloads.usageJson()) } }
                 get("/api/perf") {
                     guarded(call) {
-                        val tail = call.request.queryParameters["tail"]?.toIntOrNull() ?: DEFAULT_PERF_TAIL
+                        val tail = (call.request.queryParameters["tail"]?.toIntOrNull() ?: DEFAULT_PERF_TAIL)
+                            .coerceIn(1, MAX_TAIL)
                         respond(call, payloads.perfJson(tail))
                     }
                 }
@@ -96,6 +108,7 @@ public class ControlServer(
         server = engine
     }
 
+    @Synchronized
     public fun stop() {
         server?.stop(STOP_GRACE_MS, STOP_TIMEOUT_MS)
         server = null
@@ -127,10 +140,7 @@ public class ControlServer(
         when (action) {
             "start" -> managed.head.start()
             "stop" -> managed.head.stop()
-            "restart" -> {
-                managed.head.stop()
-                managed.head.start()
-            }
+            "restart" -> managed.head.restart()
             else -> {
                 call.respondText(
                     payloads.errorJson("unknown action"),
@@ -211,7 +221,7 @@ public class ControlServer(
 
     private suspend fun logsJson(call: ApplicationCall) {
         val key = call.parameters["head"].orEmpty()
-        val tail = call.request.queryParameters["tail"]?.toIntOrNull() ?: DEFAULT_LOG_TAIL
+        val tail = (call.request.queryParameters["tail"]?.toIntOrNull() ?: DEFAULT_LOG_TAIL).coerceIn(1, MAX_TAIL)
         val managed = heads[key]
         if (managed == null) {
             call.respondText(payloads.errorJson("unknown head"), ContentType.Application.Json, HttpStatusCode.NotFound)
@@ -280,6 +290,7 @@ public class ControlServer(
         const val STOP_TIMEOUT_MS = 500L
         const val DEFAULT_LOG_TAIL = 200
         const val DEFAULT_PERF_TAIL = 200
+        const val MAX_TAIL = 2_000
     }
 }
 

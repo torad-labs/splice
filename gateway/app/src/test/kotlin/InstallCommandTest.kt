@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.install
 import splice.app.cli.installedShimVersion
@@ -96,18 +97,46 @@ class InstallCommandTest {
     }
 
     @Test
-    fun `install is idempotent and never clobbers a real file`(@TempDir home: Path) {
+    fun `install is idempotent and fails loudly rather than clobber a real file`(@TempDir home: Path) {
         withHome(home) {
             seedTopology(home)
             install("claudex", env = noEnv)
             install("claudex", env = noEnv) // re-run: replaces the symlink, no error
             assertTrue(home.resolve(".local/bin/claudex").isSymbolicLink())
-            // a REAL file where the link would go is left alone
+            // A real file makes the whole install fail so install.sh cannot print false success.
             val bin = home.resolve(".local").resolve("bin")
             bin.resolve("grok").writeString("real file")
-            install("grok", env = noEnv)
+            assertThrows<IllegalStateException> { install("grok", env = noEnv) }
             assertFalse(bin.resolve("grok").isSymbolicLink())
             assertEquals("real file", Files.readString(bin.resolve("grok")))
+        }
+    }
+
+    @Test
+    fun `install preflights every link before changing any command`(@TempDir home: Path) {
+        withHome(home) {
+            seedTopology(home)
+            val bin = home.resolve(".local").resolve("bin")
+            Files.createDirectories(bin)
+            bin.resolve("grok").writeString("real file")
+
+            assertThrows<IllegalStateException> { install("--all", env = noEnv) }
+
+            assertFalse(Files.exists(bin.resolve("claudex"), NOFOLLOW_LINKS))
+            assertFalse(Files.exists(bin.resolve("splice"), NOFOLLOW_LINKS))
+            assertEquals("real file", Files.readString(bin.resolve("grok")))
+        }
+    }
+
+    @Test
+    fun `install refuses to create dangling wrappers when the shared shim is missing`(@TempDir home: Path) {
+        withHome(home) {
+            seedTopology(home)
+            Files.delete(shimPath(home))
+
+            assertThrows<IllegalStateException> { install("--all", env = noEnv) }
+
+            assertFalse(Files.exists(home.resolve(".local/bin/claudex"), NOFOLLOW_LINKS))
         }
     }
 

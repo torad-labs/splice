@@ -1,5 +1,30 @@
 # Changelog
 
+## splice v0.1.1 — release integrity and supported defaults - 2026-07-19
+
+### Fixed
+
+- The release installer now fetches and verifies both the fat JAR and launch shim, fails on
+  missing or mismatched assets, rejects dangling wrapper links, and is safe when piped through
+  stdin. CI and publication run the same hermetic staged-bundle install test.
+- Fresh installs now materialize a supported OpenRouter API-key topology. Codex, Grok, and Kimi
+  OAuth implementations remain available only as explicitly configured experimental opt-ins.
+
+### Added
+
+- Release bundles and the shaded JAR include the project license, third-party notices, provenance,
+  a CycloneDX 1.6 SBOM, and an exact runtime dependency-license inventory. Publication fails on
+  unresolved licenses or sidecar/JAR/checksum drift.
+- CodeQL, dependency review, artifact provenance attestations, release-version validation, and
+  bounded/concurrent CI release jobs.
+
+### Changed
+
+- Public reasoning language now describes provider-generated summaries without implying access to
+  raw, private, or exact chain-of-thought.
+- Reasoning replay now ships off. Measurement showed that replay encouraged reuse of thin prior
+  thinking; `CLAUDEX_REPLAY_REASONING=1` remains available as an explicit cache-warmth trade-off.
+
 ## splice — codex-proxy v35, claudithos removed, renamed from "mythos" - 2026-07-15
 
 Public release under the new name **splice** (was "mythos", which collided with Anthropic's

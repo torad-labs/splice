@@ -2,7 +2,7 @@
 // {req, meta} and never mutates the incoming body (v29 smuggled per-request
 // state through body.__claudex* magic props; meta replaces that side channel).
 //
-// Reasoning replay (default ON — config.replayReasoning): sets
+// Reasoning replay (explicit opt-in — config.replayReasoning): sets
 // `include: ['reasoning.encrypted_content']` and decodes redacted_thinking
 // blocks in history back into Responses reasoning input items, so the backend
 // reuses its reasoning KV and the prompt-cache prefix stays byte-stable across
@@ -10,9 +10,10 @@
 // the mirror carries the reasoning SUMMARY to the model as readable text;
 // replay carries the ENCRYPTED reasoning to the backend. prompt_cache_key routes
 // every turn of a conversation to the same prompt-cache shard. The old L1
-// no-replay invariant was retired 2026-07-14 (the power came from the mirror,
-// not from dropping replay); opt back into the pure distillation loop with
-// CLAUDEX_REPLAY_REASONING=0.
+// no-replay invariant was retired 2026-07-14, but measurements on 2026-07-15
+// showed replay made the model reuse thinner prior thinking instead of deriving
+// fresh reasoning. The pure mirror/distillation loop therefore ships by default;
+// opt into replay with CLAUDEX_REPLAY_REASONING=1.
 import { createHash } from 'node:crypto';
 import { stripModelSuffixes } from '../models/codex-models.mjs';
 import { decodeReasoningEnvelope } from '../reasoning/replay.mjs';
@@ -195,7 +196,7 @@ export function buildRequest(body, { compact, config, originalModel }) {
     stream: true, // ChatGPT backend requires stream=true; non-stream clients collect SSE
   };
 
-  // Reasoning replay (Codex-parity, default on): ask the backend to return its
+  // Reasoning replay (Codex-parity, explicit opt-in): ask the backend to return its
   // encrypted reasoning so it round-trips into the next turn's input (decoded
   // above) and the reasoning KV / prompt-cache prefix survives the agent loop.
   // Never on compact (a text-only summarizer turn). store:false is the required

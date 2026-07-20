@@ -18,9 +18,11 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import splice.core.turn.ReasoningDisplay
+import splice.core.util.SecureFile
 import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 
 public class ConfigService(
     private val statePaths: StatePaths,
@@ -32,10 +34,18 @@ public class ConfigService(
     // PATCH mutates on control-plane threads while every request thread merges — guard every
     // touch with [runtimeLock] and hand out COPIES only (audit 2026-07-18: CME risk + torn reads).
     private val runtimeLock = Any()
+    private val persistLock = Any()
     private val runtimeLayer = LinkedHashMap<String, Any?>()
 
+    private data class FileCache(
+        val path: Path,
+        val modified: FileTime,
+        val size: Long,
+        val data: Map<String, Any?>,
+    )
+
     @Volatile
-    private var fileCache: Triple<Path, Long, Map<String, Any?>>? = null
+    private var fileCache: FileCache? = null
 
     public fun getConfig(): SpliceConfig = SpliceConfig(normalize(mergedRaw()))
 
@@ -105,14 +115,19 @@ public class ConfigService(
     private fun readFileLayer(): Map<String, Any?> {
         val path = statePaths.configFile
         if (!Files.exists(path)) return emptyMap()
-        val mtime = Files.getLastModifiedTime(path).toMillis()
-        fileCache?.let { (p, m, data) -> if (p == path && m == mtime) return data }
+        val modified = Files.getLastModifiedTime(path)
+        val size = Files.size(path)
+        fileCache?.let { cached ->
+            if (cached.path == path && cached.modified == modified) {
+                if (cached.size == size) return cached.data
+            }
+        }
         val parsed = json.parseToJsonElement(Files.readString(path)).jsonObject
         val data = LinkedHashMap<String, Any?>()
         for (knob in Knob.entries) {
             fileScalar(parsed, knob)?.let { data[knob.key] = it }
         }
-        fileCache = Triple(path, mtime, data)
+        fileCache = FileCache(path, modified, size, data)
         return data
     }
 
@@ -136,12 +151,13 @@ public class ConfigService(
     private fun persistApplied(applied: Map<String, Any?>) {
         // persistence is best-effort; the runtime layer already applied
         runCatchingCancellable {
-            Files.createDirectories(statePaths.stateDir)
-            val path = statePaths.configFile
-            val onDisk = runCatchingCancellable { readOnDisk(path) }.getOrDefault(JsonObject(emptyMap()))
-            val next = mergePersisted(onDisk, applied)
-            Files.writeString(path, json.encodeToString(JsonObject.serializer(), next) + "\n")
-            fileCache = null
+            synchronized(persistLock) {
+                val path = statePaths.configFile
+                val onDisk = runCatchingCancellable { readOnDisk(path) }.getOrDefault(JsonObject(emptyMap()))
+                val next = mergePersisted(onDisk, applied)
+                SecureFile.writeAtomic0600(path, json.encodeToString(JsonObject.serializer(), next) + "\n")
+                fileCache = null
+            }
         }
     }
 
@@ -172,9 +188,16 @@ public class ConfigService(
         listOf(Knob.CHATGPT_API_BASE, Knob.XAI_API_BASE).forEach { k ->
             out[k.key] = str(out, k)?.trimEnd('/')
         }
-        out[Knob.MAX_INFLIGHT.key] = clampLong(out, Knob.MAX_INFLIGHT, floor = 0L)
-        out[Knob.MAX_QUEUED.key] = clampLong(out, Knob.MAX_QUEUED, floor = 0L)
-        out[Knob.UPSTREAM_RETRIES.key] = clampLong(out, Knob.UPSTREAM_RETRIES, floor = 1L, default = 2L)
+        out[Knob.PORT.key] = clampLong(out, Knob.PORT, floor = 1L, ceiling = MAX_PORT)
+        out[Knob.GROK_PORT.key] = clampLong(out, Knob.GROK_PORT, floor = 1L, ceiling = MAX_PORT)
+        out[Knob.CONTROL_PORT.key] = clampLong(out, Knob.CONTROL_PORT, floor = 1L, ceiling = MAX_PORT)
+        out[Knob.MAX_INFLIGHT.key] = clampLong(out, Knob.MAX_INFLIGHT, floor = 0L, ceiling = MAX_INT)
+        out[Knob.MAX_QUEUED.key] = clampLong(out, Knob.MAX_QUEUED, floor = 0L, ceiling = MAX_INT)
+        out[Knob.UPSTREAM_RETRIES.key] =
+            clampLong(out, Knob.UPSTREAM_RETRIES, floor = 1L, default = 2L, ceiling = MAX_RETRIES)
+        out[Knob.FOLD_MAX_CONTINUE.key] =
+            clampLong(out, Knob.FOLD_MAX_CONTINUE, floor = 0L, ceiling = MAX_FOLD_ROUNDS)
+        out[Knob.FOLD_MAX_TIER.key] = clampLong(out, Knob.FOLD_MAX_TIER, floor = 0L, ceiling = MAX_FOLD_TIER)
         out[Knob.UPSTREAM_TIMEOUT_MS.key] = clampLong(out, Knob.UPSTREAM_TIMEOUT_MS, floor = MIN_UPSTREAM_TIMEOUT_MS)
         out[Knob.FIRST_BYTE_TIMEOUT_MS.key] = clampLong(out, Knob.FIRST_BYTE_TIMEOUT_MS, floor = MIN_FIRST_BYTE_MS)
         val idleFloor = if (envReader("CODEX_PROXY_TEST") == "1") TEST_IDLE_FLOOR_MS else MIN_STREAM_IDLE_MS
@@ -193,7 +216,6 @@ public class ConfigService(
         out[Knob.CONTEXT_WINDOW_OVERRIDE.key] = positiveLong(out, Knob.CONTEXT_WINDOW_OVERRIDE)
         out[Knob.USAGE_WARN_PCT.key] = (num(out, Knob.USAGE_WARN_PCT) ?: 0L).coerceIn(0L, 100L)
         out[Knob.USAGE_WARN_TOKENS_5H.key] = clampLong(out, Knob.USAGE_WARN_TOKENS_5H, floor = 0L)
-        out[Knob.CONTROL_PORT.key] = positiveLong(out, Knob.CONTROL_PORT) ?: Knob.CONTROL_PORT.default
         return out
     }
 
@@ -203,6 +225,11 @@ public class ConfigService(
         const val MIN_STREAM_IDLE_MS = 30_000L
         const val TEST_IDLE_FLOOR_MS = 250L
         const val MIN_AUTH_CACHE_MS = 5_000L
+        const val MAX_PORT = 65_535L
+        const val MAX_INT = Int.MAX_VALUE.toLong()
+        const val MAX_RETRIES = 100L
+        const val MAX_FOLD_ROUNDS = 100L
+        const val MAX_FOLD_TIER = 100L
 
         fun jsonScalar(el: JsonElement): Any? = when (el) {
             is JsonPrimitive -> el.booleanOrNull ?: el.longOrNull ?: el.content
@@ -219,7 +246,7 @@ public class ConfigService(
                 if (knob == Knob.MAX_INFLIGHT && s in setOf("", "unlimited", "off", "none")) {
                     0L
                 } else {
-                    s.toDoubleOrNull()?.toLong()
+                    s.toDoubleOrNull()?.takeIf { it.isFinite() }?.toLong()
                 }
             }
             KnobKind.STRING -> raw.toString().trim().ifEmpty { null }
@@ -231,8 +258,13 @@ public class ConfigService(
         fun num(out: Map<String, Any?>, k: Knob): Long? = (out[k.key] as? Long) ?: str(out, k)?.toLongOrNull()
 
         // Read [k] as a long, substitute [default] when absent, then apply the [floor].
-        fun clampLong(out: Map<String, Any?>, k: Knob, floor: Long, default: Long = 0L): Long =
-            maxOf(floor, num(out, k) ?: default)
+        fun clampLong(
+            out: Map<String, Any?>,
+            k: Knob,
+            floor: Long,
+            default: Long = 0L,
+            ceiling: Long = Long.MAX_VALUE,
+        ): Long = (num(out, k) ?: default).coerceIn(floor, ceiling)
 
         fun positiveLong(out: Map<String, Any?>, k: Knob): Long? = num(out, k)?.takeIf { it > 0 }
     }

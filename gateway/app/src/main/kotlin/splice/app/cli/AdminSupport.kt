@@ -123,5 +123,5 @@ internal object AdminSupport {
     // The shell `${SPLICE_JVM_OPTS:-...}` lets an operator override without touching code.
     // G1PeriodicGCInterval: idle heap uncommit — a daemon that goes quiet still returns freed
     // pages to the OS instead of holding them until the next GC is triggered by allocation.
-    internal const val DEFAULT_JVM_OPTS = "-Xmx1024m -XX:+UseStringDeduplication -XX:G1PeriodicGCInterval=60000"
+    internal const val DEFAULT_JVM_OPTS = "-Xmx2048m -XX:+UseStringDeduplication -XX:G1PeriodicGCInterval=60000"
 }

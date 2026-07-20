@@ -5,7 +5,7 @@
 // makeOutputClamp clamps REPORTED output to the client's max_tokens (backend rejects cap
 // params; reasoning tokens count in output — v26); logTurnCache's exact line format is
 // watchable via log tail; usage/ratelimit state files are the HUD contract. SEAM (recorded):
-// log lines are injected writers; appends are synchronous best-effort (Node used microtasks).
+// log lines are injected writers; persistence is asynchronous best-effort on the bounded file lane.
 package splice.gateway.usage
 
 import kotlinx.serialization.json.Json
@@ -18,9 +18,12 @@ import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.usage.RateLimitState
+import splice.core.util.AsyncFileIo
+import splice.core.util.SecureFile
 import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
 
 private const val FIVE_HOURS_MS: Long = 5 * 60 * 60 * 1000
 private const val FULL_PCT = 100.0
@@ -118,31 +121,27 @@ public class UsageStore(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
-    // best-effort by design: I/O failure leaves the last-known window untouched; cancellation
-    // still propagates via runCatchingCancellable. In-memory ring keeps the 5h window so a
-    // busy head does not rewrite+reparse the whole JSON array on every completed turn. ALL ring
-    // mutation/iteration happens under ringLock (append vs statusline reads raced a CME and
-    // dropped counts — audit 2026-07-18); the file write happens OUTSIDE the lock from an
-    // immutable snapshot so slow disks never block the statusline tick.
+    // In-memory updates are immediate. Persistence is coalesced onto the bounded file-I/O lane,
+    // minute-bucketed, serialized, and atomically replaced: completion bursts neither block turn
+    // slots nor race older snapshots over newer ones.
     public fun appendOutputTokens(outputTokens: Long) {
         if (outputTokens <= 0) return
-        runCatchingCancellable {
-            Files.createDirectories(usageFile.parent)
-            val now = clock()
-            val snapshot = synchronized(ringLock) {
-                val ring = loadRingUnderLock(now - FIVE_HOURS_MS)
-                ring.addLast(
-                    buildJsonObject {
-                        put("timestamp", now)
-                        put(OUTPUT_TOKENS, outputTokens)
-                    },
-                )
-                // Cap ring growth even if the clock stalls (defensive).
-                while (ring.size > MAX_RING_ENTRIES) ring.removeFirst()
-                ring.toList()
+        val now = clock()
+        synchronized(ringLock) {
+            val ring = loadRingUnderLock(now - FIVE_HOURS_MS)
+            val previous = ring.lastOrNull()
+            val previousTs = previous?.let { num(it["timestamp"]) }
+            val sameBucket = previousTs?.let { it / USAGE_BUCKET_MS == now / USAGE_BUCKET_MS } == true
+            if (previous != null && sameBucket) {
+                ring.removeLast()
+                ring.addLast(usageEntry(now, (num(previous[OUTPUT_TOKENS]) ?: 0) + outputTokens))
+            } else {
+                ring.addLast(usageEntry(now, outputTokens))
             }
-            Files.writeString(usageFile, buildJsonArray { snapshot.forEach { add(it) } }.toString())
+            while (ring.size > MAX_RING_ENTRIES) ring.removeFirst()
+            mutationVersion += 1
         }
+        schedulePersist()
     }
 
     /** Parses x-ratelimit-limit-tokens / -remaining-tokens / -reset-tokens; no-op without a limit. */
@@ -152,7 +151,6 @@ public class UsageStore(
             val limit = header("x-ratelimit-limit-tokens")?.toLongOrNull() ?: return
             val remaining = header("x-ratelimit-remaining-tokens")?.toLongOrNull()
             val reset = header("x-ratelimit-reset-tokens")?.takeIf { it.isNotEmpty() }
-            Files.createDirectories(ratelimitFile.parent)
             val payload = buildJsonObject {
                 put("limit_tokens", limit)
                 // NB: JsonObjectBuilder.put returns the PREVIOUS value (null on first insert) —
@@ -161,7 +159,14 @@ public class UsageStore(
                 if (reset != null) put("reset_tokens", reset) else put("reset_tokens", null as String?)
                 put("updated_at", clock())
             }
-            Files.writeString(ratelimitFile, payload.toString() + "\n")
+            val encoded = payload.toString() + "\n"
+            AsyncFileIo.submit {
+                runCatchingCancellable {
+                    synchronized(writeLock) {
+                        SecureFile.writeAtomic0600(ratelimitFile, encoded)
+                    }
+                }
+            }
         }
     }
 
@@ -179,8 +184,18 @@ public class UsageStore(
         )
     }
 
+    /** Force the newest in-memory snapshot to stable storage (head stop and deterministic tests). */
+    public fun flushNow() {
+        val (snapshot, version) = synchronized(ringLock) {
+            val ring = loadRingUnderLock(clock() - FIVE_HOURS_MS)
+            ring.toList() to mutationVersion
+        }
+        persistSnapshot(snapshot, version)
+    }
+
     // best-effort by design: a missing/corrupt ratelimit file reads as null; cancellation propagates.
     public fun readRateLimit(): RateLimitState? = runCatchingCancellable {
+        AsyncFileIo.drain()
         if (!Files.exists(ratelimitFile)) {
             null
         } else {
@@ -228,8 +243,49 @@ public class UsageStore(
     }.getOrDefault(emptyList())
 
     private val ringLock = Any()
+    private val writeLock = Any()
     private val cachedRing = ArrayDeque<JsonObject>()
     private var ringLoaded = false
+    private var mutationVersion = 0L
+
+    @Volatile
+    private var persistedVersion = -1L
+    private val writeScheduled = AtomicBoolean(false)
+
+    init {
+        // Load/trim the bounded legacy ring while the head is assembled, not on the first
+        // completed turn. Every append on the turn path is then memory-only plus an async enqueue.
+        synchronized(ringLock) { loadRingUnderLock(clock() - FIVE_HOURS_MS) }
+    }
+
+    private fun usageEntry(timestamp: Long, outputTokens: Long): JsonObject = buildJsonObject {
+        put("timestamp", timestamp)
+        put(OUTPUT_TOKENS, outputTokens)
+    }
+
+    private fun schedulePersist() {
+        if (!writeScheduled.compareAndSet(false, true)) return
+        if (!AsyncFileIo.submit(USAGE_FLUSH_DELAY_MS) { flushScheduled() }) {
+            writeScheduled.set(false)
+        }
+    }
+
+    private fun flushScheduled() {
+        val (snapshot, version) = synchronized(ringLock) { cachedRing.toList() to mutationVersion }
+        persistSnapshot(snapshot, version)
+        writeScheduled.set(false)
+        val changed = synchronized(ringLock) { mutationVersion > persistedVersion }
+        if (changed) schedulePersist()
+    }
+
+    private fun persistSnapshot(snapshot: List<JsonObject>, version: Long) {
+        synchronized(writeLock) {
+            if (version <= persistedVersion) return
+            val encoded = buildJsonArray { snapshot.forEach { add(it) } }.toString() + "\n"
+            val written = runCatchingCancellable { SecureFile.writeAtomic0600(usageFile, encoded) }.isSuccess
+            if (written) persistedVersion = version
+        }
+    }
 
     private companion object {
         // MUST comfortably exceed MAX_RING_ENTRIES x ~50 bytes/row — at 2MB the reader treated a
@@ -237,7 +293,10 @@ public class UsageStore(
         // restart (audit 2026-07-18). 8MB keeps the corrupt-file guard with real headroom.
         const val MAX_USAGE_FILE_BYTES = 8L * 1024 * 1024
 
-        // ~1 entry/sec for 5h would be 18k; 50k is a hard safety cap against clock stalls.
+        // New writes aggregate by minute (~300 rows/5h); retain the legacy high cap so existing
+        // per-turn files load without data loss and are compacted naturally as the window advances.
         const val MAX_RING_ENTRIES = 50_000
+        const val USAGE_BUCKET_MS = 60_000L
+        const val USAGE_FLUSH_DELAY_MS = 1_000L
     }
 }

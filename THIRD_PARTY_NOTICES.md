@@ -41,15 +41,17 @@ under what license, standing in for banner preservation.
 
 The splice-gateway application (`gateway/:app`) is distributed as a shaded/shadow JAR
 assembling dependencies from the `:core`, `:provider-*`, `:dialect-*`, `:gateway`, and
-`:control` modules. The authoritative dependency set for a given build is enumerated with:
+`:control` modules. The human-readable dependency graph for a given build can be inspected with:
 
 ```
 cd gateway && ./gradlew :app:dependencies --configuration runtimeClasspath
 ```
 
-The release workflow attaches the output of this command as a dependency report alongside
-the published artifact, so the exact third-party set for that release is reproducible and
-auditable without hand-maintaining an enumeration here.
+Every release instead publishes `dependency-licenses.json` (the exact runtime dependency and
+declared-license inventory), `bom.cdx.json` (CycloneDX), and `THIRD_PARTY_LICENSES.txt` (the
+full license texts used by the shipped runtime and font). The same files are embedded under
+`META-INF/` in `splice.jar`, and release acceptance checks that sidecars and embedded bytes
+match.
 
 ## Torad design tokens
 

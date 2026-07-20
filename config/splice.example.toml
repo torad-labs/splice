@@ -1,14 +1,11 @@
 # splice — example multi-provider topology.
 #
-# Copy to ~/.config/splice/splice.toml (or run `splice init` for the codex-only starter).
-# Loaded once at daemon start; adding a provider/head is an operator action → restart the daemon.
+# Copy to ~/.config/splice/splice.toml for the comprehensive example. `splice init` writes the
+# supported OpenRouter API-key starter instead. Adding a provider/head requires a daemon restart.
 #
-# THE POINT: a new vendor is added HERE, in TOML — no Kotlin. The daemon dispatches on
-# (dialect, auth.kind) to the right built-in provider:
-#   openai-responses + chatgpt-oauth        → codex (ChatGPT backend)
-#   openai-responses + grok-oauth           → grok / xAI (SuperGrok / X Premium+)
-#   openai-responses + api-key (hash key)   → OpenAI platform
-#   openai-chat      + api-key              → ANY OpenAI-compatible vendor (Ollama/OpenRouter/…)
+# Supported routes use vendor-issued API keys. The OAuth sections below are explicit experimental
+# opt-ins: they reuse public CLI client identities but are not vendor-documented integrations.
+# A new OpenAI-compatible API-key vendor is otherwise pure TOML: base URL, key env, and models.
 
 [daemon]
 control_port = 3096          # loopback-only control plane + dashboard
@@ -20,7 +17,7 @@ summary        = "detailed"  # "detailed" | "concise" | "auto" | "none"
 # effort       = "high"      # optional; omit → high (Grok floors invalid values to low)
 replay_reasoning = false     # NEVER turn on lightly: replaying prior opaque encrypted reasoning items thins fresh reasoning
 
-# ── codex: ChatGPT Codex subscription via OAuth ────────────────────────────────
+# ── EXPERIMENTAL OPT-IN: ChatGPT Codex subscription via OAuth ─────────────────
 [providers.codex]
 dialect = "openai-responses"
 base_url = "https://chatgpt.com/backend-api/codex"
@@ -58,7 +55,7 @@ id = "gpt-5.3-codex-spark"
 label = "Codex Spark"
 context_window = 128000
 
-# ── xAI / grok: same Responses dialect, OAuth (SuperGrok/X Premium+), session cache key ──
+# ── EXPERIMENTAL OPT-IN: xAI/Grok OAuth (SuperGrok/X Premium+) ──────────────────
 [providers.xai]
 dialect = "openai-responses"
 base_url = "https://api.x.ai/v1"
@@ -89,11 +86,11 @@ dialect = "openai-chat"
 base_url = "https://openrouter.ai/api/v1"
 auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }
 [[providers.openrouter.models]]
-id = "meta/llama-4"
-label = "Llama 4"
-context_window = 128000
+id = "meta-llama/llama-4-maverick"
+label = "Llama 4 Maverick"
+context_window = 1048576
 
-# ── kimi / Moonshot: anthropic-passthrough dialect, device-flow OAuth (x-api-key) ─
+# ── EXPERIMENTAL OPT-IN: Kimi device-flow OAuth (x-api-key) ─────────────────────
 # api.kimi.com/coding speaks the Anthropic Messages wire natively. Browser device login:
 # `claude-kimi login` (RFC 8628 — enter a code, no loopback redirect). The wire id sent upstream
 # is the BARE model (the `[1m]` suffix is stripped); the 1M context tier is a plan entitlement,
@@ -151,7 +148,7 @@ isolate = ["commands"]         # this head gets its own commands/, everything el
 provider = "openrouter"
 port = 3101
 discovery_prefix = "claude-openrouter--"
-pinned_model = "meta/llama-4"
+pinned_model = "meta-llama/llama-4-maverick"
 [heads.openrouter.claude]
 command = "claudeor"
 

@@ -44,6 +44,7 @@ import splice.core.head.HeadHealth
 import java.net.ServerSocket
 import java.net.Socket
 import java.nio.file.Files
+import java.util.concurrent.atomic.AtomicInteger
 
 private class FakeHead(override val key: String, override val port: Int) : Head {
     override val label = key
@@ -67,6 +68,7 @@ class ControlServerTest {
     private val client = HttpClient(CIO) { expectSuccess = false }
     private val json = Json { ignoreUnknownKeys = true }
     private val head = FakeHead("codex", 3099)
+    private val shutdownRequests = AtomicInteger()
 
     private val fakePerf = splice.control.HeadPerfSource { n ->
         listOf(
@@ -125,6 +127,7 @@ class ControlServerTest {
             launchService = LaunchService(
                 splice.core.launch.ClaudeConfigMaterializer(tmp),
             ),
+            shutdownDaemon = { shutdownRequests.incrementAndGet() },
         )
         control.start()
         awaitListening(port)
@@ -205,6 +208,19 @@ class ControlServerTest {
             header("Authorization", "Bearer $key")
         }.bodyAsText()
         assertEquals("true", json.parseToJsonElement(started).jsonObject["running"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `guarded daemon shutdown acknowledges before requesting process stop`() = runTest {
+        val unauthorized = client.post("http://127.0.0.1:$port/api/daemon/shutdown")
+        assertEquals(HttpStatusCode.Unauthorized, unauthorized.status)
+        assertEquals(0, shutdownRequests.get())
+
+        val accepted = client.post("http://127.0.0.1:$port/api/daemon/shutdown") {
+            header("Authorization", "Bearer $key")
+        }
+        assertEquals(HttpStatusCode.Accepted, accepted.status)
+        assertEquals(1, shutdownRequests.get())
     }
 
     @Test

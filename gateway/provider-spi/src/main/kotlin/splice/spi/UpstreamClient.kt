@@ -38,6 +38,7 @@ import splice.core.perf.TurnPerf
 import splice.core.perf.timedOr
 import splice.core.util.runCatchingCancellable
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
 
 public class UpstreamClient(
@@ -68,8 +69,7 @@ public class UpstreamClient(
     // Shared rate-limit cooldown (one UpstreamClient per head = per upstream account). Armed by any
     // attempt that observes a 429; while armed, every post() fails fast with a synthesized 429 and
     // ZERO upstream calls. Benign write race: concurrent arms only differ by ms; latest-max wins.
-    @Volatile
-    private var rateLimitedUntilMs: Long = 0L
+    private val rateLimitedUntilMs = AtomicLong(0L)
 
     /** The per-post collaborators threaded through every attempt (grouped: one cohesive argument). */
     private data class PostContext(
@@ -154,7 +154,7 @@ public class UpstreamClient(
             )
             giveUp(state.lastErr)
         }
-        failFastIfRateLimited(ctx, state)
+        failFastIfRateLimited(ctx)
         val creds = ctx.perf.timedOr(PerfKeys.AUTH_MS) { ctx.auth.credentials() } ?: throw UpstreamAuthMissing()
         ctx.perf?.add(PerfKeys.ATTEMPTS, 1)
         var streamHandedOff = false
@@ -256,12 +256,9 @@ public class UpstreamClient(
 
     /** The cooldown's fail-fast exit: a synthesized 429 (classifier parity with the real one)
      *  thrown BEFORE credentials/attempt work — an armed cooldown costs microseconds, not an
-     *  upstream request. The remaining wait rides in the message for the operator's grep. A post
-     *  whose own last attempt was the 429 is exempt: its backoff plan governs it (a 3s blip still
-     *  heals silently) — the cooldown protects the herd, not the probe. */
-    private fun failFastIfRateLimited(ctx: PostContext, state: RetryState) {
-        if (state.lastErr?.status == RATE_LIMITED) return
-        val remainingMs = rateLimitedUntilMs - clock()
+     *  upstream request. The remaining wait rides in the message for the operator's grep. */
+    private fun failFastIfRateLimited(ctx: PostContext) {
+        val remainingMs = rateLimitedUntilMs.get() - clock()
         if (remainingMs <= 0) return
         ctx.onRetry("rate-limit cooldown active (${remainingMs}ms remaining) — failing fast, no upstream attempt")
         val waitS = (remainingMs + MS_PER_S - 1) / MS_PER_S
@@ -316,7 +313,11 @@ public class UpstreamClient(
                 onStreamStart() // block owns the stream from here — transport errors stop retrying
                 RetryOutcome.Done(block(UpstreamResponse(resp)))
             } else {
-                RetryOutcome.Failed(resp.status.value, resp.bodyText(), retryAfterMs(resp.headers["Retry-After"]))
+                RetryOutcome.Failed(
+                    resp.status.value,
+                    resp.bodyTextLimited(MAX_ERROR_BODY_BYTES),
+                    retryAfterMs(resp.headers["Retry-After"]),
+                )
             }
         }
     }
@@ -366,7 +367,11 @@ public class UpstreamClient(
         // (latest-max wins; the benign race only shifts the horizon by ms).
         if (failed.status == RATE_LIMITED) {
             val until = clock() + (failed.retryAfterMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS)
-            if (until > rateLimitedUntilMs) rateLimitedUntilMs = until
+            rateLimitedUntilMs.accumulateAndGet(until) { current, candidate -> maxOf(current, candidate) }
+            // A concurrent wave can receive 429 before any member sees the shared cooldown.
+            // Retrying each member would amplify one upstream limit into N×maxRetries requests;
+            // terminate every observed 429 and let the client retry after the shared horizon.
+            return RetryPlan(RetryDecision.GIVE_UP, nextRefreshed)
         }
         // gRPC-A6-style negative pushback: a server explicitly asking us to wait longer than the
         // interactive budget means "go away", not "hammer me on a curve" — give up honestly. The
@@ -412,6 +417,7 @@ public class UpstreamClient(
         private const val UNAUTHORIZED = 401
         private const val FORBIDDEN = 403
         private const val ERR_SNIPPET = 160
+        private const val MAX_ERROR_BODY_BYTES = 64 * 1024
 
         // xAI reports an expired/revoked OAuth token as 403 `unauthenticated:bad-credentials`,
         // NOT 401 (grok-dead-head incident, 2026-07-18: refresh never fired, the head 403'd every

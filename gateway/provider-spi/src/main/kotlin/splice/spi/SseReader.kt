@@ -57,30 +57,44 @@ public fun sseJsonEvents(
     channel: ByteReadChannel,
     onBytes: (Int) -> Unit = {},
     onMalformed: (String) -> Unit = {},
-    onRawText: ((CharSequence) -> Unit)? = null,
+    onRawText: ((CharSequence) -> Boolean)? = null,
+    maxLineChars: Int = MAX_SSE_LINE_CHARS,
+    maxEventChars: Int = MAX_SSE_EVENT_CHARS,
 ): Flow<JsonObject> = flow {
     val scratch = DecodeScratch()
     val lineBuffer = StringBuilder(READ_BUFFER_BYTES)
-    val assembler = SseEventAssembler(onMalformed)
+    val assembler = SseEventAssembler(onMalformed, maxEventChars)
     var bomChecked = false
-    while (true) {
-        val n = scratch.readChunk(channel)
-        if (n == -1) break
+    var rawObserver = onRawText
+    var n = scratch.readChunk(channel)
+    while (n >= 0) {
         onBytes(n)
         val before = lineBuffer.length
         scratch.decodeInto(n, lineBuffer)
         // Strip a leading UTF-8 BOM exactly once, only after real characters exist (a first chunk
         // that decodes to zero chars — all bytes still UTF-8 carry — must not falsely mark the
         // check done); never re-checked mid-stream (a later U+FEFF is an ordinary character).
-        if (!bomChecked && lineBuffer.isNotEmpty()) {
-            if (lineBuffer[0] == '\uFEFF') lineBuffer.deleteCharAt(0)
-            bomChecked = true
-        }
-        if (onRawText != null && lineBuffer.length > before) {
-            onRawText(lineBuffer.subSequence(before, lineBuffer.length))
-        }
+        if (!bomChecked) bomChecked = stripLeadingBomWhenReady(lineBuffer)
+        if (lineBuffer.length > maxLineChars) throw SseFrameTooLargeException("SSE line", maxLineChars)
+        rawObserver = notifyRawObserver(rawObserver, lineBuffer, before)
         emitCompleteLines(lineBuffer, assembler)
+        n = scratch.readChunk(channel)
     }
+}
+
+private fun stripLeadingBomWhenReady(lineBuffer: StringBuilder): Boolean {
+    if (lineBuffer.isEmpty()) return false
+    if (lineBuffer[0] == '\uFEFF') lineBuffer.deleteCharAt(0)
+    return true
+}
+
+private fun notifyRawObserver(
+    observer: ((CharSequence) -> Boolean)?,
+    lineBuffer: StringBuilder,
+    before: Int,
+): ((CharSequence) -> Boolean)? {
+    if (observer == null || lineBuffer.length <= before) return observer
+    return observer.takeIf { it(lineBuffer.subSequence(before, lineBuffer.length)) }
 }
 
 /**
@@ -160,13 +174,25 @@ private class DecodeScratch {
  * accumulate into [dataBuffer] and are only turned into an event on a blank line ([dispatch]); a
  * pending buffer at EOF is discarded (the outer loop never flushes).
  */
-private class SseEventAssembler(private val onMalformed: (String) -> Unit) {
+private class SseEventAssembler(
+    private val onMalformed: (String) -> Unit,
+    private val maxEventChars: Int,
+) {
     // Joined `data:` field values for the event not yet dispatched. A single `data:` line with an
     // EMPTY value is a no-op append (spec-literal "append then strip one trailing LF" is skipped):
     // since every real payload is JSON-parsed and JSON treats leading/trailing/inner whitespace and
     // newlines as insignificant, both bookkeeping styles yield identical parse results, and an
     // empty-only buffer fails `parseToJsonElement("")` identically either way (no emitted event).
     val dataBuffer = StringBuilder()
+
+    fun append(buf: StringBuilder, start: Int, end: Int) {
+        val separator = if (dataBuffer.isEmpty()) 0 else 1
+        if (dataBuffer.length + separator + (end - start) > maxEventChars) {
+            throw SseFrameTooLargeException("SSE event", maxEventChars)
+        }
+        if (separator == 1) dataBuffer.append('\n')
+        dataBuffer.append(buf, start, end)
+    }
 
     // True when the most recently scanned char was a bare `\r` whose following byte hadn't arrived
     // yet — the CRLF-vs-lone-CR chunk-boundary case (a `\n` opening the next chunk completes a CRLF).
@@ -246,8 +272,7 @@ private suspend fun FlowCollector<JsonObject>.processLine(
     var pEnd = end
     while (pStart < pEnd && buf[pStart].isAsciiWs()) pStart++
     while (pEnd > pStart && buf[pEnd - 1].isAsciiWs()) pEnd--
-    if (assembler.dataBuffer.isNotEmpty()) assembler.dataBuffer.append('\n')
-    assembler.dataBuffer.append(buf, pStart, pEnd)
+    assembler.append(buf, pStart, pEnd)
 }
 
 /** [literal] present at [start] within [start, end)? Char-wise — no substring allocation. */
@@ -261,3 +286,9 @@ private fun StringBuilder.matchesAt(start: Int, end: Int, literal: String): Bool
 
 private fun Char.isAsciiWs(): Boolean =
     this == ' ' || this == '\t' || this == '\r' || this == '\n'
+
+public class SseFrameTooLargeException(kind: String, limit: Int) :
+    RuntimeException("$kind exceeds the $limit-character safety limit")
+
+private const val MAX_SSE_LINE_CHARS = 1024 * 1024
+private const val MAX_SSE_EVENT_CHARS = 4 * 1024 * 1024

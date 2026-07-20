@@ -5,16 +5,23 @@ on:
     tags:
       - "v*"
 
-# Least-privilege: the release job only needs to create a GitHub Release + upload assets.
-permissions:
-  contents: write
+permissions: {}
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  release:
+  build:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
     steps:
-      - name: checkout
+      - name: checkout without persisted credentials
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          persist-credentials: false
 
       - name: setup java
         uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.8.0
@@ -27,40 +34,81 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
+          cache: npm
 
-      - name: build the fat jar
+      - name: install workspaces
+        run: npm ci
+
+      - name: repository gates
+        run: npm run gate
+
+      - name: build exact release jar and compliance reports
         working-directory: gateway
-        run: ./gradlew :app:shadowJar --no-daemon --stacktrace
+        run: ./gradlew :app:shadowJar --no-daemon --no-parallel --stacktrace
 
-      - name: stage release assets
-        run: |
-          mkdir -p dist
-          BUILT="$(find gateway/app/build/libs -name '*-all.jar' | head -1)"
-          cp "$BUILT" dist/splice.jar
-          cp bin/splice-launch dist/splice-launch
-          cp install.sh dist/install.sh
+      - name: stage exact release bundle
+        run: bash checks/release/stage.sh
 
-      - name: sha256sums
+      - name: accept exact release bundle
+        run: SPLICE_EXPECTED_VERSION="${GITHUB_REF_NAME#v}" bash checks/release/accept.sh
+
+      - name: transfer accepted bundle to publisher
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: accepted-release
+          path: dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - name: download the accepted bundle
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: accepted-release
+          path: dist
+
+      - name: verify transferred checksums
         working-directory: dist
-        run: sha256sum splice.jar splice-launch install.sh > sha256sums.txt
+        run: sha256sum -c sha256sums.txt
 
-      # Best-effort license/SBOM artifacts: informational only, never block the release.
-      - name: npm license report (best-effort)
-        continue-on-error: true
-        run: npx --yes license-checker-rseidelsohn --json --out dist/license-report-npm.json
+      - name: attest build provenance
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-checksums: dist/sha256sums.txt
 
-      - name: gradle license report (best-effort)
-        continue-on-error: true
-        working-directory: gateway
-        run: ./gradlew :app:dependencies --configuration runtimeClasspath --no-daemon > ../dist/license-report-gradle-deps.txt
+      - name: attest CycloneDX SBOM
+        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        with:
+          subject-path: dist/splice.jar
+          sbom-path: dist/bom.cdx.json
 
-      - name: create release
+      - name: upload every asset to an unpublished draft
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2.6.2
         with:
+          draft: true
+          fail_on_unmatched_files: true
+          generate_release_notes: true
           files: |
             dist/splice.jar
             dist/splice-launch
             dist/install.sh
+            dist/LICENSE
+            dist/THIRD_PARTY_NOTICES.md
+            dist/THIRD_PARTY_LICENSES.txt
+            dist/PROVENANCE.md
+            dist/bom.cdx.json
+            dist/dependency-licenses.json
             dist/sha256sums.txt
-            dist/license-report-npm.json
-            dist/license-report-gradle-deps.txt
+
+      - name: publish only after every upload and attestation succeeded
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false

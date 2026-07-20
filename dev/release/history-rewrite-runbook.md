@@ -1,14 +1,14 @@
-# History rewrite runbook — operator-only, NOT executed
+# History rewrite record and residual-exposure runbook
 
-This document is reference material for the human operator. It is a plan,
-not a script: nothing in this file has been run. No agent may execute the
-git history rewrite or force-push described below (OSS campaign law: agents
-never push, never rewrite history, never change GitHub settings).
+The canonical `torad-labs/splice` history was rewritten on 2026-07-19 and the
+capture paths below are no longer reachable from canonical `main`. This file now
+records what was done and what ordinary Git operations cannot remove. Do not run
+a second rewrite or force-push as routine cleanup.
 
-## Exposure
+## Original exposure
 
-Commit `4ca99f7` ("cache-replay: capture→dual-replay A/B on the live proxy
-path") is reachable from public `main` on `torad-labs/splice`. It added:
+Old commit `4ca99f7` ("cache-replay: capture→dual-replay A/B on the live proxy
+path") added:
 
 - `experiments/cache-replay/capture/turn-001.json` … `turn-010.json` — raw
   Anthropic request bodies from a live `claudex` capture, including the
@@ -19,10 +19,26 @@ path") is reachable from public `main` on `torad-labs/splice`. It added:
   operator's local job directory).
 
 Scanned for API keys/bearer tokens (`sk-ant-`, `Bearer `, `api_key`) — none
-found in either. The exposure is operator identity/path/instruction content,
-not credentials. OSS-A removes these 11 files from the tip with `git rm`;
-they remain in the git object history at `4ca99f7` and in every tree that
-references them until a history rewrite is performed.
+found in either. The exposure was operator identity/path/instruction content,
+not credentials. The rewrite removed these 11 files from all canonical refs and
+replaced the public `main` lineage. The old GitHub object remains an exposure;
+see the residual state below.
+
+## Completed and residual state
+
+- Completed: the canonical `main` and release source lineage no longer contain
+  the capture files, and normal clones of current refs do not fetch them.
+- Residual: GitHub still serves old commit `4ca99f7bc0b9382d0c21d2cded8cdb59d7a85456`
+  through its object API, and raw URLs for the old capture JSON/log have returned
+  HTTP 200 after the rewrite.
+- Residual: stale pre-rewrite pull-request refs and external clones/forks may
+  retain old commits and the historical author email.
+
+Removing GitHub-retained commit/blob/raw-cache and foreign/fork refs is a
+**GitHub Support dependency**, not something another force-push can prove. A
+support request should include the full old commit SHA and the affected raw
+paths above. Keep treating the content as exposed even if those URLs later stop
+responding.
 
 ## What a rewrite CANNOT recall
 
@@ -41,7 +57,7 @@ canonical repo. It cannot reach:
 Treat the exposure as permanent for practical purposes; a rewrite reduces
 future exposure surface, it does not undo past access.
 
-## Rewrite options (operator choice — NOT executed here)
+## Historical rewrite procedure (already executed; do not repeat)
 
 **git filter-repo** (recommended — actively maintained, path-based):
 
@@ -72,19 +88,13 @@ Faster on large histories; less precise than filter-repo about path scoping.
 
 Either tool changes every commit SHA after `4ca99f7`. That is why:
 
-## Force-push is an operator decision
+## Force-push aftermath
 
-A rewrite is only visible on the remote after a force-push (`git push
---force` to `main`). This campaign's agents never do this (LAW: no push, no
-history rewrite, no GitHub settings changes). Force-pushing:
-
-- Invalidates every existing clone/fork's ancestry versus the new `main`.
-- Breaks in-flight PRs/branches based on pre-rewrite SHAs.
-- Requires coordinating with anyone else with push/fetch access before doing
-  it.
-
-The operator decides if/when to run the rewrite plus force-push, weighing
-the "cannot recall" caveats above against the value of a clean history.
+The operator performed the one-time canonical replacement. Pre-rewrite clones,
+forks, and pull-request refs therefore diverge from current `main`; stale PRs
+must be closed/recreated from the new lineage. Branch protection and force-push
+blocking were re-enabled after the replacement. Do not retarget old release tags
+or perform another rewrite to chase provider-side caches.
 
 ## .mailmap limits
 
@@ -109,4 +119,4 @@ any accidental exposure event:
 
 ---
 
-NOT executed. This file is documentation only.
+Canonical rewrite completed 2026-07-19. Residual GitHub object/cache removal remains external.

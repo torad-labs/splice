@@ -17,13 +17,17 @@ const { getConfig } = await import('../src/config.mjs');
 
 const SRC = join(dirname(fileURLToPath(import.meta.url)), '..', 'src');
 
-// ── Reasoning replay (default-on, gated) + prompt_cache_key — Codex-parity ───
+// ── Reasoning replay (default-off, gated) + prompt_cache_key — Codex-parity ──
 // (Replaces the retired L1 "never replay" invariant, 2026-07-14. The mirror
 // still always runs; replay + cache key are the added cache-warm channels.)
 
 const cfgReplay = (on) => ({ ...getConfig(), replayReasoning: on });
 
-test('replay default-on: non-compact requests ask the backend for encrypted reasoning', () => {
+test('replay defaults off to preserve fresh reasoning depth', () => {
+  assert.equal(getConfig().replayReasoning, false);
+});
+
+test('replay opt-in: non-compact requests ask the backend for encrypted reasoning', () => {
   const body = { model: 'gpt-5.6-sol', messages: [{ role: 'user', content: 'hi' }] };
   const { req } = buildRequest(body, { compact: false, config: cfgReplay(true), originalModel: body.model });
   assert.deepEqual(req.include, ['reasoning.encrypted_content']);

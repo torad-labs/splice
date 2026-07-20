@@ -15,7 +15,7 @@ import splice.core.turn.Usage
 import splice.core.turn.pickModelText
 import splice.gateway.compact.CompactStats
 import splice.gateway.reasoning.mirrorInto
-import splice.gateway.wire.SseEmitter
+import splice.gateway.wire.TurnTerminal
 
 public class TurnPipeline(
     private val compactStats: CompactStats,
@@ -30,7 +30,7 @@ public class TurnPipeline(
      * the emitter to its SOLE terminal. Returns a short outcome tag for the debug log.
      */
     public suspend fun finishStream(
-        emitter: SseEmitter,
+        emitter: TurnTerminal,
         outcome: TurnOutcome,
         meta: TurnMeta,
         elapsedMs: Long,
@@ -52,7 +52,7 @@ public class TurnPipeline(
     }
 
     private suspend fun finishSuccess(
-        emitter: SseEmitter,
+        emitter: TurnTerminal,
         outcome: TurnOutcome.Success,
         meta: TurnMeta,
         elapsedMs: Long,

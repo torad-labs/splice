@@ -17,6 +17,12 @@
   unresolved licenses or sidecar/JAR/checksum drift.
 - CodeQL, dependency review, artifact provenance attestations, release-version validation, and
   bounded/concurrent CI release jobs.
+- Gateway hardening: an 8 MB cap on incoming request bodies, rejected with HTTP 413 when exceeded;
+  a bounded request-materialization gate limiting how many requests can be decoded/translated
+  concurrently; SSE frame-size limits on data read from upstream; and a cap on upstream
+  error-response bodies (64 KB) before they're surfaced to the client.
+- Ceilings on configuration values — ports, fold rounds/tier, and max inflight/queued — so
+  out-of-range operator or environment input can no longer reach the runtime uncapped.
 
 ### Changed
 
@@ -24,6 +30,9 @@
   raw, private, or exact chain-of-thought.
 - Reasoning replay now ships off. Measurement showed that replay encouraged reuse of thin prior
   thinking; `CLAUDEX_REPLAY_REASONING=1` remains available as an explicit cache-warmth trade-off.
+- A rate-limited (429) turn now terminates immediately instead of retrying in-gateway, so the
+  client re-sends; a real 429 arms a shared per-account cooldown so concurrent turns fail fast
+  together instead of each burning its own retries against the same limited account.
 
 ## splice — codex-proxy v35, claudithos removed, renamed from "mythos" - 2026-07-15
 

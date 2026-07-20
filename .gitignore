@@ -9,6 +9,10 @@ __pycache__/
 # <<< torad-managed <<<
 .DS_Store
 
+# generated release bundle and local validation tools
+/dist/
+/.cache/
+
 # gradle (gateway/)
 gateway/.gradle/
 gateway/**/.gradle/

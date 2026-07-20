@@ -45,8 +45,9 @@ probes over real backends) is the **run-time half** — a mock suite cannot see 
 vendor returns, which is exactly how both shipped.
 
 L1 (no reasoning replay) was RETIRED 2026-07-14: encrypted reasoning replay is
-now a supported, default-on, config-gated behavior (`replayReasoning`), paired
-with `prompt_cache_key` for Codex-parity prompt-cache warmth. The mirror (L2)
+now a supported, default-off, config-gated behavior (`replayReasoning`), paired
+with `prompt_cache_key` for Codex-parity prompt-cache warmth. Replay is opt-in
+because measurements found that it thinned fresh reasoning. The mirror (L2)
 remains the load-bearing thesis — reasoning still surfaces as visible text.
 
 Invariant L4 (no fake summaries) and the L2 both-paths-call assertion are

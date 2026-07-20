@@ -57,8 +57,8 @@ public class CodexAuthProvider(
     private val json = Json { ignoreUnknownKeys = true }
     private val singleFlight = SingleFlight<Credentials?>()
 
-    // ast-grep-ignore: main-no-hardcoded-dispatchers — this IS the injection seam: an owned
-    // background scope, decoupled from any single request's coroutine, for the G17 async-prefetch
+    // This is the injection seam: an owned background scope, decoupled from any single request's
+    // coroutine, for the G17 async-prefetch
     // tier. Mirrors GrokAuthProvider's identical property.
     private val prefetchScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val invalidGrantLatch = InvalidGrantLatch()
@@ -201,13 +201,18 @@ public class CodexAuthProvider(
         reason: String,
     ): RefreshOutcome {
         if (!allowRereadRetry) return RefreshOutcome.Rejected(reason)
-        val fresh = runCatchingCancellable {
+        val reread = runCatchingCancellable {
             json.parseToJsonElement(Files.readString(authPath)).jsonObject
-        }.getOrElse { return RefreshOutcome.Rejected(reason) }
+        }
+        val rereadFailure = reread.exceptionOrNull()
+        if (rereadFailure != null) {
+            val detail = rereadFailure.message.orEmpty().take(REFRESH_ERROR_SNIPPET)
+            return RefreshOutcome.Rejected("$reason; credential reread failed: $detail")
+        }
+        val fresh = reread.getOrThrow()
         val newTokens = fresh[FIELD_TOKENS] as? JsonObject
-        val newToken = newTokens?.str(FIELD_REFRESH_TOKEN)
-        val rotated = newToken != null && newToken != usedRefreshToken
-        return if (rotated && newTokens != null) {
+        val rotatedToken = newTokens?.str(FIELD_REFRESH_TOKEN)?.takeUnless { it == usedRefreshToken }
+        return if (newTokens != null && rotatedToken != null) {
             exchangeRefreshToken(fresh, newTokens, allowRereadRetry = false)
         } else {
             RefreshOutcome.Rejected(reason)
@@ -272,6 +277,7 @@ public class CodexAuthProvider(
     }
 
     private companion object {
+        const val REFRESH_ERROR_SNIPPET = 160
         const val LOG_TAG = "codex-auth"
         const val KIND = "chatgpt-oauth"
         const val MASK_KEEP = 4

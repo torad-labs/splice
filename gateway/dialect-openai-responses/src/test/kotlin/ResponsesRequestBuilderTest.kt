@@ -148,6 +148,22 @@ class ResponsesRequestBuilderTest {
     }
 
     @Test
+    fun `mini clamps effort max to xhigh, other models keep max`() {
+        val maxBody = """{"model":"m","effort":"max","messages":[{"role":"user","content":"x"}]}"""
+        var req = build(maxBody, options = opts(model = "gpt-5.4-mini"))
+        assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        req = build(maxBody, options = opts(model = "gpt-5.6-sol"))
+        assertEquals("max", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        // the 64k budget tier maps to max — the real-world trigger — and clamps on mini too
+        req = build(
+            """{"model":"m","thinking":{"type":"enabled","budget_tokens":64000},
+                "messages":[{"role":"user","content":"x"}]}""",
+            options = opts(model = "gpt-5.4-mini"),
+        )
+        assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+    }
+
+    @Test
     fun `spark rejects the summary field`() {
         val req = build(
             """{"model":"m","messages":[{"role":"user","content":"x"}]}""",

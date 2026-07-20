@@ -148,6 +148,22 @@ class ResponsesRequestBuilderTest {
     }
 
     @Test
+    fun `gpt-5-6 family forces parallel_tool_calls false, others omit the field`() {
+        val tooled = """{"model":"m","tools":[{"name":"Task","input_schema":{"type":"object"}}],
+            "messages":[{"role":"user","content":"x"}]}"""
+        var req = build(tooled, options = opts(model = "gpt-5.6-sol"))
+        assertEquals("false", req["parallel_tool_calls"]?.jsonPrimitive?.content)
+        req = build(tooled, options = opts(model = "gpt-5.5"))
+        assertNull(req["parallel_tool_calls"])
+        // no tools -> no field even on 5.6
+        req = build(
+            """{"model":"m","messages":[{"role":"user","content":"x"}]}""",
+            options = opts(model = "gpt-5.6-luna"),
+        )
+        assertNull(req["parallel_tool_calls"])
+    }
+
+    @Test
     fun `mini clamps effort max to xhigh, other models keep max`() {
         val maxBody = """{"model":"m","effort":"max","messages":[{"role":"user","content":"x"}]}"""
         var req = build(maxBody, options = opts(model = "gpt-5.4-mini"))

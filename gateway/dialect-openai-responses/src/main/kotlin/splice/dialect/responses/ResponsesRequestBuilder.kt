@@ -65,6 +65,10 @@ public data class ResponsesQuirks(
     val summaryRejectModelRegex: Regex? = Regex("spark", RegexOption.IGNORE_CASE),
     /** gpt-5.4-mini's ceiling is xhigh — the backend 400s effort=max on it (observed 2026-07-19). */
     val effortMaxRejectModelRegex: Regex? = Regex("mini", RegexOption.IGNORE_CASE),
+    /** codex-rs parity (read from source 2026-07-19): the gpt-5.6 family is served "responses-lite"
+     *  with parallel_tool_calls FORCED false. Splice omitting the field left the backend default
+     *  (parallel ON) governing — a sequential-tool model spraying 30-50 parallel Task calls. */
+    val sequentialToolCallsModelRegex: Regex? = Regex("gpt-5\\.6", RegexOption.IGNORE_CASE),
     val compactEffortPin: String? = null, // null = inherit session effort (the cache law)
     val emitToolChoice: Boolean = false,
     val emitStrict: Boolean = false,
@@ -189,7 +193,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
             instructions = instructions,
             tools = tools,
             toolChoice = if (emitToolChoice) toolChoice(body) else null,
-            parallelToolCalls = if (emitToolChoice) body.toolChoice?.disableParallelToolUse != true else null,
+            parallelToolCalls = parallelToolCallsFor(tools, emitToolChoice, body, opts),
             reasoning = reasoning,
             streamOptions = summaryDeliveryOptions(reasoning),
         )
@@ -230,6 +234,21 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
             }
             else -> JsonPrimitive("auto")
         }
+    }
+
+    /** codex-rs parity: 5.6-family models get parallel_tool_calls=false whenever tools ride —
+     *  their own CLI forces it (responses-lite). Wins over the grok-style toolChoice negotiation;
+     *  null = omit the field (backend default). */
+    private fun parallelToolCallsFor(
+        tools: JsonArray?,
+        emitToolChoice: Boolean,
+        body: AnthropicRequest,
+        opts: BuildOptions,
+    ): Boolean? = when {
+        tools != null &&
+            quirks.sequentialToolCallsModelRegex?.containsMatchIn(opts.upstreamModel) == true -> false
+        emitToolChoice -> body.toolChoice?.disableParallelToolUse != true
+        else -> null
     }
 
     // ── knobs ────────────────────────────────────────────────────────────────

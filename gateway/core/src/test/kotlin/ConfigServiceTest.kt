@@ -111,6 +111,13 @@ class ConfigServiceTest {
         val negative = service(env = mapOf("CLAUDEX_MAX_QUEUED" to "-5"))
         assertEquals(0, negative.getConfig().maxQueued)
 
+        // Regression: an explicit 0/negative port must fall back to the knob DEFAULT, not clamp
+        // to the floor (1 = unbindable/privileged).
+        val zeroPort = service(env = mapOf("SPLICE_CONTROL_PORT" to "0")).getConfig()
+        assertEquals(3096, zeroPort.controlPort)
+        val negativePort = service(env = mapOf("SPLICE_CONTROL_PORT" to "-1")).getConfig()
+        assertEquals(3096, negativePort.controlPort)
+
         val oversized = service(
             env = mapOf(
                 "CLAUDEX_MAX_INFLIGHT" to "3000000000",

@@ -188,9 +188,16 @@ public class ConfigService(
         listOf(Knob.CHATGPT_API_BASE, Knob.XAI_API_BASE).forEach { k ->
             out[k.key] = str(out, k)?.trimEnd('/')
         }
-        out[Knob.PORT.key] = clampLong(out, Knob.PORT, floor = 1L, ceiling = MAX_PORT)
-        out[Knob.GROK_PORT.key] = clampLong(out, Knob.GROK_PORT, floor = 1L, ceiling = MAX_PORT)
-        out[Knob.CONTROL_PORT.key] = clampLong(out, Knob.CONTROL_PORT, floor = 1L, ceiling = MAX_PORT)
+        // clampLong's `default` only fires when the value is ABSENT (num returns null); an
+        // explicit 0/negative port is PRESENT, so clampLong would still floor-clamp it to 1
+        // (unbindable). Ports need pre-commit's `positiveLong ?: default` contract instead —
+        // reject non-positive values outright, then clamp only the ceiling.
+        out[Knob.PORT.key] =
+            (positiveLong(out, Knob.PORT) ?: (Knob.PORT.default as Long)).coerceAtMost(MAX_PORT)
+        out[Knob.GROK_PORT.key] =
+            (positiveLong(out, Knob.GROK_PORT) ?: (Knob.GROK_PORT.default as Long)).coerceAtMost(MAX_PORT)
+        out[Knob.CONTROL_PORT.key] =
+            (positiveLong(out, Knob.CONTROL_PORT) ?: (Knob.CONTROL_PORT.default as Long)).coerceAtMost(MAX_PORT)
         out[Knob.MAX_INFLIGHT.key] = clampLong(out, Knob.MAX_INFLIGHT, floor = 0L, ceiling = MAX_INT)
         out[Knob.MAX_QUEUED.key] = clampLong(out, Knob.MAX_QUEUED, floor = 0L, ceiling = MAX_INT)
         out[Knob.UPSTREAM_RETRIES.key] =

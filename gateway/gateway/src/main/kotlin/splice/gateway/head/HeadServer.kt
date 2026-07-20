@@ -300,7 +300,7 @@ public class HeadServer(
         val declared = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
         if (declared != null && declared > limit) throw RequestBodyTooLarge(limit)
         val channel = call.receiveChannel()
-        val output = ByteArrayOutputStream(minOf(declared?.toInt() ?: READ_BUFFER_BYTES, limit))
+        val output = ByteArrayOutputStream(minOf(declared?.toInt() ?: READ_BUFFER_BYTES, limit).coerceAtLeast(0))
         val buffer = ByteArray(READ_BUFFER_BYTES)
         var total = 0
         var read = readAvailableOrEof(channel, buffer)

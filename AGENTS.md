@@ -53,6 +53,11 @@ grant-gated behind `SPLICE_WALLS_OK=1`.
 
 ## Management API
 
+> **Legacy Node stack.** This section describes `server/` (`src/control-server.mjs`,
+> `codex-proxy.mjs`, `reasoning/mirror.mjs`, `anthropic/sse.mjs`) — kept runnable during cutover
+> but no longer the documented entry point. The **`gateway/` Kotlin daemon (spliced) is the
+> primary stack**; see [README.md](README.md#layout).
+
 Bearer-guarded (`Authorization: Bearer $(cat ~/.claude-codex/state/mgmt-key)`),
 loopback-only, both proxies:
 
@@ -73,6 +78,10 @@ persists to the file layer. `port`, `grokPort`, `controlPort`, `upstreamTimeoutM
 need a restart; everything else hot-applies on the next request.
 
 ## Control plane (spliced)
+
+> **Legacy Node stack.** Same caveat as above: `src/control-server.mjs` is part of the legacy
+> `server/` stack. The **`gateway/` Kotlin daemon is the primary stack**; see
+> [README.md](README.md#layout).
 
 The dashboard is centralized. `spliced` (`src/control-server.mjs`, loopback
 `:3096`, `controlPort`) hosts the single webui at `/` and a bearer-guarded

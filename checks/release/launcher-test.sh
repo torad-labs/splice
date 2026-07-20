@@ -47,7 +47,11 @@ case "$url" in
   */launch/test)
     printf '%s\n' "$url" > "$LAUNCHER_URL_CAPTURE"
     printf '%s' "$data" > "$LAUNCHER_BODY_CAPTURE"
-    printf '{"env":{},"unset":[],"argv":["true"]}\n'
+    if [ "${LAUNCHER_INJECT_ENV_KEY:-0}" = "1" ]; then
+      printf '{"env":{"X$(touch %s)":"v"},"unset":[],"argv":["true"]}\n' "$LAUNCHER_PWNED_FILE"
+    else
+      printf '{"env":{},"unset":[],"argv":["true"]}\n'
+    fi
     ;;
   *)
     printf 'unexpected curl URL: %s\n' "$url" >&2
@@ -74,6 +78,8 @@ run_launcher() {
   LAUNCHER_URL_CAPTURE="$SANDBOX/url" \
   LAUNCHER_BODY_CAPTURE="$SANDBOX/body" \
   LAUNCHER_SHUTDOWN_CAPTURE="$SANDBOX/shutdown" \
+  LAUNCHER_INJECT_ENV_KEY="${LAUNCHER_INJECT_ENV_KEY:-0}" \
+  LAUNCHER_PWNED_FILE="$SANDBOX/pwned" \
     "$ROOT/bin/splice-launch" "$@"
 }
 
@@ -94,5 +100,14 @@ rm -f "$SANDBOX/shutdown"
 run_launcher
 test "$(cat "$SANDBOX/shutdown")" = "http://127.0.0.1:4567/api/daemon/shutdown"
 test "$(cat "$SANDBOX/daemon-state")" = "new"
+
+# Regression: a recipe env key containing a command substitution must never reach the shell
+# unquoted. The mock daemon returns env key `X$(touch $LAUNCHER_PWNED_FILE)`; the launcher must
+# drop it (warning to stderr) instead of executing it via `eval "$CMD"`, and must still exit
+# cleanly on the rest of the recipe.
+printf 'new\n' > "$SANDBOX/daemon-state"
+rm -f "$SANDBOX/pwned"
+LAUNCHER_INJECT_ENV_KEY=1 run_launcher
+test ! -e "$SANDBOX/pwned"
 
 echo "launcher test: OK"

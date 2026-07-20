@@ -148,7 +148,7 @@ RECIPE="$(curl -sS -X POST "${CONTROL}/launch/${HEAD}" \
 # Parse the recipe into env/unset/argv and exec. The recipe rides in $RECIPE (env), NOT stdin —
 # the heredoc is python's stdin (the script), so piping the recipe in would be swallowed.
 CMD="$(SPLICE_RECIPE="$RECIPE" python3 <<'PY'
-import os, json, shlex, sys
+import os, json, re, shlex, sys
 raw = os.environ.get("SPLICE_RECIPE", "")
 try:
     r = json.loads(raw)
@@ -156,7 +156,18 @@ except Exception:
     sys.stderr.write("splice: launch failed (no recipe from daemon): " + (raw or "<empty>") + "\n"); sys.exit(1)
 if "argv" not in r:
     sys.stderr.write("splice: launch failed: " + json.dumps(r) + "\n"); sys.exit(1)
-sets = " ".join(f"{k}={shlex.quote(v)}" for k, v in r.get("env", {}).items())
+# The key rides into `env K=V ...` unquoted (only the value is shlex-quoted), so a key that
+# isn't a bare identifier is a shell-injection vector straight from the control-plane response.
+# Reject anything that doesn't look like an env-var name instead of quoting it — quoting the
+# key would still let it break out via the bare `=` syntax `env` itself requires.
+ENV_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+env_items = []
+for k, v in r.get("env", {}).items():
+    if ENV_NAME_RE.match(k):
+        env_items.append((k, v))
+    else:
+        sys.stderr.write("splice: ignoring malformed env key from daemon: " + repr(k) + "\n")
+sets = " ".join(f"{k}={shlex.quote(v)}" for k, v in env_items)
 unsets = " ".join(f"-u {shlex.quote(k)}" for k in r.get("unset", []))
 argv = " ".join(shlex.quote(a) for a in r["argv"])
 if r.get("warning"):

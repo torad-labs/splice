@@ -11,11 +11,10 @@ Old commit `4ca99f7` ("cache-replay: capture→dual-replay A/B on the live proxy
 path") added:
 
 - `experiments/cache-replay/capture/turn-001.json` … `turn-010.json` — raw
-  Anthropic request bodies from a live `claudex` capture, including the
-  operator's private global `CLAUDE.md` instructions and `/home/<user>/...`
-  filesystem paths.
+  Anthropic request bodies from a live `claudex` capture, including private
+  local operator content and filesystem path exposure.
 - `experiments/cache-replay/capture/ab-results.log` — a run log with the same
-  `/home/<user>/...` path exposure (a `capture_env=` line naming the
+  private local operator content exposure (a `capture_env=` line naming the
   operator's local job directory).
 
 Scanned for API keys/bearer tokens (`sk-ant-`, `Bearer `, `api_key`) — none
@@ -28,17 +27,15 @@ see the residual state below.
 
 - Completed: the canonical `main` and release source lineage no longer contain
   the capture files, and normal clones of current refs do not fetch them.
-- Residual: GitHub still serves old commit `4ca99f7bc0b9382d0c21d2cded8cdb59d7a85456`
-  through its object API, and raw URLs for the old capture JSON/log have returned
-  HTTP 200 after the rewrite.
 - Residual: stale pre-rewrite pull-request refs and external clones/forks may
   retain old commits and the historical author email.
 
 Removing GitHub-retained commit/blob/raw-cache and foreign/fork refs is a
 **GitHub Support dependency**, not something another force-push can prove. A
-support request should include the full old commit SHA and the affected raw
-paths above. Keep treating the content as exposed even if those URLs later stop
-responding.
+support request should include the full old commit SHA — redacted here as
+`<pre-rewrite-commit>`; the operator holds the full value — and the affected
+raw paths above. Keep treating the content as exposed even if those URLs
+later stop responding.
 
 ## What a rewrite CANNOT recall
 

@@ -307,7 +307,7 @@ class HeadServerIntegrationTest {
     }
 
     @Test
-    fun `non-streaming requests are pre-stream rejected with a 400-shaped error`() = runTest {
+    fun `non-streaming requests get one collected Anthropic Messages JSON body`() = runTest {
         val response = client.post("http://127.0.0.1:$port/v1/messages") {
             header("Content-Type", "application/json")
             setBody(
@@ -316,10 +316,15 @@ class HeadServerIntegrationTest {
                     "messages":[{"role":"user","content":"go"}]}""",
             )
         }
-        assertEquals(HttpStatusCode.BadRequest, response.status)
+        assertEquals(HttpStatusCode.OK, response.status)
         val body = response.bodyAsText()
-        assertTrue(body.contains("invalid_request_error"))
-        assertTrue(body.contains("serves streaming clients only"))
+        // a single JSON message envelope, NOT an SSE frame stream
+        assertFalse(body.contains("event:"))
+        assertFalse(body.contains("data:"))
+        assertTrue(body.contains("\"type\":\"message\""))
+        assertTrue(body.contains("\"role\":\"assistant\""))
+        assertTrue(body.contains("ok after auth")) // the model text collected from the SSE
+        assertTrue(body.contains("\"stop_reason\":\"end_turn\""))
     }
 
     @Test

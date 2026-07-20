@@ -190,9 +190,6 @@ public class HeadServer(
             parsed == null -> "invalid request body"
             claudeModelRe.containsMatchIn(provider.catalog.unwrap(parsed.typed.model)) ->
                 "this head proxies its own models only; got ${provider.catalog.unwrap(parsed.typed.model)}"
-            // Non-stream responses are DELIBERATELY unserved rather than wrongly shaped: Claude
-            // Code always streams, and answering stream:false with SSE bytes corrupts SDK callers.
-            !parsed.typed.stream -> "this gateway serves streaming clients only — set \"stream\": true"
             else -> null
         }
         if (rejection != null || parsed == null) {
@@ -227,7 +224,13 @@ public class HeadServer(
         perf.setCount(PerfKeys.INFLIGHT, gate.snapshot().inflight.toLong())
 
         try {
-            driver.stream(call, built, slot, t0, perf)
+            // stream:true → SSE (the interactive path); stream:false → one buffered JSON body
+            // (Claude Code's internal non-stream calls, served by collecting the same machinery).
+            if (parsed.typed.stream) {
+                driver.stream(call, built, slot, t0, perf)
+            } else {
+                driver.collect(call, built, slot, t0, perf)
+            }
         } finally {
             withContext(NonCancellable) { slot.release() }
         }

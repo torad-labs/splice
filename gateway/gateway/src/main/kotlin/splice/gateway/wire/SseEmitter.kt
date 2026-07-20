@@ -21,7 +21,6 @@ import kotlinx.serialization.json.putJsonObject
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
-import splice.spi.WireSink
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Builds the (non-standard) usage payload Claude Code reads from gateways — injected so the
@@ -44,7 +43,7 @@ public class SseEmitter internal constructor(
     private val model: String,
     private val usagePayload: UsagePayloadBuilder,
     private val messageId: String,
-) : WireSink {
+) : TurnTerminal {
 
     private var started = false
     private val ended = AtomicBoolean(false)
@@ -210,7 +209,7 @@ public class SseEmitter internal constructor(
     }
 
     /** The ONLY clean ending — derives stop_reason internally (L3). */
-    public suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) {
+    override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) {
         if (!ended.compareAndSet(false, true)) return
         ensureStart()
         frame(
@@ -228,7 +227,7 @@ public class SseEmitter internal constructor(
     }
 
     /** The ONLY failure ending — an SSE error event lets Claude Code retry honestly. */
-    public suspend fun emitError(type: ErrorType, message: String) {
+    override suspend fun emitError(type: ErrorType, message: String) {
         if (!ended.compareAndSet(false, true)) return
         frame(
             "error",
@@ -243,7 +242,7 @@ public class SseEmitter internal constructor(
     }
 
     /** Client vanished mid-stream — nothing to emit, just seal the emitter. */
-    public fun abandon() {
+    override fun abandon() {
         ended.set(true)
     }
 

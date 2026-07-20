@@ -6,7 +6,9 @@
 package splice.gateway.head
 
 import io.ktor.http.ContentType
+import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.response.respondText
 import io.ktor.server.response.respondTextWriter
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -23,6 +25,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.model.ModelCatalog
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.perfLine
@@ -38,8 +41,11 @@ import splice.gateway.usage.buildUsagePayload
 import splice.gateway.usage.cacheLogLine
 import splice.gateway.usage.makeOutputClamp
 import splice.gateway.wire.BufferingWireSink
+import splice.gateway.wire.CollectingTerminal
 import splice.gateway.wire.ImmediateSseWriter
 import splice.gateway.wire.SseEmitter
+import splice.gateway.wire.TurnTerminal
+import splice.gateway.wire.UsagePayloadBuilder
 import splice.spi.BuiltTurn
 import splice.spi.FailureSource
 import splice.spi.FoldController
@@ -66,7 +72,7 @@ internal data class TurnDrive(
      *  `input` and re-POST without re-parsing (non-fold turns never read it). */
     val requestBody: JsonObject,
     val meta: TurnMeta,
-    val emitter: SseEmitter,
+    val emitter: TurnTerminal,
     val watchdog: TurnWatchdog,
     val slot: InflightGate.Slot,
     val pipeline: TurnPipeline,
@@ -85,6 +91,15 @@ internal data class ClientChannel(
     val coalesced: ImmediateSseWriter,
     val writeMutex: Mutex,
     val clientGone: AtomicBoolean,
+)
+
+/** Admission-time inputs threaded into a drive — grouped so the drive assembler stays one
+ *  cohesive argument across the stream and collect entries. */
+internal data class TurnInputs(
+    val built: BuiltTurn,
+    val slot: InflightGate.Slot,
+    val t0: Long,
+    val perf: TurnPerf,
 )
 
 /** Drives one streamed turn end-to-end. Owned by HeadServer; one instance per head. */
@@ -107,6 +122,7 @@ internal class TurnDriver(
 
     /** Open the SSE writer, wire the per-turn collaborators, run the single turn. */
     suspend fun stream(call: ApplicationCall, built: BuiltTurn, slot: InflightGate.Slot, t0: Long, perf: TurnPerf) {
+        val inputs = TurnInputs(built, slot, t0, perf)
         call.respondTextWriter(ContentType.Text.EventStream) {
             // Flush-per-frame: a frame buffered across an upstream lull is invisible to the
             // user exactly when responsiveness matters (see ImmediateSseWriter header).
@@ -115,7 +131,16 @@ internal class TurnDriver(
                 writeMutex = Mutex(),
                 clientGone = AtomicBoolean(false),
             )
-            val drive = buildTurnDrive(built, slot, t0, perf, channel)
+            val emitter = SseEmitter.create(
+                write = { frame ->
+                    channel.writeMutex.withLock {
+                        timedClientWrite(channel.coalesced, frame, perf, channel.clientGone)
+                    }
+                },
+                model = built.meta.originalModel,
+                usagePayload = usagePayloadBuilder(provider.catalog, built.meta),
+            )
+            val drive = assembleDrive(inputs, emitter, channel)
             try {
                 // The 200 + SSE headers are committed once respondTextWriter opens, so any failure
                 // must become an honest `event: error` frame — NOT escape and leave the client an
@@ -133,60 +158,39 @@ internal class TurnDriver(
         }
     }
 
-    /** The per-turn error boundary — catches exactly the failure classes [emitFailure] dispatches
-     *  on: the custom transport signals, I/O, and the two documented gateway-bug classes
-     *  (IllegalArgument/IllegalState — a bad base_url parse, a Ktor internal state error), which
-     *  previously escaped as a truncated 200 with no error frame (review 2026-07-19). */
-    private inline fun <R> catchingTurnFailure(block: () -> R): Result<R> =
-        try {
-            Result.success(block())
-        } catch (e: UpstreamAuthMissing) {
-            Result.failure(e)
-        } catch (e: UpstreamFailed) {
-            Result.failure(e)
-        } catch (e: IOException) {
-            Result.failure(e)
-        } catch (e: CancellationException) {
-            // CancellationException extends IllegalStateException — rethrown BEFORE it so a
-            // cancelled turn actually stops instead of becoming an error frame.
-            throw e
-        } catch (e: IllegalArgumentException) {
-            // e.g. a URL-parse error from a bad base_url (review 2026-07-19: previously escaped
-            // as a truncated 200 with no error frame — emitFailure's branch was unreachable)
-            Result.failure(e)
-        } catch (e: IllegalStateException) {
-            // e.g. an IllegalState out of Ktor internals — same escape class as above
-            Result.failure(e)
-        }
+    /** Non-stream sibling of [stream]: Claude Code sends stream:false on some internal calls (the
+     *  Node predecessor served them by collecting the terminal object). Drives the SAME
+     *  fold/translator/honesty machinery into a [CollectingTerminal], then writes ONE Anthropic
+     *  Messages JSON body — no SSE channel, no liveness pinger. */
+    suspend fun collect(call: ApplicationCall, built: BuiltTurn, slot: InflightGate.Slot, t0: Long, perf: TurnPerf) {
+        val terminal = CollectingTerminal(built.meta.originalModel, usagePayloadBuilder(provider.catalog, built.meta))
+        // Inert channel: the collect path never writes SSE frames, but postRound reads clientGone
+        // (stays false — a buffered client can't be observed gone mid-turn) and the drive needs one.
+        val channel = ClientChannel(
+            coalesced = ImmediateSseWriter(writeRaw = {}, flushRaw = {}),
+            writeMutex = Mutex(),
+            clientGone = AtomicBoolean(false),
+        )
+        val drive = assembleDrive(TurnInputs(built, slot, t0, perf), terminal, channel)
+        catchingTurnFailure { driveOneTurn(drive, pingClient = false) }
+            .onFailure { e -> emitFailure(drive, e) }
+        call.respondText(
+            terminal.responseBody().toString(),
+            ContentType.Application.Json,
+            HttpStatusCode.fromValue(terminal.httpStatus()),
+        )
+    }
 
-    private fun buildTurnDrive(
-        built: BuiltTurn,
-        slot: InflightGate.Slot,
-        t0: Long,
-        perf: TurnPerf,
+    /** Assemble the per-turn drive around a terminal (SseEmitter for stream, CollectingTerminal for
+     *  collect) and its channel — everything else (watchdog, pipeline, headers) is shape-neutral. */
+    private fun assembleDrive(
+        inputs: TurnInputs,
+        emitter: TurnTerminal,
         channel: ClientChannel,
     ): TurnDrive {
+        val built = inputs.built
+        val perf = inputs.perf
         val meta = built.meta
-        val emitter = SseEmitter.create(
-            write = { frame ->
-                channel.writeMutex.withLock {
-                    timedClientWrite(channel.coalesced, frame, perf, channel.clientGone)
-                }
-            },
-            model = meta.originalModel,
-            usagePayload = { usage ->
-                // Anthropic convention (Claude Code HUD/autocompact): input_tokens and
-                // cache_read_input_tokens are DISJOINT. OpenAI's input_tokens INCLUDES the cached
-                // portion, so subtract it — else input+cache_read double-counts and the context
-                // bar/autocompact fire ~2x early (the "compaction ate my quota" class).
-                val cached = usage?.cachedTokens ?: 0
-                val nonCachedInput = ((usage?.inputTokens ?: 0) - cached).coerceAtLeast(0)
-                buildUsagePayload(
-                    TurnUsage(nonCachedInput, usage?.outputTokens ?: 0, 0, cached),
-                    provider.catalog.contextWindowFor(meta.upstreamModel),
-                )
-            },
-        )
         val bodyJson = built.requestBody.toString()
         perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, bodyJson.length.toLong())
         return TurnDrive(
@@ -195,14 +199,14 @@ internal class TurnDriver(
             meta = meta,
             emitter = emitter,
             watchdog = TurnWatchdog(provider.watchdog, clock),
-            slot = slot,
+            slot = inputs.slot,
             pipeline = TurnPipeline(
                 compactStats,
                 log,
                 makeOutputClamp(meta.clientMaxTokens, meta.compact, provider.key, log),
                 mirrorReasoning = deps.mirrorReasoning,
             ),
-            t0 = t0,
+            t0 = inputs.t0,
             upstreamModel = meta.upstreamModel,
             perf = perf,
             turnHeaders = built.extraHeaders,
@@ -282,7 +286,7 @@ internal class TurnDriver(
     // the PARENT call and propagates DOWN into the turn — a parentless Job() severed that, so
     // Esc'd turns kept streaming upstream and pinning gate slots until the watchdog cap
     // (the audit's top concurrency finding, 2026-07-18).
-    private suspend fun driveOneTurn(drive: TurnDrive) {
+    private suspend fun driveOneTurn(drive: TurnDrive, pingClient: Boolean = true) {
         val parent = currentCoroutineContext()[Job]
         // CompletableJob completed in finally: a plain child Job never completes on its own and
         // would park the PARENT call forever after the turn returns.
@@ -295,7 +299,9 @@ internal class TurnDriver(
                 // backoffs are covered too — the per-attempt scope only started it after upstream
                 // headers, so a client that hung up mid-retry left a zombie turn pinning its gate
                 // slot and re-hammering the rate-limited account for a listener that was gone.
-                val pinger = self.launchClientPinger(drive, turnJob)
+                // OFF for the non-stream collect path: there is no open SSE channel to ping (the
+                // whole body is buffered and sent once), so liveness can't be probed mid-turn.
+                val pinger = if (pingClient) self.launchClientPinger(drive, turnJob) else null
                 try {
                     // Folding is null for sol / every non-codex head → the single-round path is
                     // byte-for-byte the pre-fold behaviour (drive straight to the real emitter,
@@ -313,7 +319,7 @@ internal class TurnDriver(
                         ).run(drive.requestBody, fold)
                     }
                 } finally {
-                    pinger.cancel()
+                    pinger?.cancel()
                 }
             }
         } finally {
@@ -530,13 +536,57 @@ internal class TurnDriver(
 private fun Provider.loginHint(): String =
     if (loginCommand.isNotEmpty()) " — run: $loginCommand" else ""
 
+/** The per-turn error boundary — captures exactly the failure classes [TurnDriver.emitFailure]
+ *  dispatches on: the custom transport signals, I/O, and the two documented gateway-bug classes
+ *  (IllegalArgument/IllegalState — a bad base_url parse, a Ktor internal state error), which
+ *  previously escaped as a truncated 200 with no error frame (review 2026-07-19). Top-level (not a
+ *  TurnDriver method) so the stream and collect entries share one boundary without growing the
+ *  class's function budget. */
+private inline fun <R> catchingTurnFailure(block: () -> R): Result<R> =
+    try {
+        Result.success(block())
+    } catch (e: UpstreamAuthMissing) {
+        Result.failure(e)
+    } catch (e: UpstreamFailed) {
+        Result.failure(e)
+    } catch (e: IOException) {
+        Result.failure(e)
+    } catch (e: CancellationException) {
+        // CancellationException extends IllegalStateException — rethrown BEFORE it so a
+        // cancelled turn actually stops instead of becoming an error frame.
+        throw e
+    } catch (e: IllegalArgumentException) {
+        // e.g. a URL-parse error from a bad base_url (review 2026-07-19: previously escaped
+        // as a truncated 200 with no error frame — emitFailure's branch was unreachable)
+        Result.failure(e)
+    } catch (e: IllegalStateException) {
+        // e.g. an IllegalState out of Ktor internals — same escape class as above
+        Result.failure(e)
+    }
+
+/** The Anthropic usage payload builder — shared by the stream emitter and the non-stream collector
+ *  so both report tokens identically. Top-level to keep it off TurnDriver's function budget. */
+private fun usagePayloadBuilder(catalog: ModelCatalog, meta: TurnMeta): UsagePayloadBuilder = { usage ->
+    // Anthropic convention (Claude Code HUD/autocompact): input_tokens and cache_read_input_tokens
+    // are DISJOINT. OpenAI's input_tokens INCLUDES the cached portion, so subtract it — else
+    // input+cache_read double-counts and the context bar/autocompact fire ~2x early (the
+    // "compaction ate my quota" class).
+    val cached = usage?.cachedTokens ?: 0
+    val nonCachedInput = ((usage?.inputTokens ?: 0) - cached).coerceAtLeast(0)
+    buildUsagePayload(
+        TurnUsage(nonCachedInput, usage?.outputTokens ?: 0, 0, cached),
+        catalog.contextWindowFor(meta.upstreamModel),
+    )
+}
+
 /** The reasoning-continuation fold state machine (codex 518n-2), split from TurnDriver (its function
  *  budget). Drives rounds via [postRound], BUFFERING each round's tentative final output while
  *  reasoning streams live; a truncated round's output is DISCARDED and the next round re-POSTed with
  *  its reasoning replayed; the terminal round's output is FLUSHED and [finish] called exactly ONCE
  *  with usage summed across every round — one honest terminal downstream (L3). */
 internal class FoldRunner(
-    private val emitter: SseEmitter,
+    // Only the buffer's `real` sink — never a terminal here (L3: FoldRunner finishes via [finish]).
+    private val emitter: WireSink,
     private val key: String,
     private val log: (String) -> Unit,
     private val postRound: suspend (bodyJson: String, sink: WireSink) -> TurnOutcome,

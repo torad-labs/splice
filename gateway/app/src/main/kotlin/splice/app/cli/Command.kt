@@ -4,6 +4,8 @@
 package splice.app.cli
 
 import kotlinx.coroutines.runBlocking
+import splice.core.GATEWAY_VERSION
+import splice.core.SHIM_VERSION
 
 /** The splice CLI verbs as a closed, exhaustively-dispatched hierarchy: argv is parsed into a typed
  *  case (so args like the install target are data, not positional lookups), and run() is total —
@@ -12,7 +14,8 @@ public sealed class Command {
     public abstract fun run()
 
     public data object Doctor : Command() { override fun run(): Unit = doctor() }
-    public data object Version : Command() { override fun run(): Unit = println("splice kt-1") }
+    public data object Version : Command() { override fun run(): Unit = println("splice $GATEWAY_VERSION") }
+    public data object ShimVersion : Command() { override fun run(): Unit = println(SHIM_VERSION) }
     public data object Init : Command() { override fun run(): Unit = init() }
     public data class Install(val target: String?) : Command() { override fun run(): Unit = install(target) }
     public data class Uninstall(val target: String?) : Command() { override fun run(): Unit = uninstall(target) }

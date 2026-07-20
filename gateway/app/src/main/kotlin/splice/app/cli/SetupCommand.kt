@@ -1,6 +1,6 @@
-// NEW: `splice setup` — the one guided flow that turns a fresh install into "claudex just works".
-// Materializes the topology, installs the wrapper commands, then walks the OAuth heads and offers
-// to sign in to each right now (browser). Non-interactive (piped/CI) → installs + prints the steps.
+// NEW: `splice setup` — the guided flow from a fresh install to a configured wrapper.
+// Materializes the supported API-key starter and installs its commands. If an operator has explicitly
+// added experimental OAuth heads, it walks those heads and offers browser login.
 // :app is wall-exempt for println.
 
 package splice.app.cli
@@ -16,8 +16,7 @@ private const val RESET = "\u001B[0m"
 
 internal suspend fun setup() {
     println("${BOLD}splice setup$RESET $DIM— wrap Claude Code with your own model backends$RESET")
-    println("$DIM  OAuth heads (codex · grok · kimi) reuse each vendor's CLI OAuth identity — experimental,$RESET")
-    println("$DIM  not vendor-documented; api-key routes (OpenRouter/Moonshot/OpenAI) are the supported path.$RESET")
+    println("$DIM  The starter uses the supported OpenRouter API-key route (OPENROUTER_API_KEY).$RESET")
     println()
 
     // 1. topology + wrapper commands (+ the `splice` command itself)
@@ -38,8 +37,12 @@ internal suspend fun setup() {
         }
     }
     if (pending.isEmpty()) {
-        println("$GREEN✓$RESET all heads are signed in.")
+        println("$GREEN✓$RESET wrapper installed. Set OPENROUTER_API_KEY before launching.")
     } else {
+        println(
+            "$DIM  Experimental OAuth heads are configured explicitly; " +
+                "these routes are not vendor-documented.$RESET",
+        )
         for ((key, command, _) in pending) {
             if (AdminSupport.confirm("Sign in to $CYAN$command$RESET now?", default = true)) {
                 login(key)

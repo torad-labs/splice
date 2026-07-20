@@ -9,6 +9,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -34,6 +36,7 @@ import splice.core.topology.catalogFor
 import splice.core.topology.configOverrides
 import splice.core.turn.WatchdogBudget
 import splice.core.util.discard
+import splice.core.util.runCatchingCancellable
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesQuirks
@@ -42,6 +45,7 @@ import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
+import splice.gateway.head.RequestMaterializationGate
 import splice.gateway.perf.PerfStats
 import splice.gateway.usage.UsageStore
 import splice.provider.codex.CodexAuthProvider
@@ -62,9 +66,11 @@ import splice.spi.InflightGate
 import splice.spi.Provider
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.util.concurrent.CancellationException
 import kotlin.time.Duration.Companion.milliseconds
 
 // Reasoning-continuation folding config (codex 518n-2), threaded from ConfigService like the other
@@ -76,11 +82,29 @@ private fun foldConfigFrom(cfg: SpliceConfig): FoldConfig = FoldConfig(
     maxTierN = cfg.foldMaxTier,
 )
 
+/**
+ * Best-effort isolation at daemon/head boundaries without turning cancellation or fatal JVM
+ * failures into a merely degraded head. Expected I/O and assembly failures become [Result]
+ * failures; cancellation and [Error] always escape.
+ */
+internal inline fun <T> runCatchingDaemonBoundary(block: () -> T): Result<T> = try {
+    Result.success(block())
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (failure: IOException) {
+    Result.failure(failure)
+} catch (failure: IllegalArgumentException) {
+    Result.failure(failure)
+} catch (failure: IllegalStateException) {
+    Result.failure(failure)
+}
+
 public class Daemon(
     private val topology: Topology,
     private val statePaths: StatePaths,
     private val dashboardHtml: () -> String,
     private val log: (String) -> Unit = { System.err.print(it) },
+    private val shutdownDaemon: () -> Unit = {},
     private val refreshCall: suspend (tokenUrl: String, refreshToken: String) -> RefreshAttempt<RefreshedTokens> =
         ::codexRefresh,
 ) {
@@ -88,10 +112,13 @@ public class Daemon(
     // display is operator-editable without recompiling. Env and runtime PATCH still win.
     private val config = ConfigService(statePaths, headOverrides = topology.configOverrides())
     private val mgmtKey = MgmtKey(statePaths)
+    private val requestMaterializationGate = RequestMaterializationGate()
 
     // set once in start(); the daemon is not usable before it
     private var control: ControlServer? = null
     private val heads = LinkedHashMap<String, ManagedHead>()
+    private val stopLock = Mutex()
+    private var stopped = false
 
     // G8: per-head auth/health probe. SupervisorJob so one head's probe failure can't cancel
     // another's — same isolation shape as SingleFlight.kt:33-36.
@@ -120,7 +147,7 @@ public class Daemon(
                 log("[daemon] head '$key' SKIPPED: unknown provider '${head.provider}'\n")
                 continue
             }
-            runCatching {
+            runCatchingDaemonBoundary {
                 val catalog = providerCfg.catalogFor(head)
                 val loginCommand = loginInterception(providerCfg, head, key).first
                 val ctx = ProviderBuild(key, head, providerCfg, catalog, watchdog, cfg, loginCommand)
@@ -131,14 +158,21 @@ public class Daemon(
                     log("[daemon] head '$key' SKIPPED (build failed): ${it.message}\n")
                 }
         }
-        val materializerHome = statePaths.rootDir.parent ?: statePaths.rootDir
-        val launchService = LaunchService(ClaudeConfigMaterializer(materializerHome))
-        val srv = ControlServer(controlPort, heads, config, mgmtKey, dashboardHtml, log, launchService)
+        val srv = ControlServer(
+            controlPort,
+            heads,
+            config,
+            mgmtKey,
+            dashboardHtml,
+            log,
+            LaunchService(ClaudeConfigMaterializer(statePaths.rootDir.parent ?: statePaths.rootDir)),
+            shutdownDaemon,
+        )
         control = srv
         srv.start()
         // Start each head in isolation too — a listen() failure on one port must not sink the others.
         heads.forEach { (key, m) ->
-            runCatching { m.head.start() }.onFailure {
+            runCatchingDaemonBoundary { m.head.start() }.onFailure {
                 failed[key] = "start failed: ${it.message}"
                 log("[daemon] head '$key' failed to start: ${it.message}\n")
             }
@@ -149,13 +183,17 @@ public class Daemon(
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
     }
 
-    public suspend fun stop() {
-        authProbes.values.forEach { it.stop() }
-        probeScope.cancel()
-        heads.values.forEach {
-            runCatching { it.head.stop() }.discard("shutdown: one head failing to stop must not block the rest")
+    public suspend fun stop(): Unit = stopLock.withLock {
+        if (!stopped) {
+            stopped = true
+            authProbes.values.forEach { it.stop() }
+            probeScope.cancel()
+            heads.values.forEach {
+                runCatchingDaemonBoundary { it.head.stop() }
+                    .discard("shutdown: one head failing to stop must not block the rest")
+            }
+            control?.stop()
         }
-        control?.stop()
     }
 
     /** Provider + its auth, chosen by (dialect, auth.kind) — the multi-provider dispatch. */
@@ -463,7 +501,7 @@ public class Daemon(
         val usageStore = UsageStore(statePaths.usageFile(key), statePaths.ratelimitFile(key))
         val compactStats = CompactStats(statePaths.compactStatsFile(key))
         val perfStats = PerfStats(statePaths.perfStatsFile(key))
-        val logFile = statePaths.logsDir.resolve("$key-${head.port}.log")
+        val logFile = statePaths.logsDir.resolve("daemon.log")
         val server = HeadServer(
             provider = wired.provider,
             listenPort = head.port,
@@ -484,6 +522,7 @@ public class Daemon(
                 usageStore = usageStore,
                 perfStats = perfStats,
                 log = log,
+                requestMaterializationGate = requestMaterializationGate,
             ),
         )
         return ManagedHead(
@@ -491,7 +530,7 @@ public class Daemon(
             auth = wired.auth,
             usage = UsageStoreSource(usageStore),
             compact = CompactStatsSource(compactStats),
-            logs = LogFileSource(logFile),
+            logs = LogFileSource(logFile, "[$key]"),
             warnPct = cfg.usageWarnPct,
             warnTokens5h = cfg.usageWarnTokens5h,
             authKind = ctx.providerCfg.auth.kind,
@@ -526,9 +565,18 @@ public class Daemon(
     public companion object {
         private const val GROK_OAUTH = "grok-oauth"
 
-        public fun dashboardFrom(distPath: Path): () -> String = {
-            runCatching { Files.readString(distPath) }
-                .getOrDefault("<!doctype html><title>splice</title><p>dashboard build missing</p>")
+        public fun dashboardFrom(
+            distPath: Path,
+            classpathHtml: () -> String? = {
+                Daemon::class.java.getResourceAsStream("/webui/index.html")
+                    ?.bufferedReader()
+                    ?.use { it.readText() }
+            },
+        ): () -> String = {
+            runCatchingCancellable { Files.readString(distPath) }
+                .getOrNull()
+                ?: runCatchingCancellable { classpathHtml() }.getOrNull()
+                ?: "<!doctype html><title>splice</title><p>dashboard build missing</p>"
         }
     }
 }

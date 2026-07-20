@@ -20,81 +20,26 @@ show_reasoning = "text"
 summary = "detailed"
 replay_reasoning = false
 
-[providers.codex]
-dialect = "openai-responses"
-base_url = "https://chatgpt.com/backend-api/codex"
-# EXPERIMENTAL: reuses the Codex CLI's public OAuth client identity, not a vendor-documented
-# integration; auth.json is password-equivalent (splice reads + refreshes it). API-key alt: OpenAI Platform key.
-auth = { kind = "chatgpt-oauth", file = "~/.codex/auth.json" }
-quirks = { store = false, account_id_header = true, cache_key = "first-message-hash", effort_ceiling = "max", summary_field = true }
+# Supported starter route: create an OpenRouter API key, export OPENROUTER_API_KEY, then run
+# `claudeor`. Experimental vendor-OAuth examples remain opt-in in config/splice.example.toml.
+[providers.openrouter]
+dialect = "openai-chat"
+base_url = "https://openrouter.ai/api/v1"
+auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }
 
-[[providers.codex.models]]
-id = "gpt-5.6-sol"
-label = "Codex 5.6 Sol"
-context_window = 400000
-[[providers.codex.models]]
-id = "gpt-5.6-terra"
-label = "Codex 5.6 Terra"
-context_window = 400000
-[[providers.codex.models]]
-id = "gpt-5.6-luna"
-label = "Codex 5.6 Luna"
-context_window = 400000
-[[providers.codex.models]]
-id = "gpt-5.5"
-label = "Codex 5.5"
-context_window = 272000
-[[providers.codex.models]]
-id = "gpt-5.4"
-label = "Codex 5.4"
-context_window = 272000
-[[providers.codex.models]]
-id = "gpt-5.4-mini"
-label = "Codex 5.4 Mini"
-context_window = 272000
-[[providers.codex.models]]
-id = "gpt-5.3-codex-spark"
-label = "Codex Spark"
-context_window = 128000
+[[providers.openrouter.models]]
+id = "anthropic/claude-haiku-4.5"
+label = "Claude Haiku"
+context_window = 200000
 
-[providers.xai]
-dialect = "openai-responses"
-base_url = "https://api.x.ai/v1"
-# EXPERIMENTAL: reuses the Grok CLI's public OAuth client identity, not a vendor-documented
-# integration; auth.json is password-equivalent (splice reads + refreshes it). API-key alt: OpenRouter key.
-auth = { kind = "grok-oauth", file = "~/.grok/auth.json" }
-quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = true, tool_choice = true }
+[heads.openrouter]
+provider = "openrouter"
+port = 3101
+discovery_prefix = "claude-openrouter--"
+pinned_model = "anthropic/claude-haiku-4.5"
 
-[[providers.xai.models]]
-id = "grok-4.5"
-label = "Grok 4.5"
-context_window = 500000
-[[providers.xai.models]]
-id = "grok-4.3"
-label = "Grok 4.3"
-context_window = 1000000
-[[providers.xai.models]]
-id = "grok-build-latest"
-label = "Grok Build"
-context_window = 256000
-
-[heads.claudex]
-provider = "codex"
-port = 3099
-discovery_prefix = "claude-codex--"
-pinned_model = "gpt-5.6-sol"
-
-[heads.claudex.claude]
-command = "claudex"
-
-[heads.claude-grok]
-provider = "xai"
-port = 3100
-discovery_prefix = "claude-grok--"
-pinned_model = "grok-4.5"
-
-[heads.claude-grok.claude]
-command = "claude-grok"
+[heads.openrouter.claude]
+command = "claudeor"
 """
 
     public fun configPath(env: (String) -> String? = System::getenv): Path {

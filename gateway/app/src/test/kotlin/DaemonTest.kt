@@ -110,6 +110,7 @@ class DaemonTest {
     fun `a real turn flows through the assembled head to the mock upstream`() = runBlocking {
         val sse = client.post("http://127.0.0.1:$headPort/v1/messages") {
             header("Content-Type", "application/json")
+            header("Authorization", "Bearer $key")
             setBody(
                 """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":8000,
                     "system":"You are a test. SCENARIO:basic","messages":[{"role":"user","content":"go"}]}""",
@@ -125,6 +126,7 @@ class DaemonTest {
     fun `AUTHENTICATION failure surfaces the per-head login hint`() = runBlocking {
         val sse = client.post("http://127.0.0.1:$headPort/v1/messages") {
             header("Content-Type", "application/json")
+            header("Authorization", "Bearer $key")
             setBody(
                 """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":8000,
                     "system":"You are a test. SCENARIO:authfail","messages":[{"role":"user","content":"go"}]}""",

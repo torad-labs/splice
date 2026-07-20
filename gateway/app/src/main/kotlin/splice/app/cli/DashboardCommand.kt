@@ -2,11 +2,11 @@
 // browser. Prints the mgmt-key so the (unmodified) webui can authenticate if it asks. :app: println.
 package splice.app.cli
 
-internal fun dashboard() {
+internal fun dashboard(): Boolean {
     val port = AdminSupport.controlPort()
     if (!AdminSupport.ensureDaemon(port)) {
         println("splice: the daemon isn't running and couldn't be started.")
-        return
+        return false
     }
     val url = "http://127.0.0.1:$port"
     AdminSupport.mgmtKey()?.let {
@@ -17,4 +17,5 @@ internal fun dashboard() {
     } else {
         println("splice: open the dashboard at $url")
     }
+    return true
 }

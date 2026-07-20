@@ -95,10 +95,16 @@ assert url == "http://127.0.0.1:4567/launch/test", url
 assert body["args"] == ["", "line one\nline two"], body
 PY
 
+# State config is above TOML in ConfigService's precedence and the shell shim must resolve the
+# same port or it will probe/launch the daemon at one address and call another.
+printf '{"controlPort":4568}\n' > "$SANDBOX/state/config.json"
+run_launcher
+test "$(cat "$SANDBOX/url")" = "http://127.0.0.1:4568/launch/test"
+
 printf 'old\n' > "$SANDBOX/daemon-state"
 rm -f "$SANDBOX/shutdown"
 run_launcher
-test "$(cat "$SANDBOX/shutdown")" = "http://127.0.0.1:4567/api/daemon/shutdown"
+test "$(cat "$SANDBOX/shutdown")" = "http://127.0.0.1:4568/api/daemon/shutdown"
 test "$(cat "$SANDBOX/daemon-state")" = "new"
 
 # Regression: a recipe env key containing a command substitution must never reach the shell

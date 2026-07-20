@@ -1,5 +1,5 @@
 // PORT-OF: pickModelText/isWeakSummaryText from server/src/codex/translate-response.mjs
-// @ 4ca99f7 — invariants (L4): promote only ever promotes MODEL content; "no model text
+// @ pre-public-port-baseline — invariants (L4): promote only ever promotes MODEL content; "no model text
 // returned" is weak. Provider-neutral (used by the gateway pipeline's promote-to-text), so it
 // lives in :core, not the dialect.
 package splice.core.turn

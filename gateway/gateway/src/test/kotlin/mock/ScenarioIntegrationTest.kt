@@ -1,4 +1,4 @@
-// PORT-OF: the streaming scenario assertions from server/test/codex-proxy.test.mjs @ 4ca99f7,
+// PORT-OF: the streaming scenario assertions from server/test/codex-proxy.test.mjs @ pre-public-port-baseline,
 // driven end-to-end over real HTTP: CIO client -> mock upstream -> sseJsonEvents -> machine.
 // idle/prefill/drip/refresh scenarios are exercised with the watchdog/gate/auth wiring at
 // P3-HEAD (they need the full turn pipeline); this suite pins the reader+machine composition.

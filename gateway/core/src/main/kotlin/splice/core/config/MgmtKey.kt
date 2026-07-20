@@ -1,4 +1,4 @@
-// PORT-OF: server/src/mgmt/api.mjs ensureMgmtKey @ 4ca99f7 — invariant: 32 random bytes hex,
+// PORT-OF: server/src/mgmt/api.mjs ensureMgmtKey @ pre-public-port-baseline — invariant: 32 random bytes hex,
 // 0600, minted ONCE and cached in the state dir; the bearer for every /api call. Minted EAGERLY
 // before the port opens (a dashboard load must never race an unminted key). timingSafe compare.
 package splice.core.config

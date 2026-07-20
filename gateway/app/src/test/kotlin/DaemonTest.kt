@@ -16,6 +16,7 @@ import mock.freshPort
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -23,11 +24,13 @@ import org.junit.jupiter.api.TestInstance
 import splice.app.Daemon
 import splice.app.DaemonLock
 import splice.app.TopologyLoader
+import splice.app.runCatchingDaemonBoundary
 import splice.core.auth.RefreshAttempt
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CancellationException
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class DaemonTest {
@@ -145,12 +148,52 @@ class DaemonTest {
     }
 
     @Test
-    fun `topology materializes defaults on first run`() {
+    fun `topology materializes supported api-key defaults on first run`() {
         val tmp = Files.createTempDirectory("topo")
         val path: Path = tmp.resolve("splice.toml")
         val topo = TopologyLoader.loadOrMaterialize(path)
         assertTrue(Files.exists(path))
         assertEquals(3096, topo.daemon.controlPort)
-        assertTrue(topo.heads.containsKey("claudex"))
+        assertEquals(setOf("openrouter"), topo.heads.keys)
+        assertEquals(setOf("api-key"), topo.providers.values.map { it.auth.kind }.toSet())
+        assertTrue(topo.providers.values.none { it.auth.kind.endsWith("oauth") })
+        assertEquals("claudeor", topo.heads.getValue("openrouter").claude.command)
+    }
+
+    @Test
+    fun `dashboard loader prefers a checkout build and falls back to the packaged resource`() {
+        val tmp = Files.createTempDirectory("dashboard-loader")
+        val dist = tmp.resolve("index.html")
+        var packagedReads = 0
+        val dashboard = Daemon.dashboardFrom(dist) {
+            packagedReads += 1
+            "<html>packaged</html>"
+        }
+
+        assertEquals("<html>packaged</html>", dashboard())
+        assertEquals(1, packagedReads)
+
+        Files.writeString(dist, "<html>checkout</html>")
+        assertEquals("<html>checkout</html>", dashboard())
+        assertEquals(1, packagedReads)
+    }
+
+    @Test
+    fun `daemon isolation catches expected startup failures`() {
+        assertTrue(runCatchingDaemonBoundary { throw IllegalStateException("bad head") }.isFailure)
+    }
+
+    @Test
+    fun `daemon isolation never catches cancellation`() {
+        assertThrows(CancellationException::class.java) {
+            runCatchingDaemonBoundary { throw CancellationException("cancelled") }
+        }
+    }
+
+    @Test
+    fun `daemon isolation never catches fatal errors`() {
+        assertThrows(OutOfMemoryError::class.java) {
+            runCatchingDaemonBoundary { throw OutOfMemoryError("fatal") }
+        }
     }
 }

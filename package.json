@@ -1,7 +1,7 @@
 {
   "name": "splice",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "engines": {
     "node": ">=24"
   },
@@ -14,6 +14,7 @@
     "gate": "bash checks/gate.sh",
     "gate:rules": "ast-grep scan && ast-grep test --skip-snapshot-tests",
     "test:hooks": "python3 .claude/hooks/tests/test_orchestrator.py",
+    "oss:verify": "bash checks/oss/run.sh",
     "e2e:heads": "bash checks/e2e/heads-e2e.sh",
     "e2e:heads:wire": "bash checks/e2e/heads-e2e.sh --tier 1"
   },

@@ -11,17 +11,23 @@
 Run before opening a PR — these are the same checks CI runs:
 
 ```bash
-npm run gate              # the one local gate: gradle check + walls + hook tests + config guard
+npm ci
+npm run gate              # the complete local/CI gate
 npm run gate:rules        # ast-grep walls: tree scan + rule red/green cases
 npm run test:hooks        # orchestrator hook test suite
 bash checks/config-guard.sh   # rules that guard the rules
 cd gateway && ./gradlew check # module-law + detekt + konsist + unit tests (Kotlin gateway)
+npm test -w server
+npm run lint -w webui && npm test -w webui && npm run build -w webui
+npm run oss:verify
 ```
 
-`npm run gate` (`checks/gate.sh`) runs all four checks above, including gradle check as its
-first step — the individual commands are listed only so a contributor can run one in
-isolation while iterating. The gateway is a nested Gradle build under the `gateway/`
-subdirectory with its own JDK 21 toolchain, not a git submodule.
+`npm run gate` (`checks/gate.sh`) runs the complete list: Gradle module-law/detekt/tests,
+ast-grep walls, hook tests, config guard, the legacy server suite, webui lint/test/build
+with a committed-dist check, staged release acceptance, dependency audit, and every OSS
+readiness check. The individual commands are listed only so a contributor can run one in
+isolation while iterating. The gateway is a nested Gradle build under `gateway/` with its
+own JDK 21 toolchain, not a git submodule.
 
 A green *diff* is not the bar — a green *merge* is.
 

@@ -44,8 +44,7 @@ public object CredentialLock {
             // channel.lock() BLOCKS a real thread until a peer PROCESS releases (POSIX auto-releases
             // the lock if the holding process dies, so a crashed peer can't wedge it — no timeout knob
             // needed). Push it to the IO pool so it never parks a shared coroutine-dispatcher thread.
-            // Fixed process-wide primitive, not a caller-injectable seam.
-            // ast-grep-ignore: main-no-hardcoded-dispatchers -- fixed IO pool for a blocking OS file lock
+            // Fixed process-wide primitive, not a caller-injectable seam; the IO pool owns the block.
             val lock = withContext(Dispatchers.IO) { channel.lock() }
             try {
                 return block()

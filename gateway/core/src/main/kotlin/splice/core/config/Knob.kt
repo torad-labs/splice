@@ -128,8 +128,12 @@ public enum class Knob(
         6L,
         restartRequired = true,
     ),
-    MAX_INFLIGHT("maxInflight", KnobKind.NUMBER, listOf("CLAUDEX_MAX_INFLIGHT"), 0L),
-    MAX_QUEUED("maxQueued", KnobKind.NUMBER, listOf("CLAUDEX_MAX_QUEUED"), 0L),
+
+    // Bounded by default since the 2026-07-19 storm: unlimited (0) let ~650 concurrent streams
+    // hit one rate-limited account and OOM the 1G heap. 0 still means unlimited for an explicit
+    // operator opt-out; both stay live-PATCHable.
+    MAX_INFLIGHT("maxInflight", KnobKind.NUMBER, listOf("CLAUDEX_MAX_INFLIGHT"), 48L),
+    MAX_QUEUED("maxQueued", KnobKind.NUMBER, listOf("CLAUDEX_MAX_QUEUED"), 512L),
     UPSTREAM_RETRIES(
         "upstreamRetries",
         KnobKind.NUMBER,

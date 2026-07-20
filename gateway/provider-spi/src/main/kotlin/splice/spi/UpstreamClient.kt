@@ -15,6 +15,9 @@
 //   - encrypted_content decrypt 400s are NOT retried (Grok Build)
 //   - DNS-class transport failures (UnresolvedAddressException/UnknownHostException) back off on
 //     their own 1s/2s/4s schedule (dnsBackoff), not the generic 200/400/800ms curve (G14)
+//   - 429s arm a SHARED per-client (= per-account) cooldown: one turn's rate-limit discovery
+//     teaches every concurrent turn, which fails fast with 429 instead of independently burning
+//     its own attempts (2026-07-19 storm: ~650 turns x 4 attempts against one limited account)
 package splice.spi
 
 import io.ktor.client.HttpClient
@@ -62,6 +65,12 @@ public class UpstreamClient(
     },
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
+    // Shared rate-limit cooldown (one UpstreamClient per head = per upstream account). Armed by any
+    // attempt that observes a 429; while armed, every post() fails fast with a synthesized 429 and
+    // ZERO upstream calls. Benign write race: concurrent arms only differ by ms; latest-max wins.
+    @Volatile
+    private var rateLimitedUntilMs: Long = 0L
+
     /** The per-post collaborators threaded through every attempt (grouped: one cohesive argument). */
     private data class PostContext(
         val url: String,
@@ -145,6 +154,7 @@ public class UpstreamClient(
             )
             giveUp(state.lastErr)
         }
+        failFastIfRateLimited(ctx, state)
         val creds = ctx.perf.timedOr(PerfKeys.AUTH_MS) { ctx.auth.credentials() } ?: throw UpstreamAuthMissing()
         ctx.perf?.add(PerfKeys.ATTEMPTS, 1)
         var streamHandedOff = false
@@ -244,6 +254,23 @@ public class UpstreamClient(
     private fun giveUp(last: RetryOutcome.Failed?): Nothing =
         throw UpstreamFailed(last?.text.orEmpty(), last?.status)
 
+    /** The cooldown's fail-fast exit: a synthesized 429 (classifier parity with the real one)
+     *  thrown BEFORE credentials/attempt work — an armed cooldown costs microseconds, not an
+     *  upstream request. The remaining wait rides in the message for the operator's grep. A post
+     *  whose own last attempt was the 429 is exempt: its backoff plan governs it (a 3s blip still
+     *  heals silently) — the cooldown protects the herd, not the probe. */
+    private fun failFastIfRateLimited(ctx: PostContext, state: RetryState) {
+        if (state.lastErr?.status == RATE_LIMITED) return
+        val remainingMs = rateLimitedUntilMs - clock()
+        if (remainingMs <= 0) return
+        ctx.onRetry("rate-limit cooldown active (${remainingMs}ms remaining) — failing fast, no upstream attempt")
+        val waitS = (remainingMs + MS_PER_S - 1) / MS_PER_S
+        throw UpstreamFailed(
+            """{"detail":"Rate limit exceeded — gateway cooldown, retry in ${waitS}s"}""",
+            RATE_LIMITED,
+        )
+    }
+
     // A transport error thrown BEFORE stream handoff (DNS/connect/timeout, per isRetryableTransport)
     // retries on the backoff budget; once the stream is handed off, the error is non-transport, or
     // it is the last attempt, rethrow — a retry would duplicate output or mask a real failure —
@@ -334,8 +361,17 @@ public class UpstreamClient(
         attempt: Int,
         nextRefreshed: Boolean,
     ): RetryPlan {
+        // A real 429 teaches the whole head: arm the shared cooldown so concurrent turns fail
+        // fast instead of each burning their own attempts into the same limited account
+        // (latest-max wins; the benign race only shifts the horizon by ms).
+        if (failed.status == RATE_LIMITED) {
+            val until = clock() + (failed.retryAfterMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS)
+            if (until > rateLimitedUntilMs) rateLimitedUntilMs = until
+        }
         // gRPC-A6-style negative pushback: a server explicitly asking us to wait longer than the
-        // interactive budget means "go away", not "hammer me on a curve" — give up honestly.
+        // interactive budget means "go away", not "hammer me on a curve" — give up honestly. The
+        // client owns any wait past 15s (it re-sends on its own backoff; the daemon holding the
+        // slot for a minute is what stacked the 2026-07-19 zombie herd).
         val pushback = failed.retryAfterMs
         if (pushback != null && pushback > RETRY_AFTER_GIVE_UP_MS) {
             ctx.onRetry("upstream ${failed.status} Retry-After ${pushback}ms exceeds interactive budget (no retry)")
@@ -487,7 +523,16 @@ public class UpstreamClient(
 
         private const val MS_PER_S = 1000L
         private const val MAX_BACKOFF_MS = 10_000L
-        private const val RETRY_AFTER_GIVE_UP_MS = 60_000L
+
+        // 60s→15s (2026-07-19 storm): a wait the CLIENT would outlive is the client's to make.
+        // Claude Code abandons + re-sends around 30-60s; a daemon babysitting a >15s pushback
+        // holds a gate slot for a request nobody is waiting on anymore.
+        private const val RETRY_AFTER_GIVE_UP_MS = 15_000L
+
+        // Cooldown length when a 429 carries no Retry-After (the ChatGPT backend's bare
+        // {"detail":"Rate limit exceeded"}). Long enough to starve a herd, short enough that a
+        // recovered account resumes within one client-retry cycle.
+        private const val DEFAULT_RATE_LIMIT_COOLDOWN_MS = 20_000L
         private const val JITTER_LO = 0.9
         private const val JITTER_HI = 1.1
 

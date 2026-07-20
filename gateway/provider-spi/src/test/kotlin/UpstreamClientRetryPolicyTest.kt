@@ -31,12 +31,17 @@ class UpstreamClientRetryPolicyTest {
         val minDelays = mutableListOf<Long>()
     }
 
-    private fun clientOver(engine: MockEngine, capture: Capture = Capture()) = UpstreamClient(
+    private fun clientOver(
+        engine: MockEngine,
+        capture: Capture = Capture(),
+        clock: () -> Long = System::currentTimeMillis,
+    ) = UpstreamClient(
         firstByteTimeoutMs = 5_000,
         totalTimeoutMs = 5_000,
         maxRetries = 3,
         client = HttpClient(engine),
         backoff = { _, minDelayMs -> capture.minDelays.add(minDelayMs) },
+        clock = clock,
     )
 
     private suspend fun postOnce(client: UpstreamClient): String = client.post(
@@ -123,6 +128,51 @@ class UpstreamClientRetryPolicyTest {
         }
         assertEquals("ok", postOnce(clientOver(engine, capture)))
         assertEquals(listOf(0L), capture.minDelays) // no parseable floor — curve alone decides
+    }
+
+    // Shared 429 cooldown (2026-07-19 storm): one post's rate-limit discovery teaches the whole
+    // client — followers fail fast with a synthesized 429 and ZERO upstream calls; the probe that
+    // observed the 429 keeps its own backoff plan (a blip still heals silently).
+    @Test
+    fun `429 arms a shared cooldown - followers fail fast with zero upstream calls`() = runTest {
+        var now = 0L
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            respond("""{"detail":"Rate limit exceeded"}""", HttpStatusCode.TooManyRequests, headersOf())
+        }
+        val client = clientOver(engine, clock = { now })
+        // the probe runs its full own plan (sawRateLimit exemption) and arms the cooldown
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(3, calls.get())
+        // a follower during the cooldown fails fast: 429 body names the cooldown, no upstream call
+        val e = assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(3, calls.get())
+        assertEquals(429, e.status)
+        assertTrue(e.body.contains("cooldown"))
+        // default cooldown (no Retry-After) expires after 20s — traffic is attempted again
+        now += 21_000
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertTrue(calls.get() > 3)
+    }
+
+    @Test
+    fun `retry-after beyond the interactive budget gives up at once and arms its full cooldown`() = runTest {
+        var now = 0L
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            respond("slow down", HttpStatusCode.TooManyRequests, headersOf("Retry-After", "30"))
+        }
+        val client = clientOver(engine, clock = { now })
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(1, calls.get()) // >15s pushback: the probe does not retry
+        now += 25_000 // past the 20s default but inside the served 30s
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(1, calls.get()) // still cooling — no upstream call
+        now += 6_000 // past the 30s Retry-After
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(2, calls.get()) // attempted again
     }
 
     @Test

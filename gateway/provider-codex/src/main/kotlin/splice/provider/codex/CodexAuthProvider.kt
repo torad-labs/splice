@@ -1,4 +1,4 @@
-// PORT-OF: server/src/auth/codex-oauth.mjs runtime half @ 4ca99f7 — cached auth.json read
+// PORT-OF: server/src/auth/codex-oauth.mjs runtime half @ pre-public-port-baseline — cached auth.json read
 // (path+mtime+TTL), single-flight 401 refresh (grant_type=refresh_token, preserves other
 // fields, 0600 write, cache invalidation), masked introspection. Implements the core
 // RefreshableAuthProvider SPI. SEAM: token HTTP POST + clock injected for tests.

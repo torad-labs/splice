@@ -27,6 +27,7 @@ import splice.provider.grok.makeGrokPkce
 import splice.provider.kimi.KimiDeviceIdentity
 import splice.provider.kimi.KimiOAuthEndpoints
 import splice.provider.kimi.kimiAuthJsonFromTokenResponse
+import java.nio.file.Path
 import java.nio.file.Paths
 import java.security.SecureRandom
 import java.time.Instant
@@ -77,8 +78,8 @@ private fun specFor(headKey: String, topology: Topology): LoginSpec? {
         return null
     }
     return when (provider.auth.kind) {
-        "chatgpt-oauth" -> codexSpec(headKey)
-        "grok-oauth" -> grokSpec(headKey)
+        "chatgpt-oauth" -> codexSpec(headKey, provider)
+        "grok-oauth" -> grokSpec(headKey, provider)
         else -> {
             println("splice: head '$headKey' uses ${provider.auth.kind} auth — no browser login for that kind.")
             null
@@ -91,7 +92,7 @@ private fun randomToken(): String {
     return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
 }
 
-private fun codexSpec(head: String): LoginSpec {
+private fun codexSpec(head: String, provider: ProviderConfig): LoginSpec {
     val pkce = makePkce()
     val state = randomToken()
     val clientId = CodexOAuthEndpoints.clientId(env)
@@ -107,7 +108,7 @@ private fun codexSpec(head: String): LoginSpec {
         exchangeForm = { code ->
             codexCodeExchangeForm(code, pkce.verifier, clientId, CodexOAuthEndpoints.REDIRECT_URI)
         },
-        authPath = Paths.get(TopologyLoader.expandHome("~/.codex/auth.json")),
+        authPath = oauthAuthPath(provider, "~/.codex/auth.json"),
         toAuthJson = { body -> codexAuthJson(body) },
     )
 }
@@ -124,7 +125,7 @@ private fun codexAuthJson(body: String): String {
     ).toString()
 }
 
-private fun grokSpec(head: String): LoginSpec {
+private fun grokSpec(head: String, provider: ProviderConfig): LoginSpec {
     val pkce = makeGrokPkce()
     val state = randomToken()
     val nonce = randomToken()
@@ -145,7 +146,7 @@ private fun grokSpec(head: String): LoginSpec {
                 redirectUri = GrokOAuthEndpoints.REDIRECT_URI,
             )
         },
-        authPath = Paths.get(TopologyLoader.expandHome("~/.grok/auth.json")),
+        authPath = oauthAuthPath(provider, "~/.grok/auth.json"),
         toAuthJson = { body ->
             grokAuthJsonFromTokenResponse(
                 body,
@@ -156,6 +157,9 @@ private fun grokSpec(head: String): LoginSpec {
         },
     )
 }
+
+internal fun oauthAuthPath(provider: ProviderConfig, fallback: String): Path =
+    Paths.get(TopologyLoader.expandHome(provider.auth.file ?: fallback))
 
 private fun kimiDeviceSpec(head: String, provider: ProviderConfig): DeviceLoginSpec {
     val authPath = Paths.get(TopologyLoader.expandHome(provider.auth.file ?: "~/.kimi/credentials/kimi-code.json"))

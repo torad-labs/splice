@@ -21,8 +21,25 @@ topology_control_port() {
     }
   ' "$config"
 }
-CONTROL_PORT="${SPLICE_CONTROL_PORT:-$(topology_control_port)}"
+state_control_port() {
+  local state_dir="${CLAUDEX_STATE_DIR:-$HOME/.claude-codex/state}"
+  local config="${state_dir}/config.json"
+  [ -f "$config" ] || return 0
+  python3 -c 'import json, sys
+try:
+    value = json.load(open(sys.argv[1], encoding="utf-8")).get("controlPort")
+    port = int(value)
+    if 0 < port <= 65535:
+        print(port)
+except (OSError, ValueError, TypeError, json.JSONDecodeError):
+    pass' "$config" 2>/dev/null || true
+}
+# Match ConfigService exactly: default < TOML < state/config.json < env aliases.
+CONTROL_PORT="$(topology_control_port)"
 CONTROL_PORT="${CONTROL_PORT:-3096}"
+STATE_CONTROL_PORT="$(state_control_port)"
+CONTROL_PORT="${STATE_CONTROL_PORT:-$CONTROL_PORT}"
+CONTROL_PORT="${SPLICE_CONTROL_PORT:-${CONTROL_PROXY_PORT:-$CONTROL_PORT}}"
 CONTROL="http://127.0.0.1:${CONTROL_PORT}"
 JAR="${SPLICE_JAR:-${SPLICE_SHARE_DIR:-$HOME/.local/share/splice}/splice.jar}"
 # Bounded heap by default (a 1000-stream fleet with unbounded per-stream buffers OOMs the JVM

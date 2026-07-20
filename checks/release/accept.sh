@@ -121,6 +121,69 @@ if [ -n "$EXPECTED_VERSION" ] && [ "$version" != "splice $EXPECTED_VERSION" ]; t
 fi
 rm -rf "$sandbox"
 
+# Exercise the genuine remote-release path without network access. The fake downloader serves
+# the staged assets, while the fake GitHub CLI records which candidates were attested.
+remote_tools="$(mktemp -d)"
+remote_log="$remote_tools/gh.log"
+cat > "$remote_tools/curl" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+cp "$SPLICE_FAKE_RELEASE_ASSETS/$(basename "$2")" "$4"
+SH
+cat > "$remote_tools/gh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$*" >> "$SPLICE_FAKE_GH_LOG"
+SH
+chmod +x "$remote_tools/curl" "$remote_tools/gh"
+sandbox="$(mktemp -d)"
+output="$sandbox/output.log"
+mkdir -p "$sandbox/home" "$sandbox/share" "$sandbox/bin" "$sandbox/work"
+(
+  cd "$sandbox/work"
+  HOME="$sandbox/home" \
+  JAVA_TOOL_OPTIONS="-Duser.home=$sandbox/home" \
+  SPLICE_SHARE_DIR="$sandbox/share" \
+  SPLICE_BIN_DIR="$sandbox/bin" \
+  SPLICE_RELEASE_BASE_URL="https://example.invalid/splice-release" \
+  SPLICE_FAKE_RELEASE_ASSETS="$DIST" \
+  SPLICE_FAKE_GH_LOG="$remote_log" \
+  PATH="$remote_tools:$sandbox/bin:$PATH" \
+    bash -s < "$DIST/install.sh"
+) >"$output" 2>&1 || { cat "$output" >&2; exit 1; }
+[ "$(grep -c '^attestation verify ' "$remote_log")" -eq 2 ] || {
+  echo "release accept: remote install did not attest both release artifacts" >&2
+  cat "$remote_log" >&2
+  exit 1
+}
+grep -q "splice.jar attestation: OK" "$output"
+grep -q "splice-launch attestation: OK" "$output"
+
+# A failed provenance check must abort before the candidate artifacts become live.
+cat > "$remote_tools/gh" <<'SH'
+#!/usr/bin/env bash
+exit 1
+SH
+printf 'previous jar\n' > "$sandbox/share/splice.jar"
+printf 'previous shim\n' > "$sandbox/share/splice-launch"
+if (
+  cd "$sandbox/work"
+  HOME="$sandbox/home" \
+  JAVA_TOOL_OPTIONS="-Duser.home=$sandbox/home" \
+  SPLICE_SHARE_DIR="$sandbox/share" \
+  SPLICE_BIN_DIR="$sandbox/bin" \
+  SPLICE_RELEASE_BASE_URL="https://example.invalid/splice-release" \
+  SPLICE_FAKE_RELEASE_ASSETS="$DIST" \
+  PATH="$remote_tools:$sandbox/bin:$PATH" \
+    bash -s < "$DIST/install.sh"
+) >"$output" 2>&1; then
+  echo "release accept: failed provenance verification unexpectedly installed" >&2
+  exit 1
+fi
+[ "$(cat "$sandbox/share/splice.jar")" = "previous jar" ]
+[ "$(cat "$sandbox/share/splice-launch")" = "previous shim" ]
+rm -rf "$remote_tools" "$sandbox"
+
 bad_sum="$(mktemp -d)"
 cp -a "$DIST/." "$bad_sum/"
 printf '\ncorrupt\n' >> "$bad_sum/splice.jar"

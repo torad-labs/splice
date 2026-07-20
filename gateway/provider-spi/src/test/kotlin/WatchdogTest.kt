@@ -1,4 +1,4 @@
-// PORT-OF: the v35 watchdog pins from server/test/codex-proxy.test.mjs @ 4ca99f7 — the
+// PORT-OF: the v35 watchdog pins from server/test/codex-proxy.test.mjs @ pre-public-port-baseline — the
 // slow-prefill regression (silent LONGER than streamIdle but shorter than firstByteTimeout
 // must NOT be reaped before the first byte), idle-after-first-byte reaped, total cap reaped,
 // typed sentinel set before cancel. Real clocks with generous margins (the poller sleeps).

@@ -1,4 +1,4 @@
-// PORT-OF: server/src/codex/errors.mjs @ 4ca99f7 — invariants: ONE classifier for BOTH
+// PORT-OF: server/src/codex/errors.mjs @ pre-public-port-baseline — invariants: ONE classifier for BOTH
 // transports (v29 had two and SSE overflows became raw api_error, so Claude Code hard-errored
 // instead of compacting); REGEX ORDER IS THE SPEC — overflow FIRST (v29 tested auth first and
 // "too many tokens" classified as authentication_error), auth regex never matches the bare
@@ -62,8 +62,9 @@ public object UpstreamFailureClassifier {
                 ?: ""
         }
         if (parsed.isFailure && gatewayHtmlRe.containsMatchIn(message)) {
+            val type = if (status == BAD_GATEWAY) ErrorType.OVERLOADED else ErrorType.API_ERROR
             return ExtractResult.Gateway(
-                ClassifiedFailure(ErrorType.API_ERROR, "ChatGPT backend $status (gateway)"),
+                ClassifiedFailure(type, "ChatGPT backend $status (gateway)"),
             )
         }
         return ExtractResult.Fields(message, code)
@@ -79,6 +80,8 @@ public object UpstreamFailureClassifier {
                 ClassifiedFailure(ErrorType.RATE_LIMIT, msg.take(MAX_MESSAGE))
             status == AUTH_STATUS || authRe.containsMatchIn(blob) ->
                 ClassifiedFailure(ErrorType.AUTHENTICATION, msg.take(MAX_MESSAGE))
+            status == BAD_GATEWAY ->
+                ClassifiedFailure(ErrorType.OVERLOADED, msg.take(MAX_MESSAGE))
             else -> statusFallback(status, msg)
         }
     }

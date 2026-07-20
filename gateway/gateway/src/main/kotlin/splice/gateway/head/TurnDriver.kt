@@ -563,6 +563,8 @@ private inline fun <R> catchingTurnFailure(block: () -> R): Result<R> =
         Result.failure(e)
     } catch (e: UpstreamFailed) {
         Result.failure(e)
+    } catch (e: SseFrameTooLargeException) {
+        Result.failure(e)
     } catch (e: IOException) {
         Result.failure(e)
     } catch (e: CancellationException) {

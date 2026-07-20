@@ -30,7 +30,7 @@ internal fun init(env: (String) -> String? = System::getenv) {
     println(if (existed) "splice: topology already at $path" else "splice: wrote starter topology to $path")
 }
 
-internal fun install(headArg: String?, env: (String) -> String? = System::getenv) {
+internal fun install(headArg: String?, env: (String) -> String? = System::getenv): Boolean {
     val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath(env))
     val launchShim = launchShimPath(env)
     check(Files.exists(launchShim)) { "launch shim not found at $launchShim (run install.sh)" }
@@ -43,7 +43,7 @@ internal fun install(headArg: String?, env: (String) -> String? = System::getenv
     }
     if (heads.isEmpty()) {
         println("splice: no matching head '$headArg' in the topology")
-        return
+        return false
     }
     val requested = heads.map { (key, head) -> key to (head.claude.command ?: key) }
     val commands = requested.map { it.second } + SELF_COMMAND
@@ -55,15 +55,17 @@ internal fun install(headArg: String?, env: (String) -> String? = System::getenv
     requested.forEach { (key, command) -> linkOne(bin, key, command, launchShim) }
     linkOne(bin, SELF_COMMAND, SELF_COMMAND, launchShim)
     println("splice: ensure $bin is on your PATH to use the wrappers")
+    return true
 }
 
 /** Link the `splice` admin command itself (so `splice dashboard/status/...` work as commands). */
-internal fun installSelf(env: (String) -> String? = System::getenv) {
+internal fun installSelf(env: (String) -> String? = System::getenv): Boolean {
     val launchShim = launchShimPath(env)
     check(Files.exists(launchShim)) { "launch shim not found at $launchShim (run install.sh)" }
     val bin = localBin(env)
     Files.createDirectories(bin)
     linkOne(bin, SELF_COMMAND, SELF_COMMAND, launchShim)
+    return true
 }
 
 private fun linkOne(bin: Path, headKey: String, command: String, launchShim: Path) {
@@ -92,11 +94,14 @@ private fun requireReplaceableLink(link: Path) {
     }
 }
 
-internal fun uninstall(headArg: String?, env: (String) -> String? = System::getenv) {
+internal fun uninstall(headArg: String?, env: (String) -> String? = System::getenv): Boolean {
     val topology = runCatching { TopologyLoader.parse(Files.readString(TopologyLoader.configPath(env))) }.getOrNull()
-    val commands = topology?.heads?.filterKeys { headArg == null || headArg == "--all" || it == headArg }
+    val removeAll = headArg == null || headArg == "--all"
+    val headCommands = topology?.heads?.filterKeys { removeAll || it == headArg }
         ?.map { (k, h) -> h.claude.command ?: k } ?: listOfNotNull(headArg)
+    val commands = (headCommands + if (removeAll) listOf(SELF_COMMAND) else emptyList()).distinct()
     val bin = localBin(env)
+    var ok = true
     for (command in commands) {
         val link = bin.resolve(command)
         runCatchingCancellable {
@@ -105,9 +110,11 @@ internal fun uninstall(headArg: String?, env: (String) -> String? = System::gete
                 println("splice: removed '$command'")
             }
         }.onFailure { e ->
+            ok = false
             println("splice: failed to remove $command: ${e.message}")
         }
     }
+    return ok
 }
 
 /** Copy the repo's launch shim into the share dir (used by install.sh / dev). */

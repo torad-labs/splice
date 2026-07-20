@@ -1,4 +1,4 @@
-// PORT-OF: server/test/errors.test.mjs @ 4ca99f7 — the ordered cascade: overflow BEFORE auth
+// PORT-OF: server/test/errors.test.mjs @ pre-public-port-baseline — the ordered cascade: overflow BEFORE auth
 // ("too many tokens" must never classify as auth — the v29 bug), rate/auth/5xx/4xx/fallback,
 // HTTP json extraction + html gateway branch, SSE parity, 502->529 remap, 2000-char cap.
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -64,10 +64,15 @@ class UpstreamFailureClassifierTest {
     }
 
     @Test
-    fun `html gateway body becomes api_error with status`() {
+    fun `html bad gateway body becomes retryable overloaded with status`() {
         val r = http("<html><body>Bad gateway</body></html>", 502)
-        assertEquals(ErrorType.API_ERROR, r.type)
+        assertEquals(ErrorType.OVERLOADED, r.type)
         assertTrue(r.message.contains("502"))
+    }
+
+    @Test
+    fun `structured 502 is retryable overloaded`() {
+        assertEquals(ErrorType.OVERLOADED, http("""{"error":{"message":"temporary"}}""", 502).type)
     }
 
     @Test

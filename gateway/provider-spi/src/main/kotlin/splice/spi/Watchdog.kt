@@ -1,4 +1,4 @@
-// PORT-OF: server/src/codex/stream.mjs idle-watchdog block @ 4ca99f7 — invariants (the v35
+// PORT-OF: server/src/codex/stream.mjs idle-watchdog block @ pre-public-port-baseline — invariants (the v35
 // headline fix IS the spec): BEFORE the first byte the idle limit is firstByteTimeout — a
 // big-context prefill (compaction re-reading ~160k tokens) is legitimately silent for
 // minutes; reaping prefill on streamIdle caused the abort->retry->cold-re-read loop

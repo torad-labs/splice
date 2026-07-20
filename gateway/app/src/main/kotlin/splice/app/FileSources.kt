@@ -8,6 +8,7 @@ import splice.control.HeadLogSource
 import splice.control.HeadPerfSource
 import splice.control.HeadUsageSource
 import splice.control.RateLimitView
+import splice.control.UsageView
 import splice.core.util.JsonlSink
 import splice.core.util.runCatchingCancellable
 import splice.gateway.compact.CompactStats
@@ -17,11 +18,13 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 public class UsageStoreSource(private val store: UsageStore) : HeadUsageSource {
-    private val state get() = store.readState()
-    override fun outputTokens5h(): Long = state.outputTokens5h
-    override fun entries(): Int = state.entries
-    override fun ratelimit(): RateLimitView? =
-        store.readRateLimit()?.let { RateLimitView(it.limitTokens, it.remainingTokens, it.resetTokens) }
+    override fun snapshot(): UsageView {
+        val state = store.readState()
+        val ratelimit = store.readRateLimit()?.let {
+            RateLimitView(it.limitTokens, it.remainingTokens, it.resetTokens)
+        }
+        return UsageView(state.outputTokens5h, state.entries, ratelimit)
+    }
 }
 
 public class CompactStatsSource(private val stats: CompactStats) : HeadCompactSource {

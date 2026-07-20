@@ -183,6 +183,7 @@ class MultiProviderDaemonTest {
     fun `the openrouter head was wired as openai-chat - its turn hits the chat upstream with its api key`() = runBlocking {
         val sse = client.post("http://127.0.0.1:$chatPort/v1/messages") {
             header("Content-Type", "application/json")
+            header("Authorization", "Bearer $key")
             setBody(
                 """{"model":"claude-openrouter--meta/llama-4","stream":true,"max_tokens":100,
                     "messages":[{"role":"user","content":"hi"}]}""",
@@ -197,6 +198,7 @@ class MultiProviderDaemonTest {
     fun `the grok head was wired with api-key auth against the responses dialect`() = runBlocking {
         val sse = client.post("http://127.0.0.1:$grokPort/v1/messages") {
             header("Content-Type", "application/json")
+            header("Authorization", "Bearer $key")
             header("x-claude-code-session-id", "sess-daemon")
             setBody(
                 """{"model":"claude-grok--grok-4.5","stream":true,

@@ -6,6 +6,8 @@ package grok
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
@@ -52,7 +54,9 @@ import kotlin.time.Duration.Companion.seconds
 class GrokProviderTest {
 
     private val mock = MockChatGptUpstream()
-    private val client = HttpClient(CIO)
+    private val client = HttpClient(CIO) {
+        defaultRequest { bearerAuth("test-inference-token") }
+    }
     private val port = freshPort()
     private lateinit var head: HeadServer
     private lateinit var tmp: Path
@@ -101,6 +105,7 @@ class GrokProviderTest {
             listenPort = port,
             deps = HeadDeps(
                 upstream = UpstreamClient(5_000, 30_000, 2),
+                inferenceToken = "test-inference-token",
                 gate = InflightGate({ 0 }),
                 shadow = ShadowClassifier(log = {}),
                 compactStats = CompactStats(tmp.resolve("c.jsonl")),

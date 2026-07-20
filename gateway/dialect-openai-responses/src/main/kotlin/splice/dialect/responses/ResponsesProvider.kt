@@ -79,8 +79,15 @@ public abstract class ResponsesProvider(
             StreamTurnContext(
                 compact = meta.compact,
                 // STREAM-side emission of redacted_thinking wire blocks (so Claude Code stores the
-                // handle). Distinct from BuildOptions.replayReasoning (input injection).
-                emitEncryptedReasoning = EmitEncryptedReasoning(showOn()),
+                // handle for the NEXT turn's replay). COUPLED to replayReasoning (2026-07-20): a
+                // handle the gateway will never inject back is pure cost — each redacted_thinking
+                // block is a content_block_start with NO thinking_delta, which Claude Code renders as
+                // a permanent empty "✳ Thinking…" spinner; a deep turn emits dozens (the "walls of
+                // Thinking" report). With replay OFF (default) the whole transcript-replay loop is off
+                // end-to-end: no empty spinners, and reasoning is re-derived fresh (deeper) each turn.
+                // The live summary thinking blocks (reasoning_summary_text deltas) are a SEPARATE path
+                // and still display. Fold's own intra-turn reasoning replay is independent of this.
+                emitEncryptedReasoning = EmitEncryptedReasoning(showOn() && replayReasoning),
                 encodeReasoningEnvelope = { encodeReasoningEnvelope(it) },
                 clientGone = signals.clientGone,
                 watchdogFired = signals.watchdogFired,

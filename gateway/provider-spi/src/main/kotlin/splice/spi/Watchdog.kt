@@ -41,6 +41,15 @@ public class TurnWatchdog(
         sawFirstByte.set(true)
     }
 
+    /** Reasoning-continuation fold: each round is a fresh upstream POST whose prefill can be silent
+     *  for minutes. The watchdog is shared across rounds (totalCap must span the whole turn), but the
+     *  idle TIER must reset per round — otherwise round 1's first byte pins every later round to the
+     *  short streamIdle cap instead of firstByteTimeout, wrongly aborting a slow continuation prefill.
+     *  Only the first-byte tier resets; startedAt/totalCap are untouched. */
+    public fun resetFirstByte() {
+        sawFirstByte.set(false)
+    }
+
     public fun pollInterval(): Duration {
         val third = budget.streamIdle.inWholeMilliseconds / IDLE_DIVISOR
         return third.coerceIn(MIN_POLL_MS, MAX_POLL_MS).milliseconds

@@ -65,10 +65,14 @@ public data class ResponsesQuirks(
     val summaryRejectModelRegex: Regex? = Regex("spark", RegexOption.IGNORE_CASE),
     /** gpt-5.4-mini's ceiling is xhigh — the backend 400s effort=max on it (observed 2026-07-19). */
     val effortMaxRejectModelRegex: Regex? = Regex("mini", RegexOption.IGNORE_CASE),
-    /** codex-rs parity (read from source 2026-07-19): the gpt-5.6 family is served "responses-lite"
-     *  with parallel_tool_calls FORCED false. Splice omitting the field left the backend default
-     *  (parallel ON) governing — a sequential-tool model spraying 30-50 parallel Task calls. */
-    val sequentialToolCallsModelRegex: Regex? = Regex("gpt-5\\.6", RegexOption.IGNORE_CASE),
+    /** codex-rs parity (read from source 2026-07-19): the gpt-5.6 family is served "responses-lite".
+     *  Lite turns (non-compact): instructions ride as a developer input item (top-level field
+     *  omitted), tools ride as an additional_tools input item (top-level field omitted),
+     *  parallel_tool_calls is FORCED false (splice omitting it left the backend default parallel ON
+     *  — a sequential-tool model spraying 30-50 parallel Task calls), reasoning.context=all_turns,
+     *  and the x-openai-internal-codex-responses-lite header rides. Shape accepted by the live
+     *  backend (direct probe 2026-07-19: 200, correct tool call). */
+    val responsesLiteModelRegex: Regex? = Regex("gpt-5\\.6", RegexOption.IGNORE_CASE),
     val compactEffortPin: String? = null, // null = inherit session effort (the cache law)
     val emitToolChoice: Boolean = false,
     val emitStrict: Boolean = false,
@@ -183,17 +187,18 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         val emitToolChoice = tools != null && quirks.emitToolChoice
         val include =
             if (!opts.compact && opts.includeEncryptedReasoning.v) listOf(ENCRYPTED_CONTENT_INCLUDE) else null
+        val shape = wireShape(quirks.isLite(opts), input, instructions, tools)
         val dto = ResponsesRequest(
             model = opts.upstreamModel,
-            input = input,
+            input = shape.input,
             store = quirks.store,
             stream = true,
             include = include,
             promptCacheKey = cacheKey(body, opts),
-            instructions = instructions,
-            tools = tools,
+            instructions = shape.instructions,
+            tools = shape.tools,
             toolChoice = if (emitToolChoice) toolChoice(body) else null,
-            parallelToolCalls = parallelToolCallsFor(tools, emitToolChoice, body, opts),
+            parallelToolCalls = parallelToolCallsFor(emitToolChoice, body, opts),
             reasoning = reasoning,
             streamOptions = summaryDeliveryOptions(reasoning),
         )
@@ -240,13 +245,13 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
      *  their own CLI forces it (responses-lite). Wins over the grok-style toolChoice negotiation;
      *  null = omit the field (backend default). */
     private fun parallelToolCallsFor(
-        tools: JsonArray?,
         emitToolChoice: Boolean,
         body: AnthropicRequest,
         opts: BuildOptions,
     ): Boolean? = when {
-        tools != null &&
-            quirks.sequentialToolCallsModelRegex?.containsMatchIn(opts.upstreamModel) == true -> false
+        // Unconditional on lite turns — codex-rs sends the field always, and the backend 400s a
+        // lite-header request without an explicit false (live error 2026-07-19, toolless turn).
+        quirks.isLite(opts) -> false
         emitToolChoice -> body.toolChoice?.disableParallelToolUse != true
         else -> null
     }
@@ -341,6 +346,8 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         return buildJsonObject {
             put(FIELD_EFFORT, effort)
             if (!dropSummary) put(FIELD_SUMMARY, summary)
+            // codex-rs lite parity: reasoning context spans the session, not just the current turn.
+            if (quirks.isLite(opts)) put("context", "all_turns")
         }
     }
 }

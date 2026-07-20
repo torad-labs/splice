@@ -1,4 +1,4 @@
-// PORT-OF: server/src/codex/translate-response.mjs helpers @ 4ca99f7 — invariants (L4): promote
+// PORT-OF: server/src/codex/translate-response.mjs helpers @ pre-public-port-baseline — invariants (L4): promote
 // only ever promotes MODEL content; "no model text returned" is weak; reasoning summary parts
 // join as paragraphs ('\n\n'); harvest reads the terminal Responses object when SSE deltas were
 // sparse. ONE implementation for every Responses provider (grok's Node copies were

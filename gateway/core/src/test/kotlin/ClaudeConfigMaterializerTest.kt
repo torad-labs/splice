@@ -1,4 +1,4 @@
-// PORT-OF: server/test/launcher.test.mjs prepareClaudexConfig pins @ 4ca99f7 — refuses outside
+// PORT-OF: server/test/launcher.test.mjs prepareClaudexConfig pins @ pre-public-port-baseline — refuses outside
 // .claude*, settings is a REAL merged file (never a symlink), availableModels + enforce +
 // preserved-allowed-model + statusline, shared items symlinked, a real operator DIRECTORY never
 // deleted, .claude.json gets modelOptionsCache + MCP inherit + PORT_KEYS + onboarding, isolate

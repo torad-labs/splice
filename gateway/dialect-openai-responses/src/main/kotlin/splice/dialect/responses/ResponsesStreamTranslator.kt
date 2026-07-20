@@ -1,4 +1,4 @@
-// PORT-OF: server/src/codex/stream.mjs runStreamTurn @ 4ca99f7, event-for-event — its comments
+// PORT-OF: server/src/codex/stream.mjs runStreamTurn @ pre-public-port-baseline, event-for-event — its comments
 // are the spec; every rule below pins a shipped bug:
 //   - tool_use opens EAGERLY on output_item.added; text/reasoning open LAZILY on first delta
 //     (empty thinking widgets otherwise);

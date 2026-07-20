@@ -23,10 +23,3 @@ export async function refreshAuth(head: string): Promise<AuthActionResult> {
   await fetchAuth();
   return result;
 }
-
-/** POST /api/auth/:head/login — codex only; spawns the browser OAuth flow. */
-export async function loginAuth(head: string): Promise<AuthActionResult> {
-  const result = await control.loginAuth(head);
-  await fetchAuth();
-  return result;
-}

@@ -1,4 +1,4 @@
-// PORT-OF: usage pins from server/test/{control-server,codex-proxy}.test.mjs @ 4ca99f7 —
+// PORT-OF: usage pins from server/test/{control-server,codex-proxy}.test.mjs @ pre-public-port-baseline —
 // warn table (ratelimit priority, critical bounds, tokens5h fallback, none), payload aliases
 // + non-standard context fields, output clamp with exact log line, 5h window pruning,
 // ratelimit header parsing.

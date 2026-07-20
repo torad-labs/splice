@@ -12,7 +12,7 @@ export function RefreshAuth({ head }: { head: string }) {
     setOutcome(null);
     try {
       const result = await refreshAuth(head);
-      setOutcome(result.refreshed ? 'token refreshed' : 'refresh did not produce a new token');
+      setOutcome(result.ok ? 'token refreshed' : (result.note ?? 'refresh did not produce a new token'));
     } catch (err) {
       setOutcome(err instanceof Error ? err.message : String(err));
     } finally {

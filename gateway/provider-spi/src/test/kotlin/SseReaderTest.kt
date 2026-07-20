@@ -1,4 +1,4 @@
-// PORT-OF: the sseEvents pins from server/test/codex-proxy.test.mjs @ 4ca99f7 — UTF-8 split
+// PORT-OF: the sseEvents pins from server/test/codex-proxy.test.mjs @ pre-public-port-baseline — UTF-8 split
 // across chunk boundaries, partial-line carry, [DONE]/empty/malformed skip, CRLF tolerance,
 // onBytes touch per raw read.
 import io.ktor.utils.io.ByteChannel

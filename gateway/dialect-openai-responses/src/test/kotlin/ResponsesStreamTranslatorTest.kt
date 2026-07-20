@@ -1,4 +1,4 @@
-// PORT-OF: the stream-machine pins from server/test/codex-proxy.test.mjs @ 4ca99f7 at unit
+// PORT-OF: the stream-machine pins from server/test/codex-proxy.test.mjs @ pre-public-port-baseline at unit
 // level — multipart one-block joins, lazy/eager opens, args routing, failure capture with
 // continued reading, truncated vs client-gone, watchdog outcome, harvest merge, replay
 // in-position, usage extraction.

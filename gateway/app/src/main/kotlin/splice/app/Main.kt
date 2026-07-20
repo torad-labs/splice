@@ -16,6 +16,7 @@ import java.nio.file.StandardOpenOption.CREATE
 import java.security.Security
 import java.time.LocalTime
 import java.time.temporal.ChronoUnit
+import kotlin.system.exitProcess
 
 public fun main(args: Array<String>) {
     // Kill JVM negative-DNS caching BEFORE any lookup (kimi 07:00 burst, 2026-07-18): the JVM
@@ -30,7 +31,7 @@ public fun main(args: Array<String>) {
     Security.setProperty("networkaddress.cache.ttl", "30")
     when (args.firstOrNull()) {
         null, "daemon", "start" -> runDaemon()
-        else -> splice.app.cli.runCli(args)
+        else -> exitProcess(splice.app.cli.runCli(args))
     }
 }
 

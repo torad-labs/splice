@@ -29,9 +29,12 @@ terms.
 `vite-plugin-singlefile`); the runtime packages below are compiled into it. Enumerated from
 `webui/package.json` `dependencies`:
 
-- react ^19.0.0 — MIT
-- react-dom ^19.0.0 — MIT
-- zustand ^5.0.3 — MIT
+- react 19.2.7 — MIT
+  - Copyright (c) Meta Platforms, Inc. and affiliates.
+- react-dom 19.2.7 — MIT
+  - Copyright (c) Meta Platforms, Inc. and affiliates.
+- zustand 5.0.14 — MIT
+  - Copyright (c) 2019 Paul Henschel
 
 Because the bundle is a single minified file, per-package license banners are not
 individually preserved inline; this notices file is the record of what is bundled and

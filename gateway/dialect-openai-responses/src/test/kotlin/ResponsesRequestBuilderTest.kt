@@ -1,4 +1,4 @@
-// PORT-OF: buildRequest pins from server/test/codex-proxy.test.mjs @ 4ca99f7 — effort
+// PORT-OF: buildRequest pins from server/test/codex-proxy.test.mjs @ pre-public-port-baseline — effort
 // precedence (v27), visibility floor semantics, spark summary quirk, compact stripping +
 // instruction forcing + same-model/effort inheritance, cache-key stability, tool mapping,
 // replay gating, grok ladder clamps, purity/determinism.

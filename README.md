@@ -29,6 +29,9 @@ Long coding-agent sessions bleed tokens and lose the thread. splice goes after b
 - **Python 3** — the launch shim uses it to parse the daemon's JSON launch recipe.
 - **curl** — the launch shim's health check and control-plane calls.
 - **bash** — the launch shim (`bin/splice-launch`) and `install.sh`.
+- **GitHub CLI (`gh`)** — required when `install.sh` downloads a GitHub Release, so both
+  release artifacts can be verified against their build-provenance attestations. Building
+  from a checkout does not require it.
 - **Claude Code on PATH** — splice wraps it; the `claude` binary must resolve.
 
 ## Quick start

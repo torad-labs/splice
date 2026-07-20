@@ -2,7 +2,7 @@
 // /api/* JSON through the field names declared in webui/src/shared/api/index.ts. This test boots
 // the ControlServer with a stub head and asserts every declared field is present in the daemon's
 // actual JSON — so a rename in the Kotlin payload builders breaks THIS test, not the dashboard at
-// runtime. Field sets are transcribed from index.ts @ 4ca99f7 (the comment is the source of
+// runtime. Field sets are transcribed from index.ts @ pre-public-port-baseline (the comment is the source of
 // truth; a drift shows up as a failing assertion here). Manual click-through stays operator work;
 // this pins the SHAPE contract automatically.
 package splice.control
@@ -63,13 +63,15 @@ class WebuiContractTest {
                     AuthDescription(true, "chatgpt-oauth", mapOf("account_id_masked" to "acct…5678"))
             },
             usage = object : HeadUsageSource {
-                override fun outputTokens5h() = 0L
-                override fun entries() = 1
-                override fun ratelimit() = RateLimitView(1000, 100, "6m0s")
+                override fun snapshot() = UsageView(0L, 1, RateLimitView(1000, 100, "6m0s"))
             },
             compact = object : HeadCompactSource {
                 override fun summary(tailN: Int) =
-                    CompactView(1, mapOf("model_text" to 1), listOf(mapOf("outcome" to "model_text")))
+                    CompactView(
+                        1,
+                        mapOf("model_text" to 1),
+                        listOf(mapOf("ts" to "1000", "outcome" to "model_text", "chars" to "42", "ms" to "12")),
+                    )
             },
             logs = object : HeadLogSource {
                 override fun tail(lines: Int) = "[codex] line one\n[codex] line two\n"
@@ -132,7 +134,7 @@ class WebuiContractTest {
         assertFields(payload, listOf("effective", "layers", "restart_required_keys"), "ConfigPayload")
         assertFields(
             payload["layers"]!!.jsonObject,
-            listOf("defaults", "file", "env", "runtime"),
+            listOf("defaults", "toml", "file", "env", "runtime"),
             "ConfigPayload.layers",
         )
     }
@@ -150,6 +152,13 @@ class WebuiContractTest {
     fun `compact payload matches CompactPayload plus CompactRow`() = runBlocking {
         val payload = api("/api/compact")
         assertFields(payload, listOf("stats"), "CompactPayload")
+        val stats = payload["stats"]!!.jsonObject
+        assertFields(stats, listOf("total", "by_outcome", "tail"), "CompactPayload.stats")
+        assertFields(
+            stats["tail"]!!.jsonArray.first().jsonObject,
+            listOf("head", "ts", "outcome", "chars", "ms"),
+            "CompactRow",
+        )
     }
 
     @Test

@@ -1,4 +1,4 @@
-// PORT-OF: server/src/upstream/gate.mjs contract @ 4ca99f7 + the recorded strict improvement:
+// PORT-OF: server/src/upstream/gate.mjs contract @ pre-public-port-baseline + the recorded strict improvement:
 // FIFO order, 0 = unlimited, hot-resize takes effect for queued waiters, cancel-while-queued
 // frees the spot (Node had no such path), release idempotence, snapshot shape.
 // G21: the queue itself is boundable via maxQueued (0 = unlimited, default-preserving) —

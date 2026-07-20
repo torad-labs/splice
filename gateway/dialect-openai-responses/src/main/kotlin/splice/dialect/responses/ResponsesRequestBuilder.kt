@@ -23,6 +23,7 @@
 //     > config/env fallback > high; visibility floor when showReasoning != off never RAISES
 //     a deliberate pick, only floors none/minimal -> low and folds summary to detailed;
 //   - spark rejects reasoning.summary (openai/codex#31846) — omitted via quirk regex;
+//   - gpt-5.4-mini caps effort at xhigh — the backend 400s effort=max, clamped via quirk regex;
 //   - ChatGPT backend rejects token-limit params: max_output_tokens is NEVER sent; the clamp
 //     applies to REPORTED usage (P3-USE).
 
@@ -62,6 +63,8 @@ public data class ResponsesQuirks(
     val effortLadder: EffortLadder = EffortLadder.CODEX,
     val supportsSummary: Boolean = true,
     val summaryRejectModelRegex: Regex? = Regex("spark", RegexOption.IGNORE_CASE),
+    /** gpt-5.4-mini's ceiling is xhigh — the backend 400s effort=max on it (observed 2026-07-19). */
+    val effortMaxRejectModelRegex: Regex? = Regex("mini", RegexOption.IGNORE_CASE),
     val compactEffortPin: String? = null, // null = inherit session effort (the cache law)
     val emitToolChoice: Boolean = false,
     val emitStrict: Boolean = false,
@@ -267,7 +270,8 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
             effort = budgetEffort ?: normalizeEffort(opts.configEffort, quirks.effortLadder) ?: "high"
         }
         effort = flooredForVisibility(effort, opts.showReasoning)
-        return flooredForGrok(effort, quirks.effortLadder)
+        effort = flooredForGrok(effort, quirks.effortLadder)
+        return clampedForModelCeiling(effort, opts.upstreamModel, quirks.effortMaxRejectModelRegex)
     }
 
     // NB: `as? JsonObject` NOT `?.jsonObject` — the latter THROWS on a non-object (e.g. a client
@@ -338,6 +342,12 @@ private fun flooredForVisibility(effort: String?, showReasoning: ReasoningDispla
 private fun flooredForGrok(effort: String?, ladder: EffortLadder): String? {
     if (ladder != EffortLadder.GROK) return effort
     return effort?.takeIf { it in GROK_EFFORTS } ?: "low"
+}
+
+/** Per-model effort ceiling: models matching the quirk regex reject effort=max — clamp to xhigh. */
+private fun clampedForModelCeiling(effort: String?, upstreamModel: String, rejectMax: Regex?): String? {
+    if (effort != "max" || rejectMax?.containsMatchIn(upstreamModel) != true) return effort
+    return EFFORT_XHIGH
 }
 
 /**

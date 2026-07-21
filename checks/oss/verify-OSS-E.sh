@@ -4,5 +4,6 @@ set -euo pipefail
 ! grep -q "bin/claudex login" README.md
 grep -qi "not affiliated" README.md
 grep -q "splice-launch" README.md
-grep -qi "experimental" README.md
+grep -qi "at your own risk" README.md
+grep -qi "unofficial" README.md
 echo "VERIFY OSS-E: OK"

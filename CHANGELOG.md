@@ -64,6 +64,10 @@
 
 ### Changed
 
+- The ChatGPT, Grok, and Kimi subscription routes are now presented as what they are: the
+  primary routes splice was built for — unofficial, at your own risk — rather than
+  "experimental" afterthoughts. The API-key routes remain the zero-config starter. The
+  OSS posture check now pins the risk language instead of the word "experimental".
 - Public reasoning language now describes provider-generated summaries without implying access to
   raw, private, or exact chain-of-thought.
 - Reasoning replay now ships off. Measurement showed that replay encouraged reuse of thin prior

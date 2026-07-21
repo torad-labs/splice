@@ -22,30 +22,75 @@ Long coding-agent sessions bleed tokens and lose the thread. splice goes after b
 - **Reasoning continuity is load-bearing.** The mirror preserves the provider-generated readable reasoning summary in the transcript, so the agent — and you — can inspect the summary and carry that context through later turns and compaction. It is not raw, private, or exact chain-of-thought.
 - **One instrument panel for the fleet.** The daemon serves a single dashboard over every head: live status, start/stop/restart, layered config with provenance, per-head 5-hour usage soft-warnings, auth, and logs.
 
-## Prerequisites
+## Requirements
 
-- **Node 24** — Claude Code's own runtime (`claude` must be on your PATH).
-- **Java 21** — the spliced daemon ships as a fat jar and runs on the JVM.
-- **Python 3** — the launch shim uses it to parse the daemon's JSON launch recipe.
-- **curl** — the launch shim's health check and control-plane calls.
-- **bash** — the launch shim (`bin/splice-launch`) and `install.sh`.
-- **GitHub CLI (`gh`)** — required when `install.sh` downloads a GitHub Release, so both
-  release artifacts can be verified against their build-provenance attestations. Building
-  from a checkout does not require it.
-- **Claude Code on PATH** — splice wraps it; the `claude` binary must resolve.
+**Platforms:** Linux and macOS natively; **Windows via WSL2** (run `wsl --install` in PowerShell
+once, then do everything below inside the WSL shell — it behaves exactly like Linux). Native
+Windows shells are refused by the installer with the same guidance: the launch shim and daemon
+are Unix programs.
 
-## Quick start
+| Dependency | Why | If missing |
+| --- | --- | --- |
+| **Java 21+** | the spliced daemon ships as a fat jar | `apt install openjdk-21-jre-headless` · `brew install --cask temurin@21` · [adoptium.net](https://adoptium.net) |
+| **Node 24** | Claude Code's own runtime | [nodejs.org](https://nodejs.org) or `nvm install 24` |
+| **Claude Code** | splice wraps it — `claude` must resolve on PATH | `npm install -g @anthropic-ai/claude-code` |
+| **Python 3** | the launch shim parses the daemon's JSON launch recipe | `apt install python3` · preinstalled on macOS |
+| **curl** + **bash** | the launch shim and installer | preinstalled almost everywhere |
+| **GitHub CLI, authenticated** | release installs verify build-provenance attestations via the GitHub API | `gh auth login` once ([cli.github.com](https://cli.github.com)); building from a checkout does not need it |
+
+You don't have to pre-check any of this: `install.sh` verifies every dependency up front, prints
+the exact fix for your machine's package manager, and — on an interactive terminal — offers to
+run each fix for you (always with consent). `splice doctor` re-verifies everything at any time.
+
+## Install
+
+**Option 1 — one-liner (release install).** Verifies checksums *and* GitHub build-provenance
+attestations before anything goes live, so authenticate `gh` once first:
+
+```bash
+gh auth login   # once
+curl -fsSL https://github.com/torad-labs/splice/releases/latest/download/install.sh | bash
+```
+
+**Option 2 — from source** (no `gh` needed):
 
 ```bash
 git clone https://github.com/torad-labs/splice.git
 cd splice
-./install.sh                      # build/fetch the jar and install the shared launcher
+./install.sh
+```
+
+**Option 3 — let your agent do it.** Just give this prompt to your favorite agent (Claude Code,
+or any coding agent with shell access) to install it:
+
+```text
+Install splice (https://github.com/torad-labs/splice) on this machine and verify it works:
+1. Check prerequisites: bash, curl, python3, Java 21+, Node 24, and Claude Code
+   (`claude` on PATH). Install anything missing with this machine's package manager —
+   show me each install command and ask before running it.
+2. Install from source: `git clone https://github.com/torad-labs/splice && cd splice
+   && ./install.sh` (or, if `gh auth status` shows I'm authenticated, use the release
+   one-liner from the README instead).
+3. Make sure ~/.local/bin is on my PATH (add it to my shell rc if not).
+4. Ask me for an OpenRouter API key (I can create one at https://openrouter.ai/keys),
+   export it as OPENROUTER_API_KEY, then run `splice setup`.
+5. Run `splice doctor` and fix anything it flags — every failing check prints its own
+   fix command. Repeat until it reports no blockers.
+6. Tell me it's ready and that `claudeor` launches Claude Code through OpenRouter.
+```
+
+The agent can drive the whole loop because `splice doctor` names the exact fix for every failing
+check — the same feedback loop a human uses.
+
+## Quick start
+
+```bash
 export OPENROUTER_API_KEY="…"     # vendor-issued pay-per-token API key
 splice setup                      # write the supported API-key starter and install wrappers
 claudeor                          # Claude Code through OpenRouter on loopback (:3101)
 ```
 
-`install.sh` builds the fat jar from a checkout (or fetches a release), installs the shared launch shim `bin/splice-launch`, and links the wrapper commands into `~/.local/bin`. Each wrapper is an `argv[0]` symlink to `splice-launch`, which cold-starts the daemon, asks it for an exec recipe over the loopback control plane, and execs `claude`.
+`install.sh` builds the fat jar from a checkout (or fetches a release), installs the shared launch shim `bin/splice-launch`, links the wrapper commands into `~/.local/bin`, and finishes by running `splice doctor` so you see a verified state — not a hopeful one. Each wrapper is an `argv[0]` symlink to `splice-launch`, which cold-starts the daemon, asks it for an exec recipe over the loopback control plane, and execs `claude`.
 
 Codex, Grok, and Kimi OAuth routes are not first-run defaults. To try one, copy its clearly marked **experimental opt-in** provider and head from [`config/splice.example.toml`](config/splice.example.toml), restart splice, then run that head's `login` command. Those routes reuse public CLI OAuth client identities but are not vendor-documented third-party integrations.
 
@@ -53,6 +98,8 @@ Admin verbs go through the `splice` command:
 
 ```bash
 splice status         # per-head status
+splice doctor         # check the whole install — every failing check prints its fix
+splice restart        # restart the daemon with this shell's environment
 splice dashboard      # open the control dashboard (loopback :3096)
 splice init           # write the supported OpenRouter API-key starter topology
 splice install --all  # (re)link the wrapper commands
@@ -60,6 +107,16 @@ splice install --all  # (re)link the wrapper commands
 ```
 
 The dashboard and every control endpoint are bearer-guarded and loopback-only. The unlock key lives at `~/.claude-codex/state/mgmt-key`.
+
+## Troubleshooting
+
+`splice doctor` checks everything — prerequisites, install integrity, config, daemon, and auth —
+and prints the exact fix under every failing check.
+
+One trap worth knowing by name: the daemon reads API-key env vars from **its own** environment.
+If you export a key *after* the daemon has started, the shell sees it but the daemon doesn't —
+launches warn, and requests fail upstream. `splice restart` restarts the daemon with your current
+shell's environment; `splice doctor` detects this state explicitly.
 
 ## Credential locations
 

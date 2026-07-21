@@ -9,6 +9,7 @@ import splice.core.topology.AuthKind
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
+import splice.core.topology.effectiveApiKeyEnv
 import java.nio.file.Files
 import java.nio.file.Paths
 
@@ -52,7 +53,7 @@ private fun row(
     envReader: (String) -> String?,
 ): String {
     val command = head.claude.command ?: key
-    val authed = authPresent(provider, envReader)
+    val authed = authPresent(key, provider, envReader)
     val auth = when {
         AuthKind.isOAuth(provider.auth.kind) && authed -> "$GREEN✓ signed in$RESET"
         AuthKind.isOAuth(provider.auth.kind) -> "$YELLOW— $command login$RESET"
@@ -70,10 +71,17 @@ private fun backendLabel(provider: ProviderConfig): String = when (provider.auth
     else -> if (provider.dialect.name == "OPENAI_CHAT") "OpenAI-compatible" else "OpenAI platform"
 }
 
-internal fun authPresent(provider: ProviderConfig, envReader: (String) -> String?): Boolean {
+internal fun authPresent(key: String, provider: ProviderConfig, envReader: (String) -> String?): Boolean {
     val file = provider.auth.file ?: AuthKind.defaultAuthFileFor(provider.auth.kind)
     val filePresent = file?.let { Files.exists(Paths.get(TopologyLoader.expandHome(it))) } == true
-    val envPresent = provider.auth.env?.let { envReader(it)?.isNotBlank() } == true
+    // OAuth heads authenticate by file only; api-key heads read the effective env var (the explicit
+    // auth.env OR the derived <KEY>_API_KEY default the daemon wires) so the derived path matches.
+    val envVar = if (AuthKind.isOAuth(provider.auth.kind)) {
+        provider.auth.env
+    } else {
+        effectiveApiKeyEnv(key, provider.auth)
+    }
+    val envPresent = envVar?.let { envReader(it)?.isNotBlank() } == true
     return filePresent || envPresent
 }
 
@@ -83,9 +91,9 @@ internal fun wrapperInstalled(command: String, envReader: (String) -> String?): 
 private fun printNextSteps(topology: Topology, envReader: (String) -> String?) {
     val launchable = topology.heads.map { (k, h) -> h.claude.command ?: k }
     println("  ${DIM}Launch $RESET " + launchable.joinToString("$DIM · $RESET") { "$CYAN$it$RESET" })
-    val needLogin = topology.heads.entries.filter { (_, h) ->
+    val needLogin = topology.heads.entries.filter { (k, h) ->
         val p = topology.providers[h.provider]
-        p != null && AuthKind.isOAuth(p.auth.kind) && !authPresent(p, envReader)
+        p != null && AuthKind.isOAuth(p.auth.kind) && !authPresent(k, p, envReader)
     }.map { (k, h) -> h.claude.command ?: k }
     if (needLogin.isNotEmpty()) {
         println("  ${DIM}Sign in$RESET " + needLogin.joinToString("$DIM · $RESET") { "$CYAN$it login$RESET" })

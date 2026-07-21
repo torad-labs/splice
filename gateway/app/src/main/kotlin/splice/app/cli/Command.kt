@@ -13,7 +13,7 @@ import splice.core.SHIM_VERSION
 public sealed class Command {
     public abstract fun run(): Int
 
-    public data object Doctor : Command() { override fun run(): Int = success { doctor() } }
+    public data object Doctor : Command() { override fun run(): Int = outcomeExitCode(doctor()) }
     public data object Version : Command() {
         override fun run(): Int = success { println("splice $GATEWAY_VERSION") }
     }
@@ -32,6 +32,7 @@ public sealed class Command {
         override fun run(): Int = outcomeExitCode(runBlocking { setup() })
     }
     public data object Status : Command() { override fun run(): Int = success { status() } }
+    public data object Restart : Command() { override fun run(): Int = outcomeExitCode(restart()) }
     public data object Dashboard : Command() { override fun run(): Int = outcomeExitCode(dashboard()) }
 
     public companion object {
@@ -43,7 +44,8 @@ public sealed class Command {
             "install" to { a -> Install(a.getOrNull(1)) },
             "uninstall" to { a -> Uninstall(a.getOrNull(1)) },
             "login" to { a -> Login(a.getOrNull(1)) },
-            "setup" to { Setup }, "status" to { Status }, "dashboard" to { Dashboard },
+            "setup" to { Setup }, "status" to { Status }, "restart" to { Restart },
+            "dashboard" to { Dashboard },
         )
 
         /** argv -> Command, or null for an unknown/empty verb (caller prints usage). */

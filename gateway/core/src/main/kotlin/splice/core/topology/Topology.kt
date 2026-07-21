@@ -17,7 +17,25 @@ public data class Topology(
     val defaults: Map<String, String> = emptyMap(),
     val providers: Map<String, ProviderConfig> = emptyMap(),
     val heads: Map<String, HeadConfig> = emptyMap(),
-)
+) {
+    /** Resolve a user-supplied head name — the topology key or the installed wrapper command
+     *  (starter: head `openrouter`, command `claudeor`) — to matching topology keys. A topology-KEY
+     *  match is exact and wins as the sole result; otherwise ALL heads whose wrapper command equals
+     *  the name (a misconfigured topology can share one command across several heads). */
+    public fun resolveHeadKeys(name: String): List<String> {
+        if (name in heads) return listOf(name)
+        return heads.entries.filter { (key, head) -> (head.claude.command ?: key) == name }.map { it.key }
+    }
+
+    /** The single topology key for [name], or null when unknown OR ambiguous (several heads share
+     *  the wrapper command). Callers that must tell those apart use [resolveHeadKeys]. */
+    public fun resolveHeadKey(name: String): String? = resolveHeadKeys(name).singleOrNull()
+}
+
+/** Distinct-from-"unknown-head" message for the ambiguous case: [keys] heads all map to [command].
+ *  Naming both heads points the operator at the topology collision instead of a phantom head. */
+public fun ambiguousHeadMessage(command: String, keys: List<String>): String =
+    "ambiguous head '$command' — heads ${keys.joinToString(" and ")} both use that command; fix the topology"
 
 @Serializable
 public data class DaemonConfig(
@@ -71,6 +89,12 @@ public data class AuthConfig(
     val file: String? = null,
     val env: String? = null,
 )
+
+/** The api-key env var a head actually reads: the explicit [AuthConfig.env], else the derived
+ *  `<KEY>_API_KEY` default the daemon synthesizes. One source for daemon wiring AND the CLI so a
+ *  head on the derived default never reads as "not signed in" while the daemon serves it fine. */
+public fun effectiveApiKeyEnv(key: String, auth: AuthConfig): String =
+    auth.env ?: "${key.uppercase()}_API_KEY"
 
 /** The finite quirk surface of the openai dialects — everything a vendor varies without code. */
 @Serializable

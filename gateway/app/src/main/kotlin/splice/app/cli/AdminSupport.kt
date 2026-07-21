@@ -11,6 +11,7 @@ import splice.app.TopologyLoader
 import splice.core.GATEWAY_VERSION
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
+import splice.core.topology.Topology
 import splice.core.topology.configOverrides
 import splice.core.util.runCatchingCancellable
 import java.net.HttpURLConnection
@@ -23,13 +24,21 @@ internal object AdminSupport {
     private val json = Json { ignoreUnknownKeys = true }
 
     /** The effective control port using the daemon's exact TOML < state < env precedence. */
-    fun controlPort(): Int {
-        val topo = runCatching { TopologyLoader.loadOrMaterialize(TopologyLoader.configPath()) }.getOrNull()
-        return if (topo == null) {
-            DEFAULT_CONTROL_PORT
-        } else {
-            ConfigService(StatePaths(), headOverrides = topo.configOverrides()).getConfig().controlPort
-        }
+    fun controlPort(): Int =
+        controlPort(runCatching { TopologyLoader.loadOrMaterialize(TopologyLoader.configPath()) }.getOrNull())
+
+    /** Same, from an already-loaded (or absent) topology — doctor uses this so a diagnostic
+     *  never MATERIALIZES the starter config as a side effect. [envReader] threads through the
+     *  whole port resolution (StatePaths + ConfigService env layer) so a hermetic caller never
+     *  reads the real process environment or state dir. */
+    fun controlPort(topology: Topology?, envReader: (String) -> String? = System::getenv): Int = if (topology == null) {
+        DEFAULT_CONTROL_PORT
+    } else {
+        ConfigService(
+            StatePaths(envReader = envReader),
+            headOverrides = topology.configOverrides(),
+            envReader = envReader,
+        ).getConfig().controlPort
     }
 
     /** True only when the listener answers splice's versioned HTTP health contract. */
@@ -114,8 +123,9 @@ internal object AdminSupport {
         true
     }.getOrDefault(false)
 
-    fun mgmtKey(): String? =
-        runCatching { Files.readString(StatePaths().mgmtKeyFile).trim() }.getOrNull()?.takeIf { it.isNotEmpty() }
+    fun mgmtKey(envReader: (String) -> String? = System::getenv): String? =
+        runCatching { Files.readString(StatePaths(envReader = envReader).mgmtKeyFile).trim() }
+            .getOrNull()?.takeIf { it.isNotEmpty() }
 
     fun home(): Path = Paths.get(System.getProperty("user.home"))
 

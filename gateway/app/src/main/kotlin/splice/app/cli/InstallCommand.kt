@@ -7,6 +7,8 @@ package splice.app.cli
 import splice.app.TopologyLoader
 import splice.core.SHIM_VERSION
 import splice.core.config.InstallPaths
+import splice.core.topology.Topology
+import splice.core.topology.ambiguousHeadMessage
 import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
@@ -36,26 +38,49 @@ internal fun install(headArg: String?, env: (String) -> String? = System::getenv
     check(Files.exists(launchShim)) { "launch shim not found at $launchShim (run install.sh)" }
     val bin = localBin(env)
     Files.createDirectories(bin)
-    val heads = if (headArg == null || headArg == "--all") {
+    // All heads for --all/no-arg, else the one named by topology key OR wrapper command (a failed
+    // resolution has already printed why — unknown vs ambiguous).
+    val selected = if (headArg == null || headArg == "--all") {
         topology.heads
     } else {
-        topology.heads.filterKeys { it == headArg }
+        val key = resolveSpecificHead(topology, headArg) ?: return false
+        topology.heads.filterKeys { it == key }
     }
-    if (heads.isEmpty()) {
-        println("splice: no matching head '$headArg' in the topology")
-        return false
+    // Validate the WHOLE topology's commands (+ `splice`) on EVERY install, not just this
+    // invocation — otherwise sequential single-head installs silently retarget an existing
+    // wrapper symlink onto a command another head already owns.
+    val commandOwners = topology.heads
+        .map { (key, head) -> (head.claude.command ?: key) to key }
+        .plus(SELF_COMMAND to SELF_COMMAND)
+        .groupBy({ it.first }, { it.second })
+    val collisions = commandOwners.filterValues { it.size > 1 }
+    check(collisions.isEmpty()) {
+        "topology maps multiple heads to one wrapper command: " +
+            collisions.entries.joinToString("; ") { (command, keys) -> "$command <- ${keys.joinToString(", ")}" }
     }
-    val requested = heads.map { (key, head) -> key to (head.claude.command ?: key) }
+    val requested = selected.map { (key, head) -> key to (head.claude.command ?: key) }
     val commands = requested.map { it.second } + SELF_COMMAND
-    check(commands.distinct().size == commands.size) {
-        val duplicates = commands.groupingBy { it }.eachCount().filterValues { it > 1 }.keys
-        "topology maps multiple heads to the same command: $duplicates"
-    }
     commands.forEach { command -> requireReplaceableLink(bin.resolve(command)) }
     requested.forEach { (key, command) -> linkOne(bin, key, command, launchShim) }
     linkOne(bin, SELF_COMMAND, SELF_COMMAND, launchShim)
     println("splice: ensure $bin is on your PATH to use the wrappers")
     return true
+}
+
+// Resolve a specific head arg to its single topology key, printing (and returning null) for an
+// unknown name OR an ambiguous one — the latter distinct so the operator fixes the topology
+// collision instead of chasing a phantom head. Shared by install and uninstall.
+private fun resolveSpecificHead(topology: Topology, headArg: String): String? {
+    val keys = topology.resolveHeadKeys(headArg)
+    if (keys.size == 1) return keys.single()
+    println(
+        if (keys.isEmpty()) {
+            "splice: no matching head '$headArg' in the topology"
+        } else {
+            "splice: " + ambiguousHeadMessage(headArg, keys)
+        },
+    )
+    return null
 }
 
 /** Link the `splice` admin command itself (so `splice dashboard/status/...` work as commands). */
@@ -94,12 +119,24 @@ private fun requireReplaceableLink(link: Path) {
     }
 }
 
-internal fun uninstall(headArg: String?, env: (String) -> String? = System::getenv): Boolean {
+// Which wrapper commands a `splice uninstall [head]` removes: every head command (+ `splice`
+// itself) for --all, else the one head named by topology key OR wrapper command. Returns null (and
+// prints) for an unknown or ambiguous specific arg, so uninstall fails loudly instead of exiting 0
+// with no output; a null/unreadable topology falls back to removing by the literal name typed.
+private fun uninstallTargets(headArg: String?, env: (String) -> String?): List<String>? {
     val topology = runCatching { TopologyLoader.parse(Files.readString(TopologyLoader.configPath(env))) }.getOrNull()
-    val removeAll = headArg == null || headArg == "--all"
-    val headCommands = topology?.heads?.filterKeys { removeAll || it == headArg }
-        ?.map { (k, h) -> h.claude.command ?: k } ?: listOfNotNull(headArg)
-    val commands = (headCommands + if (removeAll) listOf(SELF_COMMAND) else emptyList()).distinct()
+    if (headArg == null || headArg == "--all") {
+        val headCommands = topology?.heads?.map { (k, h) -> h.claude.command ?: k } ?: listOfNotNull(headArg)
+        return (headCommands + SELF_COMMAND).distinct()
+    }
+    if (topology == null) return listOf(headArg)
+    return resolveSpecificHead(topology, headArg)?.let { key ->
+        listOf(topology.heads.getValue(key).claude.command ?: key)
+    }
+}
+
+internal fun uninstall(headArg: String?, env: (String) -> String? = System::getenv): Boolean {
+    val commands = uninstallTargets(headArg, env) ?: return false
     val bin = localBin(env)
     var ok = true
     for (command in commands) {

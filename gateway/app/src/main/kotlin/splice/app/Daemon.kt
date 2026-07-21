@@ -34,6 +34,7 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.topology.catalogFor
 import splice.core.topology.configOverrides
+import splice.core.topology.effectiveApiKeyEnv
 import splice.core.turn.WatchdogBudget
 import splice.core.util.discard
 import splice.core.util.runCatchingCancellable
@@ -294,7 +295,7 @@ public class Daemon(
                 )
             }
             else -> ApiKeyAuthProvider(
-                envVar = providerCfg.auth.env ?: "${key.uppercase()}_API_KEY",
+                envVar = effectiveApiKeyEnv(key, providerCfg.auth),
                 keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
             )
         }
@@ -350,7 +351,7 @@ public class Daemon(
             }
             else -> {
                 val auth = ApiKeyAuthProvider(
-                    envVar = providerCfg.auth.env ?: "${key.uppercase()}_API_KEY",
+                    envVar = effectiveApiKeyEnv(key, providerCfg.auth),
                     keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
                 )
                 val identity = KimiDeviceIdentity(deviceIdPath = statePaths.stateDir.resolve("$key-device_id"))
@@ -481,7 +482,7 @@ public class Daemon(
         val watchdog = ctx.watchdog
         val cfg = ctx.cfg
         val auth = ApiKeyAuthProvider(
-            envVar = providerCfg.auth.env ?: "${key.uppercase()}_API_KEY",
+            envVar = effectiveApiKeyEnv(key, providerCfg.auth),
             keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
         )
         // Identical in both branches — factored out so adding loginCommand didn't push this past

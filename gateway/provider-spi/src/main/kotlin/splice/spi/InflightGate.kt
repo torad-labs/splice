@@ -66,6 +66,7 @@ public class InflightGate(
 
     private suspend fun awaitTurn() {
         val waiter = Waiter()
+        var admittedNow = false
         var rejected = false
         suspendCancellableCoroutine { cont ->
             synchronized(lock) {
@@ -73,6 +74,7 @@ public class InflightGate(
                 if (hasCapacityLocked() && queue.isEmpty()) {
                     inflight += 1
                     waiter.resumed = true
+                    admittedNow = true
                 } else if (hasQueueCapacityLocked()) {
                     waiter.continuation = cont
                     queue.addLast(waiter)
@@ -80,7 +82,12 @@ public class InflightGate(
                     rejected = true
                 }
             }
-            if (waiter.resumed) {
+            // Resume from THIS thread only when the recheck above admitted synchronously.
+            // `waiter.resumed` is the wrong guard here: a releaser can drain the just-queued
+            // waiter and resume it BETWEEN the lock exit and this line, and reading the shared
+            // flag then double-resumes the continuation ("Already resumed" ISE — caught by the
+            // cancel-racing-admission hammer test on CI). Only the local flag is race-free.
+            if (admittedNow) {
                 cont.resume(Unit)
                 return@suspendCancellableCoroutine
             }

@@ -3,6 +3,8 @@
 // cached read (mtime+TTL), single-flight refresh preserving other fields + 0600, masked
 // introspection.
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.runBlocking
@@ -88,6 +90,16 @@ class CodexAuthTest {
         assertEquals("2026-07-16T00:00:00Z", obj["last_refresh"]?.jsonPrimitive?.content)
     }
 
+    // Every prefetch-tier credentials() call launches a background refresh on this scope. Tests
+    // join its children before returning (drainPrefetch), so no in-flight coroutine touches the
+    // @TempDir while JUnit deletes it — the CI-only TempDirDeletionStrategy$DeletionException class.
+    private val prefetchJob = SupervisorJob()
+    private val prefetchScope = CoroutineScope(prefetchJob + kotlinx.coroutines.Dispatchers.Default)
+
+    private suspend fun drainPrefetch() {
+        prefetchJob.children.toList().forEach { it.join() }
+    }
+
     private fun provider(
         tmp: Path,
         clock: () -> Long,
@@ -100,6 +112,7 @@ class CodexAuthTest {
             clock = clock,
             nowIso = { "2026-07-16T00:00:00Z" },
             refreshCall = refresh,
+            prefetchScope = prefetchScope,
         ) to authPath
     }
 
@@ -299,10 +312,7 @@ class CodexAuthTest {
         while (calls.get() == 0) yield() // observe the background call actually started
         gate.complete(RefreshedTokens(accessToken = "new-access", refreshToken = "new-refresh", idToken = null))
         assertEquals(1, calls.get())
-        // The unblocked refresh persists the rotation into tmp AFTER the assertions above; wait
-        // for the atomic write to land so it can't race @TempDir deletion (CI-only
-        // TempDirDeletionStrategy$DeletionException — the write's sidecar appears mid-cleanup).
-        while (!path.readText().contains("new-access")) yield()
+        drainPrefetch() // settle the unblocked background refresh before @TempDir cleanup
     }
 
     @Test
@@ -342,6 +352,7 @@ class CodexAuthTest {
             Files.createDirectories(path.parent)
             path.writeText("""{"tokens":{"access_token":"$access","refresh_token":"refresh-1"}}""")
             assertEquals(access, (auth.credentials() as Credentials.Bearer).token)
+            drainPrefetch() // the prefetch-tier read launched a background refresh; settle it before teardown
         }
 
     @Test

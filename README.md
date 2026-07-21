@@ -2,7 +2,7 @@
 
 # splice
 
-**Type `claudeor` instead of `claude` — [Claude Code](https://docs.anthropic.com/en/docs/claude-code), wrapped over your own model backends, on loopback.**
+**Type `claudex` instead of `claude` — [Claude Code](https://docs.anthropic.com/en/docs/claude-code) on your ChatGPT, Grok, or Kimi subscription, on loopback.**
 
 [Install](#install) · [Quick start](#quick-start) · [How it works](#how-it-works) · [Providers](#provider-support) · [Trade-offs](#why-you-might-not-want-splice) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md)
 
@@ -129,7 +129,7 @@ claudeor                          # Claude Code through OpenRouter on loopback (
 
 `install.sh` builds the fat jar from a checkout (or fetches a release), installs the shared launch shim, links the wrapper commands into `~/.local/bin`, and finishes by running `splice doctor` so you see a verified state — not a hopeful one.
 
-Codex, Grok, and Kimi OAuth routes are not first-run defaults. To try one, copy its clearly marked **experimental opt-in** provider and head from [`config/splice.example.toml`](config/splice.example.toml), restart splice, then run that head's `login` command. Those routes reuse public CLI OAuth client identities but are not vendor-documented third-party integrations.
+**Have a ChatGPT, Grok, or Kimi subscription? That's what splice was built for.** Copy the matching provider and head from [`config/splice.example.toml`](config/splice.example.toml) into `~/.config/splice/splice.toml`, run `splice install --all`, then sign in with that head's `login` command (`claudex login`, `claude-grok login`, `claude-kimi login`). These routes are unofficial — they reuse each vendor's own CLI OAuth client identity, which no vendor documents for third parties. Use them at your own risk; the API-key starter above is the zero-config alternative.
 
 Admin verbs go through the `splice` command:
 
@@ -140,7 +140,7 @@ splice restart        # restart the daemon with this shell's environment
 splice dashboard      # open the control dashboard (loopback :3096)
 splice init           # write the supported OpenRouter API-key starter topology
 splice install --all  # (re)link the wrapper commands
-<head> login          # only for an explicitly configured experimental OAuth head
+<head> login          # sign in a subscription head (claudex, claude-grok, claude-kimi)
 ```
 
 The dashboard and every control endpoint are bearer-guarded and loopback-only. The unlock key lives at `~/.claude-codex/state/mgmt-key`.
@@ -174,18 +174,18 @@ Each of these is a **password-equivalent secret** — anything that can read the
 | --- | --- | --- |
 | OpenRouter | `api-key` (`OPENROUTER_API_KEY`) | **Supported** — pay-per-token, any OpenAI-compatible vendor |
 | Moonshot | `api-key` (`MOONSHOT_API_KEY`) | **Supported** — pay-per-token Anthropic base |
-| codex (ChatGPT) | `chatgpt-oauth` | **Experimental**, pending vendor clarification |
-| grok (xAI) | `grok-oauth` | **Experimental**, pending vendor clarification |
-| kimi (Moonshot) | `kimi-oauth` | **Experimental**, pending vendor clarification |
+| codex (ChatGPT) | `chatgpt-oauth` | **Primary** — what splice was built for; unofficial, at your own risk |
+| grok (xAI) | `grok-oauth` | **Primary** — unofficial, at your own risk |
+| kimi (Moonshot) | `kimi-oauth` | **Primary** — unofficial, at your own risk |
 
-The **api-key** routes are ordinary pay-per-token API access and are supported. The **OAuth-identity** routes are **experimental**: they authenticate by reusing the public OAuth client identities of each vendor's own CLI, not a documented third-party integration. Whether that reuse is permitted is not settled — treat these routes as experimental pending clarification from each vendor, and use them at your own risk.
+The **OAuth-identity** routes are the reason splice exists: they run Claude Code on the subscription you already pay for. They are also **unofficial** — they authenticate by reusing the public OAuth client identity of each vendor's own CLI, not a documented third-party integration, and a vendor could object or break them at any time. Use them at your own risk. The **api-key** routes are ordinary pay-per-token API access with none of that ambiguity, and make the best zero-config starter.
 
 ## Why you might not want splice
 
 Honesty over marketing — reasons to walk away:
 
 - **It's an unsupported gateway.** Anthropic explicitly identifies this class of tool as unsupported. A Claude Code update can break splice at any time; the version handshake fails loudly rather than corrupting sessions, but "fails loudly" is still "fails".
-- **The OAuth routes are legally unsettled.** Codex, Grok, and Kimi routes reuse each vendor's own CLI OAuth client identity. That reuse is not vendor-documented; it may violate terms of service. They ship as explicit experimental opt-ins for a reason.
+- **The OAuth routes are legally unsettled.** Codex, Grok, and Kimi routes reuse each vendor's own CLI OAuth client identity. That reuse is not vendor-documented; it may violate terms of service, and a vendor could cut it off without notice. They are the primary routes AND the biggest risk — both things are true.
 - **It's a single-user, loopback tool.** No multi-user story, no remote access, no TLS — by design. If you want a team-facing model gateway, use a purpose-built one (e.g. LiteLLM).
 - **It runs a JVM daemon.** Java 21 is a hard dependency, and the daemon holds a bounded 2 GB heap while serving. On a small machine that's a real cost.
 - **It's a personal project.** One maintainer, no warranty, no SLA. The release gates are strict (every release is checksummed, provenance-attested, and installed hermetically in CI before it ships) — but strictness isn't staffing.

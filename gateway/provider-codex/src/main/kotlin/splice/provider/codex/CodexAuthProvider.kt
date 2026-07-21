@@ -52,15 +52,14 @@ public class CodexAuthProvider(
     private val nowIso: () -> String = { Instant.ofEpochMilli(System.currentTimeMillis()).toString() },
     /** POST grant_type=refresh_token to the token URL; returns the classified attempt. */
     private val refreshCall: suspend (refreshToken: String) -> RefreshAttempt<RefreshedTokens>,
+    // Owned background scope for the G17 async-prefetch tier, decoupled from any single request's
+    // coroutine. Injectable so the daemon can tie it to its lifecycle and tests can drain it before
+    // teardown (an in-flight prefetch racing @TempDir cleanup was a CI-only flake). Mirrors GrokAuthProvider.
+    private val prefetchScope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob()),
 ) : RefreshableAuthProvider {
 
     private val json = Json { ignoreUnknownKeys = true }
     private val singleFlight = SingleFlight<Credentials?>()
-
-    // This is the injection seam: an owned background scope, decoupled from any single request's
-    // coroutine, for the G17 async-prefetch
-    // tier. Mirrors GrokAuthProvider's identical property.
-    private val prefetchScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val invalidGrantLatch = InvalidGrantLatch()
 
     @Volatile

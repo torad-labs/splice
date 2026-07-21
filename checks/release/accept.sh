@@ -45,6 +45,12 @@ bom = json.loads((dist / "bom.cdx.json").read_text())
 licenses = json.loads((dist / "dependency-licenses.json").read_text())
 if bom.get("bomFormat") != "CycloneDX" or not bom.get("components"):
     raise SystemExit("release accept: SBOM is not a non-empty CycloneDX document")
+# Mirror of actions/attest's checkIsCycloneDX: publish rejects a BOM lacking ANY of these,
+# so the acceptance gate must too (v0.1.1's first tag run failed only at publish time).
+if not (bom.get("bomFormat") and bom.get("serialNumber") and bom.get("specVersion")):
+    raise SystemExit("release accept: SBOM would fail actions/attest detection (needs bomFormat + serialNumber + specVersion)")
+if not str(bom.get("serialNumber", "")).startswith("urn:uuid:"):
+    raise SystemExit("release accept: SBOM serialNumber must be a urn:uuid (deterministic, content-derived)")
 if not licenses.get("dependencies"):
     raise SystemExit("release accept: dependency-license inventory is empty")
 

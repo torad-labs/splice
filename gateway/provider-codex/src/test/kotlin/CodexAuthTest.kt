@@ -299,6 +299,10 @@ class CodexAuthTest {
         while (calls.get() == 0) yield() // observe the background call actually started
         gate.complete(RefreshedTokens(accessToken = "new-access", refreshToken = "new-refresh", idToken = null))
         assertEquals(1, calls.get())
+        // The unblocked refresh persists the rotation into tmp AFTER the assertions above; wait
+        // for the atomic write to land so it can't race @TempDir deletion (CI-only
+        // TempDirDeletionStrategy$DeletionException — the write's sidecar appears mid-cleanup).
+        while (!path.readText().contains("new-access")) yield()
     }
 
     @Test

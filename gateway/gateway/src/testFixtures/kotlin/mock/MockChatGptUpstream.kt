@@ -1,4 +1,4 @@
-// PORT-OF: the mock upstream from server/test/codex-proxy.test.mjs @ 4ca99f7, 1:1 — scenario
+// PORT-OF: the mock upstream from server/test/codex-proxy.test.mjs @ pre-public-port-baseline, 1:1 — scenario
 // picked from a SCENARIO:<name> tag in body.instructions; /oauth/token counts refreshes;
 // 'refresh' 401s on the old token; every streaming scenario's event sequence is verbatim
 // (incl. the nonstream_tool mid-codepoint ✓ split and the prefill silent-then-stream shape).
@@ -10,6 +10,8 @@ package mock
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.IOException
@@ -56,8 +58,9 @@ class MockChatGptUpstream {
     private fun handle(ex: HttpExchange) {
         val raw = ex.requestBody.readBytes().decodeToString()
         val body = runCatching { Json.parseToJsonElement(raw).jsonObject }.getOrNull()
-        val instructions = body?.get("instructions")?.jsonPrimitive?.content.orEmpty()
-        val scenario = Regex("SCENARIO:(\\w+)").find(instructions)?.groupValues?.get(1) ?: "basic"
+        // responses-lite turns carry instructions as a developer input item, not the top-level
+        // field — scan the whole raw body so scenarios ride either shape.
+        val scenario = Regex("SCENARIO:(\\w+)").find(raw)?.groupValues?.get(1) ?: "basic"
         val auth = ex.requestHeaders.getFirst("Authorization")
         upstreamAuths.add(scenario to auth)
         upstreamBodies.add(scenario to raw)
@@ -82,7 +85,7 @@ class MockChatGptUpstream {
         ex.responseHeaders.add("Content-Type", "text/event-stream")
         ex.sendResponseHeaders(200, 0)
         try {
-            streamScenario(scenario, ex)
+            streamScenario(scenario, ex, body)
         } catch (abort: IOException) {
             // a broken pipe mid-stream is the drip scenario's EXPECTED client-abort exit
             if (scenario == "drip") abortedScenarios.add("drip")
@@ -93,8 +96,50 @@ class MockChatGptUpstream {
         }
     }
 
-    private fun streamScenario(scenario: String, ex: HttpExchange) {
+    // Reasoning-continuation fold scenarios (codex 518n-2). A round is a CONTINUATION when its input
+    // carries a replayed reasoning item; "fold" then serves a clean round, "foldcap" always truncates
+    // so the head hits its continuation cap.
+    private fun isContinuationRound(body: JsonObject?): Boolean =
+        body?.get("input")?.jsonArray?.any {
+            (it as? JsonObject)?.get("type")?.jsonPrimitive?.content == "reasoning"
+        } ?: false
+
+    private fun foldTruncatedRound(ex: HttpExchange) {
+        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""")
+        sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Thinking round one."}""")
+        sse(
+            ex,
+            """{"type":"response.output_item.done","output_index":0,""" +
+                """"item":{"type":"reasoning","id":"rs_trunc","encrypted_content":"ENC-TRUNC"}}""",
+        )
+        sse(ex, """{"type":"response.output_item.added","output_index":1,"item":{"type":"message"}}""")
+        sse(ex, """{"type":"response.output_text.delta","output_index":1,"delta":"TENTATIVE ANSWER"}""")
+        sse(ex, """{"type":"response.output_item.done","output_index":1}""")
+        sse(
+            ex,
+            """{"type":"response.completed","response":{"id":"rt","status":"completed","output":[],""" +
+                """"usage":{"input_tokens":100,"output_tokens":600,"output_tokens_details":{"reasoning_tokens":516}}}}""",
+        )
+    }
+
+    private fun foldCleanRound(ex: HttpExchange) {
+        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""")
+        sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Thinking round two."}""")
+        sse(ex, """{"type":"response.output_item.done","output_index":0}""")
+        sse(ex, """{"type":"response.output_item.added","output_index":1,"item":{"type":"message"}}""")
+        sse(ex, """{"type":"response.output_text.delta","output_index":1,"delta":"FINAL ANSWER"}""")
+        sse(ex, """{"type":"response.output_item.done","output_index":1}""")
+        sse(
+            ex,
+            """{"type":"response.completed","response":{"id":"rf","status":"completed","output":[],""" +
+                """"usage":{"input_tokens":150,"output_tokens":800,"output_tokens_details":{"reasoning_tokens":800}}}}""",
+        )
+    }
+
+    private fun streamScenario(scenario: String, ex: HttpExchange, body: JsonObject?) {
         when (scenario) {
+            "fold" -> if (isContinuationRound(body)) foldCleanRound(ex) else foldTruncatedRound(ex)
+            "foldcap" -> foldTruncatedRound(ex)
             "multipart" -> {
                 sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""")
                 sse(ex, """{"type":"response.reasoning_summary_part.added","output_index":0}""")
@@ -141,6 +186,10 @@ class MockChatGptUpstream {
                 """{"type":"response.failed","response":{"error":{"code":"invalid_request_error",""" +
                     """"message":"Your input exceeds the context window of this model. Please reduce the length."}}}""",
             )
+            "oversized_sse" -> {
+                ex.responseBody.write("data: ".toByteArray())
+                ex.responseBody.write("x".repeat(1024 * 1024 + 1).toByteArray())
+            }
             "truncated" -> {
                 sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
                 sse(ex, """{"type":"response.output_text.delta","output_index":0,"delta":"partial answer"}""")

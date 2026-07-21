@@ -53,6 +53,11 @@ grant-gated behind `SPLICE_WALLS_OK=1`.
 
 ## Management API
 
+> **Legacy Node stack.** This section describes `server/` (`src/control-server.mjs`,
+> `codex-proxy.mjs`, `reasoning/mirror.mjs`, `anthropic/sse.mjs`) — kept runnable during cutover
+> but no longer the documented entry point. The **`gateway/` Kotlin daemon (spliced) is the
+> primary stack**; see [README.md](README.md#layout).
+
 Bearer-guarded (`Authorization: Bearer $(cat ~/.claude-codex/state/mgmt-key)`),
 loopback-only, both proxies:
 
@@ -73,6 +78,10 @@ persists to the file layer. `port`, `grokPort`, `controlPort`, `upstreamTimeoutM
 need a restart; everything else hot-applies on the next request.
 
 ## Control plane (spliced)
+
+> **Legacy Node stack.** Same caveat as above: `src/control-server.mjs` is part of the legacy
+> `server/` stack. The **`gateway/` Kotlin daemon is the primary stack**; see
+> [README.md](README.md#layout).
 
 The dashboard is centralized. `spliced` (`src/control-server.mjs`, loopback
 `:3096`, `controlPort`) hosts the single webui at `/` and a bearer-guarded
@@ -101,7 +110,7 @@ RUNNING heads over `/mgmt` for live status + config.
 ## Gates
 
 ```
-npm run gate          # checks/gate.sh: gradle check + ast-grep walls + hook tests, ONE PASS/FAIL
+npm run gate          # all Kotlin/Node/webui/release/OSS checks, ONE PASS/FAIL
 npm run gate:rules    # ast-grep scan (tree) + rule red/green tests
 npm run test:hooks    # orchestrator routing tests
 npm test -w server    # 103 node --test behavior/invariant tests
@@ -152,5 +161,5 @@ pins the sentence. On drift: update `COMPACT_MARKER` + fixture together.
 ## Out of scope (locked)
 
 No transcript shrinking. No fake summaries (L4). (Reasoning replay was formerly
-out of scope; as of 2026-07-14 it is default-on for the codex head — see
-"L1 — RETIRED" above.)
+out of scope; as of 2026-07-14 it is supported, and as of 2026-07-15 it is
+default-off for the codex head — see "L1 — RETIRED" above.)

@@ -16,7 +16,7 @@ export function CompactFeed() {
   const { data, error, loading, lastUpdated } = useCompact((s) => s);
 
   return (
-    <Panel title="compact outcomes (codex)" actions={<Stale lastUpdated={lastUpdated} />}>
+    <Panel title="compact outcomes (all heads)" actions={<Stale lastUpdated={lastUpdated} />}>
       {error ? <ErrorNote message={error} /> : null}
       {loading && !data ? <SkeletonRows rows={2} cols={4} /> : null}
       {data ? (
@@ -30,12 +30,13 @@ export function CompactFeed() {
       {data && data.stats.tail.length > 0 ? (
         <table className="myx-table">
           <thead>
-            <tr><th>when</th><th>outcome</th><th>chars</th><th>took</th></tr>
+            <tr><th>when</th><th>head</th><th>outcome</th><th>chars</th><th>took</th></tr>
           </thead>
           <tbody>
             {[...data.stats.tail].reverse().map((row, i) => (
               <tr key={`${row.ts}-${i}`}>
                 <td>{timeAgo(row.ts)}</td>
+                <td>{row.head}</td>
                 <td><StatusPill tone={outcomeTone(row.outcome ?? 'unknown')}>{row.outcome ?? 'unknown'}</StatusPill></td>
                 <td className="myx-num">{row.chars != null ? fmtInt(row.chars) : ''}</td>
                 <td className="myx-num">{row.ms != null ? fmtMs(row.ms) : ''}</td>

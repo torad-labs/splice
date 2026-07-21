@@ -1,6 +1,8 @@
-// PORT-OF: server/test/codex-models.test.mjs @ 4ca99f7 semantics — exact-before-prefix-before-
+// PORT-OF: server/test/codex-models.test.mjs @ pre-public-port-baseline semantics — exact-before-prefix-before-
 // default resolution order, wrap/unwrap, [1m] suffix strip, discovery rows, allowlist unwrapped.
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.model.ExtraWindow
 import splice.core.model.ModelCatalog
@@ -70,5 +72,17 @@ class ModelCatalogTest {
         assertEquals("Codex 5.6 Sol", rows.first().displayName)
         assertEquals(listOf("gpt-5.6-sol", "gpt-5.3-codex-spark"), catalog.availableModelIds())
         assertEquals("gpt-5.6-sol", catalog.defaultModel)
+    }
+
+    @Test
+    fun `catalog membership accepts vendor-qualified ids without name heuristics`() {
+        val openRouter = ModelCatalog(
+            discoveryPrefix = "claude-openrouter--",
+            models = listOf(ModelEntry("anthropic/claude-haiku-4.5", contextWindow = 200_000)),
+            defaultContextWindow = 200_000,
+        )
+        assertTrue(openRouter.contains("anthropic/claude-haiku-4.5"))
+        assertTrue(openRouter.contains("claude-openrouter--anthropic/claude-haiku-4.5"))
+        assertFalse(openRouter.contains("claude-3-opus"))
     }
 }

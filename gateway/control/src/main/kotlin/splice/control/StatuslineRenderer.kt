@@ -1,4 +1,4 @@
-// PORT-OF: server/statusline/claudex-statusline.mjs @ 4ca99f7 — renders Claude Code's per-tick
+// PORT-OF: server/statusline/claudex-statusline.mjs @ pre-public-port-baseline — renders Claude Code's per-tick
 // statusline from the JSON blob it pipes on stdin. Claude Code's shape: a top-level
 // `context_window` object holding `context_window_size`, `used_percentage`, and a nested
 // `current_usage.{input_tokens, cache_read_input_tokens, cache_creation_input_tokens}`
@@ -71,8 +71,11 @@ public class StatuslineRenderer(private val label: String) {
 
     private fun warnSegment(usage: HeadUsageSource?, warnPct: Int, warnTokens5h: Long): String? {
         val source = usage ?: return null
-        val ratelimit = source.ratelimit()?.let { RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens) }
-        val warn = computeUsageWarn(source.outputTokens5h(), ratelimit, warnPct, warnTokens5h)
+        val snapshot = source.snapshot()
+        val ratelimit = snapshot.ratelimit?.let {
+            RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens)
+        }
+        val warn = computeUsageWarn(snapshot.outputTokens5h, ratelimit, warnPct, warnTokens5h)
         return when (warn.level) {
             "critical" -> "$RED⚠ ${warn.pct}%$RESET"
             "warn" -> "$YELLOW⚠ ${warn.pct}%$RESET"

@@ -40,6 +40,7 @@ class PerfStatsTest {
             perf.setCount(PerfKeys.OUT_TOKENS, i.toLong())
             stats.record(PerfRowMeta("m", "ok", compact = false), perf.snapshot())
         }
+        stats.tailNumeric(10) // drains the asynchronous writer before injecting a corrupt row
         Files.writeString(file, Files.readString(file) + "not-json\n")
         val rows = stats.tailNumeric(2)
         assertEquals(2, rows.size)

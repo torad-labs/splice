@@ -1,5 +1,77 @@
 # Changelog
 
+## splice v0.1.1 — release integrity and supported defaults - 2026-07-21
+
+### Fixed
+
+- Launching a head by its wrapper command now works when the command differs from the topology
+  key — the starter's supported route (`openrouter` head, `claudeor` command) failed its very
+  first launch with "head not launchable". `/launch`, `login`, `install <head>`, and
+  `uninstall <head>` accept either name now.
+- The release installer now fetches and verifies both the fat JAR and launch shim, fails on
+  missing or mismatched assets, rejects dangling wrapper links, and is safe when piped through
+  stdin. CI and publication run the same hermetic staged-bundle install test.
+- Fresh installs now materialize a supported OpenRouter API-key topology. Codex, Grok, and Kimi
+  OAuth implementations remain available only as explicitly configured experimental opt-ins.
+- `splice doctor` now reports management-key coverage: a missing mgmt-key while the daemon runs is
+  a failure ("admin endpoints will 401") rather than "Everything checks out", and the state dir and
+  `daemon.lock` paths are shown for orientation.
+- `splice doctor`'s split-brain check no longer vanishes silently when the daemon is up but its
+  side can't be read (no mgmt-key or `/api/auth` unreachable) — it now emits an explicit warning
+  instead of quietly skipping exactly when the daemon is busiest.
+- `splice restart` no longer false-fails when the daemon drops the shutdown connection during a
+  graceful teardown: the health poll, not the POST result, decides whether the daemon stopped.
+- `splice doctor`/`restart` no longer render a foreign listener's `{"version": null}` as the
+  literal string "null" (JsonNull-filtered read).
+- `splice doctor`'s daemon and auth sections now resolve the control port and probe `/health` once
+  through the injected environment reader, so the hermetic tests no longer depend on an ambient
+  local daemon.
+- `experiments/cache-replay/real-ab.sh` derives its repo root from its own location instead of a
+  hardcoded personal path (the last stray reference to the project's pre-rename directory).
+
+### Added
+
+- The installer now preflights the whole machine before doing anything: platform detection
+  (Linux/macOS native, Windows pointed at WSL2 with exact guidance), Java 21+ as a hard
+  requirement, and every runtime dependency (curl, python3, node, Claude Code) verified with the
+  exact per-package-manager fix — offered interactively with consent, printed otherwise. The
+  install finishes by running `splice doctor`, so it ends on a verified state, not a hopeful one.
+- README: a requirements table with per-OS fixes, three install paths (release one-liner, from
+  source, and a copy-paste prompt that lets a coding agent drive the whole install-and-verify
+  loop against `splice doctor`'s fix lines).
+- `splice doctor` now actually diagnoses: five sections (prerequisites, installation,
+  configuration, daemon, auth) with an actionable fix line under every failing check, and exit 1
+  only on real failures. It detects the exported-after-boot trap — an API key visible in the
+  shell but not to the running daemon — by comparing both sides.
+- `splice restart` — stop the daemon (stale or current) and cold-start it with the invoking
+  shell's environment; the documented fix for a key exported after the daemon booted.
+- Launching a head whose upstream credentials are absent now warns, naming the missing env var
+  (or login command) and the fix, instead of failing silently upstream on the first request.
+- The release installer preflights `gh` presence and authentication before downloading anything —
+  provenance verification needs an authenticated GitHub CLI, and learning that after the download
+  was the worst first-run moment.
+- Release bundles and the shaded JAR include the project license, third-party notices, provenance,
+  a CycloneDX 1.6 SBOM, and an exact runtime dependency-license inventory. Publication fails on
+  unresolved licenses or sidecar/JAR/checksum drift.
+- CodeQL, dependency review, artifact provenance attestations, release-version validation, and
+  bounded/concurrent CI release jobs.
+- Gateway hardening: an 8 MB cap on incoming request bodies, rejected with HTTP 413 when exceeded;
+  a bounded request-materialization gate limiting how many requests can be decoded/translated
+  concurrently; SSE frame-size limits on data read from upstream; and a cap on upstream
+  error-response bodies (64 KB) before they're surfaced to the client.
+- Ceilings on configuration values — ports, fold rounds/tier, and max inflight/queued — so
+  out-of-range operator or environment input can no longer reach the runtime uncapped.
+
+### Changed
+
+- Public reasoning language now describes provider-generated summaries without implying access to
+  raw, private, or exact chain-of-thought.
+- Reasoning replay now ships off. Measurement showed that replay encouraged reuse of thin prior
+  thinking; `CLAUDEX_REPLAY_REASONING=1` remains available as an explicit cache-warmth trade-off.
+- A rate-limited (429) turn now terminates immediately instead of retrying in-gateway, so the
+  client re-sends; a real 429 arms a shared per-account cooldown so concurrent turns fail fast
+  together instead of each burning its own retries against the same limited account.
+
 ## splice — codex-proxy v35, claudithos removed, renamed from "mythos" - 2026-07-15
 
 Public release under the new name **splice** (was "mythos", which collided with Anthropic's

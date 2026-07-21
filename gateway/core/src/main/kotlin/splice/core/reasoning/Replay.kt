@@ -1,4 +1,4 @@
-// PORT-OF: server/src/reasoning/replay.mjs @ 4ca99f7 — invariants: envelope tag
+// PORT-OF: server/src/reasoning/replay.mjs @ pre-public-port-baseline — invariants: envelope tag
 // 'splice-reasoning' v1, encode/decode stay PAIRED (a tag/version bump strands in-flight
 // transcripts — byte-compat is pinned against Node-produced fixtures); encode emits compact
 // JSON with insertion order tag,v,item{id,encrypted_content,summary?} (summary omitted when

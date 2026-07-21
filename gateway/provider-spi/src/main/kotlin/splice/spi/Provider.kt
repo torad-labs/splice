@@ -79,4 +79,8 @@ public interface Provider : ProviderIdentity {
     public fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator
 
     public fun extraHeaders(creds: Credentials): Map<String, String>
+
+    /** Reasoning-continuation folding for this turn, or null when the feature is off for this
+     *  model/head (the default — every non-codex provider stays pure passthrough). */
+    public fun foldController(meta: TurnMeta): FoldController? = null
 }

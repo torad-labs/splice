@@ -1,4 +1,4 @@
-// PORT-OF: server/src/codex/stream.mjs idle-watchdog block @ 4ca99f7 — invariants (the v35
+// PORT-OF: server/src/codex/stream.mjs idle-watchdog block @ pre-public-port-baseline — invariants (the v35
 // headline fix IS the spec): BEFORE the first byte the idle limit is firstByteTimeout — a
 // big-context prefill (compaction re-reading ~160k tokens) is legitimately silent for
 // minutes; reaping prefill on streamIdle caused the abort->retry->cold-re-read loop
@@ -39,6 +39,15 @@ public class TurnWatchdog(
     /** Reader-side touch: the first byte flips the idle tier from firstByteTimeout to streamIdle. */
     public fun markByte() {
         sawFirstByte.set(true)
+    }
+
+    /** Reasoning-continuation fold: each round is a fresh upstream POST whose prefill can be silent
+     *  for minutes. The watchdog is shared across rounds (totalCap must span the whole turn), but the
+     *  idle TIER must reset per round — otherwise round 1's first byte pins every later round to the
+     *  short streamIdle cap instead of firstByteTimeout, wrongly aborting a slow continuation prefill.
+     *  Only the first-byte tier resets; startedAt/totalCap are untouched. */
+    public fun resetFirstByte() {
+        sawFirstByte.set(false)
     }
 
     public fun pollInterval(): Duration {

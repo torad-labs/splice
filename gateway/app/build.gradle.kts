@@ -6,6 +6,7 @@ import groovy.json.JsonSlurper
 import org.cyclonedx.model.Component
 import java.nio.file.Files
 import java.nio.file.StandardCopyOption
+import java.security.MessageDigest
 
 plugins {
     id("splice.kotlin-common")
@@ -122,6 +123,22 @@ val normalizeReleaseBom = tasks.register("normalizeReleaseBom") {
             }
             entry
         }
+
+        // actions/attest's CycloneDX detection requires serialNumber (bomFormat + specVersion
+        // alone are rejected at publish time), but a RANDOM serial would break the byte-identical
+        // rebuild verification this task exists for. Derive it from the normalized content:
+        // same inputs → same BOM → same serial, unique across genuinely different BOMs.
+        val canonical = JsonOutput.toJson(stableBom)
+        val digest = MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray())
+        val serialHex = digest.take(16).joinToString("") { byte -> "%02x".format(byte) }
+        val serial = listOf(
+            serialHex.substring(0, 8),
+            serialHex.substring(8, 12),
+            serialHex.substring(12, 16),
+            serialHex.substring(16, 20),
+            serialHex.substring(20, 32),
+        ).joinToString("-")
+        stableBom["serialNumber"] = "urn:uuid:$serial"
 
         val output = bom.get().asFile
         output.parentFile.mkdirs()

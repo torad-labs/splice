@@ -32,6 +32,9 @@ public class ApiKeyAuthProvider(
             kind = "api-key",
             fields = buildMap {
                 put("env_var", envVar)
+                // Path only, never contents: a file-configured head can be told its key file is the
+                // fix instead of an env var that was never the mechanism.
+                keyFile?.let { put("key_file", it.toString()) }
                 key?.let {
                     val m = if (it.length > MASK_MIN) "${it.take(MASK_KEEP)}…${it.takeLast(MASK_KEEP)}" else "set"
                     put("api_key_masked", m)

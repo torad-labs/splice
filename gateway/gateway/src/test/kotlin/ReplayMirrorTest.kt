@@ -1,4 +1,4 @@
-// PORT-OF: reasoning/mirror.mjs + replay.mjs pins @ 4ca99f7. The BYTE-COMPAT fixtures below
+// PORT-OF: reasoning/mirror.mjs + replay.mjs pins @ pre-public-port-baseline. The BYTE-COMPAT fixtures below
 // were produced by the LIVE Node encodeReasoningEnvelope on 2026-07-16 — a tag/version/order
 // drift strands in-flight transcripts, so encode must reproduce them byte-for-byte.
 import kotlinx.coroutines.test.runTest

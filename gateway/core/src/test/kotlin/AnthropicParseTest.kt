@@ -1,4 +1,4 @@
-// PORT-OF: the request shapes exercised by server/test/codex-proxy.test.mjs fixtures @ 4ca99f7 —
+// PORT-OF: the request shapes exercised by server/test/codex-proxy.test.mjs fixtures @ pre-public-port-baseline —
 // string-or-blocks content both ways, system both shapes, tool_use/tool_result round-trip,
 // unknown block tolerance, thinking budget, loose-field raw view.
 import kotlinx.serialization.json.jsonObject

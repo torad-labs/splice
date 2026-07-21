@@ -1,5 +1,5 @@
 // PORT-OF: the compaction pins from server/test/codex-proxy.test.mjs + invariants.test.mjs
-// @ 4ca99f7 — the MARKER CANARY (verbatim sentence pinned), all five markers detected in
+// @ pre-public-port-baseline — the MARKER CANARY (verbatim sentence pinned), all five markers detected in
 // system AND last-user positions, tools-agnostic detection, resume turns never match,
 // last-user-only scanning, affordance regexes, shadow row fields + ring cap, stats round-trip.
 import org.junit.jupiter.api.Assertions.assertEquals

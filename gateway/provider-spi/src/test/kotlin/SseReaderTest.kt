@@ -1,4 +1,4 @@
-// PORT-OF: the sseEvents pins from server/test/codex-proxy.test.mjs @ 4ca99f7 — UTF-8 split
+// PORT-OF: the sseEvents pins from server/test/codex-proxy.test.mjs @ pre-public-port-baseline — UTF-8 split
 // across chunk boundaries, partial-line carry, [DONE]/empty/malformed skip, CRLF tolerance,
 // onBytes touch per raw read.
 import io.ktor.utils.io.ByteChannel
@@ -16,9 +16,11 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.Arguments
 import org.junit.jupiter.params.provider.MethodSource
+import splice.spi.SseFrameTooLargeException
 import splice.spi.sseJsonEvents
 
 class SseReaderTest {
@@ -136,8 +138,45 @@ class SseReaderTest {
             channel.flush()
             channel.close(null)
         }
-        sseJsonEvents(channel, onRawText = { captured.append(it) }).toList()
+        sseJsonEvents(channel, onRawText = {
+            captured.append(it)
+            true
+        }).toList()
         assertEquals("<html><body>Unauthorized</body></html>", captured.toString())
+    }
+
+    @Test
+    fun `raw observer can detach after its diagnostic prefix is full`() = runTest {
+        val channel = ByteChannel()
+        var calls = 0
+        launch {
+            repeat(4) {
+                channel.writeFully("not-sse-$it\n".toByteArray())
+                channel.flush()
+            }
+            channel.close(null)
+        }
+        sseJsonEvents(channel, onRawText = {
+            calls++
+            false
+        }).toList()
+        assertEquals(1, calls)
+    }
+
+    @Test
+    fun `unterminated line is rejected at the configured safety limit`() = runTest {
+        val channel = ByteReadChannel("x".repeat(64))
+        assertThrows<SseFrameTooLargeException> {
+            sseJsonEvents(channel, maxLineChars = 16).toList()
+        }
+    }
+
+    @Test
+    fun `multi-line event is rejected at the configured safety limit`() = runTest {
+        val channel = ByteReadChannel("data: 12345678\ndata: 90\n\n")
+        assertThrows<SseFrameTooLargeException> {
+            sseJsonEvents(channel, maxLineChars = 64, maxEventChars = 8).toList()
+        }
     }
 
     // REGRESSION (600%-CPU incident, 2026-07-18): a torn/half-closed upstream where readAvailable

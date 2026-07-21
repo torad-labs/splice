@@ -46,6 +46,14 @@ dependencies {
     detektPlugins("io.gitlab.arturbosch.detekt:detekt-formatting:1.23.8")
 }
 
+// The root build wires this unpublished compiler plugin into every Kotlin compile via a stable
+// -Xplugin path. Project-wide release versioning must not silently change that internal filename:
+// a versioned archive leaves an old unversioned jar behind and can make incremental builds pass
+// while clean CI fails.
+tasks.named<Jar>("jar") {
+    archiveFileName.set("fir-checks.jar")
+}
+
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     // the test drives K2JVMCompiler with -Xplugin=<this module's jar>; needs it built first and its path.

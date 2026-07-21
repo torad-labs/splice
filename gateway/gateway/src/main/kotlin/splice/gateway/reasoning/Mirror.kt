@@ -1,4 +1,4 @@
-// PORT-OF: server/src/reasoning/mirror.mjs @ 4ca99f7 — invariants (L2): ONE mirrorInto serves
+// PORT-OF: server/src/reasoning/mirror.mjs @ pre-public-port-baseline — invariants (L2): ONE mirrorInto serves
 // stream and non-stream paths (v29 had two drifting copies; an ast-grep wall pins the
 // definition to THIS file); wire contract v25-v29: "\n[reasoning summary]\n<trimmed>\n" —
 // transcript tooling keys on this shape; gates: never on compact, only showReasoning=='text',

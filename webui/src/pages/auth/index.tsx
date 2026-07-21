@@ -1,10 +1,9 @@
-// Codex credential card from GET /api/auth: automated OAuth, with sign-in and
-// refresh driven from here.
+// Per-head credential cards from GET /api/auth. Browser/device login must run
+// in the local terminal (`<head> login`); the dashboard only performs refreshes.
 import { useEffect } from 'react';
 import { startAuthPolling, useAuth } from '@entities/auth';
-import { LoginCodex } from '@features/login-codex';
 import { RefreshAuth } from '@features/refresh-auth';
-import { ErrorNote, Metric, Panel, SkeletonRows, StatusPill } from '@shared/ui';
+import { EmptyState, ErrorNote, Metric, Panel, SkeletonRows, StatusPill } from '@shared/ui';
 
 export function AuthPage() {
   useEffect(() => startAuthPolling(15000), []);
@@ -14,24 +13,29 @@ export function AuthPage() {
     <div className="myx-stack">
       {error ? <ErrorNote message={error} /> : null}
       {loading && !data ? <SkeletonRows rows={4} cols={3} /> : null}
-      {data ? (
+      {data && Object.keys(data).length === 0 ? <EmptyState label="no configured heads" /> : null}
+      {data ? Object.entries(data).map(([head, auth]) => (
         <Panel
-          title="claudex (codex auth)"
-          actions={<><LoginCodex /><RefreshAuth head="codex" /></>}
+          key={head}
+          title={`${head} (${auth.kind})`}
+          actions={auth.present && auth.kind.includes('oauth') ? <RefreshAuth head={head} /> : null}
         >
           <div className="myx-pill-row">
-            <StatusPill tone={data.codex.present ? 'pos' : 'neg'}>
-              {data.codex.present ? 'token present' : 'no token'}
+            <StatusPill tone={auth.present ? 'pos' : 'neg'}>
+              {auth.present ? 'credentials present' : 'no credentials'}
             </StatusPill>
-            {data.codex.cached ? <StatusPill tone="info">cached</StatusPill> : null}
+            {auth.refresh_latched ? <StatusPill tone="neg">refresh blocked</StatusPill> : null}
           </div>
           <div className="myx-metric-row">
-            {data.codex.account_id_masked ? <Metric label="account" value={data.codex.account_id_masked} /> : null}
-            {data.codex.last_refresh ? <Metric label="last refresh" value={data.codex.last_refresh} /> : null}
+            {auth.account_id_masked ? <Metric label="account" value={auth.account_id_masked} /> : null}
+            {auth.last_refresh ? <Metric label="last refresh" value={auth.last_refresh} /> : null}
           </div>
-          {data.codex.auth_path ? <p className="myx-footnote">{data.codex.auth_path}</p> : null}
+          {auth.auth_path ? <p className="myx-footnote">{auth.auth_path}</p> : null}
+          {!auth.present && auth.kind.includes('oauth')
+            ? <p className="myx-footnote">Sign in from a terminal: <code>{head} login</code></p>
+            : null}
         </Panel>
-      ) : null}
+      )) : null}
     </div>
   );
 }

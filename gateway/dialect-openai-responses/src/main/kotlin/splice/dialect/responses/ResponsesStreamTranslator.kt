@@ -1,4 +1,4 @@
-// PORT-OF: server/src/codex/stream.mjs runStreamTurn @ 4ca99f7, event-for-event — its comments
+// PORT-OF: server/src/codex/stream.mjs runStreamTurn @ pre-public-port-baseline, event-for-event — its comments
 // are the spec; every rule below pins a shipped bug:
 //   - tool_use opens EAGERLY on output_item.added; text/reasoning open LAZILY on first delta
 //     (empty thinking widgets otherwise);
@@ -57,6 +57,10 @@ public data class StreamTurnContext(
      *  (probed 2026-07-19: part(1,0) byte-identical to part(0,0)); codex-rs dedups client-side.
      *  Gated to the delivery quirk so genuine token-granular streams are never touched. */
     val dedupeRepeatedSummaryParts: Boolean = false,
+    /** Encode this round's encrypted reasoning items into splice-reasoning envelopes on the
+     *  Success outcome (for fold replay). True ONLY when the turn is fold-eligible — off keeps the
+     *  reducer byte-identical to the pre-fold path (no collection, empty envelopes). */
+    val collectReasoningEnvelopes: Boolean = false,
 )
 
 /** Drop paragraph-parts already streamed this turn (sequential_cutoff recap noise); parts under
@@ -142,10 +146,16 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
     private fun successOutcome(reducer: ResponsesEventReducer): TurnOutcome = TurnOutcome.Success(
         hasToolUse = reducer.hasToolUse,
         incomplete = reducer.incomplete,
-        usage = Usage(reducer.inputTokens, reducer.outputTokens, reducer.cachedTokens),
+        usage = Usage(
+            reducer.inputTokens,
+            reducer.outputTokens,
+            reducer.cachedTokens,
+            reducer.reasoningTokens,
+        ),
         thinkingText = reducer.thinkingBuf.toString(),
         bodyText = reducer.textBuf.toString(),
         emittedText = reducer.emittedText,
+        reasoningEnvelopes = reducer.reasoningEnvelopes.toList(),
     )
 
     private fun harvestFallback(reducer: ResponsesEventReducer) {
@@ -187,13 +197,23 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     var inputTokens = 0L
     var outputTokens = 0L
     var cachedTokens = 0L
+    var reasoningTokens = 0L
+
+    // splice-reasoning envelopes of this round's encrypted reasoning items (fold replay). Collected
+    // only when ctx.collectReasoningEnvelopes — otherwise stays empty, pre-fold behaviour intact.
+    val reasoningEnvelopes = mutableListOf<String>()
     private var toolSynthCounter = 0
 
     // Late-reasoning items already emitted, keyed by their reasoning block index. Substring
     // dedup on thinkingBuf dropped a DISTINCT item whose text happened to be a substring of an
     // earlier one, diverging wire from mirror (audit 2026-07-18); track per item instead.
     private val emittedReasoningKeys = HashSet<Int>()
-    private val seenSummaryParts = HashSet<String>()
+
+    // sequential_cutoff restatement dedup, PER reasoning item (keyed by output_index). A turn-global
+    // set silently dropped a genuine paragraph that two DISTINCT reasoning items happened to share
+    // byte-for-byte (2026-07-20) — restatements only recur WITHIN one item's summary stream, so the
+    // set is scoped there. Bounded by the item count per turn.
+    private val seenSummaryPartsByItem = HashMap<Int, MutableSet<String>>()
 
     suspend fun onEvent(evt: JsonObject, sink: WireSink) {
         when (str(evt["type"])) {
@@ -228,6 +248,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
         if (u.inputTokens > 0) inputTokens = u.inputTokens
         if (u.outputTokens > 0) outputTokens = u.outputTokens
         if (u.cachedTokens > 0) cachedTokens = u.cachedTokens
+        if (u.reasoningTokens > 0) reasoningTokens = u.reasoningTokens
     }
 
     private fun onFailure(evt: JsonObject) {
@@ -266,11 +287,15 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
             blocks[oi]?.let { sink.closeBlock(it.index) }
             blocks[reasoningKey(oi)]?.let { sink.closeBlock(it.index) }
         }
-        // Replay (gated): emit the encrypted reasoning IN POSITION — right after its summary
-        // closes and before the tool_use it preceded — so the round-trip preserves cache order.
-        if (item != null && shouldEmitReasoning(ctx, item)) {
-            ctx.encodeReasoningEnvelope(item)?.let { sink.addRedactedThinking(it) }
-        }
+        if (item == null) return
+        // Replay (gated): emit the encrypted reasoning IN POSITION — right after its summary closes
+        // and before the tool_use it preceded — so the round-trip preserves cache order. The SAME
+        // envelope also feeds fold replay (collectReasoningEnvelopes, independent of the emit flag).
+        // encodeReasoningEnvelope is non-null ONLY for a reasoning item carrying id +
+        // encrypted_content — so it doubles as the "is this a replayable reasoning item?" filter.
+        val envelope = ctx.encodeReasoningEnvelope(item) ?: return
+        if (shouldEmitReasoning(ctx, item)) sink.addRedactedThinking(envelope)
+        if (ctx.collectReasoningEnvelopes) reasoningEnvelopes.add(envelope)
     }
 
     private suspend fun maybeEmitLateReasoning(item: JsonObject?, oi: Int?, sink: WireSink) {
@@ -298,7 +323,8 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
         // (openai/codex#16801 ordering anomaly), and filtering first seeded the seen-set with parts
         // whose deltas hadn't arrived — suppressing them both late (sawDelta return) and live
         // (seen-set match): total summary starvation (found live 2026-07-19).
-        val text = dedupSummaryParts(raw, seenSummaryParts, ctx.dedupeRepeatedSummaryParts)
+        val seen = seenSummaryPartsByItem.getOrPut(outputIndex) { HashSet() }
+        val text = dedupSummaryParts(raw, seen, ctx.dedupeRepeatedSummaryParts)
         if (text.isEmpty()) return
         appendLateReasoning(existing, outputIndex, text, sink)
     }
@@ -336,7 +362,8 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
         // an exact repeat of an already-streamed part (>= min length; shorter deltas are plausibly
         // genuine token fragments) is upstream recap noise, not new thinking.
         if (ctx.dedupeRepeatedSummaryParts && delta.length >= SUMMARY_PART_DEDUP_MIN_CHARS) {
-            if (!seenSummaryParts.add(delta)) return
+            val oi = intOr(evt[OUTPUT_INDEX]) ?: 0
+            if (!seenSummaryPartsByItem.getOrPut(oi) { HashSet() }.add(delta)) return
         }
         val b = ensureThinkingBlock(evt, sink)
         b.sawDelta = true

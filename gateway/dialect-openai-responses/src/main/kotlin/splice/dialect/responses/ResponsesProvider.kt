@@ -13,6 +13,7 @@ import splice.core.reasoning.encodeReasoningEnvelope
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.spi.BuiltTurn
+import splice.spi.FoldController
 import splice.spi.Provider
 import splice.spi.ProviderIdentity
 import splice.spi.ProviderTuning
@@ -26,6 +27,9 @@ public abstract class ResponsesProvider(
     private val configEffort: String?,
     private val configSummary: String?,
     protected val quirks: ResponsesQuirks,
+    // Reasoning-continuation folding (codex 518n-2). null = the feature is off for this provider —
+    // grok/openai-platform pass nothing → pure passthrough. Only CodexProvider wires a real config.
+    private val foldConfig: FoldConfig? = null,
 ) : Provider, ProviderIdentity by tuning {
 
     final override val upstreamUrl: String = "${tuning.baseUrl}/responses"
@@ -58,24 +62,52 @@ public abstract class ResponsesProvider(
                 decodeReasoningEnvelope = { decodeReasoningEnvelope(it) },
             ),
         )
-        return BuiltTurn(built.req, built.meta, perTurnHeaders(sessionId))
+        return BuiltTurn(built.req, built.meta, perTurnHeaders(sessionId) + liteHeaders(built.meta))
     }
+
+    /** codex-rs sends this marker header for responses-lite (5.6-family) turns; compact turns keep
+     *  the normal shape so the header stays off there too (mirrors the builder's lite gate). */
+    private fun liteHeaders(meta: TurnMeta): Map<String, String> =
+        if (!meta.compact && quirks.responsesLiteModelRegex?.containsMatchIn(meta.upstreamModel) == true) {
+            mapOf("x-openai-internal-codex-responses-lite" to "true")
+        } else {
+            emptyMap()
+        }
 
     final override fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator =
         ResponsesStreamTranslator(
             StreamTurnContext(
                 compact = meta.compact,
                 // STREAM-side emission of redacted_thinking wire blocks (so Claude Code stores the
-                // handle). Distinct from BuildOptions.replayReasoning (input injection).
-                emitEncryptedReasoning = EmitEncryptedReasoning(showOn()),
+                // handle for the NEXT turn's replay). COUPLED to replayReasoning (2026-07-20): a
+                // handle the gateway will never inject back is pure cost — each redacted_thinking
+                // block is a content_block_start with NO thinking_delta, which Claude Code renders as
+                // a permanent empty "✳ Thinking…" spinner; a deep turn emits dozens (the "walls of
+                // Thinking" report). With replay OFF (default) the whole transcript-replay loop is off
+                // end-to-end: no empty spinners, and reasoning is re-derived fresh (deeper) each turn.
+                // The live summary thinking blocks (reasoning_summary_text deltas) are a SEPARATE path
+                // and still display. Fold's own intra-turn reasoning replay is independent of this.
+                emitEncryptedReasoning = EmitEncryptedReasoning(showOn() && replayReasoning),
                 encodeReasoningEnvelope = { encodeReasoningEnvelope(it) },
                 clientGone = signals.clientGone,
                 watchdogFired = signals.watchdogFired,
                 streamIdleMsForMessage = watchdog.streamIdle.inWholeMilliseconds,
                 upstreamTimeoutMsForMessage = watchdog.totalCap.inWholeMilliseconds,
                 dedupeRepeatedSummaryParts = quirks.summaryDelivery != null,
+                // Collect this round's encrypted reasoning envelopes ONLY when folding is active for
+                // the turn — off keeps the reducer byte-identical for sol / every non-fold turn.
+                collectReasoningEnvelopes = foldController(meta) != null,
             ),
         )
+
+    // Non-null ONLY when folding is configured AND the turn's model is fold-eligible AND it is not a
+    // compaction (a text summarizer requests no encrypted_content). Sol and every non-codex head get
+    // null here → the gateway never buffers or loops → pure passthrough.
+    final override fun foldController(meta: TurnMeta): FoldController? {
+        val cfg = foldConfig ?: return null
+        if (meta.compact || meta.upstreamModel !in cfg.models) return null
+        return ResponsesFoldController(cfg, decodeReasoningEnvelope = { decodeReasoningEnvelope(it) })
+    }
 
     private fun showOn(): Boolean = !showReasoning.isOff
 }

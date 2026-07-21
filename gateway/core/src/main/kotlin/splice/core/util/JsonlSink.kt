@@ -9,12 +9,25 @@ import java.nio.channels.FileChannel
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
+import java.util.concurrent.ConcurrentHashMap
 
 public object JsonlSink {
-    /** Append [line] (a trailing newline is added) to [file], creating the file if absent. */
-    public fun appendLine(file: Path, line: String) {
-        Files.writeString(file, line + "\n", StandardOpenOption.CREATE, StandardOpenOption.APPEND)
+    private val locks = ConcurrentHashMap<Path, Any>()
+
+    /** Append [line], rotating one generation before [maxBytes] can grow without bound. */
+    public fun appendLine(file: Path, line: String, maxBytes: Long = DEFAULT_MAX_BYTES) {
+        val normalized = file.toAbsolutePath().normalize()
+        synchronized(locks.computeIfAbsent(normalized) { Any() }) {
+            val encoded = (line + "\n").toByteArray(StandardCharsets.UTF_8)
+            val currentSize = if (Files.exists(file)) Files.size(file) else 0L
+            if (currentSize > 0 && currentSize + encoded.size > maxBytes) {
+                val rolled = file.resolveSibling("${file.fileName}.1")
+                Files.move(file, rolled, StandardCopyOption.REPLACE_EXISTING)
+            }
+            Files.write(file, encoded, StandardOpenOption.CREATE, StandardOpenOption.APPEND)
+        }
     }
 
     /**
@@ -38,4 +51,6 @@ public object JsonlSink {
             val complete = if (readFrom > 0L) text.substringAfter('\n', missingDelimiterValue = "") else text
             complete.lineSequence().filter { it.isNotEmpty() }.toList()
         }
+
+    private const val DEFAULT_MAX_BYTES = 64L * 1024 * 1024
 }

@@ -1,4 +1,4 @@
-// PORT-OF: the launcher's EADDRINUSE quiet-exit intent @ 4ca99f7, adapted for the single
+// PORT-OF: the launcher's EADDRINUSE quiet-exit intent @ pre-public-port-baseline, adapted for the single
 // daemon (P4-SUP slot): one process binds control_port AND every head port, so the per-port
 // trick doesn't compose. A flock on ~/.claude-codex/state/daemon.lock is the single-flight
 // startup gate — the loser waits briefly, health-checks the winner, exits 0 LOUD (never a loop).

@@ -13,6 +13,7 @@ import splice.app.OAuthLoginFlow
 import splice.app.TopologyLoader
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
+import splice.core.topology.ambiguousHeadMessage
 import splice.core.util.str
 import splice.provider.codex.CodexOAuthEndpoints
 import splice.provider.codex.authJsonFromTokens
@@ -57,10 +58,23 @@ private suspend fun runLoginFlow(headKey: String, provider: ProviderConfig, topo
     }
 
 private fun resolveHeadKey(headArg: String?, topology: Topology): String? {
+    if (headArg != null) {
+        // Accept the topology key or the wrapper command (`<command> login` passes argv[0]).
+        val keys = topology.resolveHeadKeys(headArg)
+        keys.singleOrNull()?.let { return it }
+        println(
+            if (keys.isEmpty()) {
+                "splice: unknown head '$headArg' (heads: ${topology.heads.keys})"
+            } else {
+                "splice: " + ambiguousHeadMessage(headArg, keys)
+            },
+        )
+        return null
+    }
     // No arg: pick the sole browser-login head, else make the user choose — never silently
     // sign into whichever head happens to be declared first.
     val oauth = topology.oauthHeads()
-    return headArg ?: oauth.singleOrNull() ?: run {
+    return oauth.singleOrNull() ?: run {
         if (oauth.isEmpty()) {
             println("splice: no browser-login heads in the topology.")
         } else {

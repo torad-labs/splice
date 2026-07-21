@@ -8,7 +8,7 @@
 # to false before mutating the file layer, and restore the snap at the end.
 set -euo pipefail
 
-ROOT="${CLAUDEX_ROOT:-$HOME/Documents/dev/projects/mythos/repo}"
+ROOT="${CLAUDEX_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 export CLAUDEX_ROOT="$ROOT"
 PORT="${CACHE_AB_PORT:-3097}"
 PROD_PORT=3099

@@ -47,8 +47,11 @@ import java.net.Socket
 import java.nio.file.Files
 import java.util.concurrent.atomic.AtomicInteger
 
-private class FakeHead(override val key: String, override val port: Int) : Head {
-    override val label = key
+private class FakeHead(
+    override val key: String,
+    override val port: Int,
+    override val label: String = key,
+) : Head {
     var running = true
     override suspend fun start() { running = true }
     override suspend fun stop() { running = false }
@@ -58,6 +61,12 @@ private class FakeHead(override val key: String, override val port: Int) : Head 
 private class FakeAuth : AuthProvider {
     override suspend fun credentials() = null
     override suspend fun describe() = AuthDescription(true, "chatgpt-oauth", mapOf("account_id_masked" to "acct…5678"))
+}
+
+/** An api-key head with NO key set — launch must still work but must carry the warning. */
+private class FakeAbsentAuth : AuthProvider {
+    override suspend fun credentials() = null
+    override suspend fun describe() = AuthDescription(false, "api-key", mapOf("env_var" to "OPENROUTER_API_KEY"))
 }
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -106,24 +115,17 @@ class ControlServerTest {
             warnTokens5h = 0,
             perf = fakePerf,
         )
-        val configDir = tmp.resolve(".claude-codex-test")
-        val launchSpec = LaunchSpec(
-            configDir = configDir,
-            pinnedModel = "gpt-5.6-sol",
-            availableModelIds = listOf("gpt-5.6-sol", "gpt-5.4-mini"),
-            modelLabels = mapOf("gpt-5.6-sol" to "Codex 5.6 Sol", "gpt-5.4-mini" to "Codex 5.4 Mini"),
-            contextWindow = 272000,
-            modelOptionsCache = kotlinx.serialization.json.buildJsonObject { },
-            statuslineCommand = "\"/bin/curl\" -s :3096/statusline",
-            loginCommand = "claudex login",
-            signInLabel = "Codex (ChatGPT)",
-            policy = splice.core.launch.ClaudePolicy(share = emptySet(), isolate = emptySet()),
-            port = 3099,
-            inferenceToken = mgmt.get(),
-        )
+        val launchSpec = launchSpecFixture(tmp, mgmt.get())
         control = ControlServer(
             port = port,
-            heads = mapOf("codex" to managed.copy(launchSpec = launchSpec)),
+            heads = mapOf(
+                "codex" to managed.copy(launchSpec = launchSpec),
+                "openrouter" to openrouterHead(managed, launchSpec),
+                // Two heads sharing one wrapper command `dup` — a misconfigured topology used to
+                // exercise the ambiguous-launch path (distinct 409, not an unknown-head 404).
+                "dupA" to sharedCommandHead(managed, launchSpec, "dupA"),
+                "dupB" to sharedCommandHead(managed, launchSpec, "dupB"),
+            ),
             config = ConfigService(paths),
             mgmtKey = mgmt,
             dashboardHtml = { "<!doctype html><title>splice</title>" },
@@ -136,6 +138,40 @@ class ControlServerTest {
         control.start()
         awaitListening(port)
     }
+
+    private fun launchSpecFixture(tmp: java.nio.file.Path, inferenceToken: String) = LaunchSpec(
+        configDir = tmp.resolve(".claude-codex-test"),
+        pinnedModel = "gpt-5.6-sol",
+        availableModelIds = listOf("gpt-5.6-sol", "gpt-5.4-mini"),
+        modelLabels = mapOf("gpt-5.6-sol" to "Codex 5.6 Sol", "gpt-5.4-mini" to "Codex 5.4 Mini"),
+        contextWindow = 272000,
+        modelOptionsCache = kotlinx.serialization.json.buildJsonObject { },
+        statuslineCommand = "\"/bin/curl\" -s :3096/statusline",
+        loginCommand = "claudex login",
+        signInLabel = "Codex (ChatGPT)",
+        policy = splice.core.launch.ClaudePolicy(share = emptySet(), isolate = emptySet()),
+        port = 3099,
+        inferenceToken = inferenceToken,
+    )
+
+    /** A second head whose wrapper COMMAND differs from its topology KEY (the starter's
+     *  openrouter → claudeor shape) and whose api-key auth is absent. */
+    private fun openrouterHead(managed: ManagedHead, launchSpec: LaunchSpec): ManagedHead = managed.copy(
+        head = FakeHead("openrouter", 3101, label = "claudeor"),
+        auth = FakeAbsentAuth(),
+        authKind = "api-key",
+        launchSpec = launchSpec.copy(port = 3101),
+    )
+
+    /** A launchable head whose wrapper COMMAND (label) is the shared `dup` — two of these collide. */
+    private fun sharedCommandHead(
+        managed: ManagedHead,
+        launchSpec: LaunchSpec,
+        key: String,
+    ): ManagedHead = managed.copy(
+        head = FakeHead(key, 3200, label = "dup"),
+        launchSpec = launchSpec.copy(port = 3200),
+    )
 
     @AfterAll
     fun tearDown() {
@@ -302,6 +338,69 @@ class ControlServerTest {
         assertTrue(argv.contains("--dangerously-skip-permissions"))
         assertTrue(argv.contains("-c")) // extra args passed through
         assertFalse(argv.contains("--model")) // model comes from env + picker, not a locked flag
+    }
+
+    @Test
+    fun `launch resolves a head by its wrapper command and warns when auth is absent`() = runTest {
+        // The shim asks by argv[0] (the wrapper command, `claudeor`), not the topology key
+        // (`openrouter`) — the starter topology broke here once (v0.1.1 first-run bug).
+        val body = client.post("http://127.0.0.1:$port/launch/claudeor") {
+            header("Authorization", "Bearer $key")
+            header("Content-Type", "application/json")
+            setBody("""{"args":[]}""")
+        }.bodyAsText()
+        val obj = json.parseToJsonElement(body).jsonObject
+        assertEquals("http://127.0.0.1:3101", obj["env"]!!.jsonObject["ANTHROPIC_BASE_URL"]?.jsonPrimitive?.content)
+        val warning = obj["warning"]?.jsonPrimitive?.content.orEmpty()
+        assertTrue(warning.contains("OPENROUTER_API_KEY"), "warning should name the env var: $warning")
+        assertTrue(warning.contains("splice restart"), "warning should name the fix: $warning")
+    }
+
+    @Test
+    fun `launch by an ambiguous wrapper command 409s naming both heads`() = runTest {
+        // Two heads share the wrapper command `dup`; resolving it must NOT report "unknown head"
+        // (which would hide the misconfiguration) but a distinct ambiguity error naming both.
+        val response = client.post("http://127.0.0.1:$port/launch/dup") {
+            header("Authorization", "Bearer $key")
+            header("Content-Type", "application/json")
+            setBody("{}")
+        }
+        assertEquals(HttpStatusCode.Conflict, response.status)
+        val error = json.parseToJsonElement(response.bodyAsText()).jsonObject["error"]?.jsonPrimitive?.content.orEmpty()
+        assertTrue(error.contains("ambiguous"), "should be a distinct ambiguity error: $error")
+        assertTrue(error.contains("dupA") && error.contains("dupB"), "ambiguity error names both heads: $error")
+    }
+
+    @Test
+    fun `a non-launch route 409s an ambiguous wrapper command instead of unknown head`() = runTest {
+        // Same misconfiguration as the launch test, on /api/logs — the other by-name routes
+        // (headAction/authAction/logs) share one resolver, so ambiguity must never read as a typo.
+        val response = client.get("http://127.0.0.1:$port/api/logs/dup") { header("Authorization", "Bearer $key") }
+        assertEquals(HttpStatusCode.Conflict, response.status)
+        val error = json.parseToJsonElement(response.bodyAsText()).jsonObject["error"]?.jsonPrimitive?.content.orEmpty()
+        assertTrue(error.contains("ambiguous"), "should be a distinct ambiguity error: $error")
+        assertTrue(error.contains("dupA") && error.contains("dupB"), "ambiguity error names both heads: $error")
+    }
+
+    @Test
+    fun `a non-launch route resolves a head by its wrapper command label`() = runTest {
+        // /api/logs used bare heads[key] (topology key only); the shared lookup now also accepts
+        // the wrapper command, so `claudeor` (openrouter's label) resolves instead of 404ing.
+        val logs = json.parseToJsonElement(authed("/api/logs/claudeor")).jsonObject
+        assertEquals("claudeor", logs["key"]?.jsonPrimitive?.content)
+        assertTrue(logs["lines"]!!.jsonArray.isNotEmpty(), "resolved head's log lines should be returned")
+    }
+
+    @Test
+    fun `launch 404 names the configured wrapper commands`() = runTest {
+        val response = client.post("http://127.0.0.1:$port/launch/nope") {
+            header("Authorization", "Bearer $key")
+            header("Content-Type", "application/json")
+            setBody("{}")
+        }
+        assertEquals(HttpStatusCode.NotFound, response.status)
+        val error = json.parseToJsonElement(response.bodyAsText()).jsonObject["error"]?.jsonPrimitive?.content.orEmpty()
+        assertTrue(error.contains("claudeor"), "404 should list launchable commands: $error")
     }
 
     @Test

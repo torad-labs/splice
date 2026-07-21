@@ -1,5 +1,5 @@
 // PORT-OF: the Anthropic Messages request shapes READ by server/src/codex/translate-request.mjs
-// + grok/translate-request.mjs @ 4ca99f7 — invariants: content is string OR block list; system is
+// + grok/translate-request.mjs @ pre-public-port-baseline — invariants: content is string OR block list; system is
 // string OR text-block list; tool_result content is string OR block list; tool input/input_schema
 // stay opaque JsonObject; UNKNOWN block types must decode (never throw) so new client block kinds
 // degrade gracefully; thinking.type disabled/disabled_thinking disables reasoning.

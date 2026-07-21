@@ -1,5 +1,5 @@
 // PORT-OF: server/src/config.mjs DEFAULTS + ENV_MAP + NUMBER_KEYS/BOOL_KEYS + RESTART_REQUIRED_KEYS
-// @ 4ca99f7 — invariants: env alias order matters (first present name wins); maxInflight accepts
+// @ pre-public-port-baseline — invariants: env alias order matters (first present name wins); maxInflight accepts
 // unlimited/off/none/'' as 0; bool coercion is /^(1|true|yes|on)$/i; RESTART_REQUIRED =
 // [port, grokPort, controlPort, upstreamTimeoutMs]. DELIBERATELY NOT PORTED (plan): the vestigial
 // anthropicUpstream + claudeCredentialsPath keys (nothing read them; claudithos leftovers).
@@ -41,13 +41,10 @@ public enum class Knob(
         "gpt-5.6-sol",
         restartRequired = true,
     ),
-    COMPACT_MODEL(
-        "compactModel",
-        KnobKind.STRING,
-        listOf("CLAUDEX_COMPACT_MODEL"),
-        "",
-        restartRequired = true,
-    ),
+
+    // (COMPACT_MODEL removed 2026-07-20: it was dead — never wired to the request builder — AND a
+    //  footgun against the cache law: compaction MUST run on the session's own model+effort or the
+    //  warm prompt-cache prefix is invalidated ("compaction ate my subscription"). Pinned by test.)
     EFFORT(
         "effort",
         KnobKind.STRING,
@@ -94,8 +91,46 @@ public enum class Knob(
         true,
         restartRequired = true,
     ),
-    MAX_INFLIGHT("maxInflight", KnobKind.NUMBER, listOf("CLAUDEX_MAX_INFLIGHT"), 0L),
-    MAX_QUEUED("maxQueued", KnobKind.NUMBER, listOf("CLAUDEX_MAX_QUEUED"), 0L),
+
+    // Reasoning-continuation folding (codex 518n-2 "dumbing down" fix). The fold set is the codex
+    // models that TRUNCATE their own chain-of-thought at reasoning_tokens == 518n-2 (luna/terra/5.5,
+    // NOT sol); a comma list so the operator can edit it. Detection replays the round's encrypted
+    // reasoning with a "Continue thinking..." marker until the model finishes cleanly, capped by
+    // fold_max_continue rounds and fold_max_tier (n). OFF for any model not in the set.
+    FOLD_REASONING_MODELS(
+        "foldReasoningModels",
+        KnobKind.STRING,
+        listOf("CLAUDEX_FOLD_REASONING_MODELS"),
+        "gpt-5.6-luna,gpt-5.6-terra,gpt-5.5",
+        restartRequired = true,
+    ),
+    FOLD_MAX_CONTINUE(
+        "foldMaxContinue",
+        KnobKind.NUMBER,
+        listOf("CLAUDEX_FOLD_MAX_CONTINUE"),
+        3L,
+        restartRequired = true,
+    ),
+    FOLD_MARKER_TEXT(
+        "foldMarkerText",
+        KnobKind.STRING,
+        listOf("CLAUDEX_FOLD_MARKER_TEXT"),
+        "Continue thinking...",
+        restartRequired = true,
+    ),
+    FOLD_MAX_TIER(
+        "foldMaxTier",
+        KnobKind.NUMBER,
+        listOf("CLAUDEX_FOLD_MAX_TIER"),
+        6L,
+        restartRequired = true,
+    ),
+
+    // Bounded by default since the 2026-07-19 storm: unlimited (0) let ~650 concurrent streams
+    // hit one rate-limited account and OOM the 1G heap. 0 still means unlimited for an explicit
+    // operator opt-out; both stay live-PATCHable.
+    MAX_INFLIGHT("maxInflight", KnobKind.NUMBER, listOf("CLAUDEX_MAX_INFLIGHT"), 48L),
+    MAX_QUEUED("maxQueued", KnobKind.NUMBER, listOf("CLAUDEX_MAX_QUEUED"), 512L),
     UPSTREAM_RETRIES(
         "upstreamRetries",
         KnobKind.NUMBER,

@@ -1,4 +1,4 @@
-// PORT-OF: server/src/models/codex-models.mjs + grok-models.mjs @ 4ca99f7 — invariants:
+// PORT-OF: server/src/models/codex-models.mjs + grok-models.mjs @ pre-public-port-baseline — invariants:
 // context windows resolve EXACT match -> ordered startsWith prefix rules -> default
 // (never substring: the v29 fuzzy pass silently inherited windows and hid catalog gaps);
 // discovery wrap because Claude Code drops /v1/models ids not matching /^(claude|anthropic)/i;
@@ -47,12 +47,16 @@ public data class ModelCatalog(
 
     private val exactWindows: Map<String, Long> =
         models.associate { it.id to it.contextWindow } + extraWindows.associate { it.id to it.contextWindow }
+    private val modelIds: Set<String> = models.mapTo(HashSet()) { it.id }
 
     private val suffixHint = Regex("\\[1m]$", RegexOption.IGNORE_CASE)
 
     public fun wrap(id: String): String = discoveryPrefix + id
 
     public fun unwrap(id: String): String = id.removePrefix(discoveryPrefix)
+
+    /** True only for a picker model owned by this head (wrapped or upstream id). */
+    public fun contains(id: String): Boolean = stripSuffixes(id) in modelIds
 
     /** Discovery wrapper + "[1m]" hint stripped — what the upstream actually sees. */
     public fun stripSuffixes(id: String): String = unwrap(id).replace(suffixHint, "")

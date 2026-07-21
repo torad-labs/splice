@@ -11,6 +11,8 @@ package head
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.plugins.HttpTimeout
+import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
@@ -182,6 +184,7 @@ class HeadServerLoadTest {
     private val gate = InflightGate({ 0 })
 
     private val client = HttpClient(CIO) {
+        defaultRequest { bearerAuth("test-inference-token") }
         install(HttpTimeout) {
             requestTimeoutMillis = 200_000
             connectTimeoutMillis = 30_000
@@ -223,6 +226,7 @@ class HeadServerLoadTest {
             listenPort = port,
             deps = HeadDeps(
                 upstream = UpstreamClient(firstByteTimeoutMs = 120_000, totalTimeoutMs = 200_000, maxRetries = 2),
+                inferenceToken = "test-inference-token",
                 gate = gate,
                 shadow = ShadowClassifier(log = {}),
                 compactStats = CompactStats(tmp.resolve("compact.jsonl")),

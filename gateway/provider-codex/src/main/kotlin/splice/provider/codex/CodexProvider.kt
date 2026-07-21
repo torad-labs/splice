@@ -6,6 +6,7 @@ package splice.provider.codex
 
 import splice.core.auth.Credentials
 import splice.core.turn.ReasoningDisplay
+import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
 import splice.spi.ProviderTuning
@@ -17,8 +18,10 @@ public class CodexProvider(
     configEffort: String?,
     configSummary: String?,
     quirks: ResponsesQuirks = defaultQuirks(),
+    // Reasoning-continuation folding (codex 518n-2). null = off; the daemon wires it from config.
+    foldConfig: FoldConfig? = null,
     private val accountIdHeader: Boolean = true,
-) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks) {
+) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks, foldConfig) {
 
     override fun extraHeaders(creds: Credentials): Map<String, String> = buildMap {
         put("Accept", "text/event-stream")

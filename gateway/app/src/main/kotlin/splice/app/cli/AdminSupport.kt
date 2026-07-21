@@ -3,31 +3,60 @@
 // commands read like a story. :app is wall-exempt for println (a terminal tool writes to stdout).
 package splice.app.cli
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import splice.app.TopologyLoader
+import splice.core.GATEWAY_VERSION
+import splice.core.config.ConfigService
 import splice.core.config.StatePaths
+import splice.core.topology.Topology
+import splice.core.topology.configOverrides
 import splice.core.util.runCatchingCancellable
-import java.net.InetSocketAddress
-import java.net.Socket
+import java.net.HttpURLConnection
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 
 internal object AdminSupport {
+    private val json = Json { ignoreUnknownKeys = true }
 
-    /** The control port from the topology (default 3096). */
-    fun controlPort(): Int {
-        val topo = runCatching { TopologyLoader.loadOrMaterialize(TopologyLoader.configPath()) }.getOrNull()
-        return topo?.daemon?.controlPort?.takeIf { it > 0 } ?: DEFAULT_CONTROL_PORT
+    /** The effective control port using the daemon's exact TOML < state < env precedence. */
+    fun controlPort(): Int =
+        controlPort(runCatching { TopologyLoader.loadOrMaterialize(TopologyLoader.configPath()) }.getOrNull())
+
+    /** Same, from an already-loaded (or absent) topology — doctor uses this so a diagnostic
+     *  never MATERIALIZES the starter config as a side effect. [envReader] threads through the
+     *  whole port resolution (StatePaths + ConfigService env layer) so a hermetic caller never
+     *  reads the real process environment or state dir. */
+    fun controlPort(topology: Topology?, envReader: (String) -> String? = System::getenv): Int = if (topology == null) {
+        DEFAULT_CONTROL_PORT
+    } else {
+        ConfigService(
+            StatePaths(envReader = envReader),
+            headOverrides = topology.configOverrides(),
+            envReader = envReader,
+        ).getConfig().controlPort
     }
 
-    /** True if something is listening on the control port (the daemon is up). */
-    fun daemonUp(port: Int = controlPort()): Boolean =
-        runCatching {
-            Socket().use {
-                it.connect(InetSocketAddress("127.0.0.1", port), PROBE_TIMEOUT_MS)
-                true
-            }
-        }.getOrDefault(false)
+    /** True only when the listener answers splice's versioned HTTP health contract. */
+    fun daemonUp(port: Int = controlPort()): Boolean = runCatchingCancellable {
+        val connection = URI("http://127.0.0.1:$port/health").toURL().openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = "GET"
+            connection.connectTimeout = PROBE_TIMEOUT_MS
+            connection.readTimeout = PROBE_TIMEOUT_MS
+            if (connection.responseCode != HttpURLConnection.HTTP_OK) return@runCatchingCancellable false
+            val health = connection.inputStream.bufferedReader().use { it.readText() }
+            val obj = json.parseToJsonElement(health).jsonObject
+            obj["ok"]?.jsonPrimitive?.booleanOrNull == true &&
+                obj["version"]?.jsonPrimitive?.content == GATEWAY_VERSION
+        } finally {
+            connection.disconnect()
+        }
+    }.getOrDefault(false)
 
     /** The running jar, so a spawned daemon reuses the exact same build. */
     fun selfJar(): Path? {
@@ -94,8 +123,9 @@ internal object AdminSupport {
         true
     }.getOrDefault(false)
 
-    fun mgmtKey(): String? =
-        runCatching { Files.readString(StatePaths().mgmtKeyFile).trim() }.getOrNull()?.takeIf { it.isNotEmpty() }
+    fun mgmtKey(envReader: (String) -> String? = System::getenv): String? =
+        runCatching { Files.readString(StatePaths(envReader = envReader).mgmtKeyFile).trim() }
+            .getOrNull()?.takeIf { it.isNotEmpty() }
 
     fun home(): Path = Paths.get(System.getProperty("user.home"))
 
@@ -123,5 +153,5 @@ internal object AdminSupport {
     // The shell `${SPLICE_JVM_OPTS:-...}` lets an operator override without touching code.
     // G1PeriodicGCInterval: idle heap uncommit — a daemon that goes quiet still returns freed
     // pages to the OS instead of holding them until the next GC is triggered by allocation.
-    internal const val DEFAULT_JVM_OPTS = "-Xmx1024m -XX:+UseStringDeduplication -XX:G1PeriodicGCInterval=60000"
+    internal const val DEFAULT_JVM_OPTS = "-Xmx2048m -XX:+UseStringDeduplication -XX:G1PeriodicGCInterval=60000"
 }

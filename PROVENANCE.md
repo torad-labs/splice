@@ -21,10 +21,10 @@ LOCAL fork (codex-for-claude-code local fork)
 splice - codex-proxy v30 (this repo)
   npm workspaces server/ + webui/, 18 server modules,
   walls-first ast-grep policy, management plane, committed dashboard
-        |  Kotlin port (PORT-OF headers @ 4ca99f7)
+        |  Kotlin port (PORT-OF headers @ pre-public-port-baseline)
         v
 gateway/ Kotlin gateway
-  51 PORT-OF-marked .kt files citing server/src modules @ 4ca99f7 (SELF-inheritance)
+  51 PORT-OF-marked .kt files citing server/src modules @ pre-public-port-baseline (SELF-inheritance)
 ```
 
 Two distinct kinds of inheritance appear in the tree and MUST NOT be conflated:
@@ -33,7 +33,7 @@ Two distinct kinds of inheritance appear in the tree and MUST NOT be conflated:
   `codex-for-claude-code`. This carries the upstream author's copyright and MIT
   license terms (see below).
 - SELF-inheritance: the `gateway/` Kotlin modules are ports of THIS repo's own
-  `server/src/*.mjs` modules, pinned at revision `4ca99f7`. The PORT-OF headers
+  `server/src/*.mjs` modules, pinned at revision `pre-public-port-baseline`. The PORT-OF headers
   cite in-repo files, not external code; they create no third-party obligation.
 
 ## Upstream identification (RESOLVED)
@@ -107,10 +107,10 @@ launder or extinguish the inherited upstream material: code descended from
 author's copyright, and the repo LICENSE cannot grant rights over what it did not
 originate. Original work and inherited work coexist; both notices apply.
 
-## PORT-OF Kotlin inventory (SELF-inheritance @ 4ca99f7)
+## PORT-OF Kotlin inventory (SELF-inheritance @ pre-public-port-baseline)
 
 51 Kotlin files carry `PORT-OF` headers citing this repo's own `server/src`
-modules at revision `4ca99f7`. Regenerate with:
+modules at revision `pre-public-port-baseline`. Regenerate with:
 
     for f in $(grep -rl 'PORT-OF' gateway/ --include='*.kt' | sort); do
       head -1 "$f" | grep -q '^// PORT-OF:' && echo "$f"; done

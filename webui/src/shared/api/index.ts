@@ -144,6 +144,7 @@ export interface ConfigPayload {
   effective: EffectiveConfig;
   layers: {
     defaults: EffectiveConfig;
+    toml: EffectiveConfig;
     file: EffectiveConfig;
     env: EffectiveConfig;
     runtime: EffectiveConfig;
@@ -201,6 +202,7 @@ export interface UsagePayload {
 }
 
 export interface CompactRow {
+  head: string;
   ts: number;
   outcome?: string;
   chars?: number;
@@ -213,27 +215,23 @@ export interface CompactPayload {
   stats: { total: number; by_outcome: Record<string, number>; tail: CompactRow[] };
 }
 
-export interface CodexAuth {
-  kind: 'codex';
+export interface ProviderAuth {
+  kind: string;
   login: string;
   present: boolean;
-  account_id_masked: string | null;
-  last_refresh: string | null;
+  account_id_masked?: string;
+  last_refresh?: string;
   auth_path?: string;
-  cached?: boolean;
-  cache_age_ms?: number | null;
+  refresh_latched?: string;
 }
 
-export interface AuthPayload {
-  codex: CodexAuth;
-}
+export type AuthPayload = Record<string, ProviderAuth>;
 
 /** POST /api/auth/:head/refresh|login — a transient outcome, not the full card
  * (callers re-fetch /api/auth for the authoritative card state). */
 export interface AuthActionResult {
+  ok: boolean;
   head?: string;
-  refreshed?: boolean;
-  started?: boolean;
   note?: string;
 }
 
@@ -258,7 +256,6 @@ export const control = {
   usage: () => request<UsagePayload>('/api/usage'),
   auth: () => request<AuthPayload>('/api/auth'),
   refreshAuth: (head: string) => request<AuthActionResult>(`/api/auth/${head}/refresh`, { method: 'POST' }),
-  loginAuth: (head: string) => request<AuthActionResult>(`/api/auth/${head}/login`, { method: 'POST' }),
   compact: () => request<CompactPayload>('/api/compact'),
   logs: (head: string, tail: number) => request<LogsPayload>(`/api/logs/${head}?tail=${tail}`),
 };

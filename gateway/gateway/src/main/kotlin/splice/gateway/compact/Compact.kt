@@ -1,4 +1,4 @@
-// PORT-OF: server/src/codex/compact.mjs @ 4ca99f7 — invariants (the compaction doctrine):
+// PORT-OF: server/src/codex/compact.mjs @ pre-public-port-baseline — invariants (the compaction doctrine):
 // POSITIVE-marker detection ONLY, tools-agnostic (v29 rejected tooled bodies and could never
 // match the real shape); the markers are Claude Code 2.1.207's VERBATIM summarizer
 // instructions, checked in the system prompt OR the LAST user message only (a summary quoted
@@ -6,7 +6,7 @@
 // heuristics stay banned). The shadow classifier logs {has_marker, tool_count, sys_len} on
 // EVERY request — the drift instrument. Stats JSONL is a contract file (HUD reads it).
 // SEAM (recorded): the shadow log line is an injected writer (Node wrote stderr directly);
-// stat appends are synchronous best-effort (Node queued a microtask — same guarantee, simpler).
+// stat appends are asynchronous best-effort on the bounded process-wide file lane.
 package splice.gateway.compact
 
 import kotlinx.serialization.json.Json
@@ -15,6 +15,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import splice.core.util.AsyncFileIo
 import splice.core.util.JsonlSink
 import splice.core.util.runCatchingCancellable
 import splice.core.wire.AnthropicRequest
@@ -144,24 +145,26 @@ public class CompactStats(private val file: Path, private val clock: () -> Long 
 
     private val json = Json { ignoreUnknownKeys = true }
 
-    // append is best-effort by design: I/O failure must not kill the turn (runCatchingCancellable
-    // captures IOException etc. yet still lets coroutine cancellation propagate).
+    // append is best-effort by design: the turn builds an immutable row and the bounded file lane
+    // owns filesystem latency.
     public fun record(fields: Map<String, Any?>) {
-        runCatchingCancellable {
-            Files.createDirectories(file.parent)
-            val row = buildJsonObject {
-                put("ts", clock())
-                fields.forEach { (k, v) ->
-                    when (v) {
-                        null -> Unit
-                        is Boolean -> put(k, v)
-                        is Int -> put(k, v)
-                        is Long -> put(k, v)
-                        else -> put(k, v.toString())
-                    }
+        val row = buildJsonObject {
+            put("ts", clock())
+            fields.forEach { (k, v) ->
+                when (v) {
+                    null -> Unit
+                    is Boolean -> put(k, v)
+                    is Int -> put(k, v)
+                    is Long -> put(k, v)
+                    else -> put(k, v.toString())
                 }
             }
-            JsonlSink.appendLine(file, row.toString())
+        }.toString()
+        AsyncFileIo.submit {
+            runCatchingCancellable {
+                Files.createDirectories(file.parent)
+                JsonlSink.appendLine(file, row)
+            }
         }
     }
 
@@ -171,6 +174,7 @@ public class CompactStats(private val file: Path, private val clock: () -> Long 
     // heap load just to render the HUD; total/byOutcome then reflect the tailed window, not the
     // full history (acceptable for a drift instrument — the file itself is still append-only).
     public fun read(tailN: Int = DEFAULT_TAIL): CompactStatsSummary {
+        AsyncFileIo.drain()
         if (!Files.exists(file)) return CompactStatsSummary(0, emptyMap(), emptyList())
         val rows = runCatchingCancellable {
             JsonlSink.readTail(file, READ_TAIL_BYTES).mapNotNull { line ->

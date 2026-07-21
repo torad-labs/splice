@@ -30,6 +30,7 @@ class LaunchServiceTest {
         signInLabel = "Codex (ChatGPT)",
         policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),
         port = 3099,
+        inferenceToken = "test-inference-token",
     )
 
     @Test
@@ -38,6 +39,7 @@ class LaunchServiceTest {
         assertFalse(recipe.argv.contains("--dangerously-skip-permissions"))
         assertTrue(recipe.argv.contains("-c"))
         assertNull(recipe.warning)
+        assertTrue(recipe.env["ANTHROPIC_AUTH_TOKEN"] == "test-inference-token")
     }
 
     @Test
@@ -45,5 +47,18 @@ class LaunchServiceTest {
         val recipe = service.launch(spec("grok"), extraArgs = emptyList(), dangerouslySkipPermissions = true)
         assertTrue(recipe.argv.contains("--dangerously-skip-permissions"))
         assertNotNull(recipe.warning)
+    }
+
+    @Test
+    fun `launch preserves ambient no-proxy entries and adds loopback`() {
+        val merged = LaunchService(
+            ClaudeConfigMaterializer(tmp),
+            envReader = { name -> if (name == "NO_PROXY") "corp.internal,localhost" else null },
+        ).launch(spec("codex"), emptyList(), dangerouslySkipPermissions = false)
+            .env
+            .getValue("NO_PROXY")
+        assertTrue(merged.contains("corp.internal"))
+        assertTrue(merged.contains("127.0.0.1"))
+        assertTrue(merged.split(',').count { it == "localhost" } == 1)
     }
 }

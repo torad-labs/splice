@@ -1,4 +1,4 @@
-// PORT-OF: server/src/auth/codex-oauth.mjs + codex-login.mjs @ 4ca99f7 — invariants: the PUBLIC
+// PORT-OF: server/src/auth/codex-oauth.mjs + codex-login.mjs @ pre-public-port-baseline — invariants: the PUBLIC
 // codex CLI client id + issuer (reusing them is what mints a ChatGPT-subscription token with no
 // separate codex binary); auth.json is byte-shape-compatible with the real codex CLI (shared
 // credential, shared refresh path); PKCE S256; authorize URL param ORDER + %20 encoding matched

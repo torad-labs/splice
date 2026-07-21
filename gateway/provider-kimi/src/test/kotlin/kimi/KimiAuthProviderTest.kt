@@ -31,6 +31,21 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class KimiAuthProviderTest {
 
+    @Test
+    fun `plan-tier 401 vetoes credential refresh`() {
+        val auth = KimiAuthProvider(
+            authPath = Files.createTempDirectory("kimi-plan-tier").resolve("auth.json"),
+            refreshCall = { RefreshAttempt.InvalidGrant("unused") },
+        )
+        assertTrue(
+            !auth.allowRefreshAfterFailure(
+                401,
+                "Current subscription does not have access; supports only Kimi-K3 up to 256K",
+            ),
+        )
+        assertTrue(auth.allowRefreshAfterFailure(401, "token expired"))
+    }
+
     private fun authFile(
         dir: Path,
         access: String = "kimi-access",

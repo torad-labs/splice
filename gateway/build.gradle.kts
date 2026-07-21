@@ -5,6 +5,7 @@
 //
 // -Xplugin=<absolute jar path> is used deliberately instead of the kotlinCompilerPluginClasspath SPI:
 // that SPI expects a PUBLISHED SubpluginArtifact coordinate, the wrong fit for an unpublished sibling.
+import groovy.json.JsonSlurper
 import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
 
 plugins {
@@ -21,6 +22,11 @@ val firChecksPluginJar =
     project(":fir-checks").layout.buildDirectory
         .file("libs/fir-checks.jar")
 val firChecksPluginArg = firChecksPluginJar.map { "-Xplugin=${it.asFile.absolutePath}" }
+val releaseVersion = (JsonSlurper().parse(file("../package.json")) as Map<*, *>)["version"].toString()
+
+allprojects {
+    version = releaseVersion
+}
 
 subprojects {
     // :fir-checks must NOT compile against its own not-yet-built jar (self-application deadlock).

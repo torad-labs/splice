@@ -25,6 +25,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
 import java.util.concurrent.atomic.AtomicInteger
+import kotlin.io.path.readText
 
 class GrokAuthProviderTest {
 
@@ -221,6 +222,10 @@ class GrokAuthProviderTest {
         while (calls.get() == 0) yield() // observe the background call actually started
         gate.complete(GrokRefreshedTokens("new-access", "new-refresh", expiresIn = 21_600)) // let it finish cleanly
         assertEquals(1, calls.get())
+        // Mirror of CodexAuthTest's post-completion wait: the unblocked refresh persists the
+        // rotation after the assertions; waiting for the write keeps the mirrored idiom safe if
+        // this temp dir ever becomes a JUnit-cleaned @TempDir (the codex twin's CI race).
+        while (!file.readText().contains("new-access")) yield()
     }
 
     @Test

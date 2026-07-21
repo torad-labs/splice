@@ -9,6 +9,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -32,15 +34,19 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.topology.catalogFor
 import splice.core.topology.configOverrides
+import splice.core.topology.effectiveApiKeyEnv
 import splice.core.turn.WatchdogBudget
 import splice.core.util.discard
+import splice.core.util.runCatchingCancellable
 import splice.dialect.chat.ChatQuirks
+import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.withToml
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
+import splice.gateway.head.RequestMaterializationGate
 import splice.gateway.perf.PerfStats
 import splice.gateway.usage.UsageStore
 import splice.provider.codex.CodexAuthProvider
@@ -61,16 +67,109 @@ import splice.spi.InflightGate
 import splice.spi.Provider
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
+import java.util.concurrent.CancellationException
 import kotlin.time.Duration.Companion.milliseconds
+
+// Reasoning-continuation folding config (codex 518n-2), threaded from ConfigService like the other
+// reasoning knobs. Top-level (off Daemon's function count); an empty model set = feature off.
+private fun foldConfigFrom(cfg: SpliceConfig): FoldConfig = FoldConfig(
+    models = cfg.foldReasoningModels,
+    maxContinue = cfg.foldMaxContinue,
+    markerText = cfg.foldMarkerText.ifEmpty { FoldConfig.DEFAULT_MARKER_TEXT },
+    maxTierN = cfg.foldMaxTier,
+)
+
+private const val CHATGPT_OAUTH = "chatgpt-oauth"
+private const val GROK_OAUTH = "grok-oauth"
+private const val KIMI_OAUTH = "kimi-oauth"
+
+/**
+ * Best-effort isolation at daemon/head boundaries without turning cancellation or fatal JVM
+ * failures into a merely degraded head. Expected I/O and assembly failures become [Result]
+ * failures; cancellation and [Error] always escape.
+ */
+internal inline fun <T> runCatchingDaemonBoundary(block: () -> T): Result<T> = try {
+    Result.success(block())
+} catch (cancelled: CancellationException) {
+    throw cancelled
+} catch (failure: IOException) {
+    Result.failure(failure)
+} catch (failure: IllegalArgumentException) {
+    Result.failure(failure)
+} catch (failure: IllegalStateException) {
+    Result.failure(failure)
+}
+
+private fun assembleDaemonHeads(
+    topology: Topology,
+    heads: MutableMap<String, ManagedHead>,
+    log: (String) -> Unit,
+    assemble: (String, HeadConfig, ProviderConfig) -> ManagedHead,
+): LinkedHashMap<String, String> {
+    val failed = LinkedHashMap<String, String>()
+    for ((key, head) in topology.heads) {
+        val providerCfg = topology.providers[head.provider]
+        if (providerCfg == null) {
+            failed[key] = "unknown provider '${head.provider}'"
+            log("[daemon] head '$key' SKIPPED: unknown provider '${head.provider}'\n")
+            continue
+        }
+        runCatchingDaemonBoundary { assemble(key, head, providerCfg) }
+            .onSuccess { heads[key] = it }
+            .onFailure {
+                failed[key] = it.message ?: it.javaClass.simpleName
+                log("[daemon] head '$key' SKIPPED (build failed): ${it.message}\n")
+            }
+    }
+    return failed
+}
+
+private suspend fun startDaemonHeads(
+    heads: Map<String, ManagedHead>,
+    failed: MutableMap<String, String>,
+    probeScope: CoroutineScope,
+    log: (String) -> Unit,
+    authProbes: MutableMap<String, AuthProbeLoop>,
+) {
+    heads.forEach { (key, managed) ->
+        runCatchingDaemonBoundary { managed.head.start() }.onFailure {
+            failed[key] = "start failed: ${it.message}"
+            log("[daemon] head '$key' failed to start: ${it.message}\n")
+        }
+        startAuthProbeIfRefreshable(key, managed.auth, probeScope, log, authProbes)
+    }
+}
+
+private fun resolveHeadConfig(
+    key: String,
+    head: HeadConfig,
+    provider: ProviderConfig,
+    cfg: SpliceConfig,
+): HeadConfig = when {
+    provider.auth.kind == CHATGPT_OAUTH -> head.copy(port = cfg.port, pinnedModel = cfg.pinnedModel)
+    provider.auth.kind == GROK_OAUTH || key.contains("grok", ignoreCase = true) ->
+        head.copy(port = cfg.grokPort, pinnedModel = cfg.grokModel)
+    else -> head
+}
+
+private fun resolveProviderConfig(key: String, provider: ProviderConfig, cfg: SpliceConfig): ProviderConfig =
+    when {
+        provider.auth.kind == CHATGPT_OAUTH -> provider.copy(baseUrl = cfg.chatgptApiBase)
+        provider.auth.kind == GROK_OAUTH || key.contains("grok", ignoreCase = true) ->
+            provider.copy(baseUrl = cfg.xaiApiBase)
+        else -> provider
+    }
 
 public class Daemon(
     private val topology: Topology,
     private val statePaths: StatePaths,
     private val dashboardHtml: () -> String,
     private val log: (String) -> Unit = { System.err.print(it) },
+    private val shutdownDaemon: () -> Unit = {},
     private val refreshCall: suspend (tokenUrl: String, refreshToken: String) -> RefreshAttempt<RefreshedTokens> =
         ::codexRefresh,
 ) {
@@ -78,10 +177,13 @@ public class Daemon(
     // display is operator-editable without recompiling. Env and runtime PATCH still win.
     private val config = ConfigService(statePaths, headOverrides = topology.configOverrides())
     private val mgmtKey = MgmtKey(statePaths)
+    private val requestMaterializationGate = RequestMaterializationGate()
 
     // set once in start(); the daemon is not usable before it
     private var control: ControlServer? = null
     private val heads = LinkedHashMap<String, ManagedHead>()
+    private val stopLock = Mutex()
+    private var stopped = false
 
     // G8: per-head auth/health probe. SupervisorJob so one head's probe failure can't cancel
     // another's — same isolation shape as SingleFlight.kt:33-36.
@@ -95,57 +197,57 @@ public class Daemon(
             streamIdle = cfg.streamIdleMs.milliseconds,
             totalCap = cfg.upstreamTimeoutMs.milliseconds,
         )
-        // topology owns the control port (loaded once at start, restart-required); the
-        // ConfigService knob is only the hot-knob default when topology omits it. Resolved before
-        // the head loop so each head's launch spec can point its statusline at this port.
-        val controlPort = topology.daemon.controlPort?.takeIf { it > 0 } ?: cfg.controlPort
+        // TOML feeds ConfigService's topology layer; state/env/runtime override it consistently.
+        // Resolved before the head loop so every launch recipe points at the actual listener.
+        val controlPort = cfg.controlPort
         // PER-HEAD BOOT ISOLATION (audit 2026-07-18): one head that fails to assemble (a valid
         // TOML the builder can't wire, e.g. a not-yet-supported dialect) must NOT abort the whole
         // daemon with a stack trace to /dev/null. Log the degraded head and serve the rest.
-        val failed = LinkedHashMap<String, String>()
-        for ((key, head) in topology.heads) {
-            val providerCfg = topology.providers[head.provider]
-            if (providerCfg == null) {
-                failed[key] = "unknown provider '${head.provider}'"
-                log("[daemon] head '$key' SKIPPED: unknown provider '${head.provider}'\n")
-                continue
-            }
-            runCatching {
-                val catalog = providerCfg.catalogFor(head)
-                val loginCommand = loginInterception(providerCfg, head, key).first
-                val ctx = ProviderBuild(key, head, providerCfg, catalog, watchdog, cfg, loginCommand)
-                assembleHead(ctx, controlPort)
-            }.onSuccess { heads[key] = it }
-                .onFailure {
-                    failed[key] = it.message ?: it.javaClass.simpleName
-                    log("[daemon] head '$key' SKIPPED (build failed): ${it.message}\n")
-                }
+        val failed = assembleDaemonHeads(topology, heads, log) { key, head, providerCfg ->
+            val resolvedHead = resolveHeadConfig(key, head, providerCfg, cfg)
+            val resolvedProvider = resolveProviderConfig(key, providerCfg, cfg)
+            val catalog = resolvedProvider.catalogFor(resolvedHead, cfg.contextWindowOverride)
+            val loginCommand = loginInterception(resolvedProvider, resolvedHead, key).first
+            val ctx = ProviderBuild(
+                key,
+                resolvedHead,
+                resolvedProvider,
+                catalog,
+                watchdog,
+                cfg,
+                loginCommand,
+            )
+            assembleHead(ctx, controlPort)
         }
-        val materializerHome = statePaths.rootDir.parent ?: statePaths.rootDir
-        val launchService = LaunchService(ClaudeConfigMaterializer(materializerHome))
-        val srv = ControlServer(controlPort, heads, config, mgmtKey, dashboardHtml, log, launchService)
+        val srv = ControlServer(
+            controlPort,
+            heads,
+            config,
+            mgmtKey,
+            dashboardHtml,
+            log,
+            LaunchService(ClaudeConfigMaterializer(statePaths.rootDir.parent ?: statePaths.rootDir)),
+            shutdownDaemon,
+        )
         control = srv
         srv.start()
         // Start each head in isolation too — a listen() failure on one port must not sink the others.
-        heads.forEach { (key, m) ->
-            runCatching { m.head.start() }.onFailure {
-                failed[key] = "start failed: ${it.message}"
-                log("[daemon] head '$key' failed to start: ${it.message}\n")
-            }
-            // Auth probing is orthogonal to port-bind success — probe even a head whose start() failed.
-            startAuthProbeIfRefreshable(key, m.auth, probeScope, log, authProbes)
-        }
+        startDaemonHeads(heads, failed, probeScope, log, authProbes)
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
     }
 
-    public suspend fun stop() {
-        authProbes.values.forEach { it.stop() }
-        probeScope.cancel()
-        heads.values.forEach {
-            runCatching { it.head.stop() }.discard("shutdown: one head failing to stop must not block the rest")
+    public suspend fun stop(): Unit = stopLock.withLock {
+        if (!stopped) {
+            stopped = true
+            authProbes.values.forEach { it.stop() }
+            probeScope.cancel()
+            heads.values.forEach {
+                runCatchingDaemonBoundary { it.head.stop() }
+                    .discard("shutdown: one head failing to stop must not block the rest")
+            }
+            control?.stop()
         }
-        control?.stop()
     }
 
     /** Provider + its auth, chosen by (dialect, auth.kind) — the multi-provider dispatch. */
@@ -193,7 +295,7 @@ public class Daemon(
                 )
             }
             else -> ApiKeyAuthProvider(
-                envVar = providerCfg.auth.env ?: "${key.uppercase()}_API_KEY",
+                envVar = effectiveApiKeyEnv(key, providerCfg.auth),
                 keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
             )
         }
@@ -232,7 +334,7 @@ public class Daemon(
         val providerCfg = ctx.providerCfg
         val cfg = ctx.cfg
         return when (providerCfg.auth.kind) {
-            "kimi-oauth" -> {
+            KIMI_OAUTH -> {
                 val authPath = Paths.get(
                     TopologyLoader.expandHome(providerCfg.auth.file ?: "~/.kimi/credentials/kimi-code.json"),
                 )
@@ -249,7 +351,7 @@ public class Daemon(
             }
             else -> {
                 val auth = ApiKeyAuthProvider(
-                    envVar = providerCfg.auth.env ?: "${key.uppercase()}_API_KEY",
+                    envVar = effectiveApiKeyEnv(key, providerCfg.auth),
                     keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
                 )
                 val identity = KimiDeviceIdentity(deviceIdPath = statePaths.stateDir.resolve("$key-device_id"))
@@ -295,11 +397,11 @@ public class Daemon(
         val watchdog = ctx.watchdog
         val cfg = ctx.cfg
         return when (providerCfg.auth.kind) {
-            "chatgpt-oauth" -> {
+            CHATGPT_OAUTH -> {
                 // Refresh hits the OAuth ISSUER's token endpoint (auth.openai.com), not the API base_url.
                 val tokenUrl = CodexOAuthEndpoints.tokenUrl(System::getenv)
                 val auth = CodexAuthProvider(
-                    authPath = Paths.get(TopologyLoader.expandHome(providerCfg.auth.file ?: cfg.codexAuthPath)),
+                    authPath = Paths.get(TopologyLoader.expandHome(cfg.codexAuthPath)),
                     authCacheMs = cfg.authCacheMs,
                     refreshCall = { rt -> refreshCall(tokenUrl, rt) },
                 )
@@ -320,6 +422,9 @@ public class Daemon(
                         configEffort = cfg.effort,
                         configSummary = cfg.summary,
                         quirks = providerCfg.responsesQuirks(CodexProvider.defaultQuirks()),
+                        // Reasoning-continuation folding (codex 518n-2) — codex head ONLY; grok/openai
+                        // never receive a fold config, so they stay pure passthrough.
+                        foldConfig = foldConfigFrom(cfg),
                         accountIdHeader = providerCfg.quirks.accountIdHeader,
                     ),
                     auth,
@@ -341,7 +446,7 @@ public class Daemon(
         val cfg = ctx.cfg
         val tokenUrl = GrokOAuthEndpoints.tokenUrl(System::getenv)
         val auth = GrokAuthProvider(
-            authPath = Paths.get(TopologyLoader.expandHome(providerCfg.auth.file ?: "~/.grok/auth.json")),
+            authPath = Paths.get(TopologyLoader.expandHome(cfg.grokAuthPath)),
             authCacheMs = cfg.authCacheMs,
             refreshCall = { rt -> grokRefresh(tokenUrl, rt) },
         )
@@ -377,7 +482,7 @@ public class Daemon(
         val watchdog = ctx.watchdog
         val cfg = ctx.cfg
         val auth = ApiKeyAuthProvider(
-            envVar = providerCfg.auth.env ?: "${key.uppercase()}_API_KEY",
+            envVar = effectiveApiKeyEnv(key, providerCfg.auth),
             keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
         )
         // Identical in both branches — factored out so adding loginCommand didn't push this past
@@ -433,9 +538,9 @@ public class Daemon(
     // (loginCommand, signInLabel) — both blank when there is no OAuth flow.
     private fun loginInterception(providerCfg: ProviderConfig, head: HeadConfig, key: String): Pair<String, String> {
         val label = when (providerCfg.auth.kind) {
-            "chatgpt-oauth" -> "Codex (ChatGPT)"
+            CHATGPT_OAUTH -> "Codex (ChatGPT)"
             GROK_OAUTH -> "Grok (xAI)"
-            "kimi-oauth" -> "Kimi (Moonshot)"
+            KIMI_OAUTH -> "Kimi (Moonshot)"
             else -> ""
         }
         val command = if (label.isEmpty()) "" else "${head.claude.command ?: key} login"
@@ -450,7 +555,7 @@ public class Daemon(
         val usageStore = UsageStore(statePaths.usageFile(key), statePaths.ratelimitFile(key))
         val compactStats = CompactStats(statePaths.compactStatsFile(key))
         val perfStats = PerfStats(statePaths.perfStatsFile(key))
-        val logFile = statePaths.logsDir.resolve("$key-${head.port}.log")
+        val logFile = statePaths.logsDir.resolve("daemon.log")
         val server = HeadServer(
             provider = wired.provider,
             listenPort = head.port,
@@ -461,6 +566,7 @@ public class Daemon(
                     cfg.upstreamRetries,
                     client = UpstreamClient.defaultClient(cfg.firstByteTimeoutMs, cfg.upstreamTimeoutMs, log),
                 ),
+                inferenceToken = mgmtKey.get(),
                 gate = InflightGate(
                     maxInflight = { config.getConfig().maxInflight },
                     maxQueued = { config.getConfig().maxQueued },
@@ -471,6 +577,7 @@ public class Daemon(
                 usageStore = usageStore,
                 perfStats = perfStats,
                 log = log,
+                requestMaterializationGate = requestMaterializationGate,
             ),
         )
         return ManagedHead(
@@ -478,7 +585,7 @@ public class Daemon(
             auth = wired.auth,
             usage = UsageStoreSource(usageStore),
             compact = CompactStatsSource(compactStats),
-            logs = LogFileSource(logFile),
+            logs = LogFileSource(logFile, "[$key]"),
             warnPct = cfg.usageWarnPct,
             warnTokens5h = cfg.usageWarnTokens5h,
             authKind = ctx.providerCfg.auth.kind,
@@ -507,15 +614,23 @@ public class Daemon(
             signInLabel = signInLabel,
             policy = ClaudePolicy(share = topology.claude.share.toSet(), isolate = head.claude.isolate.toSet()),
             port = head.port,
+            inferenceToken = mgmtKey.get(),
         )
     }
 
     public companion object {
-        private const val GROK_OAUTH = "grok-oauth"
-
-        public fun dashboardFrom(distPath: Path): () -> String = {
-            runCatching { Files.readString(distPath) }
-                .getOrDefault("<!doctype html><title>splice</title><p>dashboard build missing</p>")
+        public fun dashboardFrom(
+            distPath: Path,
+            classpathHtml: () -> String? = {
+                Daemon::class.java.getResourceAsStream("/webui/index.html")
+                    ?.bufferedReader()
+                    ?.use { it.readText() }
+            },
+        ): () -> String = {
+            runCatchingCancellable { Files.readString(distPath) }
+                .getOrNull()
+                ?: runCatchingCancellable { classpathHtml() }.getOrNull()
+                ?: "<!doctype html><title>splice</title><p>dashboard build missing</p>"
         }
     }
 }

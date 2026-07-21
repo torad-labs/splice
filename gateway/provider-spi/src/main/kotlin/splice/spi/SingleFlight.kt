@@ -1,5 +1,5 @@
 // PORT-OF: the refreshInflight single-flight pattern from server/src/auth/codex-oauth.mjs
-// @ 4ca99f7 — invariant: N concurrent 401s trigger exactly ONE refresh; late callers await the
+// @ pre-public-port-baseline — invariant: N concurrent 401s trigger exactly ONE refresh; late callers await the
 // in-flight result. Shared here so every RefreshableAuthProvider reuses it (the v29
 // copies-drift lesson applied to auth).
 //
@@ -25,9 +25,8 @@ import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.CoroutineContext
 
 public class SingleFlight<T>(
-    // the refresh runs here, off the caller's coroutine. Injectable for tests (a test dispatcher);
-    // ast-grep-ignore: main-no-hardcoded-dispatchers — this IS the injection seam, Dispatchers.Default
-    // is only the production default for a background auth refresh.
+    // The refresh runs here, off the caller's coroutine. Injectable for tests (a test dispatcher);
+    // Dispatchers.Default is only the production default for a background auth refresh.
     context: CoroutineContext = Dispatchers.Default,
 ) {
     // SupervisorJob on the RIGHT so it unconditionally wins the Job key — even if a caller passes a

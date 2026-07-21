@@ -1,112 +1,36 @@
-# History rewrite runbook — operator-only, NOT executed
+# History rewrite record
 
-This document is reference material for the human operator. It is a plan,
-not a script: nothing in this file has been run. No agent may execute the
-git history rewrite or force-push described below (OSS campaign law: agents
-never push, never rewrite history, never change GitHub settings).
+The canonical `torad-labs/splice` history was rewritten before the public
+release to remove private development captures. Those files are no longer
+reachable from canonical branches or the release source lineage, and current
+source refers to the Kotlin port's source snapshot only as
+`pre-public-port-baseline`.
 
-## Exposure
+No credentials were identified in the removed material. The removed content
+did include private operator context, so it must continue to be treated as
+exposed even after the rewrite.
 
-Commit `4ca99f7` ("cache-replay: capture→dual-replay A/B on the live proxy
-path") is reachable from public `main` on `torad-labs/splice`. It added:
+## Residual exposure
 
-- `experiments/cache-replay/capture/turn-001.json` … `turn-010.json` — raw
-  Anthropic request bodies from a live `claudex` capture, including the
-  operator's private global `CLAUDE.md` instructions and `/home/<user>/...`
-  filesystem paths.
-- `experiments/cache-replay/capture/ab-results.log` — a run log with the same
-  `/home/<user>/...` path exposure (a `capture_env=` line naming the
-  operator's local job directory).
+A Git history rewrite cannot recall objects already copied into clones, forks,
+CI caches, mirrors, pull-request refs, or provider-side caches. Ordinary Git
+operations cannot prove deletion from those locations.
 
-Scanned for API keys/bearer tokens (`sk-ant-`, `Bearer `, `api_key`) — none
-found in either. The exposure is operator identity/path/instruction content,
-not credentials. OSS-A removes these 11 files from the tip with `git rm`;
-they remain in the git object history at `4ca99f7` and in every tree that
-references them until a history rewrite is performed.
+Provider-retained objects and caches require a private GitHub Support request.
+The operator retains the sensitive object identifiers and affected path list
+outside this public repository for that purpose. They must not be copied back
+into issues, pull requests, source comments, or public runbooks.
 
-## What a rewrite CANNOT recall
+Do not perform another force-push as routine cleanup. Branch protection and
+force-push blocking remain the repository's steady state.
 
-Rewriting history (filter-repo/BFG below) only rewrites the objects in the
-canonical repo. It cannot reach:
+## Operator checklist
 
-- **Existing clones and forks** — anyone who cloned/fetched before the
-  rewrite keeps the old objects locally, indefinitely, with no way for the
-  operator to force deletion.
-- **GitHub's caches** — cached raw blob URLs, PR diff views, and code-search
-  index entries can outlive the object being rewritten away, on a timescale
-  GitHub controls, not the operator's.
-- **Any downstream copy** — CI artifact caches, mirrors, or anything that
-  fetched the blob before the rewrite.
+1. Keep the private incident record and identifiers out of the repository.
+2. Complete the GitHub Support request for provider-retained data.
+3. Treat existing downstream copies as non-recallable.
+4. Rotate credentials if a private audit later finds that any secret crossed
+   the removed capture path.
 
-Treat the exposure as permanent for practical purposes; a rewrite reduces
-future exposure surface, it does not undo past access.
-
-## Rewrite options (operator choice — NOT executed here)
-
-**git filter-repo** (recommended — actively maintained, path-based):
-
-```
-git filter-repo --invert-paths \
-  --path experiments/cache-replay/capture/turn-001.json \
-  --path experiments/cache-replay/capture/turn-002.json \
-  --path experiments/cache-replay/capture/turn-003.json \
-  --path experiments/cache-replay/capture/turn-004.json \
-  --path experiments/cache-replay/capture/turn-005.json \
-  --path experiments/cache-replay/capture/turn-006.json \
-  --path experiments/cache-replay/capture/turn-007.json \
-  --path experiments/cache-replay/capture/turn-008.json \
-  --path experiments/cache-replay/capture/turn-009.json \
-  --path experiments/cache-replay/capture/turn-010.json \
-  --path experiments/cache-replay/capture/ab-results.log
-```
-
-Rewrites every commit that touched these paths, including `4ca99f7`.
-
-**BFG Repo-Cleaner** (simpler for a pure "delete these blobs everywhere" job):
-
-```
-bfg --delete-files 'turn-0*.json' --delete-files ab-results.log
-```
-
-Faster on large histories; less precise than filter-repo about path scoping.
-
-Either tool changes every commit SHA after `4ca99f7`. That is why:
-
-## Force-push is an operator decision
-
-A rewrite is only visible on the remote after a force-push (`git push
---force` to `main`). This campaign's agents never do this (LAW: no push, no
-history rewrite, no GitHub settings changes). Force-pushing:
-
-- Invalidates every existing clone/fork's ancestry versus the new `main`.
-- Breaks in-flight PRs/branches based on pre-rewrite SHAs.
-- Requires coordinating with anyone else with push/fetch access before doing
-  it.
-
-The operator decides if/when to run the rewrite plus force-push, weighing
-the "cannot recall" caveats above against the value of a clean history.
-
-## .mailmap limits
-
-`.mailmap` (this campaign, repo-root `.mailmap`) only changes how `git log`,
-`git shortlog`, and GitHub's UI **display** author identity. It does NOT
-rewrite commit objects — the original `<redacted-email>` email
-stays in the git object history and in every existing clone, mailmap or not.
-Presentation only.
-
-## Credential rotation checklist (pointer)
-
-No live keys/tokens were found in the exposed files (see Exposure above). If
-the operator's own audit finds otherwise, or as a general precaution after
-any accidental exposure event:
-
-1. Rotate any Anthropic API key that was active during the `4ca99f7` window
-   (2026-07-15).
-2. Rotate any other secret that could plausibly have transited the same
-   proxy path (`experiments/cache-replay/real-ab.sh`, `:3097`/`:3099`).
-3. Check provider-side access logs for the rotation window for unexpected
-   use.
-
----
-
-NOT executed. This file is documentation only.
+Canonical rewrite completed 2026-07-19. Provider-side cache/object removal
+remains an external support action.

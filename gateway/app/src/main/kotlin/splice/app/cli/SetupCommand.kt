@@ -1,6 +1,6 @@
 // NEW: `splice setup` — the guided flow from a fresh install to a configured wrapper.
 // Materializes the supported API-key starter and installs its commands. If an operator has explicitly
-// added experimental OAuth heads, it walks those heads and offers browser login.
+// added subscription OAuth heads, it walks those heads and offers browser login.
 // :app is wall-exempt for println.
 
 package splice.app.cli
@@ -59,8 +59,8 @@ private suspend fun signInPendingHeads(pending: List<PendingOAuthHead>): Boolean
         return true
     }
     println(
-        "$DIM  Experimental OAuth heads are configured explicitly; " +
-            "these routes are not vendor-documented.$RESET",
+        "$DIM  Subscription heads reuse each vendor CLI's own OAuth identity — " +
+            "unofficial; use at your own risk.$RESET",
     )
     var ok = true
     for ((key, command) in pending) {

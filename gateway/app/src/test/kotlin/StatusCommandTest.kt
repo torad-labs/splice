@@ -19,9 +19,22 @@ class StatusCommandTest {
             baseUrl = "https://example.invalid",
             auth = AuthConfig("api-key", env = "VENDOR_KEY"),
         )
-        assertFalse(authPresent(provider) { "" })
-        assertFalse(authPresent(provider) { null })
-        assertTrue(authPresent(provider) { "secret" })
+        assertFalse(authPresent("vendor", provider) { "" })
+        assertFalse(authPresent("vendor", provider) { null })
+        assertTrue(authPresent("vendor", provider) { "secret" })
+    }
+
+    @Test
+    fun `api-key auth with no explicit env reads the derived KEY_API_KEY default`() {
+        val provider = ProviderConfig(
+            dialect = Dialect.OPENAI_CHAT,
+            baseUrl = "https://example.invalid",
+            auth = AuthConfig("api-key"),
+        )
+        // No auth.env — the head reads the same derived <KEY>_API_KEY the daemon wires, so the CLI
+        // must not report it "not signed in" while the daemon serves it fine.
+        assertTrue(authPresent("openrouter", provider) { name -> "k".takeIf { name == "OPENROUTER_API_KEY" } })
+        assertFalse(authPresent("openrouter", provider) { name -> "k".takeIf { name == "UNRELATED" } })
     }
 
     @Test

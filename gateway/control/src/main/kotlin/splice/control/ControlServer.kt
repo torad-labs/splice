@@ -41,10 +41,12 @@ import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
+import splice.core.auth.AuthDescription
 import splice.core.config.ConfigService
 import splice.core.config.Knob
 import splice.core.config.MgmtKey
 import splice.core.perf.PerfKeys
+import splice.core.topology.ambiguousHeadMessage
 import splice.core.usage.RateLimitState
 import splice.core.usage.computeUsageWarn
 import splice.core.util.runCatchingCancellable
@@ -152,11 +154,7 @@ public class ControlServer(
     private suspend fun headAction(call: ApplicationCall) {
         val key = call.parameters["head"].orEmpty()
         val action = call.parameters["action"].orEmpty()
-        val managed = heads[key]
-        if (managed == null) {
-            call.respondText(payloads.errorJson("unknown head"), ContentType.Application.Json, HttpStatusCode.NotFound)
-            return
-        }
+        val managed = resolveHeadOrRespond(call, heads, payloads, key) ?: return
         when (action) {
             "start" -> managed.head.start()
             "stop" -> managed.head.stop()
@@ -212,8 +210,8 @@ public class ControlServer(
     private suspend fun authAction(call: ApplicationCall) {
         val key = call.parameters["head"].orEmpty()
         val action = call.parameters["action"].orEmpty()
-        val managed = heads[key]
-        val refreshable = managed?.auth as? splice.core.auth.RefreshableAuthProvider
+        val managed = resolveHeadOrRespond(call, heads, payloads, key) ?: return
+        val refreshable = managed.auth as? splice.core.auth.RefreshableAuthProvider
         if (action == "refresh" && refreshable != null) {
             // The dashboard's primary remediation control must not lie: a failed refresh
             // (null credentials back) reports ok:false so the operator re-logins instead of
@@ -242,11 +240,7 @@ public class ControlServer(
     private suspend fun logsJson(call: ApplicationCall) {
         val key = call.parameters["head"].orEmpty()
         val tail = (call.request.queryParameters["tail"]?.toIntOrNull() ?: DEFAULT_LOG_TAIL).coerceIn(1, MAX_TAIL)
-        val managed = heads[key]
-        if (managed == null) {
-            call.respondText(payloads.errorJson("unknown head"), ContentType.Application.Json, HttpStatusCode.NotFound)
-            return
-        }
+        val managed = resolveHeadOrRespond(call, heads, payloads, key) ?: return
         // PORT-OF server/src/control/api.mjs logs payload @ pre-public-port-baseline: {key, path, lines:[...]}
         // (webui LogsPayload) — lines is an ARRAY (tail split), not one blob.
         val lines = managed.logs.tail(tail).split("\n").filter { it.isNotEmpty() }
@@ -262,11 +256,21 @@ public class ControlServer(
 
     private suspend fun launch(call: ApplicationCall) {
         val key = call.parameters["head"].orEmpty()
-        val managed = heads[key]
+        val targets = launchTargets(heads, key)
+        if (targets.size > 1) {
+            call.respondText(
+                payloads.errorJson(ambiguousHeadMessage(key, targets.map { it.head.key })),
+                ContentType.Application.Json,
+                HttpStatusCode.Conflict,
+            )
+            return
+        }
+        val managed = targets.firstOrNull()
         val spec = managed?.launchSpec
         if (spec == null || launchService == null) {
+            val known = heads.values.joinToString(", ") { it.head.label }
             call.respondText(
-                payloads.errorJson("head not launchable"),
+                payloads.errorJson("no launchable head named '$key' (configured: $known)"),
                 ContentType.Application.Json,
                 HttpStatusCode.NotFound,
             )
@@ -281,18 +285,14 @@ public class ControlServer(
             return
         }
         val request = receiveLaunchRequest(call)
-        val recipe = launchService.launch(spec, request.extraArgs, request.dangerouslySkipPermissions)
+        val recipe = withAuthWarning(
+            managed,
+            spec,
+            launchService.launch(spec, request.extraArgs, request.dangerouslySkipPermissions),
+        )
         log("[control] launch $key -> ${recipe.argv}\n")
         if (recipe.warning != null) log("[control] ${recipe.warning}\n")
-        respond(
-            call,
-            buildJsonObject {
-                putJsonObject("env") { recipe.env.forEach { (k, v) -> put(k, v) } }
-                putJsonArray("unset") { recipe.unset.forEach { add(it) } }
-                putJsonArray("argv") { recipe.argv.forEach { add(it) } }
-                if (recipe.warning != null) put("warning", recipe.warning)
-            }.toString(),
-        )
+        respond(call, launchRecipeJson(recipe))
     }
 
     private suspend fun receiveLaunchRequest(call: ApplicationCall): LaunchRequest {
@@ -307,7 +307,7 @@ public class ControlServer(
 
     private suspend fun statusline(call: ApplicationCall) {
         val key = call.parameters["head"].orEmpty()
-        val managed = heads[key]
+        val managed = headByName(heads, key).singleOrNull()
         if (managed == null) {
             call.respondText(managed?.head?.label ?: key, ContentType.Text.Plain)
             return
@@ -603,5 +603,91 @@ private class ControlPayloads(
         const val P50 = 0.50
         const val P95 = 0.95
         val COMPACT_NUMERIC_FIELDS = setOf("ts", "chars", "ms", "status")
+    }
+}
+
+// The shim names a head by its wrapper command (argv[0]); the topology keys heads independently
+// (starter: head `openrouter`, command `claudeor`). Accept either name — a map-KEY match (unique)
+// comes first for precedence, then every LABEL (wrapper command) match. Two label matches mean a
+// misconfigured topology sharing one command; callers decide unknown-vs-ambiguous from the size.
+private fun headByName(heads: Map<String, ManagedHead>, name: String): List<ManagedHead> {
+    val byKey = heads[name]
+    val byLabel = heads.values.filter { it.head.label == name && it !== byKey }
+    return listOfNotNull(byKey) + byLabel
+}
+
+// One head for a by-name /api route, or null after answering the error itself: an exact KEY match
+// wins outright (the dashboard always sends keys, and a key must never be shadowed by another
+// head's colliding command); otherwise wrapper-command matches — none is a 404, and 2+ is a 409
+// naming the colliding heads so a shared-command misconfiguration never reads as a typo.
+private suspend fun resolveHeadOrRespond(
+    call: ApplicationCall,
+    heads: Map<String, ManagedHead>,
+    payloads: ControlPayloads,
+    name: String,
+): ManagedHead? {
+    heads[name]?.let { return it }
+    val byLabel = heads.values.filter { it.head.label == name }
+    return when {
+        byLabel.size > 1 -> {
+            call.respondText(
+                payloads.errorJson(ambiguousHeadMessage(name, byLabel.map { it.head.key })),
+                ContentType.Application.Json,
+                HttpStatusCode.Conflict,
+            )
+            null
+        }
+        byLabel.isEmpty() -> {
+            call.respondText(payloads.errorJson("unknown head"), ContentType.Application.Json, HttpStatusCode.NotFound)
+            null
+        }
+        else -> byLabel.single()
+    }
+}
+
+// The launchable heads a `/launch/<name>` resolves to, with precedence applied so the launchable
+// filter runs across BOTH key- and label-matched candidates: a launchable KEY match wins outright
+// (fixes the latent case where a bare key match with no launchSpec shadowed a launchable command);
+// otherwise every launchable LABEL match — 0 = unknown, 1 = ready, 2+ = ambiguous (shared command).
+private fun launchTargets(heads: Map<String, ManagedHead>, name: String): List<ManagedHead> {
+    heads[name]?.takeIf { it.launchSpec != null }?.let { return listOf(it) }
+    return headByName(heads, name).filter { it.launchSpec != null }
+}
+
+// The exec-recipe response body: {env, unset, argv, warning?} — the shim reads it to run the head.
+private fun launchRecipeJson(recipe: LaunchRecipe): String = buildJsonObject {
+    putJsonObject("env") { recipe.env.forEach { (k, v) -> put(k, v) } }
+    putJsonArray("unset") { recipe.unset.forEach { add(it) } }
+    putJsonArray("argv") { recipe.argv.forEach { add(it) } }
+    if (recipe.warning != null) put("warning", recipe.warning)
+}.toString()
+
+// A head with no upstream credentials still launches (Claude Code opens fine) but every
+// request 401s upstream — warn NOW, at the moment the user can still fix it.
+private suspend fun withAuthWarning(managed: ManagedHead, spec: LaunchSpec, raw: LaunchRecipe): LaunchRecipe {
+    val auth = managed.auth.describe()
+    return if (auth.present) {
+        raw
+    } else {
+        raw.copy(warning = listOfNotNull(raw.warning, missingAuthWarning(managed, auth, spec)).joinToString("; "))
+    }
+}
+
+// Names the exact fix: the env var for an api-key head, the login command for an OAuth head.
+// The key is read from the DAEMON's environment, so "export then retry" silently fails until
+// the daemon restarts — the message says so.
+private fun missingAuthWarning(managed: ManagedHead, auth: AuthDescription, spec: LaunchSpec): String {
+    val label = managed.head.label
+    val envVar = auth.fields["env_var"]
+    val keyFile = auth.fields["key_file"]
+    return when {
+        // A file-configured head's primary fix is the file it reads, not an env var it never used.
+        keyFile != null ->
+            "'$label' has no upstream API key: add it to $keyFile " +
+                "(or export $envVar) — then run: splice restart"
+        envVar != null ->
+            "'$label' has no upstream API key: $envVar is not set in the daemon's environment. " +
+                "Requests will fail until you export $envVar and run: splice restart"
+        else -> "'$label' is not signed in — requests will fail until you run: ${spec.loginCommand}"
     }
 }

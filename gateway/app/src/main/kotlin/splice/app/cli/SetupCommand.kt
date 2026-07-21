@@ -39,6 +39,7 @@ internal suspend fun setup(): Boolean {
     println("  Launch      ${commands.joinToString("$DIM · $RESET") { "$CYAN$it$RESET" }}")
     println("  Dashboard   ${CYAN}splice dashboard$RESET")
     println("  Status      ${CYAN}splice status$RESET")
+    println("  Checkup     ${CYAN}splice doctor$RESET $DIM— anything wrong prints its fix$RESET")
     return ok
 }
 

@@ -1,17 +1,55 @@
 # Changelog
 
-## splice v0.1.1 — release integrity and supported defaults - 2026-07-19
+## splice v0.1.1 — release integrity and supported defaults - 2026-07-21
 
 ### Fixed
 
+- Launching a head by its wrapper command now works when the command differs from the topology
+  key — the starter's supported route (`openrouter` head, `claudeor` command) failed its very
+  first launch with "head not launchable". `/launch`, `login`, `install <head>`, and
+  `uninstall <head>` accept either name now.
 - The release installer now fetches and verifies both the fat JAR and launch shim, fails on
   missing or mismatched assets, rejects dangling wrapper links, and is safe when piped through
   stdin. CI and publication run the same hermetic staged-bundle install test.
 - Fresh installs now materialize a supported OpenRouter API-key topology. Codex, Grok, and Kimi
   OAuth implementations remain available only as explicitly configured experimental opt-ins.
+- `splice doctor` now reports management-key coverage: a missing mgmt-key while the daemon runs is
+  a failure ("admin endpoints will 401") rather than "Everything checks out", and the state dir and
+  `daemon.lock` paths are shown for orientation.
+- `splice doctor`'s split-brain check no longer vanishes silently when the daemon is up but its
+  side can't be read (no mgmt-key or `/api/auth` unreachable) — it now emits an explicit warning
+  instead of quietly skipping exactly when the daemon is busiest.
+- `splice restart` no longer false-fails when the daemon drops the shutdown connection during a
+  graceful teardown: the health poll, not the POST result, decides whether the daemon stopped.
+- `splice doctor`/`restart` no longer render a foreign listener's `{"version": null}` as the
+  literal string "null" (JsonNull-filtered read).
+- `splice doctor`'s daemon and auth sections now resolve the control port and probe `/health` once
+  through the injected environment reader, so the hermetic tests no longer depend on an ambient
+  local daemon.
+- `experiments/cache-replay/real-ab.sh` derives its repo root from its own location instead of a
+  hardcoded personal path (the last stray reference to the project's pre-rename directory).
 
 ### Added
 
+- The installer now preflights the whole machine before doing anything: platform detection
+  (Linux/macOS native, Windows pointed at WSL2 with exact guidance), Java 21+ as a hard
+  requirement, and every runtime dependency (curl, python3, node, Claude Code) verified with the
+  exact per-package-manager fix — offered interactively with consent, printed otherwise. The
+  install finishes by running `splice doctor`, so it ends on a verified state, not a hopeful one.
+- README: a requirements table with per-OS fixes, three install paths (release one-liner, from
+  source, and a copy-paste prompt that lets a coding agent drive the whole install-and-verify
+  loop against `splice doctor`'s fix lines).
+- `splice doctor` now actually diagnoses: five sections (prerequisites, installation,
+  configuration, daemon, auth) with an actionable fix line under every failing check, and exit 1
+  only on real failures. It detects the exported-after-boot trap — an API key visible in the
+  shell but not to the running daemon — by comparing both sides.
+- `splice restart` — stop the daemon (stale or current) and cold-start it with the invoking
+  shell's environment; the documented fix for a key exported after the daemon booted.
+- Launching a head whose upstream credentials are absent now warns, naming the missing env var
+  (or login command) and the fix, instead of failing silently upstream on the first request.
+- The release installer preflights `gh` presence and authentication before downloading anything —
+  provenance verification needs an authenticated GitHub CLI, and learning that after the download
+  was the worst first-run moment.
 - Release bundles and the shaded JAR include the project license, third-party notices, provenance,
   a CycloneDX 1.6 SBOM, and an exact runtime dependency-license inventory. Publication fails on
   unresolved licenses or sidecar/JAR/checksum drift.

@@ -13,7 +13,7 @@
 
 </div>
 
-splice is a local, loopback-only proxy stack. A single Kotlin daemon (**spliced**) sits between Claude Code and one or more model backends, translating Anthropic's Messages API into each backend's own wire dialect. Each backend is exposed as a **head** — a thin Claude Code wrapper on its own loopback port (`claudex`, `claude-grok`, `claude-kimi`, `claudeor`, …). Its load-bearing feature is the **mirror**: the backend's reasoning summary is written back into the transcript as visible text, so conclusions persist and stay legible turn after turn instead of evaporating.
+splice is a local, loopback-only proxy stack. A single Kotlin daemon (**spliced**) sits between Claude Code and one or more model backends, translating Anthropic's Messages API into each backend's own wire dialect. Each backend is exposed as a **head** — a thin Claude Code wrapper on its own loopback port (`claudex`, `claude-grok`, `claude-kimi`, `claudeor`, …). Its central feature is the **mirror**: the backend's reasoning summary is written back into the transcript as visible text, so conclusions stay readable turn after turn.
 
 ## Not affiliated
 
@@ -128,7 +128,7 @@ claudeor                          # Claude Code through OpenRouter on loopback (
 
 `install.sh` builds the fat jar from a checkout (or fetches a release), installs the shared launch shim, links the wrapper commands into `~/.local/bin`, and finishes by running `splice doctor`, so the install ends with a checked report.
 
-**Have a ChatGPT, Grok, or Kimi subscription? That's what splice was built for.** Copy the matching provider and head from [`config/splice.example.toml`](config/splice.example.toml) into `~/.config/splice/splice.toml`, run `splice install --all`, then sign in with that head's `login` command (`claudex login`, `claude-grok login`, `claude-kimi login`). These routes are unofficial: they reuse each vendor's own CLI OAuth client identity, which no vendor documents for third parties. Use them at your own risk; the API-key starter above is the zero-config alternative.
+**splice was built for ChatGPT, Grok, and Kimi subscriptions.** Copy the matching provider and head from [`config/splice.example.toml`](config/splice.example.toml) into `~/.config/splice/splice.toml`, run `splice install --all`, then sign in with that head's `login` command (`claudex login`, `claude-grok login`, `claude-kimi login`). These routes are unofficial: they reuse each vendor's own CLI OAuth client identity, which no vendor documents for third parties. Use them at your own risk; the API-key starter above is the zero-config alternative.
 
 Admin verbs go through the `splice` command:
 
@@ -182,10 +182,10 @@ The **OAuth-identity** routes are the reason splice exists: they run Claude Code
 
 Reasons to walk away:
 
-- **An unsupported gateway.** Anthropic identifies this class of tool as unsupported, and a Claude Code update can break splice at any time. The version handshake turns that into a loud failure instead of a corrupted session. It is still a failure.
+- **An unsupported gateway.** Anthropic identifies this class of tool as unsupported, and a Claude Code update can break splice at any time. The version handshake makes the break loud instead of corrupting a session mid-turn.
 - **Legally unsettled OAuth.** The Codex, Grok, and Kimi routes reuse each vendor's own CLI OAuth client identity. No vendor documents that reuse; it may violate terms of service, and a vendor could cut it off without notice. The primary routes are also the biggest risk.
 - **Single-user by design.** There is no multi-user story, remote access, or TLS. A team wanting a shared model gateway should run one built for that job (LiteLLM, for example).
-- **A JVM daemon.** Java 21 is a hard dependency, and the daemon holds a bounded 2 GB heap while serving. On a small machine that costs something.
+- **A JVM daemon.** Java 21 is a hard dependency, and the daemon holds a bounded 2 GB heap while serving.
 - **A one-person project.** No warranty, no SLA. The release gates are strict: every release is checksummed, provenance-attested, and installed hermetically in CI before it ships. It is still one person.
 
 ## Backends and protocols

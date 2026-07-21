@@ -2,7 +2,7 @@
 
 # splice
 
-**Type `claudeor` instead of `claude` — [Claude Code](https://docs.anthropic.com/en/docs/claude-code), wrapped over your own model backends, on loopback.**
+**Type `claudex` instead of `claude` — [Claude Code](https://docs.anthropic.com/en/docs/claude-code) on your ChatGPT, Grok, or Kimi subscription, on loopback.**
 
 [Install](#install) · [Quick start](#quick-start) · [How it works](#how-it-works) · [Providers](#provider-support) · [Trade-offs](#why-you-might-not-want-splice) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md)
 
@@ -13,13 +13,13 @@
 
 </div>
 
-splice is a local, loopback-only proxy stack. A single Kotlin daemon (**spliced**) sits between Claude Code and one or more model backends, translating Anthropic's Messages API into each backend's own wire dialect. Each backend is exposed as a **head** — a thin Claude Code wrapper on its own loopback port (`claudex`, `claude-grok`, `claude-kimi`, `claudeor`, …). Its load-bearing feature is the **mirror**: the backend's reasoning summary is written back into the transcript as visible text, so conclusions persist and stay legible turn after turn instead of evaporating.
+splice is a local, loopback-only proxy stack. A single Kotlin daemon (**spliced**) sits between Claude Code and one or more model backends, translating Anthropic's Messages API into each backend's own wire dialect. Each backend is exposed as a **head** — a thin Claude Code wrapper on its own loopback port (`claudex`, `claude-grok`, `claude-kimi`, `claudeor`, …). Its central feature is the **mirror**: the backend's reasoning summary is written back into the transcript as visible text, so conclusions stay readable turn after turn.
 
 ## Not affiliated
 
 > [!IMPORTANT]
 > splice is an independent, personal project. It is **not affiliated with, endorsed by, or sponsored by** Anthropic, OpenAI, xAI, Moonshot, or OpenRouter. All product names and trademarks belong to their respective owners.
-> Anthropic identifies routing Claude Code to non-Claude models through a custom gateway as **unsupported**. splice is exactly that kind of gateway; use it with that in mind, at your own risk. No warranty — see [License](#license), and [why you might not want splice](#why-you-might-not-want-splice).
+> Anthropic identifies routing Claude Code to non-Claude models through a custom gateway as **unsupported**. splice is exactly that kind of gateway; use it with that in mind, at your own risk. No warranty: see [License](#license), and [why you might not want splice](#why-you-might-not-want-splice).
 
 When something is wrong, `splice doctor` names the exact fix:
 
@@ -29,25 +29,25 @@ When something is wrong, `splice doctor` names the exact fix:
 
 Long coding-agent sessions bleed tokens and lose the thread. splice goes after both:
 
-- **Cache warmth is engineered, not hoped for.** A stable cache key and — critically — **compaction that runs on the session's own model and reasoning effort** keep the prompt cache warm across a long session. Opaque encrypted reasoning-item replay is an explicit, default-off trade-off: it can add cache warmth, but measurements showed it also made fresh reasoning substantially thinner. A mismatched compaction model *or* effort silently invalidates the cache and re-reads the entire transcript uncached.
-- **Reasoning continuity is load-bearing.** The mirror preserves the provider-generated readable reasoning summary in the transcript, so the agent — and you — can inspect the summary and carry that context through later turns and compaction. It is not raw, private, or exact chain-of-thought.
+- **The prompt cache stays warm.** A stable cache key and **compaction that runs on the session's own model and reasoning effort** keep the cache warm across a long session. Opaque encrypted reasoning-item replay is an explicit, default-off trade-off: it can add cache warmth, but measurements showed it also made fresh reasoning substantially thinner. A mismatched compaction model *or* effort silently invalidates the cache and re-reads the entire transcript uncached.
+- **Reasoning continuity is load-bearing.** The mirror preserves the provider-generated readable reasoning summary in the transcript, so both the agent and you can inspect the summary and carry that context through later turns and compaction. It is not raw, private, or exact chain-of-thought.
 - **One instrument panel for the fleet.** The daemon serves a single dashboard over every head: live status, start/stop/restart, layered config with provenance, per-head 5-hour usage soft-warnings, auth, and logs.
 
-What you get, concretely:
+What you get:
 
-- [x] Wrapper commands per backend — [`claudeor` is one keystroke away from `claude`](#quick-start)
-- [x] The reasoning **mirror** — [summaries survive turns and compaction](#reasoning)
+- [x] A [wrapper command per backend](#quick-start): `claudex`, `claude-grok`, `claude-kimi`, `claudeor`
+- [x] The reasoning **mirror**: [summaries survive turns and compaction](#reasoning)
 - [x] Cache-warm compaction on the session's own model and effort
-- [x] A [fleet dashboard](#quick-start) on loopback — status, config with provenance, usage soft-warnings, logs
-- [x] [`splice doctor`](#troubleshooting) — every failing check prints its own fix
+- [x] A [fleet dashboard](#quick-start) on loopback: status, config with provenance, usage soft-warnings, logs
+- [x] [`splice doctor`](#troubleshooting): every failing check prints the command that fixes it
 - [x] [Checksummed **and** provenance-attested releases](#install), verified by the installer before anything goes live
-- [x] New backends are [a TOML edit, not code](#provider-support) — the daemon dispatches on `(dialect, auth.kind)`
+- [x] New backends are [a TOML edit](#provider-support): the daemon dispatches on `(dialect, auth.kind)`
 
 ## How it works
 
 ```mermaid
 flowchart LR
-    subgraph machine["your machine — everything binds 127.0.0.1"]
+    subgraph machine["your machine: everything binds 127.0.0.1"]
         CC["Claude Code<br/>(claudeor · claudex · …)"]
         HEAD["head<br/>:3101"]
         D["spliced daemon<br/>dashboard + control :3096"]
@@ -57,12 +57,12 @@ flowchart LR
     HEAD -- "provider wire dialect" --> API["backend API<br/>(OpenRouter · Moonshot · …)"]
 ```
 
-Each wrapper is an `argv[0]` symlink to the shared launch shim `bin/splice-launch`: it cold-starts the daemon if needed, asks it for an exec recipe over the loopback control plane, and execs the real `claude` pointed at the head's port. Only the head talks to the backend; the dashboard and every control endpoint are bearer-guarded and loopback-only. Adding a backend is a TOML edit, not code — see [`config/splice.example.toml`](config/splice.example.toml) for the full sample topology.
+Each wrapper is an `argv[0]` symlink to the shared launch shim `bin/splice-launch`: it cold-starts the daemon if needed, asks it for an exec recipe over the loopback control plane, and execs the real `claude` pointed at the head's port. Only the head talks to the backend; the dashboard and every control endpoint are bearer-guarded and loopback-only. Adding a backend is a TOML edit, not code. See [`config/splice.example.toml`](config/splice.example.toml) for the full sample topology.
 
 ## Requirements
 
 **Platforms:** Linux and macOS natively; **Windows via WSL2** (run `wsl --install` in PowerShell
-once, then do everything below inside the WSL shell — it behaves exactly like Linux). Native
+once, then do everything below inside the WSL shell; it behaves exactly like Linux). Native
 Windows shells are refused by the installer with the same guidance: the launch shim and daemon
 are Unix programs.
 
@@ -76,12 +76,12 @@ are Unix programs.
 | **GitHub CLI, authenticated** | release installs verify build-provenance attestations via the GitHub API | `gh auth login` once ([cli.github.com](https://cli.github.com)); building from a checkout does not need it |
 
 You don't have to pre-check any of this: `install.sh` verifies every dependency up front, prints
-the exact fix for your machine's package manager, and — on an interactive terminal — offers to
+the exact fix for your machine's package manager, and, on an interactive terminal, offers to
 run each fix for you (always with consent). `splice doctor` re-verifies everything at any time.
 
 ## Install
 
-**Option 1 — one-liner (release install).** Verifies checksums *and* GitHub build-provenance
+**Option 1: the release one-liner.** Verifies checksums *and* GitHub build-provenance
 attestations before anything goes live, so authenticate `gh` once first:
 
 ```bash
@@ -89,7 +89,7 @@ gh auth login   # once
 curl -fsSL https://github.com/torad-labs/splice/releases/latest/download/install.sh | bash
 ```
 
-**Option 2 — from source** (no `gh` needed):
+**Option 2: from source** (no `gh` needed):
 
 ```bash
 git clone https://github.com/torad-labs/splice.git
@@ -97,8 +97,7 @@ cd splice
 ./install.sh
 ```
 
-**Option 3 — let your agent do it.** Just give this prompt to your favorite agent (Claude Code,
-or any coding agent with shell access) to install it:
+**Option 3: let your agent do it.** Give this prompt to any coding agent with shell access:
 
 ```text
 Install splice (https://github.com/torad-labs/splice) on this machine and verify it works:
@@ -116,8 +115,8 @@ Install splice (https://github.com/torad-labs/splice) on this machine and verify
 6. Tell me it's ready and that `claudeor` launches Claude Code through OpenRouter.
 ```
 
-The agent can drive the whole loop because `splice doctor` names the exact fix for every failing
-check — the same feedback loop a human uses.
+The agent can drive that loop for the same reason you can: `splice doctor` prints the fix for
+every failing check.
 
 ## Quick start
 
@@ -127,37 +126,36 @@ splice setup                      # write the supported API-key starter and inst
 claudeor                          # Claude Code through OpenRouter on loopback (:3101)
 ```
 
-`install.sh` builds the fat jar from a checkout (or fetches a release), installs the shared launch shim, links the wrapper commands into `~/.local/bin`, and finishes by running `splice doctor` so you see a verified state — not a hopeful one.
+`install.sh` builds the fat jar from a checkout (or fetches a release), installs the shared launch shim, links the wrapper commands into `~/.local/bin`, and finishes by running `splice doctor`, so the install ends with a checked report.
 
-Codex, Grok, and Kimi OAuth routes are not first-run defaults. To try one, copy its clearly marked **experimental opt-in** provider and head from [`config/splice.example.toml`](config/splice.example.toml), restart splice, then run that head's `login` command. Those routes reuse public CLI OAuth client identities but are not vendor-documented third-party integrations.
+**splice was built for ChatGPT, Grok, and Kimi subscriptions.** Copy the matching provider and head from [`config/splice.example.toml`](config/splice.example.toml) into `~/.config/splice/splice.toml`, run `splice install --all`, then sign in with that head's `login` command (`claudex login`, `claude-grok login`, `claude-kimi login`). These routes are unofficial: they reuse each vendor's own CLI OAuth client identity, which no vendor documents for third parties. Use them at your own risk; the API-key starter above is the zero-config alternative.
 
 Admin verbs go through the `splice` command:
 
 ```bash
 splice status         # per-head status
-splice doctor         # check the whole install — every failing check prints its fix
+splice doctor         # check the whole install; every failing check prints its fix
 splice restart        # restart the daemon with this shell's environment
 splice dashboard      # open the control dashboard (loopback :3096)
 splice init           # write the supported OpenRouter API-key starter topology
 splice install --all  # (re)link the wrapper commands
-<head> login          # only for an explicitly configured experimental OAuth head
+<head> login          # sign in a subscription head (claudex, claude-grok, claude-kimi)
 ```
 
 The dashboard and every control endpoint are bearer-guarded and loopback-only. The unlock key lives at `~/.claude-codex/state/mgmt-key`.
 
 ## Troubleshooting
 
-`splice doctor` checks everything — prerequisites, install integrity, config, daemon, and auth —
-and prints the exact fix under every failing check.
+`splice doctor` checks prerequisites, install integrity, config, daemon, and auth, then prints
+the exact fix under every failing check.
 
-One trap worth knowing by name: the daemon reads API-key env vars from **its own** environment.
-If you export a key *after* the daemon has started, the shell sees it but the daemon doesn't —
-launches warn, and requests fail upstream. `splice restart` restarts the daemon with your current
+The daemon reads API-key env vars from **its own** environment. Export a key *after* the daemon
+has started and the shell sees it but the daemon does not: launches warn, requests fail upstream. `splice restart` restarts the daemon with your current
 shell's environment; `splice doctor` detects this state explicitly.
 
 ## Credential locations
 
-Each of these is a **password-equivalent secret** — anything that can read the file (or the environment variable) can spend against your account. Keep files `600`, never commit them, never paste them.
+Each of these is a **password-equivalent secret**: anything that can read the file (or the environment variable) can spend against your account. Keep files `600`, never commit them, never paste them.
 
 | Backend / route | Auth kind | Location | Notes |
 | --- | --- | --- | --- |
@@ -174,35 +172,35 @@ Each of these is a **password-equivalent secret** — anything that can read the
 | --- | --- | --- |
 | OpenRouter | `api-key` (`OPENROUTER_API_KEY`) | **Supported** — pay-per-token, any OpenAI-compatible vendor |
 | Moonshot | `api-key` (`MOONSHOT_API_KEY`) | **Supported** — pay-per-token Anthropic base |
-| codex (ChatGPT) | `chatgpt-oauth` | **Experimental**, pending vendor clarification |
-| grok (xAI) | `grok-oauth` | **Experimental**, pending vendor clarification |
-| kimi (Moonshot) | `kimi-oauth` | **Experimental**, pending vendor clarification |
+| codex (ChatGPT) | `chatgpt-oauth` | **Primary** — what splice was built for; unofficial, at your own risk |
+| grok (xAI) | `grok-oauth` | **Primary** — unofficial, at your own risk |
+| kimi (Moonshot) | `kimi-oauth` | **Primary** — unofficial, at your own risk |
 
-The **api-key** routes are ordinary pay-per-token API access and are supported. The **OAuth-identity** routes are **experimental**: they authenticate by reusing the public OAuth client identities of each vendor's own CLI, not a documented third-party integration. Whether that reuse is permitted is not settled — treat these routes as experimental pending clarification from each vendor, and use them at your own risk.
+The **OAuth-identity** routes are the reason splice exists: they run Claude Code on the subscription you already pay for. They are also **unofficial**: they authenticate by reusing the public OAuth client identity of each vendor's own CLI, not a documented third-party integration, and a vendor could object or break them at any time. Use them at your own risk. The **api-key** routes are ordinary pay-per-token API access with none of that ambiguity, and make the best zero-config starter.
 
 ## Why you might not want splice
 
-Honesty over marketing — reasons to walk away:
+Reasons to walk away:
 
-- **It's an unsupported gateway.** Anthropic explicitly identifies this class of tool as unsupported. A Claude Code update can break splice at any time; the version handshake fails loudly rather than corrupting sessions, but "fails loudly" is still "fails".
-- **The OAuth routes are legally unsettled.** Codex, Grok, and Kimi routes reuse each vendor's own CLI OAuth client identity. That reuse is not vendor-documented; it may violate terms of service. They ship as explicit experimental opt-ins for a reason.
-- **It's a single-user, loopback tool.** No multi-user story, no remote access, no TLS — by design. If you want a team-facing model gateway, use a purpose-built one (e.g. LiteLLM).
-- **It runs a JVM daemon.** Java 21 is a hard dependency, and the daemon holds a bounded 2 GB heap while serving. On a small machine that's a real cost.
-- **It's a personal project.** One maintainer, no warranty, no SLA. The release gates are strict (every release is checksummed, provenance-attested, and installed hermetically in CI before it ships) — but strictness isn't staffing.
+- **An unsupported gateway.** Anthropic identifies this class of tool as unsupported, and a Claude Code update can break splice at any time. The version handshake makes the break loud instead of corrupting a session mid-turn.
+- **Legally unsettled OAuth.** The Codex, Grok, and Kimi routes reuse each vendor's own CLI OAuth client identity. No vendor documents that reuse; it may violate terms of service, and a vendor could cut it off without notice. The primary routes are also the biggest risk.
+- **Single-user by design.** There is no multi-user story, remote access, or TLS. A team wanting a shared model gateway should run one built for that job (LiteLLM, for example).
+- **A JVM daemon.** Java 21 is a hard dependency, and the daemon holds a bounded 2 GB heap while serving.
+- **A one-person project.** No warranty, no SLA. The release gates are strict: every release is checksummed, provenance-attested, and installed hermetically in CI before it ships. It is still one person.
 
 ## Backends and protocols
 
 splice speaks several upstream wire dialects (`openai-responses`, `openai-chat`, `anthropic-passthrough`), selected per provider in the topology.
 
-The codex backend at `https://chatgpt.com/backend-api/codex` is a **ChatGPT / Codex backend that speaks a Responses-STYLE protocol** — the internal endpoint the ChatGPT Codex product itself uses. It is **not the public OpenAI Responses API**, and nothing here should be read as targeting that public API.
+The codex backend at `https://chatgpt.com/backend-api/codex` is a **ChatGPT / Codex backend that speaks a Responses-STYLE protocol**: the internal endpoint the ChatGPT Codex product itself uses. It is **not the public OpenAI Responses API**, and nothing here should be read as targeting that public API.
 
 ## Reasoning
 
-"Reasoning" here means one of three concrete, narrow things — never the model's raw private chain-of-thought:
+"Reasoning" here means one of three narrow things, never the model's raw private chain-of-thought:
 
-- **Provider-generated reasoning summaries** — a short summary the backend itself produces and returns.
-- **Readable reasoning fields explicitly supplied** by the backend on the wire (e.g. `reasoning_text` / summary fields).
-- **Opaque encrypted reasoning-item replay** — carrying the backend's own encrypted reasoning items forward into a later request, verbatim and unread.
+- **Provider-generated reasoning summaries**: a short summary the backend itself produces and returns.
+- **Readable reasoning fields**: supplied explicitly by the backend on the wire (e.g. `reasoning_text` / summary fields).
+- **Opaque encrypted reasoning-item replay**: carrying the backend's own encrypted reasoning items forward into a later request, verbatim and unread.
 
 splice never has, exposes, or reconstructs the model's raw chain-of-thought or exact reasoning. The **mirror** writes only the provider-generated summary text back into the transcript.
 
@@ -210,10 +208,10 @@ Replay ships off. Set `CLAUDEX_REPLAY_REASONING=1` only if you deliberately pref
 
 ## The cache-replay experiment
 
-`experiments/cache-replay/` is a self-contained A/B that probes one question: **does replaying opaque encrypted reasoning items back into a request bust the prompt cache?** It runs a fixed multi-turn conversation twice — once carrying the encrypted reasoning items forward, once dropping them — and reports cached vs. uncached input tokens per turn.
+`experiments/cache-replay/` is a self-contained A/B that probes one question: **does replaying opaque encrypted reasoning items back into a request bust the prompt cache?** It runs a fixed multi-turn conversation twice, once carrying the encrypted reasoning items forward and once dropping them, and reports cached vs. uncached input tokens per turn.
 
-- `real-ab.sh` — two isolated real Claude-Code sessions on a side-port, same turns, only the replay toggled.
-- `run.mjs` / `replay-captured.mjs` — dependency-free Node harnesses; `replay-captured.mjs` replays a captured, sanitized transcript so the A/B is reproducible without live credentials.
+- `real-ab.sh`: two isolated real Claude-Code sessions on a side-port, same turns, only the replay toggled.
+- `run.mjs` / `replay-captured.mjs`: dependency-free Node harnesses; `replay-captured.mjs` replays a captured, sanitized transcript so the A/B is reproducible without live credentials.
 
 The cache effect remains workload-dependent, but the reasoning-depth result was strong enough to make replay default-off: replay caused the model to reuse prior thinking, reducing output and making reasoning thin. Read `experiments/cache-replay/README.md` for the caveats and run it yourself.
 

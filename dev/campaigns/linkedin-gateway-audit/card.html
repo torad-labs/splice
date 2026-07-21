@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>splice — comparison card (LinkedIn)</title>
+<style>
+  /* Torad Plate identity, candlelight register. Pigments + type from framework/torad-tokens.css. */
+  @font-face { font-family:'Fraunces'; src:url('file:///home/marcos/Documents/dev/projects/torad/torad-main/products/website/web/landing/fonts/fraunces-400.woff2') format('woff2'); font-weight:400; }
+  @font-face { font-family:'IBM Plex Mono'; src:url('file:///home/marcos/Documents/dev/projects/torad/torad-main/products/website/web/landing/fonts/ibm-plex-mono-400.woff2') format('woff2'); font-weight:400; }
+  @font-face { font-family:'IBM Plex Mono'; src:url('file:///home/marcos/Documents/dev/projects/torad/torad-main/products/website/web/landing/fonts/ibm-plex-mono-500.woff2') format('woff2'); font-weight:500; }
+  @font-face { font-family:'IBM Plex Mono'; src:url('file:///home/marcos/Documents/dev/projects/torad/torad-main/products/website/web/landing/fonts/ibm-plex-mono-600.woff2') format('woff2'); font-weight:600; }
+
+  :root{
+    --obsidian-900:#1c1610; --obsidian-800:#241a12;
+    --mist-100:#efe2c6; --mist-300:#cbbd9d; --mist-400:#b6a888; --mist-500:#968969;
+    --vermilion-400:#e2563b; --verdigris-400:#5bb59c; --ormolu-400:#e7c069;
+    --line:rgba(239,226,198,.16); --line-strong:rgba(239,226,198,.32);
+  }
+  *{ margin:0; padding:0; box-sizing:border-box; }
+  html,body{ width:1200px; height:1200px; overflow:hidden; }
+  body{ background:var(--obsidian-900); color:var(--mist-100); position:relative; }
+  body::before{
+    content:''; position:absolute; inset:0; pointer-events:none;
+    background:
+      radial-gradient(900px 520px at 14% -6%, rgba(226,86,59,.07), transparent 62%),
+      radial-gradient(700px 460px at 108% 108%, rgba(231,192,105,.05), transparent 60%);
+  }
+  .plate{ position:absolute; inset:30px; border:1px solid var(--line); }
+  .tick{ position:absolute; width:16px; height:16px; }
+  .tick::before,.tick::after{ content:''; position:absolute; background:var(--line-strong); }
+  .tick::before{ width:16px; height:1px; } .tick::after{ width:1px; height:16px; }
+  .tick.tl{ top:-1px; left:-1px; } .tick.tr{ top:-1px; right:-1px; transform:scaleX(-1); }
+  .tick.bl{ bottom:-1px; left:-1px; transform:scaleY(-1); } .tick.br{ bottom:-1px; right:-1px; transform:scale(-1); }
+
+  .card{ position:absolute; inset:30px; padding:54px 62px 46px; display:flex; flex-direction:column; }
+
+  .masthead{ display:flex; justify-content:space-between; align-items:baseline; }
+  .kicker{ font-family:'IBM Plex Mono', monospace; font-weight:500; font-size:18px; letter-spacing:.14em; color:var(--mist-500); text-transform:uppercase; }
+  .kicker b{ color:var(--verdigris-400); font-weight:600; }
+  .wordmark{ font-family:'Fraunces', serif; font-size:25px; letter-spacing:.30em; color:var(--mist-300); text-transform:uppercase; }
+
+  h1{
+    margin-top:38px;
+    font-family:'Fraunces', serif; font-weight:400;
+    font-size:52px; line-height:1.14; color:var(--mist-100); max-width:26ch;
+  }
+
+  .routes{ margin-top:16px; font-family:'IBM Plex Mono', monospace; font-size:16.5px; letter-spacing:.04em; color:var(--mist-500); }
+  .routes{ text-transform:none; }
+  table{ margin-top:34px; width:100%; border-collapse:collapse; font-family:'IBM Plex Mono', monospace; }
+  thead th{
+    font-size:19px; font-weight:600; letter-spacing:.04em; color:var(--mist-300);
+    text-align:center; padding:0 6px 16px; border-bottom:1px solid var(--line-strong);
+    vertical-align:bottom; line-height:1.3;
+  }
+  thead th.feature{ text-align:left; font-weight:500; color:var(--mist-500); font-size:16px; letter-spacing:.12em; text-transform:uppercase; }
+  thead th.splice{ color:var(--ormolu-400); font-size:21px; }
+  tbody td{
+    padding:15px 6px; border-bottom:1px solid var(--line);
+    font-size:21px; text-align:center; color:var(--mist-400);
+  }
+  tbody td.feature{ text-align:left; font-weight:500; color:var(--mist-100); font-size:21.5px; padding-right:18px; line-height:1.35; }
+  tbody td.feature small{ display:block; font-weight:400; font-size:16px; color:var(--mist-500); margin-top:3px; }
+  tbody tr:last-child td{ border-bottom:1px solid var(--line-strong); }
+  .yes{ color:var(--verdigris-400); font-weight:600; font-size:24px; }
+  .no{ color:var(--mist-500); }
+  .part{ color:var(--mist-400); font-size:18px; }
+  /* splice column: raised plate */
+  col.splice-col{ background:rgba(231,192,105,.055); }
+  tbody td.splice, thead th.splice{ border-left:1px solid var(--line); border-right:1px solid var(--line); }
+  tbody td.splice .yes{ color:var(--verdigris-400); }
+
+  .legend{
+    margin-top:24px; display:flex; gap:34px;
+    font-family:'IBM Plex Mono', monospace; font-size:16px; color:var(--mist-500);
+  }
+  .legend .yes{ font-size:17px; }
+
+  .footer{
+    margin-top:auto; padding-top:24px; border-top:1px solid var(--line-strong);
+    display:flex; justify-content:space-between; align-items:baseline;
+    font-family:'IBM Plex Mono', monospace;
+  }
+  .footer .repo{ color:var(--ormolu-400); font-weight:600; font-size:20px; }
+  .footer .meta{ color:var(--mist-500); font-size:15px; letter-spacing:.04em; }
+</style>
+</head>
+<body>
+  <div class="plate">
+    <i class="tick tl"></i><i class="tick tr"></i><i class="tick bl"></i><i class="tick br"></i>
+  </div>
+  <div class="card">
+    <div class="masthead">
+      <div class="kicker"><b>torad-labs / splice</b> · open source</div>
+      <div class="wordmark">Torad</div>
+    </div>
+
+    <h1>Run Claude&nbsp;Code on GPT, Grok, or Kimi. Keep the reasoning.</h1>
+    <div class="routes">works with your ChatGPT, Grok, and Kimi subscriptions &middot; unofficial, use at your own risk</div>
+
+    <table>
+      <colgroup>
+        <col><col class="splice-col"><col><col><col>
+      </colgroup>
+      <thead>
+        <tr>
+          <th class="feature">capability</th>
+          <th class="splice">splice</th>
+          <th>Claude Code<br>Router</th>
+          <th>LiteLLM<br>proxy</th>
+          <th>plain<br>BASE_URL</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="feature">Reasoning mirror<small>the reasoning summary stays in your transcript</small></td>
+          <td class="splice"><span class="yes">✓</span></td><td><span class="no">—</span></td><td><span class="no">—</span></td><td><span class="no">—</span></td>
+        </tr>
+        <tr>
+          <td class="feature">Cache-warm compaction<small>compact without a cold re-read of the whole transcript</small></td>
+          <td class="splice"><span class="yes">✓</span></td><td><span class="no">—</span></td><td><span class="no">—</span></td><td><span class="no">—</span></td>
+        </tr>
+        <tr>
+          <td class="feature">One command per backend<small>type claudex instead of claude</small></td>
+          <td class="splice"><span class="yes">✓</span></td><td><span class="part">profiles</span></td><td><span class="no">—</span></td><td><span class="no">—</span></td>
+        </tr>
+        <tr>
+          <td class="feature">Doctor with fix lines<small>every failing check prints the command that fixes it</small></td>
+          <td class="splice"><span class="yes">✓</span></td><td><span class="no">—</span></td><td><span class="no">—</span></td><td><span class="no">—</span></td>
+        </tr>
+        <tr>
+          <td class="feature">Attested releases<small>sha256 + build provenance verified before install</small></td>
+          <td class="splice"><span class="yes">✓</span></td><td><span class="no">—</span></td><td><span class="no">—</span></td><td><span class="no">—</span></td>
+        </tr>
+        <tr>
+          <td class="feature">Loopback-only<small>keys never leave your machine</small></td>
+          <td class="splice"><span class="yes">✓</span><span class="part">&nbsp;always</span></td><td><span class="part">default</span></td><td><span class="part">config</span></td><td><span class="yes">✓</span></td>
+        </tr>
+        <tr>
+          <td class="feature">Routing rules + fallback chains<small>where the routers win</small></td>
+          <td class="splice"><span class="no">—</span></td><td><span class="yes">✓</span></td><td><span class="yes">✓</span></td><td><span class="no">—</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="legend">
+      <span><span class="yes">✓</span>&nbsp; built in</span>
+      <span>— &nbsp;not offered</span>
+      <span>snapshot 2026-07-21, from each project's public docs</span>
+    </div>
+
+    <div class="footer">
+      <div class="repo">github.com/torad-labs/splice</div>
+      <div class="meta">MIT · v0.1.1 · runs on 127.0.0.1</div>
+    </div>
+  </div>
+</body>
+</html>

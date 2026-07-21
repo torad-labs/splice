@@ -1,10 +1,11 @@
 # splice — example multi-provider topology.
 #
 # Copy to ~/.config/splice/splice.toml for the comprehensive example. `splice init` writes the
-# supported OpenRouter API-key starter instead. Adding a provider/head requires a daemon restart.
+# zero-config OpenRouter API-key starter instead. Adding a provider/head requires a daemon restart.
 #
-# Supported routes use vendor-issued API keys. The OAuth sections below are explicit experimental
-# opt-ins: they reuse public CLI client identities but are not vendor-documented integrations.
+# The OAuth sections below are what splice was built for — Claude Code on your ChatGPT, Grok,
+# or Kimi subscription. They are unofficial: they reuse each vendor CLI's public OAuth client
+# identity, which no vendor documents for third parties. Use them at your own risk.
 # A new OpenAI-compatible API-key vendor is otherwise pure TOML: base URL, key env, and models.
 
 [daemon]

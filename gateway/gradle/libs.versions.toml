@@ -2,7 +2,7 @@
 # Versions verified against repo1.maven.org maven-metadata 2026-07-16 (the solrsearch
 # index was stale — always check metadata <latest>, not search "latestVersion").
 [versions]
-kotlin = "2.3.21"
+kotlin = "2.4.10"
 ktor = "3.5.1"
 coroutines = "1.11.0"
 serialization = "1.11.0"

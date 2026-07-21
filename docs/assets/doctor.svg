@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="418" viewBox="0 0 760 418" font-family="ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace" font-size="13">
+  <!-- Hand-built terminal mock of real `splice doctor` output (colors match GitHub dark). -->
+  <rect width="760" height="418" rx="8" fill="#0d1117" stroke="#30363d"/>
+  <circle cx="22" cy="20" r="6" fill="#f85149"/>
+  <circle cx="42" cy="20" r="6" fill="#d29922"/>
+  <circle cx="62" cy="20" r="6" fill="#3fb950"/>
+  <text x="380" y="24" fill="#8b949e" text-anchor="middle" font-size="12">splice doctor</text>
+  <g fill="#c9d1d9">
+    <text x="24" y="56"><tspan fill="#8b949e">$</tspan> splice doctor</text>
+    <text x="24" y="80"><tspan font-weight="bold">splice doctor</tspan> <tspan fill="#8b949e">— every ✗ and ! comes with its fix</tspan></text>
+    <text x="24" y="104" fill="#8b949e">prerequisites</text>
+    <text x="24" y="124"><tspan fill="#3fb950">✓</tspan> java     21.0.11</text>
+    <text x="24" y="144"><tspan fill="#3fb950">✓</tspan> claude   2.1.207 (Claude Code)</text>
+    <text x="24" y="164"><tspan fill="#3fb950">✓</tspan> node     v24.16.0</text>
+    <text x="404" y="124"><tspan fill="#3fb950">✓</tspan> python3  3.13.7</text>
+    <text x="404" y="144"><tspan fill="#3fb950">✓</tspan> curl     8.14.1</text>
+    <text x="404" y="164"><tspan fill="#3fb950">✓</tspan> bash     5.2.37</text>
+    <text x="24" y="188"><tspan fill="#d29922">!</tspan> gh       installed but not authenticated — release installs will abort</text>
+    <text x="24" y="206">           <tspan fill="#8b949e">fix:</tspan> <tspan fill="#58a6ff">gh auth login</tspan></text>
+    <text x="24" y="230" fill="#8b949e">installation</text>
+    <text x="24" y="250"><tspan fill="#3fb950">✓</tspan> jar      0.1.1   <tspan fill="#3fb950">✓</tspan> shim (shim-2)   <tspan fill="#3fb950">✓</tspan> wrapper 'claudeor'   <tspan fill="#3fb950">✓</tspan> PATH</text>
+    <text x="24" y="274" fill="#8b949e">daemon</text>
+    <text x="24" y="294"><tspan fill="#3fb950">✓</tspan> daemon   running 0.1.1 on :3096   <tspan fill="#3fb950">✓</tspan> mgmt-key</text>
+    <text x="24" y="318" fill="#8b949e">auth</text>
+    <text x="24" y="338"><tspan fill="#f85149">✗</tspan> openrouter  OPENROUTER_API_KEY is not set</text>
+    <text x="24" y="356">              <tspan fill="#8b949e">fix:</tspan> <tspan fill="#58a6ff">export OPENROUTER_API_KEY=…   then: splice restart</tspan></text>
+    <text x="24" y="392"><tspan fill="#f85149">1 issue(s)</tspan> — fixes listed above. Re-run <tspan fill="#58a6ff">splice doctor</tspan> after.</text>
+  </g>
+</svg>

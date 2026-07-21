@@ -1,4 +1,4 @@
-// PORT-OF: buildRequest pins from server/test/codex-proxy.test.mjs @ 4ca99f7 — effort
+// PORT-OF: buildRequest pins from server/test/codex-proxy.test.mjs @ pre-public-port-baseline — effort
 // precedence (v27), visibility floor semantics, spark summary quirk, compact stripping +
 // instruction forcing + same-model/effort inheritance, cache-key stability, tool mapping,
 // replay gating, grok ladder clamps, purity/determinism.
@@ -145,6 +145,90 @@ class ResponsesRequestBuilderTest {
             """{"model":"m","thinking":{"type":"disabled"},"messages":[{"role":"user","content":"x"}]}""",
         )
         assertNull(req["reasoning"])
+    }
+
+    // codex-rs responses-lite parity for the gpt-5.6 family (shape read from codex-rs source and
+    // accepted by the live backend 2026-07-19): instructions+tools move INTO input, parallel tool
+    // calls forced off, reasoning context spans the session.
+    @Test
+    fun `gpt-5-6 lite shape - instructions and tools ride as input items`() {
+        val tooled = """{"model":"m","system":"harness prompt",
+            "tools":[{"name":"Task","input_schema":{"type":"object"}}],
+            "messages":[{"role":"user","content":"x"}]}"""
+        val req = build(tooled, options = opts(model = "gpt-5.6-sol"))
+        assertNull(req["instructions"])
+        assertNull(req["tools"])
+        assertEquals("false", req["parallel_tool_calls"]?.jsonPrimitive?.content)
+        assertEquals("all_turns", req["reasoning"]?.jsonObject?.get("context")?.jsonPrimitive?.content)
+        val input = req["input"]!!.jsonArray.map { it.jsonObject }
+        assertEquals("additional_tools", input[0]["type"]?.jsonPrimitive?.content)
+        assertEquals("developer", input[0]["role"]?.jsonPrimitive?.content)
+        assertEquals("Task", input[0]["tools"]!!.jsonArray[0].jsonObject["name"]?.jsonPrimitive?.content)
+        assertEquals("developer", input[1]["role"]?.jsonPrimitive?.content)
+        assertEquals("harness prompt", input[1]["content"]?.jsonPrimitive?.content)
+        assertEquals("x", input[2]["content"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `gpt-5-6 lite without tools - developer instructions only, no additional_tools item`() {
+        val req = build(
+            """{"model":"m","system":"harness prompt","messages":[{"role":"user","content":"x"}]}""",
+            options = opts(model = "gpt-5.6-luna"),
+        )
+        assertNull(req["instructions"])
+        // the backend REQUIRES an explicit false whenever the lite header rides, tools or not
+        assertEquals("false", req["parallel_tool_calls"]?.jsonPrimitive?.content)
+        val input = req["input"]!!.jsonArray.map { it.jsonObject }
+        assertEquals("developer", input[0]["role"]?.jsonPrimitive?.content)
+        assertEquals("harness prompt", input[0]["content"]?.jsonPrimitive?.content)
+        assertFalse(input.any { it["type"]?.jsonPrimitive?.content == "additional_tools" })
+    }
+
+    @Test
+    fun `non-lite models keep the normal shape - instructions and tools top-level, no context`() {
+        val tooled = """{"model":"m","system":"harness prompt",
+            "tools":[{"name":"Task","input_schema":{"type":"object"}}],
+            "messages":[{"role":"user","content":"x"}]}"""
+        val req = build(tooled, options = opts(model = "gpt-5.5"))
+        assertEquals("harness prompt", req["instructions"]?.jsonPrimitive?.content)
+        assertEquals("Task", req["tools"]!!.jsonArray[0].jsonObject["name"]?.jsonPrimitive?.content)
+        assertNull(req["parallel_tool_calls"])
+        assertNull(req["reasoning"]?.jsonObject?.get("context"))
+        assertFalse(
+            req["input"]!!.jsonArray.any {
+                it.jsonObject["type"]?.jsonPrimitive?.content == "additional_tools"
+            },
+        )
+    }
+
+    @Test
+    fun `mini clamps effort max to xhigh, other models keep max`() {
+        val maxBody = """{"model":"m","effort":"max","messages":[{"role":"user","content":"x"}]}"""
+        var req = build(maxBody, options = opts(model = "gpt-5.4-mini"))
+        assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        req = build(maxBody, options = opts(model = "gpt-5.6-sol"))
+        assertEquals("max", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        // the 64k budget tier maps to max — the real-world trigger — and clamps on mini too
+        req = build(
+            """{"model":"m","thinking":{"type":"enabled","budget_tokens":64000},
+                "messages":[{"role":"user","content":"x"}]}""",
+            options = opts(model = "gpt-5.4-mini"),
+        )
+        assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+    }
+
+    // CACHE LAW (2026-07-20): compaction MUST run on the session's own model AND effort, or the
+    // warm prompt-cache prefix is invalidated and the whole ~160k transcript re-reads cold (the
+    // "compaction ate my subscription" bug). Codex has no compact-model override and no
+    // compactEffortPin, so both inherit the session. Pins the removal of the compactModel footgun.
+    @Test
+    fun `compact inherits the session model and effort - codex cache law`() {
+        val body = """{"model":"m","system":"base","messages":[{"role":"user","content":"go"}]}"""
+        val req = build(body, options = opts(compact = true, effort = "high", model = "gpt-5.6-sol"))
+        // model is the session's own upstream model — never swapped for a compaction run
+        assertEquals("gpt-5.6-sol", req["model"]?.jsonPrimitive?.content)
+        // effort is inherited from the session (config "high"), not pinned to low/other on codex
+        assertEquals("high", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
     }
 
     @Test

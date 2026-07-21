@@ -1,4 +1,4 @@
-// PORT-OF: usage pins from server/test/{control-server,codex-proxy}.test.mjs @ 4ca99f7 —
+// PORT-OF: usage pins from server/test/{control-server,codex-proxy}.test.mjs @ pre-public-port-baseline —
 // warn table (ratelimit priority, critical bounds, tokens5h fallback, none), payload aliases
 // + non-standard context fields, output clamp with exact log line, 5h window pruning,
 // ratelimit header parsing.
@@ -18,6 +18,7 @@ import splice.gateway.usage.buildUsagePayload
 import splice.gateway.usage.cacheLogLine
 import splice.gateway.usage.makeOutputClamp
 import java.nio.file.Path
+import java.util.concurrent.Executors
 
 private fun obj(json: String) = Json.parseToJsonElement(json).jsonObject
 
@@ -107,6 +108,7 @@ class UsageTest {
         // jump past the 5h window: the next append prunes both old entries
         now += 5 * 60 * 60 * 1000L
         store.appendOutputTokens(7)
+        store.flushNow()
         val state = store.readState()
         assertEquals(1, state.entries)
         assertEquals(7, state.outputTokens5h)
@@ -126,5 +128,24 @@ class UsageTest {
         // absent limit header -> no-op (file unchanged)
         store.persistRateLimit { null }
         assertEquals(5000, store.readRateLimit()!!.limitTokens)
+    }
+
+    @Test
+    fun `concurrent completions aggregate and restart without lost usage`(@TempDir tmp: Path) {
+        val usageFile = tmp.resolve("usage.json")
+        val rateFile = tmp.resolve("ratelimit.json")
+        val now = 20_000_000_000L
+        val store = UsageStore(usageFile, rateFile, clock = { now })
+        val pool = Executors.newFixedThreadPool(8)
+        repeat(200) { pool.submit { store.appendOutputTokens(3) } }
+        pool.shutdown()
+        assertTrue(pool.awaitTermination(5, java.util.concurrent.TimeUnit.SECONDS))
+        store.flushNow()
+
+        assertEquals(600, store.readState().outputTokens5h)
+        assertEquals(1, store.readState().entries, "same-minute turns should persist as one bounded bucket")
+        val restarted = UsageStore(usageFile, rateFile, clock = { now })
+        assertEquals(600, restarted.readState().outputTokens5h)
+        assertEquals(1, restarted.readState().entries)
     }
 }

@@ -69,8 +69,8 @@ public class GrokAuthProvider(
     private val singleFlight = SingleFlight<Credentials?>()
     private val invalidGrantLatch = InvalidGrantLatch()
 
-    // ast-grep-ignore: main-no-hardcoded-dispatchers — this IS the injection seam: an owned
-    // background scope, decoupled from any single request's coroutine, for the G17 async-prefetch
+    // This is the injection seam: an owned background scope, decoupled from any single request's
+    // coroutine, for the G17 async-prefetch
     // tier. Mirrors SingleFlight's own internal scope (same PORT-OF pattern, SingleFlight.kt:36).
     private val prefetchScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 

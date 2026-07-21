@@ -20,16 +20,20 @@ export function ConfigPage() {
         {data ? <p className="myx-footnote">effective config observed from: {data.source}</p> : null}
       </Panel>
       {data ? (
-        <Panel title="layers (defaults, then file, then env, then runtime patch)">
+        <Panel title="layers (defaults, TOML, file, env, runtime patch)">
           <table className="myx-table">
             <thead>
-              <tr><th>key</th><th>default</th><th>file</th><th>env</th><th>runtime</th><th>effective</th></tr>
+              <tr>
+                <th>key</th><th>default</th><th>TOML</th><th>file</th>
+                <th>env</th><th>runtime</th><th>effective</th>
+              </tr>
             </thead>
             <tbody>
               {Object.keys(data.effective).map((key) => (
                 <tr key={key}>
                   <td>{key}</td>
                   <td className="myx-ink-mute">{String(data.layers.defaults[key] ?? '')}</td>
+                  <td className="myx-ink-mute">{key in data.layers.toml ? String(data.layers.toml[key]) : ''}</td>
                   <td className="myx-ink-mute">{key in data.layers.file ? String(data.layers.file[key]) : ''}</td>
                   <td className="myx-ink-mute">{key in data.layers.env ? String(data.layers.env[key]) : ''}</td>
                   <td className="myx-ink-amber">{key in data.layers.runtime ? String(data.layers.runtime[key]) : ''}</td>

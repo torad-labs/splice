@@ -6,6 +6,8 @@ package head
 
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -53,7 +55,9 @@ private class CapacityFakeAuth : RefreshableAuthProvider {
 class HeadServerCapacityTest {
 
     private val mock = MockChatGptUpstream()
-    private val client = HttpClient(CIO)
+    private val client = HttpClient(CIO) {
+        defaultRequest { bearerAuth("test-inference-token") }
+    }
 
     // Ephemeral port (HeadServerLoadTest convention): a hardcoded port BindExceptions when a
     // prior run's socket is still in TIME_WAIT.
@@ -92,6 +96,7 @@ class HeadServerCapacityTest {
             listenPort = port,
             deps = HeadDeps(
                 upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 2),
+                inferenceToken = "test-inference-token",
                 gate = gate,
                 shadow = ShadowClassifier(log = {}),
                 compactStats = CompactStats(tmp.resolve("compact.jsonl")),

@@ -1,4 +1,4 @@
-// PORT-OF: server/src/upstream/gate.mjs @ 4ca99f7 — invariants: FIFO admission; maxInflight
+// PORT-OF: server/src/upstream/gate.mjs @ pre-public-port-baseline — invariants: FIFO admission; maxInflight
 // read FRESH per admission decision (live-PATCHable, 0 = unlimited — kotlinx Semaphore is
 // banned here: it cannot hot-resize); Slot carries touch()/idleFor() for the watchdog;
 // release is idempotent and admits the next waiter under the CURRENT limit.

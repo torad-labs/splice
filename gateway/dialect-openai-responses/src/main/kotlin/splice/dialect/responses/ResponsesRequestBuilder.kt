@@ -1,14 +1,14 @@
-// PORT-OF: server/src/codex/translate-request.mjs + grok/translate-request.mjs @ 4ca99f7 —
+// PORT-OF: server/src/codex/translate-request.mjs + grok/translate-request.mjs @ pre-public-port-baseline —
 // ONE Responses request builder parameterized by Quirks (the two Node files are ~90% identical;
 // the v29 lesson: copies drift). Invariants:
 //   - PURE: {req, meta} from (body, opts); never mutates the body (meta replaced v29's
 //     body.__claudex* magic props);
 //   - full fidelity on normal turns: never shrink input, never swap the model;
 //   - COMPACT turns: tools stripped (a tooled compaction can answer with tool_use and empty
-//     the text channel — v29 worst case), forced text-only instructions, model falls through
-//     to body.model when compactModel is empty, and effort INHERITS THE SESSION (codex quirk;
-//     a mismatch on model OR effort invalidates the whole prompt-cache prefix — the
-//     "compaction ate my subscription" bug), unless the quirk pins one (grok: low);
+//     the text channel — v29 worst case), forced text-only instructions, model ALWAYS the
+//     session's own (body.model — no compact-model override exists), and effort INHERITS THE
+//     SESSION (codex quirk; a mismatch on model OR effort invalidates the whole prompt-cache
+//     prefix — the "compaction ate my subscription" bug), unless the quirk pins one (grok: low);
 //   - images ride as input_image (base64 data URL or url); documents become honest markers;
 //     images inside tool_result ride in a follow-up user message (function_call_output is
 //     string-only on these backends — v25: screenshots silently vanished);
@@ -23,6 +23,7 @@
 //     > config/env fallback > high; visibility floor when showReasoning != off never RAISES
 //     a deliberate pick, only floors none/minimal -> low and folds summary to detailed;
 //   - spark rejects reasoning.summary (openai/codex#31846) — omitted via quirk regex;
+//   - gpt-5.4-mini caps effort at xhigh — the backend 400s effort=max, clamped via quirk regex;
 //   - ChatGPT backend rejects token-limit params: max_output_tokens is NEVER sent; the clamp
 //     applies to REPORTED usage (P3-USE).
 
@@ -62,6 +63,16 @@ public data class ResponsesQuirks(
     val effortLadder: EffortLadder = EffortLadder.CODEX,
     val supportsSummary: Boolean = true,
     val summaryRejectModelRegex: Regex? = Regex("spark", RegexOption.IGNORE_CASE),
+    /** gpt-5.4-mini's ceiling is xhigh — the backend 400s effort=max on it (observed 2026-07-19). */
+    val effortMaxRejectModelRegex: Regex? = Regex("mini", RegexOption.IGNORE_CASE),
+    /** codex-rs parity (read from source 2026-07-19): the gpt-5.6 family is served "responses-lite".
+     *  Lite turns (non-compact): instructions ride as a developer input item (top-level field
+     *  omitted), tools ride as an additional_tools input item (top-level field omitted),
+     *  parallel_tool_calls is FORCED false (splice omitting it left the backend default parallel ON
+     *  — a sequential-tool model spraying 30-50 parallel Task calls), reasoning.context=all_turns,
+     *  and the x-openai-internal-codex-responses-lite header rides. Shape accepted by the live
+     *  backend (direct probe 2026-07-19: 200, correct tool call). */
+    val responsesLiteModelRegex: Regex? = Regex("gpt-5\\.6", RegexOption.IGNORE_CASE),
     val compactEffortPin: String? = null, // null = inherit session effort (the cache law)
     val emitToolChoice: Boolean = false,
     val emitStrict: Boolean = false,
@@ -176,17 +187,18 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         val emitToolChoice = tools != null && quirks.emitToolChoice
         val include =
             if (!opts.compact && opts.includeEncryptedReasoning.v) listOf(ENCRYPTED_CONTENT_INCLUDE) else null
+        val shape = wireShape(quirks.isLite(opts), input, instructions, tools)
         val dto = ResponsesRequest(
             model = opts.upstreamModel,
-            input = input,
+            input = shape.input,
             store = quirks.store,
             stream = true,
             include = include,
             promptCacheKey = cacheKey(body, opts),
-            instructions = instructions,
-            tools = tools,
+            instructions = shape.instructions,
+            tools = shape.tools,
             toolChoice = if (emitToolChoice) toolChoice(body) else null,
-            parallelToolCalls = if (emitToolChoice) body.toolChoice?.disableParallelToolUse != true else null,
+            parallelToolCalls = parallelToolCallsFor(emitToolChoice, body, opts),
             reasoning = reasoning,
             streamOptions = summaryDeliveryOptions(reasoning),
         )
@@ -229,6 +241,21 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         }
     }
 
+    /** codex-rs parity: 5.6-family models get parallel_tool_calls=false whenever tools ride —
+     *  their own CLI forces it (responses-lite). Wins over the grok-style toolChoice negotiation;
+     *  null = omit the field (backend default). */
+    private fun parallelToolCallsFor(
+        emitToolChoice: Boolean,
+        body: AnthropicRequest,
+        opts: BuildOptions,
+    ): Boolean? = when {
+        // Unconditional on lite turns — codex-rs sends the field always, and the backend 400s a
+        // lite-header request without an explicit false (live error 2026-07-19, toolless turn).
+        quirks.isLite(opts) -> false
+        emitToolChoice -> body.toolChoice?.disableParallelToolUse != true
+        else -> null
+    }
+
     // ── knobs ────────────────────────────────────────────────────────────────
 
     private fun compactAwareInstructions(system: String?, compact: Boolean): String {
@@ -267,7 +294,8 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
             effort = budgetEffort ?: normalizeEffort(opts.configEffort, quirks.effortLadder) ?: "high"
         }
         effort = flooredForVisibility(effort, opts.showReasoning)
-        return flooredForGrok(effort, quirks.effortLadder)
+        effort = flooredForGrok(effort, quirks.effortLadder)
+        return clampedForModelCeiling(effort, opts.upstreamModel, quirks.effortMaxRejectModelRegex)
     }
 
     // NB: `as? JsonObject` NOT `?.jsonObject` — the latter THROWS on a non-object (e.g. a client
@@ -318,6 +346,8 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         return buildJsonObject {
             put(FIELD_EFFORT, effort)
             if (!dropSummary) put(FIELD_SUMMARY, summary)
+            // codex-rs lite parity: reasoning context spans the session, not just the current turn.
+            if (quirks.isLite(opts)) put("context", "all_turns")
         }
     }
 }
@@ -338,6 +368,12 @@ private fun flooredForVisibility(effort: String?, showReasoning: ReasoningDispla
 private fun flooredForGrok(effort: String?, ladder: EffortLadder): String? {
     if (ladder != EffortLadder.GROK) return effort
     return effort?.takeIf { it in GROK_EFFORTS } ?: "low"
+}
+
+/** Per-model effort ceiling: models matching the quirk regex reject effort=max — clamp to xhigh. */
+private fun clampedForModelCeiling(effort: String?, upstreamModel: String, rejectMax: Regex?): String? {
+    if (effort != "max" || rejectMax?.containsMatchIn(upstreamModel) != true) return effort
+    return EFFORT_XHIGH
 }
 
 /**
@@ -519,10 +555,6 @@ private const val EFFORT_XHIGH = "xhigh"
 private const val EFFORT_MINIMAL = "minimal"
 private const val SUMMARY_DETAILED = "detailed"
 private const val SUMMARY_CONCISE = "concise"
-
-/** Compact-mode model+effort pinning helper: empty compactModel = session model (the cache law). */
-public fun compactUpstreamModel(compact: Boolean, compactModel: String?, sessionModel: String): String =
-    if (compact && !compactModel.isNullOrEmpty()) compactModel else sessionModel
 
 /** Codex-parity cache key: sha256 of the FIRST user message's text, stable per conversation. */
 public fun stablePromptCacheKey(body: AnthropicRequest): String? {

@@ -1,6 +1,6 @@
-// PORT-OF: server/test/config.test.mjs semantics @ 4ca99f7 — layer precedence, PATCH persistence
+// PORT-OF: server/test/config.test.mjs semantics @ pre-public-port-baseline — layer precedence, PATCH persistence
 // + restart-required flagging, invalid-value/unknown-key rejection, maxInflight aliases,
-// normalization floors, showReasoning folding, mtime cache pickup. Env is faked via the
+// normalization floors, showReasoning folding, sub-second cache pickup. Env is faked via the
 // injected reader seam (JVM cannot setenv).
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -12,6 +12,8 @@ import splice.core.config.normalizeShowReasoning
 import splice.core.turn.ReasoningDisplay
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
@@ -35,8 +37,9 @@ class ConfigServiceTest {
         assertEquals("https://chatgpt.com/backend-api/codex", cfg.chatgptApiBase)
         assertEquals(ReasoningDisplay.TEXT, cfg.showReasoning)
         assertEquals(false, cfg.replayReasoning)
-        assertEquals(0, cfg.maxInflight)
-        assertEquals(0, cfg.maxQueued)
+        // Bounded by default since the 2026-07-19 storm (0 = unlimited stays an explicit opt-out).
+        assertEquals(48, cfg.maxInflight)
+        assertEquals(512, cfg.maxQueued)
         assertEquals(3096, cfg.controlPort)
     }
 
@@ -56,16 +59,15 @@ class ConfigServiceTest {
     }
 
     @Test
-    fun `file layer applies and mtime cache picks up external edits`() {
+    fun `file layer cache picks up a same-size external edit without a one-second delay`() {
         val svc = service()
         val stateDir = tmp.resolve("state")
         Files.createDirectories(stateDir)
         val cfgFile = stateDir.resolve("config.json")
         cfgFile.writeText("""{"pinnedModel":"gpt-5.5"}""")
         assertEquals("gpt-5.5", svc.getConfig().pinnedModel)
-        Thread.sleep(1_100) // mtime resolution
-        cfgFile.writeText("""{"pinnedModel":"gpt-5.4-mini"}""")
-        assertEquals("gpt-5.4-mini", svc.getConfig().pinnedModel)
+        cfgFile.writeText("""{"pinnedModel":"gpt-5.4"}""")
+        assertEquals("gpt-5.4", svc.getConfig().pinnedModel)
     }
 
     @Test
@@ -108,6 +110,33 @@ class ConfigServiceTest {
 
         val negative = service(env = mapOf("CLAUDEX_MAX_QUEUED" to "-5"))
         assertEquals(0, negative.getConfig().maxQueued)
+
+        // Regression: an explicit 0/negative port must fall back to the knob DEFAULT, not clamp
+        // to the floor (1 = unbindable/privileged).
+        val zeroPort = service(env = mapOf("SPLICE_CONTROL_PORT" to "0")).getConfig()
+        assertEquals(3096, zeroPort.controlPort)
+        val negativePort = service(env = mapOf("SPLICE_CONTROL_PORT" to "-1")).getConfig()
+        assertEquals(3096, negativePort.controlPort)
+
+        val oversized = service(
+            env = mapOf(
+                "CLAUDEX_MAX_INFLIGHT" to "3000000000",
+                "CLAUDEX_MAX_QUEUED" to "9999999999",
+                "SPLICE_CONTROL_PORT" to "999999",
+            ),
+        ).getConfig()
+        assertEquals(Int.MAX_VALUE, oversized.maxInflight)
+        assertEquals(Int.MAX_VALUE, oversized.maxQueued)
+        assertEquals(65_535, oversized.controlPort)
+
+        val nonFinite = service(
+            env = mapOf(
+                "CLAUDEX_MAX_INFLIGHT" to "NaN",
+                "CLAUDEX_MAX_QUEUED" to "Infinity",
+            ),
+        ).getConfig()
+        assertEquals(48, nonFinite.maxInflight)
+        assertEquals(512, nonFinite.maxQueued)
     }
 
     @Test
@@ -139,5 +168,30 @@ class ConfigServiceTest {
     fun `env alias order - first present name wins`() {
         val svc = service(env = mapOf("CODEX_REASONING_EFFORT" to "low", "CLAUDEX_REASONING_EFFORT" to "high"))
         assertEquals("high", svc.getConfig().effort)
+    }
+
+    @Test
+    fun `concurrent patches persist a complete atomic merge`() {
+        val svc = service()
+        val start = CountDownLatch(1)
+        val pool = Executors.newFixedThreadPool(2)
+        val first = pool.submit {
+            start.await()
+            svc.patch(mapOf("effort" to "high"))
+        }
+        val second = pool.submit {
+            start.await()
+            svc.patch(mapOf("maxQueued" to 77))
+        }
+        start.countDown()
+        first.get()
+        second.get()
+        pool.shutdown()
+
+        val persisted = tmp.resolve("state/config.json").readText()
+        assertTrue(persisted.contains("\"effort\":\"high\""))
+        assertTrue(persisted.contains("\"maxQueued\":77"))
+        assertEquals("high", svc.getConfig().effort)
+        assertEquals(77, svc.getConfig().maxQueued)
     }
 }

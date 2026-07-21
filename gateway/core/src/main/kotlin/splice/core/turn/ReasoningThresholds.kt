@@ -1,4 +1,4 @@
-// PORT-OF: server/src/reasoning/mirror.mjs named thresholds @ 4ca99f7 — invariants (L2/AGENTS.md):
+// PORT-OF: server/src/reasoning/mirror.mjs named thresholds @ pre-public-port-baseline — invariants (L2/AGENTS.md):
 // mirror >= 20 chars, promote >= 40, honesty < 20. Constants live in :core so the dialect
 // (promote decisions) and the gateway (mirror) share ONE definition; mirrorInto itself is
 // L2-walled to the gateway's Mirror.kt.

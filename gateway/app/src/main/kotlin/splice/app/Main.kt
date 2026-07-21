@@ -3,9 +3,10 @@
 // shutdown hook. `splice daemon` is the default; other subcommands route to the CLI (P5-CLI).
 package splice.app
 
-import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
 import splice.core.config.StatePaths
+import splice.core.util.AsyncFileIo
 import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
 import java.nio.file.Path
@@ -15,6 +16,7 @@ import java.nio.file.StandardOpenOption.CREATE
 import java.security.Security
 import java.time.LocalTime
 import java.time.temporal.ChronoUnit
+import kotlin.system.exitProcess
 
 public fun main(args: Array<String>) {
     // Kill JVM negative-DNS caching BEFORE any lookup (kimi 07:00 burst, 2026-07-18): the JVM
@@ -29,7 +31,7 @@ public fun main(args: Array<String>) {
     Security.setProperty("networkaddress.cache.ttl", "30")
     when (args.firstOrNull()) {
         null, "daemon", "start" -> runDaemon()
-        else -> splice.app.cli.runCli(args)
+        else -> exitProcess(splice.app.cli.runCli(args))
     }
 }
 
@@ -44,45 +46,52 @@ private fun runDaemon() {
     val topology = TopologyLoader.loadOrMaterialize(topologyPath)
     val distPath = Paths.get(System.getProperty("user.dir"), "..", "webui", "dist", "index.html")
     val log = persistentLogger(statePaths.logsDir)
+    val shutdownSignal = CompletableDeferred<Unit>()
     splice.app.cli.shimStalenessWarning()?.let { log("$it\n") }
     val daemon = Daemon(
         topology,
         statePaths,
         Daemon.dashboardFrom(distPath),
         log = log,
+        shutdownDaemon = { shutdownSignal.complete(Unit) },
     )
 
     Runtime.getRuntime().addShutdownHook(
         Thread {
-            runBlocking { runCatching { daemon.stop() } }
+            runBlocking { runCatchingDaemonBoundary { daemon.stop() } }
+            AsyncFileIo.drain()
             lock.close()
         },
     )
 
     runBlocking {
-        daemon.start()
-        // park the main coroutine; the embedded servers run on their own threads
-        awaitCancellation()
+        try {
+            daemon.start()
+            shutdownSignal.await()
+        } finally {
+            daemon.stop()
+            AsyncFileIo.drain()
+            lock.close()
+        }
     }
 }
 
 // Timestamps every log line and tees it to a persistent daemon.log (so failures and slow turns
-// survive restarts and are `tail -f`-able) in addition to stderr. Best-effort file I/O. The writer
-// stays OPEN for the daemon's lifetime (open/close per line was 2 syscalls + a channel alloc on
-// the turn path); flush-per-line keeps the tail -f contract. A failed write drops the writer so the
+// survive restarts and are `tail -f`-able) in addition to stderr. The turn path only enqueues an
+// immutable line; the bounded process-wide file lane owns stderr/filesystem latency. The writer
+// stays OPEN for the daemon's lifetime. A failed write drops the writer so the
 // next line reopens. SIZE-ROTATION (audit 2026-07-18: daemon.log grew forever, ~1KB/turn): at
 // MAX_LOG_BYTES the file is moved to daemon.log.1 (one generation kept) and a fresh file opened.
 private fun persistentLogger(logsDir: Path): (String) -> Unit {
     runCatchingCancellable { Files.createDirectories(logsDir) }
     val file = logsDir.resolve("daemon.log")
     val rolled = logsDir.resolve("daemon.log.1")
-    val gate = Any()
     var writer: java.io.Writer? = null
     var written = runCatchingCancellable { if (Files.exists(file)) Files.size(file) else 0L }.getOrDefault(0L)
     return { msg ->
         val line = "[${LocalTime.now().truncatedTo(ChronoUnit.SECONDS)}] $msg"
-        System.err.print(line)
-        synchronized(gate) {
+        AsyncFileIo.submit {
+            System.err.print(line)
             runCatchingCancellable {
                 if (written >= MAX_LOG_BYTES) {
                     writer?.close()
@@ -93,7 +102,7 @@ private fun persistentLogger(logsDir: Path): (String) -> Unit {
                 val w = writer ?: Files.newBufferedWriter(file, CREATE, APPEND).also { writer = it }
                 w.write(line)
                 w.flush()
-                written += line.length
+                written += line.toByteArray(Charsets.UTF_8).size
             }.onFailure {
                 runCatchingCancellable { writer?.close() }
                 writer = null

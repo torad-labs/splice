@@ -1,4 +1,4 @@
-// PORT-OF: server/src/codex/translate-response.mjs helpers @ 4ca99f7 — invariants (L4): promote
+// PORT-OF: server/src/codex/translate-response.mjs helpers @ pre-public-port-baseline — invariants (L4): promote
 // only ever promotes MODEL content; "no model text returned" is weak; reasoning summary parts
 // join as paragraphs ('\n\n'); harvest reads the terminal Responses object when SSE deltas were
 // sparse. ONE implementation for every Responses provider (grok's Node copies were
@@ -112,9 +112,13 @@ public fun usageFrom(resp: JsonObject?): Usage {
     val details = usage["input_tokens_details"] as? JsonObject
     val cached = details?.let { num(it, "cached_tokens") }?.takeIf { it > 0 }
         ?: num(usage, "cache_read_input_tokens")
+    // output_tokens_details.reasoning_tokens carries the 518n-2 truncation fingerprint; absent on
+    // non-reasoning backends (→ 0 → never fold).
+    val reasoning = (usage["output_tokens_details"] as? JsonObject)?.let { num(it, "reasoning_tokens") } ?: 0L
     return Usage(
         inputTokens = num(usage, "input_tokens", "prompt_tokens"),
         outputTokens = num(usage, "output_tokens", "completion_tokens"),
         cachedTokens = cached,
+        reasoningTokens = reasoning,
     )
 }

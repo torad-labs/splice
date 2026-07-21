@@ -32,4 +32,11 @@ public interface AuthProvider {
 /** An AuthProvider that can refresh its credentials (single-flight at the impl). */
 public interface RefreshableAuthProvider : AuthProvider {
     public suspend fun refresh(): Credentials?
+
+    /**
+     * Provider-specific veto for failures that resemble expired credentials at the HTTP layer
+     * but are actually permanent entitlement errors. The transport owns the common predicate;
+     * providers only narrow it.
+     */
+    public fun allowRefreshAfterFailure(status: Int, body: String): Boolean = true
 }

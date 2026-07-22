@@ -158,6 +158,10 @@ class ResponsesRequestBuilderTest {
         val req = build(tooled, options = opts(model = "gpt-5.6-sol"))
         assertNull(req["instructions"])
         assertNull(req["tools"])
+        // codex-rs parity (client.rs:896): tools ride as additional_tools, so the backend needs an
+        // explicit tool_choice:"auto" to enable function-calling — omitting it left the model
+        // improvising tool calls (stuck/looping turns). Emitted even though codex leaves emitToolChoice off.
+        assertEquals("auto", req["tool_choice"]?.jsonPrimitive?.content)
         assertEquals("false", req["parallel_tool_calls"]?.jsonPrimitive?.content)
         assertEquals("all_turns", req["reasoning"]?.jsonObject?.get("context")?.jsonPrimitive?.content)
         val input = req["input"]!!.jsonArray.map { it.jsonObject }
@@ -192,6 +196,9 @@ class ResponsesRequestBuilderTest {
         val req = build(tooled, options = opts(model = "gpt-5.5"))
         assertEquals("harness prompt", req["instructions"]?.jsonPrimitive?.content)
         assertEquals("Task", req["tools"]!!.jsonArray[0].jsonObject["name"]?.jsonPrimitive?.content)
+        // non-lite codex keeps its proven shape: top-level tools auto-enable calling, so tool_choice
+        // stays omitted (the lite tool_choice fix must not perturb this path).
+        assertNull(req["tool_choice"])
         assertNull(req["parallel_tool_calls"])
         assertNull(req["reasoning"]?.jsonObject?.get("context"))
         assertFalse(

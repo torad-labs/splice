@@ -7,14 +7,16 @@ package splice.dialect.responses
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.turn.Usage
 
 public data class Harvested(val text: String, val thinking: String)
 
+// JsonNull-safe (same trap as ResponsesStreamTranslator.str): null text fields must not harvest "null".
 private fun str(el: JsonElement?): String =
-    (el as? JsonPrimitive)?.content ?: ""
+    (el as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content ?: ""
 
 private const val PARA = "\n\n"
 private const val FIELD_TEXT = "text"
@@ -30,7 +32,7 @@ internal fun summaryText(item: JsonObject): String =
         (item["summary"] as? JsonArray ?: return "")
             .joinToString(PARA) { part ->
                 when (part) {
-                    is JsonPrimitive -> part.content
+                    is JsonPrimitive -> str(part)
                     is JsonObject -> str(part[FIELD_TEXT])
                     else -> ""
                 }
@@ -49,11 +51,11 @@ internal fun reasoningReadableText(item: JsonObject): String =
 
 /** One free-form reasoning field rendered readable, or null when absent/empty. */
 private fun freeFormReasoningText(v: JsonElement?): String? = when (v) {
-    is JsonPrimitive -> v.content.ifEmpty { null }
+    is JsonPrimitive -> str(v).ifEmpty { null }
     is JsonArray -> normalizeParagraphs(
         v.joinToString(PARA) { part ->
             when (part) {
-                is JsonPrimitive -> part.content
+                is JsonPrimitive -> str(part)
                 is JsonObject -> str(part[FIELD_TEXT]).ifEmpty { str(part[FIELD_CONTENT]) }
                 else -> ""
             }

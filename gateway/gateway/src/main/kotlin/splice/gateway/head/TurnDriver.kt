@@ -149,12 +149,16 @@ internal class TurnDriver(
                 // The 200 + SSE headers are committed once respondTextWriter opens, so any failure
                 // must become an honest `event: error` frame — NOT escape and leave the client an
                 // empty/truncated 200 (the "empty or malformed response (HTTP 200)" class).
-                // catchingTurnFailure rethrows CancellationException (the repo's blessed
-                // pattern — no generic catch in this file); runCatchingCancellable (splice.core.util)
-                // doesn't fit here — its catch list is I/O + (de)serialization for local best-effort
-                // work, not the turn-transport failure classes emitFailure's `when` dispatches on.
+                // catchingTurnFailure rethrows CancellationException after sealing (so a head-stop /
+                // write-timeout cancel still ends with abandon/error, not a truncated 200);
+                // runCatchingCancellable (splice.core.util) doesn't fit here — its catch list is
+                // I/O + (de)serialization for local best-effort work, not the turn-transport
+                // failure classes emitFailure's `when` dispatches on.
                 catchingTurnFailure { driveOneTurn(drive) }
                     .onFailure { e -> emitFailure(drive, e) }
+            } catch (e: CancellationException) {
+                sealCancelledTurn(drive)
+                throw e
             } finally {
                 // Terminal frames force-flush already; this covers abandon / exception paths.
                 channel.coalesced.flush()
@@ -176,8 +180,13 @@ internal class TurnDriver(
             clientGone = AtomicBoolean(false),
         )
         val drive = assembleDrive(TurnInputs(built, slot, t0, perf), terminal, channel)
-        catchingTurnFailure { driveOneTurn(drive, pingClient = false) }
-            .onFailure { e -> emitFailure(drive, e) }
+        try {
+            catchingTurnFailure { driveOneTurn(drive, pingClient = false) }
+                .onFailure { e -> emitFailure(drive, e) }
+        } catch (e: CancellationException) {
+            sealCancelledTurn(drive)
+            throw e
+        }
         call.respondText(
             terminal.responseBody().toString(),
             ContentType.Application.Json,
@@ -356,6 +365,9 @@ internal class TurnDriver(
             clientFrameEmitted = { drive.perf.hasMark(PerfKeys.FIRST_FRAME) },
         ) { resp ->
             drive.slot.touch()
+            // Persist upstream rate-limit headers for /api/usage + statusline soft-warn (Node
+            // codex-proxy wired this; the Kotlin split dropped the call site).
+            usageStore.persistRateLimit { name -> resp.header(name) }
             // Fresh upstream round/attempt: reset the idle tier so this round's (possibly long,
             // silent) prefill is judged against firstByteTimeout, not the short streamIdle a prior
             // round's first byte would otherwise pin it to. totalCap still spans the whole turn.
@@ -524,6 +536,25 @@ internal class TurnDriver(
         health.local()
     }
 
+    /** Seal a cancelled turn that never reached emitFailure (head stop, write-timeout, parent
+     *  cancel). Client-gone → abandon (nothing on the wire); still-connected → honest error so
+     *  Claude Code retries instead of seeing a truncated HTTP 200. */
+    private suspend fun sealCancelledTurn(drive: TurnDrive) {
+        if (drive.emitter.hasEnded) return
+        if (drive.channel.clientGone.get()) {
+            drive.emitter.abandon()
+            telemetry.recordPerf(drive, "client_abort")
+            return
+        }
+        log(telemetry.errTurn("cancelled", drive, ": turn cancelled before terminal"))
+        drive.emitter.emitError(
+            ErrorType.OVERLOADED,
+            "${provider.key}: turn cancelled — retry",
+        )
+        telemetry.recordPerf(drive, "error:cancelled")
+        health.local()
+    }
+
     /** Head restart = fresh diagnostic baseline (the HeadHealth doc's promised behavior; the
      *  counters lived through control-plane restarts before — review 2026-07-19). */
     internal fun resetHealth() = health.reset()
@@ -563,13 +594,18 @@ private inline fun <R> catchingTurnFailure(block: () -> R): Result<R> =
         Result.failure(e)
     } catch (e: UpstreamFailed) {
         Result.failure(e)
+    } catch (e: StreamTornBeforeClient) {
+        // Plain RuntimeException (so translators don't swallow it into a terminal). After
+        // UpstreamClient exhausts MAX_STREAM_REISSUES it rethrows here — must become emitConnReset,
+        // not escape respondTextWriter as a truncated HTTP 200 SSE.
+        Result.failure(e)
     } catch (e: SseFrameTooLargeException) {
         Result.failure(e)
     } catch (e: IOException) {
         Result.failure(e)
     } catch (e: CancellationException) {
         // CancellationException extends IllegalStateException — rethrown BEFORE it so a
-        // cancelled turn actually stops instead of becoming an error frame.
+        // cancelled turn actually stops; stream()/collect() seal the emitter then rethrow.
         throw e
     } catch (e: IllegalArgumentException) {
         // e.g. a URL-parse error from a bad base_url (review 2026-07-19: previously escaped

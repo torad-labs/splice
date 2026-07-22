@@ -107,4 +107,21 @@ class ModelCatalogTest {
         assertTrue(kimi.contains("kimi-for-coding"), "a sibling non-suffixed model still resolves")
         assertFalse(kimi.contains("k9"), "a genuinely foreign model is still rejected")
     }
+
+    @Test
+    fun `contextWindowFor strips 1m suffix so picker id windows resolve without extraWindows`() {
+        // Residual of the membership fix: modelIds stripped but exactWindows keyed raw picker ids,
+        // so contains("k3[1m]") passed while contextWindowFor fell to default 256k.
+        val kimi = ModelCatalog(
+            discoveryPrefix = "claude-kimi--",
+            models = listOf(
+                ModelEntry(id = "k3[1m]", label = "Kimi K3 (1M)", contextWindow = 1_048_576),
+            ),
+            defaultContextWindow = 262_144,
+        )
+        assertEquals(1_048_576, kimi.contextWindowFor("k3[1m]"), "picker id")
+        assertEquals(1_048_576, kimi.contextWindowFor("k3"), "bare upstream after strip")
+        assertEquals(1_048_576, kimi.contextWindowFor("claude-kimi--k3[1m]"), "wrapped picker id")
+        assertEquals(1_048_576, kimi.contextWindowFor("claude-kimi--k3"), "wrapped bare id")
+    }
 }

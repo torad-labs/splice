@@ -38,7 +38,7 @@ class ConfigServiceTest {
         assertEquals(ReasoningDisplay.TEXT, cfg.showReasoning)
         assertEquals(false, cfg.replayReasoning)
         // Bounded by default since the 2026-07-19 storm (0 = unlimited stays an explicit opt-out).
-        assertEquals(48, cfg.maxInflight)
+        assertEquals(100, cfg.maxInflight)
         assertEquals(512, cfg.maxQueued)
         assertEquals(3096, cfg.controlPort)
     }
@@ -135,7 +135,7 @@ class ConfigServiceTest {
                 "CLAUDEX_MAX_QUEUED" to "Infinity",
             ),
         ).getConfig()
-        assertEquals(48, nonFinite.maxInflight)
+        assertEquals(100, nonFinite.maxInflight)
         assertEquals(512, nonFinite.maxQueued)
     }
 

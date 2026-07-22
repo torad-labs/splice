@@ -63,16 +63,14 @@ public class GrokAuthProvider(
     private val nowIso: () -> String = { Instant.ofEpochMilli(System.currentTimeMillis()).toString() },
     /** POST grant_type=refresh_token to auth.x.ai's token URL; returns the classified attempt. */
     private val refreshCall: suspend (refreshToken: String) -> RefreshAttempt<GrokRefreshedTokens>,
+    // Injectable so the daemon can tie prefetch to probeScope (Daemon.stop cancels it). Default
+    // keeps unit tests self-contained; production MUST pass the daemon lifecycle scope.
+    private val prefetchScope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob()),
 ) : RefreshableAuthProvider {
 
     private val json = Json { ignoreUnknownKeys = true }
     private val singleFlight = SingleFlight<Credentials?>()
     private val invalidGrantLatch = InvalidGrantLatch()
-
-    // This is the injection seam: an owned background scope, decoupled from any single request's
-    // coroutine, for the G17 async-prefetch
-    // tier. Mirrors SingleFlight's own internal scope (same PORT-OF pattern, SingleFlight.kt:36).
-    private val prefetchScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     @Volatile
     private var cache: Cache? = null

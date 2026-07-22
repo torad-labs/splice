@@ -32,7 +32,8 @@ class AnthropicParseTest {
         val req = body.typed
 
         assertEquals("claude-codex--gpt-5.6-sol", req.model)
-        assertEquals("You are terse. Second part.", req.system)
+        // Multi-block system joins with newline (not "") so adjacent blocks don't glue last/first chars.
+        assertEquals("You are terse. \nSecond part.", req.system)
         assertEquals(2, req.tools.size)
         assertEquals("run", req.tools[0].name)
         assertEquals("object", req.tools[0].inputSchema?.get("type")?.jsonPrimitive?.content)

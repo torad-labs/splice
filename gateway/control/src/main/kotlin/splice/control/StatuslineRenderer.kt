@@ -86,7 +86,9 @@ public class StatuslineRenderer(private val label: String) {
     private fun locationSegment(root: JsonObject): String? {
         val cwd = str(obj(root, "workspace")?.get("current_dir")) ?: str(root["cwd"]) ?: return null
         val base = cwd.trim('/').substringAfterLast('/').ifEmpty { return null }
-        val branch = gitBranch(cwd)
+        // Only git when cwd is a real absolute directory under the user home (or /tmp) — never
+        // exec git -C against an attacker-chosen path from unauthenticated /statusline.
+        val branch = if (isSafeGitCwd(cwd)) gitBranch(cwd) else ""
         val loc = if (branch.isEmpty()) base else "$base  ⎇ $branch"
         return dim(loc)
     }
@@ -117,6 +119,23 @@ public class StatuslineRenderer(private val label: String) {
         fun num(element: JsonElement?): Long? = (element as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong()
         fun fmtK(n: Long): String = if (n >= K) "${n / K}k" else n.toString()
         fun dim(s: String) = "$DIM$s$RESET"
+
+        /** Absolute, existing directory under $HOME or /tmp, with ".." rejected after normalize. */
+        fun isSafeGitCwd(cwd: String): Boolean {
+            if (!cwd.startsWith("/")) return false
+            if (cwd.any { it.code == 0 }) return false
+            val path = runCatching { java.nio.file.Paths.get(cwd).toAbsolutePath().normalize() }.getOrNull()
+                ?: return false
+            if (path.toString().contains("..")) return false
+            val home = runCatching {
+                java.nio.file.Paths.get(System.getProperty("user.home")).toAbsolutePath().normalize()
+            }.getOrNull()
+            val tmp = java.nio.file.Paths.get("/tmp").toAbsolutePath().normalize()
+            val underHome = home != null && path.startsWith(home)
+            val underTmp = path.startsWith(tmp)
+            if (!underHome && !underTmp) return false
+            return java.nio.file.Files.isDirectory(path)
+        }
 
         const val RESET = "[0m"
         const val DIM = "[2m"

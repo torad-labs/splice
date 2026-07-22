@@ -20,6 +20,7 @@ package splice.dialect.responses
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.index.WireBlockIndex
@@ -393,13 +394,25 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     }
 
     // tool args stream as input_json_delta on the SAME wire block index; the .done frame closes it.
+    // When the backend sends complete args only on .done (no .delta frames — valid for small tools),
+    // harvest `arguments` once before close so the client does not get tool_use with empty input {}.
     private suspend fun onArgs(evt: JsonObject, sink: WireSink) {
         val b = blocks[intOr(evt[OUTPUT_INDEX]) ?: return] ?: return
         if (str(evt["type"]) == "response.function_call_arguments.done") {
+            if (!b.sawDelta) {
+                val full = str(evt["arguments"])
+                if (full.isNotEmpty()) {
+                    sink.inputJsonDelta(b.index, full)
+                    b.sawDelta = true
+                }
+            }
             sink.closeBlock(b.index)
         } else {
             val delta = str(evt[DELTA])
-            if (delta.isNotEmpty()) sink.inputJsonDelta(b.index, delta)
+            if (delta.isNotEmpty()) {
+                sink.inputJsonDelta(b.index, delta)
+                b.sawDelta = true
+            }
         }
     }
 
@@ -428,8 +441,10 @@ private fun shouldPreferHarvestedText(current: CharSequence, harvested: String):
     return current.isEmpty() || (isWeakSummaryText(current.toString()) && !isWeakSummaryText(harvested))
 }
 
+// JsonNull IS a JsonPrimitive whose .content is the 4-char string "null" — filter it (Chat /
+// core JsonScalars already do). Else call_id/name/delta:null becomes the literal "null" on wire.
 private fun str(el: JsonElement?): String =
-    (el as? JsonPrimitive)?.content ?: ""
+    (el as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content ?: ""
 
 private fun intOr(el: JsonElement?): Int? =
-    (el as? JsonPrimitive)?.content?.toIntOrNull()
+    (el as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content?.toIntOrNull()

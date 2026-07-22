@@ -250,7 +250,11 @@ public class ConfigService(
             }
             KnobKind.NUMBER -> {
                 val s = raw.toString().trim().lowercase()
-                if (knob == Knob.MAX_INFLIGHT && s in setOf("", "unlimited", "off", "none")) {
+                // maxInflight AND maxQueued both treat <=0 as unlimited in InflightGate — accept
+                // the same named sentinels so PATCH/env maxQueued=unlimited is not rejected.
+                if (knob in setOf(Knob.MAX_INFLIGHT, Knob.MAX_QUEUED) &&
+                    s in setOf("", "unlimited", "off", "none")
+                ) {
                     0L
                 } else {
                     s.toDoubleOrNull()?.takeIf { it.isFinite() }?.toLong()

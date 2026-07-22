@@ -288,7 +288,9 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
 
     private fun cacheKey(body: AnthropicRequest, opts: BuildOptions): String? = when (quirks.cacheKeyStrategy) {
         CacheKeyStrategy.OFF -> null
-        CacheKeyStrategy.SESSION_ID -> opts.sessionId?.let { "claude-grok:$it" }
+        // Prefix from quirks.providerTag (not a hard-coded "claude-grok:") so TOML cache_key=session-id
+        // on any Responses provider stays in its own cache namespace.
+        CacheKeyStrategy.SESSION_ID -> opts.sessionId?.let { "${quirks.providerTag}:$it" }
         CacheKeyStrategy.FIRST_MESSAGE_HASH -> stablePromptCacheKey(body)
     }
 

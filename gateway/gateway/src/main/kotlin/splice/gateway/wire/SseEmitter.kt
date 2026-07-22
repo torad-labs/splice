@@ -21,6 +21,7 @@ import kotlinx.serialization.json.putJsonObject
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
+import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
 
 /** Builds the (non-standard) usage payload Claude Code reads from gateways — injected so the
@@ -47,6 +48,9 @@ public class SseEmitter internal constructor(
 
     private var started = false
     private val ended = AtomicBoolean(false)
+    // Claims the sole-terminal right; ended is set only AFTER frames succeed (or abandon).
+    // Mid-terminal write failure releases the claim so emitError can still seal honestly.
+    private val ending = AtomicBoolean(false)
     private var nextBlockIndex = 0
     private val open = LinkedHashSet<Int>()
 
@@ -54,7 +58,7 @@ public class SseEmitter internal constructor(
     private val frameBuf = StringBuilder(FRAME_BUF_CAPACITY)
 
     public val hasStarted: Boolean get() = started
-    public val hasEnded: Boolean get() = ended.get()
+    override val hasEnded: Boolean get() = ended.get()
 
     private suspend fun frame(event: String, data: JsonObject) {
         frameBuf.setLength(0)
@@ -210,39 +214,55 @@ public class SseEmitter internal constructor(
 
     /** The ONLY clean ending — derives stop_reason internally (L3). */
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) {
-        if (!ended.compareAndSet(false, true)) return
-        ensureStart()
-        frame(
-            "message_delta",
-            buildJsonObject {
-                put(TYPE, "message_delta")
-                putJsonObject("delta") {
-                    put("stop_reason", deriveStopReason(hasToolUse, incomplete))
-                    put("stop_sequence", null as String?)
-                }
-                put("usage", usagePayload(usage))
-            },
-        )
-        frame("message_stop", buildJsonObject { put(TYPE, "message_stop") })
+        if (ended.get() || !ending.compareAndSet(false, true)) return
+        try {
+            ensureStart()
+            frame(
+                "message_delta",
+                buildJsonObject {
+                    put(TYPE, "message_delta")
+                    putJsonObject("delta") {
+                        put("stop_reason", deriveStopReason(hasToolUse, incomplete))
+                        put("stop_sequence", null as String?)
+                    }
+                    put("usage", usagePayload(usage))
+                },
+            )
+            frame("message_stop", buildJsonObject { put(TYPE, "message_stop") })
+            ended.set(true)
+        } catch (e: Throwable) {
+            if (e is CancellationException) throw e
+            ending.set(false)
+            throw e
+        }
     }
 
     /** The ONLY failure ending — an SSE error event lets Claude Code retry honestly. */
     override suspend fun emitError(type: ErrorType, message: String) {
-        if (!ended.compareAndSet(false, true)) return
-        frame(
-            "error",
-            buildJsonObject {
-                put(TYPE, "error")
-                putJsonObject("error") {
-                    put(TYPE, type.wireName)
-                    put(MESSAGE, message)
-                }
-            },
-        )
+        if (ended.get() || !ending.compareAndSet(false, true)) return
+        try {
+            frame(
+                "error",
+                buildJsonObject {
+                    put(TYPE, "error")
+                    putJsonObject("error") {
+                        put(TYPE, type.wireName)
+                        put(MESSAGE, message)
+                    }
+                },
+            )
+            ended.set(true)
+        } catch (e: Throwable) {
+            if (e is CancellationException) throw e
+            // Error frame itself failed (client gone) — still seal so retries don't double-end.
+            ended.set(true)
+            throw e
+        }
     }
 
     /** Client vanished mid-stream — nothing to emit, just seal the emitter. */
     override fun abandon() {
+        ending.set(true)
         ended.set(true)
     }
 

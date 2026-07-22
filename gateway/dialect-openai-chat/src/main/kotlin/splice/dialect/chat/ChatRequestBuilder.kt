@@ -7,6 +7,7 @@ package splice.dialect.chat
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonArrayBuilder
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
@@ -22,6 +23,7 @@ import splice.core.wire.DocumentBlock
 import splice.core.wire.ImageBlock
 import splice.core.wire.MediaSource
 import splice.core.wire.TextBlock
+import splice.core.wire.ToolChoice
 import splice.core.wire.ToolResultBlock
 import splice.core.wire.ToolUseBlock
 
@@ -105,6 +107,7 @@ public class ChatRequestBuilder(
             messages = messages,
             stream = true,
             tools = if (emitTools) toolsArray(body) else null,
+            toolChoice = if (emitTools) chatToolChoice(body.toolChoice) else null,
             reasoningEffort = if (quirks.emitReasoningEffort) effort else null,
             reasoning = if (quirks.emitReasoningEffort && effort != null) {
                 buildJsonObject { put("effort", effort) }
@@ -222,6 +225,10 @@ public class ChatRequestBuilder(
         sink: JsonArrayBuilder,
         toolResults: List<ToolResultBlock>,
     ) {
+        // Emit ALL tool messages first (OpenAI adjacency: every tool must immediately follow
+        // assistant.tool_calls with no intervening user). Image follow-ups land AFTER the full
+        // tool block — inserting user(images) between parallel tools 400s strict validators.
+        val trailingImages = mutableListOf<Pair<String, List<JsonObject>>>()
         toolResults.forEach { tr ->
             val out = tr.content.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
             val images = tr.content.filterIsInstance<ImageBlock>().mapNotNull { imagePart(it.source) }
@@ -232,11 +239,14 @@ public class ChatRequestBuilder(
                 // string-only channel: dropped images (no vision) are declared IN the output.
                 put(CONTENT, if (imageCount > 0 && images.isEmpty()) markerFold(out, imageCount) else out)
             }
-            // v25 doctrine: chat `tool` messages are string-only, so tool_result images ride a
-            // follow-up user message right after the tool output (same as the Responses builder).
             if (images.isNotEmpty()) {
-                appendUserContent(sink, "user", "[images from tool_result ${tr.toolUseId}]", images)
+                trailingImages.add(tr.toolUseId to images)
             }
+        }
+        // v25 doctrine: chat `tool` messages are string-only, so tool_result images ride
+        // follow-up user messages after the contiguous tool block (Responses parity).
+        trailingImages.forEach { (toolUseId, images) ->
+            appendUserContent(sink, "user", "[images from tool_result $toolUseId]", images)
         }
     }
 
@@ -308,11 +318,12 @@ public class ChatRequestBuilder(
 
 /**
  * Map Anthropic thinking budget → chat `reasoning_effort`. Default high so backends that
- * support cleartext CoT actually emit `reasoning_content`. Compact turns stay low-cost.
+ * support cleartext CoT actually emit `reasoning_content`. Compact INHERITS the session effort
+ * (AGENTS cache law — a mismatched effort cold-starts the prompt cache); tools are stripped
+ * separately, effort is not pinned low.
  */
-private fun chatReasoningEffort(body: AnthropicRequest, compact: Boolean): String? {
+private fun chatReasoningEffort(body: AnthropicRequest, @Suppress("UNUSED_PARAMETER") compact: Boolean): String? {
     if (body.thinking?.disabled == true) return null
-    if (compact) return "low"
     val budget = body.thinking?.budgetTokens
     return when {
         budget == null -> "high"
@@ -320,6 +331,20 @@ private fun chatReasoningEffort(body: AnthropicRequest, compact: Boolean): Strin
         budget >= MEDIUM_BUDGET_FLOOR -> "medium"
         budget > 0L -> "low"
         else -> "high"
+    }
+}
+
+/** Anthropic tool_choice → OpenAI chat tool_choice (Responses toolChoice parity). */
+private fun chatToolChoice(choice: ToolChoice?): JsonElement {
+    return when {
+        choice == null || choice.type == "auto" -> JsonPrimitive("auto")
+        choice.type == "none" -> JsonPrimitive("none")
+        choice.type == "any" -> JsonPrimitive("required")
+        choice.type == "tool" && choice.name != null -> buildJsonObject {
+            put("type", "function")
+            put("function", buildJsonObject { put("name", choice.name) })
+        }
+        else -> JsonPrimitive("auto")
     }
 }
 

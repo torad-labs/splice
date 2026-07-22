@@ -29,9 +29,15 @@ public class MgmtKey(private val statePaths: StatePaths) {
         return key
     }
 
-    /** Constant-time bearer check (`Authorization: Bearer <key>`). */
+    /** Constant-time bearer check (`Authorization: Bearer <key>`). Case-insensitive scheme
+     *  (HTTP-common `bearer` lowercase) — matches HeadServer.authorize so the same token bytes
+     *  work on inference and the control plane. */
     public fun matchesBearer(header: String?): Boolean {
-        val presented = Regex("^Bearer\\s+(.+)$").find(header.orEmpty().trim())?.groupValues?.get(1)?.trim()
+        val presented = Regex("^Bearer\\s+(.+)$", RegexOption.IGNORE_CASE)
+            .find(header.orEmpty().trim())
+            ?.groupValues
+            ?.get(1)
+            ?.trim()
             ?: return false
         val a = presented.toByteArray()
         val b = value.toByteArray()

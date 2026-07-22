@@ -108,6 +108,61 @@ class ChatStreamTranslatorTest {
     }
 
     @Test
+    fun `tool name deferred to a later delta opens with the real name`() = runTest {
+        // Vendors emit index+id first, function.name on a later chunk — opening early freezes "".
+        val sink = Rec()
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":{"arguments":""}}]}}]}""",
+                ),
+                ev(
+                    """{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"name":"Read","arguments":"{\"p\":1}"}}]}}]}""",
+                ),
+                ev("""{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"""),
+            ).asFlow(),
+            sink,
+        )
+        assertTrue((outcome as TurnOutcome.Success).hasToolUse)
+        assertEquals(listOf("openTool:Read", "json:{\"p\":1}", "closeAll"), sink.calls)
+    }
+
+    @Test
+    fun `final-message tool_calls are harvested when no deltas carried them`() = runTest {
+        val sink = Rec()
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"choices":[{"message":{"role":"assistant","tool_calls":[
+                        {"id":"t9","type":"function","function":{"name":"run","arguments":"{\"x\":1}"}}
+                    ]},"finish_reason":"tool_calls"}]}""",
+                ),
+            ).asFlow(),
+            sink,
+        )
+        assertTrue((outcome as TurnOutcome.Success).hasToolUse)
+        assertEquals(listOf("openTool:run", "json:{\"x\":1}", "closeAll"), sink.calls)
+    }
+
+    @Test
+    fun `final-message reasoning extends a streamed prefix without duplicating it`() = runTest {
+        val sink = Rec()
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"choices":[{"delta":{"reasoning_content":"Hello"}}]}"""),
+                ev(
+                    """{"choices":[{"message":{"role":"assistant","content":"ok",
+                        "reasoning_content":"Hello world"},"finish_reason":"stop"}]}""",
+                ),
+            ).asFlow(),
+            sink,
+        )
+        val s = outcome as TurnOutcome.Success
+        assertEquals("Hello world", s.thinkingText)
+        assertFalse(s.thinkingText.contains("HelloHello"))
+    }
+
+    @Test
     fun `truncated without finish is overloaded`() = runTest {
         val outcome = ChatStreamTranslator(ctx()).driveTurn(
             listOf(ev("""{"choices":[{"delta":{"content":"partial"}}]}""")).asFlow(),

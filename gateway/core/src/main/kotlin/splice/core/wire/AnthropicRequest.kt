@@ -152,7 +152,7 @@ public object SystemTextSerializer : KSerializer<String?> {
         return arr.mapNotNull { el ->
             val obj = el as? JsonObject ?: return@mapNotNull null
             if (obj["type"]?.jsonPrimitive?.content == "text") obj["text"]?.jsonPrimitive?.content else null
-        }.joinToString("")
+        }.joinToString("\n")
     }
 }
 

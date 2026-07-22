@@ -76,15 +76,21 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
         return terminalOutcome()
     }
 
+    // A FINISHED turn wins over a late watchdog fire (Chat/Responses parity): the poller watches
+    // the whole coroutine, which can sit on the socket-EOF read AFTER message_stop already arrived.
+    // Preferring watchdog here discarded successful kimi turns and burned quota on retries.
     private fun terminalOutcome(): TurnOutcome =
         failureType?.let {
             // a genuine upstream SSE error event (e.g. overloaded_error) — provider-reported (G20)
             TurnOutcome.Failure(it, "kimi: $failureMessage", providerReported = true)
         }
-            ?: ctx.watchdogFired()?.let {
-                TurnOutcome.Failure(ErrorType.OVERLOADED, "kimi: upstream stalled — aborted; retry")
+            ?: if (finished) {
+                successOutcome()
+            } else {
+                ctx.watchdogFired()?.let {
+                    TurnOutcome.Failure(ErrorType.OVERLOADED, "kimi: upstream stalled — aborted; retry")
+                } ?: unfinishedOutcome()
             }
-            ?: if (!finished) unfinishedOutcome() else successOutcome()
 
     private fun unfinishedOutcome(): TurnOutcome =
         if (ctx.clientGone()) {

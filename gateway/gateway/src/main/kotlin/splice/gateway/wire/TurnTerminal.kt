@@ -11,6 +11,9 @@ import splice.core.turn.Usage
 import splice.spi.WireSink
 
 public interface TurnTerminal : WireSink {
+    /** True after emitTerminal / emitError / abandon — used to seal cancelled turns honestly. */
+    public val hasEnded: Boolean
+
     /** The ONLY clean ending — implementors derive the stop_reason literal internally (L3). */
     public suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage)
 

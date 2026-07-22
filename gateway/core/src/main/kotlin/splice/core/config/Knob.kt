@@ -126,10 +126,11 @@ public enum class Knob(
         restartRequired = true,
     ),
 
-    // Bounded by default since the 2026-07-19 storm: unlimited (0) let ~650 concurrent streams
-    // hit one rate-limited account and OOM the 1G heap. 0 still means unlimited for an explicit
-    // operator opt-out; both stay live-PATCHable.
-    MAX_INFLIGHT("maxInflight", KnobKind.NUMBER, listOf("CLAUDEX_MAX_INFLIGHT"), 48L),
+    // Per-head admission (each head is a different backend/account). Bounded by default since the
+    // 2026-07-19 storm: unlimited (0) let ~650 concurrent streams OOM the 1G heap. Default 100
+    // (was 48) leaves headroom for multi-agent fleets without reopening the unlimited storm.
+    // 0 still means unlimited for an explicit operator opt-out; both stay live-PATCHable.
+    MAX_INFLIGHT("maxInflight", KnobKind.NUMBER, listOf("CLAUDEX_MAX_INFLIGHT"), 100L),
     MAX_QUEUED("maxQueued", KnobKind.NUMBER, listOf("CLAUDEX_MAX_QUEUED"), 512L),
     UPSTREAM_RETRIES(
         "upstreamRetries",

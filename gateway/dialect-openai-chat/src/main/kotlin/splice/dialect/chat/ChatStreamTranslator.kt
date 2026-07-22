@@ -53,6 +53,16 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     // parallel call into one corrupted block (ids/names dropped, arguments concatenated).
     private var nextSynthToolIndex = SYNTH_INDEX_BASE
     private val toolIndexById = HashMap<String, Int>()
+    // Deferred opens: backends often emit index+id first and function.name on a later delta.
+    // Opening with name="" freezes an empty tool_use on the Anthropic wire — buffer until name
+    // arrives (or finish_reason forces a flush).
+    private val pendingTools = HashMap<Int, PendingTool>()
+
+    private data class PendingTool(
+        var id: String,
+        var name: String = "",
+        val args: StringBuilder = StringBuilder(),
+    )
 
     override suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome {
         try {
@@ -67,6 +77,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         } catch (ignored: IllegalArgumentException) {
             // malformed value in a frame: surface via the honest terminal decision
         }
+        flushPendingTools(sink)
         sink.closeAll()
         return terminalOutcome()
     }
@@ -126,10 +137,19 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     /** The final-message fold: only fills channels the streamed deltas left empty/unseen. */
     private suspend fun applyFinalMessage(msg: JsonObject, sink: WireSink) {
         reasoningDeltaText(msg)?.let { r ->
-            if (!thinkingBuf.contains(r)) {
+            // Prefix-aware: if we already streamed a prefix of the final payload, only emit the
+            // suffix (substring contains() would append "Hello world" onto "Hello" → "HelloHello world").
+            val already = thinkingBuf.toString()
+            val toEmit = when {
+                already.isEmpty() -> r
+                r.startsWith(already) -> r.substring(already.length)
+                already.contains(r) -> ""
+                else -> r
+            }
+            if (toEmit.isNotEmpty()) {
                 val idx = thinkingBlock ?: sink.openThinking().also { thinkingBlock = it }
-                thinkingBuf.append(r)
-                sink.thinkingDelta(idx, r)
+                thinkingBuf.append(toEmit)
+                sink.thinkingDelta(idx, toEmit)
             }
         }
         str(msg["content"]).takeIf { it.isNotEmpty() }?.let { c ->
@@ -139,6 +159,10 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
                 textBuf.append(c)
                 sink.textDelta(idx, c)
             }
+        }
+        // Non-stream / final-message shape: tool_calls land on `message`, not `delta`.
+        (msg["tool_calls"] as? JsonArray)?.forEach { tc ->
+            applyToolCall(tc as? JsonObject ?: return@forEach, sink)
         }
     }
 
@@ -171,14 +195,40 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     private suspend fun applyToolCall(tc: JsonObject, sink: WireSink) {
         val index = resolveToolIndex(tc)
         val fn = tc["function"] as? JsonObject
-        val idx = toolBlocks[index] ?: run {
-            val id = str(tc["id"]).ifEmpty { "toolu_$index" }
-            val opened = sink.openTool(id, str(fn?.get("name")))
-            toolBlocks[index] = opened
-            hasToolUse = true
-            opened
+        val name = str(fn?.get("name"))
+        val idChunk = str(tc["id"])
+        val args = str(fn?.get("arguments"))
+        val opened = toolBlocks[index]
+        if (opened != null) {
+            if (args.isNotEmpty()) sink.inputJsonDelta(opened, args)
+            return
         }
-        str(fn?.get("arguments")).takeIf { it.isNotEmpty() }?.let { sink.inputJsonDelta(idx, it) }
+        val pending = pendingTools.getOrPut(index) {
+            PendingTool(id = idChunk.ifEmpty { "toolu_$index" })
+        }
+        if (idChunk.isNotEmpty()) pending.id = idChunk
+        if (name.isNotEmpty()) pending.name = name
+        if (args.isNotEmpty()) pending.args.append(args)
+        if (pending.name.isNotEmpty()) {
+            openPendingTool(index, pending, sink)
+        }
+    }
+
+    private suspend fun openPendingTool(index: Int, pending: PendingTool, sink: WireSink) {
+        if (toolBlocks.containsKey(index)) return
+        val opened = sink.openTool(pending.id, pending.name.ifEmpty { "tool" })
+        toolBlocks[index] = opened
+        hasToolUse = true
+        pendingTools.remove(index)
+        if (pending.args.isNotEmpty()) sink.inputJsonDelta(opened, pending.args.toString())
+    }
+
+    private suspend fun flushPendingTools(sink: WireSink) {
+        if (pendingTools.isEmpty()) return
+        // Snapshot keys — openPendingTool mutates pendingTools.
+        pendingTools.keys.toList().forEach { index ->
+            pendingTools[index]?.let { openPendingTool(index, it, sink) }
+        }
     }
 
     /** Explicit index wins (OpenAI streaming); otherwise each distinct id gets a synthesized
@@ -194,7 +244,8 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         finished = true
         when (reason) {
             "tool_calls" -> hasToolUse = true
-            "length" -> incomplete = true
+            // OpenAI standard is "length"; several OpenAI-compat vendors also emit "max_tokens".
+            "length", "max_tokens" -> incomplete = true
             "content_filter" -> contentFiltered = true
             else -> Unit // stop / others -> end_turn
         }

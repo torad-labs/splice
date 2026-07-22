@@ -384,6 +384,10 @@ private class ControlPayloads(
         put("version", GATEWAY_VERSION)
         put("wantShimVersion", SHIM_VERSION)
         put(HEADS, heads.size)
+        // How many heads are actually listening (post startDaemonHeads) — launch shims can wait
+        // for readyHeads == heads before POSTing /launch.
+        val ready = heads.values.count { it.head.healthSnapshot().running }
+        put("readyHeads", ready)
     }.toString()
 
     fun statusJson(): String = buildJsonObject {
@@ -395,7 +399,7 @@ private class ControlPayloads(
                 addJsonObject {
                     put(KEY, m.head.key)
                     put(LABEL, m.head.label)
-                    put("authKind", m.auth.let { "provider" })
+                    put("authKind", m.authKind)
                 }
             }
         }
@@ -420,8 +424,21 @@ private class ControlPayloads(
         put("version", if (h.running) GATEWAY_VERSION else null as String?)
         put("versionMatch", if (h.running) true else null as Boolean?)
         put("mode", null as String?)
-        put("gate", null as String?) // gate snapshot is nullable in the contract; heads self-report when wired
-        put("maxInflight", null as Int?)
+        // Live InflightGate snapshot for the dashboard (was permanently null after the Kotlin port).
+        putJsonObject("gate") {
+            put("inflight", h.gateInflight)
+            put("queued", h.gateQueued)
+            if (h.gateLimit <= 0) put("max", "unlimited") else put("max", h.gateLimit)
+            // Counters the Node gate tracked; Kotlin gate has no acquired/released totals —
+            // zero-fill so the GateSnapshot shape stays stable for the webui.
+            put("acquired", 0)
+            put("released", 0)
+            put("waited", 0)
+            put("avg_wait_ms", 0)
+            putJsonArray("live") {}
+            put("stream_idle_ms", 0)
+        }
+        put("maxInflight", if (h.gateLimit <= 0) null else h.gateLimit)
         // G20: passive per-head health counters, local-origin vs provider-error split — diagnosis
         // only, surfaced through this aggregation (never the per-head /health liveness route).
         putJsonObject("health") {

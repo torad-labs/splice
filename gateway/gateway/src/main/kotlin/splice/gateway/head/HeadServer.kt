@@ -30,6 +30,7 @@ import io.ktor.utils.io.readAvailable
 import io.netty.channel.socket.SocketChannelConfig
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -46,6 +47,7 @@ import splice.core.model.DiscoveryRow
 import splice.core.parse.parseAnthropicBody
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.util.MonoClock
 import splice.core.util.runCatchingCancellable
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
@@ -72,7 +74,7 @@ public data class HeadDeps(
     val usageStore: UsageStore,
     val perfStats: PerfStats,
     val log: (String) -> Unit,
-    val clock: () -> Long = System::currentTimeMillis,
+    val clock: () -> Long = MonoClock::nowMs,
     val requestMaterializationGate: RequestMaterializationGate = RequestMaterializationGate(),
     val maxRequestBytes: Int = DEFAULT_MAX_REQUEST_BYTES,
     val requestReadTimeoutMs: Long = DEFAULT_REQUEST_READ_TIMEOUT_MS,
@@ -177,14 +179,25 @@ public class HeadServer(
         server = engine
     }
 
-    private fun stopLocked() {
+    private suspend fun stopLocked() {
+        // Drain in-flight turns so clients get honest terminals (sealCancelledTurn) before Netty
+        // tears the engine. Bounded wait — never block restart forever.
+        val deadlineNs = System.nanoTime() + STOP_DRAIN_NS
+        while (gate.snapshot().inflight > 0 && System.nanoTime() < deadlineNs) {
+            delay(STOP_DRAIN_POLL_MS)
+        }
+        if (gate.snapshot().inflight > 0) {
+            log("[${provider.key}] stop: draining timed out with inflight=${gate.snapshot().inflight} — forcing engine stop\n")
+        }
         server?.stop(STOP_GRACE_MS, STOP_TIMEOUT_MS)
         server = null
         deps.usageStore.flushNow()
+        driver.resetHealth()
     }
 
     override fun healthSnapshot(): HeadHealth {
         val counts = driver.healthCounters()
+        val gateSnap = gate.snapshot()
         return HeadHealth(
             ok = server != null,
             running = server != null,
@@ -192,6 +205,9 @@ public class HeadServer(
             version = GATEWAY_VERSION,
             localOriginErrors = counts.localOrigin,
             providerErrors = counts.providerError,
+            gateInflight = gateSnap.inflight,
+            gateQueued = gateSnap.queued,
+            gateLimit = gateSnap.limit,
         )
     }
 
@@ -310,27 +326,34 @@ public class HeadServer(
 
     private suspend fun handleCountTokens(call: ApplicationCall) {
         if (!authorize(call)) return
-        val body = materializeOrRespond(call) { receiveBodyBounded(call, deps.maxRequestBytes) } ?: return
-        val parsed = runCatchingCancellable { parseAnthropicBody(body.text) }.getOrNull()
-        if (parsed == null) {
-            call.respondText(
-                errorBodyJson(INVALID_REQUEST_ERROR, "invalid request body"),
-                ContentType.Application.Json,
-                HttpStatusCode.BadRequest,
-            )
-        } else {
-            // Conservative and Unicode-safe: UTF-8 bytes / 3 overestimates ordinary English while
-            // avoiding the old UTF-16 chars / 4 undercount for CJK and emoji. The complete JSON body
-            // intentionally contributes structural/tool overhead.
-            val estimate =
-                ((body.bytes + TOKEN_ESTIMATE_BYTES - 1) / TOKEN_ESTIMATE_BYTES)
-                    .coerceAtLeast(1)
-                    .toLong()
-            log("[${provider.key}] count_tokens estimate=$estimate (local; no upstream turn)\n")
-            call.respondText(
-                buildJsonObject { put("input_tokens", estimate) }.toString(),
-                ContentType.Application.Json,
-            )
+        // Share the admission gate so a flood of large count_tokens bodies cannot bypass
+        // maxInflight while /v1/messages is capacity-protected.
+        val slot = acquireSlotOrRespond(call) ?: return
+        try {
+            val body = materializeOrRespond(call) { receiveBodyBounded(call, deps.maxRequestBytes) } ?: return
+            val parsed = runCatchingCancellable { parseAnthropicBody(body.text) }.getOrNull()
+            if (parsed == null) {
+                call.respondText(
+                    errorBodyJson(INVALID_REQUEST_ERROR, "invalid request body"),
+                    ContentType.Application.Json,
+                    HttpStatusCode.BadRequest,
+                )
+            } else {
+                // Conservative and Unicode-safe: UTF-8 bytes / 3 overestimates ordinary English while
+                // avoiding the old UTF-16 chars / 4 undercount for CJK and emoji. The complete JSON body
+                // intentionally contributes structural/tool overhead.
+                val estimate =
+                    ((body.bytes + TOKEN_ESTIMATE_BYTES - 1) / TOKEN_ESTIMATE_BYTES)
+                        .coerceAtLeast(1)
+                        .toLong()
+                log("[${provider.key}] count_tokens estimate=$estimate (local; no upstream turn)\n")
+                call.respondText(
+                    buildJsonObject { put("input_tokens", estimate) }.toString(),
+                    ContentType.Application.Json,
+                )
+            }
+        } finally {
+            withContext(NonCancellable) { slot.release() }
         }
     }
 
@@ -399,8 +422,12 @@ public class HeadServer(
     }.toString()
 
     private companion object {
-        const val STOP_GRACE_MS = 100L
-        const val STOP_TIMEOUT_MS = 500L
+        // Grace/timeout for Netty engine.stop after the drain window below.
+        const val STOP_GRACE_MS = 500L
+        const val STOP_TIMEOUT_MS = 2_000L
+        // Wait for in-flight SSE turns to finish (or cancel cleanly) before tearing the engine.
+        const val STOP_DRAIN_NS = 5_000_000_000L // 5s
+        const val STOP_DRAIN_POLL_MS = 50L
         const val TOKEN_ESTIMATE_BYTES = 3
         const val READ_BUFFER_BYTES = 16 * 1024
         const val CONTENT_TOO_LARGE_STATUS = 413
@@ -409,8 +436,9 @@ public class HeadServer(
         // Concurrent long-lived SSE turns per head (2x the 1000-stream design target).
         const val RUNNING_LIMIT = 2048
 
-        // Response-write stall cap — generous: the two-tier watchdog owns liveness enforcement.
-        const val WRITE_TIMEOUT_S = 60
+        // Response-write stall cap — at least as long as default streamIdle (180s) so a slow-but-alive
+        // client is not killed by Netty while the two-tier watchdog still considers the stream healthy.
+        const val WRITE_TIMEOUT_S = 300
 
         // Same numeric convention as UpstreamFailureClassifier's OVERLOADED_STATUS (kept as its
         // own const here to avoid a cross-module const import and satisfy detekt MagicNumber).

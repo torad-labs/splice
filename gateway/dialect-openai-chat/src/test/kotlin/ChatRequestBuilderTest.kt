@@ -190,4 +190,60 @@ class ChatRequestBuilderTest {
         assertFalse(off.containsKey("reasoning_effort"))
         assertFalse(off.containsKey("reasoning"))
     }
+
+    @Test
+    fun `tool_choice maps Anthropic types onto the chat wire`() {
+        val none = build(
+            """{"model":"m","tools":[{"name":"t","input_schema":{"type":"object"}}],
+                "tool_choice":{"type":"none"},"messages":[{"role":"user","content":"x"}]}""",
+        )
+        assertEquals("none", none["tool_choice"]?.jsonPrimitive?.content)
+        val any = build(
+            """{"model":"m","tools":[{"name":"t","input_schema":{"type":"object"}}],
+                "tool_choice":{"type":"any"},"messages":[{"role":"user","content":"x"}]}""",
+        )
+        assertEquals("required", any["tool_choice"]?.jsonPrimitive?.content)
+        val specific = build(
+            """{"model":"m","tools":[{"name":"run","input_schema":{"type":"object"}}],
+                "tool_choice":{"type":"tool","name":"run"},"messages":[{"role":"user","content":"x"}]}""",
+        )
+        assertEquals("function", specific["tool_choice"]?.jsonObject?.get("type")?.jsonPrimitive?.content)
+        assertEquals(
+            "run",
+            specific["tool_choice"]?.jsonObject?.get("function")?.jsonObject?.get("name")?.jsonPrimitive?.content,
+        )
+    }
+
+    @Test
+    fun `compact inherits session effort instead of pinning low`() {
+        // AGENTS cache law: compact mismatch on effort cold-starts the prompt cache.
+        val compact = build(
+            """{"model":"m","thinking":{"type":"enabled","budget_tokens":40000},
+                "messages":[{"role":"user","content":"summarize"}]}""",
+            compact = true,
+        )
+        assertEquals("high", compact["reasoning_effort"]?.jsonPrimitive?.content)
+        assertFalse(compact.containsKey("tools"))
+    }
+
+    @Test
+    fun `parallel tool_results with images keep tool messages contiguous`() {
+        val msgs = build(
+            """{"model":"m","messages":[
+                {"role":"assistant","content":[
+                    {"type":"tool_use","id":"t1","name":"shot","input":{}},
+                    {"type":"tool_use","id":"t2","name":"run","input":{}}
+                ]},
+                {"role":"user","content":[
+                    {"type":"tool_result","tool_use_id":"t1","content":[
+                        {"type":"image","source":{"type":"base64","media_type":"image/png","data":"aGk="}}
+                    ]},
+                    {"type":"tool_result","tool_use_id":"t2","content":"ok"}
+                ]}
+            ]}""",
+        ).messages()
+        val roles = msgs.map { it["role"]?.jsonPrimitive?.content }
+        // assistant, tool, tool, then user(images) — never tool, user, tool
+        assertEquals(listOf("assistant", "tool", "tool", "user"), roles)
+    }
 }

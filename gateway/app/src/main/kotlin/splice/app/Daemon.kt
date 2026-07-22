@@ -230,9 +230,10 @@ public class Daemon(
             shutdownDaemon,
         )
         control = srv
-        srv.start()
-        // Start each head in isolation too — a listen() failure on one port must not sink the others.
+        // Start heads BEFORE opening the control plane so a launch-shim that sees /health and
+        // immediately POSTs /launch/<head> does not race a still-binding head (503 head is not running).
         startDaemonHeads(heads, failed, probeScope, log, authProbes)
+        srv.start()
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
     }
@@ -292,6 +293,7 @@ public class Daemon(
                     authPath = Paths.get(TopologyLoader.expandHome(providerCfg.auth.file ?: "~/.grok/auth.json")),
                     authCacheMs = ctx.cfg.authCacheMs,
                     refreshCall = { rt -> grokRefresh(tokenUrl, rt) },
+                    prefetchScope = probeScope,
                 )
             }
             else -> ApiKeyAuthProvider(
@@ -404,6 +406,7 @@ public class Daemon(
                     authPath = Paths.get(TopologyLoader.expandHome(cfg.codexAuthPath)),
                     authCacheMs = cfg.authCacheMs,
                     refreshCall = { rt -> refreshCall(tokenUrl, rt) },
+                    prefetchScope = probeScope,
                 )
                 Wired(
                     CodexProvider(
@@ -449,6 +452,7 @@ public class Daemon(
             authPath = Paths.get(TopologyLoader.expandHome(cfg.grokAuthPath)),
             authCacheMs = cfg.authCacheMs,
             refreshCall = { rt -> grokRefresh(tokenUrl, rt) },
+            prefetchScope = probeScope,
         )
         return Wired(
             GrokProvider(

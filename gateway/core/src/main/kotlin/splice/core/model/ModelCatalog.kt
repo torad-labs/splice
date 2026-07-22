@@ -47,9 +47,14 @@ public data class ModelCatalog(
 
     private val exactWindows: Map<String, Long> =
         models.associate { it.id to it.contextWindow } + extraWindows.associate { it.id to it.contextWindow }
-    private val modelIds: Set<String> = models.mapTo(HashSet()) { it.id }
 
     private val suffixHint = Regex("\\[1m]$", RegexOption.IGNORE_CASE)
+
+    // Canonical (suffix-stripped) ids — `contains` strips its query the same way, so both sides
+    // compare on the upstream id. Storing the RAW id here let a "[1m]" picker model (kimi k3[1m])
+    // never match its own stripped upstream id "k3" → every k3 turn 400'd "proxies its own models
+    // only" (regression from the contains guard's introduction; no [1m] catalog test caught it).
+    private val modelIds: Set<String> = models.mapTo(HashSet()) { stripSuffixes(it.id) }
 
     public fun wrap(id: String): String = discoveryPrefix + id
 

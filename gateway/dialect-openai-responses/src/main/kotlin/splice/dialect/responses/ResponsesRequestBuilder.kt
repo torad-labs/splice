@@ -184,10 +184,16 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         // field on ResponsesRequest, a reviewable type change. Byte-identical to the old put() set
         // (ResponsesRequestBuilderTest pins it): fields in declaration order, null optionals omitted.
         val tools = if (!opts.compact && body.tools.isNotEmpty()) toolsArray(body) else null
-        val emitToolChoice = tools != null && quirks.emitToolChoice
+        val lite = quirks.isLite(opts)
+        // Lite turns carry tools as an additional_tools input item, not top-level `tools`; without
+        // an explicit tool_choice the backend never enables function-calling from them (the model
+        // then improvises tool calls in text — stuck/looping turns). codex-rs sends tool_choice:"auto"
+        // unconditionally (core/src/client.rs:896), so lite MUST too, independent of the grok-style
+        // emitToolChoice negotiation that codex otherwise leaves off.
+        val emitToolChoice = tools != null && (quirks.emitToolChoice || lite)
         val include =
             if (!opts.compact && opts.includeEncryptedReasoning.v) listOf(ENCRYPTED_CONTENT_INCLUDE) else null
-        val shape = wireShape(quirks.isLite(opts), input, instructions, tools)
+        val shape = wireShape(lite, input, instructions, tools)
         val dto = ResponsesRequest(
             model = opts.upstreamModel,
             input = shape.input,
@@ -197,7 +203,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
             promptCacheKey = cacheKey(body, opts),
             instructions = shape.instructions,
             tools = shape.tools,
-            toolChoice = if (emitToolChoice) toolChoice(body) else null,
+            toolChoice = toolChoiceFor(emitToolChoice, lite, body),
             parallelToolCalls = parallelToolCallsFor(emitToolChoice, body, opts),
             reasoning = reasoning,
             streamOptions = summaryDeliveryOptions(reasoning),
@@ -225,6 +231,14 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
             },
         )
         if (quirks.emitStrict && t.strict == true) put("strict", true)
+    }
+
+    /** Lite pins "auto" (the only value codex-rs validated against additional_tools — client.rs:896);
+     *  non-lite keeps the negotiated choice for grok's specific-tool path; null omits the field. */
+    private fun toolChoiceFor(emitToolChoice: Boolean, lite: Boolean, body: AnthropicRequest): JsonElement? = when {
+        !emitToolChoice -> null
+        lite -> JsonPrimitive("auto")
+        else -> toolChoice(body)
     }
 
     private fun toolChoice(body: AnthropicRequest): JsonElement {

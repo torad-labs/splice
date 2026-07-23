@@ -28,4 +28,8 @@ public data class HeadHealth(
     // split_external_local_origin_errors shape). Reset on head restart — diagnosis, not telemetry.
     val localOriginErrors: Long = 0,
     val providerErrors: Long = 0,
+    // Live InflightGate snapshot (webui HeadPlate "gate inflight / queued"). limit<=0 = unlimited.
+    val gateInflight: Int = 0,
+    val gateQueued: Int = 0,
+    val gateLimit: Int = 0,
 )

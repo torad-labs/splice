@@ -24,6 +24,7 @@ import splice.core.wire.MediaSource
 import splice.core.wire.TextBlock
 import splice.core.wire.ToolResultBlock
 import splice.core.wire.ToolUseBlock
+import splice.core.wire.openAiToolChoice
 
 public data class ChatQuirks(
     val providerTag: String,
@@ -67,7 +68,7 @@ public class ChatRequestBuilder(
             body.messages.forEach { msg -> appendMessage(this, msg.role, msg.content) }
         }
         val emitTools = quirks.supportsTools && !compact && body.tools.isNotEmpty()
-        val effort = chatReasoningEffort(body, compact)
+        val effort = chatReasoningEffort(body)
         // TIER-1 (#924): the request is a CLOSED ChatRequest DTO (see chatRequestObject) — a knob
         // that doesn't belong can't be added without a field.
         val cacheKey = quirks.sessionCacheKeyPrefix?.let { prefix -> sessionId?.let { "$prefix:$it" } }
@@ -105,6 +106,7 @@ public class ChatRequestBuilder(
             messages = messages,
             stream = true,
             tools = if (emitTools) toolsArray(body) else null,
+            toolChoice = if (emitTools) openAiToolChoice(body.toolChoice) else null,
             reasoningEffort = if (quirks.emitReasoningEffort) effort else null,
             reasoning = if (quirks.emitReasoningEffort && effort != null) {
                 buildJsonObject { put("effort", effort) }
@@ -222,6 +224,10 @@ public class ChatRequestBuilder(
         sink: JsonArrayBuilder,
         toolResults: List<ToolResultBlock>,
     ) {
+        // Emit ALL tool messages first (OpenAI adjacency: every tool must immediately follow
+        // assistant.tool_calls with no intervening user). Image follow-ups land AFTER the full
+        // tool block — inserting user(images) between parallel tools 400s strict validators.
+        val trailingImages = mutableListOf<Pair<String, List<JsonObject>>>()
         toolResults.forEach { tr ->
             val out = tr.content.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
             val images = tr.content.filterIsInstance<ImageBlock>().mapNotNull { imagePart(it.source) }
@@ -232,11 +238,14 @@ public class ChatRequestBuilder(
                 // string-only channel: dropped images (no vision) are declared IN the output.
                 put(CONTENT, if (imageCount > 0 && images.isEmpty()) markerFold(out, imageCount) else out)
             }
-            // v25 doctrine: chat `tool` messages are string-only, so tool_result images ride a
-            // follow-up user message right after the tool output (same as the Responses builder).
             if (images.isNotEmpty()) {
-                appendUserContent(sink, "user", "[images from tool_result ${tr.toolUseId}]", images)
+                trailingImages.add(tr.toolUseId to images)
             }
+        }
+        // v25 doctrine: chat `tool` messages are string-only, so tool_result images ride
+        // follow-up user messages after the contiguous tool block (Responses parity).
+        trailingImages.forEach { (toolUseId, images) ->
+            appendUserContent(sink, "user", "[images from tool_result $toolUseId]", images)
         }
     }
 
@@ -308,11 +317,12 @@ public class ChatRequestBuilder(
 
 /**
  * Map Anthropic thinking budget → chat `reasoning_effort`. Default high so backends that
- * support cleartext CoT actually emit `reasoning_content`. Compact turns stay low-cost.
+ * support cleartext CoT actually emit `reasoning_content`. Compact turns INHERIT the session
+ * effort (AGENTS cache law — a mismatched effort cold-starts the prompt cache); tools are
+ * stripped separately, effort is deliberately not compact-aware.
  */
-private fun chatReasoningEffort(body: AnthropicRequest, compact: Boolean): String? {
+private fun chatReasoningEffort(body: AnthropicRequest): String? {
     if (body.thinking?.disabled == true) return null
-    if (compact) return "low"
     val budget = body.thinking?.budgetTokens
     return when {
         budget == null -> "high"

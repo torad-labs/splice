@@ -16,7 +16,25 @@ import splice.core.usage.RateLimitState
 import splice.core.usage.computeUsageWarn
 import java.util.concurrent.TimeUnit
 
-public class StatuslineRenderer(private val label: String) {
+public class StatuslineRenderer(
+    private val label: String,
+    extraGitRoots: List<String> = emptyList(),
+) {
+    // Operator-trusted roots beyond $HOME//tmp for the git-branch lookup (statuslineGitRoots
+    // knob / CLAUDEX_STATUSLINE_GIT_ROOTS) — devcontainer /workspace, /srv layouts. Normalized once.
+    private val extraGitRoots: List<java.nio.file.Path> = extraGitRoots.mapNotNull { root ->
+        runCatching { java.nio.file.Paths.get(root).toAbsolutePath().normalize() }.getOrNull()
+    }
+
+    // Real (symlink-resolved) trusted roots for safeGitCwd's containment check — resolved ONCE here
+    // since the root set ($HOME, /tmp, extraGitRoots) is process-invariant, unlike the per-request
+    // candidate cwd (still resolved fresh on each call). A root missing at construction is dropped,
+    // same as the old per-call runCatching { root.toRealPath() }.getOrNull().
+    private val trustedRoots: List<java.nio.file.Path> = (
+        listOfNotNull(System.getProperty("user.home"), "/tmp").map { java.nio.file.Paths.get(it) } +
+            this.extraGitRoots
+        ).mapNotNull { root -> runCatching { root.toRealPath() }.getOrNull() }
+
     private val json = Json { ignoreUnknownKeys = true }
 
     public fun render(stdinJson: String, usage: HeadUsageSource?, warnPct: Int, warnTokens5h: Long): String {
@@ -86,7 +104,11 @@ public class StatuslineRenderer(private val label: String) {
     private fun locationSegment(root: JsonObject): String? {
         val cwd = str(obj(root, "workspace")?.get("current_dir")) ?: str(root["cwd"]) ?: return null
         val base = cwd.trim('/').substringAfterLast('/').ifEmpty { return null }
-        val branch = gitBranch(cwd)
+        // Only git when cwd RESOLVES to a real directory under the user home (or /tmp) — never
+        // exec git -C against an attacker-chosen path from unauthenticated /statusline. Run git in
+        // the symlink-resolved path, not the raw cwd.
+        val safe = safeGitCwd(cwd)
+        val branch = if (safe != null) gitBranch(safe.toString()) else ""
         val loc = if (branch.isEmpty()) base else "$base  ⎇ $branch"
         return dim(loc)
     }
@@ -98,6 +120,18 @@ public class StatuslineRenderer(private val label: String) {
         return (num(cu["input_tokens"]) ?: 0) +
             (num(cu["cache_read_input_tokens"]) ?: 0) +
             (num(cu["cache_creation_input_tokens"]) ?: 0)
+    }
+
+    /** The symlink-RESOLVED absolute directory if it lies under $HOME, /tmp, or an operator-trusted
+     *  root — else null (the resolved path is what git -C runs in). `normalize()` only collapses
+     *  "..": a symlink under /tmp pointing OUTSIDE the trusted roots would pass a lexical prefix
+     *  check yet run git elsewhere, so resolve REAL paths on BOTH sides and compare those
+     *  (review 2026-07-23). Repos outside the trusted roots lose only the branch segment. */
+    internal fun safeGitCwd(cwd: String): java.nio.file.Path? {
+        if (!cwd.startsWith("/") || cwd.any { it.code == 0 }) return null
+        // toRealPath resolves symlinks AND requires existence — a non-existent path returns null.
+        val real = runCatching { java.nio.file.Paths.get(cwd).toRealPath() }.getOrNull() ?: return null
+        return real.takeIf { p -> java.nio.file.Files.isDirectory(p) && trustedRoots.any { p.startsWith(it) } }
     }
 
     private fun gitBranch(cwd: String): String = runCatching {

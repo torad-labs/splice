@@ -99,7 +99,7 @@ class UsageTest {
     }
 
     @Test
-    fun `usage store - 5h window prunes, sums, and ratelimit round-trips`(@TempDir tmp: Path) {
+    fun `usage store - 5h window prunes, sums, and same-instance ratelimit round-trips`(@TempDir tmp: Path) {
         var now = 10_000_000_000L
         val store = UsageStore(tmp.resolve("codex-usage.json"), tmp.resolve("codex-ratelimit.json"), clock = { now })
         store.appendOutputTokens(100)
@@ -128,6 +128,35 @@ class UsageTest {
         // absent limit header -> no-op (file unchanged)
         store.persistRateLimit { null }
         assertEquals(5000, store.readRateLimit()!!.limitTokens)
+    }
+
+    @Test
+    fun `ratelimit persistence is durable across a fresh store and coalesces to the final value`(@TempDir tmp: Path) {
+        // review gap J (core): the round-trip above reads from the SAME instance, so pending in-memory
+        // state could satisfy it without anything reaching disk. Prove a FRESH store reads the persisted
+        // headers, and that a burst of writes with no explicit flush between them coalesces to the LAST
+        // value on disk (latest-wins). The scheduler/file-lane race bullets need an injectable seam
+        // UsageStore does not expose (process-global AsyncFileIo) and remain out of scope here.
+        val usageFile = tmp.resolve("usage.json")
+        val rateFile = tmp.resolve("ratelimit.json")
+        fun headers(limit: String, remaining: String, reset: String): (String) -> String? = { name ->
+            mapOf(
+                "x-ratelimit-limit-tokens" to limit,
+                "x-ratelimit-remaining-tokens" to remaining,
+                "x-ratelimit-reset-tokens" to reset,
+            )[name]
+        }
+        val store = UsageStore(usageFile, rateFile)
+        // A burst of successive updates before any explicit flush — latest must win.
+        store.persistRateLimit(headers("5000", "4000", "6m0s"))
+        store.persistRateLimit(headers("5000", "2500", "4m0s"))
+        store.persistRateLimit(headers("5000", "900", "2m0s"))
+        store.flushNow()
+
+        val fresh = UsageStore(usageFile, rateFile).readRateLimit()!!
+        assertEquals(5000, fresh.limitTokens)
+        assertEquals(900, fresh.remainingTokens, "a burst must coalesce to the final value, on disk")
+        assertEquals("2m0s", fresh.resetTokens)
     }
 
     @Test

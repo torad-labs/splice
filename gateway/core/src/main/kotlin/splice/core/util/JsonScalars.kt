@@ -14,6 +14,9 @@ import kotlinx.serialization.json.JsonPrimitive
 /** The scalar content of this element, or null if it is absent, JSON `null`, or not a primitive. */
 public fun JsonElement?.str(): String? = (this as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content
 
+/** Prefix-form non-null read: "" for absent / JSON null / non-primitive — the dialects' shared shape. */
+public fun strOrEmpty(el: JsonElement?): String = el.str().orEmpty()
+
 /** The scalar string at [key] (JsonNull-safe). */
 public fun JsonObject.str(key: String): String? = this[key].str()
 

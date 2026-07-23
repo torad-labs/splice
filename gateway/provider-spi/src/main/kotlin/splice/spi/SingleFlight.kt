@@ -20,6 +20,7 @@ import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.CoroutineContext
@@ -44,5 +45,12 @@ public class SingleFlight<T>(
         }
         // A caller's cancellation cancels THIS await only — the shared block keeps running in `scope`.
         return shared.await()
+    }
+
+    /** Cancel the shared refresh scope. For a LIFECYCLE owner (e.g. daemon stop) to stop an
+     *  in-flight refresh — distinct from a single caller's await cancellation, which never touches
+     *  the scope. Idempotent; after close a new wave would need a new SingleFlight. */
+    public fun close() {
+        scope.cancel()
     }
 }

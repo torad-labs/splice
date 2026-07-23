@@ -250,7 +250,11 @@ public class ConfigService(
             }
             KnobKind.NUMBER -> {
                 val s = raw.toString().trim().lowercase()
-                if (knob == Knob.MAX_INFLIGHT && s in setOf("", "unlimited", "off", "none")) {
+                // maxInflight AND maxQueued both treat <=0 as unlimited in InflightGate — accept
+                // the same named sentinels so PATCH/env maxQueued=unlimited is not rejected.
+                if (knob in setOf(Knob.MAX_INFLIGHT, Knob.MAX_QUEUED) &&
+                    s in setOf("", "unlimited", "off", "none")
+                ) {
                     0L
                 } else {
                     s.toDoubleOrNull()?.takeIf { it.isFinite() }?.toLong()
@@ -321,6 +325,11 @@ public class SpliceConfig internal constructor(private val m: Map<String, Any?>)
     public val controlPort: Int get() = long(Knob.CONTROL_PORT).toInt()
     public val usageWarnPct: Int get() = long(Knob.USAGE_WARN_PCT).toInt()
     public val usageWarnTokens5h: Long get() = long(Knob.USAGE_WARN_TOKENS_5H)
+
+    // Colon-separated absolute paths → list; relative segments are dropped (trust boundary).
+    public val statuslineGitRoots: List<String>
+        get() = string(Knob.STATUSLINE_GIT_ROOTS).orEmpty()
+            .split(':').map { it.trim() }.filter { it.startsWith("/") }
 
     public fun asMap(): Map<String, Any?> = m
 

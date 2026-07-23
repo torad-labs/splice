@@ -4,11 +4,15 @@
 name: pr-title
 
 on:
-  pull_request_target:
+  pull_request:
     types: [opened, edited, synchronize]
 
 permissions:
   pull-requests: read
+
+concurrency:
+  group: pr-title-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   lint:

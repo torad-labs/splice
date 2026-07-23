@@ -195,4 +195,30 @@ class PassthroughStreamTranslatorTest {
         assertFalse(s.bodyText.contains("null"))
         assertEquals(10, s.usage.inputTokens)
     }
+
+    @Test
+    fun `finished turn beats a late watchdog fire - success not overloaded`() = runTest {
+        // Chat/Responses parity: message_stop already delivered, then poller fires on EOF wait.
+        // Preferring watchdog discarded successful kimi turns and burned quota on retries.
+        val late = PassthroughTurnContext(
+            { false },
+            { splice.spi.WatchdogFired.Idle(180_000, true) },
+            180_000,
+            900_000,
+        )
+        val sink = Rec()
+        val outcome = PassthroughStreamTranslator(late).driveTurn(
+            listOf(
+                ev("""{"type":"message_start","message":{"usage":{"input_tokens":1}}}"""),
+                ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""),
+                ev("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"done"}}"""),
+                ev("""{"type":"content_block_stop","index":0}"""),
+                ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}"""),
+                ev("""{"type":"message_stop"}"""),
+            ).asFlow(),
+            sink,
+        )
+        assertTrue(outcome is TurnOutcome.Success, "got $outcome")
+        assertEquals("done", (outcome as TurnOutcome.Success).bodyText)
+    }
 }

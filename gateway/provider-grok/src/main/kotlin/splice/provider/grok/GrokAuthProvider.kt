@@ -23,6 +23,7 @@ package splice.provider.grok
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -63,16 +64,24 @@ public class GrokAuthProvider(
     private val nowIso: () -> String = { Instant.ofEpochMilli(System.currentTimeMillis()).toString() },
     /** POST grant_type=refresh_token to auth.x.ai's token URL; returns the classified attempt. */
     private val refreshCall: suspend (refreshToken: String) -> RefreshAttempt<GrokRefreshedTokens>,
+    // Injectable so the daemon runs the prefetch LAUNCH on probeScope and tests stay self-contained.
+    // SingleFlight isolates the shared refresh from any single request's await cancellation (a peer
+    // awaiting it must not be killed); the init block below ties that shared refresh to THIS scope's
+    // lifetime, so Daemon.stop (probeScope.cancel) cancels an in-flight refresh instead of letting
+    // it write the token file post-shutdown (review 2026-07-23).
+    private val prefetchScope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob()),
 ) : RefreshableAuthProvider {
 
     private val json = Json { ignoreUnknownKeys = true }
     private val singleFlight = SingleFlight<Credentials?>()
     private val invalidGrantLatch = InvalidGrantLatch()
 
-    // This is the injection seam: an owned background scope, decoupled from any single request's
-    // coroutine, for the G17 async-prefetch
-    // tier. Mirrors SingleFlight's own internal scope (same PORT-OF pattern, SingleFlight.kt:36).
-    private val prefetchScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    init {
+        // Lifecycle ownership: when prefetchScope ends (Daemon.stop cancels probeScope), cancel the
+        // shared refresh so it cannot persist a token after shutdown. Per-request cancellation is
+        // unaffected — it only cancels that caller's await, never the SingleFlight scope.
+        prefetchScope.coroutineContext[Job]?.invokeOnCompletion { singleFlight.close() }
+    }
 
     @Volatile
     private var cache: Cache? = null

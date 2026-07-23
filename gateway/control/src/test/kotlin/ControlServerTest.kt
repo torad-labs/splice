@@ -193,6 +193,42 @@ class ControlServerTest {
     }
 
     @Test
+    fun `degraded health denominator counts configured heads so ready plus failed equals heads`() = runTest {
+        // An ASSEMBLY-failed head never enters the `heads` map but IS counted in failedHeads;
+        // reporting heads.size (assembled only) broke the readyHeads + failedHeads == heads
+        // invariant a launch shim waits on. Report the configured total (review 2026-07-23).
+        val tmp = Files.createTempDirectory("control-degraded")
+        val paths = StatePaths(baseOverride = tmp.resolve("state"))
+        val degradedPort = freshPort()
+        val degraded = ControlServer(
+            port = degradedPort,
+            heads = emptyMap(), // the sole configured head failed to ASSEMBLE — never entered `heads`
+            config = ConfigService(paths),
+            mgmtKey = MgmtKey(paths),
+            dashboardHtml = { "" },
+            log = {},
+            failedHeads = { 1 },
+            configuredHeads = 1,
+        )
+        degraded.start()
+        try {
+            awaitListening(degradedPort)
+            val body = json.parseToJsonElement(
+                client.get("http://127.0.0.1:$degradedPort/health").bodyAsText(),
+            ).jsonObject
+            val heads = body["heads"]!!.jsonPrimitive.content.toInt()
+            val ready = body["readyHeads"]!!.jsonPrimitive.content.toInt()
+            val failed = body["failedHeads"]!!.jsonPrimitive.content.toInt()
+            assertEquals(1, heads)
+            assertEquals(0, ready)
+            assertEquals(1, failed)
+            assertEquals(heads, ready + failed) // the invariant the launch shim converges on
+        } finally {
+            degraded.stop()
+        }
+    }
+
+    @Test
     fun `bearer guard - 401 without the key, 200 with`() = runTest {
         val unauth = client.get("http://127.0.0.1:$port/api/status")
         assertEquals(HttpStatusCode.Unauthorized, unauth.status)

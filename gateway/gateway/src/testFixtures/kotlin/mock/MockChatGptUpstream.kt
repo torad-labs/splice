@@ -27,6 +27,11 @@ class MockChatGptUpstream {
     val abortedScenarios = CopyOnWriteArrayList<String>()
     val refreshCalls = AtomicInteger(0)
 
+    // The "hold" scenario blocks after its first delta until the test releases this latch — a
+    // deterministic replacement for the timer-based "idle" hold when a test must occupy a slot and
+    // then free it on command (review 2026-07-23).
+    val holdRelease = java.util.concurrent.CountDownLatch(1)
+
     private val server: HttpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
     private val pool = Executors.newCachedThreadPool()
 
@@ -82,14 +87,35 @@ class MockChatGptUpstream {
             return
         }
 
+        if (scenario == "tear") {
+            // 200 committed, then a PARTIAL frame and an early socket drop: promising more bytes
+            // (fixed Content-Length) than we deliver makes the client's read fail with a premature
+            // EOF (IOException) BEFORE any complete client frame — the StreamTornBeforeClient path.
+            ex.responseHeaders.add("Content-Type", "text/event-stream")
+            ex.sendResponseHeaders(200, 4096)
+            runCatching {
+                ex.responseBody.write("data: {\"type\":\"resp".toByteArray())
+                ex.responseBody.flush()
+            }.discard("tear: drop mid-frame")
+            ex.close()
+            return
+        }
+        if (scenario == "ratelimit") {
+            // Upstream token-budget headers TurnDriver.persistRateLimit harvests into UsageStore.
+            ex.responseHeaders.add("x-ratelimit-limit-tokens", "5000")
+            ex.responseHeaders.add("x-ratelimit-remaining-tokens", "1200")
+            ex.responseHeaders.add("x-ratelimit-reset-tokens", "6m0s")
+        }
         ex.responseHeaders.add("Content-Type", "text/event-stream")
         ex.sendResponseHeaders(200, 0)
         try {
             streamScenario(scenario, ex, body)
         } catch (abort: IOException) {
-            // a broken pipe mid-stream is the drip scenario's EXPECTED client-abort exit
-            if (scenario == "drip") abortedScenarios.add("drip")
-            check(scenario == "drip") { "unexpected mid-stream I/O failure in scenario '$scenario': ${abort.message}" }
+            // a broken pipe mid-stream is the drip/hold scenarios' EXPECTED client-abort exit
+            if (scenario == "drip" || scenario == "hold") abortedScenarios.add(scenario)
+            check(scenario == "drip" || scenario == "hold") {
+                "unexpected mid-stream I/O failure in scenario '$scenario': ${abort.message}"
+            }
         } finally {
             runCatching { ex.responseBody.close() }.discard("test-server teardown")
             runCatching { ex.close() }.discard("test-server teardown")
@@ -199,6 +225,17 @@ class MockChatGptUpstream {
                 sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
                 sse(ex, """{"type":"response.output_text.delta","output_index":0,"delta":"partial"}""")
                 Thread.sleep(5_000)
+            }
+            "hold" -> {
+                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
+                sse(ex, """{"type":"response.output_text.delta","output_index":0,"delta":"held"}""")
+                holdRelease.await() // block until the test releases, then finish cleanly
+                sse(ex, """{"type":"response.output_item.done","output_index":0}""")
+                sse(
+                    ex,
+                    """{"type":"response.completed","response":{"id":"rhold","status":"completed",""" +
+                        """"output":[],"usage":{"input_tokens":1,"output_tokens":1}}}""",
+                )
             }
             "zero_event_auth" -> {
                 ex.responseBody.write(

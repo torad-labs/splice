@@ -15,6 +15,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import splice.core.turn.WatchdogBudget
+import splice.core.util.MonoClock
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import kotlin.time.Duration
@@ -28,7 +29,8 @@ public sealed class WatchdogFired {
 
 public class TurnWatchdog(
     private val budget: WatchdogBudget,
-    private val clock: () -> Long = System::currentTimeMillis,
+    // Default is monotonic — sleep/wake/NTP must not invent stalls or freeze totalCap.
+    private val clock: () -> Long = MonoClock::nowMs,
 ) {
     private val sawFirstByte = AtomicBoolean(false)
     private val firedRef = AtomicReference<WatchdogFired?>(null)

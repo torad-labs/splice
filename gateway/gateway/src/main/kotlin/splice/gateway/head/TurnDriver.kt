@@ -138,7 +138,7 @@ internal class TurnDriver(
             val emitter = SseEmitter.create(
                 write = { frame ->
                     channel.writeMutex.withLock {
-                        timedClientWrite(channel.coalesced, frame, perf, channel.clientGone)
+                        timedClientWrite(channel.coalesced, frame, perf, channel.clientGone, clock)
                     }
                 },
                 model = built.meta.originalModel,
@@ -149,16 +149,71 @@ internal class TurnDriver(
                 // The 200 + SSE headers are committed once respondTextWriter opens, so any failure
                 // must become an honest `event: error` frame — NOT escape and leave the client an
                 // empty/truncated 200 (the "empty or malformed response (HTTP 200)" class).
-                // catchingTurnFailure rethrows CancellationException (the repo's blessed
-                // pattern — no generic catch in this file); runCatchingCancellable (splice.core.util)
-                // doesn't fit here — its catch list is I/O + (de)serialization for local best-effort
-                // work, not the turn-transport failure classes emitFailure's `when` dispatches on.
-                catchingTurnFailure { driveOneTurn(drive) }
-                    .onFailure { e -> emitFailure(drive, e) }
+                driveSealingCancellation(drive)
             } finally {
                 // Terminal frames force-flush already; this covers abandon / exception paths.
                 channel.coalesced.flush()
             }
+        }
+    }
+
+    /** Drive one turn, emit classified failures, and — if a cancellation lands (head stop,
+     *  write-timeout, parent cancel) — seal the terminal honestly before rethrowing: client-gone
+     *  → abandon (nothing on the wire); still-connected → an honest error frame so Claude Code
+     *  retries instead of seeing a truncated HTTP 200. ONE copy, shared by [stream] and
+     *  [collect], so the sealing contract cannot drift between them.
+     *
+     *  [seal] gates the cancellation seal to the STREAM path only: [collect] passes seal=false —
+     *  it never commits a 200 before its terminal respondText, so a cancelled collect has no
+     *  half-open response to rescue; sealing there only wrote an error body nobody reads while
+     *  polluting localOriginErrors (review 2026-07-22 round 3).
+     *
+     *  catchingTurnFailure rethrows CancellationException (caught HERE, after sealing);
+     *  runCatchingCancellable (splice.core.util) doesn't fit — its catch list is I/O +
+     *  (de)serialization for local best-effort work, not the turn-transport failure classes
+     *  emitFailure dispatches on. */
+    private suspend fun driveSealingCancellation(
+        drive: TurnDrive,
+        pingClient: Boolean = true,
+        seal: Boolean = true,
+    ) {
+        try {
+            catchingTurnFailure { driveOneTurn(drive, pingClient) }
+                .onFailure { e -> emitFailure(drive, e) }
+        } catch (e: CancellationException) {
+            // Flat when (not nested if) so the still-connected try/catch stays at nesting depth 3:
+            // catch → if(seal) → if(clientGone) → try would trip NestedBlockDepth's depth-4 ceiling.
+            when {
+                !seal || drive.emitter.hasEnded -> Unit
+                drive.channel.clientGone.get() -> {
+                    drive.emitter.abandon()
+                    telemetry.recordPerf(drive, "client_abort")
+                }
+                // clientGone flips only on a FAILED write, but Ktor/Netty cancels on
+                // channel-inactive with no write having failed — a user abort mid-lull reaches here
+                // still "connected". Emit FIRST; if the error frame can't reach the wire the cancel
+                // WAS a client disconnect the ping/write path hadn't flagged, so reclassify it as an
+                // abandon, not an error:cancelled (review 2026-07-22 round 3).
+                else ->
+                    try {
+                        drive.emitter.emitError(
+                            ErrorType.OVERLOADED,
+                            "${provider.key}: turn cancelled — retry",
+                        )
+                        log(telemetry.errTurn("cancelled", drive, ": turn cancelled before terminal"))
+                        telemetry.recordPerf(drive, "error:cancelled")
+                        health.local()
+                    } catch (io: IOException) {
+                        // emitError's error frame could not reach the wire — the cancel WAS a client
+                        // disconnect the ping/write path hadn't flagged. Reclassify as a benign
+                        // abandon (emitError already sealed on IOException; the set is idempotent),
+                        // NOT an error:cancelled — no health bump (review 2026-07-22 round 3).
+                        log("[${provider.key}] turn cancelled + error frame unwritable (${io.message}) — client gone\n")
+                        drive.emitter.abandon()
+                        telemetry.recordPerf(drive, "client_abort")
+                    }
+            }
+            throw e
         }
     }
 
@@ -176,8 +231,10 @@ internal class TurnDriver(
             clientGone = AtomicBoolean(false),
         )
         val drive = assembleDrive(TurnInputs(built, slot, t0, perf), terminal, channel)
-        catchingTurnFailure { driveOneTurn(drive, pingClient = false) }
-            .onFailure { e -> emitFailure(drive, e) }
+        // collect never commits a 200 before its terminal respondText — a cancelled collect is a
+        // native connection abort client-side, and sealing there only wrote an error body nobody
+        // reads while polluting localOriginErrors (review 2026-07-22 round 3).
+        driveSealingCancellation(drive, pingClient = false, seal = false)
         call.respondText(
             terminal.responseBody().toString(),
             ContentType.Application.Json,
@@ -216,30 +273,6 @@ internal class TurnDriver(
             turnHeaders = built.extraHeaders,
             channel = channel,
         )
-    }
-
-    /** Client-side write instrumented: frame counts/bytes, first-frame/first-delta marks, and the
-     *  summed write+flush time (a slow reader shows up as write_ms, not as fake stream time).
-     *  A failed write flips [clientGone] BEFORE rethrowing — the translator's terminal decision
-     *  reads it to classify the ending as ClientAbandoned instead of upstream truncation. */
-    private fun timedClientWrite(
-        coalesced: ImmediateSseWriter,
-        frame: String,
-        perf: TurnPerf,
-        clientGone: AtomicBoolean,
-    ) {
-        val t = clock()
-        try {
-            coalesced.write(frame)
-        } catch (e: IOException) {
-            clientGone.set(true)
-            throw e
-        }
-        perf.add(PerfKeys.WRITE_MS, clock() - t)
-        perf.add(PerfKeys.FRAMES_OUT, 1)
-        perf.add(PerfKeys.BYTES_OUT, frame.length.toLong())
-        perf.markOnce(PerfKeys.FIRST_FRAME)
-        if (frame.startsWith(DELTA_FRAME_PREFIX)) perf.markOnce(PerfKeys.FIRST_DELTA)
     }
 
     /** One honest error frame per failure class; anything that is not a known turn failure and
@@ -356,6 +389,9 @@ internal class TurnDriver(
             clientFrameEmitted = { drive.perf.hasMark(PerfKeys.FIRST_FRAME) },
         ) { resp ->
             drive.slot.touch()
+            // Persist upstream rate-limit headers for /api/usage + statusline soft-warn (Node
+            // codex-proxy wired this; the Kotlin split dropped the call site).
+            usageStore.persistRateLimit { name -> resp.header(name) }
             // Fresh upstream round/attempt: reset the idle tier so this round's (possibly long,
             // silent) prefill is judged against firstByteTimeout, not the short streamIdle a prior
             // round's first byte would otherwise pin it to. totalCap still spans the whole turn.
@@ -534,10 +570,6 @@ internal class TurnDriver(
         // G2: cap the raw pre-JSON body buffered for zero-event classification (~1KB).
         const val ZERO_EVENT_SNIPPET_CHARS = 1024
 
-        // first_delta detection reads the frame prefix — the emitter's event name, not a literal
-        // stop-reason (L3 walls stay intact; this only OBSERVES the already-built frame).
-        const val DELTA_FRAME_PREFIX = "event: content_block_delta"
-
         // SSE comment keepalive: pure transport, invisible to SSE parsers (spec: lines starting
         // with ':' are comments) — exists ONLY so a dead client fails a write promptly.
         const val SSE_KEEPALIVE_COMMENT = ": ping\n\n"
@@ -549,6 +581,36 @@ internal class TurnDriver(
  *  command (review 2026-07-19: two paths still hardcoded "claudex login" on non-codex heads). */
 private fun Provider.loginHint(): String =
     if (loginCommand.isNotEmpty()) " — run: $loginCommand" else ""
+
+// first_delta detection reads the frame prefix — the emitter's event name, not a literal
+// stop-reason (L3 walls stay intact; this only OBSERVES the already-built frame).
+private const val DELTA_FRAME_PREFIX = "event: content_block_delta"
+
+/** Client-side write instrumented: frame counts/bytes, first-frame/first-delta marks, and the
+ *  summed write+flush time (a slow reader shows up as write_ms, not as fake stream time).
+ *  A failed write flips [clientGone] BEFORE rethrowing — the translator's terminal decision
+ *  reads it to classify the ending as ClientAbandoned instead of upstream truncation.
+ *  Top-level (not a TurnDriver method) so it doesn't grow the class's function budget. */
+private fun timedClientWrite(
+    coalesced: ImmediateSseWriter,
+    frame: String,
+    perf: TurnPerf,
+    clientGone: AtomicBoolean,
+    clock: () -> Long,
+) {
+    val t = clock()
+    try {
+        coalesced.write(frame)
+    } catch (e: IOException) {
+        clientGone.set(true)
+        throw e
+    }
+    perf.add(PerfKeys.WRITE_MS, clock() - t)
+    perf.add(PerfKeys.FRAMES_OUT, 1)
+    perf.add(PerfKeys.BYTES_OUT, frame.length.toLong())
+    perf.markOnce(PerfKeys.FIRST_FRAME)
+    if (frame.startsWith(DELTA_FRAME_PREFIX)) perf.markOnce(PerfKeys.FIRST_DELTA)
+}
 
 /** The per-turn error boundary — captures exactly the failure classes [TurnDriver.emitFailure]
  *  dispatches on: the custom transport signals, I/O, and the two documented gateway-bug classes
@@ -563,13 +625,18 @@ private inline fun <R> catchingTurnFailure(block: () -> R): Result<R> =
         Result.failure(e)
     } catch (e: UpstreamFailed) {
         Result.failure(e)
+    } catch (e: StreamTornBeforeClient) {
+        // Plain RuntimeException (so translators don't swallow it into a terminal). After
+        // UpstreamClient exhausts MAX_STREAM_REISSUES it rethrows here — must become emitConnReset,
+        // not escape respondTextWriter as a truncated HTTP 200 SSE.
+        Result.failure(e)
     } catch (e: SseFrameTooLargeException) {
         Result.failure(e)
     } catch (e: IOException) {
         Result.failure(e)
     } catch (e: CancellationException) {
         // CancellationException extends IllegalStateException — rethrown BEFORE it so a
-        // cancelled turn actually stops instead of becoming an error frame.
+        // cancelled turn actually stops; stream()/collect() seal the emitter then rethrow.
         throw e
     } catch (e: IllegalArgumentException) {
         // e.g. a URL-parse error from a bad base_url (review 2026-07-19: previously escaped

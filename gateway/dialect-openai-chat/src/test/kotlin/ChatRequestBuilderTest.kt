@@ -190,4 +190,84 @@ class ChatRequestBuilderTest {
         assertFalse(off.containsKey("reasoning_effort"))
         assertFalse(off.containsKey("reasoning"))
     }
+
+    @Test
+    fun `tool_choice maps Anthropic types onto the chat wire`() {
+        val none = build(
+            """{"model":"m","tools":[{"name":"t","input_schema":{"type":"object"}}],
+                "tool_choice":{"type":"none"},"messages":[{"role":"user","content":"x"}]}""",
+        )
+        assertEquals("none", none["tool_choice"]?.jsonPrimitive?.content)
+        val any = build(
+            """{"model":"m","tools":[{"name":"t","input_schema":{"type":"object"}}],
+                "tool_choice":{"type":"any"},"messages":[{"role":"user","content":"x"}]}""",
+        )
+        assertEquals("required", any["tool_choice"]?.jsonPrimitive?.content)
+        val specific = build(
+            """{"model":"m","tools":[{"name":"run","input_schema":{"type":"object"}}],
+                "tool_choice":{"type":"tool","name":"run"},"messages":[{"role":"user","content":"x"}]}""",
+        )
+        assertEquals("function", specific["tool_choice"]?.jsonObject?.get("type")?.jsonPrimitive?.content)
+        assertEquals(
+            "run",
+            specific["tool_choice"]?.jsonObject?.get("function")?.jsonObject?.get("name")?.jsonPrimitive?.content,
+        )
+    }
+
+    @Test
+    fun `tool_choice defaults to auto when tools ride and the client sent none`() {
+        // Unlike the Responses builder (gated behind quirks.emitToolChoice / lite), chat emits
+        // tool_choice whenever tools ride regardless of client choice — openAiToolChoice(null) is
+        // "auto", the harmless default every OpenAI-compat vendor already assumes absent the field.
+        // Pinned so this centralization can't silently drift without a test noticing.
+        val req = build(
+            """{"model":"m","tools":[{"name":"t","input_schema":{"type":"object"}}],
+                "messages":[{"role":"user","content":"x"}]}""",
+        )
+        assertEquals("auto", req["tool_choice"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `no tool_choice field when there are no tools to choose from`() {
+        val req = build("""{"model":"m","messages":[{"role":"user","content":"hi"}]}""")
+        assertFalse(req.containsKey("tool_choice"))
+    }
+
+    @Test
+    fun `compact inherits session effort and strips tools plus tool_choice`() {
+        // AGENTS cache law: compact mismatch on effort cold-starts the prompt cache. Compact also
+        // strips tools — and with them tool_choice, else a tool_choice with no tools 400s strict
+        // vendors. Supplying real tools + tool_choice makes the stripping assertions bite.
+        val compact = build(
+            """{"model":"m","thinking":{"type":"enabled","budget_tokens":40000},
+                "tools":[{"name":"run","input_schema":{"type":"object"}}],
+                "tool_choice":{"type":"any"},
+                "messages":[{"role":"user","content":"summarize"}]}""",
+            compact = true,
+        )
+        assertEquals("high", compact["reasoning_effort"]?.jsonPrimitive?.content)
+        assertFalse(compact.containsKey("tools"))
+        assertFalse(compact.containsKey("tool_choice"))
+    }
+
+    @Test
+    fun `parallel tool_results with images keep tool messages contiguous`() {
+        val msgs = build(
+            """{"model":"m","messages":[
+                {"role":"assistant","content":[
+                    {"type":"tool_use","id":"t1","name":"shot","input":{}},
+                    {"type":"tool_use","id":"t2","name":"run","input":{}}
+                ]},
+                {"role":"user","content":[
+                    {"type":"tool_result","tool_use_id":"t1","content":[
+                        {"type":"image","source":{"type":"base64","media_type":"image/png","data":"aGk="}}
+                    ]},
+                    {"type":"tool_result","tool_use_id":"t2","content":"ok"}
+                ]}
+            ]}""",
+        ).messages()
+        val roles = msgs.map { it["role"]?.jsonPrimitive?.content }
+        // assistant, tool, tool, then user(images) — never tool, user, tool
+        assertEquals(listOf("assistant", "tool", "tool", "user"), roles)
+    }
 }

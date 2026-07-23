@@ -45,10 +45,15 @@ public data class ModelCatalog(
 
     public val defaultModel: String get() = models.first().id
 
-    private val exactWindows: Map<String, Long> =
-        models.associate { it.id to it.contextWindow } + extraWindows.associate { it.id to it.contextWindow }
-
     private val suffixHint = Regex("\\[1m]$", RegexOption.IGNORE_CASE)
+
+    // Canonical (suffix-stripped) ids — `contains` and `contextWindowFor` both strip the query the
+    // same way. Storing the RAW picker id (e.g. "k3[1m]") let membership pass after the contains
+    // fix while contextWindowFor("k3[1m]") looked up stripped "k3" and missed → default 256k window
+    // / early autocompact (residual of the [1m] membership fix).
+    private val exactWindows: Map<String, Long> =
+        models.associate { stripSuffixes(it.id) to it.contextWindow } +
+            extraWindows.associate { stripSuffixes(it.id) to it.contextWindow }
 
     // Canonical (suffix-stripped) ids — `contains` strips its query the same way, so both sides
     // compare on the upstream id. Storing the RAW id here let a "[1m]" picker model (kimi k3[1m])

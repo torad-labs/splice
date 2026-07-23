@@ -11,16 +11,15 @@ package splice.dialect.passthrough
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
-import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.parse.AnthropicTurnBody
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.util.strOrEmpty
 import splice.core.wire.AnthropicRequest
 
 public data class PassthroughQuirks(
@@ -151,7 +150,7 @@ public class PassthroughRequestBuilder(private val quirks: PassthroughQuirks) {
 
     /** Keep an accepted block (cache_control stripped, tool_result inner content filtered) or drop. */
     private fun scrubBlock(block: JsonObject): JsonObject? {
-        val type = str(block["type"])
+        val type = strOrEmpty(block["type"])
         if (type !in ALLOWED_BLOCK_TYPES) return null
         if (isEmptyThinking(type, block)) return null
         return rebuildBlock(block, type)
@@ -160,7 +159,7 @@ public class PassthroughRequestBuilder(private val quirks: PassthroughQuirks) {
     /** A whitespace-only thinking block that carries no signature holds nothing worth keeping. */
     private fun isEmptyThinking(type: String, block: JsonObject): Boolean {
         if (type != TYPE_THINKING) return false
-        return str(block["thinking"]).isBlank() && str(block["signature"]).isEmpty()
+        return strOrEmpty(block["thinking"]).isBlank() && strOrEmpty(block["signature"]).isEmpty()
     }
 
     private fun rebuildBlock(block: JsonObject, type: String): JsonObject = buildJsonObject {
@@ -203,10 +202,6 @@ public class PassthroughRequestBuilder(private val quirks: PassthroughQuirks) {
         is JsonArray -> buildJsonArray { element.forEach { add(stripCacheControl(it)) } }
         else -> element
     }
-
-    // JsonNull IS a JsonPrimitive whose `.content` is "null"; treat an explicit null as absent.
-    private fun str(element: JsonElement?): String =
-        (element as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content ?: ""
 
     private companion object {
         const val MODEL = "model"

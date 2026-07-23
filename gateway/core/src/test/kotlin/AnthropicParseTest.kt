@@ -32,6 +32,8 @@ class AnthropicParseTest {
         val req = body.typed
 
         assertEquals("claude-codex--gpt-5.6-sol", req.model)
+        // Byte-preserving: multi-block system concatenates with NO separator (Anthropic-native), so
+        // the block's own trailing space survives and no newline is invented (review 2026-07-23).
         assertEquals("You are terse. Second part.", req.system)
         assertEquals(2, req.tools.size)
         assertEquals("run", req.tools[0].name)
@@ -57,6 +59,18 @@ class AnthropicParseTest {
         val unknown = userTurn.filterIsInstance<UnknownBlock>().single()
         assertEquals("future_widget", unknown.type)
         assertEquals("kept", unknown.raw["payload"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `adjacent system blocks concatenate with no invented separator`() {
+        // Byte-preservation: two blocks with NO trailing whitespace must NOT gain a newline/space
+        // between them (Anthropic joins system blocks back-to-back). Inventing a delimiter would
+        // break cache-control prefixes and identifiers split across blocks (review 2026-07-23).
+        val body = parseAnthropicBody(
+            """{"model":"m","system":[{"type":"text","text":"prefix="},{"type":"text","text":"VALUE"}],
+               "messages":[{"role":"user","content":"x"}]}""",
+        )
+        assertEquals("prefix=VALUE", body.typed.system)
     }
 
     @Test

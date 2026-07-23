@@ -36,6 +36,7 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.timedOr
+import splice.core.util.MonoClock
 import splice.core.util.runCatchingCancellable
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -64,7 +65,10 @@ public class UpstreamClient(
         val jittered = (base * Random.nextDouble(JITTER_LO, JITTER_HI)).toLong()
         delay(jittered)
     },
-    private val clock: () -> Long = System::currentTimeMillis,
+    // Default is monotonic — a wall-clock jump must not abort a healthy retry loop (forward) or
+    // extend its deadline (backward). Same base as TurnWatchdog/InflightGate: two authorities
+    // enforce cfg.upstreamTimeoutMs and MUST NOT split-brain across clock bases (review 2026-07-22).
+    private val clock: () -> Long = MonoClock::nowMs,
 ) {
     // Shared rate-limit cooldown (one UpstreamClient per head = per upstream account). Armed by any
     // attempt that observes a 429; while armed, every post() fails fast with a synthesized 429 and

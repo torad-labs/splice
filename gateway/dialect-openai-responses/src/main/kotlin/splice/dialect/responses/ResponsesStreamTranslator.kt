@@ -21,18 +21,21 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.isWeakSummaryText
+import splice.core.util.str
+import splice.core.util.strOrEmpty
 import splice.spi.ClassifiedFailure
 import splice.spi.FailureSource
 import splice.spi.StreamTranslator
+import splice.spi.TerminalStates
 import splice.spi.UpstreamFailureClassifier
 import splice.spi.WatchdogFired
 import splice.spi.WireSink
+import splice.spi.terminalPrecedence
 import java.io.IOException
 import java.util.concurrent.CancellationException
 
@@ -63,20 +66,49 @@ public data class StreamTurnContext(
     val collectReasoningEnvelopes: Boolean = false,
 )
 
-/** Drop paragraph-parts already streamed this turn (sequential_cutoff recap noise); parts under
- *  the min length always pass (plausibly genuine fragments). No-op unless the quirk is active. */
-private fun dedupSummaryParts(text: String, seen: MutableSet<String>, active: Boolean): String {
-    if (!active || text.isEmpty()) return text
-    return text.split(PART_SEPARATOR)
-        .filter { part -> part.length < SUMMARY_PART_DEDUP_MIN_CHARS || seen.add(part) }
-        .joinToString(PART_SEPARATOR)
-}
-
 private const val PART_SEPARATOR = "\n\n"
 
 // below this length an exact repeat is plausibly a genuine token fragment; whole summary parts
 // (titled sections) are far longer
 private const val SUMMARY_PART_DEDUP_MIN_CHARS = 20
+
+// Per-item recap cursor sentinel: the leading cross-item recap has ended for this item, so every
+// remaining part is genuinely new (only within-item exact repeats are still suppressed).
+private const val RECAP_DONE = -1
+
+// sequential_cutoff restatement dedup. This mode restates summary parts in TWO distinct ways, and
+// one structure conflating them is why this kept oscillating (revert/reapply/rescope):
+//   (A) CROSS-item recap — each NEW reasoning item replays every part emitted so far, IN ORDER, as
+//       a leading prefix, then appends its genuinely-new parts (probed 2026-07-19: part(1,0) ==
+//       part(0,0)). Suppressed by matching the leading run against the ordered emitted list via a
+//       per-item cursor.
+//   (B) WITHIN-item repeat — item.done can restate parts whose deltas then re-arrive, or vice versa
+//       (openai/codex#16801 ordering anomaly, live 2026-07-19). Suppressed by a per-item exact set.
+// A turn-global SET over-suppressed a paragraph two DISTINCT items coincidentally shared
+// (2026-07-20); a per-ITEM set alone under-suppressed the cross-item recap (the duplication
+// staircase). Splitting the two jobs keeps the coincidence (per-item, non-leading) while killing
+// the staircase (ordered leading prefix). State + decision live together here (2026-07-23).
+private class SummaryDedup(private val active: Boolean) {
+    private val emittedParts = mutableListOf<String>()
+    private val recapCursor = HashMap<Int, Int>()
+    private val itemEmitted = HashMap<Int, MutableSet<String>>()
+
+    /** True to SUPPRESS a recap/repeat part of item [oi]; a genuinely-new part returns false and is
+     *  recorded so later items' recaps (A) and this item's own re-arrivals (B) match. Parts under
+     *  the min length always pass and are never recorded (plausibly genuine token fragments). */
+    fun suppress(oi: Int, part: String): Boolean {
+        if (!active || part.length < SUMMARY_PART_DEDUP_MIN_CHARS) return false
+        val cursor = recapCursor.getOrDefault(oi, 0)
+        if (cursor in emittedParts.indices && emittedParts[cursor] == part) {
+            recapCursor[oi] = cursor + 1
+            return true
+        }
+        recapCursor[oi] = RECAP_DONE
+        val fresh = itemEmitted.getOrPut(oi) { HashSet() }.add(part)
+        if (fresh) emittedParts.add(part)
+        return !fresh
+    }
+}
 
 // Mutable per-block cursor. A data class here documents it as pure per-block state; it is only
 // ever stored/looked up by wire index, never compared by value.
@@ -105,22 +137,26 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
         return terminalOutcome(reducer)
     }
 
-    private fun terminalOutcome(reducer: ResponsesEventReducer): TurnOutcome =
-        reducer.upstreamFailure?.let {
-            // parsed from a response.failed/error event the backend actually sent (G20 provenance)
-            TurnOutcome.Failure(it.type, "ChatGPT backend: ${it.message}", providerReported = true)
-        }
-            ?: if (reducer.finalResponse == null) noCompletionOutcome() else successOutcome(reducer)
+    // Ordering enforced by the shared spi.terminalPrecedence: a COMPLETED response wins over a
+    // late watchdog fire (the watchdog polls the whole enclosing coroutine, which stays suspended
+    // on the socket-EOF read AFTER response.completed was already parsed — discarding that turn
+    // would retry a successful compaction, the exact quota waste the watchdog exists to prevent).
+    private fun terminalOutcome(reducer: ResponsesEventReducer): TurnOutcome = terminalPrecedence(
+        TerminalStates(
+            providerFailure = reducer.upstreamFailure?.let {
+                // parsed from a response.failed/error event the backend actually sent (G20 provenance)
+                TurnOutcome.Failure(it.type, "ChatGPT backend: ${it.message}", providerReported = true)
+            },
+            finished = reducer.finalResponse != null,
+            watchdogFired = ctx.watchdogFired(),
+        ),
+        onFinished = { successOutcome(reducer) },
+        onWatchdog = ::watchdogOutcome,
+        onUnfinished = ::noCompletionOutcome,
+    )
 
-    // A COMPLETED response wins over a late watchdog fire. The watchdog polls the whole
-    // enclosing coroutine, which stays suspended on the socket-EOF read AFTER the terminal
-    // response.completed frame was already parsed; a fire in that window must NOT discard a
-    // fully-received turn (that would retry a successful compaction — the exact quota waste the
-    // watchdog exists to prevent). So the stall/truncation verdicts only apply when there is no
-    // completed response yet (this path).
-    private fun noCompletionOutcome(): TurnOutcome {
-        ctx.watchdogFired()?.let { return watchdogOutcome(it) }
-        return if (ctx.clientGone()) {
+    private fun noCompletionOutcome(): TurnOutcome =
+        if (ctx.clientGone()) {
             TurnOutcome.ClientAbandoned
         } else {
             TurnOutcome.Failure(
@@ -128,7 +164,6 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
                 "claudex: upstream stream ended without response.completed (truncated); retry",
             )
         }
-    }
 
     private fun watchdogOutcome(fired: WatchdogFired): TurnOutcome {
         val why = when (fired) {
@@ -209,14 +244,11 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     // earlier one, diverging wire from mirror (audit 2026-07-18); track per item instead.
     private val emittedReasoningKeys = HashSet<Int>()
 
-    // sequential_cutoff restatement dedup, PER reasoning item (keyed by output_index). A turn-global
-    // set silently dropped a genuine paragraph that two DISTINCT reasoning items happened to share
-    // byte-for-byte (2026-07-20) — restatements only recur WITHIN one item's summary stream, so the
-    // set is scoped there. Bounded by the item count per turn.
-    private val seenSummaryPartsByItem = HashMap<Int, MutableSet<String>>()
+    // sequential_cutoff restatement dedup — state + decision encapsulated in SummaryDedup (above).
+    private val summaryDedup = SummaryDedup(ctx.dedupeRepeatedSummaryParts)
 
     suspend fun onEvent(evt: JsonObject, sink: WireSink) {
-        when (str(evt["type"])) {
+        when (strOrEmpty(evt["type"])) {
             "response.completed", "response.done", "response.incomplete" -> onTerminal(evt)
             "response.failed", "response.error", "error" -> onFailure(evt)
             else -> onStreamEvent(evt, sink)
@@ -224,7 +256,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     }
 
     private suspend fun onStreamEvent(evt: JsonObject, sink: WireSink) {
-        when (str(evt["type"])) {
+        when (strOrEmpty(evt["type"])) {
             "response.output_item.added" -> onItemAdded(evt, sink)
             "response.output_item.done" -> onItemDone(evt, sink)
             "response.reasoning_summary_part.added" -> onSummaryPartAdded(evt, sink)
@@ -241,7 +273,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     private fun onTerminal(evt: JsonObject) {
         val resp = (evt["response"] as? JsonObject) ?: evt
         finalResponse = resp
-        if (str(evt["type"]) == "response.incomplete" || str(resp["status"]) == "incomplete") {
+        if (strOrEmpty(evt["type"]) == "response.incomplete" || strOrEmpty(resp["status"]) == "incomplete") {
             incomplete = true
         }
         val u = usageFrom(resp)
@@ -257,18 +289,21 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
         val e = (evt["response"] as? JsonObject)?.get("error") as? JsonObject
             ?: evt["error"] as? JsonObject
             ?: evt
-        val code = str(e["code"]).ifEmpty { str(e["type"]) }.ifEmpty { "upstream_failed" }
-        val message = str(e["message"]).ifEmpty { "ChatGPT backend reported failure" }
+        val code = strOrEmpty(e["code"]).ifEmpty { strOrEmpty(e["type"]) }.ifEmpty { "upstream_failed" }
+        val message = strOrEmpty(e["message"]).ifEmpty { "ChatGPT backend reported failure" }
         upstreamFailure = UpstreamFailureClassifier.classify(FailureSource.SSE, "$code $message")
     }
 
     private suspend fun onItemAdded(evt: JsonObject, sink: WireSink) {
         val item = evt["item"] as? JsonObject ?: return
         val oi = intOr(evt[OUTPUT_INDEX]) ?: intOr(item["index"]) ?: blocks.size
-        if (str(item["type"]) == "function_call") {
-            val id = str(item["call_id"]).ifEmpty { str(item["id"]) }
+        if (strOrEmpty(item["type"]) == "function_call") {
+            // A JsonNull call_id/name must not leak onto the wire as the literal string "null" —
+            // strOrEmpty keeps both filtered so the empty-fallback chain below still triggers
+            // (review 2026-07-22 round 3).
+            val id = strOrEmpty(item["call_id"]).ifEmpty { strOrEmpty(item["id"]) }
                 .ifEmpty { "toolu_synth_${toolSynthCounter++}_$oi" }
-            val idx = sink.openTool(id = id, name = str(item["name"]))
+            val idx = sink.openTool(id = id, name = strOrEmpty(item["name"]))
             blocks[oi] = BlockState(idx, sawDelta = false)
             hasToolUse = true
         }
@@ -300,7 +335,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
 
     private suspend fun maybeEmitLateReasoning(item: JsonObject?, oi: Int?, sink: WireSink) {
         if (item == null || oi == null) return
-        if (str(item["type"]) != "reasoning") return
+        if (strOrEmpty(item["type"]) != "reasoning") return
         emitReasoningItemText(item, oi, sink)
     }
 
@@ -318,13 +353,18 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
         if (raw.isEmpty() || streamedByDeltas) return
         if (!emittedReasoningKeys.add(reasoningKey(outputIndex))) return
         // sequential_cutoff recap arrives through THIS path too (completed items restate prior
-        // parts) — same seen-set as the delta path, at part granularity. MUST run AFTER every
-        // early-return above: the backend can deliver item.done BEFORE the item's remaining deltas
-        // (openai/codex#16801 ordering anomaly), and filtering first seeded the seen-set with parts
-        // whose deltas hadn't arrived — suppressing them both late (sawDelta return) and live
-        // (seen-set match): total summary starvation (found live 2026-07-19).
-        val seen = seenSummaryPartsByItem.getOrPut(outputIndex) { HashSet() }
-        val text = dedupSummaryParts(raw, seen, ctx.dedupeRepeatedSummaryParts)
+        // parts) — same ordered recap model as the delta path, at part granularity. MUST run AFTER
+        // every early-return above: the backend can deliver item.done BEFORE the item's remaining
+        // deltas (openai/codex#16801 ordering anomaly), and filtering first would record parts whose
+        // deltas hadn't arrived — suppressing them both late (sawDelta return) and live (recap
+        // match): total summary starvation (found live 2026-07-19).
+        // Late-path recap filter: drop the leading recap run + within-item repeats, keep the rest.
+        val text = if (ctx.dedupeRepeatedSummaryParts) {
+            raw.split(PART_SEPARATOR).filter { part -> !summaryDedup.suppress(outputIndex, part) }
+                .joinToString(PART_SEPARATOR)
+        } else {
+            raw
+        }
         if (text.isEmpty()) return
         appendLateReasoning(existing, outputIndex, text, sink)
     }
@@ -356,15 +396,11 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     }
 
     private suspend fun onThinkingDelta(evt: JsonObject, sink: WireSink) {
-        val delta = str(evt[DELTA])
+        val delta = strOrEmpty(evt[DELTA])
         if (delta.isEmpty()) return
-        // sequential_cutoff restatement dedup: whole parts arrive as single deltas in this mode;
-        // an exact repeat of an already-streamed part (>= min length; shorter deltas are plausibly
-        // genuine token fragments) is upstream recap noise, not new thinking.
-        if (ctx.dedupeRepeatedSummaryParts && delta.length >= SUMMARY_PART_DEDUP_MIN_CHARS) {
-            val oi = intOr(evt[OUTPUT_INDEX]) ?: 0
-            if (!seenSummaryPartsByItem.getOrPut(oi) { HashSet() }.add(delta)) return
-        }
+        // sequential_cutoff: whole parts arrive as single deltas; drop a delta that is either the
+        // continuation of this item's leading cross-item recap or an exact within-item repeat.
+        if (summaryDedup.suppress(intOr(evt[OUTPUT_INDEX]) ?: 0, delta)) return
         val b = ensureThinkingBlock(evt, sink)
         b.sawDelta = true
         thinkingBuf.append(delta)
@@ -383,7 +419,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     }
 
     private suspend fun onTextDelta(evt: JsonObject, sink: WireSink) {
-        val delta = str(evt[DELTA])
+        val delta = strOrEmpty(evt[DELTA])
         if (delta.isEmpty()) return
         val key = intOr(evt[OUTPUT_INDEX]) ?: 0
         val b = blocks[key] ?: BlockState(sink.openText(), sawDelta = false).also { blocks[key] = it }
@@ -393,13 +429,25 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     }
 
     // tool args stream as input_json_delta on the SAME wire block index; the .done frame closes it.
+    // When the backend sends complete args only on .done (no .delta frames — valid for small tools),
+    // harvest `arguments` once before close so the client does not get tool_use with empty input {}.
     private suspend fun onArgs(evt: JsonObject, sink: WireSink) {
         val b = blocks[intOr(evt[OUTPUT_INDEX]) ?: return] ?: return
-        if (str(evt["type"]) == "response.function_call_arguments.done") {
+        if (strOrEmpty(evt["type"]) == "response.function_call_arguments.done") {
+            if (!b.sawDelta) {
+                val full = strOrEmpty(evt["arguments"])
+                if (full.isNotEmpty()) {
+                    sink.inputJsonDelta(b.index, full)
+                    b.sawDelta = true
+                }
+            }
             sink.closeBlock(b.index)
         } else {
-            val delta = str(evt[DELTA])
-            if (delta.isNotEmpty()) sink.inputJsonDelta(b.index, delta)
+            val delta = strOrEmpty(evt[DELTA])
+            if (delta.isNotEmpty()) {
+                sink.inputJsonDelta(b.index, delta)
+                b.sawDelta = true
+            }
         }
     }
 
@@ -417,7 +465,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
 /** Gated encrypted-reasoning EMISSION predicate — kept out of the handler so its condition stays flat. */
 private fun shouldEmitReasoning(ctx: StreamTurnContext, item: JsonObject): Boolean =
     ctx.emitEncryptedReasoning.v && !ctx.compact &&
-        str(item["type"]) == "reasoning" && str(item["encrypted_content"]).isNotEmpty()
+        strOrEmpty(item["type"]) == "reasoning" && strOrEmpty(item["encrypted_content"]).isNotEmpty()
 
 /**
  * The terminal object's text replaces the streamed buffer when the stream produced nothing, or
@@ -428,8 +476,4 @@ private fun shouldPreferHarvestedText(current: CharSequence, harvested: String):
     return current.isEmpty() || (isWeakSummaryText(current.toString()) && !isWeakSummaryText(harvested))
 }
 
-private fun str(el: JsonElement?): String =
-    (el as? JsonPrimitive)?.content ?: ""
-
-private fun intOr(el: JsonElement?): Int? =
-    (el as? JsonPrimitive)?.content?.toIntOrNull()
+private fun intOr(el: JsonElement?): Int? = el.str()?.toIntOrNull()

@@ -126,10 +126,11 @@ public enum class Knob(
         restartRequired = true,
     ),
 
-    // Bounded by default since the 2026-07-19 storm: unlimited (0) let ~650 concurrent streams
-    // hit one rate-limited account and OOM the 1G heap. 0 still means unlimited for an explicit
-    // operator opt-out; both stay live-PATCHable.
-    MAX_INFLIGHT("maxInflight", KnobKind.NUMBER, listOf("CLAUDEX_MAX_INFLIGHT"), 48L),
+    // Per-head admission (each head is a different backend/account). Bounded by default since the
+    // 2026-07-19 storm: unlimited (0) let ~650 concurrent streams OOM the 1G heap. Default 100
+    // (was 48) leaves headroom for multi-agent fleets without reopening the unlimited storm.
+    // 0 still means unlimited for an explicit operator opt-out; both stay live-PATCHable.
+    MAX_INFLIGHT("maxInflight", KnobKind.NUMBER, listOf("CLAUDEX_MAX_INFLIGHT"), 100L),
     MAX_QUEUED("maxQueued", KnobKind.NUMBER, listOf("CLAUDEX_MAX_QUEUED"), 512L),
     UPSTREAM_RETRIES(
         "upstreamRetries",
@@ -224,6 +225,17 @@ public enum class Knob(
         listOf("SPLICE_USAGE_WARN_TOKENS_5H"),
         0L,
         restartRequired = true,
+    ),
+
+    // Extra trusted roots (colon-separated absolute paths) for the statusline git-branch lookup.
+    // Default empty: only $HOME and /tmp are trusted, so repos elsewhere (devcontainer /workspace,
+    // /srv layouts) show no branch segment — unauthenticated /statusline must never exec
+    // `git -C` against an untrusted path (review 2026-07-22).
+    STATUSLINE_GIT_ROOTS(
+        "statuslineGitRoots",
+        KnobKind.STRING,
+        listOf("CLAUDEX_STATUSLINE_GIT_ROOTS"),
+        "",
     ),
     ;
 

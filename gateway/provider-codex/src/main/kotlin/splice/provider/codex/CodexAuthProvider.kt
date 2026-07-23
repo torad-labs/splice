@@ -13,6 +13,7 @@ package splice.provider.codex
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
@@ -61,6 +62,13 @@ public class CodexAuthProvider(
     private val json = Json { ignoreUnknownKeys = true }
     private val singleFlight = SingleFlight<Credentials?>()
     private val invalidGrantLatch = InvalidGrantLatch()
+
+    init {
+        // Lifecycle ownership: when prefetchScope ends (Daemon.stop cancels probeScope), cancel the
+        // shared refresh so it cannot persist a token after shutdown. Per-request cancellation is
+        // unaffected — it only cancels that caller's await, never the SingleFlight scope.
+        prefetchScope.coroutineContext[Job]?.invokeOnCompletion { singleFlight.close() }
+    }
 
     @Volatile
     private var cache: Cache? = null

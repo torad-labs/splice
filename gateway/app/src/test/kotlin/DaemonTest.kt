@@ -110,6 +110,16 @@ class DaemonTest {
     }
 
     @Test
+    fun `lowercase bearer is accepted on an inference route`() = runBlocking {
+        // review gap K: inference (HeadServer.authorize) shares the control plane's bearerToken parser,
+        // so a lowercase scheme must authenticate on /v1/models too — a wrong token still 401.
+        val ok = client.get("http://127.0.0.1:$headPort/v1/models") { header("Authorization", "bearer $key") }
+        assertEquals(200, ok.status.value)
+        val bad = client.get("http://127.0.0.1:$headPort/v1/models") { header("Authorization", "bearer wrong-token") }
+        assertEquals(401, bad.status.value)
+    }
+
+    @Test
     fun `a real turn flows through the assembled head to the mock upstream`() = runBlocking {
         val sse = client.post("http://127.0.0.1:$headPort/v1/messages") {
             header("Content-Type", "application/json")

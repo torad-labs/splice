@@ -8,6 +8,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
@@ -227,6 +228,50 @@ class ResponsesStreamTranslatorTest {
             listOf("openTool#0(toolu_1,run)", "json#0:{\"c\":", "json#0:1}", "close#0", "closeAll"),
             sink.calls,
         )
+    }
+
+    @Test
+    fun `a null call_id falls back to id and a null name opens with an empty name`() = runTest {
+        // The Responses call_id -> id -> synthetic chain is distinct from the Chat null-id path.
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":0,
+                       "item":{"type":"function_call","call_id":null,"id":"resp_abc","name":null}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":0,"delta":"{\"a\":1}"}"""),
+                ev("""{"type":"response.function_call_arguments.done","output_index":0}"""),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        assertTrue((outcome as TurnOutcome.Success).hasToolUse)
+        // call_id JsonNull -> id fallback; name JsonNull -> empty (strOrEmpty filters both).
+        assertEquals("openTool#0(resp_abc,)", sink.calls.first())
+        assertFalse(sink.calls.any { it.contains("null") }, "literal null must never reach the wire: ${sink.calls}")
+        assertTrue(sink.calls.contains("json#0:{\"a\":1}"), "args must route to the resolved tool block")
+    }
+
+    @Test
+    fun `both call_id and id null get a nonempty synthetic id, never the literal null`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":2,
+                       "item":{"type":"function_call","call_id":null,"id":null,"name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":2,"delta":"{}"}"""),
+                ev("""{"type":"response.function_call_arguments.done","output_index":2}"""),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        assertTrue((outcome as TurnOutcome.Success).hasToolUse)
+        val open = sink.calls.first { it.startsWith("openTool") }
+        assertTrue(open.startsWith("openTool#0(toolu_synth"), "expected a synthetic id: $open")
+        assertFalse(open.contains("null"), "synthetic id must be nonempty, never \"null\": $open")
     }
 
     @Test

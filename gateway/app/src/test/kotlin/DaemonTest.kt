@@ -10,6 +10,9 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import mock.MockChatGptUpstream
 import mock.awaitListening
 import mock.freshPort
@@ -135,6 +138,75 @@ class DaemonTest {
         assertTrue(sse.contains("event: error"))
         assertTrue(sse.contains("authentication_error"))
         assertTrue(sse.contains("run: claudex login"))
+    }
+
+    // A 2-head topology: one valid (codex → mock) plus a `ghost` head whose provider does not exist.
+    // Extracted so the degraded-boot test body stays under the detekt LongMethod ceiling.
+    private fun degradedTopologyToml(control: Int, head: Int, ghost: Int, authFile: String) = """
+        [daemon]
+        control_port = $control
+
+        [providers.codex]
+        dialect = "openai-responses"
+        base_url = "${mock.baseUrl}"
+        auth = { kind = "chatgpt-oauth", file = "$authFile" }
+        quirks = { store = false, account_id_header = true, cache_key = "first-message-hash", effort_ceiling = "max", summary_field = true }
+
+        [[providers.codex.models]]
+        id = "gpt-5.6-sol"
+        label = "Sol"
+        context_window = 272000
+
+        [heads.claudex]
+        provider = "codex"
+        port = $head
+        discovery_prefix = "claude-codex--"
+        pinned_model = "gpt-5.6-sol"
+
+        [heads.ghost]
+        provider = "nonesuch"
+        port = $ghost
+        discovery_prefix = "claude-ghost--"
+        pinned_model = "ghost-1"
+    """.trimIndent()
+
+    @Test
+    fun `degraded boot - an unknown-provider head is failed while the valid head serves`() = runBlocking {
+        // finding 3 (review 2026-07-23): a head whose provider does not exist never enters the `heads`
+        // map — assembleDaemonHeads routes it to `failed` — so /health must report the CONFIGURED total
+        // as `heads`, else the launch shim's readyHeads + failedHeads == heads never converges. The
+        // discriminating case: heads.size (=1, assembled only) gives 1 == 1+1 (false); topology.heads.size
+        // (=2) gives 2 == 1+1 (true). One real head + one ghost, on their own ports.
+        val tmp = Files.createTempDirectory("daemon-degraded")
+        val authFile = tmp.resolve("auth.json")
+        Files.writeString(authFile, """{"tokens":{"access_token":"tok-1","account_id":"acct-1","refresh_token":"r"}}""")
+        val degradedControl = freshPort()
+        val degradedHead = freshPort()
+        val authPath = authFile.toString().replace("\\", "/")
+        val toml = degradedTopologyToml(degradedControl, degradedHead, freshPort(), authPath)
+        val degraded = Daemon(
+            topology = TopologyLoader.parse(toml),
+            statePaths = StatePaths(baseOverride = tmp.resolve("state")),
+            dashboardHtml = { "" },
+            log = {},
+            refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
+        )
+        degraded.start()
+        try {
+            awaitListening(degradedControl, degradedHead)
+            val obj = Json.parseToJsonElement(
+                client.get("http://127.0.0.1:$degradedControl/health").bodyAsText(),
+            ).jsonObject
+            val heads = obj["heads"]!!.jsonPrimitive.content.toInt()
+            val ready = obj["readyHeads"]!!.jsonPrimitive.content.toInt()
+            val failed = obj["failedHeads"]!!.jsonPrimitive.content.toInt()
+            assertEquals(2, heads, "configured total counts BOTH heads")
+            assertEquals(1, ready, "only the codex head assembled and started")
+            assertEquals(1, failed, "the unknown-provider head is failed, not assembled")
+            assertEquals(heads, ready + failed, "the invariant the launch shim converges on")
+        } finally {
+            degraded.stop()
+        }
     }
 
     @Test

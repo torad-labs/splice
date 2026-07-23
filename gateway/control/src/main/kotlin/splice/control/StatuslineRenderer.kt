@@ -118,7 +118,7 @@ public class StatuslineRenderer(
      *  "..": a symlink under /tmp pointing OUTSIDE the trusted roots would pass a lexical prefix
      *  check yet run git elsewhere, so resolve REAL paths on BOTH sides and compare those
      *  (review 2026-07-23). Repos outside the trusted roots lose only the branch segment. */
-    private fun safeGitCwd(cwd: String): java.nio.file.Path? {
+    internal fun safeGitCwd(cwd: String): java.nio.file.Path? {
         if (!cwd.startsWith("/") || cwd.any { it.code == 0 }) return null
         // toRealPath resolves symlinks AND requires existence — a non-existent path returns null.
         val real = runCatching { java.nio.file.Paths.get(cwd).toRealPath() }.getOrNull() ?: return null

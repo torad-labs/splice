@@ -215,6 +215,25 @@ class ChatRequestBuilderTest {
     }
 
     @Test
+    fun `tool_choice defaults to auto when tools ride and the client sent none`() {
+        // Unlike the Responses builder (gated behind quirks.emitToolChoice / lite), chat emits
+        // tool_choice whenever tools ride regardless of client choice — openAiToolChoice(null) is
+        // "auto", the harmless default every OpenAI-compat vendor already assumes absent the field.
+        // Pinned so this centralization can't silently drift without a test noticing.
+        val req = build(
+            """{"model":"m","tools":[{"name":"t","input_schema":{"type":"object"}}],
+                "messages":[{"role":"user","content":"x"}]}""",
+        )
+        assertEquals("auto", req["tool_choice"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `no tool_choice field when there are no tools to choose from`() {
+        val req = build("""{"model":"m","messages":[{"role":"user","content":"hi"}]}""")
+        assertFalse(req.containsKey("tool_choice"))
+    }
+
+    @Test
     fun `compact inherits session effort and strips tools plus tool_choice`() {
         // AGENTS cache law: compact mismatch on effort cold-starts the prompt cache. Compact also
         // strips tools — and with them tool_choice, else a tool_choice with no tools 400s strict

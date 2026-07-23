@@ -184,30 +184,44 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     //     arguments onto the open block or mints a duplicate tool_use (final-shape calls carry no
     //     `index`, so resolveToolIndex cannot map an echo back to its streamed slot).
     //   PENDING slot buffered from deltas that never carried function.name — adopt the echo's name
-    //     by id, else flushPendingTools opens it under the "tool" fallback. Names only; never the
-    //     echo's arguments (the deltas already buffered them).
-    //   NEW — never streamed, present ONLY in the final consolidated message (or the pure gap-fill
-    //     case where deltas carried nothing) — emit it, or it is silently lost while the turn still
-    //     reports tool_use.
+    //     by id, else flushPendingTools opens it under the "tool" fallback. Take the echo's args
+    //     too ONLY when the deltas buffered none (name AND args both final-only, finding 3); a
+    //     non-empty buffer is never appended twice.
+    //   NEW — never streamed, present ONLY in the final consolidated message (including when NO
+    //     deltas streamed any tool call) — emit it, even when it carries no name (opened under the
+    //     "tool" fallback, finding 5a), or it is silently lost while the turn reports tool_use.
+    // KNOWN LIMITATIONS (non-standard vendors only — not codex/grok/kimi; a name+args suppressor
+    // would risk dropping a legitimate distinct call, so both are left as documented gaps):
+    //   • a call STREAMED without an id (synth "toolu_<n>" slot) but echoed WITH an id can't be
+    //     matched back, so the echo mints a duplicate tool_use (finding 4);
+    //   • an id-matched echo is suppressed wholesale, so if the stream UNDER-delivered a call's
+    //     arguments the final's complete copy is discarded (finding 5b).
     private suspend fun foldFinalToolCalls(msg: JsonObject, sink: WireSink) {
         val calls = msg["tool_calls"] as? JsonArray ?: return
-        val gapFill = toolBlocks.isEmpty() && pendingTools.isEmpty()
-        calls.forEach { tc -> (tc as? JsonObject)?.let { applyFinalToolCall(it, gapFill, sink) } }
+        calls.forEach { tc -> (tc as? JsonObject)?.let { applyFinalToolCall(it, sink) } }
     }
 
-    private suspend fun applyFinalToolCall(obj: JsonObject, gapFill: Boolean, sink: WireSink) {
+    private suspend fun applyFinalToolCall(obj: JsonObject, sink: WireSink) {
         val id = strOrEmpty(obj["id"])
         if (id.isNotEmpty() && id in openedToolIds) return // echo of an already-open block
-        val name = strOrEmpty((obj["function"] as? JsonObject)?.get("name"))
-        val pending = if (id.isEmpty()) null else pendingTools.entries.firstOrNull { it.value.id == id }
-        when {
-            // Nameless pending slot buffered from deltas — adopt the echo's name by id (names only).
-            pending != null -> if (name.isNotEmpty() && pending.value.name.isEmpty()) {
-                pending.value.name = name
-                openPendingTool(pending.key, pending.value, sink)
+        val fn = obj["function"] as? JsonObject
+        val slot = if (id.isEmpty()) null else pendingTools.entries.firstOrNull { it.value.id == id }
+        if (slot == null) {
+            // A call present ONLY in the final array (never an open block — those returned at the
+            // top) — emit it, even when it carries no name (openPendingTool falls back to "tool",
+            // finding 5a), else it is silently lost while the turn reports tool_use.
+            applyToolCall(obj, sink)
+        } else {
+            // Pending slot from deltas that never carried a name — adopt the echo's name by id, and
+            // take its arguments too only when the deltas buffered none (name AND args both final-
+            // only, finding 3); a non-empty buffer is never double-appended (append("") is a no-op).
+            val pending = slot.value
+            val name = strOrEmpty(fn?.get("name"))
+            if (name.isNotEmpty() && pending.name.isEmpty()) {
+                pending.name = name
+                if (pending.args.isEmpty()) pending.args.append(strOrEmpty(fn?.get("arguments")))
+                openPendingTool(slot.key, pending, sink)
             }
-            // Gap-fill, or a call present ONLY in the final consolidated array — emit it.
-            gapFill || name.isNotEmpty() -> applyToolCall(obj, sink)
         }
     }
 
@@ -327,7 +341,10 @@ private fun reasoningDeltaText(obj: JsonObject): String? {
 /** Prefix-aware fold shared by the reasoning and text final-message channels: emit only what the
  *  streamed deltas haven't already carried ("Hello" streamed + "Hello world" final → " world";
  *  full duplicate → nothing; disjoint payload → all of it). A plain contains() check appended
- *  "Hello world" onto "Hello" → "HelloHello world". */
+ *  "Hello world" onto "Hello" → "HelloHello world". Known gap (left as-is): a final message that
+ *  re-emits the streamed prose with NORMALIZED whitespace is neither a clean prefix nor a
+ *  substring, so it falls to the `else` and re-sends in full — a whitespace-aware compare can't be
+ *  made provably safe (it would drop legitimately-repeated content). */
 private fun unseenSuffix(already: String, final: String): String = when {
     already.isEmpty() -> final
     final.startsWith(already) -> final.substring(already.length)

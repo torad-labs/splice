@@ -137,6 +137,7 @@ public class HeadServer(
         if (server != null) return
         // G20 contract: a control-plane restart promises a fresh diagnostic baseline; the counters
         // live on the long-lived TurnDriver, so reset them here (review 2026-07-19).
+        // restart() is stop-then-start, so this reset alone suffices — a bare stop keeps counters intact.
         driver.resetHealth()
         // G26: local (not a class field) so a control-plane restart (POST /api/heads/:head/restart)
         // re-arms verification instead of going permanently silent after the first restart.
@@ -207,7 +208,6 @@ public class HeadServer(
         server?.stop(STOP_GRACE_MS, STOP_TIMEOUT_MS)
         server = null
         deps.usageStore.flushNow()
-        driver.resetHealth()
     }
 
     override fun healthSnapshot(): HeadHealth {

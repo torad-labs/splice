@@ -26,6 +26,15 @@ public class StatuslineRenderer(
         runCatching { java.nio.file.Paths.get(root).toAbsolutePath().normalize() }.getOrNull()
     }
 
+    // Real (symlink-resolved) trusted roots for safeGitCwd's containment check — resolved ONCE here
+    // since the root set ($HOME, /tmp, extraGitRoots) is process-invariant, unlike the per-request
+    // candidate cwd (still resolved fresh on each call). A root missing at construction is dropped,
+    // same as the old per-call runCatching { root.toRealPath() }.getOrNull().
+    private val trustedRoots: List<java.nio.file.Path> = (
+        listOfNotNull(System.getProperty("user.home"), "/tmp").map { java.nio.file.Paths.get(it) } +
+            this.extraGitRoots
+        ).mapNotNull { root -> runCatching { root.toRealPath() }.getOrNull() }
+
     private val json = Json { ignoreUnknownKeys = true }
 
     public fun render(stdinJson: String, usage: HeadUsageSource?, warnPct: Int, warnTokens5h: Long): String {
@@ -122,10 +131,7 @@ public class StatuslineRenderer(
         if (!cwd.startsWith("/") || cwd.any { it.code == 0 }) return null
         // toRealPath resolves symlinks AND requires existence — a non-existent path returns null.
         val real = runCatching { java.nio.file.Paths.get(cwd).toRealPath() }.getOrNull() ?: return null
-        val trustedDirs = listOfNotNull(System.getProperty("user.home"), "/tmp")
-            .map { java.nio.file.Paths.get(it) } + extraGitRoots
-        val roots = trustedDirs.mapNotNull { root -> runCatching { root.toRealPath() }.getOrNull() }
-        return real.takeIf { p -> java.nio.file.Files.isDirectory(p) && roots.any { p.startsWith(it) } }
+        return real.takeIf { p -> java.nio.file.Files.isDirectory(p) && trustedRoots.any { p.startsWith(it) } }
     }
 
     private fun gitBranch(cwd: String): String = runCatching {

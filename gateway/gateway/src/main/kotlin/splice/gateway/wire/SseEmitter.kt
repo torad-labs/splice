@@ -47,10 +47,11 @@ public class SseEmitter internal constructor(
 ) : TurnTerminal {
 
     // Sole-terminal state machine: OPEN → ENDING (claim) → ENDED (frames succeeded, or abandon).
-    // ANY mid-terminal write failure — IOException or a cancellation landing between the claim
-    // and the last frame — releases the claim back to OPEN so emitError can still seal honestly;
-    // a stranded ENDING was the truncated-200 hole (review 2026-07-22). One AtomicReference so
-    // an illegal ended-without-ending combination is unrepresentable.
+    // A cancellation landing between the claim and the last frame releases the claim back to OPEN
+    // so the cancellation seal's emitError can still seal honestly (a stranded ENDING was the
+    // truncated-200 hole, review 2026-07-22); an IOException — client gone — stays ENDED so a
+    // follow-up emitError cleanly no-ops instead of re-attempting a doomed write. One
+    // AtomicReference so an illegal ended-without-ending combination is unrepresentable.
     private enum class SealState { OPEN, ENDING, ENDED }
     private val seal = AtomicReference(SealState.OPEN)
 
@@ -219,7 +220,7 @@ public class SseEmitter internal constructor(
     /** The ONLY clean ending — derives stop_reason internally (L3). */
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) {
         if (!seal.compareAndSet(SealState.OPEN, SealState.ENDING)) return
-        var sealed = false
+        var cancelled = false
         try {
             ensureStart()
             frame(
@@ -234,14 +235,17 @@ public class SseEmitter internal constructor(
                 },
             )
             frame("message_stop", buildJsonObject { put(TYPE, "message_stop") })
-            seal.set(SealState.ENDED)
-            sealed = true
+        } catch (e: CancellationException) {
+            // Cancelled mid-frame — release so the cancellation seal's emitError
+            // (TurnDriver.driveSealingCancellation) can still seal honestly; a stranded ENDING
+            // was the truncated-200 hole (review 2026-07-22).
+            cancelled = true
+            seal.set(SealState.OPEN)
+            throw e
         } finally {
-            // Release the claim on EVERY failure — cancellation included: a head-stop cancel
-            // mid-frame must leave the emitter sealable, or the cancellation seal's emitError
-            // (TurnDriver.driveSealingCancellation) no-ops and the client gets a truncated 200
-            // (the stranded-ENDING hole, review 2026-07-22).
-            if (!sealed) seal.set(SealState.OPEN)
+            // Frames delivered → sealed ENDED; frames FAILED (client gone, IOException) → still
+            // ENDED so a follow-up emitError cleanly no-ops. Only a cancellation releases instead.
+            if (!cancelled) seal.set(SealState.ENDED)
         }
     }
 

@@ -123,6 +123,11 @@ private fun rateLimitStateFrom(obj: JsonObject): RateLimitState = RateLimitState
     updatedAt = num(obj["updated_at"]),
 )
 
+/** Pending ratelimit payload paired with its already-parsed state, so readRateLimit() — polled
+ *  every /statusline tick and every /api/usage request — serves [parsed] straight from memory
+ *  instead of re-running json.parseToJsonElement on [encoded] per call (review 2026-07-22). */
+private data class PendingRateLimit(val encoded: String, val parsed: RateLimitState)
+
 /** 5h output-token window + ratelimit header persistence — the HUD contract files. */
 public class UsageStore(
     private val usageFile: Path,
@@ -173,7 +178,8 @@ public class UsageStore(
                 if (reset != null) put("reset_tokens", reset) else put("reset_tokens", null as String?)
                 put("updated_at", clock())
             }
-            pendingRateLimit.set(payload.toString() + "\n")
+            // Parse once here (not in readRateLimit) — see PendingRateLimit.
+            pendingRateLimit.set(PendingRateLimit(payload.toString() + "\n", rateLimitStateFrom(payload)))
             scheduleCoalesced(rlWriteScheduled) { flushRateLimit() }
         }
     }
@@ -200,7 +206,7 @@ public class UsageStore(
         rlWriteScheduled.set(false)
         runCatchingCancellable {
             synchronized(writeLock) {
-                val encoded = pendingRateLimit.getAndSet(null) ?: return@synchronized
+                val encoded = pendingRateLimit.getAndSet(null)?.encoded ?: return@synchronized
                 SecureFile.writeAtomic0600(ratelimitFile, encoded)
             }
         }
@@ -232,13 +238,14 @@ public class UsageStore(
 
     // best-effort by design: a missing/corrupt ratelimit file reads as null; cancellation propagates.
     // The pending payload IS the newest state, byte-identical to what the flush would write, so a
-    // non-null pending is served straight from memory — no flush, no drain, no file I/O. The inline
-    // flush this replaces had re-added, on the read path, the churn coalescing removed from the
-    // round path (review 2026-07-22 round 3).
+    // non-null pending is served straight from memory — no flush, no drain, no file I/O, and (already
+    // parsed once in persistRateLimit) no re-parse of the same JSON on every /statusline tick and
+    // /api/usage poll (review 2026-07-22). The inline flush this replaces had re-added, on the read
+    // path, the churn coalescing removed from the round path (review 2026-07-22 round 3).
     public fun readRateLimit(): RateLimitState? = runCatchingCancellable {
         val pending = pendingRateLimit.get()
         if (pending != null) {
-            rateLimitStateFrom(json.parseToJsonElement(pending).jsonObject)
+            pending.parsed
         } else {
             // Settle the coalesced lane first so a read never lags a just-arrived header by the 1s window.
             AsyncFileIo.drain()
@@ -294,7 +301,7 @@ public class UsageStore(
     private val writeScheduled = AtomicBoolean(false)
 
     // Latest-wins pending ratelimit payload; consumed by the coalesced lane, flushNow, or a read.
-    private val pendingRateLimit = AtomicReference<String?>(null)
+    private val pendingRateLimit = AtomicReference<PendingRateLimit?>(null)
     private val rlWriteScheduled = AtomicBoolean(false)
 
     init {

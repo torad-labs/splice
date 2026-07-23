@@ -11,6 +11,7 @@
 package splice.provider.kimi
 
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import splice.core.auth.AuthDescription
@@ -51,6 +52,13 @@ public class KimiAuthProvider(
     private val json = Json { ignoreUnknownKeys = true }
     private val singleFlight = SingleFlight<Credentials?>()
     private val invalidGrantLatch = InvalidGrantLatch()
+
+    init {
+        // Lifecycle ownership: when prefetchScope ends (Daemon.stop cancels probeScope), cancel the
+        // shared refresh so it cannot persist a token after shutdown. Per-request cancellation is
+        // unaffected — it only cancels that caller's await, never the SingleFlight scope.
+        prefetchScope?.coroutineContext?.get(Job)?.invokeOnCompletion { singleFlight.close() }
+    }
 
     @Volatile
     private var cache: Cache? = null

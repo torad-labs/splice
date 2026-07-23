@@ -82,9 +82,13 @@ public class ControlServer(
     // the /health readyHeads protocol converge on a degraded boot instead of waiting forever for
     // a head that will never become ready (review 2026-07-22 round 3).
     private val failedHeads: () -> Int = { 0 },
+    // Total CONFIGURED heads (topology). The readyHeads + failedHeads == heads invariant only holds
+    // against the configured total: an assembly-failed head is counted in failedHeads but is NEVER
+    // in the `heads` map, so reporting heads.size broke the invariant for it (review 2026-07-23).
+    private val configuredHeads: Int = heads.size,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
-    private val payloads = ControlPayloads(heads, config, failedHeads)
+    private val payloads = ControlPayloads(heads, config, failedHeads, configuredHeads)
 
     @Volatile
     private var server: EmbeddedServer<NettyApplicationEngine, *>? = null
@@ -383,12 +387,14 @@ private class ControlPayloads(
     private val heads: Map<String, ManagedHead>,
     private val config: ConfigService,
     private val failedHeads: () -> Int,
+    private val configuredHeads: Int,
 ) {
     fun controlHealthJson(): String = buildJsonObject {
         put("ok", true)
         put("version", GATEWAY_VERSION)
         put("wantShimVersion", SHIM_VERSION)
-        put(HEADS, heads.size)
+        // Configured total, NOT heads.size (assembled only) — see the ControlServer ctor comment.
+        put(HEADS, configuredHeads)
         // Launch shims wait for readyHeads + failedHeads == heads before POSTing /launch (post
         // startDaemonHeads) — NOT readyHeads == heads: a start-failed head stays in `heads`
         // forever with running=false, so the old equality-wait spun forever on a degraded boot

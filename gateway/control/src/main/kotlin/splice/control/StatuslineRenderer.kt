@@ -95,9 +95,11 @@ public class StatuslineRenderer(
     private fun locationSegment(root: JsonObject): String? {
         val cwd = str(obj(root, "workspace")?.get("current_dir")) ?: str(root["cwd"]) ?: return null
         val base = cwd.trim('/').substringAfterLast('/').ifEmpty { return null }
-        // Only git when cwd is a real absolute directory under the user home (or /tmp) — never
-        // exec git -C against an attacker-chosen path from unauthenticated /statusline.
-        val branch = if (isSafeGitCwd(cwd)) gitBranch(cwd) else ""
+        // Only git when cwd RESOLVES to a real directory under the user home (or /tmp) — never
+        // exec git -C against an attacker-chosen path from unauthenticated /statusline. Run git in
+        // the symlink-resolved path, not the raw cwd.
+        val safe = safeGitCwd(cwd)
+        val branch = if (safe != null) gitBranch(safe.toString()) else ""
         val loc = if (branch.isEmpty()) base else "$base  ⎇ $branch"
         return dim(loc)
     }
@@ -111,24 +113,19 @@ public class StatuslineRenderer(
             (num(cu["cache_creation_input_tokens"]) ?: 0)
     }
 
-    /** Absolute, existing directory under $HOME, /tmp, or an operator-trusted extra root — never
-     *  exec git -C against any other path from unauthenticated /statusline. Repos outside the
-     *  trusted roots lose only the branch segment. */
-    private fun isSafeGitCwd(cwd: String): Boolean {
-        if (!cwd.startsWith("/") || cwd.any { it.code == 0 }) return false
-        // normalize() resolves every ".." traversal before the prefix checks; the old substring
-        // ".." test on the normalized path only false-negatived legit names like "my..proj"
-        // (review 2026-07-22).
-        val path = runCatching { java.nio.file.Paths.get(cwd).toAbsolutePath().normalize() }.getOrNull()
-            ?: return false
-        val home = runCatching {
-            java.nio.file.Paths.get(System.getProperty("user.home")).toAbsolutePath().normalize()
-        }.getOrNull()
-        val tmp = java.nio.file.Paths.get("/tmp").toAbsolutePath().normalize()
-        val trusted = (home != null && path.startsWith(home)) ||
-            path.startsWith(tmp) ||
-            extraGitRoots.any { path.startsWith(it) }
-        return trusted && java.nio.file.Files.isDirectory(path)
+    /** The symlink-RESOLVED absolute directory if it lies under $HOME, /tmp, or an operator-trusted
+     *  root — else null (the resolved path is what git -C runs in). `normalize()` only collapses
+     *  "..": a symlink under /tmp pointing OUTSIDE the trusted roots would pass a lexical prefix
+     *  check yet run git elsewhere, so resolve REAL paths on BOTH sides and compare those
+     *  (review 2026-07-23). Repos outside the trusted roots lose only the branch segment. */
+    private fun safeGitCwd(cwd: String): java.nio.file.Path? {
+        if (!cwd.startsWith("/") || cwd.any { it.code == 0 }) return null
+        // toRealPath resolves symlinks AND requires existence — a non-existent path returns null.
+        val real = runCatching { java.nio.file.Paths.get(cwd).toRealPath() }.getOrNull() ?: return null
+        val trustedDirs = listOfNotNull(System.getProperty("user.home"), "/tmp")
+            .map { java.nio.file.Paths.get(it) } + extraGitRoots
+        val roots = trustedDirs.mapNotNull { root -> runCatching { root.toRealPath() }.getOrNull() }
+        return real.takeIf { p -> java.nio.file.Files.isDirectory(p) && roots.any { p.startsWith(it) } }
     }
 
     private fun gitBranch(cwd: String): String = runCatching {

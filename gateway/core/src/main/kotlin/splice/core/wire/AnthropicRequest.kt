@@ -149,10 +149,14 @@ public object SystemTextSerializer : KSerializer<String?> {
 
     private fun JsonElement.jsonObjectListTexts(): String? {
         val arr = this as? JsonArray ?: return null
+        // Byte-preserving concatenation with NO separator — Anthropic's own multi-block system
+        // behavior joins text blocks back-to-back (verified 2026-07-23); a delimiter here invents a
+        // character the client never sent and can break cache-control prefixes. Callers that want a
+        // boundary put it in the block text (the fixtures carry their own trailing spaces).
         return arr.mapNotNull { el ->
             val obj = el as? JsonObject ?: return@mapNotNull null
             if (obj["type"]?.jsonPrimitive?.content == "text") obj["text"]?.jsonPrimitive?.content else null
-        }.joinToString("\n")
+        }.joinToString("")
     }
 }
 

@@ -55,6 +55,10 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     private var nextSynthToolIndex = SYNTH_INDEX_BASE
     private val toolIndexById = HashMap<String, Int>()
 
+    // Ids of tool blocks already opened this turn — lets the final-message fold tell an ECHO of a
+    // streamed call (suppress) from a call present ONLY in the final consolidated array (emit).
+    private val openedToolIds = HashSet<String>()
+
     // Deferred opens: backends often emit index+id first and function.name on a later delta.
     // Opening with name="" freezes an empty tool_use on the Anthropic wire — buffer until name
     // arrives (or finish_reason forces a flush).
@@ -173,35 +177,37 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         }
     }
 
-    // Non-stream / final-message shape: tool_calls land on `message`, not `delta`. Two paths.
-    // GAP-FILL — the deltas carried NO tool activity (both maps empty), so the final message IS
-    // the calls: apply every entry. MERGE — the deltas already opened or buffered tools, so the
-    // final tool_calls are an echo. Echo-suppression is ABSOLUTE for OPEN blocks: re-applying
-    // would append the full arguments onto an open block, or mint a SECOND tool_use for the same
-    // id (final-shape calls carry no `index`, and the explicit-index delta path never records
-    // id→index, so resolveToolIndex cannot map an echo back to its streamed slot). A PENDING slot
-    // buffered from deltas that never carried function.name is the exception: adopt the name the
-    // echo supplies, matched by id — else flushPendingTools opens it under the "tool" fallback
-    // name. Merge names into pending only; never append the echo's arguments, the deltas already
-    // buffered them (review 2026-07-22 round 3).
+    // Non-stream / final-message shape: tool_calls land on `message`, not `delta`. Classified PER
+    // CALL, not per turn — a turn-global gap-fill flag dropped a call present only in the final
+    // array when it rode alongside an echo of a streamed call (review 2026-07-23). Three cases:
+    //   ECHO of an already-opened block (matched by id) — SUPPRESS: re-applying appends the full
+    //     arguments onto the open block or mints a duplicate tool_use (final-shape calls carry no
+    //     `index`, so resolveToolIndex cannot map an echo back to its streamed slot).
+    //   PENDING slot buffered from deltas that never carried function.name — adopt the echo's name
+    //     by id, else flushPendingTools opens it under the "tool" fallback. Names only; never the
+    //     echo's arguments (the deltas already buffered them).
+    //   NEW — never streamed, present ONLY in the final consolidated message (or the pure gap-fill
+    //     case where deltas carried nothing) — emit it, or it is silently lost while the turn still
+    //     reports tool_use.
     private suspend fun foldFinalToolCalls(msg: JsonObject, sink: WireSink) {
         val calls = msg["tool_calls"] as? JsonArray ?: return
         val gapFill = toolBlocks.isEmpty() && pendingTools.isEmpty()
-        calls.forEach { tc ->
-            val obj = tc as? JsonObject ?: return@forEach
-            if (gapFill) {
-                applyToolCall(obj, sink)
-                return@forEach
+        calls.forEach { tc -> (tc as? JsonObject)?.let { applyFinalToolCall(it, gapFill, sink) } }
+    }
+
+    private suspend fun applyFinalToolCall(obj: JsonObject, gapFill: Boolean, sink: WireSink) {
+        val id = strOrEmpty(obj["id"])
+        if (id.isNotEmpty() && id in openedToolIds) return // echo of an already-open block
+        val name = strOrEmpty((obj["function"] as? JsonObject)?.get("name"))
+        val pending = if (id.isEmpty()) null else pendingTools.entries.firstOrNull { it.value.id == id }
+        when {
+            // Nameless pending slot buffered from deltas — adopt the echo's name by id (names only).
+            pending != null -> if (name.isNotEmpty() && pending.value.name.isEmpty()) {
+                pending.value.name = name
+                openPendingTool(pending.key, pending.value, sink)
             }
-            val fn = obj["function"] as? JsonObject
-            val name = strOrEmpty(fn?.get("name"))
-            if (name.isEmpty()) return@forEach
-            val id = strOrEmpty(obj["id"])
-            val entry = pendingTools.entries.firstOrNull { it.value.id == id } ?: return@forEach
-            if (entry.value.name.isEmpty()) {
-                entry.value.name = name
-                openPendingTool(entry.key, entry.value, sink)
-            }
+            // Gap-fill, or a call present ONLY in the final consolidated array — emit it.
+            gapFill || name.isNotEmpty() -> applyToolCall(obj, sink)
         }
     }
 
@@ -220,15 +226,6 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
             sink.textDelta(idx, c)
         }
         (delta["tool_calls"] as? JsonArray)?.forEach { tc -> applyToolCall(tc as? JsonObject ?: return@forEach, sink) }
-    }
-
-    /** First non-empty cleartext reasoning field on a chat delta/message. */
-    private fun reasoningDeltaText(obj: JsonObject): String? {
-        for (key in REASONING_KEYS) {
-            val v = strOrEmpty(obj[key])
-            if (v.isNotEmpty()) return v
-        }
-        return null
     }
 
     private suspend fun applyToolCall(tc: JsonObject, sink: WireSink) {
@@ -259,6 +256,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     private suspend fun openPendingTool(index: Int, pending: PendingTool, sink: WireSink) {
         val opened = sink.openTool(pending.id, pending.name.ifEmpty { "tool" })
         toolBlocks[index] = opened
+        openedToolIds.add(pending.id)
         hasToolUse = true
         pendingTools.remove(index)
         if (pending.args.isNotEmpty()) sink.inputJsonDelta(opened, pending.args.toString())
@@ -309,11 +307,21 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     }
 
     private companion object {
-        val REASONING_KEYS = listOf("reasoning_content", "reasoning", "thinking", "reasoning_text")
-
         // Synthesized tool slots live far above any real streamed index (OpenAI streams 0..n).
         const val SYNTH_INDEX_BASE = 1_000_000
     }
+}
+
+private val REASONING_KEYS = listOf("reasoning_content", "reasoning", "thinking", "reasoning_text")
+
+/** First non-empty cleartext reasoning field on a chat delta/message. Top-level (off the class
+ *  function budget) — reads only its argument. */
+private fun reasoningDeltaText(obj: JsonObject): String? {
+    for (key in REASONING_KEYS) {
+        val v = strOrEmpty(obj[key])
+        if (v.isNotEmpty()) return v
+    }
+    return null
 }
 
 /** Prefix-aware fold shared by the reasoning and text final-message channels: emit only what the

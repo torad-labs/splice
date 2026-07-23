@@ -160,6 +160,11 @@ class ChatStreamTranslatorTest {
         val s = outcome as TurnOutcome.Success
         assertEquals("Hello world", s.thinkingText)
         assertFalse(s.thinkingText.contains("HelloHello"))
+        // Wire-level: the streamed prefix went out, the final fold emits ONLY the unseen suffix,
+        // and the full "Hello world" is never re-sent (the buffer alone can't prove this).
+        assertTrue(sink.calls.contains("think:Hello"))
+        assertTrue(sink.calls.contains("think: world"))
+        assertFalse(sink.calls.contains("think:Hello world"))
     }
 
     @Test
@@ -388,6 +393,34 @@ class ChatStreamTranslatorTest {
     }
 
     @Test
+    fun `a final-only tool call alongside an echo of a streamed call is emitted, not dropped`() = runTest {
+        // Superset final message: t1 was streamed (its final echo must be SUPPRESSED) while t2
+        // appears ONLY in the consolidated final array (never streamed → must be EMITTED). A
+        // turn-global gap-fill flag dropped t2 while still reporting tool_use (review 2026-07-23).
+        val sink = Rec()
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"choices":[{"delta":{"tool_calls":[""" +
+                        """{"index":0,"id":"t1","function":{"name":"first","arguments":"{}"}}]}}]}""",
+                ),
+                ev(
+                    """{"choices":[{"message":{"role":"assistant","tool_calls":[""" +
+                        """{"id":"t1","type":"function","function":{"name":"first","arguments":"{}"}},""" +
+                        """{"id":"t2","type":"function","function":{"name":"second","arguments":"{\"x\":1}"}}""" +
+                        """]},"finish_reason":"tool_calls"}]}""",
+                ),
+            ).asFlow(),
+            sink,
+        )
+        assertTrue((outcome as TurnOutcome.Success).hasToolUse)
+        // t1 opened once (echo suppressed), t2 opened once (final-only, emitted) — neither dropped.
+        assertEquals(listOf("t1" to "first", "t2" to "second"), sink.toolOpens)
+        assertEquals(1, sink.calls.count { it == "openTool:first" })
+        assertEquals(1, sink.calls.count { it == "openTool:second" })
+    }
+
+    @Test
     fun `final-message name completes a nameless pending tool without duplicating args`() = runTest {
         // A backend streams the tool's arguments but never function.name on any delta, then supplies
         // the name only in the trailing consolidated message. The pending slot must adopt that name
@@ -434,5 +467,21 @@ class ChatStreamTranslatorTest {
         assertTrue(sink.calls.contains("text:Hello"))
         assertTrue(sink.calls.contains("text: world"))
         assertFalse(s.bodyText.contains("HelloHello"))
+    }
+
+    @Test
+    fun `finish_reason max_tokens marks the turn incomplete like the standard length`() = runTest {
+        // OpenAI standard is "length"; several OpenAI-compat vendors emit "max_tokens". Both must
+        // set incomplete so the Anthropic terminal is max_tokens, not a clean end_turn.
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"choices":[{"delta":{"content":"partial answer"}}]}"""),
+                ev("""{"choices":[{"delta":{},"finish_reason":"max_tokens"}]}"""),
+            ).asFlow(),
+            Rec(),
+        )
+        val s = outcome as TurnOutcome.Success
+        assertTrue(s.incomplete, "max_tokens must mark the turn incomplete")
+        assertFalse(s.hasToolUse)
     }
 }

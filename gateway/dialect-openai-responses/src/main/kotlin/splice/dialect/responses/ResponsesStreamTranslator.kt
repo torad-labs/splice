@@ -66,20 +66,49 @@ public data class StreamTurnContext(
     val collectReasoningEnvelopes: Boolean = false,
 )
 
-/** Drop paragraph-parts already streamed this turn (sequential_cutoff recap noise); parts under
- *  the min length always pass (plausibly genuine fragments). No-op unless the quirk is active. */
-private fun dedupSummaryParts(text: String, seen: MutableSet<String>, active: Boolean): String {
-    if (!active || text.isEmpty()) return text
-    return text.split(PART_SEPARATOR)
-        .filter { part -> part.length < SUMMARY_PART_DEDUP_MIN_CHARS || seen.add(part) }
-        .joinToString(PART_SEPARATOR)
-}
-
 private const val PART_SEPARATOR = "\n\n"
 
 // below this length an exact repeat is plausibly a genuine token fragment; whole summary parts
 // (titled sections) are far longer
 private const val SUMMARY_PART_DEDUP_MIN_CHARS = 20
+
+// Per-item recap cursor sentinel: the leading cross-item recap has ended for this item, so every
+// remaining part is genuinely new (only within-item exact repeats are still suppressed).
+private const val RECAP_DONE = -1
+
+// sequential_cutoff restatement dedup. This mode restates summary parts in TWO distinct ways, and
+// one structure conflating them is why this kept oscillating (revert/reapply/rescope):
+//   (A) CROSS-item recap — each NEW reasoning item replays every part emitted so far, IN ORDER, as
+//       a leading prefix, then appends its genuinely-new parts (probed 2026-07-19: part(1,0) ==
+//       part(0,0)). Suppressed by matching the leading run against the ordered emitted list via a
+//       per-item cursor.
+//   (B) WITHIN-item repeat — item.done can restate parts whose deltas then re-arrive, or vice versa
+//       (openai/codex#16801 ordering anomaly, live 2026-07-19). Suppressed by a per-item exact set.
+// A turn-global SET over-suppressed a paragraph two DISTINCT items coincidentally shared
+// (2026-07-20); a per-ITEM set alone under-suppressed the cross-item recap (the duplication
+// staircase). Splitting the two jobs keeps the coincidence (per-item, non-leading) while killing
+// the staircase (ordered leading prefix). State + decision live together here (2026-07-23).
+private class SummaryDedup(private val active: Boolean) {
+    private val emittedParts = mutableListOf<String>()
+    private val recapCursor = HashMap<Int, Int>()
+    private val itemEmitted = HashMap<Int, MutableSet<String>>()
+
+    /** True to SUPPRESS a recap/repeat part of item [oi]; a genuinely-new part returns false and is
+     *  recorded so later items' recaps (A) and this item's own re-arrivals (B) match. Parts under
+     *  the min length always pass and are never recorded (plausibly genuine token fragments). */
+    fun suppress(oi: Int, part: String): Boolean {
+        if (!active || part.length < SUMMARY_PART_DEDUP_MIN_CHARS) return false
+        val cursor = recapCursor.getOrDefault(oi, 0)
+        if (cursor in emittedParts.indices && emittedParts[cursor] == part) {
+            recapCursor[oi] = cursor + 1
+            return true
+        }
+        recapCursor[oi] = RECAP_DONE
+        val fresh = itemEmitted.getOrPut(oi) { HashSet() }.add(part)
+        if (fresh) emittedParts.add(part)
+        return !fresh
+    }
+}
 
 // Mutable per-block cursor. A data class here documents it as pure per-block state; it is only
 // ever stored/looked up by wire index, never compared by value.
@@ -215,11 +244,8 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     // earlier one, diverging wire from mirror (audit 2026-07-18); track per item instead.
     private val emittedReasoningKeys = HashSet<Int>()
 
-    // sequential_cutoff restatement dedup, PER reasoning item (keyed by output_index). A turn-global
-    // set silently dropped a genuine paragraph that two DISTINCT reasoning items happened to share
-    // byte-for-byte (2026-07-20) — restatements only recur WITHIN one item's summary stream, so the
-    // set is scoped there. Bounded by the item count per turn.
-    private val seenSummaryPartsByItem = HashMap<Int, MutableSet<String>>()
+    // sequential_cutoff restatement dedup — state + decision encapsulated in SummaryDedup (above).
+    private val summaryDedup = SummaryDedup(ctx.dedupeRepeatedSummaryParts)
 
     suspend fun onEvent(evt: JsonObject, sink: WireSink) {
         when (strOrEmpty(evt["type"])) {
@@ -327,13 +353,18 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
         if (raw.isEmpty() || streamedByDeltas) return
         if (!emittedReasoningKeys.add(reasoningKey(outputIndex))) return
         // sequential_cutoff recap arrives through THIS path too (completed items restate prior
-        // parts) — same seen-set as the delta path, at part granularity. MUST run AFTER every
-        // early-return above: the backend can deliver item.done BEFORE the item's remaining deltas
-        // (openai/codex#16801 ordering anomaly), and filtering first seeded the seen-set with parts
-        // whose deltas hadn't arrived — suppressing them both late (sawDelta return) and live
-        // (seen-set match): total summary starvation (found live 2026-07-19).
-        val seen = seenSummaryPartsByItem.getOrPut(outputIndex) { HashSet() }
-        val text = dedupSummaryParts(raw, seen, ctx.dedupeRepeatedSummaryParts)
+        // parts) — same ordered recap model as the delta path, at part granularity. MUST run AFTER
+        // every early-return above: the backend can deliver item.done BEFORE the item's remaining
+        // deltas (openai/codex#16801 ordering anomaly), and filtering first would record parts whose
+        // deltas hadn't arrived — suppressing them both late (sawDelta return) and live (recap
+        // match): total summary starvation (found live 2026-07-19).
+        // Late-path recap filter: drop the leading recap run + within-item repeats, keep the rest.
+        val text = if (ctx.dedupeRepeatedSummaryParts) {
+            raw.split(PART_SEPARATOR).filter { part -> !summaryDedup.suppress(outputIndex, part) }
+                .joinToString(PART_SEPARATOR)
+        } else {
+            raw
+        }
         if (text.isEmpty()) return
         appendLateReasoning(existing, outputIndex, text, sink)
     }
@@ -367,13 +398,9 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     private suspend fun onThinkingDelta(evt: JsonObject, sink: WireSink) {
         val delta = strOrEmpty(evt[DELTA])
         if (delta.isEmpty()) return
-        // sequential_cutoff restatement dedup: whole parts arrive as single deltas in this mode;
-        // an exact repeat of an already-streamed part (>= min length; shorter deltas are plausibly
-        // genuine token fragments) is upstream recap noise, not new thinking.
-        if (ctx.dedupeRepeatedSummaryParts && delta.length >= SUMMARY_PART_DEDUP_MIN_CHARS) {
-            val oi = intOr(evt[OUTPUT_INDEX]) ?: 0
-            if (!seenSummaryPartsByItem.getOrPut(oi) { HashSet() }.add(delta)) return
-        }
+        // sequential_cutoff: whole parts arrive as single deltas; drop a delta that is either the
+        // continuation of this item's leading cross-item recap or an exact within-item repeat.
+        if (summaryDedup.suppress(intOr(evt[OUTPUT_INDEX]) ?: 0, delta)) return
         val b = ensureThinkingBlock(evt, sink)
         b.sawDelta = true
         thinkingBuf.append(delta)

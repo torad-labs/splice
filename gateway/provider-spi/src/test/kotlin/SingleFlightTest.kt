@@ -3,9 +3,11 @@
 // refresh; and N followers coalesce onto ONE run (the re-election design regressed this to one run
 // per follower). UnconfinedTestDispatcher = eager execution so callers actually coalesce before the
 // gate opens.
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -132,5 +134,31 @@ class SingleFlightTest {
         assertEquals(1, sf.run { runs.incrementAndGet() }) // wave 1
         assertEquals(2, sf.run { runs.incrementAndGet() }) // wave 2 — fresh, not the cached 1
         assertEquals(2, runs.get())
+    }
+
+    @Test
+    fun `close cancels an in-flight refresh so a lifecycle owner can stop it`() = runTest(UnconfinedTestDispatcher()) {
+        // Distinct from a single caller's await cancellation: a LIFECYCLE owner (daemon stop) must
+        // be able to cancel the shared refresh so it cannot complete/persist after shutdown.
+        val sf = SingleFlight<Int>(UnconfinedTestDispatcher(testScheduler))
+        val started = CompletableDeferred<Unit>()
+        var blockCancelled = false
+        // A CancellationException in a child launch is that child's own cancellation and does not
+        // fail the parent, so join() returns normally once close() cancels the shared refresh.
+        val waiter = launch {
+            sf.run {
+                started.complete(Unit)
+                try {
+                    awaitCancellation()
+                } catch (e: CancellationException) {
+                    blockCancelled = true
+                    throw e
+                }
+            }
+        }
+        started.await()
+        sf.close()
+        waiter.join()
+        assertTrue(blockCancelled, "close() must cancel the in-flight refresh block")
     }
 }

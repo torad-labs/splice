@@ -235,6 +235,9 @@ public class Daemon(
             // (a head that assembles fine but fails to start); captured by reference, so this
             // reads live rather than a stale snapshot taken before startDaemonHeads runs.
             { failed.size },
+            // Configured total so readyHeads + failedHeads == heads holds even when a head fails to
+            // ASSEMBLE (it never enters `heads`) — review 2026-07-23.
+            topology.heads.size,
         )
         control = srv
         // Start heads BEFORE opening the control plane so a launch-shim that sees /health and

@@ -215,15 +215,20 @@ class ChatRequestBuilderTest {
     }
 
     @Test
-    fun `compact inherits session effort instead of pinning low`() {
-        // AGENTS cache law: compact mismatch on effort cold-starts the prompt cache.
+    fun `compact inherits session effort and strips tools plus tool_choice`() {
+        // AGENTS cache law: compact mismatch on effort cold-starts the prompt cache. Compact also
+        // strips tools — and with them tool_choice, else a tool_choice with no tools 400s strict
+        // vendors. Supplying real tools + tool_choice makes the stripping assertions bite.
         val compact = build(
             """{"model":"m","thinking":{"type":"enabled","budget_tokens":40000},
+                "tools":[{"name":"run","input_schema":{"type":"object"}}],
+                "tool_choice":{"type":"any"},
                 "messages":[{"role":"user","content":"summarize"}]}""",
             compact = true,
         )
         assertEquals("high", compact["reasoning_effort"]?.jsonPrimitive?.content)
         assertFalse(compact.containsKey("tools"))
+        assertFalse(compact.containsKey("tool_choice"))
     }
 
     @Test

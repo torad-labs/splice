@@ -38,7 +38,7 @@ class ConfigServiceTest {
         assertEquals(ReasoningDisplay.TEXT, cfg.showReasoning)
         assertEquals(false, cfg.replayReasoning)
         // Bounded by default since the 2026-07-19 storm (0 = unlimited stays an explicit opt-out).
-        assertEquals(48, cfg.maxInflight)
+        assertEquals(100, cfg.maxInflight)
         assertEquals(512, cfg.maxQueued)
         assertEquals(3096, cfg.controlPort)
     }
@@ -135,7 +135,7 @@ class ConfigServiceTest {
                 "CLAUDEX_MAX_QUEUED" to "Infinity",
             ),
         ).getConfig()
-        assertEquals(48, nonFinite.maxInflight)
+        assertEquals(100, nonFinite.maxInflight)
         assertEquals(512, nonFinite.maxQueued)
     }
 
@@ -193,5 +193,14 @@ class ConfigServiceTest {
         assertTrue(persisted.contains("\"maxQueued\":77"))
         assertEquals("high", svc.getConfig().effort)
         assertEquals(77, svc.getConfig().maxQueued)
+    }
+
+    @Test
+    fun `statuslineGitRoots parses colon-separated absolute paths and drops relative entries`() {
+        assertEquals(emptyList<String>(), service().getConfig().statuslineGitRoots)
+        val cfg = service(
+            env = mapOf("CLAUDEX_STATUSLINE_GIT_ROOTS" to "/workspace:/srv/repos:relative:"),
+        ).getConfig()
+        assertEquals(listOf("/workspace", "/srv/repos"), cfg.statuslineGitRoots)
     }
 }

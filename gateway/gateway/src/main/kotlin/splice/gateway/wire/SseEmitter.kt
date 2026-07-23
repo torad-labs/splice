@@ -21,7 +21,8 @@ import kotlinx.serialization.json.putJsonObject
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
-import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.CancellationException
+import java.util.concurrent.atomic.AtomicReference
 
 /** Builds the (non-standard) usage payload Claude Code reads from gateways — injected so the
  *  emitter stays hud-agnostic; the real builder lands with the usage port (P3-USE). */
@@ -45,8 +46,16 @@ public class SseEmitter internal constructor(
     private val messageId: String,
 ) : TurnTerminal {
 
+    // Sole-terminal state machine: OPEN → ENDING (claim) → ENDED (frames succeeded, or abandon).
+    // A cancellation landing between the claim and the last frame releases the claim back to OPEN
+    // so the cancellation seal's emitError can still seal honestly (a stranded ENDING was the
+    // truncated-200 hole, review 2026-07-22); an IOException — client gone — stays ENDED so a
+    // follow-up emitError cleanly no-ops instead of re-attempting a doomed write. One
+    // AtomicReference so an illegal ended-without-ending combination is unrepresentable.
+    private enum class SealState { OPEN, ENDING, ENDED }
+    private val seal = AtomicReference(SealState.OPEN)
+
     private var started = false
-    private val ended = AtomicBoolean(false)
     private var nextBlockIndex = 0
     private val open = LinkedHashSet<Int>()
 
@@ -54,7 +63,7 @@ public class SseEmitter internal constructor(
     private val frameBuf = StringBuilder(FRAME_BUF_CAPACITY)
 
     public val hasStarted: Boolean get() = started
-    public val hasEnded: Boolean get() = ended.get()
+    override val hasEnded: Boolean get() = seal.get() == SealState.ENDED
 
     private suspend fun frame(event: String, data: JsonObject) {
         frameBuf.setLength(0)
@@ -210,40 +219,66 @@ public class SseEmitter internal constructor(
 
     /** The ONLY clean ending — derives stop_reason internally (L3). */
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) {
-        if (!ended.compareAndSet(false, true)) return
-        ensureStart()
-        frame(
-            "message_delta",
-            buildJsonObject {
-                put(TYPE, "message_delta")
-                putJsonObject("delta") {
-                    put("stop_reason", deriveStopReason(hasToolUse, incomplete))
-                    put("stop_sequence", null as String?)
-                }
-                put("usage", usagePayload(usage))
-            },
-        )
-        frame("message_stop", buildJsonObject { put(TYPE, "message_stop") })
+        if (!seal.compareAndSet(SealState.OPEN, SealState.ENDING)) return
+        var cancelled = false
+        try {
+            ensureStart()
+            frame(
+                "message_delta",
+                buildJsonObject {
+                    put(TYPE, "message_delta")
+                    putJsonObject("delta") {
+                        put("stop_reason", deriveStopReason(hasToolUse, incomplete))
+                        put("stop_sequence", null as String?)
+                    }
+                    put("usage", usagePayload(usage))
+                },
+            )
+            frame("message_stop", buildJsonObject { put(TYPE, "message_stop") })
+        } catch (e: CancellationException) {
+            // Cancelled mid-frame — release so the cancellation seal's emitError
+            // (TurnDriver.driveSealingCancellation) can still seal honestly; a stranded ENDING
+            // was the truncated-200 hole (review 2026-07-22).
+            cancelled = true
+            seal.set(SealState.OPEN)
+            throw e
+        } finally {
+            // Frames delivered → sealed ENDED; frames FAILED (client gone, IOException) → still
+            // ENDED so a follow-up emitError cleanly no-ops. Only a cancellation releases instead.
+            if (!cancelled) seal.set(SealState.ENDED)
+        }
     }
 
     /** The ONLY failure ending — an SSE error event lets Claude Code retry honestly. */
     override suspend fun emitError(type: ErrorType, message: String) {
-        if (!ended.compareAndSet(false, true)) return
-        frame(
-            "error",
-            buildJsonObject {
-                put(TYPE, "error")
-                putJsonObject("error") {
-                    put(TYPE, type.wireName)
-                    put(MESSAGE, message)
-                }
-            },
-        )
+        if (!seal.compareAndSet(SealState.OPEN, SealState.ENDING)) return
+        var cancelled = false
+        try {
+            frame(
+                "error",
+                buildJsonObject {
+                    put(TYPE, "error")
+                    putJsonObject("error") {
+                        put(TYPE, type.wireName)
+                        put(MESSAGE, message)
+                    }
+                },
+            )
+        } catch (e: CancellationException) {
+            // Cancelled before the frame went out — release so a later seal can still retry.
+            cancelled = true
+            seal.set(SealState.OPEN)
+            throw e
+        } finally {
+            // Frame delivered → sealed; frame FAILED (client gone, IOException) → still sealed so
+            // retries don't double-end. Only a cancellation releases the claim instead.
+            if (!cancelled) seal.set(SealState.ENDED)
+        }
     }
 
     /** Client vanished mid-stream — nothing to emit, just seal the emitter. */
     override fun abandon() {
-        ended.set(true)
+        seal.set(SealState.ENDED)
     }
 
     public companion object {

@@ -40,6 +40,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.util.str
 import splice.core.wire.AnthropicMessage
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.ContentBlock
@@ -53,6 +54,7 @@ import splice.core.wire.ToolDefinition
 import splice.core.wire.ToolResultBlock
 import splice.core.wire.ToolUseBlock
 import splice.core.wire.UnknownBlock
+import splice.core.wire.openAiToolChoice
 import java.security.MessageDigest
 
 /** The finite quirk surface separating codex / xai / openai-platform on this dialect. */
@@ -156,7 +158,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         val req = buildRequestObject(body, opts, input, instructions, reasoning)
         // meta.summary reflects what was ACTUALLY sent (spark drops it → "none"), like Node's
         // `req.reasoning?.summary ?? 'none'` — not the computed-but-maybe-dropped value.
-        val sentSummary = (reasoning?.get(FIELD_SUMMARY) as? JsonPrimitive)?.content ?: "none"
+        val sentSummary = reasoning?.get(FIELD_SUMMARY).str() ?: "none"
 
         val meta = TurnMeta(
             compact = opts.compact,
@@ -238,21 +240,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
     private fun toolChoiceFor(emitToolChoice: Boolean, lite: Boolean, body: AnthropicRequest): JsonElement? = when {
         !emitToolChoice -> null
         lite -> JsonPrimitive("auto")
-        else -> toolChoice(body)
-    }
-
-    private fun toolChoice(body: AnthropicRequest): JsonElement {
-        val choice = body.toolChoice
-        return when {
-            choice == null || choice.type == "auto" -> JsonPrimitive("auto")
-            choice.type == "none" -> JsonPrimitive("none")
-            choice.type == "any" -> JsonPrimitive("required")
-            choice.type == "tool" && choice.name != null -> buildJsonObject {
-                put("type", FIELD_FUNCTION)
-                put(FIELD_FUNCTION, buildJsonObject { put("name", choice.name) })
-            }
-            else -> JsonPrimitive("auto")
-        }
+        else -> openAiToolChoice(body.toolChoice)
     }
 
     /** codex-rs parity: 5.6-family models get parallel_tool_calls=false whenever tools ride —
@@ -288,7 +276,9 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
 
     private fun cacheKey(body: AnthropicRequest, opts: BuildOptions): String? = when (quirks.cacheKeyStrategy) {
         CacheKeyStrategy.OFF -> null
-        CacheKeyStrategy.SESSION_ID -> opts.sessionId?.let { "claude-grok:$it" }
+        // Prefix from quirks.providerTag (not a hard-coded "claude-grok:") so TOML cache_key=session-id
+        // on any Responses provider stays in its own cache namespace.
+        CacheKeyStrategy.SESSION_ID -> opts.sessionId?.let { "${quirks.providerTag}:$it" }
         CacheKeyStrategy.FIRST_MESSAGE_HASH -> stablePromptCacheKey(body)
     }
 
@@ -320,7 +310,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         (raw["output_config"] as? JsonObject)?.get(FIELD_EFFORT),
         (raw["metadata"] as? JsonObject)?.get(FIELD_EFFORT),
         (raw[FIELD_REASONING] as? JsonObject)?.get(FIELD_EFFORT),
-    ).mapNotNull { (it as? JsonPrimitive)?.content }
+    ).mapNotNull { it.str() }
         .mapNotNull { normalizeEffort(it, quirks.effortLadder) }
         .firstOrNull()
 
@@ -334,7 +324,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
             (raw[FIELD_REASONING] as? JsonObject)?.get(FIELD_SUMMARY),
             raw["reasoning_summary"],
             (raw["output_config"] as? JsonObject)?.get("reasoning_summary"),
-        ).mapNotNull { (it as? JsonPrimitive)?.content }
+        ).mapNotNull { it.str() }
             .mapNotNull { normalizeSummary(it) }
             .firstOrNull()
         // v27 visibility fold (the header's "folds summary to detailed" clause — was unimplemented,

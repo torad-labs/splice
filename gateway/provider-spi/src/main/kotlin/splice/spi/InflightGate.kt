@@ -12,6 +12,7 @@ package splice.spi
 
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.suspendCancellableCoroutine
+import splice.core.util.MonoClock
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -21,7 +22,8 @@ import kotlin.coroutines.resumeWithException
 public class InflightGate(
     private val maxInflight: () -> Int,
     private val maxQueued: () -> Int = { 0 },
-    private val clock: () -> Long = System::currentTimeMillis,
+    // Default is monotonic — wall-clock jumps must not invent idle timeouts or freeze slots.
+    private val clock: () -> Long = MonoClock::nowMs,
 ) {
     private val lock = Any()
     private var inflight = 0
@@ -88,7 +90,9 @@ public class InflightGate(
             // flag then double-resumes the continuation ("Already resumed" ISE — caught by the
             // cancel-racing-admission hammer test on CI). Only the local flag is race-free.
             if (admittedNow) {
-                cont.resume(Unit)
+                // Same undelivered-handler as release(): a waiter cancelled between inflight++ and
+                // delivery must return the permit or the head permanently loses one capacity slot.
+                cont.resume(Unit) { _, _, _ -> release() }
                 return@suspendCancellableCoroutine
             }
             if (rejected) {

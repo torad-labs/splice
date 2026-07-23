@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import splice.gateway.head.RequestMaterializationGate
 
@@ -53,5 +54,31 @@ class RequestMaterializationGateTest {
         second.await()
 
         assertEquals(listOf("first-enter", "first-exit", "second-enter"), order)
+    }
+
+    @Test
+    fun `tryWithLease fast-fails on a held permit and runs once it is free`() = runTest(UnconfinedTestDispatcher()) {
+        // count_tokens contract (review 2026-07-22): on contention the caller 529s instead of
+        // queueing, so a slow-body flood cannot camp the permits real turns materialize through.
+        val gate = RequestMaterializationGate(maxConcurrent = 1)
+        val firstEntered = CompletableDeferred<Unit>()
+        val releaseFirst = CompletableDeferred<Unit>()
+
+        val holder = async {
+            gate.withLease {
+                firstEntered.complete(Unit)
+                releaseFirst.await()
+            }
+        }
+        firstEntered.await()
+
+        var ran = false
+        assertNull(gate.tryWithLease { ran = true }, "a held permit must fast-fail, not queue")
+        assertFalse(ran, "the contended block must never run")
+
+        releaseFirst.complete(Unit)
+        holder.await()
+
+        assertEquals("ok", gate.tryWithLease { "ok" })
     }
 }

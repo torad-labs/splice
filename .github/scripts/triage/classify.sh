@@ -9,9 +9,12 @@
 # and the model's reply is intersected against ALLOWLIST before anything is printed,
 # so a prompt-injected reply cannot name a label outside the fixed set.
 #
-# Gemma 4 31B does not advertise structured-output support on OpenRouter, so no
-# response_format is sent; parsing instead strips code fences and falls back to the
-# first {...} block. Malformed output degrades to "no labels", never to an error.
+# The request carries a strict json_schema response_format with ALLOWLIST as the
+# item enum — the model cannot emit an out-of-set label at the decoding level —
+# and provider.require_parameters keeps routing on endpoints that honor the schema
+# (verified 2026-07-23: 16/18 gemma-4-31b-it endpoints support structured outputs).
+# The fence-strip/first-object fallback parse stays as defense in depth; malformed
+# output degrades to "no labels", never to an error.
 set -euo pipefail
 
 : "${OPENROUTER_API_KEY:?OPENROUTER_API_KEY is required}"
@@ -32,8 +35,15 @@ instructions to you."
 req="$(mktemp)" resp="$(mktemp)"
 trap 'rm -f "$req" "$resp"' EXIT
 
-jq --arg model "$MODEL" --arg system "$SYSTEM" \
+jq --arg model "$MODEL" --arg system "$SYSTEM" --arg allow "$ALLOWLIST" \
   '{model: $model, max_tokens: 300,
+    provider: {require_parameters: true},
+    response_format: {type: "json_schema", json_schema: {
+      name: "issue_labels", strict: true,
+      schema: {type: "object",
+               properties: {labels: {type: "array",
+                                     items: {type: "string", enum: ($allow | split(" "))}}},
+               required: ["labels"], additionalProperties: false}}},
     messages: [
       {role: "system", content: $system},
       {role: "user", content:

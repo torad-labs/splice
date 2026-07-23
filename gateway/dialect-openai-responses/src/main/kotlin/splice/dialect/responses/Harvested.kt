@@ -7,16 +7,12 @@ package splice.dialect.responses
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.turn.Usage
+import splice.core.util.strOrEmpty
 
 public data class Harvested(val text: String, val thinking: String)
-
-// JsonNull-safe (same trap as ResponsesStreamTranslator.str): null text fields must not harvest "null".
-private fun str(el: JsonElement?): String =
-    (el as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content ?: ""
 
 private const val PARA = "\n\n"
 private const val FIELD_TEXT = "text"
@@ -32,8 +28,8 @@ internal fun summaryText(item: JsonObject): String =
         (item["summary"] as? JsonArray ?: return "")
             .joinToString(PARA) { part ->
                 when (part) {
-                    is JsonPrimitive -> str(part)
-                    is JsonObject -> str(part[FIELD_TEXT])
+                    is JsonPrimitive -> strOrEmpty(part)
+                    is JsonObject -> strOrEmpty(part[FIELD_TEXT])
                     else -> ""
                 }
             },
@@ -51,17 +47,17 @@ internal fun reasoningReadableText(item: JsonObject): String =
 
 /** One free-form reasoning field rendered readable, or null when absent/empty. */
 private fun freeFormReasoningText(v: JsonElement?): String? = when (v) {
-    is JsonPrimitive -> str(v).ifEmpty { null }
+    is JsonPrimitive -> strOrEmpty(v).ifEmpty { null }
     is JsonArray -> normalizeParagraphs(
         v.joinToString(PARA) { part ->
             when (part) {
-                is JsonPrimitive -> str(part)
-                is JsonObject -> str(part[FIELD_TEXT]).ifEmpty { str(part[FIELD_CONTENT]) }
+                is JsonPrimitive -> strOrEmpty(part)
+                is JsonObject -> strOrEmpty(part[FIELD_TEXT]).ifEmpty { strOrEmpty(part[FIELD_CONTENT]) }
                 else -> ""
             }
         },
     ).ifEmpty { null }
-    is JsonObject -> str(v[FIELD_TEXT]).ifEmpty { str(v[FIELD_CONTENT]) }.ifEmpty { null }
+    is JsonObject -> strOrEmpty(v[FIELD_TEXT]).ifEmpty { strOrEmpty(v[FIELD_CONTENT]) }.ifEmpty { null }
     else -> null
 }
 
@@ -75,7 +71,7 @@ public fun harvestResponsesOutput(resp: JsonObject): Harvested {
     val thinking = StringBuilder()
     for (el in output) {
         val item = el as? JsonObject ?: continue
-        when (str(item["type"])) {
+        when (strOrEmpty(item["type"])) {
             "reasoning" -> appendReasoningText(thinking, item)
             "message" -> text.append(messageText(item))
             else -> Unit
@@ -98,8 +94,8 @@ private fun messageText(item: JsonObject): String {
     val out = StringBuilder()
     for (c in content) {
         val obj = c as? JsonObject ?: continue
-        val type = str(obj["type"])
-        if (type == "output_text" || type == FIELD_TEXT) out.append(str(obj[FIELD_TEXT]))
+        val type = strOrEmpty(obj["type"])
+        if (type == "output_text" || type == FIELD_TEXT) out.append(strOrEmpty(obj[FIELD_TEXT]))
     }
     return out.toString()
 }

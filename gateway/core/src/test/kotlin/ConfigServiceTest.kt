@@ -194,4 +194,13 @@ class ConfigServiceTest {
         assertEquals("high", svc.getConfig().effort)
         assertEquals(77, svc.getConfig().maxQueued)
     }
+
+    @Test
+    fun `statuslineGitRoots parses colon-separated absolute paths and drops relative entries`() {
+        assertEquals(emptyList<String>(), service().getConfig().statuslineGitRoots)
+        val cfg = service(
+            env = mapOf("CLAUDEX_STATUSLINE_GIT_ROOTS" to "/workspace:/srv/repos:relative:"),
+        ).getConfig()
+        assertEquals(listOf("/workspace", "/srv/repos"), cfg.statuslineGitRoots)
+    }
 }

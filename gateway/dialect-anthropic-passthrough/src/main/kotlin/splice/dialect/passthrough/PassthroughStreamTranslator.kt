@@ -16,17 +16,18 @@ package splice.dialect.passthrough
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.SerializationException
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.util.strOrEmpty
 import splice.spi.StreamTranslator
+import splice.spi.TerminalStates
 import splice.spi.WatchdogFired
 import splice.spi.WireSink
+import splice.spi.terminalPrecedence
 import java.io.IOException
 import java.util.concurrent.CancellationException
 
@@ -76,21 +77,21 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
         return terminalOutcome()
     }
 
-    // A FINISHED turn wins over a late watchdog fire (Chat/Responses parity): the poller watches
-    // the whole coroutine, which can sit on the socket-EOF read AFTER message_stop already arrived.
-    // Preferring watchdog here discarded successful kimi turns and burned quota on retries.
-    private fun terminalOutcome(): TurnOutcome =
-        failureType?.let {
-            // a genuine upstream SSE error event (e.g. overloaded_error) — provider-reported (G20)
-            TurnOutcome.Failure(it, "kimi: $failureMessage", providerReported = true)
-        }
-            ?: if (finished) {
-                successOutcome()
-            } else {
-                ctx.watchdogFired()?.let {
-                    TurnOutcome.Failure(ErrorType.OVERLOADED, "kimi: upstream stalled — aborted; retry")
-                } ?: unfinishedOutcome()
-            }
+    // Ordering enforced by the shared spi.terminalPrecedence (a FINISHED turn beats a late
+    // watchdog fire — preferring watchdog here discarded successful kimi turns and burned quota).
+    private fun terminalOutcome(): TurnOutcome = terminalPrecedence(
+        TerminalStates(
+            providerFailure = failureType?.let {
+                // a genuine upstream SSE error event (e.g. overloaded_error) — provider-reported (G20)
+                TurnOutcome.Failure(it, "kimi: $failureMessage", providerReported = true)
+            },
+            finished = finished,
+            watchdogFired = ctx.watchdogFired(),
+        ),
+        onFinished = ::successOutcome,
+        onWatchdog = { TurnOutcome.Failure(ErrorType.OVERLOADED, "kimi: upstream stalled — aborted; retry") },
+        onUnfinished = ::unfinishedOutcome,
+    )
 
     private fun unfinishedOutcome(): TurnOutcome =
         if (ctx.clientGone()) {
@@ -118,7 +119,7 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
     )
 
     private suspend fun onEvent(evt: JsonObject, sink: WireSink) {
-        when (str(evt["type"])) {
+        when (strOrEmpty(evt["type"])) {
             "message_start" -> harvestUsage((evt["message"] as? JsonObject)?.get("usage") as? JsonObject)
             "content_block_start" -> onBlockStart(evt, sink)
             "content_block_delta" -> onBlockDelta(evt, sink)
@@ -135,13 +136,15 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
     private suspend fun onBlockStart(evt: JsonObject, sink: WireSink) {
         val index = intIndex(evt) ?: return
         val cb = evt["content_block"] as? JsonObject
-        blocks[index] = when (str(cb?.get("type"))) {
+        blocks[index] = when (strOrEmpty(cb?.get("type"))) {
             "text" -> Block(Kind.TEXT, sink.openText())
             "thinking" -> Block(Kind.THINKING, sink.openThinking())
             "tool_use" -> {
-                // Pass Kimi's tool id VERBATIM: it round-trips back to Kimi on the next turn.
+                // Pass Kimi's tool id VERBATIM: it round-trips back to Kimi on the next turn — a
+                // JsonNull id must never leak as the literal string "null" into that round-trip (L3);
+                // strOrEmpty keeps it filtered (review 2026-07-22 round 3).
                 hasToolUse = true
-                Block(Kind.TOOL, sink.openTool(str(cb?.get("id")), str(cb?.get("name"))))
+                Block(Kind.TOOL, sink.openTool(strOrEmpty(cb?.get("id")), strOrEmpty(cb?.get("name"))))
             }
             // server_tool_use / web_search_tool_result / unknown: record + swallow its deltas.
             else -> Block(Kind.IGNORED, null)
@@ -157,21 +160,21 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
     }
 
     private suspend fun applyDelta(block: Block, wire: WireBlockIndex, delta: JsonObject, sink: WireSink) {
-        when (str(delta["type"])) {
+        when (strOrEmpty(delta["type"])) {
             "text_delta" -> {
-                val t = str(delta["text"])
+                val t = strOrEmpty(delta["text"])
                 textBuf.append(t)
                 emittedText = true
                 sink.textDelta(wire, t)
             }
             "thinking_delta" -> {
-                val t = str(delta["thinking"])
+                val t = strOrEmpty(delta["thinking"])
                 thinkingBuf.append(t)
                 sink.thinkingDelta(wire, t)
             }
-            "input_json_delta" -> sink.inputJsonDelta(wire, str(delta["partial_json"]))
+            "input_json_delta" -> sink.inputJsonDelta(wire, strOrEmpty(delta["partial_json"]))
             "signature_delta" -> {
-                sink.signatureDelta(wire, str(delta["signature"]))
+                sink.signatureDelta(wire, strOrEmpty(delta["signature"]))
                 block.signatureSeen = true
             }
             else -> Unit
@@ -190,7 +193,7 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
     }
 
     private fun onMessageDelta(evt: JsonObject) {
-        val reason = str((evt["delta"] as? JsonObject)?.get("stop_reason"))
+        val reason = strOrEmpty((evt["delta"] as? JsonObject)?.get("stop_reason"))
         when (reason) {
             "tool_use" -> hasToolUse = true
             "max_tokens" -> incomplete = true
@@ -201,14 +204,14 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
 
     private fun onError(evt: JsonObject) {
         val err = evt["error"] as? JsonObject
-        failureType = when (str(err?.get("type"))) {
+        failureType = when (strOrEmpty(err?.get("type"))) {
             "overloaded_error" -> ErrorType.OVERLOADED
             "rate_limit_error" -> ErrorType.RATE_LIMIT
             "authentication_error" -> ErrorType.AUTHENTICATION
             "invalid_request_error" -> ErrorType.INVALID_REQUEST
             else -> ErrorType.API_ERROR
         }
-        failureMessage = str(err?.get("message")).ifEmpty { "error" }
+        failureMessage = strOrEmpty(err?.get("message")).ifEmpty { "error" }
     }
 
     private fun harvestUsage(u: JsonObject?) {
@@ -222,11 +225,6 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
     private fun intIndex(evt: JsonObject): Int? = (evt["index"] as? JsonPrimitive)?.content?.toIntOrNull()
 
     private fun num(obj: JsonObject, key: String): Long? = (obj[key] as? JsonPrimitive)?.content?.toLongOrNull()
-
-    // JsonNull IS a JsonPrimitive whose `.content` is "null"; treat an explicit null as absent so it
-    // never leaks into text/ids and a null field cannot masquerade as a real value (L3).
-    private fun str(element: JsonElement?): String =
-        (element as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content ?: ""
 
     private companion object {
         // Short stable constant — Kimi never verifies signatures; Claude Code only needs one present.

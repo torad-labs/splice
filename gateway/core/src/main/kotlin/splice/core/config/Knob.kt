@@ -226,6 +226,17 @@ public enum class Knob(
         0L,
         restartRequired = true,
     ),
+
+    // Extra trusted roots (colon-separated absolute paths) for the statusline git-branch lookup.
+    // Default empty: only $HOME and /tmp are trusted, so repos elsewhere (devcontainer /workspace,
+    // /srv layouts) show no branch segment — unauthenticated /statusline must never exec
+    // `git -C` against an untrusted path (review 2026-07-22).
+    STATUSLINE_GIT_ROOTS(
+        "statuslineGitRoots",
+        KnobKind.STRING,
+        listOf("CLAUDEX_STATUSLINE_GIT_ROOTS"),
+        "",
+    ),
     ;
 
     public companion object {

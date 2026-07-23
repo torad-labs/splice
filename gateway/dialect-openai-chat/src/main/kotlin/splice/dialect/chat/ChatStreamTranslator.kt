@@ -10,17 +10,18 @@ package splice.dialect.chat
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.util.strOrEmpty
 import splice.spi.StreamTranslator
+import splice.spi.TerminalStates
 import splice.spi.WatchdogFired
 import splice.spi.WireSink
+import splice.spi.terminalPrecedence
 import java.io.IOException
 import java.util.concurrent.CancellationException
 
@@ -53,6 +54,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     // parallel call into one corrupted block (ids/names dropped, arguments concatenated).
     private var nextSynthToolIndex = SYNTH_INDEX_BASE
     private val toolIndexById = HashMap<String, Int>()
+
     // Deferred opens: backends often emit index+id first and function.name on a later delta.
     // Opening with name="" freezes an empty tool_use on the Anthropic wire — buffer until name
     // arrives (or finish_reason forces a flush).
@@ -82,35 +84,42 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         return terminalOutcome()
     }
 
-    // A FINISHED turn wins over a late watchdog fire (same rule the Responses translator pins:
-    // the poller watches the whole coroutine, which can sit on the socket-EOF read AFTER
-    // finish_reason already arrived — discarding a delivered turn retries a successful
-    // generation, the exact quota waste the watchdog exists to prevent).
-    private fun terminalOutcome(): TurnOutcome = when {
-        failure != null ->
-            TurnOutcome.Failure(ErrorType.API_ERROR, "chat backend: $failure", providerReported = true)
-        // finish_reason=content_filter is a CENSORED turn — a clean end_turn would let a blocked
-        // generation masquerade as complete (honesty invariant). Retry an api_error honestly.
-        contentFiltered -> TurnOutcome.Failure(
-            ErrorType.API_ERROR,
-            "chat backend: generation stopped by content filter",
-            providerReported = true, // finish_reason the backend sent, not a local verdict (G20)
-        )
-        finished -> successOutcome()
-        ctx.watchdogFired() != null ->
-            TurnOutcome.Failure(ErrorType.OVERLOADED, "chat: upstream stalled — aborted; retry")
-        else -> unfinishedOutcome()
-    }
-
-    private fun unfinishedOutcome(): TurnOutcome =
-        if (ctx.clientGone()) {
-            TurnOutcome.ClientAbandoned
-        } else {
-            TurnOutcome.Failure(
-                ErrorType.OVERLOADED,
-                "chat: stream ended without a finish_reason (truncated); retry",
+    // Ordering enforced by the shared spi.terminalPrecedence (a FINISHED turn beats a late
+    // watchdog fire — the poller can sit on the socket-EOF read AFTER finish_reason arrived).
+    private fun terminalOutcome(): TurnOutcome {
+        val providerFailure = when {
+            failure != null ->
+                TurnOutcome.Failure(ErrorType.API_ERROR, "chat backend: $failure", providerReported = true)
+            // finish_reason=content_filter is a CENSORED turn — a clean end_turn would let a
+            // blocked generation masquerade as complete (honesty invariant); it outranks
+            // `finished` (the same frame sets both). Retry an api_error honestly.
+            contentFiltered -> TurnOutcome.Failure(
+                ErrorType.API_ERROR,
+                "chat backend: generation stopped by content filter",
+                providerReported = true, // finish_reason the backend sent, not a local verdict (G20)
             )
+            else -> null
         }
+        return terminalPrecedence(
+            TerminalStates(
+                providerFailure = providerFailure,
+                finished = finished,
+                watchdogFired = ctx.watchdogFired(),
+            ),
+            onFinished = ::successOutcome,
+            onWatchdog = { TurnOutcome.Failure(ErrorType.OVERLOADED, "chat: upstream stalled — aborted; retry") },
+            onUnfinished = {
+                if (ctx.clientGone()) {
+                    TurnOutcome.ClientAbandoned
+                } else {
+                    TurnOutcome.Failure(
+                        ErrorType.OVERLOADED,
+                        "chat: stream ended without a finish_reason (truncated); retry",
+                    )
+                }
+            },
+        )
+    }
 
     private fun successOutcome(): TurnOutcome = TurnOutcome.Success(
         hasToolUse = hasToolUse,
@@ -123,7 +132,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
 
     private suspend fun onEvent(evt: JsonObject, sink: WireSink) {
         (evt["error"] as? JsonObject)?.let {
-            failure = str(it["message"]).ifEmpty { "error" }
+            failure = strOrEmpty(it["message"]).ifEmpty { "error" }
             return
         }
         usage(evt)
@@ -131,38 +140,68 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         (choice["delta"] as? JsonObject)?.let { applyDelta(it, sink) }
         // Non-stream / final-message shape: reasoning lands on `message` instead of `delta`.
         (choice["message"] as? JsonObject)?.let { applyFinalMessage(it, sink) }
-        str(choice["finish_reason"]).takeIf { it.isNotEmpty() }?.let { onFinish(it) }
+        // A null finish_reason would trip `finished` and let a truncated stream masquerade as a
+        // clean end (L3) — strOrEmpty (core JsonScalars) filters the JsonNull first (review 2026-07-22 round 3).
+        strOrEmpty(choice["finish_reason"]).takeIf { it.isNotEmpty() }?.let { onFinish(it) }
     }
 
     /** The final-message fold: only fills channels the streamed deltas left empty/unseen. */
     private suspend fun applyFinalMessage(msg: JsonObject, sink: WireSink) {
+        foldFinalProse(msg, sink)
+        foldFinalToolCalls(msg, sink)
+    }
+
+    /** The reasoning + text halves of the final-message fold, both prefix-aware via
+     *  [unseenSuffix] (extracted so applyFinalMessage stays under the complexity gate). */
+    private suspend fun foldFinalProse(msg: JsonObject, sink: WireSink) {
         reasoningDeltaText(msg)?.let { r ->
-            // Prefix-aware: if we already streamed a prefix of the final payload, only emit the
-            // suffix (substring contains() would append "Hello world" onto "Hello" → "HelloHello world").
-            val already = thinkingBuf.toString()
-            val toEmit = when {
-                already.isEmpty() -> r
-                r.startsWith(already) -> r.substring(already.length)
-                already.contains(r) -> ""
-                else -> r
-            }
+            val toEmit = unseenSuffix(thinkingBuf.toString(), r)
             if (toEmit.isNotEmpty()) {
                 val idx = thinkingBlock ?: sink.openThinking().also { thinkingBlock = it }
                 thinkingBuf.append(toEmit)
                 sink.thinkingDelta(idx, toEmit)
             }
         }
-        str(msg["content"]).takeIf { it.isNotEmpty() }?.let { c ->
-            if (textBuf.isEmpty()) {
+        strOrEmpty(msg["content"]).takeIf { it.isNotEmpty() }?.let { c ->
+            val toEmit = unseenSuffix(textBuf.toString(), c)
+            if (toEmit.isNotEmpty()) {
                 val idx = textBlock ?: sink.openText().also { textBlock = it }
                 emittedText = true
-                textBuf.append(c)
-                sink.textDelta(idx, c)
+                textBuf.append(toEmit)
+                sink.textDelta(idx, toEmit)
             }
         }
-        // Non-stream / final-message shape: tool_calls land on `message`, not `delta`.
-        (msg["tool_calls"] as? JsonArray)?.forEach { tc ->
-            applyToolCall(tc as? JsonObject ?: return@forEach, sink)
+    }
+
+    // Non-stream / final-message shape: tool_calls land on `message`, not `delta`. Two paths.
+    // GAP-FILL — the deltas carried NO tool activity (both maps empty), so the final message IS
+    // the calls: apply every entry. MERGE — the deltas already opened or buffered tools, so the
+    // final tool_calls are an echo. Echo-suppression is ABSOLUTE for OPEN blocks: re-applying
+    // would append the full arguments onto an open block, or mint a SECOND tool_use for the same
+    // id (final-shape calls carry no `index`, and the explicit-index delta path never records
+    // id→index, so resolveToolIndex cannot map an echo back to its streamed slot). A PENDING slot
+    // buffered from deltas that never carried function.name is the exception: adopt the name the
+    // echo supplies, matched by id — else flushPendingTools opens it under the "tool" fallback
+    // name. Merge names into pending only; never append the echo's arguments, the deltas already
+    // buffered them (review 2026-07-22 round 3).
+    private suspend fun foldFinalToolCalls(msg: JsonObject, sink: WireSink) {
+        val calls = msg["tool_calls"] as? JsonArray ?: return
+        val gapFill = toolBlocks.isEmpty() && pendingTools.isEmpty()
+        calls.forEach { tc ->
+            val obj = tc as? JsonObject ?: return@forEach
+            if (gapFill) {
+                applyToolCall(obj, sink)
+                return@forEach
+            }
+            val fn = obj["function"] as? JsonObject
+            val name = strOrEmpty(fn?.get("name"))
+            if (name.isEmpty()) return@forEach
+            val id = strOrEmpty(obj["id"])
+            val entry = pendingTools.entries.firstOrNull { it.value.id == id } ?: return@forEach
+            if (entry.value.name.isEmpty()) {
+                entry.value.name = name
+                openPendingTool(entry.key, entry.value, sink)
+            }
         }
     }
 
@@ -174,7 +213,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
             thinkingBuf.append(r)
             sink.thinkingDelta(idx, r)
         }
-        str(delta["content"]).takeIf { it.isNotEmpty() }?.let { c ->
+        strOrEmpty(delta["content"]).takeIf { it.isNotEmpty() }?.let { c ->
             val idx = textBlock ?: sink.openText().also { textBlock = it }
             emittedText = true
             textBuf.append(c)
@@ -186,7 +225,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     /** First non-empty cleartext reasoning field on a chat delta/message. */
     private fun reasoningDeltaText(obj: JsonObject): String? {
         for (key in REASONING_KEYS) {
-            val v = str(obj[key])
+            val v = strOrEmpty(obj[key])
             if (v.isNotEmpty()) return v
         }
         return null
@@ -195,9 +234,9 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     private suspend fun applyToolCall(tc: JsonObject, sink: WireSink) {
         val index = resolveToolIndex(tc)
         val fn = tc["function"] as? JsonObject
-        val name = str(fn?.get("name"))
-        val idChunk = str(tc["id"])
-        val args = str(fn?.get("arguments"))
+        val name = strOrEmpty(fn?.get("name"))
+        val idChunk = strOrEmpty(tc["id"])
+        val args = strOrEmpty(fn?.get("arguments"))
         val opened = toolBlocks[index]
         if (opened != null) {
             if (args.isNotEmpty()) sink.inputJsonDelta(opened, args)
@@ -214,8 +253,10 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         }
     }
 
+    // Callers guarantee toolBlocks[index] is absent: applyToolCall early-returns on an open block
+    // with no suspension before calling here, and flushPendingTools only iterates keys still in
+    // pendingTools (removed below in the same uninterruptible span that fills toolBlocks).
     private suspend fun openPendingTool(index: Int, pending: PendingTool, sink: WireSink) {
-        if (toolBlocks.containsKey(index)) return
         val opened = sink.openTool(pending.id, pending.name.ifEmpty { "tool" })
         toolBlocks[index] = opened
         hasToolUse = true
@@ -235,7 +276,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
      *  slot, and an id-less index-less call gets a fresh slot per event (complete-call shape). */
     private fun resolveToolIndex(tc: JsonObject): Int {
         (tc["index"] as? JsonPrimitive)?.content?.toIntOrNull()?.let { return it }
-        val id = str(tc["id"])
+        val id = strOrEmpty(tc["id"])
         if (id.isEmpty()) return nextSynthToolIndex++
         return toolIndexById.getOrPut(id) { nextSynthToolIndex++ }
     }
@@ -253,6 +294,8 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
 
     private fun usage(evt: JsonObject) {
         val u = evt["usage"] as? JsonObject ?: return
+        fun num(obj: JsonObject, vararg keys: String): Long =
+            keys.firstNotNullOfOrNull { (obj[it] as? JsonPrimitive)?.content?.toLongOrNull() } ?: 0L
         (u["prompt_tokens"] as? JsonPrimitive)?.content?.toLongOrNull()?.let { inputTokens = it }
         (u["completion_tokens"] as? JsonPrimitive)?.content?.toLongOrNull()?.let { outputTokens = it }
         // Prompt-cache read tokens — surfaced so the HUD/cache-log see a real hit rate. Details
@@ -265,20 +308,21 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         if (cached > 0) cachedTokens = cached
     }
 
-    private fun num(obj: JsonObject, vararg keys: String): Long =
-        keys.firstNotNullOfOrNull { (obj[it] as? JsonPrimitive)?.content?.toLongOrNull() } ?: 0L
-
-    // JsonNull IS a JsonPrimitive and its `.content` is the 4-char string "null"; treat an explicit
-    // JSON null (which every OpenAI-compatible vendor sends for finish_reason/content/id on
-    // non-final chunks) as absent — else "null" leaks into text/reasoning/ids and, worst, a null
-    // finish_reason would trip `finished` and let a truncated stream masquerade as a clean end (L3).
-    private fun str(el: JsonElement?): String =
-        (el as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content ?: ""
-
     private companion object {
         val REASONING_KEYS = listOf("reasoning_content", "reasoning", "thinking", "reasoning_text")
 
         // Synthesized tool slots live far above any real streamed index (OpenAI streams 0..n).
         const val SYNTH_INDEX_BASE = 1_000_000
     }
+}
+
+/** Prefix-aware fold shared by the reasoning and text final-message channels: emit only what the
+ *  streamed deltas haven't already carried ("Hello" streamed + "Hello world" final → " world";
+ *  full duplicate → nothing; disjoint payload → all of it). A plain contains() check appended
+ *  "Hello world" onto "Hello" → "HelloHello world". */
+private fun unseenSuffix(already: String, final: String): String = when {
+    already.isEmpty() -> final
+    final.startsWith(already) -> final.substring(already.length)
+    already.contains(final) -> ""
+    else -> final
 }

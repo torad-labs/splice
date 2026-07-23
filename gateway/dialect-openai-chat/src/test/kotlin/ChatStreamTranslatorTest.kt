@@ -360,4 +360,79 @@ class ChatStreamTranslatorTest {
         assertEquals(listOf("call_a" to "fn_a", "call_b" to "fn_b"), sink.toolOpens)
         assertEquals(listOf("json:{\"x\":1}", "json:{\"y\":2}"), sink.calls.filter { it.startsWith("json:") })
     }
+
+    @Test
+    fun `streamed tool_calls are not re-applied from a trailing final-message echo`() = runTest {
+        // OpenRouter/vLLM-style mixed stream: deltas carry the call (explicit index), then a
+        // message-shaped frame echoes the consolidated tool_calls (id, no index). The echo must
+        // be a no-op — re-applying it appended the args again onto the open block, or minted a
+        // SECOND tool_use for the same id via a fresh synth slot (review 2026-07-22).
+        val sink = Rec()
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"choices":[{"delta":{"tool_calls":[""" +
+                        """{"index":0,"id":"t1","function":{"name":"run","arguments":"{\"x\":1}"}}]}}]}""",
+                ),
+                ev(
+                    """{"choices":[{"message":{"role":"assistant","tool_calls":[""" +
+                        """{"id":"t1","type":"function","function":{"name":"run","arguments":"{\"x\":1}"}}""" +
+                        """]},"finish_reason":"tool_calls"}]}""",
+                ),
+            ).asFlow(),
+            sink,
+        )
+        assertTrue((outcome as TurnOutcome.Success).hasToolUse)
+        assertEquals(listOf("t1" to "run"), sink.toolOpens)
+        assertEquals(listOf("openTool:run", "json:{\"x\":1}", "closeAll"), sink.calls)
+    }
+
+    @Test
+    fun `final-message name completes a nameless pending tool without duplicating args`() = runTest {
+        // A backend streams the tool's arguments but never function.name on any delta, then supplies
+        // the name only in the trailing consolidated message. The pending slot must adopt that name
+        // (not flush under the "tool" fallback), and the echo's arguments must NOT be appended a
+        // second time onto the buffered slot (review 2026-07-22 round 3).
+        val sink = Rec()
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"choices":[{"delta":{"tool_calls":[""" +
+                        """{"index":0,"id":"t1","function":{"arguments":"{\"x\":1}"}}]}}]}""",
+                ),
+                ev(
+                    """{"choices":[{"message":{"role":"assistant","tool_calls":[""" +
+                        """{"id":"t1","type":"function","function":{"name":"run","arguments":"{\"x\":1}"}}""" +
+                        """]},"finish_reason":"tool_calls"}]}""",
+                ),
+            ).asFlow(),
+            sink,
+        )
+        assertTrue((outcome as TurnOutcome.Success).hasToolUse)
+        assertEquals(listOf("t1" to "run"), sink.toolOpens)
+        assertEquals(1, sink.calls.count { it == "openTool:run" })
+        assertEquals(listOf("json:{\"x\":1}"), sink.calls.filter { it.startsWith("json:") })
+    }
+
+    @Test
+    fun `final-message content extends a streamed prefix without duplicating or dropping the tail`() = runTest {
+        // Sibling of the reasoning prefix-fold: streamed "Hello", final message completes to
+        // "Hello world" — the old isEmpty() guard dropped " world" entirely.
+        val sink = Rec()
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"choices":[{"delta":{"content":"Hello"}}]}"""),
+                ev(
+                    """{"choices":[{"message":{"role":"assistant","content":"Hello world"},""" +
+                        """"finish_reason":"stop"}]}""",
+                ),
+            ).asFlow(),
+            sink,
+        )
+        val s = outcome as TurnOutcome.Success
+        assertEquals("Hello world", s.bodyText)
+        assertTrue(sink.calls.contains("text:Hello"))
+        assertTrue(sink.calls.contains("text: world"))
+        assertFalse(s.bodyText.contains("HelloHello"))
+    }
 }

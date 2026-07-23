@@ -7,7 +7,6 @@ package splice.dialect.chat
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonArrayBuilder
-import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.JsonPrimitive
@@ -23,9 +22,9 @@ import splice.core.wire.DocumentBlock
 import splice.core.wire.ImageBlock
 import splice.core.wire.MediaSource
 import splice.core.wire.TextBlock
-import splice.core.wire.ToolChoice
 import splice.core.wire.ToolResultBlock
 import splice.core.wire.ToolUseBlock
+import splice.core.wire.openAiToolChoice
 
 public data class ChatQuirks(
     val providerTag: String,
@@ -69,7 +68,7 @@ public class ChatRequestBuilder(
             body.messages.forEach { msg -> appendMessage(this, msg.role, msg.content) }
         }
         val emitTools = quirks.supportsTools && !compact && body.tools.isNotEmpty()
-        val effort = chatReasoningEffort(body, compact)
+        val effort = chatReasoningEffort(body)
         // TIER-1 (#924): the request is a CLOSED ChatRequest DTO (see chatRequestObject) — a knob
         // that doesn't belong can't be added without a field.
         val cacheKey = quirks.sessionCacheKeyPrefix?.let { prefix -> sessionId?.let { "$prefix:$it" } }
@@ -107,7 +106,7 @@ public class ChatRequestBuilder(
             messages = messages,
             stream = true,
             tools = if (emitTools) toolsArray(body) else null,
-            toolChoice = if (emitTools) chatToolChoice(body.toolChoice) else null,
+            toolChoice = if (emitTools) openAiToolChoice(body.toolChoice) else null,
             reasoningEffort = if (quirks.emitReasoningEffort) effort else null,
             reasoning = if (quirks.emitReasoningEffort && effort != null) {
                 buildJsonObject { put("effort", effort) }
@@ -318,11 +317,11 @@ public class ChatRequestBuilder(
 
 /**
  * Map Anthropic thinking budget → chat `reasoning_effort`. Default high so backends that
- * support cleartext CoT actually emit `reasoning_content`. Compact INHERITS the session effort
- * (AGENTS cache law — a mismatched effort cold-starts the prompt cache); tools are stripped
- * separately, effort is not pinned low.
+ * support cleartext CoT actually emit `reasoning_content`. Compact turns INHERIT the session
+ * effort (AGENTS cache law — a mismatched effort cold-starts the prompt cache); tools are
+ * stripped separately, effort is deliberately not compact-aware.
  */
-private fun chatReasoningEffort(body: AnthropicRequest, @Suppress("UNUSED_PARAMETER") compact: Boolean): String? {
+private fun chatReasoningEffort(body: AnthropicRequest): String? {
     if (body.thinking?.disabled == true) return null
     val budget = body.thinking?.budgetTokens
     return when {
@@ -331,20 +330,6 @@ private fun chatReasoningEffort(body: AnthropicRequest, @Suppress("UNUSED_PARAME
         budget >= MEDIUM_BUDGET_FLOOR -> "medium"
         budget > 0L -> "low"
         else -> "high"
-    }
-}
-
-/** Anthropic tool_choice → OpenAI chat tool_choice (Responses toolChoice parity). */
-private fun chatToolChoice(choice: ToolChoice?): JsonElement {
-    return when {
-        choice == null || choice.type == "auto" -> JsonPrimitive("auto")
-        choice.type == "none" -> JsonPrimitive("none")
-        choice.type == "any" -> JsonPrimitive("required")
-        choice.type == "tool" && choice.name != null -> buildJsonObject {
-            put("type", "function")
-            put("function", buildJsonObject { put("name", choice.name) })
-        }
-        else -> JsonPrimitive("auto")
     }
 }
 

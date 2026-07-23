@@ -78,9 +78,13 @@ public class ControlServer(
     private val log: (String) -> Unit,
     private val launchService: LaunchService? = null,
     private val shutdownDaemon: () -> Unit = {},
+    // Live count of heads that failed to assemble or start (Daemon.start's `failed` map) — lets
+    // the /health readyHeads protocol converge on a degraded boot instead of waiting forever for
+    // a head that will never become ready (review 2026-07-22 round 3).
+    private val failedHeads: () -> Int = { 0 },
 ) {
     private val json = Json { ignoreUnknownKeys = true }
-    private val payloads = ControlPayloads(heads, config)
+    private val payloads = ControlPayloads(heads, config, failedHeads)
 
     @Volatile
     private var server: EmbeddedServer<NettyApplicationEngine, *>? = null
@@ -325,7 +329,7 @@ public class ControlServer(
             call.respondText("statusline body timed out", ContentType.Text.Plain, HttpStatusCode.RequestTimeout)
             return
         }
-        val line = StatuslineRenderer(managed.head.label)
+        val line = StatuslineRenderer(managed.head.label, config.getConfig().statuslineGitRoots)
             .render(stdin, managed.usage, managed.warnPct, managed.warnTokens5h)
         call.respondText(line, ContentType.Text.Plain)
     }
@@ -378,16 +382,20 @@ private class StatuslineBodyTooLarge : RuntimeException()
 private class ControlPayloads(
     private val heads: Map<String, ManagedHead>,
     private val config: ConfigService,
+    private val failedHeads: () -> Int,
 ) {
     fun controlHealthJson(): String = buildJsonObject {
         put("ok", true)
         put("version", GATEWAY_VERSION)
         put("wantShimVersion", SHIM_VERSION)
         put(HEADS, heads.size)
-        // How many heads are actually listening (post startDaemonHeads) — launch shims can wait
-        // for readyHeads == heads before POSTing /launch.
+        // Launch shims wait for readyHeads + failedHeads == heads before POSTing /launch (post
+        // startDaemonHeads) — NOT readyHeads == heads: a start-failed head stays in `heads`
+        // forever with running=false, so the old equality-wait spun forever on a degraded boot
+        // (review 2026-07-22 round 3).
         val ready = heads.values.count { it.head.healthSnapshot().running }
         put("readyHeads", ready)
+        put("failedHeads", failedHeads())
     }.toString()
 
     fun statusJson(): String = buildJsonObject {

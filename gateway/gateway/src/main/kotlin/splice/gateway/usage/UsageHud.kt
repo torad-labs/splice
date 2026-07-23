@@ -24,6 +24,7 @@ import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 private const val FIVE_HOURS_MS: Long = 5 * 60 * 60 * 1000
 private const val FULL_PCT = 100.0
@@ -113,6 +114,15 @@ public data class UsageState(
     val ratelimit: RateLimitState?,
 )
 
+/** RateLimitState field mapping, single-sourced so [UsageStore.readRateLimit]'s pending-payload
+ *  and on-disk paths cannot drift (review 2026-07-22 round 3). */
+private fun rateLimitStateFrom(obj: JsonObject): RateLimitState = RateLimitState(
+    limitTokens = num(obj["limit_tokens"]),
+    remainingTokens = num(obj["remaining_tokens"]),
+    resetTokens = (obj["reset_tokens"] as? JsonPrimitive)?.takeIf { it.isString }?.content,
+    updatedAt = num(obj["updated_at"]),
+)
+
 /** 5h output-token window + ratelimit header persistence — the HUD contract files. */
 public class UsageStore(
     private val usageFile: Path,
@@ -141,11 +151,15 @@ public class UsageStore(
             while (ring.size > MAX_RING_ENTRIES) ring.removeFirst()
             mutationVersion += 1
         }
-        schedulePersist()
+        scheduleCoalesced(writeScheduled) { flushScheduled() }
     }
 
     /** Parses x-ratelimit-limit-tokens / -remaining-tokens / -reset-tokens; no-op without a limit. */
     // best-effort by design: header/write failures are swallowed; cancellation propagates.
+    // Coalesced onto the same 1s lane as the usage ring: these headers arrive on EVERY successful
+    // upstream round, and a per-round atomic rewrite of this tiny latest-wins file was pure churn
+    // (review 2026-07-22). flushNow() forces the pending payload out synchronously; readRateLimit()
+    // serves it straight from memory instead (review 2026-07-22 round 3).
     public fun persistRateLimit(header: (String) -> String?) {
         runCatchingCancellable {
             val limit = header("x-ratelimit-limit-tokens")?.toLongOrNull() ?: return
@@ -159,13 +173,35 @@ public class UsageStore(
                 if (reset != null) put("reset_tokens", reset) else put("reset_tokens", null as String?)
                 put("updated_at", clock())
             }
-            val encoded = payload.toString() + "\n"
-            AsyncFileIo.submit {
-                runCatchingCancellable {
-                    synchronized(writeLock) {
-                        SecureFile.writeAtomic0600(ratelimitFile, encoded)
-                    }
-                }
+            pendingRateLimit.set(payload.toString() + "\n")
+            scheduleCoalesced(rlWriteScheduled) { flushRateLimit() }
+        }
+    }
+
+    /**
+     * CAS-guarded debounce shared by the usage-ring and ratelimit lanes: [flag] gates a single
+     * in-flight [flush] submission. Rolling [flag] back when [AsyncFileIo.submit] rejects is the
+     * load-bearing subtlety here — a missed rollback wedges the lane forever (review 2026-07-22
+     * round 3).
+     */
+    private fun scheduleCoalesced(flag: AtomicBoolean, flush: () -> Unit) {
+        if (!flag.compareAndSet(false, true)) return
+        if (!AsyncFileIo.submit(USAGE_FLUSH_DELAY_MS, flush)) {
+            flag.set(false)
+        }
+    }
+
+    /** Write the newest pending ratelimit payload, if any — flag cleared BEFORE the payload is
+     *  consumed so a concurrent persistRateLimit always lands in a (re)scheduled flush, and the
+     *  payload is consumed INSIDE writeLock so two racing flushers (the 1s lane vs a synchronous
+     *  flushNow) serialize consume+write as one unit — consuming outside the lock let a
+     *  descheduled flusher commit an OLDER payload over a newer one (review 2026-07-22). */
+    private fun flushRateLimit() {
+        rlWriteScheduled.set(false)
+        runCatchingCancellable {
+            synchronized(writeLock) {
+                val encoded = pendingRateLimit.getAndSet(null) ?: return@synchronized
+                SecureFile.writeAtomic0600(ratelimitFile, encoded)
             }
         }
     }
@@ -191,21 +227,26 @@ public class UsageStore(
             ring.toList() to mutationVersion
         }
         persistSnapshot(snapshot, version)
+        flushRateLimit()
     }
 
     // best-effort by design: a missing/corrupt ratelimit file reads as null; cancellation propagates.
+    // The pending payload IS the newest state, byte-identical to what the flush would write, so a
+    // non-null pending is served straight from memory — no flush, no drain, no file I/O. The inline
+    // flush this replaces had re-added, on the read path, the churn coalescing removed from the
+    // round path (review 2026-07-22 round 3).
     public fun readRateLimit(): RateLimitState? = runCatchingCancellable {
-        AsyncFileIo.drain()
-        if (!Files.exists(ratelimitFile)) {
-            null
+        val pending = pendingRateLimit.get()
+        if (pending != null) {
+            rateLimitStateFrom(json.parseToJsonElement(pending).jsonObject)
         } else {
-            val obj = json.parseToJsonElement(Files.readString(ratelimitFile)).jsonObject
-            RateLimitState(
-                limitTokens = num(obj["limit_tokens"]),
-                remainingTokens = num(obj["remaining_tokens"]),
-                resetTokens = (obj["reset_tokens"] as? JsonPrimitive)?.takeIf { it.isString }?.content,
-                updatedAt = num(obj["updated_at"]),
-            )
+            // Settle the coalesced lane first so a read never lags a just-arrived header by the 1s window.
+            AsyncFileIo.drain()
+            if (!Files.exists(ratelimitFile)) {
+                null
+            } else {
+                rateLimitStateFrom(json.parseToJsonElement(Files.readString(ratelimitFile)).jsonObject)
+            }
         }
     }.getOrNull()
 
@@ -252,6 +293,10 @@ public class UsageStore(
     private var persistedVersion = -1L
     private val writeScheduled = AtomicBoolean(false)
 
+    // Latest-wins pending ratelimit payload; consumed by the coalesced lane, flushNow, or a read.
+    private val pendingRateLimit = AtomicReference<String?>(null)
+    private val rlWriteScheduled = AtomicBoolean(false)
+
     init {
         // Load/trim the bounded legacy ring while the head is assembled, not on the first
         // completed turn. Every append on the turn path is then memory-only plus an async enqueue.
@@ -263,19 +308,12 @@ public class UsageStore(
         put(OUTPUT_TOKENS, outputTokens)
     }
 
-    private fun schedulePersist() {
-        if (!writeScheduled.compareAndSet(false, true)) return
-        if (!AsyncFileIo.submit(USAGE_FLUSH_DELAY_MS) { flushScheduled() }) {
-            writeScheduled.set(false)
-        }
-    }
-
     private fun flushScheduled() {
         val (snapshot, version) = synchronized(ringLock) { cachedRing.toList() to mutationVersion }
         persistSnapshot(snapshot, version)
         writeScheduled.set(false)
         val changed = synchronized(ringLock) { mutationVersion > persistedVersion }
-        if (changed) schedulePersist()
+        if (changed) scheduleCoalesced(writeScheduled) { flushScheduled() }
     }
 
     private fun persistSnapshot(snapshot: List<JsonObject>, version: Long) {

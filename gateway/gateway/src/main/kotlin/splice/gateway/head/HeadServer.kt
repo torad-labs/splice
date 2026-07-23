@@ -41,6 +41,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.GATEWAY_VERSION
+import splice.core.auth.bearerToken
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 import splice.core.model.DiscoveryRow
@@ -110,6 +111,15 @@ public class HeadServer(
     private var server: EmbeddedServer<NettyApplicationEngine, *>? = null
     private val lifecycle = Mutex()
 
+    // stopLocked flips this BEFORE draining so the drain can converge — with admission open, the
+    // drain window just filled with new turns that were then cancelled anyway (review 2026-07-22).
+    // Convergence needs every path to the gate honoring it: the front-door acceptingOrRespond check
+    // AND the post-acquire re-check inside acquireSlotOrRespond, so a waiter the InflightGate promotes
+    // mid-drain is bounced too rather than starting a turn the engine stop would kill (review 2026-07-22 round 3).
+    // Rejected turns get the 529 capacity shape, so clients retry and land after the restart.
+    @Volatile
+    private var accepting = true
+
     override val key: String get() = provider.key
     override val label: String get() = provider.label
     override val port: Int get() = listenPort
@@ -177,17 +187,22 @@ public class HeadServer(
         }
         engine.start(wait = false)
         server = engine
+        accepting = true
     }
 
     private suspend fun stopLocked() {
-        // Drain in-flight turns so clients get honest terminals (sealCancelledTurn) before Netty
-        // tears the engine. Bounded wait — never block restart forever.
+        // Refuse new turns FIRST so the drain can actually converge, then drain in-flight turns
+        // so clients get honest terminals (driveSealingCancellation's cancellation seal) before
+        // Netty tears the engine. Bounded wait — never block restart forever.
+        accepting = false
         val deadlineNs = System.nanoTime() + STOP_DRAIN_NS
-        while (gate.snapshot().inflight > 0 && System.nanoTime() < deadlineNs) {
+        var inflight = gate.snapshot().inflight
+        while (inflight > 0 && System.nanoTime() < deadlineNs) {
             delay(STOP_DRAIN_POLL_MS)
+            inflight = gate.snapshot().inflight
         }
-        if (gate.snapshot().inflight > 0) {
-            log("[${provider.key}] stop: draining timed out with inflight=${gate.snapshot().inflight} — forcing engine stop\n")
+        if (inflight > 0) {
+            log("[${provider.key}] stop: draining timed out with inflight=$inflight — forcing engine stop\n")
         }
         server?.stop(STOP_GRACE_MS, STOP_TIMEOUT_MS)
         server = null
@@ -244,7 +259,7 @@ public class HeadServer(
     // only admitted calls may enter the process-shared materialization gate and hold raw/parsed/built
     // representations. Body-parse failure is a client 400, not a crash.
     private suspend fun handleMessages(call: ApplicationCall) {
-        if (!authorize(call)) return
+        if (!authorize(call) || !acceptingOrRespond(call)) return
         val perf = TurnPerf(clock)
         val t0 = clock()
         val slot = acquireSlotOrRespond(call) ?: return
@@ -274,20 +289,50 @@ public class HeadServer(
         }
     }
 
-    private suspend fun acquireSlotOrRespond(call: ApplicationCall): InflightGate.Slot? = try {
-        gate.acquire()
-    } catch (_: GatewayAtCapacityException) {
-        log("[${provider.key}] admission rejected: gateway at capacity (queued=${gate.snapshot().queued})\n")
-        call.respondText(
-            errorBodyJson("overloaded_error", "gateway at capacity"),
-            ContentType.Application.Json,
-            HttpStatusCode(GATEWAY_CAPACITY_STATUS, "Gateway At Capacity"),
-        )
-        null
+    /** False (with a 529 on the wire) while stopLocked drains — clients retry and land post-restart. */
+    private suspend fun acceptingOrRespond(call: ApplicationCall): Boolean {
+        if (accepting) return true
+        respondAtCapacity(call, "head is stopping — retry")
+        return false
     }
 
-    private suspend fun <T> materializeOrRespond(call: ApplicationCall, block: suspend () -> T): T? = try {
-        deps.requestMaterializationGate.withLease(block)
+    private suspend fun acquireSlotOrRespond(call: ApplicationCall): InflightGate.Slot? {
+        val slot = try {
+            gate.acquire()
+        } catch (_: GatewayAtCapacityException) {
+            log("[${provider.key}] admission rejected: gateway at capacity (queued=${gate.snapshot().queued})\n")
+            respondAtCapacity(call, "gateway at capacity")
+            return null
+        }
+        // A waiter promoted from the InflightGate queue AFTER stopLocked flipped accepting must not
+        // start an upstream turn the engine stop will kill — bouncing it here (release + 529) lets
+        // the drain actually converge, and every admission path through this helper inherits the
+        // bounce (queued waiters defeated the drain; review 2026-07-22 round 3).
+        if (!accepting) {
+            withContext(NonCancellable) { slot.release() }
+            respondAtCapacity(call, "head is stopping — retry")
+            return null
+        }
+        return slot
+    }
+
+    // fastFail: cheap best-effort endpoints (count_tokens) tryAcquire instead of queueing — a
+    // slow-body flood must not camp the process-shared semaphore real turns materialize through
+    // (review 2026-07-22); contention gets the 529 retry shape instead of a queue slot.
+    private suspend fun <T : Any> materializeOrRespond(
+        call: ApplicationCall,
+        fastFail: Boolean = false,
+        block: suspend () -> T,
+    ): T? = try {
+        if (fastFail) {
+            val leased = deps.requestMaterializationGate.tryWithLease(block)
+            if (leased == null) {
+                respondAtCapacity(call, "gateway busy — retry")
+            }
+            leased
+        } else {
+            deps.requestMaterializationGate.withLease(block)
+        }
     } catch (tooLarge: RequestBodyTooLarge) {
         call.respondText(
             errorBodyJson(INVALID_REQUEST_ERROR, "request body exceeds ${tooLarge.limit} bytes"),
@@ -326,34 +371,34 @@ public class HeadServer(
 
     private suspend fun handleCountTokens(call: ApplicationCall) {
         if (!authorize(call)) return
-        // Share the admission gate so a flood of large count_tokens bodies cannot bypass
-        // maxInflight while /v1/messages is capacity-protected.
-        val slot = acquireSlotOrRespond(call) ?: return
-        try {
-            val body = materializeOrRespond(call) { receiveBodyBounded(call, deps.maxRequestBytes) } ?: return
-            val parsed = runCatchingCancellable { parseAnthropicBody(body.text) }.getOrNull()
-            if (parsed == null) {
-                call.respondText(
-                    errorBodyJson(INVALID_REQUEST_ERROR, "invalid request body"),
-                    ContentType.Application.Json,
-                    HttpStatusCode.BadRequest,
-                )
-            } else {
-                // Conservative and Unicode-safe: UTF-8 bytes / 3 overestimates ordinary English while
-                // avoiding the old UTF-16 chars / 4 undercount for CJK and emoji. The complete JSON body
-                // intentionally contributes structural/tool overhead.
-                val estimate =
-                    ((body.bytes + TOKEN_ESTIMATE_BYTES - 1) / TOKEN_ESTIMATE_BYTES)
-                        .coerceAtLeast(1)
-                        .toLong()
-                log("[${provider.key}] count_tokens estimate=$estimate (local; no upstream turn)\n")
-                call.respondText(
-                    buildJsonObject { put("input_tokens", estimate) }.toString(),
-                    ContentType.Application.Json,
-                )
-            }
-        } finally {
-            withContext(NonCancellable) { slot.release() }
+        // NO turn-gate slot here: count_tokens is a purely LOCAL estimate (no upstream stream),
+        // and queueing it on maxInflight let a saturated head stall or 529 Claude Code's
+        // pre-flight sizing for minutes (review 2026-07-22). Memory stays bounded by the
+        // materialization gate (fastFail: contention 529s instead of queueing, so a count_tokens
+        // flood cannot camp the shared permits) plus the maxRequestBytes cap.
+        val body = materializeOrRespond(call, fastFail = true) {
+            receiveBodyBounded(call, deps.maxRequestBytes)
+        } ?: return
+        val parsed = runCatchingCancellable { parseAnthropicBody(body.text) }.getOrNull()
+        if (parsed == null) {
+            call.respondText(
+                errorBodyJson(INVALID_REQUEST_ERROR, "invalid request body"),
+                ContentType.Application.Json,
+                HttpStatusCode.BadRequest,
+            )
+        } else {
+            // Conservative and Unicode-safe: UTF-8 bytes / 3 overestimates ordinary English while
+            // avoiding the old UTF-16 chars / 4 undercount for CJK and emoji. The complete JSON body
+            // intentionally contributes structural/tool overhead.
+            val estimate =
+                ((body.bytes + TOKEN_ESTIMATE_BYTES - 1) / TOKEN_ESTIMATE_BYTES)
+                    .coerceAtLeast(1)
+                    .toLong()
+            log("[${provider.key}] count_tokens estimate=$estimate (local; no upstream turn)\n")
+            call.respondText(
+                buildJsonObject { put("input_tokens", estimate) }.toString(),
+                ContentType.Application.Json,
+            )
         }
     }
 
@@ -378,11 +423,9 @@ public class HeadServer(
     }
 
     private suspend fun authorize(call: ApplicationCall): Boolean {
-        val bearer = Regex("^Bearer\\s+(.+)$", RegexOption.IGNORE_CASE)
-            .find(call.request.headers[HttpHeaders.Authorization].orEmpty().trim())
-            ?.groupValues
-            ?.get(1)
-            ?.trim()
+        // Scheme parsing shared with MgmtKey.matchesBearer (core bearerToken) — the two planes
+        // drifted on case-sensitivity when each carried its own regex.
+        val bearer = bearerToken(call.request.headers[HttpHeaders.Authorization])
         val presented = bearer ?: call.request.headers["x-api-key"]
         val expectedBytes = deps.inferenceToken.toByteArray(Charsets.UTF_8)
         val presentedBytes = presented?.toByteArray(Charsets.UTF_8)
@@ -410,21 +453,11 @@ public class HeadServer(
         return read
     }
 
-    private fun errorBodyJson(type: String, message: String): String = buildJsonObject {
-        put("type", "error")
-        put(
-            "error",
-            buildJsonObject {
-                put("type", type)
-                put("message", message)
-            },
-        )
-    }.toString()
-
     private companion object {
         // Grace/timeout for Netty engine.stop after the drain window below.
         const val STOP_GRACE_MS = 500L
         const val STOP_TIMEOUT_MS = 2_000L
+
         // Wait for in-flight SSE turns to finish (or cancel cleanly) before tearing the engine.
         const val STOP_DRAIN_NS = 5_000_000_000L // 5s
         const val STOP_DRAIN_POLL_MS = 50L
@@ -436,12 +469,43 @@ public class HeadServer(
         // Concurrent long-lived SSE turns per head (2x the 1000-stream design target).
         const val RUNNING_LIMIT = 2048
 
-        // Response-write stall cap — at least as long as default streamIdle (180s) so a slow-but-alive
-        // client is not killed by Netty while the two-tier watchdog still considers the stream healthy.
-        const val WRITE_TIMEOUT_S = 300
-
-        // Same numeric convention as UpstreamFailureClassifier's OVERLOADED_STATUS (kept as its
-        // own const here to avoid a cross-module const import and satisfy detekt MagicNumber).
-        const val GATEWAY_CAPACITY_STATUS = 529
+        // Response-write stall cap. Netty's WriteTimeoutHandler ticks only while a write is
+        // PENDING — an upstream-idle lull writes nothing (bar the 10s keepalive pings), so this
+        // never races the watchdog's 180s streamIdle. A pending write that cannot complete in 60s
+        // means the client drained ZERO bytes for a full minute (coalesced frames clear in seconds
+        // on even a slow-but-alive pipe): that is a dead reader pinning an admission slot, not a
+        // slow one. The 300s bump quintupled dead-reader slot pinning for no live-client benefit
+        // (review 2026-07-22); 60s already carries 6x headroom over the default-10s load-test
+        // truncations (52/1000 stream tails).
+        const val WRITE_TIMEOUT_S = 60
     }
+}
+
+// Same numeric convention as UpstreamFailureClassifier's OVERLOADED_STATUS (kept as its own const
+// to avoid a cross-module const import and satisfy detekt MagicNumber). File-level private, out of
+// the companion, so the top-level respondAtCapacity below can see it (review 2026-07-22 round 3).
+private const val GATEWAY_CAPACITY_STATUS = 529
+
+// Relocated from a HeadServer member to file-level so the top-level respondAtCapacity shares one
+// body builder; pure JSON shaping with no instance state (review 2026-07-22 round 3).
+private fun errorBodyJson(type: String, message: String): String = buildJsonObject {
+    put("type", "error")
+    put(
+        "error",
+        buildJsonObject {
+            put("type", type)
+            put("message", message)
+        },
+    )
+}.toString()
+
+/** The 529 capacity terminal built once: every admission path must answer IDENTICALLY because
+ *  client retry logic keys on the shape (three hand-built copies drifted; review 2026-07-22 round 3).
+ *  Top-level (not a HeadServer member) so it doesn't grow the class's function budget. */
+private suspend fun respondAtCapacity(call: ApplicationCall, message: String) {
+    call.respondText(
+        errorBodyJson("overloaded_error", message),
+        ContentType.Application.Json,
+        HttpStatusCode(GATEWAY_CAPACITY_STATUS, "Gateway At Capacity"),
+    )
 }

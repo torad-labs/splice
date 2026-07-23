@@ -5,10 +5,13 @@
 // documented change).
 package splice.app
 
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.JsonElement
@@ -228,6 +231,10 @@ public class Daemon(
             log,
             LaunchService(ClaudeConfigMaterializer(statePaths.rootDir.parent ?: statePaths.rootDir)),
             shutdownDaemon,
+            // `failed` fills during assembleDaemonHeads above and again in startDaemonHeads below
+            // (a head that assembles fine but fails to start); captured by reference, so this
+            // reads live rather than a stale snapshot taken before startDaemonHeads runs.
+            { failed.size },
         )
         control = srv
         // Start heads BEFORE opening the control plane so a launch-shim that sees /health and
@@ -243,9 +250,24 @@ public class Daemon(
             stopped = true
             authProbes.values.forEach { it.stop() }
             probeScope.cancel()
-            heads.values.forEach {
-                runCatchingDaemonBoundary { it.head.stop() }
-                    .discard("shutdown: one head failing to stop must not block the rest")
+
+            // Heads stop in PARALLEL: each stop may drain in-flight turns for up to its 5s
+            // window, and serial stops compounded shutdown to ~5s x N heads (review 2026-07-22).
+            // SUPERVISOR scope: an exception escaping one head's stop (a type outside
+            // runCatchingDaemonBoundary's list) must not cancel the siblings' drains/flushes nor
+            // skip control.stop below — it surfaces via stopFailureHandler below instead of the
+            // JVM default, which is a black hole once production launches redirect stderr to
+            // /dev/null (review 2026-07-22 round 3).
+            val stopFailureHandler = CoroutineExceptionHandler { _, e ->
+                log("[daemon] head stop failed uncaught: ${e::class.simpleName}: ${e.message}\n")
+            }
+            supervisorScope {
+                heads.values.forEach {
+                    launch(stopFailureHandler) {
+                        runCatchingDaemonBoundary { it.head.stop() }
+                            .discard("shutdown: one head failing to stop must not block the rest")
+                    }
+                }
             }
             control?.stop()
         }

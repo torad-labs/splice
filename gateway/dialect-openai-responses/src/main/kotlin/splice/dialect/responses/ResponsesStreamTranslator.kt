@@ -20,20 +20,22 @@ package splice.dialect.responses
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.isWeakSummaryText
+import splice.core.util.str
+import splice.core.util.strOrEmpty
 import splice.spi.ClassifiedFailure
 import splice.spi.FailureSource
 import splice.spi.StreamTranslator
+import splice.spi.TerminalStates
 import splice.spi.UpstreamFailureClassifier
 import splice.spi.WatchdogFired
 import splice.spi.WireSink
+import splice.spi.terminalPrecedence
 import java.io.IOException
 import java.util.concurrent.CancellationException
 
@@ -106,22 +108,26 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
         return terminalOutcome(reducer)
     }
 
-    private fun terminalOutcome(reducer: ResponsesEventReducer): TurnOutcome =
-        reducer.upstreamFailure?.let {
-            // parsed from a response.failed/error event the backend actually sent (G20 provenance)
-            TurnOutcome.Failure(it.type, "ChatGPT backend: ${it.message}", providerReported = true)
-        }
-            ?: if (reducer.finalResponse == null) noCompletionOutcome() else successOutcome(reducer)
+    // Ordering enforced by the shared spi.terminalPrecedence: a COMPLETED response wins over a
+    // late watchdog fire (the watchdog polls the whole enclosing coroutine, which stays suspended
+    // on the socket-EOF read AFTER response.completed was already parsed — discarding that turn
+    // would retry a successful compaction, the exact quota waste the watchdog exists to prevent).
+    private fun terminalOutcome(reducer: ResponsesEventReducer): TurnOutcome = terminalPrecedence(
+        TerminalStates(
+            providerFailure = reducer.upstreamFailure?.let {
+                // parsed from a response.failed/error event the backend actually sent (G20 provenance)
+                TurnOutcome.Failure(it.type, "ChatGPT backend: ${it.message}", providerReported = true)
+            },
+            finished = reducer.finalResponse != null,
+            watchdogFired = ctx.watchdogFired(),
+        ),
+        onFinished = { successOutcome(reducer) },
+        onWatchdog = ::watchdogOutcome,
+        onUnfinished = ::noCompletionOutcome,
+    )
 
-    // A COMPLETED response wins over a late watchdog fire. The watchdog polls the whole
-    // enclosing coroutine, which stays suspended on the socket-EOF read AFTER the terminal
-    // response.completed frame was already parsed; a fire in that window must NOT discard a
-    // fully-received turn (that would retry a successful compaction — the exact quota waste the
-    // watchdog exists to prevent). So the stall/truncation verdicts only apply when there is no
-    // completed response yet (this path).
-    private fun noCompletionOutcome(): TurnOutcome {
-        ctx.watchdogFired()?.let { return watchdogOutcome(it) }
-        return if (ctx.clientGone()) {
+    private fun noCompletionOutcome(): TurnOutcome =
+        if (ctx.clientGone()) {
             TurnOutcome.ClientAbandoned
         } else {
             TurnOutcome.Failure(
@@ -129,7 +135,6 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
                 "claudex: upstream stream ended without response.completed (truncated); retry",
             )
         }
-    }
 
     private fun watchdogOutcome(fired: WatchdogFired): TurnOutcome {
         val why = when (fired) {
@@ -217,7 +222,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     private val seenSummaryPartsByItem = HashMap<Int, MutableSet<String>>()
 
     suspend fun onEvent(evt: JsonObject, sink: WireSink) {
-        when (str(evt["type"])) {
+        when (strOrEmpty(evt["type"])) {
             "response.completed", "response.done", "response.incomplete" -> onTerminal(evt)
             "response.failed", "response.error", "error" -> onFailure(evt)
             else -> onStreamEvent(evt, sink)
@@ -225,7 +230,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     }
 
     private suspend fun onStreamEvent(evt: JsonObject, sink: WireSink) {
-        when (str(evt["type"])) {
+        when (strOrEmpty(evt["type"])) {
             "response.output_item.added" -> onItemAdded(evt, sink)
             "response.output_item.done" -> onItemDone(evt, sink)
             "response.reasoning_summary_part.added" -> onSummaryPartAdded(evt, sink)
@@ -242,7 +247,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     private fun onTerminal(evt: JsonObject) {
         val resp = (evt["response"] as? JsonObject) ?: evt
         finalResponse = resp
-        if (str(evt["type"]) == "response.incomplete" || str(resp["status"]) == "incomplete") {
+        if (strOrEmpty(evt["type"]) == "response.incomplete" || strOrEmpty(resp["status"]) == "incomplete") {
             incomplete = true
         }
         val u = usageFrom(resp)
@@ -258,18 +263,21 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
         val e = (evt["response"] as? JsonObject)?.get("error") as? JsonObject
             ?: evt["error"] as? JsonObject
             ?: evt
-        val code = str(e["code"]).ifEmpty { str(e["type"]) }.ifEmpty { "upstream_failed" }
-        val message = str(e["message"]).ifEmpty { "ChatGPT backend reported failure" }
+        val code = strOrEmpty(e["code"]).ifEmpty { strOrEmpty(e["type"]) }.ifEmpty { "upstream_failed" }
+        val message = strOrEmpty(e["message"]).ifEmpty { "ChatGPT backend reported failure" }
         upstreamFailure = UpstreamFailureClassifier.classify(FailureSource.SSE, "$code $message")
     }
 
     private suspend fun onItemAdded(evt: JsonObject, sink: WireSink) {
         val item = evt["item"] as? JsonObject ?: return
         val oi = intOr(evt[OUTPUT_INDEX]) ?: intOr(item["index"]) ?: blocks.size
-        if (str(item["type"]) == "function_call") {
-            val id = str(item["call_id"]).ifEmpty { str(item["id"]) }
+        if (strOrEmpty(item["type"]) == "function_call") {
+            // A JsonNull call_id/name must not leak onto the wire as the literal string "null" —
+            // strOrEmpty keeps both filtered so the empty-fallback chain below still triggers
+            // (review 2026-07-22 round 3).
+            val id = strOrEmpty(item["call_id"]).ifEmpty { strOrEmpty(item["id"]) }
                 .ifEmpty { "toolu_synth_${toolSynthCounter++}_$oi" }
-            val idx = sink.openTool(id = id, name = str(item["name"]))
+            val idx = sink.openTool(id = id, name = strOrEmpty(item["name"]))
             blocks[oi] = BlockState(idx, sawDelta = false)
             hasToolUse = true
         }
@@ -301,7 +309,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
 
     private suspend fun maybeEmitLateReasoning(item: JsonObject?, oi: Int?, sink: WireSink) {
         if (item == null || oi == null) return
-        if (str(item["type"]) != "reasoning") return
+        if (strOrEmpty(item["type"]) != "reasoning") return
         emitReasoningItemText(item, oi, sink)
     }
 
@@ -357,7 +365,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     }
 
     private suspend fun onThinkingDelta(evt: JsonObject, sink: WireSink) {
-        val delta = str(evt[DELTA])
+        val delta = strOrEmpty(evt[DELTA])
         if (delta.isEmpty()) return
         // sequential_cutoff restatement dedup: whole parts arrive as single deltas in this mode;
         // an exact repeat of an already-streamed part (>= min length; shorter deltas are plausibly
@@ -384,7 +392,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     }
 
     private suspend fun onTextDelta(evt: JsonObject, sink: WireSink) {
-        val delta = str(evt[DELTA])
+        val delta = strOrEmpty(evt[DELTA])
         if (delta.isEmpty()) return
         val key = intOr(evt[OUTPUT_INDEX]) ?: 0
         val b = blocks[key] ?: BlockState(sink.openText(), sawDelta = false).also { blocks[key] = it }
@@ -398,9 +406,9 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     // harvest `arguments` once before close so the client does not get tool_use with empty input {}.
     private suspend fun onArgs(evt: JsonObject, sink: WireSink) {
         val b = blocks[intOr(evt[OUTPUT_INDEX]) ?: return] ?: return
-        if (str(evt["type"]) == "response.function_call_arguments.done") {
+        if (strOrEmpty(evt["type"]) == "response.function_call_arguments.done") {
             if (!b.sawDelta) {
-                val full = str(evt["arguments"])
+                val full = strOrEmpty(evt["arguments"])
                 if (full.isNotEmpty()) {
                     sink.inputJsonDelta(b.index, full)
                     b.sawDelta = true
@@ -408,7 +416,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
             }
             sink.closeBlock(b.index)
         } else {
-            val delta = str(evt[DELTA])
+            val delta = strOrEmpty(evt[DELTA])
             if (delta.isNotEmpty()) {
                 sink.inputJsonDelta(b.index, delta)
                 b.sawDelta = true
@@ -430,7 +438,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
 /** Gated encrypted-reasoning EMISSION predicate — kept out of the handler so its condition stays flat. */
 private fun shouldEmitReasoning(ctx: StreamTurnContext, item: JsonObject): Boolean =
     ctx.emitEncryptedReasoning.v && !ctx.compact &&
-        str(item["type"]) == "reasoning" && str(item["encrypted_content"]).isNotEmpty()
+        strOrEmpty(item["type"]) == "reasoning" && strOrEmpty(item["encrypted_content"]).isNotEmpty()
 
 /**
  * The terminal object's text replaces the streamed buffer when the stream produced nothing, or
@@ -441,10 +449,4 @@ private fun shouldPreferHarvestedText(current: CharSequence, harvested: String):
     return current.isEmpty() || (isWeakSummaryText(current.toString()) && !isWeakSummaryText(harvested))
 }
 
-// JsonNull IS a JsonPrimitive whose .content is the 4-char string "null" — filter it (Chat /
-// core JsonScalars already do). Else call_id/name/delta:null becomes the literal "null" on wire.
-private fun str(el: JsonElement?): String =
-    (el as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content ?: ""
-
-private fun intOr(el: JsonElement?): Int? =
-    (el as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content?.toIntOrNull()
+private fun intOr(el: JsonElement?): Int? = el.str()?.toIntOrNull()

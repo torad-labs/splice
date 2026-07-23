@@ -11,6 +11,7 @@ import splice.core.turn.ErrorType
 import splice.core.turn.Usage
 import splice.gateway.wire.SseEmitter
 import splice.gateway.wire.TerminalMessage
+import java.util.concurrent.CancellationException
 
 class SseEmitterTest {
 
@@ -169,5 +170,38 @@ class SseEmitterTest {
             ),
         )
         assertEquals("\"max_tokens\"", msg["stop_reason"].toString())
+    }
+
+    @Test
+    fun `cancellation mid-terminal releases the claim so emitError can still seal`() = runTest {
+        // The stranded-ENDING hole (review 2026-07-22): a head-stop cancel lands while the
+        // terminal frames are being written; the follow-up cancellation-seal emitError
+        // (TurnDriver.driveSealingCancellation) must still put an honest error frame on the
+        // wire — not no-op against a held claim and leave the client a truncated 200.
+        val frames = mutableListOf<String>()
+        var failOnce = true
+        val emitter = SseEmitter.create(
+            write = { frame ->
+                if (failOnce && frame.startsWith("event: message_delta")) {
+                    failOnce = false
+                    throw CancellationException("head stop mid-terminal")
+                }
+                frames.add(frame)
+            },
+            model = "m",
+            usagePayload = { buildJsonObject { put("input_tokens", 0) } },
+            messageId = "msg_fixed",
+        )
+        var cancelled: CancellationException? = null
+        try {
+            emitter.emitTerminal(hasToolUse = false, incomplete = false, usage = Usage(1, 2))
+        } catch (e: CancellationException) {
+            cancelled = e
+        }
+        assertTrue(cancelled != null, "mid-terminal cancellation must propagate")
+        assertTrue(!emitter.hasEnded, "a cancelled terminal must not read as ended")
+        emitter.emitError(ErrorType.OVERLOADED, "turn cancelled — retry")
+        assertTrue(emitter.hasEnded, "the seal after a cancelled terminal must land")
+        assertTrue(frames.any { it.startsWith("event: error") && it.contains("turn cancelled") })
     }
 }

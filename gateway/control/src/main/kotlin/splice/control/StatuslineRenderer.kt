@@ -16,7 +16,16 @@ import splice.core.usage.RateLimitState
 import splice.core.usage.computeUsageWarn
 import java.util.concurrent.TimeUnit
 
-public class StatuslineRenderer(private val label: String) {
+public class StatuslineRenderer(
+    private val label: String,
+    extraGitRoots: List<String> = emptyList(),
+) {
+    // Operator-trusted roots beyond $HOME//tmp for the git-branch lookup (statuslineGitRoots
+    // knob / CLAUDEX_STATUSLINE_GIT_ROOTS) — devcontainer /workspace, /srv layouts. Normalized once.
+    private val extraGitRoots: List<java.nio.file.Path> = extraGitRoots.mapNotNull { root ->
+        runCatching { java.nio.file.Paths.get(root).toAbsolutePath().normalize() }.getOrNull()
+    }
+
     private val json = Json { ignoreUnknownKeys = true }
 
     public fun render(stdinJson: String, usage: HeadUsageSource?, warnPct: Int, warnTokens5h: Long): String {
@@ -102,6 +111,26 @@ public class StatuslineRenderer(private val label: String) {
             (num(cu["cache_creation_input_tokens"]) ?: 0)
     }
 
+    /** Absolute, existing directory under $HOME, /tmp, or an operator-trusted extra root — never
+     *  exec git -C against any other path from unauthenticated /statusline. Repos outside the
+     *  trusted roots lose only the branch segment. */
+    private fun isSafeGitCwd(cwd: String): Boolean {
+        if (!cwd.startsWith("/") || cwd.any { it.code == 0 }) return false
+        // normalize() resolves every ".." traversal before the prefix checks; the old substring
+        // ".." test on the normalized path only false-negatived legit names like "my..proj"
+        // (review 2026-07-22).
+        val path = runCatching { java.nio.file.Paths.get(cwd).toAbsolutePath().normalize() }.getOrNull()
+            ?: return false
+        val home = runCatching {
+            java.nio.file.Paths.get(System.getProperty("user.home")).toAbsolutePath().normalize()
+        }.getOrNull()
+        val tmp = java.nio.file.Paths.get("/tmp").toAbsolutePath().normalize()
+        val trusted = (home != null && path.startsWith(home)) ||
+            path.startsWith(tmp) ||
+            extraGitRoots.any { path.startsWith(it) }
+        return trusted && java.nio.file.Files.isDirectory(path)
+    }
+
     private fun gitBranch(cwd: String): String = runCatching {
         val process = ProcessBuilder("git", "-C", cwd, "branch", "--show-current")
             .redirectErrorStream(false)
@@ -119,23 +148,6 @@ public class StatuslineRenderer(private val label: String) {
         fun num(element: JsonElement?): Long? = (element as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong()
         fun fmtK(n: Long): String = if (n >= K) "${n / K}k" else n.toString()
         fun dim(s: String) = "$DIM$s$RESET"
-
-        /** Absolute, existing directory under $HOME or /tmp, with ".." rejected after normalize. */
-        fun isSafeGitCwd(cwd: String): Boolean {
-            if (!cwd.startsWith("/")) return false
-            if (cwd.any { it.code == 0 }) return false
-            val path = runCatching { java.nio.file.Paths.get(cwd).toAbsolutePath().normalize() }.getOrNull()
-                ?: return false
-            if (path.toString().contains("..")) return false
-            val home = runCatching {
-                java.nio.file.Paths.get(System.getProperty("user.home")).toAbsolutePath().normalize()
-            }.getOrNull()
-            val tmp = java.nio.file.Paths.get("/tmp").toAbsolutePath().normalize()
-            val underHome = home != null && path.startsWith(home)
-            val underTmp = path.startsWith(tmp)
-            if (!underHome && !underTmp) return false
-            return java.nio.file.Files.isDirectory(path)
-        }
 
         const val RESET = "[0m"
         const val DIM = "[2m"

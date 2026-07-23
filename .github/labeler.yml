@@ -1,0 +1,37 @@
+# Path → label map for actions/labeler@v6 (pr-labeler.yml).
+# Labels must already exist in the repo; the action does not create them.
+gateway:
+  - changed-files:
+      - any-glob-to-any-file: 'gateway/**'
+
+webui:
+  - changed-files:
+      - any-glob-to-any-file: 'webui/**'
+
+documentation:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '**/*.md'
+          - 'docs/**'
+
+ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - '.github/**'
+          - 'checks/**'
+          - '.rules/**'
+
+release:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'install.sh'
+          - 'bin/**'
+          - 'checks/release/**'
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'package.json'
+          - 'package-lock.json'
+          - 'gateway/gradle/**'
+          - 'gateway/**/*.versions.toml'

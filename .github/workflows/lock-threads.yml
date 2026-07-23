@@ -1,0 +1,25 @@
+# Lock closed issues/PRs after 45 quiet days (vscode-style) so resolved threads don't
+# accumulate drive-by necro-comments; new reports arrive as new issues instead.
+name: lock-threads
+
+on:
+  schedule:
+    - cron: '52 10 * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: lock-threads
+
+jobs:
+  lock:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: dessant/lock-threads@v6
+        with:
+          issue-inactive-days: '45'
+          pr-inactive-days: '45'
+          process-only: 'issues, prs'

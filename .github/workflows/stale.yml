@@ -1,0 +1,40 @@
+# Stale-issue lifecycle, anthropics/claude-code cadence: 30 days inactive → warn +
+# `stale` label, 30 more days of silence → closed as not_planned. Any comment resets
+# the clock (actions/stale removes the label on activity). Escape hatches: the
+# `keep-open` label and assignment both exempt an issue. PRs are never auto-closed.
+name: stale
+
+on:
+  schedule:
+    - cron: '37 9 * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+concurrency:
+  group: stale
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/stale@v10
+        with:
+          days-before-issue-stale: 30
+          days-before-issue-close: 30
+          stale-issue-label: stale
+          exempt-issue-labels: keep-open
+          exempt-all-issue-assignees: true
+          close-issue-reason: not_planned
+          stale-issue-message: >-
+            This issue has been inactive for 30 days. If it is still relevant, please
+            comment to keep it open — any activity removes the stale label. Otherwise it
+            will be closed in 30 days for housekeeping. Maintainers can apply `keep-open`
+            to exempt it permanently.
+          close-issue-message: >-
+            Closed after 60 days of inactivity. If this is still an issue, please open a
+            new issue with updated information, or comment here to request a reopen.
+          days-before-pr-stale: -1
+          days-before-pr-close: -1
+          operations-per-run: 100

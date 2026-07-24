@@ -14,7 +14,11 @@ import splice.core.config.StatePaths
 import splice.core.topology.Topology
 import splice.core.topology.configOverrides
 import splice.core.util.runCatchingCancellable
+import java.io.IOException
+import java.net.ConnectException
 import java.net.HttpURLConnection
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
@@ -71,13 +75,42 @@ internal object AdminSupport {
     /** Cold-start the daemon detached (survives this CLI exiting) and wait until it answers. */
     fun ensureDaemon(port: Int = controlPort()): Boolean {
         if (daemonUp(port)) return true
-        val jar = selfJar()
-        if (jar == null) {
-            println("splice: can't find the splice jar to start the daemon (run: splice install).")
-            return false
-        }
+        val jar = startableJar(port) ?: return false
         println("splice: starting the daemon…")
         return spawnDaemon(jar) && waitUntilUp(port)
+    }
+
+    /** True while something still holds [port] — a TCP connect succeeds (or is ambiguous: timeout/IO).
+     *  False ONLY on an explicit refusal (ConnectException), i.e. the listener is actually gone. Both
+     *  the restart cold-start gate ([startableJar]) and the stop confirmation (ControlPlaneClient
+     *  .stopDaemon) read this, because "/health stopped answering" is NOT proof the old JVM freed its
+     *  ports — the process can linger on non-daemon Netty threads with ports still bound (BS-4). */
+    fun controlPortBound(port: Int): Boolean =
+        try {
+            Socket().use { it.connect(InetSocketAddress("127.0.0.1", port), PROBE_TIMEOUT_MS) }
+            true
+        } catch (_: ConnectException) {
+            false
+        } catch (_: IOException) {
+            // A connect timeout or other transient I/O error is ambiguous — treat as still-bound so an
+            // uncertain signal never green-lights a racing cold start.
+            true
+        }
+
+    /** The jar to (re)launch from, or null (with a printed reason) when cold-start must be REFUSED.
+     *  Waits a short bounded window for the control port to free first: spawning while a prior daemon
+     *  still holds it (stopped answering /health but not yet exited — BS-4 DEFECT B) would let the new
+     *  daemon win the just-released lock and then die on the uncaught control bind, leaving zero serving. */
+    private fun startableJar(port: Int): Path? {
+        var polls = PORT_FREE_POLLS
+        while (controlPortBound(port) && polls-- > 0) Thread.sleep(POLL_INTERVAL_MS)
+        if (controlPortBound(port)) {
+            println("splice: control port $port is still bound (a daemon is still shutting down) — retry in a moment")
+            return null
+        }
+        val jar = selfJar()
+        if (jar == null) println("splice: can't find the splice jar to start the daemon (run: splice install).")
+        return jar
     }
 
     /** Spawn the detached daemon process; false (with a message) if it can't be launched.
@@ -148,6 +181,10 @@ internal object AdminSupport {
     private const val PROBE_TIMEOUT_MS = 400
     private const val STARTUP_POLLS = 60
     private const val POLL_INTERVAL_MS = 250L
+
+    // ~2s bounded wait (8 x POLL_INTERVAL_MS) for a stopping daemon's control port to free before a
+    // cold start — long enough for a normal exit, short enough to abort-with-instructions if wedged.
+    private const val PORT_FREE_POLLS = 8
 
     // Bounded heap + string-dedup: safe for hundreds of concurrent streams, small for a laptop.
     // The shell `${SPLICE_JVM_OPTS:-...}` lets an operator override without touching code.

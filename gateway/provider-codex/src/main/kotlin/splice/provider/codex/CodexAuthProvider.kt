@@ -232,7 +232,11 @@ public class CodexAuthProvider(
         fresh: RefreshedTokens,
         access: String,
     ): RefreshOutcome {
-        writeSecure(authPath, mergedAuthJson(raw, tokens, fresh, access).toString())
+        // The endpoint already consumed the old refresh_token (Granted) by the time we get here — a
+        // throwing write must degrade to a typed PersistFailed, never a raw throw through SingleFlight
+        // out of credentials()/refresh(), so the not-yet-expired current token still gets served.
+        runCatchingCancellable { writeSecure(authPath, mergedAuthJson(raw, tokens, fresh, access).toString()) }
+            .getOrElse { return RefreshOutcome.PersistFailed("auth.json write failed: $it") }
         invalidateCache()
         return readSnapshot()?.let { RefreshOutcome.Refreshed(Credentials.Bearer(it.access, it.accountId)) }
             ?: RefreshOutcome.PersistFailed("auth.json unreadable after rotated-token write")

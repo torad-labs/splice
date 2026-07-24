@@ -280,6 +280,45 @@ class UpstreamClientTransportTest {
     }
 
     @Test
+    fun `stream reissue does not sleep once the deadline has already expired`() = runTest {
+        // G4d follow-up: the reissue branch must re-check the deadline before its backoff sleep,
+        // same as the sibling applyBackoff path already does — an expired budget must not pay for
+        // one more real delay it can't use.
+        var now = 0L
+        val engineCalls = AtomicInteger()
+        val backoffCalls = AtomicInteger()
+        val retries = mutableListOf<String>()
+        val engine = MockEngine {
+            engineCalls.incrementAndGet()
+            respond("ok-body", HttpStatusCode.OK, headersOf())
+        }
+        val client = UpstreamClient(
+            firstByteTimeoutMs = 5_000,
+            totalTimeoutMs = 1_000,
+            maxRetries = 3,
+            client = HttpClient(engine),
+            backoff = { _, _ -> backoffCalls.incrementAndGet() },
+            clock = { now },
+        )
+        assertThrows<ConnectException> {
+            client.post(
+                url = "https://api.example.test/v1",
+                bodyJson = "{}",
+                auth = fakeAuth,
+                extraHeaders = { emptyMap() },
+                onRetry = { retries.add(it) },
+                clientFrameEmitted = { false },
+            ) {
+                now = 5_000 // the deadline has already passed by the time the tear is observed
+                throw ConnectException("torn before first frame")
+            }
+        }
+        assertEquals(1, engineCalls.get(), "an expired deadline must not pay for a reissue POST")
+        assertEquals(0, backoffCalls.get(), "an expired deadline must not pay for the reissue backoff sleep")
+        assertTrue(retries.any { it.contains("deadline exceeded") && it.contains("stream reissue") })
+    }
+
+    @Test
     fun `once client has seen a frame a torn stream never reissues`() = runTest {
         val blockCalls = AtomicInteger()
         val engine = MockEngine { respond("ok-body", HttpStatusCode.OK, headersOf()) }

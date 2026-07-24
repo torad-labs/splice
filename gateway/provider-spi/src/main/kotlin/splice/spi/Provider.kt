@@ -86,4 +86,9 @@ public interface Provider : ProviderIdentity {
 
     /** Mid-stream re-anchoring policy for FAILED rounds; null = surface the failure (pre-reanchor behaviour). */
     public fun reanchorController(meta: TurnMeta): ReanchorController? = null
+
+    /** RC-4 (reasoning-cache 2026-07-24): one-shot request-body amendment on a
+     *  deterministic upstream rejection — (status, responseText, bodyJson) -> amended
+     *  body or null. Default null keeps every provider on the plain retry plan. */
+    public fun amendBodyOnFailure(status: Int, responseText: String, bodyJson: String): String? = null
 }

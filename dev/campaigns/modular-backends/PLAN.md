@@ -282,9 +282,11 @@ they gate can now be cut.
 - **P3 — Capability resolution + alias map.** One resolver, typed per-model capabilities; alias map
   with fallback; delete the substring heuristic.
 - **P4 — Auth** (C0 first — the skeleton/policy consume the strategy descriptor, so it must exist
-  before skeleton-birth; resolve `ResolvedAuthKind` before/alongside P4.0 so the new skeleton is
-  wired through typed dispatch, not the raw-string fallback it would otherwise replace in P6):
-  - **P4.0** — C0 typed login/auth-strategy parameters (`strategyParams`).
+  before skeleton-birth):
+  - **P4.0** — C0 typed login/auth-strategy parameters (`strategyParams`) **and** `ResolvedAuthKind`
+    resolution (the TOML `kind` string resolves to the closed type here), so the new skeleton is
+    wired through typed dispatch from birth — never the raw-string fallback. `ResolvedAuthKind`
+    lands **once, here**; P6 owns only the remaining factory/composition validation.
   - **P4.1** — skeleton-birth + Codex policy.
   - **P4.2** — Grok policy migration.
   - **P4.3** — Kimi policy migration.
@@ -292,8 +294,9 @@ they gate can now be cut.
   Live proof per provider (P7 carve-out).
 - **P5 — Output pipeline.** Extract demonstrated cross-cutting operations against the B0 corpora, one
   feature/dialect at a time.
-- **P6 — Registry & closed-type validation.** `ResolvedAuthKind`; exhaustive/completeness-checked
-  factory selection; the failure-classification table (§4-D).
+- **P6 — Registry & closed-type validation.** Built-in dialect/auth factory registries;
+  exhaustive/completeness-checked factory selection over the `ResolvedAuthKind` resolved in P4.0; the
+  failure-classification table (§4-D). (`ResolvedAuthKind` itself is defined in P4.0, not here.)
 - **P7 — Certification.** Full gate; request + stream + non-stream contracts; **candidate-artifact**
   live receipts (env-of-record must run the *candidate* JAR, not an arbitrary installed one). A
   **live-proof waiver is outstanding debt, not equivalent proof**: it records slot/provider/model,
@@ -361,15 +364,40 @@ policy**. The skeleton owns the sequence; a `ProviderAuthPolicy` owns the seams 
 the earlier six-op sketch, which could not express exchange, refresh-token access, grok's
 mtime-derived expiry, per-provider timing, or the two distinct failure boundaries):
 
+The skeleton is not a linear pipe — it is the **race-safe refresh choreography** the three providers
+already implement (codex `CodexAuthProvider.kt:137-225`, kimi `KimiAuthProvider.kt:102-180`). A naive
+"parse S → refreshToken(S) → exchange" is wrong: the timing decision reads a *cached* snapshot, but
+the refresh token and peer-rotation check must use an *authoritative re-read inside the lock*. The
+faithful sequence, keyed on the cached `priorAccess` captured **before** the lock:
+
 ```
 skeleton (shared, one copy):
-  read bytes+fileMetadata (mtime/TTL cache) → policy.parseSnapshot
-    → policy.refreshTiming(now) three-tier decision
-    → SingleFlight → CredentialLock
-    → policy.refreshToken(S)              // read inside the lock, before exchange
-    → policy.exchange(refreshToken, strategyParams)
-    → policy.validateRefresh → policy.merge+persist (0600)
-    → latch invalid_grant → lifecycle cancel
+  cached = parseSnapshot(cachedBytes, cachedMeta)          // may be stale; timing only
+  if refreshTiming(cached, now) says "serve as-is": return constructCredentials(cached)
+  priorAccess = accessIdentity(cached)                     // capture BEFORE the lock
+  if invalidGrantLatch.isLatched(currentMtime): return Rejected   // gives way when mtime changes
+  SingleFlight { CredentialLock.withLock(file) {
+    (bytes, meta) = read(file); fresh = parseSnapshot(bytes, meta)   // AUTHORITATIVE, inside lock
+    if accessIdentity(fresh) != priorAccess:                         // a peer/CLI rotated while we waited
+        adopt fresh, refresh cache, return constructCredentials(fresh)   // NO POST
+    rt = refreshToken(fresh) ?: return NoRefreshToken
+    attempt = exchange(rt, strategyParams)
+    if attempt rejected:                                            // MIGHT be a stale-token race
+        (bytes2, meta2) = read(file)                                //   re-read ONCE
+        rt2 = refreshToken(parseSnapshot(bytes2, meta2))
+        if rt2 != null && rt2 != rt: attempt = exchange(rt2, strategyParams)  // exactly one extra POST
+        else: return Rejected                                       //   (skeleton latches invalid_grant
+    validated = validateRefresh(attempt)                            //    on the CONFIRMED reject, by mtime)
+    newBytes = merge(bytes, meta, validated, now)                   // policy PRODUCES bytes
+    SecureFile.writeAtomic0600(file, newBytes)                      // skeleton PERSISTS + invalidates
+    reread + adopt persisted snapshot; return constructCredentials(persisted)
+  } } → lifecycle cancel
+```
+
+Persistence ownership is explicit: **`merge` returns bytes (policy); `SecureFile.writeAtomic0600` +
+cache-invalidate + verify/adopt is the skeleton's** — no `merge+persist` conflation. The `invalid_grant`
+latch is the skeleton's, keyed on the file mtime, checked at entry and released the instant the mtime
+changes (re-login). The interface below carries no choreography — only the pure per-provider seams:
 
 interface ProviderAuthPolicy<S : Snapshot, R>:
   parseSnapshot(bytes, fileMetadata): S        // fileMetadata carries mtime — grok synthesizes expiry

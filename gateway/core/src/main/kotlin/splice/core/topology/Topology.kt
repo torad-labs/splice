@@ -106,6 +106,11 @@ public data class QuirksConfig(
     @SerialName("summary_field") val summaryField: Boolean = true,
     @SerialName("compact_effort") val compactEffort: String? = null,
     @SerialName("tool_choice") val toolChoice: Boolean = false,
+    /** openai-responses only: the gateway-held reasoning cache for tool round-trips (RC-5,
+     *  2026-07-24). NULLABLE like every overlay knob — absent keeps the provider's own default
+     *  (codex: on; grok: off — xai returns no envelopes), so the overlay can't stomp it. False
+     *  restores the pre-cache behavior (per-tool-result amnesia). */
+    @SerialName("reasoning_cache") val reasoningCache: Boolean? = null,
 )
 
 @Serializable

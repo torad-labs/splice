@@ -36,6 +36,9 @@ class ExampleConfigTest {
         assertEquals(Dialect.OPENAI_RESPONSES, xai.dialect)
         assertEquals("grok-oauth", xai.auth.kind)
         assertEquals("session-id", xai.quirks.cacheKey)
+        // reasoning_cache round-trip (review 2026-07-24): a NON-default value must reach the
+        // parsed field — the 2026-07-18 audit found five decorative quirks; never again silently
+        assertEquals(false, xai.quirks.reasoningCache)
 
         val openrouter = topology.providers[topology.heads["openrouter"]!!.provider]!!
         assertEquals(Dialect.OPENAI_CHAT, openrouter.dialect)

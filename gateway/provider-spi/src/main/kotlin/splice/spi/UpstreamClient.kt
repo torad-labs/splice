@@ -83,6 +83,7 @@ public class UpstreamClient(
         val onRetry: (String) -> Unit,
         val perf: TurnPerf?,
         val clientFrameEmitted: () -> Boolean,
+        val amendBodyOnFailure: (Int, String, String) -> String?,
     )
 
     /**
@@ -105,20 +106,31 @@ public class UpstreamClient(
         // the pre-G5 commitment rule: never retry once handed off. Only TurnDriver, which can prove
         // FIRST_FRAME hasn't fired, passes a real probe.
         clientFrameEmitted: () -> Boolean = { true },
+        // RC-4 (reasoning-cache 2026-07-24): a caller-supplied ONE-SHOT body amendment for
+        // deterministic upstream rejections of request CONTENT (e.g. a 400 for stale
+        // encrypted-reasoning items): (status, responseText, currentBodyJson) -> amended body
+        // or null. Non-null swaps the body and retries immediately; fires at most once per post.
+        amendBodyOnFailure: (Int, String, String) -> String? = { _, _, _ -> null },
         block: suspend (UpstreamResponse) -> T,
     ): T {
-        val ctx = PostContext(url, auth, extraHeaders, onRetry, perf, clientFrameEmitted)
+        val ctx = PostContext(url, auth, extraHeaders, onRetry, perf, clientFrameEmitted, amendBodyOnFailure)
         // Encode ONCE; retries resend the same bytes (no per-attempt string re-encode). Never gzip.
-        val bodyBytes = bodyJson.toByteArray(Charsets.UTF_8)
+        var body = RequestBody(bodyJson)
         val state = RetryState()
         val t0 = clock()
         while (state.attempt < maxRetries) {
-            when (val step = runAttempt(ctx, bodyBytes, state, t0, block)) {
+            when (val step = runAttempt(ctx, body, state, t0, block)) {
                 is LoopStep.Done -> return step.value
+                is LoopStep.Amend -> body = RequestBody(step.bodyJson)
                 LoopStep.Continue -> Unit
             }
         }
         return giveUp(state.lastErr)
+    }
+
+    /** The current request payload: json for the RC-4 amender, bytes for the wire — encoded once. */
+    private data class RequestBody(val json: String) {
+        val bytes: ByteArray = json.toByteArray(Charsets.UTF_8)
     }
 
     /** Mutable loop state threaded through [runAttempt] — extracted (with it) so `post()` stays
@@ -132,10 +144,28 @@ public class UpstreamClient(
         // whole turn (declared once here, never reset per handoff) and is deliberately smaller than
         // and independent of `maxRetries` — re-POSTing after a 2xx is a costlier, riskier act.
         var streamReissues: Int = 0
+
+        // RC-4: the one-shot body-amendment budget (a deterministic 400 amended twice is a loop).
+        var amendedOnce: Boolean = false
+
+        /** RC-4: the one-shot amendment decision — lives here because it is pure retry-state
+         *  bookkeeping. Budgeted by [amendedOnce] ALONE, never the attempt counter: the amended
+         *  resend replays the failed attempt's slot, so it is guaranteed to go out even when the
+         *  400 lands on the last permitted attempt (review 2026-07-24: an `attempt += 1` here made
+         *  the loop guard eat the resend at the budget boundary — the amend computed a valid body
+         *  and then gave up on the stale pre-amendment error). */
+        fun amendStep(ctx: PostContext, outcome: RetryOutcome.Failed, bodyJson: String): LoopStep.Amend? {
+            if (amendedOnce) return null
+            val amended = ctx.amendBodyOnFailure(outcome.status, outcome.text, bodyJson) ?: return null
+            amendedOnce = true
+            ctx.onRetry("amending request body after ${outcome.status} and retrying once")
+            return LoopStep.Amend(amended)
+        }
     }
 
     private sealed class LoopStep<out T> {
         data class Done<T>(val value: T) : LoopStep<T>()
+        data class Amend(val bodyJson: String) : LoopStep<Nothing>()
         data object Continue : LoopStep<Nothing>()
     }
 
@@ -146,7 +176,7 @@ public class UpstreamClient(
      *  `return`) rather than signalling the loop to break — same funnel, no extra ReturnCount. */
     private suspend fun <T> runAttempt(
         ctx: PostContext,
-        bodyBytes: ByteArray,
+        body: RequestBody,
         state: RetryState,
         t0: Long,
         block: suspend (UpstreamResponse) -> T,
@@ -168,7 +198,7 @@ public class UpstreamClient(
         // 07:00 burst, 37 UnresolvedAddressException turns, attempts=1 on every one).
         val attempted = try {
             runCatchingCancellable {
-                attemptRequest(ctx, bodyBytes, creds, onStreamStart = { streamHandedOff = true }, block)
+                attemptRequest(ctx, body.bytes, creds, onStreamStart = { streamHandedOff = true }, block)
             }
         } catch (e: StreamTornBeforeClient) {
             // thrown by the turn driver through the translator (G5 reachability); a transport
@@ -184,13 +214,10 @@ public class UpstreamClient(
         if (outcome is RetryOutcome.Done) return LoopStep.Done(outcome.value)
         check(outcome is RetryOutcome.Failed) // sealed: Done or Failed, and Done returned above
         state.lastErr = outcome
-        val plan = planRetry(ctx, outcome, state.attempt, state.refreshedOnce)
-        state.refreshedOnce = plan.refreshedOnce
-        return when (plan.decision) {
-            RetryDecision.RETRY -> LoopStep.Continue // refresh succeeded — no normal attempt spent
-            RetryDecision.BACKOFF -> applyBackoff(ctx, plan, state, t0)
-            RetryDecision.GIVE_UP -> giveUp(state.lastErr)
-        }
+        // RC-4: a one-shot content amendment outranks the normal retry plan — a deterministic
+        // 400 (stale encrypted reasoning) would otherwise GIVE_UP; the amended body gets exactly
+        // one immediate resend, then normal classification owns whatever happens next.
+        return state.amendStep(ctx, outcome, body.json) ?: planStep(ctx, outcome, state, t0)
     }
 
     /** The transport-error half of one attempt (split so [runAttempt] stays under the complexity
@@ -252,11 +279,6 @@ public class UpstreamClient(
         state.attempt += 1
         return LoopStep.Continue
     }
-
-    /** The sole failure exit of the retry loop — carries the HTTP status so the classifier's
-     *  429/401/5xx floors actually fire (body-text-only classification left them dead code). */
-    private fun giveUp(last: RetryOutcome.Failed?): Nothing =
-        throw UpstreamFailed(last?.text.orEmpty(), last?.status)
 
     /** The cooldown's fail-fast exit: a synthesized 429 (classifier parity with the real one)
      *  thrown BEFORE credentials/attempt work — an armed cooldown costs microseconds, not an
@@ -419,7 +441,28 @@ public class UpstreamClient(
         ) : RetryOutcome<Nothing>()
     }
 
+    /** RC-4 companion move (function-budget): the retry-plan tail of a failed attempt. */
+    private suspend fun <T> planStep(
+        ctx: PostContext,
+        outcome: RetryOutcome.Failed,
+        state: RetryState,
+        t0: Long,
+    ): LoopStep<T> {
+        val plan = planRetry(ctx, outcome, state.attempt, state.refreshedOnce)
+        state.refreshedOnce = plan.refreshedOnce
+        return when (plan.decision) {
+            RetryDecision.RETRY -> LoopStep.Continue // refresh succeeded — no attempt spent
+            RetryDecision.BACKOFF -> applyBackoff(ctx, plan, state, t0)
+            RetryDecision.GIVE_UP -> giveUp(state.lastErr)
+        }
+    }
+
     public companion object {
+        /** The sole failure exit of the retry loop — carries the HTTP status so the classifier's
+         *  429/401/5xx floors actually fire (body-text-only classification left them dead code). */
+        private fun giveUp(last: RetryOutcome.Failed?): Nothing =
+            throw UpstreamFailed(last?.text.orEmpty(), last?.status)
+
         private const val BACKOFF_BASE_MS = 200L
         private const val UNAUTHORIZED = 401
         private const val FORBIDDEN = 403
@@ -606,8 +649,11 @@ public class UpstreamClient(
         private const val CLIENT_ERROR_MIN = 400
         private const val CLIENT_ERROR_MAX = 499
 
-        /** Grok Build: 4xx + "encrypted_content" in the message → do not retry. */
-        internal fun isEncryptedContentError(status: Int, body: String): Boolean =
+        /** Grok Build: 4xx + "encrypted_content" in the message → do not retry. PUBLIC because the
+         *  RC-4 amend gate must key off the SAME predicate as this GIVE_UP classification (review
+         *  2026-07-24: a narrower literal match on the amend side let any wording drift skip the
+         *  recovery and land straight in give-up). */
+        public fun isEncryptedContentError(status: Int, body: String): Boolean =
             status in CLIENT_ERROR_MIN..CLIENT_ERROR_MAX && body.contains("encrypted_content", ignoreCase = true)
     }
 }

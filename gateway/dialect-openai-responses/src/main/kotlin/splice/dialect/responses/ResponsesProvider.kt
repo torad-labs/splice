@@ -20,6 +20,7 @@ import splice.spi.ProviderTuning
 import splice.spi.ReanchorController
 import splice.spi.StreamTranslator
 import splice.spi.TurnSignals
+import splice.spi.UpstreamClient
 
 public abstract class ResponsesProvider(
     tuning: ProviderTuning,
@@ -54,13 +55,27 @@ public abstract class ResponsesProvider(
                 configEffort = configEffort,
                 configSummary = if (showOn) configSummary else "none",
                 showReasoning = showReasoning,
-                // INPUT injection of prior opaque encrypted reasoning items — operator opt-in ONLY (default OFF; it
-                // thins fresh reasoning ~4x). Never derived from showReasoning.
+                // LEGACY client-round-trip replay (redacted_thinking through Claude Code) —
+                // operator opt-in only; superseded by the gateway-held reasoning cache below.
                 replayReasoning = InjectPriorReasoning(replayReasoning),
-                // Ask for the opaque encrypted handle whenever reasoning is visible.
-                includeEncryptedReasoning = RequestEncryptedReasoning(showOn && !compact),
+                // Ask for the opaque encrypted handle whenever reasoning is visible OR the
+                // reasoning cache needs it (RC-5: the cache can only hold what the server returns).
+                includeEncryptedReasoning = RequestEncryptedReasoning(
+                    (showOn && !compact) || reasoningCacheActive(quirks, compact),
+                ),
                 sessionId = sessionId,
                 decodeReasoningEnvelope = { decodeReasoningEnvelope(it) },
+                // RC-5: gateway-held reasoning continuity — the turn that emitted these tool ids
+                // left its plan in the cache; reinject it so the model resumes instead of
+                // re-deriving (codex parity; repeated-tool-call amnesia otherwise). Scoped to
+                // THIS conversation (same first-message hash the builder stamps on TurnMeta).
+                reasoningLookup = { id ->
+                    if (reasoningCacheActive(quirks, compact)) {
+                        reasoningCache.lookup(stablePromptCacheKey(body.typed), id)
+                    } else {
+                        null
+                    }
+                },
             ),
         )
         return BuiltTurn(built.req, built.meta, perTurnHeaders(sessionId) + liteHeaders(built.meta))
@@ -99,7 +114,13 @@ public abstract class ResponsesProvider(
                 // could consume them: fold replay (Success side) OR mid-stream re-anchor salvage
                 // (Failure side) — i.e. every non-compact responses turn since re-anchor landed
                 // (2026-07-24). Compact turns keep the collection off.
-                collectReasoningEnvelopes = foldController(meta) != null || reanchorController(meta) != null,
+                collectReasoningEnvelopes = foldController(meta) != null || reanchorController(meta) != null ||
+                    reasoningCacheActive(quirks, meta.compact),
+                onTurnReasoning = { ids, envs ->
+                    if (reasoningCacheActive(quirks, meta.compact)) {
+                        reasoningCache.put(meta.conversationKey, ids, envs)
+                    }
+                },
             ),
         )
 
@@ -110,6 +131,19 @@ public abstract class ResponsesProvider(
         val cfg = foldConfig ?: return null
         if (meta.compact || meta.upstreamModel !in cfg.models) return null
         return ResponsesFoldController(cfg, decodeReasoningEnvelope = { decodeReasoningEnvelope(it) })
+    }
+
+    // RC-2/RC-4: gateway-held reasoning continuity for tool round-trips (codex parity). One
+    // cache per provider instance; capture and lookup wire in via buildTurn/streamTranslator.
+    private val reasoningCache: ReasoningCache = ReasoningCache()
+
+    /** RC-4: a 400 rejecting stale encrypted reasoning strips the injected items and retries
+     *  once (NEVER-BELOW-STATUS-QUO law); every other failure keeps the plain retry plan.
+     *  Keyed off the SAME classifier as the retry plan's GIVE_UP (review 2026-07-24: a narrower
+     *  literal match here let any upstream wording drift skip the recovery entirely). */
+    final override fun amendBodyOnFailure(status: Int, responseText: String, bodyJson: String): String? {
+        if (!UpstreamClient.isEncryptedContentError(status, responseText)) return null
+        return stripStaleReasoning(bodyJson, reasoningCache)
     }
 
     // The controller is stateless — one cached instance serves every turn (a per-call

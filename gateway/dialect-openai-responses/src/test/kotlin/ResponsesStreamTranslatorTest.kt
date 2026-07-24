@@ -69,6 +69,7 @@ private fun ctx(
     fired: WatchdogFired? = null,
     collect: Boolean = false,
     dedupe: Boolean = false,
+    capture: ((List<String>, List<String>) -> Unit)? = null,
 ) = StreamTurnContext(
     compact = compact,
     emitEncryptedReasoning = EmitEncryptedReasoning(emit),
@@ -79,6 +80,7 @@ private fun ctx(
     upstreamTimeoutMsForMessage = 900_000,
     collectReasoningEnvelopes = collect,
     dedupeRepeatedSummaryParts = dedupe,
+    onTurnReasoning = capture ?: { _, _ -> },
 )
 
 private fun ev(json: String): JsonObject = Json.parseToJsonElement(json).jsonObject
@@ -493,5 +495,74 @@ class ResponsesStreamTranslatorTest {
             sink,
         )
         assertTrue(sink.calls.none { it.startsWith("redacted:") })
+    }
+}
+
+// RC-1 walls (reasoning-cache campaign, 2026-07-24): the capture sink fires exactly when a
+// successful tool-use round produced envelopes keyed by REAL upstream ids — synthetic ids and
+// non-tool rounds never seed the cache.
+class TurnReasoningCaptureTest {
+
+    @Test
+    fun `a successful tool round with envelopes fires the capture with real ids`() = runTest {
+        var captured: Pair<List<String>, List<String>>? = null
+        val outcome = ResponsesStreamTranslator(
+            ctx(collect = true, capture = { ids, envs -> captured = ids to envs }),
+        ).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,""" +
+                        """"item":{"type":"reasoning","id":"rs_1","encrypted_content":"blob"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"call_abc","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1,"arguments":"{}"}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertTrue(outcome is TurnOutcome.Success)
+        assertEquals(listOf("call_abc"), captured?.first)
+        assertEquals(1, captured?.second?.size)
+    }
+
+    @Test
+    fun `a synthetic-id tool round never seeds the cache`() = runTest {
+        var fired = false
+        ResponsesStreamTranslator(
+            ctx(collect = true, capture = { _, _ -> fired = true }),
+        ).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,""" +
+                        """"item":{"type":"reasoning","id":"rs_1","encrypted_content":"blob"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","name":"run"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertFalse(fired, "toolu_synth ids repeat across turns — they must never key the cache")
+    }
+
+    @Test
+    fun `a text-only round never fires the capture`() = runTest {
+        var fired = false
+        ResponsesStreamTranslator(
+            ctx(collect = true, capture = { _, _ -> fired = true }),
+        ).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"hello"}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertFalse(fired)
     }
 }

@@ -42,6 +42,10 @@ public class GrokProvider(
             compactEffortPin = null, // inherit session effort on compact (v27 cache law — no pins)
             emitToolChoice = true,
             emitStrict = true,
+            // xai returns no encrypted reasoning envelopes, so the cache would only widen the
+            // request's include[] for nothing (untested surface on xai). TOML
+            // `reasoning_cache = true` re-enables via the overlay if that ever changes.
+            reasoningCache = false,
         )
     }
 }

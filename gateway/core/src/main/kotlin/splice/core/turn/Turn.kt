@@ -103,6 +103,10 @@ public data class TurnMeta(
     val effort: String,
     val summary: String?,
     val budgetTokens: Long?,
+    /** Stable per-conversation scope key (responses dialect: first-message hash) — partitions the
+     *  gateway reasoning cache so concurrent conversations on one head can never cross-inject
+     *  (review 2026-07-24, RC-2's eli-risk-8 keying). Null (chat/passthrough) = one shared scope. */
+    val conversationKey: String? = null,
 )
 
 /** The two-tier watchdog knobs (v35 doctrine): before first byte the idle limit is

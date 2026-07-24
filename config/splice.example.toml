@@ -27,6 +27,10 @@ base_url = "https://chatgpt.com/backend-api/codex"
 # Documented alternative: OpenAI Platform API keys (kind = "api-key", env = "OPENAI_API_KEY").
 auth = { kind = "chatgpt-oauth", file = "~/.codex/auth.json" }
 quirks = { store = false, account_id_header = true, cache_key = "first-message-hash", effort_ceiling = "max", summary_field = true }
+# reasoning_cache (default true): the gateway holds each turn's encrypted reasoning and reinjects
+# it on tool round-trips (codex-CLI parity — without it the model re-derives its plan at every
+# tool result: repeated tool calls, duplicated reasoning). The gateway retains only the OPAQUE
+# encrypted envelopes, bounded + TTL'd; set reasoning_cache = false to restore the old behavior.
 [[providers.codex.models]]
 id = "gpt-5.6-sol"
 label = "Codex 5.6 Sol"
@@ -66,7 +70,9 @@ base_url = "https://api.x.ai/v1"
 auth = { kind = "grok-oauth", file = "~/.grok/auth.json" }  # browser login: `claude-grok login`
 # summary_field=true enables the reasoning.summary field (value comes from [daemon].summary).
 # Raw reasoning items stay encrypted by xAI; public form is summary/reasoning_text only.
-quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = true, tool_choice = true }
+# reasoning_cache = false documented here because xai returns no encrypted reasoning envelopes —
+# the cache would only widen the request's include[] for nothing (it defaults on for codex).
+quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = true, tool_choice = true, reasoning_cache = false }
 [[providers.xai.models]]
 id = "grok-4.5"
 label = "Grok 4.5"

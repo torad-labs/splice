@@ -70,7 +70,9 @@ base_url = "https://api.x.ai/v1"
 auth = { kind = "grok-oauth", file = "~/.grok/auth.json" }  # browser login: `claude-grok login`
 # summary_field=true enables the reasoning.summary field (value comes from [daemon].summary).
 # Raw reasoning items stay encrypted by xAI; public form is summary/reasoning_text only.
-quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = true, tool_choice = true }
+# reasoning_cache = false documented here because xai returns no encrypted reasoning envelopes —
+# the cache would only widen the request's include[] for nothing (it defaults on for codex).
+quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = true, tool_choice = true, reasoning_cache = false }
 [[providers.xai.models]]
 id = "grok-4.5"
 label = "Grok 4.5"

@@ -47,13 +47,16 @@ phase = "P1-capture"
 title = "ReasoningCache: gateway-held bounded store keyed (conversationKey, turnKey) — conversation identity via the existing CacheKeyStrategy machinery (session-id / first-message-hash), NEVER the bare tool_use id (cross-conversation bleed, eli risk 8). Bounds: envelope-count + byte ceiling sized for deepest concurrent turns; TTL well above max turn wall-time (watchdog totalCap) and turn-AWARE: never evict a turn still receiving tool_results (eli risk 4 — mid-loop eviction reproduces the amnesia symptom intermittently). Consume-on-injection with grace re-read for retried requests. Single-process only; sticky per-head routing is the deployment reality (one daemon), note the restart-loses-cache behavior explicitly (eli risk 5) — a restart degrades to status quo, never errors"
 files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ReasoningCache.kt", "gateway/dialect-openai-responses/src/test/kotlin/ReasoningCacheTest.kt"]
 status = "done"
-verify = "cd gateway && ./gradlew :gateway:test"
+verify = "cd gateway && ./gradlew :dialect-openai-responses:test"
 # [2026-07-24] FENCE-EDITED: files = ["gateway/gateway/src/main/kotlin/splice/gateway/head/ReasoningCache.kt", "gateway/gateway/src/test/kotlin/ReasoningCacheTest.kt"] -> files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ReasoningCache.kt", "gateway/dialect-openai-responses/src/test/kotlin/ReasoningCacheTest.kt"] (by=orchestrator implied; no flag)
 # [2026-07-24] fence moved gateway/head -> dialect-openai-responses: the cache is wired entirely inside ResponsesProvider (capture sink + builder lookup), no gateway-module seam needed — smaller blast radius
 # [2026-07-24] CLAIM: owner=fable-2026-07-24 at=2026-07-24T11:31:21Z
 # [2026-07-24] ATTEST-START: tree=bc3ab6e9816376a81ca3fde1431ddd1b817d8cbf at=2026-07-24T11:31:21Z
 # [2026-07-24] landed: ReasoningCache (read-not-consume grace, oldest-first eviction under entry+byte bounds, TTL 30min via injected clock, evictByToolId for staleness) + 6 walls in ReasoningCacheTest. verify: :dialect-openai-responses:test green
 # [2026-07-24] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
+# [2026-07-24] VERIFY-EDITED: verify = "cd gateway && ./gradlew :gateway:test" -> verify = "cd gateway && ./gradlew :dialect-openai-responses:test" (by=orchestrator implied; no flag)
+# [2026-07-24] verify fix (PR #46 review c3): :gateway:test was the pre-rename module — the literal command never exercised ReasoningCacheTest; now :dialect-openai-responses:test
+# [2026-07-24] FIX ROUND (review 2026-07-24): cache is now conversation-scoped (first-message key via TurnMeta.conversationKey) per this item's original eli-risk-8 spec; eviction deliberately bare-id (over-evict = miss, never cross-inject); MonoClock replaces wall clock (TTL sweep invariant); empty-put walls split; multi-eviction wall added
 
 [[items]]
 id = "RC-3"
@@ -71,19 +74,21 @@ verify = "cd gateway && ./gradlew :dialect-openai-responses:test"
 id = "RC-4"
 phase = "P2-inject"
 title = "Staleness retry: an upstream 400 invalid_encrypted_content (encrypted envelopes expire server-side, eli constraint 4 + sub2api #3138 precedent) triggers ONE re-send with the injected reasoning items stripped — degrade to per-item amnesia, never fail the turn on cache contents. Wire into UpstreamClient's existing pre-handoff retry classification (it is a pre-stream 400, inside the existing retry window); evict the offending cache entry on the way"
-files = ["gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamClient.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesProvider.kt"]
+files = ["gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamClient.kt", "gateway/provider-spi/src/main/kotlin/splice/spi/Provider.kt", "gateway/gateway/src/main/kotlin/splice/gateway/head/TurnDriver.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesProvider.kt"]
 status = "done"
 verify = "cd gateway && ./gradlew :gateway:test :dialect-openai-responses:test"
 # [2026-07-24] CLAIM: owner=fable-2026-07-24 at=2026-07-24T11:35:45Z
 # [2026-07-24] ATTEST-START: tree=bd471d821b7f7e9d6a43af41b6a8541b0c4ae44d at=2026-07-24T11:35:45Z
 # [2026-07-24] landed: UpstreamClient one-shot amendBodyOnFailure seam (LoopStep.Amend, amendedOnce budget, fires before planRetry so a deterministic 400 gets its corrected resend instead of GIVE_UP), Provider SPI default-null hook, TurnDriver pass-through, ResponsesProvider override gated 400+invalid_encrypted_content, stripStaleReasoning via closed DTO + turn eviction; 2 strip walls + loop covered by e2e RC-6 (no UpstreamClient harness test — noted debt). verify green
 # [2026-07-24] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
+# [2026-07-24] FENCE-EDITED: files = ["gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamClient.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesProvider.kt"] -> files = ["gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamClient.kt", "gateway/provider-spi/src/main/kotlin/splice/spi/Provider.kt", "gateway/gateway/src/main/kotlin/splice/gateway/head/TurnDriver.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesProvider.kt"] (by=orchestrator implied; no flag)
+# [2026-07-24] fence fix (PR #46 review c4): added Provider.kt and TurnDriver.kt — both were landed and credited in notes but fenced nowhere. FIX ROUND (review 2026-07-24): amend no longer spends an attempt (the latch is the budget — the boundary bug never sent the amended body at attempt==maxRetries-1); amend gate now shares isEncryptedContentError with the GIVE_UP classifier; strip eviction scoped to the dropped rounds only; UpstreamClientAmendTest.kt pins all three
 
 [[items]]
 id = "RC-5"
 phase = "P3-policy"
 title = "Policy, knob, docs: cache ON by default for the responses dialect (codex head), quirks = { reasoning_cache = false } escape hatch in QuirksConfig + example config; fresh user turns get NO injection (deliberate divergence from codex's physical all-turns retention — safer, matches the server current_turn default, honors the 07-20 thins-fresh-reasoning note in its only plausible scope; eli Q5); replay_reasoning documented as the legacy client-round-trip mode; RETENTION note in PRODUCT.md/SECURITY.md: gateway holds opaque encrypted envelopes, bounded, TTL'd, never plaintext"
-files = ["gateway/core/src/main/kotlin/splice/core/topology/Topology.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesProvider.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesRequestBuilder.kt", "gateway/app/src/main/kotlin/splice/app/Daemon.kt", "config/splice.example.toml", "PRODUCT.md", "SECURITY.md"]
+files = ["gateway/core/src/main/kotlin/splice/core/topology/Topology.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesProvider.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesRequestBuilder.kt", "gateway/app/src/main/kotlin/splice/app/Daemon.kt", "config/splice.example.toml", "SECURITY.md"]
 status = "done"
 verify = "cd gateway && ./gradlew check"
 # [2026-07-24] CLAIM: owner=fable-2026-07-24 at=2026-07-24T11:39:24Z
@@ -91,12 +96,15 @@ verify = "cd gateway && ./gradlew check"
 # [2026-07-24] FENCE-EDITED: files = ["gateway/core/src/main/kotlin/splice/core/topology/Topology.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesProvider.kt", "config/splice.example.toml", "PRODUCT.md", "SECURITY.md"] -> files = ["gateway/core/src/main/kotlin/splice/core/topology/Topology.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesProvider.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesRequestBuilder.kt", "gateway/app/src/main/kotlin/splice/app/Daemon.kt", "config/splice.example.toml", "PRODUCT.md", "SECURITY.md"] (by=orchestrator implied; no flag)
 # [2026-07-24] landed: ResponsesQuirks.reasoningCache (default true) + withReasoningCacheToml chained overlay (withToml at complexity ceiling), QuirksConfig reasoning_cache TOML key + Daemon overlay, provider wiring (capture via onTurnReasoning, lookup in BuildOptions, includeEncryptedReasoning now on when cache needs it even with display off), example-config + SECURITY.md retention note; detekt budget shuffles: amendStep→RetryState, giveUp→companion, planStep extraction. verify: full gradlew check + ast-grep green
 # [2026-07-24] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
+# [2026-07-24] FENCE-EDITED: files = ["gateway/core/src/main/kotlin/splice/core/topology/Topology.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesProvider.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesRequestBuilder.kt", "gateway/app/src/main/kotlin/splice/app/Daemon.kt", "config/splice.example.toml", "PRODUCT.md", "SECURITY.md"] -> files = ["gateway/core/src/main/kotlin/splice/core/topology/Topology.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesProvider.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesRequestBuilder.kt", "gateway/app/src/main/kotlin/splice/app/Daemon.kt", "config/splice.example.toml", "SECURITY.md"] (by=orchestrator implied; no flag)
+# [2026-07-24] fence fix (PR #46 review c5): dropped PRODUCT.md — never delivered, the retention note landed in SECURITY.md only
+# [2026-07-24] FIX ROUND (review 2026-07-24): QuirksConfig.reasoning_cache now NULLABLE (absent keeps provider default) — grok defaults OFF (xai returns no envelopes; include[] widening was untested surface); example config documents reasoning_cache=false on xai + ExampleConfigTest round-trips it; withReasoningCacheToml overlay walls added; SECURITY.md documents conversation scoping
 
 [[items]]
 id = "RC-6"
 phase = "P4-proof"
 title = "Proof at the level that failed us before: the 2026-07-23 single-shot probe validated one tool call and missed the amnesia class entirely — the acceptance here is a LIVE multi-tool agentic turn through the claudex head asserting (a) request 2 carries the rs_ reasoning item immediately before the replayed function_call (capture upstream_req via a local echo probe or daemon debug), and (b) a before/after behavioral comparison on a scripted 3-tool task: repeated-tool-call count and duplicated-reasoning length drop. Plus full gradlew check + ast-grep walls green"
-files = ["checks/e2e/reasoning-cache-probe.sh", "gateway/gateway/src/test/kotlin/ReasoningCacheTest.kt"]
+files = ["checks/e2e/reasoning-cache-probe.sh"]
 status = "done"
 verify = "bash checks/e2e/reasoning-cache-probe.sh && cd gateway && ./gradlew check"
 # [2026-07-24] CLAIM: owner=fable-2026-07-24 at=2026-07-24T11:55:50Z
@@ -104,3 +112,5 @@ verify = "bash checks/e2e/reasoning-cache-probe.sh && cd gateway && ./gradlew ch
 # [2026-07-24] landed checks/e2e/reasoning-cache-probe.sh: isolated daemon (ports 3496/3497/3499, scratch SPLICE_CONFIG+CLAUDEX_STATE_DIR, live daemon untouched) x2 passes against a recording mock upstream (the item's sanctioned local echo probe). Wire receipts: A-r2 carries rs_a1 exactly once immediately before the FIRST of two parallel function_calls (INJECT-ONCE proven on a fan-out round); A-r3 carries rs_a1+rs_a2 each in-position; B 400 invalid_encrypted_content -> immediate retry byte-identical minus reasoning items, client saw clean success; OFF pass round-2 carries zero reasoning (the before-state). Client-side: 3-tool task completes, no error frames. verify green: probe PASS + gradlew check + 31 walls.
 # [2026-07-24] DEVIATION (honesty): item title asked for a behavioral before/after (repeated-tool-call count / duplicated-reasoning length on a live model); landed instead as a DETERMINISTIC wire-level before/after (cache-off amnesia vs cache-on in-position injection) — a stochastic live-model A/B cannot be a merge gate. The behavioral claim rides codex parity: codex sends exactly these bytes and does not exhibit the confusion. Live-model observation remains operator-run once #46 deploys to the real daemon.
 # [2026-07-24] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
+# [2026-07-24] FENCE-EDITED: files = ["checks/e2e/reasoning-cache-probe.sh", "gateway/gateway/src/test/kotlin/ReasoningCacheTest.kt"] -> files = ["checks/e2e/reasoning-cache-probe.sh"] (by=orchestrator implied; no flag)
+# [2026-07-24] fence fix (PR #46 review c5): dropped the stale pre-rename gateway/gateway test path; this item owns only the probe script

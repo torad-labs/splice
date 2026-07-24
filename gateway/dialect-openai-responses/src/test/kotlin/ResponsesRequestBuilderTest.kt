@@ -23,6 +23,7 @@ import splice.dialect.responses.RequestEncryptedReasoning
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesRequestBuilder
 import splice.dialect.responses.stablePromptCacheKey
+import splice.dialect.responses.withReasoningCacheToml
 
 private val CODEX = ResponsesQuirks(providerTag = "claudex")
 private val GROK = ResponsesQuirks(
@@ -424,6 +425,40 @@ private fun cacheOpts(
     reasoningLookup = lookup,
 )
 
+// RC-5 overlay wall (review 2026-07-24: the knob had no round-trip proof — this repo already
+// shipped five decorative quirks once, the 2026-07-18 withToml audit): a real TOML value must
+// reach ResponsesQuirks.reasoningCache through the chained overlay, and null must preserve it.
+class ReasoningCacheTomlOverlayTest {
+
+    @Test
+    fun `the overlay applies an explicit value and null keeps the base`() {
+        val base = ResponsesQuirks(providerTag = "t")
+        assertTrue(base.reasoningCache, "default is ON")
+        assertEquals(false, base.withReasoningCacheToml(false).reasoningCache)
+        assertEquals(true, base.withReasoningCacheToml(null).reasoningCache, "null preserves the base")
+        assertEquals(
+            false,
+            base.withReasoningCacheToml(false).withReasoningCacheToml(null).reasoningCache,
+            "null preserves an applied override",
+        )
+    }
+}
+
+/** A pre-cache caller: identical fields, but the reasoningLookup PARAMETER is never passed —
+ *  the class default carries it, which is exactly what an unwired call site looks like. */
+private fun preCacheOpts() = BuildOptions(
+    compact = false,
+    originalModel = "claude-codex--gpt-5.6-sol",
+    upstreamModel = "gpt-5.6-sol",
+    configEffort = null,
+    configSummary = null,
+    showReasoning = ReasoningDisplay.from("text"),
+    replayReasoning = InjectPriorReasoning(false),
+    includeEncryptedReasoning = RequestEncryptedReasoning(true),
+    sessionId = null,
+    decodeReasoningEnvelope = { null },
+)
+
 private const val TOOL_TURN_BODY = """{"model":"m","messages":[
     {"role":"user","content":"do the thing"},
     {"role":"assistant","content":[
@@ -469,10 +504,14 @@ class ReasoningInjectionTest {
     }
 
     @Test
-    fun `a cache miss is byte-identical to an unwired build`() {
-        val hit = build(TOOL_TURN_BODY, options = cacheOpts(lookup = { null }))
-        val unwired = build(TOOL_TURN_BODY, options = cacheOpts())
-        assertEquals(unwired.toString(), hit.toString())
+    fun `a cache miss is byte-identical to a build that never heard of the cache`() {
+        // review 2026-07-24: comparing cacheOpts(lookup = { null }) against cacheOpts() compared
+        // two identical no-ops (cacheOpts' own default is { null } too). The compat claim is
+        // against a PRE-CACHE caller: BuildOptions constructed without the reasoningLookup
+        // parameter at all, so the class default carries the unwired side.
+        val miss = build(TOOL_TURN_BODY, options = cacheOpts(lookup = { null }))
+        val unwired = build(TOOL_TURN_BODY, options = preCacheOpts())
+        assertEquals(unwired.toString(), miss.toString())
     }
 
     @Test

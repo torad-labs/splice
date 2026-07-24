@@ -149,12 +149,15 @@ public class UpstreamClient(
         var amendedOnce: Boolean = false
 
         /** RC-4: the one-shot amendment decision — lives here because it is pure retry-state
-         *  bookkeeping (budget + attempt spend); the content policy itself is the caller's hook. */
+         *  bookkeeping. Budgeted by [amendedOnce] ALONE, never the attempt counter: the amended
+         *  resend replays the failed attempt's slot, so it is guaranteed to go out even when the
+         *  400 lands on the last permitted attempt (review 2026-07-24: an `attempt += 1` here made
+         *  the loop guard eat the resend at the budget boundary — the amend computed a valid body
+         *  and then gave up on the stale pre-amendment error). */
         fun amendStep(ctx: PostContext, outcome: RetryOutcome.Failed, bodyJson: String): LoopStep.Amend? {
             if (amendedOnce) return null
             val amended = ctx.amendBodyOnFailure(outcome.status, outcome.text, bodyJson) ?: return null
             amendedOnce = true
-            attempt += 1
             ctx.onRetry("amending request body after ${outcome.status} and retrying once")
             return LoopStep.Amend(amended)
         }
@@ -646,8 +649,11 @@ public class UpstreamClient(
         private const val CLIENT_ERROR_MIN = 400
         private const val CLIENT_ERROR_MAX = 499
 
-        /** Grok Build: 4xx + "encrypted_content" in the message → do not retry. */
-        internal fun isEncryptedContentError(status: Int, body: String): Boolean =
+        /** Grok Build: 4xx + "encrypted_content" in the message → do not retry. PUBLIC because the
+         *  RC-4 amend gate must key off the SAME predicate as this GIVE_UP classification (review
+         *  2026-07-24: a narrower literal match on the amend side let any wording drift skip the
+         *  recovery and land straight in give-up). */
+        public fun isEncryptedContentError(status: Int, body: String): Boolean =
             status in CLIENT_ERROR_MIN..CLIENT_ERROR_MAX && body.contains("encrypted_content", ignoreCase = true)
     }
 }

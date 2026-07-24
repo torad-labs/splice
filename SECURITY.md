@@ -25,8 +25,11 @@ contract, or secret leakage get priority.
 
 ## Reasoning-cache retention
 
-With `reasoning_cache` enabled (the default for openai-responses providers), the daemon holds each
+With `reasoning_cache` enabled (the default for the codex provider), the daemon holds each
 turn's `reasoning.encrypted_content` envelopes in memory for up to 30 minutes (bounded count and
 bytes) so tool round-trips can replay them. The envelopes are opaque ciphertext (the upstream holds
 the keys); plaintext reasoning is never retained. They are process-memory only — never written to
-disk — and vanish on restart. Set `quirks = { reasoning_cache = false }` to disable.
+disk — and vanish on restart. Entries are scoped to their conversation (a stable first-message
+key), so concurrent conversations sharing one head can never receive each other's envelopes;
+staleness eviction is deliberately unscoped, which can only over-evict (a cache miss), never
+cross-inject. Set `quirks = { reasoning_cache = false }` to disable.

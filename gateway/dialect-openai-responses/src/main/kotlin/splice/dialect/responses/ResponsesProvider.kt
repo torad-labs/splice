@@ -20,6 +20,7 @@ import splice.spi.ProviderTuning
 import splice.spi.ReanchorController
 import splice.spi.StreamTranslator
 import splice.spi.TurnSignals
+import splice.spi.UpstreamClient
 
 public abstract class ResponsesProvider(
     tuning: ProviderTuning,
@@ -60,15 +61,20 @@ public abstract class ResponsesProvider(
                 // Ask for the opaque encrypted handle whenever reasoning is visible OR the
                 // reasoning cache needs it (RC-5: the cache can only hold what the server returns).
                 includeEncryptedReasoning = RequestEncryptedReasoning(
-                    (showOn || quirks.reasoningCache) && !compact,
+                    (showOn && !compact) || reasoningCacheActive(quirks, compact),
                 ),
                 sessionId = sessionId,
                 decodeReasoningEnvelope = { decodeReasoningEnvelope(it) },
                 // RC-5: gateway-held reasoning continuity — the turn that emitted these tool ids
                 // left its plan in the cache; reinject it so the model resumes instead of
-                // re-deriving (codex parity; repeated-tool-call amnesia otherwise).
+                // re-deriving (codex parity; repeated-tool-call amnesia otherwise). Scoped to
+                // THIS conversation (same first-message hash the builder stamps on TurnMeta).
                 reasoningLookup = { id ->
-                    if (quirks.reasoningCache && !compact) reasoningCache.lookup(id) else null
+                    if (reasoningCacheActive(quirks, compact)) {
+                        reasoningCache.lookup(stablePromptCacheKey(body.typed), id)
+                    } else {
+                        null
+                    }
                 },
             ),
         )
@@ -109,9 +115,11 @@ public abstract class ResponsesProvider(
                 // (Failure side) — i.e. every non-compact responses turn since re-anchor landed
                 // (2026-07-24). Compact turns keep the collection off.
                 collectReasoningEnvelopes = foldController(meta) != null || reanchorController(meta) != null ||
-                    (quirks.reasoningCache && !meta.compact),
+                    reasoningCacheActive(quirks, meta.compact),
                 onTurnReasoning = { ids, envs ->
-                    if (quirks.reasoningCache && !meta.compact) reasoningCache.put(ids, envs)
+                    if (reasoningCacheActive(quirks, meta.compact)) {
+                        reasoningCache.put(meta.conversationKey, ids, envs)
+                    }
                 },
             ),
         )
@@ -130,9 +138,11 @@ public abstract class ResponsesProvider(
     private val reasoningCache: ReasoningCache = ReasoningCache()
 
     /** RC-4: a 400 rejecting stale encrypted reasoning strips the injected items and retries
-     *  once (NEVER-BELOW-STATUS-QUO law); every other failure keeps the plain retry plan. */
+     *  once (NEVER-BELOW-STATUS-QUO law); every other failure keeps the plain retry plan.
+     *  Keyed off the SAME classifier as the retry plan's GIVE_UP (review 2026-07-24: a narrower
+     *  literal match here let any upstream wording drift skip the recovery entirely). */
     final override fun amendBodyOnFailure(status: Int, responseText: String, bodyJson: String): String? {
-        if (status != HTTP_BAD_REQUEST || !responseText.contains("invalid_encrypted_content")) return null
+        if (!UpstreamClient.isEncryptedContentError(status, responseText)) return null
         return stripStaleReasoning(bodyJson, reasoningCache)
     }
 
@@ -149,8 +159,4 @@ public abstract class ResponsesProvider(
         if (meta.compact) null else reanchorPolicy
 
     private fun showOn(): Boolean = !showReasoning.isOff
-
-    private companion object {
-        const val HTTP_BAD_REQUEST = 400
-    }
 }

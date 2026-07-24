@@ -126,36 +126,40 @@ public enum class EffortLadder { CODEX, GROK }
 public data class BuiltRequest(val req: JsonObject, val meta: TurnMeta)
 
 public data class BuildOptions(
-    val compact: Boolean,
-    val originalModel: String,
-    val upstreamModel: String,
-    val configEffort: String?,
-    val configSummary: String?,
-    val showReasoning: ReasoningDisplay,
+    public val compact: Boolean,
+    public val originalModel: String,
+    public val upstreamModel: String,
+    public val configEffort: String?,
+    public val configSummary: String?,
+    public val showReasoning: ReasoningDisplay,
     /**
      * Inject prior redacted_thinking envelopes into the request input (multi-turn continuity).
      * Independent of [includeEncryptedReasoning]. Keep OFF for deepest fresh reasoning.
      */
-    val replayReasoning: InjectPriorReasoning,
+    public val replayReasoning: InjectPriorReasoning,
     /**
      * Ask the server to return `reasoning.encrypted_content` on this turn's output.
      * Does NOT inject prior blobs into input. ON when reasoning is shown so we can store the
      * opaque handle for optional later replay (Grok Build / Codex always request this).
      */
-    val includeEncryptedReasoning: RequestEncryptedReasoning = RequestEncryptedReasoning(true),
-    val sessionId: String? = null,
+    public val includeEncryptedReasoning: RequestEncryptedReasoning = RequestEncryptedReasoning(true),
+    public val sessionId: String? = null,
     /** Decodes a redacted_thinking envelope back into a Responses reasoning input item. */
-    val decodeReasoningEnvelope: (String) -> JsonObject?,
+    public val decodeReasoningEnvelope: (String) -> JsonObject?,
     /** RC-3 (reasoning-cache 2026-07-24): the gateway-held cache lookup — tool_use id → the
      *  ordered envelopes of the turn that emitted it. Null = miss = today's behavior exactly.
      *  Wired by the provider; the default keeps unwired builds byte-identical. */
-    val reasoningLookup: (String) -> List<String>? = { null },
+    public val reasoningLookup: (String) -> List<String>? = { null },
+) {
     /** Per-REQUEST rs_-id dedup across BOTH injection paths (cache + legacy client replay):
      *  upstream 400s a duplicated reasoning id, and one turn's entry is shared by all its
      *  parallel tool_use blocks — first render injects, the rest skip (inject-once law).
-     *  NB: BuildOptions.copy() would SHARE this set — construct fresh per request, never copy. */
-    val injectedReasoningIds: MutableSet<String> = mutableSetOf(),
-)
+     *  A BODY property, deliberately outside the primary constructor (review 2026-07-24): a
+     *  constructor default would be ALIASED by copy() (defaults are not re-evaluated), silently
+     *  sharing dedup state between two requests — here every instance, copies included,
+     *  initializes its own fresh set, and equals/hashCode never see it. */
+    public val injectedReasoningIds: MutableSet<String> = mutableSetOf()
+}
 
 public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
 
@@ -187,6 +191,9 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
             effort = effort ?: "disabled",
             summary = sentSummary,
             budgetTokens = body.thinking?.budgetTokens,
+            // The reasoning cache's conversation scope — the SAME derivation the provider's
+            // lookup closure uses, so capture (which only sees TurnMeta) and injection agree.
+            conversationKey = stablePromptCacheKey(body),
         )
         return BuiltRequest(req, meta)
     }

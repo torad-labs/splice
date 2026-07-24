@@ -18,7 +18,7 @@ existing Kimi Code login carries over. Two questions:
    a dedicated OAuth client be issued for tools like splice?
 
 Project: splice — https://github.com/torad-labs/splice (MIT, personal open-source project)
-Maintainer: Marcos <marcos@grailseekers.shop>
+Maintainer: Marcos Paulo Souza Damasceno <marcospaulo.s.d@gmail.com>
 
 splice is not affiliated with or endorsed by your company. The integration in
 question ships labeled EXPERIMENTAL, with the credential file documented as

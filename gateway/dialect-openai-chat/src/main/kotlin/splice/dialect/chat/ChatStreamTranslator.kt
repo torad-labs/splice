@@ -79,7 +79,8 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     override suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome {
         try {
             upstream.collect { evt ->
-                if (bufferOverCapacity(textBuf.length, thinkingBuf.length, toolIndexById.size)) {
+                val toolCount = maxOf(toolIndexById.size, pendingTools.size)
+                if (bufferOverCapacity(textBuf.length, thinkingBuf.length, toolCount)) {
                     runawayGuard = RUNAWAY_GUARD_MESSAGE
                     return@collect
                 }

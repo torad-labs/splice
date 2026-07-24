@@ -612,9 +612,10 @@ internal class TurnDriver(
     /** One conn-reset surface for raw tears and reissue-exhausted [StreamTornBeforeClient]. */
     private suspend fun emitConnReset(drive: TurnDrive, detail: String?) {
         log(telemetry.errTurn("conn-reset", drive, ": $detail"))
+        val boundedDetail = (detail ?: "no detail").take(ERR_SNIPPET)
         drive.emitter.emitError(
             ErrorType.OVERLOADED,
-            "${provider.key}: upstream connection failed ($detail) — retry",
+            "${provider.key}: upstream connection failed ($boundedDetail) — retry",
         )
         telemetry.recordPerf(drive, "error:conn-reset")
         health.local()

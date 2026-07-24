@@ -383,14 +383,21 @@ refresh(): Credentials? =                   // the ONE flatten point — logs ea
   singleFlight.run { refreshOutcome().credentialsOrNull(LOG_TAG) }
 ```
 
+The read layer separates **serving usability** (a usable access token) from **refresh usability** (a
+usable refresh token) — a file can have one without the other (`CodexAuthProvider.kt:101-117` serving
+vs `:151-157` refresh). `parse` yields a **`CredentialRecord`** `{ serving: S?, refreshToken: String?,
+bytes, meta }` (serving present iff a usable access token; `refreshToken` present iff refresh material),
+so `Incomplete` never blindly means `NoRefreshToken`, and the authoritative **bytes** survive into the
+merge base to preserve foreign CLI fields (`CodexAuthProvider.kt:246-258`).
+
 **acquire (per request) — the three tiers with the still-valid fallback** (`CodexAuthProvider.kt:80-98`):
 ```
 acquire():
-  read = readParse(file)                        // ReadResult<S>: Absent | Incomplete | Malformed | Ok(S, meta)
-  when (read) {
-    Absent | Incomplete -> return null          // recoverable — probe unhealthy, NO throw / NO bind-fail
-    Malformed(e)        -> { log(e); return null }   // recoverable but DISTINCT from absent (logged, not silent)
-    Ok(S, meta)         -> {
+  when (parse(file)) {                          // ReadResult: Absent | Malformed(e) | Ok(record)
+    Absent       -> return null                 // not logged in — recoverable, probe unhealthy, NO throw / NO bind-fail
+    Malformed(e) -> { log(e); return null }      // recoverable but DISTINCT from absent (logged, not silent)
+    Ok(rec)      -> {
+      S = rec.serving ?: return null             // present but NO usable access token → cannot serve (recoverable)
       current = constructCredentials(S)
       when (refreshTiming(S, now)) {
         OUTSIDE  -> return current                                    // outside the proactive window
@@ -404,22 +411,22 @@ Both PROACTIVE and BLOCKING call the same `refresh()` (one `SingleFlight`, one P
 `AuthProbeLoop` treats a non-null result — including the fallback — as healthy (`AuthProbeLoop.kt:69`),
 so dropping the fallback would change probe health, not just latency.
 
-**refreshOutcome (locked choreography) — returns `RefreshOutcome`, `ReadResult` exhausted at every read:**
+**refreshOutcome (locked choreography) — returns `RefreshOutcome`, read result exhausted at every read:**
 ```
 refreshOutcome():
   mtimeNow = stat(file)                         // FRESH stat — isLatched needs the CURRENT mtime, not a cached one
   if invalidGrantLatch.isLatched(mtimeNow): return Rejected(INVALID_GRANT)   // auto-clears when the file mtime changes
-  priorAccess = cache?.access                   // what THIS process last served, captured before the lock
+  priorAccess = cache?.access                   // what THIS process last served — MAY BE null on a cold cache
   CredentialLock.withLock(file) {               // (the SingleFlight wraps refresh() above, not this)
-    when (readParse(file)) {                                     // AUTHORITATIVE, inside the lock — exhaustive
+    when (parse(file)) {                                         // AUTHORITATIVE, inside the lock — exhaustive
       Absent       -> return NoCredentialsFile
       Malformed(e) -> return ReadFailed(e)
-      Incomplete   -> return NoRefreshToken                      // structurally short of a usable refresh token
-      Ok(fresh, meta) -> {
-        if accessIdentity(fresh) != priorAccess:                 // a peer/CLI rotated while we waited
-            adopt fresh; refresh cache; return Refreshed(constructCredentials(fresh))   // NO POST
-        rt = refreshToken(fresh) ?: return NoRefreshToken
-        return attempt(rt, base=(fresh, meta), allowRetry=true)  // → the retry state machine below
+      Ok(rec)      -> {
+        if priorAccess != null && rec.serving != null           // COLD cache (priorAccess null) is NOT a peer rotation
+           && accessIdentity(rec.serving) != priorAccess:        // a peer/CLI rotated while we waited
+            adopt rec.serving; refresh cache; return Refreshed(constructCredentials(rec.serving))   // NO POST
+        rt = rec.refreshToken ?: return NoRefreshToken           // ONLY missing REFRESH material → NoRefreshToken
+        return attempt(rt, base=rec, allowRetry=true)            // base = the whole record (carries bytes+meta)
       }
     }
   }
@@ -439,21 +446,24 @@ rejectedOrRetry(rt, base, allowRetry, reason, confirmed):        // MIGHT be a s
   if not allowRetry:                                             // second attempt already spent → terminal
     if confirmed: invalidGrantLatch.latch(base.meta.mtime)
     return Rejected(reason)
-  when (readParse(file)) {                                       // re-read ONCE — exhaustive
-    Ok(f2, m2) -> {
-      rt2 = refreshToken(f2)
+  when (parse(file)) {                                           // re-read ONCE — exhaustive
+    Ok(rec2) -> {
+      rt2 = rec2.refreshToken
       if rt2 == null || rt2 == rt:                               // same dead token → confirmed
-        if confirmed: invalidGrantLatch.latch(m2)                // latch the AUTHORITATIVE reread's mtime (m2)
+        if confirmed: invalidGrantLatch.latch(rec2.meta.mtime)   // latch the AUTHORITATIVE reread's mtime
         return Rejected(reason)
-      return attempt(rt2, base=(f2, m2), allowRetry=false)       // PROMOTE rotated file; exactly ONE extra POST
+      return attempt(rt2, base=rec2, allowRetry=false)           // PROMOTE the whole rotated record; ONE extra POST
     }
-    else -> return Rejected(reason)                              // reread unusable → terminal on the original reason
+    else -> return Rejected(reason)                              // Absent/Malformed reread → terminal on the original reason
   }
 
-persist(base, validated):
-  newBytes = merge(base.bytes, base.meta, validated, now)        // policy PRODUCES bytes off the AUTHORITATIVE base
-  SecureFile.writeAtomic0600(file, newBytes); invalidate cache   // skeleton PERSISTS
-  return reread-and-adopt ?: PersistFailed                       // verify/adopt the persisted snapshot
+persist(base, validated):                       // a write failure becomes ONE logged PersistFailed, not a thrown deferred
+  return runCatchingCancellable {
+    newBytes = merge(base.bytes, base.meta, validated, now)      // policy PRODUCES bytes off the AUTHORITATIVE record
+    SecureFile.writeAtomic0600(file, newBytes); invalidate cache // writeAtomic0600 RETHROWS — hence the wrapper
+    reread-and-adopt persisted snapshot
+  }.fold(success = { s -> Refreshed(constructCredentials(s)) },
+         failure = { e -> PersistFailed(e) })    // distinguishes pre-write failure from post-write reread failure
 ```
 
 **Lifecycle (the two cancellation laws the skeleton must preserve, `CodexAuthProvider.kt:55-70`):** the
@@ -464,23 +474,28 @@ refresh; and (2) `ownerScope` completion (daemon shutdown) `close()`s `SingleFli
 refresh **cannot persist credentials after shutdown**.
 
 Persistence ownership: **`merge` returns bytes (policy); `SecureFile.writeAtomic0600` +
-cache-invalidate + verify/adopt is the skeleton's.** The policy interface carries **no** choreography,
-timing execution, latch, scope, or `RefreshOutcome` — only pure per-provider seams:
+cache-invalidate + verify/adopt is the skeleton's** (wrapped so a rethrown write becomes `PersistFailed`).
+The policy interface carries **no** choreography, timing execution, latch, scope, or `RefreshOutcome` —
+only pure per-provider seams:
 
 ```
 interface ProviderAuthPolicy<S : Snapshot, R>:
-  parseSnapshot(bytes, fileMetadata): ReadResult<S>   // Ok(S) | Incomplete | Malformed — NEVER throws for a bad file;
-                                                      //   fileMetadata carries mtime (grok synthesizes expiry mtime+TTL)
-  accessIdentity(S): String                           // the currently-served access token/key
-  refreshToken(S): String?                            // material the skeleton reads inside the lock
-  constructCredentials(S): Credentials                // Bearer(access[,accountId]) | ApiKey(x-api-key)
+  parse(bytes, fileMetadata): ReadResult        // Ok(record) | Malformed — NEVER throws for a bad file. record =
+                                                //   { serving: S?, refreshToken: String?, bytes, meta }; serving present
+                                                //   iff a usable ACCESS token, refreshToken iff refresh material.
+                                                //   fileMetadata carries mtime (grok synthesizes expiry mtime+TTL)
+  accessIdentity(S): String                     // the currently-served access token/key
+  constructCredentials(S): Credentials          // Bearer(access[,accountId]) | ApiKey(x-api-key)
   refreshTiming(S, now): OUTSIDE | PROACTIVE | BLOCKING   // per-provider thresholds; the SKELETON executes the tier
-  notYetExpired(S, now): Boolean                      // the still-valid fallback predicate
+  notYetExpired(S, now): Boolean                // the still-valid fallback predicate
   exchange(refreshToken, strategyParams): RefreshAttempt<R>   // Granted|InvalidGrant|Denied; THROWS on transport
   validateRefresh(R): Valid(ValidatedRefresh) | Rejected(reason)   // a nominal grant missing access/rotation → Rejected → retry
   merge(oldBytes, fileMetadata, validated, now): bytes
   allowRefreshAfterInferenceFailure(status, body): Boolean   // SEPARATE inference-401 boundary (kimi veto), NOT the endpoint
 ```
+(`refreshToken` is now a field of the parsed record, not a `refreshToken(S)` seam — a file may carry a
+refresh token with no usable access token, which `refreshToken(S)` on a null serving snapshot could not
+express.)
 
 **Skeleton-owned (core, one copy — never policy):** `RefreshOutcome` (the outer verdict incl.
 `TransportFailed` / `NoCredentialsFile` / `NoRefreshToken` / `ReadFailed` / `PersistFailed`),
@@ -490,12 +505,12 @@ interface ProviderAuthPolicy<S : Snapshot, R>:
 *different* boundary than `exchange`'s return type — an inference-side 401 (kimi entitlement veto,
 `KimiAuthProvider.kt:99`), not the refresh endpoint's own outcome.
 
-`Snapshot` is a per-provider typed record that **includes refresh material**: codex
-`{access, accountId, refresh, expiresAtMs}`, grok `{access, refresh, expiresAtMs}`, kimi
-`{access, refresh, expiresAtS, expiresInS}`, so the skeleton reads the refresh token generically in
-`S` without a side channel. **Deletion inventory (P4 final item):** the three
-`*AuthProvider.credentials()`/`refresh()` bodies collapse to one skeleton; only the policy seams +
-`Snapshot` records remain per provider. **C0 login-param schema** (client-id, issuer, authorize/token
+The **serving** `Snapshot S` carries only what serving needs — codex `{access, accountId, expiresAtMs}`,
+grok `{access, expiresAtMs}`, kimi `{access, expiresAtS, expiresInS}` — while the **refresh token** rides
+on the parsed `CredentialRecord`, not on `S`. Keeping them separate is what lets a file be refresh-usable
+without being serve-usable (and vice-versa); a `Snapshot` that bundled both could not represent that
+state. **Deletion inventory (P4 final item):** the three `*AuthProvider.credentials()`/`refresh()` bodies
+collapse to one skeleton; only the policy seams + `Snapshot`/`CredentialRecord` records remain per provider. **C0 login-param schema** (client-id, issuer, authorize/token
 URLs, scopes, redirect, credential-path) is `strategyParams` above and feeds the two login strategies
 and `exchange`/`constructCredentials`, so a same-strategy same-policy vendor is TOML-only.
 

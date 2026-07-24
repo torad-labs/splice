@@ -78,6 +78,10 @@ public data class ResponsesQuirks(
     val compactEffortPin: String? = null, // null = inherit session effort (the cache law)
     val emitToolChoice: Boolean = false,
     val emitStrict: Boolean = false,
+    /** RC-5 (reasoning-cache 2026-07-24): gateway-held reasoning continuity for tool
+     *  round-trips (codex parity — repeated tool calls / duplicated reasoning without it).
+     *  Off restores the pre-cache amnesia behavior exactly. */
+    val reasoningCache: Boolean = true,
     /** stream_options.reasoning_summary_delivery, sent only when a summary is requested. The
      *  ChatGPT backend serves ~2.3x more titled summary sections with "sequential_cutoff"
      *  (probed 2026-07-19: 30 parts/1546ch vs 14/646 on the same prompt) — the same value
@@ -113,6 +117,10 @@ public fun ResponsesQuirks.withToml(
     emitToolChoice = toolChoice ?: this.emitToolChoice,
 )
 
+/** RC-5 overlay, chained after [withToml] (which sits at detekt's complexity ceiling). */
+public fun ResponsesQuirks.withReasoningCacheToml(reasoningCache: Boolean?): ResponsesQuirks =
+    copy(reasoningCache = reasoningCache ?: this.reasoningCache)
+
 public enum class EffortLadder { CODEX, GROK }
 
 public data class BuiltRequest(val req: JsonObject, val meta: TurnMeta)
@@ -138,6 +146,15 @@ public data class BuildOptions(
     val sessionId: String? = null,
     /** Decodes a redacted_thinking envelope back into a Responses reasoning input item. */
     val decodeReasoningEnvelope: (String) -> JsonObject?,
+    /** RC-3 (reasoning-cache 2026-07-24): the gateway-held cache lookup — tool_use id → the
+     *  ordered envelopes of the turn that emitted it. Null = miss = today's behavior exactly.
+     *  Wired by the provider; the default keeps unwired builds byte-identical. */
+    val reasoningLookup: (String) -> List<String>? = { null },
+    /** Per-REQUEST rs_-id dedup across BOTH injection paths (cache + legacy client replay):
+     *  upstream 400s a duplicated reasoning id, and one turn's entry is shared by all its
+     *  parallel tool_use blocks — first render injects, the rest skip (inject-once law).
+     *  NB: BuildOptions.copy() would SHARE this set — construct fresh per request, never copy. */
+    val injectedReasoningIds: MutableSet<String> = mutableSetOf(),
 )
 
 public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
@@ -436,8 +453,17 @@ private class ResponsesInputBuilder(private val quirks: ResponsesQuirks) {
         opts: BuildOptions,
     ) {
         if (!opts.compact && opts.replayReasoning.v) {
-            opts.decodeReasoningEnvelope(block.data)?.let { sink.add(it) }
+            opts.decodeReasoningEnvelope(block.data)?.let { addReasoningOnce(sink, it, opts) }
         }
+    }
+
+    /** The single seam every reasoning input item passes through: at-most-once per request by
+     *  rs_ id, whether it arrived via the gateway cache or the legacy client round-trip. */
+    private fun addReasoningOnce(sink: JsonArrayBuilder, item: JsonObject, opts: BuildOptions) {
+        // Dedup is an rs_-id concept; an id-less item (possible only through a custom decoder —
+        // the Replay codec always carries one) has nothing to collide with and passes through.
+        val id = item["id"].str()
+        if (id == null || opts.injectedReasoningIds.add(id)) sink.add(item)
     }
 
     private fun appendToolUse(
@@ -446,6 +472,13 @@ private class ResponsesInputBuilder(private val quirks: ResponsesQuirks) {
         opts: BuildOptions,
     ) {
         if (opts.compact) return
+        // RC-3: reinject the turn's cached reasoning ONCE, immediately before its FIRST
+        // function_call — the API rejects both an orphaned reasoning item and a function_call
+        // whose reasoning was dropped (the replay_reasoning=false amnesia class this fixes).
+        // Driven by the assistant's tool_use blocks, never by which tool_results arrived.
+        opts.reasoningLookup(block.id)?.forEach { envelope ->
+            opts.decodeReasoningEnvelope(envelope)?.let { addReasoningOnce(sink, it, opts) }
+        }
         sink.add(
             buildJsonObject {
                 put("type", "function_call")

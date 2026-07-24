@@ -65,6 +65,13 @@ public data class StreamTurnContext(
      *  True for every fold- or re-anchor-eligible turn; off (compact) keeps the reducer
      *  collection-free. */
     val collectReasoningEnvelopes: Boolean = false,
+    /** Reasoning-cache capture (RC-1, 2026-07-24): called once at a successful tool-use terminal
+     *  with the round's REAL upstream function_call ids and its ordered reasoning envelopes —
+     *  codex-rs parity (store:false full replay, client.rs:888/:915) held GATEWAY-side so the
+     *  next tool-result request can reinject the model's plan in-position. Synthetic tool ids
+     *  never key the cache (toolu_synth_* repeats across turns — cross-turn bleed). Default no-op
+     *  keeps the reducer byte-identical when the provider wires no cache. */
+    val onTurnReasoning: (toolIds: List<String>, envelopes: List<String>) -> Unit = { _, _ -> },
 )
 
 private const val PART_SEPARATOR = "\n\n"
@@ -135,7 +142,17 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
 
         sink.closeAll()
         harvestFallback(reducer)
-        return terminalOutcome(reducer)
+        val outcome = terminalOutcome(reducer)
+        captureTurnReasoning(reducer, outcome)
+        return outcome
+    }
+
+    /** RC-1 capture: only a SUCCESSFUL tool-use round seeds the reasoning cache — the client
+     *  will come back with these tool ids and the injection needs the plan that produced them. */
+    private fun captureTurnReasoning(reducer: ResponsesEventReducer, outcome: TurnOutcome) {
+        if (outcome !is TurnOutcome.Success || !outcome.hasToolUse) return
+        if (reducer.turnToolIds.isEmpty() || reducer.reasoningEnvelopes.isEmpty()) return
+        ctx.onTurnReasoning(reducer.turnToolIds.toList(), reducer.reasoningEnvelopes.toList())
     }
 
     // Ordering enforced by the shared spi.terminalPrecedence: a COMPLETED response wins over a
@@ -271,6 +288,9 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     // Mid-stream re-anchor salvage (eli 2026-07-24) — see [ToolSalvage].
     val toolSalvage = ToolSalvage()
 
+    // Reasoning-cache capture (RC-1): the round's REAL upstream function_call ids, in order.
+    val turnToolIds = mutableListOf<String>()
+
     // Late-reasoning items already emitted, keyed by their reasoning block index. Substring
     // dedup on thinkingBuf dropped a DISTINCT item whose text happened to be a substring of an
     // earlier one, diverging wire from mirror (audit 2026-07-18); track per item instead.
@@ -333,8 +353,9 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
             // A JsonNull call_id/name must not leak onto the wire as the literal string "null" —
             // strOrEmpty keeps both filtered so the empty-fallback chain below still triggers
             // (review 2026-07-22 round 3).
-            val id = strOrEmpty(item["call_id"]).ifEmpty { strOrEmpty(item["id"]) }
-                .ifEmpty { "toolu_synth_${toolSynthCounter++}_$oi" }
+            val rawId = strOrEmpty(item["call_id"]).ifEmpty { strOrEmpty(item["id"]) }
+            val id = rawId.ifEmpty { "toolu_synth_${toolSynthCounter++}_$oi" }
+            if (rawId.isNotEmpty()) turnToolIds.add(rawId)
             val idx = sink.openTool(id = id, name = strOrEmpty(item["name"]))
             blocks[oi] = BlockState(idx, sawDelta = false)
             hasToolUse = true

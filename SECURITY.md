@@ -22,3 +22,11 @@ reproducing snippet before attaching anything.
 This is a personal project maintained best-effort, not a funded security team. There is no
 SLA. Reports are triaged as time allows; issues touching auth bypass, the loopback bind
 contract, or secret leakage get priority.
+
+## Reasoning-cache retention
+
+With `reasoning_cache` enabled (the default for openai-responses providers), the daemon holds each
+turn's `reasoning.encrypted_content` envelopes in memory for up to 30 minutes (bounded count and
+bytes) so tool round-trips can replay them. The envelopes are opaque ciphertext (the upstream holds
+the keys); plaintext reasoning is never retained. They are process-memory only — never written to
+disk — and vanish on restart. Set `quirks = { reasoning_cache = false }` to disable.

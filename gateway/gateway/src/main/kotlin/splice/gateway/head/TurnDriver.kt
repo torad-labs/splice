@@ -425,6 +425,7 @@ internal class TurnDriver(
             onRetry = { log("[${provider.key}] $it\n") },
             perf = drive.perf,
             clientFrameEmitted = frameEmittedThisRound,
+            amendBodyOnFailure = provider::amendBodyOnFailure,
         ) { resp ->
             drive.slot.touch()
             // Persist upstream rate-limit headers for /api/usage + statusline soft-warn (Node

@@ -44,6 +44,7 @@ import splice.core.util.runCatchingCancellable
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.withReasoningCacheToml
 import splice.dialect.responses.withToml
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
@@ -414,7 +415,7 @@ public class Daemon(
         summaryField = quirks.summaryField,
         compactEffort = quirks.compactEffort,
         toolChoice = quirks.toolChoice,
-    )
+    ).withReasoningCacheToml(quirks.reasoningCache)
 
     private fun responsesProvider(ctx: ProviderBuild, label: String): Wired {
         val key = ctx.key

@@ -337,10 +337,11 @@ Placement of the named features (composites are decomposed):
   **request transform** (`ResponsesRequestBuilder.kt:433`); *capture the encrypted envelope in
   output-item order and emit/store it* is **reducer-local** (`ResponsesStreamTranslator.kt:314`).
 - **reasoning-continuation fold (composite):** the **round/turn orchestrator** (`FoldRunner`) owns
-  decide-continue / build+POST next request / accumulate cross-round usage / flush-vs-discard /
-  invoke the terminal exactly once (`ResponsesFold.kt`, `TurnDriver.kt`); the **`WireSink` decorator**
-  (`BufferingWireSink`) is only its tentative-output buffer sub-part. Extracting the fold therefore
-  owns `FoldRunner`/`TurnDriver`, not just decorator wiring.
+  decide-continue / build+POST the next request (whose input carries the intra-turn replayed
+  reasoning items — the round-orchestration face of replay) / accumulate cross-round usage /
+  flush-vs-discard / invoke the terminal exactly once (`ResponsesFold.kt`, `TurnDriver.kt`); the
+  **`WireSink` decorator** (`BufferingWireSink`) is only its tentative-output buffer sub-part.
+  Extracting the fold therefore owns `FoldRunner`/`TurnDriver`, not just decorator wiring.
 - Anything genuinely per-frame and protocol-specific stays **reducer-local** — the reducers depend on
   synchronous handles, so this is where an immutable event IR would fight the grain (§4-B).
 

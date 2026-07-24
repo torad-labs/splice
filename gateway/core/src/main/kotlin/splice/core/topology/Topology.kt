@@ -106,6 +106,11 @@ public data class QuirksConfig(
     @SerialName("summary_field") val summaryField: Boolean = true,
     @SerialName("compact_effort") val compactEffort: String? = null,
     @SerialName("tool_choice") val toolChoice: Boolean = false,
+    /** openai-chat only: emit the `reasoning`/`reasoning_effort` request fields (default true,
+     *  matching OpenRouter/xAI). Set false for strict OpenAI-compatible vendors (e.g. Fireworks)
+     *  that reject unknown request fields; the reasoning mirror still reads `reasoning_content`
+     *  from the response. */
+    @SerialName("emit_reasoning") val emitReasoning: Boolean = true,
 )
 
 @Serializable

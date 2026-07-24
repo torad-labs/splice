@@ -342,9 +342,14 @@ public class Daemon(
                 // 2026-07-19: 135k tokens, 1.7-2.8s TTFB, 99.97% cached — the two gaps that sank
                 // the 07-18 chat-dialect attempt). Unknown api-key vendors keep the bare quirks.
                 quirks = if (providerCfg.auth.kind == GROK_OAUTH) {
-                    ChatQuirks(providerTag = key, sessionCacheKeyPrefix = label, emitUsageInStream = true)
+                    ChatQuirks(
+                        providerTag = key,
+                        sessionCacheKeyPrefix = label,
+                        emitUsageInStream = true,
+                        emitReasoningEffort = providerCfg.quirks.emitReasoning,
+                    )
                 } else {
-                    ChatQuirks(providerTag = key)
+                    ChatQuirks(providerTag = key, emitReasoningEffort = providerCfg.quirks.emitReasoning)
                 },
                 showReasoning = ctx.cfg.showReasoning,
             ),

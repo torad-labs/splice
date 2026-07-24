@@ -199,6 +199,7 @@ class ReanchorRunnerTest {
             },
         )
         assertEquals(0, asks, "the controller is never consulted for a gone client")
+        assertEquals(1, h.count("error"), "the turn still finishes with the honest error")
     }
 
     @Test
@@ -248,9 +249,67 @@ class FoldRunnerReanchorTest {
 
         assertEquals(listOf(""), seenPartialBodies, "buffered prose must be stripped before the policy sees it")
         val success = h.finished as TurnOutcome.Success
+        assertEquals("clean full answer", success.bodyText, "the merge-side strip must hold too")
         assertEquals(8, success.usage.outputTokens, "failed round's salvaged usage accrues")
         assertEquals(1, h.count("message_stop"))
         assertEquals(1, h.absorbed.size)
+    }
+
+    @Test
+    fun `a discarded round cannot vouch for text the client never saw`() = runTest {
+        // The blocker class (review-pr 2026-07-24): the failed round streamed prose into the
+        // BUFFER (emittedText=true) which was discarded; the retry completes with no text. The
+        // merged outcome must report emittedText=false so the empty-model honesty gate sees the
+        // turn's real emptiness instead of a clean empty end-of-turn.
+        val h = Harness()
+        val rounds = ArrayDeque<suspend () -> TurnOutcome>()
+        rounds.add { retryableFailure(bodyText = "buffered prose", emittedText = true) }
+        rounds.add {
+            TurnOutcome.Success(
+                hasToolUse = false,
+                incomplete = false,
+                usage = Usage(),
+                emittedText = false,
+            )
+        }
+        FoldRunner(
+            emitter = h.emitter,
+            key = "t",
+            log = { },
+            postRound = { _, _ -> rounds.removeFirst().invoke() },
+            finish = { h.finish(it) },
+            reanchor = ReanchorController { continuationBody() },
+            signals = h.signals(),
+        ).run(continuationBody()) { null }
+        val success = h.finished as TurnOutcome.Success
+        assertEquals(false, success.emittedText, "a discarded buffer must not vouch for emitted text")
+        assertEquals("", success.bodyText)
+    }
+
+    @Test
+    fun `salvaged usage rides the failure when the turn ultimately fails`() = runTest {
+        val h = Harness()
+        var posts = 0
+        ReanchorRunner(
+            key = "t",
+            log = { },
+            postRound = {
+                posts++
+                retryableFailure(outputTokens = 4)
+            },
+            finish = { h.finish(it) },
+            signals = h.signals(),
+        ).run(
+            continuationBody(),
+            ReanchorController { round -> if (round.attempt < 2) continuationBody() else null },
+        )
+        assertEquals(3, posts)
+        val failure = h.finished as TurnOutcome.Failure
+        assertEquals(
+            8,
+            failure.salvagedUsage.outputTokens,
+            "two absorbed rounds' tokens carried, final round's not salvaged",
+        )
     }
 
     @Test

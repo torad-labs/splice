@@ -568,6 +568,14 @@ internal class TurnDriver(
             }
             log(cacheLogLine(provider.key, drive.upstreamModel, usageObj, drive.meta.compact))
         }
+        // Salvaged usage from absorbed rounds of an ultimately-FAILED turn: real billed tokens
+        // that would otherwise vanish from the usage store and perf row (review-pr 2026-07-24).
+        (outcome as? TurnOutcome.Failure)?.salvagedUsage?.let { s ->
+            if (s.outputTokens > 0) {
+                drive.perf.setCount(PerfKeys.OUT_TOKENS, s.outputTokens)
+                drive.perf.timed(PerfKeys.USAGE_MS) { usageStore.appendOutputTokens(s.outputTokens) }
+            }
+        }
         // G20 (corrected, review 2026-07-19): attribution rides the outcome's provenance flag, not
         // the ErrorType — the old OVERLOADED-implies-local heuristic misfiled a passthrough
         // provider's genuine overloaded_error as local-origin. providerReported is set ONLY where a
@@ -762,13 +770,18 @@ internal class FoldRunner(
             if (retry == null) {
                 // health for absorbed rounds only on ultimate success — see ReanchorRunner.
                 if (outcome is TurnOutcome.Success) absorbedFailures.forEach(signals.onRoundFailure)
-                finalize(outcome, buffer, salvaged, acc.toUsage())
+                finalize(withFailureSalvage(outcome, acc), buffer, salvaged, acc.toUsage())
                 return
             }
             val failure = outcome as TurnOutcome.Failure
             absorbedFailures.add(failure)
             failure.partial?.let { p ->
-                salvaged.add(p.copy(bodyText = ""))
+                // Strip BOTH buffered-text signals: the prose never reached the client, so the
+                // salvage must not let the discarded round vouch for text in the merge either
+                // (emittedText=true over empty content would defeat the empty-model honesty
+                // gate — review-pr 2026-07-24). thinkingText STAYS: fold-mode reasoning streams
+                // LIVE to the wire, so it legitimately belongs in the mirror merge.
+                salvaged.add(p.copy(bodyText = "", emittedText = false))
                 acc = acc.plusRound(p.usage)
             }
             buffer.discard()
@@ -831,8 +844,23 @@ internal data class RoundUsage(
         reasoningSum = reasoningSum + u.reasoningTokens,
     )
 
-    fun toUsage() = Usage(lastInput, outSum, lastCached, reasoningSum)
+    fun toUsage() = Usage(
+        inputTokens = lastInput,
+        outputTokens = outSum,
+        cachedTokens = lastCached,
+        reasoningTokens = reasoningSum,
+    )
 }
+
+/** A turn that absorbed re-anchor rounds and STILL failed burned real billed tokens on those
+ *  rounds; carry them on the Failure so finishTurn can account them (review-pr 2026-07-24 —
+ *  before re-anchoring a Failure was always single-round, so there was nothing to lose). */
+internal fun withFailureSalvage(outcome: TurnOutcome, acc: RoundUsage): TurnOutcome =
+    if (outcome is TurnOutcome.Failure && acc.outSum + acc.reasoningSum > 0) {
+        outcome.copy(salvagedUsage = acc.toUsage())
+    } else {
+        outcome
+    }
 
 /** Cross-round merge (code-review 2026-07-24): the post-stream pipeline — empty-model honesty
  *  gate, promote-to-text, reasoning mirror — is round-blind; it sees ONE outcome. A spliced
@@ -885,7 +913,7 @@ internal class ReanchorRunner(
                 // ultimately FAILS is attributed exactly once by finishTurn — firing per absorbed
                 // round would triple-count one logical failure (HeadServerIntegrationTest).
                 if (outcome is TurnOutcome.Success) absorbedFailures.forEach(signals.onRoundFailure)
-                finish(finalOutcome(outcome, salvaged, acc))
+                finish(withFailureSalvage(finalOutcome(outcome, salvaged, acc), acc))
                 return
             }
             absorbedFailures.add(failure)

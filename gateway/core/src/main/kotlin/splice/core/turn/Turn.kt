@@ -64,6 +64,10 @@ public sealed class TurnOutcome {
          *  mid-stream re-anchoring or the turn was cancelled (watchdog). Rides the outcome the
          *  same way Success buffers do (P2-MACH); the gateway never reads envelope contents. */
         val partial: PartialRound? = null,
+        /** Output/reasoning genuinely burned by ABSORBED re-anchor rounds when the turn STILL
+         *  failed — carried so the usage store and perf row do not under-report the exact turns
+         *  that ran the most upstream rounds (review-pr 2026-07-24). Zero when no salvage. */
+        val salvagedUsage: Usage = Usage(),
     ) : TurnOutcome()
 
     /** The salvageable state of a round that failed mid-stream, for continuation re-anchoring:

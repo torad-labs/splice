@@ -186,7 +186,12 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
         hasToolUse = reducer.hasToolUse,
         reasoningEnvelopes = reducer.reasoningEnvelopes.toList(),
         toolTearOpen = reducer.toolSalvage.tearOpen,
-        usage = Usage(reducer.inputTokens, reducer.outputTokens, reducer.cachedTokens, reducer.reasoningTokens),
+        usage = Usage(
+            inputTokens = reducer.inputTokens,
+            outputTokens = reducer.outputTokens,
+            cachedTokens = reducer.cachedTokens,
+            reasoningTokens = reducer.reasoningTokens,
+        ),
     )
 
     private fun watchdogOutcome(fired: WatchdogFired): TurnOutcome {

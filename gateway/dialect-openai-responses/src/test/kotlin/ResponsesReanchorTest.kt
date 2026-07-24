@@ -105,6 +105,26 @@ class ResponsesReanchorControllerTest {
     }
 
     @Test
+    fun `envelope-only salvage continues - reasoning replay needs no prose`() {
+        val partial = TurnOutcome.PartialRound(bodyText = "", reasoningEnvelopes = listOf("e1"))
+        val next = controller.continuationForFailure(
+            ReanchorRound(previousBody(), failureWith(partial = partial), 0),
+        )
+        assertNotNull(next)
+        val input = next!!["input"]!!.jsonArray
+        // user + decoded replay + marker; NO assistant-text item for the empty prose
+        assertEquals(3, input.size)
+    }
+
+    @Test
+    fun `an api_error failure is retryable too`() {
+        val next = controller.continuationForFailure(
+            ReanchorRound(previousBody(), failureWith(type = ErrorType.API_ERROR), 0),
+        )
+        assertNotNull(next)
+    }
+
+    @Test
     fun `a thinking-only partial refuses continuation - thinking cannot seed the resume`() {
         val partial = TurnOutcome.PartialRound(thinkingText = "deep partial reasoning already streamed")
         assertNull(

@@ -17,6 +17,7 @@ import splice.spi.FoldController
 import splice.spi.Provider
 import splice.spi.ProviderIdentity
 import splice.spi.ProviderTuning
+import splice.spi.ReanchorController
 import splice.spi.StreamTranslator
 import splice.spi.TurnSignals
 
@@ -94,9 +95,11 @@ public abstract class ResponsesProvider(
                 streamIdleMsForMessage = watchdog.streamIdle.inWholeMilliseconds,
                 upstreamTimeoutMsForMessage = watchdog.totalCap.inWholeMilliseconds,
                 dedupeRepeatedSummaryParts = quirks.summaryDelivery != null,
-                // Collect this round's encrypted reasoning envelopes ONLY when folding is active for
-                // the turn — off keeps the reducer byte-identical for sol / every non-fold turn.
-                collectReasoningEnvelopes = foldController(meta) != null,
+                // Collect this round's encrypted reasoning envelopes whenever a continuation
+                // could consume them: fold replay (Success side) OR mid-stream re-anchor salvage
+                // (Failure side) — i.e. every non-compact responses turn since re-anchor landed
+                // (2026-07-24). Compact turns keep the collection off.
+                collectReasoningEnvelopes = foldController(meta) != null || reanchorController(meta) != null,
             ),
         )
 
@@ -108,6 +111,18 @@ public abstract class ResponsesProvider(
         if (meta.compact || meta.upstreamModel !in cfg.models) return null
         return ResponsesFoldController(cfg, decodeReasoningEnvelope = { decodeReasoningEnvelope(it) })
     }
+
+    // The controller is stateless — one cached instance serves every turn (a per-call
+    // allocation here also ran per ROUND via the collectReasoningEnvelopes null-check).
+    private val reanchorPolicy: ReanchorController by lazy {
+        ResponsesReanchorController(decodeReasoningEnvelope = { decodeReasoningEnvelope(it) })
+    }
+
+    // Every non-compact responses turn is re-anchor eligible (compaction is unary/buffered — the
+    // pre-handoff retry covers it). NB: fold-eligible turns get re-anchor via FoldRunner's
+    // trigger-B, not ReanchorRunner (driveOneTurn routes fold first).
+    final override fun reanchorController(meta: TurnMeta): ReanchorController? =
+        if (meta.compact) null else reanchorPolicy
 
     private fun showOn(): Boolean = !showReasoning.isOff
 }

@@ -5,6 +5,7 @@ package splice.app
 
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
 import splice.core.config.StatePaths
 import splice.core.util.AsyncFileIo
 import splice.core.util.runCatchingCancellable
@@ -16,6 +17,7 @@ import java.nio.file.StandardOpenOption.CREATE
 import java.security.Security
 import java.time.LocalTime
 import java.time.temporal.ChronoUnit
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.system.exitProcess
 
 public fun main(args: Array<String>) {
@@ -56,25 +58,59 @@ private fun runDaemon() {
         shutdownDaemon = { shutdownSignal.complete(Unit) },
     )
 
-    Runtime.getRuntime().addShutdownHook(
-        Thread {
-            runBlocking { runCatchingDaemonBoundary { daemon.stop() } }
-            AsyncFileIo.drain()
-            lock.close()
-        },
-    )
+    Runtime.getRuntime().addShutdownHook(Thread { shutdown(daemon, lock) })
 
     runBlocking {
         try {
             daemon.start()
             shutdownSignal.await()
         } finally {
-            daemon.stop()
-            AsyncFileIo.drain()
-            lock.close()
+            shutdown(daemon, lock)
         }
     }
 }
+
+// Bounded shutdown shared by BOTH drivers (the SIGTERM hook and the run-loop finally). daemon.stop()
+// is idempotent (@Synchronized/`stopped`), so a double invocation across the two drivers is safe. The
+// watchdog is the guarantee SIGTERM lacked: gating JVM exit purely on stop() returning let one wedged
+// head / non-daemon Netty thread turn SIGTERM into a no-op (the operator then reached for SIGKILL,
+// and the racing restart it invited — BS-4). withTimeoutOrNull caps the cooperative stop; halt(0) is
+// the floor for the uninterruptible case a cancel can't reach.
+private fun shutdown(daemon: Daemon, lock: DaemonLock) {
+    // The halt floor sits ABOVE the cooperative cap by a grace window: a stop that times out
+    // cooperatively at exactly STOP_DEADLINE_MS must still get its drain() + lock.close() tail
+    // before the watchdog fires (orchestrator review 2026-07-24 — equal deadlines raced the tail).
+    runBoundedTeardown(STOP_DEADLINE_MS + TEARDOWN_TAIL_GRACE_MS, { Runtime.getRuntime().halt(0) }) {
+        runBlocking { withTimeoutOrNull(STOP_DEADLINE_MS) { runCatchingDaemonBoundary { daemon.stop() } } }
+        AsyncFileIo.drain()
+        lock.close()
+    }
+}
+
+// Run [teardown] under a hard deadline: a daemon watchdog thread [halt]s the JVM if teardown overruns
+// [deadlineMs]. A cancel (withTimeoutOrNull) can't kill a thread stuck in uninterruptible blocking work
+// (a wedged engine stop), so halt(0) is the floor that guarantees termination. On a clean finish the
+// watchdog is disarmed via [halted] so halt never fires. [halt] is injected so tests exercise both paths.
+internal fun runBoundedTeardown(deadlineMs: Long, halt: () -> Unit, teardown: () -> Unit) {
+    val halted = AtomicBoolean(false)
+    Thread {
+        Thread.sleep(deadlineMs)
+        if (halted.compareAndSet(false, true)) {
+            System.err.println("[daemon] stop exceeded ${deadlineMs}ms — halting")
+            halt()
+        }
+    }.apply {
+        isDaemon = true
+        start()
+    }
+    teardown()
+    halted.set(true)
+}
+
+// Below the CLI's 15s stop-poll budget (ControlPlaneClient) so a bounded stop is never mistaken for a
+// hung one, and above the head-stop phase's HEAD_STOP_BUDGET_MS so the graceful path wins the common case.
+private const val STOP_DEADLINE_MS = 8_000L
+private const val TEARDOWN_TAIL_GRACE_MS = 2_000L
 
 // Timestamps every log line and tees it to a persistent daemon.log (so failures and slow turns
 // survive restarts and are `tail -f`-able) in addition to stderr. The turn path only enqueues an

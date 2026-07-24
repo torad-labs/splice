@@ -242,7 +242,12 @@ public class GrokAuthProvider(
 
     private fun persistRotation(refreshToken: String, fresh: GrokRefreshedTokens, access: String): RefreshOutcome {
         val expiresAtMs = fresh.expiresIn?.let { clock() + it * MS_PER_S }
-        writeSecure(authPath, mergedAuthJson(access, fresh.refreshToken ?: refreshToken, expiresAtMs).toString())
+        // The endpoint already consumed the old refresh_token (Granted) by the time we get here — a
+        // throwing write must degrade to a typed PersistFailed, never a raw throw through SingleFlight
+        // out of credentials()/refresh(), so the not-yet-expired current token still gets served.
+        runCatchingCancellable {
+            writeSecure(authPath, mergedAuthJson(access, fresh.refreshToken ?: refreshToken, expiresAtMs).toString())
+        }.getOrElse { return RefreshOutcome.PersistFailed("auth.json write failed: $it") }
         invalidateCache()
         return RefreshOutcome.Refreshed(Credentials.Bearer(access, null))
     }

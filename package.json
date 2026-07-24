@@ -19,7 +19,7 @@
     "e2e:heads:wire": "bash checks/e2e/heads-e2e.sh --tier 1"
   },
   "devDependencies": {
-    "@ast-grep/cli": "0.44.0"
+    "@ast-grep/cli": "0.45.0"
   },
   "overrides": {
     "handlebars": "4.7.9"

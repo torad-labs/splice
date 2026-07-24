@@ -12,8 +12,8 @@ plugins {
     id("splice.kotlin-common")
     id("splice.module-law")
     application
-    id("com.gradleup.shadow") version "9.6.0"
-    id("org.cyclonedx.bom") version "3.2.4"
+    id("com.gradleup.shadow") version "9.6.1"
+    id("org.cyclonedx.bom") version "3.3.0"
     id("com.github.jk1.dependency-license-report") version "3.1.4"
 }
 

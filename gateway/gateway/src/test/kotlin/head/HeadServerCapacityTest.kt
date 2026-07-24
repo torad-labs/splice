@@ -125,12 +125,12 @@ class HeadServerCapacityTest {
         return cond()
     }
 
-    private suspend fun idleTurn(): String =
+    private suspend fun heldTurn(): String =
         client.post("http://127.0.0.1:$port/v1/messages") {
             header("Content-Type", "application/json")
             setBody(
                 """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,
-                    "system":"You are a test. SCENARIO:idle",
+                    "system":"You are a test. SCENARIO:hold",
                     "messages":[{"role":"user","content":"go"}]}""",
             )
         }.bodyAsText()
@@ -140,17 +140,18 @@ class HeadServerCapacityTest {
             header("Content-Type", "application/json")
             setBody(
                 """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,
-                    "system":"You are a test. SCENARIO:idle",
+                    "system":"You are a test. SCENARIO:hold",
                     "messages":[{"role":"user","content":"go"}]}""",
             )
         }
 
     @Test
     fun `third concurrent request is shed with a 529 at capacity`() = runBlocking {
-        val first = async(Dispatchers.IO) { idleTurn() }
+        mock.resetHold()
+        val first = async(Dispatchers.IO) { heldTurn() }
         assertTrue(waitFor(5_000) { gate.snapshot().inflight == 1 }, "expected the first turn to hold the one slot")
 
-        val second = async(Dispatchers.IO) { idleTurn() }
+        val second = async(Dispatchers.IO) { heldTurn() }
         assertTrue(
             waitFor(5_000) { gate.snapshot().queued == 1 },
             "expected the second turn to fill the one queue spot",
@@ -166,8 +167,9 @@ class HeadServerCapacityTest {
             body,
         )
 
-        // let the idle scenario's own teardown (its 5s sleep, then a natural stream end) release
-        // both held requests before the test returns, so @AfterAll teardown is clean.
+        // release both held requests (they finish cleanly — no retry/re-anchor interaction, the
+        // deterministic slot-occupancy mechanism the mock prescribes) before the test returns.
+        mock.releaseHold()
         listOf(first, second).forEach { it.await() }
     }
 
@@ -175,7 +177,8 @@ class HeadServerCapacityTest {
     fun `count_tokens answers promptly and calls no upstream while the turn gate is saturated`() = runBlocking {
         // count_tokens is a local estimate off the turn gate: even with the one inflight slot held,
         // it must return 200 immediately, never touch upstream, and never occupy the gate.
-        val held = async(Dispatchers.IO) { idleTurn() }
+        mock.resetHold()
+        val held = async(Dispatchers.IO) { heldTurn() }
         assertTrue(waitFor(5_000) { gate.snapshot().inflight == 1 }, "expected the held turn to occupy the slot")
         val upstreamBefore = mock.upstreamBodies.size
 
@@ -191,6 +194,7 @@ class HeadServerCapacityTest {
         assertEquals(upstreamBefore, mock.upstreamBodies.size, "count_tokens must not call upstream")
         assertEquals(1, gate.snapshot().inflight, "count_tokens must not occupy the turn gate")
 
+        mock.releaseHold()
         held.await()
     }
 }

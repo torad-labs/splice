@@ -30,7 +30,17 @@ class MockChatGptUpstream {
     // The "hold" scenario blocks after its first delta until the test releases this latch — a
     // deterministic replacement for the timer-based "idle" hold when a test must occupy a slot and
     // then free it on command (review 2026-07-23).
-    val holdRelease = java.util.concurrent.CountDownLatch(1)
+    @Volatile var holdRelease = java.util.concurrent.CountDownLatch(1)
+        private set
+
+    /** Arm a fresh hold latch — tests that use SCENARIO:hold call this first, then countDown. */
+    fun resetHold() {
+        holdRelease = java.util.concurrent.CountDownLatch(1)
+    }
+
+    fun releaseHold() {
+        holdRelease.countDown()
+    }
 
     private val server: HttpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
     private val pool = Executors.newCachedThreadPool()

@@ -16,6 +16,10 @@ updates:
     directory: "/gateway"
     schedule:
       interval: "weekly"
+    ignore:
+      # kotlin 2.4.x is blocked by CodeQL's Kotlin extractor (KotlinVersionTooRecentError,
+      # see #18/#37) — a required check. Unignore when CodeQL supports 2.4.x.
+      - dependency-name: "org.jetbrains.kotlin*"
     groups:
       gradle-minor-patch:
         applies-to: version-updates

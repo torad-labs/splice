@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test
 import splice.core.parse.parseAnthropicBody
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.ChatRequestBuilder
+import splice.dialect.chat.withReasoningEffortToml
 
 private val CHAT = ChatQuirks(providerTag = "kimi")
 
@@ -269,5 +270,24 @@ class ChatRequestBuilderTest {
         val roles = msgs.map { it["role"]?.jsonPrimitive?.content }
         // assistant, tool, tool, then user(images) — never tool, user, tool
         assertEquals(listOf("assistant", "tool", "tool", "user"), roles)
+    }
+}
+
+// reasoning_effort overlay wall (issue #21): a real TOML value must reach ChatQuirks.emitReasoningEffort
+// through the chained overlay, and null must preserve the base — the reasoning_cache precedent
+// (2026-07-24 RC-5 review) is exactly this failure mode recurring.
+class ReasoningEffortTomlOverlayTest {
+
+    @Test
+    fun `the overlay applies an explicit value and null keeps the base`() {
+        val base = ChatQuirks(providerTag = "kimi")
+        assertTrue(base.emitReasoningEffort, "default is ON")
+        assertEquals(false, base.withReasoningEffortToml(false).emitReasoningEffort)
+        assertEquals(true, base.withReasoningEffortToml(null).emitReasoningEffort, "null preserves the base")
+        assertEquals(
+            false,
+            base.withReasoningEffortToml(false).withReasoningEffortToml(null).emitReasoningEffort,
+            "null preserves an applied override",
+        )
     }
 }

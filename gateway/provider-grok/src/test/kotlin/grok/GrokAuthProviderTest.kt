@@ -197,6 +197,35 @@ class GrokAuthProviderTest {
         assertEquals("new-access", bearerToken(auth.credentials()))
     }
 
+    // BS-2: a filesystem hiccup during persistRotation's write (disk full, perms, NFS blip) must not
+    // throw through SingleFlight/credentials() — the endpoint already burned the old refresh_token
+    // (Granted), so a lost write must still serve the not-yet-expired CURRENT token, never an exception.
+    @Test
+    fun `write failure during persist serves the current not-yet-expired token, never throws`() = runTest {
+        val dir = Files.createTempDirectory("grok-persist-fail")
+        val now = 1_000_000L
+        val file = authFile(dir, expiresAtMs = now + 10_000) // < 30s floor, still valid
+        val auth = GrokAuthProvider(
+            authPath = file,
+            clock = { now },
+            refreshCall = {
+                RefreshAttempt.Granted(GrokRefreshedTokens("new-access", "new-refresh", expiresIn = 21_600))
+            },
+        )
+        // pre-create the CredentialLock sibling so its own file open doesn't need dir-write access.
+        Files.createFile(file.resolveSibling("${file.fileName}.lock"))
+        val writablePerms = Files.getPosixFilePermissions(file.parent)
+        Files.setPosixFilePermissions(
+            file.parent,
+            java.nio.file.attribute.PosixFilePermissions.fromString("r-xr-xr-x"),
+        )
+        try {
+            assertEquals("grok-access", bearerToken(auth.credentials()))
+        } finally {
+            Files.setPosixFilePermissions(file.parent, writablePerms)
+        }
+    }
+
     // G17: proves the prefetch tier is truly fire-and-forget on a real dispatcher — if credentials()
     // still awaited the refresh synchronously, this would deadlock/timeout on the un-completed gate.
     // Mirrors KimiAuthProviderTest's "two concurrent refreshes coalesce" idiom (runBlocking, not

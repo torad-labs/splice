@@ -251,6 +251,41 @@ class KimiAuthProviderTest {
         assertEquals("still-valid", (auth.credentials() as Credentials.ApiKey).key)
     }
 
+    // BS-2: a filesystem hiccup during the write inside exchangeRefreshToken's Granted branch (disk
+    // full, perms, NFS blip) must not throw through SingleFlight/credentials() — kimi rotation is
+    // MANDATORY (the old refresh_token is already dead upstream), so a lost write must still serve
+    // the not-yet-expired CURRENT token, never an exception.
+    @Test
+    fun `write failure during persist serves the current not-yet-expired token, never throws`() = runTest {
+        val dir = Files.createTempDirectory("kimi-persist-fail")
+        val nowMs = 1_000_000_000_000L
+        val nowS = nowMs / 1000
+        // within threshold (400 < 500) so refresh is attempted, but token not yet expired.
+        val file = authFile(dir, access = "still-valid", expiresAtS = nowS + 400, expiresInS = 1000)
+        val auth = KimiAuthProvider(
+            authPath = file,
+            clock = { nowMs },
+            refreshCall = {
+                RefreshAttempt.Granted(
+                    KimiRefreshedTokens(
+                        accessToken = "rotated-access",
+                        refreshToken = "rotated-refresh",
+                        expiresIn = 3600,
+                    ),
+                )
+            },
+        )
+        // pre-create the CredentialLock sibling so its own file open doesn't need dir-write access.
+        Files.createFile(file.resolveSibling("${file.fileName}.lock"))
+        val writablePerms = Files.getPosixFilePermissions(file.parent)
+        Files.setPosixFilePermissions(file.parent, PosixFilePermissions.fromString("r-xr-xr-x"))
+        try {
+            assertEquals("still-valid", (auth.credentials() as Credentials.ApiKey).key)
+        } finally {
+            Files.setPosixFilePermissions(file.parent, writablePerms)
+        }
+    }
+
     // G1: a peer process rotated the token on disk while we were about to refresh. The freshly-read
     // access token differs from what we last served, so the POST is skipped and the peer's token is
     // served — no wasted refresh, no double token burn.

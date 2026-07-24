@@ -25,7 +25,7 @@ class ExampleConfigTest {
     @Test
     fun `example topology parses into the documented heads`() {
         val topology = TopologyLoader.parse(exampleToml())
-        assertEquals(setOf("claudex", "claude-grok", "openrouter", "claude-kimi"), topology.heads.keys)
+        assertEquals(setOf("claudex", "claude-grok", "openrouter", "fireworks", "claude-kimi"), topology.heads.keys)
         assertEquals(3096, topology.daemon.controlPort)
 
         val codex = topology.providers[topology.heads["claudex"]!!.provider]!!
@@ -36,10 +36,21 @@ class ExampleConfigTest {
         assertEquals(Dialect.OPENAI_RESPONSES, xai.dialect)
         assertEquals("grok-oauth", xai.auth.kind)
         assertEquals("session-id", xai.quirks.cacheKey)
+        // reasoning_cache round-trip (review 2026-07-24): a NON-default value must reach the
+        // parsed field — the 2026-07-18 audit found five decorative quirks; never again silently
+        assertEquals(false, xai.quirks.reasoningCache)
 
         val openrouter = topology.providers[topology.heads["openrouter"]!!.provider]!!
         assertEquals(Dialect.OPENAI_CHAT, openrouter.dialect)
         assertEquals("api-key", openrouter.auth.kind)
+        assertEquals(null, openrouter.quirks.reasoningEffort)
+
+        val fireworks = topology.providers[topology.heads["fireworks"]!!.provider]!!
+        assertEquals(Dialect.OPENAI_CHAT, fireworks.dialect)
+        assertEquals("api-key", fireworks.auth.kind)
+        // reasoning_effort round-trip (issue #21): a NON-default value must reach the parsed field —
+        // the reasoning_cache precedent (2026-07-18 audit) is exactly this failure mode recurring.
+        assertEquals(false, fireworks.quirks.reasoningEffort)
 
         val kimi = topology.providers[topology.heads["claude-kimi"]!!.provider]!!
         assertEquals(Dialect.ANTHROPIC_PASSTHROUGH, kimi.dialect)

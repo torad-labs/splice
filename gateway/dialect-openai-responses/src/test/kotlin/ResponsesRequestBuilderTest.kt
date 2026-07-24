@@ -23,6 +23,7 @@ import splice.dialect.responses.RequestEncryptedReasoning
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesRequestBuilder
 import splice.dialect.responses.stablePromptCacheKey
+import splice.dialect.responses.withReasoningCacheToml
 
 private val CODEX = ResponsesQuirks(providerTag = "claudex")
 private val GROK = ResponsesQuirks(
@@ -395,5 +396,136 @@ class ResponsesRequestBuilderTest {
             {"type":"image","source":{"type":"base64","media_type":"","data":"aGk="}}]}]}"""
         val req = build(body)
         assertTrue(req.toString().contains("data:image/png;base64,aGk="))
+    }
+}
+
+// RC-3 walls (reasoning-cache 2026-07-24): cache hits inject the turn's reasoning ONCE,
+// immediately before its FIRST function_call; misses are byte-identical to today; the rs_ id
+// appears at most once per request even when the legacy client-replay path carries it too.
+private fun cacheOpts(
+    replay: Boolean = false,
+    lookup: (String) -> List<String>? = { null },
+) = BuildOptions(
+    compact = false,
+    originalModel = "claude-codex--gpt-5.6-sol",
+    upstreamModel = "gpt-5.6-sol",
+    configEffort = null,
+    configSummary = null,
+    showReasoning = ReasoningDisplay.from("text"),
+    replayReasoning = InjectPriorReasoning(replay),
+    includeEncryptedReasoning = RequestEncryptedReasoning(true),
+    sessionId = null,
+    decodeReasoningEnvelope = { data ->
+        buildJsonObject {
+            put("type", JsonPrimitive("reasoning"))
+            put("id", JsonPrimitive("rs_$data"))
+            put("encrypted_content", JsonPrimitive(data))
+        }
+    },
+    reasoningLookup = lookup,
+)
+
+// RC-5 overlay wall (review 2026-07-24: the knob had no round-trip proof — this repo already
+// shipped five decorative quirks once, the 2026-07-18 withToml audit): a real TOML value must
+// reach ResponsesQuirks.reasoningCache through the chained overlay, and null must preserve it.
+class ReasoningCacheTomlOverlayTest {
+
+    @Test
+    fun `the overlay applies an explicit value and null keeps the base`() {
+        val base = ResponsesQuirks(providerTag = "t")
+        assertTrue(base.reasoningCache, "default is ON")
+        assertEquals(false, base.withReasoningCacheToml(false).reasoningCache)
+        assertEquals(true, base.withReasoningCacheToml(null).reasoningCache, "null preserves the base")
+        assertEquals(
+            false,
+            base.withReasoningCacheToml(false).withReasoningCacheToml(null).reasoningCache,
+            "null preserves an applied override",
+        )
+    }
+}
+
+/** A pre-cache caller: identical fields, but the reasoningLookup PARAMETER is never passed —
+ *  the class default carries it, which is exactly what an unwired call site looks like. */
+private fun preCacheOpts() = BuildOptions(
+    compact = false,
+    originalModel = "claude-codex--gpt-5.6-sol",
+    upstreamModel = "gpt-5.6-sol",
+    configEffort = null,
+    configSummary = null,
+    showReasoning = ReasoningDisplay.from("text"),
+    replayReasoning = InjectPriorReasoning(false),
+    includeEncryptedReasoning = RequestEncryptedReasoning(true),
+    sessionId = null,
+    decodeReasoningEnvelope = { null },
+)
+
+private const val TOOL_TURN_BODY = """{"model":"m","messages":[
+    {"role":"user","content":"do the thing"},
+    {"role":"assistant","content":[
+        {"type":"tool_use","id":"call_abc","name":"run","input":{"x":1}}]},
+    {"role":"user","content":[
+        {"type":"tool_result","tool_use_id":"call_abc","content":[{"type":"text","text":"ok"}]}]}
+]}"""
+
+class ReasoningInjectionTest {
+
+    private fun items(req: JsonObject) = req["input"]!!.jsonArray.map { it.jsonObject }
+
+    @Test
+    fun `a cache hit injects the turn's reasoning immediately before its function_call`() {
+        val req = build(
+            TOOL_TURN_BODY,
+            options = cacheOpts(lookup = { id -> if (id == "call_abc") listOf("env1") else null }),
+        )
+        val input = items(req)
+        val fcIdx = input.indexOfFirst { it["type"]?.jsonPrimitive?.content == "function_call" }
+        assertTrue(fcIdx > 0, "function_call present")
+        assertEquals("reasoning", input[fcIdx - 1]["type"]?.jsonPrimitive?.content)
+        assertEquals("rs_env1", input[fcIdx - 1]["id"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `one turn's entry injects once even with two tool_use blocks`() {
+        val body = """{"model":"m","messages":[
+            {"role":"user","content":"go"},
+            {"role":"assistant","content":[
+                {"type":"tool_use","id":"call_a","name":"run","input":{}},
+                {"type":"tool_use","id":"call_b","name":"run","input":{}}]},
+            {"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"call_a","content":[{"type":"text","text":"1"}]},
+                {"type":"tool_result","tool_use_id":"call_b","content":[{"type":"text","text":"2"}]}]}
+        ]}"""
+        val req = build(body, options = cacheOpts(lookup = { listOf("env1") }))
+        val input = items(req)
+        val reasonings = input.filter { it["type"]?.jsonPrimitive?.content == "reasoning" }
+        assertEquals(1, reasonings.size, "inject-once per turn")
+        val firstFc = input.indexOfFirst { it["type"]?.jsonPrimitive?.content == "function_call" }
+        assertEquals("reasoning", input[firstFc - 1]["type"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `a cache miss is byte-identical to a build that never heard of the cache`() {
+        // review 2026-07-24: comparing cacheOpts(lookup = { null }) against cacheOpts() compared
+        // two identical no-ops (cacheOpts' own default is { null } too). The compat claim is
+        // against a PRE-CACHE caller: BuildOptions constructed without the reasoningLookup
+        // parameter at all, so the class default carries the unwired side.
+        val miss = build(TOOL_TURN_BODY, options = cacheOpts(lookup = { null }))
+        val unwired = build(TOOL_TURN_BODY, options = preCacheOpts())
+        assertEquals(unwired.toString(), miss.toString())
+    }
+
+    @Test
+    fun `cache and legacy client replay never duplicate an rs_ id`() {
+        val body = """{"model":"m","messages":[
+            {"role":"user","content":"go"},
+            {"role":"assistant","content":[
+                {"type":"redacted_thinking","data":"env1"},
+                {"type":"tool_use","id":"call_abc","name":"run","input":{}}]},
+            {"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"call_abc","content":[{"type":"text","text":"ok"}]}]}
+        ]}"""
+        val req = build(body, options = cacheOpts(replay = true, lookup = { listOf("env1") }))
+        val reasonings = items(req).filter { it["type"]?.jsonPrimitive?.content == "reasoning" }
+        assertEquals(1, reasonings.size, "rs_env1 must appear exactly once across both paths")
     }
 }

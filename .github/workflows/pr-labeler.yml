@@ -1,0 +1,20 @@
+# Auto-label PRs from changed paths (.github/labeler.yml is the map).
+# pull_request_target: runs the BASE branch's workflow with a write token — safe here
+# because the job never checks out or executes PR code; it only reads the diff file list.
+name: pr-labeler
+
+on: pull_request_target
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: pr-labeler-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/labeler@b8dd2d9be0f68b860e7dae5dae7d772984eacd6d # v6.2.0

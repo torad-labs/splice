@@ -1,0 +1,28 @@
+# Auto-merge green Dependabot PRs (patch/minor only; majors wait for a human).
+# `gh pr merge --auto` only ENABLES auto-merge: GitHub performs the merge solely
+# after main's required checks (gate, codeql-*, dependency-review) pass — that
+# branch protection is what makes this safe. Squash matches house history.
+# Dependabot-triggered runs only receive the permissions declared below.
+name: dependabot-automerge
+
+on: pull_request
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  automerge:
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.repository == 'torad-labs/splice'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: dependabot/fetch-metadata@ffa630c65fa7e0ecfa0625b5ceda64399aea1b36 # v3.0.0
+        id: meta
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Enable auto-merge for patch/minor updates
+        if: steps.meta.outputs.update-type != 'version-update:semver-major'
+        run: gh pr merge --auto --squash "$PR_URL"
+        env:
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

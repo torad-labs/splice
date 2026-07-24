@@ -83,4 +83,7 @@ public interface Provider : ProviderIdentity {
     /** Reasoning-continuation folding for this turn, or null when the feature is off for this
      *  model/head (the default — every non-codex provider stays pure passthrough). */
     public fun foldController(meta: TurnMeta): FoldController? = null
+
+    /** Mid-stream re-anchoring policy for FAILED rounds; null = surface the failure (pre-reanchor behaviour). */
+    public fun reanchorController(meta: TurnMeta): ReanchorController? = null
 }

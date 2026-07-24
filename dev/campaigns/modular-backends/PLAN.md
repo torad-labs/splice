@@ -190,11 +190,12 @@ Runtime credential/refresh logic is genuinely per-provider **algorithm**: codex 
 fields on merge; kimi yields `x-api-key`, uses a dynamic proactive window, mandates refresh-token
 rotation, and vetoes refresh on entitlement-shaped 401s.
 
-- **C0 (prerequisite):** add **typed, strategy-specific login/credential parameters** to the
-  descriptor (client-id, issuer, authorize/token URLs, scopes, redirect, credential-file path)
-  consumed by the existing loopback/device algorithms. Without this, the Tier-1 "auth-param
-  variation is TOML-only" promise is false — today `AuthConfig` carries only `{kind, file, env}` and
-  the rest are Kotlin constants.
+- **C0 (prerequisite — lands FIRST, as P4.0):** add **typed, strategy-specific login/credential
+  parameters** to the descriptor (client-id, issuer, authorize/token URLs, scopes, redirect,
+  credential-file path) consumed by the existing loopback/device algorithms — this is the
+  `strategyParams` the skeleton's `exchange` reads, so it must exist *before* skeleton-birth (§7-P4).
+  Without it, the Tier-1 "auth-param variation is TOML-only" promise is false — today `AuthConfig`
+  carries only `{kind, file, env}` and the rest are Kotlin constants.
 - **Target:** **one shared refresh orchestration skeleton** (cache → expiry decision → single-flight
   → lock → peer-rotation → bounded exchange → latch → lifecycle cancel) with **explicit typed
   provider policies/codecs**: parse credentials · derive expiry · construct wire credentials ·
@@ -267,7 +268,12 @@ they gate can now be cut.
 
 - **P0 — Campaign birth.** Create `dev/campaigns/modular-backends.toml`; transcribe the §8 Q1/Q2/Q3
   decision-records; cut each slot's exact exclusive fences (unblocked by §8); declare
-  environment-of-record and deletion policy.
+  environment-of-record and deletion policy. **No non-P0 item is dispatchable until P0 produces:**
+  the exact P2/P3 before/after fixture deltas; one manifest item per exclusive file fence with its
+  own verify command; exact path/symbol inventories for each deletion item (incl. the P4.4 auth
+  collapse and the Q2 fold-orchestrator ownership of `FoldRunner`/`TurnDriver`); and a certification
+  command that launches the **candidate** JAR, verifies its hash + topology digest, and rejects
+  malformed or expired waivers.
 - **P1 — Characterize & enforce first.** Topology→profile request matrix; the **B0 stream +
   non-stream corpora** over the production path; the scoped model-resolution wall (red/green +
   same-checker-twice).
@@ -275,8 +281,15 @@ they gate can now be cut.
   `cache_key`; production-path tests prove no collateral delta.
 - **P3 — Capability resolution + alias map.** One resolver, typed per-model capabilities; alias map
   with fallback; delete the substring heuristic.
-- **P4 — Auth.** P4a skeleton-birth + Codex; P4b/P4c Grok, Kimi; C0 typed login params; live proof
-  per provider (P7 carve-out); final-item deletion.
+- **P4 — Auth** (C0 first — the skeleton/policy consume the strategy descriptor, so it must exist
+  before skeleton-birth; resolve `ResolvedAuthKind` before/alongside P4.0 so the new skeleton is
+  wired through typed dispatch, not the raw-string fallback it would otherwise replace in P6):
+  - **P4.0** — C0 typed login/auth-strategy parameters (`strategyParams`).
+  - **P4.1** — skeleton-birth + Codex policy.
+  - **P4.2** — Grok policy migration.
+  - **P4.3** — Kimi policy migration.
+  - **P4.4** — enumerated deletion / reference-zero item.
+  Live proof per provider (P7 carve-out).
 - **P5 — Output pipeline.** Extract demonstrated cross-cutting operations against the B0 corpora, one
   feature/dialect at a time.
 - **P6 — Registry & closed-type validation.** `ResolvedAuthKind`; exhaustive/completeness-checked
@@ -301,62 +314,90 @@ membership accepts only configured ids; `ProviderConfig.models` is finite), so *
 per configured model — no pattern resolver** unless dynamic upstream discovery is separately
 introduced. Capability set and alias-map schema per §4-A / §4-A′.
 
-### Q2 — resolved: four output homes, keyed by the data a feature needs
+### Q2 — resolved: five typed phases; a composite feature spans phases under one named orchestrator
 
-Every cross-cutting feature lands in exactly one of four homes, chosen by its data dependency (not by
-taste):
+The unit of placement is an **operation**, not a feature. Every operation lands in one of five typed
+phases, chosen by the data it needs. A **composite feature** is a set of operations across phases,
+with **one named orchestrator** owning their order — it is not forced into a single home.
 
-| If the feature needs… | Home | Exemplar / today |
+| If the operation needs… | Phase | Exemplar / today |
 | --- | --- | --- |
-| the **request** (before upstream) | **request transform** (builder stage, descriptor-gated) | cache-key injection, summary delivery, reasoning replay, lite reshaping |
-| **per-frame synchronous block handles** | **reducer-local** (stays inside the dialect state machine) | any protocol-specific frame handling that calls `openText`/`openThinking`/`openTool` |
-| to transform the **live frame stream** per-frame | **`WireSink` decorator** (wraps the sink during streaming) | `BufferingWireSink` (the responses-fold buffer) — the proven exemplar |
+| the **request** (before upstream) | **request transform** (builder stage, descriptor-gated) | cache-key injection, summary delivery, lite reshaping, replay *decode-into-input* |
+| **per-frame synchronous block handles** | **reducer-local** (inside the dialect state machine) | protocol frame handling that calls `openText`/`openThinking`/`openTool`; encrypted-reasoning *capture/emit in wire position* |
+| to transform the **live frame stream** per-frame | **`WireSink` decorator** (wraps the sink during streaming) | `BufferingWireSink` — buffers the tentative final output of a fold round |
 | the **aggregate `TurnOutcome`** (after the machine, before the sole emit) | **post-reducer / terminal stage** (in `TurnPipeline`) | promote-to-text, honesty gates, mirror — already there (`TurnPipeline.kt`) |
+| both a completed round's `TurnOutcome` **and** the ability to issue the **next** request | **round/turn orchestrator** | `FoldRunner` (`TurnDriver.kt:355`) driving `FoldController` — decide/repost/accumulate/finalize |
 
-Placement of the named features:
-- **cache-key, summary delivery, reasoning replay, lite reshaping** → request transforms. They shape
-  the upstream request; they never touch the output stream.
-- **promote-to-text, honesty gates, mirror** → post-reducer/terminal stages. They already run on the
-  aggregate `TurnOutcome` in `TurnPipeline` (gated by e.g. the `mirror_reasoning` knob) — this move
-  makes them *explicit descriptor-gated stages*, it does not relocate them.
-- **the reasoning-continuation fold** → `WireSink` decorator (it already is `BufferingWireSink`),
-  applied only for descriptors that declare the fold capability.
+Placement of the named features (composites are decomposed):
+- **cache-key, summary delivery, lite reshaping** → request transforms only.
+- **promote-to-text, honesty gates, mirror** → post-reducer/terminal stages; already run on the
+  aggregate `TurnOutcome` in `TurnPipeline` (gated by e.g. `mirror_reasoning`). This move makes them
+  *explicit descriptor-gated stages*, it does not relocate them.
+- **reasoning replay (composite):** *decode prior transcript envelope into upstream input* is a
+  **request transform** (`ResponsesRequestBuilder.kt:433`); *capture the encrypted envelope in
+  output-item order and emit/store it* is **reducer-local** (`ResponsesStreamTranslator.kt:314`).
+- **reasoning-continuation fold (composite):** the **round/turn orchestrator** (`FoldRunner`) owns
+  decide-continue / build+POST next request / accumulate cross-round usage / flush-vs-discard /
+  invoke the terminal exactly once (`ResponsesFold.kt`, `TurnDriver.kt`); the **`WireSink` decorator**
+  (`BufferingWireSink`) is only its tentative-output buffer sub-part. Extracting the fold therefore
+  owns `FoldRunner`/`TurnDriver`, not just decorator wiring.
 - Anything genuinely per-frame and protocol-specific stays **reducer-local** — the reducers depend on
   synchronous handles, so this is where an immutable event IR would fight the grain (§4-B).
 
-**File ownership consequence:** Move B touches (a) the request-transform assembly in the builders,
-(b) `TurnPipeline` to make the post-reducer stages explicit/composable, and (c) the decorator
-wiring — it does **not** touch reducer internals except to *remove* inlined behavior that belongs in
-one of the other three homes. Each extraction is a *pure refactor* proven against the B0 corpora.
+**File ownership consequence:** Move B touches (a) request-transform assembly in the builders, (b)
+`TurnPipeline` to make post-reducer stages explicit/composable, (c) decorator wiring, and — for the
+fold composite — (d) the `FoldRunner`/`TurnDriver` round orchestrator. It does **not** touch reducer
+internals except to *remove* inlined behavior that belongs in one of the other phases. Each extraction
+is a *pure refactor* proven against the B0 corpora.
 
 ### Q3 — resolved: the auth policy interface + the shared skeleton
 
-The three providers already share `SingleFlight<Credentials?>` + `CredentialLock` and an identical
-three-tier proactive-window expiry decision; they differ only in six typed operations. The skeleton
-owns the orchestration; a `ProviderAuthPolicy` owns the six:
+The three providers share `SingleFlight<Credentials?>` + `CredentialLock` and the **three-tier
+proactive-window shape** — but *not identical thresholds*: codex/grok use `>=300s` / `>=30s` / `<30s`
+(`CodexAuthProvider.kt:80`, `GrokAuthProvider.kt:93`), kimi uses `>=max(300, expiresIn/2)` / `>60s` /
+`<=60s` (`KimiAuthProvider.kt:68`). The *shape* is shared; **threshold + window derivation are
+policy**. The skeleton owns the sequence; a `ProviderAuthPolicy` owns the seams below (expanded from
+the earlier six-op sketch, which could not express exchange, refresh-token access, grok's
+mtime-derived expiry, per-provider timing, or the two distinct failure boundaries):
 
 ```
 skeleton (shared, one copy):
-  read snapshot (mtime/TTL cache) → policy.deriveExpiry → three-tier proactive decision
-    → SingleFlight → CredentialLock → policy.exchange → policy.validateRefresh
-    → policy.merge+persist (0600) → latch invalid_grant → lifecycle cancel
+  read bytes+fileMetadata (mtime/TTL cache) → policy.parseSnapshot
+    → policy.refreshTiming(now) three-tier decision
+    → SingleFlight → CredentialLock
+    → policy.refreshToken(S)              // read inside the lock, before exchange
+    → policy.exchange(refreshToken, strategyParams)
+    → policy.validateRefresh → policy.merge+persist (0600)
+    → latch invalid_grant → lifecycle cancel
 
-interface ProviderAuthPolicy<S : Snapshot>:
-  parseSnapshot(bytes): S                       // file codec (codex JWT / grok file / kimi json)
-  deriveExpiry(S): Long?                         // JWT exp | mtime+4h synth | expires_in field
-  construct(S): Credentials                      // Bearer(access[,accountId]) | ApiKey(x-api-key)
-  validateRefresh(response): RefreshResult       // shape/rotation checks (kimi: mandatory rotation)
-  merge(old, refreshed): bytes                   // rewrite official-CLI file, preserve foreign fields
-  classifyFailure(status, body): Refreshable|Vetoed   // kimi's entitlement-401 veto lives here
+interface ProviderAuthPolicy<S : Snapshot, R>:
+  parseSnapshot(bytes, fileMetadata): S        // fileMetadata carries mtime — grok synthesizes expiry
+                                               //   as mtime + TTL when the file omits `expires`
+  accessIdentity(S): String                    // the currently-served access token/key
+  refreshToken(S): String?                     // material the skeleton reads inside the lock
+  constructCredentials(S): Credentials         // Bearer(access[,accountId]) | ApiKey(x-api-key)
+  refreshTiming(S, now): { proactiveWindow, blockingFloor }   // per-provider thresholds
+  exchange(refreshToken, strategyParams): RefreshAttempt<R>    // the token-endpoint call
+  validateRefresh(R): ValidatedRefresh         // shape/rotation checks (kimi: mandatory rotation)
+  merge(oldBytes, fileMetadata, validated, now): bytes        // rewrite CLI file, preserve foreign fields
+  classifyRefreshFailure(status, body): RefreshFailure        // response FROM the refresh endpoint
+  allowRefreshAfterInferenceFailure(status, body): Boolean    // gate refresh on a 401 from INFERENCE
+                                                              //   (kimi's entitlement veto lives here)
 ```
 
-`Snapshot` is a per-provider typed record (codex `{access, accountId, expiresAtMs}`, grok
-`{access, expiresAtMs}`, kimi `{access, refresh, expiresAtS}`), so the skeleton stays generic in `S`
-without a stringly bag. **Deletion inventory (P4 final item):** the three `*AuthProvider.credentials()`
-+ refresh bodies collapse to one skeleton; only the six-method policies + `Snapshot` records remain
-per provider. **C0 login-param schema** (client-id, issuer, authorize/token URLs, scopes, redirect,
-credential-path) feeds the two login strategies and `parseSnapshot`/`construct`, so a same-strategy
-same-policy vendor is TOML-only.
+The last two are **distinct boundaries**: `classifyRefreshFailure` judges the refresh endpoint's own
+response (latch invalid_grant); `allowRefreshAfterInferenceFailure` decides whether an inference-side
+401 should trigger a refresh at all (kimi vetoes entitlement 401s — `KimiAuthProvider.kt:99`). One
+method cannot name both.
+
+`Snapshot` is a per-provider typed record that **includes refresh material**: codex
+`{access, accountId, refresh, expiresAtMs}`, grok `{access, refresh, expiresAtMs}`, kimi
+`{access, refresh, expiresAtS, expiresInS}`, so the skeleton reads the refresh token generically in
+`S` without a side channel. **Deletion inventory (P4 final item):** the three
+`*AuthProvider.credentials()`/`refresh()` bodies collapse to one skeleton; only the policy seams +
+`Snapshot` records remain per provider. **C0 login-param schema** (client-id, issuer, authorize/token
+URLs, scopes, redirect, credential-path) is `strategyParams` above and feeds the two login strategies
+and `exchange`/`constructCredentials`, so a same-strategy same-policy vendor is TOML-only.
 
 ## 9. Success criteria
 

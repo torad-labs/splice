@@ -373,61 +373,87 @@ and the skeleton catches (cancellation-preserving) into `RefreshOutcome.Transpor
 initial read/parse yields a **typed** result (absent / incomplete / malformed), never an exception or
 a bind-time failure — so a missing/corrupt credential leaves the head bound and recoverable (§4-D).
 
+The `RefreshOutcome → Credentials?` flattening happens at **exactly one point** — inside the
+`SingleFlight`, so the diagnostic fires once per refresh wave, not once per waiter (`credentialsOrNull`
+is the single sanctioned, exhaustive-by-construction flatten: `RefreshOutcome.kt:39-75`,
+`CodexAuthProvider.kt:126-127`):
+```
+refreshOutcome(): RefreshOutcome            // the locked choreography (below)
+refresh(): Credentials? =                   // the ONE flatten point — logs each non-success branch once, then nulls
+  singleFlight.run { refreshOutcome().credentialsOrNull(LOG_TAG) }
+```
+
 **acquire (per request) — the three tiers with the still-valid fallback** (`CodexAuthProvider.kt:80-98`):
 ```
 acquire():
-  read = readParse(file)                        // ReadResult: Absent | Incomplete | Malformed | Ok(S, meta)
-  if read is not Ok: return null                // recoverable — probe reports unhealthy, NO throw / NO bind-fail
-  (S, meta) = read; current = constructCredentials(S)
-  when (refreshTiming(S, now)):
-    OUTSIDE  -> return current                                   // outside the proactive window
-    PROACTIVE-> ownerScope.launch { refresh() }; return current  // MIDDLE tier: refresh in BACKGROUND, serve current NOW
-    BLOCKING -> refreshed = refresh()                            // at/below floor: await the shared refresh
-                return refreshed ?: (if notYetExpired(S, now) current else null)   // STILL-VALID fallback
+  read = readParse(file)                        // ReadResult<S>: Absent | Incomplete | Malformed | Ok(S, meta)
+  when (read) {
+    Absent | Incomplete -> return null          // recoverable — probe unhealthy, NO throw / NO bind-fail
+    Malformed(e)        -> { log(e); return null }   // recoverable but DISTINCT from absent (logged, not silent)
+    Ok(S, meta)         -> {
+      current = constructCredentials(S)
+      when (refreshTiming(S, now)) {
+        OUTSIDE  -> return current                                    // outside the proactive window
+        PROACTIVE-> { ownerScope.launch { refresh() }; return current }   // MIDDLE tier: BACKGROUND refresh, serve current NOW
+        BLOCKING -> return refresh() ?: (if notYetExpired(S, now) current else null)   // await; STILL-VALID fallback
+      }
+    }
+  }
 ```
-Both PROACTIVE and BLOCKING drive the **same** `SingleFlight` (concurrent entrants dedup to one POST);
+Both PROACTIVE and BLOCKING call the same `refresh()` (one `SingleFlight`, one POST per wave);
 `AuthProbeLoop` treats a non-null result — including the fallback — as healthy (`AuthProbeLoop.kt:69`),
-so omitting the fallback would change probe health, not just latency.
+so dropping the fallback would change probe health, not just latency.
 
-**refresh (locked choreography) — returns `RefreshOutcome`:**
+**refreshOutcome (locked choreography) — returns `RefreshOutcome`, `ReadResult` exhausted at every read:**
 ```
-refresh():
+refreshOutcome():
   mtimeNow = stat(file)                         // FRESH stat — isLatched needs the CURRENT mtime, not a cached one
   if invalidGrantLatch.isLatched(mtimeNow): return Rejected(INVALID_GRANT)   // auto-clears when the file mtime changes
   priorAccess = cache?.access                   // what THIS process last served, captured before the lock
-  singleFlight.run { CredentialLock.withLock(file) {
-    read = readParse(file)                                       // AUTHORITATIVE, inside the lock
-    if read is Absent:      return NoCredentialsFile
-    if read is Malformed(e): return ReadFailed(e)
-    (fresh, meta) = read
-    if accessIdentity(fresh) != priorAccess:                     // a peer/CLI rotated while we waited
-        adopt fresh; refresh cache; return Refreshed(constructCredentials(fresh))   // NO POST
-    rt = refreshToken(fresh) ?: return NoRefreshToken
-    base = (fresh, meta)                                         // merge/latch base — PROMOTED on retry
-    outcome = try exchange(rt, strategyParams) catch(cancellation-preserving e): return TransportFailed(e)
-    when (outcome) {                                            // exhaustive over the THREE RefreshAttempt verdicts
-      Granted(r)          -> return persist(base, r)
-      InvalidGrant|Denied -> {                                   // MIGHT be a stale-token race: re-read ONCE
-        (f2, m2) = readParse(file); rt2 = refreshToken(f2)
-        if rt2 == null || rt2 == rt:                             // same dead token → confirmed
-          if outcome is InvalidGrant: invalidGrantLatch.latch(m2)   // latch the AUTHORITATIVE reread's mtime (m2)
-          return Rejected(reason(outcome))
-        base = (f2, m2)                                          // PROMOTE the rotated file as merge/latch base
-        o2 = try exchange(rt2, strategyParams) catch(e): return TransportFailed(e)   // exactly ONE extra POST
-        when (o2) {
-          Granted(r)   -> return persist(base, r)
-          InvalidGrant -> { invalidGrantLatch.latch(m2); return Rejected(INVALID_GRANT) }
-          Denied       -> return Rejected(reason(o2))
-        }
+  CredentialLock.withLock(file) {               // (the SingleFlight wraps refresh() above, not this)
+    when (readParse(file)) {                                     // AUTHORITATIVE, inside the lock — exhaustive
+      Absent       -> return NoCredentialsFile
+      Malformed(e) -> return ReadFailed(e)
+      Incomplete   -> return NoRefreshToken                      // structurally short of a usable refresh token
+      Ok(fresh, meta) -> {
+        if accessIdentity(fresh) != priorAccess:                 // a peer/CLI rotated while we waited
+            adopt fresh; refresh cache; return Refreshed(constructCredentials(fresh))   // NO POST
+        rt = refreshToken(fresh) ?: return NoRefreshToken
+        return attempt(rt, base=(fresh, meta), allowRetry=true)  // → the retry state machine below
       }
     }
-  } }
+  }
 
-persist(base, r):                                               // ONLY a Granted payload reaches here
-  validated = validateRefresh(r)                                // kimi: mandatory rotation; missing access → Rejected
-  newBytes  = merge(base.bytes, base.meta, validated, now)      // policy PRODUCES bytes off the AUTHORITATIVE base
-  SecureFile.writeAtomic0600(file, newBytes); invalidate cache  // skeleton PERSISTS
-  return reread-and-adopt ?: PersistFailed                      // verify/adopt the persisted snapshot
+attempt(rt, base, allowRetry):                  // BOTH POSTs go through here → both cancellation-preserving
+  outcome = runCatchingCancellable { exchange(rt, strategyParams) }.getOrElse { return TransportFailed(it) }
+  when (outcome) {                                              // exhaustive over the THREE RefreshAttempt verdicts
+    Granted(r) -> when (validateRefresh(r)) {                    // Valid | Rejected
+      Valid(v)      -> return persist(base, v)                   // ONLY a validated grant persists
+      Rejected(msg) -> return rejectedOrRetry(rt, base, allowRetry, msg, confirmed=false)   // e.g. missing access → SAME retry
+    }
+    InvalidGrant(msg) -> return rejectedOrRetry(rt, base, allowRetry, INVALID_GRANT, confirmed=true)
+    Denied(msg)       -> return rejectedOrRetry(rt, base, allowRetry, msg, confirmed=false)
+  }
+
+rejectedOrRetry(rt, base, allowRetry, reason, confirmed):        // MIGHT be a stale-token race
+  if not allowRetry:                                             // second attempt already spent → terminal
+    if confirmed: invalidGrantLatch.latch(base.meta.mtime)
+    return Rejected(reason)
+  when (readParse(file)) {                                       // re-read ONCE — exhaustive
+    Ok(f2, m2) -> {
+      rt2 = refreshToken(f2)
+      if rt2 == null || rt2 == rt:                               // same dead token → confirmed
+        if confirmed: invalidGrantLatch.latch(m2)                // latch the AUTHORITATIVE reread's mtime (m2)
+        return Rejected(reason)
+      return attempt(rt2, base=(f2, m2), allowRetry=false)       // PROMOTE rotated file; exactly ONE extra POST
+    }
+    else -> return Rejected(reason)                              // reread unusable → terminal on the original reason
+  }
+
+persist(base, validated):
+  newBytes = merge(base.bytes, base.meta, validated, now)        // policy PRODUCES bytes off the AUTHORITATIVE base
+  SecureFile.writeAtomic0600(file, newBytes); invalidate cache   // skeleton PERSISTS
+  return reread-and-adopt ?: PersistFailed                       // verify/adopt the persisted snapshot
 ```
 
 **Lifecycle (the two cancellation laws the skeleton must preserve, `CodexAuthProvider.kt:55-70`):** the
@@ -451,7 +477,7 @@ interface ProviderAuthPolicy<S : Snapshot, R>:
   refreshTiming(S, now): OUTSIDE | PROACTIVE | BLOCKING   // per-provider thresholds; the SKELETON executes the tier
   notYetExpired(S, now): Boolean                      // the still-valid fallback predicate
   exchange(refreshToken, strategyParams): RefreshAttempt<R>   // Granted|InvalidGrant|Denied; THROWS on transport
-  validateRefresh(R): ValidatedRefresh                // Granted-payload check (kimi rotation; missing access → reject)
+  validateRefresh(R): Valid(ValidatedRefresh) | Rejected(reason)   // a nominal grant missing access/rotation → Rejected → retry
   merge(oldBytes, fileMetadata, validated, now): bytes
   allowRefreshAfterInferenceFailure(status, body): Boolean   // SEPARATE inference-401 boundary (kimi veto), NOT the endpoint
 ```

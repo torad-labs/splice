@@ -6,6 +6,12 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    ignore:
+      # plugin-react majors need a coherent webui tree first (phantom root vite 6 +
+      # ts7/typescript-eslint peer conflict, frozen by npm ci) — see issue #43. Unignore
+      # after the lockfile regeneration lands.
+      - dependency-name: "@vitejs/plugin-react"
+        update-types: ["version-update:semver-major"]
     groups:
       npm-minor-patch:
         applies-to: version-updates

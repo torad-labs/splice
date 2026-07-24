@@ -7,6 +7,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -563,6 +564,88 @@ class TurnReasoningCaptureTest {
         assertTrue(outcome is TurnOutcome.Success)
         assertEquals(listOf("call_abc"), captured?.first)
         assertEquals(1, captured?.second?.size)
+    }
+
+    @Test
+    fun `the captured envelope carries the exact encrypted content, not just an id-derived value`() = runTest {
+        // review 2026-07-24 (thread on :529): size==1 stayed green if encrypted_content was
+        // dropped or mutated — the wall must assert the full payload through a content-aware encoder
+        var captured: List<String>? = null
+        val base = ctx(collect = true, capture = { _, envs -> captured = envs })
+        ResponsesStreamTranslator(
+            base.copy(
+                encodeReasoningEnvelope = { item ->
+                    val id = item["id"]?.jsonPrimitive?.content.orEmpty()
+                    val cipher = item["encrypted_content"]?.jsonPrimitive?.content.orEmpty()
+                    "$id|$cipher"
+                },
+            ),
+        ).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,""" +
+                        """"item":{"type":"reasoning","id":"rs_abc","encrypted_content":"cipher-sentinel-9f2"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"call_abc","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1,"arguments":"{}"}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertEquals(listOf("rs_abc|cipher-sentinel-9f2"), captured)
+    }
+
+    @Test
+    fun `a failed terminal after reasoning and a real call id never seeds the capture`() = runTest {
+        // review 2026-07-24: the capture must stay gated on the SUCCESS terminal — a regression
+        // moving onTurnReasoning ahead of terminal classification would reinject a rejected turn
+        var fired = false
+        val outcome = ResponsesStreamTranslator(
+            ctx(collect = true, capture = { _, _ -> fired = true }),
+        ).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,""" +
+                        """"item":{"type":"reasoning","id":"rs_1","encrypted_content":"blob"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"call_real","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1,"arguments":"{}"}"""),
+                ev("""{"type":"response.failed","response":{"error":{"message":"upstream rejected"}}}"""),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertTrue(outcome is TurnOutcome.Failure)
+        assertTrue(!fired, "a rejected turn must not seed the cache")
+    }
+
+    @Test
+    fun `a truncated stream (EOF without terminal) never seeds the capture`() = runTest {
+        var fired = false
+        val outcome = ResponsesStreamTranslator(
+            ctx(collect = true, capture = { _, _ -> fired = true }),
+        ).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,""" +
+                        """"item":{"type":"reasoning","id":"rs_1","encrypted_content":"blob"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"call_real","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1,"arguments":"{}"}"""),
+                // stream closes here without response.completed
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertTrue(outcome !is TurnOutcome.Success)
+        assertTrue(!fired, "a truncated turn must not seed the cache")
     }
 
     @Test

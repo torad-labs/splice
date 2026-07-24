@@ -2,6 +2,12 @@
 // TTL expiry against an injected clock, oldest-first eviction under both bounds, stale eviction,
 // conversation scoping (review 2026-07-24: one instance serves every concurrent conversation on
 // a head — a bare-id lookup could cross-inject), and the reasoningCacheActive gate seam.
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -143,13 +149,19 @@ class StripStaleReasoningTest {
             """"store":false,"stream":true}"""
 
     @Test
-    fun `strips reasoning items, keeps everything else in order, evicts the turn`() {
+    fun `strips reasoning items, keeps everything else structurally identical, evicts the turn`() {
+        // review 2026-07-24 (PR #46 thread): substring checks let a faulty transform mutate the
+        // instruction, arguments, or flags unseen — the wall is the executable delta: the amended
+        // request equals the original with ONLY the reasoning input items removed
         val cache = ReasoningCache(clock = { 0L })
         cache.put(CONV, listOf("call_a"), listOf("stale"))
         val amended = stripStaleReasoning(body, cache)!!
-        assertFalse(amended.contains("\"reasoning\""))
-        assertTrue(amended.contains("call_a"))
-        assertTrue(amended.indexOf("function_call") < amended.indexOf("function_call_output"))
+        val original = Json.parseToJsonElement(body).jsonObject
+        val expectedInput = original.getValue("input").jsonArray.filterNot {
+            it.jsonObject["type"]?.jsonPrimitive?.content == "reasoning"
+        }
+        val expected = JsonObject(original + ("input" to JsonArray(expectedInput)))
+        assertEquals(expected, Json.parseToJsonElement(amended).jsonObject)
         assertNull(cache.lookup(CONV, "call_a"), "stale turn evicted")
     }
 

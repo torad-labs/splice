@@ -85,4 +85,43 @@ class ModelCatalogTest {
         assertTrue(openRouter.contains("claude-openrouter--anthropic/claude-haiku-4.5"))
         assertFalse(openRouter.contains("claude-3-opus"))
     }
+
+    @Test
+    fun `contains resolves a 1m-suffixed picker model by every address form`() {
+        // kimi k3[1m]: the picker id carries the "[1m]" tier hint; the upstream id is bare "k3".
+        // contains strips its query to "k3", so the catalog must recognize "k3" too — a raw modelIds
+        // set held "k3[1m]" and 400'd every k3 turn ("proxies its own models only").
+        val kimi = ModelCatalog(
+            discoveryPrefix = "claude-kimi--",
+            models = listOf(
+                ModelEntry(id = "k3[1m]", label = "Kimi K3 (1M)", contextWindow = 1_048_576),
+                ModelEntry(id = "kimi-for-coding", contextWindow = 262_144),
+            ),
+            extraWindows = listOf(ExtraWindow(id = "k3", contextWindow = 1_048_576)),
+            defaultContextWindow = 262_144,
+        )
+        assertTrue(kimi.contains("k3"), "bare upstream id")
+        assertTrue(kimi.contains("k3[1m]"), "picker id with the tier hint")
+        assertTrue(kimi.contains("claude-kimi--k3"), "wrapped upstream id")
+        assertTrue(kimi.contains("claude-kimi--k3[1m]"), "wrapped picker id")
+        assertTrue(kimi.contains("kimi-for-coding"), "a sibling non-suffixed model still resolves")
+        assertFalse(kimi.contains("k9"), "a genuinely foreign model is still rejected")
+    }
+
+    @Test
+    fun `contextWindowFor strips 1m suffix so picker id windows resolve without extraWindows`() {
+        // Residual of the membership fix: modelIds stripped but exactWindows keyed raw picker ids,
+        // so contains("k3[1m]") passed while contextWindowFor fell to default 256k.
+        val kimi = ModelCatalog(
+            discoveryPrefix = "claude-kimi--",
+            models = listOf(
+                ModelEntry(id = "k3[1m]", label = "Kimi K3 (1M)", contextWindow = 1_048_576),
+            ),
+            defaultContextWindow = 262_144,
+        )
+        assertEquals(1_048_576, kimi.contextWindowFor("k3[1m]"), "picker id")
+        assertEquals(1_048_576, kimi.contextWindowFor("k3"), "bare upstream after strip")
+        assertEquals(1_048_576, kimi.contextWindowFor("claude-kimi--k3[1m]"), "wrapped picker id")
+        assertEquals(1_048_576, kimi.contextWindowFor("claude-kimi--k3"), "wrapped bare id")
+    }
 }

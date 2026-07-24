@@ -11,6 +11,13 @@ import splice.core.turn.Usage
 import splice.spi.WireSink
 
 public interface TurnTerminal : WireSink {
+    /** True once this turn's ending is SETTLED — a terminal or error durably reached the wire,
+     *  abandon sealed it, or a failed error write made retrying pointless. NOT merely "attempted":
+     *  implementations keep it false after a cancelled/failed terminal so the cancellation seal
+     *  (TurnDriver.driveSealingCancellation) can still end the turn honestly (stranded-terminal /
+     *  truncated-200 fix, review 2026-07-22 round 3). */
+    public val hasEnded: Boolean
+
     /** The ONLY clean ending — implementors derive the stop_reason literal internally (L3). */
     public suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage)
 

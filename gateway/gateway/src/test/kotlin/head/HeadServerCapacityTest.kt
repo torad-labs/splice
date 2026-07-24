@@ -170,4 +170,27 @@ class HeadServerCapacityTest {
         // both held requests before the test returns, so @AfterAll teardown is clean.
         listOf(first, second).forEach { it.await() }
     }
+
+    @Test
+    fun `count_tokens answers promptly and calls no upstream while the turn gate is saturated`() = runBlocking {
+        // count_tokens is a local estimate off the turn gate: even with the one inflight slot held,
+        // it must return 200 immediately, never touch upstream, and never occupy the gate.
+        val held = async(Dispatchers.IO) { idleTurn() }
+        assertTrue(waitFor(5_000) { gate.snapshot().inflight == 1 }, "expected the held turn to occupy the slot")
+        val upstreamBefore = mock.upstreamBodies.size
+
+        val resp = client.post("http://127.0.0.1:$port/v1/messages/count_tokens") {
+            header("Content-Type", "application/json")
+            setBody(
+                """{"model":"claude-codex--gpt-5.6-sol",
+                    "messages":[{"role":"user","content":"estimate this locally"}]}""",
+            )
+        }
+        assertEquals(200, resp.status.value)
+        assertTrue(resp.bodyAsText().contains("input_tokens"), "expected a local token estimate")
+        assertEquals(upstreamBefore, mock.upstreamBodies.size, "count_tokens must not call upstream")
+        assertEquals(1, gate.snapshot().inflight, "count_tokens must not occupy the turn gate")
+
+        held.await()
+    }
 }

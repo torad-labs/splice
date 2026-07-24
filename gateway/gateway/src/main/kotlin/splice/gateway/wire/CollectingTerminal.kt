@@ -34,6 +34,8 @@ public class CollectingTerminal(
     private val blocks = mutableListOf<Blk>()
     private val ended = AtomicBoolean(false)
 
+    override val hasEnded: Boolean get() = ended.get()
+
     private var body: JsonObject? = null
     private var status = DEFAULT_ERROR_STATUS
 

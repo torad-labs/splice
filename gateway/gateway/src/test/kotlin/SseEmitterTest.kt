@@ -11,6 +11,8 @@ import splice.core.turn.ErrorType
 import splice.core.turn.Usage
 import splice.gateway.wire.SseEmitter
 import splice.gateway.wire.TerminalMessage
+import java.io.IOException
+import java.util.concurrent.CancellationException
 
 class SseEmitterTest {
 
@@ -169,5 +171,70 @@ class SseEmitterTest {
             ),
         )
         assertEquals("\"max_tokens\"", msg["stop_reason"].toString())
+    }
+
+    @Test
+    fun `cancellation mid-terminal releases the claim so emitError can still seal`() = runTest {
+        // The stranded-ENDING hole (review 2026-07-22): a head-stop cancel lands while the
+        // terminal frames are being written; the follow-up cancellation-seal emitError
+        // (TurnDriver.driveSealingCancellation) must still put an honest error frame on the
+        // wire — not no-op against a held claim and leave the client a truncated 200.
+        val frames = mutableListOf<String>()
+        var failOnce = true
+        val emitter = SseEmitter.create(
+            write = { frame ->
+                if (failOnce && frame.startsWith("event: message_delta")) {
+                    failOnce = false
+                    throw CancellationException("head stop mid-terminal")
+                }
+                frames.add(frame)
+            },
+            model = "m",
+            usagePayload = { buildJsonObject { put("input_tokens", 0) } },
+            messageId = "msg_fixed",
+        )
+        var cancelled: CancellationException? = null
+        try {
+            emitter.emitTerminal(hasToolUse = false, incomplete = false, usage = Usage(1, 2))
+        } catch (e: CancellationException) {
+            cancelled = e
+        }
+        assertTrue(cancelled != null, "mid-terminal cancellation must propagate")
+        assertTrue(!emitter.hasEnded, "a cancelled terminal must not read as ended")
+        emitter.emitError(ErrorType.OVERLOADED, "turn cancelled — retry")
+        assertTrue(emitter.hasEnded, "the seal after a cancelled terminal must land")
+        assertTrue(frames.any { it.startsWith("event: error") && it.contains("turn cancelled") })
+    }
+
+    @Test
+    fun `IOException mid-terminal stays sealed ENDED so a follow-up emitError no-ops`() = runTest {
+        // The branch-introduced regression: a client disconnecting on the second terminal frame
+        // (message_stop) threw IOException; the old finally reverted the seal to OPEN, so the
+        // downstream emitConnReset → emitError re-attempted a doomed write that threw again and
+        // escaped its recordPerf/health telemetry. Client-gone must stay ENDED (unlike a
+        // cancellation, which releases), leaving a follow-up emitError a clean no-op.
+        val frames = mutableListOf<String>()
+        val emitter = SseEmitter.create(
+            write = { frame ->
+                if (frame.startsWith("event: message_stop")) {
+                    throw IOException("client gone mid-terminal")
+                }
+                frames.add(frame)
+            },
+            model = "m",
+            usagePayload = { buildJsonObject { put("input_tokens", 0) } },
+            messageId = "msg_fixed",
+        )
+        var thrown: IOException? = null
+        try {
+            emitter.emitTerminal(hasToolUse = false, incomplete = false, usage = Usage(1, 2))
+        } catch (e: IOException) {
+            thrown = e
+        }
+        assertTrue(thrown != null, "a client-gone IOException mid-terminal must propagate")
+        assertTrue(emitter.hasEnded, "a client-gone terminal stays sealed ENDED")
+        val before = frames.size
+        emitter.emitError(ErrorType.API_ERROR, "conn reset")
+        assertEquals(before, frames.size) // emitError no-ops: nothing new on the wire
     }
 }

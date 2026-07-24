@@ -17,6 +17,7 @@ import splice.spi.FoldController
 import splice.spi.Provider
 import splice.spi.ProviderIdentity
 import splice.spi.ProviderTuning
+import splice.spi.ReanchorController
 import splice.spi.StreamTranslator
 import splice.spi.TurnSignals
 
@@ -96,7 +97,7 @@ public abstract class ResponsesProvider(
                 dedupeRepeatedSummaryParts = quirks.summaryDelivery != null,
                 // Collect this round's encrypted reasoning envelopes ONLY when folding is active for
                 // the turn — off keeps the reducer byte-identical for sol / every non-fold turn.
-                collectReasoningEnvelopes = foldController(meta) != null,
+                collectReasoningEnvelopes = foldController(meta) != null || reanchorController(meta) != null,
             ),
         )
 
@@ -107,6 +108,13 @@ public abstract class ResponsesProvider(
         val cfg = foldConfig ?: return null
         if (meta.compact || meta.upstreamModel !in cfg.models) return null
         return ResponsesFoldController(cfg, decodeReasoningEnvelope = { decodeReasoningEnvelope(it) })
+    }
+
+    // Every responses turn is re-anchor eligible except compaction (unary, buffered, no wire
+    // frames to salvage — the pre-handoff retry already covers it).
+    final override fun reanchorController(meta: TurnMeta): ReanchorController? {
+        if (meta.compact) return null
+        return ResponsesReanchorController(decodeReasoningEnvelope = { decodeReasoningEnvelope(it) })
     }
 
     private fun showOn(): Boolean = !showReasoning.isOff

@@ -60,7 +60,28 @@ public sealed class TurnOutcome {
          *  truncation-without-terminal). Drives the G20 health split — the old OVERLOADED-implies-
          *  local heuristic misattributed passthrough overloaded_error (review 2026-07-19). */
         val providerReported: Boolean = false,
+        /** What the round had produced when it died — null when the dialect does not support
+         *  mid-stream re-anchoring or the turn was cancelled (watchdog). Rides the outcome the
+         *  same way Success buffers do (P2-MACH); the gateway never reads envelope contents. */
+        val partial: PartialRound? = null,
     ) : TurnOutcome()
+
+    /** The salvageable state of a round that failed mid-stream, for continuation re-anchoring:
+     *  the wire is already at a clean block boundary (translators closeAll before the terminal
+     *  decision), so a continuation may APPEND — never replay. [toolTearOpen] marks the one
+     *  non-continuable tear: a tool_use block swept shut with partial args JSON. */
+    public data class PartialRound(
+        val thinkingText: String = "",
+        val bodyText: String = "",
+        val emittedText: Boolean = false,
+        val hasToolUse: Boolean = false,
+        val reasoningEnvelopes: List<String> = emptyList(),
+        /** call_ids of tool_use blocks cleanly closed (args done) before the tear — the
+         *  continuation round suppresses re-emission of these ids (double-dispatch guard). */
+        val committedToolIds: List<String> = emptyList(),
+        val toolTearOpen: Boolean = false,
+        val usage: Usage = Usage(),
+    )
 
     /** Client vanished mid-stream: nothing to emit, seal quietly (never an error frame). */
     public data object ClientAbandoned : TurnOutcome()

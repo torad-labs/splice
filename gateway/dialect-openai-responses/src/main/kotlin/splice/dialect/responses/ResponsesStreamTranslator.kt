@@ -145,25 +145,45 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
         TerminalStates(
             providerFailure = reducer.upstreamFailure?.let {
                 // parsed from a response.failed/error event the backend actually sent (G20 provenance)
-                TurnOutcome.Failure(it.type, "ChatGPT backend: ${it.message}", providerReported = true)
+                TurnOutcome.Failure(
+                    it.type,
+                    "ChatGPT backend: ${it.message}",
+                    providerReported = true,
+                    partial = partialRound(reducer),
+                )
             },
             finished = reducer.finalResponse != null,
             watchdogFired = ctx.watchdogFired(),
         ),
         onFinished = { successOutcome(reducer) },
         onWatchdog = ::watchdogOutcome,
-        onUnfinished = ::noCompletionOutcome,
+        onUnfinished = { noCompletionOutcome(reducer) },
     )
 
-    private fun noCompletionOutcome(): TurnOutcome =
+    private fun noCompletionOutcome(reducer: ResponsesEventReducer): TurnOutcome =
         if (ctx.clientGone()) {
             TurnOutcome.ClientAbandoned
         } else {
             TurnOutcome.Failure(
                 ErrorType.OVERLOADED,
                 "claudex: upstream stream ended without response.completed (truncated); retry",
+                partial = partialRound(reducer),
             )
         }
+
+    /** The salvage payload for mid-stream re-anchoring — the wire is at a block boundary
+     *  (driveTurn closeAll precedes the terminal decision); watchdog failures never carry one
+     *  (their turn coroutine is being cancelled — nothing may re-POST). */
+    private fun partialRound(reducer: ResponsesEventReducer): TurnOutcome.PartialRound = TurnOutcome.PartialRound(
+        thinkingText = reducer.thinkingBuf.toString(),
+        bodyText = reducer.textBuf.toString(),
+        emittedText = reducer.emittedText,
+        hasToolUse = reducer.hasToolUse,
+        reasoningEnvelopes = reducer.reasoningEnvelopes.toList(),
+        committedToolIds = reducer.toolSalvage.committed.toList(),
+        toolTearOpen = reducer.toolSalvage.tearOpen,
+        usage = Usage(reducer.inputTokens, reducer.outputTokens, reducer.cachedTokens, reducer.reasoningTokens),
+    )
 
     private fun watchdogOutcome(fired: WatchdogFired): TurnOutcome {
         val why = when (fired) {
@@ -239,6 +259,9 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     val reasoningEnvelopes = mutableListOf<String>()
     private var toolSynthCounter = 0
 
+    // Mid-stream re-anchor salvage (eli 2026-07-24) — see [ToolSalvage].
+    val toolSalvage = ToolSalvage()
+
     // Late-reasoning items already emitted, keyed by their reasoning block index. Substring
     // dedup on thinkingBuf dropped a DISTINCT item whose text happened to be a substring of an
     // earlier one, diverging wire from mirror (audit 2026-07-18); track per item instead.
@@ -306,6 +329,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
             val idx = sink.openTool(id = id, name = strOrEmpty(item["name"]))
             blocks[oi] = BlockState(idx, sawDelta = false)
             hasToolUse = true
+            toolSalvage.opened(oi, id)
         }
         // reasoning + message (text) blocks open lazily on their first delta —
         // avoids empty thinking widgets when a reasoning item carries no summary
@@ -321,6 +345,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
         if (oi != null) {
             blocks[oi]?.let { sink.closeBlock(it.index) }
             blocks[reasoningKey(oi)]?.let { sink.closeBlock(it.index) }
+            toolSalvage.closedClean(oi)
         }
         if (item == null) return
         // Replay (gated): emit the encrypted reasoning IN POSITION — right after its summary closes
@@ -432,7 +457,8 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     // When the backend sends complete args only on .done (no .delta frames — valid for small tools),
     // harvest `arguments` once before close so the client does not get tool_use with empty input {}.
     private suspend fun onArgs(evt: JsonObject, sink: WireSink) {
-        val b = blocks[intOr(evt[OUTPUT_INDEX]) ?: return] ?: return
+        val oi = intOr(evt[OUTPUT_INDEX]) ?: return
+        val b = blocks[oi] ?: return
         if (strOrEmpty(evt["type"]) == "response.function_call_arguments.done") {
             if (!b.sawDelta) {
                 val full = strOrEmpty(evt["arguments"])
@@ -442,6 +468,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
                 }
             }
             sink.closeBlock(b.index)
+            toolSalvage.closedClean(oi)
         } else {
             val delta = strOrEmpty(evt[DELTA])
             if (delta.isNotEmpty()) {
@@ -477,3 +504,23 @@ private fun shouldPreferHarvestedText(current: CharSequence, harvested: String):
 }
 
 private fun intOr(el: JsonElement?): Int? = el.str()?.toIntOrNull()
+
+/** Tool-block salvage ledger for mid-stream re-anchoring: which tool blocks closed CLEANLY
+ *  (args.done / item.done — complete args on the wire) vs are still open at a tear. A sweep-close
+ *  of an open tool block committed PARTIAL args JSON — the poison tear that forbids continuation. */
+internal class ToolSalvage {
+    val committed = mutableListOf<String>()
+    private val open = HashSet<Int>()
+    private val idByOi = HashMap<Int, String>()
+
+    val tearOpen: Boolean get() = open.isNotEmpty()
+
+    fun opened(oi: Int, id: String) {
+        open.add(oi)
+        idByOi[oi] = id
+    }
+
+    fun closedClean(oi: Int) {
+        if (open.remove(oi)) idByOi[oi]?.let { committed.add(it) }
+    }
+}

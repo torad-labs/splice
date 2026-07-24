@@ -52,6 +52,8 @@ import splice.spi.FoldController
 import splice.spi.FoldRound
 import splice.spi.InflightGate
 import splice.spi.Provider
+import splice.spi.ReanchorController
+import splice.spi.ReanchorRound
 import splice.spi.SseFrameTooLargeException
 import splice.spi.StreamTornBeforeClient
 import splice.spi.TurnSignals
@@ -349,9 +351,7 @@ internal class TurnDriver(
                     // byte-for-byte the pre-fold behaviour (drive straight to the real emitter,
                     // finish once). A fold-eligible turn hands the loop to FoldRunner.
                     val fold = provider.foldController(drive.meta)
-                    if (fold == null) {
-                        finishTurn(drive, postRound(drive, drive.bodyJson, drive.emitter, self, turnJob))
-                    } else {
+                    if (fold != null) {
                         FoldRunner(
                             emitter = drive.emitter,
                             key = provider.key,
@@ -359,6 +359,19 @@ internal class TurnDriver(
                             postRound = { bodyJson, sink -> postRound(drive, bodyJson, sink, self, turnJob) },
                             finish = { outcome -> finishTurn(drive, outcome) },
                         ).run(drive.requestBody, fold)
+                    } else {
+                        val reanchor = provider.reanchorController(drive.meta)
+                        if (reanchor == null) {
+                            finishTurn(drive, postRound(drive, drive.bodyJson, drive.emitter, self, turnJob))
+                        } else {
+                            ReanchorRunner(
+                                key = provider.key,
+                                log = log,
+                                postRound = { bodyJson -> postRound(drive, bodyJson, drive.emitter, self, turnJob) },
+                                finish = { outcome -> finishTurn(drive, outcome) },
+                                watchdogFired = { drive.watchdog.fired != null },
+                            ).run(drive.requestBody, reanchor)
+                        }
                     }
                 } finally {
                     pinger?.cancel()
@@ -728,6 +741,59 @@ internal class FoldRunner(
             buffer.discard()
             finish(outcome)
         }
+    }
+}
+
+/** Mid-stream re-anchoring loop (eli design 2026-07-24): the LIVE-emitter counterpart of
+ *  [FoldRunner]. Rounds drive the real wire directly — committed blocks stay; a round that fails
+ *  with a continuable partial re-POSTs the continuation and APPENDS; everything else finishes with
+ *  the round's honest outcome. The emitter's seal + monotonic block indices make the spliced turn
+ *  a single coherent Anthropic message ending in exactly ONE terminal (L3). A watchdog fire never
+ *  continues — its cancellation owns the turn. */
+internal class ReanchorRunner(
+    private val key: String,
+    private val log: (String) -> Unit,
+    private val postRound: suspend (bodyJson: String) -> TurnOutcome,
+    private val finish: suspend (TurnOutcome) -> Unit,
+    private val watchdogFired: () -> Boolean,
+) {
+    suspend fun run(initialBody: JsonObject, reanchor: ReanchorController) {
+        var body = initialBody
+        var attempt = 0
+        var salvagedOut = 0L
+        var salvagedReasoning = 0L
+        while (true) {
+            val outcome = postRound(body.toString())
+            val failure = outcome as? TurnOutcome.Failure
+            val next = failure
+                ?.takeIf { !watchdogFired() }
+                ?.let { reanchor.continuationForFailure(ReanchorRound(body, it, attempt)) }
+            if (next == null) {
+                finish(withSalvagedUsage(outcome, salvagedOut, salvagedReasoning))
+                return
+            }
+            salvagedOut += failure.partial?.usage?.outputTokens ?: 0L
+            salvagedReasoning += failure.partial?.usage?.reasoningTokens ?: 0L
+            log(
+                "[$key] re-anchor ${attempt + 1}: ${failure.type.wireName} mid-stream — " +
+                    "continuing from partial output\n",
+            )
+            body = next
+            attempt++
+        }
+    }
+
+    /** Fold usage law: input/cached ride the LAST round (each continuation re-sends the whole
+     *  conversation); only output/reasoning genuinely accrued across the failed rounds. */
+    private fun withSalvagedUsage(outcome: TurnOutcome, out: Long, reasoning: Long): TurnOutcome {
+        if (outcome !is TurnOutcome.Success) return outcome
+        if (out == 0L && reasoning == 0L) return outcome
+        return outcome.copy(
+            usage = outcome.usage.copy(
+                outputTokens = outcome.usage.outputTokens + out,
+                reasoningTokens = outcome.usage.reasoningTokens + reasoning,
+            ),
+        )
     }
 }
 

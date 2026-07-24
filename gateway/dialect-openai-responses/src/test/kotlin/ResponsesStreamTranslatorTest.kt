@@ -481,6 +481,42 @@ class ResponsesStreamTranslatorTest {
         assertTrue((outcome as TurnOutcome.Success).reasoningEnvelopes.isEmpty())
     }
 
+    // L3 honesty hole (BS-1): a content-filtered response.incomplete must not masquerade as a
+    // clean max_tokens stop — mirrors ChatStreamTranslator's contentFiltered branch (line 97-105).
+    @Test
+    fun `response incomplete with reason content_filter is an honest failure, not a clean stop`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"partial"}"""),
+                ev(
+                    """{"type":"response.incomplete","response":{"status":"incomplete",
+                       "incomplete_details":{"reason":"content_filter"}}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, failure.type)
+        assertTrue(failure.providerReported)
+        assertTrue(failure.message.contains("content filter"))
+    }
+
+    @Test
+    fun `response incomplete with reason max_output_tokens stays a clean incomplete success`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"partial"}"""),
+                ev(
+                    """{"type":"response.incomplete","response":{"status":"incomplete",
+                       "incomplete_details":{"reason":"max_output_tokens"}}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val success = outcome as TurnOutcome.Success
+        assertTrue(success.incomplete)
+    }
+
     @Test
     fun `replay stays off on compact turns even when enabled`() = runTest {
         val sink = RecordingSink()

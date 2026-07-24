@@ -44,6 +44,11 @@ public data class ChatQuirks(
     val emitUsageInStream: Boolean = false,
 )
 
+/** Overlay TOML `[providers.*.quirks].reasoning_effort` onto a chat-dialect quirk profile — null
+ *  keeps the provider's own default (see [ChatQuirks.emitReasoningEffort]). */
+public fun ChatQuirks.withReasoningEffortToml(reasoningEffort: Boolean?): ChatQuirks =
+    copy(emitReasoningEffort = reasoningEffort ?: this.emitReasoningEffort)
+
 public data class BuiltChatRequest(val req: JsonObject, val meta: TurnMeta)
 
 public class ChatRequestBuilder(

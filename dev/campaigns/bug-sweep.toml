@@ -1,0 +1,100 @@
+# LAW: concept #945 — this manifest IS the memory; access ONLY via dev/campaigns/manifest.py
+# LAW [2026-07-24]: PROVENANCE — items come from workflow wf_2238eaa2-444 (17 agents: 5 sweep
+#   finders + 3 known-symptom diagnosers + 9 adversarial verifiers; 9 candidates -> 3 confirmed,
+#   6 refuted). Full agent returns: scratchpad/bug-sweep-raw.json (session 8e697c27). The three
+#   diagnoses cover the daemon-shutdown symptom (observed 2026-07-24), issue #21, issue #43.
+# LAW [2026-07-24]: BASE — branch fix/bug-sweep off feat/reasoning-cache tip 8d0eded (stacked on
+#   PR #46); the working copy is the session's rcache clone; NEVER the user's main checkout.
+# LAW [2026-07-24]: NEVER-BELOW-STATUS-QUO — every fix degrades to today's behavior on its error
+#   paths, never to a failed turn; the honesty invariant (no fabricated clean terminals) is L3 law.
+# LAW [2026-07-24]: BUILDERS EDIT + TARGETED MODULE TESTS ONLY (serial, one builder at a time);
+#   the full gate (gradlew check + 31 walls + e2e probe) is orchestrator-only, run once per wave.
+# LAW [2026-07-24]: NO PUSH, CLI-ONLY — agents never push or rewrite history; ledger updates only
+#   via manifest.py; blocked write = fix code or report BLOCKED, never bypass.
+
+[campaign]
+id = "bug-sweep"
+title = "Post-review bug sweep: 3 verified sweep bugs + 3 diagnosed known symptoms"
+status = "active"
+next = ["BS-1", "BS-2", "BS-3", "BS-4", "BS-5", "BS-6"]
+
+[[items]]
+id = "BS-1"
+phase = "P1-honesty"
+title = "Content-filtered response.incomplete masquerades as a clean max_tokens stop (L3 honesty hole; verified vs OpenAI SDK enum): onTerminal blanket-maps every incomplete terminal to Success(incomplete=true) without reading incomplete_details.reason, so a censored generation reaches Claude Code as message_stop/max_tokens instead of event:error — the exact hole ChatStreamTranslator closes at its line 97-105 contentFiltered branch. Fix: read incomplete_details.reason in onTerminal; max_output_tokens keeps Success(incomplete=true); content_filter (and other non-length reasons) become a providerReported Failure mirroring the chat dialect. Walls: response.incomplete with reason=content_filter -> Failure; reason=max_output_tokens -> Success(incomplete=true) preserved"
+files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt", "gateway/dialect-openai-responses/src/test/kotlin/ResponsesStreamTranslatorTest.kt"]
+status = "verified"
+verify = "cd gateway && ./gradlew :dialect-openai-responses:test"
+# [2026-07-24] CLAIM: owner=builder-bs-1 at=2026-07-24T18:13:32Z
+# [2026-07-24] ATTEST-START: tree=8134baff66a491485163a1b624e05e5450869409 at=2026-07-24T18:13:32Z
+# [2026-07-24] landed: ResponsesStreamTranslator.onTerminal now reads incomplete_details.reason (ResponsesStreamTranslator.kt:325-353); reason=content_filter (any non-max_output_tokens reason) sets reducer.contentFiltered, and terminalOutcome's providerFailure now ORs in a new contentFilterFailure() -> TurnOutcome.Failure(API_ERROR, providerReported=true), outranking the finished/Success path (mirrors ChatStreamTranslator's contentFiltered branch, honesty wall). reason=max_output_tokens unaffected, still Success(incomplete=true). Added 2 tests (content_filter -> Failure, max_output_tokens -> Success) to ResponsesStreamTranslatorTest.kt. detekt + test green.
+# [2026-07-24] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
+# [2026-07-24] ORCHESTRATOR REVIEW: hunk read — empty/absent incomplete_details.reason stays on the clean path (conservative, status-quo); only a present non-max_output_tokens reason fails the turn. verified
+# [2026-07-24] VERDICT: outcome=accepted
+
+[[items]]
+id = "BS-2"
+phase = "P1-honesty"
+title = "Unguarded writeSecure() in token rotation loses a GRANTED rotation to a transient disk error and can brick the head: after the endpoint consumed the old refresh_token, a throwing persist (ENOSPC/EACCES/NFS blip) propagates raw through SingleFlight out of credentials(), bypassing both the credentialsOrNull logging chokepoint and the serve-current-token fallback; the dead refresh_token stays on disk so the NEXT refresh latches invalid_grant until manual re-login. RefreshOutcome.PersistFailed exists for exactly this story. Fix at all THREE sites (codex persistRotation ~:235, grok persistRotation ~:245, kimi exchangeRefreshToken ~:155): wrap the writeSecure call runCatchingCancellable -> RefreshOutcome.PersistFailed, keeping the freshly granted in-memory token serving this request where the shape allows. Walls: a throwing writer yields PersistFailed (typed), never a raw throw through refresh()/credentials()"
+files = ["gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt", "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt", "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiAuthProvider.kt"]
+status = "verified"
+verify = "cd gateway && ./gradlew :provider-codex:test :provider-grok:test :provider-kimi:test"
+# [2026-07-24] CLAIM: owner=builder-bs-2 at=2026-07-24T18:17:34Z
+# [2026-07-24] ATTEST-START: tree=b51a18a1202ecea61334956583cf49b13119feb9 at=2026-07-24T18:17:34Z
+# [2026-07-24] landed: wrapped writeSecure() in runCatchingCancellable -> RefreshOutcome.PersistFailed at all 3 sites (Codex persistRotation, Grok persistRotation, Kimi exchangeRefreshToken's Granted branch); a throwing write now degrades typed instead of raw-throwing through SingleFlight/credentials(), restoring the serve-current-not-yet-expired-token fallback. Added a write-failure regression test per provider (parent dir chmod r-x, pre-created CredentialLock .lock sibling); confirmed each fails with raw AccessDeniedException pre-fix via git stash spot-check on codex. verify green: gradlew :provider-codex:test :provider-grok:test :provider-kimi:test (36/36 tasks, 0 failures).
+# [2026-07-24] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
+# [2026-07-24] VERDICT: outcome=accepted
+
+[[items]]
+id = "BS-3"
+phase = "P2-retry"
+title = "G5 stream-reissue backoff sleep is not deadline-gated (its BACKOFF twin is): a reissue granted near the total-timeout budget sleeps through the deadline and burns a doomed attempt. Fix: gate the reissue sleep on the same remaining-deadline arithmetic the normal backoff path uses (skip-or-clamp, matching the sibling's idiom). Wall: a reissue at (deadline - epsilon) does not extend the turn past totalTimeoutMs"
+files = ["gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamClient.kt", "gateway/provider-spi/src/test/kotlin/UpstreamClientTransportTest.kt"]
+status = "verified"
+verify = "cd gateway && ./gradlew :provider-spi:test"
+# [2026-07-24] CLAIM: owner=builder-bs-3 at=2026-07-24T18:25:06Z
+# [2026-07-24] ATTEST-START: tree=426a7a3666d34db876015d81df35f1ee6fa638de at=2026-07-24T18:25:06Z
+# [2026-07-24] landed: onTransportError's canReissueStream branch (UpstreamClient.kt) now re-checks deadlineExceeded(t0) before backoffTransportError, mirroring applyBackoff's sibling guard -- an already-expired deadline throws e immediately (no wasted sleep) with an onRetry log, instead of falling through to rethrowUnlessRetryableTransport; added stepping-clock test 'stream reissue does not sleep once the deadline has already expired' in UpstreamClientTransportTest.kt; verify green (:provider-spi:test 19/19 in that file, 0 failures) + detekt clean
+# [2026-07-24] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
+# [2026-07-24] VERDICT: outcome=accepted
+
+[[items]]
+id = "BS-4"
+phase = "P3-lifecycle"
+title = "Daemon survives SIGTERM and 'splice restart' races bound ports to zero daemons (observed 2x 2026-07-24; diag: probable, two defects). DEFECT A: JVM termination gates entirely on Daemon.stop() returning — no overall deadline, per-head engine stops accidentally serialized on a single-threaded runBlocking, and NO Runtime.halt() fallback, so one wedged head/Netty non-daemon thread makes SIGTERM a no-op. DEFECT B: the CLI restart proceeds to spawn a new daemon after reporting the stop failed, racing the still-bound ports (new daemon dies on bind; killing the old one afterwards leaves zero serving). Fix per diag spec (bug-sweep-raw.json): bounded stop with STOP_DEADLINE watchdog thread + halt(0) fallback in Main shutdown drivers; parallel per-head stops on a real dispatcher with per-head budget; CLI refuses to spawn while the control port is still bound (poll-free wait then abort with instructions). Walls: DaemonStopDeadlineTest (blocking heads cannot hold stop past budget); restart-refuses-while-bound covered at CLI level"
+files = ["gateway/app/src/main/kotlin/splice/app/Main.kt", "gateway/app/src/main/kotlin/splice/app/Daemon.kt", "gateway/app/src/main/kotlin/splice/app/cli/RestartCommand.kt", "gateway/app/src/test/kotlin/DaemonStopDeadlineTest.kt"]
+status = "verified"
+verify = "cd gateway && ./gradlew :app:test"
+# [2026-07-24] CLAIM: owner=builder-bs-4 at=2026-07-24T18:28:54Z
+# [2026-07-24] ATTEST-START: tree=84eed6c24ddac756439446eaed8989a33bd91128 at=2026-07-24T18:28:54Z
+# [2026-07-24] landed: DEFECT A — Main.shutdown() now bounded via extracted runBoundedTeardown (STOP_DEADLINE_MS=8s watchdog + Runtime.halt(0) floor) wired into BOTH the SIGTERM hook and the run-loop finally; Daemon.stop() delegates to extracted stopHeads() = Dispatchers.IO parallel head stops + withTimeoutOrNull(HEAD_STOP_BUDGET_MS=6s) cap + control-always-stops. DEFECT B — AdminSupport.controlPortBound()+startableJar() make ensureDaemon() refuse cold-start into a still-bound control port (bounded wait then abort); ControlPlaneClient.stopDaemon() now confirms the listener is actually gone (port unbound), not just /health null; Daemon.start() wraps srv.start() to exit cleanly on a control-bind race instead of crashing to zero daemons. Walls: DaemonStopDeadlineTest (NEW, 4 tests: parallel-not-serialized, budget cap + control-still-stops, halt-on-overrun, clean-teardown-never-halts); AdminSupportTest +2 (controlPortBound bound/free, ensureDaemon-refuses-while-bound). Deviations: tested extracted internal stopHeads/runBoundedTeardown directly (Daemon.heads/control are private, populated only in start()) — proves same invariants; dropped a 'no-wait-when-free' test (ensureDaemon on a free port with an installed jar actually SPAWNS a daemon — machine-state side effect; property already implied by controlPortBound(free)=false); CLI-gate walls live in AdminSupportTest, RestartCommand.kt unchanged (already returns on ensureDaemon's bool). verify: cd gateway && ./gradlew :app:test GREEN (81 tests, 0 fail); :app:detekt clean; :arch-tests:test --rerun-tasks GREEN
+# [2026-07-24] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
+# [2026-07-24] ORCHESTRATOR REVIEW (2026-07-24): diff read end-to-end; one fix applied on top — the halt watchdog deadline now sits TEARDOWN_TAIL_GRACE_MS=2s above the cooperative stop cap so a stop that times out cooperatively still gets its AsyncFileIo.drain()+lock.close() tail before halt(0) (equal deadlines raced the tail). Full gate + :app re-run green.
+# [2026-07-24] VERDICT: outcome=accepted
+
+[[items]]
+id = "BS-5"
+phase = "P4-issues"
+title = "Issue #21: openai-chat always sends reasoning_effort/reasoning — strict vendors (Fireworks) 400 (diag: confirmed). The Kotlin knob ChatQuirks.emitReasoningEffort already exists and works (builder test at ~:182 proves false-case); the CONFIG layer never exposes it. Fix per diag spec: QuirksConfig gains nullable reasoning_effort (absent keeps provider default true), ChatQuirks.withReasoningEffortToml overlay mirroring withReasoningCacheToml, Daemon chat-provider wiring applies it, example config documents it on the openrouter provider (explicit true, comment naming Fireworks-class false), ExampleConfigTest round-trips, overlay walls in ChatRequestBuilderTest"
+files = ["gateway/core/src/main/kotlin/splice/core/topology/Topology.kt", "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatRequestBuilder.kt", "gateway/app/src/main/kotlin/splice/app/Daemon.kt", "config/splice.example.toml", "gateway/app/src/test/kotlin/ExampleConfigTest.kt", "gateway/dialect-openai-chat/src/test/kotlin/ChatRequestBuilderTest.kt"]
+status = "verified"
+verify = "cd gateway && ./gradlew :dialect-openai-chat:test :app:test"
+# [2026-07-24] CLAIM: owner=builder-bs-5 at=2026-07-24T18:55:21Z
+# [2026-07-24] ATTEST-START: tree=66a65170b8dcd11abe226b5cfc17806f4de7ee08 at=2026-07-24T18:55:21Z
+# [2026-07-24] landed: QuirksConfig.reasoningEffort (Topology.kt) + ChatQuirks.withReasoningEffortToml overlay (ChatRequestBuilder.kt) + Daemon top-level chatQuirks wiring (Daemon.kt, kept top-level not a class member — Daemon sat at detekt TooManyFunctions=15 ceiling) + fireworks provider/head example (splice.example.toml) + round-trip test (ExampleConfigTest) + overlay wall test (ChatRequestBuilderTest, mirrors ReasoningCacheTomlOverlayTest); skipped optional Daemon-e2e wiring test from test_spec item 3 to match the RC-5/reasoning_cache precedent exactly (that precedent also stopped at unit+config-roundtrip, no Daemon e2e); verify green: :dialect-openai-chat:test :app:test + :app:detekt clean
+# [2026-07-24] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
+# [2026-07-24] VERDICT: outcome=accepted
+
+[[items]]
+id = "BS-6"
+phase = "P4-issues"
+title = "Issue #43: webui dependency tree frozen incoherent — fresh npm install ERESOLVEs (diag: confirmed, two premature major bumps). vite ^8.1.5 vs @vitejs/plugin-react ^4.3.4 (peer vite <=7), and typescript ^7.0.2 vs typescript-eslint peer <6.1.0. Fix per diag spec: bump plugin-react to ^6 (peer vite ^8 — the very update #43 says is blocked), alias typescript per Microsoft's documented TS6/TS7 side-by-side (typescript -> npm:@typescript/typescript6, @typescript/native -> npm:typescript@7), regenerate package-lock.json with a FRESH resolve (rm node_modules+lock, npm install), keep npm ci green, and add a CI fresh-resolve smoke step so the tree can never freeze incoherent again. Verify: fresh install no-ERESOLVE + npm run build + npm ci"
+files = ["webui/package.json", "package-lock.json", "package.json", ".github/workflows/ci.yml"]
+status = "verified"
+verify = "npm ci && npm run --silent gate:rules"
+# [2026-07-24] CLAIM: owner=builder-bs-6 at=2026-07-24T19:02:22Z
+# [2026-07-24] ATTEST-START: tree=077e5305507b6a51ebfc6aa39e8f7fc3b2740345 at=2026-07-24T19:02:22Z
+# [2026-07-24] CONFLICT flagged: fix_spec item 5 asks for a new dry-resolve guard step in .github/workflows/ci.yml, but builder instructions say NEVER edit any workflow file. Skipped that step per the stricter builder constraint (compliant route); everything else in fix_spec landed. Orchestrator should add the CI guard separately if wanted.
+# [2026-07-24] landed: webui/package.json bumped @vitejs/plugin-react ^4.3.4->^6.0.4 (peer vite ^8, matches existing vite ^8.1.5) and aliased typescript per MS TS6/TS7 side-by-side (typescript->npm:@typescript/typescript6@^6.0.2, @typescript/native->npm:typescript@^7.0.2); regenerated root package-lock.json via rm -rf node_modules+lock && npm install (189 pkgs, 0 vuln, single coherent tree, no more phantom root vite@6.4.3/typescript@6.0.3 split). verify green: npm install --dry-run, npm ci, npx tsc --version (7.0.2), npm run build --workspace=webui, npm run lint --workspace=webui (exit 0, no TS7 crash), npm run test --workspace=webui (46 passed), npm run --silent gate:rules (31 ast-grep tests passed).
+# [2026-07-24] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
+# [2026-07-24] VERDICT: outcome=accepted

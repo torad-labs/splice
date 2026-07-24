@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test
 import splice.app.cli.AdminSupport
 import splice.core.GATEWAY_VERSION
 import java.net.InetSocketAddress
+import java.net.ServerSocket
 
 class AdminSupportTest {
 
@@ -39,6 +40,36 @@ class AdminSupportTest {
             assertTrue(AdminSupport.daemonUp(server.address.port))
         } finally {
             server.stop(0)
+        }
+    }
+
+    // BS-4 DEFECT B: "/health stopped answering" is not proof the old daemon freed its control port,
+    // so the cold-start gate reads the port itself. A bound-but-not-serving listener must read bound.
+    @Test
+    fun `controlPortBound reports a bound port as bound and a freed port as free`() {
+        val server = ServerSocket(0)
+        try {
+            assertTrue(AdminSupport.controlPortBound(server.localPort), "an accepting listener is bound")
+        } finally {
+            server.close()
+        }
+        assertFalse(AdminSupport.controlPortBound(server.localPort), "a closed port refuses — free")
+    }
+
+    // The restart-refuses-while-bound wall: ensureDaemon must NOT cold-start into a still-bound control
+    // port (that new daemon would win the just-released lock, then die on the uncaught control bind,
+    // leaving zero serving). It waits the bounded window instead of spawning immediately.
+    @Test
+    fun `ensureDaemon refuses to cold-start while the control port is still bound`() {
+        val server = ServerSocket(0)
+        try {
+            val start = System.nanoTime()
+            val started = AdminSupport.ensureDaemon(server.localPort)
+            val elapsedMs = (System.nanoTime() - start) / 1_000_000
+            assertFalse(started, "spawning INTO a still-bound control port must be refused")
+            assertTrue(elapsedMs >= 1_000, "the gate waits the bounded window while bound, was ${elapsedMs}ms")
+        } finally {
+            server.close()
         }
     }
 }

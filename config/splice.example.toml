@@ -97,6 +97,20 @@ id = "meta-llama/llama-4-maverick"
 label = "Llama 4 Maverick"
 context_window = 1048576
 
+# ── strict OpenAI-compatible vendor: reasoning_effort must be turned OFF ────────
+# This dialect emits reasoning_effort/reasoning by default (DeepSeek/xAI/OpenRouter accept and
+# use them). Strict OpenAI-compatible validators (Fireworks) 400 on unrecognized fields — set
+# reasoning_effort = false to omit both (issue #21).
+[providers.fireworks]
+dialect = "openai-chat"
+base_url = "https://api.fireworks.ai/inference/v1"
+auth = { kind = "api-key", env = "FIREWORKS_API_KEY" }
+quirks = { reasoning_effort = false }
+[[providers.fireworks.models]]
+id = "accounts/fireworks/models/llama-v3p1-70b-instruct"
+label = "Llama 3.1 70B (Fireworks)"
+context_window = 131072
+
 # ── EXPERIMENTAL OPT-IN: Kimi device-flow OAuth (x-api-key) ─────────────────────
 # api.kimi.com/coding speaks the Anthropic Messages wire natively. Browser device login:
 # `claude-kimi login` (RFC 8628 — enter a code, no loopback redirect). The wire id sent upstream
@@ -158,6 +172,14 @@ discovery_prefix = "claude-openrouter--"
 pinned_model = "meta-llama/llama-4-maverick"
 [heads.openrouter.claude]
 command = "claudeor"
+
+[heads.fireworks]
+provider = "fireworks"
+port = 3103
+discovery_prefix = "claude-fireworks--"
+pinned_model = "accounts/fireworks/models/llama-v3p1-70b-instruct"
+[heads.fireworks.claude]
+command = "claudefw"
 
 [heads.claude-kimi]
 provider = "kimi"

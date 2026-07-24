@@ -232,6 +232,15 @@ public class UpstreamClient(
         t0: Long,
     ): LoopStep<Nothing> {
         if (canReissueStream(streamHandedOff, e, ctx.clientFrameEmitted, state.streamReissues)) {
+            // G4d: same re-check the sibling BACKOFF path (applyBackoff) does before its sleep — a
+            // budget that expired mid-turn must not pay for one more real delay it can't use.
+            if (deadlineExceeded(t0)) {
+                ctx.onRetry(
+                    "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before stream " +
+                        "reissue ${state.streamReissues + 1}/$MAX_STREAM_REISSUES",
+                )
+                throw e
+            }
             state.streamReissues += 1
             ctx.onRetry(
                 "stream torn before first client frame, reissue ${state.streamReissues}/$MAX_STREAM_REISSUES: " +

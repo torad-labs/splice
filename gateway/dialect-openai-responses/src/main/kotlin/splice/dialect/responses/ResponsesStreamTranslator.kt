@@ -169,7 +169,7 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
                     providerReported = true,
                     partial = partialOrNull(reducer),
                 )
-            },
+            } ?: contentFilterFailure(reducer),
             finished = reducer.finalResponse != null,
             watchdogFired = ctx.watchdogFired(),
         ),
@@ -177,6 +177,21 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
         onWatchdog = ::watchdogOutcome,
         onUnfinished = { noCompletionOutcome(reducer) },
     )
+
+    // response.incomplete with a non-max_output_tokens reason is a CENSORED turn — a clean
+    // Success(incomplete=true) would let a blocked generation masquerade as complete (the same
+    // L3 honesty invariant ChatStreamTranslator's contentFiltered branch closes, line 97-105).
+    private fun contentFilterFailure(reducer: ResponsesEventReducer): TurnOutcome.Failure? =
+        if (reducer.contentFiltered) {
+            TurnOutcome.Failure(
+                ErrorType.API_ERROR,
+                "ChatGPT backend: generation stopped by content filter",
+                providerReported = true,
+                partial = partialOrNull(reducer),
+            )
+        } else {
+            null
+        }
 
     private fun noCompletionOutcome(reducer: ResponsesEventReducer): TurnOutcome =
         if (ctx.clientGone()) {
@@ -271,6 +286,10 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     var hasToolUse = false
     var emittedText = false
     var incomplete = false
+
+    // response.incomplete carrying a non-max_output_tokens reason (content_filter, etc.) — the
+    // L3 honesty hole ChatStreamTranslator's contentFiltered branch closes for the chat dialect.
+    var contentFiltered = false
     var thinkingBuf = StringBuilder()
     var textBuf = StringBuilder()
     var finalResponse: JsonObject? = null
@@ -327,6 +346,10 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
         finalResponse = resp
         if (strOrEmpty(evt["type"]) == "response.incomplete" || strOrEmpty(resp["status"]) == "incomplete") {
             incomplete = true
+            val reason = (resp["incomplete_details"] as? JsonObject)?.str("reason").orEmpty()
+            // max_output_tokens is the honest "ran out of room" stop; any other reason
+            // (content_filter, etc.) is a censored generation, never a clean incomplete.
+            if (reason.isNotEmpty() && reason != INCOMPLETE_REASON_MAX_TOKENS) contentFiltered = true
         }
         accumulateUsage(this, resp)
     }
@@ -511,6 +534,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
     private companion object {
         const val OUTPUT_INDEX = "output_index"
         const val DELTA = "delta"
+        const val INCOMPLETE_REASON_MAX_TOKENS = "max_output_tokens"
 
         // Leave the positive int space for message/tool output_index; reasoning lives above.
         const val REASONING_KEY_BASE = 1_000_000

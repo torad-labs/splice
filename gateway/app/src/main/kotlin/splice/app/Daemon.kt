@@ -14,6 +14,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -28,6 +30,7 @@ import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.SpliceConfig
 import splice.core.config.StatePaths
+import splice.core.head.Head
 import splice.core.launch.ClaudeConfigMaterializer
 import splice.core.launch.ClaudePolicy
 import splice.core.model.ModelCatalog
@@ -42,6 +45,7 @@ import splice.core.turn.WatchdogBudget
 import splice.core.util.discard
 import splice.core.util.runCatchingCancellable
 import splice.dialect.chat.ChatQuirks
+import splice.dialect.chat.withReasoningEffortToml
 import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.withReasoningCacheToml
@@ -90,6 +94,10 @@ private fun foldConfigFrom(cfg: SpliceConfig): FoldConfig = FoldConfig(
 private const val CHATGPT_OAUTH = "chatgpt-oauth"
 private const val GROK_OAUTH = "grok-oauth"
 private const val KIMI_OAUTH = "kimi-oauth"
+
+// The whole head-stop phase's deadline (see [stopHeads]). Kept below Main's STOP_DEADLINE_MS so the
+// graceful stop + control shutdown finish before Main's hard halt watchdog would ever need to fire.
+private const val HEAD_STOP_BUDGET_MS = 6_000L
 
 /**
  * Best-effort isolation at daemon/head boundaries without turning cancellation or fatal JVM
@@ -148,6 +156,38 @@ private suspend fun startDaemonHeads(
     }
 }
 
+// The daemon shutdown's head-stop phase, extracted so DaemonStopDeadlineTest can prove the two
+// invariants a wedged head must not break. (1) PARALLELISM: the N blocking HeadServer.stop() engine
+// stops run CONCURRENTLY on Dispatchers.IO instead of serializing on Main's single-thread runBlocking
+// event loop — the "PARALLEL" the old comment claimed but the missing dispatcher silently defeated (a
+// blocking server.stop() monopolized the sole thread, compounding shutdown to ~5s x N heads). (2)
+// DEADLINE: withTimeoutOrNull caps the whole phase at [budgetMs] so a head whose drain never converges
+// cannot extend shutdown unboundedly, and [stopControl] still runs afterward even when the cap trips.
+// A truly-uninterruptible thread is beyond this budget's reach — Main's halt watchdog is that guarantee.
+internal suspend fun stopHeads(
+    heads: Collection<Head>,
+    budgetMs: Long,
+    log: (String) -> Unit,
+    stopControl: () -> Unit,
+) {
+    val stopFailureHandler = CoroutineExceptionHandler { _, e ->
+        log("[daemon] head stop failed uncaught: ${e::class.simpleName}: ${e.message}\n")
+    }
+    withContext(Dispatchers.IO) {
+        withTimeoutOrNull(budgetMs) {
+            supervisorScope {
+                heads.forEach { head ->
+                    launch(stopFailureHandler) {
+                        runCatchingDaemonBoundary { head.stop() }
+                            .discard("shutdown: one head failing to stop must not block the rest")
+                    }
+                }
+            }
+        }
+    }
+    stopControl()
+}
+
 private fun resolveHeadConfig(
     key: String,
     head: HeadConfig,
@@ -167,6 +207,11 @@ private fun resolveProviderConfig(key: String, provider: ProviderConfig, cfg: Sp
             provider.copy(baseUrl = cfg.xaiApiBase)
         else -> provider
     }
+
+/** Overlay the head's TOML [providers.*.quirks] onto a chat-dialect provider's base quirk profile.
+ *  Top-level (not a Daemon member): the class sits at detekt's TooManyFunctions ceiling. */
+private fun ProviderConfig.chatQuirks(base: ChatQuirks): ChatQuirks =
+    base.withReasoningEffortToml(quirks.reasoningEffort)
 
 public class Daemon(
     private val topology: Topology,
@@ -244,7 +289,17 @@ public class Daemon(
         // Start heads BEFORE opening the control plane so a launch-shim that sees /health and
         // immediately POSTs /launch/<head> does not race a still-binding head (503 head is not running).
         startDaemonHeads(heads, failed, probeScope, log, authProbes)
-        srv.start()
+        // Defense in depth for the restart-into-a-still-bound-port race (BS-4 DEFECT B): unlike the
+        // per-head starts above, an uncaught EADDRINUSE here (a prior daemon that freed the lock but
+        // not yet the control port) would crash the new daemon to /dev/null, leaving zero serving.
+        // Exit cleanly instead — Main's finally stops the heads we started and releases the lock.
+        val controlBound = runCatchingDaemonBoundary { srv.start() }
+            .onFailure {
+                log("[daemon] control plane could not bind :$controlPort (${it.message}); another owns it, exiting\n")
+                shutdownDaemon()
+            }
+            .isSuccess
+        if (!controlBound) return
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
     }
@@ -255,25 +310,12 @@ public class Daemon(
             authProbes.values.forEach { it.stop() }
             probeScope.cancel()
 
-            // Heads stop in PARALLEL: each stop may drain in-flight turns for up to its 5s
-            // window, and serial stops compounded shutdown to ~5s x N heads (review 2026-07-22).
-            // SUPERVISOR scope: an exception escaping one head's stop (a type outside
-            // runCatchingDaemonBoundary's list) must not cancel the siblings' drains/flushes nor
-            // skip control.stop below — it surfaces via stopFailureHandler below instead of the
-            // JVM default, which is a black hole once production launches redirect stderr to
-            // /dev/null (review 2026-07-22 round 3).
-            val stopFailureHandler = CoroutineExceptionHandler { _, e ->
-                log("[daemon] head stop failed uncaught: ${e::class.simpleName}: ${e.message}\n")
-            }
-            supervisorScope {
-                heads.values.forEach {
-                    launch(stopFailureHandler) {
-                        runCatchingDaemonBoundary { it.head.stop() }
-                            .discard("shutdown: one head failing to stop must not block the rest")
-                    }
-                }
-            }
-            control?.stop()
+            // Heads stop in PARALLEL under a phase DEADLINE, then control stops — see [stopHeads].
+            // The supervisor scope + stopFailureHandler live there so an exception escaping one
+            // head's stop (a type outside runCatchingDaemonBoundary's list) can't cancel the
+            // siblings' drains/flushes nor skip control.stop — it surfaces on stderr/daemon.log
+            // instead of the JVM default, a black hole once production redirects stderr to /dev/null.
+            stopHeads(heads.values.map { it.head }, HEAD_STOP_BUDGET_MS, log) { control?.stop() }
         }
     }
 
@@ -342,11 +384,13 @@ public class Daemon(
                 // grok-oauth rides session-pinned prompt caching + opt-in usage frames (probed
                 // 2026-07-19: 135k tokens, 1.7-2.8s TTFB, 99.97% cached — the two gaps that sank
                 // the 07-18 chat-dialect attempt). Unknown api-key vendors keep the bare quirks.
-                quirks = if (providerCfg.auth.kind == GROK_OAUTH) {
-                    ChatQuirks(providerTag = key, sessionCacheKeyPrefix = label, emitUsageInStream = true)
-                } else {
-                    ChatQuirks(providerTag = key)
-                },
+                quirks = providerCfg.chatQuirks(
+                    if (providerCfg.auth.kind == GROK_OAUTH) {
+                        ChatQuirks(providerTag = key, sessionCacheKeyPrefix = label, emitUsageInStream = true)
+                    } else {
+                        ChatQuirks(providerTag = key)
+                    },
+                ),
                 showReasoning = ctx.cfg.showReasoning,
             ),
             auth,

@@ -343,6 +343,35 @@ class CodexAuthTest {
         assertEquals(newAccess, onDisk["tokens"]!!.jsonObject["access_token"]?.jsonPrimitive?.content)
     }
 
+    // BS-2: a filesystem hiccup during persistRotation's write (disk full, perms, NFS blip) must not
+    // throw through SingleFlight/credentials() — the endpoint already burned the old refresh_token
+    // (Granted), so a lost write must still serve the not-yet-expired CURRENT token, never an exception.
+    @Test
+    fun `write failure during persist serves the current not-yet-expired token, never throws`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        val now = 1_000_000L
+        val access = jwt("""{"exp":${(now + 10_000) / 1000}}""") // below the 30s stale floor, still valid
+        val newAccess = jwt("""{"exp":${(now + 3_600_000) / 1000}}""")
+        val (auth, path) = provider(tmp, { now }) {
+            RefreshAttempt.Granted(RefreshedTokens(newAccess, "new-refresh", idToken = null))
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"$access","refresh_token":"old-r","account_id":"acct-1"}}""")
+        // pre-create the CredentialLock sibling so its own file open doesn't need dir-write access.
+        Files.createFile(path.resolveSibling("${path.fileName}.lock"))
+        val writablePerms = Files.getPosixFilePermissions(path.parent)
+        Files.setPosixFilePermissions(
+            path.parent,
+            java.nio.file.attribute.PosixFilePermissions.fromString("r-xr-xr-x"),
+        )
+        try {
+            assertEquals(access, (auth.credentials() as Credentials.Bearer).token)
+        } finally {
+            Files.setPosixFilePermissions(path.parent, writablePerms)
+        }
+    }
+
     @Test
     fun `inside window but not expired a failed refresh still serves the current token`(@TempDir tmp: Path) =
         runTest {

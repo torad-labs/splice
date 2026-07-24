@@ -44,11 +44,14 @@ public class ResponsesReanchorController(
         else -> hasSalvage(partial)
     }
 
-    /** Re-anchoring exists to SALVAGE forwarded work; a round that died with nothing to salvage
-     *  surfaces immediately — the client-side retry owns that class, and continuing it just
-     *  multiplies the duration of dead turns (HeadServerCapacityTest). */
+    /** Re-anchoring exists to SALVAGE forwarded work — and only content the continuation can
+     *  actually REPLAY counts: prose (rides as an assistant item) or encrypted reasoning
+     *  envelopes. thinkingText alone does NOT qualify (code-review 2026-07-24): it cannot seed
+     *  the continuation, so a mid-reasoning-delta death with no completed reasoning item would
+     *  continue with only the marker — an incoherent restart that burns budget. Those surface
+     *  honestly instead. Nothing-to-salvage rounds likewise surface (HeadServerCapacityTest). */
     private fun hasSalvage(partial: TurnOutcome.PartialRound): Boolean {
-        if (partial.bodyText.isNotEmpty() || partial.thinkingText.isNotEmpty()) return true
+        if (partial.bodyText.isNotEmpty()) return true
         return partial.reasoningEnvelopes.isNotEmpty()
     }
 
@@ -70,7 +73,8 @@ public class ResponsesReanchorController(
         public const val DEFAULT_MAX_CONTINUATIONS: Int = 2
         public const val MARKER_TEXT: String =
             "Your previous stream was interrupted mid-answer. Continue EXACTLY where the text " +
-                "above stops — do not repeat or restate anything already written."
+                "above stops — do not repeat or restate anything already written, and do not " +
+                "restate reasoning you have already given."
         private val RETRYABLE = setOf(ErrorType.OVERLOADED, ErrorType.API_ERROR)
     }
 }

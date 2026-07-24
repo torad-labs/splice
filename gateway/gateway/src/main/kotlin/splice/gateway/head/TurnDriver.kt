@@ -84,6 +84,9 @@ internal data class TurnDrive(
     val perf: TurnPerf,
     /** Per-turn upstream headers from BuiltTurn (e.g. grok conv-id affinity). */
     val turnHeaders: Map<String, String>,
+    /** Runner liveness gates + the health hook for absorbed round failures (built once in
+     *  assembleDrive; one construction site, the policies never drift). */
+    val signals: RunnerSignals,
     /** The client-facing SSE channel: coalesced writer + write mutex + clientGone flag. */
     val channel: ClientChannel,
 )
@@ -256,12 +259,25 @@ internal class TurnDriver(
         val meta = built.meta
         val bodyJson = built.requestBody.toString()
         perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, bodyJson.length.toLong())
+        val watchdog = TurnWatchdog(provider.watchdog, clock)
+        // Absorbed round failures still count for the G20 health split (code-review 2026-07-24).
+        val signals = RunnerSignals(
+            watchdogFired = { watchdog.fired != null },
+            clientGone = { channel.clientGone.get() },
+            onRoundFailure = { f ->
+                log(
+                    "[${provider.key}] mid-stream ${f.type.wireName} absorbed by " +
+                        "re-anchor: ${f.message.take(ROUND_FAILURE_SNIPPET)}\n",
+                )
+                if (f.providerReported) health.provider() else health.local()
+            },
+        )
         return TurnDrive(
             bodyJson = bodyJson,
             requestBody = built.requestBody,
             meta = meta,
             emitter = emitter,
-            watchdog = TurnWatchdog(provider.watchdog, clock),
+            watchdog = watchdog,
             slot = inputs.slot,
             pipeline = TurnPipeline(
                 compactStats,
@@ -274,6 +290,7 @@ internal class TurnDriver(
             perf = perf,
             turnHeaders = built.extraHeaders,
             channel = channel,
+            signals = signals,
         )
     }
 
@@ -351,6 +368,7 @@ internal class TurnDriver(
                     // byte-for-byte the pre-fold behaviour (drive straight to the real emitter,
                     // finish once). A fold-eligible turn hands the loop to FoldRunner.
                     val fold = provider.foldController(drive.meta)
+                    val reanchor = provider.reanchorController(drive.meta)
                     if (fold != null) {
                         FoldRunner(
                             emitter = drive.emitter,
@@ -358,20 +376,19 @@ internal class TurnDriver(
                             log = log,
                             postRound = { bodyJson, sink -> postRound(drive, bodyJson, sink, self, turnJob) },
                             finish = { outcome -> finishTurn(drive, outcome) },
+                            reanchor = reanchor,
+                            signals = drive.signals,
                         ).run(drive.requestBody, fold)
+                    } else if (reanchor == null) {
+                        finishTurn(drive, postRound(drive, drive.bodyJson, drive.emitter, self, turnJob))
                     } else {
-                        val reanchor = provider.reanchorController(drive.meta)
-                        if (reanchor == null) {
-                            finishTurn(drive, postRound(drive, drive.bodyJson, drive.emitter, self, turnJob))
-                        } else {
-                            ReanchorRunner(
-                                key = provider.key,
-                                log = log,
-                                postRound = { bodyJson -> postRound(drive, bodyJson, drive.emitter, self, turnJob) },
-                                finish = { outcome -> finishTurn(drive, outcome) },
-                                watchdogFired = { drive.watchdog.fired != null },
-                            ).run(drive.requestBody, reanchor)
-                        }
+                        ReanchorRunner(
+                            key = provider.key,
+                            log = log,
+                            postRound = { bodyJson -> postRound(drive, bodyJson, drive.emitter, self, turnJob) },
+                            finish = { outcome -> finishTurn(drive, outcome) },
+                            signals = drive.signals,
+                        ).run(drive.requestBody, reanchor)
                     }
                 } finally {
                     pinger?.cancel()
@@ -391,15 +408,23 @@ internal class TurnDriver(
         sink: WireSink,
         self: CoroutineScope,
         turnJob: Job,
-    ): TurnOutcome =
-        upstream.post(
+    ): TurnOutcome {
+        // Per-ROUND baselines (code-review 2026-07-24): drive.perf is one cumulative TurnPerf
+        // shared across re-anchor rounds — the global FIRST_FRAME mark and EVENTS_IN counter go
+        // permanently stale after round 1, which (a) denied continuation rounds the safe
+        // pre-frame reissue and (b) skipped the G2 zero-event reclassifier for them. Frame/event
+        // facts for reissue and zero-event classification are judged against THIS round only.
+        val framesBase = drive.perfCounter(PerfKeys.FRAMES_OUT)
+        val eventsBase = drive.perfCounter(PerfKeys.EVENTS_IN)
+        val frameEmittedThisRound = { drive.perfCounter(PerfKeys.FRAMES_OUT) > framesBase }
+        return upstream.post(
             url = provider.upstreamUrl,
             bodyJson = bodyJson,
             auth = provider.auth,
             extraHeaders = { creds -> provider.extraHeaders(creds) + drive.turnHeaders },
             onRetry = { log("[${provider.key}] $it\n") },
             perf = drive.perf,
-            clientFrameEmitted = { drive.perf.hasMark(PerfKeys.FIRST_FRAME) },
+            clientFrameEmitted = frameEmittedThisRound,
         ) { resp ->
             drive.slot.touch()
             // Persist upstream rate-limit headers for /api/usage + statusline soft-warn (Node
@@ -416,18 +441,19 @@ internal class TurnDriver(
             // now — launched once in driveOneTurn, cancelled there.)
             try {
                 val capture = ZeroEventCapture()
-                val events = tearAwareEvents(drive, resp, capture)
+                val events = tearAwareEvents(drive, resp, capture, frameEmittedThisRound)
                 val signals = TurnSignals(
                     watchdogFired = { drive.watchdog.fired },
                     clientGone = { drive.channel.clientGone.get() },
                 )
                 val rawOutcome = provider.streamTranslator(drive.meta, signals).driveTurn(events, sink)
                 drive.perf.mark(PerfKeys.STREAM_END)
-                classifyZeroEventFailure(drive, rawOutcome, capture.snippet.toString())
+                classifyZeroEventFailure(drive, rawOutcome, capture.snippet.toString(), eventsBase)
             } finally {
                 poller.cancel()
             }
         }
+    }
 
     /** Raw-body capture for the G2 zero-event classifier, threaded through [tearAwareEvents]. */
     private class ZeroEventCapture {
@@ -445,6 +471,7 @@ internal class TurnDriver(
         drive: TurnDrive,
         resp: UpstreamResponse,
         capture: ZeroEventCapture,
+        frameEmittedThisRound: () -> Boolean,
     ) =
         sseJsonEvents(
             resp.bodyChannel(),
@@ -474,7 +501,9 @@ internal class TurnDriver(
             capture.sawEvent = true
             drive.perf.add(PerfKeys.EVENTS_IN, 1)
         }.catch { e ->
-            if (e is IOException && !drive.perf.hasMark(PerfKeys.FIRST_FRAME)) {
+            // Per-round (not per-turn) pre-frame test: a continuation round's early tear is as
+            // safely reissuable as a first round's — its own body re-POSTs (code-review 2026-07-24).
+            if (e is IOException && !frameEmittedThisRound()) {
                 throw StreamTornBeforeClient(e)
             }
             throw e
@@ -488,11 +517,17 @@ internal class TurnDriver(
      *  surfaces AUTHENTICATION with a login hint instead of a retryable OVERLOADED that spins
      *  forever. A genuinely empty body (no bytes at all — a real stall) has nothing to classify and
      *  keeps the translator's original verdict. */
-    private fun classifyZeroEventFailure(drive: TurnDrive, outcome: TurnOutcome, snippet: String): TurnOutcome {
+    private fun classifyZeroEventFailure(
+        drive: TurnDrive,
+        outcome: TurnOutcome,
+        snippet: String,
+        eventsBase: Long,
+    ): TurnOutcome {
         if (outcome !is TurnOutcome.Failure) return outcome
-        // events_in == 0 means zero JSON frames parsed; a blank body is a true stall (nothing to
-        // classify) — either case keeps the translator's original verdict.
-        val eventsIn = drive.perf.snapshot().counters[PerfKeys.EVENTS_IN] ?: 0L
+        // THIS ROUND's events (cumulative counter minus the round's baseline): zero JSON frames
+        // parsed means a dead-head body; a blank body is a true stall (nothing to classify) —
+        // either case keeps the translator's original verdict.
+        val eventsIn = drive.perfCounter(PerfKeys.EVENTS_IN) - eventsBase
         if (eventsIn != 0L || snippet.isBlank()) return outcome
         val classified = UpstreamFailureClassifier.classify(FailureSource.SSE, snippet)
         log(
@@ -508,8 +543,10 @@ internal class TurnDriver(
         } else {
             classified.message
         }
-        // classified from a body the provider actually sent — a provider-reported failure (G20)
-        return TurnOutcome.Failure(classified.type, message, providerReported = true)
+        // classified from a body the provider actually sent — a provider-reported failure (G20).
+        // copy() preserves the (empty) partial: a full-constructor rebuild would silently drop
+        // the field on any future broadening of this path (code-review 2026-07-24).
+        return outcome.copy(type = classified.type, message = message, providerReported = true)
     }
 
     /** Terminal frames FIRST (finishStream), stats after: the usage-file rewrite and the cache
@@ -680,6 +717,10 @@ private fun usagePayloadBuilder(catalog: ModelCatalog, meta: TurnMeta): UsagePay
  *  reasoning streams live; a truncated round's output is DISCARDED and the next round re-POSTed with
  *  its reasoning replayed; the terminal round's output is FLUSHED and [finish] called exactly ONCE
  *  with usage summed across every round — one honest terminal downstream (L3). */
+private fun TurnDrive.perfCounter(key: String): Long = perf.snapshot().counters[key] ?: 0L
+
+private const val ROUND_FAILURE_SNIPPET = 160
+
 internal class FoldRunner(
     // Only the buffer's `real` sink — never a terminal here (L3: FoldRunner finishes via [finish]).
     private val emitter: WireSink,
@@ -687,54 +728,74 @@ internal class FoldRunner(
     private val log: (String) -> Unit,
     private val postRound: suspend (bodyJson: String, sink: WireSink) -> TurnOutcome,
     private val finish: suspend (TurnOutcome) -> Unit,
+    private val reanchor: ReanchorController? = null,
+    private val signals: RunnerSignals = RunnerSignals(),
 ) {
     suspend fun run(initialBody: JsonObject, fold: FoldController) {
         var body = initialBody
-        var acc = FoldUsage()
+        var acc = RoundUsage()
         var roundIndex = 0
+        var reanchorAttempt = 0
+        val salvaged = mutableListOf<TurnOutcome.PartialRound>()
+        val absorbedFailures = mutableListOf<TurnOutcome.Failure>()
         while (true) {
             val buffer = BufferingWireSink(emitter)
             val outcome = postRound(body.toString(), buffer)
             val success = outcome as? TurnOutcome.Success
             if (success != null) acc = acc.plusRound(success.usage)
             val next = success?.let { fold.continuation(FoldRound(body, it, roundIndex)) }
-            if (next == null) {
-                finalize(outcome, buffer, acc.toUsage())
+            if (next != null) {
+                buffer.discard()
+                val reasoningTokens = success.usage.reasoningTokens
+                log("[$key] fold round ${roundIndex + 1}: reasoning truncated at $reasoningTokens tokens, continuing\n")
+                body = next
+                roundIndex++
+                continue
+            }
+            // Trigger B (code-review 2026-07-24: fold-eligible models — the truncation-prone
+            // ones — previously had NO re-anchor cover). The round's final output was BUFFERED,
+            // never forwarded, so bodyText is stripped from the salvage: replaying
+            // never-forwarded prose as "already written" would desync the client's wire; the
+            // retried round re-answers cleanly from its reasoning envelopes. Live thinking
+            // already on the wire stays (append-only).
+            val retry = continuationForFailedRound(outcome, body, reanchorAttempt)
+            if (retry == null) {
+                // health for absorbed rounds only on ultimate success — see ReanchorRunner.
+                if (outcome is TurnOutcome.Success) absorbedFailures.forEach(signals.onRoundFailure)
+                finalize(outcome, buffer, salvaged, acc.toUsage())
                 return
             }
+            val failure = outcome as TurnOutcome.Failure
+            absorbedFailures.add(failure)
+            failure.partial?.let { p ->
+                salvaged.add(p.copy(bodyText = ""))
+                acc = acc.plusRound(p.usage)
+            }
             buffer.discard()
-            val reasoningTokens = success.usage.reasoningTokens
-            log("[$key] fold round ${roundIndex + 1}: reasoning truncated at $reasoningTokens tokens, continuing\n")
-            body = next
-            roundIndex++
+            log("[$key] fold re-anchor ${reanchorAttempt + 1}: ${failure.type.wireName} mid-round — retrying\n")
+            body = retry
+            reanchorAttempt++
         }
     }
 
-    /** Fold usage combinator (2026-07-20): each continuation re-sends the ENTIRE conversation, so
-     *  input/cached are CUMULATIVE — round N already includes round N-1's. Summing them (the old
-     *  `Usage.plus`) inflated the client-visible prompt size up to ~Nx, firing the context bar /
-     *  autocompact early on luna/terra/5.5 fold turns. Only output/reasoning genuinely accrue per
-     *  round; input/cached take the LAST round's value. */
-    private data class FoldUsage(
-        val lastInput: Long = 0,
-        val lastCached: Long = 0,
-        val outSum: Long = 0,
-        val reasoningSum: Long = 0,
+    private fun continuationForFailedRound(outcome: TurnOutcome, body: JsonObject, attempt: Int): JsonObject? =
+        when {
+            reanchor == null || outcome !is TurnOutcome.Failure -> null
+            signals.watchdogFired() || signals.clientGone() -> null
+            else -> reanchor.continuationForFailure(
+                ReanchorRound(body, outcome.copy(partial = outcome.partial?.copy(bodyText = "")), attempt),
+            )
+        }
+
+    private suspend fun finalize(
+        outcome: TurnOutcome,
+        buffer: BufferingWireSink,
+        salvaged: List<TurnOutcome.PartialRound>,
+        summed: Usage,
     ) {
-        fun plusRound(u: Usage) = FoldUsage(
-            lastInput = u.inputTokens,
-            lastCached = u.cachedTokens,
-            outSum = outSum + u.outputTokens,
-            reasoningSum = reasoningSum + u.reasoningTokens,
-        )
-
-        fun toUsage() = Usage(lastInput, outSum, lastCached, reasoningSum)
-    }
-
-    private suspend fun finalize(outcome: TurnOutcome, buffer: BufferingWireSink, summed: Usage) {
         if (outcome is TurnOutcome.Success) {
             buffer.flush()
-            finish(outcome.copy(usage = summed))
+            finish(mergedAcrossRounds(outcome.copy(usage = summed), salvaged))
         } else {
             // a failed/abandoned round has no honest final output to flush — drop the buffer, then
             // emit the round's real (error/abandon) outcome. Never a fabricated clean stop (L3).
@@ -742,6 +803,55 @@ internal class FoldRunner(
             finish(outcome)
         }
     }
+}
+
+/** Shared per-loop collaborators for the round runners: liveness gates + the health hook for
+ *  absorbed failures (one construction site in driveOneTurn — the policies never drift apart). */
+internal data class RunnerSignals(
+    val watchdogFired: () -> Boolean = { false },
+    val clientGone: () -> Boolean = { false },
+    val onRoundFailure: (TurnOutcome.Failure) -> Unit = {},
+)
+
+/** The round-usage law, ONE implementation for both runners (2026-07-20, unified in the
+ *  code-review 2026-07-24): each continuation re-sends the ENTIRE conversation, so input/cached
+ *  are CUMULATIVE — round N already includes round N-1's; summing them (the old `Usage.plus`)
+ *  inflated the client-visible prompt up to ~Nx, firing the context bar / autocompact early.
+ *  Only output/reasoning genuinely accrue per round. */
+internal data class RoundUsage(
+    val lastInput: Long = 0,
+    val lastCached: Long = 0,
+    val outSum: Long = 0,
+    val reasoningSum: Long = 0,
+) {
+    fun plusRound(u: Usage) = RoundUsage(
+        lastInput = u.inputTokens,
+        lastCached = u.cachedTokens,
+        outSum = outSum + u.outputTokens,
+        reasoningSum = reasoningSum + u.reasoningTokens,
+    )
+
+    fun toUsage() = Usage(lastInput, outSum, lastCached, reasoningSum)
+}
+
+/** Cross-round merge (code-review 2026-07-24): the post-stream pipeline — empty-model honesty
+ *  gate, promote-to-text, reasoning mirror — is round-blind; it sees ONE outcome. A spliced
+ *  turn's Success must carry the WHOLE turn's facts, or a round-2 empty completion after a lost
+ *  terminal frame turns an already-delivered answer into a client-visible error, and earlier
+ *  rounds' reasoning vanishes from the mirror. Usage on [outcome] must already be round-summed. */
+internal fun mergedAcrossRounds(
+    outcome: TurnOutcome,
+    salvaged: List<TurnOutcome.PartialRound>,
+): TurnOutcome {
+    if (outcome !is TurnOutcome.Success || salvaged.isEmpty()) return outcome
+    return outcome.copy(
+        hasToolUse = outcome.hasToolUse || salvaged.any { it.hasToolUse },
+        emittedText = outcome.emittedText || salvaged.any { it.emittedText },
+        thinkingText = (salvaged.map { it.thinkingText } + outcome.thinkingText)
+            .filter { it.isNotEmpty() }
+            .joinToString("\n\n"),
+        bodyText = (salvaged.map { it.bodyText } + outcome.bodyText).joinToString(""),
+    )
 }
 
 /** Mid-stream re-anchoring loop (eli design 2026-07-24): the LIVE-emitter counterpart of
@@ -755,25 +865,34 @@ internal class ReanchorRunner(
     private val log: (String) -> Unit,
     private val postRound: suspend (bodyJson: String) -> TurnOutcome,
     private val finish: suspend (TurnOutcome) -> Unit,
-    private val watchdogFired: () -> Boolean,
+    private val signals: RunnerSignals,
 ) {
     suspend fun run(initialBody: JsonObject, reanchor: ReanchorController) {
         var body = initialBody
         var attempt = 0
-        var salvagedOut = 0L
-        var salvagedReasoning = 0L
+        var acc = RoundUsage()
+        val salvaged = mutableListOf<TurnOutcome.PartialRound>()
+        val absorbedFailures = mutableListOf<TurnOutcome.Failure>()
         while (true) {
             val outcome = postRound(body.toString())
             val failure = outcome as? TurnOutcome.Failure
             val next = failure
-                ?.takeIf { !watchdogFired() }
+                ?.takeIf { !signals.watchdogFired() && !signals.clientGone() }
                 ?.let { reanchor.continuationForFailure(ReanchorRound(body, it, attempt)) }
             if (next == null) {
-                finish(withSalvagedUsage(outcome, salvagedOut, salvagedReasoning))
+                // Absorbed failures hit the health split ONLY when the turn ultimately succeeds
+                // (a rescued turn must not report a degraded provider as healthy); a turn that
+                // ultimately FAILS is attributed exactly once by finishTurn — firing per absorbed
+                // round would triple-count one logical failure (HeadServerIntegrationTest).
+                if (outcome is TurnOutcome.Success) absorbedFailures.forEach(signals.onRoundFailure)
+                finish(finalOutcome(outcome, salvaged, acc))
                 return
             }
-            salvagedOut += failure.partial?.usage?.outputTokens ?: 0L
-            salvagedReasoning += failure.partial?.usage?.reasoningTokens ?: 0L
+            absorbedFailures.add(failure)
+            failure.partial?.let { p ->
+                salvaged.add(p)
+                acc = acc.plusRound(p.usage)
+            }
             log(
                 "[$key] re-anchor ${attempt + 1}: ${failure.type.wireName} mid-stream — " +
                     "continuing from partial output\n",
@@ -783,17 +902,13 @@ internal class ReanchorRunner(
         }
     }
 
-    /** Fold usage law: input/cached ride the LAST round (each continuation re-sends the whole
-     *  conversation); only output/reasoning genuinely accrued across the failed rounds. */
-    private fun withSalvagedUsage(outcome: TurnOutcome, out: Long, reasoning: Long): TurnOutcome {
-        if (outcome !is TurnOutcome.Success) return outcome
-        if (out == 0L && reasoning == 0L) return outcome
-        return outcome.copy(
-            usage = outcome.usage.copy(
-                outputTokens = outcome.usage.outputTokens + out,
-                reasoningTokens = outcome.usage.reasoningTokens + reasoning,
-            ),
-        )
+    private fun finalOutcome(
+        outcome: TurnOutcome,
+        salvaged: List<TurnOutcome.PartialRound>,
+        acc: RoundUsage,
+    ): TurnOutcome {
+        if (outcome !is TurnOutcome.Success || salvaged.isEmpty()) return outcome
+        return mergedAcrossRounds(outcome.copy(usage = acc.plusRound(outcome.usage).toUsage()), salvaged)
     }
 }
 

@@ -60,9 +60,10 @@ public data class StreamTurnContext(
      *  (probed 2026-07-19: part(1,0) byte-identical to part(0,0)); codex-rs dedups client-side.
      *  Gated to the delivery quirk so genuine token-granular streams are never touched. */
     val dedupeRepeatedSummaryParts: Boolean = false,
-    /** Encode this round's encrypted reasoning items into splice-reasoning envelopes on the
-     *  Success outcome (for fold replay). True ONLY when the turn is fold-eligible — off keeps the
-     *  reducer byte-identical to the pre-fold path (no collection, empty envelopes). */
+    /** Encode this round's encrypted reasoning items into splice-reasoning envelopes, riding the
+     *  Success outcome (fold replay) AND the Failure partial (re-anchor salvage, 2026-07-24).
+     *  True for every fold- or re-anchor-eligible turn; off (compact) keeps the reducer
+     *  collection-free. */
     val collectReasoningEnvelopes: Boolean = false,
 )
 
@@ -149,7 +150,7 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
                     it.type,
                     "ChatGPT backend: ${it.message}",
                     providerReported = true,
-                    partial = partialRound(reducer),
+                    partial = partialOrNull(reducer),
                 )
             },
             finished = reducer.finalResponse != null,
@@ -167,20 +168,23 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
             TurnOutcome.Failure(
                 ErrorType.OVERLOADED,
                 "claudex: upstream stream ended without response.completed (truncated); retry",
-                partial = partialRound(reducer),
+                partial = partialOrNull(reducer),
             )
         }
 
     /** The salvage payload for mid-stream re-anchoring — the wire is at a block boundary
      *  (driveTurn closeAll precedes the terminal decision); watchdog failures never carry one
-     *  (their turn coroutine is being cancelled — nothing may re-POST). */
+     *  (their turn coroutine is being cancelled — nothing may re-POST). Compact turns never
+     *  re-anchor, so skip the full-buffer copies for them. */
+    private fun partialOrNull(reducer: ResponsesEventReducer): TurnOutcome.PartialRound? =
+        if (ctx.compact) null else partialRound(reducer)
+
     private fun partialRound(reducer: ResponsesEventReducer): TurnOutcome.PartialRound = TurnOutcome.PartialRound(
         thinkingText = reducer.thinkingBuf.toString(),
         bodyText = reducer.textBuf.toString(),
         emittedText = reducer.emittedText,
         hasToolUse = reducer.hasToolUse,
         reasoningEnvelopes = reducer.reasoningEnvelopes.toList(),
-        committedToolIds = reducer.toolSalvage.committed.toList(),
         toolTearOpen = reducer.toolSalvage.tearOpen,
         usage = Usage(reducer.inputTokens, reducer.outputTokens, reducer.cachedTokens, reducer.reasoningTokens),
     )
@@ -299,11 +303,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
         if (strOrEmpty(evt["type"]) == "response.incomplete" || strOrEmpty(resp["status"]) == "incomplete") {
             incomplete = true
         }
-        val u = usageFrom(resp)
-        if (u.inputTokens > 0) inputTokens = u.inputTokens
-        if (u.outputTokens > 0) outputTokens = u.outputTokens
-        if (u.cachedTokens > 0) cachedTokens = u.cachedTokens
-        if (u.reasoningTokens > 0) reasoningTokens = u.reasoningTokens
+        accumulateUsage(this, resp)
     }
 
     private fun onFailure(evt: JsonObject) {
@@ -315,6 +315,10 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
         val code = strOrEmpty(e["code"]).ifEmpty { strOrEmpty(e["type"]) }.ifEmpty { "upstream_failed" }
         val message = strOrEmpty(e["message"]).ifEmpty { "ChatGPT backend reported failure" }
         upstreamFailure = UpstreamFailureClassifier.classify(FailureSource.SSE, "$code $message")
+        // A response.failed payload can carry the round's usage — harvest it so the salvage
+        // accounting is real (code-review 2026-07-24: the terminal-only harvest left
+        // PartialRound.usage permanently zero).
+        (evt["response"] as? JsonObject)?.let { accumulateUsage(this, it) }
     }
 
     private suspend fun onItemAdded(evt: JsonObject, sink: WireSink) {
@@ -329,7 +333,7 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
             val idx = sink.openTool(id = id, name = strOrEmpty(item["name"]))
             blocks[oi] = BlockState(idx, sawDelta = false)
             hasToolUse = true
-            toolSalvage.opened(oi, id)
+            toolSalvage.opened(oi)
         }
         // reasoning + message (text) blocks open lazily on their first delta —
         // avoids empty thinking widgets when a reasoning item carries no summary
@@ -505,22 +509,31 @@ private fun shouldPreferHarvestedText(current: CharSequence, harvested: String):
 
 private fun intOr(el: JsonElement?): Int? = el.str()?.toIntOrNull()
 
-/** Tool-block salvage ledger for mid-stream re-anchoring: which tool blocks closed CLEANLY
- *  (args.done / item.done — complete args on the wire) vs are still open at a tear. A sweep-close
- *  of an open tool block committed PARTIAL args JSON — the poison tear that forbids continuation. */
+/** Tool-block salvage ledger for mid-stream re-anchoring: tracks blocks still OPEN at a tear.
+ *  A sweep-close of an open tool block committed PARTIAL args JSON — the poison tear that forbids
+ *  continuation. NB: cleanly-closed tools do NOT re-enable continuation — a committed
+ *  function_call without its function_call_output cannot ride a continuation input (400) and a
+ *  re-emitted call would double-dispatch; eligibility refuses ANY tool use (hasToolUse). */
 internal class ToolSalvage {
-    val committed = mutableListOf<String>()
     private val open = HashSet<Int>()
-    private val idByOi = HashMap<Int, String>()
 
     val tearOpen: Boolean get() = open.isNotEmpty()
 
-    fun opened(oi: Int, id: String) {
+    fun opened(oi: Int) {
         open.add(oi)
-        idByOi[oi] = id
     }
 
     fun closedClean(oi: Int) {
-        if (open.remove(oi)) idByOi[oi]?.let { committed.add(it) }
+        open.remove(oi)
     }
+}
+
+/** Shared usage harvest for terminal AND failure payloads (file-level: the reducer sits at its
+ *  TooManyFunctions budget). Guarded >0 so a later, richer payload never zeroes an earlier one. */
+private fun accumulateUsage(reducer: ResponsesEventReducer, resp: JsonObject) {
+    val u = usageFrom(resp)
+    if (u.inputTokens > 0) reducer.inputTokens = u.inputTokens
+    if (u.outputTokens > 0) reducer.outputTokens = u.outputTokens
+    if (u.cachedTokens > 0) reducer.cachedTokens = u.cachedTokens
+    if (u.reasoningTokens > 0) reducer.reasoningTokens = u.reasoningTokens
 }

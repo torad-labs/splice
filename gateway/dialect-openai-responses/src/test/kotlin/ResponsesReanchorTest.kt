@@ -78,7 +78,6 @@ class ResponsesReanchorControllerTest {
         val partial = TurnOutcome.PartialRound(
             bodyText = "x",
             hasToolUse = true,
-            committedToolIds = listOf("t1"),
         )
         assertNull(
             controller.continuationForFailure(
@@ -103,6 +102,16 @@ class ResponsesReanchorControllerTest {
     fun `the continuation budget caps at two`() {
         assertNotNull(controller.continuationForFailure(ReanchorRound(previousBody(), failureWith(), 1)))
         assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), failureWith(), 2)))
+    }
+
+    @Test
+    fun `a thinking-only partial refuses continuation - thinking cannot seed the resume`() {
+        val partial = TurnOutcome.PartialRound(thinkingText = "deep partial reasoning already streamed")
+        assertNull(
+            controller.continuationForFailure(
+                ReanchorRound(previousBody(), failureWith(partial = partial), 0),
+            ),
+        )
     }
 
     @Test
@@ -229,8 +238,25 @@ class ResponsesReanchorPartialTest {
         val partial = (outcome as TurnOutcome.Failure).partial
         assertNotNull(partial)
         assertFalse(partial!!.toolTearOpen)
-        assertEquals(listOf("t1"), partial.committedToolIds)
         assertTrue(partial.hasToolUse)
+    }
+
+    @Test
+    fun `a failed event's usage block is harvested into the partial`() = runTest {
+        val outcome = ResponsesStreamTranslator(reanchorCtx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"some text"}"""),
+                ev(
+                    """{"type":"response.failed","response":{""" +
+                        """"error":{"code":"server_error","message":"overloaded"},""" +
+                        """"usage":{"input_tokens":100,"output_tokens":42,""" +
+                        """"output_tokens_details":{"reasoning_tokens":7}}}}""",
+                ),
+            ).asFlow(),
+            NullSink(),
+        )
+        val partial = (outcome as TurnOutcome.Failure).partial
+        assertEquals(42, partial?.usage?.outputTokens)
     }
 
     @Test

@@ -69,16 +69,16 @@ public sealed class TurnOutcome {
     /** The salvageable state of a round that failed mid-stream, for continuation re-anchoring:
      *  the wire is already at a clean block boundary (translators closeAll before the terminal
      *  decision), so a continuation may APPEND — never replay. [toolTearOpen] marks the one
-     *  non-continuable tear: a tool_use block swept shut with partial args JSON. */
+     *  non-continuable tear: a tool_use block swept shut with partial args JSON. [bodyText] and
+     *  [reasoningEnvelopes] seed the continuation request; [thinkingText]/[emittedText] feed the
+     *  cross-round merge so the final honesty gates and reasoning mirror see the WHOLE turn, not
+     *  just the last round (code-review 2026-07-24: the pipeline is round-blind by itself). */
     public data class PartialRound(
         val thinkingText: String = "",
         val bodyText: String = "",
         val emittedText: Boolean = false,
         val hasToolUse: Boolean = false,
         val reasoningEnvelopes: List<String> = emptyList(),
-        /** call_ids of tool_use blocks cleanly closed (args done) before the tear — the
-         *  continuation round suppresses re-emission of these ids (double-dispatch guard). */
-        val committedToolIds: List<String> = emptyList(),
         val toolTearOpen: Boolean = false,
         val usage: Usage = Usage(),
     )

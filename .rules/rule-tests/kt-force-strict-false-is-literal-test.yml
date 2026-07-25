@@ -4,6 +4,14 @@ valid:
   - 'when { emitStrict && t.strict == true -> put(FIELD_STRICT, true) }'
   - 'when { lite -> put(FIELD_TOOL_CHOICE, "auto") }'
   - 'put(FIELD_STRICT, t.strict == true)'
+  # grouped branch: only FIELD_STRICT is governed — a sibling put must not be blocked (review #49)
+  - |
+    when {
+        forceStrictFalse -> {
+            put(FIELD_STRICT, false)
+            put(FIELD_DEFER_LOADING, true)
+        }
+    }
 invalid:
   - 'when { forceStrictFalse -> put(FIELD_STRICT, t.strict == true) }'
   - 'when { forceStrictFalse -> put(FIELD_STRICT, t.strict) }'

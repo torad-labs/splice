@@ -30,6 +30,12 @@ rule:
       kind: when_condition
       regex: '^forceStrictFalse$'
 constraints:
+  # FIELD is pinned (review #49): unconstrained, the rule fired on ANY put in the branch — a
+  # future compliant edit that groups another builder call into it (e.g. put(FIELD_DEFER_LOADING,
+  # true)) would be blocked mid-write. A wall that fires on compliant code teaches agents that
+  # wall output is noise, which is the failure #924 is about.
+  FIELD:
+    regex: '^FIELD_STRICT$'
   VAL:
     not:
       regex: '^false$'

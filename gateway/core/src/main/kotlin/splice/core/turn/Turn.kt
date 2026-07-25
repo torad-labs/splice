@@ -3,6 +3,7 @@
 // (tool_use > max_tokens > end_turn) is sealed inside the gateway's SseEmitter (L3-as-types).
 package splice.core.turn
 
+import kotlinx.serialization.json.JsonObject
 import kotlin.time.Duration
 
 public data class Usage(
@@ -35,6 +36,20 @@ public enum class ErrorType(public val wireName: String) {
     OVERLOADED("overloaded_error"),
 }
 
+/** A hosted tool call the round addressed to the GATEWAY (Responses `execution:"client"`), never
+ *  to Claude Code. Value-typed id so a call_id can never be confused with a tool_use id. */
+@JvmInline
+public value class ToolSearchCallId(public val v: String)
+
+public data class ToolSearchCall(
+    val callId: ToolSearchCallId,
+    val query: String,
+    val limit: Int?,
+    /** The item VERBATIM as the backend sent it — echoed into the continuation's input so the
+     *  history item is the backend's own shape, never a re-authored guess. */
+    val raw: JsonObject,
+)
+
 public sealed class TurnOutcome {
     /** Buffers ride the outcome (pinned P2-MACH slot): the gateway pipeline runs
      *  promote-to-text -> honesty gates -> mirror -> terminal AFTER the machine returns. */
@@ -50,6 +65,10 @@ public sealed class TurnOutcome {
          *  otherwise (opaque handles — the gateway forwards them to the provider's fold controller,
          *  never reads them). */
         val reasoningEnvelopes: List<String> = emptyList(),
+        /** tool_search_call items THIS round emitted. Non-empty only on a responses turn with
+         *  deferral active; the gateway never reads their contents — it hands them to the turn's
+         *  ToolSearchController (the same opaque-forwarding rule as reasoningEnvelopes). */
+        val toolSearches: List<ToolSearchCall> = emptyList(),
     ) : TurnOutcome()
 
     public data class Failure(
@@ -107,6 +126,11 @@ public data class TurnMeta(
      *  gateway reasoning cache so concurrent conversations on one head can never cross-inject
      *  (review 2026-07-24, RC-2's eli-risk-8 keying). Null (chat/passthrough) = one shared scope. */
     val conversationKey: String? = null,
+    /** Tool-surface partition sizes for THIS turn's request; null when deferral was not in play.
+     *  Non-null stamps the perf counters even at zero — a deploy where tools_deferred stays 0 is a
+     *  false landing, and it must be visible in one grep of the perf JSONL. */
+    val toolsEager: Int? = null,
+    val toolsDeferred: Int? = null,
 )
 
 /** The two-tier watchdog knobs (v35 doctrine): before first byte the idle limit is

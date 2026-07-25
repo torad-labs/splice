@@ -685,3 +685,154 @@ class TurnReasoningCaptureTest {
         assertFalse(fired)
     }
 }
+
+// Tool-search capture walls (ToolSurface deferral, the search round). A tool_search_call opens NO
+// wire block and must never touch hasToolUse/turnToolIds — a synthetic/foreign id there would
+// mis-key the reasoning cache (a known prior bug class this pins against).
+class ToolSearchCaptureTest {
+
+    @Test
+    fun `a tool_search_call opens no block, leaves hasToolUse false, lands in toolSearches`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"tool_search_call",""" +
+                        """"call_id":"ts_1","execution":"client","arguments":{"query":"web search exa"}}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        val success = outcome as TurnOutcome.Success
+        assertFalse(success.hasToolUse)
+        val opened = setOf("openTool", "openText", "openThinking")
+        assertTrue(sink.calls.none { call -> opened.any { call.startsWith(it) } }, "no wire block opens")
+        assertEquals(1, success.toolSearches.size)
+        assertEquals("ts_1", success.toolSearches.single().callId.v)
+        assertEquals("web search exa", success.toolSearches.single().query)
+    }
+
+    @Test
+    fun `execution server is not captured`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"tool_search_call",""" +
+                        """"call_id":"ts_1","execution":"server","arguments":{"query":"x"}}}""",
+                ),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val success = outcome as TurnOutcome.Success
+        assertTrue(success.toolSearches.isEmpty())
+    }
+
+    @Test
+    fun `arguments as a JSON string parses`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"tool_search_call",""" +
+                        """"call_id":"ts_1","execution":"client",""" +
+                        """"arguments":"{\"query\":\"exa search\",\"limit\":3}"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val success = outcome as TurnOutcome.Success
+        assertEquals("exa search", success.toolSearches.single().query)
+        assertEquals(3, success.toolSearches.single().limit)
+    }
+
+    @Test
+    fun `malformed arguments yields empty query and does not throw`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"tool_search_call",""" +
+                        """"call_id":"ts_1","execution":"client","arguments":"not valid json {"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val success = outcome as TurnOutcome.Success
+        assertEquals(1, success.toolSearches.size)
+        assertEquals("", success.toolSearches.single().query)
+    }
+
+    @Test
+    fun `empty call_id is dropped`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"tool_search_call",""" +
+                        """"call_id":"","execution":"client","arguments":{"query":"x"}}}""",
+                ),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val success = outcome as TurnOutcome.Success
+        assertTrue(success.toolSearches.isEmpty())
+    }
+
+    @Test
+    fun `terminal-only delivery is recovered by the harvest fallback`() = runTest {
+        // No output_item.done for the search call — only the terminal response object carries it.
+        val terminal = ev(
+            """{"type":"response.completed","response":{"id":"r1","usage":{"input_tokens":10,"output_tokens":1},
+                "output":[{"type":"tool_search_call","call_id":"ts_9","execution":"client",
+                    "arguments":{"query":"harvested"}}]}}""",
+        )
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(listOf(terminal).asFlow(), RecordingSink())
+        val success = outcome as TurnOutcome.Success
+        assertEquals(1, success.toolSearches.size)
+        assertEquals("ts_9", success.toolSearches.single().callId.v)
+    }
+
+    @Test
+    fun `streamed capture present - the harvest fallback does not duplicate`() = runTest {
+        val terminal = ev(
+            """{"type":"response.completed","response":{"id":"r1","usage":{"input_tokens":10,"output_tokens":1},
+                "output":[{"type":"tool_search_call","call_id":"ts_1","execution":"client",
+                    "arguments":{"query":"streamed"}}]}}""",
+        )
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"tool_search_call",""" +
+                        """"call_id":"ts_1","execution":"client","arguments":{"query":"streamed"}}}""",
+                ),
+                terminal,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val success = outcome as TurnOutcome.Success
+        assertEquals(1, success.toolSearches.size, "the streamed capture wins; the harvest never re-adds it")
+    }
+
+    // The dispatch-after-search wall: a function_call for a tool absent from THIS turn's
+    // declared set (i.e. a tool the model only learned about via a prior search) still opens an
+    // ordinary tool_use block — splice never validates names against the declared set.
+    @Test
+    fun `a function_call for an undeclared tool still opens a tool_use block`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":0,""" +
+                        """"item":{"type":"function_call","call_id":"call_1","name":"mcp__exa__web_search_exa"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        val success = outcome as TurnOutcome.Success
+        assertTrue(success.hasToolUse)
+        assertTrue(sink.calls.any { it.startsWith("openTool") && it.contains("mcp__exa__web_search_exa") })
+    }
+}

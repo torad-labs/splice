@@ -37,6 +37,7 @@ import splice.core.model.ModelCatalog
 import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
+import splice.core.topology.ToolSurfaceConfig
 import splice.core.topology.Topology
 import splice.core.topology.catalogFor
 import splice.core.topology.configOverrides
@@ -48,8 +49,10 @@ import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.withReasoningEffortToml
 import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.ToolDeferralPolicy
 import splice.dialect.responses.withReasoningCacheToml
 import splice.dialect.responses.withToml
+import splice.dialect.responses.withToolSurfaceToml
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.HeadDeps
@@ -212,6 +215,35 @@ private fun resolveProviderConfig(key: String, provider: ProviderConfig, cfg: Sp
  *  Top-level (not a Daemon member): the class sits at detekt's TooManyFunctions ceiling. */
 private fun ProviderConfig.chatQuirks(base: ChatQuirks): ChatQuirks =
     base.withReasoningEffortToml(quirks.reasoningEffort)
+
+/** TOML table -> dialect policy. Null (absent table, enabled=false, or the daemon-wide kill
+ *  switch) = feature off. The mapping lives HERE, at the assembly point, so the dialect never
+ *  imports a topology config type — the same reason withToml takes primitives. Top-level (not a
+ *  Daemon member): the class sits at detekt's TooManyFunctions ceiling.
+ *
+ *  Clamped (review 2026-07-24): ToolSurfaceConfig does no validation of its own, so an operator
+ *  TOML typo (e.g. `search_limit = 0`) reached `coerceIn(1, policy.searchLimit)` in
+ *  ResponsesToolSearchController unclamped and THREW — a client-visible failed turn on every
+ *  round that searched, the one place this feature's own NEVER-BELOW-STATUS-QUO law broke.
+ *  Clamping here (like every other numeric knob — ConfigService.normalize) makes a bad value
+ *  un-armable instead of a live crash. */
+private fun toolDeferralPolicy(t: ToolSurfaceConfig?, globalOff: Boolean): ToolDeferralPolicy? = when {
+    t == null -> null
+    !t.enabled -> null
+    globalOff -> null
+    else -> ToolDeferralPolicy(
+        deferPrefixes = t.deferPrefixes,
+        defer = t.defer.toSet(),
+        eager = t.eager.toSet(),
+        minDeferred = t.minDeferred.coerceAtLeast(MIN_TOOL_SURFACE_FLOOR),
+        searchLimit = t.searchLimit.coerceIn(MIN_TOOL_SURFACE_FLOOR, MAX_TOOL_SEARCH_LIMIT),
+        searchRounds = t.searchRounds.coerceIn(MIN_TOOL_SURFACE_FLOOR, MAX_TOOL_SEARCH_ROUNDS),
+    )
+}
+
+private const val MIN_TOOL_SURFACE_FLOOR = 1
+private const val MAX_TOOL_SEARCH_LIMIT = 50
+private const val MAX_TOOL_SEARCH_ROUNDS = 5
 
 public class Daemon(
     private val topology: Topology,
@@ -453,13 +485,17 @@ public class Daemon(
 
     /** Overlay the head's TOML [providers.*.quirks] onto a provider's base quirk profile. */
     // quirks.effortCeiling is intentionally not passed: the effort ladder clamps per provider.
-    private fun ProviderConfig.responsesQuirks(base: ResponsesQuirks): ResponsesQuirks = base.withToml(
+    private fun ProviderConfig.responsesQuirks(
+        base: ResponsesQuirks,
+        cfg: SpliceConfig,
+    ): ResponsesQuirks = base.withToml(
         store = quirks.store,
         cacheKey = quirks.cacheKey,
         summaryField = quirks.summaryField,
         compactEffort = quirks.compactEffort,
         toolChoice = quirks.toolChoice,
     ).withReasoningCacheToml(quirks.reasoningCache)
+        .withToolSurfaceToml(toolDeferralPolicy(quirks.toolSurface, cfg.toolSurfaceOff))
 
     private fun responsesProvider(ctx: ProviderBuild, label: String): Wired {
         val key = ctx.key
@@ -494,7 +530,7 @@ public class Daemon(
                         replayReasoning = cfg.replayReasoning,
                         configEffort = cfg.effort,
                         configSummary = cfg.summary,
-                        quirks = providerCfg.responsesQuirks(CodexProvider.defaultQuirks()),
+                        quirks = providerCfg.responsesQuirks(CodexProvider.defaultQuirks(), cfg),
                         // Reasoning-continuation folding (codex 518n-2) — codex head ONLY; grok/openai
                         // never receive a fold config, so they stay pure passthrough.
                         foldConfig = foldConfigFrom(cfg),
@@ -540,7 +576,7 @@ public class Daemon(
                 replayReasoning = cfg.replayReasoning,
                 configEffort = cfg.effort,
                 configSummary = cfg.summary,
-                quirks = providerCfg.responsesQuirks(GrokProvider.defaultQuirks()),
+                quirks = providerCfg.responsesQuirks(GrokProvider.defaultQuirks(), cfg),
             ),
             auth,
         )
@@ -578,7 +614,7 @@ public class Daemon(
                 replayReasoning = cfg.replayReasoning,
                 configEffort = cfg.effort,
                 configSummary = cfg.summary,
-                quirks = providerCfg.responsesQuirks(GrokProvider.defaultQuirks()),
+                quirks = providerCfg.responsesQuirks(GrokProvider.defaultQuirks(), cfg),
             )
         } else {
             OpenAiResponsesProvider(
@@ -587,7 +623,7 @@ public class Daemon(
                 replayReasoning = cfg.replayReasoning,
                 configEffort = cfg.effort,
                 configSummary = cfg.summary,
-                quirks = providerCfg.responsesQuirks(OpenAiResponsesProvider.defaultQuirks()),
+                quirks = providerCfg.responsesQuirks(OpenAiResponsesProvider.defaultQuirks(), cfg),
             )
         }
         return Wired(provider, auth)

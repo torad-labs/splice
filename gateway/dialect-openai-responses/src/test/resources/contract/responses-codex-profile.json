@@ -13,6 +13,15 @@
                         "type": "object"
                     },
                     "strict": false
+                },
+                {
+                    "type": "function",
+                    "name": "Bash",
+                    "description": "",
+                    "parameters": {
+                        "type": "object"
+                    },
+                    "strict": false
                 }
             ]
         },

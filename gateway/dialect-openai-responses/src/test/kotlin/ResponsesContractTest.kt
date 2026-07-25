@@ -61,9 +61,14 @@ class ResponsesContractTest {
 
     @Test
     fun `responses codex profile pins strict false on every function tool`() {
+        // The second tool arrives with its OWN "strict":true (review 2026-07-25, comment 1): the
+        // golden must still pin "strict":false for it, or a forceStrictFalse regression that lets
+        // a tool's own strict value pass through (ToolSurface.kt functionToolObject) would stay
+        // green — the prior fixture only ever exercised a tool with no strict field at all.
         val toolBody = """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":1024,""" +
             """"system":"You are Splice, a contract fixture.",""" +
-            """"tools":[{"name":"Read","input_schema":{"type":"object"}}],""" +
+            """"tools":[{"name":"Read","input_schema":{"type":"object"}},""" +
+            """{"name":"Bash","input_schema":{"type":"object"},"strict":true}],""" +
             """"messages":[{"role":"user","content":"Ping."}]}"""
         val parsed = parseAnthropicBody(toolBody)
         val req = ResponsesRequestBuilder(codexProfileQuirks())

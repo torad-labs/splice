@@ -45,6 +45,13 @@ import splice.core.wire.ToolDefinition
 import splice.core.wire.ToolUseBlock
 import java.util.concurrent.atomic.AtomicBoolean
 
+/** Per-provider deferred-tool-surface policy — governs whether/how a request's `tools` gets
+ *  PARTITIONed into an eager set (declared normally in `additional_tools`) and a deferred set
+ *  (answered on demand via `tool_search`; see this file's header). Overlaid from the operator-
+ *  facing TOML `[providers.*.quirks.tool_surface]` table via [withToolSurfaceToml] into
+ *  [ResponsesQuirks.toolSurface]. An ABSENT policy (`toolSurface == null`) means the feature is
+ *  OFF — every request is byte-identical to pre-feature status quo (all tools eager, no
+ *  tool_search object); there is no "configured but inert" state between off and active. */
 public data class ToolDeferralPolicy(
     val deferPrefixes: List<String> = listOf(MCP_PREFIX),
     /** Names FORCED deferred regardless of prefix — the Agent/Task availability brake. */
@@ -53,7 +60,17 @@ public data class ToolDeferralPolicy(
     val eager: Set<String> = emptySet(),
     /** Below this many deferrable tools the split buys nothing and costs a round. */
     val minDeferred: Int = DEFAULT_MIN_DEFERRED,
+    /** Max tools returned by one `tool_search` answer (clamped 1..this —
+     *  [ResponsesToolSearchController.clampedLimit]). Trades answer size against round count: a
+     *  HIGHER limit answers a broad query in fewer rounds at the cost of a bigger
+     *  tool_search_output payload every round; a LOWER limit keeps each round's answer small but
+     *  pushes more queries toward [searchRounds]'s exhaustive fallback. */
     val searchLimit: Int = DEFAULT_SEARCH_LIMIT,
+    /** Permitted `tool_search` rounds before the FINAL round answers with the ENTIRE deferred set
+     *  regardless of query — the loop-can't-wedge law (ResponsesToolSearch.kt header): capability
+     *  at the cap is exactly today's full surface. Trades round budget against when narrowing
+     *  gives up: MORE rounds lets ranked, limit-sized answers keep narrowing longer before the
+     *  exhaustive fallback; FEWER rounds reaches the larger, unranked exhaustive answer sooner. */
     val searchRounds: Int = DEFAULT_SEARCH_ROUNDS,
 )
 
@@ -66,13 +83,29 @@ internal data class ToolPartition(val eager: List<ToolDefinition>, val deferred:
 /** The capability latch — the ENTIRE persistent state of this design: one bit per provider
  *  instance, moving in exactly ONE direction (toward status quo). Closed by a backend rejection
  *  of the tool-surface shape; a daemon restart re-opens it, so a transient backend change costs
- *  one re-probe per lifetime, never a permanent silent downgrade. */
+ *  one re-probe per lifetime, never a permanent silent downgrade.
+ *
+ *  Honesty gap, accepted (review 2026-07-25, options 1+2 over 3): the turn that TRIGGERS the
+ *  close is itself served on a degraded surface, not full status quo. [ResponsesProvider.
+ *  amendBodyOnFailure]'s signature is `(status, responseText, bodyJson)` — the already-serialized
+ *  wire body, never the [ToolPartition] or [ToolDeferralPolicy] that produced it — so the amend
+ *  path can strip the invented tool_search shape but cannot reconstruct and re-attach the
+ *  deferred tools' full schemas (they never rode the request by design; this file's header). That
+ *  ONE recovery turn therefore completes eager-only: one turn below full status quo. Every LATER
+ *  turn on this provider instance reads [open] == false and builds the full eager set from the
+ *  start via [partitionTools]'s `!opts.toolSurfaceOpen -> allEager` branch — true status quo.
+ *  Cost: one degraded-but-successful turn per provider instance per daemon lifetime. Restoring
+ *  the full surface on the amend path itself (option 3) was rejected: it would touch the same
+ *  shared amend seam RC-4's stale-reasoning recovery uses. [close] returns whether THIS call
+ *  performed the actual transition so the caller can fire its one observable signal exactly once
+ *  per instance, never once per amend attempt. */
 internal class ToolSurfaceLatch {
     private val openFlag = AtomicBoolean(true)
     val open: Boolean get() = openFlag.get()
-    fun close() {
-        openFlag.set(false)
-    }
+
+    /** CAS, not a plain set: only the open->closed transition returns true, so a caller racing
+     *  two amend attempts (or any future re-entry) fires its visibility signal exactly once. */
+    fun close(): Boolean = openFlag.compareAndSet(true, false)
 }
 
 /** Overlay the head's TOML `[providers.*.quirks.tool_surface]` table — a DIRECT set, not the
@@ -153,7 +186,11 @@ internal fun functionToolObject(t: ToolDefinition, emitStrict: Boolean, forceStr
         put(FIELD_DESCRIPTION, t.description ?: "")
         put(FIELD_PARAMETERS, t.inputSchema ?: emptyObjectSchema())
         when {
-            forceStrictFalse -> put(FIELD_STRICT, t.strict == true)
+            // forceStrictFalse is a HARD SET (codex-rs parity, responses_api.rs:29-32): every
+            // function tool gets strict:false regardless of the tool's OWN value — passing
+            // t.strict through here (review 2026-07-25) would send strict:true for a tool that
+            // arrives with strict==true, breaking the exact parity this quirk exists for.
+            forceStrictFalse -> put(FIELD_STRICT, false)
             emitStrict && t.strict == true -> put(FIELD_STRICT, true)
             else -> Unit
         }
@@ -172,7 +209,10 @@ internal fun deferredToolObject(t: ToolDefinition, emitStrict: Boolean, forceStr
         put(FIELD_DEFER_LOADING, true)
         put(FIELD_PARAMETERS, t.inputSchema ?: emptyObjectSchema())
         when {
-            forceStrictFalse -> put(FIELD_STRICT, t.strict == true)
+            // Same hard-set law as functionToolObject's identical branch just above (review
+            // 2026-07-25) — a deferred tool answered through tool_search gets forced strict:false
+            // too, never a pass-through of its own strict==true.
+            forceStrictFalse -> put(FIELD_STRICT, false)
             emitStrict && t.strict == true -> put(FIELD_STRICT, true)
             else -> Unit
         }

@@ -181,6 +181,18 @@ class ResponsesToolSearchTest {
         assertEquals(POLICY.searchLimit, tools.size)
     }
 
+    // review 2026-07-25 (comment 3): the sibling of the test just above, which only ever exercised
+    // the UPPER bound. If clampedLimit lost its floor (a refactor to coerceAtMost, say), limit = 0
+    // would answer with an empty tools[] — the exact starvation the blank-query branch exists to
+    // avoid — and the suite would stay green without this.
+    @Test
+    fun `a limit of zero is clamped up to one tool`() {
+        val c = call("ts_1", "tool", limit = 0)
+        val next = CONTROLLER.continuationForSearch(ToolSearchRound(priorRequest, success(listOf(c)), 0))!!
+        val tools = next["input"]!!.jsonArray.last().jsonObject["tools"]!!.jsonArray
+        assertEquals(1, tools.size)
+    }
+
     @Test
     fun `a duplicate call_id in one round is answered exactly once`() {
         val calls = listOf(call("ts_1", "tool_0"), call("ts_1", "tool_1"))
@@ -188,6 +200,13 @@ class ResponsesToolSearchTest {
         val tail = appendedTail(next)
         val outputs = tail.map { it.jsonObject }.filter { it["type"]?.jsonPrimitive?.content == "tool_search_output" }
         assertEquals(1, outputs.size)
+        // review 2026-07-25 (comment 4): pin WHICH duplicate is answered, not just the count.
+        // answeredOnce (ResponsesToolSearch.kt:136-140) is documented first-wins; "tool_0" (the
+        // first call's query) matches only mcp__exa__tool_0 (no "tool_10"/"tool_11" substring
+        // collision the way "tool_1" would) — a first->last regression would answer with
+        // mcp__exa__tool_1 (and its "tool_1x" siblings) instead, and only this assertion catches it.
+        val names = outputs.single()["tools"]!!.jsonArray.map { it.jsonObject["name"]?.jsonPrimitive?.content }
+        assertEquals(listOf("mcp__exa__tool_0"), names)
     }
 
     @Test

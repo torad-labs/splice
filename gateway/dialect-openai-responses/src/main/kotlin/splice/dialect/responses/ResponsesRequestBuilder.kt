@@ -594,7 +594,7 @@ private class ResponsesInputBuilder(private val quirks: ResponsesQuirks) {
                 put("type", "tool_search_call")
                 put("call_id", callId)
                 put("execution", "client")
-                put("arguments", buildJsonObject { put("query", tool.name) }.toString())
+                put("arguments", buildJsonObject { put("query", tool.name) })
             },
         )
         sink.add(toolSearchOutputItem(callId, listOf(tool), quirks.emitStrict, quirks.forceStrictFalse))

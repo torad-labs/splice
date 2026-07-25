@@ -635,6 +635,11 @@ class ToolSurfaceRequestTest {
         val call = input[fcIdx - 2]
         val output = input[fcIdx - 1]
         assertEquals("tool_search_call", call["type"]?.jsonPrimitive?.content)
+        // REGRESSION (PR #48 shipped this as a stringified JSON → upstream 400 "input[N].arguments:
+        // expected an object, but got a string"): the Responses API types tool_search_call.arguments
+        // as an OBJECT (codex-rs models.rs:888 `arguments: serde_json::Value`), unlike function_call.
+        assertTrue(call["arguments"] is JsonObject, "tool_search_call.arguments must be a JSON object, not a string")
+        assertEquals("mcp__exa__tool_5", call["arguments"]!!.jsonObject["query"]?.jsonPrimitive?.content)
         assertEquals("tool_search_output", output["type"]?.jsonPrimitive?.content)
         assertEquals(call["call_id"]?.jsonPrimitive?.content, output["call_id"]?.jsonPrimitive?.content)
         val tools = output["tools"]!!.jsonArray

@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import splice.core.turn.ToolSearchCall
 import splice.core.turn.Usage
 import splice.core.util.strOrEmpty
 
@@ -99,6 +100,21 @@ private fun messageText(item: JsonObject): String {
     }
     return out.toString()
 }
+
+/** tool_search_call items on the completed response object — the same walk [harvestResponsesOutput]
+ *  performs, filtered to tool_search_call, reusing [parseToolSearchCall] (ResponsesStreamTranslator.kt)
+ *  so there is ONE parser, not two (the v29 copies-drift law). Recovers a round the live
+ *  output_item.done capture missed (delivered ONLY on the terminal object, no per-item events). */
+internal fun harvestToolSearchCalls(resp: JsonObject?): List<ToolSearchCall> {
+    val output = resp?.get("output") as? JsonArray ?: return emptyList()
+    return output.asSequence()
+        .filterIsInstance<JsonObject>()
+        .filter { strOrEmpty(it["type"]) == TYPE_TOOL_SEARCH_CALL }
+        .mapNotNull(::parseToolSearchCall)
+        .toList()
+}
+
+private const val TYPE_TOOL_SEARCH_CALL = "tool_search_call"
 
 /** Usage extraction: input/output plus the prompt-cache read (input_tokens_details.cached_tokens,
  *  with the flat cache_read_input_tokens as the fallback) — so the real cache hit rate is visible. */

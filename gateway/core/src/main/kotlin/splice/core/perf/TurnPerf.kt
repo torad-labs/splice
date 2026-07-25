@@ -45,6 +45,12 @@ public object PerfKeys {
     /** Concurrent turns in flight on this head at admission — the live-concurrency gauge. */
     public const val INFLIGHT: String = "inflight"
 
+    // Tool-surface deferral (responses-lite tool_search) — the expected-delta instrument (#959):
+    // a deploy where TOOLS_DEFERRED stays 0 is a false landing, not a quiet success.
+    public const val TOOLS_EAGER: String = "tools_eager"
+    public const val TOOLS_DEFERRED: String = "tools_deferred"
+    public const val SEARCH_ROUNDS: String = "search_rounds"
+
     /** Mark keys in pipeline order — the aggregation and the log line render in THIS order. */
     public val markOrder: List<String> = listOf(
         RECV, PARSE, BUILD, GATE, HEADERS, FIRST_BYTE, FIRST_FRAME, FIRST_DELTA,

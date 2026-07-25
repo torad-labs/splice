@@ -56,6 +56,8 @@ import splice.spi.ReanchorController
 import splice.spi.ReanchorRound
 import splice.spi.SseFrameTooLargeException
 import splice.spi.StreamTornBeforeClient
+import splice.spi.ToolSearchController
+import splice.spi.ToolSearchRound
 import splice.spi.TurnSignals
 import splice.spi.TurnWatchdog
 import splice.spi.UpstreamAuthMissing
@@ -89,6 +91,9 @@ internal data class TurnDrive(
     val signals: RunnerSignals,
     /** The client-facing SSE channel: coalesced writer + write mutex + clientGone flag. */
     val channel: ClientChannel,
+    /** The provider's answering policy for THIS turn's deferred tool surface. Null = no deferral
+     *  this turn, or the feature is off — the round loop is byte-for-byte unchanged. */
+    val toolSearch: ToolSearchController?,
 )
 
 /** Per-turn client write surface: the coalesced writer, a mutex serializing the emitter vs the
@@ -259,6 +264,10 @@ internal class TurnDriver(
         val meta = built.meta
         val bodyJson = built.requestBody.toString()
         perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, bodyJson.length.toLong())
+        // Tool-surface partition sizes — the expected-delta instrument (#959): setCount (not add)
+        // so a request that stamped tools_deferred=0 is VISIBLE, never silently absent.
+        meta.toolsEager?.let { perf.setCount(PerfKeys.TOOLS_EAGER, it.toLong()) }
+        meta.toolsDeferred?.let { perf.setCount(PerfKeys.TOOLS_DEFERRED, it.toLong()) }
         val watchdog = TurnWatchdog(provider.watchdog, clock)
         // Absorbed round failures still count for the G20 health split (code-review 2026-07-24).
         val signals = RunnerSignals(
@@ -271,6 +280,7 @@ internal class TurnDriver(
                 )
                 if (f.providerReported) health.provider() else health.local()
             },
+            onSearchRound = { perf.setCount(PerfKeys.SEARCH_ROUNDS, it.toLong()) },
         )
         return TurnDrive(
             bodyJson = bodyJson,
@@ -291,6 +301,7 @@ internal class TurnDriver(
             turnHeaders = built.extraHeaders,
             channel = channel,
             signals = signals,
+            toolSearch = built.toolSearch,
         )
     }
 
@@ -378,8 +389,9 @@ internal class TurnDriver(
                             finish = { outcome -> finishTurn(drive, outcome) },
                             reanchor = reanchor,
                             signals = drive.signals,
+                            toolSearch = drive.toolSearch,
                         ).run(drive.requestBody, fold)
-                    } else if (reanchor == null) {
+                    } else if (reanchor == null && drive.toolSearch == null) {
                         finishTurn(drive, postRound(drive, drive.bodyJson, drive.emitter, self, turnJob))
                     } else {
                         ReanchorRunner(
@@ -388,6 +400,7 @@ internal class TurnDriver(
                             postRound = { bodyJson -> postRound(drive, bodyJson, drive.emitter, self, turnJob) },
                             finish = { outcome -> finishTurn(drive, outcome) },
                             signals = drive.signals,
+                            toolSearch = drive.toolSearch,
                         ).run(drive.requestBody, reanchor)
                     }
                 } finally {
@@ -730,6 +743,31 @@ private fun TurnDrive.perfCounter(key: String): Long = perf.snapshot().counters[
 
 private const val ROUND_FAILURE_SNIPPET = 160
 
+/** The search-continuation gate, shared by both runners (never two copies — the v29 law). A
+ *  search NEVER continues past a watchdog fire or a dead client (the same rule re-anchor
+ *  applies), and never past a round that already committed a real tool_use to the client's wire
+ *  — that check lives inside ResponsesToolSearchController itself (TurnOutcome.Success.hasToolUse),
+ *  so it need not be repeated here. */
+internal fun searchContinuation(
+    search: ToolSearchController?,
+    outcome: TurnOutcome,
+    body: JsonObject,
+    roundIndex: Int,
+    signals: RunnerSignals,
+): JsonObject? {
+    if (search == null || outcome !is TurnOutcome.Success) return null
+    if (signals.watchdogFired() || signals.clientGone()) return null
+    return search.continuationForSearch(ToolSearchRound(body, outcome, roundIndex))
+}
+
+/** FoldRunner's rounds run through a BufferingWireSink: [TurnOutcome.Success.emittedText]/
+ *  [TurnOutcome.Success.bodyText] reflect what the round PRODUCED, not what reached the client.
+ *  Strips both before a search continuation can replay them — the same rule FoldRunner's own
+ *  re-anchor branch (trigger B) applies to its salvage. A no-op for ReanchorRunner's LIVE rounds
+ *  (non-Success outcomes pass through; searchContinuation's own type guard ignores them anyway). */
+internal fun bufferedForSearch(outcome: TurnOutcome): TurnOutcome =
+    if (outcome is TurnOutcome.Success) outcome.copy(bodyText = "", emittedText = false) else outcome
+
 internal class FoldRunner(
     // Only the buffer's `real` sink — never a terminal here (L3: FoldRunner finishes via [finish]).
     private val emitter: WireSink,
@@ -739,12 +777,14 @@ internal class FoldRunner(
     private val finish: suspend (TurnOutcome) -> Unit,
     private val reanchor: ReanchorController? = null,
     private val signals: RunnerSignals = RunnerSignals(),
+    private val toolSearch: ToolSearchController? = null,
 ) {
     suspend fun run(initialBody: JsonObject, fold: FoldController) {
         var body = initialBody
         var acc = RoundUsage()
         var roundIndex = 0
         var reanchorAttempt = 0
+        var searchIndex = 0
         val salvaged = mutableListOf<TurnOutcome.PartialRound>()
         val absorbedFailures = mutableListOf<TurnOutcome.Failure>()
         while (true) {
@@ -752,15 +792,19 @@ internal class FoldRunner(
             val outcome = postRound(body.toString(), buffer)
             val success = outcome as? TurnOutcome.Success
             if (success != null) acc = acc.plusRound(success.usage)
-            val next = success?.let { fold.continuation(FoldRound(body, it, roundIndex)) }
-            if (next != null) {
-                buffer.discard()
-                val reasoningTokens = success.usage.reasoningTokens
-                log("[$key] fold round ${roundIndex + 1}: reasoning truncated at $reasoningTokens tokens, continuing\n")
-                body = next
-                roundIndex++
+
+            // Fold-continuation and search are two of this loop's three continuation triggers,
+            // tried in that fixed precedence (a truncated round re-runs and re-emits its own
+            // search call next round, so this ordering is unchanged from before the extraction —
+            // detekt 2026-07-24: inlined here the loop carried 2 `continue`s + CC 11 + 50 lines).
+            val nextRound = nextRoundBody(fold, outcome, buffer, salvaged, RoundCursor(body, roundIndex, searchIndex))
+            if (nextRound != null) {
+                body = nextRound.body
+                roundIndex = nextRound.roundIndex
+                searchIndex = nextRound.searchIndex
                 continue
             }
+
             // Trigger B (code-review 2026-07-24: fold-eligible models — the truncation-prone
             // ones — previously had NO re-anchor cover). The round's final output was BUFFERED,
             // never forwarded, so bodyText is stripped from the salvage: replaying
@@ -791,6 +835,49 @@ internal class FoldRunner(
             reanchorAttempt++
         }
     }
+
+    /** The fold-continuation and search-continuation checks, extracted out of [run] (detekt
+     *  2026-07-24: LongMethod/CyclomaticComplexMethod/LoopWithTooManyJumpStatements). Null = neither
+     *  fired; the caller falls through to the re-anchor check exactly as before the extraction. */
+    private fun nextRoundBody(
+        fold: FoldController,
+        outcome: TurnOutcome,
+        buffer: BufferingWireSink,
+        salvaged: MutableList<TurnOutcome.PartialRound>,
+        cursor: RoundCursor,
+    ): RoundCursor? {
+        val (body, roundIndex, searchIndex) = cursor
+        val success = outcome as? TurnOutcome.Success
+        val foldNext = success?.let { fold.continuation(FoldRound(body, it, roundIndex)) }
+        if (foldNext != null) {
+            buffer.discard()
+            log(
+                "[$key] fold round ${roundIndex + 1}: reasoning truncated at " +
+                    "${success.usage.reasoningTokens} tokens, continuing\n",
+            )
+            return RoundCursor(foldNext, roundIndex + 1, searchIndex)
+        }
+        // FoldRunner's rounds run through a BufferingWireSink — reducer.emittedText/bodyText
+        // reflect what the round PRODUCED, not what reached the client. Strip both before the
+        // controller ever sees them, so a buffered-and-discarded round can never "vouch" for
+        // prose the client never saw in the search continuation's own replay (review 2026-07-24;
+        // the same rule this loop's own re-anchor branch below already applies).
+        val searchNext = searchContinuation(toolSearch, bufferedForSearch(outcome), body, searchIndex, signals)
+        if (searchNext != null) {
+            buffer.discard() // the buffered final output never reached the client
+            salvaged.add(searchPartial(outcome as TurnOutcome.Success, buffered = true))
+            val nextSearchIndex = searchIndex + 1
+            signals.onSearchRound(nextSearchIndex)
+            log("[$key] tool search round $nextSearchIndex: answering locally, continuing\n")
+            return RoundCursor(searchNext, roundIndex, nextSearchIndex)
+        }
+        return null
+    }
+
+    /** One position in the round loop: the body to POST plus the two round counters. Serves
+     *  BOTH directions — passed INTO [nextRoundBody] as the current cursor and returned as the
+     *  next one (detekt 2026-07-24: the 8-arg form tripped LongParameterList). */
+    private data class RoundCursor(val body: JsonObject, val roundIndex: Int, val searchIndex: Int)
 
     private fun continuationForFailedRound(outcome: TurnOutcome, body: JsonObject, attempt: Int): JsonObject? =
         when {
@@ -825,6 +912,9 @@ internal data class RunnerSignals(
     val watchdogFired: () -> Boolean = { false },
     val clientGone: () -> Boolean = { false },
     val onRoundFailure: (TurnOutcome.Failure) -> Unit = {},
+    /** Search-continuation counter sink — the expected-delta instrument. Stamped as an absolute
+     *  count, so a turn that never searched records nothing and a turn that did records exactly N. */
+    val onSearchRound: (Int) -> Unit = {},
 )
 
 /** The round-usage law, ONE implementation for both runners (2026-07-20, unified in the
@@ -852,6 +942,24 @@ internal data class RoundUsage(
         reasoningTokens = reasoningSum,
     )
 }
+
+/** The search-round salvage entry, shared by both runners so they cannot drift (the v29 law).
+ *  [buffered]=true (FoldRunner) means the round's output never reached the client — text signals
+ *  are stripped so a discarded round cannot vouch for content in the merge (the same rule the
+ *  fold re-anchor branch applies just above). [buffered]=false (ReanchorRunner) carries the
+ *  round's REAL emitted text truthfully — it already reached the wire. usage is zeroed on both;
+ *  the caller already folded it into acc. hasToolUse is always false: [searchContinuation] never
+ *  fires on a round that carried one. */
+internal fun searchPartial(success: TurnOutcome.Success, buffered: Boolean): TurnOutcome.PartialRound =
+    if (buffered) {
+        TurnOutcome.PartialRound(thinkingText = success.thinkingText, bodyText = "", emittedText = false)
+    } else {
+        TurnOutcome.PartialRound(
+            thinkingText = success.thinkingText,
+            bodyText = success.bodyText,
+            emittedText = success.emittedText,
+        )
+    }
 
 /** A turn that absorbed re-anchor rounds and STILL failed burned real billed tokens on those
  *  rounds; carry them on the Failure so finishTurn can account them (review-pr 2026-07-24 —
@@ -895,10 +1003,15 @@ internal class ReanchorRunner(
     private val postRound: suspend (bodyJson: String) -> TurnOutcome,
     private val finish: suspend (TurnOutcome) -> Unit,
     private val signals: RunnerSignals,
+    private val toolSearch: ToolSearchController? = null,
 ) {
-    suspend fun run(initialBody: JsonObject, reanchor: ReanchorController) {
+    // [reanchor] is nullable — a turn may reach this runner with search-only continuation (no
+    // ReanchorController at all): driveOneTurn routes here whenever EITHER exists, so the seam is
+    // total rather than resting on an undocumented cross-object invariant.
+    suspend fun run(initialBody: JsonObject, reanchor: ReanchorController?) {
         var body = initialBody
         var attempt = 0
+        var searchIndex = 0
         var acc = RoundUsage()
         val salvaged = mutableListOf<TurnOutcome.PartialRound>()
         val absorbedFailures = mutableListOf<TurnOutcome.Failure>()
@@ -907,8 +1020,22 @@ internal class ReanchorRunner(
             val failure = outcome as? TurnOutcome.Failure
             val next = failure
                 ?.takeIf { !signals.watchdogFired() && !signals.clientGone() }
-                ?.let { reanchor.continuationForFailure(ReanchorRound(body, it, attempt)) }
+                ?.let { reanchor?.continuationForFailure(ReanchorRound(body, it, attempt)) }
             if (next == null) {
+                // A search round is inserted HERE — after the failure-continuation is computed and
+                // found null, so it never competes with re-anchor for a retryable failure, and
+                // only ever fires on a Success (searchContinuation's own type guard).
+                val searchNext = searchContinuation(toolSearch, outcome, body, searchIndex, signals)
+                if (searchNext != null) {
+                    val searched = outcome as TurnOutcome.Success
+                    salvaged.add(searchPartial(searched, buffered = false))
+                    acc = acc.plusRound(searched.usage)
+                    body = searchNext
+                    searchIndex++
+                    signals.onSearchRound(searchIndex)
+                    log("[$key] tool search round $searchIndex: answering locally, continuing\n")
+                    continue
+                }
                 // Absorbed failures hit the health split ONLY when the turn ultimately succeeds
                 // (a rescued turn must not report a degraded provider as healthy); a turn that
                 // ultimately FAILS is attributed exactly once by finishTurn — firing per absorbed

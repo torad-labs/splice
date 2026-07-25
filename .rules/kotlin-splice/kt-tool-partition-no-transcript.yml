@@ -1,0 +1,38 @@
+# PROMPT-CACHE WALL (2026-07-25): the deferred-tool partition must never read the transcript.
+# The tool payload rides `additional_tools` at input[0], AHEAD of every conversation item, under a
+# single prompt_cache_key for the whole conversation — so the eager/deferred split is INSIDE the
+# cached prefix. If the split varies per turn, the prefix changes and the entire cache is re-billed:
+# measured ~94,000 previously-cached tokens re-charged per bust, against a saving of only a few
+# thousand to ~15K tokens/request from deferring the schemas. One bust outweighs dozens of requests
+# of savings, and busts recur per distinct newly-used deferred tool.
+#
+# The first implementation did exactly this — `partitionWithPolicy` called `warmToolNames(body)` to
+# force previously-used tools eager, which silently turned the feature into a NET TOKEN REGRESSION.
+# Three independent adversarial reviews missed it: all verified the bytes-when-stable case, none
+# tested turn-to-turn stability. The reference client never injects a searched tool into tools[]
+# either — its own regression test pins "follow-up request should rely on tool_search_output
+# history, not tool injection" (codex-rs core/tests/suite/search_tool.rs:782-814).
+#
+# A deferred tool used earlier in the transcript is declared IN POSITION instead (a
+# tool_search_call/output pair immediately before its function_call), which extends history rather
+# than rewriting the prefix. warmToolNames itself stays legal — it feeds that declaration replay.
+id: kt-tool-partition-no-transcript
+language: kotlin
+severity: error
+message: "The tool-surface partition must be a pure function of (tools, policy) — reading the transcript here varies input[0] per turn and re-bills the whole prompt-cache prefix (~94k tokens/bust)."
+note: >
+  Keep the split derived from the tool list and policy only. If a transcript-derived tool needs to
+  reach the model, DECLARE it in position (tool_search_call/output before its function_call) instead
+  of promoting it into the eager set — that extends history without rewriting the cached prefix.
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  any:
+    - pattern: $X.messages
+    - pattern: warmToolNames($$$ARGS)
+  inside:
+    kind: function_declaration
+    stopBy: end
+    has:
+      kind: simple_identifier
+      regex: '^partition'

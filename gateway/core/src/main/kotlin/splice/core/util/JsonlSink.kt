@@ -49,7 +49,10 @@ public object JsonlSink {
             val text = StandardCharsets.UTF_8.decode(buf).toString()
             // Mid-file start: drop the leading partial line (no newline at all -> nothing complete).
             val complete = if (readFrom > 0L) text.substringAfter('\n', missingDelimiterValue = "") else text
-            complete.lineSequence().filter { it.isNotEmpty() }.toList()
+            // Trailing tear: a torn write (disk-full mid-append) leaves bytes with no closing newline;
+            // every well-formed record ends in '\n', so drop a non-newline-terminated trailing remnant.
+            val whole = if (complete.endsWith('\n')) complete else complete.substringBeforeLast('\n', "")
+            whole.lineSequence().filter { it.isNotEmpty() }.toList()
         }
 
     private const val DEFAULT_MAX_BYTES = 64L * 1024 * 1024

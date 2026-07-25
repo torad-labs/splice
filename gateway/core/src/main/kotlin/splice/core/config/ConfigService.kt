@@ -117,7 +117,12 @@ public class ConfigService(
         if (!Files.exists(path)) return emptyMap()
         val modified = Files.getLastModifiedTime(path)
         val size = Files.size(path)
-        fileCache?.let { cached ->
+        // A same-second edit that lands at an identical byte count is invisible to (mtime, size)
+        // alone (torn-read risk) — refuse the cache while the file's mtime is still within the
+        // resolution window, forcing a fresh read until it ages past it.
+        val cacheable = System.currentTimeMillis() - modified.toMillis() >= MTIME_RESOLUTION_WINDOW_MS
+        val cached = fileCache
+        if (cacheable && cached != null) {
             if (cached.path == path && cached.modified == modified) {
                 if (cached.size == size) return cached.data
             }
@@ -141,7 +146,14 @@ public class ConfigService(
         val data = LinkedHashMap<String, Any?>()
         for (knob in Knob.entries) {
             val raw = knob.envNames.firstNotNullOfOrNull { name -> envReader(name)?.takeIf { it.isNotEmpty() } }
-            if (raw != null) coerce(knob, raw)?.let { data[knob.key] = it }
+            if (raw != null) {
+                val coerced = coerce(knob, raw)
+                if (coerced != null) {
+                    data[knob.key] = coerced
+                } else {
+                    System.err.println("[config] ignoring invalid env value for ${knob.key}: '$raw'")
+                }
+            }
         }
         return data
     }
@@ -158,7 +170,7 @@ public class ConfigService(
                 SecureFile.writeAtomic0600(path, json.encodeToString(JsonObject.serializer(), next) + "\n")
                 fileCache = null
             }
-        }
+        }.onFailure { e -> System.err.println("[config] failed to persist config to disk: $e") }
     }
 
     private fun readOnDisk(path: Path): JsonObject =
@@ -231,6 +243,9 @@ public class ConfigService(
     }
 
     private companion object {
+        // Filesystem mtime granularity is 1s on many platforms; a same-second edit landing at an
+        // identical byte count is otherwise indistinguishable from an unchanged file (CONF-3).
+        const val MTIME_RESOLUTION_WINDOW_MS = 2_000L
         const val MIN_UPSTREAM_TIMEOUT_MS = 30_000L
         const val MIN_FIRST_BYTE_MS = 10_000L
         const val MIN_STREAM_IDLE_MS = 30_000L

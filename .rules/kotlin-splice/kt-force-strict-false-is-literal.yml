@@ -1,0 +1,41 @@
+# VENDOR-PARITY WALL (2026-07-25): a `forceStrictFalse` branch must emit the LITERAL false.
+# The quirk exists for ONE reason — codex-rs hard-sets `strict:false` on EVERY function tool
+# regardless of the tool's own value (responses_api.rs:29-32; OpenCode does the same, marked
+# "Codex parity"). It SHIPPED as `put(FIELD_STRICT, t.strict == true)` in BOTH tool builders:
+# the KDoc promised a hard-set, the code passed the tool's own value through. A ToolDefinition
+# with strict=true would have sent strict:true where codex-rs sends false — a parity break in
+# the very quirk that exists for parity.
+#
+# It survived the gate because the contract golden meant to pin it ("pins strict false on every
+# function tool") used a fixture tool with NO strict field, so the assertion could not observe
+# the difference. Human review caught it; nothing mechanical did. This is the generation-time
+# half (PreToolUse scans the PROPOSED write) of that invariant; the gate half is the contract
+# fixture, which now carries a strict:true tool.
+id: kt-force-strict-false-is-literal
+language: kotlin
+severity: error
+message: "A forceStrictFalse branch must emit the LITERAL false — passing the tool's own strict value through defeats the codex-parity hard-set the quirk exists for (shipped bug, 2026-07-25)."
+note: >
+  Write `put(FIELD_STRICT, false)`. If a provider genuinely needs the tool's own value passed
+  through, that is the SEPARATE `emitStrict` quirk — do not overload forceStrictFalse, which is
+  defined as an unconditional hard-set (ResponsesQuirks KDoc, ResponsesRequestBuilder.kt).
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  pattern: put($FIELD, $VAL)
+  inside:
+    kind: when_entry
+    stopBy: end
+    has:
+      kind: when_condition
+      regex: '^forceStrictFalse$'
+constraints:
+  # FIELD is pinned (review #49): unconstrained, the rule fired on ANY put in the branch — a
+  # future compliant edit that groups another builder call into it (e.g. put(FIELD_DEFER_LOADING,
+  # true)) would be blocked mid-write. A wall that fires on compliant code teaches agents that
+  # wall output is noise, which is the failure #924 is about.
+  FIELD:
+    regex: '^FIELD_STRICT$'
+  VAL:
+    not:
+      regex: '^false$'

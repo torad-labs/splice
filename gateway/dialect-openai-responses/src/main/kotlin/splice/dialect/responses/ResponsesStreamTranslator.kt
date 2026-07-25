@@ -447,10 +447,12 @@ private class ResponsesEventReducer(val ctx: StreamTurnContext) {
         // deltas hadn't arrived — suppressing them both late (sawDelta return) and live (recap
         // match): total summary starvation (found live 2026-07-19).
         // Late-path recap filter: drop the leading recap run + within-item repeats, keep the rest.
-        val text = if (ctx.dedupeRepeatedSummaryParts) {
+        val text = if (ctx.dedupeRepeatedSummaryParts && raw.length <= MAX_DEDUP_SPLIT_CHARS) {
             raw.split(PART_SEPARATOR).filter { part -> !summaryDedup.suppress(outputIndex, part) }
                 .joinToString(PART_SEPARATOR)
         } else {
+            // WIRE-4: splitting an unbounded upstream reasoning delta allocates one substring per
+            // separator without limit; beyond the cap dedup is immaterial, so pass it through unsplit.
             raw
         }
         if (text.isEmpty()) return
@@ -546,6 +548,11 @@ private class ResponsesEventReducer(val ctx: StreamTurnContext) {
         const val DELTA = "delta"
         const val INCOMPLETE_REASON_MAX_TOKENS = "max_output_tokens"
         const val TOOL_SEARCH_CALL = "tool_search_call"
+
+        // WIRE-4 guard (hardening r1): far above any legitimate single reasoning item's text.
+        // REASONING_KEY_BASE/reasoningKey moved to file top-level on main (detekt extraction);
+        // only this guard comes across from the hardening branch.
+        const val MAX_DEDUP_SPLIT_CHARS = 5_000_000
     }
 }
 

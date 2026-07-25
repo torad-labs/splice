@@ -231,10 +231,9 @@ public object OAuthLoginFlow {
                 }
                 val bodyText = resp.bodyAsText()
                 if (!resp.status.isSuccess()) {
-                    println(
-                        "splice: token exchange failed (HTTP ${resp.status.value}): " +
-                            sanitize(bodyText.take(ERR_BODY_CAP)),
-                    )
+                    // Never print the provider's response body here — a provider that echoes a
+                    // secret into error_description must not surface it on the operator's terminal.
+                    println("splice: token exchange failed (HTTP ${resp.status.value})")
                     false
                 } else {
                     writeCredentialFile(spec.authPath, spec.toAuthJson(bodyText))

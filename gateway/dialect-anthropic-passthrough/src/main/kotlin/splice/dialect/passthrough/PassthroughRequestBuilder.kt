@@ -194,16 +194,27 @@ public class PassthroughRequestBuilder(private val quirks: PassthroughQuirks) {
 
     // --- helpers ---------------------------------------------------------------------------------
 
-    /** Recursively remove every `cache_control` key; other structure passes verbatim. */
-    private fun stripCacheControl(element: JsonElement): JsonElement = when (element) {
-        is JsonObject -> buildJsonObject {
-            for ((key, value) in element) if (key != CACHE_CONTROL) put(key, stripCacheControl(value))
+    /** Recursively remove every `cache_control` key; other structure passes verbatim. Bounded by
+     *  [DEPTH_CAP] (mirrors MfjsSanitizer's guard): client-supplied JSON deeper than the cap is
+     *  passed through AS-IS beyond that point — cache_control stripping at extreme depth is
+     *  immaterial, and this must never StackOverflow on adversarially nested input. */
+    private fun stripCacheControl(element: JsonElement, depth: Int = 0): JsonElement {
+        if (depth >= DEPTH_CAP) return element
+        return when (element) {
+            is JsonObject -> buildJsonObject {
+                for ((key, value) in element) {
+                    if (key != CACHE_CONTROL) put(key, stripCacheControl(value, depth + 1))
+                }
+            }
+            is JsonArray -> buildJsonArray { element.forEach { add(stripCacheControl(it, depth + 1)) } }
+            else -> element
         }
-        is JsonArray -> buildJsonArray { element.forEach { add(stripCacheControl(it)) } }
-        else -> element
     }
 
     private companion object {
+        // stripCacheControl's recursion guard (WIRE-1) — far above any legitimate request's
+        // nesting, well below a stack-overflow depth.
+        const val DEPTH_CAP = 200
         const val MODEL = "model"
         const val STREAM = "stream"
         const val THINKING = "thinking"

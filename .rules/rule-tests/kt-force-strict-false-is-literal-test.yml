@@ -1,0 +1,11 @@
+id: kt-force-strict-false-is-literal
+valid:
+  - 'when { forceStrictFalse -> put(FIELD_STRICT, false) }'
+  - 'when { emitStrict && t.strict == true -> put(FIELD_STRICT, true) }'
+  - 'when { lite -> put(FIELD_TOOL_CHOICE, "auto") }'
+  - 'put(FIELD_STRICT, t.strict == true)'
+invalid:
+  - 'when { forceStrictFalse -> put(FIELD_STRICT, t.strict == true) }'
+  - 'when { forceStrictFalse -> put(FIELD_STRICT, t.strict) }'
+  - 'when { forceStrictFalse -> put(FIELD_STRICT, strict == true) }'
+  - 'when { forceStrictFalse -> put(FIELD_STRICT, true) }'

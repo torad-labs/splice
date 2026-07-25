@@ -1,4 +1,5 @@
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
@@ -8,6 +9,8 @@ import splice.core.topology.DaemonConfig
 import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
+import splice.core.topology.QuirksConfig
+import splice.core.topology.ToolSurfaceConfig
 import splice.core.topology.Topology
 import splice.core.topology.catalogFor
 import splice.core.topology.configOverrides
@@ -76,5 +79,38 @@ class TopologyConfigOverridesTest {
         val catalog = provider.catalogFor(head, contextWindowOverride = 333_000)
         assertEquals(333_000, catalog.contextWindowFor("toml-codex"))
         assertEquals(333_000, catalog.contextWindowFor("future-model"))
+    }
+
+    // [providers.*.quirks.tool_surface] — the nullable-overlay idiom (Topology.kt): an absent
+    // table parses to null, and a present table carries every field through untouched. The
+    // TOML->ToolDeferralPolicy mapping itself (toolDeferralPolicy, incl. the enabled=false and
+    // daemon-wide-off cases) lives in :app's Daemon.kt and cannot be reached from :core — this
+    // pins the shape :app's mapper reads.
+    @Test
+    fun `tool_surface quirks table - absent parses null, present carries every field`() {
+        val absent = topology.providers.getValue("codex").quirks.toolSurface
+        assertNull(absent)
+
+        val withTable = topology.providers.getValue("codex").copy(
+            quirks = QuirksConfig(
+                toolSurface = ToolSurfaceConfig(
+                    enabled = true,
+                    deferPrefixes = listOf("mcp__"),
+                    defer = listOf("Task"),
+                    eager = listOf("mcp__exa__web_search_exa"),
+                    minDeferred = 6,
+                    searchLimit = 5,
+                    searchRounds = 2,
+                ),
+            ),
+        )
+        val table = withTable.quirks.toolSurface!!
+        assertEquals(true, table.enabled)
+        assertEquals(listOf("mcp__"), table.deferPrefixes)
+        assertEquals(listOf("Task"), table.defer)
+        assertEquals(listOf("mcp__exa__web_search_exa"), table.eager)
+        assertEquals(6, table.minDeferred)
+        assertEquals(5, table.searchLimit)
+        assertEquals(2, table.searchRounds)
     }
 }

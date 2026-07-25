@@ -76,9 +76,17 @@ public abstract class ResponsesProvider(
                         null
                     }
                 },
+                // The provider's capability latch, read at build time: false = a shape-400 already
+                // closed it this daemon lifetime; build the full status-quo request instead.
+                toolSurfaceOpen = toolSurfaceLatch.open,
             ),
         )
-        return BuiltTurn(built.req, built.meta, perTurnHeaders(sessionId) + liteHeaders(built.meta))
+        return BuiltTurn(
+            built.req,
+            built.meta,
+            perTurnHeaders(sessionId) + liteHeaders(built.meta),
+            toolSearch = built.toolSearch,
+        )
     }
 
     /** codex-rs sends this marker header for responses-lite (5.6-family) turns; compact turns keep
@@ -137,13 +145,42 @@ public abstract class ResponsesProvider(
     // cache per provider instance; capture and lookup wire in via buildTurn/streamTranslator.
     private val reasoningCache: ReasoningCache = ReasoningCache()
 
+    // The tool-surface capability latch (§1.3/§5.3): one AtomicBoolean per provider instance,
+    // moving in exactly one direction — toward status quo. Read at build time (buildTurn), closed
+    // by amendBodyOnFailure on a shape-400.
+    private val toolSurfaceLatch = ToolSurfaceLatch()
+
     /** RC-4: a 400 rejecting stale encrypted reasoning strips the injected items and retries
-     *  once (NEVER-BELOW-STATUS-QUO law); every other failure keeps the plain retry plan.
+     *  once (NEVER-BELOW-STATUS-QUO law); every other failure keeps the plain retry plan. A 400
+     *  rejecting the tool-surface shape strips the tool_search entry, retries once, and closes the
+     *  latch so every LATER turn on this provider instance builds the full status-quo request.
      *  Keyed off the SAME classifier as the retry plan's GIVE_UP (review 2026-07-24: a narrower
-     *  literal match here let any upstream wording drift skip the recovery entirely). */
-    final override fun amendBodyOnFailure(status: Int, responseText: String, bodyJson: String): String? {
-        if (!UpstreamClient.isEncryptedContentError(status, responseText)) return null
-        return stripStaleReasoning(bodyJson, reasoningCache)
+     *  literal match here let any upstream wording drift skip the recovery entirely).
+     *  Honesty gap (review 2026-07-25, [ToolSurfaceLatch]'s KDoc has the full account): the amend
+     *  return value here is eager-only for THIS turn — this function only ever sees
+     *  (status, responseText, bodyJson), never the [ToolPartition] that would let it re-attach the
+     *  deferred tools' schemas, so the recovery turn runs one turn below full status quo before
+     *  the latch restores every later turn. [logToolSurfaceLatchClosed] makes that one-time degrade
+     *  observable instead of silent. */
+    final override fun amendBodyOnFailure(status: Int, responseText: String, bodyJson: String): String? = when {
+        UpstreamClient.isEncryptedContentError(status, responseText) -> stripStaleReasoning(bodyJson, reasoningCache)
+        isToolSurfaceRejection(status, responseText) -> dropToolSearchTool(bodyJson)?.also {
+            if (toolSurfaceLatch.close()) logToolSurfaceLatchClosed()
+        }
+        else -> null
+    }
+
+    /** The latch's one observable signal — stderr, the same `[tag] message` idiom
+     *  ApiKeyAuthProvider.kt uses for standalone diagnostics (no injected logger reaches this
+     *  module; see [ToolSurfaceLatch]). Guarded by [ToolSurfaceLatch.close]'s CAS return, so this
+     *  fires EXACTLY ONCE per provider instance — never once per turn, since every turn after the
+     *  close reads the latch already-closed and never re-enters this branch. */
+    private fun logToolSurfaceLatchClosed() {
+        System.err.println(
+            "[${quirks.providerTag}] tool-surface latch closed: backend rejected the tool_search " +
+                "shape; this turn recovered eager-only (one turn below status quo), every later turn " +
+                "on this provider instance builds the full eager surface.",
+        )
     }
 
     // The controller is stateless — one cached instance serves every turn (a per-call

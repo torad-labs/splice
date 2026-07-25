@@ -17,32 +17,81 @@ import splice.dialect.responses.InjectPriorReasoning
 import splice.dialect.responses.RequestEncryptedReasoning
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesRequestBuilder
+import splice.dialect.responses.ToolDeferralPolicy
 import java.io.File
 
+// The codex quirk profile, mirrored from CodexProvider.defaultQuirks() (provider-codex DEPENDS ON
+// this module, never the reverse — the dialect can never import a concrete provider).
+private fun codexProfileQuirks(toolSurface: ToolDeferralPolicy? = null) = ResponsesQuirks(
+    providerTag = "claudex",
+    summaryDelivery = "sequential_cutoff",
+    forceStrictFalse = true,
+    toolSurface = toolSurface,
+)
+
 class ResponsesContractTest {
+    private val canonicalAnthropic =
+        """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":1024,""" +
+            """"system":"You are Splice, a contract fixture.",""" +
+            """"messages":[{"role":"user","content":"Ping."}]}"""
+
+    private fun canonicalOpts() = BuildOptions(
+        compact = false,
+        originalModel = "claude-codex--gpt-5.6-sol",
+        upstreamModel = "gpt-5.6-sol",
+        configEffort = "high",
+        configSummary = "detailed",
+        showReasoning = ReasoningDisplay.TEXT,
+        replayReasoning = InjectPriorReasoning(false),
+        includeEncryptedReasoning = RequestEncryptedReasoning(true),
+        sessionId = "contract-fixture",
+        decodeReasoningEnvelope = { null },
+    )
+
     @Test
     fun `responses canonical request matches the golden bytes`() {
-        val anthropic =
-            """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":1024,""" +
-                """"system":"You are Splice, a contract fixture.",""" +
-                """"messages":[{"role":"user","content":"Ping."}]}"""
-        val parsed = parseAnthropicBody(anthropic)
-        val opts = BuildOptions(
-            compact = false,
-            originalModel = "claude-codex--gpt-5.6-sol",
-            upstreamModel = "gpt-5.6-sol",
-            configEffort = "high",
-            configSummary = "detailed",
-            showReasoning = ReasoningDisplay.TEXT,
-            replayReasoning = InjectPriorReasoning(false),
-            includeEncryptedReasoning = RequestEncryptedReasoning(true),
-            sessionId = "contract-fixture",
-            decodeReasoningEnvelope = { null },
-        )
+        // This golden's green IS the default-off proof: neither emitStrict nor toolSurface moves
+        // it — the fixture builds with the bare ResponsesQuirks(providerTag = "claudex").
+        val parsed = parseAnthropicBody(canonicalAnthropic)
         val req = ResponsesRequestBuilder(ResponsesQuirks(providerTag = "claudex"))
-            .build(parsed.typed, parsed.raw, opts)
+            .build(parsed.typed, parsed.raw, canonicalOpts())
             .req
         assertGoldenContract("responses-canonical", req) { ResponsesContractTest::class.java }
+    }
+
+    @Test
+    fun `responses codex profile pins strict false on every function tool`() {
+        // The second tool arrives with its OWN "strict":true (review 2026-07-25, comment 1): the
+        // golden must still pin "strict":false for it, or a forceStrictFalse regression that lets
+        // a tool's own strict value pass through (ToolSurface.kt functionToolObject) would stay
+        // green — the prior fixture only ever exercised a tool with no strict field at all.
+        val toolBody = """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":1024,""" +
+            """"system":"You are Splice, a contract fixture.",""" +
+            """"tools":[{"name":"Read","input_schema":{"type":"object"}},""" +
+            """{"name":"Bash","input_schema":{"type":"object"},"strict":true}],""" +
+            """"messages":[{"role":"user","content":"Ping."}]}"""
+        val parsed = parseAnthropicBody(toolBody)
+        val req = ResponsesRequestBuilder(codexProfileQuirks())
+            .build(parsed.typed, parsed.raw, canonicalOpts())
+            .req
+        assertGoldenContract("responses-codex-profile", req) { ResponsesContractTest::class.java }
+    }
+
+    @Test
+    fun `responses tool search pins the eager array, absent deferred tools, and the tool_search object`() {
+        val mcpTools = (1..12).joinToString(",") {
+            """{"name":"mcp__exa__tool_$it","input_schema":{"type":"object"}}"""
+        }
+        val toolBody = """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":1024,""" +
+            """"system":"You are Splice, a contract fixture.",""" +
+            """"tools":[{"name":"Read","input_schema":{"type":"object"}},$mcpTools],""" +
+            """"messages":[{"role":"user","content":"Ping."}]}"""
+        val parsed = parseAnthropicBody(toolBody)
+        val quirks = codexProfileQuirks(toolSurface = ToolDeferralPolicy(minDeferred = 4))
+        val req = ResponsesRequestBuilder(quirks)
+            .build(parsed.typed, parsed.raw, canonicalOpts())
+            .req
+        assertGoldenContract("responses-tool-search", req) { ResponsesContractTest::class.java }
     }
 }
 

@@ -126,6 +126,12 @@ public enum class Knob(
         restartRequired = true,
     ),
 
+    // Daemon-wide tool-surface kill switch. ONE-WAY OFF ONLY: "off" forces every head back to the
+    // full eager tool array without editing TOML; any other value honours each provider's own
+    // [providers.*.quirks.tool_surface] table. It can never turn the feature ON — forcing it on
+    // globally would arm tool_search for grok/openai heads whose backends do not serve it.
+    TOOL_SURFACE("toolSurface", KnobKind.STRING, listOf("CLAUDEX_TOOL_SURFACE"), "auto", restartRequired = true),
+
     // Per-head admission (each head is a different backend/account). Bounded by default since the
     // 2026-07-19 storm: unlimited (0) let ~650 concurrent streams OOM the 1G heap. Default 100
     // (was 48) leaves headroom for multi-agent fleets without reopening the unlimited storm.

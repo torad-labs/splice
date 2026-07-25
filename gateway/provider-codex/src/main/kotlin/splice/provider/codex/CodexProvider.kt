@@ -37,6 +37,12 @@ public class CodexProvider(
             providerTag = "claudex",
             // richer titled reasoning sections from the ChatGPT backend (probed 2026-07-19)
             summaryDelivery = "sequential_cutoff",
+            // codex-rs parity: hard-sets strict:false on every function tool (responses_api.rs:29-32);
+            // OpenCode does the same, marked "Codex parity". Omitting it lets the backend attempt
+            // strict auto-normalisation of ~87 MCP schemas and silently report whatever it settled on.
+            // forceStrictFalse, NOT emitStrict (review 2026-07-24): emitStrict is grok's pre-existing,
+            // never-consequential pass-through flag — reusing it here silently changed grok's bytes too.
+            forceStrictFalse = true,
         )
     }
 }

@@ -139,6 +139,23 @@ class ConfigServiceTest {
         assertEquals(512, nonFinite.maxQueued)
     }
 
+    // The r3 invalid-env-value lesson: an unrecognized value must never silently ARM a feature.
+    // TOOL_SURFACE normalizes to exactly "off" or "auto" — nothing else.
+    @Test
+    fun `toolSurface knob normalizes to exactly off or auto, never an unrecognized value`() {
+        assertEquals("auto", service().getConfig().asMap()["toolSurface"])
+        listOf("off", "OFF", " off ").forEach { raw ->
+            val cfg = service(env = mapOf("CLAUDEX_TOOL_SURFACE" to raw)).getConfig()
+            assertEquals("off", cfg.asMap()["toolSurface"])
+            assertTrue(cfg.toolSurfaceOff)
+        }
+        listOf("on", "true", "garbage").forEach { raw ->
+            val cfg = service(env = mapOf("CLAUDEX_TOOL_SURFACE" to raw)).getConfig()
+            assertEquals("auto", cfg.asMap()["toolSurface"])
+            assertEquals(false, cfg.toolSurfaceOff)
+        }
+    }
+
     @Test
     fun `maxQueued env alias applies`() {
         val svc = service(env = mapOf("CLAUDEX_MAX_QUEUED" to "50"))

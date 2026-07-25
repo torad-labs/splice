@@ -19,10 +19,14 @@ package splice.dialect.responses
 
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.SerializationException
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
+import splice.core.turn.ToolSearchCall
+import splice.core.turn.ToolSearchCallId
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.isWeakSummaryText
@@ -252,6 +256,10 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
         bodyText = reducer.textBuf.toString(),
         emittedText = reducer.emittedText,
         reasoningEnvelopes = reducer.reasoningEnvelopes.toList(),
+        // The harvest fallback runs ONLY when the streamed list is empty (needs no dedup): a round
+        // that emitted only a search call and was missed by the live capture would otherwise
+        // produce a client-visible empty turn through the honesty gate — the worst available failure.
+        toolSearches = reducer.toolSearches.ifEmpty { harvestToolSearchCalls(reducer.finalResponse) },
     )
 
     private fun harvestFallback(reducer: ResponsesEventReducer) {
@@ -277,7 +285,7 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
  * upstream event family — the ported shape of stream.mjs's runStreamTurn; the translator drives
  * it and reads the accumulated state to render the terminal outcome.
  */
-private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
+private class ResponsesEventReducer(val ctx: StreamTurnContext) {
 
     // Int keys: message/tool blocks use the upstream output_index directly; reasoning blocks
     // use REASONING_KEY_BASE + output_index so the two families never collide and we never
@@ -309,6 +317,10 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
 
     // Reasoning-cache capture (RC-1): the round's REAL upstream function_call ids, in order.
     val turnToolIds = mutableListOf<String>()
+
+    // tool_search_call items this round emitted (deferred tool surface) — populated only when the
+    // gateway declared deferral this turn; empty otherwise (pre-deferral behaviour intact).
+    val toolSearches = mutableListOf<ToolSearchCall>()
 
     // Late-reasoning items already emitted, keyed by their reasoning block index. Substring
     // dedup on thinkingBuf dropped a DISTINCT item whose text happened to be a substring of an
@@ -388,27 +400,25 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
         // avoids empty thinking widgets when a reasoning item carries no summary
     }
 
+    // Split into onItemDone + 2 file-level extensions below (detekt 2026-07-24: CyclomaticComplexMethod
+    // 11 -> the class already sits at TooManyFunctions' 14-member ceiling, so the extraction is a
+    // top-level extension on this class instead of a new member — see closeOpenBlocks/emitReplayedReasoning).
     private suspend fun onItemDone(evt: JsonObject, sink: WireSink) {
         val item = evt["item"] as? JsonObject
+        // tool_search_call has no open wire block and must not touch hasToolUse/turnToolIds — a
+        // synthetic/foreign id there would mis-key the reasoning cache (a known prior bug class).
+        if (item != null && strOrEmpty(item["type"]) == TOOL_SEARCH_CALL) {
+            captureToolSearch(this, item)
+            return
+        }
         val oi = intOr(evt[OUTPUT_INDEX]) ?: intOr(item?.get("index"))
         // Some backends only attach readable reasoning on the completed item (no per-token
         // summary deltas). Surface that text NOW so Claude Code's thinking UI fills live,
         // not only via the end-of-turn harvest fallback.
         maybeEmitLateReasoning(item, oi, sink)
-        if (oi != null) {
-            blocks[oi]?.let { sink.closeBlock(it.index) }
-            blocks[reasoningKey(oi)]?.let { sink.closeBlock(it.index) }
-            toolSalvage.closedClean(oi)
-        }
+        closeOpenBlocks(oi, sink)
         if (item == null) return
-        // Replay (gated): emit the encrypted reasoning IN POSITION — right after its summary closes
-        // and before the tool_use it preceded — so the round-trip preserves cache order. The SAME
-        // envelope also feeds fold replay (collectReasoningEnvelopes, independent of the emit flag).
-        // encodeReasoningEnvelope is non-null ONLY for a reasoning item carrying id +
-        // encrypted_content — so it doubles as the "is this a replayable reasoning item?" filter.
-        val envelope = ctx.encodeReasoningEnvelope(item) ?: return
-        if (shouldEmitReasoning(ctx, item)) sink.addRedactedThinking(envelope)
-        if (ctx.collectReasoningEnvelopes) reasoningEnvelopes.add(envelope)
+        emitReplayedReasoning(item, sink)
     }
 
     private suspend fun maybeEmitLateReasoning(item: JsonObject?, oi: Int?, sink: WireSink) {
@@ -535,12 +545,34 @@ private class ResponsesEventReducer(private val ctx: StreamTurnContext) {
         const val OUTPUT_INDEX = "output_index"
         const val DELTA = "delta"
         const val INCOMPLETE_REASON_MAX_TOKENS = "max_output_tokens"
-
-        // Leave the positive int space for message/tool output_index; reasoning lives above.
-        const val REASONING_KEY_BASE = 1_000_000
-
-        fun reasoningKey(outputIndex: Int): Int = REASONING_KEY_BASE + outputIndex
+        const val TOOL_SEARCH_CALL = "tool_search_call"
     }
+}
+
+// Leave the positive int space for message/tool output_index; reasoning lives above. Top-level
+// (not the reducer's companion, detekt 2026-07-24): onItemDone's extraction below needs it
+// unqualified from outside the class, and a private-companion member is invisible there.
+private const val REASONING_KEY_BASE = 1_000_000
+
+private fun reasoningKey(outputIndex: Int): Int = REASONING_KEY_BASE + outputIndex
+
+/** onItemDone's block-closing half (extraction, detekt 2026-07-24): close both the tool/message
+ *  block and any reasoning block at this output_index, and clear the salvage-open marker. A
+ *  top-level extension, not a reducer member — the class is already at TooManyFunctions' ceiling. */
+private suspend fun ResponsesEventReducer.closeOpenBlocks(oi: Int?, sink: WireSink) {
+    if (oi == null) return
+    blocks[oi]?.let { sink.closeBlock(it.index) }
+    blocks[reasoningKey(oi)]?.let { sink.closeBlock(it.index) }
+    toolSalvage.closedClean(oi)
+}
+
+/** onItemDone's replay half (extraction, detekt 2026-07-24): emit the encrypted reasoning IN
+ *  POSITION (gated) and collect its envelope for fold/re-anchor replay — see onItemDone's own
+ *  comment for why this rides right after the summary closes. */
+private suspend fun ResponsesEventReducer.emitReplayedReasoning(item: JsonObject, sink: WireSink) {
+    val envelope = ctx.encodeReasoningEnvelope(item) ?: return
+    if (shouldEmitReasoning(ctx, item)) sink.addRedactedThinking(envelope)
+    if (ctx.collectReasoningEnvelopes) reasoningEnvelopes.add(envelope)
 }
 
 /** Gated encrypted-reasoning EMISSION predicate — kept out of the handler so its condition stays flat. */
@@ -587,3 +619,54 @@ private fun accumulateUsage(reducer: ResponsesEventReducer, resp: JsonObject) {
     if (u.cachedTokens > 0) reducer.cachedTokens = u.cachedTokens
     if (u.reasoningTokens > 0) reducer.reasoningTokens = u.reasoningTokens
 }
+
+/** tool_search_call capture (file-level: the reducer sits at its TooManyFunctions budget, the
+ *  same accumulateUsage precedent). Deliberately does NOT touch hasToolUse/blocks/toolSalvage/
+ *  turnToolIds — a search call opens no wire block and is not a tool dispatch. */
+private fun captureToolSearch(reducer: ResponsesEventReducer, item: JsonObject) {
+    parseToolSearchCall(item)?.let { reducer.toolSearches.add(it) }
+}
+
+/** Parses one tool_search_call item into a [ToolSearchCall], or null when it should be skipped
+ *  (server-executed — execution:"server" means the backend already answered, protocol/src/
+ *  models.rs:3693-3728 — or carries no call_id). The ONE parser shared by the live capture above
+ *  and the terminal-object harvest fallback ([harvestToolSearchCalls] in Harvested.kt) — never two
+ *  hand-rolled readers of the same shape (the v29 copies-drift law). */
+internal fun parseToolSearchCall(item: JsonObject): ToolSearchCall? {
+    val execution = strOrEmpty(item["execution"])
+    if (execution.isNotEmpty() && execution != TOOL_SEARCH_EXECUTION_CLIENT) return null
+    // NB: no `id` fallback here (unlike function_call's onItemAdded) — call.raw is echoed
+    // VERBATIM into the continuation, so a synthesized id would produce a tool_search_output
+    // keyed by a value the echoed call itself doesn't carry: an unpairable item the backend
+    // 400s (review 2026-07-24). Skipping is the spec behavior and matches codex-rs's own
+    // catch-all (a client-execution call always carries call_id; this is defensive-only).
+    val callId = strOrEmpty(item["call_id"])
+    if (callId.isEmpty()) return null
+    val (query, limit) = parseToolSearchArguments(item["arguments"])
+    return ToolSearchCall(callId = ToolSearchCallId(callId), query = query, limit = limit, raw = item)
+}
+
+/** `arguments` is a real JSON object on this item type (unlike function_call, where it is a
+ *  string) — a string is accepted defensively and parsed. Unparseable/absent arguments yield
+ *  query="" (answered exhaustively downstream) rather than dropping the call. */
+private fun parseToolSearchArguments(arguments: JsonElement?): Pair<String, Int?> {
+    val obj = when (arguments) {
+        is JsonObject -> arguments
+        is JsonPrimitive -> parseArgumentsString(strOrEmpty(arguments))
+        else -> null
+    } ?: return "" to null
+    return strOrEmpty(obj["query"]) to intOr(obj["limit"])
+}
+
+private fun parseArgumentsString(text: String): JsonObject? {
+    if (text.isEmpty()) return null
+    return try {
+        Json.parseToJsonElement(text) as? JsonObject
+    } catch (ignored: SerializationException) {
+        // malformed tool_search_call arguments: fall through to query="" (answered exhaustively
+        // downstream), matching this file's own precedent at driveTurn's catch list above.
+        null
+    }
+}
+
+private const val TOOL_SEARCH_EXECUTION_CLIENT = "client"

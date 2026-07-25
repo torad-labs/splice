@@ -27,6 +27,10 @@ public data class BuiltTurn(
     val requestBody: JsonObject,
     val meta: TurnMeta,
     val extraHeaders: Map<String, String> = emptyMap(),
+    /** The answering policy for THIS turn's deferred surface, built by the request builder (the
+     *  only place that knows what was deferred). Null = no deferral this turn, or the feature is
+     *  off — the gateway's round loop is byte-for-byte unchanged. */
+    val toolSearch: ToolSearchController? = null,
 )
 
 /** Per-turn liveness signals the gateway hands the translator: the watchdog's typed sentinel and

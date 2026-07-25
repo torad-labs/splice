@@ -1,0 +1,66 @@
+{
+    "model": "gpt-5.6-sol",
+    "input": [
+        {
+            "type": "additional_tools",
+            "role": "developer",
+            "tools": [
+                {
+                    "type": "function",
+                    "name": "Read",
+                    "description": "",
+                    "parameters": {
+                        "type": "object"
+                    },
+                    "strict": false
+                },
+                {
+                    "type": "tool_search",
+                    "execution": "client",
+                    "description": "# Tool discovery\n\nSearches over deferred tool metadata and exposes matching tools for the next model call.\n\nSome of the tools may not have been provided to you upfront, and you should use this tool (`tool_search`) to search for the required tools. For MCP tool discovery, always use `tool_search` instead of `list_mcp_resources` or `list_mcp_resource_templates`.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "Search query for deferred tools."
+                            },
+                            "limit": {
+                                "type": "number",
+                                "description": "Maximum number of tools to return. Defaults to 8."
+                            }
+                        },
+                        "required": [
+                            "query"
+                        ],
+                        "additionalProperties": false
+                    }
+                }
+            ]
+        },
+        {
+            "role": "developer",
+            "content": "You are Splice, a contract fixture."
+        },
+        {
+            "role": "user",
+            "content": "Ping."
+        }
+    ],
+    "store": false,
+    "stream": true,
+    "include": [
+        "reasoning.encrypted_content"
+    ],
+    "prompt_cache_key": "splice-7d6e0aa0474b35db01b1f13cba38ea78",
+    "tool_choice": "auto",
+    "parallel_tool_calls": false,
+    "reasoning": {
+        "effort": "high",
+        "summary": "detailed",
+        "context": "all_turns"
+    },
+    "stream_options": {
+        "reasoning_summary_delivery": "sequential_cutoff"
+    }
+}

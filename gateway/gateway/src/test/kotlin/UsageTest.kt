@@ -10,8 +10,10 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.turn.Usage
 import splice.core.usage.RateLimitState
 import splice.core.usage.computeUsageWarn
+import splice.gateway.head.RoundUsage
 import splice.gateway.usage.TurnUsage
 import splice.gateway.usage.UsageStore
 import splice.gateway.usage.buildUsagePayload
@@ -54,6 +56,22 @@ class UsageTest {
         val none = computeUsageWarn(outputTokens5h = 999_999, warnTokens5h = 0)
         assertEquals("ok", none.level)
         assertEquals("none", none.source)
+    }
+
+    // A search round re-POSTs the WHOLE conversation (tool_search_call/output appended to input),
+    // so it obeys the exact same RoundUsage law fold/re-anchor rounds do: input/cached are this
+    // round's OWN reading (last-round-wins), never summed — an inflated prompt count would fire
+    // Claude Code's context bar / autocompact early, the regression this law prevents.
+    @Test
+    fun `a search round obeys the RoundUsage law - last-round input cached, summed output reasoning`() {
+        var acc = RoundUsage()
+        acc = acc.plusRound(Usage(inputTokens = 1000, outputTokens = 50, cachedTokens = 800, reasoningTokens = 20))
+        acc = acc.plusRound(Usage(inputTokens = 1500, outputTokens = 30, cachedTokens = 1200, reasoningTokens = 10))
+        val usage = acc.toUsage()
+        assertEquals(1500, usage.inputTokens, "last round's input wins - never summed across rounds")
+        assertEquals(1200, usage.cachedTokens, "last round's cached wins")
+        assertEquals(80, usage.outputTokens, "output accrues per round")
+        assertEquals(30, usage.reasoningTokens, "reasoning accrues per round")
     }
 
     @Test

@@ -223,6 +223,10 @@ public class ConfigService(
         out[Knob.CONTEXT_WINDOW_OVERRIDE.key] = positiveLong(out, Knob.CONTEXT_WINDOW_OVERRIDE)
         out[Knob.USAGE_WARN_PCT.key] = (num(out, Knob.USAGE_WARN_PCT) ?: 0L).coerceIn(0L, 100L)
         out[Knob.USAGE_WARN_TOKENS_5H.key] = clampLong(out, Knob.USAGE_WARN_TOKENS_5H, floor = 0L)
+        // anything that is not exactly "off" is "auto" — an unknown value must never silently arm
+        // a feature (the r3 invalid-env-value lesson).
+        out[Knob.TOOL_SURFACE.key] =
+            if (str(out, Knob.TOOL_SURFACE)?.trim()?.lowercase() == "off") "off" else "auto"
         return out
     }
 
@@ -325,6 +329,7 @@ public class SpliceConfig internal constructor(private val m: Map<String, Any?>)
     public val controlPort: Int get() = long(Knob.CONTROL_PORT).toInt()
     public val usageWarnPct: Int get() = long(Knob.USAGE_WARN_PCT).toInt()
     public val usageWarnTokens5h: Long get() = long(Knob.USAGE_WARN_TOKENS_5H)
+    public val toolSurfaceOff: Boolean get() = string(Knob.TOOL_SURFACE) == "off"
 
     // Colon-separated absolute paths → list; relative segments are dropped (trust boundary).
     public val statuslineGitRoots: List<String>

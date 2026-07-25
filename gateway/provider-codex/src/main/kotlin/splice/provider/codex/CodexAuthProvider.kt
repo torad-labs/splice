@@ -73,7 +73,7 @@ public class CodexAuthProvider(
     @Volatile
     private var cache: Cache? = null
 
-    private data class Cache(val snapshot: Snapshot, val mtimeMs: Long, val loadedAt: Long)
+    private data class Cache(val snapshot: Snapshot, val mtimeMs: Long, val loadedAt: Long, val sizeBytes: Long)
 
     private data class Snapshot(val access: String, val accountId: String?, val expiresAtMs: Long?)
 
@@ -101,9 +101,11 @@ public class CodexAuthProvider(
     private fun readSnapshot(): Snapshot? = runCatchingCancellable {
         if (!Files.exists(authPath)) return@runCatchingCancellable null
         val mtime = Files.getLastModifiedTime(authPath).toMillis()
+        val size = Files.size(authPath)
         val now = clock()
         cache?.let { c ->
-            if (c.mtimeMs == mtime && (now - c.loadedAt) < authCacheMs) {
+            val sameFile = c.mtimeMs == mtime && c.sizeBytes == size
+            if (sameFile && (now - c.loadedAt) < authCacheMs) {
                 return@runCatchingCancellable c.snapshot
             }
         }
@@ -112,7 +114,7 @@ public class CodexAuthProvider(
             val accountId = tokens.str(FIELD_ACCOUNT_ID)
             val expiresAtMs = decodeJwtClaims(access).long(FIELD_EXP)?.let { it * MS_PER_S }
             val snapshot = Snapshot(access, accountId, expiresAtMs)
-            cache = Cache(snapshot, mtime, now)
+            cache = Cache(snapshot, mtime, now, size)
             snapshot
         }
     }.onFailure {
@@ -167,7 +169,7 @@ public class CodexAuthProvider(
         val accountId = tokens.str(FIELD_ACCOUNT_ID)
         val expiresAtMs = decodeJwtClaims(freshAccess).long(FIELD_EXP)?.let { it * MS_PER_S }
         val snapshot = Snapshot(freshAccess, accountId, expiresAtMs)
-        cache = Cache(snapshot, Files.getLastModifiedTime(authPath).toMillis(), clock())
+        cache = Cache(snapshot, Files.getLastModifiedTime(authPath).toMillis(), clock(), Files.size(authPath))
         return RefreshOutcome.Refreshed(Credentials.Bearer(freshAccess, accountId))
     }
 

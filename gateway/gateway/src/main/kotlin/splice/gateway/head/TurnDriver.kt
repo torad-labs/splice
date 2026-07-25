@@ -322,10 +322,11 @@ internal class TurnDriver(
                 val failure = UpstreamFailureClassifier.classify(FailureSource.HTTP, e.body, e.status)
                 val detail = "type=${failure.type.wireName} status=${e.status} msg=${failure.message.take(ERR_SNIPPET)}"
                 log(telemetry.errTurn("upstream-failed", drive, detail))
+                val boundedMessage = failure.message.take(ERR_SNIPPET)
                 val message = if (failure.type == ErrorType.AUTHENTICATION && provider.loginCommand.isNotEmpty()) {
-                    "${failure.message} — run: ${provider.loginCommand}"
+                    "$boundedMessage — run: ${provider.loginCommand}"
                 } else {
-                    failure.message
+                    boundedMessage
                 }
                 drive.emitter.emitError(failure.type, message)
                 telemetry.recordPerf(drive, "error:upstream-failed")
@@ -345,7 +346,7 @@ internal class TurnDriver(
                 // e.g. a URL-parse error from a bad base_url, an IllegalState out of Ktor
                 // internals. Previously ESCAPED: truncated 200, no error frame, no perf row.
                 log(telemetry.errTurn("unexpected", drive, ": ${e.javaClass.simpleName} ${e.message}"))
-                drive.emitter.emitError(ErrorType.API_ERROR, "claudex: internal gateway error (${e.message}) — retry")
+                drive.emitter.emitError(ErrorType.API_ERROR, "claudex: internal gateway error — retry")
                 telemetry.recordPerf(drive, "error:unexpected")
                 health.local() // internal gateway bug (e.g. bad base_url parse)
             }
@@ -624,9 +625,10 @@ internal class TurnDriver(
     /** One conn-reset surface for raw tears and reissue-exhausted [StreamTornBeforeClient]. */
     private suspend fun emitConnReset(drive: TurnDrive, detail: String?) {
         log(telemetry.errTurn("conn-reset", drive, ": $detail"))
+        val boundedDetail = (detail ?: "no detail").take(ERR_SNIPPET)
         drive.emitter.emitError(
             ErrorType.OVERLOADED,
-            "${provider.key}: upstream connection failed ($detail) — retry",
+            "${provider.key}: upstream connection failed ($boundedDetail) — retry",
         )
         telemetry.recordPerf(drive, "error:conn-reset")
         health.local()

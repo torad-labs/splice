@@ -11,15 +11,38 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.ErrorType
+import splice.core.turn.ToolSearchCall
+import splice.core.turn.ToolSearchCallId
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.gateway.head.FoldRunner
 import splice.gateway.head.ReanchorRunner
 import splice.gateway.head.RunnerSignals
 import splice.gateway.wire.SseEmitter
+import splice.spi.FoldController
 import splice.spi.ReanchorController
+import splice.spi.ToolSearchController
+import splice.spi.WireSink
 
 private fun continuationBody() = buildJsonObject { }
+
+// A search-carrying Success — usage/text default to a no-op round so tests opt into only what
+// they need (the ReanchorRunnerTest / FoldRunnerReanchorTest precedent's retryableFailure()).
+private fun searchSuccess(
+    outputTokens: Long = 0,
+    bodyText: String = "",
+    thinkingText: String = "",
+    emittedText: Boolean = false,
+    hasToolUse: Boolean = false,
+) = TurnOutcome.Success(
+    hasToolUse = hasToolUse,
+    incomplete = false,
+    usage = Usage(outputTokens = outputTokens),
+    thinkingText = thinkingText,
+    bodyText = bodyText,
+    emittedText = emittedText,
+    toolSearches = listOf(ToolSearchCall(ToolSearchCallId("ts_1"), "q", null, buildJsonObject { })),
+)
 
 private class Harness {
     val frames = mutableListOf<String>()
@@ -31,11 +54,13 @@ private class Harness {
     )
     var finished: TurnOutcome? = null
     val absorbed = mutableListOf<TurnOutcome.Failure>()
+    val searchRounds = mutableListOf<Int>()
 
     fun signals(watchdog: Boolean = false, gone: Boolean = false) = RunnerSignals(
         watchdogFired = { watchdog },
         clientGone = { gone },
         onRoundFailure = { absorbed.add(it) },
+        onSearchRound = { searchRounds.add(it) },
     )
 
     suspend fun finish(outcome: TurnOutcome) {
@@ -330,5 +355,283 @@ class FoldRunnerReanchorTest {
         ).run(continuationBody()) { null }
         assertEquals(0, asks)
         assertNull(h.finished as? TurnOutcome.Success)
+    }
+}
+
+// Search-continuation walls on ReanchorRunner (the search-only path — no ReanchorController at
+// all, or a ReanchorController that stays silent because nothing failed).
+class ReanchorRunnerSearchTest {
+
+    @Test
+    fun `a search round continues once, appends, and the turn emits exactly one terminal`() = runTest {
+        val h = Harness()
+        val rounds = ArrayDeque<suspend () -> TurnOutcome>()
+        rounds.add { searchSuccess() }
+        rounds.add {
+            TurnOutcome.Success(
+                hasToolUse = false,
+                incomplete = false,
+                usage = Usage(outputTokens = 5),
+                bodyText = "answer",
+                emittedText = true,
+            )
+        }
+        var searchAsks = 0
+        val search = ToolSearchController { round ->
+            // The runner consults the controller on EVERY Success round (searchContinuation only
+            // type/liveness-guards); the "nothing to answer" decision lives inside the real
+            // controller (ResponsesToolSearch.kt). Count only genuine answers, matching this
+            // test's intent ("a search round continues ONCE") — review 2026-07-24 round 1.
+            if (round.outcome.toolSearches.isEmpty()) {
+                null
+            } else {
+                searchAsks++
+                continuationBody()
+            }
+        }
+        ReanchorRunner(
+            key = "t",
+            log = { },
+            postRound = { rounds.removeFirst().invoke() },
+            finish = { h.finish(it) },
+            signals = h.signals(),
+            toolSearch = search,
+        ).run(continuationBody(), reanchor = null)
+
+        assertEquals(1, searchAsks)
+        assertEquals(1, h.count("message_stop"), "exactly one clean terminal")
+        assertEquals(0, h.count("error"))
+        val success = h.finished as TurnOutcome.Success
+        assertEquals("answer", success.bodyText)
+    }
+
+    @Test
+    fun `search salvage carries the round's real emitted text truthfully`() = runTest {
+        val h = Harness()
+        val rounds = ArrayDeque<suspend () -> TurnOutcome>()
+        rounds.add {
+            searchSuccess(
+                bodyText = "partial answer",
+                thinkingText = "reasoning so far",
+                emittedText = true,
+                outputTokens = 3,
+            )
+        }
+        rounds.add { TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(outputTokens = 2)) }
+        val search = ToolSearchController { round ->
+            if (round.outcome.toolSearches.isEmpty()) null else continuationBody()
+        }
+        ReanchorRunner(
+            key = "t",
+            log = { },
+            postRound = { rounds.removeFirst().invoke() },
+            finish = { h.finish(it) },
+            signals = h.signals(),
+            toolSearch = search,
+        ).run(continuationBody(), reanchor = null)
+
+        val success = h.finished as TurnOutcome.Success
+        assertTrue(success.emittedText, "round-1's real emitted text must count for the honesty gate")
+        assertEquals("reasoning so far", success.thinkingText)
+        assertEquals("partial answer", success.bodyText)
+        assertEquals(5, success.usage.outputTokens)
+    }
+
+    @Test
+    fun `hasToolUse in the outcome reaches the controller, which then blocks the continuation`() = runTest {
+        val h = Harness()
+        var sawHasToolUse = false
+        val search = ToolSearchController { round ->
+            sawHasToolUse = round.outcome.hasToolUse
+            if (round.outcome.hasToolUse) null else continuationBody()
+        }
+        ReanchorRunner(
+            key = "t",
+            log = { },
+            postRound = { searchSuccess(hasToolUse = true) },
+            finish = { h.finish(it) },
+            signals = h.signals(),
+            toolSearch = search,
+        ).run(continuationBody(), reanchor = null)
+        assertTrue(sawHasToolUse, "the runner must pass the round's real hasToolUse to the controller")
+        assertEquals(1, h.count("message_stop"))
+    }
+
+    @Test
+    fun `a watchdog fire never continues a search - its cancellation owns the turn`() = runTest {
+        val h = Harness()
+        var asks = 0
+        val search = ToolSearchController {
+            asks++
+            continuationBody()
+        }
+        ReanchorRunner(
+            key = "t",
+            log = { },
+            postRound = { searchSuccess() },
+            finish = { h.finish(it) },
+            signals = h.signals(watchdog = true),
+            toolSearch = search,
+        ).run(continuationBody(), reanchor = null)
+        assertEquals(0, asks, "the controller is never consulted after a watchdog fire")
+        assertEquals(1, h.count("message_stop"))
+    }
+
+    @Test
+    fun `a gone client never continues a search`() = runTest {
+        val h = Harness()
+        var asks = 0
+        val search = ToolSearchController {
+            asks++
+            continuationBody()
+        }
+        ReanchorRunner(
+            key = "t",
+            log = { },
+            postRound = { searchSuccess() },
+            finish = { h.finish(it) },
+            signals = h.signals(gone = true),
+            toolSearch = search,
+        ).run(continuationBody(), reanchor = null)
+        assertEquals(0, asks)
+        assertEquals(1, h.count("message_stop"))
+    }
+
+    @Test
+    fun `the search counter is independent of the re-anchor attempt counter`() = runTest {
+        val h = Harness()
+        val rounds = ArrayDeque<suspend () -> TurnOutcome>()
+        rounds.add { retryableFailure(outputTokens = 1) }
+        rounds.add { searchSuccess(outputTokens = 1) }
+        rounds.add { TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(outputTokens = 1)) }
+        val search = ToolSearchController { round ->
+            if (round.outcome.toolSearches.isEmpty()) null else continuationBody()
+        }
+        var reanchorAsks = 0
+        ReanchorRunner(
+            key = "t",
+            log = { },
+            postRound = { rounds.removeFirst().invoke() },
+            finish = { h.finish(it) },
+            signals = h.signals(),
+            toolSearch = search,
+        ).run(
+            continuationBody(),
+            ReanchorController { round ->
+                reanchorAsks++
+                if (round.attempt < 1) continuationBody() else null
+            },
+        )
+        assertEquals(1, reanchorAsks, "the re-anchor budget was consulted for its own retryable round only")
+        assertEquals(listOf(1), h.searchRounds, "one search round, an independent counter from re-anchor's attempt")
+        assertEquals(1, h.count("message_stop"))
+    }
+
+    @Test
+    fun `reanchor null and a non-null search still runs the loop`() = runTest {
+        val h = Harness()
+        val rounds = ArrayDeque<suspend () -> TurnOutcome>()
+        rounds.add { searchSuccess() }
+        rounds.add { TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(outputTokens = 1)) }
+        val search = ToolSearchController { round ->
+            if (round.outcome.toolSearches.isEmpty()) null else continuationBody()
+        }
+        ReanchorRunner(
+            key = "t",
+            log = { },
+            postRound = { rounds.removeFirst().invoke() },
+            finish = { h.finish(it) },
+            signals = h.signals(),
+            toolSearch = search,
+        ).run(continuationBody(), reanchor = null)
+        assertEquals(1, h.count("message_stop"))
+    }
+}
+
+// Search-continuation walls on FoldRunner: buffered rounds strip bodyText/emittedText but keep
+// live thinking (the same rule fold's own re-anchor trigger-B applies), and fold-continuation
+// (a truncated round) takes precedence over a search on the same round.
+class FoldRunnerSearchTest {
+
+    @Test
+    fun `a fold-round search continuation discards the buffer and strips only the text signals`() = runTest {
+        val h = Harness()
+        val rounds = ArrayDeque<suspend (WireSink) -> TurnOutcome>()
+        rounds.add { sink ->
+            val i = sink.openText()
+            sink.textDelta(i, "buffered never-sent prose")
+            sink.closeBlock(i)
+            searchSuccess(
+                bodyText = "buffered never-sent prose",
+                thinkingText = "live reasoning",
+                emittedText = true,
+                outputTokens = 2,
+            )
+        }
+        rounds.add { _ ->
+            TurnOutcome.Success(
+                hasToolUse = false,
+                incomplete = false,
+                usage = Usage(outputTokens = 1),
+                bodyText = "final",
+                emittedText = true,
+            )
+        }
+        val search = ToolSearchController { round ->
+            if (round.outcome.toolSearches.isEmpty()) null else continuationBody()
+        }
+        FoldRunner(
+            emitter = h.emitter,
+            key = "t",
+            log = { },
+            postRound = { _, sink -> rounds.removeFirst().invoke(sink) },
+            finish = { h.finish(it) },
+            signals = h.signals(),
+            toolSearch = search,
+        ).run(continuationBody()) { null }
+
+        val success = h.finished as TurnOutcome.Success
+        assertEquals("final", success.bodyText, "the buffered never-sent prose must not leak into the merge")
+        assertEquals("live reasoning", success.thinkingText, "live-streamed thinking belongs in the mirror merge")
+        assertEquals(1, h.count("message_stop"))
+    }
+
+    @Test
+    fun `fold-continuation takes precedence over search on a round that is both truncated and searching`() = runTest {
+        val h = Harness()
+        // A dumb controller that always declines — the point is proving it is never even ASKED
+        // about the round that carries a search (round 1); round 2 legitimately has none.
+        var consultedForSearchingRound = false
+        val search = ToolSearchController { round ->
+            if (round.outcome.toolSearches.isNotEmpty()) consultedForSearchingRound = true
+            null
+        }
+        val fold = FoldController { round -> if (round.roundIndex == 0) continuationBody() else null }
+        val rounds = ArrayDeque<suspend (WireSink) -> TurnOutcome>()
+        rounds.add { _ ->
+            TurnOutcome.Success(
+                hasToolUse = false,
+                incomplete = false,
+                usage = Usage(reasoningTokens = 516),
+                toolSearches = listOf(ToolSearchCall(ToolSearchCallId("ts_1"), "q", null, buildJsonObject { })),
+            )
+        }
+        rounds.add { _ -> TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(outputTokens = 1)) }
+        FoldRunner(
+            emitter = h.emitter,
+            key = "t",
+            log = { },
+            postRound = { _, sink -> rounds.removeFirst().invoke(sink) },
+            finish = { h.finish(it) },
+            signals = h.signals(),
+            toolSearch = search,
+        ).run(continuationBody(), fold)
+
+        assertEquals(
+            false,
+            consultedForSearchingRound,
+            "fold continuation wins on round 1; the search gate never sees that round's outcome",
+        )
+        assertEquals(1, h.count("message_stop"))
     }
 }

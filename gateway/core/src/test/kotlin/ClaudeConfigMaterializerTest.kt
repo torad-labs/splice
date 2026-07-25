@@ -19,6 +19,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.launch.ClaudeConfigMaterializer
 import splice.core.launch.ClaudePolicy
 import splice.core.launch.MaterializeSpec
+import splice.core.launch.TokenCaptureSpec
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
@@ -215,5 +216,69 @@ class ClaudeConfigMaterializerTest {
         materializer(tmp).materialize(dir, allPolicy, listOf("m"), "m", optionsCache) // shim: loginCommand=""
         assertFalse(Files.exists(dir.resolve("splice-login-hook.sh")))
         assertTrue(dir.resolve("commands").isSymbolicLink()) // stays a plain shared symlink
+    }
+
+    @Test
+    fun `api-key head wires capture hook plus masked-prompt login wording`(@TempDir tmp: Path) {
+        seedGlobal(tmp)
+        val dir = tmp.resolve(".claude-openrouter")
+        materializer(tmp).materialize(
+            MaterializeSpec(
+                configDir = dir,
+                policy = allPolicy,
+                availableModelIds = listOf("m"),
+                defaultModel = "m",
+                modelOptionsCache = optionsCache,
+                statuslineCommand = statusline,
+                loginCommand = "claudeor login",
+                signInLabel = "OpenRouter",
+                signInViaBrowser = false,
+                tokenCapture = TokenCaptureSpec("OPENROUTER_API_KEY", "sk-or-[A-Za-z0-9_-]{20,}", "OpenRouter"),
+            ),
+        )
+        // login.md + login hook exist, with the MASKED-PROMPT wording (no browser anywhere)
+        val loginHook = dir.resolve("splice-login-hook.sh").readText()
+        assertTrue(loginHook.contains("masked terminal prompt"))
+        assertFalse(loginHook.contains("browser"))
+        // capture hook: env name, quote-anchored pattern, store via splice key set --stdin, blocked
+        val capture = dir.resolve("splice-key-capture-hook.sh").readText()
+        assertTrue(capture.contains("OPENROUTER_API_KEY"))
+        assertTrue(capture.contains("sk-or-[A-Za-z0-9_-]{20,}"))
+        assertTrue(capture.contains("splice key set OPENROUTER_API_KEY --stdin"))
+        assertTrue(capture.contains("\\\"prompt\\\""))
+        // settings.json wires BOTH UserPromptSubmit hooks
+        val settings = Json.parseToJsonElement(dir.resolve("settings.json").readText()).jsonObject
+        val ups = settings["hooks"]!!.jsonObject["UserPromptSubmit"]!!.jsonArray.toString()
+        assertTrue(ups.contains("splice-login-hook.sh"))
+        assertTrue(ups.contains("splice-key-capture-hook.sh"))
+        // no advertiser unless asked
+        assertFalse(settings["hooks"]!!.jsonObject.containsKey("SessionStart"))
+    }
+
+    @Test
+    fun `advertiseKeySetup installs the SessionStart advertiser`(@TempDir tmp: Path) {
+        seedGlobal(tmp)
+        val dir = tmp.resolve(".claude-openrouter")
+        materializer(tmp).materialize(
+            MaterializeSpec(
+                configDir = dir,
+                policy = allPolicy,
+                availableModelIds = listOf("m"),
+                defaultModel = "m",
+                modelOptionsCache = optionsCache,
+                statuslineCommand = statusline,
+                loginCommand = "claudeor login",
+                signInLabel = "OpenRouter",
+                signInViaBrowser = false,
+                tokenCapture = TokenCaptureSpec("OPENROUTER_API_KEY", "sk-or-[A-Za-z0-9_-]{20,}", "OpenRouter"),
+                advertiseKeySetup = true,
+            ),
+        )
+        val script = dir.resolve("splice-keysetup-hook.sh").readText()
+        assertTrue(script.contains("OPENROUTER_API_KEY"))
+        assertTrue(script.contains("OpenRouter"))
+        val settings = Json.parseToJsonElement(dir.resolve("settings.json").readText()).jsonObject
+        val ss = settings["hooks"]!!.jsonObject["SessionStart"]!!.jsonArray.toString()
+        assertTrue(ss.contains("splice-keysetup-hook.sh"))
     }
 }

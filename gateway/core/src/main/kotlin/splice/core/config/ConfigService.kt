@@ -146,7 +146,14 @@ public class ConfigService(
         val data = LinkedHashMap<String, Any?>()
         for (knob in Knob.entries) {
             val raw = knob.envNames.firstNotNullOfOrNull { name -> envReader(name)?.takeIf { it.isNotEmpty() } }
-            if (raw != null) coerce(knob, raw)?.let { data[knob.key] = it }
+            if (raw != null) {
+                val coerced = coerce(knob, raw)
+                if (coerced != null) {
+                    data[knob.key] = coerced
+                } else {
+                    System.err.println("[config] ignoring invalid env value for ${knob.key}: '$raw'")
+                }
+            }
         }
         return data
     }

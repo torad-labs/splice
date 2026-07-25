@@ -1,11 +1,18 @@
 version: 2
 # Patch+minor updates arrive as ONE grouped PR per ecosystem per week (majors stay
 # individual PRs and are excluded from auto-merge by dependabot-automerge.yml).
+# cooldown applies to VERSION updates only — security updates still open immediately.
+# 7 days clears zizmor's dependabot-cooldown floor and covers the window in which a
+# compromised package is usually yanked; majors get 30 since they already wait for a
+# human per dependabot-automerge.yml.
 updates:
   - package-ecosystem: "npm"
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
     ignore:
       # plugin-react majors need a coherent webui tree first (phantom root vite 6 +
       # ts7/typescript-eslint peer conflict, frozen by npm ci) — see issue #43. Unignore
@@ -22,6 +29,9 @@ updates:
     directory: "/gateway"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
     ignore:
       # kotlin 2.4.x is blocked by CodeQL's Kotlin extractor (KotlinVersionTooRecentError,
       # see #18/#37) — a required check. Unignore when CodeQL supports 2.4.x.
@@ -36,6 +46,9 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
     groups:
       actions-minor-patch:
         applies-to: version-updates

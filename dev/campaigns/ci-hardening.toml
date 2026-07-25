@@ -52,34 +52,51 @@ id = "CI-1"
 phase = "P1-workflows"
 title = "NEW .github/workflows/dependency-submission.yml — close the Gradle blind spot: GitHub's dependency graph has NO Gradle manifest support, so Dependabot alerts/security-updates and the dependency-review gate currently see npm deps only and the Kotlin gateway is invisible. Triggers: push to main + workflow_dispatch ONLY (PR-side submission needs contents: write, which Dependabot/fork-triggered runs never receive — the header comment must state this documented limitation: PR-compare coverage for Gradle deps in dependency-review stays npm-only). permissions contents: write (Dependency Submission API); concurrency dependency-submission-<ref> cancel-in-progress; timeout 20m; checkout + setup-java from KNOWN PINS (cache: gradle); gradle/actions/dependency-submission@<RESOLVE per SHA law> with build-root-directory: gateway — VERIFY the exact input name for a non-root build in gradle/actions docs/dependency-submission.md BEFORE writing. PR body must carry the post-merge operator verification (Insights → Dependency graph shows a Gradle manifest; run logs show snapshot submitted) — it cannot be exercised from the PR itself."
 files = [".github/workflows/dependency-submission.yml"]
-status = "todo"
+status = "verified"
 verify = "python3 -c 'import yaml; yaml.safe_load(open(\".github/workflows/dependency-submission.yml\"))' && uvx zizmor --offline .github/workflows/dependency-submission.yml"
+# [2026-07-25] Landed .github/workflows/dependency-submission.yml. Item verify exit 0 (yaml.safe_load + uvx zizmor --offline file). actionlint exit 0. cannot_fail_probe: (1) unclosed quote in name broke yaml.safe_load exit 1; (2) injected ${{ github.ref }} into run: block broke zizmor exit 14 with error[template-injection]; both restored, file clean. Repo-wide zizmor --offline still reports 8 unsuppressed findings (exit 14), unchanged from baseline. Workflow file count 10 -> 11. Uses KNOWN PINS verbatim: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1, actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0, gradle/actions/dependency-submission@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0. build-root-directory: gateway confirmed against gradle/actions docs; gateway/settings.gradle.kts, gateway/build.gradle.kts, gateway/gradlew present.
+# [2026-07-25] Attribution unavailable: missing in_flight tree snapshot
+# [2026-07-25] VERIFIED by orchestrator: 3/3 round-1 reviewers ACCEPT (live SHA re-resolution, action inputs checked at pinned SHA, fork-token semantics). Verify re-run green. Comment fix by orchestrator: 17 → 15 Gradle modules (settings.gradle.kts include block counted).
+# [2026-07-25] VERDICT: outcome=accepted
 
 [[items]]
 id = "CI-2"
 phase = "P1-workflows"
 title = "NEW .github/workflows/workflow-lint.yml (zizmor + actionlint; trigger paths .github/workflows/** + .github/dependabot.yml; permissions contents: read; timeout 10m/job) + fix EVERY finding on existing workflows. zizmor job: zizmorcore/zizmor-action@<RESOLVE> with advanced-security: false — FIRST confirm via the action README that this mode propagates a nonzero exit on findings; if masked, fall back to astral-sh/setup-uv@<RESOLVE> + `uvx zizmor@<pinned-version> --format github .`. actionlint job: reviewdog/action-actionlint@<RESOLVE> with reporter: local + fail_level: error (console output, no checks/PR perms). Run `uvx zizmor --offline .` repo-wide BEFORE writing anything. EXPECTED findings (fix or inline-ignore-with-rationale per site, per zizmor law): (a) issue-triage.yml — ${{ github.event.issue.number || inputs.issue_number }} interpolated inside a run: block (template-injection pattern) → env: ISSUE_NUMBER indirection, pass \"$ISSUE_NUMBER\" to the script, add type: number to the dispatch input; (b) pr-labeler.yml pull_request_target — justified (no checkout, token only labels): zizmor ignore comment with one-line rationale IF flagged; (c) release.yml cache: gradle/npm in a release workflow (cache-poisoning audit) — documented ignore preferred (cache derives from reviewed main code; the attestation chain is the integrity control), dropping cache: there is the acceptable alternative; (d) HYGIENE — add missing timeout-minutes: dependabot-automerge 5, pr-labeler 5, pr-title 5, issue-triage lifecycle 5 + classify 10, lock-threads 5, stale 5. Done means zizmor exits 0 repo-wide (or documented ignores only)."
 files = [".github/workflows/workflow-lint.yml", ".github/workflows/issue-triage.yml", ".github/workflows/pr-labeler.yml", ".github/workflows/release.yml", ".github/workflows/dependabot-automerge.yml", ".github/workflows/pr-title.yml", ".github/workflows/lock-threads.yml", ".github/workflows/stale.yml"]
-status = "todo"
+status = "verified"
 verify = "bash -c 'uvx zizmor --offline . && for f in .github/workflows/*.yml; do python3 -c \"import yaml,sys; yaml.safe_load(open(sys.argv[1]))\" \"$f\" || exit 1; done'"
+# [2026-07-25] Implemented fence: workflow-lint.yml born (zizmor + actionlint jobs, push/pr paths .github/workflows/** + .github/dependabot.yml, contents: read, timeouts 10m); issue-triage.yml fixed (type:number dispatch input, issues:write moved to both jobs, ISSUE_NUMBER env indirection, timeouts 5m/10m); release.yml fixed (cache-poisoning ignores x2 + superfluous-actions ignore with rationales); timeouts added to automerge/label/lint/lock/stale jobs. actionlint exit 0 on all 8 touched files; yaml parse loop green; zizmor on fence files exit 0 (3 ignored). Repo-wide verify blocked: CI-4 dependabot.yml cooldown not landed; uvx zizmor --offline . exits 13 with 3 dependabot-cooldown warnings at dependabot.yml:5,21,35.
+# [2026-07-25] NEEDS_FIX root cause was CI-4's unlanded fence (3 dependabot-cooldown warnings kept the repo-wide sweep red; fence law barred CI-2 from touching dependabot.yml) — NOT a defect in CI-2's own work. Orchestrator landed CI-4 (corrected 7/30), re-ran CI-2 verify verbatim: exit 0, 'No findings (3 ignored, 36 suppressed)' — the 3 ignored are the documented release.yml ignores. Instrument 8 → 0 as predicted. workflow-lint.yml (zizmor via setup-uv + uvx zizmor@1.28.0 --format github; actionlint via reviewdog reporter:local fail_level:error) in tree; actionlint clean on all 12 workflows.
+# [2026-07-25] Attribution unavailable: missing in_flight tree snapshot
+# [2026-07-25] round-2 reviewers (2 opus) DIED on upstream 429 quota — per loop doctrine silence is not assent, so the orchestrator executed BOTH round-2 lenses mechanically instead: timeout coverage 17/17 jobs across 12 files (python walk); WHY headers on both new workflows; release.yml ignores proven ALIVE (stripped scratch copy re-flags exactly the 3 sites); no wave-introduced workflow-level write perms (5 pre-existing deliberate ones untouched); sweep exit 0 '3 ignored, 36 suppressed'; actionlint clean ×12; issue-triage semantics confirmed (type:number dispatch-only, lifecycle issues:write intact, classify logged-skip intact). VERIFIED.
+# [2026-07-25] VERDICT: outcome=accepted
 
 [[items]]
 id = "CI-3"
 phase = "P1-workflows"
 title = "ci.yml gains TWO jobs (this file is the fence — one owner; do NOT otherwise touch ci.yml: the single gate job is a deliberate design, one required check). (1) walls-annotate: parallel job, ALWAYS GREEN via `npx --no-install ast-grep scan --format github || true` — wall violations surface as PR diff annotations instead of log spelunking; the gate job stays the SOLE pass/fail authority (same-checker-twice); header comment notes GitHub's 10-annotation/step cap; FIRST confirm --format github exists in the pinned CLI (@ast-grep/cli 0.45.0): `npx --no-install ast-grep scan --help`. Steps: checkout + setup-node KNOWN PINS, npm ci, annotate step. (2) wrapper-validation: gradle/actions/wrapper-validation@<RESOLVE>, timeout 5m, contents: read — catches a tampered gradle-wrapper.jar arriving via fork PR. Both jobs get the standard concurrency/timeout treatment already present at workflow level."
 files = [".github/workflows/ci.yml"]
-status = "todo"
+status = "verified"
 verify = "python3 -c 'import yaml; yaml.safe_load(open(\".github/workflows/ci.yml\"))' && npx --no-install ast-grep scan --format github >/dev/null && uvx zizmor --offline .github/workflows/ci.yml"
+# [2026-07-25] LANDED. Added walls-annotate (timeout 10m, always-green via || true, same-checker-twice annotation-only surface) and wrapper-validation (timeout 5m, gradle/actions/wrapper-validation@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0, zero inputs because action discovers gateway/gradle/wrapper/gradle-wrapper.jar recursively). Verify exit 0: yaml parse, ast-grep scan --format github, uvx zizmor --offline ci.yml all clean; actionlint ci.yml exit 0. Expected-delta instruments: runs-on=3, wrapper-validation SHA=1, 'format github || true'=1, timeout-minutes=3. Cannot-fail probe passed: zizmor caught unpinned actions/checkout@v3 (exit 14), actionlint caught template injection in run: (exit 1), yaml parse caught misindented step (exit 1); all restored and re-green.
+# [2026-07-25] Attribution unavailable: missing in_flight tree snapshot
+# [2026-07-25] VERIFIED by orchestrator: 3/3 round-1 reviewers ACCEPT. Verify re-run green (yaml + ast-grep --format github + zizmor). walls-annotate keeps || true — gate job sole authority confirmed.
+# [2026-07-25] VERDICT: outcome=accepted
 
 [[items]]
 id = "CI-4"
 phase = "P1-workflows"
 title = "dependabot.yml: add `cooldown: {default-days: 5, semver-major-days: 30}` to ALL THREE ecosystems (npm, gradle, github-actions). Header comment: cooldown applies to VERSION updates only — security updates still open immediately (GitHub GA 2025-07-01; a 3-day default exists since 2026-07-14 — explicit values make the choice intentional; Cilium runs 5d because compromised packages are usually yanked inside that window; majors get 30d since they already wait for a human per dependabot-automerge.yml)."
 files = [".github/dependabot.yml"]
-status = "todo"
+status = "verified"
 verify = "python3 -c 'import yaml; d=yaml.safe_load(open(\".github/dependabot.yml\")); assert all(\"cooldown\" in u for u in d[\"updates\"]), \"missing cooldown\"' && uvx zizmor --offline .github/dependabot.yml"
 
 # ── P2-coverage — wave 2: SEPARATE PR (touches the Gradle build) ──────────────
+# [2026-07-25] premise auditor killed the item FACTUALLY_WRONG: zizmor 1.28.0 dependabot-cooldown requires default-days >= 7 — the pinned 5 failed the item's OWN verify. Orchestrator re-ran the cited boundary experiment before accepting (kill protocol): default-days 5 → warning exit 13; 7 → exit 0. Kill CONFIRMED. Landed corrected values cooldown {default-days: 7, semver-major-days: 30} on all 3 ecosystems + header comment (Cilium-5d rationale replaced by the zizmor-floor rationale). Verify exit 0. Full audit: workflow wf_b83310cb-bd6 journal.
+# [2026-07-25] Attribution unavailable: missing in_flight tree snapshot
+# [2026-07-25] round-2 review died on the same 429; orchestrator close-out: diff is header + 3 cooldown blocks only, ignore: blocks byte-untouched, zizmor dependabot.yml exit 0, cooldown-in-all-3 assertion passes. Change is 6 yaml lines whose oracle is mechanical and green. VERIFIED.
+# [2026-07-25] VERDICT: outcome=accepted CONTRADICTION locus=item pinned default-days 5; zizmor floor is 7 (kill confirmed by orchestrator re-run); landed 7/30
 
 [[items]]
 id = "CI-5"
@@ -90,6 +107,7 @@ status = "todo"
 verify = "bash -c 'cd gateway && ./gradlew koverXmlReport && ls */build/reports/kover/report.xml'"
 
 # ── P3-live-probe — wave 3: BLOCKED on operator secrets (spec + skeleton only) ─
+# [2026-07-25] premise audit verdict FACTUALLY_WRONG (fence, not the idea): settings.gradle.kts DROPPED (stable kover route needs no settings change; the aggregation settings plugin is explicitly preliminary); fence ADDS gateway/gradle/libs.versions.toml + gateway/gradle/verification-metadata.xml. kover 0.9.9 resolved from plugins.gradle.org maven-metadata 2026-07-25. Module pool: 15 includes (12 production + spikes/arch-tests/fir-checks). Wave-2 placement CONFIRMED; precondition sharpened: CI-4 must be VERIFIED (dependabot handling depends on its final state). Full corrected item in workflow wf_b83310cb-bd6 journal.
 
 [[items]]
 id = "CI-6"
@@ -100,6 +118,7 @@ status = "todo"
 verify = "python3 -c 'import yaml; yaml.safe_load(open(\".github/workflows/live-probe.yml\"))' && uvx zizmor --offline .github/workflows/live-probe.yml"
 
 # ── P4-triage-ext — wave 3: extends the existing triage pipeline ───────────────
+# [2026-07-25] premise audit SOUND. Cron picked: 43 4 * * * (04:43 UTC, off-:00/:30, no collision with codeql 17 4 Thu / stale 37 9 / lock-threads 52 10). Wave-3 confirmed; the workflow_dispatch-ONLY skeleton IS landable now (degrades to logged skip), the scheduled version stays BLOCKED on operator secrets. Constraint for the implementer: the file must land zizmor+actionlint clean because CI-2's workflow-lint now gates the tree. Full corrected item in workflow wf_b83310cb-bd6 journal.
 
 [[items]]
 id = "CI-7"
@@ -108,3 +127,4 @@ title = "Duplicate-issue detection — EXTENDS .github/scripts/triage/ (NOT a th
 files = [".github/scripts/triage/find-duplicates.sh", ".github/scripts/triage/test-find-duplicates.sh", ".github/workflows/issue-triage.yml"]
 status = "todo"
 verify = "bash .github/scripts/triage/test-find-duplicates.sh"
+# [2026-07-25] premise audit SOUND with 5 binding amendments (mirror the classify STEP wiring from CI-2's refactored issue-triage.yml — reuse $ISSUE_NUMBER, keep job-level permissions and timeouts; python3 difflib heredoc, stdlib only; threshold 0.8 named constant; verbs limited to comment + add-label potential-duplicate; numeric issue pin mirroring triage-issue.sh). Precondition confirmed load-bearing: claim only after CI-2 VERIFIED — now satisfiable. Full amendments in workflow wf_b83310cb-bd6 journal.

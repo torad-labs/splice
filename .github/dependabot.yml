@@ -35,7 +35,10 @@ updates:
     ignore:
       # kotlin 2.4.x is blocked by CodeQL's Kotlin extractor (KotlinVersionTooRecentError,
       # see #18/#37) — a required check. Unignore when CodeQL supports 2.4.x.
-      - dependency-name: "org.jetbrains.kotlin*"
+      # The block is group-scoped to the Kotlin compiler/toolchain only; org.jetbrains.kotlinx.* is
+      # intentionally released into gradle-minor-patch.
+      - dependency-name: "org.jetbrains.kotlin:*"   # group:artifact form: kotlin-stdlib, kotlin-compiler-embeddable (CodeQL kotlin-2.4.x block, #18/#37)
+      - dependency-name: "org.jetbrains.kotlin.*"   # plugin-id + marker forms: org.jetbrains.kotlin.jvm, .plugin.serialization, and any future org.jetbrains.kotlin.* plugin (e.g. .plugin.compose)
     groups:
       gradle-minor-patch:
         applies-to: version-updates

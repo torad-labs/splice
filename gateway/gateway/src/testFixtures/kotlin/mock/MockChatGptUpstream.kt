@@ -21,6 +21,11 @@ import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
 import splice.core.util.discard
 
+// The two summary sections the "foldsummary" scenario streams (both over the 20-char dedup floor):
+// section A is re-titled verbatim by the continuation round, B only ever arrives in round 2.
+const val SUMMARY_SECTION_A: String = "**Analyzing CLI exit and async error handling**"
+const val SUMMARY_SECTION_B: String = "**Deploying the hardened fleet build**"
+
 class MockChatGptUpstream {
     val upstreamAuths = CopyOnWriteArrayList<Pair<String, String?>>()
     val upstreamBodies = CopyOnWriteArrayList<Pair<String, String>>()
@@ -172,9 +177,48 @@ class MockChatGptUpstream {
         )
     }
 
+    // ADDED (2026-07-26, turn-scoped summary dedup): a fold whose CONTINUATION round re-titles the
+    // round-1 summary section verbatim before adding a new one — exactly what sequential_cutoff does
+    // when a continuation re-requests the detailed summary over already-summarized reasoning.
+    private fun foldSummaryTruncatedRound(ex: HttpExchange) {
+        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""")
+        sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$SUMMARY_SECTION_A"}""")
+        sse(
+            ex,
+            """{"type":"response.output_item.done","output_index":0,""" +
+                """"item":{"type":"reasoning","id":"rs_trunc","encrypted_content":"ENC-TRUNC"}}""",
+        )
+        sse(ex, """{"type":"response.output_item.added","output_index":1,"item":{"type":"message"}}""")
+        sse(ex, """{"type":"response.output_text.delta","output_index":1,"delta":"TENTATIVE ANSWER"}""")
+        sse(ex, """{"type":"response.output_item.done","output_index":1}""")
+        sse(
+            ex,
+            """{"type":"response.completed","response":{"id":"rt","status":"completed","output":[],""" +
+                """"usage":{"input_tokens":100,"output_tokens":600,"output_tokens_details":{"reasoning_tokens":516}}}}""",
+        )
+    }
+
+    private fun foldSummaryCleanRound(ex: HttpExchange) {
+        // output_index restarts at 0 for the continuation round, as the real backend does.
+        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""")
+        sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$SUMMARY_SECTION_A"}""")
+        sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$SUMMARY_SECTION_B"}""")
+        sse(ex, """{"type":"response.output_item.done","output_index":0}""")
+        sse(ex, """{"type":"response.output_item.added","output_index":1,"item":{"type":"message"}}""")
+        sse(ex, """{"type":"response.output_text.delta","output_index":1,"delta":"FINAL ANSWER"}""")
+        sse(ex, """{"type":"response.output_item.done","output_index":1}""")
+        sse(
+            ex,
+            """{"type":"response.completed","response":{"id":"rf","status":"completed","output":[],""" +
+                """"usage":{"input_tokens":150,"output_tokens":800,"output_tokens_details":{"reasoning_tokens":800}}}}""",
+        )
+    }
+
     private fun streamScenario(scenario: String, ex: HttpExchange, body: JsonObject?) {
         when (scenario) {
             "fold" -> if (isContinuationRound(body)) foldCleanRound(ex) else foldTruncatedRound(ex)
+            "foldsummary" ->
+                if (isContinuationRound(body)) foldSummaryCleanRound(ex) else foldSummaryTruncatedRound(ex)
             "foldcap" -> foldTruncatedRound(ex)
             "multipart" -> {
                 sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""")

@@ -105,6 +105,13 @@ private const val RECAP_DONE = -1
 // (2026-07-20); a per-ITEM set alone under-suppressed the cross-item recap (the duplication
 // staircase). Splitting the two jobs keeps the coincidence (per-item, non-leading) while killing
 // the staircase (ordered leading prefix). State + decision live together here (2026-07-23).
+// The per-item sets are TURN-scoped per output_index SLOT (2026-07-26): continuation rounds share
+// them and the backend restarts output_index at 0 each round, so a byte-identical non-leading part
+// shared by two genuinely different items landing in the same slot is suppressed across rounds.
+// Accepted (operator call): an exact identity is overwhelmingly a restatement, and no-duplicates
+// wins. Re-keying the sets by round or item id is the one fix NOT to make — when the backend
+// re-titles a repeat into the same slot, that keying is what lets the mirror duplication back in.
+// The 2026-07-20 case stays intact: WITHIN a round, distinct items still get distinct slots.
 private class SummaryDedup(private val active: Boolean, shared: SharedSummaryParts? = null) {
     // emittedParts + itemEmitted are TURN-scoped when shared is present (continuation rounds);
     // recapCursor is deliberately per round — each round's stream re-starts its leading recap

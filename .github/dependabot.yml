@@ -4,7 +4,8 @@ version: 2
 # cooldown applies to VERSION updates only — security updates still open immediately.
 # 7 days clears zizmor's dependabot-cooldown floor and covers the window in which a
 # compromised package is usually yanked; majors get 30 since they already wait for a
-# human per dependabot-automerge.yml.
+# human per dependabot-automerge.yml. github-actions gets default-days only — Dependabot's
+# validator rejects semver-*-days for that ecosystem (PR #52 check failure 2026-07-26).
 updates:
   - package-ecosystem: "npm"
     directory: "/"
@@ -48,7 +49,6 @@ updates:
       interval: "weekly"
     cooldown:
       default-days: 7
-      semver-major-days: 30
     groups:
       actions-minor-patch:
         applies-to: version-updates

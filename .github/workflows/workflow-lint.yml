@@ -47,3 +47,7 @@ jobs:
         with:
           reporter: local
           fail_level: error
+          # reviewdog computes findings against a diff by default and the shallow PR
+          # checkout has no base — "diff command is empty" red. nofilter = lint the
+          # whole workflow surface every run (this gate's entire point).
+          filter_mode: nofilter

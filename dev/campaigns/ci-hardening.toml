@@ -71,6 +71,7 @@ verify = "bash -c 'uvx zizmor --offline . && for f in .github/workflows/*.yml; d
 # [2026-07-25] Attribution unavailable: missing in_flight tree snapshot
 # [2026-07-25] round-2 reviewers (2 opus) DIED on upstream 429 quota — per loop doctrine silence is not assent, so the orchestrator executed BOTH round-2 lenses mechanically instead: timeout coverage 17/17 jobs across 12 files (python walk); WHY headers on both new workflows; release.yml ignores proven ALIVE (stripped scratch copy re-flags exactly the 3 sites); no wave-introduced workflow-level write perms (5 pre-existing deliberate ones untouched); sweep exit 0 '3 ignored, 36 suppressed'; actionlint clean ×12; issue-triage semantics confirmed (type:number dispatch-only, lifecycle issues:write intact, classify logged-skip intact). VERIFIED.
 # [2026-07-25] VERDICT: outcome=accepted
+# [2026-07-25] PR #52 live run of the new gate caught a wrapper defect the local oracles could not see: reviewdog with reporter: local needs filter_mode: nofilter or it dies with 'diff command is empty' (no diff base on the shallow checkout). Fixed in workflow-lint.yml with a WHY comment; the gate now dogfoods on every PR including this one.
 
 [[items]]
 id = "CI-3"
@@ -97,6 +98,7 @@ verify = "python3 -c 'import yaml; d=yaml.safe_load(open(\".github/dependabot.ym
 # [2026-07-25] Attribution unavailable: missing in_flight tree snapshot
 # [2026-07-25] round-2 review died on the same 429; orchestrator close-out: diff is header + 3 cooldown blocks only, ignore: blocks byte-untouched, zizmor dependabot.yml exit 0, cooldown-in-all-3 assertion passes. Change is 6 yaml lines whose oracle is mechanical and green. VERIFIED.
 # [2026-07-25] VERDICT: outcome=accepted CONTRADICTION locus=item pinned default-days 5; zizmor floor is 7 (kill confirmed by orchestrator re-run); landed 7/30
+# [2026-07-25] PR #52 check failure (live, 2026-07-26): Dependabot's validator rejects semver-major-days for the github-actions ecosystem ('not supported') — npm/gradle accept it. Corrected: github-actions cooldown = { default-days: 7 } only; header comment records the restriction. The docs-page premise missed the per-ecosystem constraint; the live validator is now the receipt. cooldown-in-all-3 assertion + zizmor + CI-9 guard still green.
 
 [[items]]
 id = "CI-5"

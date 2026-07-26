@@ -43,6 +43,18 @@ class MockChatGptUpstream {
         holdRelease = java.util.concurrent.CountDownLatch(1)
     }
 
+    // SEPARATE latch from [holdRelease] on purpose: "holdstart" blocks BEFORE any event while
+    // "hold" blocks AFTER its first delta, and sharing one latch let whichever test armed it last
+    // release the other's upstream mid-assertion (observed as a cross-test failure in the
+    // stop-drain case). One latch per scenario keeps the two independent.
+    @Volatile var startHoldRelease = java.util.concurrent.CountDownLatch(1)
+        private set
+
+    /** Arm a fresh start-hold latch — tests that use SCENARIO:holdstart call this, then countDown. */
+    fun resetStartHold() {
+        startHoldRelease = java.util.concurrent.CountDownLatch(1)
+    }
+
     fun releaseHold() {
         holdRelease.countDown()
     }
@@ -279,6 +291,21 @@ class MockChatGptUpstream {
                 sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
                 sse(ex, """{"type":"response.output_text.delta","output_index":0,"delta":"partial"}""")
                 Thread.sleep(5_000)
+            }
+            // Models the codex reasoning phase: upstream commits 200 + headers, then emits NOTHING
+            // content-bearing until released. The client must still see the turn open immediately
+            // (message_start + ping) — that window measured p50 2840ms of frozen screen before
+            // message_start moved to upstream-handoff.
+            "holdstart" -> {
+                startHoldRelease.await()
+                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")
+                sse(ex, """{"type":"response.output_text.delta","output_index":0,"delta":"late"}""")
+                sse(ex, """{"type":"response.output_item.done","output_index":0}""")
+                sse(
+                    ex,
+                    """{"type":"response.completed","response":{"id":"rhs","status":"completed",""" +
+                        """"output":[],"usage":{"input_tokens":1,"output_tokens":1}}}""",
+                )
             }
             "hold" -> {
                 sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"message"}}""")

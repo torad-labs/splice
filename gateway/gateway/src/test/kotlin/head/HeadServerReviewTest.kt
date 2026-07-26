@@ -13,14 +13,18 @@ import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.header
 import io.ktor.client.request.post
+import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
+import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
+import io.ktor.utils.io.readUTF8Line
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import mock.MockChatGptUpstream
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -122,6 +126,77 @@ class HeadServerReviewTest {
     }
 
     private fun freshPort(): Int = ServerSocket(0).use { it.localPort }
+
+    // Dead-air wall: the Responses backend commits 200 + headers, then reasons for seconds before
+    // any content event. message_start needs nothing from upstream, so the client must see the turn
+    // OPEN during that window rather than a frozen screen. Measured before the fix: first_byte ->
+    // first_frame p50 2840ms on the codex head (37% of a median turn), 0ms on kimi/grok.
+    // Fails if drive.emitter.ensureStarted() is removed from the upstream-handoff path — the frames
+    // then arrive only after the latch releases.
+    @Test
+    fun `message_start reaches the client while upstream is still silent`() = runBlocking {
+        val port = freshPort()
+        val head = buildHead(
+            port,
+            InflightGate(maxInflight = { 4 }),
+            RequestMaterializationGate(),
+            tmp.resolve("rl-hs.json"),
+        )
+        head.start()
+        Thread.sleep(700)
+        mock.resetStartHold()
+        val opened = CompletableDeferred<Long>()
+        try {
+            val t0 = System.currentTimeMillis()
+            val turn = async(Dispatchers.IO) { readTurn(port, "holdstart", opened, t0) }
+            // The latch is still closed: upstream has emitted NOTHING content-bearing. message_start
+            // must already have reached the client.
+            val openedAtMs = withTimeout(20_000) { opened.await() }
+            assertTrue(mock.startHoldRelease.count > 0, "latch must still be closed when message_start lands")
+            mock.startHoldRelease.countDown()
+            val body = turn.await()
+            assertTrue(body.contains("event: message_start"), "expected message_start in: $body")
+            assertTrue(body.contains("\"late\""), "expected the post-release content in: $body")
+            assertTrue(body.contains("event: message_stop"), "turn must still end cleanly: $body")
+            // message_start precedes the first content block on the wire (order unchanged).
+            assertTrue(
+                body.indexOf("event: message_start") < body.indexOf("event: content_block_start"),
+                "message_start must precede content: $body",
+            )
+            println("message_start reached client at ${openedAtMs}ms, before any upstream content")
+        } finally {
+            mock.startHoldRelease.countDown()
+            head.stop()
+        }
+    }
+
+    /** Stream a turn line-by-line, completing [opened] the instant message_start lands. */
+    private suspend fun readTurn(
+        port: Int,
+        scenario: String,
+        opened: CompletableDeferred<Long>,
+        t0: Long,
+    ): String {
+        val sb = StringBuilder()
+        client.preparePost("http://127.0.0.1:$port/v1/messages") {
+            header("Content-Type", "application/json")
+            setBody(
+                """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,
+                    "system":"You are a test. SCENARIO:$scenario",
+                    "messages":[{"role":"user","content":"go"}]}""",
+            )
+        }.execute { resp ->
+            val ch = resp.bodyAsChannel()
+            while (true) {
+                val line = ch.readUTF8Line() ?: break
+                sb.append(line).append('\n')
+                if (!opened.isCompleted && line.contains("event: message_start")) {
+                    opened.complete(System.currentTimeMillis() - t0)
+                }
+            }
+        }
+        return sb.toString()
+    }
 
     private suspend fun waitFor(capMs: Long, cond: () -> Boolean): Boolean {
         val deadline = System.currentTimeMillis() + capMs

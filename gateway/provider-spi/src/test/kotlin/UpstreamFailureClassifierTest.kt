@@ -47,6 +47,26 @@ class UpstreamFailureClassifierTest {
         assertEquals(ErrorType.RATE_LIMIT, sse("quota exhausted for org").type)
     }
 
+    // 2026-07-26: the ChatGPT quota 429 carries resets_at/plan_type, and keeping only `message`
+    // surfaced "The usage limit has been reached" with no hint the reset was 142h away.
+    @Test
+    fun `quota 429 keeps reset time and plan in the surfaced message`() {
+        val resetsAt = System.currentTimeMillis() / 1000 + 86_400 * 6 + 3600 * 4
+        val body = """{"error":{"type":"usage_limit_reached","message":"The usage limit has been reached",""" +
+            """"plan_type":"pro","resets_at":$resetsAt}}"""
+        val out = http(body, 429)
+        assertEquals(ErrorType.RATE_LIMIT, out.type)
+        assertTrue(out.message.startsWith("The usage limit has been reached"), out.message)
+        assertTrue(out.message.contains("plan=pro"), out.message)
+        assertTrue(out.message.contains("resets in 6d 4h"), out.message)
+    }
+
+    @Test
+    fun `quota suffix is absent when upstream sends no reset fields`() {
+        val out = http("""{"error":{"type":"rate_limit_error","message":"slow down"}}""", 429)
+        assertEquals("slow down", out.message)
+    }
+
     @Test
     fun `auth by status or wording - but never the bare word token`() {
         assertEquals(ErrorType.AUTHENTICATION, http("nope", 401).type)

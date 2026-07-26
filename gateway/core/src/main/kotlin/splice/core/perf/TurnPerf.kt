@@ -36,6 +36,14 @@ public object PerfKeys {
     public const val SSE_BYTES_IN: String = "sse_bytes_in"
     public const val EVENTS_IN: String = "events_in"
     public const val FRAMES_OUT: String = "frames_out"
+
+    /** Frames that carried CONTENT — everything except the structural turn-opening pair
+     *  (message_start + ping). G5's safe-reissue probe keys off THIS, not [FRAMES_OUT]: since
+     *  message_start moved to upstream-handoff (dead-air fix), frames_out goes non-zero before the
+     *  client has seen a single token, which would silently disable pre-content reissue and
+     *  downgrade a torn stream from a retryable overloaded_error to a raw api_error. Reissuing
+     *  after only the opening pair is safe — ensureStarted() is idempotent, so nothing duplicates. */
+    public const val CONTENT_FRAMES_OUT: String = "content_frames_out"
     public const val FRAMES_SKIPPED: String = "frames_skipped"
     public const val BYTES_OUT: String = "bytes_out"
     public const val OUT_TOKENS: String = "out_tokens"

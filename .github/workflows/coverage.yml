@@ -1,0 +1,41 @@
+# Coverage visibility. Generates an aggregated Kotlin gateway coverage report on every PR
+# and posts it as a single comment (updated in place, not a thread). Fork PRs skip the
+# comment post because the default token is read-only there; the report artifact is still
+# produced so local checks are not red for external contributors. WebUI vitest coverage is
+# intentionally deferred to a follow-up (# TODO / PR body note).
+name: coverage
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: coverage-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Generate aggregated kover report
+        run: cd gateway && ./gradlew :koverXmlReport --console=plain
+      - uses: mi-kas/kover-report@ea8425161dd880a7dea9e76b3c89cf168b1d1162 # v2.5
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        with:
+          path: ${{ github.workspace }}/gateway/build/reports/kover/report.xml
+          title: Gateway coverage report
+          update-comment: true

@@ -9,6 +9,7 @@ serialization = "1.11.0"
 ktoml = "0.7.1"
 konsist = "0.17.3"
 detekt = "1.23.8"
+kover = "0.9.9"
 junit = "6.1.2"
 
 [libraries]
@@ -41,3 +42,4 @@ junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
 detekt = { id = "io.gitlab.arturbosch.detekt", version.ref = "detekt" }
+kover = { id = "org.jetbrains.kotlinx.kover", version.ref = "kover" }

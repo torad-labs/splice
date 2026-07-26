@@ -31,5 +31,9 @@ while IFS= read -r f; do
   [ "$sev" = "error" ] || err "$f severity is '${sev:-unset}', must be 'error'"
 done < <(find .rules -path .rules/rule-tests -prune -o -type f -name '*.yml' -print)
 
+# 4. Dependabot Kotlin ignore block stays scoped to the compiler/toolchain (#18/#37),
+# not the independently-versioned kotlinx libraries (kover, coroutines, serialization).
+python3 checks/config/dependabot-kotlin-scope.py || fail=1
+
 if [ "$fail" -eq 0 ]; then echo "config-guard: PASS"; else echo "config-guard: FAIL"; fi
 exit "$fail"

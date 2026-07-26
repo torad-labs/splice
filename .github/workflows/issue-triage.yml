@@ -19,14 +19,17 @@ on:
       issue_number:
         description: 'Issue number to (re)classify'
         required: true
+        type: number
 
-permissions:
-  issues: write
+permissions: {}
 
 jobs:
   lifecycle:
     if: github.event_name == 'issues'
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
     steps:
       - uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         with:
@@ -46,6 +49,9 @@ jobs:
   classify:
     if: github.event_name == 'workflow_dispatch' || github.event.action == 'opened'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      issues: write
     concurrency:
       group: issue-classify-${{ github.event.issue.number || inputs.issue_number }}
       cancel-in-progress: true
@@ -59,11 +65,21 @@ jobs:
         with:
           persist-credentials: false
       - name: Classify and label
+        env:
+          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
         run: |
           if [ -z "$OPENROUTER_API_KEY" ]; then
             echo "OPENROUTER_API_KEY not configured; skipping AI classification."
             exit 0
           fi
           .github/scripts/triage/triage-issue.sh \
-            "${{ github.event.issue.number || inputs.issue_number }}" \
+            "$ISSUE_NUMBER" \
             || echo "::warning::issue triage classification failed (non-blocking)"
+
+      - name: Find potential duplicates
+        env:
+          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+        run: |
+          .github/scripts/triage/find-duplicates.sh \
+            "$ISSUE_NUMBER" \
+            || echo "::warning::duplicate search failed (non-blocking)"

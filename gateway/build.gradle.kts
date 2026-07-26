@@ -12,6 +12,9 @@ plugins {
     // apply false: put the Kotlin Gradle plugin on THIS build script's classpath (so KotlinCompile is
     // typeable here) without applying it to the root project itself.
     alias(libs.plugins.kotlin.jvm) apply false
+    // Coverage visibility: org.jetbrains.kotlinx.kover is applied at the root so the aggregated
+    // :koverXmlReport task merges reports from every Kotlin module (kover { merge { allProjects() } }).
+    alias(libs.plugins.kover)
 }
 
 // The plugin jar's path is derived from :fir-checks' build layout (default archive name
@@ -49,5 +52,20 @@ subprojects {
                 .withPropertyName("firChecksPluginJar")
             compilerOptions.freeCompilerArgs.add(firChecksPluginArg)
         }
+    }
+}
+
+// Kover is applied versionless to every Kotlin JVM module from the root. Each module still resolves
+// the version through the catalog alias in the root plugins{} block, and the root `kover { merge }`
+// configuration aggregates all subproject reports into one XML at :koverXmlReport.
+subprojects {
+    plugins.withId("org.jetbrains.kotlin.jvm") {
+        apply(plugin = "org.jetbrains.kotlinx.kover")
+    }
+}
+
+kover {
+    merge {
+        allProjects()
     }
 }

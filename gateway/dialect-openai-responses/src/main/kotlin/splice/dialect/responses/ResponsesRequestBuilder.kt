@@ -92,6 +92,11 @@ public data class ResponsesQuirks(
      *  round-trips (codex parity — repeated tool calls / duplicated reasoning without it).
      *  Off restores the pre-cache amnesia behavior exactly. */
     val reasoningCache: Boolean = true,
+    /** Loop guard (2026-07-26): a stateless circuit breaker for the identical-failed-call
+     *  pathology (measured on the live codex head: the same Edit re-issued 89-101x against the
+     *  harness staleness guard). From the 3rd identical failure the result's output gains an
+     *  escalating directive; success or changed arguments reset. Off restores plain passthrough. */
+    val loopGuard: Boolean = true,
     /** Deferred tool surface (tool_search) for responses-lite turns. NULL = off, and off is the
      *  shipped default for every provider — the request is byte-identical to today. */
     val toolSurface: ToolDeferralPolicy? = null,
@@ -208,8 +213,6 @@ public data class BuildOptions(
 
 public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
 
-    private val inputBuilder = ResponsesInputBuilder(quirks)
-
     public fun build(body: AnthropicRequest, raw: JsonObject, opts: BuildOptions): BuiltRequest {
         // Partition FIRST, before the message walk: it is a pure function of (body.tools, policy)
         // ONLY (ToolSurface.kt header) and the declaration-replay injection below needs to know,
@@ -218,6 +221,13 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         // wire input untouched by anything the walk discovers.
         val partition = if (!opts.compact && body.tools.isNotEmpty()) quirks.partitionTools(body, opts) else null
         val declareByName = declarationCandidates(body, partition)
+        // The loop guard walks the same conversation (stateless) and marks identical-failed-call
+        // streaks for a directive in that result's output. Compaction turns are excluded: their
+        // results fold to plain text and a directive would only feed the summarizer noise.
+        val loopGuardDirectives =
+            if (quirks.loopGuard && !opts.compact) LoopGuard.analyze(body.messages) else emptyMap()
+        // Constructed per build (the field version predates per-build state) — cheap, race-free.
+        val inputBuilder = ResponsesInputBuilder(quirks, loopGuardDirectives)
         val input = buildJsonArray {
             for (msg in body.messages) {
                 inputBuilder.appendMessage(this, msg, opts, declareByName)
@@ -479,7 +489,10 @@ private fun clampedForModelCeiling(effort: String?, upstreamModel: String, rejec
  * the ported shape of translate-request.mjs's message/block walk, kept flat so no single handler
  * nests the whole cascade.
  */
-private class ResponsesInputBuilder(private val quirks: ResponsesQuirks) {
+private class ResponsesInputBuilder(
+    private val quirks: ResponsesQuirks,
+    private val loopGuardDirectives: Map<String, String> = emptyMap(),
+) {
 
     fun appendMessage(
         sink: JsonArrayBuilder,
@@ -630,7 +643,7 @@ private class ResponsesInputBuilder(private val quirks: ResponsesQuirks) {
             buildJsonObject {
                 put("type", "function_call_output")
                 put("call_id", block.toolUseId)
-                put("output", text)
+                put("output", loopGuardDirectives[block.toolUseId]?.let { "$it\n\n$text" } ?: text)
             },
         )
         // v25: images inside tool_result (Read on a PNG, screenshots) used to vanish —

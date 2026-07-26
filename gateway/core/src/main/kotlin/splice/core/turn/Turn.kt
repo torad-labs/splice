@@ -131,7 +131,20 @@ public data class TurnMeta(
      *  false landing, and it must be visible in one grep of the perf JSONL. */
     val toolsEager: Int? = null,
     val toolsDeferred: Int? = null,
+    /** Turn-scoped summary-dedup state shared by every continuation round's translator (rounds
+     *  build fresh translators; without a shared set, a section re-titled by a continuation round
+     *  passes each round's per-instance dedup and lands as a duplicate — the 2026-07-26 mirror
+     *  duplication). Null on dialects that don't render reasoning summaries. */
+    val summaryParts: SharedSummaryParts? = null,
 )
+
+/** The shared state behind TurnMeta.summaryParts: the ordered parts already emitted to the
+ *  client this turn, plus the per-item exact set the dedup's within-item arm matches against.
+ *  Mutable per-turn coordination, never compared by value. */
+public class SharedSummaryParts {
+    public val emittedParts: MutableList<String> = mutableListOf()
+    public val itemEmitted: MutableMap<Int, MutableSet<String>> = mutableMapOf()
+}
 
 /** The two-tier watchdog knobs (v35 doctrine): before first byte the idle limit is
  *  firstByteTimeout (prefill is legitimately silent for minutes); after, streamIdle;

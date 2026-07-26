@@ -25,6 +25,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
+import splice.core.turn.SharedSummaryParts
 import splice.core.turn.ToolSearchCall
 import splice.core.turn.ToolSearchCallId
 import splice.core.turn.TurnOutcome
@@ -64,6 +65,10 @@ public data class StreamTurnContext(
      *  (probed 2026-07-19: part(1,0) byte-identical to part(0,0)); codex-rs dedups client-side.
      *  Gated to the delivery quirk so genuine token-granular streams are never touched. */
     val dedupeRepeatedSummaryParts: Boolean = false,
+    /** Turn-scoped dedup state shared across this turn's continuation rounds (fresh translator
+     *  per round; without it, a section re-titled by a continuation round passes each round's
+     *  per-instance dedup and lands as a duplicate — the 2026-07-26 mirror duplication). */
+    val summaryPartsShared: SharedSummaryParts? = null,
     /** Encode this round's encrypted reasoning items into splice-reasoning envelopes, riding the
      *  Success outcome (fold replay) AND the Failure partial (re-anchor salvage, 2026-07-24).
      *  True for every fold- or re-anchor-eligible turn; off (compact) keeps the reducer
@@ -100,10 +105,13 @@ private const val RECAP_DONE = -1
 // (2026-07-20); a per-ITEM set alone under-suppressed the cross-item recap (the duplication
 // staircase). Splitting the two jobs keeps the coincidence (per-item, non-leading) while killing
 // the staircase (ordered leading prefix). State + decision live together here (2026-07-23).
-private class SummaryDedup(private val active: Boolean) {
-    private val emittedParts = mutableListOf<String>()
+private class SummaryDedup(private val active: Boolean, shared: SharedSummaryParts? = null) {
+    // emittedParts + itemEmitted are TURN-scoped when shared is present (continuation rounds);
+    // recapCursor is deliberately per round — each round's stream re-starts its leading recap
+    // at position 0 of the shared list, which is exactly what suppresses it.
+    private val emittedParts = shared?.emittedParts ?: mutableListOf()
+    private val itemEmitted = shared?.itemEmitted ?: mutableMapOf()
     private val recapCursor = HashMap<Int, Int>()
-    private val itemEmitted = HashMap<Int, MutableSet<String>>()
 
     /** True to SUPPRESS a recap/repeat part of item [oi]; a genuinely-new part returns false and is
      *  recorded so later items' recaps (A) and this item's own re-arrivals (B) match. Parts under
@@ -328,7 +336,7 @@ private class ResponsesEventReducer(val ctx: StreamTurnContext) {
     private val emittedReasoningKeys = HashSet<Int>()
 
     // sequential_cutoff restatement dedup — state + decision encapsulated in SummaryDedup (above).
-    private val summaryDedup = SummaryDedup(ctx.dedupeRepeatedSummaryParts)
+    private val summaryDedup = SummaryDedup(ctx.dedupeRepeatedSummaryParts, ctx.summaryPartsShared)
 
     suspend fun onEvent(evt: JsonObject, sink: WireSink) {
         when (strOrEmpty(evt["type"])) {

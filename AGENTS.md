@@ -72,10 +72,19 @@ loopback-only, both proxies:
 | GET /mgmt/logs?tail=N | proxy log tail from ~/.claude-codex/logs/ |
 | GET /mgmt/models | catalog, windows, pinned, discovery ids |
 
-Config layering: defaults ← state/config.json ← env ← runtime PATCH. Env is
-the boot authority (the launcher writes it); PATCH wins until restart and
-persists to the file layer. `port`, `grokPort`, `controlPort`, `upstreamTimeoutMs`
-need a restart; everything else hot-applies on the next request.
+Config layering: defaults ← `[defaults]` TOML ← `[heads.<key>.overrides]` TOML ←
+state/config.json ← env ← runtime PATCH. Env is the boot authority (the launcher
+writes it); PATCH wins until restart and persists to the file layer. `port`,
+`grokPort`, `controlPort`, `upstreamTimeoutMs` need a restart; everything else
+hot-applies on the next request.
+
+All heads share ONE `ConfigService` (one JVM — unlike the Node lineage's
+process-per-head), so a knob read via `getConfig()` governs EVERY head. Anything
+that belongs to a single upstream account — `maxInflight`, `maxQueued`, the
+timeouts — must be read via `getConfig(headKey)` and set under
+`[heads.<key>.overrides]`. NB `ConfigService(headOverrides = …)` is NOT that: it
+is the flat GLOBAL layer sourced from the topology file. The per-head map is
+`perHeadOverrides`.
 
 ## Control plane (spliced)
 

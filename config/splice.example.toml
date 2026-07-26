@@ -191,3 +191,19 @@ discovery_prefix = "claude-kimi--"
 pinned_model = "k3[1m]"
 [heads.claude-kimi.claude]
 command = "claude-kimi"
+# PER-HEAD KNOBS. Same names as [defaults], same string values — but scoped to THIS head, so a
+# ceiling sized for one upstream account no longer governs the others. Precedence:
+#   knob defaults <- [defaults] <- [heads.<key>.overrides] <- state config.json <- env <- PATCH
+#
+# maxInflight is the one that matters most: it is the concurrency the UPSTREAM ACCOUNT tolerates,
+# not what the gateway can hold. The gate admits up to this many turns and QUEUES the rest — which
+# is the backpressure that stops a workflow fan-out from bursting into a 429 storm (a real 429 arms
+# a shared per-head cooldown and every concurrent turn then fails fast, no retry). Measured on this
+# box: 0.3% turn failure at inflight<=14, 11% at 38, 67% at 100.
+#
+# Start near the observed-good ceiling and raise only with perf-jsonl evidence.
+[heads.claude-kimi.overrides]
+maxInflight = "8"
+# kimi K3 reasons 10-20 min; keep the long cap HERE instead of [defaults], where it also handed
+# codex and grok a 40-min ceiling (a wedged turn holds its inflight slot for the whole budget).
+upstreamTimeoutMs = "2400000"

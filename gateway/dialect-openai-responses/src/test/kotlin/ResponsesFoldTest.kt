@@ -21,6 +21,7 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesFoldController
+import splice.dialect.responses.continuationRequest
 import splice.spi.FoldRound
 import splice.core.reasoning.decodeReasoningEnvelope as coreDecode
 
@@ -116,5 +117,31 @@ class ResponsesFoldTest {
     fun `tier window - a tier above maxTier is released as-is`() {
         // tier 7 fingerprint = 518*7 - 2 = 3624, above the default maxTierN 6.
         assertNull(controller.continuation(round(3624, listOf(envelopeFor("rs")))))
+    }
+
+    @Test
+    fun `continuation strips the summary re-request but keeps effort and context`() {
+        // 2026-07-26: continuation rounds replay reasoning the server already summarized; re-asking
+        // summary: detailed re-titles the same content and lands as duplicated reasoning blocks.
+        val withSummary = Json.parseToJsonElement(
+            """{"model":"gpt-5.6-luna","input":[{"role":"user","content":"solve it"}],
+                "store":false,"stream":true,
+                "reasoning":{"effort":"high","summary":"detailed","context":"all_turns"},
+                "stream_options":{"reasoning_summary_delivery":"sequential_cutoff"}}""",
+        ).jsonObject
+        val next = continuationRequest(withSummary, emptyList())
+        val reasoning = next["reasoning"]!!.jsonObject
+        assertNull(reasoning["summary"])
+        assertEquals("high", reasoning["effort"]?.jsonPrimitive?.content)
+        assertEquals("all_turns", reasoning["context"]?.jsonPrimitive?.content)
+        assertNull(next["stream_options"])
+        assertEquals("solve it", next["input"]!!.jsonArray.first().jsonObject["content"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `continuation without a reasoning block stays reasoning-free`() {
+        val next = continuationRequest(priorRequest, emptyList())
+        assertNull(next["reasoning"]?.jsonObject?.get("summary"))
+        assertNull(next["stream_options"])
     }
 }

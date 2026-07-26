@@ -75,3 +75,11 @@ jobs:
           .github/scripts/triage/triage-issue.sh \
             "$ISSUE_NUMBER" \
             || echo "::warning::issue triage classification failed (non-blocking)"
+
+      - name: Find potential duplicates
+        env:
+          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+        run: |
+          .github/scripts/triage/find-duplicates.sh \
+            "$ISSUE_NUMBER" \
+            || echo "::warning::duplicate search failed (non-blocking)"

@@ -1,6 +1,7 @@
-// NEW: generic api-key auth for OpenAI-platform + any OpenAI-compatible vendor. Key from env or a
-// file (bare line or {"api_key":...}). No refresh (api keys don't expire like OAuth); refresh()
-// returns the same key. Shared by OpenAiChatProvider and an openai-platform Responses provider.
+// NEW: generic api-key auth for OpenAI-platform + any OpenAI-compatible vendor. Key from env, a
+// file (bare line or {"api_key":...}), or the shared KeyStore (~/.config/splice/keys.toml) — in
+// that precedence order. No refresh (api keys don't expire like OAuth); refresh() returns the
+// same key. Shared by OpenAiChatProvider and an openai-platform Responses provider.
 package splice.provider.openai
 
 import kotlinx.serialization.json.Json
@@ -8,6 +9,7 @@ import kotlinx.serialization.json.jsonObject
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.config.KeyStore
 import splice.core.util.runCatchingCancellable
 import splice.core.util.str
 import java.nio.file.Files
@@ -17,6 +19,10 @@ public class ApiKeyAuthProvider(
     private val envVar: String,
     private val keyFile: Path? = null,
     private val envReader: (String) -> String? = System::getenv,
+    // Resolved once at construction (daemon restart moves it); the FILE is re-read per call, so
+    // a `splice key set` lands on the very next request without a restart. Tests inject a hermetic
+    // store — the default points at the operator's real ~/.config/splice/keys.toml.
+    private val keyStore: KeyStore = KeyStore(KeyStore.defaultPath(envReader)),
 ) : RefreshableAuthProvider {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -24,6 +30,10 @@ public class ApiKeyAuthProvider(
     override suspend fun credentials(): Credentials? = readKey()?.let { Credentials.ApiKey(it) }
 
     override suspend fun refresh(): Credentials? = credentials()
+
+    /** Non-suspend presence peek for launch-time decisions (the SessionStart advertiser is
+     *  installed only while this is false). Same read chain as credentials(). */
+    public fun hasKeyNow(): Boolean = readKey() != null
 
     override suspend fun describe(): AuthDescription {
         val key = readKey()
@@ -45,8 +55,14 @@ public class ApiKeyAuthProvider(
 
     private fun readKey(): String? {
         envReader(envVar)?.takeIf { it.isNotEmpty() }?.let { return it }
-        val file = keyFile ?: return null
-        return runCatchingCancellable {
+        keyFile?.let { file -> readKeyFile(file)?.let { return it } }
+        // Durable fallback: `splice key set` / `<head> login` / token-capture wrote it once and
+        // every later request picks it up — the export-then-restart dance is no longer load-bearing.
+        return keyStore.read(envVar)
+    }
+
+    private fun readKeyFile(file: Path): String? =
+        runCatchingCancellable {
             if (!Files.exists(file)) return@runCatchingCancellable null
             val text = Files.readString(file).trim()
             if (text.startsWith("{")) {
@@ -57,7 +73,6 @@ public class ApiKeyAuthProvider(
         }.onFailure {
             System.err.println("[api-key-auth] failed to read $file: $it — treating as no key configured")
         }.getOrNull()
-    }
 
     private companion object {
         const val MASK_MIN = 8

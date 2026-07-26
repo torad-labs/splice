@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonElement
 import splice.core.launch.ClaudeConfigMaterializer
 import splice.core.launch.ClaudePolicy
 import splice.core.launch.MaterializeSpec
+import splice.core.launch.TokenCaptureSpec
 import java.nio.file.Path
 import kotlin.math.max
 
@@ -25,6 +26,12 @@ public data class LaunchSpec(
     val statuslineCommand: String, // per-head statusline command (…/statusline/<head>)
     val loginCommand: String, // shell command that runs THIS head's provider sign-in (e.g. `claudex login`)
     val signInLabel: String, // provider label for the /login UX ("Codex (ChatGPT)", "Grok (xAI)")
+    /** False for api-key heads: the /login block reason points at a masked terminal prompt. */
+    val signInViaBrowser: Boolean = true,
+    /** api-key heads: capture a bare pasted token into the KeyStore (blocked from model context). */
+    val tokenCapture: TokenCaptureSpec? = null,
+    /** Install the SessionStart key-missing advertiser (daemon sets it only while unconfigured). */
+    val advertiseKeySetup: Boolean = false,
     val policy: ClaudePolicy,
     val port: Int,
     /** Per-install local gateway credential; shared with the head's inbound verifier. */
@@ -62,6 +69,9 @@ public class LaunchService(
                 statuslineCommand = spec.statuslineCommand,
                 loginCommand = spec.loginCommand,
                 signInLabel = spec.signInLabel,
+                signInViaBrowser = spec.signInViaBrowser,
+                tokenCapture = spec.tokenCapture,
+                advertiseKeySetup = spec.advertiseKeySetup,
             ),
         )
         val env = buildEnv(spec)

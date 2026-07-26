@@ -88,6 +88,9 @@ context_window = 256000
 
 # ── openrouter: the "new vendor = pure TOML, zero code" proof (Chat Completions) ─
 # Swap base_url + env for Ollama (http://localhost:11434/v1), LM Studio, DeepSeek, etc.
+# api-key resolution: $OPENROUTER_API_KEY from the daemon's env wins; else the shared
+# ~/.config/splice/keys.toml store (written by `claudeor login` / `splice key set` /
+# the in-session token-capture hook) — env always overrides the store.
 [providers.openrouter]
 dialect = "openai-chat"
 base_url = "https://openrouter.ai/api/v1"

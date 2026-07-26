@@ -11,9 +11,11 @@ import splice.app.DeviceLoginSpec
 import splice.app.LoginSpec
 import splice.app.OAuthLoginFlow
 import splice.app.TopologyLoader
+import splice.core.config.KeyStore
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.topology.ambiguousHeadMessage
+import splice.core.topology.effectiveApiKeyEnv
 import splice.core.util.str
 import splice.provider.codex.CodexOAuthEndpoints
 import splice.provider.codex.authJsonFromTokens
@@ -40,22 +42,51 @@ private val env: (String) -> String? = System::getenv
 internal suspend fun login(headArg: String?): Boolean {
     val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath())
     val headKey = resolveHeadKey(headArg, topology) ?: return false
-    val provider = topology.heads[headKey]?.let { topology.providers[it.provider] }
+    val providerKey = topology.heads[headKey]?.provider
+    val provider = providerKey?.let { topology.providers[it] }
     if (provider == null) {
         println("splice: unknown head '$headKey' (heads: ${topology.heads.keys})")
         return false
     }
-    val ok = runLoginFlow(headKey, provider, topology)
+    val ok = runLoginFlow(headKey, providerKey, provider, topology)
     if (!ok) println("splice: login for '$headKey' did not complete.")
     return ok
 }
 
-// kimi uses the RFC 8628 device flow (no loopback); codex/grok use the browser-loopback flow.
-private suspend fun runLoginFlow(headKey: String, provider: ProviderConfig, topology: Topology): Boolean =
+// kimi uses the RFC 8628 device flow (no loopback); codex/grok use the browser-loopback flow;
+// api-key heads get a masked terminal prompt into the KeyStore (no browser anywhere).
+private suspend fun runLoginFlow(
+    headKey: String,
+    providerKey: String,
+    provider: ProviderConfig,
+    topology: Topology,
+): Boolean =
     when (provider.auth.kind) {
         "kimi-oauth" -> DeviceLoginFlow.run(kimiDeviceSpec(headKey, provider))
+        "api-key" -> apiKeyLogin(providerKey, provider)
         else -> specFor(headKey, topology)?.let { OAuthLoginFlow.run(it) } ?: false
     }
+
+// Masked read into ~/.config/splice/keys.toml — the key never hits shell history, ps, or a
+// transcript. Live daemons pick it up on the next request; restart only refreshes status.
+private fun apiKeyLogin(providerKey: String, provider: ProviderConfig): Boolean {
+    val envVar = effectiveApiKeyEnv(providerKey, provider.auth)
+    val console = System.console()
+    val value = when {
+        console == null -> {
+            println("splice: no interactive console — pipe it instead:")
+            println("  printf '%s' \"\$KEY\" | splice key set $envVar --stdin")
+            null
+        }
+        else -> console.readPassword("$providerKey API key ($envVar): ")?.let { String(it).trim() }
+    }
+    if (value != null && value.isEmpty()) println("splice: empty key — nothing stored.")
+    return !value.isNullOrEmpty() && runCatching {
+        val store = KeyStore(KeyStore.defaultPath())
+        store.write(envVar, value)
+        println("$envVar stored to ${store.path} (0600) — live daemons pick it up on the next request.")
+    }.onFailure { System.err.println("splice: failed to store key: ${it.message}") }.isSuccess
+}
 
 private fun resolveHeadKey(headArg: String?, topology: Topology): String? {
     if (headArg != null) {
@@ -71,14 +102,14 @@ private fun resolveHeadKey(headArg: String?, topology: Topology): String? {
         )
         return null
     }
-    // No arg: pick the sole browser-login head, else make the user choose — never silently
+    // No arg: pick the sole sign-in-capable head, else make the user choose — never silently
     // sign into whichever head happens to be declared first.
-    val oauth = topology.oauthHeads()
-    return oauth.singleOrNull() ?: run {
-        if (oauth.isEmpty()) {
-            println("splice: no browser-login heads in the topology.")
+    val signIn = topology.signInHeads()
+    return signIn.singleOrNull() ?: run {
+        if (signIn.isEmpty()) {
+            println("splice: no sign-in-capable heads in the topology.")
         } else {
-            println("splice: which head? " + oauth.joinToString(", ") { "$it login" })
+            println("splice: which head? " + signIn.joinToString(", ") { "$it login" })
         }
         null
     }
@@ -191,8 +222,10 @@ private fun kimiDeviceSpec(head: String, provider: ProviderConfig): DeviceLoginS
 
 private const val TOKEN_BYTES = 24
 
-/** Which heads support browser login — keyed off auth.kind, matching login()'s own dispatch. */
-public fun Topology.oauthHeads(): List<String> =
+/** Which heads support ANY sign-in flow (browser OAuth or api-key prompt) — keyed off auth.kind,
+ *  matching login()'s own dispatch. */
+public fun Topology.signInHeads(): List<String> =
     heads.entries.filter { (_, h) ->
-        providers[h.provider]?.auth?.kind?.endsWith("oauth") == true
+        val kind = providers[h.provider]?.auth?.kind
+        kind?.endsWith("oauth") == true || kind == "api-key"
     }.map { it.key }

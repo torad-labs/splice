@@ -94,9 +94,9 @@ private fun foldConfigFrom(cfg: SpliceConfig): FoldConfig = FoldConfig(
     maxTierN = cfg.foldMaxTier,
 )
 
-private const val CHATGPT_OAUTH = "chatgpt-oauth"
-private const val GROK_OAUTH = "grok-oauth"
-private const val KIMI_OAUTH = "kimi-oauth"
+internal const val CHATGPT_OAUTH = "chatgpt-oauth"
+internal const val GROK_OAUTH = "grok-oauth"
+internal const val KIMI_OAUTH = "kimi-oauth"
 
 // The whole head-stop phase's deadline (see [stopHeads]). Kept below Main's STOP_DEADLINE_MS so the
 // graceful stop + control shutdown finish before Main's hard halt watchdog would ever need to fire.
@@ -288,7 +288,7 @@ public class Daemon(
             val resolvedHead = resolveHeadConfig(key, head, providerCfg, cfg)
             val resolvedProvider = resolveProviderConfig(key, providerCfg, cfg)
             val catalog = resolvedProvider.catalogFor(resolvedHead, cfg.contextWindowOverride)
-            val loginCommand = loginInterception(resolvedProvider, resolvedHead, key).first
+            val loginCommand = signInPlan(resolvedProvider, resolvedHead, key).command
             val ctx = ProviderBuild(
                 key,
                 resolvedHead,
@@ -643,19 +643,8 @@ public class Daemon(
     }
 
     // Common assembly shared by every provider: stores, the generic HeadServer, launch spec.
-    // /login interception only makes sense for browser-OAuth providers; api-key heads have no
-    // sign-in flow, so they get no custom /login (just the disabled Anthropic built-in). Returns
-    // (loginCommand, signInLabel) — both blank when there is no OAuth flow.
-    private fun loginInterception(providerCfg: ProviderConfig, head: HeadConfig, key: String): Pair<String, String> {
-        val label = when (providerCfg.auth.kind) {
-            CHATGPT_OAUTH -> "Codex (ChatGPT)"
-            GROK_OAUTH -> "Grok (xAI)"
-            KIMI_OAUTH -> "Kimi (Moonshot)"
-            else -> ""
-        }
-        val command = if (label.isEmpty()) "" else "${head.claude.command ?: key} login"
-        return command to label
-    }
+    // The sign-in plan (OAuth browser flow vs api-key masked prompt + token capture) lives in
+    // SignInPlan.kt — factored out of this class (detekt LargeClass).
 
     private fun assembleHead(ctx: ProviderBuild, controlPort: Int): ManagedHead {
         val key = ctx.key
@@ -690,6 +679,7 @@ public class Daemon(
                 requestMaterializationGate = requestMaterializationGate,
             ),
         )
+        val apiKeyPresent = (wired.auth as? ApiKeyAuthProvider)?.hasKeyNow() != false
         return ManagedHead(
             head = server,
             auth = wired.auth,
@@ -699,17 +689,17 @@ public class Daemon(
             warnPct = cfg.usageWarnPct,
             warnTokens5h = cfg.usageWarnTokens5h,
             authKind = ctx.providerCfg.auth.kind,
-            launchSpec = launchSpecFor(ctx, controlPort),
+            launchSpec = launchSpecFor(ctx, controlPort, keyPresent = apiKeyPresent),
             perf = PerfStatsSource(perfStats),
         )
     }
 
-    private fun launchSpecFor(ctx: ProviderBuild, controlPort: Int): LaunchSpec {
+    private fun launchSpecFor(ctx: ProviderBuild, controlPort: Int, keyPresent: Boolean): LaunchSpec {
         val key = ctx.key
         val head = ctx.head
         val providerCfg = ctx.providerCfg
         val configDir = Paths.get(TopologyLoader.expandHome(head.claude.configDir ?: "~/.claude-$key"))
-        val (loginCommand, signInLabel) = loginInterception(providerCfg, head, key)
+        val signIn = signInPlan(providerCfg, head, key)
         return LaunchSpec(
             configDir = configDir,
             pinnedModel = head.pinnedModel,
@@ -719,9 +709,14 @@ public class Daemon(
             modelOptionsCache = modelOptionsCache(providerCfg),
             statuslineCommand = "curl -sS --data-binary @- http://127.0.0.1:$controlPort/statusline/$key",
             // The installed wrapper (`<command> login`) runs this head's provider sign-in; the
-            // materialized /login command + UserPromptSubmit hook route the user here.
-            loginCommand = loginCommand,
-            signInLabel = signInLabel,
+            // materialized /login command + UserPromptSubmit hook route the user here. api-key
+            // heads additionally capture a bare pasted token, and advertise the flow at session
+            // start ONLY while the key is unconfigured (re-materialized each launch).
+            loginCommand = signIn.command,
+            signInLabel = signIn.label,
+            signInViaBrowser = signIn.viaBrowser,
+            tokenCapture = signIn.tokenCapture,
+            advertiseKeySetup = signIn.tokenCapture != null && !keyPresent,
             policy = ClaudePolicy(share = topology.claude.share.toSet(), isolate = head.claude.isolate.toSet()),
             port = head.port,
             inferenceToken = mgmtKey.get(),

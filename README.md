@@ -126,6 +126,19 @@ splice setup                      # write the supported API-key starter and inst
 claudeor                          # Claude Code through OpenRouter on loopback (:3101)
 ```
 
+No export handy? There are two other ways to get the key in — both land in
+`~/.config/splice/keys.toml` (0600), which every later daemon start reads from any shell:
+
+- `claudeor login` — a masked terminal prompt (the key never hits shell history, `ps`, or a
+  session transcript).
+- Inside a `claudeor` session, while the key is missing, splice offers to capture it: paste the
+  key as a **bare message** (nothing else in the text) and it is stored and blocked before it
+  reaches the model — it never travels upstream. The session transcript still records the paste,
+  so the masked `claudeor login` stays the zero-trace path.
+
+An explicit `OPENROUTER_API_KEY` in the daemon's environment always wins over the store.
+`splice key set|list|unset` manages the store directly (`--stdin` for scripts).
+
 `install.sh` builds the fat jar from a checkout (or fetches a release), installs the shared launch shim, links the wrapper commands into `~/.local/bin`, and finishes by running `splice doctor`, so the install ends with a checked report.
 
 **splice was built for ChatGPT, Grok, and Kimi subscriptions.** Copy the matching provider and head from [`config/splice.example.toml`](config/splice.example.toml) into `~/.config/splice/splice.toml`, run `splice install --all`, then sign in with that head's `login` command (`claudex login`, `claude-grok login`, `claude-kimi login`). These routes are unofficial: they reuse each vendor's own CLI OAuth client identity, which no vendor documents for third parties. Use them at your own risk; the API-key starter above is the zero-config alternative.
@@ -151,7 +164,9 @@ the exact fix under every failing check.
 
 The daemon reads API-key env vars from **its own** environment. Export a key *after* the daemon
 has started and the shell sees it but the daemon does not: launches warn, requests fail upstream. `splice restart` restarts the daemon with your current
-shell's environment; `splice doctor` detects this state explicitly.
+shell's environment; `splice doctor` detects this state explicitly. Keys in
+`~/.config/splice/keys.toml` sidestep the whole class: the store is re-read per request, so a
+`claudeor login` or `splice key set` lands on the next request, no restart required.
 
 ## Credential locations
 
@@ -162,8 +177,9 @@ Each of these is a **password-equivalent secret**: anything that can read the fi
 | codex (ChatGPT) | `chatgpt-oauth` | `~/.codex/auth.json` | OAuth tokens — password-equivalent |
 | grok (xAI) | `grok-oauth` | `~/.grok/auth.json` | OAuth tokens — password-equivalent |
 | kimi (Moonshot) | `kimi-oauth` | `~/.kimi/credentials/kimi-code.json` | device-flow token — password-equivalent |
-| OpenRouter | `api-key` | `$OPENROUTER_API_KEY` (env) | API key — password-equivalent |
-| Moonshot (pay-per-token) | `api-key` | `$MOONSHOT_API_KEY` (env) | API key — password-equivalent |
+| OpenRouter | `api-key` | `$OPENROUTER_API_KEY` (env) or `~/.config/splice/keys.toml` | API key — password-equivalent |
+| Moonshot (pay-per-token) | `api-key` | `$MOONSHOT_API_KEY` (env) or `~/.config/splice/keys.toml` | API key — password-equivalent |
+| splice api-key store | — | `~/.config/splice/keys.toml` (0600) | env wins over the store — password-equivalent |
 | splice control plane | — | `~/.claude-codex/state/mgmt-key` | dashboard/API unlock key — password-equivalent |
 
 ## Provider support

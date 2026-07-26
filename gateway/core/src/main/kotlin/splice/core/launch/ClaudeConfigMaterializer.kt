@@ -64,6 +64,16 @@ public data class MaterializeSpec(
     val loginCommand: String = "",
     // Human label for the head's provider in the /login UX (e.g. "Codex (ChatGPT)", "Grok (xAI)").
     val signInLabel: String = "",
+    // True for browser-OAuth heads; false switches the block reason to the masked-terminal-prompt
+    // wording (api-key heads sign in at a console readPassword, not a browser).
+    val signInViaBrowser: Boolean = true,
+    // api-key heads: capture a BARE provider token pasted as the whole message into the KeyStore,
+    // blocked before it reaches the model context. Null disables capture.
+    val tokenCapture: TokenCaptureSpec? = null,
+    // Install the SessionStart key-missing advertiser. The daemon sets this only while the head's
+    // key is unconfigured and re-materializes on every launch, so the advertiser removes itself
+    // once the key lands. Requires tokenCapture for the paste instruction to be true.
+    val advertiseKeySetup: Boolean = false,
 )
 
 public class ClaudeConfigMaterializer(
@@ -79,13 +89,22 @@ public class ClaudeConfigMaterializer(
         requireIsolatedDir(spec.configDir)
         Files.createDirectories(spec.configDir)
         linkShared(spec.configDir, spec.policy)
-        val loginHook = LoginInterception.wire(
-            spec.configDir,
-            spec.loginCommand,
-            spec.signInLabel,
-            globalCommands = if (shares(spec.policy, Keys.COMMANDS)) globalDir().resolve(Keys.COMMANDS) else null,
+        val hookAdditions = LoginInterception.concat(
+            LoginInterception.wire(
+                spec.configDir,
+                spec.loginCommand,
+                spec.signInLabel,
+                globalCommands = if (shares(spec.policy, Keys.COMMANDS)) globalDir().resolve(Keys.COMMANDS) else null,
+                viaBrowser = spec.signInViaBrowser,
+                tokenCapture = spec.tokenCapture,
+            ),
+            if (spec.advertiseKeySetup && spec.tokenCapture != null) {
+                LoginInterception.keySetupAdvertiser(spec.configDir, spec.tokenCapture, spec.loginCommand)
+            } else {
+                emptyMap()
+            },
         )
-        writeSettings(spec, loginHook)
+        writeSettings(spec, hookAdditions)
         val mcpCount = writeClaudeJson(
             spec.configDir,
             spec.modelOptionsCache,
@@ -151,7 +170,7 @@ public class ClaudeConfigMaterializer(
         Files.createSymbolicLink(dst, src)
     }
 
-    private fun writeSettings(spec: MaterializeSpec, loginHook: JsonObject?) {
+    private fun writeSettings(spec: MaterializeSpec, hookAdditions: Map<String, List<JsonObject>>) {
         val allow = spec.availableModelIds
         val dst = spec.configDir.resolve(Keys.SETTINGS)
         val global =
@@ -159,7 +178,7 @@ public class ClaudeConfigMaterializer(
         val existing = breakSettingsSymlinkAndRead(dst)
         val savedModel = existing[Keys.MODEL]?.jsonPrimitive?.content
         val model = if (savedModel != null && savedModel in allow) savedModel else spec.defaultModel
-        val hooks = LoginInterception.mergeInto(global[Keys.HOOKS], loginHook)
+        val hooks = LoginInterception.mergeInto(global[Keys.HOOKS], hookAdditions)
         val merged = buildJsonObject {
             global.forEach { (k, v) -> if (isCarriedGlobalKey(k)) put(k, v) }
             putJsonArray(Keys.AVAILABLE_MODELS) { allow.forEach { add(it) } }

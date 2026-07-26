@@ -5,6 +5,7 @@ package splice.app.cli
 
 import splice.app.TopologyLoader
 import splice.core.config.InstallPaths
+import splice.core.config.KeyStore
 import splice.core.topology.AuthKind
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
@@ -82,7 +83,11 @@ internal fun authPresent(key: String, provider: ProviderConfig, envReader: (Stri
         effectiveApiKeyEnv(key, provider.auth)
     }
     val envPresent = envVar?.let { envReader(it)?.isNotBlank() } == true
-    return filePresent || envPresent
+    // The KeyStore is the third presence source for api-key heads — a key stored by
+    // `splice key set` / `<head> login` / token capture reads as configured here too.
+    val storePresent = !AuthKind.isOAuth(provider.auth.kind) && envVar != null &&
+        KeyStore(KeyStore.defaultPath(envReader)).read(envVar) != null
+    return filePresent || envPresent || storePresent
 }
 
 internal fun wrapperInstalled(command: String, envReader: (String) -> String?): Boolean =

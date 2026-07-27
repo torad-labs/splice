@@ -338,13 +338,25 @@ class HeadServerReviewTest {
                 assertTrue(body.contains("overloaded_error"), "expected overloaded_error in: $body")
                 assertEquals(1, body.split("event: error").size - 1, "exactly one error event: $body")
                 assertTrue(!body.contains("message_stop"), "a torn turn must NOT emit message_stop: $body")
-                // Early-open handoff (2026-07-26 review): the turn now opens at upstream handoff, so
-                // the client sees message_start BEFORE the tear becomes an error frame. Without this,
-                // the assertions above stay green even if the early frames vanished from the torn path.
+                // Early-open handoff (2026-07-26 review): the turn opens at upstream handoff, so a
+                // torn stream can reach the client as message_start THEN an error frame.
+                //
+                // Asserting message_start is always PRESENT here is wrong, and shipping that
+                // assertion turned CI red (2026-07-27) while passing 3/3 locally. Whether the turn
+                // opens at all depends on where the premature EOF surfaces — during upstream
+                // response setup (pre-handoff: ensureStarted never runs, no message_start) or during
+                // the body stream (post-handoff: it does). That is environment timing, not a
+                // contract, so a test that demands one of the two outcomes is a flake.
+                //
+                // What IS invariant, and what a regression would break: message_start must never
+                // arrive AFTER the error frame. Ordering is the contract; presence is a race.
+                // The PRESENCE half is pinned deterministically by the holdstart test above
+                // ("message_start reaches the client while upstream is still silent"), where the
+                // mock blocks before emitting anything and the handoff is guaranteed.
                 val startAt = body.indexOf("event: message_start")
                 assertTrue(
-                    startAt in 0 until body.indexOf("event: error"),
-                    "message_start must precede the error frame on the early-open failure path: $body",
+                    startAt == -1 || startAt < body.indexOf("event: error"),
+                    "message_start must never follow the error frame on the torn path: $body",
                 )
                 // Upstream was hit (the request handed off before tearing). NB: this premature-EOF
                 // tear is not classed as a retryable transport reset, so it does not consume the

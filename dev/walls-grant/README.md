@@ -81,5 +81,23 @@ trusting it — worth knowing if you modify either file.
 |---|---|
 | `03_grant_command.py` | `.claude/hooks/modules/userpromptsubmit/` |
 | `install.sh` | run in place; patches `orchestrator.py`, updates `.gitignore` |
+| `../../.claude/commands/grant.md` | already committed — the / menu surface (read-only) |
+
+## The two surfaces
+
+A UserPromptSubmit interception does **not** appear in the `/` autocomplete menu — the menu only
+indexes command/skill files. So there are two surfaces over one implementation:
+
+| surface | what it does | why |
+|---|---|---|
+| `.claude/commands/grant.md` | **status only** — state, remaining time, usage | discoverable in the `/` menu |
+| UserPromptSubmit hook | **issues / revokes** | the one channel an assistant cannot reach |
+
+The menu surface is deliberately read-only. A `!` line in a command file is a shell command, and
+any shell command an operator can run an assistant can also run with Bash — `disable-model-invocation`
+stops an assistant invoking the *command*, not from executing the script. If issuing were reachable
+from there, the grant would be assistant-issuable and the wall would be policy rather than structure.
+Verified: running the module CLI with issue-shaped args (`03_grant_command.py 45 reason`) creates no
+grant and leaves the wall blocked.
 
 The transient grant file lives at `.claude/state/walls-grant.json` and is gitignored.

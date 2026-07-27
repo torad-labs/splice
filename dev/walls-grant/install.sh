@@ -21,7 +21,11 @@ echo "repo: $ROOT"
 # ---------------------------------------------------------------- 1. the module
 mkdir -p "$MODDIR"
 cp "$ROOT/dev/walls-grant/03_grant_command.py" "$MODDIR/03_grant_command.py"
-echo "  [1/4] installed $MODDIR/03_grant_command.py"
+# The / menu surface. .claude/commands/ is gitignored in this repo (per-developer Claude Code
+# config is deliberately not shipped), so the canonical copy lives here and is installed locally.
+mkdir -p "$ROOT/.claude/commands"
+cp "$ROOT/dev/walls-grant/grant.command.md" "$ROOT/.claude/commands/grant.md"
+echo "  [1/4] installed $MODDIR/03_grant_command.py + .claude/commands/grant.md"
 
 # ------------------------------------------------- 2. teach the gate about grants
 # Patched with python + an explicit match assertion: a str.replace that matches nothing rewrites
@@ -117,6 +121,21 @@ esac
 python3 -c "import json,time,sys; open(sys.argv[1],'w').write(json.dumps({'until': time.time()-1, 'reason':'expired'}))" "$GRANT"
 [ "$(run_gate)" = "BLOCK" ] || { echo "    FAIL: an EXPIRED grant must not hold the wall open"; rm -f "$GRANT"; exit 1; }
 echo "    RED   ok — expired grant does not hold the wall open"
+rm -f "$GRANT"
+
+# END-TO-END through the MODULE, not a hand-written grant file. The three checks above all write
+# $GRANT directly, so they pass even if the module writes its grant somewhere else entirely —
+# which it did (parents[3] resolved to .claude/, one level short of the repo root), reporting
+# ACTIVE while the gate kept blocking. Only an issue-then-open assertion catches that.
+python3 - "$MODDIR/03_grant_command.py" <<'PY' >/dev/null
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("g", sys.argv[1])
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+m.run({"prompt": "/grant 5 installer end-to-end self-test", "hook_event_name": "UserPromptSubmit"})
+PY
+[ -f "$GRANT" ] || { echo "    FAIL: the module wrote its grant somewhere other than $GRANT"; exit 1; }
+[ "$(run_gate)" = "ALLOW" ] || { echo "    FAIL: a module-issued grant did not open the wall"; rm -f "$GRANT"; exit 1; }
+echo "    GREEN ok — module-issued grant opens the wall (paths agree end-to-end)"
 rm -f "$GRANT"
 
 echo

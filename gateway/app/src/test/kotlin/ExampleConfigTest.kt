@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.app.TopologyLoader
+import splice.core.config.Knob
 import splice.core.topology.Dialect
 import java.nio.file.Files
 import java.nio.file.Paths
@@ -60,5 +61,29 @@ class ExampleConfigTest {
         // the isolate override survives the round-trip
         assertTrue(topology.heads["claude-grok"]!!.claude.isolate.contains("commands"))
         assertEquals("claudex", topology.heads["claudex"]!!.claude.command)
+    }
+
+    // 2026-07-26 review: the per-head block documented knob names in prose, and the prose had
+    // drifted (it leaned three times on a [defaults] table the file never defined). Prose rots
+    // silently; this makes the example's knob vocabulary answer to the Knob enum mechanically.
+    // Covers BOTH the live override tables and the names the comments teach operators to use.
+    @Test
+    fun `every knob the example uses or names is a real Knob key`() {
+        val toml = exampleToml()
+        val topology = TopologyLoader.parse(toml)
+
+        // 1. Live [heads.<key>.overrides] tables — a typo here ships a silently-ignored knob.
+        val used = topology.heads.values.flatMap { it.overrides.keys }.toSet()
+        assertTrue(used.isNotEmpty(), "the example must keep demonstrating per-head overrides")
+        used.forEach { assertTrue(Knob.byKey.containsKey(it), "example sets unknown knob '$it'") }
+
+        // 2. Knob names the COMMENTS teach. Anything camelCase-and-backticked-or-listed in the
+        //    per-head doc block must resolve; that is what went stale and got hand-fixed once.
+        val docNames = Regex("\\b([a-z]+[A-Z][A-Za-z]*)\\b")
+            .findAll(toml.lines().filter { it.trimStart().startsWith("#") }.joinToString("\n"))
+            .map { it.groupValues[1] }
+            .filter { it.endsWith("Ms") || it.startsWith("max") }
+            .toSet()
+        docNames.forEach { assertTrue(Knob.byKey.containsKey(it), "example comment names unknown knob '$it'") }
     }
 }

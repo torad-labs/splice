@@ -134,8 +134,13 @@ public data class TurnMeta(
     /** Turn-scoped summary-dedup state shared by every continuation round's translator (rounds
      *  build fresh translators; without a shared set, a section re-titled by a continuation round
      *  passes each round's per-instance dedup and lands as a duplicate — the 2026-07-26 mirror
-     *  duplication). Null on dialects that don't render reasoning summaries. */
-    val summaryParts: SharedSummaryParts? = null,
+     *  duplication).
+     *
+     *  NON-NULL WITH A FRESH DEFAULT ON PURPOSE (2026-07-26): this is the ONLY sanctioned
+     *  construction site. No caller passes this argument, so there is no per-round construction to
+     *  get wrong, and `copy()` — which every continuation path uses — preserves the reference.
+     *  Dialects that render no reasoning summary simply never read it (two empty collections). */
+    val summaryParts: SharedSummaryParts = SharedSummaryParts(),
 )
 
 /** The shared state behind TurnMeta.summaryParts: the ordered parts already emitted to the

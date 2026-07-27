@@ -39,7 +39,6 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.turn.ReasoningDisplay
-import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnMeta
 import splice.core.util.str
 import splice.core.wire.AnthropicMessage
@@ -257,9 +256,9 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
             // The reasoning cache's conversation scope — the SAME derivation the provider's
             // lookup closure uses, so capture (which only sees TurnMeta) and injection agree.
             conversationKey = stablePromptCacheKey(body),
-            // Every continuation round of this turn reuses this meta object (continuationRequest
-            // bypasses build()), so the dedup state it carries is genuinely turn-scoped.
-            summaryParts = SharedSummaryParts(),
+            // summaryParts is NOT passed: TurnMeta's default constructs the turn's one instance.
+            // Every continuation round reuses this meta object (continuationRequest bypasses
+            // build()), so the dedup state it carries is genuinely turn-scoped.
             toolsEager = built.toolsEager,
             toolsDeferred = built.toolsDeferred,
         )

@@ -25,6 +25,7 @@ cp "$ROOT/dev/walls-grant/03_grant_command.py" "$MODDIR/03_grant_command.py"
 # config is deliberately not shipped), so the canonical copy lives here and is installed locally.
 mkdir -p "$ROOT/.claude/commands"
 cp "$ROOT/dev/walls-grant/grant.command.md" "$ROOT/.claude/commands/grant.md"
+cp "$ROOT/dev/walls-grant/install-walls.command.md" "$ROOT/.claude/commands/install-walls.md"
 echo "  [1/4] installed $MODDIR/03_grant_command.py + .claude/commands/grant.md"
 
 # ------------------------------------------------- 2. teach the gate about grants

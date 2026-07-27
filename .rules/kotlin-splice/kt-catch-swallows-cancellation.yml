@@ -1,6 +1,11 @@
 # Structured-concurrency honesty — a broad catch that does not rethrow
 # CancellationException silently eats coroutine cancellation (watchdog aborts,
 # client disconnects) and resurrects the Node-era zombie-stream bug class.
+# Widened: the exemption was a free-text regex (`has: {regex: CancellationException,
+# stopBy: end}`) over the whole catch-block subtree, so a catch body containing only a
+# comment or log string mentioning the class name (e.g. `// CancellationException handled
+# by caller`) satisfied the exemption without any real rethrow. Replaced with a structural
+# `pattern: $_ is CancellationException` check — only a real parsed type-check counts.
 id: kt-catch-swallows-cancellation
 language: kotlin
 severity: error
@@ -12,5 +17,5 @@ rule:
   regex: ':\s*(kotlin\.)?(Exception|Throwable)\b'
   not:
     has:
-      regex: CancellationException
+      pattern: $_ is CancellationException
       stopBy: end

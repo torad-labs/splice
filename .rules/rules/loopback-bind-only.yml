@@ -1,6 +1,15 @@
 # The proxies and the bearer-guarded management plane are loopback-only
 # infrastructure. Every listen() must pass the literal '127.0.0.1' — a bare
 # listen(port) binds all interfaces, and a variable host is an unauditable bind.
+#
+# The options-object exemption path was rewritten: a rule this shape's ancestor
+# (submitted as `pattern: host: '127.0.0.1'`) does NOT parse to the object-literal
+# `pair` node that `{ host: '127.0.0.1' }` actually produces — standalone, that
+# text parses as a `labeled_statement` (label `host`, string statement) instead,
+# so the exemption could never match and the rule flagged its own compliant
+# `server.listen({ port, host: '127.0.0.1' })` sample. Fixed with `context:` +
+# `selector: pair` (both quote styles), which forces the parse into an object-
+# literal context so the pattern lands on the real `pair` node.
 id: loopback-bind-only
 language: javascript
 severity: error
@@ -13,7 +22,18 @@ files:
   - server/**/*.mjs
 rule:
   any:
-    - pattern: $S.listen($P)
+    - all:
+        - pattern: $S.listen($P)
+        - not:
+            has:
+              stopBy: end
+              any:
+                - pattern:
+                    context: "({host: '127.0.0.1'})"
+                    selector: pair
+                - pattern:
+                    context: '({host: "127.0.0.1"})'
+                    selector: pair
     - pattern: $S.listen($P, $HOST)
     - pattern: $S.listen($P, $HOST, $$$REST)
 constraints:

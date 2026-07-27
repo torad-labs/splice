@@ -6,5 +6,9 @@ valid:
   - 'val w = Files.newBufferedWriter(file, CREATE, APPEND)'
   # a plain (non-append) writeString is fine — the fingerprint is APPEND specifically
   - 'Files.writeString(file, text)'
+  # a plain (non-append) Files.write is fine for the same reason
+  - 'Files.write(file, bytes)'
 invalid:
   - 'Files.writeString(file, row.toString() + "\n", StandardOpenOption.CREATE, StandardOpenOption.APPEND)'
+  # byte-array Files.write bypass: same lifecycle/APPEND guard, different overload than the wall matched
+  - 'Files.write(file, (row.toString() + "\n").toByteArray(), StandardOpenOption.CREATE, StandardOpenOption.APPEND)'

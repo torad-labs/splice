@@ -4,3 +4,8 @@ valid:
 invalid:
   - 'const r = await fetch("/mgmt/status");'
   - 'const r = await window.fetch(url, opts);'
+  - 'const r = await window?.fetch(url, opts);'
+  - 'const r = await window["fetch"](url, opts);'
+  - "const r = await window['fetch'](url, opts);"
+  - 'const r = await window?.["fetch"](url, opts);'
+  - "const r = await window?.['fetch'](url, opts);"

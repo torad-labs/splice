@@ -11,6 +11,14 @@
 # the difference. Human review caught it; nothing mechanical did. This is the generation-time
 # half (PreToolUse scans the PROPOSED write) of that invariant; the gate half is the contract
 # fixture, which now carries a strict:true tool.
+#
+# WIDENED (2026-07-26 audit): the guard was `kind: when_condition, regex: '^forceStrictFalse$'`,
+# which matches the when_condition node's FULL TEXT. A redundant-but-valid spelling of the same
+# guard — `forceStrictFalse == true ->` — has when_condition text `forceStrictFalse == true`, which
+# the anchored regex rejects, so the wall silently stopped guarding that branch shape. Replaced with
+# a structural `has` reaching the `simple_identifier` for `forceStrictFalse` anywhere inside the
+# condition (`stopBy: end`), which recognizes the guard regardless of what else the condition's text
+# contains.
 id: kt-force-strict-false-is-literal
 language: kotlin
 severity: error
@@ -28,7 +36,10 @@ rule:
     stopBy: end
     has:
       kind: when_condition
-      regex: '^forceStrictFalse$'
+      has:
+        kind: simple_identifier
+        regex: '^forceStrictFalse$'
+        stopBy: end
 constraints:
   # FIELD is pinned (review #49): unconstrained, the rule fired on ANY put in the branch — a
   # future compliant edit that groups another builder call into it (e.g. put(FIELD_DEFER_LOADING,

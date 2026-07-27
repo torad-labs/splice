@@ -4,7 +4,18 @@ valid:
   - 'val y = runCatching { read() }.onFailure { System.err.println(it) }.getOrDefault(false)'
   - 'val z = mapOf("a" to 1).getOrDefault("a", 0)'
   - 'val w = listOf(1, 2).getOrNull()'
+  - |
+    val result = runCatching { read() }.onFailure { log(it) }
+    val token = result.getOrNull()
+  - |
+    val other = compute()
+    val list = mapOf("a" to 1)
+    val w = list.getOrDefault("a", 0)
+    val v = other.getOrNull()
 invalid:
   - 'val x = runCatchingCancellable { read() }.getOrNull()'
   - 'val y = runCatching { read() }.getOrDefault(false)'
   - 'val z = runCatchingCancellable { parse(s) }.getOrNull() ?: return null'
+  - |
+    val result = runCatching { read() }
+    val token = result.getOrNull()

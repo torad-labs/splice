@@ -1,9 +1,9 @@
 # proxy-hardening.toml — never-fails / self-heals / just-works campaign for splice (2026-07-26).
 # LAW: concept #945 — this manifest IS the memory; access ONLY via dev/campaigns/manifest.py
 #   (`python3 dev/campaigns/manifest.py dev/campaigns/proxy-hardening.toml <verb>`). Raw edits skip
-#   the flock and the validate-rollback gate. NOTE: manifest.py's DEFAULT path argument is stale in
-#   this repo (points at a non-existent dev/campaigns/kotlin-hardening.toml, so a bare
-#   `manifest.py selftest` traces back) — ALWAYS pass the ledger path explicitly as the first arg.
+#   the flock and the validate-rollback gate. ALWAYS pass the ledger path as the first arg; a
+#   path-less verb now names the problem and prints the ledger census rather than tracing
+#   back (manifest.py `_no_default_ledger`, 2026-07-27 review).
 # LAW [2026-07-26]: PROVENANCE — every item derives from
 #   dev/campaigns/proxy-hardening/research/proxy-landscape-improvements-2026-07-26.md (4,228 lines), produced by workflow
 #   wf_8a65d1ed-109: 46 agents, 94 projects swept across 5 blind angles, 12 deep-dived with their

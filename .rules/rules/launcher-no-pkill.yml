@@ -15,6 +15,19 @@
 #   exec-family call (execSync/exec/execFileSync/spawn/spawnSync) — narrow
 #   enough that it does not fire on the real HTML-string concatenation in
 #   server/src/auth/codex-login.mjs (verified: 0 hits there).
+# - NARROWED 2026-07-27 (review round 2): that branch matched ANY two-literal
+#   concatenation in exec arguments with no constraint on the text, so
+#   `execSync('ls' + ' -la')` tripped a wall whose message is about pkill. It
+#   held clean only because the codex-login concat sits outside exec arguments,
+#   not because the branch was content-aware — latent, and a wall that flags
+#   compliant code trains authors to reach for ast-grep-ignore, which weakens
+#   every wall including this one. The branch now requires the pkill morpheme
+#   itself, split across the quote boundary. All FOUR split points are covered
+#   (p|kill, pk|ill, pki|ll, pkil|l) rather than only the pk|ill shape the
+#   review sketched: `'p' + 'kill'` produces the identical runtime command and
+#   would otherwise still walk through. The regex matches node text including
+#   quotes, so ordinary spacing variants and backticks match too (both proved in
+#   the rule-test). Verified 0 hits across server/**/*.mjs at 24eefbf.
 id: launcher-no-pkill
 language: javascript
 severity: error
@@ -31,6 +44,8 @@ rule:
     - kind: string_fragment
       regex: pkill
     - kind: binary_expression
+      # "pkill" broken across a quote boundary, at any of its four split points.
+      regex: "(p['\"`]\\s*\\+\\s*['\"`]kill|pk['\"`]\\s*\\+\\s*['\"`]ill|pki['\"`]\\s*\\+\\s*['\"`]ll|pkil['\"`]\\s*\\+\\s*['\"`]l)"
       all:
         - has:
             field: operator

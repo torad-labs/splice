@@ -8,8 +8,18 @@
 # its item is unfinished is VACUOUS and reads RED. You cannot land a wall that was never red,
 # and you cannot mark an item done until its wall flips. Green is EARNED, never protected.
 #
-# BIRTH STATE 2026-07-26: 83 items, 80 UNWALLED, 3 walled-and-correctly-red.
-# That is the honest work inventory, not a failure.
+# THE COUNT IS THE ROWS. Do not trust any summary, INCLUDING THIS ONE.
+#
+# This header used to read "BIRTH STATE 2026-07-26: 83 items, 80 UNWALLED, 3 walled-and-correctly-
+# red" and was 88/81/7 by 2026-07-27 — caught by the round-2 review. In most files a stale count
+# is cosmetic; in the file whose whole job is to be the number auditors trust, it is the one thing
+# that cannot drift, because a reader quotes the top and never recounts. A number transcribed by
+# hand rots by construction, so the numbers are gone rather than corrected.
+#
+# The live census is computed from these rows, never transcribed:
+#   npm run gate:campaign:census   ->   items N | walled N | UNWALLED N | earned-green N | ...
+#
+# An UNWALLED majority is the honest work inventory, not a failure.
 
 [[item]]
 id = "CX-19"

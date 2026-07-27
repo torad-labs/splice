@@ -28,14 +28,15 @@
  *     the honest list of what is not yet proven.
  *
  * RUN   node dev/campaigns/proxy-hardening/oracle/capture.mjs            (writes fixtures + manifest)
- *       node dev/campaigns/proxy-hardening/oracle/capture.mjs --check     (re-capture to temp, diff vs committed)
+ *       node dev/campaigns/proxy-hardening/oracle/capture.mjs --check     (re-capture to temp, diff vs committed;
+ *                                                                         nonzero on ANY drift — see compareAgainstCommitted)
  *
  * NOT A TEST. This produces the oracle; dev/campaigns/proxy-hardening/oracle/replay is what grades against it.
  */
 
 import http from 'node:http';
 import { createHash } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync, rmSync } from 'node:fs';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
@@ -146,6 +147,52 @@ function post(port, body) {
   });
 }
 
+/**
+ * THE DRIFT TRIPWIRE — what makes `--check` a gate instead of a re-run.
+ *
+ * Review 2026-07-27: `--check` used to capture into a temp dir, delete it, and exit on scenario
+ * success alone. Nothing ever read the committed fixtures, so `oracle:check` (package.json) and
+ * ledger item INF-03's verify command were both vacuous: change behavior in server/ and it still
+ * exited 0. A proof that cannot fail is not a proof.
+ *
+ * Compares three things, because each fails independently:
+ *   1. every scenario fixture, BYTE-for-byte (the oracle itself);
+ *   2. the vendored mock's sha256 (the mock can drift under a byte-identical fixture set only
+ *      until it doesn't — and mockSha is recomputed live on every run, so nothing else sees it);
+ *   3. the scenario ROSTER both ways — a fixture the fresh run no longer produces is drift just
+ *      as much as one it newly produces.
+ * Returns the drift lines; empty means clean.
+ */
+function compareAgainstCommitted(freshDir, manifest) {
+  if (!existsSync(FIXTURES)) return [`no committed fixtures at ${FIXTURES} — run without --check first`];
+  const drift = [];
+
+  let committedManifest = null;
+  try {
+    committedManifest = JSON.parse(readFileSync(join(FIXTURES, '_manifest.json'), 'utf8'));
+  } catch (e) {
+    drift.push(`_manifest.json unreadable in the committed corpus: ${String(e).slice(0, 120)}`);
+  }
+  if (committedManifest && committedManifest.mock_region_sha256 !== manifest.mock_region_sha256) {
+    drift.push(
+      `mock region sha256: committed ${String(committedManifest.mock_region_sha256).slice(0, 16)}… ` +
+      `vs live ${manifest.mock_region_sha256.slice(0, 16)}… (server/test/codex-proxy.test.mjs moved)`,
+    );
+  }
+
+  const fresh = new Set(readdirSync(freshDir).filter((f) => f.endsWith('.json') && f !== '_manifest.json'));
+  const committed = new Set(readdirSync(FIXTURES).filter((f) => f.endsWith('.json') && f !== '_manifest.json'));
+  for (const f of committed) if (!fresh.has(f)) drift.push(`${f}: committed but the fresh capture did not produce it`);
+  for (const f of fresh) if (!committed.has(f)) drift.push(`${f}: captured but not committed`);
+
+  for (const f of [...fresh].filter((x) => committed.has(x)).sort()) {
+    const a = readFileSync(join(FIXTURES, f));
+    const b = readFileSync(join(freshDir, f));
+    if (!a.equals(b)) drift.push(`${f}: BYTES DIFFER (committed ${a.length}B vs fresh ${b.length}B)`);
+  }
+  return drift;
+}
+
 async function main() {
   const check = process.argv.includes('--check');
   const tmp = mkdtempSync(join(tmpdir(), 'splice-oracle-'));
@@ -205,9 +252,21 @@ async function main() {
   }
   console.log(`  excluded (recorded, not dropped): ${Object.keys(EXCLUDED).join(', ')}`);
   console.log(`  mock region sha256: ${mockSha.slice(0, 16)}…`);
-  if (!check) console.log(`\nwrote ${outDir}`);
+
+  let drift = [];
+  if (check) {
+    drift = compareAgainstCommitted(outDir, manifest);
+    console.log(drift.length ? `\noracle DRIFT — ${drift.length} mismatch(es) vs the committed corpus:` : '\noracle clean — fresh capture matches the committed corpus byte-for-byte');
+    for (const line of drift) console.log(`  ✗ ${line}`);
+    if (drift.length) {
+      console.log('\nThe legacy stack changed, or the fixtures did. Re-read the diff before re-capturing:');
+      console.log('  npm run oracle:capture   # only after deciding the new behavior is the CORRECT oracle');
+    }
+  } else {
+    console.log(`\nwrote ${outDir}`);
+  }
   rmSync(tmp, { recursive: true, force: true });
-  process.exit(ok.length === SCENARIOS.length ? 0 : 1);
+  process.exit(ok.length === SCENARIOS.length && drift.length === 0 ? 0 : 1);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

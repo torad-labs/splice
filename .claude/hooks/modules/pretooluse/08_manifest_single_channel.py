@@ -8,6 +8,15 @@ well-formedness gate that rolls back broken writes.
 
 Creating a NEW campaign file via Write is allowed (that's how campaigns start);
 everything after birth goes through the CLI. Style/discipline gate — fail-open.
+
+SCOPE IS THE LEDGERS, NOT THE SUBTREE (narrowed 2026-07-27, review round 2): this used to match
+any .toml anywhere under dev/campaigns/, which caught a campaign's own ASSETS — the wall census
+(proxy-hardening/walls/wall_registry.toml) and the oracle's expectations.toml. Those are not
+ledgers: they carry no [[items]], manifest.py has no verb that can touch them, and the flock and
+tomllib-rollback rationale above does not apply to them. So the guard blocked the only channel
+they have while offering a CLI alternative that does not exist — a wall with no door, which is
+how `ast-grep-ignore` habits start. A ledger is a DIRECT child of dev/campaigns/, which is
+exactly the set manifest.py operates on.
 """
 from __future__ import annotations
 
@@ -40,7 +49,8 @@ def run(data: dict) -> Optional[HookResult]:
         rel = p.resolve().relative_to(root).as_posix()
     except (OSError, ValueError):
         return None
-    if not rel.startswith("dev/campaigns/"):
+    # A ledger is a DIRECT child of dev/campaigns/ — campaign assets nested below it are not.
+    if pathlib.PurePosixPath(rel).parent.as_posix() != "dev/campaigns":
         return None
 
     if data.get("tool_name") == "Write" and not p.exists():

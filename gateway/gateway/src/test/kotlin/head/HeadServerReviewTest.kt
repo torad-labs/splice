@@ -338,6 +338,14 @@ class HeadServerReviewTest {
                 assertTrue(body.contains("overloaded_error"), "expected overloaded_error in: $body")
                 assertEquals(1, body.split("event: error").size - 1, "exactly one error event: $body")
                 assertTrue(!body.contains("message_stop"), "a torn turn must NOT emit message_stop: $body")
+                // Early-open handoff (2026-07-26 review): the turn now opens at upstream handoff, so
+                // the client sees message_start BEFORE the tear becomes an error frame. Without this,
+                // the assertions above stay green even if the early frames vanished from the torn path.
+                val startAt = body.indexOf("event: message_start")
+                assertTrue(
+                    startAt in 0 until body.indexOf("event: error"),
+                    "message_start must precede the error frame on the early-open failure path: $body",
+                )
                 // Upstream was hit (the request handed off before tearing). NB: this premature-EOF
                 // tear is not classed as a retryable transport reset, so it does not consume the
                 // stream-reissue budget — a real connection RST (which the in-process mock cannot

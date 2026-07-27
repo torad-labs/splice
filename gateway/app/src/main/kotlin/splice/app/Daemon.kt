@@ -346,7 +346,9 @@ public class Daemon(
     /** Resolve one head's build inputs against ITS OWN effective config. Heads share a single
      *  ConfigService (one JVM), so every value here must come from `getConfig(key)` — reading the
      *  global view is what made a knob tuned for one upstream govern all of them. */
-    private fun providerContext(key: String, head: HeadConfig, providerCfg: ProviderConfig): ProviderBuild {
+    // `internal`, not private: DaemonPerHeadConfigTest calls this directly to pin that each head
+    // resolves against getConfig(key). No production caller outside this class (2026-07-26 review).
+    internal fun providerContext(key: String, head: HeadConfig, providerCfg: ProviderConfig): ProviderBuild {
         val headCfg = config.getConfig(key)
         val resolvedHead = resolveHeadConfig(key, head, providerCfg, headCfg)
         val resolvedProvider = resolveProviderConfig(key, providerCfg, headCfg)
@@ -366,7 +368,7 @@ public class Daemon(
     }
 
     /** The per-head inputs every provider builder threads through — a parameter object. */
-    private data class ProviderBuild(
+    internal data class ProviderBuild(
         val key: String,
         val head: HeadConfig,
         val providerCfg: ProviderConfig,

@@ -140,7 +140,14 @@ public data class TurnMeta(
 
 /** The shared state behind TurnMeta.summaryParts: the ordered parts already emitted to the
  *  client this turn, plus the per-item exact set the dedup's within-item arm matches against.
- *  Mutable per-turn coordination, never compared by value. */
+ *  Mutable per-turn coordination, never compared by value.
+ *
+ *  ACCESS DISCIPLINE (2026-07-26 review): mutated by ONE round's translator at a time. The
+ *  fold/re-anchor/tool_search loops drive rounds strictly sequentially (`FoldRunner.run` is a
+ *  plain `while (true) { postRound(...) }` — no launch/async around a round), so the absence of
+ *  synchronization here is deliberate, not an oversight. A future round loop that overlaps rounds
+ *  must add synchronization before sharing this. Public, not internal: the dialect module reads
+ *  these across a module boundary. */
 public class SharedSummaryParts {
     public val emittedParts: MutableList<String> = mutableListOf()
     public val itemEmitted: MutableMap<Int, MutableSet<String>> = mutableMapOf()

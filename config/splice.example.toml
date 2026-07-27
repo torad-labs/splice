@@ -191,8 +191,10 @@ discovery_prefix = "claude-kimi--"
 pinned_model = "k3[1m]"
 [heads.claude-kimi.claude]
 command = "claude-kimi"
-# PER-HEAD KNOBS. Same names as [defaults], same string values — but scoped to THIS head, so a
-# ceiling sized for one upstream account no longer governs the others. Precedence:
+# PER-HEAD KNOBS. Keys are the knob names from ConfigService's Knob enum (maxInflight, maxQueued,
+# upstreamTimeoutMs, streamIdleMs, firstByteTimeoutMs, ...), always as STRINGS. The same names work
+# in an optional top-level [defaults] table, which this example deliberately omits: a knob put there
+# governs EVERY head, which is the exact problem per-head overrides exist to solve. Precedence:
 #   knob defaults <- [defaults] <- [heads.<key>.overrides] <- state config.json <- env <- PATCH
 #
 # maxInflight is the one that matters most: it is the concurrency the UPSTREAM ACCOUNT tolerates,

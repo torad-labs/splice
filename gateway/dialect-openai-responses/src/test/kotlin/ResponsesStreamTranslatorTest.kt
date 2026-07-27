@@ -71,7 +71,7 @@ private fun ctx(
     fired: WatchdogFired? = null,
     collect: Boolean = false,
     dedupe: Boolean = false,
-    shared: SharedSummaryParts? = null,
+    shared: SharedSummaryParts = SharedSummaryParts(),
     capture: ((List<String>, List<String>) -> Unit)? = null,
 ) = StreamTurnContext(
     compact = compact,

@@ -67,8 +67,13 @@ public data class StreamTurnContext(
     val dedupeRepeatedSummaryParts: Boolean = false,
     /** Turn-scoped dedup state shared across this turn's continuation rounds (fresh translator
      *  per round; without it, a section re-titled by a continuation round passes each round's
-     *  per-instance dedup and lands as a duplicate — the 2026-07-26 mirror duplication). */
-    val summaryPartsShared: SharedSummaryParts? = null,
+     *  per-instance dedup and lands as a duplicate — the 2026-07-26 mirror duplication).
+     *
+     *  REQUIRED, no default (2026-07-27 review): it used to be `SharedSummaryParts? = null` for
+     *  test convenience, and a null here silently restores exactly the per-round private state the
+     *  turn-scoping exists to remove. Production passes `meta.summaryParts`; a test that wants
+     *  round-private state now has to say so. */
+    val summaryPartsShared: SharedSummaryParts,
     /** Encode this round's encrypted reasoning items into splice-reasoning envelopes, riding the
      *  Success outcome (fold replay) AND the Failure partial (re-anchor salvage, 2026-07-24).
      *  True for every fold- or re-anchor-eligible turn; off (compact) keeps the reducer
@@ -112,12 +117,11 @@ private const val RECAP_DONE = -1
 // wins. Re-keying the sets by round or item id is the one fix NOT to make — when the backend
 // re-titles a repeat into the same slot, that keying is what lets the mirror duplication back in.
 // The 2026-07-20 case stays intact: WITHIN a round, distinct items still get distinct slots.
-private class SummaryDedup(private val active: Boolean, shared: SharedSummaryParts? = null) {
-    // emittedParts + itemEmitted are TURN-scoped when shared is present (continuation rounds);
-    // recapCursor is deliberately per round — each round's stream re-starts its leading recap
-    // at position 0 of the shared list, which is exactly what suppresses it.
-    private val emittedParts = shared?.emittedParts ?: mutableListOf()
-    private val itemEmitted = shared?.itemEmitted ?: mutableMapOf()
+private class SummaryDedup(private val active: Boolean, private val shared: SharedSummaryParts) {
+    // The emitted parts are TURN-scoped: the caller hands over the turn's one SharedSummaryParts
+    // (TurnMeta's default), so continuation rounds see each other's emissions. recapCursor is
+    // deliberately per round — each round's stream re-starts its leading recap at position 0 of
+    // the shared list, which is exactly what suppresses it.
     private val recapCursor = HashMap<Int, Int>()
 
     /** True to SUPPRESS a recap/repeat part of item [oi]; a genuinely-new part returns false and is
@@ -126,14 +130,12 @@ private class SummaryDedup(private val active: Boolean, shared: SharedSummaryPar
     fun suppress(oi: Int, part: String): Boolean {
         if (!active || part.length < SUMMARY_PART_DEDUP_MIN_CHARS) return false
         val cursor = recapCursor.getOrDefault(oi, 0)
-        if (cursor in emittedParts.indices && emittedParts[cursor] == part) {
+        if (shared.partAt(cursor) == part) {
             recapCursor[oi] = cursor + 1
             return true
         }
         recapCursor[oi] = RECAP_DONE
-        val fresh = itemEmitted.getOrPut(oi) { HashSet() }.add(part)
-        if (fresh) emittedParts.add(part)
-        return !fresh
+        return !shared.markEmitted(oi, part)
     }
 }
 

@@ -79,11 +79,28 @@ class ExampleConfigTest {
 
         // 2. Knob names the COMMENTS teach. Anything camelCase-and-backticked-or-listed in the
         //    per-head doc block must resolve; that is what went stale and got hand-fixed once.
+        //
+        //    2026-07-27 review: this used to pre-filter to `startsWith("max") || endsWith("Ms")`,
+        //    which was lossless only by accident — the example happens to name only the
+        //    timeout-and-capacity family today. `toolSurface`, `usageWarnPct`, `pinnedModel`,
+        //    `foldMarkerText` and `contextWindowOverride` are all live Knob keys the filter would
+        //    have silently dropped, and silent skipping is the exact drift this test exists to
+        //    catch. Every camelCase token now resolves against the enum; prose words that are not
+        //    knobs go in an EXPLICIT allowlist, so they stay visible instead of vanishing into a
+        //    shape rule.
         val docNames = Regex("\\b([a-z]+[A-Z][A-Za-z]*)\\b")
             .findAll(toml.lines().filter { it.trimStart().startsWith("#") }.joinToString("\n"))
             .map { it.groupValues[1] }
-            .filter { it.endsWith("Ms") || it.startsWith("max") }
             .toSet()
-        docNames.forEach { assertTrue(Knob.byKey.containsKey(it), "example comment names unknown knob '$it'") }
+        assertTrue(docNames.isNotEmpty(), "the example must keep teaching knob names in comments")
+
+        // Prose, not knobs. An entry here that IS a knob would silence a real drift, so the
+        // allowlist is asserted disjoint from the enum rather than trusted.
+        val prose = setOf("xAI")
+        prose.forEach { assertTrue(!Knob.byKey.containsKey(it), "'$it' is a real knob — remove it from the prose allowlist") }
+
+        (docNames - prose).forEach {
+            assertTrue(Knob.byKey.containsKey(it), "example comment names unknown knob '$it' (add it to the prose allowlist only if it is not a knob)")
+        }
     }
 }

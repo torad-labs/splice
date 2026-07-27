@@ -152,10 +152,28 @@ public data class TurnMeta(
  *  plain `while (true) { postRound(...) }` — no launch/async around a round), so the absence of
  *  synchronization here is deliberate, not an oversight. A future round loop that overlaps rounds
  *  must add synchronization before sharing this. Public, not internal: the dialect module reads
- *  these across a module boundary. */
+ *  these across a module boundary.
+ *
+ *  APPEND-ONLY BY TYPE, not by comment (2026-07-27 review): the collections used to be public
+ *  `MutableList`/`MutableMap`, so the discipline above was documentary — any in-repo caller could
+ *  `clear()`, reorder or truncate the list with no compile error and no test to catch it, and the
+ *  translator's recap cursor trusts this list's ORDER and LENGTH. The surface is now exactly the
+ *  two operations the dedup dialect performs; the collections cannot be reached to be reordered. */
 public class SharedSummaryParts {
-    public val emittedParts: MutableList<String> = mutableListOf()
-    public val itemEmitted: MutableMap<Int, MutableSet<String>> = mutableMapOf()
+    private val emittedParts = mutableListOf<String>()
+    private val itemEmitted = mutableMapOf<Int, MutableSet<String>>()
+
+    /** The part at [cursor] in emission order, or null past either end (the recap arm passes
+     *  RECAP_DONE = -1 once an item's leading recap is finished, which must not match). */
+    public fun partAt(cursor: Int): String? = emittedParts.getOrNull(cursor)
+
+    /** Records [part] as emitted for item [outputIndex]. Returns false when it was ALREADY
+     *  emitted for that item — a dedup hit — in which case nothing is appended. */
+    public fun markEmitted(outputIndex: Int, part: String): Boolean {
+        val fresh = itemEmitted.getOrPut(outputIndex) { mutableSetOf() }.add(part)
+        if (fresh) emittedParts.add(part)
+        return fresh
+    }
 }
 
 /** The two-tier watchdog knobs (v35 doctrine): before first byte the idle limit is

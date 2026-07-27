@@ -19,6 +19,7 @@ import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.dialect.responses.EmitEncryptedReasoning
+import splice.core.turn.SharedSummaryParts
 import splice.dialect.responses.ResponsesReanchorController
 import splice.dialect.responses.ResponsesStreamTranslator
 import splice.dialect.responses.StreamTurnContext
@@ -179,6 +180,8 @@ private fun reanchorCtx(fired: WatchdogFired? = null, collect: Boolean = true) =
     watchdogFired = { fired },
     streamIdleMsForMessage = 180_000,
     upstreamTimeoutMsForMessage = 900_000,
+    // re-anchor salvage is asserted per round here; a fresh instance is the turn's state
+    summaryPartsShared = SharedSummaryParts(),
     collectReasoningEnvelopes = collect,
 )
 

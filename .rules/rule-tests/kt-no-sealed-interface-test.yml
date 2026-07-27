@@ -7,3 +7,8 @@ valid:
 invalid:
   - 'sealed interface Foo'
   - 'public sealed interface TurnOutcome { }'
+  - |
+    @Serializable
+    sealed interface Foo
+  - 'public  sealed interface Baz'
+  - 'internal sealed interface Qux'

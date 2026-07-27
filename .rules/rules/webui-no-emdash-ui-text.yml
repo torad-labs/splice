@@ -1,5 +1,12 @@
 # Copy gate (locked design decision): zero em-dashes in UI text. Functional
 # labels only. Applies to JSX text and string literals; code comments are free.
+#
+# Widened 2026-07-26 (ast-grep-walls-audit): matched only the literal `—`
+# character, but HTML entity encodings (`&mdash;`, `&#8212;`, `&#x2014;`)
+# CST-parse to their own `html_character_reference` node — a sibling of
+# `jsx_text`, invisible to the old rule. All three encodings bypassed pre-fix.
+# Added a case-insensitive html_character_reference branch; verified against
+# `&amp;`/`&nbsp;` as false-positive controls (3 of 5 entities correctly flagged).
 id: webui-no-emdash-ui-text
 language: tsx
 severity: error
@@ -16,3 +23,5 @@ rule:
       regex: "—"
     - kind: string_fragment
       regex: "—"
+    - kind: html_character_reference
+      regex: "(?i)^&#?(mdash|8212|x2014);$"

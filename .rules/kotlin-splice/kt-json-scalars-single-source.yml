@@ -4,6 +4,11 @@
 # STRING "null" — a null access_token becomes a live-looking bearer "null". kimi/grok/codex each
 # hand-rolled this read; the reconciled reader is JsonElement?.str() / JsonObject.str(key), which
 # filters JsonNull. Provider-scoped because a NEW provider is exactly where the copy re-appears.
+# Widened (2026-07-26 audit): the rule's own subject file (JsonScalars.kt) names
+# `(x as? JsonPrimitive)?.content` in its header as a second common leak shape, and the wall never
+# matched it. Added the 4 cast forms (as/as? x content/contentOrNull) plus 2 smart-cast composites
+# (`if (v is JsonPrimitive) { … v.content … }`), the latter using metavariable identity ($V) so it
+# doesn't fire on every `.content` in a file that happens to also smart-cast something unrelated.
 id: kt-json-scalars-single-source
 language: kotlin
 severity: error
@@ -17,3 +22,21 @@ rule:
     - pattern: $X.jsonPrimitive.content
     - pattern: $X?.jsonPrimitive?.contentOrNull
     - pattern: $X.jsonPrimitive.contentOrNull
+    - pattern: ($X as? JsonPrimitive)?.content
+    - pattern: ($X as JsonPrimitive).content
+    - pattern: ($X as? JsonPrimitive)?.contentOrNull
+    - pattern: ($X as JsonPrimitive).contentOrNull
+    - all:
+        - pattern: $V.content
+        - inside:
+            stopBy: end
+            has:
+              stopBy: end
+              pattern: $V is JsonPrimitive
+    - all:
+        - pattern: $V.contentOrNull
+        - inside:
+            stopBy: end
+            has:
+              stopBy: end
+              pattern: $V is JsonPrimitive

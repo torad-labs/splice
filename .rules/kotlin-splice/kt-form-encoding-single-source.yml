@@ -1,6 +1,10 @@
 # WALL (#924 Phase 3): RFC-3986 percent-encoding lives ONCE, in core/util/FormEncoding. codex/grok/
 # kimi each carried a byte-identical copy; the %%%02X hex-escape is the fingerprint. Use
 # FormEncoding.percentEncode / formEncode instead of re-deriving it.
+# Widened (2026-07-26 audit): the %%%02X literal is a format string, not a wire token, so it can be
+# reproduced byte-for-byte via string concatenation without ever containing that literal —
+# `"%" + "%02X".format(c)` matches `PCT + HEX` and slips past the bare-literal fingerprint. Added an
+# `any:` branch for the split-literal form, constrained so `"color-" + "%02X".format(v)` stays clean.
 id: kt-form-encoding-single-source
 language: kotlin
 severity: error
@@ -10,5 +14,17 @@ files:
 ignores:
   - gateway/core/src/main/kotlin/splice/core/util/FormEncoding.kt
 rule:
-  kind: string_literal
-  regex: '%%%02X'
+  any:
+    - kind: string_literal
+      regex: '%%%02X'
+    - pattern: $PCT + $HEX
+constraints:
+  PCT:
+    kind: string_literal
+    regex: '^"%+"$'
+  HEX:
+    kind: call_expression
+    has:
+      stopBy: end
+      kind: string_literal
+      regex: '^"%02X"$'

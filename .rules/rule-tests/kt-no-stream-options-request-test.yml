@@ -7,3 +7,5 @@ valid:
 invalid:
   - 'put("stream_options", buildJsonObject { put("include_usage", true) })'
   - 'val opts = buildJsonObject { put("include_usage", true) }'
+  # bypass: a raw string has different delimiters (full-text regex missed it) but identical inner content
+  - 'val opts = buildJsonObject { put("""include_usage""", true) }'

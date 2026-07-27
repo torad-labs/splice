@@ -4,3 +4,9 @@ valid:
   - 'Files.setPosixFilePermissions(script, PosixFilePermissions.fromString("rwx------"))'
 invalid:
   - 'Files.setPosixFilePermissions(p, PosixFilePermissions.fromString("rw-------"))'
+  # EnumSet.of spelling of 0600, both argument orders
+  - 'Files.setPosixFilePermissions(p, EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE))'
+  - 'Files.setPosixFilePermissions(p, EnumSet.of(PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_READ))'
+  # setOf spelling of 0600, both argument orders
+  - 'Files.setPosixFilePermissions(p, setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE))'
+  - 'Files.setPosixFilePermissions(p, setOf(PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_READ))'

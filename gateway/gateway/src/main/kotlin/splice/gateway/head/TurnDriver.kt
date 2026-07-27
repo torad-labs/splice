@@ -428,9 +428,13 @@ internal class TurnDriver(
         // permanently stale after round 1, which (a) denied continuation rounds the safe
         // pre-frame reissue and (b) skipped the G2 zero-event reclassifier for them. Frame/event
         // facts for reissue and zero-event classification are judged against THIS round only.
-        val framesBase = drive.perfCounter(PerfKeys.FRAMES_OUT)
+        // CONTENT frames, not all frames: message_start now lands at upstream-handoff, so keying
+        // G5 off FRAMES_OUT would report "client saw output" before a single token existed and
+        // silently kill pre-content reissue (HeadServerReviewTest: torn-before-client must stay a
+        // retryable overloaded_error, not a raw api_error).
+        val framesBase = drive.perfCounter(PerfKeys.CONTENT_FRAMES_OUT)
         val eventsBase = drive.perfCounter(PerfKeys.EVENTS_IN)
-        val frameEmittedThisRound = { drive.perfCounter(PerfKeys.FRAMES_OUT) > framesBase }
+        val frameEmittedThisRound = { drive.perfCounter(PerfKeys.CONTENT_FRAMES_OUT) > framesBase }
         return upstream.post(
             url = provider.upstreamUrl,
             bodyJson = bodyJson,
@@ -442,6 +446,12 @@ internal class TurnDriver(
             amendBodyOnFailure = provider::amendBodyOnFailure,
         ) { resp ->
             drive.slot.touch()
+            // Upstream answered 2xx and the stream is ours — open the turn on the wire immediately
+            // instead of waiting for the first content block. This block runs ONLY on success (see
+            // UpstreamClient.attemptRequest), so a pre-stream failure still writes its error frame
+            // first and nothing here pre-empts it. Recovers p50 2840ms of frozen screen per codex
+            // turn; also gives the keepalive pinger an opened stream to ping into.
+            drive.emitter.ensureStarted()
             // Persist upstream rate-limit headers for /api/usage + statusline soft-warn (Node
             // codex-proxy wired this; the Kotlin split dropped the call site).
             usageStore.persistRateLimit { name -> resp.header(name) }
@@ -659,6 +669,8 @@ private fun Provider.loginHint(): String =
 // first_delta detection reads the frame prefix — the emitter's event name, not a literal
 // stop-reason (L3 walls stay intact; this only OBSERVES the already-built frame).
 private const val DELTA_FRAME_PREFIX = "event: content_block_delta"
+private const val START_FRAME_PREFIX = "event: message_start"
+private const val PING_FRAME_PREFIX = "event: ping"
 
 /** Client-side write instrumented: frame counts/bytes, first-frame/first-delta marks, and the
  *  summed write+flush time (a slow reader shows up as write_ms, not as fake stream time).
@@ -681,6 +693,11 @@ private fun timedClientWrite(
     }
     perf.add(PerfKeys.WRITE_MS, clock() - t)
     perf.add(PerfKeys.FRAMES_OUT, 1)
+    // Structural opener carries no content — see PerfKeys.CONTENT_FRAMES_OUT for why G5 must not
+    // count it as "the client saw output".
+    if (!frame.startsWith(START_FRAME_PREFIX) && !frame.startsWith(PING_FRAME_PREFIX)) {
+        perf.add(PerfKeys.CONTENT_FRAMES_OUT, 1)
+    }
     perf.add(PerfKeys.BYTES_OUT, frame.length.toLong())
     perf.markOnce(PerfKeys.FIRST_FRAME)
     if (frame.startsWith(DELTA_FRAME_PREFIX)) perf.markOnce(PerfKeys.FIRST_DELTA)

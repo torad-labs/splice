@@ -2,5 +2,8 @@ id: kt-no-request-body-gzip
 valid:
   - 'val decompressed = GZIPInputStream(resp.body())'
   - 'val bodyBytes = bodyJson.toByteArray(Charsets.UTF_8)'
+  - 'import java.util.zip.GZIPOutputStream'
 invalid:
   - 'GZIPOutputStream(out).use { it.write(bytes) }'
+  # bypass: fully-qualified constructor call — the bare pattern only sees a plain-identifier callee
+  - 'java.util.zip.GZIPOutputStream(out).use { it.write(bytes) }'

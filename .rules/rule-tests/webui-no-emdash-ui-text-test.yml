@@ -5,6 +5,11 @@ valid:
       // comments may use an em-dash — rules gate UI text only
       return <span title="uptime, seconds">up</span>;
     }
+  - 'export const Label = () => <span>Tom &amp; Jerry</span>;'
+  - 'export const Label = () => <span>a&nbsp;b</span>;'
 invalid:
   - 'export const Label = () => <span>usage — live</span>;'
   - 'const title = "requests — in flight";'
+  - 'export const Label = () => <span>usage &mdash; live</span>;'
+  - 'export const Label = () => <span>usage &#8212; live</span>;'
+  - 'export const Label = () => <span>usage &#x2014; live</span>;'

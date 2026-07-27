@@ -97,10 +97,19 @@ class ExampleConfigTest {
         // Prose, not knobs. An entry here that IS a knob would silence a real drift, so the
         // allowlist is asserted disjoint from the enum rather than trusted.
         val prose = setOf("xAI")
-        prose.forEach { assertTrue(!Knob.byKey.containsKey(it), "'$it' is a real knob — remove it from the prose allowlist") }
+        prose.forEach {
+            assertTrue(
+                !Knob.byKey.containsKey(it),
+                "'$it' is a real knob — remove it from the prose allowlist",
+            )
+        }
 
         (docNames - prose).forEach {
-            assertTrue(Knob.byKey.containsKey(it), "example comment names unknown knob '$it' (add it to the prose allowlist only if it is not a knob)")
+            assertTrue(
+                Knob.byKey.containsKey(it),
+                "example comment names unknown knob '$it' " +
+                    "(add it to the prose allowlist only if it is not a knob)",
+            )
         }
     }
 }

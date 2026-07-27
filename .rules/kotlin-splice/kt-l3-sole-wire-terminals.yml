@@ -1,6 +1,14 @@
 # Invariant L3 (Kotlin) — SseEmitter.kt is the ONLY file that may hold the
 # Anthropic wire terminal literals. Anything else holding message_stop or
 # message_delta is a second wire emitter in the making (fake-end_turn bug class).
+# Widened 2026-07-26 (audit §4/A.5): a `string_content` regex is a per-node
+# substring test — "message_" + "stop" reproduces the same runtime string with
+# no node ever containing `message_stop`, so the original rule was bypassable by
+# splitting the literal across an additive_expression. Added a second branch that
+# catches a two-operand additive_expression where each string_literal operand is
+# exactly one morpheme of either banned token (`^(message_?|_?stop|_?delta)$`,
+# anchored so unrelated text cannot trip it), excluding any operand pair that
+# contains an interpolated_expression (so runtime-built strings are not flagged).
 id: kt-l3-sole-wire-terminals
 language: kotlin
 severity: error
@@ -10,5 +18,24 @@ files:
 ignores:
   - gateway/gateway/src/main/kotlin/**/wire/SseEmitter.kt
 rule:
-  kind: string_content
-  regex: \b(message_stop|message_delta)\b
+  any:
+    - kind: string_content
+      regex: \b(message_stop|message_delta)\b
+    - all:
+        - kind: additive_expression
+        - has:
+            kind: string_literal
+            nthChild: 1
+            has:
+              kind: string_content
+              regex: "^(message_?|_?stop|_?delta)$"
+        - has:
+            kind: string_literal
+            nthChild: 2
+            has:
+              kind: string_content
+              regex: "^(message_?|_?stop|_?delta)$"
+        - not:
+            has:
+              stopBy: end
+              kind: interpolated_expression

@@ -1,5 +1,11 @@
 # Invariant L2 (Kotlin) — exactly ONE mirrorInto lives in reasoning/Mirror.kt.
 # v29 shipped two drifting copies; this wall makes a second definition unwritable.
+# Rewritten as a kind+has structural match (not a text pattern): the real mirrorInto is declared
+# `public suspend fun mirrorInto(...)`, and any faithful reimplementation MUST be `suspend` (it calls
+# WireSink.addTextBlock, itself suspend) — a bare pattern match on `fun mirrorInto($$$P)` never sees a
+# modifier-bearing declaration at all (Kotlin's `modifiers` node is a required sibling child that
+# breaks smart-strictness pattern matching when present in the target but absent from the pattern),
+# so the old rule could never actually catch the shape of the bug it exists to prevent.
 id: kt-l2-single-mirror-definition
 language: kotlin
 severity: error
@@ -9,4 +15,7 @@ files:
 ignores:
   - gateway/gateway/src/main/kotlin/**/reasoning/Mirror.kt
 rule:
-  pattern: fun mirrorInto($$$P)
+  kind: function_declaration
+  has:
+    kind: simple_identifier
+    regex: ^mirrorInto$

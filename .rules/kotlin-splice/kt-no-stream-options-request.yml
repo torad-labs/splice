@@ -19,8 +19,17 @@ files:
   # DEFAULT-DENY (#924 Phase 0.5): every main source EXCEPT the chat dialect, where include_usage
   # is the documented usage-frame knob — a NEW dialect/provider must not reopen the incident.
   - gateway/*/src/main/**/*.kt
+# WIDENED (2026-07-26 audit): `regex: '^"include_usage"$'` matched the string_literal node's FULL
+# TEXT, delimiters included — a Kotlin raw string (`"""include_usage"""`) has different delimiters
+# and different full text, so it walked straight through while producing the identical banned
+# runtime string. Anchored against the inner string_content node instead, which is delimiter-
+# agnostic: it matches the content of both `"include_usage"` and `"""include_usage"""` alike. The
+# `gateway/dialect-openai-chat/**` exemption is unaffected and still discriminates against the 2
+# real files there that legitimately carry the string.
 ignores:
   - gateway/dialect-openai-chat/**
 rule:
   kind: string_literal
-  regex: '^"include_usage"$'
+  has:
+    kind: string_content
+    regex: '^include_usage$'

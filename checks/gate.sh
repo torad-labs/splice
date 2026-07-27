@@ -64,6 +64,13 @@ echo "══ splice gate ══  (JAVA_HOME=$JAVA_HOME)"
 run "gradle clean check" bash -c 'cd gateway && ./gradlew clean check'
 run "ast-grep walls" npm run --silent gate:rules
 run "hook tests"     npm run --silent test:hooks
+# Campaign enforcement, BLOCKING half only (C1/C2/C3/C5/C6/C7/C9): a wall that lies, a status that
+# lies, a fence collision, or a broken law are never acceptable. The ADVISORY half (C4 unwalled /
+# C8 unlawed) is the standing worklist and is reported without failing — see
+# `npm run gate:campaign:strict`. Split 2026-07-26: lumping them together kept the whole check out
+# of this ladder, which meant nothing ran it at all.
+run "campaign walls"  npm run --silent gate:campaign
+run "campaign selftest" npm run --silent gate:campaign:selftest
 run "config guard"   bash checks/config-guard.sh
 run "server tests"   npm test -w server
 run "webui lint"     npm run lint -w webui

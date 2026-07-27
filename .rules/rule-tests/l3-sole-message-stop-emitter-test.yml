@@ -1,6 +1,8 @@
 id: l3-sole-message-stop-emitter
 valid:
   - 'emit("message_delta", payload)'
+  - 'const label = "message: " + "stopped"'
 invalid:
   - 'emit("message_stop", {})'
   - 'res.write(`event: message_stop\n`)'
+  - 'emit("message_" + "stop", {})'

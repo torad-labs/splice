@@ -256,7 +256,14 @@ public class Daemon(
 ) {
     // Topology TOML ([daemon] + [defaults]) feeds the headOverrides layer so reasoning
     // display is operator-editable without recompiling. Env and runtime PATCH still win.
-    private val config = ConfigService(statePaths, headOverrides = topology.configOverrides())
+    // [heads.<key>.overrides] rides the per-head layer: heads share ONE ConfigService (one JVM,
+    // unlike the Node lineage's process-per-head), so without this a knob tuned for one upstream
+    // hit all of them — e.g. kimi's 40-min upstreamTimeoutMs also gave codex a 40-min ceiling.
+    private val config = ConfigService(
+        statePaths,
+        headOverrides = topology.configOverrides(),
+        perHeadOverrides = topology.heads.mapValues { (_, head) -> head.overrides },
+    )
     private val mgmtKey = MgmtKey(statePaths)
     private val requestMaterializationGate = RequestMaterializationGate()
 
@@ -273,11 +280,6 @@ public class Daemon(
 
     public suspend fun start() {
         val cfg = config.getConfig()
-        val watchdog = WatchdogBudget(
-            firstByteTimeout = cfg.firstByteTimeoutMs.milliseconds,
-            streamIdle = cfg.streamIdleMs.milliseconds,
-            totalCap = cfg.upstreamTimeoutMs.milliseconds,
-        )
         // TOML feeds ConfigService's topology layer; state/env/runtime override it consistently.
         // Resolved before the head loop so every launch recipe points at the actual listener.
         val controlPort = cfg.controlPort
@@ -285,20 +287,7 @@ public class Daemon(
         // TOML the builder can't wire, e.g. a not-yet-supported dialect) must NOT abort the whole
         // daemon with a stack trace to /dev/null. Log the degraded head and serve the rest.
         val failed = assembleDaemonHeads(topology, heads, log) { key, head, providerCfg ->
-            val resolvedHead = resolveHeadConfig(key, head, providerCfg, cfg)
-            val resolvedProvider = resolveProviderConfig(key, providerCfg, cfg)
-            val catalog = resolvedProvider.catalogFor(resolvedHead, cfg.contextWindowOverride)
-            val loginCommand = signInPlan(resolvedProvider, resolvedHead, key).command
-            val ctx = ProviderBuild(
-                key,
-                resolvedHead,
-                resolvedProvider,
-                catalog,
-                watchdog,
-                cfg,
-                loginCommand,
-            )
-            assembleHead(ctx, controlPort)
+            assembleHead(providerContext(key, head, providerCfg), controlPort)
         }
         val srv = ControlServer(
             controlPort,
@@ -354,8 +343,32 @@ public class Daemon(
     /** Provider + its auth, chosen by (dialect, auth.kind) — the multi-provider dispatch. */
     private data class Wired(val provider: Provider, val auth: RefreshableAuthProvider)
 
+    /** Resolve one head's build inputs against ITS OWN effective config. Heads share a single
+     *  ConfigService (one JVM), so every value here must come from `getConfig(key)` — reading the
+     *  global view is what made a knob tuned for one upstream govern all of them. */
+    // `internal`, not private: DaemonPerHeadConfigTest calls this directly to pin that each head
+    // resolves against getConfig(key). No production caller outside this class (2026-07-26 review).
+    internal fun providerContext(key: String, head: HeadConfig, providerCfg: ProviderConfig): ProviderBuild {
+        val headCfg = config.getConfig(key)
+        val resolvedHead = resolveHeadConfig(key, head, providerCfg, headCfg)
+        val resolvedProvider = resolveProviderConfig(key, providerCfg, headCfg)
+        return ProviderBuild(
+            key = key,
+            head = resolvedHead,
+            providerCfg = resolvedProvider,
+            catalog = resolvedProvider.catalogFor(resolvedHead, headCfg.contextWindowOverride),
+            watchdog = WatchdogBudget(
+                firstByteTimeout = headCfg.firstByteTimeoutMs.milliseconds,
+                streamIdle = headCfg.streamIdleMs.milliseconds,
+                totalCap = headCfg.upstreamTimeoutMs.milliseconds,
+            ),
+            cfg = headCfg,
+            loginCommand = signInPlan(resolvedProvider, resolvedHead, key).command,
+        )
+    }
+
     /** The per-head inputs every provider builder threads through — a parameter object. */
-    private data class ProviderBuild(
+    internal data class ProviderBuild(
         val key: String,
         val head: HeadConfig,
         val providerCfg: ProviderConfig,
@@ -666,9 +679,14 @@ public class Daemon(
                     client = UpstreamClient.defaultClient(cfg.firstByteTimeoutMs, cfg.upstreamTimeoutMs, log),
                 ),
                 inferenceToken = mgmtKey.get(),
+                // Re-read per head on EVERY admission (still hot-resizable): the ceiling belongs to
+                // the upstream ACCOUNT, not the gateway. One shared value meant a workflow fan-out
+                // admitted 100 concurrent streams into a single account, 429'd, and armed the shared
+                // cooldown — measured 67% turn failure at inflight=100 vs 0.3% at <=14 (perf jsonl,
+                // 2026-07-24). Per-head lets a slow upstream sit low while a fast one stays high.
                 gate = InflightGate(
-                    maxInflight = { config.getConfig().maxInflight },
-                    maxQueued = { config.getConfig().maxQueued },
+                    maxInflight = { config.getConfig(key).maxInflight },
+                    maxQueued = { config.getConfig(key).maxQueued },
                 ),
                 shadow = ShadowClassifier(log = log),
                 compactStats = compactStats,

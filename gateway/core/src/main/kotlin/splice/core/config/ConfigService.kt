@@ -1,6 +1,7 @@
 // PORT-OF: server/src/config.mjs layers/coerce/normalize/getConfig/configLayers/patchConfig
 // @ pre-public-port-baseline — invariants: layers merge FRESH on every read (v29 froze knobs at import; nothing
-// was hot-tunable); precedence defaults <- headOverrides(TOML, NEW layer) <- state config.json
+// was hot-tunable); precedence defaults <- headOverrides(TOML, NEW layer) <- perHead
+// ([heads.<key>.overrides] TOML, more specific than the global one) <- state config.json
 // (mtime-cached) <- env (alias order) <- runtime PATCH; PATCH persists to the state file
 // best-effort (env still wins at next boot); normalization floors (upstreamTimeout >= 30s,
 // firstByte >= 10s, streamIdle >= 30s or 250ms under CODEX_PROXY_TEST=1, authCache >= 5s);
@@ -26,7 +27,13 @@ import java.nio.file.attribute.FileTime
 
 public class ConfigService(
     private val statePaths: StatePaths,
+    // NAME IS A TRAP (three agents mis-read it): this is the GLOBAL knob layer sourced from the
+    // head-topology FILE ([defaults] + [daemon]), NOT a per-head dimension. Per-head lives in
+    // [perHeadOverrides] below.
     private val headOverrides: Map<String, String> = emptyMap(),
+    // headKey -> knob map, from [heads.<key>.overrides]. Applied only by getConfig(headKey), so a
+    // head can hold its own maxInflight/timeouts without the value leaking onto its siblings.
+    private val perHeadOverrides: Map<String, Map<String, String>> = emptyMap(),
     private val envReader: (String) -> String? = System::getenv,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -47,7 +54,10 @@ public class ConfigService(
     @Volatile
     private var fileCache: FileCache? = null
 
-    public fun getConfig(): SpliceConfig = SpliceConfig(normalize(mergedRaw()))
+    /** Effective config. [headKey] folds that head's [heads.<key>.overrides] in above the global
+     *  TOML layer — an unknown/absent key is simply the global view, so callers never branch. */
+    @JvmOverloads
+    public fun getConfig(headKey: String? = null): SpliceConfig = SpliceConfig(normalize(mergedRaw(headKey)))
 
     public fun layers(): ConfigLayers = ConfigLayers(
         defaults = Knob.entries.associate { it.key to it.default },
@@ -91,10 +101,14 @@ public class ConfigService(
         fileCache = null
     }
 
-    private fun mergedRaw(): Map<String, Any?> {
+    private fun mergedRaw(headKey: String? = null): Map<String, Any?> {
         val merged = LinkedHashMap<String, Any?>()
         Knob.entries.forEach { merged[it.key] = it.default }
         coerceAll(headOverrides).forEach { (k, v) -> merged[k] = v }
+        // Sits directly above the global TOML layer: more specific TOML wins over less specific,
+        // while state/env/PATCH keep their existing authority over BOTH (unchanged precedence).
+        headKey?.let { key -> perHeadOverrides[key]?.let { coerceAll(it) } }
+            ?.forEach { (k, v) -> merged[k] = v }
         fileLayer().forEach { (k, v) -> merged[k] = v }
         envLayer().forEach { (k, v) -> merged[k] = v }
         synchronized(runtimeLock) { runtimeLayer.forEach { (k, v) -> merged[k] = v } }

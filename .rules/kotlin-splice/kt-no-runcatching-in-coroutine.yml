@@ -4,6 +4,11 @@
 # This is the runCatching complement to kt-catch-swallows-cancellation (which only sees try/catch).
 # Scoped to the coroutine-heavy modules; core/app/control keep raw runCatching for synchronous
 # best-effort work where there is no coroutine to cancel.
+# Widened: `pattern: runCatching { $$$BODY }` only matches the bare-call, trailing-lambda shape.
+# Package-qualified (`kotlin.runCatching`) and parenthesized-argument (`runCatching(::fn)`,
+# `kotlin.runCatching(::fn)`) forms are different node kinds and slipped through entirely. Added an
+# `any:` covering all three alternate shapes; `runCatchingCancellable` stays correctly unaffected
+# because every branch matches on the exact `runCatching` identifier, no prefix collision.
 id: kt-no-runcatching-in-coroutine
 language: kotlin
 severity: error
@@ -19,4 +24,8 @@ files:
   - gateway/dialect-anthropic-passthrough/src/main/**/*.kt
   - gateway/gateway/src/main/**/*.kt
 rule:
-  pattern: runCatching { $$$BODY }
+  any:
+    - pattern: runCatching { $$$BODY }
+    - pattern: runCatching($$$ARGS)
+    - pattern: kotlin.runCatching { $$$BODY }
+    - pattern: kotlin.runCatching($$$ARGS)

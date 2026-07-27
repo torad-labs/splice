@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
+import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
 import splice.dialect.responses.EmitEncryptedReasoning
 import splice.dialect.responses.ResponsesStreamTranslator
@@ -70,6 +71,7 @@ private fun ctx(
     fired: WatchdogFired? = null,
     collect: Boolean = false,
     dedupe: Boolean = false,
+    shared: SharedSummaryParts = SharedSummaryParts(),
     capture: ((List<String>, List<String>) -> Unit)? = null,
 ) = StreamTurnContext(
     compact = compact,
@@ -81,6 +83,7 @@ private fun ctx(
     upstreamTimeoutMsForMessage = 900_000,
     collectReasoningEnvelopes = collect,
     dedupeRepeatedSummaryParts = dedupe,
+    summaryPartsShared = shared,
     onTurnReasoning = capture ?: { _, _ -> },
 )
 

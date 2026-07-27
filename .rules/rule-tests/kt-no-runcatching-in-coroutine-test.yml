@@ -2,6 +2,10 @@ id: kt-no-runcatching-in-coroutine
 valid:
   - 'runCatchingCancellable { parse(payload) }'
   - 'val x = runCatchingCancellable { risky() }.getOrNull()'
+  - 'val x = runCatchingCancellable(::risky)'
 invalid:
   - 'runCatching { parse(payload) }'
   - 'val x = runCatching { risky() }.getOrNull()'
+  - 'val x = runCatching(::risky)'
+  - 'val x = kotlin.runCatching { risky() }'
+  - 'val x = kotlin.runCatching(::risky)'

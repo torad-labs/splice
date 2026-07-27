@@ -19,3 +19,7 @@ invalid:
   - |
     val result = runCatching { read() }
     val token = result.getOrNull()
+  # 2026-07-27 review: the same collapse behind a `var` binding — branch B required `val`.
+  - |
+    var result = runCatching { read() }
+    val token = result.getOrNull()

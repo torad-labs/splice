@@ -19,3 +19,15 @@ invalid:
         // note: CancellationException handling deferred to caller
         log("saw CancellationException, ignoring: " + e)
     }
+  # 2026-07-27 review: type-checked but NOT rethrown — passed the old exemption, still swallows.
+  - |
+    try { work() } catch (e: Exception) {
+        if (e is CancellationException) { log.debug { "cancelled" } }
+        recover()
+    }
+  # …and rethrowing a DIFFERENT variable must not satisfy the exemption either ($V identity).
+  - |
+    try { work() } catch (e: Exception) {
+        if (e is CancellationException) throw other
+        recover()
+    }

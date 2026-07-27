@@ -26,8 +26,26 @@ with a loud stderr warning (session end must never wedge on scan
 infrastructure; the write-time wall and the gate are the backstops).
 
 Walls are grant-gated: edits to .rules/, .claude/hooks/, .claude/settings.json,
-or sgconfig.yml are blocked unless the operator sets SPLICE_WALLS_OK=1. The
-override is loud by design — never set it to push past your own block.
+or sgconfig.yml are blocked unless one of two things is true —
+
+  · the operator issued /grant <minutes> <reason> from the prompt line, which
+    fires a UserPromptSubmit hook (the one channel an assistant structurally
+    cannot reach: it emits tool calls, never a user prompt); or
+  · SPLICE_WALLS_OK=1 is set in the CLI's environment.
+
+Both are loud by design — never set either to push past your own block.
+
+A grant is a SIGNED record. Until 2026-07-27 it was a plain JSON file that this
+gate trusted on sight, and .claude/state/ was not a wall path, so an assistant
+could Write its own grant and open every wall without going near the operator
+channel — "operator-only" was true of ISSUING and false of the thing the gate
+TRUSTS, which is the half that matters. Now: HMAC-SHA256 over the payload with a
+key outside the repo, signature checked BEFORE `until` is read, optional
+per-path scope inside the signed bytes, and the grant record itself is in
+NEVER_WRITABLE so no tool write can ever mint or extend one. The verify/expiry/
+scope logic lives once, in lib/walls_grant.py — read its header before changing
+anything here; it also records honestly what signing does NOT close (Bash never
+reaches PreToolUse).
 
 Deliberate rule exceptions go inline: `// ast-grep-ignore: <rule-id>` plus a
 justification; ast-grep honors these in both the hook and the gate.
@@ -43,6 +61,9 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from lib import walls_grant  # noqa: E402  # pyright: ignore[reportMissingImports, reportAttributeAccessIssue]
+
 # SPLICE_HOOK_ROOT exists for the hermetic test harness only. Redirecting it to
 # dodge policy is equivalent to setting SPLICE_WALLS_OK — visible, auditable,
 # and caught by the gate re-running the same rules on the real tree.
@@ -52,6 +73,12 @@ ERROR_LOG = Path(__file__).resolve().parent / "log" / "orchestrator_errors.log"
 
 WRITE_TOOLS = ("Write", "Edit", "MultiEdit")
 WALL_PATHS = (".rules", ".claude/hooks", ".claude/settings.json", "sgconfig.yml")
+# The grant record is the thing the wall gate TRUSTS, so it is never a legitimate tool-write
+# target — not even under an active grant, which would let a grant extend itself. Blocked
+# unconditionally rather than added to WALL_PATHS (review round 2 suggested the latter; the
+# stronger form costs nothing, since only the UserPromptSubmit module has any business writing
+# it, and it does so with plain file I/O inside the hook, never through a tool).
+NEVER_WRITABLE = (walls_grant.GRANT_REL,)
 SCAN_TIMEOUT = 20
 
 
@@ -99,7 +126,16 @@ def pretooluse(data: dict) -> int:
     except ValueError:
         return 0  # outside the repo — not this wall's jurisdiction
 
-    if _is_wall_path(rel) and os.environ.get("SPLICE_WALLS_OK") != "1" and not _walls_grant_active():
+    if str(rel) in NEVER_WRITABLE:
+        _emit_block(
+            f"SPLICE WALLS: {rel} is the wall gate's OWN trust anchor — never a tool-write target.\n\n"
+            "A grant is issued only from the prompt line (/grant <minutes> <reason>), which writes\n"
+            "this file itself and signs it. A tool write here would be a grant minting a grant.\n"
+            "If you need the wall open, ask the operator for /grant; if you need it shut, /grant revoke."
+        )
+        return 0
+
+    if _is_wall_path(rel) and os.environ.get("SPLICE_WALLS_OK") != "1" and not _walls_grant_active(rel):
         _emit_block(
             f"SPLICE WALLS: {rel} is wall infrastructure (rules / orchestrator / settings).\n\n"
             "Walls are grant-gated: a blocked write means fix the code, not the wall.\n"
@@ -150,19 +186,22 @@ def stop(data: dict) -> int:
     return 0
 
 
-def _walls_grant_active() -> bool:
-    """True while an operator-issued /grant is live (see modules/userpromptsubmit/03_grant_command.py).
+def _walls_grant_active(rel: Path) -> bool:
+    """True while a SIGNED, unexpired, in-scope operator grant covers [rel].
 
     A grant is issuable ONLY from a UserPromptSubmit hook, which fires only on text a human typed
-    into the prompt box — an assistant emits tool calls, never a user prompt. So this stays
-    operator-only by construction, not by policy. Expiry is enforced HERE, at the gate, so a stale
-    file can never hold the wall open; the grant module reports the same rule.
+    into the prompt box — an assistant emits tool calls, never a user prompt. That made ISSUING
+    operator-only by construction. It said nothing about the record this gate TRUSTS, and until
+    2026-07-27 an assistant could simply Write .claude/state/walls-grant.json and open every wall
+    without going near the module (review round 2, the blocker). So the record is now HMAC-signed
+    with a key outside the repo, and the signature is checked BEFORE `until` is read.
+
+    Verification, expiry and scope live in lib/walls_grant so this gate and /grant's status report
+    cannot drift apart. Any failure — no key, no file, bad signature, expired, out of scope —
+    returns False, which keeps the wall SHUT.
     """
-    try:
-        raw = json.loads((ROOT / ".claude/state/walls-grant.json").read_text(encoding="utf-8"))
-        return float(raw.get("until", 0)) > __import__("time").time()
-    except (OSError, ValueError, TypeError):
-        return False
+    grant = walls_grant.active(ROOT)
+    return grant is not None and walls_grant.covers(grant, str(rel), WALL_PATHS)
 
 
 def _is_wall_path(rel: Path) -> bool:

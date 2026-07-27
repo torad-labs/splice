@@ -6,6 +6,17 @@
 # suppression). Same-checker-twice: detekt's ForbiddenSuppress (gateway/detekt.yml) enforces
 # the same set at the gate. Compiler-diagnostic suppressions (e.g. "UNCHECKED_CAST") are not
 # matched — this wall targets the detekt quality rules only.
+#
+# Widened 2026-07-26 (audit §3.1): two shapes defeated the original `inside: {kind: annotation}`
+# chain. (1) `@file:Suppress("LongMethod")` parses as a `file_annotation` node wrapping the
+# `constructor_invocation` DIRECTLY — there is no intervening `annotation` node, so the old rule's
+# `inside: kind: annotation` could structurally never reach it; one file-level annotation silenced
+# every detekt structural rule in the file. (2) `@kotlin.Suppress(...)` parses its `user_type` as
+# the whole dotted string `kotlin.Suppress`, which the old anchored `^Suppress$` regex rejected.
+# Fixed by: matching either `annotation` or `file_annotation` via `any:`, and widening the
+# user_type regex to `^(.*\.)?Suppress$` so a qualified receiver doesn't hide the class name.
+# Verified this does NOT fire on the compliant real case `provider-spi/InflightGate.kt:37`
+# (`@Suppress("UseDataClass")`, not in the banned-rule list) or on `@Suppress("UNCHECKED_CAST")`.
 id: kt-no-quality-suppress
 language: kotlin
 severity: error
@@ -24,9 +35,11 @@ rule:
     kind: value_argument
     stopBy: end
     inside:
-      kind: annotation
       stopBy: end
+      any:
+        - kind: annotation
+        - kind: file_annotation
       has:
         stopBy: end
         kind: user_type
-        regex: "^Suppress$"
+        regex: "^(.*\\.)?Suppress$"

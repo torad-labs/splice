@@ -1,13 +1,24 @@
 # WALL (#924 Phase 3): the atomic-0600 credential write lives ONCE, in core/util/SecureFile. Five
 # modules used to re-derive it and one (kimi) drifted into the world-readable write-then-chmod bug.
 # The 0600 permission literal is the fingerprint — use SecureFile.writeAtomic0600 instead.
+# Widened (2026-07-26 audit, APPENDIX A.12): only the `PosixFilePermissions.fromString("rw-------")`
+# spelling was banned — the `EnumSet.of(OWNER_READ, OWNER_WRITE)` / `setOf(...)` spelling of the same
+# 0600 permission set was wide open. Added both argument orders x both EnumSet.of/setOf forms.
+# Disclosed residual gap (not closed by this change): a fully-qualified
+# `java.util.EnumSet.of(PosixFilePermission.OWNER_READ, ...)` form still evades — verified, not
+# overstated.
 id: kt-secure-file-single-source
 language: kotlin
 severity: error
-message: "Use SecureFile.writeAtomic0600 (core/util) — the 0600 credential-write primitive lives in one place; re-deriving it is how kimi drifted into a world-readable window."
+message: "Use SecureFile.writeAtomic0600 (core/util) — the 0600 credential-write primitive lives in one place; re-deriving it — via PosixFilePermissions.fromString(\"rw-------\") or an equivalent OWNER_READ+OWNER_WRITE permission set — is how kimi drifted into a world-readable window."
 files:
   - gateway/*/src/main/**/*.kt
 ignores:
   - gateway/core/src/main/kotlin/splice/core/util/SecureFile.kt
 rule:
-  pattern: PosixFilePermissions.fromString("rw-------")
+  any:
+    - pattern: PosixFilePermissions.fromString("rw-------")
+    - pattern: EnumSet.of(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE)
+    - pattern: EnumSet.of(PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_READ)
+    - pattern: setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE)
+    - pattern: setOf(PosixFilePermission.OWNER_WRITE, PosixFilePermission.OWNER_READ)

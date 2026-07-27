@@ -16,6 +16,15 @@
 # A deferred tool used earlier in the transcript is declared IN POSITION instead (a
 # tool_search_call/output pair immediately before its function_call), which extends history rather
 # than rewriting the prefix. warmToolNames itself stays legal — it feeds that declaration replay.
+#
+# WIDENED (2026-07-26 audit): the rule matched `$X.messages` (a qualified receiver) and
+# `warmToolNames(...)`, but a partition function written as an extension on AnthropicRequest reads
+# the transcript through the IMPLICIT receiver — a bare `messages` simple_identifier, with no `$X.`
+# prefix for the qualified branch to bind. Added a third branch for the bare identifier. Known
+# cosmetic cost: on a qualified `body.messages` occurrence the bare-identifier branch also matches
+# the `messages` navigation_suffix, so a future violation's reported hit count is inflated by 1 per
+# qualified occurrence — pass/fail direction is unaffected, and this rule's own real-tree count
+# stays 0.
 id: kt-tool-partition-no-transcript
 language: kotlin
 severity: error
@@ -30,6 +39,8 @@ rule:
   any:
     - pattern: $X.messages
     - pattern: warmToolNames($$$ARGS)
+    - kind: simple_identifier
+      regex: '^messages$'
   inside:
     kind: function_declaration
     stopBy: end

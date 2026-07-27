@@ -2,6 +2,19 @@
 # `pkill -f` self-matches the launcher command line (the v29 trap: launcher
 # kills itself, stale proxy keeps the port, EADDRINUSE silent-exit(0),
 # version-handshake loop). Any pkill in launcher strings is that trap.
+#
+# Widened twice:
+# - `files:` grew from `server/launcher/**` to `server/**/*.mjs` — `heads.mjs` is
+#   shared lifecycle code consumed by the control server too, so the ban must
+#   follow the string past the launcher directory boundary, not stop at it.
+# - Added a split-literal branch: `"pk" + "ill -f " + name` produces the same
+#   runtime command with no single `string_fragment` node containing `pkill`,
+#   so the per-node substring regex alone is evadable by splitting the literal
+#   across concatenation. The new branch is scoped to a `+` binary expression of
+#   two string/template operands sitting inside the `arguments` of an
+#   exec-family call (execSync/exec/execFileSync/spawn/spawnSync) — narrow
+#   enough that it does not fire on the real HTML-string concatenation in
+#   server/src/auth/codex-login.mjs (verified: 0 hits there).
 id: launcher-no-pkill
 language: javascript
 severity: error
@@ -12,7 +25,32 @@ note: |
   own command line and kills it mid-restart, leaving the stale proxy holding
   the port (EADDRINUSE → silent exit(0) → version-handshake loop).
 files:
-  - server/launcher/**/*.mjs
+  - server/**/*.mjs
 rule:
-  kind: string_fragment
-  regex: pkill
+  any:
+    - kind: string_fragment
+      regex: pkill
+    - kind: binary_expression
+      all:
+        - has:
+            field: operator
+            regex: ^\+$
+        - has:
+            field: left
+            any:
+              - kind: string
+              - kind: template_string
+        - has:
+            field: right
+            any:
+              - kind: string
+              - kind: template_string
+        - inside:
+            stopBy: end
+            kind: arguments
+            inside:
+              stopBy: neighbor
+              kind: call_expression
+              has:
+                field: function
+                regex: ^(execSync|exec|execFileSync|spawn|spawnSync)$

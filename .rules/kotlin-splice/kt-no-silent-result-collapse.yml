@@ -16,6 +16,13 @@ note: >
   missing files). Route the failure somewhere first: .onFailure { log(...) } / classify it /
   return a sealed outcome. If null truly is the complete story (e.g. optional config probe),
   keep the collapse and add `// ast-grep-ignore: kt-no-silent-result-collapse -- <reason>`.
+# Widened 2026-07-26 (audit 3.7): the original single-branch rule only matched a `.getOrNull()`/
+# `.getOrDefault()` node whose OWN subtree contains `runCatching` — assigning the Result to a val
+# first (`val result = runCatching { read() }` then `val token = result.getOrNull()` on a later
+# line) breaks that subtree relationship and the collapse vanished with zero textual trace. Added
+# branch B: a `property_declaration` whose initializer is the collapse call, tied by metavariable
+# identity on `$RECV` to a preceding sibling `val $RECV = runCatching {…}` (that identity is what
+# stops it firing on unrelated vals sharing the same collapse call shape).
 files:
   - gateway/provider-spi/src/main/**/*.kt
   - gateway/provider-grok/src/main/**/*.kt
@@ -24,12 +31,38 @@ files:
   - gateway/provider-openai/src/main/**/*.kt
 rule:
   any:
-    - pattern: $RECV.getOrNull()
-    - pattern: $RECV.getOrDefault($$$ARGS)
-  has:
-    stopBy: end
-    regex: "\\brunCatching(Cancellable)?\\b"
-  not:
-    has:
-      stopBy: end
-      regex: "\\bonFailure\\b"
+    # A. direct chain — the original wall, unchanged
+    - all:
+        - any:
+            - pattern: $RECV.getOrNull()
+            - pattern: $RECV.getOrDefault($$$ARGS)
+        - has:
+            stopBy: end
+            regex: "\\brunCatching(Cancellable)?\\b"
+        - not:
+            has:
+              stopBy: end
+              regex: "\\bonFailure\\b"
+    # B. split form: `val r = runCatching { … }` then `r.getOrNull()` on a later line.
+    - all:
+        - kind: property_declaration
+        - has:
+            stopBy: end
+            any:
+              - pattern: $RECV.getOrNull()
+              - pattern: $RECV.getOrDefault($$$ARGS)
+        - not:
+            has:
+              stopBy: end
+              regex: "\\bonFailure\\b"
+        - follows:
+            stopBy: end
+            all:
+              - pattern: val $RECV = $$$INIT
+              - has:
+                  stopBy: end
+                  regex: "\\brunCatching(Cancellable)?\\b"
+              - not:
+                  has:
+                    stopBy: end
+                    regex: "\\bonFailure\\b"

@@ -5,6 +5,32 @@ valid:
   - 'element.str()'
   # non-content jsonPrimitive access (numbers) is a different concern, not the null-string leak
   - 'obj["n"]?.jsonPrimitive?.long'
+  # unrelated smart cast + unrelated `.content` field access must not trip the composite branch
+  - |
+    fun f(x: Any, foo: Foo) {
+        if (x is String) {
+            println(x.length)
+        }
+        println(foo.content)
+    }
 invalid:
   - 'tokens?.get(FIELD_ACCESS_TOKEN)?.jsonPrimitive?.content'
   - 'obj["access_token"]!!.jsonPrimitive.content'
+  # cast forms named in JsonScalars.kt's own header as a second common leak shape
+  - '(x as? JsonPrimitive)?.content'
+  - '(x as JsonPrimitive).content'
+  - '(x as? JsonPrimitive)?.contentOrNull'
+  - '(x as JsonPrimitive).contentOrNull'
+  # smart-cast composite: `if (v is JsonPrimitive) { ... v.content ... }`
+  - |
+    fun f(v: JsonElement) {
+        if (v is JsonPrimitive) {
+            println(v.content)
+        }
+    }
+  - |
+    fun f(v: JsonElement) {
+        if (v is JsonPrimitive) {
+            println(v.contentOrNull)
+        }
+    }

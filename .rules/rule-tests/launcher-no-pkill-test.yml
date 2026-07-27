@@ -1,6 +1,11 @@
 id: launcher-no-pkill
 valid:
   - 'execSync("pgrep -f codex-proxy")'
+  - |
+    res.end(`<!doctype html><body>`
+      + `<h2>Signed in</h2></body>`);
 invalid:
   - 'execSync("pkill -f codex-proxy")'
   - 'const cmd = `pkill -f ${name}`'
+  - 'execSync("pk" + "ill -f " + name)'
+  - 'spawnSync("pk" + "ill", ["-f", name])'

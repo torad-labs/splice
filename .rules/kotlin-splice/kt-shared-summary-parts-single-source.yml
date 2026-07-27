@@ -1,0 +1,27 @@
+# Turn-scoped summary dedup rides on ONE SharedSummaryParts instance per turn: every continuation
+# round's translator must receive the SAME object (TurnMeta carries it; continuationRequest reuses
+# the meta). A second construction — or re-assigning it on a copy() — gives that round its own
+# private dedup state, which is the 2026-07-26 mirror duplication (89-102 duplicated summary
+# sections per claudex session) with every unit test still green.
+#
+# TurnMeta's default argument is the ONLY sanctioned construction site (Turn.kt), and it is a
+# default precisely so no caller ever passes this argument. HeadServerFoldTest pins the runtime
+# behaviour end-to-end; this wall pins the shape that would break it.
+id: kt-shared-summary-parts-single-source
+language: kotlin
+severity: error
+message: "SharedSummaryParts is constructed ONCE per turn (TurnMeta's default) — a second instance, or re-assigning it on a copy(), gives a round private dedup state and re-opens the 2026-07-26 mirror duplication."
+files:
+  - gateway/*/src/main/**/*.kt
+ignores:
+  - gateway/core/src/main/kotlin/**/turn/Turn.kt
+rule:
+  any:
+    # bare construction
+    - pattern: SharedSummaryParts()
+    # fully-qualified construction — a DIFFERENT node (navigation_expression) the bare
+    # pattern cannot reach; this is the exact shape used to red-proof the wiring test.
+    - pattern: $$$.SharedSummaryParts()
+    # re-assignment on a copy(): meta.copy(summaryParts = …) hands one round its own state
+    # without constructing anything. Named explicitly in the 2026-07-26 review.
+    - pattern: summaryParts = $ANY

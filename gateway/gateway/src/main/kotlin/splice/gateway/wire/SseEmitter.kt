@@ -78,6 +78,8 @@ public class SseEmitter internal constructor(
         write(frameBuf.toString())
     }
 
+    override suspend fun ensureStarted(): Unit = ensureStart()
+
     public suspend fun ensureStart() {
         if (started) return
         started = true

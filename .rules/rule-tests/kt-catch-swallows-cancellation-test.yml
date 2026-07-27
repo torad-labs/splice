@@ -5,7 +5,29 @@ valid:
         if (e is CancellationException) throw e
         log(e)
     }
+  - |
+    try { work() } catch (ex: Throwable) {
+        if (ex is CancellationException) throw ex
+        log(ex)
+    }
   - 'try { work() } catch (e: IOException) { log(e) }'
 invalid:
   - 'try { work() } catch (e: Exception) { log(e) }'
   - 'try { work() } catch (t: Throwable) { report(t) }'
+  - |
+    try { work() } catch (e: Exception) {
+        // note: CancellationException handling deferred to caller
+        log("saw CancellationException, ignoring: " + e)
+    }
+  # 2026-07-27 review: type-checked but NOT rethrown — passed the old exemption, still swallows.
+  - |
+    try { work() } catch (e: Exception) {
+        if (e is CancellationException) { log.debug { "cancelled" } }
+        recover()
+    }
+  # …and rethrowing a DIFFERENT variable must not satisfy the exemption either ($V identity).
+  - |
+    try { work() } catch (e: Exception) {
+        if (e is CancellationException) throw other
+        recover()
+    }

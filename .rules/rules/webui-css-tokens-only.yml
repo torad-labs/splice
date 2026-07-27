@@ -3,6 +3,14 @@
 # on spacing/font-size properties anywhere outside the vendored token sheet.
 # Matches the unit NODE structurally (integer_value/float_value > unit), so
 # unitless 0 and var()/calc() token references stay clean.
+#
+# Widened 2026-07-26 (ast-grep-walls-audit): the property regex allowed at most
+# one dash segment and the unit regex was case-sensitive with no `em`, so CSS
+# logical properties (padding-inline-start, margin-block-end) and `em`/`PX`
+# spellings were invisible. Property regex now allows repeated dash segments
+# ((-[a-z]+)*) and the unit regex is case-insensitive and includes em. Four
+# live bypasses reproduced pre-fix (padding-inline-start: 8px, margin-block-end:
+# 1.5rem, font-size: 1.5em, gap: 10PX) — all four now match; real tree stays 0.
 id: webui-css-tokens-only
 language: css
 severity: error
@@ -21,8 +29,8 @@ rule:
   all:
     - has:
         kind: property_name
-        regex: '^(font-size|gap|row-gap|column-gap|inset|top|right|bottom|left|(margin|padding)(-[a-z]+)?)$'
+        regex: '^(font-size|gap|row-gap|column-gap|top|right|bottom|left|(inset|margin|padding)(-[a-z]+)*)$'
     - has:
         stopBy: end
         kind: unit
-        regex: '^(px|rem)$'
+        regex: '(?i)^(px|rem|em)$'

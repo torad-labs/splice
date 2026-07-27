@@ -2,5 +2,10 @@ id: kt-l2-single-mirror-definition
 valid:
   - 'fun mirrorText(sink: WireSink) {}'
   - 'mirrorInto(sink, thinking, opts)'
+  - 'fun process(mirrorInto: String) {}'
 invalid:
   - 'fun mirrorInto(sink: WireSink, thinking: String) {}'
+  - |
+    public suspend fun mirrorInto(sink: WireSink, thinking: String) {
+        sink.addTextBlock(thinking)
+    }

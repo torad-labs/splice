@@ -2,5 +2,9 @@ id: kt-form-encoding-single-source
 valid:
   - 'FormEncoding.percentEncode(value)'
   - 'append("%02X".format(c))'
+  # split-percent concatenation with an unrelated literal must stay clean
+  - 'append("color-" + "%02X".format(v))'
 invalid:
   - 'append("%%%02X".format(c))'
+  # split-literal bypass: reproduces %%%02X byte-for-byte without ever containing that literal
+  - 'append("%" + "%02X".format(c))'

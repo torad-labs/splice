@@ -4,6 +4,10 @@
 # across a package boundary for it). Route through JsonlSink.appendLine / JsonlSink.readTail.
 # A long-lived Files.newBufferedWriter log stream (e.g. Main's stderr tee) is a DIFFERENT lifecycle
 # and is intentionally not matched — the fingerprint is a writeString call carrying APPEND.
+# Widened (2026-07-26 audit): the wall's own subject file (JsonlSink.kt:29) actually uses the
+# byte-array `Files.write` overload, not `Files.writeString` — a different call fingerprint than the
+# wall itself matches, so a re-derivation using `Files.write(..., APPEND)` slipped through entirely.
+# Added a second `any:` branch for that overload, gated by the same APPEND guard.
 id: kt-jsonl-sink-single-source
 language: kotlin
 severity: error
@@ -14,7 +18,12 @@ files:
 ignores:
   - gateway/core/src/main/kotlin/splice/core/util/JsonlSink.kt
 rule:
-  pattern: Files.writeString($$$)
-  has:
-    pattern: StandardOpenOption.APPEND
-    stopBy: end
+  any:
+    - pattern: Files.writeString($$$)
+      has:
+        pattern: StandardOpenOption.APPEND
+        stopBy: end
+    - pattern: Files.write($$$)
+      has:
+        pattern: StandardOpenOption.APPEND
+        stopBy: end

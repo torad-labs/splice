@@ -43,6 +43,16 @@ application {
     mainClass.set("splice.app.MainKt")
 }
 
+// ExampleConfigTest reads config/splice.example.toml by walking up from the module dir, which
+// Gradle cannot see — so editing ONLY the example left :app:test UP-TO-DATE and the check never
+// ran (caught 2026-07-26 while red-proofing it). Declaring the file as an input makes the example
+// a real gate: touch it, the test re-runs.
+tasks.test {
+    inputs.file(rootProject.layout.projectDirectory.file("../config/splice.example.toml"))
+        .withPropertyName("spliceExampleToml")
+        .withPathSensitivity(PathSensitivity.RELATIVE)
+}
+
 val repositoryRoot = rootProject.layout.projectDirectory.dir("..")
 val rawBomDir = layout.buildDirectory.dir("reports/cyclonedx")
 val rawLicenseDir = layout.buildDirectory.dir("reports/licenses")

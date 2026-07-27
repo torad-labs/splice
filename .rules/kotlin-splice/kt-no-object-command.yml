@@ -2,6 +2,12 @@
 # `object …Command` namespaces dispatched by a stringly-typed map. An `object <Name>Command` is the
 # banned shape; model it as `data class`/`data object … : Command()` instead. (Stateless helper
 # namespaces like `object AdminSupport` are fine — only names ending in `Command` are flagged.)
+# Narrowed 2026-07-26 (audit 3.6 — the one FALSE POSITIVE in the set): the old regex ran over the
+# whole declaration's text, so a docstring or an unrelated type reference *inside the body*
+# (e.g. `object AdminSupport { val usage = """Usage: object FooCommand <args>"""; val x:
+# FooCommand = TODO() }`) tripped the wall on compliant code — a wall that fires on compliant code
+# teaches agents that wall output is noise. Scoped to a structural check on the object's own
+# identifier (`type_identifier` child) so body text can no longer trigger a match.
 id: kt-no-object-command
 language: kotlin
 severity: error
@@ -10,4 +16,6 @@ files:
   - gateway/*/src/main/**/*.kt
 rule:
   kind: object_declaration
-  regex: 'object\s+\w*Command\b'
+  has:
+    kind: type_identifier
+    regex: '^\w*Command$'

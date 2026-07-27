@@ -26,4 +26,20 @@ public interface TurnTerminal : WireSink {
 
     /** Client vanished before any ending: seal with nothing emitted (never an error/terminal). */
     public fun abandon()
+
+    /** Open the turn on the wire NOW, before any content exists.
+     *
+     * message_start needs nothing from upstream — the id, model and a zeroed usage payload are all
+     * known at build time — so holding it until the first content block buys nothing and costs the
+     * whole upstream reasoning phase in dead air. Measured on the codex head (perf jsonl,
+     * 2026-07-26): first_byte -> first_frame p50 2840ms / p90 5819ms, i.e. 37% of a median 7658ms
+     * turn spent writing NOTHING to a client that renders a frozen screen. kimi and grok measure
+     * 0ms because their upstreams emit a content-bearing first event; only the Responses dialect
+     * has a long content-free reasoning phase in front of it.
+     *
+     * Frame ORDER is unchanged (message_start + ping were always first) — only their timing moves,
+     * so the golden differential byte-diffs still hold. Idempotent: later content/terminal paths
+     * still call it, and re-anchor rounds are no-ops. No-op by default for the non-stream sink,
+     * which has no incremental wire to open. */
+    public suspend fun ensureStarted() {}
 }

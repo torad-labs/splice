@@ -11,3 +11,28 @@ invalid:
       useEffect(() => { fetch("/mgmt/usage"); }, []);
       return <div />;
     }
+  - |
+    export function UsageMeter() {
+      useEffect(() => { window?.fetch("/mgmt/usage"); }, []);
+      return <div />;
+    }
+  - |
+    export function UsageMeter() {
+      useEffect(() => { window["fetch"]("/mgmt/usage"); }, []);
+      return <div />;
+    }
+  - |
+    export function UsageMeter() {
+      useEffect(() => { window['fetch']("/mgmt/usage"); }, []);
+      return <div />;
+    }
+  - |
+    export function UsageMeter() {
+      useEffect(() => { window?.["fetch"]("/mgmt/usage"); }, []);
+      return <div />;
+    }
+  - |
+    export function UsageMeter() {
+      useEffect(() => { window?.['fetch']("/mgmt/usage"); }, []);
+      return <div />;
+    }

@@ -2,6 +2,13 @@
 # class gives one canonical hierarchy with cases as `data class`/`data object`, a real constructor
 # seam if shared state is ever needed, and the same exhaustive-`when` guarantee. (Plain `interface`,
 # `fun interface`, and capability interfaces are unaffected — this bans only `sealed interface`.)
+# Widened 2026-07-26 (audit 3.5): the old regex ran over the whole node's leading text, so an
+# annotation line (`@Serializable\nsealed interface Foo`) or a stray double space
+# (`public  sealed interface Baz`) put `sealed` and `interface` out of adjacency and the anchored
+# regex silently missed both — 2 of 4 probe violations passed. Replaced with two relational `has`
+# checks against the CST-confirmed shape (`class_declaration > modifiers > class_modifier('sealed')`
+# plus the anonymous `interface` keyword as a direct sibling child) so the match no longer depends
+# on modifier ordering, whitespace, or leading annotations.
 id: kt-no-sealed-interface
 language: kotlin
 severity: error
@@ -10,4 +17,10 @@ files:
   - gateway/*/src/main/**/*.kt
 rule:
   kind: class_declaration
-  regex: '^(public |internal |private |protected )*sealed interface\b'
+  all:
+    - has:
+        stopBy: end
+        kind: class_modifier
+        regex: '^sealed$'
+    - has:
+        regex: '^interface$'

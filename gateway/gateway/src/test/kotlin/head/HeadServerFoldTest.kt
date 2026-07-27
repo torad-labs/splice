@@ -4,6 +4,8 @@
 // truncated output discarded, usage summed, the continuation marker in the round-2 upstream body);
 // the continuation cap (the head stops and emits the last round honestly); and passthrough parity
 // (a non-fold model — sol — reporting the SAME 516 fingerprint does NOT continue).
+// ADDED 2026-07-26: the turn-scoped summary-dedup WIRING — rounds share one SharedSummaryParts, so a
+// section the continuation round re-titles reaches the client exactly once (review of #58).
 package head
 
 import io.ktor.client.HttpClient
@@ -16,6 +18,8 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.test.runTest
 import mock.MockChatGptUpstream
+import mock.SUMMARY_SECTION_A
+import mock.SUMMARY_SECTION_B
 import mock.awaitListening
 import mock.freshPort
 import org.junit.jupiter.api.AfterAll
@@ -45,6 +49,15 @@ import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
 import java.nio.file.Files
 import kotlin.time.Duration.Companion.seconds
+
+private fun countOf(haystack: String, needle: String): Int =
+    Regex(Regex.escape(needle)).findAll(haystack).count()
+
+/** Occurrences of [needle] in the LIVE thinking stream only. This head runs ReasoningDisplay.TEXT,
+ *  which additionally mirrors the final round's summary into a trailing text block — a separate
+ *  (pre-existing) rendering concern, not the per-round dedup this pins. */
+private fun thinkingCountOf(sse: String, needle: String): Int =
+    sse.lineSequence().filter { it.contains("\"thinking_delta\"") }.count { it.contains(needle) }
 
 private class FoldFakeAuth : RefreshableAuthProvider {
     override suspend fun credentials(): Credentials = Credentials.Bearer("tok-test", "acct-test")
@@ -152,6 +165,29 @@ class HeadServerFoldTest {
         assertTrue(sse.contains("\"stop_reason\":\"end_turn\""))
         // usage summed across rounds (round1 out=600 + round2 out=800 = 1400), not a single round
         assertTrue(sse.contains("\"output_tokens\":1400"), "usage should sum across rounds: $sse")
+    }
+
+    // ADDED 2026-07-26 (review of #58): SummaryTurnDedupTest pins the MECHANISM by handing one
+    // SharedSummaryParts to two translators by hand; nothing pinned the WIRING that makes rounds
+    // share it in production. A meta rebuilt per round — or an explicit copy(summaryParts = ...)
+    // slipped into the fold loop — keeps every unit test green and brings the mirror duplication
+    // straight back. This drives the real head: HeadServer -> TurnDriver -> per-round translator.
+    @Test
+    fun `turn-scoped summary dedup - a continuation round's re-titled section reaches the client once`() = runTest {
+        val before = mock.upstreamBodies.size
+        val sse = messages("foldsummary", "claude-codex--gpt-5.6-luna")
+        assertEquals(2, mock.upstreamBodies.size - before, "expected one continuation POST")
+
+        // round 2 restates section A verbatim (upstream sent it twice, downstream must show it once)
+        assertEquals(
+            1,
+            thinkingCountOf(sse, SUMMARY_SECTION_A),
+            "the continuation round's re-titled section must be suppressed turn-scoped: $sse",
+        )
+        assertEquals(1, countOf(sse, SUMMARY_SECTION_A), "the re-titled section leaked into the payload: $sse")
+        // ...while the section only round 2 produced still lands — the summary stays complete
+        assertEquals(1, thinkingCountOf(sse, SUMMARY_SECTION_B), "a genuinely-new section was suppressed: $sse")
+        assertTrue(sse.contains("FINAL ANSWER"), sse)
     }
 
     @Test

@@ -1,0 +1,7 @@
+id: kt-no-runblocking-exported-bridge
+valid:
+  - 'private fun blockingBridge(x: Int) = runBlocking { work(x) }'
+  - 'override fun run() { runBlocking { work() } }'
+invalid:
+  - 'internal fun blockingBridge(x: Int) = runBlocking { work(x) }'
+  - 'fun blockingBridge(x: Int) = runBlocking { work(x) }'

@@ -2,5 +2,8 @@ id: kt-l3-end-turn-literal
 valid:
   - 'val reason = StopReason.TOOL_USE'
   - '// end_turn named in a comment is fine'
+  - 'val msg = "stream ended: " + reason'
+  - 'val msg = "the " + "turnaround"'
 invalid:
   - 'val reason = "end_turn"'
+  - 'val reason = "end_" + "turn"'

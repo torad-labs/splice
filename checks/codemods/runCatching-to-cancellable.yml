@@ -12,6 +12,18 @@
 #   npx ast-grep scan --rule checks/codemods/runCatching-to-cancellable.yml --update-all
 id: codemod-runcatching-to-cancellable
 language: kotlin
+#
+# The fully-qualified spelling `kotlin.runCatching { … }` is a DIFFERENT node (navigation_expression)
+# and the bare pattern cannot reach it (walls audit 2026-07-26). Dormant today — 0 live hits — but
+# it is the one-line spelling that defeats this codemod.
+#
+# DELIBERATELY ABSENT: a parenthesized-call branch. `runCatching(::fn)` never binds $$$BODY, and
+# ast-grep substitutes an unmatched metavariable with the EMPTY STRING — so a $$$BODY-templated fix
+# would silently rewrite it to `runCatchingCancellable { }`, a broken empty body, with no error.
+# That form stays detect-only under kt-no-runcatching-in-coroutine. Verified: this rule returns []
+# on `val x = runCatching(::risky)`.
 rule:
-  pattern: runCatching { $$$BODY }
+  any:
+    - pattern: runCatching { $$$BODY }
+    - pattern: kotlin.runCatching { $$$BODY }
 fix: 'runCatchingCancellable { $$$BODY }'

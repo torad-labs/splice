@@ -1,13 +1,27 @@
 # External contract protection — the byte-identical state paths (~/.claude-codex/*)
 # resolve in ONE place (StatePaths.kt); a second literal is a drift seed.
+#
+# Widened from `\.claude-codex` to `\.claude-` (walls audit 2026-07-26): the narrower regex is a
+# PER-NODE substring check, so it is trivially evaded by splitting the literal across concatenation
+# or a string template (`".claude-" + "codex"`, or `"~/.claude-$head"` when head == "codex") — no
+# single string_content node then contains the full substring. Do NOT narrow it back; that reopens
+# the concatenation evasion.
+#
+# Daemon.kt is ignored deliberately, not incidentally. Its `"~/.claude-$key"` (launchSpecFor) is the
+# per-head CLAUDE_CONFIG_DIR default for the WRAPPED Claude Code instance — `~/.claude-claudex`,
+# `~/.claude-grok`, one per head. That is a different external contract from this wall's subject,
+# which is the GATEWAY's own state dir (StatePaths.kt:16 — `~/.claude-codex/state`). They share a
+# prefix and nothing else; routing the launcher's config dir through StatePaths would be wrong.
 id: kt-state-paths-single-source
 language: kotlin
 severity: error
-message: "State paths resolve only in StatePaths.kt — no `.claude-codex` literals elsewhere."
+message: "State paths resolve only in StatePaths.kt — no `.claude-` state-dir literals, concatenated or templated, elsewhere."
 files:
   - gateway/*/src/main/**/*.kt
 ignores:
   - gateway/core/src/main/kotlin/**/config/StatePaths.kt
+  # per-head CLAUDE_CONFIG_DIR for the wrapped Claude Code — a separate contract, see header
+  - gateway/app/src/main/kotlin/splice/app/Daemon.kt
 rule:
   kind: string_content
-  regex: \.claude-codex
+  regex: \.claude-

@@ -7,7 +7,10 @@
 package splice.spi
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.longOrNull
 import splice.core.turn.ErrorType
 import splice.core.util.runCatchingCancellable
 import splice.core.util.str
@@ -60,6 +63,10 @@ public object UpstreamFailureClassifier {
             code = err?.str("type")
                 ?: err?.str("code")
                 ?: ""
+            // Keep the fields that tell the operator WHAT TO DO. The bare `message` alone reads
+            // "The usage limit has been reached" with no hint the ChatGPT Pro quota is six days
+            // out (2026-07-26: the reset was 142h away and nothing on the wire said so).
+            message += quotaSuffix(err)
         }
         if (parsed.isFailure && gatewayHtmlRe.containsMatchIn(message)) {
             val type = if (status == BAD_GATEWAY) ErrorType.OVERLOADED else ErrorType.API_ERROR
@@ -86,6 +93,34 @@ public object UpstreamFailureClassifier {
         }
     }
 
+    /** Upstream quota errors carry the only fields that answer "what do I do now" — when it
+     *  resets, and which plan hit the wall — and keeping just `message` threw them away. Appended
+     *  as plain text so every consumer (SSE error frame, non-stream envelope, daemon.log) gains it
+     *  without an envelope-shape change. Absent fields append nothing. */
+    private fun quotaSuffix(err: JsonObject?): String {
+        if (err == null) return ""
+        val parts = mutableListOf<String>()
+        err.str("plan_type")?.takeIf { it.isNotBlank() }?.let { parts += "plan=$it" }
+        val resetsInS = err["resets_in_seconds"]?.jsonPrimitive?.longOrNull
+            ?: err["resets_at"]?.jsonPrimitive?.longOrNull?.let { it - System.currentTimeMillis() / MS_PER_S }
+        resetsInS?.takeIf { it > 0 }?.let { parts += "resets in ${humanizeDuration(it)}" }
+        return if (parts.isEmpty()) "" else " (${parts.joinToString(", ")})"
+    }
+
+    /** Seconds -> "6d 4h" / "4h 12m" / "45s". Coarse on purpose: the operator needs the ORDER of
+     *  magnitude ("six days, switch heads") far more than the exact second. */
+    private fun humanizeDuration(totalSeconds: Long): String {
+        val d = totalSeconds / SECONDS_PER_DAY
+        val h = (totalSeconds % SECONDS_PER_DAY) / SECONDS_PER_HOUR
+        val m = (totalSeconds % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE
+        return when {
+            d > 0 -> "${d}d ${h}h"
+            h > 0 -> "${h}h ${m}m"
+            m > 0 -> "${m}m"
+            else -> "${totalSeconds}s"
+        }
+    }
+
     private fun overflowFailure(msg: String): ClassifiedFailure {
         val message = if (promptTooLongRe.containsMatchIn(msg)) msg else "prompt is too long: $msg"
         return ClassifiedFailure(ErrorType.INVALID_REQUEST, message.take(MAX_MESSAGE))
@@ -105,6 +140,11 @@ public object UpstreamFailureClassifier {
         data class Fields(val message: String, val code: String) : ExtractResult()
         data class Gateway(val failure: ClassifiedFailure) : ExtractResult()
     }
+
+    private const val MS_PER_S = 1000L
+    private const val SECONDS_PER_MINUTE = 60L
+    private const val SECONDS_PER_HOUR = 3600L
+    private const val SECONDS_PER_DAY = 86_400L
 
     private const val RATE_LIMIT_STATUS = 429
     private const val AUTH_STATUS = 401

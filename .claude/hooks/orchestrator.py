@@ -99,11 +99,12 @@ def pretooluse(data: dict) -> int:
     except ValueError:
         return 0  # outside the repo — not this wall's jurisdiction
 
-    if _is_wall_path(rel) and os.environ.get("SPLICE_WALLS_OK") != "1":
+    if _is_wall_path(rel) and os.environ.get("SPLICE_WALLS_OK") != "1" and not _walls_grant_active():
         _emit_block(
             f"SPLICE WALLS: {rel} is wall infrastructure (rules / orchestrator / settings).\n\n"
             "Walls are grant-gated: a blocked write means fix the code, not the wall.\n"
             "If the operator consciously approved a wall change, re-run with\n"
+            "/grant <minutes> <reason> from the prompt line (operator-only), or\n"
             "SPLICE_WALLS_OK=1 — loud and never silent. Then re-run the gate\n"
             "(npm run gate:rules && npm run test:hooks) to prove red/green."
         )
@@ -147,6 +148,21 @@ def stop(data: dict) -> int:
             + "\n\nFix them before stopping (same rules as npm run gate:rules)."
         )
     return 0
+
+
+def _walls_grant_active() -> bool:
+    """True while an operator-issued /grant is live (see modules/userpromptsubmit/03_grant_command.py).
+
+    A grant is issuable ONLY from a UserPromptSubmit hook, which fires only on text a human typed
+    into the prompt box — an assistant emits tool calls, never a user prompt. So this stays
+    operator-only by construction, not by policy. Expiry is enforced HERE, at the gate, so a stale
+    file can never hold the wall open; the grant module reports the same rule.
+    """
+    try:
+        raw = json.loads((ROOT / ".claude/state/walls-grant.json").read_text(encoding="utf-8"))
+        return float(raw.get("until", 0)) > __import__("time").time()
+    except (OSError, ValueError, TypeError):
+        return False
 
 
 def _is_wall_path(rel: Path) -> bool:

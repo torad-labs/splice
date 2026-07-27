@@ -56,3 +56,6 @@ credentials.json
 /dev/research/gateway-best-practices-2026-07-18.md
 /dev/research/gateway-gaps-tracker.md
 # --- end OSS-K entries ---
+
+# transient operator wall grant (/grant) — never committed
+.claude/state/walls-grant.json

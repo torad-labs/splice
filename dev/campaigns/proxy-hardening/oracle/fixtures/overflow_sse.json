@@ -1,0 +1,39 @@
+{
+  "scenario": "overflow_sse",
+  "client_request": {
+    "model": "gpt-5-codex",
+    "max_tokens": 1024,
+    "stream": true,
+    "system": "SCENARIO:overflow_sse",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Say the answer."
+      }
+    ]
+  },
+  "expected_upstream_requests": [
+    {
+      "model": "gpt-5-codex",
+      "input": [
+        {
+          "role": "user",
+          "content": "Say the answer."
+        }
+      ],
+      "store": false,
+      "stream": true,
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "prompt_cache_key": "splice-ab79a7c5bb0a3cec72e01e4e19b47fac",
+      "instructions": "SCENARIO:overflow_sse",
+      "reasoning": {
+        "effort": "high",
+        "summary": "detailed"
+      }
+    }
+  ],
+  "expected_client_status": 200,
+  "expected_client_sse": "event: error\ndata: {\"type\":\"error\",\"error\":{\"type\":\"invalid_request_error\",\"message\":\"ChatGPT backend: prompt is too long: invalid_request_error Your input exceeds the context window of this model. Please reduce the length.\"}}\n\n"
+}

@@ -1,0 +1,82 @@
+{
+  "captured_from": "server/ (legacy Node reference implementation)",
+  "source_test": "server/test/codex-proxy.test.mjs",
+  "mock_region_sha256": "91da8226d95fa2c09ec60620aa231d221cb9e4cacb52dc7bd9d1c92d5bccd396",
+  "canonicalization": [
+    "message-id: msg_<digits> -> msg_CANON"
+  ],
+  "node_suite_state_at_capture": "104/104 pass (node --test)",
+  "excluded": {
+    "idle": "timing-dependent (CLAUDEX_STREAM_IDLE_MS) — wall-clock races make a byte-exact fixture unstable",
+    "drip": "timing-dependent chunk pacing — same reason as idle",
+    "refresh": "mutates auth state across runs (single-flight 401 refresh); needs its own stateful fixture shape"
+  },
+  "scenarios": {
+    "basic": {
+      "sha256": "175ed929706530e5cb667f5a486579fdf09f9326396d13ada2e64aa7e2addff9",
+      "upstream_requests": 1,
+      "client_sse_bytes": 1090,
+      "client_status": 200
+    },
+    "multipart": {
+      "sha256": "7cb4d975c355724b9001bef8c2e6bfaa0d7a205558b9e29eae84a0a525402283",
+      "upstream_requests": 1,
+      "client_sse_bytes": 2031,
+      "client_status": 200
+    },
+    "toolcall": {
+      "sha256": "12dc74dee09e067ec03f90de488e3f10f09f57c46207d88116adce1db8e59fc6",
+      "upstream_requests": 1,
+      "client_sse_bytes": 1269,
+      "client_status": 200
+    },
+    "nonstream_tool": {
+      "sha256": "852eac9448781c036e02002817f5ccb77139e67b8e759877f510f524e5b9a4ae",
+      "upstream_requests": 1,
+      "client_sse_bytes": 1468,
+      "client_status": 200
+    },
+    "truncated": {
+      "sha256": "9acdedb53b422a6ecba05252ef27e25aa26360c712970be895c70af8235e98a3",
+      "upstream_requests": 1,
+      "client_sse_bytes": 895,
+      "client_status": 200
+    },
+    "overflow_sse": {
+      "sha256": "7355f793fcab9c83f4073ecb7f6dae110357fa676fa80e72166270f7cd4f32ea",
+      "upstream_requests": 1,
+      "client_sse_bytes": 228,
+      "client_status": 200
+    },
+    "prefill": {
+      "sha256": "ce1a10e8a453643a123b2a0109e9dbe9f80c8875bd183c1fb944765050143684",
+      "upstream_requests": 1,
+      "client_sse_bytes": 1103,
+      "client_status": 200
+    },
+    "replaystream": {
+      "sha256": "3cd4d43aa79e80d2788cae910c4abaf88f631bc25543c9e92d95e3dcd1851f09",
+      "upstream_requests": 1,
+      "client_sse_bytes": 2160,
+      "client_status": 200
+    },
+    "failed": {
+      "sha256": "0bbcab46febfaea1dd3910934eeebe9a091b1d57abe303ad877ea0be8f121066",
+      "upstream_requests": 1,
+      "client_sse_bytes": 122,
+      "client_status": 200
+    },
+    "bigout": {
+      "sha256": "b0d780aa63901e9dd26822f864b4a4b96b453c73a5888e676494ca9f7e8a1d38",
+      "upstream_requests": 1,
+      "client_sse_bytes": 1092,
+      "client_status": 200
+    },
+    "compactish": {
+      "sha256": "d9582cb4ead4402eafef69d9c216005a0931905d0ba591bee8ef80d74907a08b",
+      "upstream_requests": 1,
+      "client_sse_bytes": 1908,
+      "client_status": 200
+    }
+  }
+}

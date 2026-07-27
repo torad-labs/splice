@@ -1,0 +1,453 @@
+# wall_registry.toml — the enforcement census for dev/campaigns/proxy-hardening.toml.
+#
+# LAW #924 / #954: an item with no wall is UNENFORCED DOCUMENTATION. Every row below is
+# checked by dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py in BOTH directions, and a row may NEVER
+# be deleted to silence the gate — the fix is BUILDING THE WALL.
+#
+# THE POLARITY LAW: a wall whose item is todo/in_flight MUST FAIL. A wall that passes while
+# its item is unfinished is VACUOUS and reads RED. You cannot land a wall that was never red,
+# and you cannot mark an item done until its wall flips. Green is EARNED, never protected.
+#
+# BIRTH STATE 2026-07-26: 83 items, 80 UNWALLED, 3 walled-and-correctly-red.
+# That is the honest work inventory, not a failure.
+
+[[item]]
+id = "CX-19"
+phase = "W0-net"
+wall = "dev/campaigns/proxy-hardening/walls/cx_19_oracle_replay.py"
+
+[[item]]
+id = "NF-01"
+phase = "W1-bounded-failure"
+wall = "dev/campaigns/proxy-hardening/walls/nf_01_rate_limit_cooldown_bounded.py"
+
+[[item]]
+id = "NF-02"
+phase = "W1-bounded-failure"
+wall = "dev/campaigns/proxy-hardening/walls/nf_02_max_inflight_default.py"
+
+[[item]]
+id = "NF-03"
+phase = "W1-bounded-failure"
+wall = ""
+
+[[item]]
+id = "NF-04"
+phase = "W1-bounded-failure"
+wall = ""
+
+[[item]]
+id = "NF-06"
+phase = "W1-bounded-failure"
+wall = ""
+
+[[item]]
+id = "SH-06"
+phase = "W1-bounded-failure"
+wall = ""
+
+[[item]]
+id = "SH-01"
+phase = "W2-auth-lifecycle"
+wall = ""
+
+[[item]]
+id = "SH-02"
+phase = "W2-auth-lifecycle"
+wall = ""
+
+[[item]]
+id = "SH-04"
+phase = "W2-auth-lifecycle"
+wall = ""
+
+[[item]]
+id = "SH-10"
+phase = "W2-auth-lifecycle"
+wall = ""
+
+[[item]]
+id = "SH-11"
+phase = "W2-auth-lifecycle"
+wall = ""
+
+[[item]]
+id = "SH-12"
+phase = "W2-auth-lifecycle"
+wall = ""
+
+[[item]]
+id = "SH-14"
+phase = "W2-auth-lifecycle"
+wall = ""
+
+[[item]]
+id = "JW-01"
+phase = "W3-see-the-daemon"
+wall = ""
+
+[[item]]
+id = "JW-02"
+phase = "W3-see-the-daemon"
+wall = ""
+
+[[item]]
+id = "JW-03"
+phase = "W3-see-the-daemon"
+wall = ""
+
+[[item]]
+id = "JW-04"
+phase = "W3-see-the-daemon"
+wall = ""
+
+[[item]]
+id = "JW-05"
+phase = "W3-see-the-daemon"
+wall = ""
+
+[[item]]
+id = "JW-06"
+phase = "W3-see-the-daemon"
+wall = ""
+
+[[item]]
+id = "JW-08"
+phase = "W3-see-the-daemon"
+wall = ""
+
+[[item]]
+id = "JW-13"
+phase = "W3-see-the-daemon"
+wall = ""
+
+[[item]]
+id = "JW-17"
+phase = "W3-see-the-daemon"
+wall = ""
+
+[[item]]
+id = "CX-01"
+phase = "W4-correctness-walls"
+wall = ""
+
+[[item]]
+id = "CX-02"
+phase = "W4-correctness-walls"
+wall = "dev/campaigns/proxy-hardening/walls/cx_02_compact_directive_dialect_symmetry.py"
+
+[[item]]
+id = "CX-04"
+phase = "W4-correctness-walls"
+wall = ""
+
+[[item]]
+id = "CX-07"
+phase = "W4-correctness-walls"
+wall = ""
+
+[[item]]
+id = "CX-08"
+phase = "W4-correctness-walls"
+wall = ""
+
+[[item]]
+id = "CX-09"
+phase = "W4-correctness-walls"
+wall = ""
+
+[[item]]
+id = "CX-11"
+phase = "W4-correctness-walls"
+wall = ""
+
+[[item]]
+id = "CX-18"
+phase = "W4-correctness-walls"
+wall = ""
+
+[[item]]
+id = "CX-20"
+phase = "W4-correctness-walls"
+wall = ""
+
+[[item]]
+id = "CX-03"
+phase = "W5-overflow-skew"
+wall = ""
+
+[[item]]
+id = "CX-12"
+phase = "W5-overflow-skew"
+wall = ""
+
+[[item]]
+id = "CX-13"
+phase = "W5-overflow-skew"
+wall = ""
+
+[[item]]
+id = "CX-15"
+phase = "W5-overflow-skew"
+wall = ""
+
+[[item]]
+id = "JW-07"
+phase = "W5-overflow-skew"
+wall = ""
+
+[[item]]
+id = "JW-11"
+phase = "W6-shed-backpressure"
+wall = ""
+
+[[item]]
+id = "NF-05"
+phase = "W6-shed-backpressure"
+wall = ""
+
+[[item]]
+id = "NF-08"
+phase = "W6-shed-backpressure"
+wall = ""
+
+[[item]]
+id = "NF-09"
+phase = "W6-shed-backpressure"
+wall = ""
+
+[[item]]
+id = "NF-10"
+phase = "W6-shed-backpressure"
+wall = ""
+
+[[item]]
+id = "NF-14"
+phase = "W6-shed-backpressure"
+wall = ""
+
+[[item]]
+id = "NF-15"
+phase = "W6-shed-backpressure"
+wall = ""
+
+[[item]]
+id = "NF-19"
+phase = "W6-shed-backpressure"
+wall = ""
+
+[[item]]
+id = "JW-10"
+phase = "W7-auth-on-the-wire"
+wall = ""
+
+[[item]]
+id = "NF-23"
+phase = "W7-auth-on-the-wire"
+wall = ""
+
+[[item]]
+id = "SH-03"
+phase = "W7-auth-on-the-wire"
+wall = ""
+
+[[item]]
+id = "SH-05"
+phase = "W7-auth-on-the-wire"
+wall = ""
+
+[[item]]
+id = "SH-07"
+phase = "W7-auth-on-the-wire"
+wall = ""
+
+[[item]]
+id = "SH-08"
+phase = "W7-auth-on-the-wire"
+wall = ""
+
+[[item]]
+id = "SH-09"
+phase = "W7-auth-on-the-wire"
+wall = ""
+
+[[item]]
+id = "SH-15"
+phase = "W7-auth-on-the-wire"
+wall = ""
+
+[[item]]
+id = "SH-16"
+phase = "W7-auth-on-the-wire"
+wall = ""
+
+[[item]]
+id = "SH-20"
+phase = "W7-auth-on-the-wire"
+wall = ""
+
+[[item]]
+id = "SH-21"
+phase = "W7-auth-on-the-wire"
+wall = ""
+
+[[item]]
+id = "CX-14"
+phase = "W8-operator-surface"
+wall = ""
+
+[[item]]
+id = "JW-09"
+phase = "W8-operator-surface"
+wall = ""
+
+[[item]]
+id = "JW-12"
+phase = "W8-operator-surface"
+wall = ""
+
+[[item]]
+id = "JW-14"
+phase = "W8-operator-surface"
+wall = ""
+
+[[item]]
+id = "JW-15"
+phase = "W8-operator-surface"
+wall = ""
+
+[[item]]
+id = "JW-16"
+phase = "W8-operator-surface"
+wall = ""
+
+[[item]]
+id = "JW-19"
+phase = "W8-operator-surface"
+wall = ""
+
+[[item]]
+id = "JW-20"
+phase = "W8-operator-surface"
+wall = ""
+
+[[item]]
+id = "NF-07"
+phase = "W8-operator-surface"
+wall = ""
+
+[[item]]
+id = "NF-12"
+phase = "W8-operator-surface"
+wall = ""
+
+[[item]]
+id = "NF-13"
+phase = "W8-operator-surface"
+wall = ""
+
+[[item]]
+id = "SH-13"
+phase = "W8-operator-surface"
+wall = ""
+
+[[item]]
+id = "SH-17"
+phase = "W8-operator-surface"
+wall = ""
+
+[[item]]
+id = "JW-21"
+phase = "W9-tracker-truth"
+wall = ""
+
+[[item]]
+id = "NF-16"
+phase = "W9-tracker-truth"
+wall = ""
+
+[[item]]
+id = "NF-21"
+phase = "W9-tracker-truth"
+wall = ""
+
+[[item]]
+id = "CX-16"
+phase = "W10-deferred-gated"
+wall = ""
+
+[[item]]
+id = "JW-22"
+phase = "W10-deferred-gated"
+wall = ""
+
+[[item]]
+id = "NF-11"
+phase = "W10-deferred-gated"
+wall = ""
+
+[[item]]
+id = "NF-22"
+phase = "W10-deferred-gated"
+wall = ""
+
+[[item]]
+id = "SH-18"
+phase = "W10-deferred-gated"
+wall = ""
+
+[[item]]
+id = "SH-19"
+phase = "W10-deferred-gated"
+wall = ""
+
+[[item]]
+id = "NF-24"
+phase = "W11-operator-decision"
+wall = ""
+
+[[item]]
+id = "CX-05"
+phase = "W12-unscheduled"
+wall = ""
+
+[[item]]
+id = "CX-06"
+phase = "W12-unscheduled"
+wall = ""
+
+[[item]]
+id = "CX-10"
+phase = "W12-unscheduled"
+wall = ""
+
+[[item]]
+id = "CX-17"
+phase = "W12-unscheduled"
+wall = ""
+
+[[item]]
+id = "INF-02"
+phase = "W-INFRA"
+wall = "dev/campaigns/proxy-hardening/walls/inf_02_every_law_walled.py"
+
+[[item]]
+id = "INF-03"
+phase = "W-INFRA"
+wall = ""
+
+[[item]]
+id = "INF-04"
+phase = "W-INFRA"
+wall = "dev/campaigns/proxy-hardening/walls/inf_04_no_unscheduled_items.py"
+
+[[item]]
+id = "INF-05"
+phase = "W-INFRA"
+wall = ""
+
+[[item]]
+id = "INF-01"
+phase = "W-INFRA"
+wall = "dev/campaigns/proxy-hardening/walls/inf_01_every_item_walled.py"
+

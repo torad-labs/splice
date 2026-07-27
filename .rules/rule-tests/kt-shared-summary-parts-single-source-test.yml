@@ -1,0 +1,12 @@
+id: kt-shared-summary-parts-single-source
+valid:
+  # the only legitimate shape: read the turn's instance, never make one
+  - 'val next = ctx.copy(summaryPartsShared = meta.summaryParts)'
+  - 'val parts = meta.summaryParts'
+  - 'private val emittedParts = shared?.emittedParts ?: mutableListOf()'
+invalid:
+  - 'val a = SharedSummaryParts()'
+  # fully-qualified: a different node kind, and the exact red-proof mutation
+  - 'summaryPartsShared = splice.core.turn.SharedSummaryParts()'
+  # re-assignment on a copy — no construction, same bug
+  - 'val next = meta.copy(summaryParts = SharedSummaryParts())'

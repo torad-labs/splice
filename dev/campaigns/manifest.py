@@ -56,6 +56,9 @@ USAGE:
   manifest.py edit-fence <ID> "f1, f2, ..."      replace the files fence + append FENCE-EDITED note
   manifest.py edit-verify <ID> "cmd"             replace the verify string + append VERIFY-EDITED note
   manifest.py add-law "text"                    append a dated # LAW line to the header banner
+  manifest.py amend-header "old" "new"          substring-replace in exactly ONE banner comment
+                                                line — the sanctioned channel for a rotted pointer
+                                                (hook 08 blocks raw ledger edits)
   manifest.py laws                              print LAW header lines (no explicit path: aggregated
                                                 + deduped across ALL dev/campaigns/*.toml)
   manifest.py packet <ID>                         emit the computed packet for one item
@@ -98,6 +101,9 @@ from contextlib import redirect_stderr
 from pathlib import Path
 
 DEFAULT = os.path.join(os.path.dirname(__file__), "kotlin-hardening.toml")
+# Verbs that are meaningful with no ledger path (`laws` aggregates across every ledger).
+# Everything else addresses ONE campaign and must be told which.
+PATHLESS_VERBS = frozenset({"laws"})
 DEFAULT_WORKSPACES_DB = os.path.expanduser("~/.openclaw/workspaces/workspaces.db")
 DEFAULT_LITELLM_PRICING = os.path.expanduser("~/.openclaw/workspaces/litellm-pricing.json")
 HDR = re.compile(r"^\[\[items?\]\]\s*$")
@@ -6356,6 +6362,36 @@ def _cmd_selftest_body(path):
     )
 
 
+def _no_default_ledger(cmd):
+    """The message a path-less invocation gets when DEFAULT does not exist here.
+
+    2026-07-27 review: DEFAULT is a VENDORING ARTIFACT — it names kotlin-hardening.toml, which
+    exists in the repo this CLI was vendored from, not in this one. So a bare, fully lawful
+    `manifest.py selftest` ended in a FileNotFoundError traceback, and the only thing between an
+    amnesiac session and that traceback was a NOTE in one ledger's header banner. An instruction a
+    session has to REMEMBER is precisely the failure mode the ledger design exists to remove; a
+    tool that teaches beats a note that must be read first.
+
+    Deliberately does NOT guess a ledger. Seven campaigns live in this directory, and silently
+    picking one for a mutating verb (`note`, `set-status`, `claim`) would write the right text into
+    the WRONG campaign — strictly worse than the traceback it replaces. Name the problem, print the
+    census, exit 2.
+    """
+    here = os.path.dirname(__file__) or "."
+    try:
+        ledgers = sorted(f for f in os.listdir(here) if f.endswith(".toml"))
+    except OSError:
+        ledgers = []
+    listing = "\n".join(f"  python3 {os.path.join(here, f)} {cmd} ..." for f in ledgers) or "  (none found)"
+    return (
+        f"error: `{cmd}` addresses ONE campaign ledger and no path was given.\n"
+        f"The built-in default ({os.path.basename(DEFAULT)}) does not exist in {here} — it came\n"
+        "from the repo this CLI was vendored from. Pass the ledger explicitly as the FIRST arg:\n\n"
+        f"{listing}\n\n"
+        "(`laws` is the one verb that works with no path: it aggregates across every ledger.)"
+    )
+
+
 def main(argv):
     args = list(argv[1:])
     path = DEFAULT
@@ -6365,6 +6401,8 @@ def main(argv):
     if not args:
         sys.exit(__doc__)
     cmd, rest = args[0], args[1:]
+    if not explicit_path and cmd not in PATHLESS_VERBS and not os.path.exists(path):
+        sys.exit(_no_default_ledger(cmd))
     if cmd == "list":
         kw = {}
         while rest:

@@ -5,6 +5,11 @@ valid:
     sealed class Command {
         data object Doctor : Command()
     }
+  - |
+    object AdminSupport {
+        val usage = """Usage: object FooCommand <args>"""
+        val x: FooCommand = TODO()
+    }
 invalid:
   - |
     object InstallCommand {

@@ -1,5 +1,17 @@
 # Loopback-only (ported wall) — every embeddedServer call must pass the literal
 # "127.0.0.1"; Ktor's default host is 0.0.0.0 and a variable host can drift.
+# Widened: the old exemption was an UNSCOPED subtree `has: kind: string_content
+# regex: ^127\.0\.0\.1$` — it matched the literal "127.0.0.1" appearing ANYWHERE
+# inside the embeddedServer call, not specifically bound to the host parameter.
+# `embeddedServer(Netty, port = p, host = bindHost, tag = "127.0.0.1") { ... }`
+# passed as compliant even though host was actually a variable, because some
+# unrelated string argument happened to equal the loopback literal. The exemption
+# is now scoped to the host assignment itself: `host = "127.0.0.1"` covers the
+# connector-block form (a plain assignment), and the second branch covers the
+# named-argument call form (`embeddedServer(Netty, port = p, host = "127.0.0.1")`)
+# — that form parses to a `value_argument` node, not the assignment node the first
+# pattern matches, so a standalone `host = "127.0.0.1"` pattern alone misses it;
+# `context:`+`selector: value_argument` is required to target that node shape.
 id: kt-embedded-server-loopback
 language: kotlin
 severity: error
@@ -10,6 +22,9 @@ rule:
   pattern: embeddedServer($$$ARGS)
   not:
     has:
-      kind: string_content
-      regex: ^127\.0\.0\.1$
       stopBy: end
+      any:
+        - pattern: host = "127.0.0.1"
+        - pattern:
+            context: "f(host = \"127.0.0.1\")"
+            selector: value_argument

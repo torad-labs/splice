@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import splice.core.turn.ErrorType
+import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
 import splice.dialect.responses.EmitEncryptedReasoning
 import splice.dialect.responses.ResponsesStreamTranslator
@@ -43,6 +44,8 @@ class ScenarioIntegrationTest {
         watchdogFired = { null },
         streamIdleMsForMessage = 180_000,
         upstreamTimeoutMsForMessage = 900_000,
+        // one turn, one round: this test never continues, so a fresh instance IS the turn's state
+        summaryPartsShared = SharedSummaryParts(),
     )
 
     private fun drive(scenario: String, replay: Boolean = false): Pair<TurnOutcome, RecordingSink2> {

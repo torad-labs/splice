@@ -1,0 +1,114 @@
+# dev/campaigns/proxy-hardening/oracle/expectations.toml — the honest red list for the migration oracle.
+#
+# MODELLED ON bun's test/expectations.txt. Bun's rule, which this keeps: a scenario that passes
+# but is not enrolled here "wasn't counted and wasn't protected against regression" (bun#34441).
+# Enrolment is what makes a green result MEAN something.
+#
+# WHAT THE ORACLE IS  dev/campaigns/proxy-hardening/oracle/fixtures/*.json — both wire directions of the LEGACY Node
+# stack (server/), recorded byte-exactly by dev/campaigns/proxy-hardening/oracle/capture.mjs while that stack was green
+# (104/104, `cd server && node --test`). It is the reference implementation of this protocol.
+#
+# THE ORACLE IS NOT A SPEC — IT IS A RECORDING. It faithfully encodes the reference's BUGS as
+# well as its correctness. The Kotlin gateway deliberately fixed several of them (the G-series in
+# dev/research/gateway-gaps-tracker.md). So a replay divergence has exactly two readings, and
+# every one must be classified into one of them, never left ambiguous:
+#
+#   status = "not-yet-replayed"    no verdict exists yet. The birth state of every row.
+#   status = "kotlin-wrong"        the gateway diverges and the reference was right. A BUG. Fix
+#                                  the gateway; the row leaves this file when it passes.
+#   status = "sanctioned"          the gateway diverges ON PURPOSE and is better. MUST cite the
+#                                  G-number or campaign item that authorised it, and MUST pin the
+#                                  new expected bytes — a sanctioned divergence is still pinned,
+#                                  otherwise it is an unmonitored hole.
+#
+# A row is NEVER deleted to make the runner green. Deleting a row un-protects the scenario, which
+# is the precise failure bun#34441 names. Rows leave only by passing.
+#
+# BIRTH STATE 2026-07-26: 11 captured, 0 replayed. The replay runner does not exist yet, so every
+# row is not-yet-replayed. That count IS the work inventory (#954: red is the honest inventory).
+
+[oracle]
+captured = 2026-07-26
+fixtures = "dev/campaigns/proxy-hardening/oracle/fixtures"
+source = "server/ (legacy Node reference implementation)"
+source_suite_state = "104/104 pass at capture time"
+canonicalization = ["message-id: msg_<digits> -> msg_CANON"]
+replayed = 0
+captured_count = 11
+
+# ── captured, awaiting a replay verdict ──────────────────────────────────────
+# Each row's `covers` names what the scenario actually pins, so a future reader knows what is
+# lost if the row is dropped.
+
+[[scenario]]
+name = "basic"
+status = "not-yet-replayed"
+covers = "happy-path streaming turn: message_start/ping/content_block_*/message_delta/message_stop ordering, usage payload shape"
+
+[[scenario]]
+name = "multipart"
+status = "not-yet-replayed"
+covers = "multi-part reasoning summary folded into ONE thinking block + the mirror text block (invariant L2)"
+
+[[scenario]]
+name = "toolcall"
+status = "not-yet-replayed"
+covers = "tool_use block assembly from streamed function-call arguments"
+
+[[scenario]]
+name = "nonstream_tool"
+status = "not-yet-replayed"
+covers = "non-stream translation path + UTF-8 split-chunk handling"
+
+[[scenario]]
+name = "truncated"
+status = "not-yet-replayed"
+covers = "honest failure: a truncated upstream stream is an SSE error, NEVER a clean empty end_turn (invariant L3)"
+
+[[scenario]]
+name = "overflow_sse"
+status = "not-yet-replayed"
+covers = "context overflow via response.failed rewritten to 'prompt is too long' invalid_request_error — the P0 the pre-port tree died on"
+note = "captured client status was 200. Whether the Kotlin gateway should return 4xx here is a G13 question (G13 fixed PRE-stream rejections; this failure arrives mid-stream, after headers). Classify at first replay from evidence — do not assume either reading."
+
+[[scenario]]
+name = "prefill"
+status = "not-yet-replayed"
+covers = "assistant-prefill request shaping"
+
+[[scenario]]
+name = "replaystream"
+status = "not-yet-replayed"
+covers = "encrypted reasoning-item replay wire path (captured with CLAUDEX_REPLAY_REASONING=1; ships default-off)"
+
+[[scenario]]
+name = "failed"
+status = "not-yet-replayed"
+covers = "upstream response.failed -> honest terminal error, no fabricated end_turn"
+
+[[scenario]]
+name = "bigout"
+status = "not-yet-replayed"
+covers = "output-token clamp: reported usage clamped to the client's max_tokens"
+
+[[scenario]]
+name = "compactish"
+status = "not-yet-replayed"
+covers = "real Claude Code 2.1.207 compaction shape WITH tools -> detected, tools stripped upstream, summary delivered"
+
+# ── captured deliberately NOT frozen, with reasons (never silently dropped) ──
+
+[[excluded]]
+name = "idle"
+reason = "timing-dependent (CLAUDEX_STREAM_IDLE_MS); wall-clock races make a byte-exact fixture unstable"
+recover = "needs a virtual-clock fixture shape before it can be frozen"
+
+[[excluded]]
+name = "drip"
+reason = "timing-dependent chunk pacing — same as idle"
+recover = "same"
+
+[[excluded]]
+name = "refresh"
+reason = "mutates auth state across runs (single-flight 401 refresh), so capture is order-dependent"
+recover = "needs a stateful fixture shape recording the refresh call sequence, not just one turn"

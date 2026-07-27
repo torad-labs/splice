@@ -5,6 +5,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.app.TopologyLoader
+import splice.core.config.Knob
 import splice.core.topology.Dialect
 import java.nio.file.Files
 import java.nio.file.Paths
@@ -60,5 +61,55 @@ class ExampleConfigTest {
         // the isolate override survives the round-trip
         assertTrue(topology.heads["claude-grok"]!!.claude.isolate.contains("commands"))
         assertEquals("claudex", topology.heads["claudex"]!!.claude.command)
+    }
+
+    // 2026-07-26 review: the per-head block documented knob names in prose, and the prose had
+    // drifted (it leaned three times on a [defaults] table the file never defined). Prose rots
+    // silently; this makes the example's knob vocabulary answer to the Knob enum mechanically.
+    // Covers BOTH the live override tables and the names the comments teach operators to use.
+    @Test
+    fun `every knob the example uses or names is a real Knob key`() {
+        val toml = exampleToml()
+        val topology = TopologyLoader.parse(toml)
+
+        // 1. Live [heads.<key>.overrides] tables — a typo here ships a silently-ignored knob.
+        val used = topology.heads.values.flatMap { it.overrides.keys }.toSet()
+        assertTrue(used.isNotEmpty(), "the example must keep demonstrating per-head overrides")
+        used.forEach { assertTrue(Knob.byKey.containsKey(it), "example sets unknown knob '$it'") }
+
+        // 2. Knob names the COMMENTS teach. Anything camelCase-and-backticked-or-listed in the
+        //    per-head doc block must resolve; that is what went stale and got hand-fixed once.
+        //
+        //    2026-07-27 review: this used to pre-filter to `startsWith("max") || endsWith("Ms")`,
+        //    which was lossless only by accident — the example happens to name only the
+        //    timeout-and-capacity family today. `toolSurface`, `usageWarnPct`, `pinnedModel`,
+        //    `foldMarkerText` and `contextWindowOverride` are all live Knob keys the filter would
+        //    have silently dropped, and silent skipping is the exact drift this test exists to
+        //    catch. Every camelCase token now resolves against the enum; prose words that are not
+        //    knobs go in an EXPLICIT allowlist, so they stay visible instead of vanishing into a
+        //    shape rule.
+        val docNames = Regex("\\b([a-z]+[A-Z][A-Za-z]*)\\b")
+            .findAll(toml.lines().filter { it.trimStart().startsWith("#") }.joinToString("\n"))
+            .map { it.groupValues[1] }
+            .toSet()
+        assertTrue(docNames.isNotEmpty(), "the example must keep teaching knob names in comments")
+
+        // Prose, not knobs. An entry here that IS a knob would silence a real drift, so the
+        // allowlist is asserted disjoint from the enum rather than trusted.
+        val prose = setOf("xAI")
+        prose.forEach {
+            assertTrue(
+                !Knob.byKey.containsKey(it),
+                "'$it' is a real knob — remove it from the prose allowlist",
+            )
+        }
+
+        (docNames - prose).forEach {
+            assertTrue(
+                Knob.byKey.containsKey(it),
+                "example comment names unknown knob '$it' " +
+                    "(add it to the prose allowlist only if it is not a knob)",
+            )
+        }
     }
 }

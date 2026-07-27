@@ -1,0 +1,35 @@
+# Per-head config discipline. Heads share ONE ConfigService in one JVM (unlike the Node lineage's
+# process-per-head), so a knob tuned for one upstream governs all of them unless every read is
+# KEYED: config.getConfig(key), never the unkeyed global view. The regression this prevents is
+# measured — kimi's 40-min upstreamTimeoutMs also handing codex a 40-min ceiling, and a shared
+# inflight=100 producing 67% turn failure.
+#
+# RELATIONAL, NOT FILE-SCOPED, ON PURPOSE (2026-07-26 review). The naive form of this wall bans
+# config.getConfig() inside Daemon.kt with a hand-maintained exception for the one legitimate
+# boot-time global read. That exception list rots, and it says nothing about new files. This rule
+# instead states the actual invariant: INSIDE A HEAD-SCOPED FUNCTION, the unkeyed view is banned.
+#   - Daemon.start() reads the global view legitimately and is untouched — no key in scope.
+#   - providerContext(key: String, …) and assembleHead { val key = ctx.key } are both covered,
+#     and they bind `key` differently, which is why both shapes are matched.
+#   - any NEW head-scoped function is covered the day it is written, with no rule edit.
+# Verified when authored: 0 hits on the clean tree; 1 hit when the key is dropped at either site.
+id: kt-head-scoped-config-must-be-keyed
+language: kotlin
+severity: error
+message: "A head-scoped function must read config.getConfig(key) — the unkeyed global view leaks one head's knob onto every head (kimi's 40-min cap once governed codex)."
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  all:
+    - pattern: config.getConfig()
+    - inside:
+        kind: function_declaration
+        stopBy: end
+        has:
+          stopBy: end
+          any:
+            # the head key arrives as a parameter …
+            - kind: parameter
+              regex: '^key: String$'
+            # … or is bound locally from the per-head build context
+            - pattern: val key = $ANY

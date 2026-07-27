@@ -1,5 +1,11 @@
 id: kt-state-paths-single-source
 valid:
   - 'val dir = statePaths.stateDir'
+  - 'val dir = statePaths.resolve("state")'
 invalid:
   - 'val dir = home.resolve(".claude-codex/state")'
+  # the evasions the widened fragment closes (2026-07-26 audit): the old
+  # `\.claude-codex` regex is a per-NODE check, so neither of these contained
+  # the full substring in any single string_content node and both scanned clean.
+  - 'val dir = home.resolve(".claude-" + "codex")'
+  - 'val dir = home.resolve("~/.claude-$head/state")'

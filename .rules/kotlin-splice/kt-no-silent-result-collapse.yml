@@ -16,6 +16,34 @@ note: >
   missing files). Route the failure somewhere first: .onFailure { log(...) } / classify it /
   return a sealed outcome. If null truly is the complete story (e.g. optional config probe),
   keep the collapse and add `// ast-grep-ignore: kt-no-silent-result-collapse -- <reason>`.
+# Widened 2026-07-26 (audit 3.7): the original single-branch rule only matched a `.getOrNull()`/
+# `.getOrDefault()` node whose OWN subtree contains `runCatching` — assigning the Result to a val
+# first (`val result = runCatching { read() }` then `val token = result.getOrNull()` on a later
+# line) breaks that subtree relationship and the collapse vanished with zero textual trace. Added
+# branch B: a `property_declaration` whose initializer is the collapse call, tied by metavariable
+# identity on `$RECV` to a preceding sibling `val $RECV = runCatching {…}` (that identity is what
+# stops it firing on unrelated vals sharing the same collapse call shape).
+#
+# Widened 2026-07-27 (review round 2): branch B's binding arm required `val`, so the identical
+# collapse behind a `var` binding walked straight through. The arm now accepts either.
+#
+# NOT widened, and this is a decision with evidence, not an omission: the review also sketched
+# relaxing the `kind: property_declaration` anchor so a collapse in a `return` (or any non-
+# initializer position) would be caught, flagging it as a sketch to validate with rule-tests
+# before landing. It was validated, and it FAILS: with the anchor relaxed to include
+# `jump_expression`, this legitimately-handled shape trips the wall —
+#
+#     val r = runCatching { read() }
+#     r.onFailure { log(it) }          // failure consumed, on its own statement
+#     return r.getOrNull()
+#
+# because the `not: has onFailure` guards are scoped to the collapse node's subtree and the
+# binding's subtree, and a standalone `r.onFailure { … }` statement is in neither. Binding the
+# receiver in a `not: follows: $RECV.onFailure($$$)` arm does not suppress it (trailing-lambda
+# call shape). A wall that flags compliant code trains authors to reach for ast-grep-ignore —
+# the same argument this audit made against launcher-no-pkill's over-broad branch. The
+# return-position gap is therefore left OPEN and named here rather than closed with a rule that
+# cries wolf; closing it properly needs failure-consumption tracking the pattern layer lacks.
 files:
   - gateway/provider-spi/src/main/**/*.kt
   - gateway/provider-grok/src/main/**/*.kt
@@ -24,12 +52,40 @@ files:
   - gateway/provider-openai/src/main/**/*.kt
 rule:
   any:
-    - pattern: $RECV.getOrNull()
-    - pattern: $RECV.getOrDefault($$$ARGS)
-  has:
-    stopBy: end
-    regex: "\\brunCatching(Cancellable)?\\b"
-  not:
-    has:
-      stopBy: end
-      regex: "\\bonFailure\\b"
+    # A. direct chain — the original wall, unchanged
+    - all:
+        - any:
+            - pattern: $RECV.getOrNull()
+            - pattern: $RECV.getOrDefault($$$ARGS)
+        - has:
+            stopBy: end
+            regex: "\\brunCatching(Cancellable)?\\b"
+        - not:
+            has:
+              stopBy: end
+              regex: "\\bonFailure\\b"
+    # B. split form: `val r = runCatching { … }` then `r.getOrNull()` on a later line.
+    - all:
+        - kind: property_declaration
+        - has:
+            stopBy: end
+            any:
+              - pattern: $RECV.getOrNull()
+              - pattern: $RECV.getOrDefault($$$ARGS)
+        - not:
+            has:
+              stopBy: end
+              regex: "\\bonFailure\\b"
+        - follows:
+            stopBy: end
+            all:
+              - any:
+                  - pattern: val $RECV = $$$INIT
+                  - pattern: var $RECV = $$$INIT
+              - has:
+                  stopBy: end
+                  regex: "\\brunCatching(Cancellable)?\\b"
+              - not:
+                  has:
+                    stopBy: end
+                    regex: "\\bonFailure\\b"

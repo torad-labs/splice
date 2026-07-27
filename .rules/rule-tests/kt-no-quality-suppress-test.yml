@@ -2,7 +2,10 @@ id: kt-no-quality-suppress
 valid:
   - 'val x = listOf("TooManyFunctions")'
   - '@Suppress("UNCHECKED_CAST") val y = z as Map<String, String>'
+  - '@Suppress("UseDataClass") class InflightGate'
 invalid:
   - '@Suppress("TooManyFunctions") class HeadServer'
   - '@Suppress("LongMethod") fun drive() {}'
   - '@Suppress("TooGenericExceptionCaught") fun f() {}'
+  - '@file:Suppress("LongMethod", "TooManyFunctions")'
+  - '@kotlin.Suppress("LongMethod") class Foo'

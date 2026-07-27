@@ -1,5 +1,13 @@
 # FSD: UI strictly via state — tsx variant. api segments are plain .ts, so ANY
 # fetch in a .tsx file is a component fetching server state directly.
+#
+# Widened 2026-07-26 (ast-grep-walls-audit): same defect as webui-fetch-only-in-api
+# — the bare pattern only matched a bare or dot-accessed call callee; optional
+# chaining ($W?.fetch) and bracket access ($W['fetch'], $W["fetch"],
+# $W?.['fetch'], $W?.["fetch"]) are different node shapes and slipped through.
+# All six call shapes are now enumerated (double-quoted bracket form is an
+# audit addition with its own rule-test case, per §9 of the audit). Real tree
+# stays 0 hits across 45 webui/src files.
 id: webui-fetch-only-in-api-tsx
 language: tsx
 severity: error
@@ -14,3 +22,8 @@ rule:
   any:
     - pattern: fetch($$$A)
     - pattern: $W.fetch($$$A)
+    - pattern: $W?.fetch($$$A)
+    - pattern: $W['fetch']($$$A)
+    - pattern: $W?.['fetch']($$$A)
+    - pattern: $W["fetch"]($$$A)
+    - pattern: $W?.["fetch"]($$$A)

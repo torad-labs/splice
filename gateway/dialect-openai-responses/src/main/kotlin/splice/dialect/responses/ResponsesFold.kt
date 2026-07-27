@@ -87,25 +87,16 @@ public class ResponsesFoldController(
 /** DTO-faithful continuation shared by fold and re-anchor: decode the prior request, extend ONLY
  *  its `input` with [extraItems], re-encode through the same closed serializer. No request FIELD
  *  is added — the #924 closed DTO is untouched, so byte-identity off both paths is trivial.
- *  The summary request is STRIPPED (2026-07-26, operator report): continuation rounds replay
- *  reasoning the server already summarized in round 1, and re-asking `summary: detailed` makes
- *  the summarizer re-title the same content with the same generic section titles — which the
- *  mirror commits as duplicated reasoning blocks in adjacent turns (measured 89-102 dupes per
- *  claudex session; codex-rs/KiloCode/opencode don't re-request it). Effort, context, and the
- *  encrypted-content include stay — continuity is untouched; only the summary RE-REQUEST dies. */
+ *  The summary request RIDES ALONG on continuations by design (operator call 2026-07-26: "I want
+ *  to always see the reasoning, detailed"): the duplicated sections that the re-request provokes
+ *  are suppressed turn-scoped in the stream translator (SharedSummaryParts) — exact repeats of a
+ *  section already emitted this turn never reach the client; every genuinely-new section does. */
 internal fun continuationRequest(previous: JsonObject, extraItems: List<JsonObject>): JsonObject {
     val base = responsesRequestJson.decodeFromJsonElement(ResponsesRequest.serializer(), previous)
     val nextInput = buildJsonArray {
         base.input.forEach { add(it) }
         extraItems.forEach { add(it) }
     }
-    val next = base.copy(
-        input = nextInput,
-        reasoning = base.reasoning?.withoutSummary(),
-        streamOptions = null,
-    )
+    val next = base.copy(input = nextInput)
     return responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), next) as JsonObject
 }
-
-private fun JsonObject.withoutSummary(): JsonObject =
-    JsonObject(filterKeys { it != "summary" })

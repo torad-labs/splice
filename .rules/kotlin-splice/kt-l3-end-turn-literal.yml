@@ -1,5 +1,13 @@
 # Invariant L3 (Kotlin) — no caller ever holds an end_turn literal; stop_reason
 # derivation lives inside SseEmitter.emitTerminal (tool_use > max_tokens > end_turn).
+# Widened 2026-07-26 (audit §4/A.4): a `string_content` regex is a per-node substring
+# test — "end_" + "turn" reproduces the same runtime string with no node ever
+# containing `end_turn`, so the original rule was bypassable by splitting the
+# literal across an additive_expression. Added a second branch that catches a
+# two-operand additive_expression where each string_literal operand is exactly
+# one morpheme of the banned token (`^(end_?|_?turn)$`, anchored so a log line
+# like `stream ended: ${reason}` cannot trip it), excluding any operand pair that
+# contains an interpolated_expression (so runtime-built strings are not flagged).
 id: kt-l3-end-turn-literal
 language: kotlin
 severity: error
@@ -9,5 +17,24 @@ files:
 ignores:
   - gateway/gateway/src/main/kotlin/**/wire/SseEmitter.kt
 rule:
-  kind: string_content
-  regex: \bend_turn\b
+  any:
+    - kind: string_content
+      regex: \bend_turn\b
+    - all:
+        - kind: additive_expression
+        - has:
+            kind: string_literal
+            nthChild: 1
+            has:
+              kind: string_content
+              regex: "^(end_?|_?turn)$"
+        - has:
+            kind: string_literal
+            nthChild: 2
+            has:
+              kind: string_content
+              regex: "^(end_?|_?turn)$"
+        - not:
+            has:
+              stopBy: end
+              kind: interpolated_expression

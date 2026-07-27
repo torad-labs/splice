@@ -64,7 +64,12 @@ WALL_PATHS_DOC = ".rules/, .claude/hooks/, .claude/settings.json, sgconfig.yml"
 
 
 def _root() -> pathlib.Path:
-    return pathlib.Path(__file__).resolve().parents[3]
+    # This file installs to <repo>/.claude/hooks/modules/userpromptsubmit/, so the repo root is
+    # FOUR parents up: [0]=userpromptsubmit [1]=modules [2]=hooks [3]=.claude [4]=<repo>.
+    # Off-by-one here is silent and nasty: the module writes the grant to <repo>/.claude/.claude/...
+    # while orchestrator.py reads <repo>/.claude/state/..., so /grant reports ACTIVE and the gate
+    # keeps blocking. Caught 2026-07-26 by asserting the wall actually OPENS after an issue.
+    return pathlib.Path(__file__).resolve().parents[4]
 
 
 def _grant_file() -> pathlib.Path:
@@ -196,3 +201,29 @@ def run(data: dict) -> HookResult | None:
             module_name="grant",
         )
     return HookResult(kind="inject", payload=_issue(minutes, reason), module_name="grant")
+
+
+# --------------------------------------------------------------------------------------------
+# CLI MODE — READ-ONLY, BY DESIGN. This is what `.claude/commands/grant.md` executes so the
+# command is visible in the / autocomplete menu (a UserPromptSubmit interception alone is not:
+# the menu only indexes command/skill FILES).
+#
+# It can INSPECT a grant. It deliberately CANNOT issue one, and that asymmetry is the whole
+# security model — same split as torad-fleet's scripts/fleet-grant-status.py.
+#
+# Why: a `!`-line in a command file runs a shell command, and any shell command an operator can
+# run, an assistant can also run with the Bash tool. `disable-model-invocation` stops an
+# assistant invoking the COMMAND, but not from executing this file directly. So if `_issue()`
+# were reachable from here, the grant would become assistant-issuable and the wall would be
+# policy rather than structure.
+#
+# Issuing therefore stays exclusively on the UserPromptSubmit path above, which fires only on
+# text a human typed. If someone later adds an `issue` mode here "for convenience", the
+# recursion terminator this whole layer exists for is gone.
+if __name__ == "__main__":
+    print(_status_text())
+    print()
+    print("To ISSUE a grant, type this into the prompt box (it is intercepted by the hook,")
+    print("which is the one channel an assistant structurally cannot reach):")
+    print(f"    /grant <minutes up to {MAX_MINUTES}> <reason>")
+    print("    /grant revoke")

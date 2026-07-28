@@ -123,14 +123,23 @@ private const val TEARDOWN_TAIL_GRACE_MS = 2_000L
 // stays OPEN for the daemon's lifetime. A failed write drops the writer so the
 // next line reopens. SIZE-ROTATION (audit 2026-07-18: daemon.log grew forever, ~1KB/turn): at
 // MAX_LOG_BYTES the file is moved to daemon.log.1 (one generation kept) and a fresh file opened.
-private fun persistentLogger(logsDir: Path): (String) -> Unit {
+//
+// LINE TERMINATION IS NORMALIZED HERE, not trusted to callers (review of PR #62, 2026-07-27).
+// This sink used to `print`/`write` the message verbatim, so a trailing "\n" was part of every
+// caller's string by convention. That convention is invisible at the call site and silently
+// breaks whoever forgets: the kt-no-println conversion moved 14 sites off System.err.println —
+// which appends the newline for you — onto this sink, and their entries merged into one run-on
+// line in daemon.log. /mgmt/logs splits on "\n" (ControlServer.logsJson), so the endpoint this
+// whole change exists to feed emitted concatenated garbage. Exactly one terminator is appended
+// here, which is a no-op for the callers that already pass one and makes the class unrepeatable.
+internal fun persistentLogger(logsDir: Path): (String) -> Unit {
     runCatchingCancellable { Files.createDirectories(logsDir) }
     val file = logsDir.resolve("daemon.log")
     val rolled = logsDir.resolve("daemon.log.1")
     var writer: java.io.Writer? = null
     var written = runCatchingCancellable { if (Files.exists(file)) Files.size(file) else 0L }.getOrDefault(0L)
     return { msg ->
-        val line = "[${LocalTime.now().truncatedTo(ChronoUnit.SECONDS)}] $msg"
+        val line = "[${LocalTime.now().truncatedTo(ChronoUnit.SECONDS)}] ${msg.trimEnd('\n')}\n"
         AsyncFileIo.submit {
             System.err.print(line)
             runCatchingCancellable {

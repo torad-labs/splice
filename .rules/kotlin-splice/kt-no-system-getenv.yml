@@ -12,11 +12,16 @@
 # uses and is exempted for. Banning it would flag this codebase's own constructor-injection
 # convention and turn CI red for a rule nobody agreed to.
 #
-# The real defect is narrower: the rule saw only `System.getenv(...)`, so the fully-qualified
-# spelling `java.lang.System.getenv("HOME")` — a different node (navigation_expression with a
-# qualified receiver) — walked straight through. That is a genuine evasion of a real read.
-# Adding `$RECEIVER.getenv($$$A)` closes it, leaves all three injection forms clean (proved
-# against the tree AND against a synthetic file carrying each shape), and scans to 0 hits.
+# The real defect is narrower: the rule saw only `System.getenv(...)`, so other spellings of a real
+# read walked straight through — `java.lang.System.getenv("HOME")` (navigation_expression with a
+# qualified receiver) and, per the #62 review, a static import (`import java.lang.System.getenv`
+# then a bare `getenv("HOME")`, which is a call_expression with a plain identifier callee and
+# matches NEITHER of the receiver-shaped branches). Three branches now cover all three spellings.
+#
+# An earlier revision of this header called the qualified receiver "the only real evasion". That
+# was wrong and the static-import case proves it: this rule matches SPELLINGS, and an enumeration
+# of spellings is never provably complete. Treat the branch list as the shapes known to occur, not
+# as closure — if you find a fourth, add it rather than trusting this comment.
 #
 # The distinction this rule now draws: a CALL reads the environment; a REFERENCE hands the
 # capability to someone who was asked to accept it. Only the first bypasses the config layer.
@@ -32,5 +37,11 @@ rule:
   any:
     - pattern: System.getenv($$$A)
     # fully-qualified spelling — java.lang.System.getenv("X"); a different node the bare
-    # pattern cannot reach, and the only real evasion the old rule had.
+    # pattern cannot reach.
     - pattern: $RECEIVER.getenv($$$A)
+    # static import — `import java.lang.System.getenv` then a bare `getenv("X")`. No receiver at
+    # all, so neither branch above can see it. `kind: call_expression` is load-bearing: without it
+    # the pattern also binds the `getenv` identifier inside the two receiver forms above.
+    - all:
+        - pattern: getenv($$$A)
+        - kind: call_expression

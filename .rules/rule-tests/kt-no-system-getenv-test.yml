@@ -12,3 +12,7 @@ invalid:
   # the fully-qualified evasion — a real read the bare pattern could never see
   - 'val v = java.lang.System.getenv("HOME")'
   - 'val v = System.getenv(name)'
+  # static import (#62 review): no receiver, so both receiver-shaped branches are blind to it
+  - |
+    import java.lang.System.getenv
+    fun read() = getenv("HOME")

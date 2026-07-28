@@ -8,6 +8,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import splice.core.config.StatePaths
 import splice.core.util.AsyncFileIo
+import splice.core.util.DaemonLog
 import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
 import java.nio.file.Path
@@ -48,6 +49,10 @@ private fun runDaemon() {
     val topology = TopologyLoader.loadOrMaterialize(topologyPath)
     val distPath = Paths.get(System.getProperty("user.dir"), "..", "webui", "dist", "index.html")
     val log = persistentLogger(statePaths.logsDir)
+    // Components that would otherwise fall back to bare stderr (auth providers, ConfigService,
+    // ResponsesProvider) default to this sink, so their diagnostics reach daemon.log and therefore
+    // /mgmt/logs. Injection still wins where a caller passes its own (wall kt-no-println).
+    DaemonLog.install(log)
     val shutdownSignal = CompletableDeferred<Unit>()
     splice.app.cli.shimStalenessWarning()?.let { log("$it\n") }
     val daemon = Daemon(

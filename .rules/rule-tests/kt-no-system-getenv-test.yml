@@ -1,5 +1,14 @@
 id: kt-no-system-getenv
 valid:
   - 'val v = config.effort'
+  # INJECTION, not access (audit §2.1): handing the capability to a caller that asked for it.
+  # All 21 live `System::getenv` sites are one of these two shapes — the same idiom
+  # ConfigService.kt:37 is exempted for. Flagging them would ban the DI convention itself.
+  - 'fun configPath(env: (String) -> String? = System::getenv): Path = TODO()'
+  - 'private val envReader: (String) -> String? = System::getenv'
+  - 'val tokenUrl = GrokOAuthEndpoints.tokenUrl(System::getenv)'
 invalid:
   - 'val v = System.getenv("CLAUDEX_REASONING_EFFORT")'
+  # the fully-qualified evasion — a real read the bare pattern could never see
+  - 'val v = java.lang.System.getenv("HOME")'
+  - 'val v = System.getenv(name)'

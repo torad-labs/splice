@@ -1,6 +1,25 @@
 # Config discipline — env access goes through the layered config service (the
 # Kotlin analog of webui's fetch-only-in-api). Scattered System.getenv reads
 # bypass provenance, coercion, and the /mgmt/config layer view.
+#
+# WIDENED 2026-07-27 (audit §2.1) — but NOT the way that audit drafted it, and the difference is
+# the whole point. The audit proposed adding `$RECEIVER::getenv` and a bare `System::getenv`
+# callable_reference branch, which surfaces 21 live hits across 11 files and calls them violations.
+# Every one of those 21 was read: all are INJECTION, not scattered access — either a DI default
+# (`env: (String) -> String? = System::getenv`, e.g. TopologyLoader.configPath, InstallCommand,
+# AdminSupport, DoctorCommand) or the reader handed to a function that takes it as a parameter
+# (`GrokOAuthEndpoints.tokenUrl(System::getenv)`). That is the IDENTICAL idiom ConfigService.kt:37
+# uses and is exempted for. Banning it would flag this codebase's own constructor-injection
+# convention and turn CI red for a rule nobody agreed to.
+#
+# The real defect is narrower: the rule saw only `System.getenv(...)`, so the fully-qualified
+# spelling `java.lang.System.getenv("HOME")` — a different node (navigation_expression with a
+# qualified receiver) — walked straight through. That is a genuine evasion of a real read.
+# Adding `$RECEIVER.getenv($$$A)` closes it, leaves all three injection forms clean (proved
+# against the tree AND against a synthetic file carrying each shape), and scans to 0 hits.
+#
+# The distinction this rule now draws: a CALL reads the environment; a REFERENCE hands the
+# capability to someone who was asked to accept it. Only the first bypasses the config layer.
 id: kt-no-system-getenv
 language: kotlin
 severity: error
@@ -10,4 +29,8 @@ files:
 ignores:
   - gateway/core/src/main/kotlin/**/config/**
 rule:
-  pattern: System.getenv($$$A)
+  any:
+    - pattern: System.getenv($$$A)
+    # fully-qualified spelling — java.lang.System.getenv("X"); a different node the bare
+    # pattern cannot reach, and the only real evasion the old rule had.
+    - pattern: $RECEIVER.getenv($$$A)

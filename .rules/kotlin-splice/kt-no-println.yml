@@ -1,5 +1,24 @@
 # Logging discipline — daemon output goes through the per-head logger (log tail
 # endpoints + files depend on the format); println is invisible to /mgmt/logs.
+#
+# WIDENED 2026-07-27 (audit §2.2, deferred there for an operator call — made since).
+# `pattern: println($$$A)` matches a BARE CALL only, so the shape that actually occurs in this
+# repo was invisible: `System.err.println(...)` is a navigation_expression, `System.err::println`
+# a different one (the last navigation_suffix uses `::`), and `::println` a callable_reference.
+# The wall reported 0 while 13 live sites bypassed the log endpoint.
+#
+# The invariant was VERIFIED before widening rather than assumed: Main.persistentLogger is a
+# (String) -> Unit that writes BOTH stderr and daemon.log, and /mgmt/logs serves daemon.log
+# (ControlServer.logsJson -> LogFileSource.tail, filtered by the `[key]` tag). A bare
+# System.err.println reaches stderr ONLY, so its line genuinely never appears in the endpoint —
+# the failure you most want to read is the one you cannot.
+#
+# All 13 sites were CONVERTED, not exempted: an injected `log: (String) -> Unit` now threads from
+# Daemon into the four auth providers, ConfigService, ResponsesProvider (+ its three subclasses)
+# and RefreshOutcome (whose `= System.err::println` default was itself a hit). The `= {}` default
+# keeps ~50 test construction sites untouched. One deliberate carve-out remains, inline:
+# AsyncFileIo.recordDrop, because persistentLogger writes daemon.log BY calling AsyncFileIo.submit
+# — the log lane cannot report its own failure through itself.
 id: kt-no-println
 language: kotlin
 severity: error
@@ -11,4 +30,12 @@ ignores:
   # (doctor output, usage). Daemon LOGGING still flows through the injected log lambda.
   - gateway/app/src/main/**/*.kt
 rule:
-  pattern: println($$$A)
+  any:
+    - pattern: println($$$A)
+    # System.err.println(...) / any qualified receiver — the shape 12 of the 13 sites used.
+    - pattern: $RECV.println($$$A)
+    # System.err::println as a DI default — a stderr write dressed as injection.
+    - pattern: $RECV::println
+    # bare ::println; a different node again (callable_reference with no receiver).
+    - kind: callable_reference
+      regex: '^::println$'

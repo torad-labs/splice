@@ -10,6 +10,7 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.config.KeyStore
+import splice.core.util.DaemonLog
 import splice.core.util.runCatchingCancellable
 import splice.core.util.str
 import java.nio.file.Files
@@ -23,6 +24,12 @@ public class ApiKeyAuthProvider(
     // a `splice key set` lands on the very next request without a restart. Tests inject a hermetic
     // store — the default points at the operator's real ~/.config/splice/keys.toml.
     private val keyStore: KeyStore = KeyStore(KeyStore.defaultPath(envReader)),
+    /** Daemon log sink (Main.persistentLogger): writes BOTH stderr and daemon.log, which is what
+     *  /mgmt/logs tails. A bare System.err.println reaches stderr ONLY, so its line never appears in
+     *  the log endpoint — the failure you most want to read is the one you cannot (wall
+     *  kt-no-println, 2026-07-27). Defaults to a no-op so tests need not thread it; the daemon
+     *  always injects the real sink. */
+    private val log: (String) -> Unit = DaemonLog::write,
 ) : RefreshableAuthProvider {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -71,7 +78,7 @@ public class ApiKeyAuthProvider(
                 text.takeIf { it.isNotEmpty() }
             }
         }.onFailure {
-            System.err.println("[api-key-auth] failed to read $file: $it — treating as no key configured")
+            log("[api-key-auth] failed to read $file: $it — treating as no key configured")
         }.getOrNull()
 
     private companion object {

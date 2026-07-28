@@ -12,6 +12,7 @@ import splice.core.reasoning.decodeReasoningEnvelope
 import splice.core.reasoning.encodeReasoningEnvelope
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.util.DaemonLog
 import splice.spi.BuiltTurn
 import splice.spi.FoldController
 import splice.spi.Provider
@@ -32,6 +33,12 @@ public abstract class ResponsesProvider(
     // Reasoning-continuation folding (codex 518n-2). null = the feature is off for this provider —
     // grok/openai-platform pass nothing → pure passthrough. Only CodexProvider wires a real config.
     private val foldConfig: FoldConfig? = null,
+    /** Daemon log sink (Main.persistentLogger): writes BOTH stderr and daemon.log, which is what
+     *  /mgmt/logs tails. A bare System.err.println reaches stderr ONLY, so its line never appears in
+     *  the log endpoint — the failure you most want to read is the one you cannot (wall
+     *  kt-no-println, 2026-07-27). Defaults to a no-op so tests need not thread it; the daemon
+     *  always injects the real sink. */
+    private val log: (String) -> Unit = DaemonLog::write,
 ) : Provider, ProviderIdentity by tuning {
 
     final override val upstreamUrl: String = "${tuning.baseUrl}/responses"
@@ -171,13 +178,13 @@ public abstract class ResponsesProvider(
         else -> null
     }
 
-    /** The latch's one observable signal — stderr, the same `[tag] message` idiom
-     *  ApiKeyAuthProvider.kt uses for standalone diagnostics (no injected logger reaches this
-     *  module; see [ToolSurfaceLatch]). Guarded by [ToolSurfaceLatch.close]'s CAS return, so this
+    /** The latch's one observable signal, through the injected daemon sink so it reaches
+     *  /mgmt/logs and not stderr alone (wall kt-no-println, 2026-07-27; it used to be a bare
+     *  System.err.println on the premise that no logger reaches this module — one now does). Guarded by [ToolSurfaceLatch.close]'s CAS return, so this
      *  fires EXACTLY ONCE per provider instance — never once per turn, since every turn after the
      *  close reads the latch already-closed and never re-enters this branch. */
     private fun logToolSurfaceLatchClosed() {
-        System.err.println(
+        log(
             "[${quirks.providerTag}] tool-surface latch closed: backend rejected the tool_search " +
                 "shape; this turn recovered eager-only (one turn below status quo), every later turn " +
                 "on this provider instance builds the full eager surface.",

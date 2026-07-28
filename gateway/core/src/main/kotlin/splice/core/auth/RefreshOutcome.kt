@@ -8,6 +8,8 @@
 // classification (see RefreshAttempt.kt) produces, so InvalidGrantLatch can key its gate on it.
 package splice.core.auth
 
+import splice.core.util.DaemonLog
+
 /** The Rejected.reason marker for a CONFIRMED invalid_grant (401/403/explicit invalid_grant body) —
  *  as opposed to any other non-retryable refresh rejection. Paired with [InvalidGrantLatch]. */
 public const val INVALID_GRANT_REASON: String = "invalid_grant"
@@ -43,7 +45,11 @@ public sealed class RefreshOutcome {
  */
 public fun RefreshOutcome.credentialsOrNull(
     tag: String,
-    log: (String) -> Unit = System.err::println,
+    // Was `= System.err::println`, which reached stderr ONLY and so never appeared in /mgmt/logs
+    // (wall kt-no-println, 2026-07-27). The default now resolves to the process sink Main installs,
+    // which writes daemon.log; daemon callers still pass their own injected sink explicitly, and
+    // tests pass a capturing one. Uninstalled, DaemonLog is a no-op — never a silent stderr write.
+    log: (String) -> Unit = DaemonLog::write,
 ): Credentials? = when (this) {
     is RefreshOutcome.Refreshed -> credentials
     RefreshOutcome.NoCredentialsFile -> {

@@ -19,6 +19,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import splice.core.turn.ReasoningDisplay
+import splice.core.util.DaemonLog
 import splice.core.util.SecureFile
 import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
@@ -35,6 +36,12 @@ public class ConfigService(
     // head can hold its own maxInflight/timeouts without the value leaking onto its siblings.
     private val perHeadOverrides: Map<String, Map<String, String>> = emptyMap(),
     private val envReader: (String) -> String? = System::getenv,
+    /** Daemon log sink (Main.persistentLogger): writes BOTH stderr and daemon.log, which is what
+     *  /mgmt/logs tails. A bare System.err.println reaches stderr ONLY, so its line never appears in
+     *  the log endpoint — the failure you most want to read is the one you cannot (wall
+     *  kt-no-println, 2026-07-27). Defaults to a no-op so tests need not thread it; the daemon
+     *  always injects the real sink. */
+    private val log: (String) -> Unit = DaemonLog::write,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -165,7 +172,7 @@ public class ConfigService(
                 if (coerced != null) {
                     data[knob.key] = coerced
                 } else {
-                    System.err.println("[config] ignoring invalid env value for ${knob.key}: '$raw'")
+                    log("[config] ignoring invalid env value for ${knob.key}: '$raw'")
                 }
             }
         }
@@ -184,7 +191,7 @@ public class ConfigService(
                 SecureFile.writeAtomic0600(path, json.encodeToString(JsonObject.serializer(), next) + "\n")
                 fileCache = null
             }
-        }.onFailure { e -> System.err.println("[config] failed to persist config to disk: $e") }
+        }.onFailure { e -> log("[config] failed to persist config to disk: $e") }
     }
 
     private fun readOnDisk(path: Path): JsonObject =

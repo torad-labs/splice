@@ -1,6 +1,30 @@
 # Config discipline — env access goes through the layered config service (the
 # Kotlin analog of webui's fetch-only-in-api). Scattered System.getenv reads
 # bypass provenance, coercion, and the /mgmt/config layer view.
+#
+# WIDENED 2026-07-27 (audit §2.1) — but NOT the way that audit drafted it, and the difference is
+# the whole point. The audit proposed adding `$RECEIVER::getenv` and a bare `System::getenv`
+# callable_reference branch, which surfaces 21 live hits across 11 files and calls them violations.
+# Every one of those 21 was read: all are INJECTION, not scattered access — either a DI default
+# (`env: (String) -> String? = System::getenv`, e.g. TopologyLoader.configPath, InstallCommand,
+# AdminSupport, DoctorCommand) or the reader handed to a function that takes it as a parameter
+# (`GrokOAuthEndpoints.tokenUrl(System::getenv)`). That is the IDENTICAL idiom ConfigService.kt:37
+# uses and is exempted for. Banning it would flag this codebase's own constructor-injection
+# convention and turn CI red for a rule nobody agreed to.
+#
+# The real defect is narrower: the rule saw only `System.getenv(...)`, so other spellings of a real
+# read walked straight through — `java.lang.System.getenv("HOME")` (navigation_expression with a
+# qualified receiver) and, per the #62 review, a static import (`import java.lang.System.getenv`
+# then a bare `getenv("HOME")`, which is a call_expression with a plain identifier callee and
+# matches NEITHER of the receiver-shaped branches). Three branches now cover all three spellings.
+#
+# An earlier revision of this header called the qualified receiver "the only real evasion". That
+# was wrong and the static-import case proves it: this rule matches SPELLINGS, and an enumeration
+# of spellings is never provably complete. Treat the branch list as the shapes known to occur, not
+# as closure — if you find a fourth, add it rather than trusting this comment.
+#
+# The distinction this rule now draws: a CALL reads the environment; a REFERENCE hands the
+# capability to someone who was asked to accept it. Only the first bypasses the config layer.
 id: kt-no-system-getenv
 language: kotlin
 severity: error
@@ -10,4 +34,14 @@ files:
 ignores:
   - gateway/core/src/main/kotlin/**/config/**
 rule:
-  pattern: System.getenv($$$A)
+  any:
+    - pattern: System.getenv($$$A)
+    # fully-qualified spelling — java.lang.System.getenv("X"); a different node the bare
+    # pattern cannot reach.
+    - pattern: $RECEIVER.getenv($$$A)
+    # static import — `import java.lang.System.getenv` then a bare `getenv("X")`. No receiver at
+    # all, so neither branch above can see it. `kind: call_expression` is load-bearing: without it
+    # the pattern also binds the `getenv` identifier inside the two receiver forms above.
+    - all:
+        - pattern: getenv($$$A)
+        - kind: call_expression

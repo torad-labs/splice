@@ -22,6 +22,7 @@ import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.auth.credentialsOrNull
+import splice.core.util.DaemonLog
 import splice.core.util.long
 import splice.core.util.runCatchingCancellable
 import splice.core.util.str
@@ -47,6 +48,12 @@ public class KimiAuthProvider(
     private val refreshCall: suspend (refreshToken: String) -> RefreshAttempt<KimiRefreshedTokens>,
     /** G17: scope for background prefetch in the proactive window; null keeps the blocking path. */
     private val prefetchScope: CoroutineScope? = null,
+    /** Daemon log sink (Main.persistentLogger): writes BOTH stderr and daemon.log, which is what
+     *  /mgmt/logs tails. A bare System.err.println reaches stderr ONLY, so its line never appears in
+     *  the log endpoint — the failure you most want to read is the one you cannot (wall
+     *  kt-no-println, 2026-07-27). Defaults to a no-op so tests need not thread it; the daemon
+     *  always injects the real sink. */
+    private val log: (String) -> Unit = DaemonLog::write,
 ) : RefreshableAuthProvider {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -86,15 +93,15 @@ public class KimiAuthProvider(
     // a nearly-dead token risks a mid-stream 401, which costs more than the wait.
     private suspend fun proactiveWindowCredentials(snap: Snapshot, nowS: Long, remainingS: Long): Credentials? {
         if (prefetchScope != null && remainingS > HARD_FLOOR_S) {
-            prefetchScope.launch { singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG) } }
+            prefetchScope.launch { singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) } }
             return apiKey(snap.access)
         }
-        val refreshed = singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG) }
+        val refreshed = singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) }
         return refreshed ?: (if (nowS < snap.expiresAtS) apiKey(snap.access) else null)
     }
 
     override suspend fun refresh(): Credentials? =
-        singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG) }
+        singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) }
 
     override fun allowRefreshAfterFailure(status: Int, body: String): Boolean =
         !isPlanTierRejection(body)
@@ -109,7 +116,7 @@ public class KimiAuthProvider(
     // mtime changes (re-login), so a genuinely stale latch never outlives the credentials it named.
     private suspend fun doRefresh(): RefreshOutcome {
         if (!Files.exists(authPath)) return RefreshOutcome.NoCredentialsFile
-        val mtime = kimiAuthMtimeOrNull(authPath)
+        val mtime = kimiAuthMtimeOrNull(authPath, log)
         if (invalidGrantLatch.isLatched(mtime)) return RefreshOutcome.Rejected(INVALID_GRANT_REASON)
         val priorAccess = cache?.snapshot?.access
         val outcome = CredentialLock.withLock(authPath) { refreshLocked(priorAccess) }
@@ -199,7 +206,7 @@ public class KimiAuthProvider(
         }
         parseSnapshot()?.also { cache = Cache(it, mtime, now) }
     }.onFailure {
-        System.err.println("[kimi-auth] failed to read $authPath: $it — treating as not logged in")
+        log("[kimi-auth] failed to read $authPath: $it — treating as not logged in")
     }.getOrNull()
 
     private fun parseSnapshot(): Snapshot? {
@@ -223,7 +230,7 @@ public class KimiAuthProvider(
         val present = runCatchingCancellable {
             Files.exists(authPath) && parseSnapshot() != null
         }.getOrDefault(false)
-        val mtime = kimiAuthMtimeOrNull(authPath)
+        val mtime = kimiAuthMtimeOrNull(authPath, log)
         return AuthDescription(
             present = present,
             kind = "kimi-oauth",
@@ -251,8 +258,8 @@ public class KimiAuthProvider(
 // KimiAuthProvider stays under the TooManyFunctions ceiling; shared by doRefresh() and describe().
 // The failure is logged, not swallowed, before collapsing to null — a stat failure is "unknown",
 // which InvalidGrantLatch treats as fail-open (never suppresses), NOT "file unchanged".
-private fun kimiAuthMtimeOrNull(authPath: Path): Long? = runCatchingCancellable {
+private fun kimiAuthMtimeOrNull(authPath: Path, log: (String) -> Unit): Long? = runCatchingCancellable {
     Files.getLastModifiedTime(authPath).toMillis()
 }.onFailure {
-    System.err.println("[kimi-auth] failed to stat $authPath mtime: $it — invalid_grant latch check skipped")
+    log("[kimi-auth] failed to stat $authPath mtime: $it — invalid_grant latch check skipped")
 }.getOrNull()

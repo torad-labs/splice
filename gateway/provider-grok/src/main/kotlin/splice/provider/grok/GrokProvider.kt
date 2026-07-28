@@ -7,6 +7,7 @@ package splice.provider.grok
 
 import splice.core.auth.Credentials
 import splice.core.turn.ReasoningDisplay
+import splice.core.util.DaemonLog
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.EffortLadder
 import splice.dialect.responses.ResponsesProvider
@@ -20,7 +21,10 @@ public class GrokProvider(
     configEffort: String?,
     configSummary: String? = null,
     quirks: ResponsesQuirks = defaultQuirks(),
-) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks) {
+    /** Daemon log sink — forwarded to ResponsesProvider so its diagnostics reach
+     *  /mgmt/logs and not stderr alone (wall kt-no-println, 2026-07-27). */
+    log: (String) -> Unit = DaemonLog::write,
+) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks, log = log) {
 
     // Grok Build sets both the body prompt_cache_key AND x-grok-conv-id for sticky routing. The
     // header rides the PER-TURN BuiltTurn (via the base's perTurnHeaders hook) — a shared provider

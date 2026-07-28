@@ -22,8 +22,6 @@ import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ToolDeferralPolicy
 import splice.provider.codex.CodexProvider
 import splice.spi.ProviderTuning
-import java.io.ByteArrayOutputStream
-import java.io.PrintStream
 import kotlin.time.Duration.Companion.seconds
 
 class CodexProviderTest {
@@ -34,7 +32,11 @@ class CodexProviderTest {
         override suspend fun describe() = AuthDescription(true, "chatgpt-oauth", emptyMap())
     }
 
-    private fun provider(accountIdHeader: Boolean, toolSurface: ToolDeferralPolicy? = null) = CodexProvider(
+    private fun provider(
+        accountIdHeader: Boolean,
+        toolSurface: ToolDeferralPolicy? = null,
+        log: (String) -> Unit = {},
+    ) = CodexProvider(
         tuning = ProviderTuning(
             key = "codex",
             label = "claudex",
@@ -54,6 +56,7 @@ class CodexProviderTest {
         configSummary = "detailed",
         quirks = CodexProvider.defaultQuirks().copy(toolSurface = toolSurface),
         accountIdHeader = accountIdHeader,
+        log = log,
     )
 
     @Test
@@ -81,16 +84,6 @@ class CodexProviderTest {
 
     /** Runs [block] with stderr captured, restoring the original stream in [finally] — same
      *  idiom as DoctorCommandTest's System.setOut capture. */
-    private fun <T> captureStderr(block: () -> T): Pair<T, String> {
-        val err = ByteArrayOutputStream()
-        val original = System.err
-        return try {
-            System.setErr(PrintStream(err, true, Charsets.UTF_8))
-            block() to err.toString(Charsets.UTF_8)
-        } finally {
-            System.setErr(original)
-        }
-    }
 
     // review 2026-07-25 (PR top-level comment 7): the latch-close path (amendBodyOnFailure ->
     // dropToolSearchTool -> ToolSurfaceLatch.close) had no direct test — every existing test
@@ -101,19 +94,24 @@ class CodexProviderTest {
     // (comment 2) firing exactly once, not once per amend attempt or per turn.
     @Test
     fun `a shape-400 through amendBodyOnFailure strips tool_search, closes the latch once, next turn is eager`() {
-        val deferring = provider(accountIdHeader = false, toolSurface = ToolDeferralPolicy(minDeferred = 4))
+        // 2026-07-27: the latch signal moved off bare stderr onto the injected daemon sink (wall
+        // kt-no-println) so it reaches /mgmt/logs. Capture the sink — capturing stderr would now
+        // pass vacuously with zero lines, which is exactly the regression this assertion guards.
+        val loggedLines = mutableListOf<String>()
+        val deferring = provider(
+            accountIdHeader = false,
+            toolSurface = ToolDeferralPolicy(minDeferred = 4),
+            log = { loggedLines += it },
+        )
         val body = deferrableTurnBody()
         val before = deferring.buildTurn(body, compact = false, sessionId = "s1")
         assertEquals(10, before.meta.toolsDeferred, "setup: this turn actually deferred the mcp tools")
         assertEquals(1, before.meta.toolsEager)
 
-        val (turnResult, logged) = captureStderr {
-            val amended = deferring.amendBodyOnFailure(SHAPE_400, SHAPE_400_TEXT, REJECTED_TOOL_SEARCH_BODY)
-            // a second rejection on the now-closed latch must not fire a second log line
-            deferring.amendBodyOnFailure(SHAPE_400, SHAPE_400_TEXT, REJECTED_TOOL_SEARCH_BODY)
-            amended to deferring.buildTurn(body, compact = false, sessionId = "s1")
-        }
-        val (amended, after) = turnResult
+        val amended = deferring.amendBodyOnFailure(SHAPE_400, SHAPE_400_TEXT, REJECTED_TOOL_SEARCH_BODY)
+        // a second rejection on the now-closed latch must not fire a second log line
+        deferring.amendBodyOnFailure(SHAPE_400, SHAPE_400_TEXT, REJECTED_TOOL_SEARCH_BODY)
+        val after = deferring.buildTurn(body, compact = false, sessionId = "s1")
 
         assertTrue(amended != null)
         val amendedInput = Json.parseToJsonElement(amended!!).jsonObject["input"]!!.jsonArray
@@ -126,7 +124,7 @@ class CodexProviderTest {
 
         assertEquals(0, after.meta.toolsDeferred, "latch closed -> the next turn builds the full eager surface")
         assertEquals(11, after.meta.toolsEager, "all 11 tools (1 builtin + 10 mcp) ride eager now")
-        assertEquals(1, logged.lines().count { "tool-surface latch closed" in it }, "fires exactly once, not per turn")
+        assertEquals(1, loggedLines.count { "tool-surface latch closed" in it }, "fires exactly once, not per turn")
     }
 }
 

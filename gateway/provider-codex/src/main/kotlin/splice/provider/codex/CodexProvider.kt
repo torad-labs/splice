@@ -6,6 +6,7 @@ package splice.provider.codex
 
 import splice.core.auth.Credentials
 import splice.core.turn.ReasoningDisplay
+import splice.core.util.DaemonLog
 import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
@@ -21,7 +22,10 @@ public class CodexProvider(
     // Reasoning-continuation folding (codex 518n-2). null = off; the daemon wires it from config.
     foldConfig: FoldConfig? = null,
     private val accountIdHeader: Boolean = true,
-) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks, foldConfig) {
+    /** Daemon log sink — forwarded to ResponsesProvider so its diagnostics reach
+     *  /mgmt/logs and not stderr alone (wall kt-no-println, 2026-07-27). */
+    log: (String) -> Unit = DaemonLog::write,
+) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks, foldConfig, log) {
 
     override fun extraHeaders(creds: Credentials): Map<String, String> = buildMap {
         put("Accept", "text/event-stream")

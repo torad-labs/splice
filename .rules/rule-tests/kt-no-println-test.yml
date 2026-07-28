@@ -1,5 +1,13 @@
 id: kt-no-println
 valid:
   - 'log.info("head started")'
+  # 2026-07-27: the sanctioned shape — an injected sink that reaches daemon.log, hence /mgmt/logs.
+  - 'log("[grok-auth] failed to read $authPath: $it — treating as not logged in")'
+  - 'private val log: (String) -> Unit = {}'
 invalid:
   - 'println("head started")'
+  # the shape 12 of the 13 live sites used — invisible to the wall until 2026-07-27
+  - 'System.err.println("[grok-auth] failed to read $authPath")'
+  - 'System.out.println("x")'
+  # a stderr write dressed as injection: the RefreshOutcome default that was itself a hit
+  - 'fun f(log: (String) -> Unit = System.err::println) = log("x")'

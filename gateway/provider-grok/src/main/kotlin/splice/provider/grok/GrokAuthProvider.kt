@@ -39,6 +39,7 @@ import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.auth.credentialsOrNull
+import splice.core.util.DaemonLog
 import splice.core.util.SecureFile
 import splice.core.util.long
 import splice.core.util.runCatchingCancellable
@@ -70,6 +71,12 @@ public class GrokAuthProvider(
     // lifetime, so Daemon.stop (probeScope.cancel) cancels an in-flight refresh instead of letting
     // it write the token file post-shutdown (review 2026-07-23).
     private val prefetchScope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob()),
+    /** Daemon log sink (Main.persistentLogger): writes BOTH stderr and daemon.log, which is what
+     *  /mgmt/logs tails. A bare System.err.println reaches stderr ONLY, so its line never appears in
+     *  the log endpoint — the failure you most want to read is the one you cannot (wall
+     *  kt-no-println, 2026-07-27). Defaults to a no-op so tests need not thread it; the daemon
+     *  always injects the real sink. */
+    private val log: (String) -> Unit = DaemonLog::write,
 ) : RefreshableAuthProvider {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -108,12 +115,12 @@ public class GrokAuthProvider(
             // prefetch tier (G17): kick a single-flight refresh in the background, serve the CURRENT
             // token now. singleFlight still dedups concurrent entrants to one network call;
             // credentialsOrNull still owns the one logging flatten (discipline L3).
-            prefetchScope.launch { singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG) } }
+            prefetchScope.launch { singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) } }
             current
         } else {
             // stale floor: too close to hard expiry to risk it — block for a confirmed-fresh token,
             // same as pre-G17 behavior.
-            val refreshed = singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG) }
+            val refreshed = singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) }
             refreshed ?: (if (clock() < expiresAt) current else null)
         }
     }
@@ -134,7 +141,7 @@ public class GrokAuthProvider(
             ?.let { it.copy(expiresAtMs = it.expiresAtMs ?: (mtime + SYNTHETIC_EXPIRY_TTL_MS)) }
             ?.also { cache = Cache(it, mtime, now) }
     }.onFailure {
-        System.err.println("[grok-auth] failed to read $authPath: $it — treating as not logged in")
+        log("[grok-auth] failed to read $authPath: $it — treating as not logged in")
     }.getOrNull()
 
     // Fresh, uncached parse (mirrors KimiAuthProvider.parseSnapshot): the authoritative read used
@@ -154,7 +161,7 @@ public class GrokAuthProvider(
     }
 
     override suspend fun refresh(): Credentials? =
-        singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG) }
+        singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) }
 
     // Sealed per-mode outcome (discipline L3): a dead refresh token, a transport blip, and a
     // corrupt file are DIFFERENT stories; credentialsOrNull is the single logging flatten.
@@ -166,7 +173,7 @@ public class GrokAuthProvider(
     // mtime changes (re-login), so a genuinely stale latch never outlives the credentials it named.
     private suspend fun doRefresh(): RefreshOutcome {
         if (!Files.exists(authPath)) return RefreshOutcome.NoCredentialsFile
-        val mtime = grokAuthMtimeOrNull(authPath)
+        val mtime = grokAuthMtimeOrNull(authPath, log)
         if (invalidGrantLatch.isLatched(mtime)) return RefreshOutcome.Rejected(INVALID_GRANT_REASON)
         val priorAccess = cache?.snapshot?.access
         val outcome = CredentialLock.withLock(authPath) { refreshLocked(priorAccess) }
@@ -261,7 +268,7 @@ public class GrokAuthProvider(
         val onDisk = runCatchingCancellable {
             json.parseToJsonElement(Files.readString(authPath)).jsonObject
         }.onFailure {
-            System.err.println("[grok-auth] re-read of $authPath for merge failed: $it — writing tokens-only file")
+            log("[grok-auth] re-read of $authPath for merge failed: $it — writing tokens-only file")
         }.getOrNull() ?: JsonObject(emptyMap())
         val oldTokens = onDisk[FIELD_TOKENS] as? JsonObject ?: JsonObject(emptyMap())
         return buildJsonObject {
@@ -289,7 +296,7 @@ public class GrokAuthProvider(
         val present = runCatchingCancellable {
             Files.exists(authPath) && tokensOf()?.get(FIELD_ACCESS_TOKEN) != null
         }.getOrDefault(false)
-        val mtime = grokAuthMtimeOrNull(authPath)
+        val mtime = grokAuthMtimeOrNull(authPath, log)
         return AuthDescription(
             present = present,
             kind = "grok-oauth",
@@ -333,8 +340,8 @@ public class GrokAuthProvider(
 // GrokAuthProvider stays under the TooManyFunctions ceiling; shared by doRefresh() and describe().
 // The failure is logged, not swallowed, before collapsing to null — a stat failure is "unknown",
 // which InvalidGrantLatch treats as fail-open (never suppresses), NOT "file unchanged".
-private fun grokAuthMtimeOrNull(authPath: Path): Long? = runCatchingCancellable {
+private fun grokAuthMtimeOrNull(authPath: Path, log: (String) -> Unit): Long? = runCatchingCancellable {
     Files.getLastModifiedTime(authPath).toMillis()
 }.onFailure {
-    System.err.println("[grok-auth] failed to stat $authPath mtime: $it — invalid_grant latch check skipped")
+    log("[grok-auth] failed to stat $authPath mtime: $it — invalid_grant latch check skipped")
 }.getOrNull()

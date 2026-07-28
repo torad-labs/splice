@@ -1,5 +1,42 @@
 # Changelog
 
+## Unreleased
+
+### Security
+
+- **Wall grants are signed.** The write-time gate that protects `.rules/`, `.claude/hooks/`,
+  `.claude/settings.json` and `sgconfig.yml` trusted `.claude/state/walls-grant.json` on sight,
+  and that path was not itself walled — so an assistant could write its own grant record and open
+  every wall in a single tool call, leaving no git trace (the file is gitignored). "Operator-only
+  by construction" held for *issuing* a grant and not for the record the gate *trusts*, which is
+  the half that matters.
+
+  Grants are now HMAC-SHA256 signed and the signature is verified before the expiry field is read.
+  The key lives outside the repo (`~/.local/state/splice/walls-grant.key`, mode 0600) and is
+  created only by `dev/walls-grant/install.sh` — never by the gate, since a verifier that can mint
+  its own key proves nothing. The grant record is refused as a tool-write target unconditionally,
+  so a grant cannot extend itself. Grants may now be scoped to specific wall paths, and the issuing
+  session id is part of the signed payload, so the audit record says who opened a wall and from
+  where rather than only when it expires. Every failure mode — missing key, bad signature, expired,
+  out of scope — leaves the wall shut.
+
+  Known limitation, deliberately recorded rather than implied away: `Bash` tool calls do not pass
+  through the write-time hook, so a key readable by the same process it defends raises the bar
+  without sealing it. See the header of `.claude/hooks/lib/walls_grant.py`.
+
+- The `/grant` installer no longer reports a repo carrying the pre-signature gate as already
+  installed; it refuses loudly rather than silently leaving a forgeable gate in place. Re-running
+  it also no longer revokes an active grant out from under the operator.
+
+### Fixed
+
+- The frozen migration oracle's `--check` mode never compared against the committed fixtures, so
+  no behaviour drift could fail it despite being wired as a verification gate. It now diffs fixture
+  bytes, the vendored mock's checksum, and the scenario roster in both directions.
+- Three ast-grep walls were narrower than their own messages claimed: the cancellation wall
+  accepted a type check without the rethrow it demands; the `pkill` wall fired on unrelated string
+  concatenation in exec arguments; the silent-`Result`-collapse wall missed `var` bindings.
+
 ## splice v0.1.1 — release integrity and supported defaults - 2026-07-21
 
 ### Fixed

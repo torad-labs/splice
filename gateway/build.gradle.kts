@@ -64,6 +64,36 @@ subprojects {
     }
 }
 
+// TRANSITIVE CVE FLOOR (2026-07-27). netty rides in under ktor-server-netty and is declared
+// nowhere — which is exactly why Dependabot could not fix its alerts: every security-update job
+// died with `security_update_dependency_not_found`, having no declaration to edit, so no PR was
+// ever opened and the alerts simply sat there. A constraint is the narrowest fix that both raises
+// the resolved version and gives Dependabot a line to bump next time.
+//
+// A constraint is a FLOOR, not a force: a future ktor shipping a newer netty still wins normally
+// rather than being dragged backwards. Constraints apply only to configurations that already
+// resolve these modules, so nothing new is pulled onto any classpath.
+//
+// The jackson alerts are deliberately NOT handled here — jackson 2.20.1 is on the PLUGIN
+// classpath via detekt's jackson-dataformat-xml, which subproject constraints cannot reach
+// (proved: constraining it added zero verification-metadata entries). Build-time only, never
+// shipped; it needs a plugin-classpath constraint or a detekt bump instead.
+subprojects {
+    plugins.withId("org.jetbrains.kotlin.jvm") {
+        dependencies {
+            constraints {
+                listOf(
+                    "io.netty:netty-codec",
+                    "io.netty:netty-codec-base",
+                    "io.netty:netty-codec-http",
+                    "io.netty:netty-codec-http2",
+                    "io.netty:netty-codec-compression",
+                ).forEach { add("implementation", "$it:${libs.versions.netty.get()}") }
+            }
+        }
+    }
+}
+
 kover {
     merge {
         allProjects()

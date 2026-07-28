@@ -11,6 +11,17 @@ konsist = "0.17.3"
 detekt = "1.23.8"
 kover = "0.9.9"
 junit = "6.1.2"
+# TRANSITIVE CVE FLOOR (2026-07-27). netty is not a dependency we declare — it arrives under
+# ktor-server-netty. Dependabot therefore could not fix it: every security-update job failed with
+# `security_update_dependency_not_found` because there was no declaration to edit, which is why the
+# alerts sat open with no PR ever appearing. Declaring the floor gives the resolver a minimum AND
+# Dependabot a line to bump next time. Raise, never lower; drop it once ktor's own netty clears it.
+#
+# The jackson alerts are NOT covered here and deliberately so: jackson 2.20.1 rides in on the
+# PLUGIN classpath via detekt's jackson-dataformat-xml, which subproject dependency constraints
+# cannot reach (proved: constraining it added zero verification entries). It is build-time only and
+# never ships in the jar, so it needs a plugin-classpath constraint or a detekt bump, not this.
+netty = "4.2.16.Final"          # 4.2.15.Final resolved; CVEs in netty-codec-http/http2/compression
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }

@@ -60,6 +60,12 @@ public object AsyncFileIo {
     private fun recordDrop() {
         dropped.incrementAndGet()
         if (warned.compareAndSet(false, true)) {
+            // LAST-RESORT CHANNEL, not an unconverted site. Main.persistentLogger writes daemon.log
+            // by calling AsyncFileIo.submit, so this lane IS the log lane. Routing its own drop
+            // warning through the injected sink would re-enter the component that just failed to
+            // accept work — making the one message you most need the one guaranteed not to arrive.
+            // stderr is deliberately the fallback, and the warning fires exactly once (CAS above).
+            // ast-grep-ignore: kt-no-println -- the log lane cannot report its own failure through itself
             System.err.println("[async-file-io] task dropped (pending cap or rejection) — further drops silent")
         }
     }

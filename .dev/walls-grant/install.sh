@@ -42,7 +42,7 @@ reconcile_menu_file() {  # <canonical> <installed>
 }
 reconcile_menu_file "$ROOT/dev/walls-grant/grant.command.md" "$ROOT/.claude/commands/grant.md"
 reconcile_menu_file "$ROOT/dev/walls-grant/install-walls.command.md" "$ROOT/.claude/commands/install-walls.md"
-echo "  [1/4] installed $MODDIR/03_grant_command.py + .claude/commands/grant.md (menu files reconciled)"
+echo "  [1/5] installed $MODDIR/03_grant_command.py + .claude/commands/grant.md (menu files reconciled)"
 
 # ------------------------------------------------------- 1b. the signing key
 # Grants are HMAC-signed (review round 2: an unsigned record was forgeable in one Write, which
@@ -55,7 +55,7 @@ import sys; sys.path.insert(0, '$ROOT/.claude/hooks')
 from lib import walls_grant
 print(walls_grant.create_key())
 ")
-echo "  [1b/4] signing key at $KEY (0600, outside the repo, never committed)"
+echo "  [1b/5] signing key at $KEY (0600, outside the repo, never committed)"
 
 # ------------------------------------------------- 2. teach the gate about grants
 # Patched with python + an explicit match assertion: a str.replace that matches nothing rewrites
@@ -71,12 +71,12 @@ p = pathlib.Path(sys.argv[1]); s = p.read_text(encoding="utf-8")
 # silently left forgeable. An installer that skips an UPGRADE it was run to perform is the same
 # failure as a str.replace that matches nothing: exits 0, changes nothing, looks installed.
 if "walls_grant.active(ROOT)" in s:
-    print("  [2/4] orchestrator already carries the SIGNED grant gate — skipping patch")
+    print("  [2/5] orchestrator already carries the SIGNED grant gate — skipping patch")
     sys.exit(0)
 
 if "_walls_grant_active" in s:
     sys.exit(
-        "  [2/4] FAIL: orchestrator.py carries the PRE-SIGNATURE grant helper.\n"
+        "  [2/5] FAIL: orchestrator.py carries the PRE-SIGNATURE grant helper.\n"
         "        That version trusts an UNSIGNED .claude/state/walls-grant.json, which any Write\n"
         "        can forge — the wall is open to whatever it was meant to stop.\n"
         "        Refusing to skip, and refusing to blind-replace a multi-line body. Replace\n"
@@ -145,7 +145,7 @@ OLD_MSG = '"SPLICE_WALLS_OK=1 — loud and never silent. Then re-run the gate\\n
 if s.count(OLD_MSG) == 1:
     s = s.replace(OLD_MSG, '"/grant <minutes> <reason> from the prompt line (operator-only), or\\n"\n            "SPLICE_WALLS_OK=1 — loud and never silent. Then re-run the gate\\n"')
 p.write_text(s, encoding="utf-8")
-print("  [2/4] patched orchestrator.py (guard + _walls_grant_active + block message)")
+print("  [2/5] patched orchestrator.py (guard + _walls_grant_active + block message)")
 PY
 
 # ------------------------------------------------------------------ 3. ignore state
@@ -153,7 +153,7 @@ GI="$ROOT/.gitignore"
 grep -qxF '.claude/state/walls-grant.json' "$GI" 2>/dev/null || {
   printf '\n# transient operator wall grant (/grant) — never committed\n.claude/state/walls-grant.json\n' >> "$GI"
 }
-echo "  [3/4] .gitignore covers the transient grant file"
+echo "  [3/5] .gitignore covers the transient grant file"
 
 # ------------------------------------------------------- 4. RED -> GREEN self-test
 # Proves the gate actually changes behavior. Drives orchestrator.py's pretooluse lifecycle with a
@@ -163,7 +163,7 @@ echo "  [3/4] .gitignore covers the transient grant file"
 # legacy path, not exit-2). An exit-code-based check therefore reports "allowed" for every blocked
 # write and the whole self-test passes vacuously — caught while simulating this installer against a
 # copy of orchestrator.py rather than trusting it.
-echo "  [4/4] self-test:"
+echo "  [4/5] self-test:"
 EVENT='{"tool_name":"Write","cwd":"'"$ROOT"'","tool_input":{"file_path":"'"$ROOT"'/.rules/rules/__grant_probe.yml","content":"id: x\nlanguage: yaml\nrule:\n  pattern: x\n"}}'
 GRANT="$ROOT/.claude/state/walls-grant.json"
 
@@ -187,7 +187,16 @@ restore_grant() {
     rm -f "$GRANT"
   fi
 }
-trap restore_grant EXIT
+# ONE EXIT trap for the whole script: bash keeps only the LAST `trap ... EXIT`, so a second
+# `trap` later would SILENTLY replace this one and stop restoring the operator's grant. Later
+# steps register their cleanup here instead of declaring their own.
+MENU_TMP=""
+cleanup_on_exit() {
+  restore_grant
+  [ -n "$MENU_TMP" ] && rm -rf "$MENU_TMP"
+  return 0
+}
+trap cleanup_on_exit EXIT
 
 rm -f "$GRANT"
 
@@ -276,6 +285,64 @@ PY
 [ "$(run_gate)" = "ALLOW" ] || { echo "    FAIL: a module-issued grant did not open the wall"; rm -f "$GRANT"; exit 1; }
 echo "    GREEN ok — module-issued grant opens the wall (paths agree end-to-end)"
 rm -f "$GRANT"
+
+# ------------------------------------------- 5. THE MENU BANG-LINE ITSELF
+# Added 2026-07-28 after the gap it covers bit live. Everything above drives the GATE end to end;
+# NOTHING executed the one line the operator actually triggers. So a syntax error in `/grant`'s
+# bang-line — the operator's ONLY status surface — shipped with every arm above green, and was
+# found by an operator typing a reason containing parentheses and getting a raw bash trace.
+#
+# THE SUBSTITUTION MODEL IS THE WHOLE POINT. Claude Code replaces the arguments placeholder
+# TEXTUALLY and then bash parses the result. Passing arguments as an environment variable would
+# NOT reproduce the failure: `(` inside an env value is inert, while `(` pasted into the source
+# text is a parse error that kills the line before any fallback branch can run. This harness
+# substitutes textually, exactly as the real thing does — otherwise it would pass vacuously against
+# the very bug it exists to catch (verified: it goes red against the pre-fix unquoted line).
+echo "  [5/5] menu bang-line self-test:"
+MENU="$ROOT/.claude/commands/grant.md"
+BANG="$(grep -o '^!`.*`$' "$MENU" | sed 's/^!`//; s/`$//')"
+[ -n "$BANG" ] || { echo "    FAIL: no bang-line found in $MENU"; exit 1; }
+
+MENU_TMP="$(mktemp -d)"   # removed by cleanup_on_exit; the FAIL arms below exit non-zero
+run_menu() {  # <args-text> ; substitutes textually, then executes, exactly as Claude Code does
+  python3 - "$BANG" "$1" <<'PYEOF' > "$MENU_TMP/cmd.sh" 2>/dev/null
+import sys
+sys.stdout.write(sys.argv[1].replace("$ARGUMENTS", sys.argv[2]))
+PYEOF
+  # `|| true` is load-bearing under `set -e`: a bang-line with a SYNTAX error makes bash exit 2,
+  # which would abort the installer at the assignment below — before the FAIL message that names
+  # what broke ever prints. classify() is the judge here, never the exit status.
+  bash "$MENU_TMP/cmd.sh" 2>&1 || true
+}
+
+classify() {  # ALLOW-shaped classification of the menu output, three named outcomes
+  if grep -q 'NOT INSTALLED' <<<"$1"; then echo ABSENT
+  elif grep -q 'STATUS UNAVAILABLE' <<<"$1"; then echo BROKEN
+  elif grep -q '§grant' <<<"$1"; then echo STATUS
+  else echo SHELL_ERROR; fi
+}
+
+out="$(run_menu '')"
+[ "$(classify "$out")" = "STATUS" ] || { echo "    FAIL: healthy install did not report status"; echo "$out" | sed 's/^/      /'; exit 1; }
+echo "    GREEN ok — healthy install reports grant status"
+
+# THE REGRESSION ARM. A reason carrying shell metacharacters must not kill the line. Unquoted,
+# this is a parse error and classify() returns SHELL_ERROR because not one branch got to run.
+out="$(run_menu '15 --paths .rules close the gap (review of #62) & now; done `x`')"
+[ "$(classify "$out")" = "STATUS" ] || { echo "    FAIL: a reason containing ( ) ; & or a backtick broke the bang-line"; echo "$out" | sed 's/^/      /'; exit 1; }
+echo "    GREEN ok — reason text with shell metacharacters is inert"
+
+probe="$(mktemp -d)"
+out="$(cd "$probe" && run_menu '')"
+[ "$(classify "$out")" = "ABSENT" ] || { echo "    FAIL: a missing module must report NOT INSTALLED, got: $(classify "$out")"; exit 1; }
+echo "    RED   ok — missing module reports NOT INSTALLED"
+
+mkdir -p "$probe/.claude/hooks/modules/userpromptsubmit"
+printf 'import sys; sys.exit(3)\n' > "$probe/.claude/hooks/modules/userpromptsubmit/03_grant_command.py"
+out="$(cd "$probe" && run_menu '')"
+[ "$(classify "$out")" = "BROKEN" ] || { echo "    FAIL: a broken module must report STATUS UNAVAILABLE, not NOT INSTALLED"; exit 1; }
+echo "    RED   ok — broken module is distinguished from a missing one"
+rm -rf "$probe"
 
 echo
 echo "== installed =="

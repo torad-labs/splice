@@ -12,6 +12,7 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
@@ -93,6 +94,19 @@ class CodexAuthTest {
     // Every prefetch-tier credentials() call launches a background refresh on this scope. Tests
     // join its children before returning (drainPrefetch), so no in-flight coroutine touches the
     // @TempDir while JUnit deletes it — the CI-only TempDirDeletionStrategy$DeletionException class.
+    //
+    // 2026-07-27: that discipline was PER-TEST and therefore opt-in, which is why this race has now
+    // been closed three times (e3a50e8, 60df304, PR #17) and come back: a test that launches a
+    // prefetch and forgets to drain leaves a coroutine running into JUnit's @TempDir deletion for
+    // THAT test, surfacing as NoSuchFileException somewhere unrelated. The scope is shared across
+    // the whole class, so the window is not even confined to the forgetful test. Draining in
+    // @AfterEach makes it structural: no test can forget, and the per-test drainPrefetch() calls
+    // below stay only because they document intent at the point the prefetch is launched.
+    @AfterEach
+    fun settlePrefetchBeforeTempDirCleanup(): Unit = runBlocking {
+        prefetchJob.children.toList().forEach { it.join() }
+    }
+
     private val prefetchJob = SupervisorJob()
     private val prefetchScope = CoroutineScope(prefetchJob + kotlinx.coroutines.Dispatchers.Default)
 

@@ -152,7 +152,12 @@ public class KimiAuthProvider(
             .getOrElse { return RefreshOutcome.TransportFailed(it) }
         return when (attempt) {
             is RefreshAttempt.Granted -> {
-                writeSecure(authPath, kimiAuthJson(attempt.tokens, clock()).toString())
+                // The endpoint already rotated the old refresh_token (mandatory rotation) by the time
+                // we get here — a throwing write must degrade to a typed PersistFailed, never a raw
+                // throw through SingleFlight out of credentials()/refresh(), so the not-yet-expired
+                // current token still gets served.
+                runCatchingCancellable { writeSecure(authPath, kimiAuthJson(attempt.tokens, clock()).toString()) }
+                    .getOrElse { return RefreshOutcome.PersistFailed("credentials write failed: $it") }
                 invalidateCache()
                 RefreshOutcome.Refreshed(apiKey(attempt.tokens.accessToken))
             }

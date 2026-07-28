@@ -1,0 +1,35 @@
+id: kt-tool-partition-no-transcript
+valid:
+  # the pure form: split derived from tools + policy only
+  - |
+    private fun partitionWithPolicy(tools: List<ToolDefinition>, policy: ToolDeferralPolicy): ToolPartition {
+        val deferred = tools.filter { eligibleForDefer(it, policy) }
+        return ToolPartition(tools, deferred)
+    }
+  # warmToolNames' OWN definition is legal — it feeds in-position declaration replay, not the split
+  - |
+    internal fun warmToolNames(body: AnthropicRequest): Set<String> =
+        body.messages.asSequence().filterIsInstance<ToolUseBlock>().mapTo(HashSet()) { it.name }
+  # transcript reads outside any partition function are unaffected
+  - |
+    private fun declarationCandidates(body: AnthropicRequest): Set<String> = warmToolNames(body)
+invalid:
+  # the shape that shipped and silently defeated the feature
+  - |
+    private fun partitionWithPolicy(body: AnthropicRequest, policy: ToolDeferralPolicy): ToolPartition {
+        val warm = warmToolNames(body)
+        return ToolPartition(body.tools, body.tools.filter { it.name !in warm })
+    }
+  # the same defect reached directly rather than via the helper
+  - |
+    private fun partitionTools(body: AnthropicRequest, policy: ToolDeferralPolicy): ToolPartition {
+        val used = body.messages.flatMap { it.content }
+        return ToolPartition(body.tools, emptyList())
+    }
+  # the bypass this widening closes: implicit-receiver read via an extension function — no `$X.`
+  # prefix exists for the qualified branch to bind
+  - |
+    private fun AnthropicRequest.partitionExt(policy: ToolDeferralPolicy): ToolPartition {
+        val used = messages.flatMap { it.content }
+        return ToolPartition(tools, emptyList())
+    }

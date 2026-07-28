@@ -27,3 +27,20 @@ public data class FoldRound(
     val outcome: TurnOutcome.Success,
     val roundIndex: Int,
 )
+
+/** Mid-stream re-anchoring policy (eli design 2026-07-24): when a round FAILS after frames were
+ *  already forwarded, the provider may return the continuation request that resumes the turn from
+ *  its accumulated partial output. Null = not continuable (non-retryable failure type, a poison
+ *  tool tear, or budget exhausted) — the gateway then emits the honest error terminal. Distinct
+ *  from [FoldController], which continues SUCCESSFUL rounds whose reasoning was truncated. */
+public fun interface ReanchorController {
+    public fun continuationForFailure(round: ReanchorRound): JsonObject?
+}
+
+/** One failed round: the request that produced it, its failure (carrying the partial), and how
+ *  many mid-stream continuations this turn already spent (0-based). */
+public data class ReanchorRound(
+    val requestBody: JsonObject,
+    val failure: TurnOutcome.Failure,
+    val attempt: Int,
+)

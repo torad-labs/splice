@@ -1,0 +1,122 @@
+# law_registry.toml — every standing LAW must name its mechanical enforcer.
+#
+# LAW #924: prose-only lawmaking is UNENFORCED DOCUMENTATION. A row with wall = "" reads RED
+# (advisory C8) until it earns a checker. A row may NEVER be deleted to silence the gate — the
+# fix is BUILDING THE CHECKER. Ported from qgre dev/gates/law-wall-registry.toml.
+#
+# Found by the 2026-07-26 self-review: 17 of 19 laws were prose-only. The campaign was violating
+# its own founding doctrine. This file is that debt, made countable.
+
+[[law]]
+tag = "CLI-ONLY-LEDGER"
+wall = ""
+note = "needs a hook asserting no raw ledger writes"
+law_present = true
+
+[[law]]
+tag = "PROVENANCE"
+wall = ""
+note = "needs a checker that every item id resolves to a section in the research doc"
+law_present = true
+
+[[law]]
+tag = "PREMISE-RE-CHECK"
+wall = ""
+note = "needs per-item file:line liveness check on the SPLICE TODAY anchor"
+law_present = true
+
+[[law]]
+tag = "NO-RE-REPORT-SOLVED"
+wall = ""
+note = "needs a cross-check of item G-numbers against tracker `done` rows"
+law_present = true
+
+[[law]]
+tag = "LOCKED-NON-GOALS"
+wall = "dev/campaigns/proxy-hardening/walls/law_locked_non_goals.py"
+note = "banned-term scan over item titles"
+law_present = true
+
+[[law]]
+tag = "WAVE-0-IS-THE-NET"
+wall = "dev/campaigns/proxy-hardening/walls/law_wave0_is_the_net.py"
+note = "no W4/W5 item done while CX-19 is unfinished"
+law_present = true
+
+[[law]]
+tag = "FENCES-DERIVED"
+wall = ""
+note = "needs a check that every claimed item ran edit-fence first"
+law_present = true
+
+[[law]]
+tag = "FENCE-EXCLUSIVITY"
+wall = "dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py"
+note = "gate check C7 (phase clash + in_flight clash)"
+law_present = true
+
+[[law]]
+tag = "BUILDERS-TARGETED"
+wall = ""
+note = "needs CI-side detection of a builder running the full gate"
+law_present = true
+
+[[law]]
+tag = "HONEST-STATUS"
+wall = "dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py"
+note = "gate check C5 (false-green)"
+law_present = true
+
+[[law]]
+tag = "OPERATOR-GATED"
+wall = ""
+note = "needs a check that W10/W11 items carry an operator note before leaving todo"
+law_present = true
+
+[[law]]
+tag = "SECTION-10-OMISSION"
+wall = ""
+note = "resolved when INF-06 slots CX-05/06/10/17"
+law_present = true
+
+[[law]]
+tag = "LIVE-CONFIG-FINDING"
+wall = ""
+note = "operator action; not mechanically enforceable in-repo"
+law_present = true
+
+[[law]]
+tag = "WALLS-BEFORE-GREEN"
+wall = "dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py"
+note = "gate checks C1-C4"
+law_present = true
+
+[[law]]
+tag = "POLARITY"
+wall = "dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py"
+note = "gate checks C5 + C6 (positive control)"
+law_present = true
+
+[[law]]
+tag = "NEVER-LOOSEN-A-WALL"
+wall = ""
+note = "needs a ratchet: wall thresholds may only tighten (qgre zero_ratchet shape)"
+law_present = true
+
+[[law]]
+tag = "GATE-NOT-IN-LADDER"
+wall = ""
+note = "SUPERSEDED by the severity split — blocking half IS in the ladder now"
+law_present = true
+
+[[law]]
+tag = "MIGRATION-ORACLE"
+wall = ""
+note = "MISMAPPED at first authoring (2026-07-26): cx_19_oracle_replay.py is CX-19's ITEM wall, which must be RED while CX-19 is todo — the inverse polarity of a law enforcer, so C9 read it as a live law violation. The law's INTEGRITY half (every fixture still hashes to its captured sha256) is a genuine always-true invariant and needs its own enforcer split out of the item wall."
+law_present = true
+
+[[law]]
+tag = "LAYOUT"
+wall = ""
+note = "needs a check that no campaign artifact lives outside the campaign folder"
+law_present = true

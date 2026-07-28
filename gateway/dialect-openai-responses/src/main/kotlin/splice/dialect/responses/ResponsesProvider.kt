@@ -17,8 +17,10 @@ import splice.spi.FoldController
 import splice.spi.Provider
 import splice.spi.ProviderIdentity
 import splice.spi.ProviderTuning
+import splice.spi.ReanchorController
 import splice.spi.StreamTranslator
 import splice.spi.TurnSignals
+import splice.spi.UpstreamClient
 
 public abstract class ResponsesProvider(
     tuning: ProviderTuning,
@@ -53,16 +55,38 @@ public abstract class ResponsesProvider(
                 configEffort = configEffort,
                 configSummary = if (showOn) configSummary else "none",
                 showReasoning = showReasoning,
-                // INPUT injection of prior opaque encrypted reasoning items — operator opt-in ONLY (default OFF; it
-                // thins fresh reasoning ~4x). Never derived from showReasoning.
+                // LEGACY client-round-trip replay (redacted_thinking through Claude Code) —
+                // operator opt-in only; superseded by the gateway-held reasoning cache below.
                 replayReasoning = InjectPriorReasoning(replayReasoning),
-                // Ask for the opaque encrypted handle whenever reasoning is visible.
-                includeEncryptedReasoning = RequestEncryptedReasoning(showOn && !compact),
+                // Ask for the opaque encrypted handle whenever reasoning is visible OR the
+                // reasoning cache needs it (RC-5: the cache can only hold what the server returns).
+                includeEncryptedReasoning = RequestEncryptedReasoning(
+                    (showOn && !compact) || reasoningCacheActive(quirks, compact),
+                ),
                 sessionId = sessionId,
                 decodeReasoningEnvelope = { decodeReasoningEnvelope(it) },
+                // RC-5: gateway-held reasoning continuity — the turn that emitted these tool ids
+                // left its plan in the cache; reinject it so the model resumes instead of
+                // re-deriving (codex parity; repeated-tool-call amnesia otherwise). Scoped to
+                // THIS conversation (same first-message hash the builder stamps on TurnMeta).
+                reasoningLookup = { id ->
+                    if (reasoningCacheActive(quirks, compact)) {
+                        reasoningCache.lookup(stablePromptCacheKey(body.typed), id)
+                    } else {
+                        null
+                    }
+                },
+                // The provider's capability latch, read at build time: false = a shape-400 already
+                // closed it this daemon lifetime; build the full status-quo request instead.
+                toolSurfaceOpen = toolSurfaceLatch.open,
             ),
         )
-        return BuiltTurn(built.req, built.meta, perTurnHeaders(sessionId) + liteHeaders(built.meta))
+        return BuiltTurn(
+            built.req,
+            built.meta,
+            perTurnHeaders(sessionId) + liteHeaders(built.meta),
+            toolSearch = built.toolSearch,
+        )
     }
 
     /** codex-rs sends this marker header for responses-lite (5.6-family) turns; compact turns keep
@@ -94,9 +118,18 @@ public abstract class ResponsesProvider(
                 streamIdleMsForMessage = watchdog.streamIdle.inWholeMilliseconds,
                 upstreamTimeoutMsForMessage = watchdog.totalCap.inWholeMilliseconds,
                 dedupeRepeatedSummaryParts = quirks.summaryDelivery != null,
-                // Collect this round's encrypted reasoning envelopes ONLY when folding is active for
-                // the turn — off keeps the reducer byte-identical for sol / every non-fold turn.
-                collectReasoningEnvelopes = foldController(meta) != null,
+                summaryPartsShared = meta.summaryParts,
+                // Collect this round's encrypted reasoning envelopes whenever a continuation
+                // could consume them: fold replay (Success side) OR mid-stream re-anchor salvage
+                // (Failure side) — i.e. every non-compact responses turn since re-anchor landed
+                // (2026-07-24). Compact turns keep the collection off.
+                collectReasoningEnvelopes = foldController(meta) != null || reanchorController(meta) != null ||
+                    reasoningCacheActive(quirks, meta.compact),
+                onTurnReasoning = { ids, envs ->
+                    if (reasoningCacheActive(quirks, meta.compact)) {
+                        reasoningCache.put(meta.conversationKey, ids, envs)
+                    }
+                },
             ),
         )
 
@@ -108,6 +141,60 @@ public abstract class ResponsesProvider(
         if (meta.compact || meta.upstreamModel !in cfg.models) return null
         return ResponsesFoldController(cfg, decodeReasoningEnvelope = { decodeReasoningEnvelope(it) })
     }
+
+    // RC-2/RC-4: gateway-held reasoning continuity for tool round-trips (codex parity). One
+    // cache per provider instance; capture and lookup wire in via buildTurn/streamTranslator.
+    private val reasoningCache: ReasoningCache = ReasoningCache()
+
+    // The tool-surface capability latch (§1.3/§5.3): one AtomicBoolean per provider instance,
+    // moving in exactly one direction — toward status quo. Read at build time (buildTurn), closed
+    // by amendBodyOnFailure on a shape-400.
+    private val toolSurfaceLatch = ToolSurfaceLatch()
+
+    /** RC-4: a 400 rejecting stale encrypted reasoning strips the injected items and retries
+     *  once (NEVER-BELOW-STATUS-QUO law); every other failure keeps the plain retry plan. A 400
+     *  rejecting the tool-surface shape strips the tool_search entry, retries once, and closes the
+     *  latch so every LATER turn on this provider instance builds the full status-quo request.
+     *  Keyed off the SAME classifier as the retry plan's GIVE_UP (review 2026-07-24: a narrower
+     *  literal match here let any upstream wording drift skip the recovery entirely).
+     *  Honesty gap (review 2026-07-25, [ToolSurfaceLatch]'s KDoc has the full account): the amend
+     *  return value here is eager-only for THIS turn — this function only ever sees
+     *  (status, responseText, bodyJson), never the [ToolPartition] that would let it re-attach the
+     *  deferred tools' schemas, so the recovery turn runs one turn below full status quo before
+     *  the latch restores every later turn. [logToolSurfaceLatchClosed] makes that one-time degrade
+     *  observable instead of silent. */
+    final override fun amendBodyOnFailure(status: Int, responseText: String, bodyJson: String): String? = when {
+        UpstreamClient.isEncryptedContentError(status, responseText) -> stripStaleReasoning(bodyJson, reasoningCache)
+        isToolSurfaceRejection(status, responseText) -> dropToolSearchTool(bodyJson)?.also {
+            if (toolSurfaceLatch.close()) logToolSurfaceLatchClosed()
+        }
+        else -> null
+    }
+
+    /** The latch's one observable signal — stderr, the same `[tag] message` idiom
+     *  ApiKeyAuthProvider.kt uses for standalone diagnostics (no injected logger reaches this
+     *  module; see [ToolSurfaceLatch]). Guarded by [ToolSurfaceLatch.close]'s CAS return, so this
+     *  fires EXACTLY ONCE per provider instance — never once per turn, since every turn after the
+     *  close reads the latch already-closed and never re-enters this branch. */
+    private fun logToolSurfaceLatchClosed() {
+        System.err.println(
+            "[${quirks.providerTag}] tool-surface latch closed: backend rejected the tool_search " +
+                "shape; this turn recovered eager-only (one turn below status quo), every later turn " +
+                "on this provider instance builds the full eager surface.",
+        )
+    }
+
+    // The controller is stateless — one cached instance serves every turn (a per-call
+    // allocation here also ran per ROUND via the collectReasoningEnvelopes null-check).
+    private val reanchorPolicy: ReanchorController by lazy {
+        ResponsesReanchorController(decodeReasoningEnvelope = { decodeReasoningEnvelope(it) })
+    }
+
+    // Every non-compact responses turn is re-anchor eligible (compaction is unary/buffered — the
+    // pre-handoff retry covers it). NB: fold-eligible turns get re-anchor via FoldRunner's
+    // trigger-B, not ReanchorRunner (driveOneTurn routes fold first).
+    final override fun reanchorController(meta: TurnMeta): ReanchorController? =
+        if (meta.compact) null else reanchorPolicy
 
     private fun showOn(): Boolean = !showReasoning.isOff
 }

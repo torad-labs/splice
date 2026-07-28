@@ -1,6 +1,7 @@
 // PORT-OF: server/src/config.mjs layers/coerce/normalize/getConfig/configLayers/patchConfig
 // @ pre-public-port-baseline — invariants: layers merge FRESH on every read (v29 froze knobs at import; nothing
-// was hot-tunable); precedence defaults <- headOverrides(TOML, NEW layer) <- state config.json
+// was hot-tunable); precedence defaults <- headOverrides(TOML, NEW layer) <- perHead
+// ([heads.<key>.overrides] TOML, more specific than the global one) <- state config.json
 // (mtime-cached) <- env (alias order) <- runtime PATCH; PATCH persists to the state file
 // best-effort (env still wins at next boot); normalization floors (upstreamTimeout >= 30s,
 // firstByte >= 10s, streamIdle >= 30s or 250ms under CODEX_PROXY_TEST=1, authCache >= 5s);
@@ -26,7 +27,13 @@ import java.nio.file.attribute.FileTime
 
 public class ConfigService(
     private val statePaths: StatePaths,
+    // NAME IS A TRAP (three agents mis-read it): this is the GLOBAL knob layer sourced from the
+    // head-topology FILE ([defaults] + [daemon]), NOT a per-head dimension. Per-head lives in
+    // [perHeadOverrides] below.
     private val headOverrides: Map<String, String> = emptyMap(),
+    // headKey -> knob map, from [heads.<key>.overrides]. Applied only by getConfig(headKey), so a
+    // head can hold its own maxInflight/timeouts without the value leaking onto its siblings.
+    private val perHeadOverrides: Map<String, Map<String, String>> = emptyMap(),
     private val envReader: (String) -> String? = System::getenv,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
@@ -47,7 +54,10 @@ public class ConfigService(
     @Volatile
     private var fileCache: FileCache? = null
 
-    public fun getConfig(): SpliceConfig = SpliceConfig(normalize(mergedRaw()))
+    /** Effective config. [headKey] folds that head's [heads.<key>.overrides] in above the global
+     *  TOML layer — an unknown/absent key is simply the global view, so callers never branch. */
+    @JvmOverloads
+    public fun getConfig(headKey: String? = null): SpliceConfig = SpliceConfig(normalize(mergedRaw(headKey)))
 
     public fun layers(): ConfigLayers = ConfigLayers(
         defaults = Knob.entries.associate { it.key to it.default },
@@ -91,10 +101,14 @@ public class ConfigService(
         fileCache = null
     }
 
-    private fun mergedRaw(): Map<String, Any?> {
+    private fun mergedRaw(headKey: String? = null): Map<String, Any?> {
         val merged = LinkedHashMap<String, Any?>()
         Knob.entries.forEach { merged[it.key] = it.default }
         coerceAll(headOverrides).forEach { (k, v) -> merged[k] = v }
+        // Sits directly above the global TOML layer: more specific TOML wins over less specific,
+        // while state/env/PATCH keep their existing authority over BOTH (unchanged precedence).
+        headKey?.let { key -> perHeadOverrides[key]?.let { coerceAll(it) } }
+            ?.forEach { (k, v) -> merged[k] = v }
         fileLayer().forEach { (k, v) -> merged[k] = v }
         envLayer().forEach { (k, v) -> merged[k] = v }
         synchronized(runtimeLock) { runtimeLayer.forEach { (k, v) -> merged[k] = v } }
@@ -117,7 +131,12 @@ public class ConfigService(
         if (!Files.exists(path)) return emptyMap()
         val modified = Files.getLastModifiedTime(path)
         val size = Files.size(path)
-        fileCache?.let { cached ->
+        // A same-second edit that lands at an identical byte count is invisible to (mtime, size)
+        // alone (torn-read risk) — refuse the cache while the file's mtime is still within the
+        // resolution window, forcing a fresh read until it ages past it.
+        val cacheable = System.currentTimeMillis() - modified.toMillis() >= MTIME_RESOLUTION_WINDOW_MS
+        val cached = fileCache
+        if (cacheable && cached != null) {
             if (cached.path == path && cached.modified == modified) {
                 if (cached.size == size) return cached.data
             }
@@ -141,7 +160,14 @@ public class ConfigService(
         val data = LinkedHashMap<String, Any?>()
         for (knob in Knob.entries) {
             val raw = knob.envNames.firstNotNullOfOrNull { name -> envReader(name)?.takeIf { it.isNotEmpty() } }
-            if (raw != null) coerce(knob, raw)?.let { data[knob.key] = it }
+            if (raw != null) {
+                val coerced = coerce(knob, raw)
+                if (coerced != null) {
+                    data[knob.key] = coerced
+                } else {
+                    System.err.println("[config] ignoring invalid env value for ${knob.key}: '$raw'")
+                }
+            }
         }
         return data
     }
@@ -158,7 +184,7 @@ public class ConfigService(
                 SecureFile.writeAtomic0600(path, json.encodeToString(JsonObject.serializer(), next) + "\n")
                 fileCache = null
             }
-        }
+        }.onFailure { e -> System.err.println("[config] failed to persist config to disk: $e") }
     }
 
     private fun readOnDisk(path: Path): JsonObject =
@@ -223,10 +249,17 @@ public class ConfigService(
         out[Knob.CONTEXT_WINDOW_OVERRIDE.key] = positiveLong(out, Knob.CONTEXT_WINDOW_OVERRIDE)
         out[Knob.USAGE_WARN_PCT.key] = (num(out, Knob.USAGE_WARN_PCT) ?: 0L).coerceIn(0L, 100L)
         out[Knob.USAGE_WARN_TOKENS_5H.key] = clampLong(out, Knob.USAGE_WARN_TOKENS_5H, floor = 0L)
+        // anything that is not exactly "off" is "auto" — an unknown value must never silently arm
+        // a feature (the r3 invalid-env-value lesson).
+        out[Knob.TOOL_SURFACE.key] =
+            if (str(out, Knob.TOOL_SURFACE)?.trim()?.lowercase() == "off") "off" else "auto"
         return out
     }
 
     private companion object {
+        // Filesystem mtime granularity is 1s on many platforms; a same-second edit landing at an
+        // identical byte count is otherwise indistinguishable from an unchanged file (CONF-3).
+        const val MTIME_RESOLUTION_WINDOW_MS = 2_000L
         const val MIN_UPSTREAM_TIMEOUT_MS = 30_000L
         const val MIN_FIRST_BYTE_MS = 10_000L
         const val MIN_STREAM_IDLE_MS = 30_000L
@@ -325,6 +358,7 @@ public class SpliceConfig internal constructor(private val m: Map<String, Any?>)
     public val controlPort: Int get() = long(Knob.CONTROL_PORT).toInt()
     public val usageWarnPct: Int get() = long(Knob.USAGE_WARN_PCT).toInt()
     public val usageWarnTokens5h: Long get() = long(Knob.USAGE_WARN_TOKENS_5H)
+    public val toolSurfaceOff: Boolean get() = string(Knob.TOOL_SURFACE) == "off"
 
     // Colon-separated absolute paths → list; relative segments are dropped (trust boundary).
     public val statuslineGitRoots: List<String>

@@ -55,6 +55,7 @@ import splice.core.wire.ToolResultBlock
 import splice.core.wire.ToolUseBlock
 import splice.core.wire.UnknownBlock
 import splice.core.wire.openAiToolChoice
+import splice.spi.ToolSearchController
 import java.security.MessageDigest
 
 /** The finite quirk surface separating codex / xai / openai-platform on this dialect. */
@@ -77,7 +78,28 @@ public data class ResponsesQuirks(
     val responsesLiteModelRegex: Regex? = Regex("gpt-5\\.6", RegexOption.IGNORE_CASE),
     val compactEffortPin: String? = null, // null = inherit session effort (the cache law)
     val emitToolChoice: Boolean = false,
+    /** Passes through a tool's own `strict == true` as `"strict": true`; false (the default,
+     *  and the only value that has ever mattered — Claude Code's ToolDefinition.strict is always
+     *  null) omits the field entirely. Distinct from [forceStrictFalse] below (review 2026-07-24:
+     *  conflating the two silently changed grok's live wire bytes when this feature landed). */
     val emitStrict: Boolean = false,
+    /** codex-rs parity: hard-sets `strict:false` on EVERY function tool object regardless of the
+     *  tool's own value (responses_api.rs:29-32; OpenCode does the same, marked "Codex parity").
+     *  false (the default) leaves [emitStrict]'s pass-through behavior as the only effect, exactly
+     *  today's behavior. Only CodexProvider sets this true. */
+    val forceStrictFalse: Boolean = false,
+    /** RC-5 (reasoning-cache 2026-07-24): gateway-held reasoning continuity for tool
+     *  round-trips (codex parity — repeated tool calls / duplicated reasoning without it).
+     *  Off restores the pre-cache amnesia behavior exactly. */
+    val reasoningCache: Boolean = true,
+    /** Loop guard (2026-07-26): a stateless circuit breaker for the identical-failed-call
+     *  pathology (measured on the live codex head: the same Edit re-issued 89-101x against the
+     *  harness staleness guard). From the 3rd identical failure the result's output gains an
+     *  escalating directive; success or changed arguments reset. Off restores plain passthrough. */
+    val loopGuard: Boolean = true,
+    /** Deferred tool surface (tool_search) for responses-lite turns. NULL = off, and off is the
+     *  shipped default for every provider — the request is byte-identical to today. */
+    val toolSurface: ToolDeferralPolicy? = null,
     /** stream_options.reasoning_summary_delivery, sent only when a summary is requested. The
      *  ChatGPT backend serves ~2.3x more titled summary sections with "sequential_cutoff"
      *  (probed 2026-07-19: 30 parts/1546ch vs 14/646 on the same prompt) — the same value
@@ -113,41 +135,102 @@ public fun ResponsesQuirks.withToml(
     emitToolChoice = toolChoice ?: this.emitToolChoice,
 )
 
+/** RC-5 overlay, chained after [withToml] (which sits at detekt's complexity ceiling). */
+public fun ResponsesQuirks.withReasoningCacheToml(reasoningCache: Boolean?): ResponsesQuirks =
+    copy(reasoningCache = reasoningCache ?: this.reasoningCache)
+
 public enum class EffortLadder { CODEX, GROK }
 
-public data class BuiltRequest(val req: JsonObject, val meta: TurnMeta)
+public data class BuiltRequest(val req: JsonObject, val meta: TurnMeta, val toolSearch: ToolSearchController? = null)
+
+/** [buildRequestObject]'s internal return — the request bytes plus the tool-surface facts only
+ *  the builder knows (the partition sizes for TurnMeta, the search controller for BuiltRequest).
+ *  Keeping these OFF buildRequestObject's parameter list is why it stays under LongParameterList's
+ *  function threshold instead of growing a 6th argument. */
+internal data class BuiltBody(
+    val req: JsonObject,
+    val toolSearch: ToolSearchController?,
+    val toolsEager: Int?,
+    val toolsDeferred: Int?,
+)
+
+/** The pieces [ResponsesRequestBuilder.build] computes before the DTO is assembled, bundled as one
+ *  argument — the INPUT-side sibling of [BuiltBody], and for the same reason: `partition` was the
+ *  6th parameter that tripped LongParameterList (review 2026-07-25). Bundling, not dropping: every
+ *  field is still read verbatim by buildRequestObject. */
+internal data class RequestParts(
+    val input: JsonArray,
+    val instructions: String,
+    val reasoning: JsonObject?,
+    val partition: ToolPartition?,
+)
 
 public data class BuildOptions(
-    val compact: Boolean,
-    val originalModel: String,
-    val upstreamModel: String,
-    val configEffort: String?,
-    val configSummary: String?,
-    val showReasoning: ReasoningDisplay,
+    public val compact: Boolean,
+    public val originalModel: String,
+    public val upstreamModel: String,
+    public val configEffort: String?,
+    public val configSummary: String?,
+    public val showReasoning: ReasoningDisplay,
     /**
      * Inject prior redacted_thinking envelopes into the request input (multi-turn continuity).
      * Independent of [includeEncryptedReasoning]. Keep OFF for deepest fresh reasoning.
      */
-    val replayReasoning: InjectPriorReasoning,
+    public val replayReasoning: InjectPriorReasoning,
     /**
      * Ask the server to return `reasoning.encrypted_content` on this turn's output.
      * Does NOT inject prior blobs into input. ON when reasoning is shown so we can store the
      * opaque handle for optional later replay (Grok Build / Codex always request this).
      */
-    val includeEncryptedReasoning: RequestEncryptedReasoning = RequestEncryptedReasoning(true),
-    val sessionId: String? = null,
+    public val includeEncryptedReasoning: RequestEncryptedReasoning = RequestEncryptedReasoning(true),
+    public val sessionId: String? = null,
     /** Decodes a redacted_thinking envelope back into a Responses reasoning input item. */
-    val decodeReasoningEnvelope: (String) -> JsonObject?,
-)
+    public val decodeReasoningEnvelope: (String) -> JsonObject?,
+    /** RC-3 (reasoning-cache 2026-07-24): the gateway-held cache lookup — tool_use id → the
+     *  ordered envelopes of the turn that emitted it. Null = miss = today's behavior exactly.
+     *  Wired by the provider; the default keeps unwired builds byte-identical. */
+    public val reasoningLookup: (String) -> List<String>? = { null },
+    /** The provider's tool-surface capability latch, read at build time. False = the backend
+     *  rejected the shape on this daemon lifetime; build the full status-quo request. */
+    public val toolSurfaceOpen: Boolean = true,
+) {
+    /** Per-REQUEST rs_-id dedup across BOTH injection paths (cache + legacy client replay):
+     *  upstream 400s a duplicated reasoning id, and one turn's entry is shared by all its
+     *  parallel tool_use blocks — first render injects, the rest skip (inject-once law).
+     *  A BODY property, deliberately outside the primary constructor (review 2026-07-24): a
+     *  constructor default would be ALIASED by copy() (defaults are not re-evaluated), silently
+     *  sharing dedup state between two requests — here every instance, copies included,
+     *  initializes its own fresh set, and equals/hashCode never see it. */
+    public val injectedReasoningIds: MutableSet<String> = mutableSetOf()
+
+    /** Per-REQUEST dedup for the declaration-replay injection (CHANGE 2, cache-prefix stability
+     *  2026-07-25): a deferred tool's schema is declared AT MOST ONCE per request, immediately
+     *  before the FIRST function_call in this turn's input that uses it. Same must-be-a-body-
+     *  property law as [injectedReasoningIds] just above (a constructor default would be ALIASED
+     *  by copy() — defaults are not re-evaluated — silently sharing dedup state between requests). */
+    public val injectedToolDeclarationNames: MutableSet<String> = mutableSetOf()
+}
 
 public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
 
-    private val inputBuilder = ResponsesInputBuilder(quirks)
-
     public fun build(body: AnthropicRequest, raw: JsonObject, opts: BuildOptions): BuiltRequest {
+        // Partition FIRST, before the message walk: it is a pure function of (body.tools, policy)
+        // ONLY (ToolSurface.kt header) and the declaration-replay injection below needs to know,
+        // per ToolUseBlock, whether that tool is THIS request's deferred set — moving it earlier
+        // costs nothing (buildRequestObject no longer recomputes it) and keeps position 0 of the
+        // wire input untouched by anything the walk discovers.
+        val partition = if (!opts.compact && body.tools.isNotEmpty()) quirks.partitionTools(body, opts) else null
+        val declareByName = declarationCandidates(body, partition)
+        // The loop guard walks the same conversation (stateless) and marks identical-failed-call
+        // streaks for a directive in that result's output. Compaction turns are excluded: their
+        // results fold to plain text and a directive would only feed the summarizer noise.
+        val loopGuardDirectives =
+            if (quirks.loopGuard && !opts.compact) LoopGuard.analyze(body.messages) else emptyMap()
+        // Constructed per build (the field version predates per-build state) — cheap, race-free.
+        val inputBuilder = ResponsesInputBuilder(quirks, loopGuardDirectives)
         val input = buildJsonArray {
             for (msg in body.messages) {
-                inputBuilder.appendMessage(this, msg, opts)
+                inputBuilder.appendMessage(this, msg, opts, declareByName)
             }
         }
         val instructions = compactAwareInstructions(body.system, opts.compact)
@@ -155,7 +238,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         val summary = resolveSummary(raw, opts, effort)
         val reasoning = reasoningBlock(effort, summary, opts)
 
-        val req = buildRequestObject(body, opts, input, instructions, reasoning)
+        val built = buildRequestObject(body, opts, RequestParts(input, instructions, reasoning, partition))
         // meta.summary reflects what was ACTUALLY sent (spark drops it → "none"), like Node's
         // `req.reasoning?.summary ?? 'none'` — not the computed-but-maybe-dropped value.
         val sentSummary = reasoning?.get(FIELD_SUMMARY).str() ?: "none"
@@ -170,22 +253,25 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
             effort = effort ?: "disabled",
             summary = sentSummary,
             budgetTokens = body.thinking?.budgetTokens,
+            // The reasoning cache's conversation scope — the SAME derivation the provider's
+            // lookup closure uses, so capture (which only sees TurnMeta) and injection agree.
+            conversationKey = stablePromptCacheKey(body),
+            // summaryParts is NOT passed: TurnMeta's default constructs the turn's one instance.
+            // Every continuation round reuses this meta object (continuationRequest bypasses
+            // build()), so the dedup state it carries is genuinely turn-scoped.
+            toolsEager = built.toolsEager,
+            toolsDeferred = built.toolsDeferred,
         )
-        return BuiltRequest(req, meta)
+        return BuiltRequest(built.req, meta, built.toolSearch)
     }
 
-    private fun buildRequestObject(
-        body: AnthropicRequest,
-        opts: BuildOptions,
-        input: JsonArray,
-        instructions: String,
-        reasoning: JsonObject?,
-    ): JsonObject {
+    private fun buildRequestObject(body: AnthropicRequest, opts: BuildOptions, parts: RequestParts): BuiltBody {
         // TIER-1 (#924): the request is a CLOSED DTO, not a hand-assembled JsonObject. A Chat-only
         // knob (stream_options.include_usage — the codex-breaking incident) cannot be added without a
         // field on ResponsesRequest, a reviewable type change. Byte-identical to the old put() set
         // (ResponsesRequestBuilderTest pins it): fields in declaration order, null optionals omitted.
-        val tools = if (!opts.compact && body.tools.isNotEmpty()) toolsArray(body) else null
+        val searchLimit = quirks.toolSurface?.searchLimit ?: DEFAULT_SEARCH_LIMIT
+        val tools = parts.partition?.let { toolsSection(it, quirks.emitStrict, quirks.forceStrictFalse, searchLimit) }
         val lite = quirks.isLite(opts)
         // Lite turns carry tools as an additional_tools input item, not top-level `tools`; without
         // an explicit tool_choice the backend never enables function-calling from them (the model
@@ -195,7 +281,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         val emitToolChoice = tools != null && (quirks.emitToolChoice || lite)
         val include =
             if (!opts.compact && opts.includeEncryptedReasoning.v) listOf(ENCRYPTED_CONTENT_INCLUDE) else null
-        val shape = wireShape(lite, input, instructions, tools)
+        val shape = wireShape(lite, parts.input, parts.instructions, tools)
         val dto = ResponsesRequest(
             model = opts.upstreamModel,
             input = shape.input,
@@ -207,32 +293,53 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
             tools = shape.tools,
             toolChoice = toolChoiceFor(emitToolChoice, lite, body),
             parallelToolCalls = parallelToolCallsFor(emitToolChoice, body, opts),
-            reasoning = reasoning,
-            streamOptions = summaryDeliveryOptions(reasoning),
+            reasoning = parts.reasoning,
+            streamOptions = summaryDeliveryOptions(parts.reasoning),
         )
-        return responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), dto) as JsonObject
+        val req = responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), dto) as JsonObject
+        // Stamped only when a policy is actually CONFIGURED for this provider (quirks.toolSurface
+        // != null) — never for every provider globally just because tools rode this turn. A
+        // configured-but-not-triggering turn (wrong model, latch closed, below the floor) still
+        // stamps 0, which is the real "why no deferral happened" signal the perf JSONL needs.
+        val surfaceInPlay = parts.partition?.takeIf { quirks.toolSurface != null }
+        return BuiltBody(
+            req = req,
+            toolSearch = toolSearchControllerFor(parts.partition, opts),
+            toolsEager = surfaceInPlay?.eager?.size,
+            toolsDeferred = surfaceInPlay?.deferred?.size,
+        )
     }
 
     // ── tools ────────────────────────────────────────────────────────────────
 
-    private fun toolsArray(body: AnthropicRequest) = buildJsonArray {
-        for (t in body.tools) add(toolObject(t))
+    /** Non-null only when this request actually deferred something — a bare partition (deferral
+     *  off, non-lite, below the floor) yields an empty deferred list, so [ToolPartition.deferring]
+     *  is the single source both this and [toolsSection] read. */
+    private fun toolSearchControllerFor(partition: ToolPartition?, opts: BuildOptions): ToolSearchController? {
+        val policy = quirks.toolSurface ?: return null
+        if (partition == null || !partition.deferring) return null
+        return ResponsesToolSearchController(
+            index = ToolSearchIndex(partition.deferred),
+            policy = policy,
+            emitStrict = quirks.emitStrict,
+            forceStrictFalse = quirks.forceStrictFalse,
+            decodeReasoningEnvelope = opts.decodeReasoningEnvelope,
+        )
     }
 
-    private fun toolObject(t: ToolDefinition): JsonObject = buildJsonObject {
-        put("type", FIELD_FUNCTION)
-        put("name", t.name)
-        put("description", t.description ?: "")
-        // Both Node references send `properties:{}` on a bare object schema; some strict
-        // validators reject an object schema without it (audit 2026-07-18).
-        put(
-            "parameters",
-            t.inputSchema ?: buildJsonObject {
-                put("type", "object")
-                put("properties", buildJsonObject { })
-            },
-        )
-        if (quirks.emitStrict && t.strict == true) put("strict", true)
+    /** The declaration-replay input for CHANGE 2 (cache-prefix stability, 2026-07-25): every
+     *  DEFERRED tool this turn's transcript already named via a ToolUseBlock, keyed by name so
+     *  [ResponsesInputBuilder] can hand its full schema straight to the injector without a second
+     *  body.tools lookup. [warmToolNames] used to gate the (now-removed) always-eager promotion in
+     *  ToolSurface.kt; it feeds this instead — see that file's header. A tool warm but NOT in this
+     *  map (eager, or dropped from body.tools since it was last used) gets no declaration on
+     *  purpose: eager tools are already declared via tools[] every turn, and a dropped tool has no
+     *  schema to declare — the degrade-to-status-quo path [appendToolUse] documents. */
+    private fun declarationCandidates(body: AnthropicRequest, partition: ToolPartition?): Map<String, ToolDefinition> {
+        val deferred = partition?.deferred
+        if (deferred.isNullOrEmpty()) return emptyMap()
+        val warm = warmToolNames(body)
+        return deferred.filter { it.name in warm }.associateBy { it.name }
     }
 
     /** Lite pins "auto" (the only value codex-rs validated against additional_tools — client.rs:896);
@@ -385,15 +492,19 @@ private fun clampedForModelCeiling(effort: String?, upstreamModel: String, rejec
  * the ported shape of translate-request.mjs's message/block walk, kept flat so no single handler
  * nests the whole cascade.
  */
-private class ResponsesInputBuilder(private val quirks: ResponsesQuirks) {
+private class ResponsesInputBuilder(
+    private val quirks: ResponsesQuirks,
+    private val loopGuardDirectives: Map<String, String> = emptyMap(),
+) {
 
     fun appendMessage(
         sink: JsonArrayBuilder,
         msg: AnthropicMessage,
         opts: BuildOptions,
+        declareByName: Map<String, ToolDefinition>,
     ) {
         for (block in msg.content) {
-            appendBlock(sink, msg.role, block, opts)
+            appendBlock(sink, msg.role, block, opts, declareByName)
         }
     }
 
@@ -402,13 +513,14 @@ private class ResponsesInputBuilder(private val quirks: ResponsesQuirks) {
         role: String,
         block: ContentBlock,
         opts: BuildOptions,
+        declareByName: Map<String, ToolDefinition>,
     ) {
         when (block) {
             is TextBlock -> sink.add(roleText(role, block.text))
             is ImageBlock -> appendImage(sink, block, opts)
             is DocumentBlock -> appendDocument(sink, block, opts)
             is RedactedThinkingBlock -> appendRedactedThinking(sink, block, opts)
-            is ToolUseBlock -> appendToolUse(sink, block, opts)
+            is ToolUseBlock -> appendToolUse(sink, block, opts, declareByName)
             is ToolResultBlock -> appendToolResult(sink, block, opts)
             is ThinkingBlock -> Unit // visible thinking never rides back upstream
             is UnknownBlock -> Unit // unknown client blocks are dropped, never crash
@@ -436,16 +548,44 @@ private class ResponsesInputBuilder(private val quirks: ResponsesQuirks) {
         opts: BuildOptions,
     ) {
         if (!opts.compact && opts.replayReasoning.v) {
-            opts.decodeReasoningEnvelope(block.data)?.let { sink.add(it) }
+            opts.decodeReasoningEnvelope(block.data)?.let { addReasoningOnce(sink, it, opts) }
         }
+    }
+
+    /** The single seam every reasoning input item passes through: at-most-once per request by
+     *  rs_ id, whether it arrived via the gateway cache or the legacy client round-trip. */
+    private fun addReasoningOnce(sink: JsonArrayBuilder, item: JsonObject, opts: BuildOptions) {
+        // Dedup is an rs_-id concept; an id-less item (possible only through a custom decoder —
+        // the Replay codec always carries one) has nothing to collide with and passes through.
+        val id = item["id"].str()
+        if (id == null || opts.injectedReasoningIds.add(id)) sink.add(item)
     }
 
     private fun appendToolUse(
         sink: JsonArrayBuilder,
         block: ToolUseBlock,
         opts: BuildOptions,
+        declareByName: Map<String, ToolDefinition>,
     ) {
         if (opts.compact) return
+        // CHANGE 2 (cache-prefix stability, 2026-07-25): a DEFERRED tool this block names gets its
+        // full schema declared IN HISTORY, ONCE per request, immediately before this function_call
+        // — the model then knows it from tool_search_output, never from a moving tools[] entry
+        // (ToolSurface.kt header). Absent from declareByName means the tool is either already eager
+        // (declared normally, nothing to add) or was dropped from body.tools entirely since it was
+        // last used (no schema exists to declare) — either way this is a no-op and the function_call
+        // rides exactly like an eager tool's: degrade to status quo, never crash, never an
+        // undeclared tool_search reference.
+        declareByName[block.name]?.let { tool ->
+            if (opts.injectedToolDeclarationNames.add(tool.name)) appendToolDeclaration(sink, tool)
+        }
+        // RC-3: reinject the turn's cached reasoning ONCE, immediately before its FIRST
+        // function_call — the API rejects both an orphaned reasoning item and a function_call
+        // whose reasoning was dropped (the replay_reasoning=false amnesia class this fixes).
+        // Driven by the assistant's tool_use blocks, never by which tool_results arrived.
+        opts.reasoningLookup(block.id)?.forEach { envelope ->
+            opts.decodeReasoningEnvelope(envelope)?.let { addReasoningOnce(sink, it, opts) }
+        }
         sink.add(
             buildJsonObject {
                 put("type", "function_call")
@@ -454,6 +594,26 @@ private class ResponsesInputBuilder(private val quirks: ResponsesQuirks) {
                 put("arguments", block.input.toString())
             },
         )
+    }
+
+    /** The synthetic pair CHANGE 2 injects for a deferred tool a ToolUseBlock already named: a
+     *  tool_search_call, then the tool_search_output carrying its FULL schema — the exact shape
+     *  [ResponsesToolSearchController] emits for a REAL within-turn search, reused via
+     *  [toolSearchOutputItem] (ResponsesToolSearch.kt) and never re-authored as a second shape. The
+     *  call_id is a pure function of the tool NAME alone ([stableToolSearchCallId]) — no transcript
+     *  position, no counters, no randomness — so the whole pair is byte-identical on every turn
+     *  that replays this tool's declaration, which is the property this feature exists to buy. */
+    private fun appendToolDeclaration(sink: JsonArrayBuilder, tool: ToolDefinition) {
+        val callId = stableToolSearchCallId(tool.name)
+        sink.add(
+            buildJsonObject {
+                put("type", "tool_search_call")
+                put("call_id", callId)
+                put("execution", "client")
+                put("arguments", buildJsonObject { put("query", tool.name) })
+            },
+        )
+        sink.add(toolSearchOutputItem(callId, listOf(tool), quirks.emitStrict, quirks.forceStrictFalse))
     }
 
     private fun appendImage(sink: JsonArrayBuilder, block: ImageBlock, opts: BuildOptions) {
@@ -486,7 +646,7 @@ private class ResponsesInputBuilder(private val quirks: ResponsesQuirks) {
             buildJsonObject {
                 put("type", "function_call_output")
                 put("call_id", block.toolUseId)
-                put("output", text)
+                put("output", loopGuardDirectives[block.toolUseId]?.let { "$it\n\n$text" } ?: text)
             },
         )
         // v25: images inside tool_result (Read on a PNG, screenshots) used to vanish —
@@ -547,7 +707,6 @@ private const val FIELD_CONTENT = "content"
 private const val FIELD_EFFORT = "effort"
 private const val FIELD_SUMMARY = "summary"
 private const val FIELD_REASONING = "reasoning"
-private const val FIELD_FUNCTION = "function"
 
 // Data-URL pieces for base64 image parts (capacity math uses their lengths — no magic numbers).
 private const val DATA_URL_PREFIX = "data:"
@@ -588,6 +747,28 @@ private val HEX_DIGITS = "0123456789abcdef".toCharArray()
 
 // MessageDigest is not thread-safe; a ThreadLocal avoids the provider lookup per turn without sharing.
 private val SHA256 = ThreadLocal.withInitial { MessageDigest.getInstance("SHA-256") }
+
+/** CHANGE 2's call_id (cache-prefix stability, 2026-07-25): a pure function of the tool NAME
+ *  alone — same sha256-hex-prefix idiom as [stablePromptCacheKey] just above, so a deferred
+ *  tool's declaration pair carries the identical call_id on every turn it is replayed on (no
+ *  transcript position, no counters, no randomness — any of those would reintroduce the exact
+ *  cache bust this feature exists to fix). */
+internal fun stableToolSearchCallId(toolName: String): String {
+    val md = SHA256.get()
+    md.reset()
+    val digest = md.digest(toolName.toByteArray(Charsets.UTF_8))
+    val hexChars = CharArray(CALL_ID_HEX_LEN)
+    var hi = 0
+    for (i in 0 until CALL_ID_HEX_LEN / 2) {
+        val b = digest[i].toInt() and BYTE_MASK
+        hexChars[hi++] = HEX_DIGITS[b ushr NIBBLE_BITS]
+        hexChars[hi++] = HEX_DIGITS[b and NIBBLE_MASK]
+    }
+    return CALL_ID_PREFIX + String(hexChars)
+}
+
+private const val CALL_ID_PREFIX = "ts_decl_"
+private const val CALL_ID_HEX_LEN = 24
 
 // the alias table IS the contract
 public fun normalizeEffort(raw: String?, ladder: EffortLadder): String? {

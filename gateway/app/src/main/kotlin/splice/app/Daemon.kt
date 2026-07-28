@@ -14,6 +14,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
@@ -28,12 +30,14 @@ import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.SpliceConfig
 import splice.core.config.StatePaths
+import splice.core.head.Head
 import splice.core.launch.ClaudeConfigMaterializer
 import splice.core.launch.ClaudePolicy
 import splice.core.model.ModelCatalog
 import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
+import splice.core.topology.ToolSurfaceConfig
 import splice.core.topology.Topology
 import splice.core.topology.catalogFor
 import splice.core.topology.configOverrides
@@ -42,9 +46,13 @@ import splice.core.turn.WatchdogBudget
 import splice.core.util.discard
 import splice.core.util.runCatchingCancellable
 import splice.dialect.chat.ChatQuirks
+import splice.dialect.chat.withReasoningEffortToml
 import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesQuirks
+import splice.dialect.responses.ToolDeferralPolicy
+import splice.dialect.responses.withReasoningCacheToml
 import splice.dialect.responses.withToml
+import splice.dialect.responses.withToolSurfaceToml
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.HeadDeps
@@ -86,9 +94,13 @@ private fun foldConfigFrom(cfg: SpliceConfig): FoldConfig = FoldConfig(
     maxTierN = cfg.foldMaxTier,
 )
 
-private const val CHATGPT_OAUTH = "chatgpt-oauth"
-private const val GROK_OAUTH = "grok-oauth"
-private const val KIMI_OAUTH = "kimi-oauth"
+internal const val CHATGPT_OAUTH = "chatgpt-oauth"
+internal const val GROK_OAUTH = "grok-oauth"
+internal const val KIMI_OAUTH = "kimi-oauth"
+
+// The whole head-stop phase's deadline (see [stopHeads]). Kept below Main's STOP_DEADLINE_MS so the
+// graceful stop + control shutdown finish before Main's hard halt watchdog would ever need to fire.
+private const val HEAD_STOP_BUDGET_MS = 6_000L
 
 /**
  * Best-effort isolation at daemon/head boundaries without turning cancellation or fatal JVM
@@ -147,6 +159,38 @@ private suspend fun startDaemonHeads(
     }
 }
 
+// The daemon shutdown's head-stop phase, extracted so DaemonStopDeadlineTest can prove the two
+// invariants a wedged head must not break. (1) PARALLELISM: the N blocking HeadServer.stop() engine
+// stops run CONCURRENTLY on Dispatchers.IO instead of serializing on Main's single-thread runBlocking
+// event loop — the "PARALLEL" the old comment claimed but the missing dispatcher silently defeated (a
+// blocking server.stop() monopolized the sole thread, compounding shutdown to ~5s x N heads). (2)
+// DEADLINE: withTimeoutOrNull caps the whole phase at [budgetMs] so a head whose drain never converges
+// cannot extend shutdown unboundedly, and [stopControl] still runs afterward even when the cap trips.
+// A truly-uninterruptible thread is beyond this budget's reach — Main's halt watchdog is that guarantee.
+internal suspend fun stopHeads(
+    heads: Collection<Head>,
+    budgetMs: Long,
+    log: (String) -> Unit,
+    stopControl: () -> Unit,
+) {
+    val stopFailureHandler = CoroutineExceptionHandler { _, e ->
+        log("[daemon] head stop failed uncaught: ${e::class.simpleName}: ${e.message}\n")
+    }
+    withContext(Dispatchers.IO) {
+        withTimeoutOrNull(budgetMs) {
+            supervisorScope {
+                heads.forEach { head ->
+                    launch(stopFailureHandler) {
+                        runCatchingDaemonBoundary { head.stop() }
+                            .discard("shutdown: one head failing to stop must not block the rest")
+                    }
+                }
+            }
+        }
+    }
+    stopControl()
+}
+
 private fun resolveHeadConfig(
     key: String,
     head: HeadConfig,
@@ -167,6 +211,40 @@ private fun resolveProviderConfig(key: String, provider: ProviderConfig, cfg: Sp
         else -> provider
     }
 
+/** Overlay the head's TOML [providers.*.quirks] onto a chat-dialect provider's base quirk profile.
+ *  Top-level (not a Daemon member): the class sits at detekt's TooManyFunctions ceiling. */
+private fun ProviderConfig.chatQuirks(base: ChatQuirks): ChatQuirks =
+    base.withReasoningEffortToml(quirks.reasoningEffort)
+
+/** TOML table -> dialect policy. Null (absent table, enabled=false, or the daemon-wide kill
+ *  switch) = feature off. The mapping lives HERE, at the assembly point, so the dialect never
+ *  imports a topology config type — the same reason withToml takes primitives. Top-level (not a
+ *  Daemon member): the class sits at detekt's TooManyFunctions ceiling.
+ *
+ *  Clamped (review 2026-07-24): ToolSurfaceConfig does no validation of its own, so an operator
+ *  TOML typo (e.g. `search_limit = 0`) reached `coerceIn(1, policy.searchLimit)` in
+ *  ResponsesToolSearchController unclamped and THREW — a client-visible failed turn on every
+ *  round that searched, the one place this feature's own NEVER-BELOW-STATUS-QUO law broke.
+ *  Clamping here (like every other numeric knob — ConfigService.normalize) makes a bad value
+ *  un-armable instead of a live crash. */
+private fun toolDeferralPolicy(t: ToolSurfaceConfig?, globalOff: Boolean): ToolDeferralPolicy? = when {
+    t == null -> null
+    !t.enabled -> null
+    globalOff -> null
+    else -> ToolDeferralPolicy(
+        deferPrefixes = t.deferPrefixes,
+        defer = t.defer.toSet(),
+        eager = t.eager.toSet(),
+        minDeferred = t.minDeferred.coerceAtLeast(MIN_TOOL_SURFACE_FLOOR),
+        searchLimit = t.searchLimit.coerceIn(MIN_TOOL_SURFACE_FLOOR, MAX_TOOL_SEARCH_LIMIT),
+        searchRounds = t.searchRounds.coerceIn(MIN_TOOL_SURFACE_FLOOR, MAX_TOOL_SEARCH_ROUNDS),
+    )
+}
+
+private const val MIN_TOOL_SURFACE_FLOOR = 1
+private const val MAX_TOOL_SEARCH_LIMIT = 50
+private const val MAX_TOOL_SEARCH_ROUNDS = 5
+
 public class Daemon(
     private val topology: Topology,
     private val statePaths: StatePaths,
@@ -178,7 +256,14 @@ public class Daemon(
 ) {
     // Topology TOML ([daemon] + [defaults]) feeds the headOverrides layer so reasoning
     // display is operator-editable without recompiling. Env and runtime PATCH still win.
-    private val config = ConfigService(statePaths, headOverrides = topology.configOverrides())
+    // [heads.<key>.overrides] rides the per-head layer: heads share ONE ConfigService (one JVM,
+    // unlike the Node lineage's process-per-head), so without this a knob tuned for one upstream
+    // hit all of them — e.g. kimi's 40-min upstreamTimeoutMs also gave codex a 40-min ceiling.
+    private val config = ConfigService(
+        statePaths,
+        headOverrides = topology.configOverrides(),
+        perHeadOverrides = topology.heads.mapValues { (_, head) -> head.overrides },
+    )
     private val mgmtKey = MgmtKey(statePaths)
     private val requestMaterializationGate = RequestMaterializationGate()
 
@@ -195,11 +280,6 @@ public class Daemon(
 
     public suspend fun start() {
         val cfg = config.getConfig()
-        val watchdog = WatchdogBudget(
-            firstByteTimeout = cfg.firstByteTimeoutMs.milliseconds,
-            streamIdle = cfg.streamIdleMs.milliseconds,
-            totalCap = cfg.upstreamTimeoutMs.milliseconds,
-        )
         // TOML feeds ConfigService's topology layer; state/env/runtime override it consistently.
         // Resolved before the head loop so every launch recipe points at the actual listener.
         val controlPort = cfg.controlPort
@@ -207,20 +287,7 @@ public class Daemon(
         // TOML the builder can't wire, e.g. a not-yet-supported dialect) must NOT abort the whole
         // daemon with a stack trace to /dev/null. Log the degraded head and serve the rest.
         val failed = assembleDaemonHeads(topology, heads, log) { key, head, providerCfg ->
-            val resolvedHead = resolveHeadConfig(key, head, providerCfg, cfg)
-            val resolvedProvider = resolveProviderConfig(key, providerCfg, cfg)
-            val catalog = resolvedProvider.catalogFor(resolvedHead, cfg.contextWindowOverride)
-            val loginCommand = loginInterception(resolvedProvider, resolvedHead, key).first
-            val ctx = ProviderBuild(
-                key,
-                resolvedHead,
-                resolvedProvider,
-                catalog,
-                watchdog,
-                cfg,
-                loginCommand,
-            )
-            assembleHead(ctx, controlPort)
+            assembleHead(providerContext(key, head, providerCfg), controlPort)
         }
         val srv = ControlServer(
             controlPort,
@@ -243,7 +310,17 @@ public class Daemon(
         // Start heads BEFORE opening the control plane so a launch-shim that sees /health and
         // immediately POSTs /launch/<head> does not race a still-binding head (503 head is not running).
         startDaemonHeads(heads, failed, probeScope, log, authProbes)
-        srv.start()
+        // Defense in depth for the restart-into-a-still-bound-port race (BS-4 DEFECT B): unlike the
+        // per-head starts above, an uncaught EADDRINUSE here (a prior daemon that freed the lock but
+        // not yet the control port) would crash the new daemon to /dev/null, leaving zero serving.
+        // Exit cleanly instead — Main's finally stops the heads we started and releases the lock.
+        val controlBound = runCatchingDaemonBoundary { srv.start() }
+            .onFailure {
+                log("[daemon] control plane could not bind :$controlPort (${it.message}); another owns it, exiting\n")
+                shutdownDaemon()
+            }
+            .isSuccess
+        if (!controlBound) return
         val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
         log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
     }
@@ -254,33 +331,44 @@ public class Daemon(
             authProbes.values.forEach { it.stop() }
             probeScope.cancel()
 
-            // Heads stop in PARALLEL: each stop may drain in-flight turns for up to its 5s
-            // window, and serial stops compounded shutdown to ~5s x N heads (review 2026-07-22).
-            // SUPERVISOR scope: an exception escaping one head's stop (a type outside
-            // runCatchingDaemonBoundary's list) must not cancel the siblings' drains/flushes nor
-            // skip control.stop below — it surfaces via stopFailureHandler below instead of the
-            // JVM default, which is a black hole once production launches redirect stderr to
-            // /dev/null (review 2026-07-22 round 3).
-            val stopFailureHandler = CoroutineExceptionHandler { _, e ->
-                log("[daemon] head stop failed uncaught: ${e::class.simpleName}: ${e.message}\n")
-            }
-            supervisorScope {
-                heads.values.forEach {
-                    launch(stopFailureHandler) {
-                        runCatchingDaemonBoundary { it.head.stop() }
-                            .discard("shutdown: one head failing to stop must not block the rest")
-                    }
-                }
-            }
-            control?.stop()
+            // Heads stop in PARALLEL under a phase DEADLINE, then control stops — see [stopHeads].
+            // The supervisor scope + stopFailureHandler live there so an exception escaping one
+            // head's stop (a type outside runCatchingDaemonBoundary's list) can't cancel the
+            // siblings' drains/flushes nor skip control.stop — it surfaces on stderr/daemon.log
+            // instead of the JVM default, a black hole once production redirects stderr to /dev/null.
+            stopHeads(heads.values.map { it.head }, HEAD_STOP_BUDGET_MS, log) { control?.stop() }
         }
     }
 
     /** Provider + its auth, chosen by (dialect, auth.kind) — the multi-provider dispatch. */
     private data class Wired(val provider: Provider, val auth: RefreshableAuthProvider)
 
+    /** Resolve one head's build inputs against ITS OWN effective config. Heads share a single
+     *  ConfigService (one JVM), so every value here must come from `getConfig(key)` — reading the
+     *  global view is what made a knob tuned for one upstream govern all of them. */
+    // `internal`, not private: DaemonPerHeadConfigTest calls this directly to pin that each head
+    // resolves against getConfig(key). No production caller outside this class (2026-07-26 review).
+    internal fun providerContext(key: String, head: HeadConfig, providerCfg: ProviderConfig): ProviderBuild {
+        val headCfg = config.getConfig(key)
+        val resolvedHead = resolveHeadConfig(key, head, providerCfg, headCfg)
+        val resolvedProvider = resolveProviderConfig(key, providerCfg, headCfg)
+        return ProviderBuild(
+            key = key,
+            head = resolvedHead,
+            providerCfg = resolvedProvider,
+            catalog = resolvedProvider.catalogFor(resolvedHead, headCfg.contextWindowOverride),
+            watchdog = WatchdogBudget(
+                firstByteTimeout = headCfg.firstByteTimeoutMs.milliseconds,
+                streamIdle = headCfg.streamIdleMs.milliseconds,
+                totalCap = headCfg.upstreamTimeoutMs.milliseconds,
+            ),
+            cfg = headCfg,
+            loginCommand = signInPlan(resolvedProvider, resolvedHead, key).command,
+        )
+    }
+
     /** The per-head inputs every provider builder threads through — a parameter object. */
-    private data class ProviderBuild(
+    internal data class ProviderBuild(
         val key: String,
         val head: HeadConfig,
         val providerCfg: ProviderConfig,
@@ -341,11 +429,13 @@ public class Daemon(
                 // grok-oauth rides session-pinned prompt caching + opt-in usage frames (probed
                 // 2026-07-19: 135k tokens, 1.7-2.8s TTFB, 99.97% cached — the two gaps that sank
                 // the 07-18 chat-dialect attempt). Unknown api-key vendors keep the bare quirks.
-                quirks = if (providerCfg.auth.kind == GROK_OAUTH) {
-                    ChatQuirks(providerTag = key, sessionCacheKeyPrefix = label, emitUsageInStream = true)
-                } else {
-                    ChatQuirks(providerTag = key)
-                },
+                quirks = providerCfg.chatQuirks(
+                    if (providerCfg.auth.kind == GROK_OAUTH) {
+                        ChatQuirks(providerTag = key, sessionCacheKeyPrefix = label, emitUsageInStream = true)
+                    } else {
+                        ChatQuirks(providerTag = key)
+                    },
+                ),
                 showReasoning = ctx.cfg.showReasoning,
             ),
             auth,
@@ -408,13 +498,17 @@ public class Daemon(
 
     /** Overlay the head's TOML [providers.*.quirks] onto a provider's base quirk profile. */
     // quirks.effortCeiling is intentionally not passed: the effort ladder clamps per provider.
-    private fun ProviderConfig.responsesQuirks(base: ResponsesQuirks): ResponsesQuirks = base.withToml(
+    private fun ProviderConfig.responsesQuirks(
+        base: ResponsesQuirks,
+        cfg: SpliceConfig,
+    ): ResponsesQuirks = base.withToml(
         store = quirks.store,
         cacheKey = quirks.cacheKey,
         summaryField = quirks.summaryField,
         compactEffort = quirks.compactEffort,
         toolChoice = quirks.toolChoice,
-    )
+    ).withReasoningCacheToml(quirks.reasoningCache)
+        .withToolSurfaceToml(toolDeferralPolicy(quirks.toolSurface, cfg.toolSurfaceOff))
 
     private fun responsesProvider(ctx: ProviderBuild, label: String): Wired {
         val key = ctx.key
@@ -449,7 +543,7 @@ public class Daemon(
                         replayReasoning = cfg.replayReasoning,
                         configEffort = cfg.effort,
                         configSummary = cfg.summary,
-                        quirks = providerCfg.responsesQuirks(CodexProvider.defaultQuirks()),
+                        quirks = providerCfg.responsesQuirks(CodexProvider.defaultQuirks(), cfg),
                         // Reasoning-continuation folding (codex 518n-2) — codex head ONLY; grok/openai
                         // never receive a fold config, so they stay pure passthrough.
                         foldConfig = foldConfigFrom(cfg),
@@ -495,7 +589,7 @@ public class Daemon(
                 replayReasoning = cfg.replayReasoning,
                 configEffort = cfg.effort,
                 configSummary = cfg.summary,
-                quirks = providerCfg.responsesQuirks(GrokProvider.defaultQuirks()),
+                quirks = providerCfg.responsesQuirks(GrokProvider.defaultQuirks(), cfg),
             ),
             auth,
         )
@@ -533,7 +627,7 @@ public class Daemon(
                 replayReasoning = cfg.replayReasoning,
                 configEffort = cfg.effort,
                 configSummary = cfg.summary,
-                quirks = providerCfg.responsesQuirks(GrokProvider.defaultQuirks()),
+                quirks = providerCfg.responsesQuirks(GrokProvider.defaultQuirks(), cfg),
             )
         } else {
             OpenAiResponsesProvider(
@@ -542,7 +636,7 @@ public class Daemon(
                 replayReasoning = cfg.replayReasoning,
                 configEffort = cfg.effort,
                 configSummary = cfg.summary,
-                quirks = providerCfg.responsesQuirks(OpenAiResponsesProvider.defaultQuirks()),
+                quirks = providerCfg.responsesQuirks(OpenAiResponsesProvider.defaultQuirks(), cfg),
             )
         }
         return Wired(provider, auth)
@@ -562,19 +656,8 @@ public class Daemon(
     }
 
     // Common assembly shared by every provider: stores, the generic HeadServer, launch spec.
-    // /login interception only makes sense for browser-OAuth providers; api-key heads have no
-    // sign-in flow, so they get no custom /login (just the disabled Anthropic built-in). Returns
-    // (loginCommand, signInLabel) — both blank when there is no OAuth flow.
-    private fun loginInterception(providerCfg: ProviderConfig, head: HeadConfig, key: String): Pair<String, String> {
-        val label = when (providerCfg.auth.kind) {
-            CHATGPT_OAUTH -> "Codex (ChatGPT)"
-            GROK_OAUTH -> "Grok (xAI)"
-            KIMI_OAUTH -> "Kimi (Moonshot)"
-            else -> ""
-        }
-        val command = if (label.isEmpty()) "" else "${head.claude.command ?: key} login"
-        return command to label
-    }
+    // The sign-in plan (OAuth browser flow vs api-key masked prompt + token capture) lives in
+    // SignInPlan.kt — factored out of this class (detekt LargeClass).
 
     private fun assembleHead(ctx: ProviderBuild, controlPort: Int): ManagedHead {
         val key = ctx.key
@@ -596,9 +679,14 @@ public class Daemon(
                     client = UpstreamClient.defaultClient(cfg.firstByteTimeoutMs, cfg.upstreamTimeoutMs, log),
                 ),
                 inferenceToken = mgmtKey.get(),
+                // Re-read per head on EVERY admission (still hot-resizable): the ceiling belongs to
+                // the upstream ACCOUNT, not the gateway. One shared value meant a workflow fan-out
+                // admitted 100 concurrent streams into a single account, 429'd, and armed the shared
+                // cooldown — measured 67% turn failure at inflight=100 vs 0.3% at <=14 (perf jsonl,
+                // 2026-07-24). Per-head lets a slow upstream sit low while a fast one stays high.
                 gate = InflightGate(
-                    maxInflight = { config.getConfig().maxInflight },
-                    maxQueued = { config.getConfig().maxQueued },
+                    maxInflight = { config.getConfig(key).maxInflight },
+                    maxQueued = { config.getConfig(key).maxQueued },
                 ),
                 shadow = ShadowClassifier(log = log),
                 compactStats = compactStats,
@@ -609,6 +697,7 @@ public class Daemon(
                 requestMaterializationGate = requestMaterializationGate,
             ),
         )
+        val apiKeyPresent = (wired.auth as? ApiKeyAuthProvider)?.hasKeyNow() != false
         return ManagedHead(
             head = server,
             auth = wired.auth,
@@ -618,17 +707,17 @@ public class Daemon(
             warnPct = cfg.usageWarnPct,
             warnTokens5h = cfg.usageWarnTokens5h,
             authKind = ctx.providerCfg.auth.kind,
-            launchSpec = launchSpecFor(ctx, controlPort),
+            launchSpec = launchSpecFor(ctx, controlPort, keyPresent = apiKeyPresent),
             perf = PerfStatsSource(perfStats),
         )
     }
 
-    private fun launchSpecFor(ctx: ProviderBuild, controlPort: Int): LaunchSpec {
+    private fun launchSpecFor(ctx: ProviderBuild, controlPort: Int, keyPresent: Boolean): LaunchSpec {
         val key = ctx.key
         val head = ctx.head
         val providerCfg = ctx.providerCfg
         val configDir = Paths.get(TopologyLoader.expandHome(head.claude.configDir ?: "~/.claude-$key"))
-        val (loginCommand, signInLabel) = loginInterception(providerCfg, head, key)
+        val signIn = signInPlan(providerCfg, head, key)
         return LaunchSpec(
             configDir = configDir,
             pinnedModel = head.pinnedModel,
@@ -638,9 +727,14 @@ public class Daemon(
             modelOptionsCache = modelOptionsCache(providerCfg),
             statuslineCommand = "curl -sS --data-binary @- http://127.0.0.1:$controlPort/statusline/$key",
             // The installed wrapper (`<command> login`) runs this head's provider sign-in; the
-            // materialized /login command + UserPromptSubmit hook route the user here.
-            loginCommand = loginCommand,
-            signInLabel = signInLabel,
+            // materialized /login command + UserPromptSubmit hook route the user here. api-key
+            // heads additionally capture a bare pasted token, and advertise the flow at session
+            // start ONLY while the key is unconfigured (re-materialized each launch).
+            loginCommand = signIn.command,
+            signInLabel = signIn.label,
+            signInViaBrowser = signIn.viaBrowser,
+            tokenCapture = signIn.tokenCapture,
+            advertiseKeySetup = signIn.tokenCapture != null && !keyPresent,
             policy = ClaudePolicy(share = topology.claude.share.toSet(), isolate = head.claude.isolate.toSet()),
             port = head.port,
             inferenceToken = mgmtKey.get(),

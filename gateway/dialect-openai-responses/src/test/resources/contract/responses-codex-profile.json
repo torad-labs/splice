@@ -1,0 +1,53 @@
+{
+    "model": "gpt-5.6-sol",
+    "input": [
+        {
+            "type": "additional_tools",
+            "role": "developer",
+            "tools": [
+                {
+                    "type": "function",
+                    "name": "Read",
+                    "description": "",
+                    "parameters": {
+                        "type": "object"
+                    },
+                    "strict": false
+                },
+                {
+                    "type": "function",
+                    "name": "Bash",
+                    "description": "",
+                    "parameters": {
+                        "type": "object"
+                    },
+                    "strict": false
+                }
+            ]
+        },
+        {
+            "role": "developer",
+            "content": "You are Splice, a contract fixture."
+        },
+        {
+            "role": "user",
+            "content": "Ping."
+        }
+    ],
+    "store": false,
+    "stream": true,
+    "include": [
+        "reasoning.encrypted_content"
+    ],
+    "prompt_cache_key": "splice-7d6e0aa0474b35db01b1f13cba38ea78",
+    "tool_choice": "auto",
+    "parallel_tool_calls": false,
+    "reasoning": {
+        "effort": "high",
+        "summary": "detailed",
+        "context": "all_turns"
+    },
+    "stream_options": {
+        "reasoning_summary_delivery": "sequential_cutoff"
+    }
+}

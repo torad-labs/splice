@@ -1,0 +1,37 @@
+# COMPANION to kt-no-runblocking-in-daemon (added 2026-07-26, audit §3.2): the exempted entry
+# paths (Main.kt, cli/**) may CALL runBlocking, but they must not EXPORT it. A non-private
+# `fun blockingBridge(...) = runBlocking { ... }` declared in cli/ is callable from daemon code
+# and defeats the daemon wall with zero textual trace at the call site — `runBlocking` never
+# appears where the daemon code actually calls in. kt-no-runblocking-in-daemon itself is left
+# exactly as it is (its exemption is correct for process entry); this rule closes the re-export
+# hole the exemption opens. Sanctioned shape: private helpers, plus `override fun run()` (the
+# Command dispatch seam), since that override is a fixed interface contract, not a reusable
+# blocking API an agent chose to expose.
+id: kt-no-runblocking-exported-bridge
+language: kotlin
+severity: error
+message: "A function whose body reaches runBlocking inside the entry-path exemption must be private (or an `override` Command.run) — a non-private bridge re-exports runBlocking into daemon code."
+note: >
+  Mark the helper `private`, or keep it suspend and let the caller stay suspend. The exemption for
+  Main.kt/cli exists for PROCESS ENTRY, not for a reusable blocking API.
+files:
+  - gateway/app/src/main/kotlin/**/Main.kt
+  - gateway/app/src/main/kotlin/**/cli/**
+rule:
+  kind: function_declaration
+  all:
+    - has:
+        stopBy: end
+        pattern: runBlocking
+    - not:
+        has:
+          kind: modifiers
+          has:
+            kind: visibility_modifier
+            regex: '^private$'
+    - not:
+        has:
+          kind: modifiers
+          has:
+            kind: member_modifier
+            regex: '^override$'

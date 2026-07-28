@@ -49,6 +49,12 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     private var cachedTokens = 0L
     private var failure: String? = null
 
+    // WIRE-2/3/6: textBuf/thinkingBuf/toolIndexById exist for legitimate dedup/replay and must
+    // stay unbounded on the normal path; this local safety valve (never provider-reported) only
+    // trips far above any real response, cleanly failing the turn instead of a runaway upstream
+    // growing them without limit.
+    private var runawayGuard: String? = null
+
     // Index-less parallel tool_calls (Mistral-shape backends emit complete calls with no
     // `index`): each NEW id gets its own synthesized slot — defaulting to 0 folded every
     // parallel call into one corrupted block (ids/names dropped, arguments concatenated).
@@ -72,7 +78,19 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
 
     override suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome {
         try {
-            upstream.collect { evt -> onEvent(evt, sink) }
+            upstream.collect { evt ->
+                val toolCount = maxOf(toolIndexById.size, pendingTools.size)
+                // pendingTools' per-entry `args` accumulate BEFORE the tool opens (deferred-open:
+                // a backend may stream index+id and large argument deltas but never function.name),
+                // so an entry count alone leaves those chars unbounded — review #49. Normally a
+                // handful of entries; the count cap bounds the sum's worst case.
+                val pendingArgsChars = pendingTools.values.sumOf { it.args.length }
+                if (bufferOverCapacity(textBuf.length, thinkingBuf.length, toolCount, pendingArgsChars)) {
+                    runawayGuard = RUNAWAY_GUARD_MESSAGE
+                    return@collect
+                }
+                onEvent(evt, sink)
+            }
         } catch (e: CancellationException) {
             // Only a watchdog fire may swallow cancellation; a real cancel propagates.
             if (ctx.watchdogFired() == null) throw e
@@ -91,7 +109,9 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     // Ordering enforced by the shared spi.terminalPrecedence (a FINISHED turn beats a late
     // watchdog fire — the poller can sit on the socket-EOF read AFTER finish_reason arrived).
     private fun terminalOutcome(): TurnOutcome {
+        val runaway = runawayGuard
         val providerFailure = when {
+            runaway != null -> TurnOutcome.Failure(ErrorType.API_ERROR, runaway, providerReported = false)
             failure != null ->
                 TurnOutcome.Failure(ErrorType.API_ERROR, "chat backend: $failure", providerReported = true)
             // finish_reason=content_filter is a CENSORED turn — a clean end_turn would let a
@@ -327,6 +347,24 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
 }
 
 private val REASONING_KEYS = listOf("reasoning_content", "reasoning", "thinking", "reasoning_text")
+
+// WIRE-2/3/6 runaway-upstream guard: far above any legitimate response (200K-token completions
+// run well under 1M chars; real turns use a handful of tool calls).
+private const val MAX_BUFFERED_CHARS = 20_000_000
+private const val MAX_TOOL_INDEX_ENTRIES = 50_000
+private const val RUNAWAY_GUARD_MESSAGE = "chat backend: response exceeded max buffered size — aborting"
+
+/** True once textBuf/thinkingBuf, the tool-index map, or the not-yet-opened tools' buffered
+ *  arguments have grown past their cap. Top-level (off the class function budget) — reads only its
+ *  arguments; the caller latches [ChatStreamTranslator]'s own runawayGuard state. */
+private fun bufferOverCapacity(
+    textLen: Int,
+    thinkingLen: Int,
+    toolIndexCount: Int,
+    pendingArgsLen: Int,
+): Boolean =
+    textLen >= MAX_BUFFERED_CHARS || thinkingLen >= MAX_BUFFERED_CHARS ||
+        toolIndexCount >= MAX_TOOL_INDEX_ENTRIES || pendingArgsLen >= MAX_BUFFERED_CHARS
 
 /** First non-empty cleartext reasoning field on a chat delta/message. Top-level (off the class
  *  function budget) — reads only its argument. */

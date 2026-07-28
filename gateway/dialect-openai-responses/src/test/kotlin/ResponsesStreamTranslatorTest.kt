@@ -7,12 +7,14 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
+import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
 import splice.dialect.responses.EmitEncryptedReasoning
 import splice.dialect.responses.ResponsesStreamTranslator
@@ -69,6 +71,8 @@ private fun ctx(
     fired: WatchdogFired? = null,
     collect: Boolean = false,
     dedupe: Boolean = false,
+    shared: SharedSummaryParts = SharedSummaryParts(),
+    capture: ((List<String>, List<String>) -> Unit)? = null,
 ) = StreamTurnContext(
     compact = compact,
     emitEncryptedReasoning = EmitEncryptedReasoning(emit),
@@ -79,6 +83,8 @@ private fun ctx(
     upstreamTimeoutMsForMessage = 900_000,
     collectReasoningEnvelopes = collect,
     dedupeRepeatedSummaryParts = dedupe,
+    summaryPartsShared = shared,
+    onTurnReasoning = capture ?: { _, _ -> },
 )
 
 private fun ev(json: String): JsonObject = Json.parseToJsonElement(json).jsonObject
@@ -479,6 +485,42 @@ class ResponsesStreamTranslatorTest {
         assertTrue((outcome as TurnOutcome.Success).reasoningEnvelopes.isEmpty())
     }
 
+    // L3 honesty hole (BS-1): a content-filtered response.incomplete must not masquerade as a
+    // clean max_tokens stop — mirrors ChatStreamTranslator's contentFiltered branch (line 97-105).
+    @Test
+    fun `response incomplete with reason content_filter is an honest failure, not a clean stop`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"partial"}"""),
+                ev(
+                    """{"type":"response.incomplete","response":{"status":"incomplete",
+                       "incomplete_details":{"reason":"content_filter"}}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, failure.type)
+        assertTrue(failure.providerReported)
+        assertTrue(failure.message.contains("content filter"))
+    }
+
+    @Test
+    fun `response incomplete with reason max_output_tokens stays a clean incomplete success`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"partial"}"""),
+                ev(
+                    """{"type":"response.incomplete","response":{"status":"incomplete",
+                       "incomplete_details":{"reason":"max_output_tokens"}}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val success = outcome as TurnOutcome.Success
+        assertTrue(success.incomplete)
+    }
+
     @Test
     fun `replay stays off on compact turns even when enabled`() = runTest {
         val sink = RecordingSink()
@@ -493,5 +535,307 @@ class ResponsesStreamTranslatorTest {
             sink,
         )
         assertTrue(sink.calls.none { it.startsWith("redacted:") })
+    }
+}
+
+// RC-1 walls (reasoning-cache campaign, 2026-07-24): the capture sink fires exactly when a
+// successful tool-use round produced envelopes keyed by REAL upstream ids — synthetic ids and
+// non-tool rounds never seed the cache.
+class TurnReasoningCaptureTest {
+
+    @Test
+    fun `a successful tool round with envelopes fires the capture with real ids`() = runTest {
+        var captured: Pair<List<String>, List<String>>? = null
+        val outcome = ResponsesStreamTranslator(
+            ctx(collect = true, capture = { ids, envs -> captured = ids to envs }),
+        ).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,""" +
+                        """"item":{"type":"reasoning","id":"rs_1","encrypted_content":"blob"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"call_abc","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1,"arguments":"{}"}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertTrue(outcome is TurnOutcome.Success)
+        assertEquals(listOf("call_abc"), captured?.first)
+        assertEquals(1, captured?.second?.size)
+    }
+
+    @Test
+    fun `the captured envelope carries the exact encrypted content, not just an id-derived value`() = runTest {
+        // review 2026-07-24 (thread on :529): size==1 stayed green if encrypted_content was
+        // dropped or mutated — the wall must assert the full payload through a content-aware encoder
+        var captured: List<String>? = null
+        val base = ctx(collect = true, capture = { _, envs -> captured = envs })
+        ResponsesStreamTranslator(
+            base.copy(
+                encodeReasoningEnvelope = { item ->
+                    val id = item["id"]?.jsonPrimitive?.content.orEmpty()
+                    val cipher = item["encrypted_content"]?.jsonPrimitive?.content.orEmpty()
+                    "$id|$cipher"
+                },
+            ),
+        ).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,""" +
+                        """"item":{"type":"reasoning","id":"rs_abc","encrypted_content":"cipher-sentinel-9f2"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"call_abc","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1,"arguments":"{}"}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertEquals(listOf("rs_abc|cipher-sentinel-9f2"), captured)
+    }
+
+    @Test
+    fun `a failed terminal after reasoning and a real call id never seeds the capture`() = runTest {
+        // review 2026-07-24: the capture must stay gated on the SUCCESS terminal — a regression
+        // moving onTurnReasoning ahead of terminal classification would reinject a rejected turn
+        var fired = false
+        val outcome = ResponsesStreamTranslator(
+            ctx(collect = true, capture = { _, _ -> fired = true }),
+        ).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,""" +
+                        """"item":{"type":"reasoning","id":"rs_1","encrypted_content":"blob"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"call_real","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1,"arguments":"{}"}"""),
+                ev("""{"type":"response.failed","response":{"error":{"message":"upstream rejected"}}}"""),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertTrue(outcome is TurnOutcome.Failure)
+        assertTrue(!fired, "a rejected turn must not seed the cache")
+    }
+
+    @Test
+    fun `a truncated stream (EOF without terminal) never seeds the capture`() = runTest {
+        var fired = false
+        val outcome = ResponsesStreamTranslator(
+            ctx(collect = true, capture = { _, _ -> fired = true }),
+        ).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,""" +
+                        """"item":{"type":"reasoning","id":"rs_1","encrypted_content":"blob"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"call_real","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1,"arguments":"{}"}"""),
+                // stream closes here without response.completed
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertTrue(outcome !is TurnOutcome.Success)
+        assertTrue(!fired, "a truncated turn must not seed the cache")
+    }
+
+    @Test
+    fun `a synthetic-id tool round never seeds the cache`() = runTest {
+        var fired = false
+        ResponsesStreamTranslator(
+            ctx(collect = true, capture = { _, _ -> fired = true }),
+        ).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,""" +
+                        """"item":{"type":"reasoning","id":"rs_1","encrypted_content":"blob"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","name":"run"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertFalse(fired, "toolu_synth ids repeat across turns — they must never key the cache")
+    }
+
+    @Test
+    fun `a text-only round never fires the capture`() = runTest {
+        var fired = false
+        ResponsesStreamTranslator(
+            ctx(collect = true, capture = { _, _ -> fired = true }),
+        ).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"hello"}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertFalse(fired)
+    }
+}
+
+// Tool-search capture walls (ToolSurface deferral, the search round). A tool_search_call opens NO
+// wire block and must never touch hasToolUse/turnToolIds — a synthetic/foreign id there would
+// mis-key the reasoning cache (a known prior bug class this pins against).
+class ToolSearchCaptureTest {
+
+    @Test
+    fun `a tool_search_call opens no block, leaves hasToolUse false, lands in toolSearches`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"tool_search_call",""" +
+                        """"call_id":"ts_1","execution":"client","arguments":{"query":"web search exa"}}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        val success = outcome as TurnOutcome.Success
+        assertFalse(success.hasToolUse)
+        val opened = setOf("openTool", "openText", "openThinking")
+        assertTrue(sink.calls.none { call -> opened.any { call.startsWith(it) } }, "no wire block opens")
+        assertEquals(1, success.toolSearches.size)
+        assertEquals("ts_1", success.toolSearches.single().callId.v)
+        assertEquals("web search exa", success.toolSearches.single().query)
+    }
+
+    @Test
+    fun `execution server is not captured`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"tool_search_call",""" +
+                        """"call_id":"ts_1","execution":"server","arguments":{"query":"x"}}}""",
+                ),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val success = outcome as TurnOutcome.Success
+        assertTrue(success.toolSearches.isEmpty())
+    }
+
+    @Test
+    fun `arguments as a JSON string parses`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"tool_search_call",""" +
+                        """"call_id":"ts_1","execution":"client",""" +
+                        """"arguments":"{\"query\":\"exa search\",\"limit\":3}"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val success = outcome as TurnOutcome.Success
+        assertEquals("exa search", success.toolSearches.single().query)
+        assertEquals(3, success.toolSearches.single().limit)
+    }
+
+    @Test
+    fun `malformed arguments yields empty query and does not throw`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"tool_search_call",""" +
+                        """"call_id":"ts_1","execution":"client","arguments":"not valid json {"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val success = outcome as TurnOutcome.Success
+        assertEquals(1, success.toolSearches.size)
+        assertEquals("", success.toolSearches.single().query)
+    }
+
+    @Test
+    fun `empty call_id is dropped`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"tool_search_call",""" +
+                        """"call_id":"","execution":"client","arguments":{"query":"x"}}}""",
+                ),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val success = outcome as TurnOutcome.Success
+        assertTrue(success.toolSearches.isEmpty())
+    }
+
+    @Test
+    fun `terminal-only delivery is recovered by the harvest fallback`() = runTest {
+        // No output_item.done for the search call — only the terminal response object carries it.
+        val terminal = ev(
+            """{"type":"response.completed","response":{"id":"r1","usage":{"input_tokens":10,"output_tokens":1},
+                "output":[{"type":"tool_search_call","call_id":"ts_9","execution":"client",
+                    "arguments":{"query":"harvested"}}]}}""",
+        )
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(listOf(terminal).asFlow(), RecordingSink())
+        val success = outcome as TurnOutcome.Success
+        assertEquals(1, success.toolSearches.size)
+        assertEquals("ts_9", success.toolSearches.single().callId.v)
+    }
+
+    @Test
+    fun `streamed capture present - the harvest fallback does not duplicate`() = runTest {
+        val terminal = ev(
+            """{"type":"response.completed","response":{"id":"r1","usage":{"input_tokens":10,"output_tokens":1},
+                "output":[{"type":"tool_search_call","call_id":"ts_1","execution":"client",
+                    "arguments":{"query":"streamed"}}]}}""",
+        )
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"tool_search_call",""" +
+                        """"call_id":"ts_1","execution":"client","arguments":{"query":"streamed"}}}""",
+                ),
+                terminal,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val success = outcome as TurnOutcome.Success
+        assertEquals(1, success.toolSearches.size, "the streamed capture wins; the harvest never re-adds it")
+    }
+
+    // The dispatch-after-search wall: a function_call for a tool absent from THIS turn's
+    // declared set (i.e. a tool the model only learned about via a prior search) still opens an
+    // ordinary tool_use block — splice never validates names against the declared set.
+    @Test
+    fun `a function_call for an undeclared tool still opens a tool_use block`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":0,""" +
+                        """"item":{"type":"function_call","call_id":"call_1","name":"mcp__exa__web_search_exa"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        val success = outcome as TurnOutcome.Success
+        assertTrue(success.hasToolUse)
+        assertTrue(sink.calls.any { it.startsWith("openTool") && it.contains("mcp__exa__web_search_exa") })
     }
 }

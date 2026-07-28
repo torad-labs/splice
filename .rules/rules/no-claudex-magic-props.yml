@@ -2,6 +2,14 @@
 # side channel is dead. Any __claudex-prefixed property (dot/bracket access,
 # object key, shorthand, or destructuring) reintroduces the hidden coupling
 # this migration killed.
+#
+# Widened 2026-07-26 (ast-grep-walls-audit, split-literal evasion theme, §A.8):
+# `body["__claude" + "xEffort"]` reproduces the identical property name with no
+# node containing the `__claudex` prefix, so the four fingerprint branches above
+# never saw it. Added a 5th branch: a string/template_string `+` concatenation
+# whose result sits inside a subscript_expression (bracket access) or
+# computed_property_name (computed object key) — the only two places a
+# concatenated property name can land.
 id: no-claudex-magic-props
 language: javascript
 severity: error
@@ -22,3 +30,23 @@ rule:
       regex: ^__claudex
     - kind: string_fragment
       regex: ^__claudex
+    - kind: binary_expression
+      all:
+        - has:
+            field: operator
+            regex: ^\+$
+        - has:
+            field: left
+            any:
+              - kind: string
+              - kind: template_string
+        - has:
+            field: right
+            any:
+              - kind: string
+              - kind: template_string
+        - inside:
+            stopBy: end
+            any:
+              - kind: subscript_expression
+              - kind: computed_property_name

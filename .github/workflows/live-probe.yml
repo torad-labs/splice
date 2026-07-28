@@ -1,0 +1,134 @@
+# Nightly live-provider tier-1 e2e.
+#
+# Every current gate is PR-triggered, but splice is an LLM gateway — the highest-probability
+# breakage is upstream provider drift while no PR is moving. This workflow converts
+# user-reported outages into an early-morning CI signal by running a cheap, provider-billed,
+# seconds-per-head wire probe against the live daemon.
+#
+# The scheduled trigger is intentionally commented out until operator-provisioned provider
+# API-key repo secrets are available; until then the workflow runs only on workflow_dispatch
+# and degrades every secret-dependent step to a logged skip with exit 0.
+# The ci-live-probe label is the recurrence key for the open-OR-update issue below; the
+# workflow self-provisions it on every run (gh label create --force, idempotent), so no repo
+# settings step is needed — the operator MAY pre-create it alongside the provider secrets.
+# First real dispatch builds the fat jar cold (install.sh runs ./gradlew :app:shadowJar); a
+# first-run timeout is resolved by re-dispatching once a build has completed (gradle cache).
+name: live-probe
+
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: '43 4 * * *'  # 04:43 UTC — uncomment when provider secrets are provisioned
+
+permissions: {}
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      issues: write
+    env:
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: Provider secrets presence gate
+        id: gate
+        run: |
+          if [ -z "$OPENROUTER_API_KEY" ]; then
+            echo "OPENROUTER_API_KEY not configured; skipping live provider probe."
+            echo "should_skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "should_skip=false" >> "$GITHUB_OUTPUT"
+      - name: Install splice
+        if: steps.gate.outputs.should_skip == 'false'
+        run: ./install.sh
+      - name: Write splice configuration
+        if: steps.gate.outputs.should_skip == 'false'
+        run: |
+          mkdir -p ~/.config/splice
+          cat > ~/.config/splice/splice.toml <<'EOF'
+          [daemon]
+          control_port = 3096
+
+          [providers.openrouter]
+          dialect = "openai-chat"
+          base_url = "https://openrouter.ai/api/v1"
+          auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }
+
+          [[providers.openrouter.models]]
+          id = "meta-llama/llama-4-maverick"
+          label = "Llama 4 Maverick"
+          context_window = 1048576
+
+          [heads.openrouter]
+          provider = "openrouter"
+          port = 3101
+          discovery_prefix = "claude-openrouter--"
+          pinned_model = "meta-llama/llama-4-maverick"
+
+          [heads.openrouter.claude]
+          command = "claudeor"
+          EOF
+      - name: Start splice daemon
+        id: daemon
+        if: steps.gate.outputs.should_skip == 'false'
+        run: |
+          java -jar "$HOME/.local/share/splice/splice.jar" daemon >/tmp/splice-daemon.log 2>&1 &
+          echo "daemon_pid=$!" >> "$GITHUB_OUTPUT"
+          for _ in $(seq 1 60); do
+            if curl -sS -m 2 http://127.0.0.1:3096/health >/dev/null 2>&1; then
+              echo "splice daemon healthy"
+              exit 0
+            fi
+            sleep 0.5
+          done
+          echo "splice daemon failed to become healthy" >&2
+          cat /tmp/splice-daemon.log >&2 || true
+          exit 1
+      - name: Run tier-1 live probe
+        id: tier1
+        if: steps.gate.outputs.should_skip == 'false'
+        run: checks/e2e/heads-e2e.sh --tier 1
+      - name: Update live-probe issue
+        if: always() && steps.gate.outputs.should_skip == 'false'
+        env:
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          TIER1_OUTCOME: ${{ steps.tier1.outcome }}
+          ISSUE_LABEL: ci-live-probe
+        run: |
+          gh label create "$ISSUE_LABEL" --force --color BFD4F2 --description "Nightly live-provider probe signal" || \
+            echo "::warning::could not provision label $ISSUE_LABEL; falling back to unlabeled issue"
+          # The probe's redness is owned by the tier-1 gate, never by this notification step:
+          # a GitHub-API hiccup here degrades to ::warning::, so a provider-healthy run can
+          # never go red on a gh outage and a provider-outage signal is never lost to one.
+          if [ "$TIER1_OUTCOME" = "success" ]; then
+            open_issues="$(gh issue list --label "$ISSUE_LABEL" --state open --json number --jq '.[].number' 2>/dev/null || true)"
+            [ -n "$open_issues" ] || echo "::warning::no open $ISSUE_LABEL issues to close (or GitHub API hiccup)"
+            for n in $open_issues; do
+              gh issue close "$n" --comment "Live provider probe passed at $(date -u +%Y-%m-%dT%H:%M:%SZ). Run: $RUN_URL" || \
+                echo "::warning::could not close issue $n (GitHub API hiccup; the green probe stands)"
+            done
+          else
+            existing="$(gh issue list --label "$ISSUE_LABEL" --state open --json number --jq '.[0].number' 2>/dev/null || true)"
+            body="Live provider probe failed at $(date -u +%Y-%m-%dT%H:%M:%SZ). Run: $RUN_URL"
+            if [ -n "$existing" ]; then
+              gh issue comment "$existing" --body "$body" || \
+                echo "::warning::could not comment on issue $existing (GitHub API hiccup; the red probe stands)"
+            else
+              gh issue create --label "$ISSUE_LABEL" --title "Live provider probe failed" --body "$body" || \
+                gh issue create --title "Live provider probe failed" --body "$body" || \
+                echo "::warning::could not open the recurring issue (GitHub API hiccup; the red probe stands)"
+            fi
+          fi

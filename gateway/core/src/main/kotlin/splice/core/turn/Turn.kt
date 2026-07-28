@@ -3,6 +3,7 @@
 // (tool_use > max_tokens > end_turn) is sealed inside the gateway's SseEmitter (L3-as-types).
 package splice.core.turn
 
+import kotlinx.serialization.json.JsonObject
 import kotlin.time.Duration
 
 public data class Usage(
@@ -35,6 +36,20 @@ public enum class ErrorType(public val wireName: String) {
     OVERLOADED("overloaded_error"),
 }
 
+/** A hosted tool call the round addressed to the GATEWAY (Responses `execution:"client"`), never
+ *  to Claude Code. Value-typed id so a call_id can never be confused with a tool_use id. */
+@JvmInline
+public value class ToolSearchCallId(public val v: String)
+
+public data class ToolSearchCall(
+    val callId: ToolSearchCallId,
+    val query: String,
+    val limit: Int?,
+    /** The item VERBATIM as the backend sent it — echoed into the continuation's input so the
+     *  history item is the backend's own shape, never a re-authored guess. */
+    val raw: JsonObject,
+)
+
 public sealed class TurnOutcome {
     /** Buffers ride the outcome (pinned P2-MACH slot): the gateway pipeline runs
      *  promote-to-text -> honesty gates -> mirror -> terminal AFTER the machine returns. */
@@ -50,6 +65,10 @@ public sealed class TurnOutcome {
          *  otherwise (opaque handles — the gateway forwards them to the provider's fold controller,
          *  never reads them). */
         val reasoningEnvelopes: List<String> = emptyList(),
+        /** tool_search_call items THIS round emitted. Non-empty only on a responses turn with
+         *  deferral active; the gateway never reads their contents — it hands them to the turn's
+         *  ToolSearchController (the same opaque-forwarding rule as reasoningEnvelopes). */
+        val toolSearches: List<ToolSearchCall> = emptyList(),
     ) : TurnOutcome()
 
     public data class Failure(
@@ -60,7 +79,32 @@ public sealed class TurnOutcome {
          *  truncation-without-terminal). Drives the G20 health split — the old OVERLOADED-implies-
          *  local heuristic misattributed passthrough overloaded_error (review 2026-07-19). */
         val providerReported: Boolean = false,
+        /** What the round had produced when it died — null when the dialect does not support
+         *  mid-stream re-anchoring or the turn was cancelled (watchdog). Rides the outcome the
+         *  same way Success buffers do (P2-MACH); the gateway never reads envelope contents. */
+        val partial: PartialRound? = null,
+        /** Output/reasoning genuinely burned by ABSORBED re-anchor rounds when the turn STILL
+         *  failed — carried so the usage store and perf row do not under-report the exact turns
+         *  that ran the most upstream rounds (review-pr 2026-07-24). Zero when no salvage. */
+        val salvagedUsage: Usage = Usage(),
     ) : TurnOutcome()
+
+    /** The salvageable state of a round that failed mid-stream, for continuation re-anchoring:
+     *  the wire is already at a clean block boundary (translators closeAll before the terminal
+     *  decision), so a continuation may APPEND — never replay. [toolTearOpen] marks the one
+     *  non-continuable tear: a tool_use block swept shut with partial args JSON. [bodyText] and
+     *  [reasoningEnvelopes] seed the continuation request; [thinkingText]/[emittedText] feed the
+     *  cross-round merge so the final honesty gates and reasoning mirror see the WHOLE turn, not
+     *  just the last round (code-review 2026-07-24: the pipeline is round-blind by itself). */
+    public data class PartialRound(
+        val thinkingText: String = "",
+        val bodyText: String = "",
+        val emittedText: Boolean = false,
+        val hasToolUse: Boolean = false,
+        val reasoningEnvelopes: List<String> = emptyList(),
+        val toolTearOpen: Boolean = false,
+        val usage: Usage = Usage(),
+    )
 
     /** Client vanished mid-stream: nothing to emit, seal quietly (never an error frame). */
     public data object ClientAbandoned : TurnOutcome()
@@ -78,7 +122,59 @@ public data class TurnMeta(
     val effort: String,
     val summary: String?,
     val budgetTokens: Long?,
+    /** Stable per-conversation scope key (responses dialect: first-message hash) — partitions the
+     *  gateway reasoning cache so concurrent conversations on one head can never cross-inject
+     *  (review 2026-07-24, RC-2's eli-risk-8 keying). Null (chat/passthrough) = one shared scope. */
+    val conversationKey: String? = null,
+    /** Tool-surface partition sizes for THIS turn's request; null when deferral was not in play.
+     *  Non-null stamps the perf counters even at zero — a deploy where tools_deferred stays 0 is a
+     *  false landing, and it must be visible in one grep of the perf JSONL. */
+    val toolsEager: Int? = null,
+    val toolsDeferred: Int? = null,
+    /** Turn-scoped summary-dedup state shared by every continuation round's translator (rounds
+     *  build fresh translators; without a shared set, a section re-titled by a continuation round
+     *  passes each round's per-instance dedup and lands as a duplicate — the 2026-07-26 mirror
+     *  duplication).
+     *
+     *  NON-NULL WITH A FRESH DEFAULT ON PURPOSE (2026-07-26): this is the ONLY sanctioned
+     *  construction site. No caller passes this argument, so there is no per-round construction to
+     *  get wrong, and `copy()` — which every continuation path uses — preserves the reference.
+     *  Dialects that render no reasoning summary simply never read it (two empty collections). */
+    val summaryParts: SharedSummaryParts = SharedSummaryParts(),
 )
+
+/** The shared state behind TurnMeta.summaryParts: the ordered parts already emitted to the
+ *  client this turn, plus the per-item exact set the dedup's within-item arm matches against.
+ *  Mutable per-turn coordination, never compared by value.
+ *
+ *  ACCESS DISCIPLINE (2026-07-26 review): mutated by ONE round's translator at a time. The
+ *  fold/re-anchor/tool_search loops drive rounds strictly sequentially (`FoldRunner.run` is a
+ *  plain `while (true) { postRound(...) }` — no launch/async around a round), so the absence of
+ *  synchronization here is deliberate, not an oversight. A future round loop that overlaps rounds
+ *  must add synchronization before sharing this. Public, not internal: the dialect module reads
+ *  these across a module boundary.
+ *
+ *  APPEND-ONLY BY TYPE, not by comment (2026-07-27 review): the collections used to be public
+ *  `MutableList`/`MutableMap`, so the discipline above was documentary — any in-repo caller could
+ *  `clear()`, reorder or truncate the list with no compile error and no test to catch it, and the
+ *  translator's recap cursor trusts this list's ORDER and LENGTH. The surface is now exactly the
+ *  two operations the dedup dialect performs; the collections cannot be reached to be reordered. */
+public class SharedSummaryParts {
+    private val emittedParts = mutableListOf<String>()
+    private val itemEmitted = mutableMapOf<Int, MutableSet<String>>()
+
+    /** The part at [cursor] in emission order, or null past either end (the recap arm passes
+     *  RECAP_DONE = -1 once an item's leading recap is finished, which must not match). */
+    public fun partAt(cursor: Int): String? = emittedParts.getOrNull(cursor)
+
+    /** Records [part] as emitted for item [outputIndex]. Returns false when it was ALREADY
+     *  emitted for that item — a dedup hit — in which case nothing is appended. */
+    public fun markEmitted(outputIndex: Int, part: String): Boolean {
+        val fresh = itemEmitted.getOrPut(outputIndex) { mutableSetOf() }.add(part)
+        if (fresh) emittedParts.add(part)
+        return fresh
+    }
+}
 
 /** The two-tier watchdog knobs (v35 doctrine): before first byte the idle limit is
  *  firstByteTimeout (prefill is legitimately silent for minutes); after, streamIdle;

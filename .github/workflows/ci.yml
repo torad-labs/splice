@@ -33,3 +33,38 @@ jobs:
         run: npm ci
       - name: complete repository gate
         run: npm run gate
+
+  walls-annotate:
+    # Annotation-only surface for ast-grep wall violations.
+    # The gate job at checks/gate.sh:65 remains the SOLE pass/fail authority
+    # (same checker run twice deliberately). The `|| true` is deliberate:
+    # this job exists only to surface violations as PR diff annotations, not
+    # to block merges. GitHub caps annotations at roughly 10 error + 10 warning
+    # per step, so large violation sets truncate to the log.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: install workspaces
+        run: npm ci
+      - name: annotate wall violations
+        run: npx --no-install ast-grep scan --format github || true
+
+  wrapper-validation:
+    # Validates the Gradle wrapper checksum on every pull request.
+    # This catches a tampered gradle-wrapper.jar arriving via fork PR before
+    # any build step executes it. The action discovers wrapper files recursively,
+    # so no path inputs are required (repo has gateway/gradlew + wrapper jar).
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: gradle/actions/wrapper-validation@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0

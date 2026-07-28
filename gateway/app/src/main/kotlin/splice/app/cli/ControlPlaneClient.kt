@@ -25,20 +25,26 @@ internal object ControlPlaneClient {
         }
     }.getOrNull()
 
-    /** Ask the daemon to shut down (bearer-guarded) and wait until the port stops answering.
+    /** Ask the daemon to shut down (bearer-guarded) and wait until the LISTENER is actually gone.
      *  The POST is fire-and-observe: a graceful teardown can drop the connection mid-response
-     *  (read-timeout) before it 2xx's, so the POST outcome is NOT the signal — the health poll is.
-     *  Failure is reported only when the daemon is still answering after the whole poll budget. */
+     *  (read-timeout) before it 2xx's, so the POST outcome is NOT the signal — the stop poll is.
+     *  Failure is reported only when the port is still bound after the whole poll budget. */
     fun stopDaemon(port: Int, key: String): Boolean {
         runCatchingCancellable {
             request("http://127.0.0.1:$port/api/daemon/shutdown", method = "POST", bearer = key) { true }
-        }.discard("POST may fail on graceful teardown; the health poll below is the real stop signal")
+        }.discard("POST may fail on graceful teardown; the stop poll below is the real stop signal")
         repeat(STOP_POLLS) {
-            if (healthVersion(port) == null) return true
+            if (stopped(port)) return true
             Thread.sleep(POLL_INTERVAL_MS)
         }
-        return healthVersion(port) == null
+        return stopped(port)
     }
+
+    /** "Stopped" means the LISTENER is gone, not merely that /health went null: a daemon whose control
+     *  server quit answering can still linger with the port bound on non-daemon Netty threads, and
+     *  reporting a premature "stopped" is what invited the restart-into-a-still-bound-port race (BS-4). */
+    private fun stopped(port: Int): Boolean =
+        healthVersion(port) == null && !AdminSupport.controlPortBound(port)
 
     /** Per-head credential presence as the DAEMON sees it (`/api/auth`), or null when unreachable.
      *  Doctor compares this against shell-side presence to catch the exported-after-boot trap. */

@@ -1,6 +1,15 @@
 # FSD: UI strictly via state. The mgmt HTTP client is touched only by entity
 # api segments (and the shared client itself); views subscribe to Zustand
 # selectors. A fetch anywhere else is component-local server state.
+#
+# Widened 2026-07-26 (ast-grep-walls-audit): the bare pattern only matched a
+# `call_expression` with a bare or dot-accessed callee; optional chaining
+# ($W?.fetch) and bracket access ($W['fetch'], $W["fetch"], $W?.['fetch'],
+# $W?.["fetch"]) are different node shapes and slipped through. All six
+# call shapes are now enumerated (single- and double-quoted bracket forms
+# included — the double-quoted form was an audit addition with its own
+# rule-test case, per §9 of the audit). Real tree stays 0 hits across 45
+# webui/src files.
 id: webui-fetch-only-in-api
 language: typescript
 severity: error
@@ -18,3 +27,8 @@ rule:
   any:
     - pattern: fetch($$$A)
     - pattern: $W.fetch($$$A)
+    - pattern: $W?.fetch($$$A)
+    - pattern: $W['fetch']($$$A)
+    - pattern: $W?.['fetch']($$$A)
+    - pattern: $W["fetch"]($$$A)
+    - pattern: $W?.["fetch"]($$$A)

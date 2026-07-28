@@ -25,9 +25,15 @@ class ConfigServiceTest {
     private fun service(
         env: Map<String, String> = emptyMap(),
         overrides: Map<String, String> = emptyMap(),
+        perHead: Map<String, Map<String, String>> = emptyMap(),
     ): ConfigService {
         val paths = StatePaths(baseOverride = tmp.resolve("state"))
-        return ConfigService(paths, headOverrides = overrides, envReader = { env[it] })
+        return ConfigService(
+            paths,
+            headOverrides = overrides,
+            perHeadOverrides = perHead,
+            envReader = { env[it] },
+        )
     }
 
     @Test
@@ -139,6 +145,23 @@ class ConfigServiceTest {
         assertEquals(512, nonFinite.maxQueued)
     }
 
+    // The r3 invalid-env-value lesson: an unrecognized value must never silently ARM a feature.
+    // TOOL_SURFACE normalizes to exactly "off" or "auto" — nothing else.
+    @Test
+    fun `toolSurface knob normalizes to exactly off or auto, never an unrecognized value`() {
+        assertEquals("auto", service().getConfig().asMap()["toolSurface"])
+        listOf("off", "OFF", " off ").forEach { raw ->
+            val cfg = service(env = mapOf("CLAUDEX_TOOL_SURFACE" to raw)).getConfig()
+            assertEquals("off", cfg.asMap()["toolSurface"])
+            assertTrue(cfg.toolSurfaceOff)
+        }
+        listOf("on", "true", "garbage").forEach { raw ->
+            val cfg = service(env = mapOf("CLAUDEX_TOOL_SURFACE" to raw)).getConfig()
+            assertEquals("auto", cfg.asMap()["toolSurface"])
+            assertEquals(false, cfg.toolSurfaceOff)
+        }
+    }
+
     @Test
     fun `maxQueued env alias applies`() {
         val svc = service(env = mapOf("CLAUDEX_MAX_QUEUED" to "50"))
@@ -202,5 +225,44 @@ class ConfigServiceTest {
             env = mapOf("CLAUDEX_STATUSLINE_GIT_ROOTS" to "/workspace:/srv/repos:relative:"),
         ).getConfig()
         assertEquals(listOf("/workspace", "/srv/repos"), cfg.statuslineGitRoots)
+    }
+
+    // Per-head overrides ([heads.<key>.overrides]). Before this layer existed, every head shared
+    // ONE maxInflight, so a ceiling sized for a fast upstream also governed a rate-limited one.
+    @Test
+    fun `per-head override applies to its own head only`() {
+        val svc = service(
+            overrides = mapOf("maxInflight" to "100"),
+            perHead = mapOf("kimi" to mapOf("maxInflight" to "8")),
+        )
+        assertEquals(8, svc.getConfig("kimi").maxInflight)
+        // The sibling and the global view keep the shared value — no leak in either direction.
+        assertEquals(100, svc.getConfig("claudex").maxInflight)
+        assertEquals(100, svc.getConfig().maxInflight)
+    }
+
+    @Test
+    fun `per-head override beats global TOML but yields to env and runtime PATCH`() {
+        val svc = service(
+            env = mapOf("CLAUDEX_MAX_QUEUED" to "64"),
+            overrides = mapOf("maxInflight" to "100", "maxQueued" to "512"),
+            perHead = mapOf("kimi" to mapOf("maxInflight" to "8", "maxQueued" to "256")),
+        )
+        // more specific TOML wins over less specific TOML...
+        assertEquals(8, svc.getConfig("kimi").maxInflight)
+        // ...but env keeps its existing authority over BOTH TOML layers.
+        assertEquals(64, svc.getConfig("kimi").maxQueued)
+        svc.patch(mapOf("maxInflight" to 20))
+        assertEquals(20, svc.getConfig("kimi").maxInflight)
+    }
+
+    @Test
+    fun `head with no overrides is byte-identical to the global view`() {
+        val svc = service(
+            overrides = mapOf("maxInflight" to "100"),
+            perHead = mapOf("kimi" to mapOf("maxInflight" to "8")),
+        )
+        assertEquals(svc.getConfig().asMap(), svc.getConfig("grok").asMap())
+        assertEquals(svc.getConfig().asMap(), svc.getConfig("no-such-head").asMap())
     }
 }

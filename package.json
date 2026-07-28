@@ -13,10 +13,16 @@
   "scripts": {
     "gate": "bash checks/gate.sh",
     "gate:rules": "ast-grep scan && ast-grep test --skip-snapshot-tests",
+    "gate:campaign": "python3 dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py",
+    "gate:campaign:census": "python3 dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py --no-run",
+    "gate:campaign:selftest": "python3 dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py --selftest",
     "test:hooks": "python3 .claude/hooks/tests/test_orchestrator.py",
     "oss:verify": "bash checks/oss/run.sh",
     "e2e:heads": "bash checks/e2e/heads-e2e.sh",
-    "e2e:heads:wire": "bash checks/e2e/heads-e2e.sh --tier 1"
+    "e2e:heads:wire": "bash checks/e2e/heads-e2e.sh --tier 1",
+    "oracle:capture": "node dev/campaigns/proxy-hardening/oracle/capture.mjs",
+    "oracle:check": "node dev/campaigns/proxy-hardening/oracle/capture.mjs --check",
+    "gate:campaign:strict": "python3 dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py --strict"
   },
   "devDependencies": {
     "@ast-grep/cli": "0.45.0"

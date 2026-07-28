@@ -59,19 +59,8 @@ public class ResponsesFoldController(
             round.roundIndex < config.maxContinue
     }
 
-    /** DTO-faithful continuation: decode the prior request, extend ONLY its `input` (the reasoning
-     *  replay items + the marker), re-encode through the same closed serializer. No request FIELD is
-     *  added — the #924 closed DTO is untouched, so byte-identity for the non-fold path is trivial. */
-    private fun continuationBody(previous: JsonObject, replayItems: List<JsonObject>): JsonObject {
-        val base = responsesRequestJson.decodeFromJsonElement(ResponsesRequest.serializer(), previous)
-        val nextInput = buildJsonArray {
-            base.input.forEach { add(it) }
-            replayItems.forEach { add(it) }
-            add(continuationMarker())
-        }
-        val next = base.copy(input = nextInput)
-        return responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), next) as JsonObject
-    }
+    private fun continuationBody(previous: JsonObject, replayItems: List<JsonObject>): JsonObject =
+        continuationRequest(previous, replayItems + listOf(continuationMarker()))
 
     // A hidden phase:commentary assistant message — the codex-rs / CodexCont / codexcomp nudge.
     // It ALSO satisfies the Responses "reasoning item needs a following item" constraint.
@@ -93,4 +82,21 @@ public class ResponsesFoldController(
         /** Tier n for a fingerprint-matching count (516→1, 1034→2, ...). */
         public fun tierOf(reasoningTokens: Long): Long = (reasoningTokens + FINGERPRINT_OFFSET) / FOLD_PERIOD
     }
+}
+
+/** DTO-faithful continuation shared by fold and re-anchor: decode the prior request, extend ONLY
+ *  its `input` with [extraItems], re-encode through the same closed serializer. No request FIELD
+ *  is added — the #924 closed DTO is untouched, so byte-identity off both paths is trivial.
+ *  The summary request RIDES ALONG on continuations by design (operator call 2026-07-26: "I want
+ *  to always see the reasoning, detailed"): the duplicated sections that the re-request provokes
+ *  are suppressed turn-scoped in the stream translator (SharedSummaryParts) — exact repeats of a
+ *  section already emitted this turn never reach the client; every genuinely-new section does. */
+internal fun continuationRequest(previous: JsonObject, extraItems: List<JsonObject>): JsonObject {
+    val base = responsesRequestJson.decodeFromJsonElement(ResponsesRequest.serializer(), previous)
+    val nextInput = buildJsonArray {
+        base.input.forEach { add(it) }
+        extraItems.forEach { add(it) }
+    }
+    val next = base.copy(input = nextInput)
+    return responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), next) as JsonObject
 }

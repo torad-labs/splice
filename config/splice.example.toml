@@ -27,6 +27,10 @@ base_url = "https://chatgpt.com/backend-api/codex"
 # Documented alternative: OpenAI Platform API keys (kind = "api-key", env = "OPENAI_API_KEY").
 auth = { kind = "chatgpt-oauth", file = "~/.codex/auth.json" }
 quirks = { store = false, account_id_header = true, cache_key = "first-message-hash", effort_ceiling = "max", summary_field = true }
+# reasoning_cache (default true): the gateway holds each turn's encrypted reasoning and reinjects
+# it on tool round-trips (codex-CLI parity — without it the model re-derives its plan at every
+# tool result: repeated tool calls, duplicated reasoning). The gateway retains only the OPAQUE
+# encrypted envelopes, bounded + TTL'd; set reasoning_cache = false to restore the old behavior.
 [[providers.codex.models]]
 id = "gpt-5.6-sol"
 label = "Codex 5.6 Sol"
@@ -66,7 +70,9 @@ base_url = "https://api.x.ai/v1"
 auth = { kind = "grok-oauth", file = "~/.grok/auth.json" }  # browser login: `claude-grok login`
 # summary_field=true enables the reasoning.summary field (value comes from [daemon].summary).
 # Raw reasoning items stay encrypted by xAI; public form is summary/reasoning_text only.
-quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = true, tool_choice = true }
+# reasoning_cache = false documented here because xai returns no encrypted reasoning envelopes —
+# the cache would only widen the request's include[] for nothing (it defaults on for codex).
+quirks = { cache_key = "session-id", effort_ceiling = "high", summary_field = true, tool_choice = true, reasoning_cache = false }
 [[providers.xai.models]]
 id = "grok-4.5"
 label = "Grok 4.5"
@@ -82,6 +88,9 @@ context_window = 256000
 
 # ── openrouter: the "new vendor = pure TOML, zero code" proof (Chat Completions) ─
 # Swap base_url + env for Ollama (http://localhost:11434/v1), LM Studio, DeepSeek, etc.
+# api-key resolution: $OPENROUTER_API_KEY from the daemon's env wins; else the shared
+# ~/.config/splice/keys.toml store (written by `claudeor login` / `splice key set` /
+# the in-session token-capture hook) — env always overrides the store.
 [providers.openrouter]
 dialect = "openai-chat"
 base_url = "https://openrouter.ai/api/v1"
@@ -90,6 +99,20 @@ auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }
 id = "meta-llama/llama-4-maverick"
 label = "Llama 4 Maverick"
 context_window = 1048576
+
+# ── strict OpenAI-compatible vendor: reasoning_effort must be turned OFF ────────
+# This dialect emits reasoning_effort/reasoning by default (DeepSeek/xAI/OpenRouter accept and
+# use them). Strict OpenAI-compatible validators (Fireworks) 400 on unrecognized fields — set
+# reasoning_effort = false to omit both (issue #21).
+[providers.fireworks]
+dialect = "openai-chat"
+base_url = "https://api.fireworks.ai/inference/v1"
+auth = { kind = "api-key", env = "FIREWORKS_API_KEY" }
+quirks = { reasoning_effort = false }
+[[providers.fireworks.models]]
+id = "accounts/fireworks/models/llama-v3p1-70b-instruct"
+label = "Llama 3.1 70B (Fireworks)"
+context_window = 131072
 
 # ── EXPERIMENTAL OPT-IN: Kimi device-flow OAuth (x-api-key) ─────────────────────
 # api.kimi.com/coding speaks the Anthropic Messages wire natively. Browser device login:
@@ -153,6 +176,14 @@ pinned_model = "meta-llama/llama-4-maverick"
 [heads.openrouter.claude]
 command = "claudeor"
 
+[heads.fireworks]
+provider = "fireworks"
+port = 3103
+discovery_prefix = "claude-fireworks--"
+pinned_model = "accounts/fireworks/models/llama-v3p1-70b-instruct"
+[heads.fireworks.claude]
+command = "claudefw"
+
 [heads.claude-kimi]
 provider = "kimi"
 port = 3102
@@ -160,3 +191,21 @@ discovery_prefix = "claude-kimi--"
 pinned_model = "k3[1m]"
 [heads.claude-kimi.claude]
 command = "claude-kimi"
+# PER-HEAD KNOBS. Keys are the knob names from ConfigService's Knob enum (maxInflight, maxQueued,
+# upstreamTimeoutMs, streamIdleMs, firstByteTimeoutMs, ...), always as STRINGS. The same names work
+# in an optional top-level [defaults] table, which this example deliberately omits: a knob put there
+# governs EVERY head, which is the exact problem per-head overrides exist to solve. Precedence:
+#   knob defaults <- [defaults] <- [heads.<key>.overrides] <- state config.json <- env <- PATCH
+#
+# maxInflight is the one that matters most: it is the concurrency the UPSTREAM ACCOUNT tolerates,
+# not what the gateway can hold. The gate admits up to this many turns and QUEUES the rest — which
+# is the backpressure that stops a workflow fan-out from bursting into a 429 storm (a real 429 arms
+# a shared per-head cooldown and every concurrent turn then fails fast, no retry). Measured on this
+# box: 0.3% turn failure at inflight<=14, 11% at 38, 67% at 100.
+#
+# Start near the observed-good ceiling and raise only with perf-jsonl evidence.
+[heads.claude-kimi.overrides]
+maxInflight = "8"
+# kimi K3 reasons 10-20 min; keep the long cap HERE instead of [defaults], where it also handed
+# codex and grok a 40-min ceiling (a wedged turn holds its inflight slot for the whole budget).
+upstreamTimeoutMs = "2400000"

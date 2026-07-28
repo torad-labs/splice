@@ -22,7 +22,9 @@ import splice.dialect.responses.InjectPriorReasoning
 import splice.dialect.responses.RequestEncryptedReasoning
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesRequestBuilder
+import splice.dialect.responses.ToolDeferralPolicy
 import splice.dialect.responses.stablePromptCacheKey
+import splice.dialect.responses.withReasoningCacheToml
 
 private val CODEX = ResponsesQuirks(providerTag = "claudex")
 private val GROK = ResponsesQuirks(
@@ -395,5 +397,294 @@ class ResponsesRequestBuilderTest {
             {"type":"image","source":{"type":"base64","media_type":"","data":"aGk="}}]}]}"""
         val req = build(body)
         assertTrue(req.toString().contains("data:image/png;base64,aGk="))
+    }
+}
+
+// RC-3 walls (reasoning-cache 2026-07-24): cache hits inject the turn's reasoning ONCE,
+// immediately before its FIRST function_call; misses are byte-identical to today; the rs_ id
+// appears at most once per request even when the legacy client-replay path carries it too.
+private fun cacheOpts(
+    replay: Boolean = false,
+    lookup: (String) -> List<String>? = { null },
+) = BuildOptions(
+    compact = false,
+    originalModel = "claude-codex--gpt-5.6-sol",
+    upstreamModel = "gpt-5.6-sol",
+    configEffort = null,
+    configSummary = null,
+    showReasoning = ReasoningDisplay.from("text"),
+    replayReasoning = InjectPriorReasoning(replay),
+    includeEncryptedReasoning = RequestEncryptedReasoning(true),
+    sessionId = null,
+    decodeReasoningEnvelope = { data ->
+        buildJsonObject {
+            put("type", JsonPrimitive("reasoning"))
+            put("id", JsonPrimitive("rs_$data"))
+            put("encrypted_content", JsonPrimitive(data))
+        }
+    },
+    reasoningLookup = lookup,
+)
+
+// RC-5 overlay wall (review 2026-07-24: the knob had no round-trip proof — this repo already
+// shipped five decorative quirks once, the 2026-07-18 withToml audit): a real TOML value must
+// reach ResponsesQuirks.reasoningCache through the chained overlay, and null must preserve it.
+class ReasoningCacheTomlOverlayTest {
+
+    @Test
+    fun `the overlay applies an explicit value and null keeps the base`() {
+        val base = ResponsesQuirks(providerTag = "t")
+        assertTrue(base.reasoningCache, "default is ON")
+        assertEquals(false, base.withReasoningCacheToml(false).reasoningCache)
+        assertEquals(true, base.withReasoningCacheToml(null).reasoningCache, "null preserves the base")
+        assertEquals(
+            false,
+            base.withReasoningCacheToml(false).withReasoningCacheToml(null).reasoningCache,
+            "null preserves an applied override",
+        )
+    }
+}
+
+/** A pre-cache caller: identical fields, but the reasoningLookup PARAMETER is never passed —
+ *  the class default carries it, which is exactly what an unwired call site looks like. */
+private fun preCacheOpts() = BuildOptions(
+    compact = false,
+    originalModel = "claude-codex--gpt-5.6-sol",
+    upstreamModel = "gpt-5.6-sol",
+    configEffort = null,
+    configSummary = null,
+    showReasoning = ReasoningDisplay.from("text"),
+    replayReasoning = InjectPriorReasoning(false),
+    includeEncryptedReasoning = RequestEncryptedReasoning(true),
+    sessionId = null,
+    decodeReasoningEnvelope = { null },
+)
+
+private const val TOOL_TURN_BODY = """{"model":"m","messages":[
+    {"role":"user","content":"do the thing"},
+    {"role":"assistant","content":[
+        {"type":"tool_use","id":"call_abc","name":"run","input":{"x":1}}]},
+    {"role":"user","content":[
+        {"type":"tool_result","tool_use_id":"call_abc","content":[{"type":"text","text":"ok"}]}]}
+]}"""
+
+class ReasoningInjectionTest {
+
+    private fun items(req: JsonObject) = req["input"]!!.jsonArray.map { it.jsonObject }
+
+    @Test
+    fun `a cache hit injects the turn's reasoning immediately before its function_call`() {
+        val req = build(
+            TOOL_TURN_BODY,
+            options = cacheOpts(lookup = { id -> if (id == "call_abc") listOf("env1") else null }),
+        )
+        val input = items(req)
+        val fcIdx = input.indexOfFirst { it["type"]?.jsonPrimitive?.content == "function_call" }
+        assertTrue(fcIdx > 0, "function_call present")
+        assertEquals("reasoning", input[fcIdx - 1]["type"]?.jsonPrimitive?.content)
+        assertEquals("rs_env1", input[fcIdx - 1]["id"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `one turn's entry injects once even with two tool_use blocks`() {
+        val body = """{"model":"m","messages":[
+            {"role":"user","content":"go"},
+            {"role":"assistant","content":[
+                {"type":"tool_use","id":"call_a","name":"run","input":{}},
+                {"type":"tool_use","id":"call_b","name":"run","input":{}}]},
+            {"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"call_a","content":[{"type":"text","text":"1"}]},
+                {"type":"tool_result","tool_use_id":"call_b","content":[{"type":"text","text":"2"}]}]}
+        ]}"""
+        val req = build(body, options = cacheOpts(lookup = { listOf("env1") }))
+        val input = items(req)
+        val reasonings = input.filter { it["type"]?.jsonPrimitive?.content == "reasoning" }
+        assertEquals(1, reasonings.size, "inject-once per turn")
+        val firstFc = input.indexOfFirst { it["type"]?.jsonPrimitive?.content == "function_call" }
+        assertEquals("reasoning", input[firstFc - 1]["type"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `a cache miss is byte-identical to a build that never heard of the cache`() {
+        // review 2026-07-24: comparing cacheOpts(lookup = { null }) against cacheOpts() compared
+        // two identical no-ops (cacheOpts' own default is { null } too). The compat claim is
+        // against a PRE-CACHE caller: BuildOptions constructed without the reasoningLookup
+        // parameter at all, so the class default carries the unwired side.
+        val miss = build(TOOL_TURN_BODY, options = cacheOpts(lookup = { null }))
+        val unwired = build(TOOL_TURN_BODY, options = preCacheOpts())
+        assertEquals(unwired.toString(), miss.toString())
+    }
+
+    @Test
+    fun `cache and legacy client replay never duplicate an rs_ id`() {
+        val body = """{"model":"m","messages":[
+            {"role":"user","content":"go"},
+            {"role":"assistant","content":[
+                {"type":"redacted_thinking","data":"env1"},
+                {"type":"tool_use","id":"call_abc","name":"run","input":{}}]},
+            {"role":"user","content":[
+                {"type":"tool_result","tool_use_id":"call_abc","content":[{"type":"text","text":"ok"}]}]}
+        ]}"""
+        val req = build(body, options = cacheOpts(replay = true, lookup = { listOf("env1") }))
+        val reasonings = items(req).filter { it["type"]?.jsonPrimitive?.content == "reasoning" }
+        assertEquals(1, reasonings.size, "rs_env1 must appear exactly once across both paths")
+    }
+}
+
+// Tool-surface deferral walls (ToolSurface.kt / ResponsesRequestBuilder's toolSearchControllerFor).
+// The three EXISTING lite-shape tests above (`gpt-5-6 lite shape...`, `...without tools...`,
+// `non-lite models keep the normal shape...`) stay green UNMODIFIED — that green is the second
+// default-off proof (deferral off never perturbs the lite/non-lite shape they pin).
+private val MCP_TOOLS_JSON = (1..12).joinToString(",") {
+    """{"name":"mcp__exa__tool_$it","input_schema":{"type":"object"}}"""
+}
+
+private fun toolSurfaceBody() = """{"model":"m",
+    "tools":[{"name":"Read","input_schema":{"type":"object"}},$MCP_TOOLS_JSON],
+    "messages":[{"role":"user","content":"x"}]}"""
+
+// N+1 of toolSurfaceBody(): the same tools, plus a prior turn's tool_use/tool_result of [toolName].
+private fun toolSurfaceBodyWithHistory(toolName: String) = """{"model":"m",
+    "tools":[{"name":"Read","input_schema":{"type":"object"}},$MCP_TOOLS_JSON],
+    "messages":[
+        {"role":"user","content":"x"},
+        {"role":"assistant","content":[{"type":"tool_use","id":"call_x","name":"$toolName","input":{}}]},
+        {"role":"user","content":[
+            {"type":"tool_result","tool_use_id":"call_x","content":[{"type":"text","text":"ok"}]}]}
+    ]}"""
+
+class ToolSurfaceRequestTest {
+
+    private val quirksOn = CODEX.copy(toolSurface = ToolDeferralPolicy(minDeferred = 4))
+
+    @Test
+    fun `deferral on - deferred names absent, tool_search last, other fields unchanged`() {
+        val req = build(toolSurfaceBody(), quirks = quirksOn, options = opts(model = "gpt-5.6-sol"))
+        val toolsArr = req["input"]!!.jsonArray[0].jsonObject["tools"]!!.jsonArray
+        val kinds = toolsArr.map { t ->
+            t.jsonObject["name"]?.jsonPrimitive?.content ?: t.jsonObject["type"]?.jsonPrimitive?.content
+        }
+        assertFalse(kinds.any { it?.startsWith("mcp__") == true }, "deferred tools never ride the request")
+        assertEquals("tool_search", kinds.last())
+        assertEquals("auto", req["tool_choice"]?.jsonPrimitive?.content)
+        assertEquals("false", req["parallel_tool_calls"]?.jsonPrimitive?.content)
+        assertEquals("all_turns", req["reasoning"]?.jsonObject?.get("context")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `BuiltRequest toolSearch is non-null exactly when the partition deferred something`() {
+        val parsedOn = parseAnthropicBody(toolSurfaceBody())
+        val builtOn = ResponsesRequestBuilder(quirksOn).build(parsedOn.typed, parsedOn.raw, opts(model = "gpt-5.6-sol"))
+        assertTrue(builtOn.toolSearch != null)
+
+        val parsedOff = parseAnthropicBody(toolSurfaceBody())
+        val builtOff = ResponsesRequestBuilder(CODEX).build(parsedOff.typed, parsedOff.raw, opts(model = "gpt-5.6-sol"))
+        assertNull(builtOff.toolSearch)
+    }
+
+    @Test
+    fun `TurnMeta stamps tools eager and deferred, null when deferral is off`() {
+        val parsedOn = parseAnthropicBody(toolSurfaceBody())
+        val builtOn = ResponsesRequestBuilder(quirksOn).build(parsedOn.typed, parsedOn.raw, opts(model = "gpt-5.6-sol"))
+        assertEquals(1, builtOn.meta.toolsEager)
+        assertEquals(12, builtOn.meta.toolsDeferred)
+
+        val parsedOff = parseAnthropicBody(toolSurfaceBody())
+        val builtOff = ResponsesRequestBuilder(CODEX).build(parsedOff.typed, parsedOff.raw, opts(model = "gpt-5.6-sol"))
+        assertNull(builtOff.meta.toolsEager)
+        assertNull(builtOff.meta.toolsDeferred)
+    }
+
+    // Declaration-replay walls (cache-prefix stability, 2026-07-25): ToolSurface.kt's transcript-
+    // warm promotion busted the cached prefix (the R2 wall moved additional_tools' bytes the FIRST
+    // time a deferred tool was actually used); these pin its replacement — the tool's schema is
+    // re-declared IN HISTORY, immediately before its function_call, and additional_tools never moves.
+
+    @Test
+    fun `additional_tools bytes are identical whether or not history already used a deferred tool`() {
+        val cold = build(toolSurfaceBody(), quirks = quirksOn, options = opts(model = "gpt-5.6-sol"))
+        val warm = build(
+            toolSurfaceBodyWithHistory("mcp__exa__tool_5"),
+            quirks = quirksOn,
+            options = opts(model = "gpt-5.6-sol"),
+        )
+        assertEquals(cold["input"]!!.jsonArray[0].toString(), warm["input"]!!.jsonArray[0].toString())
+    }
+
+    @Test
+    fun `turn N+1 (adds a tool_use plus tool_result of a deferred tool) keeps input(0) byte-identical to turn N`() {
+        val turnN = build(toolSurfaceBody(), quirks = quirksOn, options = opts(model = "gpt-5.6-sol"))
+        val turnNPlus1 = build(
+            toolSurfaceBodyWithHistory("mcp__exa__tool_5"),
+            quirks = quirksOn,
+            options = opts(model = "gpt-5.6-sol"),
+        )
+        assertEquals(turnN["input"]!!.jsonArray[0].toString(), turnNPlus1["input"]!!.jsonArray[0].toString())
+    }
+
+    @Test
+    fun `declaration replay - full schema, positioned immediately before the function_call`() {
+        val req = build(
+            toolSurfaceBodyWithHistory("mcp__exa__tool_5"),
+            quirks = quirksOn,
+            options = opts(model = "gpt-5.6-sol"),
+        )
+        val input = req["input"]!!.jsonArray.map { it.jsonObject }
+        val fcIdx = input.indexOfFirst { it["type"]?.jsonPrimitive?.content == "function_call" }
+        assertTrue(fcIdx >= 2, "reasoning-free turn: call then output must precede the function_call")
+        val call = input[fcIdx - 2]
+        val output = input[fcIdx - 1]
+        assertEquals("tool_search_call", call["type"]?.jsonPrimitive?.content)
+        // REGRESSION (PR #48 shipped this as a stringified JSON → upstream 400 "input[N].arguments:
+        // expected an object, but got a string"): the Responses API types tool_search_call.arguments
+        // as an OBJECT (codex-rs models.rs:888 `arguments: serde_json::Value`), unlike function_call.
+        assertTrue(call["arguments"] is JsonObject, "tool_search_call.arguments must be a JSON object, not a string")
+        assertEquals("mcp__exa__tool_5", call["arguments"]!!.jsonObject["query"]?.jsonPrimitive?.content)
+        assertEquals("tool_search_output", output["type"]?.jsonPrimitive?.content)
+        assertEquals(call["call_id"]?.jsonPrimitive?.content, output["call_id"]?.jsonPrimitive?.content)
+        val tools = output["tools"]!!.jsonArray
+        assertEquals(1, tools.size)
+        assertEquals("mcp__exa__tool_5", tools[0].jsonObject["name"]?.jsonPrimitive?.content)
+        assertEquals("true", tools[0].jsonObject["defer_loading"]?.jsonPrimitive?.content)
+        // nothing else in the input carries a second declaration of this tool
+        assertEquals(1, input.count { it["type"]?.jsonPrimitive?.content == "tool_search_call" })
+    }
+
+    @Test
+    fun `declaration replay is deterministic - identical JSON across repeated builds`() {
+        val body = toolSurfaceBodyWithHistory("mcp__exa__tool_5")
+        val a = build(body, quirks = quirksOn, options = opts(model = "gpt-5.6-sol"))
+        val b = build(body, quirks = quirksOn, options = opts(model = "gpt-5.6-sol"))
+        assertEquals(a.toString(), b.toString())
+    }
+
+    @Test
+    fun `a transcript tool_use naming a tool absent from body-tools does not crash or emit a declaration`() {
+        val req = build(
+            toolSurfaceBodyWithHistory("mcp__exa__ghost"),
+            quirks = quirksOn,
+            options = opts(model = "gpt-5.6-sol"),
+        ) // must not throw
+        val input = req["input"]!!.jsonArray.map { it.jsonObject }
+        assertTrue(input.none { it["type"]?.jsonPrimitive?.content == "tool_search_call" })
+        assertTrue(input.none { it["type"]?.jsonPrimitive?.content == "tool_search_output" })
+        val call = input.first { it["type"]?.jsonPrimitive?.content == "function_call" }
+        assertEquals(
+            "mcp__exa__ghost",
+            call["name"]?.jsonPrimitive?.content,
+            "the call rides bare, like an eager tool's",
+        )
+    }
+
+    @Test
+    fun `deferral off - a warm deferred-shaped tool_use still emits no declaration`() {
+        val req = build(
+            toolSurfaceBodyWithHistory("mcp__exa__tool_5"),
+            quirks = CODEX,
+            options = opts(model = "gpt-5.6-sol"),
+        )
+        val input = req["input"]!!.jsonArray.map { it.jsonObject }
+        assertTrue(input.none { it["type"]?.jsonPrimitive?.content == "tool_search_call" })
+        assertTrue(input.none { it["type"]?.jsonPrimitive?.content == "tool_search_output" })
     }
 }

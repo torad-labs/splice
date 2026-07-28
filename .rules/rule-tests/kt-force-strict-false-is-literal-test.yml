@@ -1,0 +1,23 @@
+id: kt-force-strict-false-is-literal
+valid:
+  - 'when { forceStrictFalse -> put(FIELD_STRICT, false) }'
+  # redundant-but-valid guard spelling — must still be recognized (must still get put(...,false))
+  - 'when { forceStrictFalse == true -> put(FIELD_STRICT, false) }'
+  - 'when { emitStrict && t.strict == true -> put(FIELD_STRICT, true) }'
+  - 'when { lite -> put(FIELD_TOOL_CHOICE, "auto") }'
+  - 'put(FIELD_STRICT, t.strict == true)'
+  # grouped branch: only FIELD_STRICT is governed — a sibling put must not be blocked (review #49)
+  - |
+    when {
+        forceStrictFalse -> {
+            put(FIELD_STRICT, false)
+            put(FIELD_DEFER_LOADING, true)
+        }
+    }
+invalid:
+  # the bypass this widening closes: same guard, redundant `== true` spelling, non-literal value
+  - 'when { forceStrictFalse == true -> put(FIELD_STRICT, t.strict == true) }'
+  - 'when { forceStrictFalse -> put(FIELD_STRICT, t.strict == true) }'
+  - 'when { forceStrictFalse -> put(FIELD_STRICT, t.strict) }'
+  - 'when { forceStrictFalse -> put(FIELD_STRICT, strict == true) }'
+  - 'when { forceStrictFalse -> put(FIELD_STRICT, true) }'

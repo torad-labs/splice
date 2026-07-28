@@ -1,0 +1,39 @@
+{
+  "scenario": "basic",
+  "client_request": {
+    "model": "gpt-5-codex",
+    "max_tokens": 1024,
+    "stream": true,
+    "system": "SCENARIO:basic",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Say the answer."
+      }
+    ]
+  },
+  "expected_upstream_requests": [
+    {
+      "model": "gpt-5-codex",
+      "input": [
+        {
+          "role": "user",
+          "content": "Say the answer."
+        }
+      ],
+      "store": false,
+      "stream": true,
+      "include": [
+        "reasoning.encrypted_content"
+      ],
+      "prompt_cache_key": "splice-ab79a7c5bb0a3cec72e01e4e19b47fac",
+      "instructions": "SCENARIO:basic",
+      "reasoning": {
+        "effort": "high",
+        "summary": "detailed"
+      }
+    }
+  ],
+  "expected_client_status": 200,
+  "expected_client_sse": "event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_CANON\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"gpt-5-codex\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":0,\"output_tokens\":0,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"context_window\":272000,\"context_window_size\":272000,\"used_percentage\":0}}}\n\nevent: ping\ndata: {\"type\":\"ping\"}\n\nevent: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\nevent: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":\"ok after auth\"}}\n\nevent: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\nevent: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"input_tokens\":1,\"output_tokens\":1,\"cache_creation_input_tokens\":0,\"cache_read_input_tokens\":0,\"context_window\":272000,\"context_window_size\":272000,\"used_percentage\":0.0003676470588235294}}\n\nevent: message_stop\ndata: {\"type\":\"message_stop\"}\n\n"
+}

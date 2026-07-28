@@ -1,0 +1,35 @@
+id: kt-head-scoped-config-must-be-keyed
+valid:
+  # boot-time global read: no head key in scope, so the global view is correct here
+  - |
+    suspend fun start() {
+        val cfg = config.getConfig()
+        val controlPort = cfg.controlPort
+    }
+  # head-scoped and correctly keyed — parameter form
+  - |
+    private fun providerContext(key: String, head: HeadConfig): ProviderBuild {
+        val headCfg = config.getConfig(key)
+        return build(headCfg)
+    }
+  # head-scoped and correctly keyed — local-binding form
+  - |
+    private fun assembleHead(ctx: ProviderBuild): ManagedHead {
+        val key = ctx.key
+        val gate = InflightGate(maxInflight = { config.getConfig(key).maxInflight })
+        return gate
+    }
+invalid:
+  # head key as a PARAMETER, unkeyed read
+  - |
+    private fun providerContext(key: String, head: HeadConfig): ProviderBuild {
+        val headCfg = config.getConfig()
+        return build(headCfg)
+    }
+  # head key as a LOCAL BINDING, unkeyed read inside a lambda (the reviewed Daemon.kt:686 shape)
+  - |
+    private fun assembleHead(ctx: ProviderBuild): ManagedHead {
+        val key = ctx.key
+        val gate = InflightGate(maxInflight = { config.getConfig().maxInflight })
+        return gate
+    }

@@ -27,6 +27,10 @@ public data class BuiltTurn(
     val requestBody: JsonObject,
     val meta: TurnMeta,
     val extraHeaders: Map<String, String> = emptyMap(),
+    /** The answering policy for THIS turn's deferred surface, built by the request builder (the
+     *  only place that knows what was deferred). Null = no deferral this turn, or the feature is
+     *  off — the gateway's round loop is byte-for-byte unchanged. */
+    val toolSearch: ToolSearchController? = null,
 )
 
 /** Per-turn liveness signals the gateway hands the translator: the watchdog's typed sentinel and
@@ -83,4 +87,12 @@ public interface Provider : ProviderIdentity {
     /** Reasoning-continuation folding for this turn, or null when the feature is off for this
      *  model/head (the default — every non-codex provider stays pure passthrough). */
     public fun foldController(meta: TurnMeta): FoldController? = null
+
+    /** Mid-stream re-anchoring policy for FAILED rounds; null = surface the failure (pre-reanchor behaviour). */
+    public fun reanchorController(meta: TurnMeta): ReanchorController? = null
+
+    /** RC-4 (reasoning-cache 2026-07-24): one-shot request-body amendment on a
+     *  deterministic upstream rejection — (status, responseText, bodyJson) -> amended
+     *  body or null. Default null keeps every provider on the plain retry plan. */
+    public fun amendBodyOnFailure(status: Int, responseText: String, bodyJson: String): String? = null
 }

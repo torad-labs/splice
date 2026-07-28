@@ -21,6 +21,7 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesFoldController
+import splice.dialect.responses.continuationRequest
 import splice.spi.FoldRound
 import splice.core.reasoning.decodeReasoningEnvelope as coreDecode
 
@@ -116,5 +117,24 @@ class ResponsesFoldTest {
     fun `tier window - a tier above maxTier is released as-is`() {
         // tier 7 fingerprint = 518*7 - 2 = 3624, above the default maxTierN 6.
         assertNull(controller.continuation(round(3624, listOf(envelopeFor("rs")))))
+    }
+
+    @Test
+    fun `continuation keeps the summary request (turn-scoped dedup owns the repeats)`() {
+        // Operator call 2026-07-26: "always show the reasoning, detailed" — the summary request
+        // rides on continuations; exact repeats are suppressed in the stream translator instead.
+        val withSummary = Json.parseToJsonElement(
+            """{"model":"gpt-5.6-luna","input":[{"role":"user","content":"solve it"}],
+                "store":false,"stream":true,
+                "reasoning":{"effort":"high","summary":"detailed","context":"all_turns"},
+                "stream_options":{"reasoning_summary_delivery":"sequential_cutoff"}}""",
+        ).jsonObject
+        val next = continuationRequest(withSummary, emptyList())
+        val reasoning = next["reasoning"]!!.jsonObject
+        assertEquals("detailed", reasoning["summary"]?.jsonPrimitive?.content)
+        assertEquals("high", reasoning["effort"]?.jsonPrimitive?.content)
+        assertEquals("all_turns", reasoning["context"]?.jsonPrimitive?.content)
+        val delivery = next["stream_options"]!!.jsonObject["reasoning_summary_delivery"]?.jsonPrimitive?.content
+        assertEquals("sequential_cutoff", delivery)
     }
 }

@@ -106,6 +106,31 @@ public data class QuirksConfig(
     @SerialName("summary_field") val summaryField: Boolean = true,
     @SerialName("compact_effort") val compactEffort: String? = null,
     @SerialName("tool_choice") val toolChoice: Boolean = false,
+    /** openai-responses only: the gateway-held reasoning cache for tool round-trips (RC-5,
+     *  2026-07-24). NULLABLE like every overlay knob — absent keeps the provider's own default
+     *  (codex: on; grok: off — xai returns no envelopes), so the overlay can't stomp it. False
+     *  restores the pre-cache behavior (per-tool-result amnesia). */
+    @SerialName("reasoning_cache") val reasoningCache: Boolean? = null,
+    /** openai-chat only: emit reasoning_effort/reasoning fields (DeepSeek/xAI/OpenRouter-style
+     *  backends read them). null keeps the provider's own default (true); set false for strict
+     *  OpenAI-compatible vendors (Fireworks — issue #21) that 400 on unrecognized fields. */
+    @SerialName("reasoning_effort") val reasoningEffort: Boolean? = null,
+    /** openai-responses only: the deferred tool surface (tool_search) for responses-lite turns.
+     *  ABSENT TABLE = feature off — the reasoning_cache nullable-overlay idiom (Topology.kt:109-113). */
+    @SerialName("tool_surface") val toolSurface: ToolSurfaceConfig? = null,
+)
+
+/** openai-responses only: the deferred tool surface (tool_search) for responses-lite turns.
+ *  ABSENT TABLE = feature off — the reasoning_cache nullable-overlay idiom (Topology.kt:109-113). */
+@Serializable
+public data class ToolSurfaceConfig(
+    val enabled: Boolean = true,
+    @SerialName("defer_prefixes") val deferPrefixes: List<String> = listOf("mcp__"),
+    val defer: List<String> = emptyList(),
+    val eager: List<String> = emptyList(),
+    @SerialName("min_deferred") val minDeferred: Int = 8,
+    @SerialName("search_limit") val searchLimit: Int = 8,
+    @SerialName("search_rounds") val searchRounds: Int = 3,
 )
 
 @Serializable

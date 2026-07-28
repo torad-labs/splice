@@ -1,0 +1,46 @@
+name: dependency-submission
+
+# GitHub's dependency graph has no static Gradle manifest support, so Dependabot
+# alerts/security-updates and the dependency-review gate currently see npm deps
+# only and the Kotlin gateway (15 Gradle modules under gateway/) is invisible.
+#
+# Gradle version updates already work via dependabot.yml's Gradle parser; this
+# workflow closes the graph gap by submitting a Gradle snapshot via the
+# Dependency Submission API.
+#
+# Triggers are limited to push-to-main and workflow_dispatch. PR-side submission
+# would need contents: write, which runs triggered by forks or Dependabot never
+# receive, so dependency-review compare coverage for Gradle deps stays npm-only
+# until after merge.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-submission-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-submission:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+      - name: submit Gradle dependency graph
+        uses: gradle/actions/dependency-submission@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
+        with:
+          build-root-directory: gateway

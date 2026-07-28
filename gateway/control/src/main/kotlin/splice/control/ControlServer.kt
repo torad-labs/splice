@@ -333,7 +333,12 @@ public class ControlServer(
             call.respondText("statusline body timed out", ContentType.Text.Plain, HttpStatusCode.RequestTimeout)
             return
         }
-        val line = StatuslineRenderer(managed.head.label, config.getConfig().statuslineGitRoots)
+        // getConfig(KEY), not the global view: everything else here is this head's (label, usage,
+        // warn thresholds) and statuslineGitRoots is per-head overridable, so the unkeyed read
+        // silently ignored [heads.<key>.overrides].statuslineGitRoots. Found by
+        // kt-head-scoped-config-must-be-keyed on its first tree scan (2026-07-26). `key` is
+        // non-empty here — the managed == null early return above guarantees it resolved.
+        val line = StatuslineRenderer(managed.head.label, config.getConfig(key).statuslineGitRoots)
             .render(stdin, managed.usage, managed.warnPct, managed.warnTokens5h)
         call.respondText(line, ContentType.Text.Plain)
     }

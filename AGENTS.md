@@ -136,6 +136,25 @@ existed it was authored but NEVER executed by automation — only the ast-grep w
 Green means all of them. A wall block means fix the code, not the wall — never trust a filtered
 `gradle | grep` exit; read the real `BUILD SUCCESSFUL` / `GATE: PASS`.
 
+## PR titles are linted; branch commits are not
+
+`.github/workflows/pr-title.yml` enforces Conventional Commits on the **PR title** via a REQUIRED
+check. Allowed types, and this is the complete list:
+
+    feat  fix  docs  test  build  ci  chore  perf  refactor  revert  release  codex
+
+Scope optional (`fix(walls): ...`). Anything else fails `lint` and blocks the merge.
+
+WHY THIS IS EASY TO GET WRONG THREE TIMES IN A ROW (it happened, 2026-07-28/29): branch commit
+messages are NOT linted, so `harden(walls):` and `verify(x):` write and review fine locally. The
+title is checked only after the PR exists — and because merges are SQUASHED, the PR title replaces
+your branch commits in `main`, so history shows only compliant types and gives no hint that a wider
+vocabulary was ever tried and rejected. The feedback arrives late and then erases its own evidence.
+
+Pick the type from the list above BEFORE opening the PR. `gh pr create --body ...` bypasses
+`.github/PULL_REQUEST_TEMPLATE.md`, so the template's reminder never reaches an agent — this section
+is the one that does.
+
 ## Enforcement tiers (#924: make drift not compile)
 
 Each failure class this codebase hit is now stopped by the STRONGEST tier that can express it —

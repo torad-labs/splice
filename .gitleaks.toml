@@ -1,0 +1,12 @@
+# Repo-local gitleaks config (auto-loaded from the scan root). Extends the default
+# ruleset — this file only narrows false-positive classes, never disables rules.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "splice fixture shapes that pattern-match generic-api-key but are not credentials"
+regexes = [
+  # Oracle/contract fixture cache keys: "splice-" + md5 hex. Exact value shape —
+  # cannot mask an arbitrary real secret on the same line.
+  '''"prompt_cache_key":\s*"splice-[0-9a-f]{32}"''',
+]

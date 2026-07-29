@@ -1,3 +1,7 @@
+<!-- TITLE must be Conventional Commits, and CI enforces it (required check `lint`):
+     feat fix docs test build ci chore perf refactor revert release codex
+     Scope optional: fix(walls): ...  Any other type FAILS and blocks the merge. -->
+
 ## What / why
 
 ## Gates

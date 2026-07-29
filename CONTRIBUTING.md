@@ -49,9 +49,12 @@ Scope is optional: `fix(walls): …`. Anything else fails the `lint` check, whic
 so the PR cannot merge.
 
 **This list is the whole vocabulary.** Inventing a type that reads well — `harden(walls):`,
-`verify(x):`, `style(y):` — fails, and because squash-merge replaces your branch commits with the PR
-title, `main`'s history gives no hint that the wider vocabulary was ever rejected. Branch commit
-messages are not linted; only the title is.
+`verify(x):`, `style(y):` — fails the check.
+
+**Use an allowed type in your branch commit subject as well.** Only the title is linted, but the
+squash subject does not always come from the title: #66 passed with `chore(...)` and landed on `main`
+as `verify(...)`, its branch commit subject. Matching both is the only way to guarantee `main`'s
+history complies.
 
 ## No CLA
 

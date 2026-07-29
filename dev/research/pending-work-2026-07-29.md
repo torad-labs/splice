@@ -21,12 +21,12 @@ done
 npm run gate:campaign:census      # proxy-hardening walled/unwalled census
 ```
 
-## 1. `reasoning-cache` — 6 items claimed, 0 audited  ← the only integrity gap
+## 1. ~~`reasoning-cache` — 6 items claimed, 0 audited~~  → CLOSED 2026-07-29 (#66)
 
 | | |
 |---|---|
 | ledger | `dev/campaigns/reasoning-cache.toml` |
-| state | **6 `done`, 0 `verified`** |
+| state | **6 `verified`** — audited and promoted in #66; gate re-run FORCED (`--rerun-tasks`) after a cached 784ms green was rejected as evidence |
 | why it matters | `done` is a *builder's claim*. `verified` means the orchestrator independently re-ran the gate, read the diff, and worked the checklist — and only the orchestrator may set it (concept #945). |
 
 This is the one place the repo's own records currently **overstate what has been proven**. Every
@@ -101,10 +101,9 @@ Recorded here because nothing else tracks them.
 2. **detekt version skew.** `detekt` is in the version catalog; `detekt-formatting:1.23.8` is
    hardcoded in `gateway/build-logic/src/main/kotlin/splice.kotlin-common.gradle.kts`. A catalog
    bump silently leaves formatting behind.
-3. **14 stale agent worktrees** under `.claude/worktrees/`. Last touched 2026-07-19 and
-   2026-07-22/23; no open file handles, every tree clean, and both commits they sit on are ancestors
-   of `main`. They hold nothing. Awaiting an operator call on removal, since `.claude/` tooling may
-   expect the directory to exist.
+3. ~~**14 stale agent worktrees**~~ → REMOVED 2026-07-29. Re-verified inert immediately before
+   removal (0 dirty trees, 0 open file handles, both commits ancestors of `main`); recovered 81 MB.
+   One unrelated worktree remains under another session's scratchpad and was left alone.
 
 ## Suggested order, and why
 

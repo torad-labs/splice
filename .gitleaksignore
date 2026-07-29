@@ -1,0 +1,23 @@
+# Vetted false positives (2026-07-28 triage, PR #63). Every fingerprint below was
+# inspected by hand: 13 are `prompt_cache_key: "splice-<md5>"` cache keys in oracle/
+# contract fixtures (future ones are allowlisted by regex in .gitleaks.toml), one is
+# the phrase 'pinned public key' in a manifest.py comment, and the canonical.json /
+# GrokProviderTest pair was vetted in the 2026-07-19 pre-publication audit
+# (audit-splice-public-refs-gitleaks-20260719). A NEW finding must be triaged, not
+# appended here blindly.
+561d7ec0eb8a2bef8d724832211a3896b2af3bd1:dev/campaigns/proxy-hardening/oracle/fixtures/bigout.json:generic-api-key:29
+561d7ec0eb8a2bef8d724832211a3896b2af3bd1:dev/campaigns/proxy-hardening/oracle/fixtures/failed.json:generic-api-key:29
+561d7ec0eb8a2bef8d724832211a3896b2af3bd1:dev/campaigns/proxy-hardening/oracle/fixtures/basic.json:generic-api-key:29
+561d7ec0eb8a2bef8d724832211a3896b2af3bd1:dev/campaigns/proxy-hardening/oracle/fixtures/overflow_sse.json:generic-api-key:29
+561d7ec0eb8a2bef8d724832211a3896b2af3bd1:dev/campaigns/proxy-hardening/oracle/fixtures/prefill.json:generic-api-key:29
+561d7ec0eb8a2bef8d724832211a3896b2af3bd1:dev/campaigns/proxy-hardening/oracle/fixtures/toolcall.json:generic-api-key:29
+561d7ec0eb8a2bef8d724832211a3896b2af3bd1:dev/campaigns/proxy-hardening/oracle/fixtures/nonstream_tool.json:generic-api-key:29
+561d7ec0eb8a2bef8d724832211a3896b2af3bd1:dev/campaigns/proxy-hardening/oracle/fixtures/compactish.json:generic-api-key:29
+561d7ec0eb8a2bef8d724832211a3896b2af3bd1:dev/campaigns/proxy-hardening/oracle/fixtures/replaystream.json:generic-api-key:29
+561d7ec0eb8a2bef8d724832211a3896b2af3bd1:dev/campaigns/proxy-hardening/oracle/fixtures/multipart.json:generic-api-key:29
+561d7ec0eb8a2bef8d724832211a3896b2af3bd1:dev/campaigns/proxy-hardening/oracle/fixtures/truncated.json:generic-api-key:29
+c0a91614361f847917972c29c56a209286b5ce4c:gateway/dialect-openai-responses/src/test/resources/contract/responses-codex-profile.json:generic-api-key:42
+c0a91614361f847917972c29c56a209286b5ce4c:gateway/dialect-openai-responses/src/test/resources/contract/responses-tool-search.json:generic-api-key:55
+2c8f0a4d5074ca9a3525544e896770417390249f:gateway/dialect-openai-responses/src/test/resources/contract/responses-canonical.json:generic-api-key:14
+dd2a6783fd349d253b4e1fd70cd36f33471b4bc7:gateway/provider-grok/src/test/kotlin/grok/GrokProviderTest.kt:generic-api-key:73
+5910ee1866fa962cac25fd9c17b416b869a654f8:dev/campaigns/manifest.py:generic-api-key:116

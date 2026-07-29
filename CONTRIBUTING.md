@@ -37,6 +37,22 @@ Write-time policy (ast-grep rules) and the commit gate run the SAME checker twic
 `.rules/README.md` for the full rule inventory and authoring doctrine before adding or
 changing a rule.
 
+## PR title
+
+CI (`.github/workflows/pr-title.yml`) enforces Conventional Commits on the **PR title** — it is the
+squash-merge subject, so it becomes `main`'s history verbatim. Only these types pass:
+
+`feat` · `fix` · `docs` · `test` · `build` · `ci` · `chore` · `perf` · `refactor` · `revert` ·
+`release` · `codex`
+
+Scope is optional: `fix(walls): …`. Anything else fails the `lint` check, which is a required check,
+so the PR cannot merge.
+
+**This list is the whole vocabulary.** Inventing a type that reads well — `harden(walls):`,
+`verify(x):`, `style(y):` — fails, and because squash-merge replaces your branch commits with the PR
+title, `main`'s history gives no hint that the wider vocabulary was ever rejected. Branch commit
+messages are not linted; only the title is.
+
 ## No CLA
 
 Contributions are made under the project's [MIT license](LICENSE) — MIT in, MIT out. No

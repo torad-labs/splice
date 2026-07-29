@@ -17,11 +17,12 @@ junit = "6.1.2"
 # alerts sat open with no PR ever appearing. Declaring the floor gives the resolver a minimum AND
 # Dependabot a line to bump next time. Raise, never lower; drop it once ktor's own netty clears it.
 #
-# The jackson alerts are NOT covered here and deliberately so: jackson 2.20.1 rides in on the
-# PLUGIN classpath via detekt's jackson-dataformat-xml, which subproject dependency constraints
-# cannot reach (proved: constraining it added zero verification entries). It is build-time only and
-# never ships in the jar, so it needs a plugin-classpath constraint or a detekt bump, not this.
 netty = "4.2.16.Final"          # 4.2.15.Final resolved; CVEs in netty-codec-http/http2/compression
+# jackson rides in on the PLUGIN classpath via detekt's jackson-dataformat-xml, which subproject
+# constraints cannot reach — so the floor is applied in build-logic/build.gradle.kts, the one build
+# that owns that classpath (see the reasoning there). Build-time only, never in the shipped jar.
+# A detekt bump would be the cleaner fix but is unavailable: 1.23.8 is the latest release.
+jackson = "2.21.5"              # 2.20.1 resolved; advisories in jackson-core/databind
 
 [libraries]
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }

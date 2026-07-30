@@ -21,12 +21,29 @@ detekt {
     buildUponDefaultConfig = true
 }
 
+// VERSIONS COME FROM THE CATALOG, never a literal (2026-07-29). detekt-formatting and junit-bom were
+// pinned here as bare strings while `detekt` and `junit` already lived in libs.versions.toml, so a
+// catalog bump left BOTH behind silently: detekt-formatting at a version the detekt plugin no longer
+// matches, and junit-bom disagreeing with the platform the modules resolve. Nothing fails loudly —
+// you get a skew, which is the failure mode a version catalog exists to make impossible.
+//
+// A precompiled script plugin gets no generated `libs` accessor, which is why the literals were here
+// in the first place; VersionCatalogsExtension is the supported way to reach it from this context.
+private val catalog = extensions.getByType<org.gradle.api.artifacts.VersionCatalogsExtension>().named("libs")
+
+private fun catalogVersion(alias: String): String =
+    catalog.findVersion(alias).orElseThrow {
+        // Fail LOUD: a missing alias must not silently fall back to a literal, or the skew returns
+        // wearing the fix's clothes.
+        GradleException("version catalog has no `$alias` — libs.versions.toml and this convention plugin disagree")
+    }.requiredVersion
+
 dependencies {
-    "testImplementation"(platform("org.junit:junit-bom:6.1.2"))
+    "testImplementation"(platform("org.junit:junit-bom:${catalogVersion("junit")}"))
     "testImplementation"("org.junit.jupiter:junit-jupiter")
     "testRuntimeOnly"("org.junit.platform:junit-platform-launcher")
     // the kit detekt.yml carries a `formatting:` section (ktlint rules) — needs this plugin
-    "detektPlugins"("io.gitlab.arturbosch.detekt:detekt-formatting:1.23.8")
+    "detektPlugins"("io.gitlab.arturbosch.detekt:detekt-formatting:${catalogVersion("detekt")}")
 }
 
 tasks.withType<Test>().configureEach {

@@ -146,10 +146,19 @@ check. Allowed types, and this is the complete list:
 Scope optional (`fix(walls): ...`). Anything else fails `lint` and blocks the merge.
 
 WHY THIS IS EASY TO GET WRONG THREE TIMES IN A ROW (it happened, 2026-07-28/29): branch commit
-messages are NOT linted, so `harden(walls):` and `verify(x):` write and review fine locally. The
-title is checked only after the PR exists — and because merges are SQUASHED, the PR title replaces
-your branch commits in `main`, so history shows only compliant types and gives no hint that a wider
-vocabulary was ever tried and rejected. The feedback arrives late and then erases its own evidence.
+messages are NOT linted, so `harden(walls):` and `verify(x):` write and review fine locally, and the
+title is checked only after the PR exists — late, well after the work reads finished.
+
+AND THE CHECK IS NOT SUFFICIENT. Corrected 2026-07-29, same day the original claim was written: this
+section used to say the PR title "replaces your branch commits in main". It does not always. PR #66
+passed `lint` with the title `chore(reasoning-cache): ...` and landed on `main` as
+`verify(reasoning-cache): ...` — its BRANCH COMMIT subject, a type the linter forbids. So a green
+`lint` does not guarantee `main`'s history complies; the squash subject can come from either source
+and which one is not reliably predictable from the PR (#66 had 3 commits and used the commit message,
+#65 had 1 and used the title, so it is not a commit-count rule — mechanism undetermined).
+
+PRACTICAL RULE, and it costs nothing: make the BRANCH COMMIT SUBJECT use an allowed type too. Then
+whichever source the squash picks, `main` is compliant. Do not rely on the title check alone.
 
 Pick the type from the list above BEFORE opening the PR. `gh pr create --body ...` bypasses
 `.github/PULL_REQUEST_TEMPLATE.md`, so the template's reminder never reaches an agent — this section

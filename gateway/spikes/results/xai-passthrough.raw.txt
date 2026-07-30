@@ -1,0 +1,7 @@
+status: 200
+events: 25
+sequence: message_start -> content_block_start -> content_block_delta -> content_block_stop -> message_delta -> message_stop
+block types: [thinking, tool_use]
+content_block_start index values: [0, 0]
+content_block_delta missing index: 18/18
+stop_reason: tool_use

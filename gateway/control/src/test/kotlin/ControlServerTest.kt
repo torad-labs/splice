@@ -296,7 +296,13 @@ class ControlServerTest {
             header("Authorization", "Bearer $key")
         }
         assertEquals(HttpStatusCode.Accepted, accepted.status)
-        assertEquals(1, shutdownRequests.get())
+        // POLLED, NOT READ INSTANTLY — and the reason is this test's own subject. The handler ACKS
+        // FIRST and calls shutdownDaemon() afterwards (ControlServer.kt:110-115); that ordering is
+        // what the test exists to pin, and it is exactly why the client can observe 202 before the
+        // server has reached the call. Reading the counter on the next line therefore races the
+        // very window being asserted. Caught in CI 2026-07-30 (0/10 locally — a load-dependent
+        // window looks like that). Same discipline as awaitOne below: poll with a bound.
+        awaitCount(shutdownRequests, 1, "shutdown request after a 202")
     }
 
     @Test
@@ -496,6 +502,14 @@ private fun freshPort(): Int = ServerSocket(0).use { it.localPort }
 
 private fun awaitListening(vararg ports: Int) {
     for (p in ports) awaitOne(p)
+}
+
+private fun awaitCount(counter: AtomicInteger, expected: Int, what: String) {
+    val deadline = System.currentTimeMillis() + 10_000
+    while (counter.get() != expected) {
+        check(System.currentTimeMillis() < deadline) { "$what: expected $expected, still ${counter.get()}" }
+        Thread.sleep(5)
+    }
 }
 
 private fun awaitOne(port: Int) {

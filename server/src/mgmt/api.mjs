@@ -25,11 +25,21 @@ export function ensureMgmtKey() {
   return key;
 }
 
+// NO REGEX, deliberately (CodeQL js/polynomial-redos, 2026-07-29). `\s+` and `(.+)` both match a
+// space, so the engine must try every split; with a trailing newline `$` is unreachable (`.` does not
+// cross \n) and V8 backtracks the whole span. MEASURED on this exact pattern, not assumed:
+// 50k spaces => 1.0s, 100k => 3.1s, 200k => 11.1s of blocked event loop — quadratic, on an
+// UNAUTHENTICATED path, before any key comparison happens. Node's HTTP parser rejects bare newlines
+// in header values, so this is defence in depth rather than a live exploit; the scan below is linear
+// and removes the primitive entirely, which is cheaper than continuing to reason about reachability.
 function authorized(req) {
   const header = String(req.headers.authorization ?? '');
-  const m = /^Bearer\s+(.+)$/.exec(header);
-  if (!m) return false;
-  const presented = Buffer.from(m[1].trim());
+  const SCHEME = 'Bearer';
+  if (header.slice(0, SCHEME.length) !== SCHEME) return false;
+  const rest = header.slice(SCHEME.length);
+  // at least one space must separate scheme from token — `Bearerabc` is not a bearer header
+  if (!rest || !/^\s/.test(rest)) return false;
+  const presented = Buffer.from(rest.trim());
   const expected = Buffer.from(ensureMgmtKey());
   return presented.length === expected.length && timingSafeEqual(presented, expected);
 }

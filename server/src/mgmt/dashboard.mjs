@@ -25,7 +25,11 @@ export function handleDashboard(req, res) {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
     res.end(cache.html);
   } catch (err) {
-    sendJson(res, 500, { error: { type: 'api_error', message: String(err?.message || err) } });
+    // This wraps a FILE READ, so an ENOENT message carries the install path verbatim — the one
+      // concrete leak among these flows.
+    // Detail to stderr, generic to the client (CodeQL js/stack-trace-exposure, 2026-07-29).
+    process.stderr.write(`[dashboard] dashboard render failed: ${err?.stack || err?.message || err}\n`);
+    sendJson(res, 500, { error: { type: 'api_error', message: 'dashboard render failed — see the daemon log' } });
   }
   return true;
 }

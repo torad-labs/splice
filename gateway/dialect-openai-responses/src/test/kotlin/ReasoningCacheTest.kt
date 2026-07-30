@@ -51,14 +51,59 @@ class ReasoningCacheTest {
     }
 
     @Test
-    fun `ttl expires entries`() {
+    fun `ttl expires IDLE entries`() {
+        // The TTL is an IDLE timer (prefix stability, 2026-07-30): untouched entries still expire
+        // exactly as before. The active-conversation case is pinned by the next two tests.
         var now = 0L
         val c = ReasoningCache(ttlMs = 100, clock = { now })
         c.put(CONV, listOf("call_a"), listOf("e1"))
         now = 99
-        assertEquals(listOf("e1"), c.lookup(CONV, "call_a"))
-        now = 101
+        assertEquals(listOf("e1"), c.lookup(CONV, "call_a"), "not yet idle-expired")
+        now = 200 // 101ms since the refresh at t=99 -> idle past the TTL
         assertNull(c.lookup(CONV, "call_a"))
+    }
+
+    @Test
+    fun `an ACTIVE conversation never partially expires - the prefix-stability contract`() {
+        // THE REGRESSION THIS PINS: the builder injects each round's reasoning immediately before
+        // that round's first function_call, so losing ONE round mid-conversation deletes an item
+        // from the middle of the input array and shifts everything after it. Turn N+1 then stops
+        // being a prefix-extension of turn N and OpenAI re-bills the remainder. Before the fix,
+        // round 1 expired on the raw insertion TTL while later rounds lived on -- measured at 7.7%
+        // prefix reuse (PrefixStabilityDiagnostic).
+        var now = 0L
+        val c = ReasoningCache(ttlMs = 100, clock = { now })
+        c.put(CONV, listOf("call_1"), listOf("e1"))
+        // A long conversation: a new round every 60ms, each turn re-reading every earlier round
+        // exactly as the builder's walk does.
+        for (round in 2..10) {
+            now += 60
+            for (earlier in 1 until round) {
+                assertEquals(
+                    listOf("e$earlier"),
+                    c.lookup(CONV, "call_$earlier"),
+                    "round $earlier vanished at t=$now while the conversation was still active",
+                )
+            }
+            c.put(CONV, listOf("call_$round"), listOf("e$round"))
+        }
+        // t=540, far beyond the 100ms TTL: every round is still resolvable, so the input array is
+        // byte-identical to the previous turn's up to the append point.
+        for (round in 1..10) assertEquals(listOf("e$round"), c.lookup(CONV, "call_$round"))
+    }
+
+    @Test
+    fun `an idle conversation expires WHOLESALE, never half`() {
+        // A clean one-time transition to no-injection beats continuous per-round churn: half a
+        // conversation is exactly the prefix-shifting state the cache must never serve.
+        var now = 0L
+        val c = ReasoningCache(ttlMs = 100, clock = { now })
+        c.put(CONV, listOf("call_1"), listOf("e1"))
+        now = 60
+        c.put(CONV, listOf("call_2"), listOf("e2"))
+        now = 130 // call_1 is idle-expired; call_2 is not
+        assertNull(c.lookup(CONV, "call_1"))
+        assertNull(c.lookup(CONV, "call_2"), "the younger round must go with it, or the prefix shifts")
     }
 
     @Test

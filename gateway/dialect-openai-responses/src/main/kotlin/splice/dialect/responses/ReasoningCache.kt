@@ -63,9 +63,27 @@ internal class ReasoningCache(
             entries[key] = Entry(conversationKey, toolIds, envelopes, bytes, clock())
             toolIds.forEach { byScopedToolId[scoped(conversationKey, it)] = key }
             totalBytes += bytes
-            while (entries.size > maxEntries || totalBytes > maxTotalBytes) {
-                val oldest = entries.entries.firstOrNull() ?: break
+            evictToBoundLocked(writing = conversationKey)
+        }
+    }
+
+    /** Evict the oldest CONVERSATION wholesale, not just its oldest round. Oldest-first by round is
+     *  the worst possible choice for prefix stability: the oldest round's reasoning sits EARLIEST in
+     *  the input array, so dropping it invalidates every token after it (see
+     *  [touchConversationLocked]). Dropping a whole conversation costs that one its injection but
+     *  keeps every surviving conversation prefix-stable. */
+    private fun evictToBoundLocked(writing: String?) {
+        while (entries.size > maxEntries || totalBytes > maxTotalBytes) {
+            val oldest = entries.entries.firstOrNull() ?: break
+            val victim = oldest.value.conversationKey
+            // Never self-wipe the conversation being written: if IT alone overflows the bound,
+            // wholesale eviction would empty the cache on every put and destroy far more prefix
+            // than it saves. Fall back to today's oldest-round eviction (NEVER-BELOW-STATUS-QUO).
+            if (victim == null || victim == writing) {
                 removeLocked(oldest.key)
+            } else {
+                entries.filterValues { it.conversationKey == victim }.keys.toList()
+                    .forEach { removeLocked(it) }
             }
         }
     }
@@ -75,7 +93,31 @@ internal class ReasoningCache(
     fun lookup(conversationKey: String?, toolId: String): List<String>? = synchronized(lock) {
         sweepLocked()
         val key = byScopedToolId[scoped(conversationKey, toolId)] ?: return null
-        entries[key]?.envelopes
+        val envelopes = entries[key]?.envelopes
+        if (envelopes != null) touchConversationLocked(conversationKey)
+        envelopes
+    }
+
+    /** PREFIX STABILITY (2026-07-30): a conversation's entries live and die TOGETHER.
+     *  The builder injects each round's reasoning immediately before that round's FIRST
+     *  function_call, so losing ONE round mid-conversation deletes an item from the middle of the
+     *  input array and shifts every item after it. Turn N+1 then stops being a prefix-extension of
+     *  turn N, and OpenAI — which reuses the longest stable prefix — re-bills the entire remainder.
+     *  Measured offline against this builder: evicting the single OLDEST entry of an 8-round
+     *  conversation dropped prefix reuse from 100% to 7.7%. Against live telemetry the same
+     *  signature accounts for 1,349 turns at =<25% prefix reuse.
+     *  Refreshing the WHOLE conversation on any lookup means an active conversation never
+     *  partially expires; an idle one expires wholesale, which is a single clean transition to
+     *  no-injection (stable thereafter) instead of continuous per-round churn.
+     *  Re-inserting in iteration order preserves insertion-order == timestamp-order, the invariant
+     *  sweepLocked's takeWhile early-exit depends on. */
+    private fun touchConversationLocked(conversationKey: String?) {
+        // Unscoped entries (null key = a first user message with no text to hash) share one
+        // namespace across conversations and cannot be grouped; leave them on plain insertion TTL.
+        if (conversationKey == null) return
+        val now = clock()
+        entries.entries.filter { it.value.conversationKey == conversationKey }.map { it.key }
+            .forEach { k -> entries.remove(k)?.let { entries[k] = it.copy(at = now) } }
     }
 
     /** Drop every turn containing [toolId] — used when upstream rejects its envelopes as stale.
@@ -91,7 +133,15 @@ internal class ReasoningCache(
     private fun sweepLocked() {
         val cutoff = clock() - ttlMs
         val expired = entries.entries.takeWhile { it.value.at < cutoff }.map { it.key }
+        if (expired.isEmpty()) return
+        // Wholesale by conversation: a half-swept conversation is exactly the prefix-shifting
+        // state this cache must never produce (see touchConversationLocked). Collect the doomed
+        // keys BEFORE removing, then drop every remaining entry that belongs to one of them.
+        val doomed = expired.mapNotNull { entries[it]?.conversationKey }.toSet()
         expired.forEach { removeLocked(it) }
+        if (doomed.isNotEmpty()) {
+            entries.filterValues { it.conversationKey in doomed }.keys.toList().forEach { removeLocked(it) }
+        }
     }
 
     private fun removeLocked(key: String) {

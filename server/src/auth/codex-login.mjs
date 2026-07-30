@@ -153,10 +153,18 @@ export async function loginCodex({ authPath = getConfig().codexAuthPath, openBro
       try { server.close(); } catch { /* ignore */ }
       reject(new Error('login timed out after 5 min'));
     }, timeoutMs);
+    // ESCAPE BEFORE INTERPOLATION (CodeQL js/reflected-xss, 2026-07-29). The failure paths below
+    // pass provider-supplied query params straight in — `error` and `error_description` come off the
+    // callback URL, so anyone who can get the operator to open
+    // http://127.0.0.1:1455/auth/callback?error=<script>... during a login window executes script in
+    // that origin. The Kotlin port already does this correctly (OAuthLoginFlow.htmlEscape); only the
+    // legacy Node twin interpolated raw.
+    const esc = (v) => String(v).replace(/[&<>"']/g, (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
     const finish = (res, ok, msg) => {
       res.writeHead(ok ? 200 : 400, { 'Content-Type': 'text/html; charset=utf-8' });
       res.end(`<!doctype html><meta charset=utf-8><body style="font-family:system-ui;max-width:32rem;margin:4rem auto;padding:0 1rem">`
-        + `<h2>${ok ? 'Signed in to ChatGPT ✓' : 'Sign-in failed'}</h2><p>${msg}</p>`
+        + `<h2>${ok ? 'Signed in to ChatGPT ✓' : 'Sign-in failed'}</h2><p>${esc(msg)}</p>`
         + `<p style="color:#888">You can close this tab and return to the terminal.</p></body>`);
       clearTimeout(timer);
       try { server.close(); } catch { /* ignore */ }

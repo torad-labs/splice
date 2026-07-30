@@ -245,7 +245,11 @@ export async function handleControlApi(req, res) {
     sendJson(res, 404, { error: { type: 'invalid_request_error', message: `unknown control route: ${method} ${url.pathname}` } });
     return true;
   } catch (err) {
-    sendJson(res, 500, { error: { type: 'api_error', message: String(err?.message || err) } });
+    // Catch-all around every control route; whatever throws here is a proxy BUG, and its message
+      // is a crash artefact rather than anything an operator can act on in the client.
+    // Detail to stderr, generic to the client (CodeQL js/stack-trace-exposure, 2026-07-29).
+    process.stderr.write(`[control] control-plane request failed: ${err?.stack || err?.message || err}\n`);
+    sendJson(res, 500, { error: { type: 'api_error', message: 'control-plane request failed — see the daemon log' } });
     return true;
   }
 }

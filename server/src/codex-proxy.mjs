@@ -238,7 +238,14 @@ async function handleMessages(req, res) {
     process.stderr.write(`[codex-proxy] stream/handler error: ${err?.message || err}\n`);
     try {
       if (!res.headersSent) {
-        sendJson(res, 502, { error: { message: String(err?.message || err) } });
+        // Generic to the CLIENT, full detail to stderr one line above (CodeQL
+        // js/stack-trace-exposure, 2026-07-29). This is the handler-CRASH path, not the upstream
+        // classification — that lives at the anthropicErrorBody call further up and is untouched,
+        // because an upstream reason IS the operator's diagnostic. A crash message
+        // ("Cannot read properties of undefined") helps nobody in the client and can carry a
+        // filesystem path from an fs error, so it stays in the log where this repo now routes
+        // diagnostics.
+        sendJson(res, 502, { error: { type: 'api_error', message: 'internal proxy error — see the daemon log' } });
       } else if (!res.writableEnded) {
         endResponse(res);
       }

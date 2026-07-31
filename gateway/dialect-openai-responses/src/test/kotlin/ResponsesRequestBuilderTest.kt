@@ -24,6 +24,7 @@ import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesRequestBuilder
 import splice.dialect.responses.ToolDeferralPolicy
 import splice.dialect.responses.stablePromptCacheKey
+import splice.dialect.responses.withParallelToolCallsToml
 import splice.dialect.responses.withReasoningCacheToml
 
 private val CODEX = ResponsesQuirks(providerTag = "claudex")
@@ -686,5 +687,35 @@ class ToolSurfaceRequestTest {
         val input = req["input"]!!.jsonArray.map { it.jsonObject }
         assertTrue(input.none { it["type"]?.jsonPrimitive?.content == "tool_search_call" })
         assertTrue(input.none { it["type"]?.jsonPrimitive?.content == "tool_search_output" })
+    }
+
+    @Test
+    fun `parallel_tool_calls always rides on lite turns and its VALUE is an overlay knob`() {
+        val body = """{"model":"m","messages":[{"role":"user","content":"x"}]}"""
+        fun ptc(q: ResponsesQuirks) =
+            build(body, quirks = q, options = opts(model = "gpt-5.6-sol"))["parallel_tool_calls"]
+
+        // The field must be PRESENT on every lite turn — the backend 400s a lite request without
+        // it (live error 2026-07-19, toolless turn), so "omit when false" is not an option.
+        assertEquals(JsonPrimitive(false), ptc(CODEX), "default is unchanged: sequential")
+        // Absent TOML must keep the provider's own default, never stomp it (the summary_field trap).
+        assertEquals(JsonPrimitive(false), ptc(CODEX.withParallelToolCallsToml(null)))
+        // ...and an explicit TOML true must actually REACH THE WIRE. A knob that unit-tests green
+        // and no-ops in the daemon is the failure mode this assertion exists for.
+        assertEquals(JsonPrimitive(true), ptc(CODEX.withParallelToolCallsToml(true)))
+        assertEquals(JsonPrimitive(false), ptc(CODEX.withParallelToolCallsToml(false)))
+    }
+
+    @Test
+    fun `the parallel_tool_calls knob does not touch non-lite or compact turns`() {
+        val body = """{"model":"m","messages":[{"role":"user","content":"x"}]}"""
+        val on = CODEX.withParallelToolCallsToml(true)
+        // Non-lite model: the lite branch never runs, so the knob is inert and the field stays
+        // omitted (backend default) exactly as before.
+        assertNull(build(body, quirks = on, options = opts(model = "gpt-5.4-mini"))["parallel_tool_calls"])
+        // Compact turns are not lite by construction (isLite is !compact && …).
+        assertNull(
+            build(body, quirks = on, options = opts(compact = true, model = "gpt-5.6-sol"))["parallel_tool_calls"],
+        )
     }
 }

@@ -77,6 +77,15 @@ public data class ResponsesQuirks(
      *  backend (direct probe 2026-07-19: 200, correct tool call). */
     val responsesLiteModelRegex: Regex? = Regex("gpt-5\\.6", RegexOption.IGNORE_CASE),
     val compactEffortPin: String? = null, // null = inherit session effort (the cache law)
+    /** The VALUE sent for parallel_tool_calls on responses-lite turns (the field itself always
+     *  rides — a lite request without it 400s). codex-rs reads this per model from
+     *  `model_info.supports_parallel_tool_calls` rather than hardcoding it, so it is a knob here
+     *  too. Default false = today's behaviour. Turning it on lets the model batch tool calls in one
+     *  turn instead of one per turn; measured 2026-07-31, claudex averages 386 output tokens/turn
+     *  against grok's 663 and kimi's 786, i.e. ~2x the round-trips, and every round-trip re-sends
+     *  the whole context. UNTESTED against the live backend — see the 30-50 parallel Task spray in
+     *  this class's header, which came from omitting the field entirely. */
+    val liteParallelToolCalls: Boolean = false,
     val emitToolChoice: Boolean = false,
     /** Passes through a tool's own `strict == true` as `"strict": true`; false (the default,
      *  and the only value that has ever mattered — Claude Code's ToolDefinition.strict is always
@@ -138,6 +147,13 @@ public fun ResponsesQuirks.withToml(
 /** RC-5 overlay, chained after [withToml] (which sits at detekt's complexity ceiling). */
 public fun ResponsesQuirks.withReasoningCacheToml(reasoningCache: Boolean?): ResponsesQuirks =
     copy(reasoningCache = reasoningCache ?: this.reasoningCache)
+
+/** parallel_tool_calls overlay (2026-07-31), chained like [withReasoningCacheToml] for the same
+ *  reason. NULLABLE — absent TOML keeps the provider's own default, so the overlay can never stomp
+ *  it. (`summary_field` is non-nullable and DOES stomp `supportsSummary`, which is how that knob
+ *  became unreachable from a provider default; not repeating it here.) */
+public fun ResponsesQuirks.withParallelToolCallsToml(parallelToolCalls: Boolean?): ResponsesQuirks =
+    copy(liteParallelToolCalls = parallelToolCalls ?: this.liteParallelToolCalls)
 
 public enum class EffortLadder { CODEX, GROK }
 
@@ -358,9 +374,15 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         body: AnthropicRequest,
         opts: BuildOptions,
     ): Boolean? = when {
-        // Unconditional on lite turns — codex-rs sends the field always, and the backend 400s a
-        // lite-header request without an explicit false (live error 2026-07-19, toolless turn).
-        quirks.isLite(opts) -> false
+        // Always PRESENT on lite turns — codex-rs sends the field always, and the backend 400s a
+        // lite-header request without an explicit value (live error 2026-07-19, toolless turn).
+        // The VALUE is a quirk (2026-07-31): codex-rs does not hardcode it either, it sends
+        // `model_info.supports_parallel_tool_calls`, a per-model configurable. Default stays false
+        // — omitting the field once left the backend default parallel ON and gpt-5.6 sprayed 30-50
+        // parallel Task calls (see the header). Note that pathology came from OMITTING the field,
+        // which is not the same as sending an explicit true; the true case is untested, which is
+        // exactly why this is an opt-in knob and not a changed default.
+        quirks.isLite(opts) -> quirks.liteParallelToolCalls
         emitToolChoice -> body.toolChoice?.disableParallelToolUse != true
         else -> null
     }

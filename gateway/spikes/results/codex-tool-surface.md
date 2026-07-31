@@ -33,13 +33,21 @@ hardcoded. codex-rs does not hardcode it — it sends
 So the parity claim was stronger than the reality: codex treats it as a per-model knob, splice
 treated it as a constant.
 
-It is now `[providers.codex.quirks] parallel_tool_calls`, **defaulting to false** — today's exact
-behaviour — using the nullable-overlay idiom so absent TOML can never stomp a provider default.
+It is now the `parallel_tool_calls` key in the codex provider's `quirks` table (add it INSIDE the
+existing inline `quirks = { ... }` — a separate `[providers.codex.quirks]` section header clashes
+with the inline table and fails to parse), **defaulting to false** — today's exact behaviour —
+using the nullable-overlay idiom so absent TOML can never stomp a provider default. It applies to
+responses-lite turns only; on non-lite turns (grok) the wire value still comes from the client's
+`tool_choice`, so setting the key there is an accepted no-op.
 
 The default did NOT change, deliberately. The recorded pathology (gpt-5.6 "spraying 30-50 parallel
 Task calls") came from **omitting the field**, which left the backend default parallel ON. That is
 not the same as sending an explicit `true`, and the explicit-`true` case has never been tested. The
-knob exists so that can be measured on one head without a rebuild or a code change.
+knob exists so that can be measured on one head without a rebuild or a code change. Two guardrails
+land with it (review of #71 round 2): a client's explicit `disable_parallel_tool_use = true` beats
+the knob (the gateway must not override a request the client asked to serialize), and toolless
+turns stay `false` (nothing to parallelize, and explicit-true-without-tools is itself an untested
+combination — probe it before assuming it is accepted).
 
 ## Difference 2: codex collapses the whole tool surface into ONE `exec` tool
 

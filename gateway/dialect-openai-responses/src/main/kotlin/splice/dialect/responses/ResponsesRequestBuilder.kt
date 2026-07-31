@@ -382,7 +382,14 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         // parallel Task calls (see the header). Note that pathology came from OMITTING the field,
         // which is not the same as sending an explicit true; the true case is untested, which is
         // exactly why this is an opt-in knob and not a changed default.
-        quirks.isLite(opts) -> quirks.liteParallelToolCalls
+        // Even with the knob on (review of #71 round 2): a client's explicit
+        // disable_parallel_tool_use=true wins — the gateway must not override a request the
+        // client asked to serialize — and a TOOLLESS turn stays false (nothing to parallelize,
+        // and explicit-true-without-tools is an untested combination upstream).
+        quirks.isLite(opts) ->
+            quirks.liteParallelToolCalls &&
+                body.tools.isNotEmpty() &&
+                body.toolChoice?.disableParallelToolUse != true
         emitToolChoice -> body.toolChoice?.disableParallelToolUse != true
         else -> null
     }

@@ -25,7 +25,12 @@ should report `cached >= previous input`. The shortfall is tokens that were prov
 | ~100% (healthy) | 2,024 | 1,306,127 | 0.4% |
 | **total** | **7,056** | **350,920,932** | |
 
-Only **7.4%** of continuation turns reused the full prefix they had already paid for.
+Two reuse statistics, at different thresholds (they are NOT contradictory — review of #71 round 2
+flagged the ambiguity): **7.4%** of continuation turns reused the full prefix to within one
+128-token cache block (measured over 6,909 pairs from a first extraction pass with a slightly
+stricter pairing filter), while the table's ~100% band (28.7% of 7,056 pairs) uses the looser
+"≥99% of the previous input" cut, which at ~150k-token contexts allows ~1.5k tokens of slack.
+Full-prefix reuse in the strict sense was rare; near-full reuse was a minority.
 
 The shape is the diagnosis: the 1-25% band has half as many turns as the 75-99% band but costs
 **nine times** as much. An EARLY divergence invalidates everything after it, so a handful of turns
@@ -61,32 +66,48 @@ first divergence at index 2 of 26
 
 ## Fix
 
-A conversation's entries now live and die together (`ReasoningCache`):
+The **conversation is the primary cache record** (`ReasoningCache`, reworked 2026-07-31 after a
+second review round): one rounds map, ONE idle timestamp, ONE admission flag. The policies fall out
+of the data shape instead of being retrofitted onto a flat per-round map:
 
-- `lookup()` refreshes the whole conversation, making the TTL an **idle** timer. An active
-  conversation never partially expires.
-- `sweepLocked()` expires a conversation **wholesale**, so an idle one makes ONE clean transition to
-  no-injection instead of churning round by round.
-- bound eviction drops the oldest **conversation** as one unit, never a single round.
-- a conversation that overflows the bounds **by itself** is marked non-injectable and dropped whole,
-  rather than trimmed round by round.
+- every build takes ONE atomic `snapshot()` of the conversation (which is also its single touch),
+  making the TTL an **idle** timer — an active conversation never partially expires, and a build
+  can never tear across a concurrent eviction.
+- idle expiry is **wholesale by construction**: one record, one clock; there is no per-round age to
+  half-expire on.
+- bound pressure evicts the least-recently-touched **neighbor** conversation whole — never the
+  conversation being written.
+- a conversation that alone exceeds the bounds **freezes admission**: the offered round (never yet
+  injected, so rejecting it shifts nothing) is dropped and every admitted round keeps serving. The
+  tail loses its injection; the prefix never busts.
+- a stale-envelope 400 (`evictByToolId`) evicts the **whole conversation**, never a round — a
+  per-round hole in a conversation that no longer ages out would shift the prefix forever.
 
-That last point took two attempts and a review to get right, and the intermediate states are worth
-recording because both look plausible:
+It took four designs and two review rounds to get here, and the intermediate states are worth
+recording because each looks plausible:
 
 1. *Wipe the active conversation wholesale* — empties the cache on every put once the conversation
    alone exceeds the bound. Four existing tests caught it.
-2. *Fall back to oldest-round eviction for the active conversation* — passes those tests, but leaves
-   the conversation half-cached, which is precisely the mid-prefix shift this whole fix exists to
-   prevent (caught in review of #71).
-3. *Wipe wholesale AND mark the conversation non-injectable* — correct. Without the marker, a wipe
-   only trades grinding for oscillation: the conversation re-caches, overflows, wipes again, and
-   each wipe makes rounds LOSE reasoning they already had. With it there is exactly one transition,
-   then stability for the rest of that conversation's life.
+2. *Fall back to oldest-round eviction for the active conversation* — passes those tests, but
+   leaves the conversation half-cached, the exact mid-prefix shift this fix exists to prevent
+   (review round 1).
+3. *Wipe wholesale AND mark non-injectable* — shipped briefly. Review round 2 confirmed four holes
+   mechanically: the disable trigger fired on "the writer owns the globally-oldest entry" (neighbor
+   pressure permanently disabled innocent conversations); touch-immortality made the 256-round cap
+   the guaranteed end state of every long session, wiping and disabling it at round ~257; a
+   conversation evicted as a cross-pressure victim re-cached into a partial group with no marker
+   (per-cycle re-bills); and `evictByToolId` still punched per-round holes that touch-refresh then
+   kept alive forever.
+4. *Conversation-primary records with freeze-admission* — current. Freeze-admission is strictly
+   better than wipe+disable: zero prefix busts instead of one catastrophic one, and rounds already
+   paid for keep serving. A 257-round session keeps rounds 1..256 injecting; only the tail goes
+   uninjected (tail-append, prefix-stable).
 
-Pinned by `PrefixStabilityDiagnostic`, which drives the REAL cache through a 12-round conversation
-outliving its TTL and asserts every turn extends the previous turn's prefix exactly. On the parent
-commit it fails at turn 2: *"rewrote the prefix at index 2 of 5 (40.0% reused)"*.
+Pinned by `PrefixStabilityDiagnostic` (every turn both extends the previous prefix exactly AND
+actually injects every round's reasoning — the second assertion exists because prefix-extension
+alone is vacuously satisfied by a cache that injects nothing) and by `ReasoningCacheTest` pins for
+neighbor-eviction, freeze-admission, wholesale stale eviction, retry-grace, and the null-key status
+quo. All five round-2 defect pins were run RED against the wipe+disable design before the rework.
 
 ## What is NOT fixed, and why
 
@@ -126,6 +147,28 @@ behaviour is near-perfect. It is **not** portable to splice as it stands:
 
 Adopting it means implementing the Responses WebSocket transport plus its connection lifecycle and
 fallback logic. That is a separate project and an operator decision, not a bug fix.
+
+### Known residual limitations (review of #71 round 2)
+
+- **Null-key conversations** (first user message with no text blocks — image-first or
+  tool_result-first openers) have no grouping identity, so they keep the ORIGINAL flat per-round
+  insertion TTL and can still hit the mid-conversation-expiry pathology this fix removes for keyed
+  conversations. They also share one id namespace, so a cross-conversation `call_id` collision
+  inside that class could cross-inject (pre-existing; low probability; no coverage).
+- **Conversation-key fusion**: the key is a hash of the first user message's text alone, so two
+  concurrent sessions opening with byte-identical first messages (scripted `claude -p` dispatch,
+  templated subagent openers) fuse into one cache unit — shared budget, shared idle clock, shared
+  freeze. With freeze-admission the worst case is tail rounds losing injection and retention
+  extending while either session is active; nothing wipes or cross-injects.
+- **A second mid-array injection source is NOT protected**: the deferred-tool declaration pair
+  (`tool_search_call`/`tool_search_output`) that CHANGE 2 injects in history vanishes mid-array if
+  a deferred tool leaves `body.tools` (MCP disconnect, schema change) — empirically reproduced at
+  27.3% prefix reuse. Blast radius today is small (27 tool-search rounds in the whole log); it
+  belongs to the `proxy-hardening` campaign, not this fix.
+- **Retention semantics changed**: the reasoning-cache TTL is now idle-based, so an active
+  session's encrypted envelopes stay in memory for the session's lifetime rather than a fixed 30
+  minutes. SECURITY.md was updated to say so (hard caps: 256 rounds / 64 MB, wholesale eviction,
+  ciphertext only, never on disk).
 
 ## Reproduce
 

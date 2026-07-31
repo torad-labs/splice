@@ -98,6 +98,12 @@ class PrefixStabilityDiagnostic {
                     "from there on is re-billed.\n  was: ${previous.getOrNull(d)?.take(120)}\n  " +
                     "now: ${current.getOrNull(d)?.take(120)}",
             )
+            // NON-VACUITY (review of #71 round 2): prefix-extension alone also passes when the
+            // cache injects NOTHING (a wiped/frozen/miswired cache still appends cleanly). Every
+            // round's reasoning must actually be present, or this wall cannot see the failure
+            // class it exists for.
+            val injected = current.count { it.contains("\"type\":\"reasoning\"") }
+            assertEquals(round, injected, "turn $round injected $injected reasoning items, expected $round")
             previous = current
         }
     }

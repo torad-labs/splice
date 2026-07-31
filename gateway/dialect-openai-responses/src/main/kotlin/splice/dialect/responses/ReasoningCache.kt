@@ -54,11 +54,24 @@ internal class ReasoningCache(
 
     private fun scoped(conversationKey: String?, toolId: String) = "${conversationKey.orEmpty()}\u0000$toolId"
 
+    // Conversations that overflowed the bounds ON THEIR OWN (review of #71). Once a conversation
+    // cannot be held WHOLE, holding PART of it is worse than holding none: a partial conversation
+    // shifts the input array mid-prefix every time another of its rounds is dropped, which is
+    // precisely the state this cache exists to prevent. Wiping it WITHOUT this marker only trades
+    // grinding for oscillation — the conversation re-caches, overflows and wipes again, and each
+    // wipe makes rounds LOSE reasoning they already had. The marker makes it ONE transition, then
+    // stable for the rest of that conversation's life (no-injection is the documented status-quo
+    // fallback). Insertion-ordered and swept on the same idle TTL as [entries] so it cannot grow
+    // without bound; letting an IDLE one lapse is safe, because a resumed conversation's old rounds
+    // stay unreasoned and new rounds only ever ADD reasoning at the tail, which shifts nothing.
+    private val disabled = LinkedHashMap<String, Long>()
+
     fun put(conversationKey: String?, toolIds: List<String>, envelopes: List<String>) {
         if (toolIds.isEmpty() || envelopes.isEmpty()) return
         val bytes = envelopes.sumOf { it.length.toLong() }
         synchronized(lock) {
             sweepLocked()
+            if (conversationKey != null && refreshDisabledLocked(conversationKey)) return
             val key = "t${seq++}"
             entries[key] = Entry(conversationKey, toolIds, envelopes, bytes, clock())
             toolIds.forEach { byScopedToolId[scoped(conversationKey, it)] = key }
@@ -76,22 +89,40 @@ internal class ReasoningCache(
         while (entries.size > maxEntries || totalBytes > maxTotalBytes) {
             val oldest = entries.entries.firstOrNull() ?: break
             val victim = oldest.value.conversationKey
-            // Never self-wipe the conversation being written: if IT alone overflows the bound,
-            // wholesale eviction would empty the cache on every put and destroy far more prefix
-            // than it saves. Fall back to today's oldest-round eviction (NEVER-BELOW-STATUS-QUO).
-            if (victim == null || victim == writing) {
+            if (victim == null) {
+                // Unscoped entries have no conversation group to evict as a unit.
                 removeLocked(oldest.key)
             } else {
+                // A conversation that overflows the bound BY ITSELF cannot be held whole, so it is
+                // marked non-injectable rather than trimmed round by round (see [disabled]).
+                if (victim == writing) disableLocked(victim)
                 entries.filterValues { it.conversationKey == victim }.keys.toList()
                     .forEach { removeLocked(it) }
             }
         }
     }
 
+    private fun disableLocked(key: String) {
+        disabled.remove(key)
+        disabled[key] = clock()
+        while (disabled.size > maxEntries) disabled.remove(disabled.keys.first())
+    }
+
+    /** True when [key] names a disabled conversation, refreshing its marker so an ACTIVE one STAYS
+     *  disabled — re-enabling mid-conversation restarts the overflow/wipe oscillation the marker
+     *  exists to end. Re-insertion keeps insertion order == timestamp order for the sweep. */
+    private fun refreshDisabledLocked(key: String): Boolean {
+        if (!disabled.containsKey(key)) return false
+        disabled.remove(key)
+        disabled[key] = clock()
+        return true
+    }
+
     /** The ordered envelopes for the turn of THIS conversation that emitted [toolId], or null
      *  (miss = status quo; another conversation's identical id never resolves). */
     fun lookup(conversationKey: String?, toolId: String): List<String>? = synchronized(lock) {
         sweepLocked()
+        if (conversationKey != null && refreshDisabledLocked(conversationKey)) return null
         val key = byScopedToolId[scoped(conversationKey, toolId)] ?: return null
         val envelopes = entries[key]?.envelopes
         if (envelopes != null) touchConversationLocked(conversationKey)
@@ -132,6 +163,8 @@ internal class ReasoningCache(
 
     private fun sweepLocked() {
         val cutoff = clock() - ttlMs
+        // Disabled markers lapse on the same idle timer (safe: see [disabled]).
+        disabled.entries.takeWhile { it.value < cutoff }.map { it.key }.forEach { disabled.remove(it) }
         val expired = entries.entries.takeWhile { it.value.at < cutoff }.map { it.key }
         if (expired.isEmpty()) return
         // Wholesale by conversation: a half-swept conversation is exactly the prefix-shifting

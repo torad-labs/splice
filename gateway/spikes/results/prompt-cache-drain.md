@@ -67,10 +67,22 @@ A conversation's entries now live and die together (`ReasoningCache`):
   conversation never partially expires.
 - `sweepLocked()` expires a conversation **wholesale**, so an idle one makes ONE clean transition to
   no-injection instead of churning round by round.
-- bound eviction drops the oldest **conversation**, but never the conversation being written — a
-  single dominant conversation would otherwise wipe itself on every put, which is worse than status
-  quo. (This guard exists because the first attempt did exactly that and four existing tests caught
-  it.)
+- bound eviction drops the oldest **conversation** as one unit, never a single round.
+- a conversation that overflows the bounds **by itself** is marked non-injectable and dropped whole,
+  rather than trimmed round by round.
+
+That last point took two attempts and a review to get right, and the intermediate states are worth
+recording because both look plausible:
+
+1. *Wipe the active conversation wholesale* — empties the cache on every put once the conversation
+   alone exceeds the bound. Four existing tests caught it.
+2. *Fall back to oldest-round eviction for the active conversation* — passes those tests, but leaves
+   the conversation half-cached, which is precisely the mid-prefix shift this whole fix exists to
+   prevent (caught in review of #71).
+3. *Wipe wholesale AND mark the conversation non-injectable* — correct. Without the marker, a wipe
+   only trades grinding for oscillation: the conversation re-caches, overflows, wipes again, and
+   each wipe makes rounds LOSE reasoning they already had. With it there is exactly one transition,
+   then stability for the rest of that conversation's life.
 
 Pinned by `PrefixStabilityDiagnostic`, which drives the REAL cache through a 12-round conversation
 outliving its TTL and asserts every turn extends the previous turn's prefix exactly. On the parent

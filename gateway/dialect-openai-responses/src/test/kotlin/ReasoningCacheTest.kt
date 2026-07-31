@@ -107,36 +107,65 @@ class ReasoningCacheTest {
     }
 
     @Test
-    fun `entry-count bound evicts the oldest turn first`() {
+    fun `entry-count bound evicts the oldest CONVERSATION, sparing newer ones`() {
+        // Was "evicts the oldest turn first" (review of #71): trimming one ROUND off a live
+        // conversation leaves it half-cached, which shifts the input array mid-prefix. The unit of
+        // eviction is now the conversation.
+        val c = ReasoningCache(maxEntries = 2, clock = { 0L })
+        c.put("conv-old", listOf("call_1"), listOf("e1"))
+        c.put("conv-mid", listOf("call_2"), listOf("e2"))
+        c.put("conv-new", listOf("call_3"), listOf("e3"))
+        assertNull(c.lookup("conv-old", "call_1"), "oldest conversation evicted")
+        assertEquals(listOf("e2"), c.lookup("conv-mid", "call_2"))
+        assertEquals(listOf("e3"), c.lookup("conv-new", "call_3"))
+    }
+
+    @Test
+    fun `byte ceiling evicts whole conversations until under bound`() {
+        val c = ReasoningCache(maxTotalBytes = 10, clock = { 0L })
+        c.put("conv-old", listOf("call_1"), listOf("aaaaa"))
+        c.put("conv-mid", listOf("call_2"), listOf("bbbbb"))
+        c.put("conv-new", listOf("call_3"), listOf("ccccc"))
+        assertNull(c.lookup("conv-old", "call_1"))
+        assertEquals(listOf("bbbbb"), c.lookup("conv-mid", "call_2"))
+    }
+
+    @Test
+    fun `one oversized put evicts as many oldest conversations as the bound requires`() {
+        // review 2026-07-24: the single-eviction case left the while-loop's 2nd+ iteration untested
+        val c = ReasoningCache(maxTotalBytes = 12, clock = { 0L })
+        c.put("conv-a", listOf("call_1"), listOf("aaaaa"))
+        c.put("conv-b", listOf("call_2"), listOf("bbbbb"))
+        c.put("conv-c", listOf("call_3"), listOf("cccccccccc"))
+        assertNull(c.lookup("conv-a", "call_1"))
+        assertNull(c.lookup("conv-b", "call_2"), "the second-oldest must go too - one eviction is not enough")
+        assertEquals(listOf("cccccccccc"), c.lookup("conv-c", "call_3"))
+    }
+
+    @Test
+    fun `a conversation that overflows the bound ALONE is dropped whole and stays non-injectable`() {
+        // THE REVIEW OF #71: the earlier fallback trimmed the ACTIVE conversation one round at a
+        // time, leaving newer rounds cached and older ones not — the exact mid-prefix shift this
+        // cache exists to prevent. Wiping without a marker is not enough either: the conversation
+        // would re-cache, overflow, and wipe again, so rounds keep LOSING reasoning they had.
         val c = ReasoningCache(maxEntries = 2, clock = { 0L })
         c.put(CONV, listOf("call_1"), listOf("e1"))
         c.put(CONV, listOf("call_2"), listOf("e2"))
-        c.put(CONV, listOf("call_3"), listOf("e3"))
-        assertNull(c.lookup(CONV, "call_1"), "oldest evicted")
-        assertEquals(listOf("e2"), c.lookup(CONV, "call_2"))
-        assertEquals(listOf("e3"), c.lookup(CONV, "call_3"))
-    }
+        c.put(CONV, listOf("call_3"), listOf("e3")) // overflows on its own
 
-    @Test
-    fun `byte ceiling evicts oldest until under bound`() {
-        val c = ReasoningCache(maxTotalBytes = 10, clock = { 0L })
-        c.put(CONV, listOf("call_1"), listOf("aaaaa"))
-        c.put(CONV, listOf("call_2"), listOf("bbbbb"))
-        c.put(CONV, listOf("call_3"), listOf("ccccc"))
-        assertNull(c.lookup(CONV, "call_1"))
-        assertEquals(listOf("bbbbb"), c.lookup(CONV, "call_2"))
-    }
+        assertNull(c.lookup(CONV, "call_1"), "no partial state: every round goes")
+        assertNull(c.lookup(CONV, "call_2"))
+        assertNull(c.lookup(CONV, "call_3"))
 
-    @Test
-    fun `one oversized put evicts as many oldest entries as the bound requires`() {
-        // review 2026-07-24: the single-eviction case left the while-loop's 2nd+ iteration untested
-        val c = ReasoningCache(maxTotalBytes = 12, clock = { 0L })
-        c.put(CONV, listOf("call_1"), listOf("aaaaa"))
-        c.put(CONV, listOf("call_2"), listOf("bbbbb"))
-        c.put(CONV, listOf("call_3"), listOf("cccccccccc"))
-        assertNull(c.lookup(CONV, "call_1"))
-        assertNull(c.lookup(CONV, "call_2"), "the second-oldest must go too - one eviction is not enough")
-        assertEquals(listOf("cccccccccc"), c.lookup(CONV, "call_3"))
+        // ...and it must not creep back, or the overflow/wipe cycle restarts.
+        c.put(CONV, listOf("call_4"), listOf("e4"))
+        c.put(CONV, listOf("call_5"), listOf("e5"))
+        assertNull(c.lookup(CONV, "call_4"), "a disabled conversation must not re-cache")
+        assertNull(c.lookup(CONV, "call_5"))
+
+        // Other conversations are unaffected — the marker is per-conversation.
+        c.put("conv-other", listOf("call_9"), listOf("e9"))
+        assertEquals(listOf("e9"), c.lookup("conv-other", "call_9"))
     }
 
     @Test

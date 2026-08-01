@@ -15,24 +15,47 @@ internal fun loginCommandMd(signInLabel: String, sentinel: String): String =
     |$sentinel
     """.trimMargin() + "\n"
 
-internal fun loginHookScript(loginCommand: String, signInLabel: String, viaBrowser: Boolean, sentinel: String): String =
+internal fun loginHookScript(
+    loginCommand: String,
+    signInLabel: String,
+    viaBrowser: Boolean,
+    sentinel: String,
+    /** True when this head can capture a bare token pasted into the prompt box. Decides the whole
+     *  shape of /login for an api-key head — see [lead] below. */
+    canCapturePaste: Boolean,
+): String =
     buildString {
         val d = "$" // keep the shell $ out of Kotlin interpolation
+        // WHY THREE WORDINGS (2026-08-01): the api-key branch used to promise "a masked terminal
+        // prompt is asking for your key" while spawning `<cmd> login` DETACHED with stdout to
+        // /dev/null. Detached means no TTY, so System.console() is null, so the CLI printed its
+        // pipe-instead hint into /dev/null and exited — the promised prompt could never appear and
+        // the user was left waiting on nothing. Verified by running it. An api-key head that CAN
+        // capture a paste is therefore told the path that actually works, and nothing is spawned.
         val lead =
-            if (viaBrowser) {
-                "Opening your browser to sign in to $signInLabel — finish there, then continue. " +
-                    "If it did not open, run: $loginCommand"
-            } else {
-                "A masked terminal prompt is asking for your $signInLabel API key — finish there, then continue. " +
-                    "If it did not appear, run: $loginCommand"
+            when {
+                viaBrowser ->
+                    "Opening your browser to sign in to $signInLabel — finish there, then continue. " +
+                        "If it did not open, run: $loginCommand"
+                canCapturePaste ->
+                    "Paste your $signInLabel API key as your next message. splice stores it to " +
+                        "~/.config/splice/keys.toml (0600) and BLOCKS it before it reaches the model, " +
+                        "so it is never sent upstream. Note: the session log on disk still records the " +
+                        "pasted line — for a fully masked entry, run `$loginCommand` in a terminal " +
+                        "instead. Then wait."
+                else ->
+                    "This head signs in with an API key. Run `$loginCommand` in a terminal — it asks " +
+                        "for the key with a masked prompt. It cannot be asked for from inside this " +
+                        "session."
             }
         appendLine("#!/usr/bin/env bash")
         appendLine("# NEW (splice): /login interception — route to this head's $signInLabel sign-in,")
-        appendLine("# not Claude Code's disabled Anthropic login. Runs detached; blocks the model turn.")
+        appendLine("# not Claude Code's disabled Anthropic login. Blocks the model turn.")
         appendLine("input=\"$d(cat)\"")
         appendLine("case \"${d}input\" in")
         appendLine("  *$sentinel*|*'\"prompt\":\"/login\"'*|*'\"prompt\": \"/login\"'*)")
-        appendLine("    nohup $loginCommand >/dev/null 2>&1 &")
+        // Only the browser flow is spawned. A detached api-key login has no TTY and cannot prompt.
+        if (viaBrowser) appendLine("    nohup $loginCommand >/dev/null 2>&1 &")
         append("    printf '%s' '{\"decision\":\"block\",\"reason\":")
         append("\"$lead\"}'")
         appendLine()

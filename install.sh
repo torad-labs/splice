@@ -376,7 +376,7 @@ case ":$PATH:" in
     echo
     echo "Next:  export OPENROUTER_API_KEY=…   # create one at https://openrouter.ai/keys"
     echo "       splice setup      # install the supported API-key starter"
-    echo "       claudeor          # Claude Code through OpenRouter"
+    echo "       claude-openrouter          # Claude Code through OpenRouter"
     echo "       splice doctor     # if anything misbehaves — every check prints its fix"
     ;;
   *)

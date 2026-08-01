@@ -218,8 +218,36 @@ class ClaudeConfigMaterializerTest {
         assertTrue(dir.resolve("commands").isSymbolicLink()) // stays a plain shared symlink
     }
 
+    /** EVERY head keeps /login. A head without a known token shape cannot capture a paste, but it
+     *  still HAS a sign-in path (`<command> login` in a terminal) — so /login must still be wired
+     *  and must say so. Removing it for those heads was a regression this pins against. */
     @Test
-    fun `api-key head wires capture hook plus masked-prompt login wording`(@TempDir tmp: Path) {
+    fun `api-key head WITHOUT capture still gets login, pointing at the terminal command`(@TempDir tmp: Path) {
+        seedGlobal(tmp)
+        val dir = tmp.resolve(".claude-fireworks")
+        materializer(tmp).materialize(
+            MaterializeSpec(
+                configDir = dir,
+                policy = allPolicy,
+                availableModelIds = listOf("m"),
+                defaultModel = "m",
+                modelOptionsCache = optionsCache,
+                statuslineCommand = statusline,
+                loginCommand = "claude-fireworks login",
+                signInLabel = "Fireworks",
+                signInViaBrowser = false,
+                tokenCapture = null, // splice does not know this vendor's token shape
+            ),
+        )
+        val loginHook = dir.resolve("splice-login-hook.sh").readText()
+        assertTrue(loginHook.contains("claude-fireworks login"), "/login must still name the working command")
+        assertTrue(loginHook.contains("cannot be asked for from inside this session"), "and say why, plainly")
+        assertFalse(loginHook.contains("nohup"), "still nothing spawned — a detached login has no TTY")
+        assertFalse(loginHook.contains("browser"))
+    }
+
+    @Test
+    fun `api-key head with capture tells the user the path that WORKS, and spawns nothing`(@TempDir tmp: Path) {
         seedGlobal(tmp)
         val dir = tmp.resolve(".claude-openrouter")
         materializer(tmp).materialize(
@@ -230,16 +258,29 @@ class ClaudeConfigMaterializerTest {
                 defaultModel = "m",
                 modelOptionsCache = optionsCache,
                 statuslineCommand = statusline,
-                loginCommand = "claudeor login",
+                loginCommand = "claude-openrouter login",
                 signInLabel = "OpenRouter",
                 signInViaBrowser = false,
                 tokenCapture = TokenCaptureSpec("OPENROUTER_API_KEY", "sk-or-[A-Za-z0-9_-]{20,}", "OpenRouter"),
             ),
         )
-        // login.md + login hook exist, with the MASKED-PROMPT wording (no browser anywhere)
+        // THE 2026-08-01 FIX. This used to promise "a masked terminal prompt is asking for your
+        // key" while spawning `<cmd> login` DETACHED with stdout to /dev/null — no TTY, so
+        // System.console() was null, so the CLI printed its pipe-hint into the void and exited.
+        // The prompt could never appear and the user waited on nothing (verified by running it).
+        // A capture-capable head is now told the path that actually works.
         val loginHook = dir.resolve("splice-login-hook.sh").readText()
-        assertTrue(loginHook.contains("masked terminal prompt"))
+        assertTrue(loginHook.contains("Paste your OpenRouter API key as your next message"))
+        assertTrue(loginHook.contains("never sent upstream"), "the safety property must be stated")
+        assertTrue(
+            loginHook.contains("session log on disk still records"),
+            "and the residual must be stated too — the transcript keeps the pasted line",
+        )
         assertFalse(loginHook.contains("browser"))
+        assertFalse(
+            loginHook.contains("nohup"),
+            "nothing may be spawned: a detached api-key login has no TTY and cannot prompt",
+        )
         // capture hook: env name, quote-anchored pattern, store via splice key set --stdin, blocked
         val capture = dir.resolve("splice-key-capture-hook.sh").readText()
         assertTrue(capture.contains("OPENROUTER_API_KEY"))
@@ -267,7 +308,7 @@ class ClaudeConfigMaterializerTest {
                 defaultModel = "m",
                 modelOptionsCache = optionsCache,
                 statuslineCommand = statusline,
-                loginCommand = "claudeor login",
+                loginCommand = "claude-openrouter login",
                 signInLabel = "OpenRouter",
                 signInViaBrowser = false,
                 tokenCapture = TokenCaptureSpec("OPENROUTER_API_KEY", "sk-or-[A-Za-z0-9_-]{20,}", "OpenRouter"),

@@ -7,6 +7,7 @@
 // on the stream — lives here ONCE.
 package splice.dialect.responses
 
+import splice.core.auth.Credentials
 import splice.core.parse.AnthropicTurnBody
 import splice.core.reasoning.decodeReasoningEnvelope
 import splice.core.reasoning.encodeReasoningEnvelope
@@ -154,20 +155,44 @@ public abstract class ResponsesProvider(
         return ResponsesFoldController(cfg, decodeReasoningEnvelope = { decodeReasoningEnvelope(it) })
     }
 
-    /** ws-transport WS-3: non-null ONLY when the operator opted in. With the quirk off this is
-     *  null, no WsUpstream is constructed, and the request path is byte-identical to before —
-     *  the property that makes the overlay safe to ship. */
-    final override val wsRunner: WsRoundRunner? = if (!quirks.webSocket) {
-        null
-    } else {
-        ResponsesWsRunner(
-            transport = WsUpstream(log = log),
-            session = ResponsesWsSession(),
-            // Same path as upstreamUrl, on the WebSocket scheme (live spike receipt).
-            wssUrl = upstreamUrl.replaceFirst("https://", "wss://").replaceFirst("http://", "ws://"),
-            handshakeHeaders = { creds -> extraHeaders(creds) + mapOf("OpenAI-Beta" to WS_BETA_HEADER) },
-            log = log,
-        )
+    /** Whether THIS provider's upstream actually speaks the Responses WebSocket. False by default:
+     *  the quirk table is shared by every openai-responses provider (codex, grok, openai-platform),
+     *  so an operator setting websocket = true under [providers.xai.quirks] would otherwise make
+     *  grok open a WebSocket to api.x.ai and fail every round into SSE (review of #72). Only a
+     *  provider that has PROVEN the protocol against its own upstream overrides this. */
+    protected open val supportsWebSocket: Boolean = false
+
+    /** ws-transport WS-3: non-null ONLY when the operator opted in AND this provider's upstream
+     *  was actually probed. With the quirk off no WsUpstream is constructed and the request path is
+     *  byte-identical to before the overlay landed — the property that makes it safe to ship.
+     *
+     *  LAZY, not an eager val: [supportsWebSocket] is overridden by subclasses, whose own
+     *  properties are assigned AFTER this base constructor runs. Computing it eagerly read the
+     *  override before it existed, so EVERY provider got null and the overlay could never arm —
+     *  caught by WsQuirkWiringTest, and it would have silently disabled the feature in production. */
+    final override val wsRunner: WsRoundRunner? by lazy {
+        if (!quirks.webSocket || !supportsWebSocket) {
+            null
+        } else {
+            ResponsesWsRunner(
+                transport = WsUpstream(log = log),
+                session = ResponsesWsSession(),
+                // Same path as upstreamUrl, on the WebSocket scheme (live spike receipt).
+                wssUrl = upstreamUrl.replaceFirst("https://", "wss://").replaceFirst("http://", "ws://"),
+                // Authorization is added HERE because the SSE path gets it from
+                // UpstreamClient.applyAuth, which the WS path never goes through — without it every
+                // handshake 401s and the overlay falls back to SSE forever, i.e. the feature simply
+                // cannot work (found while adjudicating the review of #72).
+                handshakeHeaders = { creds ->
+                    val auth = when (creds) {
+                        is Credentials.Bearer -> mapOf("Authorization" to "Bearer ${creds.token}")
+                        is Credentials.ApiKey -> mapOf(creds.header to "${creds.prefix}${creds.key}")
+                    }
+                    auth + extraHeaders(creds) + mapOf("OpenAI-Beta" to WS_BETA_HEADER)
+                },
+                log = log,
+            )
+        }
     }
 
     // RC-2/RC-4: gateway-held reasoning continuity for tool round-trips (codex parity). One

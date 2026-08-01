@@ -319,8 +319,12 @@ class WsUpstreamTest {
 
     @Test
     fun `a send that throws synchronously returns null and poisons the connection`() = runTest {
-        val fx = Fixture().apply { sendThrows = IOException("output closed") }.start()
+        // IllegalStateException, not IOException: production separates the SYNCHRONOUS throw
+        // ("Send pending" / output closed, an ISE) from the ASYNCHRONOUS future failure (IOException),
+        // and only ISE exercises this branch. The sibling test covers the future path (review of #72).
+        val fx = Fixture().apply { sendThrows = IllegalStateException("Send pending") }.start()
         assertNull(fx.go(), "a failed send must ride SSE")
+        assertTrue(fx.logged("send failed sync"), "the SYNCHRONOUS diagnostic, distinct from the async one")
         assertTrue(fx.handed.single().dead.get(), "a failed send poisons the connection")
         assertEquals(1, fx.opened.single().aborts)
         assertTrue(fx.logged("send failed"))
@@ -591,7 +595,12 @@ class WsUpstreamInboxListenerTest {
         val inbox = Channel<JsonObject>(Channel.UNLIMITED)
         var anomalies = 0
         val socket = FakeSocket(Fixture())
-        val listener = InboxListener(inbox, { }, { anomalies += 1 })
+        val listener = InboxListener(
+            inbox,
+            { },
+            terminalSeen = { false },
+            onAnomaly = { anomalies += 1 },
+        )
         listener.onText(socket, """{"type":"a""", false)
         listener.onText(socket, """"}""", true)
         listener.onText(socket, """{"type":"b""", false)
@@ -605,7 +614,12 @@ class WsUpstreamInboxListenerTest {
     fun `every text frame re-arms request - a missed re-arm deadlocks the stream silently`() {
         val inbox = Channel<JsonObject>(Channel.UNLIMITED)
         val socket = FakeSocket(Fixture())
-        val listener = InboxListener(inbox, { }, { })
+        val listener = InboxListener(
+            inbox,
+            { },
+            terminalSeen = { false },
+            onAnomaly = { },
+        )
         listener.onOpen(socket)
         assertEquals(1, socket.requests, "onOpen arms the first read")
         listener.onText(socket, """{"type":"a""", false)
@@ -619,7 +633,12 @@ class WsUpstreamInboxListenerTest {
         val inbox = Channel<JsonObject>(CAP)
         var anomalies = 0
         val socket = FakeSocket(Fixture())
-        val listener = InboxListener(inbox, { }, { anomalies += 1 })
+        val listener = InboxListener(
+            inbox,
+            { },
+            terminalSeen = { false },
+            onAnomaly = { anomalies += 1 },
+        )
         repeat(CAP + 1) { listener.onText(socket, """{"type":"e$it"}""", true) }
         assertEquals(1, anomalies, "the frame past the buffer poisons the connection")
     }
@@ -629,7 +648,12 @@ class WsUpstreamInboxListenerTest {
         val inbox = Channel<JsonObject>(CAP)
         var anomalies = 0
         val socket = FakeSocket(Fixture())
-        val listener = InboxListener(inbox, { }, { anomalies += 1 })
+        val listener = InboxListener(
+            inbox,
+            { },
+            terminalSeen = { false },
+            onAnomaly = { anomalies += 1 },
+        )
         inbox.close()
         listener.onText(socket, DONE, true)
         assertEquals(1, anomalies)
@@ -638,13 +662,15 @@ class WsUpstreamInboxListenerTest {
     @Test
     fun `onClose closes the inbox with NO cause and onError closes it with an IOException`() = runTest {
         val clean = Channel<JsonObject>(1)
-        InboxListener(clean, { }, { }).onClose(FakeSocket(Fixture()), WebSocket.NORMAL_CLOSURE, "bye")
+        InboxListener(clean, { }, terminalSeen = { false }, onAnomaly = { })
+            .onClose(FakeSocket(Fixture()), WebSocket.NORMAL_CLOSURE, "bye")
         val closed = clean.receiveCatching()
         assertTrue(closed.isClosed)
         assertNull(closed.exceptionOrNull(), "a clean close carries NO cause — this is the shape that used to escape")
 
         val errored = Channel<JsonObject>(1)
-        InboxListener(errored, { }, { }).onError(FakeSocket(Fixture()), IOException("reset"))
+        InboxListener(errored, { }, terminalSeen = { false }, onAnomaly = { })
+            .onError(FakeSocket(Fixture()), IOException("reset"))
         val cause = errored.receiveCatching().exceptionOrNull()
         assertTrue(cause is IOException, "an errored close carries an IOException, got $cause")
         assertEquals("websocket error", cause?.message)

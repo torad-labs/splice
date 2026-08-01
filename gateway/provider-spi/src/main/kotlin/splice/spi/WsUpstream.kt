@@ -51,6 +51,13 @@ public class WsConnection internal constructor(
     internal val busy = AtomicBoolean(false)
     internal val dead = AtomicBoolean(false)
 
+    /** Set by the consumer when the round's terminal event has been taken. From that moment ANY
+     *  further frame is a late tail belonging to a finished round, and the listener (the producer)
+     *  poisons the connection on arrival. The consumer-side `inbox.isEmpty` check is only a
+     *  sample and cannot fence a frame that lands just after it (review of #72); this can, because
+     *  it runs on the producer itself. */
+    internal val terminalSeen = AtomicBoolean(false)
+
     /** Poison this connection: no further rounds will reuse it; the socket is torn down hard.
      *  abort(), not sendClose() — the one caller path that lands here is an ABNORMAL end (tear,
      *  timeout, cancelled round, eviction), where a graceful close handshake could block behind
@@ -112,8 +119,18 @@ public class WsUpstream(
         frameFor: (WsConnection) -> String,
     ): Flow<JsonObject>? {
         val conn = acquire(key, headers, wssUrl) ?: return null
-        val first = if (sendFrame(conn, key, frameFor(conn))) awaitFirstEvent(conn, key) else null
-        return first?.let { roundFlow(conn, key, it, isTerminal) }
+        // Between winning the busy flag and handing back a flow there are two suspension points,
+        // and a cancellation at either one used to propagate BEFORE any flow existed — so
+        // onCompletion never ran, the busy flag stayed set, and every later round for this key lost
+        // the CAS and rode SSE forever (review of #72). Any non-flow exit now poisons the
+        // connection, which costs one reconnect instead of stranding the conversation.
+        var handedOff = false
+        return try {
+            val first = if (sendFrame(conn, key, frameFor(conn))) awaitFirstEvent(conn, key) else null
+            first?.let { roundFlow(conn, key, it, isTerminal) }?.also { handedOff = true }
+        } finally {
+            if (!handedOff) failRound(conn, key)
+        }
     }
 
     /** Receive one event, or null when the inbox is CLOSED.
@@ -141,6 +158,9 @@ public class WsUpstream(
         }
         // Lost the race with a tear between the registry read and the busy win.
         if (conn.dead.get()) conn.busy.set(false)
+        // A NEW round begins: the previous round's terminal must not make this round's first frame
+        // look like a late tail. The fence is per-round, and this is the one place a round starts.
+        conn.terminalSeen.set(false)
         return conn.takeIf { !it.dead.get() }
     }
 
@@ -148,7 +168,11 @@ public class WsUpstream(
         val generation = generations.incrementAndGet()
         val inbox = Channel<JsonObject>(INBOX_CAPACITY)
         val holder = arrayOfNulls<WsConnection>(1)
-        val listener = InboxListener(inbox, log) { holder[0]?.kill() }
+        val listener = InboxListener(
+            inbox,
+            log,
+            terminalSeen = { holder[0]?.terminalSeen?.get() == true },
+        ) { holder[0]?.kill() }
         val socket = runCatchingCancellable {
             connector(URI.create(wssUrl), headers, listener)
         }.getOrElse { e ->
@@ -161,8 +185,12 @@ public class WsUpstream(
             connections.remove(key)?.also { it.kill() } // a dead predecessor never lingers
             connections[key] = conn
             if (connections.size > maxConnections) {
-                val oldest = connections.keys.first()
-                connections.remove(oldest)
+                // Only an IDLE connection may be evicted: an entry stays registered for the whole
+                // of its round, so evicting by pure age could abort an in-flight response
+                // (review of #72). With every connection busy nothing is evicted — the cap is a
+                // soft bound under burst, and each round poisons its own connection on completion.
+                val idle = connections.entries.firstOrNull { !it.value.busy.get() }?.key
+                idle?.let { connections.remove(it) }
             } else {
                 null
             }
@@ -233,6 +261,7 @@ public class WsUpstream(
         isTerminal: (JsonObject) -> Boolean,
     ): Flow<JsonObject> {
         var completed = isTerminal(first)
+        if (completed) conn.terminalSeen.set(true)
         return flow {
             emit(first)
             while (!completed) {
@@ -244,29 +273,34 @@ public class WsUpstream(
                 val evt = received.getOrNull()
                     ?: throw IOException("websocket stream ended mid-round", received.exceptionOrNull())
                 completed = isTerminal(evt)
+                if (completed) conn.terminalSeen.set(true)
                 emit(evt)
             }
-        }.onCompletion { cause ->
-            // The inbox MUST be empty to pool the connection (adversarial review of WS-3): a frame
-            // the server emits AFTER the round-ending one would otherwise sit in the inbox and be
-            // handed to the NEXT round as its first event — a silent cross-round frame leak, and
-            // the reason this class kills rather than drains. Killing costs one reconnect (a full
-            // send, i.e. today's behaviour); serving a stale frame corrupts the next turn.
-            val drained = conn.inbox.isEmpty
-            val poolable = cause == null && completed
-            if (poolable && drained) {
-                conn.busy.set(false)
-                synchronized(lock) { // touch: completed rounds move their connection to MRU
-                    connections.remove(key)?.let { connections[key] = it }
-                }
-            } else {
-                if (poolable) {
-                    log("[ws] $key frames arrived after the round terminal — killing rather than pooling\n")
-                }
-                // Cancelled (watchdog/client-gone) or torn: leftover frames of a half-consumed
-                // round poison reuse — kill, next round reconnects (full send, status quo).
-                failRound(conn, key)
+        }.onCompletion { cause -> finishRound(conn, key, cause, completed) }
+    }
+
+    /** Pool the connection only when the round ended CLEANLY and left nothing behind; otherwise
+     *  poison it. Split out of [roundFlow] to stay under the complexity ceiling. */
+    private fun finishRound(conn: WsConnection, key: String, cause: Throwable?, completed: Boolean) {
+        // The inbox MUST be empty to pool the connection (adversarial review of WS-3): a frame
+        // the server emits AFTER the round-ending one would otherwise sit in the inbox and be
+        // handed to the NEXT round as its first event — a silent cross-round frame leak, and
+        // the reason this class kills rather than drains. Killing costs one reconnect (a full
+        // send, i.e. today's behaviour); serving a stale frame corrupts the next turn.
+        val drained = conn.inbox.isEmpty
+        val poolable = cause == null && completed
+        if (poolable && drained) {
+            conn.busy.set(false)
+            synchronized(lock) { // touch: completed rounds move their connection to MRU
+                connections.remove(key)?.let { connections[key] = it }
             }
+        } else {
+            if (poolable) {
+                log("[ws] $key frames arrived after the round terminal — killing rather than pooling\n")
+            }
+            // Cancelled (watchdog/client-gone) or torn: leftover frames of a half-consumed
+            // round poison reuse — kill, next round reconnects (full send, status quo).
+            failRound(conn, key)
         }
     }
 
@@ -312,6 +346,7 @@ public class WsUpstream(
 internal class InboxListener(
     private val inbox: Channel<JsonObject>,
     private val log: (String) -> Unit,
+    private val terminalSeen: () -> Boolean,
     private val onAnomaly: () -> Unit,
 ) : WebSocket.Listener {
     private val assembly = StringBuilder()
@@ -321,6 +356,14 @@ internal class InboxListener(
     }
 
     override fun onText(webSocket: WebSocket, data: CharSequence, last: Boolean): CompletionStage<*>? {
+        if (terminalSeen()) {
+            // A frame after the round's terminal: the round it belongs to is over, so this can only
+            // ever be served as some LATER round's first event. Poison instead.
+            log("[ws] frame arrived after the round terminal — poisoning rather than serving it later\n")
+            onAnomaly()
+            webSocket.request(1)
+            return null
+        }
         assembly.append(data)
         if (last) {
             val payload = assembly.toString()
@@ -392,6 +435,12 @@ public interface WsRoundRunner {
      *  Anything else must clear the chaining state — a response id that was never completed would
      *  anchor the next turn onto context the server never finished building. */
     public fun roundEnded(meta: TurnMeta, ok: Boolean)
+
+    /** The head served this round WITHOUT the overlay (no credentials, transport declined, or a
+     *  pre-content failure fell back). The conversation still advanced, so any chaining state must
+     *  be dropped — a chain anchored before a turn the server never saw would make the next delta
+     *  omit that turn entirely. */
+    public fun roundBypassed(meta: TurnMeta)
 }
 
 /** Thrown by the head when a WS round failed BEFORE the client saw any content, so the round is

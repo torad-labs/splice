@@ -48,7 +48,11 @@ internal class WsRoundDriver(
         // simply rides SSE and gets refreshed there.
         val events = provider.auth.credentials()
             ?.let { creds -> runner.attempt(inputs.bodyJson, drive.meta, drive.turnHeaders, creds) }
-            ?: return null
+        if (events == null) {
+            // SSE is about to serve this round, so the conversation advances outside any chain.
+            runner.roundBypassed(drive.meta)
+            return null
+        }
         drive.slot.touch()
         drive.emitter.ensureStarted()
         drive.watchdog.resetFirstByte()
@@ -61,7 +65,7 @@ internal class WsRoundDriver(
             // bypass retry/refresh/cooldown entirely — the one way this overlay could land BELOW
             // the status quo.
             log("[${provider.key}] websocket round failed before any client frame — serving over SSE\n")
-            runner.roundEnded(drive.meta, ok = false)
+            runner.roundBypassed(drive.meta)
             null
         } finally {
             poller.cancel()

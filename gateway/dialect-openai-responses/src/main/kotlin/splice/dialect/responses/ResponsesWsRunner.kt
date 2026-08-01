@@ -33,6 +33,7 @@ import splice.core.util.runCatchingCancellable
 import splice.core.util.str
 import splice.spi.WsRoundRunner
 import splice.spi.WsUpstream
+import java.security.MessageDigest
 
 /** ws-transport WS-3 overlay, NULLABLE like its siblings — absent TOML keeps the provider default
  *  (false). A non-nullable field would stomp the provider default; that is exactly how
@@ -66,10 +67,13 @@ internal class ResponsesWsRunner(
         turnHeaders: Map<String, String>,
         creds: Credentials,
     ): Flow<JsonObject>? {
-        val request = parseRequest(bodyJson) ?: return null
-        val headers = handshakeHeaders(creds) + turnHeaders
-        val key = connectionKey(meta, headers)
+        // No parseable body, or no isolation identity => ride SSE. The second is not a weaker key
+        // but NO key: without it, conversations sharing a first message would share a chain.
+        val request = parseRequest(bodyJson)
         val chain = chainKey(meta)
+        if (request == null || chain == null) return null
+        val headers = handshakeHeaders(creds) + turnHeaders
+        val key = connectionKey(chain, meta, headers)
         // Committed at SEND time, read at TERMINAL time: the frame the chaining layer just built
         // determines what the next turn's prefix must be, and only a clean terminal may commit it.
         var pending: PendingCommit? = null
@@ -110,24 +114,45 @@ internal class ResponsesWsRunner(
         event[FIELD_TYPE].str() in ResponsesRoundEnd.FAILED
 
     override fun roundEnded(meta: TurnMeta, ok: Boolean) {
-        if (!ok) session.cleared(chainKey(meta))
+        if (!ok) chainKey(meta)?.let { session.cleared(it) }
+    }
+
+    /** A round this overlay did NOT serve still advances the conversation, so the chain must be
+     *  dropped (review of #72): the server's chained context stops at the last WS round, and the
+     *  delta classifier would then drop the SSE turn's assistant message as "server-held" when it
+     *  is nothing of the sort — a silent context loss, not a miss. */
+    override fun roundBypassed(meta: TurnMeta) {
+        chainKey(meta)?.let { session.cleared(it) }
     }
 
     private data class PendingCommit(val request: JsonObject, val generation: Long)
 
-    /** Session id + first-message hash. NEITHER alone is sufficient: the hash alone fuses two
-     *  conversations that open with identical text (finding 1 above), and the session id alone is
-     *  absent on clients that do not send one. */
-    private fun chainKey(meta: TurnMeta): String =
-        lengthPrefixed(listOf(meta.sessionId.orEmpty(), meta.conversationKey.orEmpty()))
+    /** Session id + first-message hash, or NULL when either is missing.
+     *
+     *  Null means "do not chain, and do not reuse a socket" — enforced by the callers. Substituting
+     *  empty strings (the first cut, caught in review of #72) silently re-opened the exact collision
+     *  the two-part key exists to close: with no session id, every conversation whose first message
+     *  hashes the same shares one chain, and one conversation's server-side context answers another.
+     *  A missing isolation value is not a weaker key, it is NO key. */
+    private fun chainKey(meta: TurnMeta): String? {
+        val session = meta.sessionId?.takeIf { it.isNotEmpty() } ?: return null
+        val conversation = meta.conversationKey?.takeIf { it.isNotEmpty() } ?: return null
+        return lengthPrefixed(listOf(session, conversation))
+    }
 
-    /** The chain key plus the handshake-relevant header set (finding 2): a turn whose headers
-     *  differ must not ride a socket opened without them. */
-    private fun connectionKey(meta: TurnMeta, headers: Map<String, String>): String =
-        lengthPrefixed(
-            listOf(chainKey(meta), meta.upstreamModel) +
-                headers.toSortedMap().flatMap { (k, v) -> listOf(k, v) },
-        )
+    /** The chain key plus a DIGEST of the handshake header set. Headers must participate in
+     *  identity (a turn needing a different set must not ride a socket opened without it), but they
+     *  carry the Authorization bearer token, and this key reaches daemon.log on the busy/connect
+     *  paths. Hashing keeps identity exact while making it structurally impossible for a credential
+     *  to be logged — safer than remembering to redact at every call site (review of #72). */
+    private fun connectionKey(chain: String, meta: TurnMeta, headers: Map<String, String>): String =
+        lengthPrefixed(listOf(chain, meta.upstreamModel, headerDigest(headers)))
+
+    private fun headerDigest(headers: Map<String, String>): String {
+        val canonical = lengthPrefixed(headers.toSortedMap().flatMap { (k, v) -> listOf(k, v) })
+        val bytes = MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray(Charsets.UTF_8))
+        return bytes.take(DIGEST_BYTES).joinToString("") { "%02x".format(it) }
+    }
 
     /** Injective for every String, with no reserved character (finding 3). */
     private fun lengthPrefixed(parts: List<String>): String =
@@ -146,5 +171,9 @@ internal class ResponsesWsRunner(
 
     private companion object {
         const val FIELD_TYPE = "type"
+
+        /** 8 bytes of SHA-256: collision-free enough to key a per-head connection pool, and short
+         *  enough that the key stays readable. */
+        const val DIGEST_BYTES = 8
     }
 }

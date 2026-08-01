@@ -22,6 +22,8 @@ import splice.spi.ReanchorController
 import splice.spi.StreamTranslator
 import splice.spi.TurnSignals
 import splice.spi.UpstreamClient
+import splice.spi.WsRoundRunner
+import splice.spi.WsUpstream
 
 public abstract class ResponsesProvider(
     tuning: ProviderTuning,
@@ -152,6 +154,22 @@ public abstract class ResponsesProvider(
         return ResponsesFoldController(cfg, decodeReasoningEnvelope = { decodeReasoningEnvelope(it) })
     }
 
+    /** ws-transport WS-3: non-null ONLY when the operator opted in. With the quirk off this is
+     *  null, no WsUpstream is constructed, and the request path is byte-identical to before —
+     *  the property that makes the overlay safe to ship. */
+    final override val wsRunner: WsRoundRunner? = if (!quirks.webSocket) {
+        null
+    } else {
+        ResponsesWsRunner(
+            transport = WsUpstream(log = log),
+            session = ResponsesWsSession(),
+            // Same path as upstreamUrl, on the WebSocket scheme (live spike receipt).
+            wssUrl = upstreamUrl.replaceFirst("https://", "wss://").replaceFirst("http://", "ws://"),
+            handshakeHeaders = { creds -> extraHeaders(creds) + mapOf("OpenAI-Beta" to WS_BETA_HEADER) },
+            log = log,
+        )
+    }
+
     // RC-2/RC-4: gateway-held reasoning continuity for tool round-trips (codex parity). One
     // cache per provider instance; capture and lookup wire in via buildTurn/streamTranslator.
     // The log sink surfaces the cache's two one-way transitions (freeze, bound eviction) in
@@ -209,4 +227,10 @@ public abstract class ResponsesProvider(
         if (meta.compact) null else reanchorPolicy
 
     private fun showOn(): Boolean = !showReasoning.isOff
+
+    private companion object {
+        /** The v2 Responses-WebSocket beta value codex-rs sends (codex-rs/core/src/client.rs:155),
+         *  confirmed accepted by the live backend in the WS-0 spike. */
+        const val WS_BETA_HEADER = "responses_websockets=2026-02-06"
+    }
 }

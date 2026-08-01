@@ -18,10 +18,11 @@
   pasted token is now told the path that actually works (paste it as a message; splice stores it
   and blocks it before it reaches the model), the residual is stated plainly (the session log on
   disk still records the pasted line), and nothing is spawned.
-- `/login` is no longer wired for an api-key head whose token shape splice does not know. It had
-  no working in-session path, so offering it advertised a dead end; those heads keep the
-  `<command> login` CLI, which works in a real terminal. Capture support stays deliberately
-  one-provider-at-a-time (today: OpenRouter).
+- `/login` still works for EVERY head — each has its own sign-in path, and being in the topology
+  is what makes it supported. Only the wording differs: a head whose token shape splice knows
+  gets the in-session paste path; one it does not gets pointed at `<command> login` in a terminal,
+  with the reason stated. Capture patterns stay deliberately one-provider-at-a-time (today:
+  OpenRouter) — that scoping applies to CAPTURE, never to whether `/login` exists.
 
 ## Unreleased
 

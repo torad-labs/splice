@@ -40,17 +40,12 @@ private fun apiKeySignIn(providerCfg: ProviderConfig, head: HeadConfig, command:
     val capture = API_KEY_TOKEN_PATTERNS[head.provider]?.let { pattern ->
         TokenCaptureSpec(effectiveApiKeyEnv(head.provider, providerCfg.auth), pattern, label)
     }
-    // ONE PROVIDER AT A TIME (operator, 2026-08-01): /login is wired for an api-key head ONLY where
-    // splice knows that vendor's token shape well enough to capture a paste. Without that, the
-    // in-session flow has nothing that works — a detached masked prompt has no TTY and cannot ask
-    // for anything — so offering /login would advertise a dead end. Those heads keep the
-    // `<command> login` CLI, which works fine in a real terminal.
-    return SignInPlan(
-        command = if (capture != null) command else "",
-        label = label,
-        viaBrowser = false,
-        tokenCapture = capture,
-    )
+    // EVERY head keeps /login — each one has its own sign-in path, and being in the topology is
+    // what makes it supported. What differs is only the WORDING: a head that can capture a pasted
+    // token gets the in-session path; one that cannot is told to run `<command> login` in a
+    // terminal. Neither spawns anything, because a detached api-key login has no TTY.
+    // (ONE PROVIDER AT A TIME applies to CAPTURE patterns — not to whether /login exists.)
+    return SignInPlan(command, label, viaBrowser = false, tokenCapture = capture)
 }
 
 internal fun signInPlan(providerCfg: ProviderConfig, head: HeadConfig, key: String): SignInPlan {

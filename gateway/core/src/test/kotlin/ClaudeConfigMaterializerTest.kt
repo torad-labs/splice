@@ -218,6 +218,34 @@ class ClaudeConfigMaterializerTest {
         assertTrue(dir.resolve("commands").isSymbolicLink()) // stays a plain shared symlink
     }
 
+    /** EVERY head keeps /login. A head without a known token shape cannot capture a paste, but it
+     *  still HAS a sign-in path (`<command> login` in a terminal) — so /login must still be wired
+     *  and must say so. Removing it for those heads was a regression this pins against. */
+    @Test
+    fun `api-key head WITHOUT capture still gets login, pointing at the terminal command`(@TempDir tmp: Path) {
+        seedGlobal(tmp)
+        val dir = tmp.resolve(".claude-fireworks")
+        materializer(tmp).materialize(
+            MaterializeSpec(
+                configDir = dir,
+                policy = allPolicy,
+                availableModelIds = listOf("m"),
+                defaultModel = "m",
+                modelOptionsCache = optionsCache,
+                statuslineCommand = statusline,
+                loginCommand = "claude-fireworks login",
+                signInLabel = "Fireworks",
+                signInViaBrowser = false,
+                tokenCapture = null, // splice does not know this vendor's token shape
+            ),
+        )
+        val loginHook = dir.resolve("splice-login-hook.sh").readText()
+        assertTrue(loginHook.contains("claude-fireworks login"), "/login must still name the working command")
+        assertTrue(loginHook.contains("cannot be asked for from inside this session"), "and say why, plainly")
+        assertFalse(loginHook.contains("nohup"), "still nothing spawned — a detached login has no TTY")
+        assertFalse(loginHook.contains("browser"))
+    }
+
     @Test
     fun `api-key head with capture tells the user the path that WORKS, and spawns nothing`(@TempDir tmp: Path) {
         seedGlobal(tmp)

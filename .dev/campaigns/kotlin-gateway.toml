@@ -126,6 +126,7 @@ verify = "test -s gateway/spikes/results/xai-passthrough.md"
 # [2026-07-30] Attribution unavailable: missing in_flight tree snapshot
 # [2026-07-30] STATUS IS done, NOT verified, deliberately. #945 reserves verified for an orchestrator who independently re-ran the gate and read the diff; here builder and verifier are the same seat, and marking my own work verified is precisely the conflation the 2026-07-29 reasoning-cache audit existed to correct. Disclosed rather than assumed. What HAS been done: the item's verify (test -s ...) passes, and the finding reproduced under two independent clients (curl, then XaiPassthroughSpike via gradle). A second seat re-running the spike is all that is needed to promote it.
 # [2026-08-01] [2026-08-01] MERGED to main as #70 (925d66b). Hardened first after code review: the probe now VERIFIES the strict-sequencing invariant its verdict rests on (asserts maxOpen<=1, zero orphan deltas, nothing unclosed) instead of merely observing it, explicitly requests thinking (the receipt had claimed thinking fidelity from a body that never asked for it), asserts a minimum contract so a 500/empty/malformed stream fails rather than writing a receipt, and both checked-in artifacts now derive from ONE live run (they had disagreed 26-vs-25 events). Verdict unchanged: near-faithful Anthropic SSE, index defect recoverable by a ~10-line shim. P6-GROK's index-normalising shim + interleaving fixture remain its own item.
+# [2026-08-01] VERDICT: outcome=accepted
 
 [[items]]
 id = "P1-CAMP"

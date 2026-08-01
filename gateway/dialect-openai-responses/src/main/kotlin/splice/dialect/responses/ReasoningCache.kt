@@ -237,7 +237,11 @@ internal class ReasoningCache(
 
     private fun removeNullLocked(roundKey: String) {
         val round = nullRounds.remove(roundKey) ?: return
-        round.toolIds.forEach { nullByToolId.remove(it) }
+        // Remove an id ONLY while it still points at THIS round: the null-key class shares one id
+        // namespace, so a newer round re-using a tool id has already overwritten the index, and an
+        // unconditional remove would delete the LIVE mapping and lose the newer round's reasoning
+        // (review of #72).
+        round.toolIds.forEach { toolId -> if (nullByToolId[toolId] == roundKey) nullByToolId.remove(toolId) }
         totalBytes -= round.bytes
         roundCount--
     }

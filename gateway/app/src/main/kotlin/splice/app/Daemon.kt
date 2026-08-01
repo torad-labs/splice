@@ -54,6 +54,7 @@ import splice.dialect.responses.withParallelToolCallsToml
 import splice.dialect.responses.withReasoningCacheToml
 import splice.dialect.responses.withToml
 import splice.dialect.responses.withToolSurfaceToml
+import splice.dialect.responses.withWebSocketToml
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.HeadDeps
@@ -510,6 +511,7 @@ public class Daemon(
         toolChoice = quirks.toolChoice,
     ).withReasoningCacheToml(quirks.reasoningCache)
         .withParallelToolCallsToml(quirks.parallelToolCalls)
+        .withWebSocketToml(quirks.webSocket)
         .withToolSurfaceToml(toolDeferralPolicy(quirks.toolSurface, cfg.toolSurfaceOff))
 
     private fun responsesProvider(ctx: ProviderBuild, label: String): Wired {

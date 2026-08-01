@@ -27,6 +27,11 @@ public class CodexProvider(
     log: (String) -> Unit = DaemonLog::write,
 ) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks, foldConfig, log) {
 
+    /** Proven against the live ChatGPT backend by the WS-0 spike
+     *  (gateway/spikes/results/responses-websocket.md): handshake, event vocabulary and
+     *  previous_response_id chaining all confirmed. No other Responses upstream has been probed. */
+    override val supportsWebSocket: Boolean = true
+
     override fun extraHeaders(creds: Credentials): Map<String, String> = buildMap {
         put("Accept", "text/event-stream")
         val accountId = (creds as? Credentials.Bearer)?.accountId

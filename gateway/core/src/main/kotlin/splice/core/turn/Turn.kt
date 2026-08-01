@@ -126,6 +126,12 @@ public data class TurnMeta(
      *  gateway reasoning cache so concurrent conversations on one head can never cross-inject
      *  (review 2026-07-24, RC-2's eli-risk-8 keying). Null (chat/passthrough) = one shared scope. */
     val conversationKey: String? = null,
+    /** The client's session id when it sent one (ws-transport WS-3). [conversationKey] alone is a
+     *  hash of the first user message's TEXT, so two conversations that open with identical words
+     *  share it BY DESIGN — harmless for a cache miss, but fatal as a previous_response_id chain
+     *  anchor, where it would hand one conversation's server-side context to another. Null when
+     *  the client sends no session id; consumers must mix BOTH, never either alone. */
+    val sessionId: String? = null,
     /** Tool-surface partition sizes for THIS turn's request; null when deferral was not in play.
      *  Non-null stamps the perf counters even at zero — a deploy where tools_deferred stays 0 is a
      *  false landing, and it must be visible in one grep of the perf JSONL. */

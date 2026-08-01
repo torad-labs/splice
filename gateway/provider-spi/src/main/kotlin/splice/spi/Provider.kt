@@ -95,4 +95,10 @@ public interface Provider : ProviderIdentity {
      *  deterministic upstream rejection — (status, responseText, bodyJson) -> amended
      *  body or null. Default null keeps every provider on the plain retry plan. */
     public fun amendBodyOnFailure(status: Int, responseText: String, bodyJson: String): String? = null
+
+    /** ws-transport WS-3: the WebSocket overlay for this provider, or null (the default, and every
+     *  provider that has not opted in). Non-null lets the head attempt a WS round before its normal
+     *  SSE post; the runner returns null for "ride SSE", so the overlay can only ever remove work,
+     *  never add a failure mode the SSE path did not already have. */
+    public val wsRunner: WsRoundRunner? get() = null
 }

@@ -41,6 +41,15 @@ quirks = { store = false, account_id_header = true, cache_key = "first-message-h
 # stay false. Lite-only — ignored on non-lite turns (grok's value comes from the client's
 # tool_choice). UNTESTED against the live backend: leaving the field out entirely once let the
 # backend default to parallel and gpt-5.6 sprayed 30-50 parallel Task calls. Opt in to measure.
+# websocket (default false): serve rounds over the Responses WebSocket with previous_response_id
+# chaining, so a continuation turn sends ONLY the new items instead of the whole history. Measured
+# on a 12-round tool loop: wire bytes go FLAT (~2.4KB) while the full send grows linearly — 92.5%
+# less at round 12. Add `websocket = true` INSIDE the inline quirks table above (a separate
+# [providers.codex.quirks] section would clash with it and fail to parse).
+# It is an OVERLAY: any failure — handshake, busy socket, send, first-event timeout, or a round that
+# fails before the client sees content — falls back to the normal SSE path, which keeps sole
+# ownership of retry, the 401 refresh and the 429 cooldown. With the key absent no WebSocket is ever
+# constructed and the request path is byte-identical to a build without the feature.
 [[providers.codex.models]]
 id = "gpt-5.6-sol"
 label = "Codex 5.6 Sol"

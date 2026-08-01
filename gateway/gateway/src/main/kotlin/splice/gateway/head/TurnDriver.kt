@@ -128,6 +128,7 @@ internal class TurnDriver(
     private val clock get() = deps.clock
 
     private val telemetry = TurnTelemetry(provider.key, deps.perfStats, deps.log, deps.clock)
+    private val wsDriver = WsRoundDriver(provider, deps.log, ::classifyZeroEventFailure)
     private val health = HeadHealthCounters()
 
     /** G20: passive health snapshot for HeadServer.healthSnapshot() — the control-plane's
@@ -435,6 +436,14 @@ internal class TurnDriver(
         val framesBase = drive.perfCounter(PerfKeys.CONTENT_FRAMES_OUT)
         val eventsBase = drive.perfCounter(PerfKeys.EVENTS_IN)
         val frameEmittedThisRound = { drive.perfCounter(PerfKeys.CONTENT_FRAMES_OUT) > framesBase }
+        // ws-transport WS-3: try the WebSocket overlay first. It returns null for "ride SSE" on
+        // EVERY failure, and WsRoundNeedsSse when a round failed before the client saw content —
+        // both land on the unchanged post() below, so SSE keeps sole ownership of retry, the
+        // single-flight 401 refresh and the shared 429 cooldown (L5). With the quirk off,
+        // provider.wsRunner is null and not one line of this executes.
+        wsDriver.run(
+            WsRoundInputs(drive, bodyJson, sink, self, turnJob, frameEmittedThisRound, eventsBase),
+        )?.let { return it }
         return upstream.post(
             url = provider.upstreamUrl,
             bodyJson = bodyJson,

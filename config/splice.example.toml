@@ -31,6 +31,16 @@ quirks = { store = false, account_id_header = true, cache_key = "first-message-h
 # it on tool round-trips (codex-CLI parity — without it the model re-derives its plan at every
 # tool result: repeated tool calls, duplicated reasoning). The gateway retains only the OPAQUE
 # encrypted envelopes, bounded + TTL'd; set reasoning_cache = false to restore the old behavior.
+# parallel_tool_calls (default false): the VALUE sent for parallel_tool_calls on responses-lite
+# (gpt-5.6) turns — the field itself always rides, since a lite request without it 400s. codex-rs
+# reads this per model rather than hardcoding it, so it is a knob here too. false = one tool call
+# per turn, which is why claudex averages ~2x the round-trips of grok/kimi and re-sends the whole
+# context each time. To opt in, add `parallel_tool_calls = true` INSIDE the inline quirks table
+# above (a separate [providers.codex.quirks] section would clash with it and fail to parse).
+# Guardrails: a client's explicit disable_parallel_tool_use=true always wins, and toolless turns
+# stay false. Lite-only — ignored on non-lite turns (grok's value comes from the client's
+# tool_choice). UNTESTED against the live backend: leaving the field out entirely once let the
+# backend default to parallel and gpt-5.6 sprayed 30-50 parallel Task calls. Opt in to measure.
 [[providers.codex.models]]
 id = "gpt-5.6-sol"
 label = "Codex 5.6 Sol"

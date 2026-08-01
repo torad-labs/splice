@@ -13,7 +13,7 @@
 
 </div>
 
-splice is a local, loopback-only proxy stack. A single Kotlin daemon (**spliced**) sits between Claude Code and one or more model backends, translating Anthropic's Messages API into each backend's own wire dialect. Each backend is exposed as a **head** — a thin Claude Code wrapper on its own loopback port (`claudex`, `claude-grok`, `claude-kimi`, `claudeor`, …). Its central feature is the **mirror**: the backend's reasoning summary is written back into the transcript as visible text, so conclusions stay readable turn after turn.
+splice is a local, loopback-only proxy stack. A single Kotlin daemon (**spliced**) sits between Claude Code and one or more model backends, translating Anthropic's Messages API into each backend's own wire dialect. Each backend is exposed as a **head** — a thin Claude Code wrapper on its own loopback port (`claudex`, `claude-grok`, `claude-kimi`, `claude-openrouter`, …). Its central feature is the **mirror**: the backend's reasoning summary is written back into the transcript as visible text, so conclusions stay readable turn after turn.
 
 ## Not affiliated
 
@@ -35,7 +35,7 @@ Long coding-agent sessions bleed tokens and lose the thread. splice goes after b
 
 What you get:
 
-- [x] A [wrapper command per backend](#quick-start): `claudex`, `claude-grok`, `claude-kimi`, `claudeor`
+- [x] A [wrapper command per backend](#quick-start): `claudex`, `claude-grok`, `claude-kimi`, `claude-openrouter`
 - [x] The reasoning **mirror**: [summaries survive turns and compaction](#reasoning)
 - [x] Cache-warm compaction on the session's own model and effort
 - [x] A [fleet dashboard](#quick-start) on loopback: status, config with provenance, usage soft-warnings, logs
@@ -48,7 +48,7 @@ What you get:
 ```mermaid
 flowchart LR
     subgraph machine["your machine: everything binds 127.0.0.1"]
-        CC["Claude Code<br/>(claudeor · claudex · …)"]
+        CC["Claude Code<br/>(claude-openrouter · claudex · …)"]
         HEAD["head<br/>:3101"]
         D["spliced daemon<br/>dashboard + control :3096"]
         CC -- "Anthropic Messages API" --> HEAD
@@ -112,7 +112,7 @@ Install splice (https://github.com/torad-labs/splice) on this machine and verify
    export it as OPENROUTER_API_KEY, then run `splice setup`.
 5. Run `splice doctor` and fix anything it flags — every failing check prints its own
    fix command. Repeat until it reports no blockers.
-6. Tell me it's ready and that `claudeor` launches Claude Code through OpenRouter.
+6. Tell me it's ready and that `claude-openrouter` launches Claude Code through OpenRouter.
 ```
 
 The agent can drive that loop for the same reason you can: `splice doctor` prints the fix for
@@ -123,18 +123,18 @@ every failing check.
 ```bash
 export OPENROUTER_API_KEY="…"     # vendor-issued pay-per-token API key
 splice setup                      # write the supported API-key starter and install wrappers
-claudeor                          # Claude Code through OpenRouter on loopback (:3101)
+claude-openrouter                          # Claude Code through OpenRouter on loopback (:3101)
 ```
 
 No export handy? There are two other ways to get the key in — both land in
 `~/.config/splice/keys.toml` (0600), which every later daemon start reads from any shell:
 
-- `claudeor login` — a masked terminal prompt (the key never hits shell history, `ps`, or a
+- `claude-openrouter login` — a masked terminal prompt (the key never hits shell history, `ps`, or a
   session transcript).
-- Inside a `claudeor` session, while the key is missing, splice offers to capture it: paste the
+- Inside a `claude-openrouter` session, while the key is missing, splice offers to capture it: paste the
   key as a **bare message** (nothing else in the text) and it is stored and blocked before it
   reaches the model — it never travels upstream. The session transcript still records the paste,
-  so the masked `claudeor login` stays the zero-trace path.
+  so the masked `claude-openrouter login` stays the zero-trace path.
 
 An explicit `OPENROUTER_API_KEY` in the daemon's environment always wins over the store.
 `splice key set|list|unset` manages the store directly (`--stdin` for scripts).
@@ -166,7 +166,7 @@ The daemon reads API-key env vars from **its own** environment. Export a key *af
 has started and the shell sees it but the daemon does not: launches warn, requests fail upstream. `splice restart` restarts the daemon with your current
 shell's environment; `splice doctor` detects this state explicitly. Keys in
 `~/.config/splice/keys.toml` sidestep the whole class: the store is re-read per request, so a
-`claudeor login` or `splice key set` lands on the next request, no restart required.
+`claude-openrouter login` or `splice key set` lands on the next request, no restart required.
 
 ## Credential locations
 

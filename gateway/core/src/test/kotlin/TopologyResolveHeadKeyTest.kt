@@ -1,5 +1,5 @@
 // resolveHeadKey: user-supplied head names arrive as the topology key OR the wrapper command
-// (the shim passes argv[0]). The starter's `openrouter` head installs as `claudeor` — v0.1.1's
+// (the shim passes argv[0]). The starter's `openrouter` head installs as `claude-openrouter` — v0.1.1's
 // first-run launch broke on exactly this mismatch.
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
@@ -32,7 +32,7 @@ class TopologyResolveHeadKeyTest {
     private val topology = Topology(
         providers = mapOf("openrouter" to provider),
         heads = mapOf(
-            "openrouter" to head(command = "claudeor"),
+            "openrouter" to head(command = "claude-openrouter"),
             "claudex" to head(command = null), // command defaults to the key
         ),
     )
@@ -45,7 +45,7 @@ class TopologyResolveHeadKeyTest {
 
     @Test
     fun `resolves a wrapper command to its topology key`() {
-        assertEquals("openrouter", topology.resolveHeadKey("claudeor"))
+        assertEquals("openrouter", topology.resolveHeadKey("claude-openrouter"))
     }
 
     @Test

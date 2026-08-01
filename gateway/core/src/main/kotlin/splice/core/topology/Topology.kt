@@ -19,7 +19,7 @@ public data class Topology(
     val heads: Map<String, HeadConfig> = emptyMap(),
 ) {
     /** Resolve a user-supplied head name — the topology key or the installed wrapper command
-     *  (starter: head `openrouter`, command `claudeor`) — to matching topology keys. A topology-KEY
+     *  (starter: head `openrouter`, command `claude-openrouter`) — to matching topology keys. A topology-KEY
      *  match is exact and wins as the sole result; otherwise ALL heads whose wrapper command equals
      *  the name (a misconfigured topology can share one command across several heads). */
     public fun resolveHeadKeys(name: String): List<String> {

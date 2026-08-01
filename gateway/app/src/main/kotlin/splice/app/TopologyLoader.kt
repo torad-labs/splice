@@ -21,8 +21,8 @@ summary = "detailed"
 replay_reasoning = false
 
 # Supported starter route: create an OpenRouter API key, then EITHER export OPENROUTER_API_KEY
-# or let `claudeor login` store it to ~/.config/splice/keys.toml (0600 — survives restarts from
-# any shell; inside a claudeor session you can also paste it as a bare message and the
+# or let `claude-openrouter login` store it to ~/.config/splice/keys.toml (0600 — survives restarts from
+# any shell; inside a claude-openrouter session you can also paste it as a bare message and the
 # token-capture hook stores it without it reaching the model).
 # Experimental vendor-OAuth examples remain opt-in in config/splice.example.toml.
 [providers.openrouter]
@@ -42,7 +42,7 @@ discovery_prefix = "claude-openrouter--"
 pinned_model = "anthropic/claude-haiku-4.5"
 
 [heads.openrouter.claude]
-command = "claudeor"
+command = "claude-openrouter"
 """
 
     public fun configPath(env: (String) -> String? = System::getenv): Path {

@@ -241,7 +241,7 @@ class DaemonTest {
         assertEquals(setOf("openrouter"), topo.heads.keys)
         assertEquals(setOf("api-key"), topo.providers.values.map { it.auth.kind }.toSet())
         assertTrue(topo.providers.values.none { it.auth.kind.endsWith("oauth") })
-        assertEquals("claudeor", topo.heads.getValue("openrouter").claude.command)
+        assertEquals("claude-openrouter", topo.heads.getValue("openrouter").claude.command)
     }
 
     @Test

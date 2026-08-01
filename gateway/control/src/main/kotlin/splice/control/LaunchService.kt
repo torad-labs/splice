@@ -32,6 +32,9 @@ public data class LaunchSpec(
     val tokenCapture: TokenCaptureSpec? = null,
     /** Install the SessionStart key-missing advertiser (daemon sets it only while unconfigured). */
     val advertiseKeySetup: Boolean = false,
+    /** Absolute path of this head's login receipt (LoginOutcomeFile) — the channel a DETACHED
+     *  sign-in uses to tell the session what happened. Empty = no in-session confirmation. */
+    val loginOutcomeFile: String = "",
     val policy: ClaudePolicy,
     val port: Int,
     /** Per-install local gateway credential; shared with the head's inbound verifier. */
@@ -72,6 +75,7 @@ public class LaunchService(
                 signInViaBrowser = spec.signInViaBrowser,
                 tokenCapture = spec.tokenCapture,
                 advertiseKeySetup = spec.advertiseKeySetup,
+                loginOutcomeFile = spec.loginOutcomeFile,
             ),
         )
         val env = buildEnv(spec)

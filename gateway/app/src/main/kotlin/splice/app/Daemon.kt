@@ -33,6 +33,7 @@ import splice.core.config.StatePaths
 import splice.core.head.Head
 import splice.core.launch.ClaudeConfigMaterializer
 import splice.core.launch.ClaudePolicy
+import splice.core.launch.LoginOutcomeFile
 import splice.core.model.ModelCatalog
 import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
@@ -738,6 +739,9 @@ public class Daemon(
             signInLabel = signIn.label,
             signInViaBrowser = signIn.viaBrowser,
             tokenCapture = signIn.tokenCapture,
+            // The receipt path MUST match what LoginCommand writes (same StatePaths, same head
+            // key), or a detached sign-in reports into a file nothing reads.
+            loginOutcomeFile = LoginOutcomeFile.pathFor(StatePaths().stateDir, key).toString(),
             advertiseKeySetup = signIn.tokenCapture != null && !keyPresent,
             policy = ClaudePolicy(share = topology.claude.share.toSet(), isolate = head.claude.isolate.toSet()),
             port = head.port,

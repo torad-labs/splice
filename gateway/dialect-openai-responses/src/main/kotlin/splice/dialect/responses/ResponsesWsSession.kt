@@ -50,6 +50,17 @@ internal class ResponsesWsSession {
 
     private val chains = HashMap<String, Chain>()
 
+    /** Per-conversation invalidation counter. A commit carries the epoch it was BUILT under and is
+     *  discarded if the epoch has moved since (review of #72): a concurrent round declined as busy,
+     *  or any bypass, rides SSE and advances the conversation, but an in-flight WS round's terminal
+     *  lands AFTER that clear and would otherwise resurrect a chain the server can no longer honour
+     *  — the next delta would then drop the SSE turn's assistant message as "server-held" when the
+     *  server never saw it. Clearing alone cannot fix an ordering problem; the epoch can. */
+    private val epochs = HashMap<String, Long>()
+
+    /** The current epoch for [key] — captured at send time, checked at commit time. */
+    fun epochOf(key: String): Long = epochs[key] ?: 0L
+
     /**
      * Build the frame for this round. [request] is the full request the builder produced.
      * Returns the incremental frame when every chaining precondition holds, else the full frame.
@@ -81,18 +92,23 @@ internal class ResponsesWsSession {
 
     /** Commit after a clean terminal: the round's FULL logical input becomes the next turn's
      *  prefix (never the delta — the server now holds the chained context PLUS what we sent). */
-    fun completed(key: String, request: JsonObject, responseId: String?, generation: Long) {
+    fun completed(key: String, request: JsonObject, responseId: String?, generation: Long, epoch: Long) {
         val input = request[FIELD_INPUT] as? JsonArray
-        if (responseId == null || input == null) {
+        // A stale epoch means something invalidated this conversation while the round was in flight.
+        val committable = responseId != null && input != null && epoch == epochOf(key)
+        if (!committable) {
+            // Committing now would anchor the next turn onto context the server lacks.
             chains.remove(key)
             return
         }
-        chains[key] = Chain(input.map { it.toString() }, responseId, propsOf(request), generation)
+        chains[key] = Chain(input!!.map { it.toString() }, responseId!!, propsOf(request), generation)
     }
 
-    /** Any non-clean ending (tear, cancel, failure, SSE fallback): the next round full-sends. */
+    /** Any non-clean ending (tear, cancel, failure, SSE fallback): the next round full-sends, AND
+     *  any round still in flight is barred from committing (the epoch bump). */
     fun cleared(key: String) {
         chains.remove(key)
+        epochs[key] = epochOf(key) + 1
     }
 
     /** [input] null = keep the request's own input array (the full send). */

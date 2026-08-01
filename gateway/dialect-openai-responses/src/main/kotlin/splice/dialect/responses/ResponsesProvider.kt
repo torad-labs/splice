@@ -24,7 +24,6 @@ import splice.spi.StreamTranslator
 import splice.spi.TurnSignals
 import splice.spi.UpstreamClient
 import splice.spi.WsRoundRunner
-import splice.spi.WsUpstream
 
 public abstract class ResponsesProvider(
     tuning: ProviderTuning,

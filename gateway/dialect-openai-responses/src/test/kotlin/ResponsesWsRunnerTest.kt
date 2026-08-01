@@ -23,8 +23,8 @@ import splice.core.turn.TurnMeta
 import splice.dialect.responses.ResponsesRoundEnd
 import splice.dialect.responses.ResponsesWsRunner
 import splice.dialect.responses.ResponsesWsSession
+import splice.dialect.responses.WsUpstream
 import splice.dialect.responses.responsesRequestJson
-import splice.spi.WsUpstream
 import java.net.URI
 import java.net.http.WebSocket
 import java.util.concurrent.CompletableFuture

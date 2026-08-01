@@ -1,4 +1,9 @@
-// NEW: (ws-transport WS-1, 2026-07-31) the Responses WebSocket transport. The ChatGPT codex
+// NEW: (ws-transport WS-1, 2026-07-31; moved out of :provider-spi 2026-08-01) the Responses
+// WebSocket transport. It lives in the DIALECT because the Responses runner is its only caller:
+// keeping it in the shared SPI exposed connection-lifecycle details no other module needs
+// (review of #72). :gateway still sees only the WsRoundRunner seam, which is all the module
+// law lets it see.
+// The Responses WebSocket transport. The ChatGPT codex
 // backend serves the Responses API over a v2 WebSocket (OpenAI-Beta: responses_websockets=…) whose
 // payload frames are the SAME JSON events the SSE body carries — one event per text message — so a
 // WS round yields the exact Flow<JsonObject> the stream translators already consume. What the WS
@@ -14,7 +19,7 @@
 //   NO NEW DEPENDENCIES — java.net.http.WebSocket (JDK 21), same lineage as UpstreamClient's Java
 //   engine. The dialect stays out of this file: the round-terminal predicate is INJECTED, so
 //   provider-spi never learns Responses event names.
-package splice.spi
+package splice.dialect.responses
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
@@ -27,8 +32,6 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
-import splice.core.auth.Credentials
-import splice.core.turn.TurnMeta
 import splice.core.util.runCatchingCancellable
 import java.io.IOException
 import java.net.URI
@@ -181,8 +184,19 @@ public class WsUpstream(
         }
         val conn = WsConnection(socket, inbox, generation, log)
         holder[0] = conn
+        // RACE (review of #72): two callers can both miss the lookup in acquire() and both connect.
+        // Replacing unconditionally meant the SECOND registration killed the first caller's socket —
+        // which may already have won `busy` and started streaming — aborting a live response. Under
+        // the lock we now re-check: a LIVE predecessor wins and our socket is discarded; only a dead
+        // one is replaced.
+        var winner = conn
         val evicted = synchronized(lock) {
-            connections.remove(key)?.also { it.kill() } // a dead predecessor never lingers
+            val existing = connections[key]
+            if (existing != null && !existing.dead.get()) {
+                winner = existing
+                return@synchronized null
+            }
+            connections.remove(key)?.also { it.kill() } // only ever a DEAD predecessor
             connections[key] = conn
             if (connections.size > maxConnections) {
                 // Only an IDLE connection may be evicted: an entry stays registered for the whole
@@ -194,6 +208,11 @@ public class WsUpstream(
             } else {
                 null
             }
+        }
+        if (winner !== conn) {
+            // Lost the connect race: close our redundant socket and use the live one.
+            conn.kill()
+            return winner
         }
         evicted?.kill()
         log("[ws] $key connected (generation=$generation)\n")
@@ -402,49 +421,3 @@ private val wsJson = Json {
     ignoreUnknownKeys = true
     isLenient = true
 }
-
-/**
- * The WS seam the generic head drives (ws-transport WS-3). It lives in :provider-spi because the
- * module law forbids :gateway from naming a dialect type (splice.module-law.gradle.kts:15-31), so
- * every Responses-specific decision — the round-terminal vocabulary, the chaining frame, the
- * pre-content failure test — is supplied by the provider behind this interface.
- *
- * Contract: [attempt] returns null for "serve this round over SSE", which is the answer to every
- * failure (NEVER-BELOW-STATUS-QUO). The head then runs its normal upstream POST, and SSE keeps
- * sole ownership of retry, the single-flight 401 refresh and the shared 429 cooldown (L5).
- */
-public interface WsRoundRunner {
-
-    /** Attempt one round; null = ride SSE. [turnHeaders] are the PER-TURN headers the SSE path
-     *  would send — they participate in connection identity, because a WebSocket's handshake
-     *  headers are fixed for the socket's life and a turn needing a different set must not reuse
-     *  a socket opened without it (adversarial review of WS-3: a lite marker was silently dropped). */
-    public suspend fun attempt(
-        bodyJson: String,
-        meta: TurnMeta,
-        turnHeaders: Map<String, String>,
-        creds: Credentials,
-    ): Flow<JsonObject>?
-
-    /** True when [event] ends the round in FAILURE. The head uses this to bail to SSE while the
-     *  client has still seen nothing, so an upstream error keeps SSE's retry/refresh/cooldown
-     *  rather than being served raw over the WebSocket. */
-    public fun isFailureTerminal(event: JsonObject): Boolean
-
-    /** Called once the round is over: [ok] true only for a clean, fully-consumed terminal.
-     *  Anything else must clear the chaining state — a response id that was never completed would
-     *  anchor the next turn onto context the server never finished building. */
-    public fun roundEnded(meta: TurnMeta, ok: Boolean)
-
-    /** The head served this round WITHOUT the overlay (no credentials, transport declined, or a
-     *  pre-content failure fell back). The conversation still advanced, so any chaining state must
-     *  be dropped — a chain anchored before a turn the server never saw would make the next delta
-     *  omit that turn entirely. */
-    public fun roundBypassed(meta: TurnMeta)
-}
-
-/** Thrown by the head when a WS round failed BEFORE the client saw any content, so the round is
- *  re-served over SSE. A plain RuntimeException on purpose: the stream translators' catch lists
- *  (IOException / SerializationException / IllegalArgumentException) must not swallow it, the same
- *  reason [StreamTornBeforeClient] is one. */
-public class WsRoundNeedsSse : RuntimeException("websocket round failed before any client frame")

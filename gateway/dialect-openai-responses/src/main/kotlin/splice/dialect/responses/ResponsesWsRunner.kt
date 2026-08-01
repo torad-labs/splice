@@ -32,7 +32,6 @@ import splice.core.turn.TurnMeta
 import splice.core.util.runCatchingCancellable
 import splice.core.util.str
 import splice.spi.WsRoundRunner
-import splice.spi.WsUpstream
 import java.security.MessageDigest
 
 /** ws-transport WS-3 overlay, NULLABLE like its siblings — absent TOML keeps the provider default
@@ -84,16 +83,17 @@ internal class ResponsesWsRunner(
             isTerminal = { it[FIELD_TYPE].str() in ResponsesRoundEnd.ALL },
         ) { conn ->
             val frame = session.frameFor(chain, request, conn.generation)
-            pending = PendingCommit(request, conn.generation)
+            // Capture the epoch the frame was built under: if anything invalidates this conversation
+            // before the terminal lands, the commit is discarded rather than resurrecting it.
+            pending = PendingCommit(request, conn.generation, session.epochOf(chain))
             if (frame.chained) log("[ws] ${logKey(key)} chained onto the previous response\n")
             frame.json
         }
-        if (flow == null) {
-            // The round never reached the wire; the chain state must not survive as an anchor for
-            // a turn that will now be served over SSE with the full history.
-            session.cleared(chain)
-            return null
-        }
+        // No clear here: the transport declining (busy / connect failure) is a BYPASS, and the head
+        // calls roundBypassed for exactly that. Clearing in both places bumped the epoch twice for
+        // one logical event and, on the busy path, threw away a concurrent round's valid state
+        // before its terminal could even be observed (review of #72).
+        if (flow == null) return null
         // Terminal observation lives HERE, not in the caller: the runner is the only party that
         // knows which events are terminal AND owns the chaining state they commit.
         return flow.onEach { event -> observeTerminal(chain, pending, event) }
@@ -107,7 +107,13 @@ internal class ResponsesWsRunner(
             session.cleared(chain)
             return
         }
-        session.completed(chain, commit.request, (event["response"] as? JsonObject)?.get("id").str(), commit.generation)
+        session.completed(
+            chain,
+            commit.request,
+            (event["response"] as? JsonObject)?.get("id").str(),
+            commit.generation,
+            commit.epoch,
+        )
     }
 
     override fun isFailureTerminal(event: JsonObject): Boolean =
@@ -125,7 +131,7 @@ internal class ResponsesWsRunner(
         chainKey(meta)?.let { session.cleared(it) }
     }
 
-    private data class PendingCommit(val request: JsonObject, val generation: Long)
+    private data class PendingCommit(val request: JsonObject, val generation: Long, val epoch: Long)
 
     /** Session id + first-message hash, or NULL when either is missing.
      *

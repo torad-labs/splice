@@ -33,9 +33,9 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.spi.InboxListener
-import splice.spi.WsConnection
-import splice.spi.WsUpstream
+import splice.dialect.responses.InboxListener
+import splice.dialect.responses.WsConnection
+import splice.dialect.responses.WsUpstream
 import java.io.IOException
 import java.net.URI
 import java.net.http.WebSocket
@@ -296,23 +296,34 @@ class WsUpstreamTest {
     }
 
     @Test
-    fun `KNOWN GAP - concurrent COLD rounds on one key both connect, the second tears the first`() = runTest {
+    fun `concurrent COLD rounds on one key share ONE connection - the loser never tears the winner`() = runTest {
+        // WAS "KNOWN GAP": both callers missed the acquire() lookup, both connected, and the second
+        // registration killed the first — aborting a LIVE round mid-stream. The implementer pinned
+        // that gap as a test; the review of #72 independently filed it as a blocker. connect() now
+        // re-checks under the lock, so a live predecessor wins and the redundant socket is discarded.
         val fx = Fixture().apply {
             connectGate = CompletableDeferred()
-            reply = replyWith(CREATED)
+            reply = replyWith(CREATED, DONE)
         }.start()
         val first = async { fx.go() }
         val second = async { fx.go() }
         runCurrent()
         assertTrue(fx.connectGate?.complete(Unit) == true, "both rounds are parked in the handshake")
         val flowA = first.await()
-        assertNotNull(second.await(), "the second round also commits")
-        assertNotNull(flowA, "both took the existing==null branch — the busy CAS never saw them")
-        assertEquals(2, fx.connects, "the busy flag only guards an EXISTING connection")
-        assertEquals(1, fx.opened[0].aborts, "the second connect kills the first mid-round")
+        val flowB = second.await()
+
+        assertNotNull(flowA, "the winner commits")
+        assertNull(flowB, "the loser finds the winner BUSY and rides SSE — it must not open a second round")
+        assertEquals(2, fx.connects, "both raced into connect()...")
+        assertEquals(
+            1,
+            fx.opened.count { it.aborts == 0 },
+            "...but exactly ONE socket survives: the loser's is closed, the winner's is untouched",
+        )
+
         val (seen, torn) = collectTorn(flowA ?: error("no flow"))
-        assertEquals(listOf("response.created"), seen)
-        assertNotNull(torn, "the victim round tears rather than truncating silently")
+        assertEquals(listOf("response.created", "response.completed"), seen, "the winner streams to its terminal")
+        assertNull(torn, "the winner must NOT be torn by the loser's arrival")
     }
 
     // ================================================================================ sendFrame ===

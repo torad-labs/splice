@@ -41,6 +41,12 @@ public data class LoginSpec(
 public object OAuthLoginFlow {
 
     private const val CALLBACK_TIMEOUT_S = 300L
+
+    /** `code=` in a pasted redirect URL or query fragment. */
+    private val CODE_PARAM = Regex("""[?&#]code=([^&\s]+)""")
+
+    /** Shortest thing accepted as a BARE code — below this it is almost certainly a stray key. */
+    private const val MIN_BARE_CODE = 8
     private const val HTTP_OK = 200
     private const val HTTP_BAD_REQUEST = 400
     private const val ERR_BODY_CAP = 300
@@ -89,8 +95,15 @@ public object OAuthLoginFlow {
             println("splice: open this URL to sign in:")
             println(spec.authorizeUrl)
         }
+        // LOOPBACK **OR** STDIN PASTE. A loopback callback can simply never arrive — a browser on
+        // another machine, an SSH session, a container without a shared localhost, a redirect the
+        // provider fires at a different port. xAI's own CLI accepts both for exactly this reason
+        // ("OIDC: waiting for auth code (loopback + stdin)"), and without a second channel the only
+        // outcome is a silent timeout. Racing them means whichever lands first wins; the pasted
+        // value goes through the SAME exchange, so nothing about the token path changes.
+        pasteFallback(spec, latch, codeRef)
         if (!latch.await(CALLBACK_TIMEOUT_S, TimeUnit.SECONDS)) {
-            println("splice: login timed out waiting for the callback.")
+            println("splice: login timed out waiting for the callback (${CALLBACK_TIMEOUT_S}s).")
             return null
         }
         errRef.get()?.let {
@@ -101,6 +114,41 @@ public object OAuthLoginFlow {
             println("splice: login failed: no authorization code received.")
             null
         }
+    }
+
+    /** Read a pasted `code=` value (or a whole redirect URL) from stdin, racing the loopback.
+     *
+     *  Daemon thread on purpose: when the loopback wins, this reader is still parked on a blocking
+     *  read that nothing will ever satisfy, and a non-daemon thread would keep the JVM alive after
+     *  a successful login. Silently no-ops without a console, which is also the detached case. */
+    private fun pasteFallback(spec: LoginSpec, latch: CountDownLatch, codeRef: AtomicReference<String?>) {
+        if (System.console() == null) return
+        println("splice: if the browser cannot reach this machine, paste the redirect URL (or just the code) here:")
+        val t = Thread {
+            runCatchingCancellable {
+                generateSequence(::readlnOrNull).forEach { line ->
+                    if (latch.count == 0L) return@Thread // the loopback already won
+                    extractCode(line)?.let { code ->
+                        codeRef.compareAndSet(null, code)
+                        latch.countDown()
+                        return@Thread
+                    }
+                    if (line.isNotBlank()) println("splice: that is not an authorization code — try again:")
+                }
+            }.discard("stdin closed or unreadable; the loopback callback is still live")
+        }
+        t.isDaemon = true
+        t.name = "splice-login-paste-${spec.head}"
+        t.start()
+    }
+
+    /** A pasted redirect URL, a bare `code=...` fragment, or a bare code. Null when it is neither. */
+    internal fun extractCode(raw: String): String? {
+        val line = raw.trim()
+        if (line.isEmpty()) return null
+        CODE_PARAM.find(line)?.let { return it.groupValues[1] }
+        // A bare code: no scheme, no spaces, and long enough not to be a stray keystroke.
+        return line.takeIf { !it.contains("://") && !it.contains(' ') && it.length >= MIN_BARE_CODE }
     }
 
     private fun handleCallback(
@@ -149,7 +197,10 @@ public object OAuthLoginFlow {
         val cls = if (ok) "ok" else "err"
         val title = if (ok) "Signed in to splice" else "Login didn’t complete"
         val sub = if (ok) {
-            "You’re all set — close this tab and head back to your terminal."
+            // Name the DESTINATION, not "your terminal": /login is usually invoked from inside a
+            // Claude Code session, where there is no terminal to go back to. xAI's own CLI does
+            // exactly this — "You can close this window and return to Grok Build."
+            "You’re all set — close this window and return to your splice session."
         } else {
             "Something went wrong signing in. You can close this tab and try again."
         }

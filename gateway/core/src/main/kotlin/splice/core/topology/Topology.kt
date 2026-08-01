@@ -117,6 +117,10 @@ public data class QuirksConfig(
      *  way the non-nullable summary_field above does. true lets the model batch tool calls into one
      *  turn instead of one per turn; UNTESTED against the live backend, see ResponsesQuirks. */
     @SerialName("parallel_tool_calls") val parallelToolCalls: Boolean? = null,
+    /** openai-responses only: serve rounds over the Responses WebSocket with previous_response_id
+     *  chaining (ws-transport). NULLABLE overlay — absent keeps the provider default (false), so
+     *  the feature is invisible until an operator opts in. Any failure degrades to the SSE path. */
+    @SerialName("websocket") val webSocket: Boolean? = null,
     /** openai-chat only: emit reasoning_effort/reasoning fields (DeepSeek/xAI/OpenRouter-style
      *  backends read them). null keeps the provider's own default (true); set false for strict
      *  OpenAI-compatible vendors (Fireworks — issue #21) that 400 on unrecognized fields. */

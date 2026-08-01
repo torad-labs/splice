@@ -86,6 +86,10 @@ public data class ResponsesQuirks(
      *  the whole context. UNTESTED against the live backend — see the 30-50 parallel Task spray in
      *  this class's header, which came from omitting the field entirely. */
     val liteParallelToolCalls: Boolean = false,
+    /** ws-transport WS-3: serve rounds over the Responses WebSocket, with previous_response_id
+     *  chaining, falling back to SSE on ANY failure. DEFAULT FALSE — the overlay must be invisible
+     *  until an operator opts in, and with it off no WebSocket is ever constructed. */
+    val webSocket: Boolean = false,
     val emitToolChoice: Boolean = false,
     /** Passes through a tool's own `strict == true` as `"strict": true`; false (the default,
      *  and the only value that has ever mattered — Claude Code's ToolDefinition.strict is always
@@ -272,6 +276,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
             // The reasoning cache's conversation scope — the SAME derivation the provider's
             // lookup closure uses, so capture (which only sees TurnMeta) and injection agree.
             conversationKey = stablePromptCacheKey(body),
+            sessionId = opts.sessionId,
             // summaryParts is NOT passed: TurnMeta's default constructs the turn's one instance.
             // Every continuation round reuses this meta object (continuationRequest bypasses
             // build()), so the dedup state it carries is genuinely turn-scoped.

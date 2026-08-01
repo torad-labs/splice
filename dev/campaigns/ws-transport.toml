@@ -1,0 +1,117 @@
+# LAW: concept #945 — this manifest IS the memory; access ONLY via dev/campaigns/manifest.py
+# LAW [2026-07-31]: PROVENANCE — born from the live WS spike (scratchpad ws_probe.py, receipt
+#   gateway/spikes/results/responses-websocket.md): the ChatGPT codex backend accepts splice's own
+#   OAuth on wss://chatgpt.com/backend-api/codex/responses with OpenAI-Beta
+#   responses_websockets=2026-02-06, streams the SAME event vocabulary the SSE translator already
+#   consumes, and honors previous_response_id chaining with store:false (turn 2 = new items only).
+# LAW [2026-07-31]: NEVER-BELOW-STATUS-QUO — the WS path is an OVERLAY. Any failure at any stage
+#   (handshake, first-event timeout, mid-round tear, delta-classifier bail) degrades to the
+#   existing SSE full-send path, never to a client-visible error the SSE path would not have
+#   produced. A chained round that fails BEFORE the first client frame falls back to SSE in the
+#   same postRound; after the first frame it follows the existing torn-stream rules.
+# LAW [2026-07-31]: BAIL-CLOSED DELTA — the incremental send fires ONLY when the suffix beyond the
+#   last built input classifies cleanly (drop-phase: rebuilt assistant/reasoning/function_call
+#   items the server already holds; send-phase: function_call_output + user messages only).
+#   ANY unrecognized item shape ANYWHERE in the suffix -> full send. Wrong-drop risks silent
+#   context loss; wrong-send risks duplicate items; bailing costs only bytes.
+# LAW [2026-07-31]: DEFAULT OFF — ships behind [providers.*.quirks] websocket = true (nullable
+#   overlay, absent keeps false). Flipping it live is the OPERATOR's one-line TOML act, never a
+#   code default change. Chaining is additionally per-connection: reconnect => full send.
+# LAW [2026-07-31]: NO NEW DEPENDENCIES — java.net.http.WebSocket (JDK 21) only, matching the
+#   UpstreamClient Java-engine lineage. No ktor-client-websockets, no verification-metadata churn.
+# LAW [2026-07-31]: MIRROR THE PROVEN NEIGHBOR — WsUpstream mirrors UpstreamClient idioms
+#   (MonoClock, runCatchingCancellable, injectable clock/log, bounded LRU like ReasoningCache).
+
+[campaign]
+name = "ws-transport"
+goal = "Responses WebSocket transport with previous_response_id chaining for the codex head — end the full-history re-send on 95.6%-tool-round-trip traffic"
+next = "WS-1"
+
+[[items]]
+id = "WS-0"
+phase = "spike"
+status = "done"
+title = "GO/NO-GO live spike: splice OAuth opens wss://chatgpt.com/backend-api/codex/responses (101), a full response.create streams (same event vocabulary + codex.* extras the reducer ignores), and previous_response_id chaining works with store:false — turn 2 sent ONLY the new user message and answered in context. Receipt: gateway/spikes/results/responses-websocket.md. Caveats recorded: billed input still counts the full logical context (the win is structural cache stability + ~480KB->~1KB wire upload); chaining presumed per-connection; tiny-context probe proves protocol, not cache economics."
+files = ["gateway/spikes/results/responses-websocket.md"]
+verify = "receipt exists and states the three facts with caveats"
+# 2026-07-31 probe facts: turn1 resp_id resp_0c9480…, turn2 chained resp_id resp_0c9480…, both
+# response.completed; events seen: codex.rate_limits, codex.response.metadata,
+# responsesapi.websocket_timing + the standard response.* set.
+
+[[items]]
+id = "WS-1"
+phase = "transport"
+status = "done"
+title = "WsUpstream (provider-spi): java.net.http.WebSocket client — connect with per-round auth headers + OpenAI-Beta responses_websockets=2026-02-06; text-frame assembly across fragmented frames (Listener last=false accumulation); round(requestJson) sends ONE response.create frame and yields Flow<JsonObject> that completes at response.completed/failed/incomplete or errors on tear; first-event timeout (15s) returns null -> caller falls back to SSE; per-key connection map bounded LRU (32, close on evict); one in-flight round per connection (busy -> null -> SSE); dead-marking on close/error/unsolicited-frame anomalies."
+files = ["gateway/provider-spi/src/main/kotlin/splice/spi/WsUpstream.kt"]
+verify = "cd gateway && ./gradlew :provider-spi:test --tests 'WsUpstream*'"
+# [2026-07-31] CLAIM: owner=opus-main at=2026-07-31T23:11:58Z
+# [2026-07-31] ATTEST-START: tree=5d85c5310c5e8577b97b3e19191b0a070fa4e8b6 at=2026-07-31T23:11:58Z
+# [2026-07-31] landed: WsUpstream.kt — JDK java.net.http.WebSocket, injectable connector, bounded LRU(32) registry, busy-flag single-round-per-connection, 15s first-event commit point, kill-on-anomaly (binary frame/unparseable JSON/inbox overflow/tear/cancel). Walls forced runCatchingCancellable + non-collapsed Results throughout (5 findings, all fixed, none suppressed). Compiles clean. Tests are WS-4.
+# [2026-07-31] ATTEST: scoped diffstat: .../src/main/kotlin/splice/spi/WsUpstream.kt       | 309 +++++++++++++++++++++ | 1 file changed, 309 insertions(+); sidecar: .claude/ledger-diffs/WS-1.diff; off-scope: gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesWsSession.kt, gateway/dialect-openai-responses/src/test/kotlin/ResponsesWsSessionTest.kt
+# [2026-07-31] [2026-07-31] ADVERSARIAL LOOP (wf_151e0f40-0b2, item WS-A) found 3 REAL defects in the as-shipped WsUpstream, all orchestrator-confirmed before fixing: (1) ClosedReceiveChannelException extends NoSuchElementException -> outside runCatchingCancellable's catch list, so it ESCAPED round() past withTimeoutOrNull and the caller never got the null the SSE fallback depends on — a direct NEVER-BELOW-STATUS-QUO violation; (2) sendText returns CompletableFuture (javap) so the async failure was discarded, costing the full 15s budget before fallback; (3) sendFrame's catch was inert — sendText's sync throw is IllegalStateException and runCatchingCancellable cannot catch ISE because CancellationException extends it. Fixed in 8fd4065 with receiveCatching()/await()/explicit catch. 33 lifecycle tests landed; RED-GREEN proven 7-of-33 red against cb9ee4c. Full build green, walls clean.
+
+[[items]]
+id = "WS-2"
+phase = "chaining"
+status = "done"
+title = "ResponsesWsSession (dialect-openai-responses): per-conversation chaining state {lastBuiltInput canonical item strings, lastResponseId, propsFingerprint = request JSON minus input/type/previous_response_id, connection generation} + the BAIL-CLOSED delta classifier: prefix check (lastBuiltInput elementwise == new input head) -> suffix walk: drop-phase accepts reasoning/function_call/assistant-message rebuilds of the last response, boundary at first function_call_output-or-user-message, send-phase accepts ONLY those two shapes; tool_search_*/additional_tools/developer/unknown anywhere in suffix -> bail; props mismatch -> full send; state cleared on anything but response.completed and on fallback. lastBuiltInput updates to the FULL built input after every WS round (chained or full)."
+files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesWsSession.kt"]
+verify = "cd gateway && ./gradlew :dialect-openai-responses:test --tests 'ResponsesWsSession*'"
+# [2026-07-31] CLAIM: owner=opus-main at=2026-07-31T23:17:08Z
+# [2026-07-31] ATTEST-START: tree=2646d3eef7dbc51c088d416a1e752b172ee677db at=2026-07-31T23:17:08Z
+# [2026-07-31] landed: ResponsesWsSession.kt — chaining state + BAIL-CLOSED delta classifier. 12 walls in ResponsesWsSessionTest, all driven by the REAL builder (a fixture would pin my assumptions about item shapes, which is the actual risk). Chains: pure tool round -> delta is EXACTLY [function_call_output]; assistant-text round -> assistant message dropped (server-held); user follow-up -> the user message. Bails: reconnect generation, effort flip (props), rewritten prefix, identical retry (empty delta), unknown item type, other conversation key, null response id. Measured magnitude on a 12-round loop with 2KB tool results: wire bytes FLAT at ~2385 while full send grows linearly (round 12: 31882 -> 2387, 92.5% saved; total 208674 -> 29250, 86%). Constant-vs-linear: the saving grows with conversation length.
+# [2026-07-31] ATTEST: scoped diffstat: .../splice/dialect/responses/ResponsesWsSession.kt | 140 +++++++++++++++++++++ | 1 file changed, 140 insertions(+); sidecar: .claude/ledger-diffs/WS-2.diff; off-scope: gateway/dialect-openai-responses/src/test/kotlin/ResponsesWsSessionTest.kt
+
+[[items]]
+id = "WS-3"
+phase = "wire"
+status = "done"
+title = "Wiring: quirks.websocket (Boolean, default false) + withWebSocketToml nullable overlay + QuirksConfig websocket key; ResponsesProvider owns WsUpstream+ResponsesWsSession when enabled and exposes a wsRound hook through the Provider SPI; TurnDriver.postRound tries the WS round first (watchdog touch per frame, EVENTS_IN perf, zero-event classify parity) and falls back to upstream.post SSE on null; example TOML documents the key inside the inline quirks table."
+files = [
+  "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesRequestBuilder.kt",
+  "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesProvider.kt",
+  "gateway/core/src/main/kotlin/splice/core/topology/Topology.kt",
+  "gateway/app/src/main/kotlin/splice/app/Daemon.kt",
+  "gateway/gateway/src/main/kotlin/splice/gateway/head/TurnDriver.kt",
+  "gateway/provider-spi/src/main/kotlin/splice/spi/Provider.kt",
+  "config/splice.example.toml",
+]
+verify = "cd gateway && ./gradlew build"
+# [2026-07-31] [2026-07-31] ESCALATED by the adversarial loop (wf_151e0f40-0b2, item WS-B). Premise auditor returned OVER_PINNED; implementer LAND_WIDENED; round-1 panel: 1 CANNOT_FAIL + 3 MISFIRES, all IN_SCOPE_DEFECT; planner+repair ran; round-2 panel STILL routed FIX_FORWARD (MISFIRES, UNVERIFIED_CLAIM, MISFIRES). Artifact preserved at scratchpad/artifact-WS-B-LAND.kt (163K). NOT APPLIED — surviving objections need orchestrator adjudication, and the session hit its quota limit mid-loop (advocate-r1:WS-A and plan:WS-A died). Next: adjudicate the round-2 objections with commands before any apply.
+# [2026-08-01] [2026-08-01] LANDED. Implemented by the orchestrator after adjudicating all 7 round-2 objections from wf_151e0f40-0b2 item WS-B; the 163K artifact was NOT applied. Design: WsRoundRunner SPI in :provider-spi (module law forbids :gateway naming a dialect type), ResponsesWsRunner in the dialect, WsRoundDriver extracted in :gateway (TurnDriver was at its LargeClass/TooManyFunctions ceiling). Objections closed: (1) CANNOT_FAIL switch -> WsQuirkWiringTest, mutation-proven 3-red on inverting the condition; (2) stale-frame leak -> pool only when inbox.isEmpty, else kill; (3) key collision -> chain key is sessionId+firstMessageHash, never the hash alone (TurnMeta gained sessionId); (4) per-turn headers dropped -> headers fold into the connection key so a changed set opens a new socket; (5) failure terminal served raw -> WsRoundNeedsSse falls back to SSE while no client frame has been emitted; (6) log hygiene -> logKey digest; (7) non-injective key encoding -> length-prefixed. Full ./gradlew build green, walls clean.
+# [2026-08-01] Attribution unavailable: missing in_flight tree snapshot
+
+[[items]]
+id = "WS-4"
+phase = "tests"
+status = "in_flight"
+title = "Tests: delta classifier driven by the REAL ResponsesRequestBuilder over a growing conversation (pure tool round -> chains with exactly the function_call_output suffix; text+tool round -> assistant message dropped in drop-phase; user continuation -> chains with the user message; deferred-tool declaration in suffix -> bail; image/unknown item -> bail; effort flip -> props mismatch full send; retry same input -> full send not double-chain); WsUpstream frame assembly + lifecycle against a scripted fake (fragmented frames, first-event timeout -> null, busy connection -> null, mid-round tear -> flow error, LRU eviction closes); TurnDriver fallback (ws null -> SSE path serves, zero behavior change with quirk off — the DEFAULT-OFF pin)."
+files = [
+  "gateway/dialect-openai-responses/src/test/kotlin/ResponsesWsSessionTest.kt",
+  "gateway/provider-spi/src/test/kotlin/WsUpstreamTest.kt",
+]
+verify = "cd gateway && ./gradlew :provider-spi:test :dialect-openai-responses:test :gateway:test"
+# [2026-07-31] ATTEST-START: tree=0252f2701682c3c9362d22d53da6ae2550a1f53d at=2026-08-01T03:31:39Z
+# [2026-07-31] [2026-07-31] WsUpstream third LANDED via loop item WS-A (33 tests, 8fd4065). Remaining: the TurnDriver-fallback third, which depends on WS-3 wiring. WS-B (the wiring) ESCALATED — see WS-3 note.
+
+[[items]]
+id = "WS-5"
+phase = "live"
+status = "todo"
+title = "Live verification (operator-gated): deploy default-off; operator flips websocket = true on the codex head; verify from daemon.log — chaining engages (ws log lines), no error-class regressions, cache hit vs the Jul-31 90% baseline, wire req_bytes collapse on chained rounds; capture the codex.rate_limits event shape and wire it into usageStore (SSE-path rate-limit headers do not exist on WS — statusline soft-warn goes stale on a WS-only head until this lands); then decide the default with the operator."
+files = []
+verify = "daemon.log shows chained rounds and no regression vs SSE baseline; operator sign-off"
+
+[[items]]
+id = "WS-6"
+phase = "docs"
+status = "done"
+title = "Docs: spike receipt (landed with WS-0); prompt-cache-drain.md 'previous_response_id — WebSocket-only' section updated from 'separate project, not portable' to 'landed behind quirks.websocket, default off' with the chaining rules and per-connection caveat; SECURITY.md note if needed (store stays false — chaining is connection state, no upstream retention change)."
+files = [
+  "gateway/spikes/results/prompt-cache-drain.md",
+  "gateway/spikes/results/responses-websocket.md",
+]
+verify = "docs state the shipped behavior, not the plan"
+# [2026-08-01] [2026-08-01] prompt-cache-drain.md updated: the previous_response_id section now records the landing (default-off quirk, measured 86% wire reduction) instead of 'a separate project'. splice.example.toml documents the websocket key.
+# [2026-08-01] Attribution unavailable: missing in_flight tree snapshot

@@ -70,7 +70,13 @@ internal object LoginInterception {
                     val script = writeHookScript(
                         configDir,
                         LOGIN_HOOK_SH,
-                        loginHookScript(loginCommand, signInLabel, viaBrowser, LOGIN_SENTINEL),
+                        loginHookScript(
+                            loginCommand,
+                            signInLabel,
+                            viaBrowser,
+                            LOGIN_SENTINEL,
+                            canCapturePaste = tokenCapture != null,
+                        ),
                     )
                     upsHooks += hookEntry(script, HOOK_TIMEOUT_SECONDS)
                 }

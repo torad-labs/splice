@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+### Changed — BREAKING
+
+- The OpenRouter head's wrapper command is renamed `claudeor` -> `claude-openrouter`, matching
+  `claude-grok` / `claude-kimi`. **Existing installs keep a stale `claudeor` symlink**: `install
+  --all` links the topology's commands but never prunes one whose name disappeared, so the old
+  wrapper survives and resolves to no head. Remove it once: `rm ~/.local/bin/claudeor`.
+
+### Fixed
+
+- `/login` on an api-key head promised "a masked terminal prompt is asking for your key" while
+  spawning `<command> login` DETACHED with output to `/dev/null`. Detached means no TTY, so
+  `System.console()` was null, the CLI printed its pipe-instead hint into the void, and the
+  promised prompt could never appear — the user waited on nothing. A head that can capture a
+  pasted token is now told the path that actually works (paste it as a message; splice stores it
+  and blocks it before it reaches the model), the residual is stated plainly (the session log on
+  disk still records the pasted line), and nothing is spawned.
+- `/login` is no longer wired for an api-key head whose token shape splice does not know. It had
+  no working in-session path, so offering it advertised a dead end; those heads keep the
+  `<command> login` CLI, which works in a real terminal. Capture support stays deliberately
+  one-provider-at-a-time (today: OpenRouter).
+
+## Unreleased
+
 ### Security
 
 - **Wall grants are signed.** The write-time gate that protects `.rules/`, `.claude/hooks/`,

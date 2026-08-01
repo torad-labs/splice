@@ -33,20 +33,33 @@ internal data class SignInPlan(
     val tokenCapture: TokenCaptureSpec?,
 )
 
+/** The api-key branch, split out so [signInPlan] stays under detekt's complexity ceiling. */
+private fun apiKeySignIn(providerCfg: ProviderConfig, head: HeadConfig, command: String): SignInPlan {
+    val label = API_KEY_LABELS[head.provider] ?: head.provider
+    // Capture only where the token shape is KNOWN and unambiguous (v1: OpenRouter).
+    val capture = API_KEY_TOKEN_PATTERNS[head.provider]?.let { pattern ->
+        TokenCaptureSpec(effectiveApiKeyEnv(head.provider, providerCfg.auth), pattern, label)
+    }
+    // ONE PROVIDER AT A TIME (operator, 2026-08-01): /login is wired for an api-key head ONLY where
+    // splice knows that vendor's token shape well enough to capture a paste. Without that, the
+    // in-session flow has nothing that works — a detached masked prompt has no TTY and cannot ask
+    // for anything — so offering /login would advertise a dead end. Those heads keep the
+    // `<command> login` CLI, which works fine in a real terminal.
+    return SignInPlan(
+        command = if (capture != null) command else "",
+        label = label,
+        viaBrowser = false,
+        tokenCapture = capture,
+    )
+}
+
 internal fun signInPlan(providerCfg: ProviderConfig, head: HeadConfig, key: String): SignInPlan {
     val command = "${head.claude.command ?: key} login"
     return when (providerCfg.auth.kind) {
         CHATGPT_OAUTH -> SignInPlan(command, "Codex (ChatGPT)", viaBrowser = true, tokenCapture = null)
         GROK_OAUTH -> SignInPlan(command, "Grok (xAI)", viaBrowser = true, tokenCapture = null)
         KIMI_OAUTH -> SignInPlan(command, "Kimi (Moonshot)", viaBrowser = true, tokenCapture = null)
-        API_KEY -> {
-            val label = API_KEY_LABELS[head.provider] ?: head.provider
-            // Capture only where the token shape is KNOWN and unambiguous (v1: OpenRouter).
-            val capture = API_KEY_TOKEN_PATTERNS[head.provider]?.let { pattern ->
-                TokenCaptureSpec(effectiveApiKeyEnv(head.provider, providerCfg.auth), pattern, label)
-            }
-            SignInPlan(command, label, viaBrowser = false, tokenCapture = capture)
-        }
+        API_KEY -> apiKeySignIn(providerCfg, head, command)
         else -> SignInPlan("", "", viaBrowser = true, tokenCapture = null)
     }
 }

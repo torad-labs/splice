@@ -643,7 +643,7 @@ private class ControlPayloads(
 }
 
 // The shim names a head by its wrapper command (argv[0]); the topology keys heads independently
-// (starter: head `openrouter`, command `claudeor`). Accept either name — a map-KEY match (unique)
+// (starter: head `openrouter`, command `claude-openrouter`). Accept either name — a map-KEY match (unique)
 // comes first for precedence, then every LABEL (wrapper command) match. Two label matches mean a
 // misconfigured topology sharing one command; callers decide unknown-vs-ambiguous from the size.
 private fun headByName(heads: Map<String, ManagedHead>, name: String): List<ManagedHead> {

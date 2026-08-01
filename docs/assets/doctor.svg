@@ -18,7 +18,7 @@
     <text x="24" y="188"><tspan fill="#d29922">!</tspan> gh       installed but not authenticated — release installs will abort</text>
     <text x="24" y="206">           <tspan fill="#8b949e">fix:</tspan> <tspan fill="#58a6ff">gh auth login</tspan></text>
     <text x="24" y="230" fill="#8b949e">installation</text>
-    <text x="24" y="250"><tspan fill="#3fb950">✓</tspan> jar      0.1.1   <tspan fill="#3fb950">✓</tspan> shim (shim-2)   <tspan fill="#3fb950">✓</tspan> wrapper 'claudeor'   <tspan fill="#3fb950">✓</tspan> PATH</text>
+    <text x="24" y="250"><tspan fill="#3fb950">✓</tspan> jar      0.1.1   <tspan fill="#3fb950">✓</tspan> shim (shim-2)   <tspan fill="#3fb950">✓</tspan> wrapper 'claude-openrouter'   <tspan fill="#3fb950">✓</tspan> PATH</text>
     <text x="24" y="274" fill="#8b949e">daemon</text>
     <text x="24" y="294"><tspan fill="#3fb950">✓</tspan> daemon   running 0.1.1 on :3096   <tspan fill="#3fb950">✓</tspan> mgmt-key</text>
     <text x="24" y="318" fill="#8b949e">auth</text>

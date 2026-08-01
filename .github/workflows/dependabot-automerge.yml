@@ -22,7 +22,7 @@
 # base branch's required checks pass. On a repo with NO required checks that is
 # effectively an immediate merge — which is why the operator asserts branch
 # protection fleet-wide and the org ruleset supplies gates that apply everywhere.
-name: dependabot-automerge
+name: automerge
 
 on: pull_request
 
@@ -33,6 +33,30 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Anything the repo owner opens. Auto-merge only ARMS here — GitHub still
+  # waits for required checks — so this cannot merge anything red. Added
+  # 2026-08-01: covering only Dependabot left the owner's own green PRs sitting
+  # untouched (aisdk-kotlin #26 was CLEAN for hours with nothing to merge it).
+  owner:
+    if: >-
+      github.event.pull_request.user.login != 'dependabot[bot]' &&
+      contains(fromJSON('["OWNER","MEMBER"]'), github.event.pull_request.author_association) &&
+      github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Arm auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          set -euo pipefail
+          gh pr merge --auto --squash "$PR_URL"
+          echo "Auto-merge armed; GitHub merges once required checks pass." >> "$GITHUB_STEP_SUMMARY"
+
   automerge:
     # Gate on the ACTOR, not the branch name: a branch called
     # `dependabot/anything` can be pushed by anyone, and this job holds

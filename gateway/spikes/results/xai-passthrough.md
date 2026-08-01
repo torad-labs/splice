@@ -40,10 +40,12 @@ Two problems, same root:
    and tool_use blocks into one.
 
 **It is cheaply recoverable, and that is what decides the verdict.** The blocks are strictly
-sequential: zero deltas arrive outside a `start`/`stop` pair, and no two blocks are ever open at
-once (measured — all 19 deltas fall inside exactly one open block). So correct indices can be
-reconstructed by counting `content_block_start` occurrences and stamping the running index onto
-`start`, every `delta`, and `stop`.
+sequential, and the probe now VERIFIES that rather than observing it (review of #70): it walks the
+stream tracking open blocks and asserts `maxOpen <= 1`, zero deltas outside a `start`/`stop` pair,
+and no unclosed block at the end. The run below reports `strictly sequential blocks: true (max
+concurrently open: 1, orphan deltas: 0)`, and the assertion FAILS the spike if a future run
+interleaves. So correct indices can be reconstructed by counting `content_block_start` occurrences
+and stamping the running index onto `start`, every `delta`, and `stop`.
 
 That is a ~10-line stateful rewrite over the SSE stream, not a dialect port.
 
@@ -59,6 +61,17 @@ That is a ~10-line stateful rewrite over the SSE stream, not a dialect port.
   fixture asserting the reconstruction and fail loudly if x.ai ever interleaves.
 
 ## Scope of this evidence, stated honestly
+
+Both checked-in artifacts (this receipt and `xai-passthrough.raw.txt`) now come from ONE run — the
+2026-08-01 re-run after the review of #70. They previously disagreed (26 vs 25 events, 19 vs 18
+deltas) because the raw file had been overwritten by a later run than the one the prose described;
+there was no way to tell which supported the verdict. The numbers below are that single run's.
+
+Thinking is now explicitly requested in the probe body (`"thinking":{"type":"enabled",...}`) and
+asserted present. Previously the receipt claimed thinking fidelity while the request never asked
+for it, so the claim could not be reproduced from the test. The probe also now asserts HTTP 200, a
+non-empty event list and a `message_stop`, so a 500 or a malformed stream fails instead of quietly
+writing a receipt.
 
 One request, one model (`grok-4-latest`, served as `grok-4.3`), one turn shape (thinking + one tool
 call). Not probed: multi-tool parallel rounds, `max_tokens` truncation, refusal/`stop_sequence`

@@ -22,6 +22,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assumptions.assumeTrue
+import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 
 private const val ENDPOINT = "https://api.x.ai/v1/messages"
@@ -48,7 +50,8 @@ class XaiPassthroughSpike {
         assumeTrue(token != null, "no live grok-oauth token in ~/.grok/auth.json — spike skipped, not faked")
 
         val body = """
-            {"model":"$MODEL","max_tokens":256,"stream":true,
+            {"model":"$MODEL","max_tokens":2048,"stream":true,
+             "thinking":{"type":"enabled","budget_tokens":1024},
              "tools":[{"name":"get_weather","description":"Get weather","input_schema":
                {"type":"object","properties":{"city":{"type":"string"}},"required":["city"]}}],
              "messages":[{"role":"user","content":"Use the get_weather tool for Paris, then say DONE."}]}
@@ -72,10 +75,42 @@ class XaiPassthroughSpike {
         }
         val typeOf = { e: JsonObject -> e["type"]?.jsonPrimitive?.content }
 
-        // What the receipt records. Deliberately assertion-light: a spike answers a question, it
-        // does not gate CI — the walls that pin the ANSWER land with P6-GROK.
+        // THE INVARIANT THE VERDICT RESTS ON (review of #70). The receipt concludes that correct
+        // indices can be reconstructed by COUNTING content_block_start events. That is only sound
+        // while blocks are strictly sequential: no delta outside an open block, and never two open
+        // at once. Filtering starts and deltas cannot see either violation — an interleaved stream
+        // produced the identical report and passed. This walks the stream and records the verdict.
+        var open = 0
+        var maxOpen = 0
+        var orphanDeltas = 0
+        for (e in events) {
+            when (typeOf(e)) {
+                "content_block_start" -> { open += 1; maxOpen = maxOf(maxOpen, open) }
+                "content_block_stop" -> open -= 1
+                "content_block_delta" -> if (open == 0) orphanDeltas += 1
+            }
+        }
+        val sequential = maxOpen <= 1 && orphanDeltas == 0 && open == 0
+
         val starts = events.filter { typeOf(it) == "content_block_start" }
         val deltas = events.filter { typeOf(it) == "content_block_delta" }
+
+        // A MINIMUM CONTRACT, so a 500 / empty body / malformed SSE fails instead of silently
+        // writing a receipt (review of #70). Everything the verdict claims is asserted; what the
+        // spike merely OBSERVES (index values, stop_reason) stays in the report.
+        assertEquals(200, res.statusCode(), "the spike's verdict assumes a live 200")
+        assertTrue(events.isNotEmpty(), "no SSE events parsed — the receipt would be evidence-free")
+        assertTrue(events.any { typeOf(it) == "message_stop" }, "the stream must terminate")
+        assertTrue(starts.isNotEmpty(), "no content blocks to reason about")
+        assertTrue(
+            sequential,
+            "blocks were NOT strictly sequential (maxOpen=$maxOpen orphanDeltas=$orphanDeltas " +
+                "unclosed=$open) — the count-the-starts reconstruction the receipt proposes is unsound",
+        )
+        assertTrue(
+            starts.any { it["content_block"]?.jsonObject?.get("type")?.jsonPrimitive?.content == "thinking" },
+            "the receipt claims thinking fidelity, so the run must actually contain a thinking block",
+        )
         val findings = buildString {
             appendLine("status: ${res.statusCode()}")
             appendLine("events: ${events.size}")
@@ -83,6 +118,7 @@ class XaiPassthroughSpike {
             appendLine("block types: ${starts.mapNotNull { it["content_block"]?.jsonObject?.get("type")?.jsonPrimitive?.content }}")
             appendLine("content_block_start index values: ${starts.map { it["index"]?.jsonPrimitive?.content }}")
             appendLine("content_block_delta missing index: ${deltas.count { "index" !in it }}/${deltas.size}")
+            appendLine("strictly sequential blocks: $sequential (max concurrently open: $maxOpen, orphan deltas: $orphanDeltas)")
             appendLine("stop_reason: ${events.firstOrNull { typeOf(it) == "message_delta" }?.get("delta")?.jsonObject?.get("stop_reason")?.jsonPrimitive?.content}")
         }
         println(findings)

@@ -50,6 +50,7 @@ import splice.dialect.chat.withReasoningEffortToml
 import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ToolDeferralPolicy
+import splice.dialect.responses.withParallelToolCallsToml
 import splice.dialect.responses.withReasoningCacheToml
 import splice.dialect.responses.withToml
 import splice.dialect.responses.withToolSurfaceToml
@@ -508,6 +509,7 @@ public class Daemon(
         compactEffort = quirks.compactEffort,
         toolChoice = quirks.toolChoice,
     ).withReasoningCacheToml(quirks.reasoningCache)
+        .withParallelToolCallsToml(quirks.parallelToolCalls)
         .withToolSurfaceToml(toolDeferralPolicy(quirks.toolSurface, cfg.toolSurfaceOff))
 
     private fun responsesProvider(ctx: ProviderBuild, label: String): Wired {

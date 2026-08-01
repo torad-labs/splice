@@ -24,6 +24,7 @@ import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesRequestBuilder
 import splice.dialect.responses.ToolDeferralPolicy
 import splice.dialect.responses.stablePromptCacheKey
+import splice.dialect.responses.withParallelToolCallsToml
 import splice.dialect.responses.withReasoningCacheToml
 
 private val CODEX = ResponsesQuirks(providerTag = "claudex")
@@ -686,5 +687,52 @@ class ToolSurfaceRequestTest {
         val input = req["input"]!!.jsonArray.map { it.jsonObject }
         assertTrue(input.none { it["type"]?.jsonPrimitive?.content == "tool_search_call" })
         assertTrue(input.none { it["type"]?.jsonPrimitive?.content == "tool_search_output" })
+    }
+
+    @Test
+    fun `parallel_tool_calls always rides on lite turns and its VALUE is an overlay knob`() {
+        val toolless = """{"model":"m","messages":[{"role":"user","content":"x"}]}"""
+        val tooled = """{"model":"m","tools":[{"name":"Task","input_schema":{"type":"object"}}],
+            "messages":[{"role":"user","content":"x"}]}"""
+        fun ptc(json: String, q: ResponsesQuirks) =
+            build(json, quirks = q, options = opts(model = "gpt-5.6-sol"))["parallel_tool_calls"]
+
+        // The field must be PRESENT on every lite turn — the backend 400s a lite request without
+        // it (live error 2026-07-19, toolless turn), so "omit when false" is not an option.
+        assertEquals(JsonPrimitive(false), ptc(tooled, CODEX), "default is unchanged: sequential")
+        // Absent TOML must keep the provider's own default, never stomp it (the summary_field trap).
+        assertEquals(JsonPrimitive(false), ptc(tooled, CODEX.withParallelToolCallsToml(null)))
+        // ...and an explicit TOML true must actually REACH THE WIRE on a tooled turn. A knob that
+        // unit-tests green and no-ops in the daemon is the failure mode this assertion exists for.
+        assertEquals(JsonPrimitive(true), ptc(tooled, CODEX.withParallelToolCallsToml(true)))
+        assertEquals(JsonPrimitive(false), ptc(tooled, CODEX.withParallelToolCallsToml(false)))
+        // Knob on, TOOLLESS turn: stays false — nothing to parallelize, and explicit-true-
+        // without-tools is an untested combination upstream (review of #71 round 2).
+        assertEquals(JsonPrimitive(false), ptc(toolless, CODEX.withParallelToolCallsToml(true)))
+    }
+
+    @Test
+    fun `the client's explicit disable_parallel_tool_use beats the operator knob`() {
+        // review of #71 round 2: with the knob on, the lite branch used to short-circuit before
+        // reading tool_choice — the gateway silently overrode a request the client asked to
+        // serialize (the recorded 30-50-parallel-Task-spray shape).
+        val serial = """{"model":"m","tools":[{"name":"Task","input_schema":{"type":"object"}}],
+            "tool_choice":{"type":"auto","disable_parallel_tool_use":true},
+            "messages":[{"role":"user","content":"x"}]}"""
+        val req = build(serial, quirks = CODEX.withParallelToolCallsToml(true), options = opts(model = "gpt-5.6-sol"))
+        assertEquals(JsonPrimitive(false), req["parallel_tool_calls"])
+    }
+
+    @Test
+    fun `the parallel_tool_calls knob does not touch non-lite or compact turns`() {
+        val body = """{"model":"m","messages":[{"role":"user","content":"x"}]}"""
+        val on = CODEX.withParallelToolCallsToml(true)
+        // Non-lite model: the lite branch never runs, so the knob is inert and the field stays
+        // omitted (backend default) exactly as before.
+        assertNull(build(body, quirks = on, options = opts(model = "gpt-5.4-mini"))["parallel_tool_calls"])
+        // Compact turns are not lite by construction (isLite is !compact && …).
+        assertNull(
+            build(body, quirks = on, options = opts(compact = true, model = "gpt-5.6-sol"))["parallel_tool_calls"],
+        )
     }
 }

@@ -48,18 +48,26 @@ internal class ResponsesWsSession {
         val generation: Long,
     )
 
-    private val chains = HashMap<String, Chain>()
+    // BOUNDED, insertion-ordered, oldest dropped at the cap (review of #72's flow map: these had
+    // no TTL or bound at all, so one daemon lifetime accumulated a record per conversation
+    // forever). Dropping a record costs that conversation one full send — today's behaviour —
+    // never a wrong chain: see epochOf for why eviction cannot resurrect stale state.
+    private val chains = LinkedHashMap<String, Chain>()
+    private val epochs = LinkedHashMap<String, Long>()
 
-    /** Per-conversation invalidation counter. A commit carries the epoch it was BUILT under and is
-     *  discarded if the epoch has moved since (review of #72): a concurrent round declined as busy,
-     *  or any bypass, rides SSE and advances the conversation, but an in-flight WS round's terminal
-     *  lands AFTER that clear and would otherwise resurrect a chain the server can no longer honour
-     *  — the next delta would then drop the SSE turn's assistant message as "server-held" when the
-     *  server never saw it. Clearing alone cannot fix an ordering problem; the epoch can. */
-    private val epochs = HashMap<String, Long>()
+    /** A MONOTONIC counter, never per-key. Each [cleared] stamps a fresh value strictly greater
+     *  than anything previously handed out, so a captured epoch can only still match when nothing
+     *  invalidated the conversation in between. */
+    private var seq = 0L
 
-    /** The current epoch for [key] — captured at send time, checked at commit time. */
-    fun epochOf(key: String): Long = epochs[key] ?: 0L
+    /** The epoch for [key] — captured at send time, checked at commit time.
+     *
+     *  An ABSENT key falls back to the current [seq], not to zero, and that is what makes eviction
+     *  safe: after a record is dropped under the cap, every previously captured epoch is strictly
+     *  LESS than [seq] (a clear always stamps ++seq), so a late commit can never match and can
+     *  never resurrect a chain the server no longer honours. Falling back to 0 would have
+     *  re-opened exactly the ordering hole the epoch exists to close. */
+    fun epochOf(key: String): Long = epochs[key] ?: seq
 
     /**
      * Build the frame for this round. [request] is the full request the builder produced.
@@ -101,14 +109,25 @@ internal class ResponsesWsSession {
             chains.remove(key)
             return
         }
+        chains.remove(key)
         chains[key] = Chain(input!!.map { it.toString() }, responseId!!, propsOf(request), generation)
+        trimLocked()
     }
 
     /** Any non-clean ending (tear, cancel, failure, SSE fallback): the next round full-sends, AND
      *  any round still in flight is barred from committing (the epoch bump). */
     fun cleared(key: String) {
         chains.remove(key)
-        epochs[key] = epochOf(key) + 1
+        epochs.remove(key)
+        epochs[key] = ++seq
+        trimLocked()
+    }
+
+    /** Drop the oldest records past the cap. Order is by last WRITE, which for a live conversation
+     *  is every completed round, so an active one is never the eviction victim. */
+    private fun trimLocked() {
+        while (chains.size > MAX_CONVERSATIONS) chains.remove(chains.keys.first())
+        while (epochs.size > MAX_CONVERSATIONS) epochs.remove(epochs.keys.first())
     }
 
     /** [input] null = keep the request's own input array (the full send). */
@@ -124,6 +143,10 @@ internal class ResponsesWsSession {
         JsonObject(request.filterKeys { it != FIELD_INPUT }).toString()
 
     internal companion object {
+        /** Same order as the reasoning cache's bound: far more than any real concurrent-session
+         *  count on one head, and an evicted record costs only a full send. */
+        const val MAX_CONVERSATIONS = 256
+
         /** Item kinds the server ALREADY holds after the previous response: it produced them, so
          *  the builder's rebuild of them is a duplicate that must be dropped from the delta. */
         private val SERVER_HELD = setOf("reasoning", "function_call", "tool_search_call", "tool_search_output")

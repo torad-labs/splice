@@ -79,7 +79,7 @@ jobs:
           pinned_model = "meta-llama/llama-4-maverick"
 
           [heads.openrouter.claude]
-          command = "claudeor"
+          command = "claude-openrouter"
           EOF
       - name: Start splice daemon
         id: daemon

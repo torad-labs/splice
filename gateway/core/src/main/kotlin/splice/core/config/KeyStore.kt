@@ -2,7 +2,7 @@
 // authenticated only when the DAEMON's own process environment carried the key — export it after
 // the daemon started and the shell saw it but the daemon did not (the #1 documented setup pain).
 // KeyStore is the file fallback ApiKeyAuthProvider reads after env and any explicit auth.file:
-// `splice key set`, `claudeor login`, or a head's token-capture hook writes here once and every
+// `splice key set`, `claude-openrouter login`, or a head's token-capture hook writes here once and every
 // later `splice restart` picks the key up from any shell. Flat `NAME = "value"` subset of TOML —
 // we are the only writer, so a tolerant line parser is enough and core stays ktoml-free.
 // Lives in core/config: System.getenv is walled to this package (kt-no-system-getenv) and the

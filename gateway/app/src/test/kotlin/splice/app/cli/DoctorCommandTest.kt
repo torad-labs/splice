@@ -75,7 +75,7 @@ class DoctorCommandTest {
         pinned_model = "m"
 
         [heads.openrouter.claude]
-        command = "claudeor"
+        command = "claude-openrouter"
     """.trimIndent()
 
     // Same starter, but the api-key provider omits an explicit `env` — auth resolves through the
@@ -96,7 +96,7 @@ class DoctorCommandTest {
         Files.writeString(shim, "#!/usr/bin/env bash\nSPLICE_SHIM_VERSION=\"$SHIM_VERSION\"\n")
         shim.toFile().setExecutable(true)
         fakeBinaries(bin, "claude", "node", "python3", "curl", "bash")
-        Files.createSymbolicLink(bin.resolve("claudeor"), shim)
+        Files.createSymbolicLink(bin.resolve("claude-openrouter"), shim)
         Files.createSymbolicLink(bin.resolve("splice"), shim)
 
         val (ok, out) = runDoctor(env(tmp, bin, share, hermetic(tmp, mapOf("OPENROUTER_API_KEY" to "k"))))
@@ -115,13 +115,13 @@ class DoctorCommandTest {
         Files.writeString(shim, "#!/usr/bin/env bash\nSPLICE_SHIM_VERSION=\"$SHIM_VERSION\"\n")
         shim.toFile().setExecutable(true)
         fakeBinaries(bin, "claude", "node", "python3", "curl", "bash")
-        Files.createSymbolicLink(bin.resolve("claudeor"), shim)
+        Files.createSymbolicLink(bin.resolve("claude-openrouter"), shim)
         Files.createSymbolicLink(bin.resolve("splice"), shim)
 
         val (ok, out) = runDoctor(env(tmp, bin, share, hermetic(tmp, mapOf("OPENROUTER_API_KEY" to "k"))))
         assertTrue(ok, "expected no failures:\n$out")
         assertTrue(out.contains("OPENROUTER_API_KEY is set"), out)
-        assertTrue(out.contains("openrouter → claudeor"), out)
+        assertTrue(out.contains("openrouter → claude-openrouter"), out)
     }
 
     @Test
@@ -135,7 +135,7 @@ class DoctorCommandTest {
         Files.writeString(shim, "#!/usr/bin/env bash\nSPLICE_SHIM_VERSION=\"$SHIM_VERSION\"\n")
         shim.toFile().setExecutable(true)
         fakeBinaries(bin, "claude", "node", "python3", "curl", "bash")
-        Files.createSymbolicLink(bin.resolve("claudeor"), shim)
+        Files.createSymbolicLink(bin.resolve("claude-openrouter"), shim)
         Files.createSymbolicLink(bin.resolve("splice"), shim)
 
         // Empty state dir (hermetic) → no mgmt-key file; free control port → daemon reads as stopped.
@@ -171,8 +171,8 @@ class DoctorCommandTest {
         Files.writeString(shim, "#!/usr/bin/env bash\nSPLICE_SHIM_VERSION=\"$SHIM_VERSION\"\n")
         shim.toFile().setExecutable(true)
         fakeBinaries(bin, "claude", "node", "python3", "curl", "bash")
-        Files.writeString(bin.resolve("claudeor"), "#!/bin/sh\necho foreign\n")
-        bin.resolve("claudeor").toFile().setExecutable(true)
+        Files.writeString(bin.resolve("claude-openrouter"), "#!/bin/sh\necho foreign\n")
+        bin.resolve("claude-openrouter").toFile().setExecutable(true)
         Files.createSymbolicLink(bin.resolve("splice"), shim)
 
         val (_, out) = runDoctor(env(tmp, bin, share, mapOf("OPENROUTER_API_KEY" to "k")))
@@ -223,7 +223,7 @@ class DoctorCommandTest {
         Files.writeString(shim, "#!/usr/bin/env bash\nSPLICE_SHIM_VERSION=\"$SHIM_VERSION\"\n")
         shim.toFile().setExecutable(true)
         fakeBinaries(bin, "claude", "node", "python3", "curl", "bash")
-        Files.createSymbolicLink(bin.resolve("claudeor"), shim)
+        Files.createSymbolicLink(bin.resolve("claude-openrouter"), shim)
         Files.createSymbolicLink(bin.resolve("splice"), shim)
 
         val (ok, out) = runDoctor(env(tmp, bin, share))

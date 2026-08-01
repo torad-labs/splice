@@ -155,9 +155,9 @@ class ControlServerTest {
     )
 
     /** A second head whose wrapper COMMAND differs from its topology KEY (the starter's
-     *  openrouter → claudeor shape) and whose api-key auth is absent. */
+     *  openrouter → claude-openrouter shape) and whose api-key auth is absent. */
     private fun openrouterHead(managed: ManagedHead, launchSpec: LaunchSpec): ManagedHead = managed.copy(
-        head = FakeHead("openrouter", 3101, label = "claudeor"),
+        head = FakeHead("openrouter", 3101, label = "claude-openrouter"),
         auth = FakeAbsentAuth(),
         authKind = "api-key",
         launchSpec = launchSpec.copy(port = 3101),
@@ -384,9 +384,9 @@ class ControlServerTest {
 
     @Test
     fun `launch resolves a head by its wrapper command and warns when auth is absent`() = runTest {
-        // The shim asks by argv[0] (the wrapper command, `claudeor`), not the topology key
+        // The shim asks by argv[0] (the wrapper command, `claude-openrouter`), not the topology key
         // (`openrouter`) — the starter topology broke here once (v0.1.1 first-run bug).
-        val body = client.post("http://127.0.0.1:$port/launch/claudeor") {
+        val body = client.post("http://127.0.0.1:$port/launch/claude-openrouter") {
             header("Authorization", "Bearer $key")
             header("Content-Type", "application/json")
             setBody("""{"args":[]}""")
@@ -427,9 +427,9 @@ class ControlServerTest {
     @Test
     fun `a non-launch route resolves a head by its wrapper command label`() = runTest {
         // /api/logs used bare heads[key] (topology key only); the shared lookup now also accepts
-        // the wrapper command, so `claudeor` (openrouter's label) resolves instead of 404ing.
-        val logs = json.parseToJsonElement(authed("/api/logs/claudeor")).jsonObject
-        assertEquals("claudeor", logs["key"]?.jsonPrimitive?.content)
+        // the wrapper command, so `claude-openrouter` (openrouter's label) resolves instead of 404ing.
+        val logs = json.parseToJsonElement(authed("/api/logs/claude-openrouter")).jsonObject
+        assertEquals("claude-openrouter", logs["key"]?.jsonPrimitive?.content)
         assertTrue(logs["lines"]!!.jsonArray.isNotEmpty(), "resolved head's log lines should be returned")
     }
 
@@ -442,7 +442,7 @@ class ControlServerTest {
         }
         assertEquals(HttpStatusCode.NotFound, response.status)
         val error = json.parseToJsonElement(response.bodyAsText()).jsonObject["error"]?.jsonPrimitive?.content.orEmpty()
-        assertTrue(error.contains("claudeor"), "404 should list launchable commands: $error")
+        assertTrue(error.contains("claude-openrouter"), "404 should list launchable commands: $error")
     }
 
     @Test

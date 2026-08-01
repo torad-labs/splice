@@ -107,8 +107,8 @@ verify = "test -s gateway/spikes/results/pool-cancel.md"
 id = "P0-XAI"
 phase = "P0"
 title = "Spike: xAI anthropic-passthrough fidelity — does api.x.ai /v1/messages stream faithful Anthropic SSE?"
-files = ["gateway/spikes/src/main/kotlin/XaiPassthroughSpike.kt", "gateway/spikes/results/xai-passthrough.md"]
-status = "todo"
+files = ["gateway/spikes/src/test/kotlin/XaiPassthroughSpike.kt", "gateway/spikes/results/xai-passthrough.md"]
+status = "done"
 verify = "test -s gateway/spikes/results/xai-passthrough.md"
 # Context: decides P6-GROK dialect. Needs XAI_API_KEY (or key file ~/.local/share/claude-grok/auth.json)
 # — PREMISE-BLOCK with a note if absent, do not fabricate. Probe: streamed request with a tool +
@@ -119,6 +119,12 @@ verify = "test -s gateway/spikes/results/xai-passthrough.md"
 
 # ── P1 — foundation: campaign, hooks, skeleton, walls, core ──────────────────
 # [2026-07-16] PREMISE-BLOCK (slot law): no XAI_API_KEY in env and no ~/.local/share/claude-grok/auth.json on disk — the fidelity probe cannot be grounded. Not improvising. Stays todo until the operator provides a key; P6-GROK falls back to the proven Responses translators if this never lands.
+# [2026-07-30] FENCE-EDITED: files = ["gateway/spikes/src/main/kotlin/XaiPassthroughSpike.kt", "gateway/spikes/results/xai-passthrough.md"] -> files = ["gateway/spikes/src/test/kotlin/XaiPassthroughSpike.kt", "gateway/spikes/results/xai-passthrough.md"] (by=orchestrator implied; no flag)
+# [2026-07-30] PREMISE-BLOCK OF 2026-07-16 WAS FALSE, on both halves. It read: 'no XAI_API_KEY in env and no ~/.local/share/claude-grok/auth.json on disk — the fidelity probe cannot be grounded'. That file EXISTED, mtime 2026-07-15 — the day BEFORE the block — with an expired token; expired is a different fact from absent, and the note recorded the wrong one. More importantly the probe never needed it: the product's own grok head authenticates from ~/.grok/auth.json via grok-oauth, which was never checked. Operator asked 'we support grok via spacex ai so cant we check that way' — that is exactly what unblocked it. Cost: two weeks on an item a credential search would have cleared in two minutes (CLAUDE.md 9: a missing secret usually means you have not searched).
+# [2026-07-30] VERDICT 2026-07-30: NEAR-FAITHFUL. api.x.ai /v1/messages returns 200 and streams the full Anthropic shape — message_start / content_block_start / content_block_delta / content_block_stop / message_delta / message_stop, thinking blocks with thinking_delta, tool_use opened with real name+id, arguments via input_json_delta, stop_reason=tool_use, message_stop present, usage on both message_start (input/cache/output) and message_delta (output). ONE DEFECT: block indexing. content_block_delta NEVER carries index (19/19 then 18/18 on re-run), and content_block_start/stop pin index=0 for EVERY block — the tool_use block should be index 1, so an index-keyed client merges thinking and tool_use. RECOVERABLE: blocks are strictly sequential (zero deltas outside a start/stop pair, never two open at once, measured), so counting content_block_start and stamping the running index restores fidelity in ~10 lines. THEREFORE P6-GROK = near-passthrough (auth + model map + usage) PLUS an index-normalising SSE shim; the Responses-dialect fallback (server/src/grok/translate-*.mjs) does NOT need porting. P6-GROK must wall the shim: interleaved blocks would break count-the-starts, and this is one model and one turn shape.
+# [2026-07-30] SCOPE OF EVIDENCE, so the next reader does not over-trust it: one request, one model (grok-4-latest, served as grok-4.3), one turn shape (thinking + one tool call). NOT probed: parallel multi-tool rounds, max_tokens truncation, refusal/stop_sequence stop reasons, error frames, long context. The index defect is stable enough to design against (reproduced by two independent clients — curl and XaiPassthroughSpike); the ABSENCE of other defects is not established by a single turn.
+# [2026-07-30] Attribution unavailable: missing in_flight tree snapshot
+# [2026-07-30] STATUS IS done, NOT verified, deliberately. #945 reserves verified for an orchestrator who independently re-ran the gate and read the diff; here builder and verifier are the same seat, and marking my own work verified is precisely the conflation the 2026-07-29 reasoning-cache audit existed to correct. Disclosed rather than assumed. What HAS been done: the item's verify (test -s ...) passes, and the finding reproduced under two independent clients (curl, then XaiPassthroughSpike via gradle). A second seat re-running the spike is all that is needed to promote it.
 
 [[items]]
 id = "P1-CAMP"

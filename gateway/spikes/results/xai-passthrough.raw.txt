@@ -1,0 +1,8 @@
+status: 200
+events: 26
+sequence: message_start -> content_block_start -> content_block_delta -> content_block_stop -> message_delta -> message_stop
+block types: [thinking, tool_use]
+content_block_start index values: [0, 0]
+content_block_delta missing index: 19/19
+strictly sequential blocks: true (max concurrently open: 1, orphan deltas: 0)
+stop_reason: tool_use

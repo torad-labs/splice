@@ -371,6 +371,18 @@ else
   echo "splice: the ✗/! checks above are next steps with their fixes — the install itself landed."
 fi
 
+# Migration notice for the claudeor -> claude-openrouter rename. `install --all` links the
+# topology's commands but never PRUNES one whose name disappeared, so an upgrading user keeps a
+# `claudeor` symlink that resolves to no head. Deleting it here is not our call — this bin dir
+# holds links we did not create — so detect it and print the one command that clears it. Scoped to
+# a symlink pointing at OUR launch shim: a user's unrelated `claudeor` script is never mentioned.
+if [ -L "$BIN_DIR/claudeor" ] && [ "$(readlink -f "$BIN_DIR/claudeor" 2>/dev/null)" = "$(readlink -f "$SHARE_DIR/splice-launch" 2>/dev/null)" ]; then
+  echo
+  echo "splice: the OpenRouter head's command is now 'claude-openrouter' (was 'claudeor')."
+  echo "        The old link is stale — it no longer resolves to a head. Remove it with:"
+  echo "            rm $BIN_DIR/claudeor"
+fi
+
 case ":$PATH:" in
   *":$BIN_DIR:"*)
     echo

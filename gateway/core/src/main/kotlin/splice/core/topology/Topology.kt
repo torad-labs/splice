@@ -111,6 +111,12 @@ public data class QuirksConfig(
      *  (codex: on; grok: off — xai returns no envelopes), so the overlay can't stomp it. False
      *  restores the pre-cache behavior (per-tool-result amnesia). */
     @SerialName("reasoning_cache") val reasoningCache: Boolean? = null,
+    /** openai-responses only: the VALUE sent for parallel_tool_calls on responses-lite turns (the
+     *  field always rides; a lite request without it 400s). NULLABLE overlay like reasoning_cache —
+     *  absent keeps the provider's own default (false), so it can't stomp a provider default the
+     *  way the non-nullable summary_field above does. true lets the model batch tool calls into one
+     *  turn instead of one per turn; UNTESTED against the live backend, see ResponsesQuirks. */
+    @SerialName("parallel_tool_calls") val parallelToolCalls: Boolean? = null,
     /** openai-chat only: emit reasoning_effort/reasoning fields (DeepSeek/xAI/OpenRouter-style
      *  backends read them). null keeps the provider's own default (true); set false for strict
      *  OpenAI-compatible vendors (Fireworks — issue #21) that 400 on unrecognized fields. */

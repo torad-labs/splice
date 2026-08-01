@@ -85,7 +85,7 @@ verify = "cd gateway && ./gradlew build"
 [[items]]
 id = "WS-4"
 phase = "tests"
-status = "in_flight"
+status = "done"
 title = "Tests: delta classifier driven by the REAL ResponsesRequestBuilder over a growing conversation (pure tool round -> chains with exactly the function_call_output suffix; text+tool round -> assistant message dropped in drop-phase; user continuation -> chains with the user message; deferred-tool declaration in suffix -> bail; image/unknown item -> bail; effort flip -> props mismatch full send; retry same input -> full send not double-chain); WsUpstream frame assembly + lifecycle against a scripted fake (fragmented frames, first-event timeout -> null, busy connection -> null, mid-round tear -> flow error, LRU eviction closes); TurnDriver fallback (ws null -> SSE path serves, zero behavior change with quirk off — the DEFAULT-OFF pin)."
 files = [
   "gateway/dialect-openai-responses/src/test/kotlin/ResponsesWsSessionTest.kt",
@@ -94,6 +94,8 @@ files = [
 verify = "cd gateway && ./gradlew :provider-spi:test :dialect-openai-responses:test :gateway:test"
 # [2026-07-31] ATTEST-START: tree=0252f2701682c3c9362d22d53da6ae2550a1f53d at=2026-08-01T03:31:39Z
 # [2026-07-31] [2026-07-31] WsUpstream third LANDED via loop item WS-A (33 tests, 8fd4065). Remaining: the TurnDriver-fallback third, which depends on WS-3 wiring. WS-B (the wiring) ESCALATED — see WS-3 note.
+# [2026-08-01] [2026-08-01] DONE. Landed in #72 (40a1634): WsUpstreamTest 28, ResponsesWsSessionTest 14, ResponsesWsRunnerTest 13, WsQuirkWiringTest 5, head.WsRoundDriverTest 2 = 62 tests, 0 skipped. The TurnDriver-fallback third is covered by WsRoundDriverTest (both directions, mutation-proven: inverting the pre-content boolean turns both red).
+# [2026-08-01] ATTEST: scoped diffstat: .../src/test/kotlin/ResponsesWsSessionTest.kt      |  48 +- | .../provider-spi/src/test/kotlin/WsUpstreamTest.kt | 652 --------------------- | 2 files changed, 37 insertions(+), 663 deletions(-); sidecar: .claude/ledger-diffs/WS-4.diff; off-scope: config/splice.example.toml, gateway/app/src/main/kotlin/splice/app/Daemon.kt, gateway/core/src/main/kotlin/splice/core/topology/Topology.kt, gateway/core/src/main/kotlin/splice/core/turn/Turn.kt, gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ReasoningCache.kt, gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesProvider.kt, gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesRequestBuilder.kt, gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesWsRunner.kt, ... 16 more
 
 [[items]]
 id = "WS-5"
@@ -102,6 +104,7 @@ status = "todo"
 title = "Live verification (operator-gated): deploy default-off; operator flips websocket = true on the codex head; verify from daemon.log — chaining engages (ws log lines), no error-class regressions, cache hit vs the Jul-31 90% baseline, wire req_bytes collapse on chained rounds; capture the codex.rate_limits event shape and wire it into usageStore (SSE-path rate-limit headers do not exist on WS — statusline soft-warn goes stale on a WS-only head until this lands); then decide the default with the operator."
 files = []
 verify = "daemon.log shows chained rounds and no regression vs SSE baseline; operator sign-off"
+# [2026-08-01] [2026-08-01] BLOCKED ON OPERATOR — everything upstream of it is merged to main (#72, 40a1634) and shipping DEFAULT OFF, so no behaviour changed. This item needs a human act that an agent must not perform: flip 'websocket = true' inside the codex inline quirks table, restart, then read telemetry for (a) '[ws] ... chained' lines appearing, (b) cache hit vs the 2026-07-31 90% baseline, (c) upstream_req_bytes collapsing on chained rounds. Known gap to wire during that step: codex.rate_limits arrives as a WS EVENT where the SSE path reads rate-limit HEADERS, so the statusline soft-warn goes stale on a WS-only head until it is mapped.
 
 [[items]]
 id = "WS-6"

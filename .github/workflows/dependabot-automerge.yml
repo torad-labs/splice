@@ -37,11 +37,28 @@ jobs:
   # waits for required checks — so this cannot merge anything red. Added
   # 2026-08-01: covering only Dependabot left the owner's own green PRs sitting
   # untouched (aisdk-kotlin #26 was CLEAN for hours with nothing to merge it).
-  owner:
+  # Auto-merge is for AUTOMATED pull requests only.
+  #
+  # This job used to arm auto-merge for any non-draft OWNER/MEMBER PR, which was
+  # written to un-strand green PRs and instead merged splice#75 — a real
+  # fix — before its review had landed and before the work was finished. Human
+  # PRs get reviewed; that is the entire point of opening one.
+  #
+  # "Automated" is deliberately narrow and matched two ways, because the author
+  # alone is not sufficient: a sync PR opened with a personal token carries a
+  # HUMAN login even though nothing about it is human. So:
+  #   * any Bot author (dependabot, renovate, the operator App), or
+  #   * the operator's own template-sync branch, whoever opened it.
+  # Anything else — a feature, a fix, a bugfix, a refactor — is not eligible,
+  # regardless of who wrote it or how green it is.
+  automated:
     if: >-
-      github.event.pull_request.user.login != 'dependabot[bot]' &&
-      contains(fromJSON('["OWNER","MEMBER"]'), github.event.pull_request.author_association) &&
-      github.event.pull_request.draft == false
+      github.event.pull_request.draft == false &&
+      (
+        github.event.pull_request.user.type == 'Bot' ||
+        github.event.pull_request.head.ref == 'chore/sync-workflow-templates'
+      ) &&
+      github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

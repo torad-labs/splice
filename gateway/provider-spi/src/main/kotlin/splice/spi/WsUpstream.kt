@@ -16,7 +16,9 @@
 //   provider-spi never learns Responses event names.
 package splice.spi
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ChannelResult
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onCompletion
@@ -112,6 +114,19 @@ public class WsUpstream(
         return first?.let { roundFlow(conn, key, it, isTerminal) }
     }
 
+    /** Receive one event, or null when the inbox is CLOSED.
+     *
+     *  Why this exists (adversarial review of WS-1, 2026-07-31): `receive()` signals closure by
+     *  THROWING ClosedReceiveChannelException, which extends NoSuchElementException -> RuntimeException
+     *  and is therefore outside runCatchingCancellable's {IOException, SerializationException,
+     *  IllegalArgumentException} (core/util/Cancellation.kt:20-25). A server closing cleanly before
+     *  answering threw straight out of round(), past withTimeoutOrNull, so the caller never received
+     *  the `null` the whole SSE-fallback design depends on — a NEVER-BELOW-STATUS-QUO violation that
+     *  surfaced as a client-visible error where SSE would have served the turn.
+     *  receiveCatching() returns the closure as a VALUE, so it cannot escape. */
+    private suspend fun receiveCatching(conn: WsConnection): ChannelResult<JsonObject> =
+        conn.inbox.receiveCatching()
+
     /** Get-or-connect, and win the busy flag — or null (SSE round). */
     private suspend fun acquire(key: String, headers: Map<String, String>, wssUrl: String): WsConnection? {
         val existing = synchronized(lock) { connections[key]?.takeIf { !it.dead.get() } }
@@ -155,30 +170,55 @@ public class WsUpstream(
         return conn
     }
 
-    private fun sendFrame(conn: WsConnection, key: String, frame: String): Boolean {
-        // sendText's async completion is observed by the first-event wait; what is caught here is
-        // the SYNCHRONOUS failure class (IllegalStateException: output closed / pending send).
-        val sent = runCatchingCancellable { conn.socket.sendText(frame, true) }
-            .onFailure { e ->
-                log(
-                    "[ws] $key send failed (${e::class.simpleName}: ${e.message?.take(ERR_SNIPPET)}) " +
-                        "— killing connection, round rides SSE\n",
-                )
-            }
-        if (sent.isFailure) failRound(conn, key)
-        return sent.isSuccess
+    /** Send the round's one frame and AWAIT delivery.
+     *
+     *  Both failure modes are real and neither was caught before the adversarial review of WS-1:
+     *  sendText returns a CompletableFuture (javap: `CompletableFuture<WebSocket> sendText(...)`),
+     *  so a delivery failure is ASYNCHRONOUS and was previously discarded with the future; and its
+     *  SYNCHRONOUS throw is IllegalStateException ("Send pending"/output closed), which
+     *  runCatchingCancellable deliberately cannot catch because CancellationException extends
+     *  IllegalStateException — catching ISE there would swallow cancellation repo-wide.
+     *  Hence the explicit catch with the cancellation rethrow, and the await. */
+    private suspend fun sendFrame(conn: WsConnection, key: String, frame: String): Boolean {
+        // "sync" vs "async" stays in the log line on purpose: they are different upstream faults
+        // (a socket we already broke vs a delivery the peer refused) and only the log distinguishes
+        // them after the fact.
+        val failure: Pair<String, Throwable>? = try {
+            conn.socket.sendText(frame, true).await()
+            null
+        } catch (e: CancellationException) {
+            throw e // a cancelled turn must stop, never look like a send failure
+        } catch (e: IllegalStateException) {
+            "sync" to e // output closed, or a send already pending on this socket
+        } catch (e: IOException) {
+            "async" to e // the delivery future completed exceptionally
+        }
+        if (failure != null) {
+            val (kind, error) = failure
+            log(
+                "[ws] $key send failed $kind (${error::class.simpleName}: " +
+                    "${error.message?.take(ERR_SNIPPET)}) — killing connection, round rides SSE\n",
+            )
+            failRound(conn, key)
+        }
+        return failure == null
     }
 
     /** The commit point: no event within the budget → the round (and the connection, whose state
-     *  is now indeterminate — the server may or may not have started the response) goes to SSE. */
+     *  is now indeterminate — the server may or may not have started the response) goes to SSE.
+     *  A CLOSED inbox ends the wait IMMEDIATELY instead of burning the whole budget, and says so
+     *  distinguishably: "inbox closed before first event" and "no first event in Nms" are different
+     *  upstream faults, and daemon.log is the only place that difference survives. */
     private suspend fun awaitFirstEvent(conn: WsConnection, key: String): JsonObject? {
-        val first = withTimeoutOrNull(firstEventTimeoutMs) {
-            runCatchingCancellable { conn.inbox.receive() }
-                .onFailure { log("[ws] $key inbox closed before first event: ${it::class.simpleName}\n") }
-                .getOrNull()
-        }
+        val received = withTimeoutOrNull(firstEventTimeoutMs) { receiveCatching(conn) }
+        val first = received?.getOrNull()
         if (first == null) {
-            log("[ws] $key no first event in ${firstEventTimeoutMs}ms — killing connection, round rides SSE\n")
+            val why = if (received == null) {
+                "no first event in ${firstEventTimeoutMs}ms"
+            } else {
+                "inbox closed before first event (${received.exceptionOrNull()?.message?.take(ERR_SNIPPET) ?: "clean"})"
+            }
+            log("[ws] $key $why — killing connection, round rides SSE\n")
             failRound(conn, key)
         }
         return first
@@ -194,9 +234,13 @@ public class WsUpstream(
         return flow {
             emit(first)
             while (!completed) {
-                val evt = runCatchingCancellable { conn.inbox.receive() }.getOrElse {
-                    throw IOException("websocket stream ended mid-round", it)
-                }
+                // A closed inbox mid-round is a TEAR. It must surface as IOException specifically:
+                // TurnDriver's pre-frame reissue keys on `e is IOException` (tearAwareEvents), and
+                // the raw ClosedReceiveChannelException this used to throw matched neither that
+                // check nor the translators' catch lists (adversarial review of WS-1).
+                val received = receiveCatching(conn)
+                val evt = received.getOrNull()
+                    ?: throw IOException("websocket stream ended mid-round", received.exceptionOrNull())
                 completed = isTerminal(evt)
                 emit(evt)
             }

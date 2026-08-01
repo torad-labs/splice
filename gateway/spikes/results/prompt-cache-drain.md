@@ -145,8 +145,16 @@ behaviour is near-perfect. It is **not** portable to splice as it stands:
   the ChatGPT backend. The chaining is connection state, not server-side storage, so adopting it
   does not imply retaining conversation data upstream.
 
-Adopting it means implementing the Responses WebSocket transport plus its connection lifecycle and
-fallback logic. That is a separate project and an operator decision, not a bug fix.
+**UPDATE 2026-08-01 — this landed.** The `ws-transport` campaign implemented exactly that: a JDK
+`java.net.http.WebSocket` transport (`WsUpstream`), a bail-closed delta classifier
+(`ResponsesWsSession`), and the daemon wiring, all behind `[providers.codex.quirks] websocket`,
+**default false**. Any failure at any stage degrades to the SSE path, which keeps sole ownership of
+retry, the single-flight 401 refresh and the shared 429 cooldown. Measured on a 12-round tool loop:
+wire bytes go FLAT (~2.4KB) while the full send grows linearly — 92.5% less at round 12, 86% over
+the whole loop, and the saving widens with conversation length. Billed input tokens do NOT drop (the
+server reconstructs the same context); what drops is the client-side re-send and, with it, the whole
+class of mid-array prefix drift this document measures. See
+`gateway/spikes/results/responses-websocket.md` for the live protocol receipt.
 
 ### Known residual limitations (review of #71 round 2)
 

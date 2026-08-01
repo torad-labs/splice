@@ -60,6 +60,7 @@ internal object LoginInterception {
         globalCommands: Path?,
         viaBrowser: Boolean = true,
         tokenCapture: TokenCaptureSpec? = null,
+        loginOutcomeFile: String = "",
     ): Map<String, List<JsonObject>> {
         if (loginCommand.isBlank() && tokenCapture == null) return emptyMap()
         return runCatchingCancellable {
@@ -71,11 +72,14 @@ internal object LoginInterception {
                         configDir,
                         LOGIN_HOOK_SH,
                         loginHookScript(
-                            loginCommand,
-                            signInLabel,
-                            viaBrowser,
-                            LOGIN_SENTINEL,
-                            canCapturePaste = tokenCapture != null,
+                            LoginHookSpec(
+                                loginCommand = loginCommand,
+                                signInLabel = signInLabel,
+                                viaBrowser = viaBrowser,
+                                sentinel = LOGIN_SENTINEL,
+                                outcomeFile = loginOutcomeFile,
+                                canCapturePaste = tokenCapture != null,
+                            ),
                         ),
                     )
                     upsHooks += hookEntry(script, HOOK_TIMEOUT_SECONDS)

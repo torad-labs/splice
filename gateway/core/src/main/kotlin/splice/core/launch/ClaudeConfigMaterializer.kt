@@ -70,6 +70,9 @@ public data class MaterializeSpec(
     // api-key heads: capture a BARE provider token pasted as the whole message into the KeyStore,
     // blocked before it reaches the model context. Null disables capture.
     val tokenCapture: TokenCaptureSpec? = null,
+    /** Absolute path of this head's login receipt (LoginOutcomeFile). Empty disables the
+     *  in-session confirmation — the detached sign-in still works, it just cannot report back. */
+    val loginOutcomeFile: String = "",
     // Install the SessionStart key-missing advertiser. The daemon sets this only while the head's
     // key is unconfigured and re-materializes on every launch, so the advertiser removes itself
     // once the key lands. Requires tokenCapture for the paste instruction to be true.
@@ -97,6 +100,7 @@ public class ClaudeConfigMaterializer(
                 globalCommands = if (shares(spec.policy, Keys.COMMANDS)) globalDir().resolve(Keys.COMMANDS) else null,
                 viaBrowser = spec.signInViaBrowser,
                 tokenCapture = spec.tokenCapture,
+                loginOutcomeFile = spec.loginOutcomeFile,
             ),
             if (spec.advertiseKeySetup && spec.tokenCapture != null) {
                 LoginInterception.keySetupAdvertiser(spec.configDir, spec.tokenCapture, spec.loginCommand)

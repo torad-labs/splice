@@ -9,8 +9,24 @@
   --all` links the topology's commands but never prunes one whose name disappeared, so the old
   wrapper survives and resolves to no head. Remove it once: `rm ~/.local/bin/claudeor`.
 
+### Added
+
+- `/login` now reports its outcome back INTO the session. The sign-in runs detached, so everything
+  it printed was lost and the session never learned whether it worked; it writes a one-line receipt
+  that the head's `/login` hook reads and consumes on the next prompt. This is the only channel
+  that can confirm a kimi login at all — an RFC 8628 device flow has no browser redirect to render
+  a page in, which is why opencode and Kilo Code both confirm in-client rather than via a callback.
+  Failures are reported too, which is the case that previously said nothing at all.
+- The browser login accepts a PASTED redirect URL (or a bare code) on stdin, racing the loopback
+  callback. A loopback can simply never arrive — browser on another machine, SSH, a container
+  without shared localhost — and the only outcome was a silent five-minute timeout. xAI's own CLI
+  accepts both channels for this reason.
+
 ### Fixed
 
+- The OAuth callback page said "close this tab and head back to your terminal", but `/login` is
+  usually invoked from inside a session where there is no terminal to return to. It now names the
+  destination, matching what xAI's CLI does ("You can close this window and return to Grok Build").
 - `/login` on an api-key head promised "a masked terminal prompt is asking for your key" while
   spawning `<command> login` DETACHED with output to `/dev/null`. Detached means no TTY, so
   `System.console()` was null, the CLI printed its pipe-instead hint into the void, and the

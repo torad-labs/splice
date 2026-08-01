@@ -52,11 +52,33 @@ jobs:
   # Anything else — a feature, a fix, a bugfix, a refactor — is not eligible,
   # regardless of who wrote it or how green it is.
   automated:
+    # Four ways to qualify as automated, because "a bot opened it" is not the
+    # only shape automation takes:
+    #
+    #   Bot author            dependabot, renovate, anything acting as an App
+    #   operator/* branch     the operator's own remediation PRs — a gitleaks
+    #                         allowlist fix or a fleet repair is automation work
+    #                         even when the token opening it belongs to a human,
+    #                         which is precisely the case this originally missed
+    #   the sync branch       the established name, kept so PRs already open
+    #                         under it are not stranded
+    #   `automated` label     explicit opt-in, and the only way a human PR can
+    #                         qualify. Applying it is a deliberate act; if the
+    #                         label does not exist in a repo the condition simply
+    #                         never matches, so this degrades to no-op rather
+    #                         than to an error.
+    #
+    # What still does NOT qualify: an ordinary feature, fix or bugfix branch,
+    # regardless of author or how green it is. splice#75 merged before its review
+    # landed because the old condition was `author_association`, which said who
+    # opened a PR and nothing about what it contained.
     if: >-
       github.event.pull_request.draft == false &&
       (
         github.event.pull_request.user.type == 'Bot' ||
-        github.event.pull_request.head.ref == 'chore/sync-workflow-templates'
+        startsWith(github.event.pull_request.head.ref, 'operator/') ||
+        github.event.pull_request.head.ref == 'chore/sync-workflow-templates' ||
+        contains(github.event.pull_request.labels.*.name, 'automated')
       ) &&
       github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest

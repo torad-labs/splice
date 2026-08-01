@@ -76,12 +76,15 @@ public abstract class ResponsesProvider(
                 // left its plan in the cache; reinject it so the model resumes instead of
                 // re-deriving (codex parity; repeated-tool-call amnesia otherwise). Scoped to
                 // THIS conversation (same first-message hash the builder stamps on TurnMeta).
-                reasoningLookup = { id ->
-                    if (reasoningCacheActive(quirks, compact)) {
-                        reasoningCache.lookup(stablePromptCacheKey(body.typed), id)
-                    } else {
-                        null
-                    }
+                // ONE atomic snapshot per build (review of #71 round 2): per-block lookups could
+                // tear across a concurrent eviction (rounds 1..k injected, k+1.. missing), re-ran
+                // the first-message SHA-256 per block, and re-touched the conversation per block.
+                // Lazy so a build with no tool_use blocks never touches the cache at all.
+                reasoningLookup = if (!reasoningCacheActive(quirks, compact)) {
+                    { null }
+                } else {
+                    val snapshot = lazy { reasoningCache.snapshot(stablePromptCacheKey(body.typed)) }
+                    ({ id -> snapshot.value[id] })
                 },
                 // The provider's capability latch, read at build time: false = a shape-400 already
                 // closed it this daemon lifetime; build the full status-quo request instead.
@@ -151,7 +154,9 @@ public abstract class ResponsesProvider(
 
     // RC-2/RC-4: gateway-held reasoning continuity for tool round-trips (codex parity). One
     // cache per provider instance; capture and lookup wire in via buildTurn/streamTranslator.
-    private val reasoningCache: ReasoningCache = ReasoningCache()
+    // The log sink surfaces the cache's two one-way transitions (freeze, bound eviction) in
+    // /mgmt/logs — silent state loss here cost a two-day cache-drain investigation.
+    private val reasoningCache: ReasoningCache = ReasoningCache(log = log)
 
     // The tool-surface capability latch (§1.3/§5.3): one AtomicBoolean per provider instance,
     // moving in exactly one direction — toward status quo. Read at build time (buildTurn), closed

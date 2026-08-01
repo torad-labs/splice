@@ -51,47 +51,216 @@ class ReasoningCacheTest {
     }
 
     @Test
-    fun `ttl expires entries`() {
+    fun `ttl expires IDLE entries`() {
+        // The TTL is an IDLE timer (prefix stability, 2026-07-30): untouched entries still expire
+        // exactly as before. The active-conversation case is pinned by the next two tests.
         var now = 0L
         val c = ReasoningCache(ttlMs = 100, clock = { now })
         c.put(CONV, listOf("call_a"), listOf("e1"))
         now = 99
-        assertEquals(listOf("e1"), c.lookup(CONV, "call_a"))
-        now = 101
+        assertEquals(listOf("e1"), c.lookup(CONV, "call_a"), "not yet idle-expired")
+        now = 200 // 101ms since the refresh at t=99 -> idle past the TTL
         assertNull(c.lookup(CONV, "call_a"))
     }
 
     @Test
-    fun `entry-count bound evicts the oldest turn first`() {
+    fun `an ACTIVE conversation never partially expires - the prefix-stability contract`() {
+        // THE REGRESSION THIS PINS: the builder injects each round's reasoning immediately before
+        // that round's first function_call, so losing ONE round mid-conversation deletes an item
+        // from the middle of the input array and shifts everything after it. Turn N+1 then stops
+        // being a prefix-extension of turn N and OpenAI re-bills the remainder. Before the fix,
+        // round 1 expired on the raw insertion TTL while later rounds lived on -- measured at 7.7%
+        // prefix reuse (PrefixStabilityDiagnostic).
+        var now = 0L
+        val c = ReasoningCache(ttlMs = 100, clock = { now })
+        c.put(CONV, listOf("call_1"), listOf("e1"))
+        // A long conversation: a new round every 60ms, each turn re-reading every earlier round
+        // exactly as the builder's walk does.
+        for (round in 2..10) {
+            now += 60
+            for (earlier in 1 until round) {
+                assertEquals(
+                    listOf("e$earlier"),
+                    c.lookup(CONV, "call_$earlier"),
+                    "round $earlier vanished at t=$now while the conversation was still active",
+                )
+            }
+            c.put(CONV, listOf("call_$round"), listOf("e$round"))
+        }
+        // t=540, far beyond the 100ms TTL: every round is still resolvable, so the input array is
+        // byte-identical to the previous turn's up to the append point.
+        for (round in 1..10) assertEquals(listOf("e$round"), c.lookup(CONV, "call_$round"))
+    }
+
+    @Test
+    fun `an idle conversation expires WHOLESALE, never half`() {
+        // One record, ONE clock: rounds inserted 161ms and 101ms ago expire together the moment
+        // the conversation's idle timer lapses — there is no per-round age to half-expire on.
+        // (Half a conversation is exactly the prefix-shifting state the cache must never serve.)
+        var now = 0L
+        val c = ReasoningCache(ttlMs = 100, clock = { now })
+        c.put(CONV, listOf("call_1"), listOf("e1"))
+        now = 60
+        c.put(CONV, listOf("call_2"), listOf("e2"))
+        now = 130 // idle only 70ms since the last touch: BOTH still serve — no partial state
+        assertEquals(listOf("e1"), c.lookup(CONV, "call_1"))
+        now = 340 // the t=130 lookup touched the conversation; 210ms of true idle since -> gone
+        assertNull(c.lookup(CONV, "call_1"))
+        assertNull(c.lookup(CONV, "call_2"), "the younger round goes with its conversation")
+    }
+
+    @Test
+    fun `entry-count bound evicts the oldest CONVERSATION, sparing newer ones`() {
+        // Was "evicts the oldest turn first" (review of #71): trimming one ROUND off a live
+        // conversation leaves it half-cached, which shifts the input array mid-prefix. The unit of
+        // eviction is now the conversation.
+        val c = ReasoningCache(maxEntries = 2, clock = { 0L })
+        c.put("conv-old", listOf("call_1"), listOf("e1"))
+        c.put("conv-mid", listOf("call_2"), listOf("e2"))
+        c.put("conv-new", listOf("call_3"), listOf("e3"))
+        assertNull(c.lookup("conv-old", "call_1"), "oldest conversation evicted")
+        assertEquals(listOf("e2"), c.lookup("conv-mid", "call_2"))
+        assertEquals(listOf("e3"), c.lookup("conv-new", "call_3"))
+    }
+
+    @Test
+    fun `byte ceiling evicts whole conversations until under bound`() {
+        val c = ReasoningCache(maxTotalBytes = 10, clock = { 0L })
+        c.put("conv-old", listOf("call_1"), listOf("aaaaa"))
+        c.put("conv-mid", listOf("call_2"), listOf("bbbbb"))
+        c.put("conv-new", listOf("call_3"), listOf("ccccc"))
+        assertNull(c.lookup("conv-old", "call_1"))
+        assertEquals(listOf("bbbbb"), c.lookup("conv-mid", "call_2"))
+    }
+
+    @Test
+    fun `one oversized put evicts as many oldest conversations as the bound requires`() {
+        // review 2026-07-24: the single-eviction case left the while-loop's 2nd+ iteration untested
+        val c = ReasoningCache(maxTotalBytes = 12, clock = { 0L })
+        c.put("conv-a", listOf("call_1"), listOf("aaaaa"))
+        c.put("conv-b", listOf("call_2"), listOf("bbbbb"))
+        c.put("conv-c", listOf("call_3"), listOf("cccccccccc"))
+        assertNull(c.lookup("conv-a", "call_1"))
+        assertNull(c.lookup("conv-b", "call_2"), "the second-oldest must go too - one eviction is not enough")
+        assertEquals(listOf("cccccccccc"), c.lookup("conv-c", "call_3"))
+    }
+
+    // ── review of #71 round 2: the conversation is the unit of EVERY policy ─────────────────
+    // The wipe+disable design had four confirmed holes: the disable trigger tested "writer owns
+    // the globally-oldest entry" (neighbor pressure disabled innocent conversations); touch-
+    // immortality made the 256-round cap the guaranteed end state of every long session (wipe +
+    // permanent disable at round ~257); a cross-evicted conversation re-cached into a partial
+    // group with no marker; and evictByToolId still punched per-round holes. These tests pin the
+    // replacement semantics: freeze-admission for self-overflow (old rounds keep serving — zero
+    // prefix busts), least-recently-touched NEIGHBOR eviction for cross pressure, and wholesale
+    // stale eviction.
+
+    @Test
+    fun `bound pressure evicts the LRU NEIGHBOR wholesale - the writer is never the victim`() {
+        val c = ReasoningCache(maxTotalBytes = 12, clock = { 0L })
+        c.put("conv-a", listOf("call_1"), listOf("aaaaa"))
+        c.put("conv-b", listOf("call_2"), listOf("bbbbb"))
+        c.put("conv-a", listOf("call_3"), listOf("ccc")) // 13 > 12, conv-a is writing
+        assertEquals(listOf("aaaaa"), c.lookup("conv-a", "call_1"), "the writer keeps its rounds")
+        assertEquals(listOf("ccc"), c.lookup("conv-a", "call_3"))
+        assertNull(c.lookup("conv-b", "call_2"), "the least-recently-touched neighbor went, whole")
+        c.put("conv-a", listOf("call_4"), listOf("dd"))
+        assertEquals(
+            listOf("dd"),
+            c.lookup("conv-a", "call_4"),
+            "neighbor pressure must never freeze/disable the writer (review finding 1: the old " +
+                "trigger tested oldest-entry ownership, not self-overflow)",
+        )
+    }
+
+    @Test
+    fun `a conversation that ALONE exceeds the bound freezes admission - old rounds keep serving`() {
+        val c = ReasoningCache(maxTotalBytes = 12, clock = { 0L })
+        c.put(CONV, listOf("call_1"), listOf("aaaaa"))
+        c.put(CONV, listOf("call_2"), listOf("bbbbb"))
+        c.put(CONV, listOf("call_3"), listOf("ccccc")) // would be 15 > 12, nobody else to evict
+        assertEquals(
+            listOf("aaaaa"),
+            c.lookup(CONV, "call_1"),
+            "admitted rounds keep serving — freezing admission costs only the tail, a wipe would " +
+                "bust the whole prefix once and then every remaining round (review finding 2)",
+        )
+        assertEquals(listOf("bbbbb"), c.lookup(CONV, "call_2"))
+        assertNull(
+            c.lookup(CONV, "call_3"),
+            "the overflowing round is rejected: never injected, so rejecting shifts nothing",
+        )
+        c.put(CONV, listOf("call_4"), listOf("d"))
+        assertNull(c.lookup(CONV, "call_4"), "admission stays frozen for the conversation's life")
+        // Frozen is admission-only and per-conversation: a small neighbor still caches.
+        c.put("conv-other", listOf("call_9"), listOf("e"))
+        assertEquals(listOf("e"), c.lookup("conv-other", "call_9"))
+    }
+
+    @Test
+    fun `entry-count self-overflow freezes too`() {
         val c = ReasoningCache(maxEntries = 2, clock = { 0L })
         c.put(CONV, listOf("call_1"), listOf("e1"))
         c.put(CONV, listOf("call_2"), listOf("e2"))
         c.put(CONV, listOf("call_3"), listOf("e3"))
-        assertNull(c.lookup(CONV, "call_1"), "oldest evicted")
+        assertEquals(listOf("e1"), c.lookup(CONV, "call_1"), "a 257th-round session must not lose rounds 1..256")
         assertEquals(listOf("e2"), c.lookup(CONV, "call_2"))
-        assertEquals(listOf("e3"), c.lookup(CONV, "call_3"))
+        assertNull(c.lookup(CONV, "call_3"))
     }
 
     @Test
-    fun `byte ceiling evicts oldest until under bound`() {
-        val c = ReasoningCache(maxTotalBytes = 10, clock = { 0L })
-        c.put(CONV, listOf("call_1"), listOf("aaaaa"))
-        c.put(CONV, listOf("call_2"), listOf("bbbbb"))
-        c.put(CONV, listOf("call_3"), listOf("ccccc"))
+    fun `stale eviction drops the WHOLE conversation - no partial hole survives a 400`() {
+        // review finding 4: per-round eviction left rounds 2..n injecting while round 1's hole
+        // shifted the array — permanent now that active conversations no longer age out.
+        val c = ReasoningCache(clock = { 0L })
+        c.put(CONV, listOf("call_1"), listOf("e1"))
+        c.put(CONV, listOf("call_2"), listOf("e2"))
+        c.evictByToolId("call_1")
         assertNull(c.lookup(CONV, "call_1"))
-        assertEquals(listOf("bbbbb"), c.lookup(CONV, "call_2"))
+        assertNull(c.lookup(CONV, "call_2"), "a mid-array hole would shift the prefix on every later build")
     }
 
     @Test
-    fun `one oversized put evicts as many oldest entries as the bound requires`() {
-        // review 2026-07-24: the single-eviction case left the while-loop's 2nd+ iteration untested
-        val c = ReasoningCache(maxTotalBytes = 12, clock = { 0L })
-        c.put(CONV, listOf("call_1"), listOf("aaaaa"))
-        c.put(CONV, listOf("call_2"), listOf("bbbbb"))
-        c.put(CONV, listOf("call_3"), listOf("cccccccccc"))
-        assertNull(c.lookup(CONV, "call_1"))
-        assertNull(c.lookup(CONV, "call_2"), "the second-oldest must go too - one eviction is not enough")
-        assertEquals(listOf("cccccccccc"), c.lookup(CONV, "call_3"))
+    fun `a client-retry re-put of the same round is grace, not growth`() {
+        // review finding 2 accelerator: duplicate puts orphaned the old entry, which still
+        // counted against the bound and dragged the conversation toward the cliff.
+        val c = ReasoningCache(maxEntries = 2, clock = { 0L })
+        c.put(CONV, listOf("call_1"), listOf("e1"))
+        c.put(CONV, listOf("call_1"), listOf("e1")) // retried request re-captures the same round
+        c.put(CONV, listOf("call_2"), listOf("e2")) // 2 real rounds — must NOT trip the bound
+        assertEquals(listOf("e1"), c.lookup(CONV, "call_1"))
+        assertEquals(listOf("e2"), c.lookup(CONV, "call_2"))
+    }
+
+    @Test
+    fun `snapshot returns every round in one atomic read and counts as ONE touch`() {
+        // The builder consumes the cache through snapshot() (review finding 14: N per-block
+        // lookups could tear across a concurrent eviction; finding 10: they re-touched N times).
+        var now = 0L
+        val c = ReasoningCache(ttlMs = 100, clock = { now })
+        c.put(CONV, listOf("call_1"), listOf("e1"))
+        now = 60
+        c.put(CONV, listOf("call_2"), listOf("e2"))
+        now = 130 // 70ms since the last touch: alive
+        val snap = c.snapshot(CONV)
+        assertEquals(listOf("e1"), snap["call_1"])
+        assertEquals(listOf("e2"), snap["call_2"])
+        assertNull(snap["call_9"], "absent ids are plain map misses")
+        now = 220 // 90ms since the snapshot's touch: still alive — snapshot refreshed the clock
+        assertEquals(listOf("e1"), c.lookup(CONV, "call_1"))
+    }
+
+    @Test
+    fun `null-key rounds keep the flat insertion TTL - the pre-rework status quo`() {
+        // A first user message with no text to hash has no conversation identity; that class
+        // keeps the original behavior (documented limitation, spike doc "not fixed").
+        var now = 0L
+        val c = ReasoningCache(ttlMs = 100, clock = { now })
+        c.put(null, listOf("call_1"), listOf("e1"))
+        now = 60
+        assertEquals(listOf("e1"), c.lookup(null, "call_1"))
+        now = 161 // 101ms past INSERTION — lookups do not refresh this class
+        assertNull(c.lookup(null, "call_1"))
     }
 
     @Test
@@ -166,7 +335,15 @@ class StripStaleReasoningTest {
     }
 
     @Test
-    fun `eviction is scoped to the dropped rounds - other rounds keep their entries`() {
+    fun `a stale 400 evicts the WHOLE conversation - the body amendment stays round-scoped`() {
+        // Was "eviction is scoped to the dropped rounds" (review of #71 round 2, finding 4): the
+        // per-round eviction it pinned left surviving rounds injecting around a permanent
+        // mid-array hole — permanent, because active conversations no longer age out. The BODY
+        // amendment is unchanged (only stale reasoning items are stripped from the request); the
+        // CACHE consequence widens to the conversation: one clean transition to no-injection,
+        // after which fresh rounds re-cache at the tail (prefix-stable). An unrelated
+        // conversation is untouched — the widening is per-conversation, not the RC-4 bug of
+        // wiping every conversation on one 400.
         val twoRounds =
             """{"model":"m","input":[""" +
                 """{"role":"user","content":"go"},""" +
@@ -179,14 +356,15 @@ class StripStaleReasoningTest {
         val cache = ReasoningCache(clock = { 0L })
         cache.put(CONV, listOf("call_a"), listOf("stale1"))
         cache.put(CONV, listOf("call_orphan"), listOf("healthy"))
+        cache.put("conv-bystander", listOf("call_z"), listOf("ez"))
         val amended = stripStaleReasoning(twoRounds, cache)!!
         assertFalse(amended.contains("\"reasoning\""))
         assertNull(cache.lookup(CONV, "call_a"), "the round under the dropped reasoning is evicted")
-        assertEquals(
-            listOf("healthy"),
+        assertNull(
             cache.lookup(CONV, "call_orphan"),
-            "a round with no reasoning item in the body had nothing stale to evict",
+            "its conversation goes with it — a surviving round would inject around a permanent hole",
         )
+        assertEquals(listOf("ez"), cache.lookup("conv-bystander", "call_z"), "other conversations untouched")
     }
 
     @Test

@@ -15,15 +15,21 @@ internal fun loginCommandMd(signInLabel: String, sentinel: String): String =
     |$sentinel
     """.trimMargin() + "\n"
 
-internal fun loginHookScript(
-    loginCommand: String,
-    signInLabel: String,
-    viaBrowser: Boolean,
-    sentinel: String,
+/** Everything the /login hook needs for ONE head — a parameter object because these six always
+ *  travel together and describe a single thing: how this head signs in. */
+internal data class LoginHookSpec(
+    val loginCommand: String,
+    val signInLabel: String,
+    val viaBrowser: Boolean,
+    val sentinel: String,
+    /** Absolute path of this head's login receipt — see LoginOutcomeFile. */
+    val outcomeFile: String,
     /** True when this head can capture a bare token pasted into the prompt box. Decides the whole
      *  shape of /login for an api-key head — see [lead] below. */
-    canCapturePaste: Boolean,
-): String =
+    val canCapturePaste: Boolean,
+)
+
+internal fun loginHookScript(hook: LoginHookSpec): String =
     buildString {
         val d = "$" // keep the shell $ out of Kotlin interpolation
         // WHY THREE WORDINGS (2026-08-01): the api-key branch used to promise "a masked terminal
@@ -34,28 +40,46 @@ internal fun loginHookScript(
         // capture a paste is therefore told the path that actually works, and nothing is spawned.
         val lead =
             when {
-                viaBrowser ->
-                    "Opening your browser to sign in to $signInLabel — finish there, then continue. " +
-                        "If it did not open, run: $loginCommand"
-                canCapturePaste ->
-                    "Paste your $signInLabel API key as your next message. splice stores it to " +
+                hook.viaBrowser ->
+                    "Opening your browser to sign in to ${hook.signInLabel} — finish there, then continue. " +
+                        "If it did not open, run: ${hook.loginCommand}"
+                hook.canCapturePaste ->
+                    "Paste your ${hook.signInLabel} API key as your next message. splice stores it to " +
                         "~/.config/splice/keys.toml (0600) and BLOCKS it before it reaches the model, " +
                         "so it is never sent upstream. Note: the session log on disk still records the " +
-                        "pasted line — for a fully masked entry, run `$loginCommand` in a terminal " +
+                        "pasted line — for a fully masked entry, run `${hook.loginCommand}` in a terminal " +
                         "instead. Then wait."
                 else ->
-                    "This head signs in with an API key. Run `$loginCommand` in a terminal — it asks " +
+                    "This head signs in with an API key. Run `${hook.loginCommand}` in a terminal — it asks " +
                         "for the key with a masked prompt. It cannot be asked for from inside this " +
                         "session."
             }
         appendLine("#!/usr/bin/env bash")
-        appendLine("# NEW (splice): /login interception — route to this head's $signInLabel sign-in,")
+        appendLine("# NEW (splice): /login interception — route to this head's ${hook.signInLabel} sign-in,")
         appendLine("# not Claude Code's disabled Anthropic login. Blocks the model turn.")
         appendLine("input=\"$d(cat)\"")
+        // THE LOGIN RECEIPT (2026-08-01). The sign-in runs detached, so everything it prints is
+        // lost; without this the session never learns whether the login worked. kimi CANNOT be
+        // confirmed in a browser at all (device flow: no redirect target), so the confirmation has
+        // to arrive here — the same in-client status surface opencode and Kilo Code settled on.
+        // Checked on EVERY prompt, not just /login, because the user finishes in the browser and
+        // then types something ordinary.
+        appendLine("receipt=\"${hook.outcomeFile}\"")
+        appendLine("if [ -f \"${d}receipt\" ]; then")
+        appendLine("  msg=\"$d(cat \"${d}receipt\" 2>/dev/null)\"")
+        appendLine("  rm -f \"${d}receipt\"")
+        appendLine("  if [ -n \"${d}msg\" ]; then")
+        append("    printf '%s' \"{\\\"hookSpecificOutput\\\":{\\\"hookEventName\\\":")
+        append("\\\"UserPromptSubmit\\\",\\\"additionalContext\\\":\\\"splice ")
+        append("${hook.signInLabel} login: ${d}msg\\\"}}\"")
+        appendLine()
+        appendLine("    exit 0")
+        appendLine("  fi")
+        appendLine("fi")
         appendLine("case \"${d}input\" in")
-        appendLine("  *$sentinel*|*'\"prompt\":\"/login\"'*|*'\"prompt\": \"/login\"'*)")
+        appendLine("  *${hook.sentinel}*|*'\"prompt\":\"/login\"'*|*'\"prompt\": \"/login\"'*)")
         // Only the browser flow is spawned. A detached api-key login has no TTY and cannot prompt.
-        if (viaBrowser) appendLine("    nohup $loginCommand >/dev/null 2>&1 &")
+        if (hook.viaBrowser) appendLine("    nohup ${hook.loginCommand} >/dev/null 2>&1 &")
         append("    printf '%s' '{\"decision\":\"block\",\"reason\":")
         append("\"$lead\"}'")
         appendLine()

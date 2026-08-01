@@ -12,6 +12,8 @@ import splice.app.LoginSpec
 import splice.app.OAuthLoginFlow
 import splice.app.TopologyLoader
 import splice.core.config.KeyStore
+import splice.core.config.StatePaths
+import splice.core.launch.LoginOutcomeFile
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.topology.ambiguousHeadMessage
@@ -50,6 +52,20 @@ internal suspend fun login(headArg: String?): Boolean {
     }
     val ok = runLoginFlow(headKey, providerKey, provider, topology)
     if (!ok) println("splice: login for '$headKey' did not complete.")
+    // THE RECEIPT (2026-08-01). /login runs this detached, so everything printed above is lost and
+    // the session that asked never learns the result. One line on disk, read back by the head's
+    // /login hook on the next prompt — the only channel that also works for kimi, whose device flow
+    // has no browser redirect to confirm in. Written for BOTH outcomes: "it failed" is the message
+    // a user most needs and least gets today.
+    LoginOutcomeFile.write(
+        StatePaths().stateDir,
+        headKey,
+        if (ok) {
+            "signed in — this session is using the new credentials."
+        } else {
+            "sign-in did not complete. Run `$headKey login` in a terminal to see why."
+        },
+    )
     return ok
 }
 

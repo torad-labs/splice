@@ -66,3 +66,20 @@ contributor license agreement is required.
 SemVer, currently pre-1.0 (`0.x`) — breaking changes may land on a minor bump until 1.0.0.
 The root `package.json` version field itself is owned by a separate dependency-hygiene pass,
 not this document.
+
+## Releasing
+
+The `prod` branch is the release line, and **merging the `main -> prod` PR is the release
+action** — GitHub does the rest, no local command involved:
+
+1. Land a version-bump PR on `main` (all four sites move together: `Versions.kt`
+   `GATEWAY_VERSION`, `bin/splice-launch` `SPLICE_GATEWAY_VERSION`, `package.json`,
+   `package-lock.json`), with the `CHANGELOG.md` cut for the release.
+2. Open the promotion PR, base `prod`, head `main` — in the UI, or `npm run promote` which
+   opens the same PR after a courtesy version preflight. `promotion-check` fails the PR before
+   merge if the promoted version is already tagged (a promotion that would release nothing).
+3. **Merge it with a merge commit** (never squash: squashing collapses main's promoted history
+   into one alien commit on prod). The resulting push fires `release.yml` on `prod`: full gate,
+   build, attestations, and the `vX.Y.Z` tag created at the promoted commit when the draft
+   release publishes. The version is derived from the promoted code, so the tag can never
+   disagree with what shipped.

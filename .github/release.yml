@@ -1,0 +1,32 @@
+# Release-notes shaping for the auto-generated "What's Changed" body
+# (release.yml sets generate_release_notes: true on every published release).
+#
+# Categories key off the labels pr-labeler.yml already applies, so the notes organize
+# themselves with no per-PR effort. Two surfaces, two jobs, on purpose:
+#   - CHANGELOG.md is the CURATED narrative — what changed and why it matters, cut by hand in
+#     the version-bump PR (the v0.2.0 cut is the model);
+#   - the GitHub release notes are the PR-level INDEX — every merged PR since the last tag,
+#     categorized, with the compare link.
+# Bot traffic is excluded: dependabot bumps land under Dependencies via their label when a human
+# PR carries it, but the bots' own PR spam does not belong in release notes.
+changelog:
+  exclude:
+    authors:
+      - dependabot
+      - dependabot[bot]
+      - github-actions[bot]
+    labels:
+      - skip-changelog
+  categories:
+    - title: Gateway
+      labels: [gateway]
+    - title: Web UI
+      labels: [webui]
+    - title: Documentation
+      labels: [documentation]
+    - title: CI & release engineering
+      labels: [ci, release]
+    - title: Dependencies
+      labels: [dependencies]
+    - title: Everything else
+      labels: ["*"]

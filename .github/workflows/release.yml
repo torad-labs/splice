@@ -1,14 +1,38 @@
 name: release
 
+# Two ways in, ONE release identity (the vX.Y.Z tag):
+#
+#   promote:  merge the main -> prod PR (merge commit, never squash). The merge's push fires
+#     this workflow — GitHub generates the release; nobody runs a release command. The version is
+#     DERIVED from the promoted code (bin/splice-launch's SPLICE_GATEWAY_VERSION, the same marker
+#     accept.sh pins against the jar), and the tag is created by the publish step at the promoted
+#     commit — an artifact of promotion, never a second manual pointer that can disagree (fleet's
+#     release-line pattern, minus changesets: splice's versions are hand-paired in code, so the
+#     bump lands on main via PR). `npm run promote` merely OPENS the promotion PR.
+#     Promoting without a version bump fails twice: promotion-check.yml pre-merge, and the
+#     resolve step here at build time.
+#
+#   tag push (the plumbing):  git push origin v0.2.0     — still works, unchanged.
+#
+# The tag created on publish uses the workflow's own GITHUB_TOKEN, and events created with that
+# token do not trigger workflows — so a promotion cannot recursively fire the tag path.
 on:
   push:
     tags:
       - "v*"
+    branches:
+      - prod
 
 permissions: {}
 
+# ONE group for BOTH entry points (review of #86): ref-scoped grouping put a prod promotion
+# (refs/heads/prod) and a manual tag push (refs/tags/vX.Y.Z) in DIFFERENT groups, so the same
+# version could build twice concurrently — each passing its own existence check before the other
+# published, then both publishing competing drafts. Serialized, the loser of either ordering now
+# fails its resolve step inside the critical section: a promotion finds the tag already created,
+# a tag re-push finds the release already published.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
@@ -17,6 +41,8 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - name: checkout without persisted credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -38,6 +64,40 @@ jobs:
           node-version: 24
           cache: npm
 
+      - name: resolve release version
+        id: version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$REF_TYPE" = "tag" ]; then
+            version="${REF_NAME#v}"
+            # The serialized-concurrency partner guard: a tag run whose release already exists is
+            # a re-release attempt (or the losing side of a promotion race) and must stop here,
+            # not upload competing assets. Deliberate re-release means deleting the release first.
+            # Drafts are invisible to this read-scoped token, so a mid-flight failed run can still
+            # be re-run — only a PUBLISHED release refuses.
+            if gh release view "v${version}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "release: v${version} is already published — deliberate re-release requires deleting the release first" >&2
+              exit 1
+            fi
+          else
+            # Promotion path: the promoted CODE is the version authority — the same shim marker
+            # accept.sh compares against the jar, so resolve and accept can never disagree.
+            version="$(awk -F'"' '/^SPLICE_GATEWAY_VERSION="/ { print $2; exit }' bin/splice-launch)"
+            if [ -z "$version" ]; then
+              echo "release: could not read SPLICE_GATEWAY_VERSION from bin/splice-launch" >&2
+              exit 1
+            fi
+            if git ls-remote --exit-code --tags origin "refs/tags/v${version}" >/dev/null 2>&1; then
+              echo "release: tag v${version} already exists — promotion without a version bump" >&2
+              exit 1
+            fi
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "release version: ${version}"
+
       - name: install workspaces
         run: npm ci
 
@@ -52,7 +112,9 @@ jobs:
         run: bash checks/release/stage.sh
 
       - name: accept exact release bundle
-        run: SPLICE_EXPECTED_VERSION="${GITHUB_REF_NAME#v}" bash checks/release/accept.sh
+        env:
+          RESOLVED_VERSION: ${{ steps.version.outputs.version }}
+        run: SPLICE_EXPECTED_VERSION="$RESOLVED_VERSION" bash checks/release/accept.sh
 
       - name: transfer accepted bundle to publisher
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -64,6 +126,8 @@ jobs:
 
   publish:
     needs: build
+    # The build job resolved the ONE version both paths share; the tag is created from it here,
+    # at exactly the commit that was gated, built, and attested.
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -97,6 +161,10 @@ jobs:
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2 # zizmor: ignore[superfluous-actions]
         with:
           draft: true
+          # Explicit on BOTH paths: on a prod promotion there is no tag yet — it is created when
+          # the draft publishes, at the exact SHA the build job gated and attested.
+          tag_name: v${{ needs.build.outputs.version }}
+          target_commitish: ${{ github.sha }}
           fail_on_unmatched_files: true
           generate_release_notes: true
           files: |
@@ -114,4 +182,5 @@ jobs:
       - name: publish only after every upload and attestation succeeded
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release edit "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --draft=false
+          RELEASE_TAG: v${{ needs.build.outputs.version }}
+        run: gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false

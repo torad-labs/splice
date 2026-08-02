@@ -162,7 +162,13 @@ function tailLog(key, tailN) {
     const lines = readFileSync(path, 'utf8').split('\n').filter(Boolean);
     return { key, path, lines: lines.slice(-tailN) };
   } catch (err) {
-    return { key, path, lines: [], note: String(err?.message || err) };
+    // Detail to stderr, generic to the client (CodeQL js/stack-trace-exposure, alert 1). This is
+    // the same fix dashboard.mjs already carries; these two log-tail sites were missed by it.
+    // The reflected text is a real leak, not just a query heuristic: a readFileSync failure
+    // reports errno plus the absolute path verbatim. `path` is returned deliberately as part of
+    // LogsPayload, but the FAILURE MODE of the host filesystem is not the client's business.
+    process.stderr.write(`[control] log tail failed for ${path}: ${err?.stack || err?.message || err}\n`);
+    return { key, path, lines: [], note: 'log unavailable — see the daemon log' };
   }
 }
 

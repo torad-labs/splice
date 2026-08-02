@@ -12,19 +12,37 @@ prose included. Three separate ways a "comment" has broken scanning, all in PR #
 | 2 | A bare `#` separator | An unanchored regex matching any hit *containing* `#` — silently exempted every credential in a shell/Python/YAML/TOML comment, repo-wide. |
 | 3 | Unbalanced `(` in prose | Made the whole file an **invalid** pattern set, so `grep -vEf` errors instead of filtering. |
 
-None was caught by review. All three are caught by a planted canary in under a second, which is
-why the file is now patterns-only and verified mechanically.
+None was caught by review, and hazards 1 and 2 landed in the same file in the same PR hours apart:
+the first was fixed as an instance, so the generator re-derived the class. That is why the answer
+below is a generator rather than another checker.
 
-## Rules
+## The file is GENERATED
 
-1. **No blank lines.** An empty regex matches every hit and disables the scan while CI stays green.
-2. **Every line anchored.** Prose lines start `^#`; exemptions are anchored `^`…`$`. A hit always
-   arrives from `grep -nIE` as `<line>:<content>`, so it begins with a **digit** — a `^#` line can
-   therefore never match one, which is what makes it inert.
-3. **Every line a valid ERE.** Balanced parens and brackets. Prefer prose with no metacharacters.
-4. **Keep prose out.** Add reasoning to this README instead. The file should stay near-empty.
-5. **Never verify by eye.** Run `bash checks/secret-scan-allow-selftest.sh` after any edit; it is
-   wired into `npm run gate`.
+`secret-scan-allow.txt` is emitted from **`secret-scan-allow.toml`** by
+`checks/gen-secret-scan-allow.py`. Do not edit the `.txt`.
+
+That is the fix for all three hazards above, and it is a different KIND of fix: they are now
+impossible to express rather than merely detected (brain concept #924, "you make drift not
+compile"). Hazards 1 and 2 landed in the same file in the same PR hours apart precisely because
+the first was fixed as an instance, so the generator re-derived the class.
+
+| hazard | why it can no longer be written |
+|---|---|
+| unanchored entry | the generator owns `^`...`$`; a `pattern` carrying its own anchors is refused |
+| prose as a live regex | there is no prose slot in the `.txt`; `reason` lives in the TOML and never reaches grep |
+| invalid ERE | generation fails, validated against **grep** (the actual consumer, not Python's `re`) |
+| hand-edited `.txt` | `--check` regenerates and diffs; the gate runs it |
+
+An exemption also cannot be added without a `reason` — an unexplained one is not reviewable.
+
+```bash
+python3 checks/gen-secret-scan-allow.py          # regenerate
+python3 checks/gen-secret-scan-allow.py --check  # what the gate runs
+bash checks/secret-scan-allow-selftest.sh        # canaries over the generated output
+```
+
+The canary self-test stays as defence in depth: it verifies the generator's OUTPUT, so a bug in
+the generator itself is still caught.
 
 ## The current entry
 

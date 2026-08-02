@@ -72,6 +72,7 @@ run "hook tests"     npm run --silent test:hooks
 run "campaign walls"  npm run --silent gate:campaign
 run "campaign selftest" npm run --silent gate:campaign:selftest
 run "config guard"   bash checks/config-guard.sh
+run "secret-scan allowlist" bash checks/secret-scan-allow-selftest.sh
 run "server tests"   npm test -w server
 run "webui lint"     npm run lint -w webui
 run "webui tests"    npm test -w webui

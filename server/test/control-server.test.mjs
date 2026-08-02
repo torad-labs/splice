@@ -142,6 +142,35 @@ test('GET / serves the dashboard (html when built)', async () => {
   assert.ok(status === 200 || status === 503, 'committed dist → 200, otherwise 503');
 });
 
+// WALL for CodeQL js/stack-trace-exposure (alert 1) — the control-plane twin of the mgmt case in
+// mgmt.test.mjs. tailLog() used to return `String(err?.message || err)` as the response note, so a
+// readFileSync failure reflected errno and the absolute host path to the client. Both sites were
+// missed when dashboard.mjs was fixed for this class; both are pinned now.
+//
+// EISDIR is forced by making the log path a DIRECTORY, which drives the exact catch branch the
+// CodeQL flow ran through.
+test('GET /api/logs: a read failure does not reflect the exception text', async () => {
+  const { logsDir, getConfig } = await import('../src/config.mjs');
+  const { proxyLogName } = await import('../src/mgmt/api.mjs');
+  const { HEAD_REGISTRY } = await import('../launcher/heads.mjs');
+  const { rmSync } = await import('node:fs');
+
+  const entry = HEAD_REGISTRY.codex;
+  const logPath = join(logsDir(), proxyLogName(entry.name, getConfig()[entry.portKey]));
+  mkdirSync(logPath, { recursive: true });
+  try {
+    const { status, json } = await call('GET', '/api/logs/codex?tail=10');
+    assert.equal(status, 200);
+    assert.deepEqual(json.lines, []);
+    assert.ok(json.note, 'a failed read still reports SOMETHING to the operator');
+    for (const leak of ['EISDIR', 'illegal operation', logPath, logsDir()]) {
+      assert.ok(!json.note.includes(leak), `note leaked exception detail (${leak}): ${json.note}`);
+    }
+  } finally {
+    rmSync(logPath, { recursive: true, force: true });
+  }
+});
+
 test('unknown /api route → 404', async () => {
   assert.equal((await call('GET', '/api/nope')).status, 404);
 });

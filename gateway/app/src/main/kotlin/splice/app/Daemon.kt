@@ -738,7 +738,12 @@ public class Daemon(
             loginCommand = signIn.command,
             signInLabel = signIn.label,
             signInViaBrowser = signIn.viaBrowser,
-            tokenCapture = signIn.tokenCapture,
+            // ONLY while the key is MISSING (review of #75). The capture hook swallows a bare
+            // sk-or-… message and stores it; on a head that is already configured that is pure
+            // downside — an accidental paste (or discussing a key as the whole message) silently
+            // OVERWRITES a working credential and the message never reaches the model. The
+            // advertiser below was already gated this way; the hook that acts on the paste was not.
+            tokenCapture = signIn.tokenCapture?.takeIf { !keyPresent },
             // The receipt path MUST match what LoginCommand writes (same StatePaths, same head
             // key), or a detached sign-in reports into a file nothing reads.
             loginOutcomeFile = LoginOutcomeFile.pathFor(StatePaths().stateDir, key).toString(),

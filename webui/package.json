@@ -21,7 +21,7 @@
     "@types/react-dom": "^19.0.0",
     "@typescript/native": "npm:typescript@^7.0.2",
     "@vitejs/plugin-react": "^6.0.4",
-    "eslint": "^10.7.0",
+    "eslint": "^10.8.0",
     "eslint-import-resolver-typescript": "^4.4.5",
     "eslint-plugin-boundaries": "^7.1.0",
     "typescript": "npm:@typescript/typescript6@^6.0.2",

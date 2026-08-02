@@ -20,7 +20,12 @@ cd "$ROOT"
 
 git fetch -q origin
 
-version="$(git show origin/main:bin/splice-launch | awk -F'"' '/^SPLICE_GATEWAY_VERSION="/ { print $2; exit }')"
+# Pin the SHA the version is read from — everything below (display, confirmation, push) refers to
+# THIS commit, so what the operator confirms is exactly what ships (review of #86: the first-
+# promotion push resolved origin/main at push time, after an interactive prompt of unbounded
+# duration, so main advancing mid-prompt could silently change what got promoted).
+main_sha="$(git rev-parse origin/main)"
+version="$(git show "$main_sha:bin/splice-launch" | awk -F'"' '/^SPLICE_GATEWAY_VERSION="/ { print $2; exit }')"
 [ -n "$version" ] || { echo "promote: could not read SPLICE_GATEWAY_VERSION from origin/main" >&2; exit 1; }
 
 if git ls-remote --exit-code --tags origin "refs/tags/v${version}" >/dev/null 2>&1; then
@@ -29,27 +34,49 @@ if git ls-remote --exit-code --tags origin "refs/tags/v${version}" >/dev/null 2>
   exit 1
 fi
 
-existing="$(gh pr list --base prod --head main --state open --json url --jq '.[0].url // empty')"
-if [ -n "$existing" ]; then
-  echo "promote: a promotion PR is already open — merge it (merge commit, not squash): $existing"
-  exit 0
-fi
-
 # prod is created on first use; a PR needs the base ref to exist. Seeding it at main's tip is a
 # no-op promotion (same tree, no release fires until the NEXT prod push differs... it does fire —
 # a push event is a push event). So seed from the CURRENT PROD-LESS state only via the API ref
 # create, which is a push of main's tip and WILL fire release.yml once, releasing v<version>.
 # That is the correct first promotion, stated rather than hidden.
 if ! git ls-remote --exit-code origin refs/heads/prod >/dev/null 2>&1; then
-  echo "promote: prod does not exist yet. Creating it AT origin/main IS the first promotion:"
-  echo "         release.yml will fire and publish v${version}."
+  echo "promote: prod does not exist yet. Creating it IS the first promotion:"
+  echo "         release.yml will fire and publish v${version} from ${main_sha}."
   if [ "${PROMOTE_YES:-0}" != "1" ]; then
     printf 'Type the version to confirm the FIRST promotion (%s): ' "$version"
-    read -r answer
-    [ "$answer" = "$version" ] || { echo "promote: aborted (typed '$answer')" >&2; exit 1; }
+    # `|| answer=""`: on EOF (non-tty, piped stdin) read fails and set -e would exit SILENTLY
+    # before the abort message — turn it into the ordinary mismatch abort instead.
+    read -r answer || answer=""
+    [ "$answer" = "$version" ] || { echo "promote: aborted (typed '${answer:-<eof>}')" >&2; exit 1; }
   fi
-  git push origin "$(git rev-parse origin/main):refs/heads/prod"
-  echo "promote: prod created — release.yml is publishing v${version}."
+  # Freshness check AT the point of creation: the confirmation prompt is unbounded, so require
+  # that main still points at the confirmed SHA before pushing it. The push itself uses the
+  # PINNED sha — never a re-resolved ref — so a race can only abort, never promote something the
+  # operator did not see.
+  git fetch -q origin
+  if [ "$(git rev-parse origin/main)" != "$main_sha" ]; then
+    echo "promote: main moved while you were confirming (now $(git rev-parse --short origin/main)," >&2
+    echo "         confirmed ${main_sha}). Nothing pushed — re-run to promote the new tip." >&2
+    exit 1
+  fi
+  git push origin "$main_sha:refs/heads/prod"
+  echo "promote: prod created at ${main_sha} — release.yml is publishing v${version}."
+  exit 0
+fi
+
+# Everything below needs the GitHub CLI. Guarded EXPLICITLY: under `set -e` a failing command
+# substitution kills the script with no message at all — the sandbox test found exactly that
+# (a broken gh made promote.sh exit 1 in complete silence).
+command -v gh >/dev/null 2>&1 || {
+  echo "promote: the GitHub CLI (gh) is required to open the promotion PR — https://cli.github.com" >&2
+  exit 1
+}
+existing="$(gh pr list --base prod --head main --state open --json url --jq '.[0].url // empty')" || {
+  echo "promote: gh failed listing PRs — check 'gh auth status'" >&2
+  exit 1
+}
+if [ -n "$existing" ]; then
+  echo "promote: a promotion PR is already open — merge it (merge commit, not squash): $existing"
   exit 0
 fi
 

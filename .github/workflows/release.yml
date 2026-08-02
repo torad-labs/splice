@@ -25,8 +25,14 @@ on:
 
 permissions: {}
 
+# ONE group for BOTH entry points (review of #86): ref-scoped grouping put a prod promotion
+# (refs/heads/prod) and a manual tag push (refs/tags/vX.Y.Z) in DIFFERENT groups, so the same
+# version could build twice concurrently — each passing its own existence check before the other
+# published, then both publishing competing drafts. Serialized, the loser of either ordering now
+# fails its resolve step inside the critical section: a promotion finds the tag already created,
+# a tag re-push finds the release already published.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release
   cancel-in-progress: false
 
 jobs:
@@ -63,9 +69,19 @@ jobs:
         env:
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           if [ "$REF_TYPE" = "tag" ]; then
             version="${REF_NAME#v}"
+            # The serialized-concurrency partner guard: a tag run whose release already exists is
+            # a re-release attempt (or the losing side of a promotion race) and must stop here,
+            # not upload competing assets. Deliberate re-release means deleting the release first.
+            # Drafts are invisible to this read-scoped token, so a mid-flight failed run can still
+            # be re-run — only a PUBLISHED release refuses.
+            if gh release view "v${version}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "release: v${version} is already published — deliberate re-release requires deleting the release first" >&2
+              exit 1
+            fi
           else
             # Promotion path: the promoted CODE is the version authority — the same shim marker
             # accept.sh compares against the jar, so resolve and accept can never disagree.

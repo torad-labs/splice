@@ -1,26 +1,25 @@
 #!/usr/bin/env bash
-# Promote main -> prod: the one release action. `npm run promote`.
+# Open the promotion PR (main -> prod). `npm run promote`, or skip this entirely and open the
+# same PR in the GitHub UI — the script is convenience, not mechanism.
 #
-# The prod branch is the release line (fleet's pattern): pushing it fires release.yml, which
-# derives the version FROM THE PROMOTED CODE (bin/splice-launch's SPLICE_GATEWAY_VERSION — the
-# same marker accept.sh pins against the jar), gates, builds, attests, and creates the vX.Y.Z tag
-# at the promoted commit when the draft publishes. The tag is an ARTIFACT of promotion, never a
-# second manual pointer that can disagree with it.
+# THE MECHANISM IS GITHUB-NATIVE: merging the main -> prod PR is the promotion. The push that
+# merge produces fires release.yml on prod, which derives the version FROM THE PROMOTED CODE
+# (bin/splice-launch's SPLICE_GATEWAY_VERSION — the same marker accept.sh pins against the jar),
+# re-runs the full gate, builds, attests, and creates the vX.Y.Z tag at the promoted commit when
+# the draft release publishes. Nothing local touches prod, and no command "does the release".
 #
-# This script promotes the REMOTE main, not the local checkout — a promotion must never depend on
-# (or accidentally include) local state. It refuses when:
-#   - prod exists but is not an ancestor of main (someone committed to prod directly; prod is a
-#     pure fast-forward of main by construction, so a diverged prod is a broken invariant, not a
-#     merge problem to paper over);
-#   - the promoted version's tag already exists (promotion without a version bump releases
-#     nothing — bump on main first, like the v0.2.0 PR).
+# Merge the promotion PR with a MERGE COMMIT, never squash: squashing collapses all of main's
+# promoted history into one alien commit on prod and breaks the next promotion's diff.
+#
+# The forgot-to-bump case is guarded twice, both server-side: promotion-check.yml fails the PR
+# BEFORE merge when the version's tag already exists, and release.yml's resolve step refuses
+# again at build time. The preflight here is a courtesy third look, not the net.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 git fetch -q origin
 
-main_sha="$(git rev-parse origin/main)"
 version="$(git show origin/main:bin/splice-launch | awk -F'"' '/^SPLICE_GATEWAY_VERSION="/ { print $2; exit }')"
 [ -n "$version" ] || { echo "promote: could not read SPLICE_GATEWAY_VERSION from origin/main" >&2; exit 1; }
 
@@ -30,29 +29,31 @@ if git ls-remote --exit-code --tags origin "refs/tags/v${version}" >/dev/null 2>
   exit 1
 fi
 
-if git ls-remote --exit-code origin refs/heads/prod >/dev/null 2>&1; then
-  prod_sha="$(git ls-remote origin refs/heads/prod | cut -f1)"
-  if ! git merge-base --is-ancestor "$prod_sha" "$main_sha"; then
-    echo "promote: prod ($prod_sha) is not an ancestor of main — it has diverged." >&2
-    echo "         prod is a pure fast-forward of main; inspect how it diverged before forcing anything." >&2
-    exit 1
+existing="$(gh pr list --base prod --head main --state open --json url --jq '.[0].url // empty')"
+if [ -n "$existing" ]; then
+  echo "promote: a promotion PR is already open — merge it (merge commit, not squash): $existing"
+  exit 0
+fi
+
+# prod is created on first use; a PR needs the base ref to exist. Seeding it at main's tip is a
+# no-op promotion (same tree, no release fires until the NEXT prod push differs... it does fire —
+# a push event is a push event). So seed from the CURRENT PROD-LESS state only via the API ref
+# create, which is a push of main's tip and WILL fire release.yml once, releasing v<version>.
+# That is the correct first promotion, stated rather than hidden.
+if ! git ls-remote --exit-code origin refs/heads/prod >/dev/null 2>&1; then
+  echo "promote: prod does not exist yet. Creating it AT origin/main IS the first promotion:"
+  echo "         release.yml will fire and publish v${version}."
+  if [ "${PROMOTE_YES:-0}" != "1" ]; then
+    printf 'Type the version to confirm the FIRST promotion (%s): ' "$version"
+    read -r answer
+    [ "$answer" = "$version" ] || { echo "promote: aborted (typed '$answer')" >&2; exit 1; }
   fi
-  span="$(git rev-list --count "$prod_sha".."$main_sha")"
-else
-  prod_sha="(new branch)"
-  span="all history"
+  git push origin "$(git rev-parse origin/main):refs/heads/prod"
+  echo "promote: prod created — release.yml is publishing v${version}."
+  exit 0
 fi
 
-echo "promote: main -> prod"
-echo "  releases:  v${version}"
-echo "  commit:    ${main_sha}"
-echo "  prod was:  ${prod_sha}  (${span} commits promoted)"
-if [ "${PROMOTE_YES:-0}" != "1" ]; then
-  printf 'Type the version to confirm (%s): ' "$version"
-  read -r answer
-  [ "$answer" = "$version" ] || { echo "promote: aborted (typed '$answer')" >&2; exit 1; }
-fi
-
-git push origin "$main_sha:refs/heads/prod"
-echo "promote: pushed — release.yml is now gating, building, attesting, and publishing v${version}."
-echo "         Watch it: gh run watch \$(gh run list --workflow=release.yml --limit 1 --json databaseId --jq '.[0].databaseId')"
+gh pr create --base prod --head main \
+  --title "chore(release): promote main to prod (v${version})" \
+  --body "$(printf 'Merging this PR IS the promotion: the resulting push to prod fires release.yml, which re-gates, builds, attests, and publishes **v%s** with the tag created at the promoted commit.\n\nMerge with a **merge commit**, not squash.' "$version")"
+echo "promote: promotion PR opened — merging it releases v${version}."

@@ -1,0 +1,37 @@
+# Pre-merge guard for promotion PRs (main -> prod): fail BEFORE the merge when the promotion
+# would release nothing — i.e. the promoted code's version is already tagged. The same refusal
+# exists in release.yml's resolve step (defence in depth), but a post-merge failure arrives after
+# prod has already moved; this one arrives while the PR is still open and fixable.
+name: promotion-check
+
+on:
+  pull_request:
+    branches: [prod]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: promotion-check-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  version-not-yet-released:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: the promoted version must not already be tagged
+        run: |
+          version="$(awk -F'"' '/^SPLICE_GATEWAY_VERSION="/ { print $2; exit }' bin/splice-launch)"
+          if [ -z "$version" ]; then
+            echo "::error::could not read SPLICE_GATEWAY_VERSION from bin/splice-launch"
+            exit 1
+          fi
+          if git ls-remote --exit-code --tags origin "refs/tags/v${version}" >/dev/null 2>&1; then
+            echo "::error::tag v${version} already exists — this promotion would release nothing. Bump the version on main first (Versions.kt, bin/splice-launch, package.json, package-lock.json move together)."
+            exit 1
+          fi
+          echo "promotion releases v${version} on merge"

@@ -2,14 +2,15 @@ name: release
 
 # Two ways in, ONE release identity (the vX.Y.Z tag):
 #
-#   promote (the porcelain):  git push origin main:prod   — `npm run promote`
-#     The version is DERIVED from the promoted code (bin/splice-launch's
-#     SPLICE_GATEWAY_VERSION, the same marker accept.sh pins against the jar), and the tag is
-#     created by the publish step at the promoted commit. Promotion is one action; the tag is an
-#     artifact of it, never a second manual pointer that can disagree (fleet's release-line
-#     pattern, minus changesets: splice's versions are hand-paired in code, so the bump lands on
-#     main via PR and prod stays a pure fast-forward of main).
-#     Promoting without a version bump fails loudly at the resolve step: the tag already exists.
+#   promote:  merge the main -> prod PR (merge commit, never squash). The merge's push fires
+#     this workflow — GitHub generates the release; nobody runs a release command. The version is
+#     DERIVED from the promoted code (bin/splice-launch's SPLICE_GATEWAY_VERSION, the same marker
+#     accept.sh pins against the jar), and the tag is created by the publish step at the promoted
+#     commit — an artifact of promotion, never a second manual pointer that can disagree (fleet's
+#     release-line pattern, minus changesets: splice's versions are hand-paired in code, so the
+#     bump lands on main via PR). `npm run promote` merely OPENS the promotion PR.
+#     Promoting without a version bump fails twice: promotion-check.yml pre-merge, and the
+#     resolve step here at build time.
 #
 #   tag push (the plumbing):  git push origin v0.2.0     — still works, unchanged.
 #

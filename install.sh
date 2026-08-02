@@ -371,6 +371,33 @@ else
   echo "splice: the ✗/! checks above are next steps with their fixes — the install itself landed."
 fi
 
+# Migration notice for the claudeor -> claude-openrouter rename. `install --all` links the
+# topology's commands but never PRUNES one whose name disappeared, so an upgrading user keeps a
+# `claudeor` symlink that resolves to no head. Deleting it here is not our call — this bin dir
+# holds links we did not create — so detect it and print the one command that clears it. Scoped to
+# a symlink pointing at OUR launch shim: a user's unrelated `claudeor` script is never mentioned.
+# FAIL CLOSED (review of #81): BSD readlink (macOS, which install.sh supports — see the platform
+# gate above) has no -f. With errors suppressed BOTH substitutions became empty strings, which
+# compare EQUAL, so the notice fired for ANY claudeor symlink — including one the user made
+# themselves. Resolving to nothing must mean "say nothing", never "assume it is ours".
+resolve_link() {
+  _r="$(readlink -f "$1" 2>/dev/null)" || return 1
+  [ -n "$_r" ] || return 1
+  printf '%s\n' "$_r"
+}
+stale_claudeor=""
+if [ -L "$BIN_DIR/claudeor" ]; then
+  _old="$(resolve_link "$BIN_DIR/claudeor")" || _old=""
+  _shim="$(resolve_link "$SHARE_DIR/splice-launch")" || _shim=""
+  [ -n "$_old" ] && [ -n "$_shim" ] && [ "$_old" = "$_shim" ] && stale_claudeor=1
+fi
+if [ -n "$stale_claudeor" ]; then
+  echo
+  echo "splice: the OpenRouter head's command is now 'claude-openrouter' (was 'claudeor')."
+  echo "        The old link is stale — it no longer resolves to a head. Remove it with:"
+  echo "            rm $BIN_DIR/claudeor"
+fi
+
 case ":$PATH:" in
   *":$BIN_DIR:"*)
     echo

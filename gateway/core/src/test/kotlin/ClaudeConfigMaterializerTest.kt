@@ -218,6 +218,36 @@ class ClaudeConfigMaterializerTest {
         assertTrue(dir.resolve("commands").isSymbolicLink()) // stays a plain shared symlink
     }
 
+    /** THE CAPTURE HOOK IS FOR AN UNCONFIGURED HEAD ONLY (review of #75). On a head whose key is
+     *  already set the hook is pure downside: it swallows any bare `sk-or-…` message, silently
+     *  OVERWRITES a working credential, and the message never reaches the model — so merely
+     *  DISCUSSING a key by pasting one would break the session's auth. The daemon now passes
+     *  tokenCapture only while the key is missing; this pins the materializer side of that. */
+    @Test
+    fun `no capture hook is installed when tokenCapture is absent`(@TempDir tmp: Path) {
+        seedGlobal(tmp)
+        val dir = tmp.resolve(".claude-openrouter-configured")
+        materializer(tmp).materialize(
+            MaterializeSpec(
+                configDir = dir,
+                policy = allPolicy,
+                availableModelIds = listOf("m"),
+                defaultModel = "m",
+                modelOptionsCache = optionsCache,
+                statuslineCommand = statusline,
+                loginCommand = "claude-openrouter login",
+                signInLabel = "OpenRouter",
+                signInViaBrowser = false,
+                tokenCapture = null, // the daemon withholds it once the key resolves
+            ),
+        )
+        assertFalse(
+            dir.resolve("splice-key-capture-hook.sh").toFile().exists(),
+            "a configured head must not install the paste-capture hook",
+        )
+        assertTrue(dir.resolve("splice-login-hook.sh").toFile().exists(), "/login itself still works")
+    }
+
     /** EVERY head keeps /login. A head without a known token shape cannot capture a paste, but it
      *  still HAS a sign-in path (`<command> login` in a terminal) — so /login must still be wired
      *  and must say so. Removing it for those heads was a regression this pins against. */

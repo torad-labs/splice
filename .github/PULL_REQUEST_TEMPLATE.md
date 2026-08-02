@@ -1,6 +1,12 @@
-<!-- TITLE must be Conventional Commits, and CI enforces it (required check `lint`):
-     feat fix docs test build ci chore perf refactor revert release codex
-     Scope optional: fix(walls): ...  Any other type FAILS and blocks the merge. -->
+<!-- TITLE must be Conventional Commits; the ORG gate enforces it (check `title`).
+     The allowed types are NOT repeated here on purpose — a second copy is how this
+     repo ended up with two enforcers that disagreed. There is one list, in
+     checks/pr-title.sh, and `npm run gate` checks your commit subject against it.
+
+       bash checks/pr-title.sh "feat(scope): subject"   # check a title before opening
+
+     Do NOT infer the convention from `git log`: most of this repo's history predates
+     the gate and uses types that fail it. -->
 
 ## What / why
 

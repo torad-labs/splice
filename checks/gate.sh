@@ -72,6 +72,7 @@ run "hook tests"     npm run --silent test:hooks
 run "campaign walls"  npm run --silent gate:campaign
 run "campaign selftest" npm run --silent gate:campaign:selftest
 run "config guard"   bash checks/config-guard.sh
+run "pr title"       bash checks/pr-title.sh
 # Two layers, deliberately. The generator makes the hazards inexpressible (#924); the canary
 # selftest is defence in depth over its OUTPUT, so a bug in the generator itself still gets caught.
 run "secret-scan allowlist generated" python3 checks/gen-secret-scan-allow.py --check

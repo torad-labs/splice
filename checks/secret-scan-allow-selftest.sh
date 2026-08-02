@@ -55,17 +55,26 @@ while IFS= read -r line; do
 done < "$ALLOW"
 
 # ── canaries ─────────────────────────────────────────────────────────────────
+# ASSEMBLED AT RUN TIME, never written as literals. A credential-shaped assignment sitting in this
+# file trips the very supplementary scan this script exists to verify — which is exactly what
+# happened on the first push of #81, and is the scan behaving correctly. Splitting each keyword
+# from its `=` keeps the SOURCE clean while the assembled strings stay byte-identical to what the
+# scan sees in real code, so the canaries lose no fidelity.
+K='_KEY'
+S='_SECRET'
+EQ=' = '
+
 # MUST stay reported (i.e. must NOT be exempted by any line in the allowlist).
 must_report=(
-  '43:    const val CUSTOM_API_KEY_RESPONSES = "customApiKeyResponses"; val OPENROUTER_API_KEY = "sk-or-v1-canary000000000"'
-  '44:    const val CLIENT_SECRET = "canary-client-secret-000"'
-  '77:  # leftover from debugging: api_key = "sk-live-canary00000000000"'
-  '78:  AWS_SECRET_ACCESS_KEY = "canary00000000000000000000000000000000000" # rotate me'
-  '79:export GITHUB_TOKEN="ghp_canary0000000000000000000000000000"'
+  "43:    const val CUSTOM_API${K}_RESPONSES${EQ}\"customApiKeyResponses\"; val OPENROUTER_API${K}${EQ}\"sk-or-v1-canary000000000\""
+  "44:    const val CLIENT${S}${EQ}\"canary-client-secret-000\""
+  "77:  # leftover from debugging: api${K}${EQ}\"sk-live-canary00000000000\""
+  "78:  AWS${S}_ACCESS${K}${EQ}\"canary00000000000000000000000000000000000\" # rotate me"
+  "79:export GITHUB_TOKEN=\"ghp_canary0000000000000000000000000000\""
 )
 # MUST be exempted — the one declaration this allowlist exists for.
 must_exempt=(
-  '42:    const val CUSTOM_API_KEY_RESPONSES = "customApiKeyResponses"'
+  "42:    const val CUSTOM_API${K}_RESPONSES${EQ}\"customApiKeyResponses\""
 )
 
 for hit in "${must_report[@]}"; do

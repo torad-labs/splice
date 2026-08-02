@@ -39,9 +39,22 @@ if [ -z "$title" ]; then
   # learned it). A merge commit carries no authored subject to judge, so skip rather than invent a
   # verdict: the ORG gate validates the real PR title in CI, and this script's job is the LOCAL
   # preflight it cannot do.
-  # `--parents` prints "<sha> <parent>..."; >2 words means 2+ parents, i.e. a merge. NB: adding
-  # `--count` here silently defeats it — it replaces the output with a bare "1" and the branch
-  # never fires (shipped that way for one commit).
+  #
+  # TWO detections, because each has a blind spot the other covers (both failures were SHIPPED,
+  # not hypothesized):
+  #   1. GITHUB_REF=refs/pull/N/merge — Actions names the synthetic merge ref explicitly. Needed
+  #      because actions/checkout defaults to fetch-depth:1, and a SHALLOW clone grafts the tip
+  #      commit PARENTLESS: `rev-list --parents` and `%P` both report zero parents (verified
+  #      against a --depth 1 clone), so no git-side merge detection can fire there at all.
+  #   2. The parent count, for real merge tips outside Actions where GITHUB_REF is unset.
+  #      `--parents` prints "<sha> <parent>..."; >2 words = 2+ parents. NB: adding `--count`
+  #      silently defeats it — it replaces the output with a bare "1" (shipped that way once).
+  case "${GITHUB_REF:-}" in
+    refs/pull/*/merge)
+      echo "  pr title: PR merge ref, skipped (the org gate validates the PR title in CI)"
+      exit 0
+      ;;
+  esac
   if [ "$(git rev-list --parents -n1 HEAD 2>/dev/null | wc -w)" -gt 2 ]; then
     echo "  pr title: merge commit, skipped (the org gate validates the PR title in CI)"
     exit 0

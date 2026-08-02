@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## splice v0.2.0 — reasoning continuity, the cache-drain fix, and every-head login - 2026-08-02
 
 ### Changed — BREAKING
 
@@ -11,6 +11,31 @@
 
 ### Added
 
+- **Gateway-held reasoning cache** (codex provider, default on): each turn's
+  `reasoning.encrypted_content` envelopes are held in memory per conversation and replayed on tool
+  round-trips, restoring the reasoning continuity the codex CLI gets natively. Retention is
+  activity-based with hard caps (256 rounds / 64 MB across a head, whole-conversation eviction);
+  the envelopes are opaque ciphertext, never written to disk, and scoped to their conversation so
+  concurrent sessions can never receive each other's. `quirks = { reasoning_cache = false }`
+  disables it. Documented in SECURITY.md.
+- **Deferred tool surface**: responses-dialect heads advertise a small eager slice of the tool
+  surface and defer the rest behind a gateway-answered `tool_search` — the model asks, the gateway
+  answers from the deferred inventory, and the continuation round is invisible to the client. Cuts
+  tens of KB from every upstream request; across a full daemon log, well under 1% of turns needed a
+  search round.
+- **Responses WebSocket transport** (opt-in, `websocket = true`, default off): rides the upstream
+  v2 WebSocket with `previous_response_id` chaining, sending per-round deltas instead of the full
+  replay. Cuts wire bytes and prefix drift. Measured NOT to reduce billed input tokens — the
+  receipt (`gateway/spikes/results/responses-websocket.md`) is explicit — so this is a latency and
+  robustness lever, not a quota one.
+- **Mid-stream re-anchoring**: a turn torn by a provider brownout after frames were already
+  forwarded is re-anchored upstream and continued instead of failed.
+- **Turn-scoped summary dedup**, and continuation rounds no longer re-request reasoning summaries:
+  detailed reasoning on every round with zero duplicated summary text.
+- **Loop guard**: a circuit breaker for the identical-failed-tool-call pathology, which previously
+  burned rounds repeating a call that could never succeed.
+- **API-key store and token capture** for api-key heads: `splice key`, and paste-to-store during
+  `/login` for providers whose token shape splice knows (today: OpenRouter).
 - `/login` now reports its outcome back INTO the session. The sign-in runs detached, so everything
   it printed was lost and the session never learned whether it worked; it writes a one-line receipt
   that the head's `/login` hook reads and consumes on the next prompt. This is the only channel
@@ -24,6 +49,15 @@
 
 ### Fixed
 
+- **The prompt-cache drain.** The reasoning cache expired envelopes on ACTIVE conversations, which
+  rewrote the replayed prompt prefix mid-conversation and invalidated the provider's prefix cache
+  turn after turn — measured at 350,920,932 wasted input tokens across 7,056 turns in one window,
+  a 66.6% hit rate against 98.0% (grok) and 96.3% (kimi) on the same daemon
+  (`gateway/spikes/results/prompt-cache-drain.md`). Envelopes now expire wholesale on idle
+  conversations only; the measured hit rate recovered to ~90%.
+- responses-lite turns send `tool_choice=auto` — fixes broken tool-calling on gpt-5.6.
+- `tool_search_call.arguments` is emitted as a JSON object, not a string.
+- Catalog membership recognizes `[1m]`-suffixed models — unbreaks kimi k3.
 - The paste-capture hook is installed ONLY while an api-key head's key is missing. On a configured
   head it was pure downside: a bare `sk-or-…` message was swallowed and stored, silently
   overwriting a working credential, and the message never reached the model — so merely discussing
@@ -48,8 +82,12 @@
   gets the in-session paste path; one it does not gets pointed at `<command> login` in a terminal,
   with the reason stated. Capture patterns stay deliberately one-provider-at-a-time (today:
   OpenRouter) — that scoping applies to CAPTURE, never to whether `/login` exists.
-
-## Unreleased
+- The frozen migration oracle's `--check` mode never compared against the committed fixtures, so
+  no behaviour drift could fail it despite being wired as a verification gate. It now diffs fixture
+  bytes, the vendored mock's checksum, and the scenario roster in both directions.
+- Three ast-grep walls were narrower than their own messages claimed: the cancellation wall
+  accepted a type check without the rethrow it demands; the `pkill` wall fired on unrelated string
+  concatenation in exec arguments; the silent-`Result`-collapse wall missed `var` bindings.
 
 ### Security
 
@@ -76,15 +114,16 @@
 - The `/grant` installer no longer reports a repo carrying the pre-signature gate as already
   installed; it refuses loudly rather than silently leaving a forgeable gate in place. Re-running
   it also no longer revokes an active grant out from under the operator.
-
-### Fixed
-
-- The frozen migration oracle's `--check` mode never compared against the committed fixtures, so
-  no behaviour drift could fail it despite being wired as a verification gate. It now diffs fixture
-  bytes, the vendored mock's checksum, and the scenario roster in both directions.
-- Three ast-grep walls were narrower than their own messages claimed: the cancellation wall
-  accepted a type check without the rethrow it demands; the `pkill` wall fired on unrelated string
-  concatenation in exec arguments; the silent-`Result`-collapse wall missed `var` bindings.
+- Closed every open CodeQL alert: a measured ReDoS, an unescaped OAuth-callback echo, error
+  de-leaking, and the legacy Node log-tail endpoints reflecting exception text — errno plus the
+  absolute host path — back to clients. Detail goes to stderr, a fixed string to the wire; the
+  Kotlin gateway's own log endpoint was never affected.
+- Dependency floors: netty 4.2.16.Final and jackson on the Gradle plugin classpath — the alerts
+  Dependabot could not raise PRs for.
+- The secret-scan allowlist is now GENERATED from a TOML source. The three `grep -vEf` hazards
+  that blinded the scan during review (an unanchored entry, prose acting as a live regex, an
+  invalid ERE breaking the whole pattern file) are inexpressible rather than merely detected, and
+  a canary self-test guards the generator's output in the gate.
 
 ## splice v0.1.1 — release integrity and supported defaults - 2026-07-21
 

@@ -2,6 +2,19 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+# The mock daemon's "current" version is DERIVED from the shim under test, never hardcoded — a
+# snapshot literal here goes stale on the first version bump and flips every "up" daemon to
+# "stale", sending the launcher down the replace path against the mock (found by the v0.2.0 bump:
+# the hardcoded 0.1.1 made this test fail on exactly the commit that mattered). Same awk as
+# checks/release/accept.sh — one idiom for reading the marker.
+GATEWAY_VERSION="$(awk -F'"' '/^SPLICE_GATEWAY_VERSION="/ { print $2; exit }' "$ROOT/bin/splice-launch")"
+SHIM_VERSION="$(awk -F'"' '/^SPLICE_SHIM_VERSION="/ { print $2; exit }' "$ROOT/bin/splice-launch")"
+[ -n "$GATEWAY_VERSION" ] && [ -n "$SHIM_VERSION" ] || {
+  echo "launcher test: could not read version markers from bin/splice-launch" >&2
+  exit 1
+}
+
 SANDBOX="$(mktemp -d)"
 trap 'rm -rf "$SANDBOX"' EXIT
 
@@ -34,7 +47,7 @@ done
 case "$url" in
   */health)
     case "$(cat "$LAUNCHER_DAEMON_STATE")" in
-      up|new) printf '{"ok":true,"version":"0.1.1","wantShimVersion":"shim-2"}\n' ;;
+      up|new) printf '{"ok":true,"version":"%s","wantShimVersion":"%s"}\n' "$LAUNCHER_GATEWAY_VERSION" "$LAUNCHER_SHIM_VERSION" ;;
       old) printf '{"ok":true,"version":"0.0.9","wantShimVersion":"shim-1"}\n' ;;
       down) ;;
     esac
@@ -75,6 +88,8 @@ run_launcher() {
   SPLICE_SHARE_DIR="$SANDBOX/share" \
   CLAUDEX_STATE_DIR="$SANDBOX/state" \
   LAUNCHER_DAEMON_STATE="$SANDBOX/daemon-state" \
+  LAUNCHER_GATEWAY_VERSION="$GATEWAY_VERSION" \
+  LAUNCHER_SHIM_VERSION="$SHIM_VERSION" \
   LAUNCHER_URL_CAPTURE="$SANDBOX/url" \
   LAUNCHER_BODY_CAPTURE="$SANDBOX/body" \
   LAUNCHER_SHUTDOWN_CAPTURE="$SANDBOX/shutdown" \

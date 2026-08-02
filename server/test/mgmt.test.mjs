@@ -124,6 +124,36 @@ test('GET /mgmt/logs: tolerates missing log file', async () => {
   assert.ok(Array.isArray(json.lines));
 });
 
+// WALL for CodeQL js/stack-trace-exposure (alert 1). The log-tail catch used to put
+// `String(err?.message || err)` straight into the response, so a readFileSync failure reflected
+// errno AND the absolute host path back to the client. dashboard.mjs was fixed for this class in
+// 2026-07-29; this site and its control-plane twin were missed, and nothing pinned them.
+//
+// EISDIR is forced by making the log path a DIRECTORY: existsSync then passes, so the request
+// takes the exact catch branch the CodeQL flow ran through, rather than the missing-file branch.
+test('GET /mgmt/logs: a read failure does not reflect the exception text', async () => {
+  const { logsDir, getConfig } = await import('../src/config.mjs');
+  const { proxyLogName } = await import('../src/mgmt/api.mjs');
+  const { mkdirSync, rmSync } = await import('node:fs');
+
+  const logPath = join(logsDir(), proxyLogName('codex-proxy', getConfig().port));
+  mkdirSync(logPath, { recursive: true });
+  try {
+    const { status, json } = await call('GET', '/mgmt/logs?tail=10');
+    assert.equal(status, 200);
+    assert.deepEqual(json.lines, []);
+    assert.ok(json.note, 'a failed read still reports SOMETHING to the operator');
+    for (const leak of ['EISDIR', 'illegal operation', logPath, logsDir()]) {
+      assert.ok(
+        !json.note.includes(leak),
+        `note leaked exception detail (${leak}): ${json.note}`,
+      );
+    }
+  } finally {
+    rmSync(logPath, { recursive: true, force: true });
+  }
+});
+
 test('unknown mgmt route → 404', async () => {
   assert.equal((await call('GET', '/mgmt/nope')).status, 404);
 });

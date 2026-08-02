@@ -31,7 +31,23 @@ set -uo pipefail
 
 TYPES='build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test'
 
-title="${1:-$(git log -1 --format=%s 2>/dev/null)}"
+title="${1:-}"
+
+if [ -z "$title" ]; then
+  # CI checks out the PR's MERGE commit, whose subject is "Merge <sha> into <sha>" and is never a
+  # conventional title — reading HEAD there fails every PR (it failed #84, which is how this branch
+  # learned it). A merge commit carries no authored subject to judge, so skip rather than invent a
+  # verdict: the ORG gate validates the real PR title in CI, and this script's job is the LOCAL
+  # preflight it cannot do.
+  # `--parents` prints "<sha> <parent>..."; >2 words means 2+ parents, i.e. a merge. NB: adding
+  # `--count` here silently defeats it — it replaces the output with a bare "1" and the branch
+  # never fires (shipped that way for one commit).
+  if [ "$(git rev-list --parents -n1 HEAD 2>/dev/null | wc -w)" -gt 2 ]; then
+    echo "  pr title: merge commit, skipped (the org gate validates the PR title in CI)"
+    exit 0
+  fi
+  title="$(git log -1 --format=%s 2>/dev/null)"
+fi
 
 if [ -z "$title" ]; then
   echo "pr-title: no title given and no commit to read" >&2

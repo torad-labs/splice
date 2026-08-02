@@ -34,29 +34,31 @@ TYPES='build|chore|ci|docs|feat|fix|perf|refactor|revert|style|test'
 title="${1:-}"
 
 if [ -z "$title" ]; then
-  # CI checks out the PR's MERGE commit, whose subject is "Merge <sha> into <sha>" and is never a
-  # conventional title — reading HEAD there fails every PR (it failed #84, which is how this branch
-  # learned it). A merge commit carries no authored subject to judge, so skip rather than invent a
-  # verdict: the ORG gate validates the real PR title in CI, and this script's job is the LOCAL
-  # preflight it cannot do.
+  # The no-arg mode judges HEAD's subject — which is only meaningful LOCALLY, before a PR exists.
+  # In Actions there are exactly two contexts, and neither has an authored subject worth judging
+  # (both failures below were SHIPPED on this very branch, not hypothesized):
   #
-  # TWO detections, because each has a blind spot the other covers (both failures were SHIPPED,
-  # not hypothesized):
-  #   1. GITHUB_REF=refs/pull/N/merge — Actions names the synthetic merge ref explicitly. Needed
-  #      because actions/checkout defaults to fetch-depth:1, and a SHALLOW clone grafts the tip
-  #      commit PARENTLESS: `rev-list --parents` and `%P` both report zero parents (verified
-  #      against a --depth 1 clone), so no git-side merge detection can fire there at all.
-  #   2. The parent count, for real merge tips outside Actions where GITHUB_REF is unset.
-  #      `--parents` prints "<sha> <parent>..."; >2 words = 2+ parents. NB: adding `--count`
-  #      silently defeats it — it replaces the output with a bare "1" (shipped that way once).
-  case "${GITHUB_REF:-}" in
-    refs/pull/*/merge)
-      echo "  pr title: PR merge ref, skipped (the org gate validates the PR title in CI)"
-      exit 0
-      ;;
-  esac
+  #   - a PR run checks out the synthetic merge ref, subject "Merge <sha> into <sha>" — and no
+  #     git-side merge detection can even fire there, because actions/checkout's default
+  #     fetch-depth:1 grafts the tip PARENTLESS (verified against a --depth 1 clone: `rev-list
+  #     --parents` prints one word and `%P` is empty). The ORG title gate validates the real PR
+  #     title on that event; this script cannot and need not.
+  #   - a push-to-main run sees the just-landed SQUASH commit. GitHub derives a single-commit
+  #     PR's squash subject from the COMMIT, not the validated PR title (how "harden(ci): ..."
+  #     landed on main from #83 after its title was fixed), so failing here is retroactive noise
+  #     about history nobody can amend.
+  #
+  # So: in Actions, the no-arg mode always defers to the org gate. An EXPLICIT title argument is
+  # still validated anywhere, CI included.
+  if [ "${GITHUB_ACTIONS:-}" = "true" ]; then
+    echo "  pr title: CI run, skipped (the org gate validates the PR title; this check is the local preflight)"
+    exit 0
+  fi
+  # Local merge tips carry no authored subject either. `--parents` prints "<sha> <parent>...";
+  # >2 words = 2+ parents. NB: adding `--count` silently defeats it — it replaces the output
+  # with a bare "1" (shipped that way once).
   if [ "$(git rev-list --parents -n1 HEAD 2>/dev/null | wc -w)" -gt 2 ]; then
-    echo "  pr title: merge commit, skipped (the org gate validates the PR title in CI)"
+    echo "  pr title: merge commit, skipped (nothing authored to judge)"
     exit 0
   fi
   title="$(git log -1 --format=%s 2>/dev/null)"

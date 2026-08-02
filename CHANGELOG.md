@@ -24,6 +24,15 @@
 
 ### Fixed
 
+- The paste-capture hook is installed ONLY while an api-key head's key is missing. On a configured
+  head it was pure downside: a bare `sk-or-…` message was swallowed and stored, silently
+  overwriting a working credential, and the message never reached the model — so merely discussing
+  a key by pasting one broke the session's auth. The key-missing advertiser was already gated this
+  way; the hook that acts on the paste was not.
+- `install.sh` now detects a stale `claudeor` symlink left by the rename and prints the one command
+  that clears it. It does not delete anything: that bin dir holds links splice did not create. The
+  notice is scoped to a symlink pointing at splice's own launch shim, so a user's unrelated
+  `claudeor` script is never mentioned.
 - The OAuth callback page said "close this tab and head back to your terminal", but `/login` is
   usually invoked from inside a session where there is no terminal to return to. It now names the
   destination, matching what xAI's CLI does ("You can close this window and return to Grok Build").

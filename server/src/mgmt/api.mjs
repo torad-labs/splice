@@ -64,7 +64,10 @@ function readLogsTail(proxy, tailN) {
     const lines = readFileSync(path, 'utf8').split('\n').filter(Boolean);
     return { path, lines: lines.slice(-tailN) };
   } catch (err) {
-    return { path, lines: [], note: String(err?.message || err) };
+    // Detail to stderr, generic to the client (CodeQL js/stack-trace-exposure, alert 1) — the
+    // mgmt twin of the control-plane site above; both were missed when dashboard.mjs was fixed.
+    process.stderr.write(`[mgmt] log tail failed for ${path}: ${err?.stack || err?.message || err}\n`);
+    return { path, lines: [], note: 'log unavailable — see the daemon log' };
   }
 }
 

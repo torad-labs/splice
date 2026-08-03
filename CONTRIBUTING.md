@@ -67,6 +67,19 @@ SemVer, currently pre-1.0 (`0.x`) — breaking changes may land on a minor bump 
 The root `package.json` version field itself is owned by a separate dependency-hygiene pass,
 not this document.
 
+### What compatibility means here
+
+splice ships as an **application** — one shadow jar plus a launcher — and publishes no artifact
+to any registry. The Kotlin `public` surface exists for the internal module graph (`:core`,
+`:provider-spi`, the dialects), not for external compiled consumers, so changes to public
+data-class shapes (constructor arity, `copy`/`componentN` signatures) are **not** treated as
+breaking. Review findings about JVM ABI drift on these types have this standing answer: nothing
+outside this repository links against them.
+
+The contracts that ARE stable, and gated as such: the `/v1` Anthropic wire surface (frozen
+migration oracle), the `/api/*` payload shapes (`WebuiContractTest`), the state-file names
+(`StatePaths` header), and the TOML config keys. Break one of those and a test must move with it.
+
 ## Releasing
 
 The `prod` branch is the release line, and **merging the `main -> prod` PR is the release

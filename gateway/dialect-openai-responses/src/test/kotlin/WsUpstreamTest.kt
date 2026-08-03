@@ -593,37 +593,6 @@ class WsUpstreamTest {
         )
         assertTrue(fx.logged("unexpected binary frame"), "it is logged, just not acted on")
     }
-
-    // ==================================================================== log hygiene ===
-
-    /** WALL (stale review of #72, the finding its header-digest fix did not finish): the
-     *  connection key concatenates the CHAIN key — the client's session id and conversation
-     *  identity, raw client-derived text — and six transport log sites interpolated it verbatim
-     *  into daemon.log while logKey() existed for exactly this reason. Every operator-facing line
-     *  must carry the short digest, never the key. The key here is deliberately distinctive so a
-     *  substring match cannot false-negative. */
-    @Test
-    fun `no log line ever carries the raw connection key`() = runTest {
-        val rawKey = "9:session-A31:what the user actually typed"
-        // A NON-terminal first reply keeps the round open (an instant DONE would return the
-        // connection to the pool before the busy probe, and nothing would be busy to decline).
-        val fx = Fixture().apply { reply = replyWith(CREATED) }.start()
-        // exercise the chatty paths: connect + a live round, a busy decline, then completion
-        val flow = fx.up.round(rawKey, HEADERS, WSS_URL, TERMINAL) { FRAME }
-        assertTrue(flow != null, "first round should acquire")
-        val gate = Channel<Unit>(1)
-        val collector = launch { flow!!.collect { gate.trySend(Unit) } }
-        gate.receive() // the first (non-terminal) event arrived: the round is live, the socket busy
-        assertTrue(fx.up.round(rawKey, HEADERS, WSS_URL, TERMINAL) { FRAME } == null, "second round declines busy")
-        fx.opened.last().push(DONE) // finish the round
-        collector.join()
-        assertTrue(fx.log.isNotEmpty(), "the paths under test must actually log")
-        fx.log.forEach { line ->
-            assertTrue(!line.contains(rawKey), "raw key leaked into the log: $line")
-            assertTrue(!line.contains("what the user actually typed"), "client text leaked: $line")
-        }
-        assertTrue(fx.log.any { it.contains("ws-") }, "the digest form should appear in the log")
-    }
 }
 
 /** InboxListener drives the frame->event boundary and is a separate production class; its tests
@@ -716,5 +685,92 @@ class WsUpstreamInboxListenerTest {
         val cause = errored.receiveCatching().exceptionOrNull()
         assertTrue(cause is IOException, "an errored close carries an IOException, got $cause")
         assertEquals("websocket error", cause?.message)
+    }
+}
+
+/**
+ * WALL (stale review of #72, finished per review of #88): the connection key concatenates the
+ * CHAIN key — the client's session id and conversation identity, raw client-derived text — and
+ * six transport log sites interpolated it verbatim into daemon.log while logKey() existed for
+ * exactly this reason. One test per log-bearing path, the failure paths included: a first cut
+ * drove only the happy path, so a regression in a failure site would have passed, and it matched
+ * a bare "ws-" prefix, which a constant or wrong-input digest also satisfies (review of #88).
+ * Every test asserts the EXACT digest of its own distinctive key.
+ */
+@OptIn(ExperimentalCoroutinesApi::class)
+class WsUpstreamLogHygieneTest {
+
+    private val clientText = "what the user actually typed"
+
+    private fun rawKey(tag: String) = "9:session-$tag" + "31:$clientText"
+
+    private fun assertSafeLogs(fx: Fixture, rawKey: String) {
+        val expectedDigest = "ws-" + Integer.toHexString(rawKey.hashCode())
+        assertTrue(fx.log.isNotEmpty(), "the path under test must actually log")
+        fx.log.forEach { line ->
+            assertTrue(rawKey !in line, "raw key leaked: $line")
+            assertTrue(clientText !in line, "client text leaked: $line")
+        }
+        assertTrue(
+            fx.log.any { expectedDigest in it },
+            "the digest of THIS key must appear (a constant or wrong-input digest must fail): ${fx.log}",
+        )
+    }
+
+    @Test
+    fun `connect and busy-decline log only the digest`() = runTest {
+        val key = rawKey("A")
+        val fx = Fixture().apply { reply = replyWith(CREATED) }.start()
+        val flow = fx.up.round(key, HEADERS, WSS_URL, TERMINAL) { FRAME }
+        assertTrue(flow != null, "first round should acquire")
+        val gate = Channel<Unit>(1)
+        val collector = launch { flow!!.collect { gate.trySend(Unit) } }
+        gate.receive() // non-terminal first event: the round is live, the socket busy
+        assertTrue(fx.up.round(key, HEADERS, WSS_URL, TERMINAL) { FRAME } == null, "second declines busy")
+        fx.opened.last().push(DONE)
+        collector.join()
+        assertSafeLogs(fx, key)
+    }
+
+    @Test
+    fun `connect failure logs only the digest`() = runTest {
+        val key = rawKey("B")
+        val fx = Fixture().apply { connectFailure = IOException("refused") }.start()
+        assertNull(fx.up.round(key, HEADERS, WSS_URL, TERMINAL) { FRAME })
+        assertSafeLogs(fx, key)
+    }
+
+    @Test
+    fun `synchronous send failure logs only the digest`() = runTest {
+        val key = rawKey("C")
+        val fx = Fixture().apply { sendThrows = IllegalStateException("send pending") }.start()
+        assertNull(fx.up.round(key, HEADERS, WSS_URL, TERMINAL) { FRAME })
+        assertSafeLogs(fx, key)
+    }
+
+    @Test
+    fun `first-event timeout logs only the digest`() = runTest {
+        val key = rawKey("D")
+        val fx = Fixture().start(firstEventTimeoutMs = BUDGET) // no reply configured: silence
+        assertNull(fx.up.round(key, HEADERS, WSS_URL, TERMINAL) { FRAME })
+        assertSafeLogs(fx, key)
+    }
+
+    @Test
+    fun `inbox closed before the first event logs only the digest`() = runTest {
+        val key = rawKey("E")
+        val fx = Fixture().apply { onHandshake = { it.closeClean() } }.start()
+        assertNull(fx.up.round(key, HEADERS, WSS_URL, TERMINAL) { FRAME })
+        assertSafeLogs(fx, key)
+    }
+
+    @Test
+    fun `frames after the round terminal log only the digest`() = runTest {
+        val key = rawKey("F")
+        val fx = Fixture().apply { reply = replyWith(DONE, DELTA) }.start()
+        val flow = fx.up.round(key, HEADERS, WSS_URL, TERMINAL) { FRAME }
+        assertTrue(flow != null, "round should acquire")
+        flow!!.collect { }
+        assertSafeLogs(fx, key)
     }
 }

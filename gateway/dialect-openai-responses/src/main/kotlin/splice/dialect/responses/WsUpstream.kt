@@ -136,6 +136,14 @@ public class WsUpstream(
         }
     }
 
+    /** The operator-facing key form. The connection key deliberately concatenates the CHAIN key
+     *  (the client's session id + conversation identity — raw client-derived text) with the header
+     *  digest, and six log sites here interpolated it verbatim into daemon.log while the runner's
+     *  own logKey existed for exactly this reason (review of #72, the one finding of it that the
+     *  header-digest fix did not finish). Same short stable digest as the runner's: enough to
+     *  correlate connect/busy/kill lines for one connection, nothing recoverable. */
+    private fun logKey(key: String): String = "ws-" + Integer.toHexString(key.hashCode())
+
     /** Receive one event, or null when the inbox is CLOSED.
      *
      *  Why this exists (adversarial review of WS-1, 2026-07-31): `receive()` signals closure by
@@ -156,7 +164,7 @@ public class WsUpstream(
         if (!conn.busy.compareAndSet(false, true)) {
             // A concurrent round of the SAME conversation is already on the socket — never
             // interleave two response.create frames on one connection; the second rides SSE.
-            log("[ws] $key busy — concurrent round rides SSE\n")
+            log("[ws] ${logKey(key)} busy — concurrent round rides SSE\n")
             return null
         }
         // Lost the race with a tear between the registry read and the busy win.
@@ -179,7 +187,7 @@ public class WsUpstream(
         val socket = runCatchingCancellable {
             connector(URI.create(wssUrl), headers, listener)
         }.getOrElse { e ->
-            log("[ws] $key connect failed (${e::class.simpleName}: ${e.message?.take(ERR_SNIPPET)}) — SSE\n")
+            log("[ws] ${logKey(key)} connect failed (${e::class.simpleName}: ${e.message?.take(ERR_SNIPPET)}) — SSE\n")
             return null
         }
         val conn = WsConnection(socket, inbox, generation, log)
@@ -215,7 +223,7 @@ public class WsUpstream(
             return winner
         }
         evicted?.kill()
-        log("[ws] $key connected (generation=$generation)\n")
+        log("[ws] ${logKey(key)} connected (generation=$generation)\n")
         return conn
     }
 
@@ -245,7 +253,7 @@ public class WsUpstream(
         if (failure != null) {
             val (kind, error) = failure
             log(
-                "[ws] $key send failed $kind (${error::class.simpleName}: " +
+                "[ws] ${logKey(key)} send failed $kind (${error::class.simpleName}: " +
                     "${error.message?.take(ERR_SNIPPET)}) — killing connection, round rides SSE\n",
             )
             failRound(conn, key)
@@ -267,7 +275,7 @@ public class WsUpstream(
             } else {
                 "inbox closed before first event (${received.exceptionOrNull()?.message?.take(ERR_SNIPPET) ?: "clean"})"
             }
-            log("[ws] $key $why — killing connection, round rides SSE\n")
+            log("[ws] ${logKey(key)} $why — killing connection, round rides SSE\n")
             failRound(conn, key)
         }
         return first
@@ -315,7 +323,7 @@ public class WsUpstream(
             }
         } else {
             if (poolable) {
-                log("[ws] $key frames arrived after the round terminal — killing rather than pooling\n")
+                log("[ws] ${logKey(key)} frames arrived after the round terminal — killing rather than pooling\n")
             }
             // Cancelled (watchdog/client-gone) or torn: leftover frames of a half-consumed
             // round poison reuse — kill, next round reconnects (full send, status quo).

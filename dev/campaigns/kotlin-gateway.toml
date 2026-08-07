@@ -45,7 +45,7 @@
 name = "kotlin-gateway"
 created = "2026-07-16"
 goal = "Replace the Node splice stack with a Kotlin multi-provider gateway (single daemon, N heads, TOML topology, provider SPI) at full behavioral parity — then cut over and delete server/"
-next = ["P1-CAMP", "P1-HOOKS", "P1-GRADLE", "P0-ENG", "P0-TOML", "P0-POOL", "P0-XAI", "P1-WALLS", "P1-KONSIST", "P1-CORE", "P1-CONF"]
+next = ["P2-GOLD", "P3-LIVE", "P7-PAR", "P8-CUT"]
 
 # ── P0 — spikes (each lands a receipt in gateway/spikes/results/) ─────────────
 
@@ -428,6 +428,7 @@ verify = "node gateway/tools/golden-diff.mjs --all"
 # ── P3 — codex head end-to-end on side port ──────────────────────────────────
 # [2026-07-16] SLOT addendum: harness = node script driving BOTH stacks against the same mock upstream via HTTP, normalizing msg_<ts> ids + timestamps, byte-diffing SSE transcripts. Node side: server/test harness with CODEX_PROXY_TEST=1 on a scratch port. Kotlin side needs P3-HEAD's route wiring — P2-GOLD's full gate therefore lands right after P3-HEAD; the harness skeleton + normalizer can land earlier. Scenario list in P2-MOCK context.
 # [2026-07-16] REVIEW-PHASE INPUT for the golden differential: an adversarial review (4 reviewers) of the data plane found + fixed 8 real bugs (commit 190acd1) — 3 HIGH (grok compact effort not pinned; completed-response-discarded-on-late-watchdog; account_id_header=false no-op), SingleFlight cancellation-broadcast, malformed-field crash, compact blank-line, meta.summary, image MIME. KNOWN FAITHFUL DIVERGENCE the golden diff must NOT flag as a Kotlin defect: on a NON-COMPACT reasoning-only turn (no text, no tools, thinking>=40, showReasoning=text), the pipeline promotes the reasoning to a text block AND mirrors it as '[reasoning summary]' — the reasoning appears TWICE. This is IDENTICAL in Node (server/src/codex/stream.mjs:269-300, promote-then-unconditional-mirror, no guard). Both stacks produce the duplicate, so the byte-differential is CLEAN — but it is arguably a UX bug worth a DELIBERATE joint fix in BOTH stacks post-cutover (add a guard so a promoted reasoning turn skips the redundant mirror). Not fixed unilaterally: would break parity.
+# [2026-08-07] [2026-08-07] RECONCILE — gateway/tools/ was never created; the live Node-vs-Kotlin differential as specced is partially SUPERSEDED: proxy-hardening CX-19 (2026-07-26) captured 11 byte-exact response fixtures from the legacy Node reference while green (dev/campaigns/proxy-hardening/oracle/fixtures/, npm run oracle:capture) — the Node half of the differential now exists as a frozen oracle. Remaining P2-GOLD work should build the REPLAY side against those fixtures (see CX-19 notes + branch stash-archive/cx19-round2-repair-2026-07-30 for the graded expectations.toml and wall repair), not resurrect a live two-stack harness. P7-PAR/P8-CUT still gate on it.
 
 [[items]]
 id = "P3-REQ"

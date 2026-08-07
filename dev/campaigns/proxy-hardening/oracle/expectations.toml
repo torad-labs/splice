@@ -33,7 +33,8 @@ fixtures = "dev/campaigns/proxy-hardening/oracle/fixtures"
 source = "server/ (legacy Node reference implementation)"
 source_suite_state = "104/104 pass at capture time"
 canonicalization = ["message-id: msg_<digits> -> msg_CANON"]
-replayed = 0
+replayed = 11
+replayed_at = 2026-08-07  # node dev/campaigns/proxy-hardening/oracle/replay.mjs (hermetic jar + vendored mock)
 captured_count = 11
 
 # ── captured, awaiting a replay verdict ──────────────────────────────────────
@@ -42,58 +43,75 @@ captured_count = 11
 
 [[scenario]]
 name = "basic"
-status = "not-yet-replayed"
+status = "passing"
+proof = "replay 2026-08-07: node dev/campaigns/proxy-hardening/oracle/replay.mjs — byte-identical after msg_CANON canonicalization; upstream requests field-identical except the sanctioned stream_options divergence (see [[divergence]])"
 covers = "happy-path streaming turn: message_start/ping/content_block_*/message_delta/message_stop ordering, usage payload shape"
 
 [[scenario]]
 name = "multipart"
-status = "not-yet-replayed"
+status = "passing"
+proof = "replay 2026-08-07: node dev/campaigns/proxy-hardening/oracle/replay.mjs — byte-identical after msg_CANON canonicalization; upstream requests field-identical except the sanctioned stream_options divergence (see [[divergence]])"
 covers = "multi-part reasoning summary folded into ONE thinking block + the mirror text block (invariant L2)"
 
 [[scenario]]
 name = "toolcall"
-status = "not-yet-replayed"
+status = "passing"
+proof = "replay 2026-08-07: node dev/campaigns/proxy-hardening/oracle/replay.mjs — byte-identical after msg_CANON canonicalization; upstream requests field-identical except the sanctioned stream_options divergence (see [[divergence]])"
 covers = "tool_use block assembly from streamed function-call arguments"
 
 [[scenario]]
 name = "nonstream_tool"
-status = "not-yet-replayed"
+status = "passing"
+proof = "replay 2026-08-07: node dev/campaigns/proxy-hardening/oracle/replay.mjs — byte-identical after msg_CANON canonicalization; upstream requests field-identical except the sanctioned stream_options divergence (see [[divergence]])"
 covers = "non-stream translation path + UTF-8 split-chunk handling"
 
 [[scenario]]
 name = "truncated"
-status = "not-yet-replayed"
+status = "sanctioned"
+authority = "PR #42 (8778274): mid-stream re-anchoring — salvage forwarded turns through provider brownouts; backoff deadline-gated by BS-3"
+pinned_sha256 = "6d6177ece878874da27b5a68e9e378b89e97317187dad24845e84ee86f8f65e0"
+replay_note = "Reference gave up after 1 attempt (887B, one partial block + overloaded_error). Gateway re-anchors twice (CLAUDEX_UPSTREAM_RETRIES=2 -> 3 upstream requests, continuation-shaped: partial text + continue-exactly instruction), then emits the SAME overloaded_error class. Mock replays the identical truncation each time, so salvage cannot succeed here by construction; the pinned bytes encode 3 attempts."
 covers = "honest failure: a truncated upstream stream is an SSE error, NEVER a clean empty end_turn (invariant L3)"
 
 [[scenario]]
 name = "overflow_sse"
-status = "not-yet-replayed"
+status = "sanctioned"
+authority = "PR #58 (561d7ec): message_start at upstream-handoff — same authority as failed"
+pinned_sha256 = "a99587ab2be7b97be8fb53de751082a163bc6c7b6549e3c8e61c9201a5d4f1b7"
+replay_note = "Same eager-preamble shape as failed; the invalid_request_error 'prompt is too long' rewrite itself is byte-identical to the reference. The G13 question in the pre-replay note is answered from evidence: mid-stream arrival keeps client status 200 in BOTH stacks."
 covers = "context overflow via response.failed rewritten to 'prompt is too long' invalid_request_error — the P0 the pre-port tree died on"
 note = "captured client status was 200. Whether the Kotlin gateway should return 4xx here is a G13 question (G13 fixed PRE-stream rejections; this failure arrives mid-stream, after headers). Classify at first replay from evidence — do not assume either reading."
 
 [[scenario]]
 name = "prefill"
-status = "not-yet-replayed"
+status = "passing"
+proof = "replay 2026-08-07: node dev/campaigns/proxy-hardening/oracle/replay.mjs — byte-identical after msg_CANON canonicalization; upstream requests field-identical except the sanctioned stream_options divergence (see [[divergence]])"
 covers = "assistant-prefill request shaping"
 
 [[scenario]]
 name = "replaystream"
-status = "not-yet-replayed"
+status = "passing"
+proof = "replay 2026-08-07: node dev/campaigns/proxy-hardening/oracle/replay.mjs — byte-identical after msg_CANON canonicalization; upstream requests field-identical except the sanctioned stream_options divergence (see [[divergence]])"
 covers = "encrypted reasoning-item replay wire path (captured with CLAUDEX_REPLAY_REASONING=1; ships default-off)"
 
 [[scenario]]
 name = "failed"
-status = "not-yet-replayed"
+status = "sanctioned"
+authority = "PR #58 (561d7ec): message_start lands at upstream-handoff so G5 pre-content reissue stays safe (HeadServerReviewTest: torn-before-client stays retryable)"
+pinned_sha256 = "9c253ca5cabd9e1b7052ad03fb693ba49ea8cd45f0f752c9fccc4fe83f5f57e9"
+replay_note = "Gateway emits message_start+ping BEFORE the upstream terminal, then the SAME api_error text the reference emitted bare. Error class and message identical; only the eager preamble differs."
 covers = "upstream response.failed -> honest terminal error, no fabricated end_turn"
 
 [[scenario]]
 name = "bigout"
-status = "not-yet-replayed"
+status = "passing"
+proof = "replay 2026-08-07: node dev/campaigns/proxy-hardening/oracle/replay.mjs — byte-identical after msg_CANON canonicalization; upstream requests field-identical except the sanctioned stream_options divergence (see [[divergence]])"
 covers = "output-token clamp: reported usage clamped to the client's max_tokens"
 
 [[scenario]]
 name = "compactish"
-status = "not-yet-replayed"
+status = "passing"
+proof = "replay 2026-08-07: node dev/campaigns/proxy-hardening/oracle/replay.mjs — byte-identical after msg_CANON canonicalization; upstream requests field-identical except the sanctioned stream_options divergence (see [[divergence]])"
 covers = "real Claude Code 2.1.207 compaction shape WITH tools -> detected, tools stripped upstream, summary delivered"
 
 # ── captured deliberately NOT frozen, with reasons (never silently dropped) ──
@@ -112,3 +130,54 @@ recover = "same"
 name = "refresh"
 reason = "mutates auth state across runs (single-flight 401 refresh), so capture is order-dependent"
 recover = "needs a stateful fixture shape recording the refresh call sequence, not just one turn"
+
+# ── FIELD-LEVEL divergences the gateway makes ON PURPOSE ─────────────────────
+# A [[divergence]] is a sanctioned difference that cuts ACROSS scenarios rather than living in one,
+# so it cannot be a [[scenario]] row without corrupting the roster. Same law as a sanctioned
+# scenario, and cx_19_oracle_replay.py applies it through the SAME checker (_grade_status): cite
+# what authorised it, pin the expected bytes, never delete a row to make a runner green.
+# (Design + prompt_cache_key row rescued from the 2026-07-30 review repair — branch
+# stash-archive/cx19-round2-repair-2026-07-30 — and re-validated against today's tree.)
+
+[[divergence]]
+field = "expected_upstream_requests[].stream_options"
+status = "sanctioned"
+authority = "PR #57/#58 (789b2ce/561d7ec): turn-scoped summary dedup — sequential-cutoff summary delivery; wall exception bdf6bc0"
+pinned_value = '{"reasoning_summary_delivery":"sequential_cutoff"}'
+pinned_sha256 = "695bd96a217d1af7e8af90d19e93b9efa7d1fc933eff3fdbbc694ee2598e737e"
+affects = "every request the responses dialect sends — the field did not exist at capture time (captured 2026-07-26, feature merged 2026-07-27)"
+reason = """
+The legacy reference re-requested reasoning summaries on every continuation round, duplicating
+them; the gateway's turn-scoped dedup requires the upstream to deliver summaries with a
+sequential cutoff, expressed as stream_options.reasoning_summary_delivery on EVERY request.
+The oracle predates the feature by one day, so the frozen upstream bytes lack the field. A
+replay observation of exactly the pinned value is sanctioned; any OTHER value or shape is a
+regression and must go kotlin-wrong.
+"""
+
+[[divergence]]
+field = "expected_upstream_requests[].prompt_cache_key"
+status = "sanctioned"
+authority = "cache-key strategy quirk: ResponsesRequestBuilder.kt:141 CacheKeyStrategy.SESSION_ID (TOML cache_key = \"session-id\", shipped for grok at config/splice.example.toml:94); review repair 2026-07-30"
+pinned_sha256 = "ab79a7c5bb0a3cec72e01e4e19b47fac"
+affects = "all 11 frozen fixtures — every one pins splice-ab79a7c5bb0a3cec72e01e4e19b47fac (the first-message-hash fallback)"
+expected_with_session_header = "claudex:<x-claude-code-session-id>"
+expected_without_session_header = "splice-ab79a7c5bb0a3cec72e01e4e19b47fac"
+reason = """
+The legacy Node reference derives prompt_cache_key from the FIRST USER MESSAGE
+(server/src/codex/translate-request.mjs docstring: "Claude Code exposes no thread id, so we key
+on the FIRST user message") — a premise the gateway can improve on: the x-claude-code-session-id
+header is in hand for every head, and a content-derived key is orphaned by any transcript-head
+rewrite (/compact, resume-from-summary), precisely when the cached prefix is largest. The gateway
+ships the session-id strategy as a TOML quirk; the codex head TODAY still selects
+"first-message-hash" (config/splice.example.toml:29), so this divergence is LATENT.
+"""
+note = """
+READ THIS BEFORE CLASSIFYING A REPLAY: the fixtures record client_request as a BODY ONLY — no
+request headers. replay.mjs deliberately sends no x-claude-code-session-id, so a faithful gateway
+hits the first-message-hash fallback and reproduces the frozen bytes EXACTLY
+(sha256("Say the answer.")[:32] = ab79a7c5bb0a3cec72e01e4e19b47fac) — these rows do NOT go red on
+their own. The divergence only materialises if a runner supplies the header while the codex TOML
+selects the session-id strategy, and THAT is the reading it must take then: sanctioned, not
+kotlin-wrong.
+"""

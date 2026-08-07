@@ -92,6 +92,31 @@ class UsageTest {
     }
 
     @Test
+    fun `payload - integral used_percentage serializes bare, JS-number parity`() {
+        // The migration oracle byte-compares our SSE against the legacy Node reference, and
+        // JSON.stringify prints an integral double bare ("0", never "0.0"). CX-19 replay
+        // 2026-08-07: every streaming fixture diverged at exactly this byte.
+        val zero = TurnUsage.from(obj("""{"input_tokens":0,"output_tokens":0}"""))
+        val payload = buildUsagePayload(zero, contextWindow = 272_000)
+        assertEquals("0", payload["used_percentage"]?.jsonPrimitive?.content)
+        val full = TurnUsage.from(obj("""{"input_tokens":136000,"output_tokens":0}"""))
+        assertEquals(
+            "50",
+            buildUsagePayload(full, contextWindow = 272_000)["used_percentage"]?.jsonPrimitive?.content,
+        )
+        val frac = TurnUsage.from(obj("""{"input_tokens":160,"output_tokens":0}"""))
+        val content = buildUsagePayload(frac, contextWindow = 272_000)["used_percentage"]?.jsonPrimitive?.content
+        assertTrue(content!!.startsWith("0.0588"), "non-integral stays decimal: $content")
+        // Below 1e-3 the JVM flips to E-notation where JS stays decimal — the basic fixture's
+        // exact value (1 input token against the 272k default window).
+        val tiny = TurnUsage.from(obj("""{"input_tokens":1,"output_tokens":0}"""))
+        assertEquals(
+            "0.0003676470588235294",
+            buildUsagePayload(tiny, contextWindow = 272_000)["used_percentage"]?.jsonPrimitive?.content,
+        )
+    }
+
+    @Test
     fun `cache log line format is exact`() {
         val line = cacheLogLine(
             "codex-proxy",

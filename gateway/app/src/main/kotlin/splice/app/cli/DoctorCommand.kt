@@ -151,6 +151,10 @@ private fun daemonChecks(
     // fabricated staleness WARN. The state dir path is the same kind of orientation detail.
     val stateInfo = listOf(
         DoctorCheck("state dir", CheckStatus.INFO, statePaths.stateDir.toString()),
+        // JW-08: daemon.log lives in the SIBLING logs dir, not state/ — printing only the state
+        // dir sent operators to a directory that does not contain the logs. Name the real path
+        // and the verb that reaches it (works with the daemon stopped).
+        DoctorCheck("logs", CheckStatus.INFO, "${statePaths.logsDir.resolve("daemon.log")}  (splice logs)"),
         DoctorCheck("daemon.lock", CheckStatus.INFO, statePaths.daemonLockFile.toString()),
     )
     return listOf(daemon) + headChecks(snapshot, topology) +

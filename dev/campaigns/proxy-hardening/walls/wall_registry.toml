@@ -124,7 +124,7 @@ wall = "dev/campaigns/proxy-hardening/walls/jw_06_perhead_config_visible.py"
 [[item]]
 id = "JW-08"
 phase = "W3-see-the-daemon"
-wall = ""
+wall = "dev/campaigns/proxy-hardening/walls/jw_08_splice_logs_verb.py"
 
 [[item]]
 id = "JW-13"

@@ -332,4 +332,16 @@ class DoctorCommandTest {
             server.stop(0)
         }
     }
+
+    @Test
+    fun `doctor names the logs path in the logs dir, not the state dir - JW-08`() {
+        val tmp = Files.createTempDirectory("doctor-logs")
+        val bin = Files.createDirectories(tmp.resolve("bin"))
+        val share = Files.createDirectories(tmp.resolve("share"))
+        fakeBinaries(bin, "claude", "node", "python3", "curl", "bash")
+        val (_, out) = runDoctor(env(tmp, bin, share, hermetic(tmp)))
+        // the row must point at <root>/logs/daemon.log and mention the verb — NOT the state dir
+        assertTrue(out.contains("logs/daemon.log"), out)
+        assertTrue(out.contains("splice logs"), out)
+    }
 }

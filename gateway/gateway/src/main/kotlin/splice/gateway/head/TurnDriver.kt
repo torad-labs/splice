@@ -192,6 +192,14 @@ internal class TurnDriver(
             catchingTurnFailure { driveOneTurn(drive, pingClient) }
                 .onFailure { e -> emitFailure(drive, e) }
         } catch (e: CancellationException) {
+            // NF-03: a watchdog-fired cancellation names its reason. Pre-stream reaps (total cap
+            // during connect/backoff/refresh) land HERE, not in a translator's watchdogOutcome —
+            // the generic "cancelled" hid them. Computed before the when: depth stays 3.
+            val cancelMsg = if (drive.watchdog.fired != null) {
+                "${provider.key}: upstream stalled (watchdog) — aborted; retry"
+            } else {
+                "${provider.key}: turn cancelled — retry"
+            }
             // Flat when (not nested if) so the still-connected try/catch stays at nesting depth 3:
             // catch → if(seal) → if(clientGone) → try would trip NestedBlockDepth's depth-4 ceiling.
             when {
@@ -207,10 +215,7 @@ internal class TurnDriver(
                 // abandon, not an error:cancelled (review 2026-07-22 round 3).
                 else ->
                     try {
-                        drive.emitter.emitError(
-                            ErrorType.OVERLOADED,
-                            "${provider.key}: turn cancelled — retry",
-                        )
+                        drive.emitter.emitError(ErrorType.OVERLOADED, cancelMsg)
                         log(telemetry.errTurn("cancelled", drive, ": turn cancelled before terminal"))
                         telemetry.recordPerf(drive, "error:cancelled")
                         health.local()
@@ -376,6 +381,10 @@ internal class TurnDriver(
                 // OFF for the non-stream collect path: there is no open SSE channel to ping (the
                 // whole body is buffered and sent once), so liveness can't be probed mid-turn.
                 val pinger = if (pingClient) self.launchClientPinger(drive, turnJob) else null
+                // NF-03: whole-turn totalCap poller, unconditional (non-stream turns burn wall
+                // clock too). launchIn keeps the idle tiers stream-scoped; this one only samples
+                // elapsed, so connect/backoff/refresh/between-rounds time finally counts.
+                val capPoller = drive.watchdog.launchTotalCap(self, turnJob)
                 try {
                     // Folding is null for sol / every non-codex head → the single-round path is
                     // byte-for-byte the pre-fold behaviour (drive straight to the real emitter,
@@ -407,6 +416,7 @@ internal class TurnDriver(
                     }
                 } finally {
                     pinger?.cancel()
+                    capPoller.cancel()
                 }
             }
         } finally {

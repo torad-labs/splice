@@ -39,7 +39,7 @@ wall = "dev/campaigns/proxy-hardening/walls/nf_02_max_inflight_default.py"
 [[item]]
 id = "NF-03"
 phase = "W1-bounded-failure"
-wall = ""
+wall = "dev/campaigns/proxy-hardening/walls/nf_03_total_cap_always_armed.py"
 
 [[item]]
 id = "NF-04"

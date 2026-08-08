@@ -130,6 +130,12 @@ class MockChatGptUpstream {
             ex.close()
             return
         }
+        if (scenario == "stall") {
+            // ADDED (named change, NF-03): sleep past a tiny totalCap BEFORE response headers —
+            // the connect/headers window no stream-scoped poller ever covered. The turn must be
+            // reaped by the whole-turn cap poller while this thread is still sleeping.
+            Thread.sleep(3_000)
+        }
         if (scenario == "quota429") {
             // ADDED (named change, NF-01): a hard 429 with a sub-ceiling Retry-After — arms the
             // UpstreamClient's shared head-wide cooldown so restart-clears-it is testable.

@@ -218,4 +218,74 @@ class HeadServerFoldTest {
         assertEquals(1, Regex("event: message_stop").findAll(sse).count())
         assertTrue(sse.contains("\"stop_reason\":\"end_turn\""))
     }
+
+    /** A dedicated head whose totalCap (1s) is far tighter than its idle budgets — the NF-03 rig. */
+    private fun tightCapHead(gate: InflightGate, capPort: Int): HeadServer = HeadServer(
+        provider = CodexProvider(
+            tuning = ProviderTuning(
+                key = "codex",
+                label = "claudex",
+                catalog = catalog,
+                pinnedModel = "gpt-5.6-luna",
+                auth = FoldFakeAuth(),
+                baseUrl = mock.baseUrl,
+                watchdog = WatchdogBudget(10.seconds, 10.seconds, 1.seconds),
+                loginCommand = "claudex login",
+            ),
+            showReasoning = ReasoningDisplay.TEXT,
+            replayReasoning = false,
+            configEffort = "high",
+            configSummary = "detailed",
+        ),
+        listenPort = capPort,
+        deps = HeadDeps(
+            upstream = UpstreamClient(firstByteTimeoutMs = 20_000, totalTimeoutMs = 20_000, maxRetries = 1),
+            inferenceToken = "test-inference-token",
+            gate = gate,
+            shadow = ShadowClassifier(log = {}),
+            compactStats = CompactStats(tmp.resolve("cap-compact.jsonl")),
+            usageStore = UsageStore(tmp.resolve("cap-usage.json"), tmp.resolve("cap-ratelimit.json")),
+            perfStats = PerfStats(tmp.resolve("cap-perf.jsonl")),
+            log = {},
+        ),
+    )
+
+    @Test
+    fun `totalCap reaps a turn stalled BEFORE upstream headers and frees the slot - NF-03`() = runTest {
+        // The window launchIn never covered: the mock sleeps 3s before sending response headers,
+        // no stream ever opens, and this head's totalCap is 1s. Pre-fix, nothing sampled the cap
+        // here — the turn ran the full stall while pinning its gate slot. The verify-spec sketched
+        // a rounds-sum-past-cap fold instead, but round N's stream-scoped poller already samples
+        // whole-turn elapsed mid-stream, so that case was green BEFORE the fix; this one is the
+        // honest red→green.
+        val gate = InflightGate(maxInflight = { 1 }, maxQueued = { 0 })
+        val capPort = freshPort()
+        val capHead = tightCapHead(gate, capPort)
+        capHead.start()
+        awaitListening(capPort)
+        try {
+            val t0 = System.currentTimeMillis()
+            val sse = client.post("http://127.0.0.1:$capPort/v1/messages") {
+                header("Content-Type", "application/json")
+                setBody(
+                    """{"model":"claude-codex--gpt-5.6-luna","stream":true,"max_tokens":64,
+                        "system":"You are a test. SCENARIO:stall",
+                        "messages":[{"role":"user","content":"go"}]}""",
+                )
+            }.bodyAsText()
+            val tookMs = System.currentTimeMillis() - t0
+
+            assertTrue(sse.contains("\"type\":\"error\""), "expected an honest error terminal: $sse")
+            assertTrue(sse.contains("stalled (watchdog)"), "expected the watchdog-named reason: $sse")
+            assertTrue(tookMs < 2_500, "reaped by the 1s cap, not the 3s stall (took ${tookMs}ms)")
+            // the slot must come back within ~one poll interval, not ride the stall
+            val deadline = System.currentTimeMillis() + 2_000
+            while (System.currentTimeMillis() < deadline && gate.snapshot().inflight != 0) {
+                Thread.sleep(50)
+            }
+            assertEquals(0, gate.snapshot().inflight, "the reaped turn must release its gate slot")
+        } finally {
+            capHead.stop()
+        }
+    }
 }

@@ -282,4 +282,54 @@ class DoctorCommandTest {
             server.stop(0)
         }
     }
+
+    @Test
+    fun `an edited splice_toml shows a stale-topology WARN with the restart fix - JW-04`() {
+        val tmp = Files.createTempDirectory("doctor-stale-topo")
+        val bin = Files.createDirectories(tmp.resolve("bin"))
+        val share = Files.createDirectories(tmp.resolve("share"))
+        val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
+        Files.writeString(configDir.resolve("splice.toml"), starterToml)
+        val shim = share.resolve("splice-launch")
+        Files.writeString(shim, "#!/usr/bin/env bash\nSPLICE_SHIM_VERSION=\"$SHIM_VERSION\"\n")
+        shim.toFile().setExecutable(true)
+        fakeBinaries(bin, "claude", "node", "python3", "curl", "bash")
+        Files.createSymbolicLink(bin.resolve("claude-openrouter"), shim)
+        Files.createSymbolicLink(bin.resolve("splice"), shim)
+
+        // A healthy daemon whose booted digest does NOT match the file on disk (the operator
+        // edited splice.toml after boot). Pre-fix: no consumer ever compared them.
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+        val healthJson =
+            """{"ok":true,"version":"${'$'}{splice.core.Versions.GATEWAY_VERSION}","heads":1,"readyHeads":1,""" +
+                """"failedHeads":0,"topologyDigest":"digest-of-what-it-booted-with","topologyStale":true}"""
+        server.createContext("/health") { ex ->
+            val bytes = healthJson.toByteArray()
+            ex.sendResponseHeaders(200, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        try {
+            val state = Files.createDirectories(tmp.resolve("state"))
+            Files.writeString(state.resolve("mgmt-key"), "k\n")
+            val (ok, out) = runDoctor(
+                env(
+                    tmp,
+                    bin,
+                    share,
+                    mapOf(
+                        "OPENROUTER_API_KEY" to "k",
+                        "CLAUDEX_STATE_DIR" to state.toString(),
+                        "SPLICE_CONTROL_PORT" to server.address.port.toString(),
+                    ),
+                ),
+            )
+            assertTrue(ok, "a stale topology is a WARN, not a failure:\n$out")
+            assertTrue(out.contains("running topology is stale"), out)
+            assertTrue(out.contains("splice restart"), out)
+            assertTrue(!out.contains("Everything checks out"), out)
+        } finally {
+            server.stop(0)
+        }
+    }
 }

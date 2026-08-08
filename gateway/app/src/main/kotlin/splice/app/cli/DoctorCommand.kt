@@ -64,7 +64,7 @@ internal fun doctor(envReader: (String) -> String? = System::getenv): Boolean {
         "prerequisites" to guarded { prerequisiteChecks(envReader) },
         "installation" to guarded { installationChecks(topo, envReader) },
         "configuration" to guarded { configurationChecks(topo, configPath) },
-        CHECK_DAEMON to guarded { daemonChecks(snapshot, envReader, topology) },
+        CHECK_DAEMON to guarded { daemonChecks(snapshot, envReader, topology, configPath) },
         "auth" to guarded { authChecks(topo, envReader, snapshot) },
     )
     println("${BOLD}splice doctor$RESET $DIM— every ✗ and ! comes with its fix$RESET")
@@ -130,6 +130,7 @@ private fun daemonChecks(
     snapshot: DaemonSnapshot,
     envReader: (String) -> String?,
     topology: Topology?,
+    configPath: Path? = null,
 ): List<DoctorCheck> {
     val statePaths = StatePaths(envReader = envReader)
     val daemon = when (val running = snapshot.healthVersion) {
@@ -150,7 +151,28 @@ private fun daemonChecks(
         DoctorCheck("daemon.lock", CheckStatus.INFO, statePaths.daemonLockFile.toString()),
     )
     return listOf(daemon) + headChecks(snapshot, topology) +
-        listOf(mgmtKeyCheck(statePaths, snapshot.running)) + stateInfo
+        listOfNotNull(topologyFreshness(snapshot, configPath), mgmtKeyCheck(statePaths, snapshot.running)) +
+        stateInfo
+}
+
+/** JW-04: is the file on disk still the one the daemon booted from? Compared digest-to-digest
+ *  (the doctor hashes the local file; the daemon published what it parsed), with the daemon's
+ *  own topologyStale recompute as the belt. Fail-open: no health, no published digest, or an
+ *  unreadable local file all mean no row — never a fabricated verdict. */
+private fun topologyFreshness(snapshot: DaemonSnapshot, configPath: Path?): DoctorCheck? {
+    val h = snapshot.health
+    val booted = h?.topologyDigest?.takeIf { it.isNotEmpty() }
+    val local = booted?.let { configPath?.let(TopologyLoader::currentDigest) } ?: return null
+    return if (local == booted && h?.topologyStale != true) {
+        DoctorCheck("topology", CheckStatus.OK, "running config matches the file on disk")
+    } else {
+        DoctorCheck(
+            "topology",
+            CheckStatus.WARN,
+            "splice.toml changed since the daemon booted — the running topology is stale",
+            "splice restart",
+        )
+    }
 }
 
 /** JW-02: the degraded-boot rows doctor was structurally blind to. /health has carried

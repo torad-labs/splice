@@ -18,3 +18,7 @@ export async function applyConfigPatch(patch: Record<string, ConfigValue>): Prom
   await fetchConfig();
   return result;
 }
+
+// JW-04: re-exported through the entity so pages stay inside the boundaries policy
+// (pages -> entities -> shared-api).
+export { fetchTopologyStale } from '@shared/api';

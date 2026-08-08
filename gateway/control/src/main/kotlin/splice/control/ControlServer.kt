@@ -86,9 +86,16 @@ public class ControlServer(
     // against the configured total: an assembly-failed head is counted in failedHeads but is NEVER
     // in the `heads` map, so reporting heads.size broke the invariant for it (review 2026-07-23).
     private val configuredHeads: Int = heads.size,
+    // JW-04: the booted config identity + a per-request staleness recompute (fail-open lambda).
+    // Topology stays deliberately non-hot-reloadable; these only make the required restart VISIBLE
+    // to the shim, doctor, and the dashboard.
+    private val topologyDigest: String = "",
+    private val configPath: String = "",
+    private val topologyStale: () -> Boolean = { false },
 ) {
     private val json = Json { ignoreUnknownKeys = true }
-    private val payloads = ControlPayloads(heads, config, failedHeads, configuredHeads)
+    private val payloads =
+        ControlPayloads(heads, config, failedHeads, configuredHeads, topologyDigest, configPath, topologyStale)
 
     @Volatile
     private var server: EmbeddedServer<NettyApplicationEngine, *>? = null
@@ -393,6 +400,9 @@ private class ControlPayloads(
     private val config: ConfigService,
     private val failedHeads: () -> Int,
     private val configuredHeads: Int,
+    private val topologyDigest: String = "",
+    private val configPath: String = "",
+    private val topologyStale: () -> Boolean = { false },
 ) {
     fun controlHealthJson(): String = buildJsonObject {
         put("ok", true)
@@ -407,6 +417,12 @@ private class ControlPayloads(
         val ready = heads.values.count { it.head.healthSnapshot().running }
         put("readyHeads", ready)
         put("failedHeads", failedHeads())
+        // JW-04: the booted config identity — an edited splice.toml used to be silently inert
+        // (topology loads once by design; nothing anywhere compared disk to boot). Stale is
+        // recomputed per request and fails OPEN on an unreadable file.
+        put("topologyDigest", topologyDigest)
+        put("configPath", configPath)
+        put("topologyStale", topologyStale())
     }.toString()
 
     fun statusJson(): String = buildJsonObject {

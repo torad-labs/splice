@@ -51,7 +51,8 @@ private fun runDaemon() {
         return
     }
     val topologyPath = TopologyLoader.configPath()
-    val topology = TopologyLoader.loadOrMaterialize(topologyPath)
+    val loaded = TopologyLoader.loadOrMaterializeWithDigest(topologyPath)
+    val topology = loaded.topology
     val distPath = Paths.get(System.getProperty("user.dir"), "..", "webui", "dist", "index.html")
     val log = persistentLogger(statePaths.logsDir)
     // Components that would otherwise fall back to bare stderr (auth providers, ConfigService,
@@ -66,6 +67,10 @@ private fun runDaemon() {
         Daemon.dashboardFrom(distPath),
         log = log,
         shutdownDaemon = { shutdownSignal.complete(Unit) },
+        // JW-04: the booted config identity, published on /health so an edited-but-inert
+        // splice.toml is visible to the shim, doctor, and the dashboard.
+        topologyDigest = loaded.digest,
+        topologyPath = topologyPath,
     )
 
     Runtime.getRuntime().addShutdownHook(Thread { shutdown(daemon, lock) })

@@ -172,6 +172,14 @@ if [ -n "$WANT_SHIM" ] && [ -n "$SPLICE_SHIM_VERSION" ] && [ "$WANT_SHIM" != "$S
   echo "splice: WARNING — installed launch shim ($0) is stale (marker=$SPLICE_SHIM_VERSION, daemon expects=$WANT_SHIM). Run: splice install (or ./install.sh) to refresh it." >&2
 fi
 
+# JW-04, same non-fatal shape: topology loads once by design, so an edited splice.toml is inert
+# until a restart — the daemon re-compares its booted digest to the file per /health request
+# (topologyStale, fail-open), and this names the fix instead of leaving the edit silently dead.
+TOPOLOGY_STALE="$(health_field topologyStale)"
+if [ "$TOPOLOGY_STALE" = "True" ] || [ "$TOPOLOGY_STALE" = "true" ]; then
+  echo "splice: WARNING — splice.toml changed since the daemon booted; the running topology is stale. Run: splice restart" >&2
+fi
+
 KEY="$(cat "$KEY_FILE" 2>/dev/null || true)"
 if [ -z "$KEY" ]; then echo "splice: mgmt-key not found at $KEY_FILE" >&2; exit 1; fi
 

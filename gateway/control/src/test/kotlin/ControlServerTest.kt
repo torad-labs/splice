@@ -134,6 +134,9 @@ class ControlServerTest {
                 splice.core.launch.ClaudeConfigMaterializer(tmp),
             ),
             shutdownDaemon = { shutdownRequests.incrementAndGet() },
+            topologyDigest = "boot-digest-abc",
+            configPath = "/tmp/splice.toml",
+            topologyStale = { true },
         )
         control.start()
         awaitListening(port)
@@ -190,6 +193,11 @@ class ControlServerTest {
         assertEquals("true", body["ok"]?.jsonPrimitive?.content)
         assertTrue(body.containsKey("version"))
         assertEquals(SHIM_VERSION, body["wantShimVersion"]?.jsonPrimitive?.content)
+        // JW-04: the booted config identity + per-request staleness recompute ride /health so
+        // shim/doctor/dashboard can see an edited-but-inert splice.toml.
+        assertEquals("boot-digest-abc", body["topologyDigest"]?.jsonPrimitive?.content)
+        assertEquals("/tmp/splice.toml", body["configPath"]?.jsonPrimitive?.content)
+        assertEquals("true", body["topologyStale"]?.jsonPrimitive?.content)
     }
 
     @Test

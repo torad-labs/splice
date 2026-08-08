@@ -259,3 +259,16 @@ export const control = {
   compact: () => request<CompactPayload>('/api/compact'),
   logs: (head: string, tail: number) => request<LogsPayload>(`/api/logs/${head}?tail=${tail}`),
 };
+
+// JW-04: the unauthenticated /health probe carries topologyStale — the daemon re-compares its
+// booted splice.toml digest against the file on disk per request (fail-open on unreadable).
+// An edited-but-inert topology used to be invisible everywhere; the config page banners it.
+export async function fetchTopologyStale(): Promise<boolean> {
+  try {
+    const res = await fetch('/health');
+    const body = (await res.json()) as { topologyStale?: boolean };
+    return body.topologyStale === true;
+  } catch {
+    return false; // fail open — a health hiccup must never block the page
+  }
+}

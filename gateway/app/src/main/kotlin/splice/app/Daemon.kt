@@ -257,6 +257,10 @@ public class Daemon(
     private val shutdownDaemon: () -> Unit = {},
     private val refreshCall: suspend (tokenUrl: String, refreshToken: String) -> RefreshAttempt<RefreshedTokens> =
         ::codexRefresh,
+    // JW-04: the booted config identity (sha-256 of the parsed bytes + the resolved path).
+    // Defaults keep every existing test constructor compiling; Main always passes both.
+    private val topologyDigest: String = "",
+    private val topologyPath: Path? = null,
 ) {
     // Topology TOML ([daemon] + [defaults]) feeds the headOverrides layer so reasoning
     // display is operator-editable without recompiling. Env and runtime PATCH still win.
@@ -309,6 +313,9 @@ public class Daemon(
             // Configured total so readyHeads + failedHeads == heads holds even when a head fails to
             // ASSEMBLE (it never enters `heads`) — review 2026-07-23.
             topology.heads.size,
+            topologyDigest = topologyDigest,
+            configPath = topologyPath?.toString().orEmpty(),
+            topologyStale = topologyStaleProbe(topologyPath, topologyDigest),
         )
         control = srv
         // Start heads BEFORE opening the control plane so a launch-shim that sees /health and
@@ -658,17 +665,6 @@ public class Daemon(
 
     // The /model picker option list Claude Code caches in .claude.json — every model with its
     // label, description, and window, so all of them appear in the picker (not just the pinned one).
-    private fun modelOptionsCache(providerCfg: ProviderConfig): JsonElement = buildJsonArray {
-        providerCfg.models.forEach { model ->
-            addJsonObject {
-                put("value", model.id)
-                put("label", model.label.ifEmpty { model.id })
-                put("description", model.description.ifEmpty { model.label.ifEmpty { model.id } })
-                put("context_window", model.contextWindow)
-            }
-        }
-    }
-
     // Common assembly shared by every provider: stores, the generic HeadServer, launch spec.
     // The sign-in plan (OAuth browser flow vs api-key masked prompt + token capture) lives in
     // SignInPlan.kt — factored out of this class (detekt LargeClass).
@@ -776,6 +772,26 @@ public class Daemon(
                 .getOrNull()
                 ?: runCatchingCancellable { classpathHtml() }.getOrNull()
                 ?: "<!doctype html><title>splice</title><p>dashboard build missing</p>"
+        }
+    }
+}
+
+/** JW-04: per-request staleness recompute, failing OPEN — an unreadable file degrades the
+ *  signal, never /health. Top-level: Daemon sits at detekt's LargeClass ceiling. */
+private fun topologyStaleProbe(topologyPath: Path?, bootDigest: String): () -> Boolean = {
+    val now = topologyPath?.let { TopologyLoader.currentDigest(it) }
+    now != null && bootDigest.isNotEmpty() && now != bootDigest
+}
+
+/** Pure roster -> dropdown-cache projection. Top-level: Daemon sits at detekt's LargeClass
+ *  ceiling (JW-04 relocation; SignInPlan.kt was the same move). */
+private fun modelOptionsCache(providerCfg: ProviderConfig): JsonElement = buildJsonArray {
+    providerCfg.models.forEach { model ->
+        addJsonObject {
+            put("value", model.id)
+            put("label", model.label.ifEmpty { model.id })
+            put("description", model.description.ifEmpty { model.label.ifEmpty { model.id } })
+            put("context_window", model.contextWindow)
         }
     }
 }

@@ -1,18 +1,24 @@
 // Runtime knobs, hot-applied through the layered config. The layers table
 // shows WHY a value is what it is (defaults, file, env, runtime PATCH).
-import { useEffect } from 'react';
-import { fetchConfig, useConfig } from '@entities/config';
+import { useEffect, useState } from 'react';
+import { fetchConfig, fetchTopologyStale, useConfig } from '@entities/config';
 import { EditConfig } from '@features/edit-config';
 import { ErrorNote, Panel, SkeletonRows } from '@shared/ui';
 
 export function ConfigPage() {
+  // JW-04: topology loads once at boot by design — this banner is the visibility half.
+  const [topologyStale, setTopologyStale] = useState(false);
   useEffect(() => {
     void fetchConfig();
+    void fetchTopologyStale().then(setTopologyStale);
   }, []);
   const { data, error, loading } = useConfig((s) => s);
 
   return (
     <div className="myx-stack">
+      {topologyStale ? (
+        <ErrorNote message="splice.toml changed since the daemon booted; the running topology is stale. Run: splice restart" />
+      ) : null}
       <Panel title="runtime config (hot unless marked restart)">
         {error ? <ErrorNote message={error} /> : null}
         {loading && !data ? <SkeletonRows rows={8} cols={2} /> : null}

@@ -3,6 +3,7 @@
 package splice.app.cli
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -23,6 +24,10 @@ internal object ControlPlaneClient {
         val heads: Int?,
         val readyHeads: Int?,
         val failedHeads: Int?,
+        // JW-04: the booted config identity + the daemon's own per-request staleness recompute.
+        val topologyDigest: String? = null,
+        val configPath: String? = null,
+        val topologyStale: Boolean? = null,
     )
 
     /** The /health payload of any splice-shaped listener, or null when nothing answers.
@@ -37,6 +42,9 @@ internal object ControlPlaneClient {
                 heads = obj.int("heads"),
                 readyHeads = obj.int("readyHeads"),
                 failedHeads = obj.int("failedHeads"),
+                topologyDigest = obj.str("topologyDigest"),
+                configPath = obj.str("configPath"),
+                topologyStale = (obj["topologyStale"] as? JsonPrimitive)?.booleanOrNull,
             )
         }
     }.getOrNull()

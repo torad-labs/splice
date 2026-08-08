@@ -109,7 +109,7 @@ wall = ""
 [[item]]
 id = "JW-04"
 phase = "W3-see-the-daemon"
-wall = ""
+wall = "dev/campaigns/proxy-hardening/walls/jw_04_topology_staleness_visible.py"
 
 [[item]]
 id = "JW-05"

@@ -166,7 +166,9 @@ class UpstreamClientRetryPolicyTest {
     }
 
     @Test
-    fun `retry-after beyond the interactive budget gives up at once and arms its full cooldown`() = runTest {
+    fun `retry-after below the cooldown ceiling gives up at once and arms its full pushback`() = runTest {
+        // NF-01 REWRITE of the old honour-the-full-pushback pin: below MAX_RATE_LIMIT_COOLDOWN_MS
+        // the served value still wins verbatim; only horizons past the ceiling clamp (next test).
         var now = 0L
         val calls = AtomicInteger()
         val engine = MockEngine {
@@ -182,6 +184,53 @@ class UpstreamClientRetryPolicyTest {
         now += 6_000 // past the 30s Retry-After
         assertThrows<UpstreamFailed> { postOnce(client) }
         assertEquals(2, calls.get()) // attempted again
+    }
+
+    @Test
+    fun `a multi-day retry-after arms a horizon no longer than the cooldown ceiling`() = runTest {
+        // NF-01: one 86400s pushback (ChatGPT quota resets legitimately run to days — 142h
+        // observed 2026-07-26) must not poison the head permanently. The armed horizon clamps to
+        // MAX_RATE_LIMIT_COOLDOWN_MS (120s); the TRUE pushback still reaches the caller in the
+        // surfaced upstream body.
+        var now = 0L
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            respond(
+                """{"detail":"Rate limit exceeded","resets_in_seconds":86400}""",
+                HttpStatusCode.TooManyRequests,
+                headersOf("Retry-After", "86400"),
+            )
+        }
+        val client = clientOver(engine, clock = { now })
+        val armed = assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(1, calls.get())
+        assertTrue(armed.body.contains("86400"), "true pushback surfaces in the upstream body: ${armed.body}")
+        now += 119_000 // inside the 120s ceiling — still failing fast
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(1, calls.get())
+        now += 2_000 // 121s: the clamp has expired — traffic is attempted again, not in 24h
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(2, calls.get())
+    }
+
+    @Test
+    fun `clearRateLimitCooldown drops an armed horizon immediately`() = runTest {
+        // NF-01: the restart escape hatch — HeadServer.startLocked() calls this.
+        var now = 0L
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            respond("slow down", HttpStatusCode.TooManyRequests, headersOf("Retry-After", "60"))
+        }
+        val client = clientOver(engine, clock = { now })
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(1, calls.get())
+        assertTrue(client.rateLimitedForMs > 0L)
+        client.clearRateLimitCooldown()
+        assertEquals(0L, client.rateLimitedForMs)
+        assertThrows<UpstreamFailed> { postOnce(client) } // straight to upstream, no fail-fast
+        assertEquals(2, calls.get())
     }
 
     @Test

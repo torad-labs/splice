@@ -26,6 +26,9 @@ import splice.core.util.discard
 const val SUMMARY_SECTION_A: String = "**Analyzing CLI exit and async error handling**"
 const val SUMMARY_SECTION_B: String = "**Deploying the hardened fleet build**"
 
+// NF-01 quota429 scenario: the HTTP status a real ChatGPT quota rejection carries.
+const val RATE_LIMITED_STATUS: Int = 429
+
 class MockChatGptUpstream {
     val upstreamAuths = CopyOnWriteArrayList<Pair<String, String?>>()
     val upstreamBodies = CopyOnWriteArrayList<Pair<String, String>>()
@@ -124,6 +127,17 @@ class MockChatGptUpstream {
                 ex.responseBody.write("data: {\"type\":\"resp".toByteArray())
                 ex.responseBody.flush()
             }.discard("tear: drop mid-frame")
+            ex.close()
+            return
+        }
+        if (scenario == "quota429") {
+            // ADDED (named change, NF-01): a hard 429 with a sub-ceiling Retry-After — arms the
+            // UpstreamClient's shared head-wide cooldown so restart-clears-it is testable.
+            ex.responseHeaders.add("Content-Type", "application/json")
+            ex.responseHeaders.add("Retry-After", "60")
+            val body429 = """{"detail":"Rate limit exceeded","resets_in_seconds":60}""".toByteArray()
+            ex.sendResponseHeaders(RATE_LIMITED_STATUS, body429.size.toLong())
+            ex.responseBody.use { it.write(body429) }
             ex.close()
             return
         }

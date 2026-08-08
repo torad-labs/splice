@@ -63,6 +63,7 @@ class HeadServerCapacityTest {
     // prior run's socket is still in TIME_WAIT.
     private val port = ServerSocket(0).use { it.localPort }
     private lateinit var head: HeadServer
+    private val upstreamClient = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 2)
     private val gate = InflightGate(maxInflight = { 1 }, maxQueued = { 1 })
     private lateinit var tmp: java.nio.file.Path
 
@@ -95,7 +96,7 @@ class HeadServerCapacityTest {
             provider = provider,
             listenPort = port,
             deps = HeadDeps(
-                upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 2),
+                upstream = upstreamClient,
                 inferenceToken = "test-inference-token",
                 gate = gate,
                 shadow = ShadowClassifier(log = {}),
@@ -196,5 +197,23 @@ class HeadServerCapacityTest {
 
         mock.releaseHold()
         held.await()
+    }
+
+    @Test
+    fun `restart clears an armed 429 cooldown`() = runBlocking {
+        // NF-01: an upstream 429 arms the head-wide fail-fast horizon on the long-lived
+        // UpstreamClient; a control-plane restart must be a real escape hatch, not a no-op.
+        client.post("http://127.0.0.1:$port/v1/messages") {
+            header("Content-Type", "application/json")
+            setBody(
+                """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":64,
+                    "system":"You are a test. SCENARIO:quota429",
+                    "messages":[{"role":"user","content":"go"}]}""",
+            )
+        }
+        assertTrue(upstreamClient.rateLimitedForMs > 0L, "the 429 should have armed the cooldown")
+        head.restart()
+        assertEquals(0L, upstreamClient.rateLimitedForMs, "restart must clear the armed horizon")
+        Thread.sleep(700) // Netty warmup before the next test reuses the port
     }
 }

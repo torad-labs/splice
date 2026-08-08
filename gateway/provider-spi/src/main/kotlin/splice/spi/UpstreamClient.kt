@@ -75,6 +75,16 @@ public class UpstreamClient(
     // ZERO upstream calls. Benign write race: concurrent arms only differ by ms; latest-max wins.
     private val rateLimitedUntilMs = AtomicLong(0L)
 
+    /** NF-01: head restart is a real escape hatch — HeadServer.startLocked() clears the armed
+     *  horizon alongside driver.resetHealth(), instead of the cooldown outliving the restart. */
+    public fun clearRateLimitCooldown() {
+        rateLimitedUntilMs.set(0L)
+    }
+
+    /** NF-01: remaining armed cooldown (0 when idle) — surfaced so doctor/status views can name
+     *  WHY a head is failing fast (NF-10/JW-11 read this). */
+    public val rateLimitedForMs: Long get() = maxOf(0L, rateLimitedUntilMs.get() - clock())
+
     /** The per-post collaborators threaded through every attempt (grouped: one cohesive argument). */
     private data class PostContext(
         val url: String,
@@ -357,10 +367,6 @@ public class UpstreamClient(
         }
     }
 
-    /** Seconds-form Retry-After → ms; HTTP-date form and garbage → null (backoff curve decides). */
-    private fun retryAfterMs(header: String?): Long? =
-        header?.trim()?.toLongOrNull()?.takeIf { it >= 0 }?.times(MS_PER_S)
-
     /** Cross-attempt wall-clock budget (route-timeout analog to the per-try [firstByteTimeoutMs]). */
     private fun deadlineExceeded(t0: Long): Boolean = clock() - t0 >= totalTimeoutMs
 
@@ -404,7 +410,16 @@ public class UpstreamClient(
         // fast instead of each burning their own attempts into the same limited account
         // (latest-max wins; the benign race only shifts the horizon by ms).
         if (failed.status == RATE_LIMITED) {
-            val until = clock() + (failed.retryAfterMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS)
+            // NF-01: arm at most MAX_RATE_LIMIT_COOLDOWN_MS — the full pushback is not lost, it
+            // rides in the upstream body this GIVE_UP surfaces; only the fail-fast horizon clamps.
+            val pushbackMs = failed.retryAfterMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS
+            if (pushbackMs > MAX_RATE_LIMIT_COOLDOWN_MS) {
+                ctx.onRetry(
+                    "429 Retry-After ${pushbackMs}ms exceeds the cooldown ceiling — " +
+                        "arming ${MAX_RATE_LIMIT_COOLDOWN_MS}ms",
+                )
+            }
+            val until = clock() + minOf(pushbackMs, MAX_RATE_LIMIT_COOLDOWN_MS)
             rateLimitedUntilMs.accumulateAndGet(until) { current, candidate -> maxOf(current, candidate) }
             // A concurrent wave can receive 429 before any member sees the shared cooldown.
             // Retrying each member would amplify one upstream limit into N×maxRetries requests;
@@ -586,7 +601,6 @@ public class UpstreamClient(
             status == RATE_LIMITED || status == REQUEST_TIMEOUT ||
                 (status in SERVER_ERRORS && status != NOT_IMPLEMENTED)
 
-        private const val MS_PER_S = 1000L
         private const val MAX_BACKOFF_MS = 10_000L
 
         // 60s→15s (2026-07-19 storm): a wait the CLIENT would outlive is the client's to make.
@@ -598,6 +612,14 @@ public class UpstreamClient(
         // {"detail":"Rate limit exceeded"}). Long enough to starve a herd, short enough that a
         // recovered account resumes within one client-retry cycle.
         private const val DEFAULT_RATE_LIMIT_COOLDOWN_MS = 20_000L
+
+        // NF-01: ceiling on the ARMED horizon, whatever the pushback says. ChatGPT quota errors
+        // legitimately carry multi-day resets (142h observed 2026-07-26) and accumulateAndGet(max)
+        // makes the longest value ever seen win permanently — one malformed pushback would poison
+        // the head for every future turn with no operator escape short of killing the daemon.
+        // 120s starves a herd but lets a recovering account resume inside one client-retry cycle;
+        // the true pushback still reaches the operator in the surfaced upstream body.
+        private const val MAX_RATE_LIMIT_COOLDOWN_MS = 120_000L
         private const val JITTER_LO = 0.9
         private const val JITTER_HI = 1.1
 
@@ -681,3 +703,11 @@ public class UpstreamFailed(
     public val body: String,
     public val status: Int? = null,
 ) : RuntimeException("upstream failed after retries (status=$status)")
+
+private const val MS_PER_S = 1000L
+
+/** Seconds-form Retry-After → ms; HTTP-date form and garbage → null (backoff curve decides).
+ *  Top-level (not an UpstreamClient method): the class sits at its detekt function budget, and
+ *  the parser is pure — NF-04's HTTP-date extension lands here without touching the class. */
+private fun retryAfterMs(header: String?): Long? =
+    header?.trim()?.toLongOrNull()?.takeIf { it >= 0 }?.times(MS_PER_S)

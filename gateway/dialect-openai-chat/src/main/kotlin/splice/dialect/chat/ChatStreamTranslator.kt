@@ -38,6 +38,12 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     private var textBlock: WireBlockIndex? = null
     private var thinkingBlock: WireBlockIndex? = null
     private val toolBlocks = HashMap<Int, WireBlockIndex>()
+
+    // CX-01: full accumulated argument text per opened tool index — the streamed chunks go
+    // straight to the wire, so this is the only place the WHOLE buffer exists for a JSON parse
+    // at terminal. Capped by BufferCapacity (NF-06).
+    private val toolArgsByIndex = HashMap<Int, StringBuilder>()
+    private var toolArgsInvalid: String? = null
     private var hasToolUse = false
     private var emittedText = false
     private var incomplete = false
@@ -103,6 +109,9 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
             // malformed value in a frame: surface via the honest terminal decision
         }
         flushPendingTools(sink)
+        // CX-01: parse each opened tool's accumulated args at terminal; a corrupt/empty tool call
+        // becomes a Failure in terminalOutcome, never a Success with a malformed tool_use.
+        if (toolArgsInvalid == null) toolArgsInvalid = firstInvalidToolArgs(toolBlocks.keys, toolArgsByIndex)
         sink.closeAll()
         return terminalOutcome()
     }
@@ -113,6 +122,13 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         val runaway = runawayGuard
         val providerFailure = when {
             runaway != null -> TurnOutcome.Failure(ErrorType.API_ERROR, runaway, providerReported = false)
+            // CX-01: a terminated turn whose tool arguments are corrupt must not reach the client
+            // as a Success — provider-reported (the backend produced the bytes), so it retries.
+            toolArgsInvalid != null -> TurnOutcome.Failure(
+                ErrorType.API_ERROR,
+                "chat backend: $toolArgsInvalid in tool call — retry",
+                providerReported = true,
+            )
             failure != null ->
                 TurnOutcome.Failure(ErrorType.API_ERROR, "chat backend: $failure", providerReported = true)
             // finish_reason=content_filter is a CENSORED turn — a clean end_turn would let a
@@ -271,7 +287,10 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         val args = strOrEmpty(fn?.get("arguments"))
         val opened = toolBlocks[index]
         if (opened != null) {
-            if (args.isNotEmpty()) sink.inputJsonDelta(opened, args)
+            if (args.isNotEmpty()) {
+                sink.inputJsonDelta(opened, args)
+                accumulateToolArgs(toolArgsByIndex, index, args)
+            }
             return
         }
         val pending = pendingTools.getOrPut(index) {
@@ -294,7 +313,10 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         openedToolIds.add(pending.id)
         hasToolUse = true
         pendingTools.remove(index)
-        if (pending.args.isNotEmpty()) sink.inputJsonDelta(opened, pending.args.toString())
+        if (pending.args.isNotEmpty()) {
+            sink.inputJsonDelta(opened, pending.args.toString())
+            accumulateToolArgs(toolArgsByIndex, index, pending.args.toString())
+        }
     }
 
     private suspend fun flushPendingTools(sink: WireSink) {
@@ -375,4 +397,31 @@ private fun unseenSuffix(already: String, final: String): String = when {
     final.startsWith(already) -> final.substring(already.length)
     already.contains(final) -> ""
     else -> final
+}
+
+/** CX-01: the first opened tool whose accumulated args are empty or not valid JSON, or null when
+ *  all parse. Top-level (off ChatStreamTranslator's detekt function budget) — reads only its
+ *  arguments. An opened tool with zero argument text is malformed ({} for a tool that needed args). */
+// CX-01: bounded accumulation of an opened tool's full argument text (streamed chunks go to the
+// wire; this is the only place the whole buffer exists to parse at terminal). Top-level — off the
+// class function budget. NF-06 cap.
+private fun accumulateToolArgs(argsByIndex: MutableMap<Int, StringBuilder>, index: Int, chunk: String) {
+    val buf = argsByIndex.getOrPut(index) { StringBuilder() }
+    if (buf.length < BufferCapacity.MAX_BUFFERED_CHARS) buf.append(chunk)
+}
+
+private fun firstInvalidToolArgs(indices: Set<Int>, argsByIndex: Map<Int, StringBuilder>): String? =
+    indices.firstNotNullOfOrNull { index -> invalidArgsReason(argsByIndex[index]?.toString().orEmpty()) }
+
+/** null when [text] is valid non-empty tool-argument JSON, else the reason. */
+private fun invalidArgsReason(text: String): String? {
+    if (text.isBlank()) return "empty arguments for an opened tool call"
+    return try {
+        kotlinx.serialization.json.Json.parseToJsonElement(text)
+        null
+    } catch (ignored: kotlinx.serialization.SerializationException) {
+        "malformed JSON"
+    } catch (ignored: IllegalArgumentException) {
+        "malformed JSON"
+    }
 }

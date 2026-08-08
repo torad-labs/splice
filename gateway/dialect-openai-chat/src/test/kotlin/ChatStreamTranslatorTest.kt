@@ -104,7 +104,10 @@ class ChatStreamTranslatorTest {
             sink,
         )
         assertTrue((outcome as TurnOutcome.Success).hasToolUse)
-        assertEquals(listOf("openTool:run", "json:{\"a\":", "json:1}", "closeAll"), sink.calls)
+        assertEquals(
+            listOf("openTool:run", "json:{\"a\":", "json:1}", "closeAll"),
+            sink.calls,
+        )
     }
 
     @Test
@@ -483,5 +486,60 @@ class ChatStreamTranslatorTest {
         val s = outcome as TurnOutcome.Success
         assertTrue(s.incomplete, "max_tokens must mark the turn incomplete")
         assertFalse(s.hasToolUse)
+    }
+}
+
+// CX-01 in its own class: ChatStreamTranslatorTest sits at detekt's LargeClass ceiling.
+class ChatToolArgsValidationTest {
+    @Test
+    fun `truncated tool arguments plus a terminal is a Failure, not a corrupt Success - CX-01`() = runTest {
+        // The backend truncates arguments mid-string but still emits finish_reason:tool_calls —
+        // the block would close as Success carrying corrupt JSON that Claude Code then parses.
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":{"name":"run","arguments":"{\"a\":"}}]}}]}""",
+                ),
+                ev("""{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"""),
+            ).asFlow(),
+            Rec(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, failure.type)
+        assertTrue(failure.message.contains("malformed JSON"), failure.message)
+    }
+
+    @Test
+    fun `an opened tool with zero argument deltas is a Failure - CX-01`() = runTest {
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":{"name":"run"}}]}}]}"""),
+                ev("""{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"""),
+            ).asFlow(),
+            Rec(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertTrue(failure.message.contains("empty arguments"), failure.message)
+    }
+
+    @Test
+    fun `valid tool arguments still succeed with byte-identical wire - CX-01`() = runTest {
+        val sink = Rec()
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":{"name":"run","arguments":"{\"a\":"}}]}}]}""",
+                ),
+                ev("""{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"1}"}}]}}]}"""),
+                ev("""{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}"""),
+            ).asFlow(),
+            sink,
+        )
+        assertTrue((outcome as TurnOutcome.Success).hasToolUse)
+        // wire unchanged from the pre-CX-01 pin: validation is observe-only
+        assertEquals(
+            listOf("openTool:run", "json:{\"a\":", "json:1}", "closeAll"),
+            sink.calls,
+        )
     }
 }

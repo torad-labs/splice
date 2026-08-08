@@ -142,7 +142,13 @@ private class SummaryDedup(private val active: Boolean, private val shared: Shar
 
 // Mutable per-block cursor. A data class here documents it as pure per-block state; it is only
 // ever stored/looked up by wire index, never compared by value.
-private data class BlockState(val index: WireBlockIndex, var sawDelta: Boolean)
+private data class BlockState(
+    val index: WireBlockIndex,
+    var sawDelta: Boolean,
+    // CX-01: accumulated tool-argument text for a function_call block, validated as JSON at close.
+    // Empty for text/reasoning blocks (they never reach onArgs). Capped by BufferCapacity (NF-06).
+    val args: StringBuilder = StringBuilder(),
+)
 
 public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : StreamTranslator {
 
@@ -204,6 +210,15 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
             // neither a late terminal nor a provider error can describe this turn honestly.
             providerFailure = runawayGuard?.let {
                 TurnOutcome.Failure(ErrorType.API_ERROR, it, providerReported = false)
+            } ?: reducer.toolArgsInvalid?.let {
+                // CX-01: the backend sent a terminal, but a tool call's arguments are corrupt —
+                // provider-reported (the backend produced the bytes) so it retries, never a clean
+                // Success that dispatches garbage.
+                TurnOutcome.Failure(
+                    ErrorType.API_ERROR,
+                    "ChatGPT backend: $it in tool call — retry",
+                    providerReported = true,
+                )
             } ?: reducer.upstreamFailure?.let {
                 // parsed from a response.failed/error event the backend actually sent (G20 provenance)
                 TurnOutcome.Failure(
@@ -341,6 +356,10 @@ private class ResponsesEventReducer(val ctx: StreamTurnContext) {
     var textBuf = StringBuilder()
     var finalResponse: JsonObject? = null
     var upstreamFailure: ClassifiedFailure? = null
+
+    // CX-01: latched when a function_call block closes with malformed/empty argument JSON — a
+    // truncated-but-terminated tool call would otherwise reach Claude Code as a corrupt tool_use.
+    var toolArgsInvalid: String? = null
     var inputTokens = 0L
     var outputTokens = 0L
     var cachedTokens = 0L
@@ -564,21 +583,16 @@ private class ResponsesEventReducer(val ctx: StreamTurnContext) {
         val oi = intOr(evt[OUTPUT_INDEX]) ?: return
         val b = blocks[oi] ?: return
         if (strOrEmpty(evt["type"]) == "response.function_call_arguments.done") {
-            if (!b.sawDelta) {
-                val full = strOrEmpty(evt["arguments"])
-                if (full.isNotEmpty()) {
-                    sink.inputJsonDelta(b.index, full)
-                    b.sawDelta = true
-                }
-            }
+            if (!b.sawDelta) emitToolArgText(b, strOrEmpty(evt["arguments"]), sink)
+            // CX-01: a backend can truncate arguments mid-string and STILL send .done — the block
+            // would close as a Success carrying corrupt tool JSON that Claude Code then parses or
+            // dispatches. Validate the accumulated buffer; an opened tool with zero args is equally
+            // a malformed tool_use ({} for a tool that needed arguments). Latched, not thrown.
+            if (toolArgsInvalid == null) toolArgsInvalid = invalidToolArgsReason(b.args.toString())
             sink.closeBlock(b.index)
             toolSalvage.closedClean(oi)
         } else {
-            val delta = strOrEmpty(evt[DELTA])
-            if (delta.isNotEmpty()) {
-                sink.inputJsonDelta(b.index, delta)
-                b.sawDelta = true
-            }
+            emitToolArgText(b, strOrEmpty(evt[DELTA]), sink)
         }
     }
 
@@ -719,3 +733,26 @@ private const val TOOL_SEARCH_EXECUTION_CLIENT = "client"
 
 // NF-06 runaway-upstream guard message; the cap lives in spi.BufferCapacity (one source, three dialects).
 private const val RUNAWAY_GUARD_MESSAGE = "ChatGPT backend: response exceeded max buffered size — aborting"
+
+/** CX-01: null when [text] is valid non-empty tool-argument JSON, else the reason. Top-level —
+ *  off ResponsesEventReducer's function budget. */
+// CX-01: stream a tool-arg chunk to the wire AND accumulate it (bounded) for the terminal parse.
+// Top-level suspend — off ResponsesEventReducer's function budget.
+private suspend fun emitToolArgText(b: BlockState, text: String, sink: WireSink) {
+    if (text.isEmpty()) return
+    sink.inputJsonDelta(b.index, text)
+    b.sawDelta = true
+    if (b.args.length < BufferCapacity.MAX_BUFFERED_CHARS) b.args.append(text)
+}
+
+private fun invalidToolArgsReason(text: String): String? {
+    if (text.isBlank()) return "empty arguments for an opened tool call"
+    return try {
+        Json.parseToJsonElement(text)
+        null
+    } catch (ignored: SerializationException) {
+        "malformed JSON"
+    } catch (ignored: IllegalArgumentException) {
+        "malformed JSON"
+    }
+}

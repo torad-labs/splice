@@ -870,3 +870,60 @@ class ResponsesRunawayGuardTest {
         assertTrue(deltas in 20..21, "expected the guard to stop the stream at the cap, saw $deltas deltas")
     }
 }
+
+// CX-01 in its own class: ResponsesStreamTranslatorTest sits at detekt's LargeClass ceiling.
+class ResponsesToolArgsValidationTest {
+    @Test
+    fun `truncated tool arguments plus a terminal is a Failure, not corrupt Success - CX-01`() = runTest {
+        // .done arrives with a mid-string-truncated buffer; pre-fix the block closed as Success.
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,
+                       "item":{"type":"function_call","call_id":"toolu_1","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"c\":"}"""),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, failure.type)
+        assertTrue(failure.message.contains("malformed JSON"), failure.message)
+    }
+
+    @Test
+    fun `an opened tool with zero argument deltas is a Failure - CX-01`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,
+                       "item":{"type":"function_call","call_id":"toolu_1","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertTrue((outcome as TurnOutcome.Failure).message.contains("empty arguments"), outcome.message)
+    }
+
+    @Test
+    fun `valid tool arguments still succeed - CX-01`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,
+                       "item":{"type":"function_call","call_id":"toolu_1","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"c\":"}"""),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"1}"}"""),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertTrue((outcome as TurnOutcome.Success).hasToolUse)
+    }
+}

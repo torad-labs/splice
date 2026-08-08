@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
+import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.dialect.chat.ChatStreamTranslator
 import splice.dialect.chat.ChatTurnContext
@@ -123,13 +124,14 @@ class ChatToolFoldTest {
     }
 
     @Test
-    fun `id-matched echo does not repair under-delivered stream args - pins known limitation finding 5b`() = runTest {
-        // KNOWN LIMITATION (pinned): the stream under-delivers a call's arguments (partial JSON),
-        // then the trailing consolidated message echoes the SAME id with the COMPLETE arguments. The
-        // echo is suppressed wholesale (by id) to keep the common full-delivery echo a no-op, so the
-        // final's complete copy is discarded and the wire keeps only the partial args. Left as-is —
-        // repairing it needs per-block arg tracking, not worth the hot-path risk for a non-standard
-        // vendor (not codex/grok/kimi).
+    fun `under-delivered stream args echoed by id are caught as a Failure - CX-01 supersedes finding 5b`() = runTest {
+        // The former finding 5b was a KNOWN LIMITATION: the stream under-delivers a call's
+        // arguments (partial JSON), the trailing consolidated message echoes the SAME id with the
+        // COMPLETE arguments, the echo is suppressed wholesale (by id), and the wire kept only the
+        // partial args — i.e. the turn succeeded carrying corrupt tool JSON. CX-01 (2026-08-08)
+        // makes that a Failure: the partial "{\"x\":" on the wire is invalid JSON, so the turn is
+        // rejected for retry instead of dispatching garbage. The echo-suppression itself is
+        // unchanged (still no per-id repair); CX-01 just refuses to ship the corrupt result.
         val sink = FoldRec()
         val outcome = ChatStreamTranslator(foldCtx()).driveTurn(
             listOf(
@@ -145,9 +147,11 @@ class ChatToolFoldTest {
             ).asFlow(),
             sink,
         )
-        assertTrue((outcome as TurnOutcome.Success).hasToolUse)
-        assertEquals(listOf("t1" to "run"), sink.toolOpens)
-        // only the partial streamed args reached the wire; the final's complete "{\"x\":1}" is dropped
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, failure.type)
+        assertTrue(failure.message.contains("malformed JSON"), failure.message)
+        // the partial args still reached the wire before the terminal verdict — the fix is the
+        // outcome, not a wire rewrite (finding 5b's suppression is untouched).
         assertEquals(listOf("json:{\"x\":"), sink.calls.filter { it.startsWith("json:") })
     }
 }

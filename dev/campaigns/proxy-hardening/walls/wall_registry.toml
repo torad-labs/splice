@@ -74,7 +74,7 @@ wall = "dev/campaigns/proxy-hardening/walls/sh_04_auth_probe_supervised.py"
 [[item]]
 id = "SH-10"
 phase = "W2-auth-lifecycle"
-wall = ""
+wall = "dev/campaigns/proxy-hardening/walls/sh_10_kimi_merge_never_rewrite.py"
 
 [[item]]
 id = "SH-11"

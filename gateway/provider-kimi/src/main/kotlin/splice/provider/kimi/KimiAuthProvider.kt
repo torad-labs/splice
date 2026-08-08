@@ -22,6 +22,7 @@ import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.auth.credentialsOrNull
+import splice.core.auth.mergedCredentialJson
 import splice.core.auth.synthesizedExpiryMs
 import splice.core.util.DaemonLog
 import splice.core.util.long
@@ -164,7 +165,18 @@ public class KimiAuthProvider(
                 // we get here — a throwing write must degrade to a typed PersistFailed, never a raw
                 // throw through SingleFlight out of credentials()/refresh(), so the not-yet-expired
                 // current token still gets served.
-                runCatchingCancellable { writeSecure(authPath, kimiAuthJson(attempt.tokens, clock()).toString()) }
+                // SH-10: merge onto the on-disk object — a from-scratch rewrite dropped every
+                // field kimi-cli/kimi-code stores beside ours (the 2026-07-18 audit shape grok and
+                // codex already fixed). An unreadable file logs and degrades to tokens-only.
+                val onDisk = runCatchingCancellable {
+                    json.parseToJsonElement(Files.readString(authPath)).jsonObjectOrEmpty()
+                }.onFailure {
+                    log("[kimi-auth] could not re-read $authPath before persist ($it) — writing tokens-only")
+                }.getOrNull()
+                runCatchingCancellable {
+                    val merged = mergedCredentialJson(onDisk, kimiAuthJson(attempt.tokens, clock()))
+                    writeSecure(authPath, merged.toString())
+                }
                     .getOrElse { return RefreshOutcome.PersistFailed("credentials write failed: $it") }
                 invalidateCache()
                 RefreshOutcome.Refreshed(apiKey(attempt.tokens.accessToken))

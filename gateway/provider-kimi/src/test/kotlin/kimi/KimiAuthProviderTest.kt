@@ -496,4 +496,41 @@ class KimiSynthesizedExpiryTest {
         }
         assertEquals(0, calls.get(), "a fresh expires_at-less file must not refresh per call")
     }
+
+    @Test
+    fun `refresh merges onto the on-disk file - foreign fields survive rotation - SH-10`() = runTest {
+        // Pre-fix, a successful refresh wrote a fixed six-key object from scratch: device_id and
+        // any vendor field kimi-cli stores beside ours vanished on every rotation.
+        val dir = Files.createTempDirectory("kimi-merge")
+        val file = dir.resolve(".kimi").resolve("credentials").resolve("kimi-code.json")
+        Files.createDirectories(file.parent)
+        Files.writeString(
+            file,
+            """{"access_token":"old-access","refresh_token":"old-refresh","expires_at":1,
+                "scope":"coding","token_type":"Bearer","expires_in":3600,
+                "device_id":"dev-123","vendor_future_field":{"nested":true}}""",
+        )
+        val auth = KimiAuthProvider(
+            authPath = file,
+            clock = { 1_000_000L },
+            refreshCall = {
+                RefreshAttempt.Granted(
+                    KimiRefreshedTokens(
+                        accessToken = "new-access",
+                        refreshToken = "new-refresh",
+                        expiresIn = 7200,
+                        scope = "coding",
+                        tokenType = "Bearer",
+                    ),
+                )
+            },
+        )
+        auth.refresh()
+        val onDisk = Json.parseToJsonElement(Files.readString(file)).jsonObject
+        assertEquals("new-access", onDisk["access_token"]!!.jsonPrimitive.content)
+        assertEquals("new-refresh", onDisk["refresh_token"]!!.jsonPrimitive.content)
+        assertEquals("dev-123", onDisk["device_id"]!!.jsonPrimitive.content, "foreign key must survive")
+        assertTrue("vendor_future_field" in onDisk, "unknown vendor field must survive: $onDisk")
+        assertEquals("7200", onDisk["expires_in"]!!.jsonPrimitive.content, "rotation fields must replace")
+    }
 }

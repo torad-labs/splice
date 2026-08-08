@@ -114,7 +114,7 @@ wall = "dev/campaigns/proxy-hardening/walls/jw_04_topology_staleness_visible.py"
 [[item]]
 id = "JW-05"
 phase = "W3-see-the-daemon"
-wall = ""
+wall = "dev/campaigns/proxy-hardening/walls/jw_05_doctor_reads_runtime.py"
 
 [[item]]
 id = "JW-06"

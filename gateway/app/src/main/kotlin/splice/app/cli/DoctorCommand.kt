@@ -66,6 +66,9 @@ internal fun doctor(envReader: (String) -> String? = System::getenv): Boolean {
         "configuration" to guarded { configurationChecks(topo, configPath) },
         CHECK_DAEMON to guarded { daemonChecks(snapshot, envReader, topology, configPath) },
         "auth" to guarded { authChecks(topo, envReader, snapshot) },
+        // JW-05: what actually HAPPENED — every section above reads configuration and presence;
+        // this one reads the runtime instruments (health counters + perf outcome tail).
+        "runtime" to guarded { runtimeChecks(snapshot, envReader) },
     )
     println("${BOLD}splice doctor$RESET $DIM— every ✗ and ! comes with its fix$RESET")
     sections.forEach { (title, checks) -> renderSection(title, checks) }

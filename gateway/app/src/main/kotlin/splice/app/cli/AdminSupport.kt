@@ -35,15 +35,17 @@ internal object AdminSupport {
      *  never MATERIALIZES the starter config as a side effect. [envReader] threads through the
      *  whole port resolution (StatePaths + ConfigService env layer) so a hermetic caller never
      *  reads the real process environment or state dir. */
-    fun controlPort(topology: Topology?, envReader: (String) -> String? = System::getenv): Int = if (topology == null) {
-        DEFAULT_CONTROL_PORT
-    } else {
+    fun controlPort(topology: Topology?, envReader: (String) -> String? = System::getenv): Int =
         ConfigService(
             StatePaths(envReader = envReader),
-            headOverrides = topology.configOverrides(),
+            // No topology (fresh machine / broken TOML) still resolves through the layered config:
+            // the old null-branch returned the hardcoded default, silently IGNORING the state
+            // config.json and SPLICE_CONTROL_PORT layers — which both broke hermetic test rigs
+            // (an ambient real daemon answered instead) and diverged from the launch shim's own
+            // resolution (JW-05 discovery, 2026-08-07).
+            headOverrides = topology?.configOverrides() ?: emptyMap(),
             envReader = envReader,
         ).getConfig().controlPort
-    }
 
     /** True only when the listener answers splice's versioned HTTP health contract. */
     fun daemonUp(port: Int = controlPort()): Boolean = runCatchingCancellable {
@@ -191,7 +193,6 @@ internal object AdminSupport {
         }
     }
 
-    private const val DEFAULT_CONTROL_PORT = 3096
     private const val PROBE_TIMEOUT_MS = 400
     private const val STARTUP_POLLS = 60
     private const val POLL_INTERVAL_MS = 250L

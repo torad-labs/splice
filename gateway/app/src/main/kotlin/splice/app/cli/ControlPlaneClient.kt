@@ -3,12 +3,15 @@
 package splice.app.cli
 
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import splice.core.util.discard
 import splice.core.util.int
+import splice.core.util.long
 import splice.core.util.runCatchingCancellable
 import splice.core.util.str
 import java.net.HttpURLConnection
@@ -50,6 +53,25 @@ internal object ControlPlaneClient {
     }.getOrNull()
 
     fun healthVersion(port: Int): String? = healthView(port)?.version
+
+    /** JW-05: the per-head runtime counters from /api/heads (bearer-guarded) — the
+     *  local-origin vs provider-error split G20 built for exactly this diagnosis. */
+    data class HeadRuntime(val key: String, val localOriginErrors: Long, val providerErrors: Long)
+
+    fun headsRuntime(port: Int, bearer: String): List<HeadRuntime>? = runCatchingCancellable {
+        request("http://127.0.0.1:$port/api/heads", bearer = bearer) { connection ->
+            val obj = json.parseToJsonElement(body(connection)).jsonObject
+            (obj["heads"] as? JsonArray).orEmpty().mapNotNull { el ->
+                val head = el as? JsonObject ?: return@mapNotNull null
+                val health = head["health"] as? JsonObject ?: return@mapNotNull null
+                HeadRuntime(
+                    key = head.str("key") ?: return@mapNotNull null,
+                    localOriginErrors = health.long("localOriginErrors") ?: 0L,
+                    providerErrors = health.long("providerErrors") ?: 0L,
+                )
+            }
+        }
+    }.getOrNull()
 
     /** Ask the daemon to shut down (bearer-guarded) and wait until the LISTENER is actually gone.
      *  The POST is fire-and-observe: a graceful teardown can drop the connection mid-response

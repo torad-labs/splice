@@ -250,7 +250,7 @@ class DoctorCommandTest {
         // doctor extracted only `version` and closed with "Everything checks out."
         val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
         val healthJson =
-            """{"ok":true,"version":"${'$'}{splice.core.Versions.GATEWAY_VERSION}","heads":3,"readyHeads":1,"failedHeads":2}"""
+            """{"ok":true,"version":"${splice.core.GATEWAY_VERSION}","heads":3,"readyHeads":1,"failedHeads":2}"""
         server.createContext("/health") { ex ->
             val bytes = healthJson.toByteArray()
             ex.responseHeaders.add("Content-Type", "application/json")
@@ -301,7 +301,7 @@ class DoctorCommandTest {
         // edited splice.toml after boot). Pre-fix: no consumer ever compared them.
         val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
         val healthJson =
-            """{"ok":true,"version":"${'$'}{splice.core.Versions.GATEWAY_VERSION}","heads":1,"readyHeads":1,""" +
+            """{"ok":true,"version":"${splice.core.GATEWAY_VERSION}","heads":1,"readyHeads":1,""" +
                 """"failedHeads":0,"topologyDigest":"digest-of-what-it-booted-with","topologyStale":true}"""
         server.createContext("/health") { ex ->
             val bytes = healthJson.toByteArray()

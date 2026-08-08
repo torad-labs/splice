@@ -84,7 +84,7 @@ wall = "dev/campaigns/proxy-hardening/walls/sh_11_keystore_no_blind_rmw.py"
 [[item]]
 id = "SH-12"
 phase = "W2-auth-lifecycle"
-wall = ""
+wall = "dev/campaigns/proxy-hardening/walls/sh_12_mgmtkey_loud_remint.py"
 
 [[item]]
 id = "SH-14"

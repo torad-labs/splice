@@ -44,7 +44,10 @@ class ConfigServiceTest {
         assertEquals(ReasoningDisplay.TEXT, cfg.showReasoning)
         assertEquals(false, cfg.replayReasoning)
         // Bounded by default since the 2026-07-19 storm (0 = unlimited stays an explicit opt-out).
-        assertEquals(100, cfg.maxInflight)
+        // NF-02: 12 sits inside the measured 0.3%-failure band (<=14; 67% failure at the old 100).
+        assertEquals(12, cfg.maxInflight)
+        // 0 = unlimited stays the explicit operator opt-out — the new default must not eat it.
+        assertEquals(0, service(env = mapOf("CLAUDEX_MAX_INFLIGHT" to "0")).getConfig().maxInflight)
         assertEquals(512, cfg.maxQueued)
         assertEquals(3096, cfg.controlPort)
     }
@@ -141,7 +144,7 @@ class ConfigServiceTest {
                 "CLAUDEX_MAX_QUEUED" to "Infinity",
             ),
         ).getConfig()
-        assertEquals(100, nonFinite.maxInflight)
+        assertEquals(12, nonFinite.maxInflight)
         assertEquals(512, nonFinite.maxQueued)
     }
 

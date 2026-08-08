@@ -133,10 +133,13 @@ public enum class Knob(
     TOOL_SURFACE("toolSurface", KnobKind.STRING, listOf("CLAUDEX_TOOL_SURFACE"), "auto", restartRequired = true),
 
     // Per-head admission (each head is a different backend/account). Bounded by default since the
-    // 2026-07-19 storm: unlimited (0) let ~650 concurrent streams OOM the 1G heap. Default 100
-    // (was 48) leaves headroom for multi-agent fleets without reopening the unlimited storm.
-    // 0 still means unlimited for an explicit operator opt-out; both stay live-PATCHable.
-    MAX_INFLIGHT("maxInflight", KnobKind.NUMBER, listOf("CLAUDEX_MAX_INFLIGHT"), 100L),
+    // 2026-07-19 storm: unlimited (0) let ~650 concurrent streams OOM the 1G heap. NF-02: default
+    // 12 (was 100) — splice's own perf-JSONL measurement (config/splice.example.toml: 0.3% turn
+    // failure at inflight<=14, 11% at 38, 67% at 100) sits INSIDE the 0.3% band with headroom
+    // over kimi's proven 8. The ceiling belongs to the upstream ACCOUNT (Daemon.kt reasoning);
+    // high-capacity backends (vLLM, enterprise keys) raise it per head via [heads.*.overrides]
+    // or opt out with 0 = unlimited. Hot-PATCHable, no restart.
+    MAX_INFLIGHT("maxInflight", KnobKind.NUMBER, listOf("CLAUDEX_MAX_INFLIGHT"), 12L),
     MAX_QUEUED("maxQueued", KnobKind.NUMBER, listOf("CLAUDEX_MAX_QUEUED"), 512L),
     UPSTREAM_RETRIES(
         "upstreamRetries",

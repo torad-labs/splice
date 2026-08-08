@@ -63,7 +63,7 @@ class AuthProbeLoopTest {
         loop.probeOnce() // tick 1: healthy
         auth.credsOk = false
         loop.probeOnce() // tick 2: unhealthy
-        assertEquals(listOf("[auth-probe:head1] health healthy -> unhealthy\n"), lines)
+        assertEquals(listOf("[head1][auth-probe] health healthy -> unhealthy\n"), lines)
         assertEquals(1, auth.refreshCalls.get())
     }
 
@@ -87,7 +87,7 @@ class AuthProbeLoopTest {
             val lines = logs()
             val loop = AuthProbeLoop("head1", auth, log = { lines += it })
             loop.probeOnce()
-            assertEquals(listOf("[auth-probe:head1] initial health check: unhealthy\n"), lines)
+            assertEquals(listOf("[head1][auth-probe] initial health check: unhealthy\n"), lines)
             assertEquals(1, auth.refreshCalls.get())
         }
 
@@ -101,8 +101,8 @@ class AuthProbeLoopTest {
         loop.probeOnce() // recovered
         assertEquals(
             listOf(
-                "[auth-probe:head1] initial health check: unhealthy\n",
-                "[auth-probe:head1] health unhealthy -> healthy\n",
+                "[head1][auth-probe] initial health check: unhealthy\n",
+                "[head1][auth-probe] health unhealthy -> healthy\n",
             ),
             lines,
         )

@@ -1,0 +1,12 @@
+id: kt-head-log-prefix
+valid:
+  - 'log("[$key][auth-probe] probe tick threw: $e\n")'
+  - 'log("[$key][boot] head SKIPPED: unknown provider\n")'
+  - 'log("[claudex][codex-auth] refresh failed\n")'
+  - 'log("[daemon] shutting down\n")'
+invalid:
+  - 'log("[auth-probe:$key] probe tick threw: $e\n")'
+  - |
+    log("[daemon] head '$key' SKIPPED: unknown provider")
+  - |
+    log("[daemon] head '$key' failed to start: $m")

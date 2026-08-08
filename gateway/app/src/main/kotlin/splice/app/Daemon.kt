@@ -45,6 +45,7 @@ import splice.core.topology.configOverrides
 import splice.core.topology.effectiveApiKeyEnv
 import splice.core.turn.WatchdogBudget
 import splice.core.util.discard
+import splice.core.util.headScopedLog
 import splice.core.util.runCatchingCancellable
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.withReasoningEffortToml
@@ -133,14 +134,14 @@ private fun assembleDaemonHeads(
         val providerCfg = topology.providers[head.provider]
         if (providerCfg == null) {
             failed[key] = "unknown provider '${head.provider}'"
-            log("[daemon] head '$key' SKIPPED: unknown provider '${head.provider}'\n")
+            log("[$key][boot] SKIPPED: unknown provider '${head.provider}'\n")
             continue
         }
         runCatchingDaemonBoundary { assemble(key, head, providerCfg) }
             .onSuccess { heads[key] = it }
             .onFailure {
                 failed[key] = it.message ?: it.javaClass.simpleName
-                log("[daemon] head '$key' SKIPPED (build failed): ${it.message}\n")
+                log("[$key][boot] SKIPPED (build failed): ${it.message}\n")
             }
     }
     return failed
@@ -156,7 +157,7 @@ private suspend fun startDaemonHeads(
     heads.forEach { (key, managed) ->
         runCatchingDaemonBoundary { managed.head.start() }.onFailure {
             failed[key] = "start failed: ${it.message}"
-            log("[daemon] head '$key' failed to start: ${it.message}\n")
+            log("[$key][boot] failed to start: ${it.message}\n")
         }
         startAuthProbeIfRefreshable(key, managed.auth, probeScope, log, authProbes)
     }
@@ -410,6 +411,8 @@ public class Daemon(
                     authCacheMs = ctx.cfg.authCacheMs,
                     refreshCall = { rt -> grokRefresh(tokenUrl, rt) },
                     prefetchScope = probeScope,
+                    // JW-03: [<headKey>] first, so [grok-auth] refresh lines reach the head's tail
+                    log = headScopedLog(ctx.key, log),
                 )
             }
             else -> ApiKeyAuthProvider(
@@ -466,6 +469,8 @@ public class Daemon(
                     authCacheMs = cfg.authCacheMs,
                     refreshCall = { rt -> kimiRefresh(tokenUrl, rt, identityHeaders) },
                     prefetchScope = probeScope,
+                    // JW-03: [<headKey>] first, so [kimi-auth] refresh lines reach the head's tail
+                    log = headScopedLog(key, log),
                 )
                 Wired(kimiProvider(ctx, label, auth, identity), auth)
             }
@@ -531,6 +536,8 @@ public class Daemon(
                     authCacheMs = cfg.authCacheMs,
                     refreshCall = { rt -> refreshCall(tokenUrl, rt) },
                     prefetchScope = probeScope,
+                    // JW-03: [<headKey>] first, so [codex-auth] refresh lines reach the head's tail
+                    log = headScopedLog(key, log),
                 )
                 Wired(
                     CodexProvider(
@@ -577,6 +584,8 @@ public class Daemon(
             authCacheMs = cfg.authCacheMs,
             refreshCall = { rt -> grokRefresh(tokenUrl, rt) },
             prefetchScope = probeScope,
+            // JW-03: [<headKey>] first, so [grok-auth] refresh lines reach the head's tail
+            log = headScopedLog(key, log),
         )
         return Wired(
             GrokProvider(

@@ -68,7 +68,7 @@ public class AuthProbeLoop(
         val launched = scope.launch {
             while (isActive) {
                 runCatchingCancellable { probeOnce() }
-                    .onFailure { log("[auth-probe:$key] probe tick threw: $it\n") }
+                    .onFailure { log("[$key][auth-probe] probe tick threw: $it\n") }
                 delay(intervalMs)
             }
         }
@@ -87,11 +87,11 @@ public class AuthProbeLoop(
             }
             val n = recordRestart()
             if (n <= MAX_RESTARTS) {
-                log("[auth-probe:$key] loop died: $cause — restarting ($n/$MAX_RESTARTS)\n")
+                log("[$key][auth-probe] loop died: $cause — restarting ($n/$MAX_RESTARTS)\n")
                 launchSupervised(scope)
             } else {
                 log(
-                    "[auth-probe:$key] loop died: $cause — restart budget exhausted " +
+                    "[$key][auth-probe] loop died: $cause — restart budget exhausted " +
                         "($MAX_RESTARTS in ${RESTART_WINDOW_MS / MS_PER_MIN}m); probe permanently down\n",
                 )
             }
@@ -121,8 +121,8 @@ public class AuthProbeLoop(
         val prev = healthy
         healthy = ok
         when {
-            prev == null && !ok -> log("[auth-probe:$key] initial health check: unhealthy\n")
-            prev != null && prev != ok -> log("[auth-probe:$key] health ${state(prev)} -> ${state(ok)}\n")
+            prev == null && !ok -> log("[$key][auth-probe] initial health check: unhealthy\n")
+            prev != null && prev != ok -> log("[$key][auth-probe] health ${state(prev)} -> ${state(ok)}\n")
         }
     }
 

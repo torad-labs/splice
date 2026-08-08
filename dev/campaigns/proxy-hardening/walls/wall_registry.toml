@@ -79,7 +79,7 @@ wall = "dev/campaigns/proxy-hardening/walls/sh_10_kimi_merge_never_rewrite.py"
 [[item]]
 id = "SH-11"
 phase = "W2-auth-lifecycle"
-wall = ""
+wall = "dev/campaigns/proxy-hardening/walls/sh_11_keystore_no_blind_rmw.py"
 
 [[item]]
 id = "SH-12"

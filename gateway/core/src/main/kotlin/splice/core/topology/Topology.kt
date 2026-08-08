@@ -30,7 +30,17 @@ public data class Topology(
     /** The single topology key for [name], or null when unknown OR ambiguous (several heads share
      *  the wrapper command). Callers that must tell those apart use [resolveHeadKeys]. */
     public fun resolveHeadKey(name: String): String? = resolveHeadKeys(name).singleOrNull()
+
+    /** JW-13: ports mapped to the >1 heads that share them — the port analogue of the
+     *  wrapper-command collision install already validates. A copy-pasted [heads.X] with an
+     *  unchanged port otherwise surfaces only as an opaque per-head "Address already in use". */
+    public fun portCollisions(): Map<Int, List<String>> =
+        heads.entries.groupBy({ it.value.port }, { it.key }).filterValues { it.size > 1 }
 }
+
+/** Names both heads and the port so the operator sees the collision, not a phantom bind error. */
+public fun portCollisionMessage(port: Int, keys: List<String>): String =
+    "port $port is claimed by ${keys.joinToString(" and ")} — give each head its own port"
 
 /** Distinct-from-"unknown-head" message for the ambiguous case: [keys] heads all map to [command].
  *  Naming both heads points the operator at the topology collision instead of a phantom head. */

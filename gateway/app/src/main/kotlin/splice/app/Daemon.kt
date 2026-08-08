@@ -43,6 +43,7 @@ import splice.core.topology.Topology
 import splice.core.topology.catalogFor
 import splice.core.topology.configOverrides
 import splice.core.topology.effectiveApiKeyEnv
+import splice.core.topology.portCollisionMessage
 import splice.core.turn.WatchdogBudget
 import splice.core.util.discard
 import splice.core.util.headScopedLog
@@ -130,7 +131,17 @@ private fun assembleDaemonHeads(
     assemble: (String, HeadConfig, ProviderConfig) -> ManagedHead,
 ): LinkedHashMap<String, String> {
     val failed = LinkedHashMap<String, String>()
-    for ((key, head) in topology.heads) {
+    // JW-13: name a duplicate-port collision before the loser hits an opaque "Address already in
+    // use". Both colliding heads are marked failed with a message pointing at the sibling.
+    val portDupes = topology.portCollisions()
+    val collidingHeads = portDupes.values.flatten().toSet()
+    for ((port, keys) in portDupes) {
+        keys.forEach { failed[it] = portCollisionMessage(port, keys) }
+        log("[daemon][boot] ${portCollisionMessage(port, keys)}\n")
+    }
+    // Colliding heads already failed above with a named reason — filter them out so the assembly
+    // loop keeps a single continue (detekt LoopWithTooManyJumpStatements).
+    for ((key, head) in topology.heads.filterKeys { it !in collidingHeads }) {
         val providerCfg = topology.providers[head.provider]
         if (providerCfg == null) {
             failed[key] = "unknown provider '${head.provider}'"

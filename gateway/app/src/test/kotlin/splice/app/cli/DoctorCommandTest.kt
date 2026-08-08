@@ -85,6 +85,18 @@ class DoctorCommandTest {
         """auth = { kind = "api-key" }""",
     )
 
+    // JW-13: a second head copy-pasted onto the same port (4501) — the most likely TOML mistake.
+    private val starterTomlDupPort = starterToml + "\n" + """
+        [heads.openrouter2]
+        provider = "openrouter"
+        port = 4501
+        discovery_prefix = "claude-openrouter2--"
+        pinned_model = "m"
+
+        [heads.openrouter2.claude]
+        command = "claude-openrouter2"
+    """.trimIndent()
+
     @Test
     fun `an api-key head with no explicit env resolves the derived KEY_API_KEY`() {
         val tmp = Files.createTempDirectory("doctor-derived")
@@ -343,5 +355,20 @@ class DoctorCommandTest {
         // the row must point at <root>/logs/daemon.log and mention the verb — NOT the state dir
         assertTrue(out.contains("logs/daemon.log"), out)
         assertTrue(out.contains("splice logs"), out)
+    }
+
+    @Test
+    fun `two heads on one port is a config FAIL naming both - JW-13`() {
+        val tmp = Files.createTempDirectory("doctor-dupport")
+        val bin = Files.createDirectories(tmp.resolve("bin"))
+        val share = Files.createDirectories(tmp.resolve("share"))
+        val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
+        Files.writeString(configDir.resolve("splice.toml"), starterTomlDupPort)
+        fakeBinaries(bin, "claude", "node", "python3", "curl", "bash")
+        val (ok, out) = runDoctor(env(tmp, bin, share, hermetic(tmp, mapOf("OPENROUTER_API_KEY" to "k"))))
+        assertTrue(!ok, "a duplicate port must be a doctor FAILURE:\n$out")
+        assertTrue(out.contains("port 4501 is claimed by"), out)
+        assertTrue(out.contains("openrouter") && out.contains("openrouter2"), out)
+        assertTrue(out.contains("change one head's port"), out)
     }
 }

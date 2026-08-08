@@ -12,6 +12,7 @@ import splice.core.topology.AuthKind
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.topology.effectiveApiKeyEnv
+import splice.core.topology.portCollisionMessage
 import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
 import java.nio.file.Path
@@ -125,7 +126,17 @@ private fun configurationChecks(topo: DoctorTopology, configPath: Path): List<Do
                 "add [providers.${head.provider}] to $configPath or fix the head's provider",
             )
         }
-        listOf(summary) + brokenRefs
+        // JW-13: a duplicate port is a pre-flight FAIL naming both heads (mirrors the
+        // wrapper-command collision install validates), not an opaque per-head bind error.
+        val portDupes = topology.portCollisions().map { (port, keys) ->
+            DoctorCheck(
+                CHECK_TOPOLOGY,
+                CheckStatus.FAIL,
+                portCollisionMessage(port, keys),
+                "change one head's port in $configPath",
+            )
+        }
+        listOf(summary) + brokenRefs + portDupes
     }
 }
 

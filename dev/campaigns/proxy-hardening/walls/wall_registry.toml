@@ -134,7 +134,7 @@ wall = "dev/campaigns/proxy-hardening/walls/jw_13_port_collision_preflight.py"
 [[item]]
 id = "JW-17"
 phase = "W3-see-the-daemon"
-wall = ""
+wall = "dev/campaigns/proxy-hardening/walls/jw_17_doctor_probes_writable_dirs.py"
 
 [[item]]
 id = "CX-01"

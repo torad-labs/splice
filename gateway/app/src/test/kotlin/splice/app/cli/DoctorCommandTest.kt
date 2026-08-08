@@ -12,6 +12,7 @@ import java.io.PrintStream
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 
 // Generous relative to OVERALL_BOUND_SECONDS (PROBE_SECONDS * 3): proves a hang is bounded at
 // all, not a tight race against it.
@@ -370,5 +371,40 @@ class DoctorCommandTest {
         assertTrue(out.contains("port 4501 is claimed by"), out)
         assertTrue(out.contains("openrouter") && out.contains("openrouter2"), out)
         assertTrue(out.contains("change one head's port"), out)
+    }
+
+    @Test
+    fun `an unwritable state dir is a FAIL with a chmod fix, and the probe is cleaned up - JW-17`() {
+        val tmp = Files.createTempDirectory("doctor-unwritable")
+        val bin = Files.createDirectories(tmp.resolve("bin"))
+        val share = Files.createDirectories(tmp.resolve("share"))
+        fakeBinaries(bin, "claude", "node", "python3", "curl", "bash")
+        val state = Files.createDirectories(tmp.resolve("state"))
+        // 0500: readable + executable, NOT writable. Skip if the test user is root (chmod is
+        // advisory for uid 0).
+        org.junit.jupiter.api.Assumptions.assumeFalse(System.getProperty("user.name") == "root")
+        Files.setPosixFilePermissions(state, PosixFilePermissions.fromString("r-x------"))
+        try {
+            val env = mapOf(
+                "XDG_CONFIG_HOME" to tmp.resolve("config").toString(),
+                "SPLICE_BIN_DIR" to bin.toString(),
+                "SPLICE_SHARE_DIR" to share.toString(),
+                "PATH" to bin.toString(),
+                "CLAUDEX_STATE_DIR" to state.toString(),
+                "SPLICE_CONTROL_PORT" to ServerSocket(0).use { it.localPort }.toString(),
+                "OPENROUTER_API_KEY" to "k",
+            )
+            val (ok, out) = runDoctor(env)
+            assertTrue(!ok, "an unwritable state dir must be a doctor FAILURE:\n$out")
+            assertTrue(out.contains("state dir") && out.contains("not writable"), out)
+            assertTrue(out.contains("chmod u+rwx"), out)
+            // non-mutating in spirit: no probe file survives
+            val noProbe = Files.list(state).use { s ->
+                s.noneMatch { it.fileName.toString().contains("probe") }
+            }
+            assertTrue(noProbe, "probe leaked")
+        } finally {
+            Files.setPosixFilePermissions(state, PosixFilePermissions.fromString("rwx------"))
+        }
     }
 }

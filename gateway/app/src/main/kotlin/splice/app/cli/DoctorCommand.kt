@@ -161,11 +161,13 @@ private fun daemonChecks(
     // presence proves nothing about liveness (DaemonLock.kt) — report the path only, never a
     // fabricated staleness WARN. The state dir path is the same kind of orientation detail.
     val stateInfo = listOf(
-        DoctorCheck("state dir", CheckStatus.INFO, statePaths.stateDir.toString()),
+        // JW-17: PROVE writability, don't just print the path — an unwritable ~/.claude-codex
+        // degrades daemon.log, config persistence, and usage/perf/compact appends all silently.
+        writableProbe("state dir", statePaths.stateDir),
         // JW-08: daemon.log lives in the SIBLING logs dir, not state/ — printing only the state
         // dir sent operators to a directory that does not contain the logs. Name the real path
         // and the verb that reaches it (works with the daemon stopped).
-        DoctorCheck("logs", CheckStatus.INFO, "${statePaths.logsDir.resolve("daemon.log")}  (splice logs)"),
+        writableProbe("logs dir", statePaths.logsDir, "${statePaths.logsDir.resolve("daemon.log")}  (splice logs)"),
         DoctorCheck("daemon.lock", CheckStatus.INFO, statePaths.daemonLockFile.toString()),
     )
     return listOf(daemon) + headChecks(snapshot, topology) +

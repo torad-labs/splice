@@ -706,8 +706,19 @@ public class UpstreamFailed(
 
 private const val MS_PER_S = 1000L
 
-/** Seconds-form Retry-After → ms; HTTP-date form and garbage → null (backoff curve decides).
- *  Top-level (not an UpstreamClient method): the class sits at its detekt function budget, and
- *  the parser is pure — NF-04's HTTP-date extension lands here without touching the class. */
-private fun retryAfterMs(header: String?): Long? =
-    header?.trim()?.toLongOrNull()?.takeIf { it >= 0 }?.times(MS_PER_S)
+/** Retry-After → ms, both RFC 7231 forms; garbage → null (backoff curve decides). Strict seconds
+ *  FIRST so nothing on the pre-NF-04 path changes; the HTTP-date fallback (NF-04: Cloudflare and
+ *  gateway fronts emit it) converts against the WALL clock deliberately — an HTTP-date is wall
+ *  time, MonoClock has no epoch — clamping past dates to 0. A skewed clock can only inflate the
+ *  delta into NF-01's 120s cooldown ceiling / the 15s give-up, never wedge the head.
+ *  Top-level (not an UpstreamClient method): the class sits at its detekt function budget. */
+private fun retryAfterMs(header: String?, nowEpochMs: () -> Long = System::currentTimeMillis): Long? {
+    val value = header?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    value.toLongOrNull()?.let { seconds -> return seconds.takeIf { it >= 0 }?.times(MS_PER_S) }
+    return try {
+        val at = java.time.ZonedDateTime.parse(value, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME)
+        (at.toInstant().toEpochMilli() - nowEpochMs()).coerceAtLeast(0L)
+    } catch (ignored: java.time.format.DateTimeParseException) {
+        null // not seconds, not an HTTP-date: garbage stays null BY CONTRACT — the curve decides
+    }
+}

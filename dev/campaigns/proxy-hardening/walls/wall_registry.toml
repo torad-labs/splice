@@ -69,7 +69,7 @@ wall = "dev/campaigns/proxy-hardening/walls/sh_02_refresh_ineffective_guard.py"
 [[item]]
 id = "SH-04"
 phase = "W2-auth-lifecycle"
-wall = ""
+wall = "dev/campaigns/proxy-hardening/walls/sh_04_auth_probe_supervised.py"
 
 [[item]]
 id = "SH-10"

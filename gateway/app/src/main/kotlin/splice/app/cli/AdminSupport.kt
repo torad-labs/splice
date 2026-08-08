@@ -130,7 +130,7 @@ internal object AdminSupport {
                 // generation), never /dev/null; an unwritable logs dir degrades the redirect
                 // instead of breaking the launch. Mirrors bin/splice-launch byte-for-byte in
                 // behaviour — the two cold-start paths must not drift.
-                "L=\"\${CLAUDEX_STATE_DIR:-\$HOME/.claude-codex/state}/../logs\"; " +
+                "L='${StatePaths().logsDir}'; " +
                     "B=\"\$L/daemon-boot.log\"; mkdir -p \"\$L\" 2>/dev/null; " +
                     "[ -f \"\$B\" ] && [ \"\$(wc -c <\"\$B\" 2>/dev/null || echo 0)\" -gt 1048576 ] " +
                     "&& mv -f \"\$B\" \"\$B.1\" 2>/dev/null; " +

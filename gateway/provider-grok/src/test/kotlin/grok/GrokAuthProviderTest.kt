@@ -339,7 +339,10 @@ class GrokAuthProviderTest {
     }
 
     @Test
-    fun `refresh response without expires_in keeps the old expires field`() = runTest {
+    fun `refresh response without expires_in synthesizes a new expires field - SH-02 rewrite`() = runTest {
+        // SH-02 REWRITE of the old keeps-the-old-expires pin: carrying the stale value was the
+        // refresh-ineffective loop (every next call re-entered the blocking tier and burned a
+        // rotating refresh token). A just-minted token synthesizes now+TTL instead.
         val dir = Files.createTempDirectory("grok-noexp")
         val now = 1_000_000L
         val oldExpires = now - 1
@@ -353,7 +356,8 @@ class GrokAuthProviderTest {
         )
         assertEquals("new-access", bearerToken(auth.credentials()))
         val onDisk = Json.parseToJsonElement(Files.readString(file)).jsonObject
-        assertEquals(oldExpires, onDisk["expires"]!!.jsonPrimitive.content.toLong())
+        val persisted = onDisk["expires"]!!.jsonPrimitive.content.toLong()
+        assertTrue(persisted > now, "expires must ADVANCE past now (was $oldExpires, got $persisted)")
     }
 
     // G15: a confirmed invalid_grant (post-G1 re-read: disk untouched, so the retry-once check
@@ -409,5 +413,47 @@ class GrokAuthProviderTest {
         assertNull(auth.describe().fields["refresh_latched"])
         assertNull(auth.refresh())
         assertEquals("invalid_grant", auth.describe().fields["refresh_latched"])
+    }
+
+    @Test
+    fun `granted refresh with no expires_in advances the expiry - one refresh across N calls - SH-02a`() = runTest {
+        // Pre-fix: null expiresIn persisted a null expiry, the merge kept the stale on-disk value,
+        // and every credentials() call below the stale floor blocked on ANOTHER refresh — each one
+        // consuming a rotating refresh token. The synthesized now+TTL expiry kills the loop.
+        val dir = Files.createTempDirectory("grok-noexpin")
+        var now = 1_000_000L
+        val file = authFile(dir, expiresAtMs = now + 1_000) // inside the stale floor: blocking tier
+        val calls = AtomicInteger(0)
+        val auth = GrokAuthProvider(authPath = file, clock = { now }, refreshCall = {
+            calls.incrementAndGet()
+            RefreshAttempt.Granted(GrokRefreshedTokens("new-access", "new-refresh", expiresIn = null))
+        })
+        repeat(5) { assertEquals("new-access", bearerToken(auth.credentials())) }
+        assertEquals(1, calls.get(), "an expires_in-less grant must refresh once, not per call")
+        assertEquals(0, auth.ineffectiveRefreshCount, "the synthesized expiry advanced — not ineffective")
+    }
+
+    @Test
+    fun `sub-floor grant trips the ineffective backoff - one refresh, logged once - SH-02b`() = runTest {
+        // A grant whose expires_in cannot satisfy the stale floor is a SUCCESSFUL refresh the tier
+        // logic will re-request forever. The guard logs, counts, and serves the current token
+        // through the 30s backoff window instead.
+        val dir = Files.createTempDirectory("grok-subfloor")
+        var now = 1_000_000L
+        val file = authFile(dir, expiresAtMs = now + 1_000)
+        val calls = AtomicInteger(0)
+        val logs = mutableListOf<String>()
+        val auth = GrokAuthProvider(authPath = file, clock = { now }, log = logs::add, refreshCall = {
+            calls.incrementAndGet()
+            RefreshAttempt.Granted(GrokRefreshedTokens("new-access", "new-refresh", expiresIn = 10))
+        })
+        repeat(5) { assertEquals("new-access", bearerToken(auth.credentials())) }
+        assertEquals(1, calls.get(), "the backoff must absorb the re-entering tier, not refresh per call")
+        assertEquals(1, auth.ineffectiveRefreshCount)
+        assertEquals(1, logs.count { it.contains("did not advance") }, "logged once, got $logs")
+        // the backoff lapses: the next stale-floor entry may refresh again
+        now += 31_000
+        auth.credentials()
+        assertEquals(2, calls.get(), "after the backoff window a refresh is allowed again")
     }
 }

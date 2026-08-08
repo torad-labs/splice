@@ -64,7 +64,7 @@ wall = "dev/campaigns/proxy-hardening/walls/sh_01_missing_expiry_synthesized.py"
 [[item]]
 id = "SH-02"
 phase = "W2-auth-lifecycle"
-wall = ""
+wall = "dev/campaigns/proxy-hardening/walls/sh_02_refresh_ineffective_guard.py"
 
 [[item]]
 id = "SH-04"

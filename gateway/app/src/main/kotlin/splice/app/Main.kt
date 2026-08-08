@@ -40,6 +40,11 @@ public fun main(args: Array<String>) {
 
 private fun runDaemon() {
     val statePaths = StatePaths()
+    // JW-01: the boot-failure net exists BEFORE anything that can throw (lock, TOML parse,
+    // daemon.start). Both cold-start paths used to launch the JVM with output discarded, so a
+    // pre-logger stack trace died in /dev/null and the operator saw only "failed version
+    // handshake (got <none>)".
+    Thread.setDefaultUncaughtExceptionHandler(bootFailureHandler(statePaths))
     val lock = DaemonLock(statePaths.daemonLockFile)
     if (!lock.tryAcquire()) {
         System.err.println("[daemon] another splice daemon holds the lock — exiting (the winner serves)")
@@ -170,3 +175,19 @@ internal fun persistentLogger(logsDir: Path, maxBytes: Long = MAX_LOG_BYTES): (S
 
 // One rolled generation at 64MB caps daemon.log disk at ~128MB — plenty of tail history, bounded.
 private const val MAX_LOG_BYTES = 64L * 1024 * 1024
+
+/** JW-01: the last-resort boot net. Writes SYNCHRONOUSLY — the async file lane is a daemon
+ *  thread that dies with the JVM, and this fires when the JVM is dying. No catch clause on the
+ *  boot path itself (an uncaught-exception handler needs none), so the cancellation and
+ *  broad-catch walls stay untouched. Covers runtime uncaught throwables on other threads too —
+ *  a net, not a boot-only special case. */
+internal fun bootFailureHandler(statePaths: StatePaths): Thread.UncaughtExceptionHandler =
+    Thread.UncaughtExceptionHandler { thread, e ->
+        val line = "[${LocalTime.now().truncatedTo(ChronoUnit.SECONDS)}] [daemon] UNCAUGHT on " +
+            "${thread.name}: ${e.stackTraceToString()}\n"
+        System.err.print(line)
+        runCatchingCancellable {
+            Files.createDirectories(statePaths.logsDir)
+            Files.writeString(statePaths.logsDir.resolve("daemon.log"), line, CREATE, APPEND)
+        }
+    }

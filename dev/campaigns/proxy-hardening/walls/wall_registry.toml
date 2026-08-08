@@ -94,7 +94,7 @@ wall = "dev/campaigns/proxy-hardening/walls/sh_14_daemon_log_rotate_selfheals.py
 [[item]]
 id = "JW-01"
 phase = "W3-see-the-daemon"
-wall = ""
+wall = "dev/campaigns/proxy-hardening/walls/jw_01_boot_stderr_not_devnull.py"
 
 [[item]]
 id = "JW-02"

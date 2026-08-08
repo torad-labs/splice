@@ -76,6 +76,12 @@ SH
 cat > "$SANDBOX/bin/java" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
+if [ "${LAUNCHER_JAVA_BOOT_FAILS:-0}" = "1" ]; then
+  # JW-01: a boot-dead daemon — the stack trace goes to stderr, which the launcher must be
+  # redirecting into daemon-boot.log (pre-fix it went to /dev/null).
+  echo "Exception in thread main: kaboom-at-boot" >&2
+  exit 1
+fi
 printf 'new\n' > "$LAUNCHER_DAEMON_STATE"
 SH
 chmod +x "$SANDBOX/bin/curl" "$SANDBOX/bin/java"
@@ -94,6 +100,7 @@ run_launcher() {
   LAUNCHER_BODY_CAPTURE="$SANDBOX/body" \
   LAUNCHER_SHUTDOWN_CAPTURE="$SANDBOX/shutdown" \
   LAUNCHER_INJECT_ENV_KEY="${LAUNCHER_INJECT_ENV_KEY:-0}" \
+  LAUNCHER_JAVA_BOOT_FAILS="${LAUNCHER_JAVA_BOOT_FAILS:-0}" \
   LAUNCHER_PWNED_FILE="$SANDBOX/pwned" \
     "$ROOT/bin/splice-launch" "$@"
 }
@@ -130,5 +137,19 @@ printf 'new\n' > "$SANDBOX/daemon-state"
 rm -f "$SANDBOX/pwned"
 LAUNCHER_INJECT_ENV_KEY=1 run_launcher
 test ! -e "$SANDBOX/pwned"
+
+# JW-01: a boot-dead daemon must leave a tailable trace, and the launcher must SHOW it on the
+# handshake failure instead of just "got <none>". The java stub writes its stack trace to
+# stderr, which the launcher's redirect must capture in daemon-boot.log.
+printf 'down\n' > "$SANDBOX/daemon-state"
+rm -f "$SANDBOX/logs/daemon-boot.log"
+set +e
+BOOT_ERR="$(LAUNCHER_JAVA_BOOT_FAILS=1 run_launcher 2>&1)"
+BOOT_RC=$?
+set -e
+test "$BOOT_RC" -ne 0
+grep -q "daemon-boot.log" <<<"$BOOT_ERR" || { echo "JW-01: launcher must name the boot log, got: $BOOT_ERR" >&2; exit 1; }
+grep -q "kaboom-at-boot" <<<"$BOOT_ERR" || { echo "JW-01: launcher must print the boot-log tail, got: $BOOT_ERR" >&2; exit 1; }
+grep -q "kaboom-at-boot" "$SANDBOX/logs/daemon-boot.log"
 
 echo "launcher test: OK"

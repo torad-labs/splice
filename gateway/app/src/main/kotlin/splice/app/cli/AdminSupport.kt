@@ -77,7 +77,11 @@ internal object AdminSupport {
         if (daemonUp(port)) return true
         val jar = startableJar(port) ?: return false
         println("splice: starting the daemon…")
-        return spawnDaemon(jar) && waitUntilUp(port)
+        val up = spawnDaemon(jar) && waitUntilUp(port)
+        // JW-01: when the daemon never answers, the reason is in the boot log — print it here
+        // instead of leaving "starting the daemon…" as the last line the operator ever sees.
+        if (!up) printBootLogTail()
+        return up
     }
 
     /** True while something still holds [port] — a TCP connect succeeds (or is ambiguous: timeout/IO).
@@ -122,7 +126,17 @@ internal object AdminSupport {
             ProcessBuilder(
                 "sh",
                 "-c",
-                "nohup java \${SPLICE_JVM_OPTS:-$DEFAULT_JVM_OPTS} -jar '$jar' daemon >/dev/null 2>&1 &",
+                // JW-01: the spawned JVM's output lands in daemon-boot.log (rolled at 1MB, one
+                // generation), never /dev/null; an unwritable logs dir degrades the redirect
+                // instead of breaking the launch. Mirrors bin/splice-launch byte-for-byte in
+                // behaviour — the two cold-start paths must not drift.
+                "L=\"\${CLAUDEX_STATE_DIR:-\$HOME/.claude-codex/state}/../logs\"; " +
+                    "B=\"\$L/daemon-boot.log\"; mkdir -p \"\$L\" 2>/dev/null; " +
+                    "[ -f \"\$B\" ] && [ \"\$(wc -c <\"\$B\" 2>/dev/null || echo 0)\" -gt 1048576 ] " +
+                    "&& mv -f \"\$B\" \"\$B.1\" 2>/dev/null; " +
+                    "if ( : >>\"\$B\" ) 2>/dev/null; then " +
+                    "nohup java \${SPLICE_JVM_OPTS:-$DEFAULT_JVM_OPTS} -jar '$jar' daemon >>\"\$B\" 2>&1 & " +
+                    "else nohup java \${SPLICE_JVM_OPTS:-$DEFAULT_JVM_OPTS} -jar '$jar' daemon >/dev/null 2>&1 & fi",
             )
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
@@ -192,3 +206,14 @@ internal object AdminSupport {
     // pages to the OS instead of holding them until the next GC is triggered by allocation.
     internal const val DEFAULT_JVM_OPTS = "-Xmx2048m -XX:+UseStringDeduplication -XX:G1PeriodicGCInterval=60000"
 }
+
+/** JW-01: shown when the daemon never answers after a cold start. Top-level (off AdminSupport's
+ *  detekt function budget) — reads only the filesystem. */
+private fun printBootLogTail() {
+    val bootLog = StatePaths().logsDir.resolve("daemon-boot.log")
+    if (!Files.exists(bootLog)) return
+    println("splice: daemon did not come up — last boot output ($bootLog):")
+    runCatchingCancellable { Files.readAllLines(bootLog).takeLast(BOOT_LOG_TAIL_LINES).forEach(::println) }
+}
+
+private const val BOOT_LOG_TAIL_LINES = 15

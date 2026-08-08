@@ -7,6 +7,7 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import splice.core.util.discard
+import splice.core.util.int
 import splice.core.util.runCatchingCancellable
 import splice.core.util.str
 import java.net.HttpURLConnection
@@ -15,15 +16,32 @@ import java.net.URI
 internal object ControlPlaneClient {
     private val json = Json { ignoreUnknownKeys = true }
 
-    /** The version any splice-shaped listener reports on /health, or null when nothing answers.
+    /** JW-02: what /health actually says — the version AND the head counters the launch shim
+     *  already waits on. Doctor reads the counters; restart keeps the thin version accessor. */
+    data class HealthView(
+        val version: String?,
+        val heads: Int?,
+        val readyHeads: Int?,
+        val failedHeads: Int?,
+    )
+
+    /** The /health payload of any splice-shaped listener, or null when nothing answers.
      *  Unlike AdminSupport.daemonUp this accepts a STALE daemon — restart must be able to stop one.
      *  str() (JsonNull-filtering) keeps a foreign listener's {"version": null} from reading back as
      *  the literal string "null". */
-    fun healthVersion(port: Int): String? = runCatchingCancellable {
+    fun healthView(port: Int): HealthView? = runCatchingCancellable {
         request("http://127.0.0.1:$port/health") { connection ->
-            json.parseToJsonElement(body(connection)).jsonObject.str("version")
+            val obj = json.parseToJsonElement(body(connection)).jsonObject
+            HealthView(
+                version = obj.str("version"),
+                heads = obj.int("heads"),
+                readyHeads = obj.int("readyHeads"),
+                failedHeads = obj.int("failedHeads"),
+            )
         }
     }.getOrNull()
+
+    fun healthVersion(port: Int): String? = healthView(port)?.version
 
     /** Ask the daemon to shut down (bearer-guarded) and wait until the LISTENER is actually gone.
      *  The POST is fire-and-observe: a graceful teardown can drop the connection mid-response

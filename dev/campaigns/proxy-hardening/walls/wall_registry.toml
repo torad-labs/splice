@@ -99,7 +99,7 @@ wall = "dev/campaigns/proxy-hardening/walls/jw_01_boot_stderr_not_devnull.py"
 [[item]]
 id = "JW-02"
 phase = "W3-see-the-daemon"
-wall = ""
+wall = "dev/campaigns/proxy-hardening/walls/jw_02_doctor_sees_dead_heads.py"
 
 [[item]]
 id = "JW-03"

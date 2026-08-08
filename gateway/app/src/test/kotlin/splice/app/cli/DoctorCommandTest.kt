@@ -231,4 +231,55 @@ class DoctorCommandTest {
         assertTrue(out.contains("OPENROUTER_API_KEY is not set"), out)
         assertTrue(out.contains("export OPENROUTER_API_KEY"), out)
     }
+
+    @Test
+    fun `a daemon with failed heads is a FAIL, never everything-checks-out - JW-02`() {
+        val tmp = Files.createTempDirectory("doctor-degraded")
+        val bin = Files.createDirectories(tmp.resolve("bin"))
+        val share = Files.createDirectories(tmp.resolve("share"))
+        val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
+        Files.writeString(configDir.resolve("splice.toml"), starterToml)
+        val shim = share.resolve("splice-launch")
+        Files.writeString(shim, "#!/usr/bin/env bash\nSPLICE_SHIM_VERSION=\"$SHIM_VERSION\"\n")
+        shim.toFile().setExecutable(true)
+        fakeBinaries(bin, "claude", "node", "python3", "curl", "bash")
+        Files.createSymbolicLink(bin.resolve("claude-openrouter"), shim)
+        Files.createSymbolicLink(bin.resolve("splice"), shim)
+
+        // A live /health reporting a degraded boot: 3 configured, 1 ready, 2 dead. Pre-fix the
+        // doctor extracted only `version` and closed with "Everything checks out."
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+        val healthJson =
+            """{"ok":true,"version":"${'$'}{splice.core.Versions.GATEWAY_VERSION}","heads":3,"readyHeads":1,"failedHeads":2}"""
+        server.createContext("/health") { ex ->
+            val bytes = healthJson.toByteArray()
+            ex.responseHeaders.add("Content-Type", "application/json")
+            ex.sendResponseHeaders(200, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        try {
+            // state dir carries a mgmt-key so the running-daemon key check stays green — this
+            // test is about the HEAD rows.
+            val state = Files.createDirectories(tmp.resolve("state"))
+            Files.writeString(state.resolve("mgmt-key"), "k\n")
+            val envMap = env(
+                tmp,
+                bin,
+                share,
+                mapOf(
+                    "OPENROUTER_API_KEY" to "k",
+                    "CLAUDEX_STATE_DIR" to state.toString(),
+                    "SPLICE_CONTROL_PORT" to server.address.port.toString(),
+                ),
+            )
+            val (ok, out) = runDoctor(envMap)
+            assertTrue(!ok, "failed heads must be a doctor FAILURE:\n$out")
+            assertTrue(out.contains("2 of 3 head(s) FAILED to start"), out)
+            assertTrue(out.contains("splice restart"), out)
+            assertTrue(!out.contains("Everything checks out"), out)
+        } finally {
+            server.stop(0)
+        }
+    }
 }

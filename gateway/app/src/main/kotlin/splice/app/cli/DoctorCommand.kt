@@ -40,8 +40,9 @@ internal data class DoctorCheck(
 /** Resolved control port + the version the listener there reports (null = nothing answering).
  *  Computed ONCE in doctor() and threaded into both the daemon and auth sections so the port is
  *  resolved a single time and /health is probed a single time (was: twice each). */
-internal data class DaemonSnapshot(val port: Int, val healthVersion: String?) {
-    val running: Boolean get() = healthVersion != null
+internal data class DaemonSnapshot(val port: Int, val health: ControlPlaneClient.HealthView?) {
+    val healthVersion: String? get() = health?.version
+    val running: Boolean get() = health != null
 }
 
 /** The topology as doctor sees it: not written yet, readable, or broken (with the parse error). */
@@ -58,12 +59,12 @@ internal fun doctor(envReader: (String) -> String? = System::getenv): Boolean {
     // so a busy daemon is contacted a single time and the split-brain check can't silently self-skip.
     val topology = (topo as? DoctorTopology.Parsed)?.topology
     val port = AdminSupport.controlPort(topology, envReader)
-    val snapshot = DaemonSnapshot(port, ControlPlaneClient.healthVersion(port))
+    val snapshot = DaemonSnapshot(port, ControlPlaneClient.healthView(port))
     val sections = listOf(
         "prerequisites" to guarded { prerequisiteChecks(envReader) },
         "installation" to guarded { installationChecks(topo, envReader) },
         "configuration" to guarded { configurationChecks(topo, configPath) },
-        CHECK_DAEMON to guarded { daemonChecks(snapshot, envReader) },
+        CHECK_DAEMON to guarded { daemonChecks(snapshot, envReader, topology) },
         "auth" to guarded { authChecks(topo, envReader, snapshot) },
     )
     println("${BOLD}splice doctor$RESET $DIM— every ✗ and ! comes with its fix$RESET")
@@ -125,7 +126,11 @@ private fun configurationChecks(topo: DoctorTopology, configPath: Path): List<Do
     }
 }
 
-private fun daemonChecks(snapshot: DaemonSnapshot, envReader: (String) -> String?): List<DoctorCheck> {
+private fun daemonChecks(
+    snapshot: DaemonSnapshot,
+    envReader: (String) -> String?,
+    topology: Topology?,
+): List<DoctorCheck> {
     val statePaths = StatePaths(envReader = envReader)
     val daemon = when (val running = snapshot.healthVersion) {
         null -> DoctorCheck(CHECK_DAEMON, CheckStatus.INFO, "stopped (starts on first launch)")
@@ -144,7 +149,50 @@ private fun daemonChecks(snapshot: DaemonSnapshot, envReader: (String) -> String
         DoctorCheck("state dir", CheckStatus.INFO, statePaths.stateDir.toString()),
         DoctorCheck("daemon.lock", CheckStatus.INFO, statePaths.daemonLockFile.toString()),
     )
-    return listOf(daemon, mgmtKeyCheck(statePaths, snapshot.running)) + stateInfo
+    return listOf(daemon) + headChecks(snapshot, topology) +
+        listOf(mgmtKeyCheck(statePaths, snapshot.running)) + stateInfo
+}
+
+/** JW-02: the degraded-boot rows doctor was structurally blind to. /health has carried
+ *  heads/readyHeads/failedHeads since the shim's converge-wait; a green "daemon running" over
+ *  dead heads plus "Everything checks out." was the exact lie this command exists to prevent.
+ *  Per-head TCP probes distinguish a bound-but-unassembled head from an unbound one; probed only
+ *  while the daemon runs (a stopped daemon's closed ports are expected, not findings). */
+private fun headChecks(snapshot: DaemonSnapshot, topology: Topology?): List<DoctorCheck> {
+    val h = snapshot.health ?: return emptyList()
+    val perHead = topology?.heads.orEmpty().map { (key, cfg) ->
+        val listening = AdminSupport.controlPortBound(cfg.port)
+        DoctorCheck(
+            "head $key",
+            if (listening) CheckStatus.INFO else CheckStatus.WARN,
+            ":${cfg.port} ${if (listening) "listening" else "not listening"}",
+        )
+    }
+    return listOfNotNull(headSummary(h)) + perHead
+}
+
+/** The heads/readyHeads/failedHeads verdict; null on a foreign/ancient listener without the
+ *  counters (a real daemon always sends all three) — nothing honest to report then. */
+private fun headSummary(h: ControlPlaneClient.HealthView): DoctorCheck? {
+    val heads = h.heads
+    val ready = h.readyHeads
+    val failed = h.failedHeads
+    val countersPresent = listOf(heads, ready, failed).none { it == null }
+    if (!countersPresent) return null
+    checkNotNull(heads)
+    checkNotNull(ready)
+    checkNotNull(failed)
+    return when {
+        failed > 0 -> DoctorCheck(
+            "heads",
+            CheckStatus.FAIL,
+            "$failed of $heads head(s) FAILED to start",
+            "splice restart (then: splice logs --head <key> --tail 50 to see why)",
+        )
+        ready + failed < heads ->
+            DoctorCheck("heads", CheckStatus.WARN, "still converging: $ready ready + $failed failed of $heads")
+        else -> DoctorCheck("heads", CheckStatus.OK, "$ready of $heads head(s) ready")
+    }
 }
 
 // LOST-COVERAGE fix: a missing mgmt-key file 401s every bearer endpoint. Present → OK; absent while

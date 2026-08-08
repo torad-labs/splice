@@ -132,7 +132,7 @@ private const val TEARDOWN_TAIL_GRACE_MS = 2_000L
 // line in daemon.log. /mgmt/logs splits on "\n" (ControlServer.logsJson), so the endpoint this
 // whole change exists to feed emitted concatenated garbage. Exactly one terminator is appended
 // here, which is a no-op for the callers that already pass one and makes the class unrepeatable.
-internal fun persistentLogger(logsDir: Path): (String) -> Unit {
+internal fun persistentLogger(logsDir: Path, maxBytes: Long = MAX_LOG_BYTES): (String) -> Unit {
     runCatchingCancellable { Files.createDirectories(logsDir) }
     val file = logsDir.resolve("daemon.log")
     val rolled = logsDir.resolve("daemon.log.1")
@@ -143,7 +143,7 @@ internal fun persistentLogger(logsDir: Path): (String) -> Unit {
         AsyncFileIo.submit {
             System.err.print(line)
             runCatchingCancellable {
-                if (written >= MAX_LOG_BYTES) {
+                if (written >= maxBytes) {
                     writer?.close()
                     Files.move(file, rolled, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
                     writer = null
@@ -153,9 +153,16 @@ internal fun persistentLogger(logsDir: Path): (String) -> Unit {
                 w.write(line)
                 w.flush()
                 written += line.toByteArray(Charsets.UTF_8).size
-            }.onFailure {
+            }.onFailure { failure ->
                 runCatchingCancellable { writer?.close() }
                 writer = null
+                // SH-14: a failed rotate used to leave `written` >= the cap forever — every later
+                // line re-entered the rotate branch, threw BEFORE reaching newBufferedWriter, and
+                // daemon.log went silent permanently. Reconcile from disk so the next line
+                // self-corrects, and say so on stderr (the one lane still alive here).
+                written = runCatchingCancellable { if (Files.exists(file)) Files.size(file) else 0L }
+                    .getOrDefault(0L)
+                System.err.print("[daemon-log] write/rotate failed ($failure) — size reconciled to $written\n")
             }
         }
     }

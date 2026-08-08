@@ -54,7 +54,7 @@ wall = "dev/campaigns/proxy-hardening/walls/nf_06_runaway_buffer_guard.py"
 [[item]]
 id = "SH-06"
 phase = "W1-bounded-failure"
-wall = ""
+wall = "dev/campaigns/proxy-hardening/walls/sh_06_credential_lock_bounded.py"
 
 [[item]]
 id = "SH-01"

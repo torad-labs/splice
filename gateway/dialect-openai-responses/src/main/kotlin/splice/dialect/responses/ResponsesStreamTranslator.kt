@@ -33,6 +33,7 @@ import splice.core.turn.Usage
 import splice.core.turn.isWeakSummaryText
 import splice.core.util.str
 import splice.core.util.strOrEmpty
+import splice.spi.BufferCapacity
 import splice.spi.ClassifiedFailure
 import splice.spi.FailureSource
 import splice.spi.StreamTranslator
@@ -145,12 +146,29 @@ private data class BlockState(val index: WireBlockIndex, var sawDelta: Boolean)
 
 public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : StreamTranslator {
 
+    // NF-06: latched when BufferCapacity trips; never provider-reported (the verdict is local).
+    private var runawayGuard: String? = null
+
     override suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome {
         // Stream read errors surface via the terminal decision, never a crash; only a genuine
         // cancellation (no watchdog fire) is allowed to propagate.
         val reducer = ResponsesEventReducer(ctx)
         try {
-            upstream.collect { evt -> reducer.onEvent(evt, sink) }
+            upstream.collect { evt ->
+                // NF-06: the shared runaway valve Chat already had — reasoningEnvelopes accumulate
+                // before any block opens, so they ride the pendingArgs surface of the cap.
+                val envelopeChars = reducer.reasoningEnvelopes.sumOf { it.length }
+                val over = BufferCapacity.over(
+                    reducer.textBuf.length,
+                    reducer.thinkingBuf.length,
+                    pendingArgsLen = envelopeChars,
+                )
+                if (over) {
+                    runawayGuard = RUNAWAY_GUARD_MESSAGE
+                    return@collect
+                }
+                reducer.onEvent(evt, sink)
+            }
         } catch (e: CancellationException) {
             if (ctx.watchdogFired() == null) throw e
         } catch (ignored: IOException) {
@@ -182,7 +200,11 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
     // would retry a successful compaction, the exact quota waste the watchdog exists to prevent).
     private fun terminalOutcome(reducer: ResponsesEventReducer): TurnOutcome = terminalPrecedence(
         TerminalStates(
-            providerFailure = reducer.upstreamFailure?.let {
+            // NF-06: a tripped runaway valve outranks everything — the buffers were truncated, so
+            // neither a late terminal nor a provider error can describe this turn honestly.
+            providerFailure = runawayGuard?.let {
+                TurnOutcome.Failure(ErrorType.API_ERROR, it, providerReported = false)
+            } ?: reducer.upstreamFailure?.let {
                 // parsed from a response.failed/error event the backend actually sent (G20 provenance)
                 TurnOutcome.Failure(
                     it.type,
@@ -694,3 +716,6 @@ private fun parseArgumentsString(text: String): JsonObject? {
 }
 
 private const val TOOL_SEARCH_EXECUTION_CLIENT = "client"
+
+// NF-06 runaway-upstream guard message; the cap lives in spi.BufferCapacity (one source, three dialects).
+private const val RUNAWAY_GUARD_MESSAGE = "ChatGPT backend: response exceeded max buffered size — aborting"

@@ -839,3 +839,34 @@ class ToolSearchCaptureTest {
         assertTrue(sink.calls.any { it.startsWith("openTool") && it.contains("mcp__exa__web_search_exa") })
     }
 }
+
+// NF-06 lives in its own class: ResponsesStreamTranslatorTest sits at detekt's LargeClass ceiling.
+class ResponsesRunawayGuardTest {
+    @Test
+    fun `runaway upstream trips the shared buffer cap into an honest local failure - NF-06`() = runTest {
+        // 25 x 1M-char text deltas, never a response.completed — the misbehaving-upstream shape.
+        // The guard must latch at the shared cap, stop feeding the buffers, and end the turn as a
+        // non-provider-reported API_ERROR (never a crash, never a provider attribution).
+        val chunk = "x".repeat(1_000_000)
+        val sink = RecordingSink()
+        val events = kotlinx.coroutines.flow.flow {
+            repeat(25) {
+                emit(
+                    kotlinx.serialization.json.buildJsonObject {
+                        put("type", kotlinx.serialization.json.JsonPrimitive("response.output_text.delta"))
+                        put("output_index", kotlinx.serialization.json.JsonPrimitive(0))
+                        put("delta", kotlinx.serialization.json.JsonPrimitive(chunk))
+                    },
+                )
+            }
+        }
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(events, sink)
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, failure.type)
+        assertFalse(failure.providerReported, "the runaway verdict is LOCAL — never provider-attributed")
+        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        // consumption stopped at the latch: 20 x 1M reaches the cap, later deltas never emit
+        val deltas = sink.calls.count { it.startsWith("text#") }
+        assertTrue(deltas in 20..21, "expected the guard to stop the stream at the cap, saw $deltas deltas")
+    }
+}

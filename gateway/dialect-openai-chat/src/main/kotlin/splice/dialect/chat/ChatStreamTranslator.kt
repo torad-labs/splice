@@ -17,6 +17,7 @@ import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.strOrEmpty
+import splice.spi.BufferCapacity
 import splice.spi.StreamTranslator
 import splice.spi.TerminalStates
 import splice.spi.WatchdogFired
@@ -85,7 +86,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
                 // so an entry count alone leaves those chars unbounded — review #49. Normally a
                 // handful of entries; the count cap bounds the sum's worst case.
                 val pendingArgsChars = pendingTools.values.sumOf { it.args.length }
-                if (bufferOverCapacity(textBuf.length, thinkingBuf.length, toolCount, pendingArgsChars)) {
+                if (BufferCapacity.over(textBuf.length, thinkingBuf.length, toolCount, pendingArgsChars)) {
                     runawayGuard = RUNAWAY_GUARD_MESSAGE
                     return@collect
                 }
@@ -348,23 +349,9 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
 
 private val REASONING_KEYS = listOf("reasoning_content", "reasoning", "thinking", "reasoning_text")
 
-// WIRE-2/3/6 runaway-upstream guard: far above any legitimate response (200K-token completions
-// run well under 1M chars; real turns use a handful of tool calls).
-private const val MAX_BUFFERED_CHARS = 20_000_000
-private const val MAX_TOOL_INDEX_ENTRIES = 50_000
+// WIRE-2/3/6 runaway-upstream guard message; the cap itself lives in spi.BufferCapacity (NF-06:
+// one definition, three dialects).
 private const val RUNAWAY_GUARD_MESSAGE = "chat backend: response exceeded max buffered size — aborting"
-
-/** True once textBuf/thinkingBuf, the tool-index map, or the not-yet-opened tools' buffered
- *  arguments have grown past their cap. Top-level (off the class function budget) — reads only its
- *  arguments; the caller latches [ChatStreamTranslator]'s own runawayGuard state. */
-private fun bufferOverCapacity(
-    textLen: Int,
-    thinkingLen: Int,
-    toolIndexCount: Int,
-    pendingArgsLen: Int,
-): Boolean =
-    textLen >= MAX_BUFFERED_CHARS || thinkingLen >= MAX_BUFFERED_CHARS ||
-        toolIndexCount >= MAX_TOOL_INDEX_ENTRIES || pendingArgsLen >= MAX_BUFFERED_CHARS
 
 /** First non-empty cleartext reasoning field on a chat delta/message. Top-level (off the class
  *  function budget) — reads only its argument. */

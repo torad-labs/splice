@@ -221,4 +221,36 @@ class PassthroughStreamTranslatorTest {
         assertTrue(outcome is TurnOutcome.Success, "got $outcome")
         assertEquals("done", (outcome as TurnOutcome.Success).bodyText)
     }
+
+    @Test
+    fun `runaway upstream trips the shared buffer cap into an honest local failure - NF-06`() = runTest {
+        // 25 x 1M-char text deltas, never a message_stop — the misbehaving-upstream shape.
+        val chunk = "x".repeat(1_000_000)
+        val sink = Rec()
+        val events = kotlinx.coroutines.flow.flow {
+            emit(ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""))
+            repeat(25) {
+                emit(
+                    kotlinx.serialization.json.buildJsonObject {
+                        put("type", kotlinx.serialization.json.JsonPrimitive("content_block_delta"))
+                        put("index", kotlinx.serialization.json.JsonPrimitive(0))
+                        put(
+                            "delta",
+                            kotlinx.serialization.json.buildJsonObject {
+                                put("type", kotlinx.serialization.json.JsonPrimitive("text_delta"))
+                                put("text", kotlinx.serialization.json.JsonPrimitive(chunk))
+                            },
+                        )
+                    },
+                )
+            }
+        }
+        val outcome = PassthroughStreamTranslator(ctx()).driveTurn(events, sink)
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, failure.type)
+        assertFalse(failure.providerReported, "the runaway verdict is LOCAL — never provider-attributed")
+        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        val deltas = sink.calls.count { it.startsWith("text:") }
+        assertTrue(deltas in 20..21, "expected the guard to stop the stream at the cap, saw $deltas deltas")
+    }
 }

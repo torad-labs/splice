@@ -23,6 +23,7 @@ import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.strOrEmpty
+import splice.spi.BufferCapacity
 import splice.spi.StreamTranslator
 import splice.spi.TerminalStates
 import splice.spi.WatchdogFired
@@ -60,9 +61,19 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
     private var failureType: ErrorType? = null
     private var failureMessage: String = ""
 
+    // NF-06: latched when BufferCapacity trips; never provider-reported (the verdict is local).
+    private var runawayGuard: String? = null
+
     override suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome {
         try {
-            upstream.collect { evt -> onEvent(evt, sink) }
+            upstream.collect { evt ->
+                // NF-06: the shared runaway valve Chat already had.
+                if (BufferCapacity.over(textBuf.length, thinkingBuf.length)) {
+                    runawayGuard = RUNAWAY_GUARD_MESSAGE
+                    return@collect
+                }
+                onEvent(evt, sink)
+            }
         } catch (e: CancellationException) {
             // Only a watchdog fire may swallow cancellation; a real cancel propagates.
             if (ctx.watchdogFired() == null) throw e
@@ -81,7 +92,10 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
     // watchdog fire — preferring watchdog here discarded successful kimi turns and burned quota).
     private fun terminalOutcome(): TurnOutcome = terminalPrecedence(
         TerminalStates(
-            providerFailure = failureType?.let {
+            // NF-06: a tripped runaway valve outranks the provider slot — the buffers were truncated.
+            providerFailure = runawayGuard?.let {
+                TurnOutcome.Failure(ErrorType.API_ERROR, it, providerReported = false)
+            } ?: failureType?.let {
                 // a genuine upstream SSE error event (e.g. overloaded_error) — provider-reported (G20)
                 TurnOutcome.Failure(it, "kimi: $failureMessage", providerReported = true)
             },
@@ -232,3 +246,6 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
         val EMPTY = JsonObject(emptyMap())
     }
 }
+
+// NF-06 runaway-upstream guard message; the cap lives in spi.BufferCapacity (one source, three dialects).
+private const val RUNAWAY_GUARD_MESSAGE = "kimi: response exceeded max buffered size — aborting"

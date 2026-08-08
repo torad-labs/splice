@@ -49,7 +49,7 @@ wall = "dev/campaigns/proxy-hardening/walls/nf_04_retry_after_date_form.py"
 [[item]]
 id = "NF-06"
 phase = "W1-bounded-failure"
-wall = ""
+wall = "dev/campaigns/proxy-hardening/walls/nf_06_runaway_buffer_guard.py"
 
 [[item]]
 id = "SH-06"

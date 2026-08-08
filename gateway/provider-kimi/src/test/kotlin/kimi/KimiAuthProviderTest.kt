@@ -463,3 +463,37 @@ class KimiAuthProviderTest {
         assertEquals("invalid_grant", auth.describe().fields["refresh_latched"])
     }
 }
+
+// SH-01 lives in its own class: KimiAuthProviderTest sits at detekt's LargeClass ceiling.
+class KimiSynthesizedExpiryTest {
+
+    @Test
+    fun `missing expires_at synthesizes one ceiling - one refresh across N calls - SH-01`() = runTest {
+        // Pre-fix, a file with no expires_at floored to 0: every credentials() call sat below the
+        // hard floor and fired its own blocking refresh. The shared policy synthesizes mtime+4h:
+        // fresh file => N calls, ZERO refreshes.
+        val dir = Files.createTempDirectory("kimi-noexp")
+        val file = dir.resolve(".kimi").resolve("credentials").resolve("kimi-code.json")
+        Files.createDirectories(file.parent)
+        Files.writeString(
+            file,
+            """{"access_token":"kimi-access","refresh_token":"kimi-refresh",
+                "scope":"coding","token_type":"Bearer"}""",
+        )
+        val mtime = Files.getLastModifiedTime(file).toMillis()
+        val calls = AtomicInteger(0)
+        val auth = KimiAuthProvider(
+            authPath = file,
+            clock = { mtime + 1_000 },
+            refreshCall = {
+                calls.incrementAndGet()
+                RefreshAttempt.Denied("must-not-be-called")
+            },
+        )
+        repeat(5) {
+            val creds = auth.credentials()
+            assertTrue(creds is Credentials.ApiKey, "got $creds")
+        }
+        assertEquals(0, calls.get(), "a fresh expires_at-less file must not refresh per call")
+    }
+}

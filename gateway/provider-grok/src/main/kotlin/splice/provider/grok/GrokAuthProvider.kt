@@ -39,6 +39,7 @@ import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.auth.credentialsOrNull
+import splice.core.auth.synthesizedExpiryMs
 import splice.core.util.DaemonLog
 import splice.core.util.SecureFile
 import splice.core.util.long
@@ -138,7 +139,7 @@ public class GrokAuthProvider(
         // stripped it) is otherwise never-expiring — synthesize a ceiling off the mtime already
         // read above, no new I/O.
         parseSnapshot()
-            ?.let { it.copy(expiresAtMs = it.expiresAtMs ?: (mtime + SYNTHETIC_EXPIRY_TTL_MS)) }
+            ?.let { it.copy(expiresAtMs = it.expiresAtMs ?: synthesizedExpiryMs(mtime)) } // SH-01: shared policy
             ?.also { cache = Cache(it, mtime, now) }
     }.onFailure {
         log("[grok-auth] failed to read $authPath: $it — treating as not logged in")
@@ -327,7 +328,6 @@ public class GrokAuthProvider(
 
         /** 4h ceiling synthesized for auth files with no `expires` field (legacy/foreign CLI writes,
          *  G18) — otherwise readSnapshot() would treat them as never-expiring. */
-        const val SYNTHETIC_EXPIRY_TTL_MS = 4 * 60 * 60 * 1000L
         const val FIELD_TOKENS = "tokens"
         const val FIELD_ACCESS_TOKEN = "access_token"
         const val FIELD_REFRESH_TOKEN = "refresh_token"

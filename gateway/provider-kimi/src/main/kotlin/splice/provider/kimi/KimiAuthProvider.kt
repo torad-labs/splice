@@ -22,6 +22,7 @@ import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.auth.credentialsOrNull
+import splice.core.auth.synthesizedExpiryMs
 import splice.core.util.DaemonLog
 import splice.core.util.long
 import splice.core.util.runCatchingCancellable
@@ -216,7 +217,10 @@ public class KimiAuthProvider(
         return Snapshot(
             access = access,
             refresh = obj.str("refresh_token"),
-            expiresAtS = obj.long("expires_at") ?: 0L,
+            // SH-01 shared missing-expiry policy: a file with no expires_at synthesizes
+            // mtime+TTL — ONE refresh when the ceiling lapses, not one per call under the floor.
+            expiresAtS = obj.long("expires_at")
+                ?: (synthesizedExpiryMs(Files.getLastModifiedTime(authPath).toMillis()) / MS_PER_S),
             expiresInS = obj.long("expires_in") ?: 0L,
         )
     }

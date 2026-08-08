@@ -2,10 +2,10 @@ import { control } from '@shared/api';
 import type { ConfigValue, PatchResult } from '@shared/api';
 import { configStore } from '../model/store';
 
-export async function fetchConfig(): Promise<void> {
+export async function fetchConfig(head?: string): Promise<void> {
   configStore.startLoading();
   try {
-    configStore.setData(await control.config());
+    configStore.setData(await control.config(head));
   } catch (err) {
     configStore.setError(err instanceof Error ? err.message : String(err));
   }

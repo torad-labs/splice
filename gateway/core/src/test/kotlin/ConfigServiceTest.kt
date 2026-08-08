@@ -233,6 +233,18 @@ class ConfigServiceTest {
     // Per-head overrides ([heads.<key>.overrides]). Before this layer existed, every head shared
     // ONE maxInflight, so a ceiling sized for a fast upstream also governed a rate-limited one.
     @Test
+    fun `layers expose the per-head override map - JW-06`() {
+        val svc = service(
+            overrides = mapOf("maxInflight" to "100"),
+            perHead = mapOf("kimi" to mapOf("maxInflight" to "8"), "claudex" to emptyMap()),
+        )
+        val layers = svc.layers()
+        // the tuned head appears with its coerced knobs; a head with no overrides is ABSENT
+        assertEquals(mapOf("maxInflight" to 8L), layers.perHead["kimi"])
+        assertEquals(setOf("kimi"), layers.perHead.keys)
+    }
+
+    @Test
     fun `per-head override applies to its own head only`() {
         val svc = service(
             overrides = mapOf("maxInflight" to "100"),

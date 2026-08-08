@@ -122,7 +122,10 @@ public class ControlServer(
                         shutdownDaemon()
                     }
                 }
-                get("/api/config") { guarded(call) { respond(call, payloads.configJson()) } }
+                get("/api/config") {
+                    // JW-06: ?head=<key> folds that head's override layer into `effective`.
+                    guarded(call) { respond(call, payloads.configJson(call.request.queryParameters["head"])) }
+                }
                 patch("/api/config") { guarded(call) { patchConfig(call) } }
                 get("/api/usage") { guarded(call) { respond(call, payloads.usageJson()) } }
                 get("/api/perf") {
@@ -483,17 +486,25 @@ private class ControlPayloads(
         putJsonArray("pids") {}
     }
 
-    fun configJson(): String {
+    fun configJson(headKey: String? = null): String {
         val layers = config.layers()
-        val effective = config.getConfig().asMap()
+        // JW-06: ?head=<key> answers "why is THIS head's knob X" — effective folds the head's
+        // override layer exactly as admission does; unknown/absent key stays the global view.
+        val effective = config.getConfig(headKey).asMap()
         return buildJsonObject {
             put("effective", mapToJson(effective))
+            headKey?.let { put("head", it) }
             putJsonObject("layers") {
                 put("defaults", mapToJson(layers.defaults))
                 // The operator-facing layer: ~/.config/splice/splice.toml [daemon]/[defaults].
                 // Shown in precedence position (beats defaults, loses to file/env/runtime) so
                 // "why is this knob X?" is answerable from the payload alone.
                 put("toml", mapToJson(layers.headOverrides))
+                // JW-06: [heads.<key>.overrides] — precedence directly above the global TOML
+                // layer (mergedRaw's real order); only override-carrying heads appear.
+                putJsonObject("perHead") {
+                    layers.perHead.forEach { (key, knobs) -> put(key, mapToJson(knobs)) }
+                }
                 put("file", mapToJson(layers.file))
                 put("env", mapToJson(layers.env))
                 put("runtime", mapToJson(layers.runtime))

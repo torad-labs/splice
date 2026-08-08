@@ -527,3 +527,69 @@ private fun awaitOne(port: Int) {
         Thread.sleep(50)
     }
 }
+
+// JW-06 lives in its own class: ControlServerTest sits at detekt's LargeClass ceiling.
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class ControlServerPerHeadConfigTest {
+    private val json = Json { ignoreUnknownKeys = true }
+    private val client = HttpClient(CIO)
+
+    @AfterAll
+    fun tearDown() = client.close()
+
+    @Test
+    fun `config head param folds that head's override layer into effective - JW-06`() = runTest {
+        // [heads.<key>.overrides] was a real precedence layer that /api/config could not show:
+        // "why is kimi's maxInflight 8 when the panel says 100" was unanswerable.
+        val tmp = Files.createTempDirectory("control-perhead")
+        val paths = StatePaths(baseOverride = tmp.resolve("state"))
+        val mgmt = MgmtKey(paths)
+        val perHeadPort = freshPort()
+        val svc = ConfigService(
+            paths,
+            headOverrides = mapOf("maxInflight" to "100"),
+            perHeadOverrides = mapOf("kimi" to mapOf("maxInflight" to "8")),
+        )
+        val server = ControlServer(
+            port = perHeadPort,
+            heads = emptyMap(),
+            config = svc,
+            mgmtKey = mgmt,
+            dashboardHtml = { "" },
+            log = {},
+        )
+        server.start()
+        try {
+            awaitListening(perHeadPort)
+            val bearer = mgmt.get()
+            suspend fun getConfig(path: String) = json.parseToJsonElement(
+                client.get("http://127.0.0.1:$perHeadPort$path") {
+                    header("Authorization", "Bearer $bearer")
+                }.bodyAsText(),
+            ).jsonObject
+
+            val global = getConfig("/api/config")
+            assertEquals(
+                "100",
+                global["effective"]!!.jsonObject["maxInflight"]!!.jsonPrimitive.content,
+                "the unparameterized view stays global",
+            )
+            val perHeadLayer = global["layers"]!!.jsonObject["perHead"]!!.jsonObject
+            assertEquals(
+                "8",
+                perHeadLayer["kimi"]!!.jsonObject["maxInflight"]!!.jsonPrimitive.content,
+                "the override-carrying head appears in the perHead layer",
+            )
+
+            val kimi = getConfig("/api/config?head=kimi")
+            assertEquals(
+                "8",
+                kimi["effective"]!!.jsonObject["maxInflight"]!!.jsonPrimitive.content,
+                "?head folds the head's layer exactly as admission does",
+            )
+            assertEquals("kimi", kimi["head"]!!.jsonPrimitive.content)
+        } finally {
+            server.stop()
+        }
+    }
+}

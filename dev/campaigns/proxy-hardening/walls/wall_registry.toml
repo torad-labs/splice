@@ -119,7 +119,7 @@ wall = "dev/campaigns/proxy-hardening/walls/jw_05_doctor_reads_runtime.py"
 [[item]]
 id = "JW-06"
 phase = "W3-see-the-daemon"
-wall = ""
+wall = "dev/campaigns/proxy-hardening/walls/jw_06_perhead_config_visible.py"
 
 [[item]]
 id = "JW-08"

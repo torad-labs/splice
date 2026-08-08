@@ -21,6 +21,9 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 DOCTOR = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/DoctorCommand.kt"
+# The probe helper lives in its own file (DoctorCommand.kt is at the file function budget); the
+# wall reads both so a legitimate split cannot read as a gap.
+PROBE = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/DoctorProbeWrite.kt"
 
 
 def detect(doctor: str | None) -> list[str]:
@@ -74,7 +77,7 @@ def selftest() -> int:
 def main() -> int:
     if "--selftest" in sys.argv:
         return selftest()
-    problems = detect(_read(DOCTOR))
+    problems = detect((_read(DOCTOR) or "") + "\n" + (_read(PROBE) or "") if _read(DOCTOR) else None)
     if problems:
         print("JW-17 WALL RED — doctor never checks the state/log dirs are writable:")
         for p in problems:

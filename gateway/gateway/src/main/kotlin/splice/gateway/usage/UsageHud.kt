@@ -8,10 +8,12 @@
 // log lines are injected writers; persistence is asynchronous best-effort on the bounded file lane.
 package splice.gateway.usage
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonUnquotedLiteral
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
@@ -72,9 +74,37 @@ public fun buildUsagePayload(usage: TurnUsage, contextWindow: Long?): JsonObject
         if (contextWindow != null && contextWindow > 0) {
             put("context_window", contextWindow)
             put("context_window_size", contextWindow)
-            put("used_percentage", totalInput.toDouble() / contextWindow * FULL_PCT)
+            // JS-number parity: the legacy reference emits this via JSON.stringify and the
+            // migration oracle byte-compares. Two notation gaps vs JVM: an integral double prints
+            // bare ("0", never "0.0"), and JS stays in decimal notation down to 1e-7 where the
+            // JVM flips to E-notation below 1e-3 (0.000367…, never 3.67E-4).
+            val pct = totalInput.toDouble() / contextWindow * FULL_PCT
+            if (pct == kotlin.math.floor(pct)) {
+                put("used_percentage", pct.toLong())
+            } else {
+                put("used_percentage", jsNumber(pct))
+            }
         }
     }
+}
+
+/** JVM Double.toString rendered in JS decimal notation for the E-notation window JS doesn't use
+ *  (exponents -1..-6): the digit sequence is shortest-round-trip in both runtimes, only the
+ *  notation differs. Exponents <= -7 are E-notation in JS too and cannot arise for a percentage
+ *  of a real context window, so any other repr rides through untouched. */
+/** JS switches to exponent notation only below 1e-7 (ECMA-262 Number::toString step 5 bound). */
+private const val JS_DECIMAL_MIN_EXP = -6
+
+@OptIn(ExperimentalSerializationApi::class)
+private fun jsNumber(v: Double): JsonElement {
+    val s = v.toString()
+    val e = s.indexOf('E')
+    if (e < 0) return JsonPrimitive(v)
+    val exp = s.substring(e + 1).toInt()
+    if (exp > 0 || exp < JS_DECIMAL_MIN_EXP) return JsonPrimitive(v)
+    val neg = s.startsWith("-")
+    val digits = s.substring(if (neg) 1 else 0, e).replace(".", "").trimEnd('0').ifEmpty { "0" }
+    return JsonUnquotedLiteral((if (neg) "-" else "") + "0." + "0".repeat(-exp - 1) + digits)
 }
 
 /** One concise line per completed turn so the cache hit rate is watchable live. Parses via the

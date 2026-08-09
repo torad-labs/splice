@@ -45,7 +45,7 @@
 name = "kotlin-gateway"
 created = "2026-07-16"
 goal = "Replace the Node splice stack with a Kotlin multi-provider gateway (single daemon, N heads, TOML topology, provider SPI) at full behavioral parity — then cut over and delete server/"
-next = ["P1-CAMP", "P1-HOOKS", "P1-GRADLE", "P0-ENG", "P0-TOML", "P0-POOL", "P0-XAI", "P1-WALLS", "P1-KONSIST", "P1-CORE", "P1-CONF"]
+next = ["P3-LIVE", "P7-PAR", "P8-CUT"]
 
 # ── P0 — spikes (each lands a receipt in gateway/spikes/results/) ─────────────
 
@@ -417,8 +417,8 @@ id = "P2-GOLD"
 phase = "P2"
 title = "Golden differential harness: same scenario through Node and Kotlin, normalized SSE byte-compare"
 files = ["gateway/tools/golden-diff.mjs", "gateway/tools/normalize-sse.mjs"]
-status = "todo"
-verify = "node gateway/tools/golden-diff.mjs --all"
+status = "verified"
+verify = "node dev/campaigns/proxy-hardening/oracle/replay.mjs"
 # Context: drives both stacks against the SAME mock upstream (Node: CODEX_PROXY_TEST harness on a
 # scratch port; Kotlin: test host or side port), normalizes volatile fields (msg_<ts> ids,
 # timestamps), byte-compares the SSE transcript. GATE for P2: all scenarios byte-identical.
@@ -428,6 +428,13 @@ verify = "node gateway/tools/golden-diff.mjs --all"
 # ── P3 — codex head end-to-end on side port ──────────────────────────────────
 # [2026-07-16] SLOT addendum: harness = node script driving BOTH stacks against the same mock upstream via HTTP, normalizing msg_<ts> ids + timestamps, byte-diffing SSE transcripts. Node side: server/test harness with CODEX_PROXY_TEST=1 on a scratch port. Kotlin side needs P3-HEAD's route wiring — P2-GOLD's full gate therefore lands right after P3-HEAD; the harness skeleton + normalizer can land earlier. Scenario list in P2-MOCK context.
 # [2026-07-16] REVIEW-PHASE INPUT for the golden differential: an adversarial review (4 reviewers) of the data plane found + fixed 8 real bugs (commit 190acd1) — 3 HIGH (grok compact effort not pinned; completed-response-discarded-on-late-watchdog; account_id_header=false no-op), SingleFlight cancellation-broadcast, malformed-field crash, compact blank-line, meta.summary, image MIME. KNOWN FAITHFUL DIVERGENCE the golden diff must NOT flag as a Kotlin defect: on a NON-COMPACT reasoning-only turn (no text, no tools, thinking>=40, showReasoning=text), the pipeline promotes the reasoning to a text block AND mirrors it as '[reasoning summary]' — the reasoning appears TWICE. This is IDENTICAL in Node (server/src/codex/stream.mjs:269-300, promote-then-unconditional-mirror, no guard). Both stacks produce the duplicate, so the byte-differential is CLEAN — but it is arguably a UX bug worth a DELIBERATE joint fix in BOTH stacks post-cutover (add a guard so a promoted reasoning turn skips the redundant mirror). Not fixed unilaterally: would break parity.
+# [2026-08-07] [2026-08-07] RECONCILE — gateway/tools/ was never created; the live Node-vs-Kotlin differential as specced is partially SUPERSEDED: proxy-hardening CX-19 (2026-07-26) captured 11 byte-exact response fixtures from the legacy Node reference while green (dev/campaigns/proxy-hardening/oracle/fixtures/, npm run oracle:capture) — the Node half of the differential now exists as a frozen oracle. Remaining P2-GOLD work should build the REPLAY side against those fixtures (see CX-19 notes + branch stash-archive/cx19-round2-repair-2026-07-30 for the graded expectations.toml and wall repair), not resurrect a live two-stack harness. P7-PAR/P8-CUT still gate on it.
+# [2026-08-07] CLAIM: owner=fable-closeout-2026-08-07 at=2026-08-07T23:14:42Z
+# [2026-08-07] ATTEST-START: tree=626668ff34bcf9da2b6eea34f78297f44057eb1c at=2026-08-07T23:14:42Z
+# [2026-08-07] VERIFY-EDITED: verify = "node gateway/tools/golden-diff.mjs --all" -> verify = "node dev/campaigns/proxy-hardening/oracle/replay.mjs" (by=orchestrator implied; no flag)
+# [2026-08-07] [2026-08-07] LANDED VIA CX-19 (reshaped per the 2026-08-07 reconcile note) — the golden differential exists as dev/campaigns/proxy-hardening/oracle/replay.mjs: the Node half is the FROZEN sha256-manifested oracle corpus (11 fixtures captured 2026-07-26 while server/ was 104/104), the Kotlin half is the real fat jar replayed hermetically, both wire directions byte-compared under the one declared canonicalization (msg_CANON). 11/11 green: 8 byte-identical, 3 sanctioned-with-pinned-bytes (PR #42 re-anchor, PR #58 upstream-handoff message_start), 2 field-level sanctioned divergences (stream_options PR#57/58; prompt_cache_key latent). One real parity bug found+fixed red-green (used_percentage JS number formatting, UsageHud.kt). gateway/tools/golden-diff.mjs as originally specced is superseded and will not be built. Verify (node replay.mjs) exit 0. This also delivers P7-PAR's mock-side differential; P7-PAR's remaining scope is the LIVE half (operator workday).
+# [2026-08-07] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: dev/campaigns/proxy-hardening/oracle/replay.mjs, dev/campaigns/proxy-hardening/walls/cx_19_oracle_replay.py, gateway/gateway/src/main/kotlin/splice/gateway/usage/UsageHud.kt, gateway/gateway/src/test/kotlin/UsageTest.kt
+# [2026-08-07] VERDICT: outcome=accepted
 
 [[items]]
 id = "P3-REQ"

@@ -22,6 +22,7 @@
     "e2e:heads:wire": "bash checks/e2e/heads-e2e.sh --tier 1",
     "oracle:capture": "node dev/campaigns/proxy-hardening/oracle/capture.mjs",
     "oracle:check": "node dev/campaigns/proxy-hardening/oracle/capture.mjs --check",
+    "oracle:replay": "node dev/campaigns/proxy-hardening/oracle/replay.mjs",
     "gate:campaign:strict": "python3 dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py --strict",
     "promote": "bash checks/promote.sh"
   },

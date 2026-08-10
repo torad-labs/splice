@@ -805,6 +805,9 @@ internal fun searchContinuation(
  *  (non-Success outcomes pass through; searchContinuation's own type guard ignores them anyway). */
 internal fun bufferedForSearch(outcome: TurnOutcome): TurnOutcome =
     if (outcome is TurnOutcome.Success) outcome.copy(bodyText = "", emittedText = false) else outcome
+// CX-09 note: emittedThinking is deliberately NOT stripped here — BufferingWireSink buffers only
+// text/tool ops and forwards openThinking/thinkingDelta straight through, so a reasoning block from
+// a buffered round DID reach the client and must keep the honesty gate quiet.
 
 internal class FoldRunner(
     // Only the buffer's `real` sink — never a terminal here (L3: FoldRunner finishes via [finish]).
@@ -864,6 +867,7 @@ internal class FoldRunner(
                 // (emittedText=true over empty content would defeat the empty-model honesty
                 // gate — review-pr 2026-07-24). thinkingText STAYS: fold-mode reasoning streams
                 // LIVE to the wire, so it legitimately belongs in the mirror merge.
+                // emittedThinking rides along with thinkingText for the same reason.
                 salvaged.add(p.copy(bodyText = "", emittedText = false))
                 acc = acc.plusRound(p.usage)
             }
@@ -990,12 +994,21 @@ internal data class RoundUsage(
  *  fires on a round that carried one. */
 internal fun searchPartial(success: TurnOutcome.Success, buffered: Boolean): TurnOutcome.PartialRound =
     if (buffered) {
-        TurnOutcome.PartialRound(thinkingText = success.thinkingText, bodyText = "", emittedText = false)
+        TurnOutcome.PartialRound(
+            thinkingText = success.thinkingText,
+            bodyText = "",
+            emittedText = false,
+            // CX-09: reasoning is NOT buffered (BufferingWireSink forwards openThinking/
+            // thinkingDelta to the real sink), so it genuinely reached the client — the same
+            // reason thinkingText itself survives this strip.
+            emittedThinking = success.emittedThinking,
+        )
     } else {
         TurnOutcome.PartialRound(
             thinkingText = success.thinkingText,
             bodyText = success.bodyText,
             emittedText = success.emittedText,
+            emittedThinking = success.emittedThinking,
         )
     }
 
@@ -1022,6 +1035,7 @@ internal fun mergedAcrossRounds(
     return outcome.copy(
         hasToolUse = outcome.hasToolUse || salvaged.any { it.hasToolUse },
         emittedText = outcome.emittedText || salvaged.any { it.emittedText },
+        emittedThinking = outcome.emittedThinking || salvaged.any { it.emittedThinking },
         thinkingText = (salvaged.map { it.thinkingText } + outcome.thinkingText)
             .filter { it.isNotEmpty() }
             .joinToString("\n\n"),

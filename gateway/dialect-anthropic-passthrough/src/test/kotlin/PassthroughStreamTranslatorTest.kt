@@ -177,6 +177,41 @@ class PassthroughStreamTranslatorTest {
         assertEquals(listOf("closeAll"), sink.calls) // nothing opened, nothing closed
     }
 
+    // CX-18: Anthropic's newer per-TTL shape reports cache creation as a nested object instead of
+    // the flat cache_creation_input_tokens. Reading only the flat key scored those tokens as zero,
+    // and since successOutcome folds cacheCreation back into inputTokens, the whole context-window
+    // percentage came out low on every cache-writing turn.
+    @Test
+    fun `nested cache_creation buckets sum into the input total`() = runTest {
+        val sink = Rec()
+        val s = drive(
+            sink,
+            ev(
+                """{"type":"message_start","message":{"usage":{"input_tokens":10,"cache_read_input_tokens":5,""" +
+                    """"cache_creation":{"ephemeral_5m_input_tokens":30,"ephemeral_1h_input_tokens":7}}}}""",
+            ),
+            ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}"""),
+            ev("""{"type":"message_stop"}"""),
+        ) as TurnOutcome.Success
+        assertEquals(52, s.usage.inputTokens) // 10 + cache_read 5 + cache_creation (30 + 7)
+        assertEquals(5, s.usage.cachedTokens)
+    }
+
+    @Test
+    fun `the flat cache_creation key still wins over the nested object`() = runTest {
+        val sink = Rec()
+        val s = drive(
+            sink,
+            ev(
+                """{"type":"message_start","message":{"usage":{"input_tokens":10,""" +
+                    """"cache_creation_input_tokens":4,"cache_creation":{"ephemeral_5m_input_tokens":999}}}}""",
+            ),
+            ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}"""),
+            ev("""{"type":"message_stop"}"""),
+        ) as TurnOutcome.Success
+        assertEquals(14, s.usage.inputTokens) // 10 + flat 4; the nested object is not double-counted
+    }
+
     @Test
     fun `explicit JSON nulls never leak into buffers`() = runTest {
         val sink = Rec()

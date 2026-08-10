@@ -13,12 +13,15 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonObjectBuilder
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.parse.AnthropicTurnBody
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.compactDirective
+import splice.core.turn.withCompactDirective
 import splice.core.util.strOrEmpty
 import splice.core.wire.AnthropicRequest
 
@@ -54,7 +57,7 @@ public class PassthroughRequestBuilder(private val quirks: PassthroughQuirks) {
             copyUnhandledFields(raw)
             put(MODEL, upstreamModel)
             put(STREAM, true)
-            raw[SYSTEM]?.let { put(SYSTEM, stripCacheControl(it)) }
+            compactAwareSystem(raw[SYSTEM], compact)?.let { put(SYSTEM, it) }
             raw[MESSAGES]?.let { put(MESSAGES, scrubMessages(it)) }
             if (!compact) {
                 raw[TOOLS]?.let { put(TOOLS, sanitizeTools(it)) }
@@ -193,6 +196,39 @@ public class PassthroughRequestBuilder(private val quirks: PassthroughQuirks) {
     }
 
     // --- helpers ---------------------------------------------------------------------------------
+
+    /** CX-02: the scrubbed system field, with the compaction directive appended on a compact turn.
+     *
+     *  This is the one place passthrough INVENTS content rather than forwarding it, and it is
+     *  deliberate: without it a kimi compaction turn is an ordinary tool-stripped turn and a chatty
+     *  reply becomes the stored summary. Both legal shapes are handled — Anthropic's `system` is a
+     *  string OR an array of blocks — and a compact turn with no system at all still gets one.
+     *  Non-compact returns exactly what the old `stripCacheControl` call returned, null included. */
+    private fun compactAwareSystem(system: JsonElement?, compact: Boolean): JsonElement? {
+        val scrubbed = system?.let { stripCacheControl(it) }
+        if (!compact) return scrubbed
+        val directiveBlock = buildJsonObject {
+            put("type", "text")
+            put("text", compactDirective)
+        }
+        return when (scrubbed) {
+            is JsonArray -> buildJsonArray {
+                scrubbed.forEach { add(it) }
+                add(directiveBlock)
+            }
+            null -> buildJsonArray { add(directiveBlock) }
+            // A string system prompt stays a string — appending a block would change its type.
+            // strOrEmpty returns "" for any NON-primitive (an object, JSON null), which in a
+            // verbatim-forwarding dialect would silently replace a client's unusual-but-forwardable
+            // system with the directive alone. Forward it untouched instead and append the
+            // directive as its own block, so nothing the client sent is ever dropped.
+            is JsonPrimitive -> JsonPrimitive(withCompactDirective(strOrEmpty(scrubbed), compact = true))
+            else -> buildJsonArray {
+                add(scrubbed)
+                add(directiveBlock)
+            }
+        }
+    }
 
     /** Recursively remove every `cache_control` key; other structure passes verbatim. Bounded by
      *  [DEPTH_CAP] (mirrors MfjsSanitizer's guard): client-supplied JSON deeper than the cap is

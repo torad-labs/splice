@@ -40,6 +40,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.withCompactDirective
 import splice.core.util.str
 import splice.core.wire.AnthropicMessage
 import splice.core.wire.AnthropicRequest
@@ -401,18 +402,12 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
 
     // ── knobs ────────────────────────────────────────────────────────────────
 
+    // CX-02: the directive text moved to :core (withCompactDirective) so chat and passthrough emit
+    // the SAME one. The composition is unchanged — the Node .filter(Boolean) that dropped the ""
+    // separator is what withCompactDirective's filter reproduces — so the wire bytes are identical.
     private fun compactAwareInstructions(system: String?, compact: Boolean): String {
-        val base = system.orEmpty()
-        if (!compact) return base.ifEmpty { "You are a helpful assistant." }
-        return listOf(
-            base,
-            "",
-            "COMPACT MODE (critical): You are summarizing a coding session for another agent.",
-            "Respond with ONLY a detailed plain-text summary. No tools. No function calls.",
-            "Do not put the summary only in reasoning — the final message text MUST contain the full summary.",
-            "Structure with headings: Goal, Decisions, Files touched, Current state, Errors, Next steps, Constraints.",
-            "Be concrete (paths, commands, numbers). Omit boilerplate.",
-        ).filter { it.isNotEmpty() }.joinToString("\n") // Node .filter(Boolean): drops the "" separator
+        if (!compact) return system.orEmpty().ifEmpty { "You are a helpful assistant." }
+        return withCompactDirective(system, compact = true)
     }
 
     private fun cacheKey(body: AnthropicRequest, opts: BuildOptions): String? = when (quirks.cacheKeyStrategy) {

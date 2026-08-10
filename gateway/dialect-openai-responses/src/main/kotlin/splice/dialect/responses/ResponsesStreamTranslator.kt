@@ -292,6 +292,7 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
         thinkingText = reducer.thinkingBuf.toString(),
         bodyText = reducer.textBuf.toString(),
         emittedText = reducer.emittedText,
+        emittedThinking = reducer.emittedThinking,
         hasToolUse = reducer.hasToolUse,
         reasoningEnvelopes = reducer.reasoningEnvelopes.toList(),
         toolTearOpen = reducer.toolSalvage.tearOpen,
@@ -328,6 +329,7 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
         thinkingText = reducer.thinkingBuf.toString(),
         bodyText = reducer.textBuf.toString(),
         emittedText = reducer.emittedText,
+        emittedThinking = reducer.emittedThinking,
         reasoningEnvelopes = reducer.reasoningEnvelopes.toList(),
         // The harvest fallback runs ONLY when the streamed list is empty (needs no dedup): a round
         // that emitted only a search call and was missed by the live capture would otherwise
@@ -384,6 +386,12 @@ private class ResponsesEventReducer(val ctx: StreamTurnContext) {
     val blocks = HashMap<Int, BlockState>()
     var hasToolUse = false
     var emittedText = false
+
+    /** CX-09: a thinking block actually reached the sink. NOT the same as thinkingBuf being
+     *  non-empty — [harvestFallback] refills that buffer from the completed response object
+     *  without emitting anything, and that is precisely the turn the honesty gate must still
+     *  call empty. */
+    var emittedThinking = false
     var incomplete = false
 
     // response.incomplete carrying a non-max_output_tokens reason (content_filter, etc.) — the
@@ -576,6 +584,7 @@ private class ResponsesEventReducer(val ctx: StreamTurnContext) {
         val b = existing ?: run {
             if (thinkingBuf.isNotEmpty() && !thinkingBuf.endsWith("\n")) thinkingBuf.append("\n\n")
             val idx = sink.openThinking()
+            emittedThinking = true // CX-09: reached the sink, so the client received it
             BlockState(idx, sawDelta = false).also { blocks[reasoningKey(outputIndex)] = it }
         }
         if (thinkingBuf.isNotEmpty() && !thinkingBuf.endsWith("\n")) {
@@ -615,6 +624,7 @@ private class ResponsesEventReducer(val ctx: StreamTurnContext) {
         // separate multiple reasoning ITEMS in the mirror buffer
         if (thinkingBuf.isNotEmpty() && !thinkingBuf.endsWith("\n")) thinkingBuf.append("\n\n")
         val idx = sink.openThinking()
+        emittedThinking = true // CX-09: reached the sink, so the client received it
         val state = BlockState(idx, sawDelta = false)
         blocks[key] = state
         return state

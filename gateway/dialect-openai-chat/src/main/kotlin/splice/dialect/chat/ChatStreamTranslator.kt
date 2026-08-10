@@ -16,6 +16,7 @@ import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.util.firstLong
 import splice.core.util.strIfString
 import splice.core.util.strOrEmpty
 import splice.spi.BufferCapacity
@@ -47,6 +48,10 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     private var toolArgsInvalid: String? = null
     private var hasToolUse = false
     private var emittedText = false
+
+    // CX-09: a thinking block reaching the sink is content the client got; the empty-turn
+    // honesty gate reads this so it never grades a thinking-only turn as empty.
+    private var emittedThinking = false
     private var incomplete = false
     private val textBuf = StringBuilder()
     private val thinkingBuf = StringBuilder()
@@ -190,6 +195,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         thinkingText = thinkingBuf.toString(),
         bodyText = textBuf.toString(),
         emittedText = emittedText,
+        emittedThinking = emittedThinking,
     )
 
     private suspend fun onEvent(evt: JsonObject, sink: WireSink) {
@@ -221,6 +227,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
             val toEmit = unseenSuffix(thinkingBuf.toString(), r)
             if (toEmit.isNotEmpty()) {
                 val idx = thinkingBlock ?: sink.openThinking().also { thinkingBlock = it }
+                emittedThinking = true // CX-09: a thinking block is on the wire from here on
                 thinkingBuf.append(toEmit)
                 sink.thinkingDelta(idx, toEmit)
             }
@@ -289,6 +296,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         // DeepSeek/xAI chat → reasoning_content; some OpenRouter/vLLM → reasoning; a few → thinking.
         reasoningDeltaText(delta)?.let { r ->
             val idx = thinkingBlock ?: sink.openThinking().also { thinkingBlock = it }
+            emittedThinking = true // CX-09: a thinking block is on the wire from here on
             thinkingBuf.append(r)
             sink.thinkingDelta(idx, r)
         }
@@ -372,17 +380,19 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
 
     private fun usage(evt: JsonObject) {
         val u = evt["usage"] as? JsonObject ?: return
-        fun num(obj: JsonObject, vararg keys: String): Long =
-            keys.firstNotNullOfOrNull { (obj[it] as? JsonPrimitive)?.content?.toLongOrNull() } ?: 0L
-        (u["prompt_tokens"] as? JsonPrimitive)?.content?.toLongOrNull()?.let { inputTokens = it }
-        (u["completion_tokens"] as? JsonPrimitive)?.content?.toLongOrNull()?.let { outputTokens = it }
+        // CX-18: OpenRouter's Responses-shaped routes and several OpenAI-compatible servers report
+        // the two main buckets under the input_/output_ spelling; reading only prompt_/completion_
+        // landed those turns at zero usage. Canonical spelling first — a backend emitting both is
+        // read by the standard field.
+        u.firstLong("prompt_tokens", "input_tokens")?.let { inputTokens = it }
+        u.firstLong("completion_tokens", "output_tokens")?.let { outputTokens = it }
         // Prompt-cache read tokens — surfaced so the HUD/cache-log see a real hit rate. Details
         // field first (OpenAI standard: prompt_tokens_details.cached_tokens), then flat `cached_tokens`,
         // then DeepSeek's `prompt_cache_hit_tokens`. RAW here: prompt_tokens already INCLUDES this
         // cached portion and HeadServer disjoints them, so subtracting here would double-subtract.
         val details = u["prompt_tokens_details"] as? JsonObject
-        val cached = details?.let { num(it, "cached_tokens") }?.takeIf { it > 0 }
-            ?: num(u, "cached_tokens", "prompt_cache_hit_tokens")
+        val cached = details?.firstLong("cached_tokens")?.takeIf { it > 0 }
+            ?: u.firstLong("cached_tokens", "prompt_cache_hit_tokens") ?: 0L
         if (cached > 0) cachedTokens = cached
     }
 

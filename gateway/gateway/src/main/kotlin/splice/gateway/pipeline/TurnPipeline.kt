@@ -2,19 +2,20 @@
 // codex-proxy.mjs handleMessages @ pre-public-port-baseline — invariants: after the stream machine returns its
 // TurnOutcome, the gateway (not the provider) runs promote-to-text (only when no text AND no
 // tools — compact needs a text channel), the honesty gates (empty compact => api_error, never
-// an empty success; completed-but-empty non-compact under HONESTY_MIN => api_error), the mirror
+// an empty success; completed-but-empty non-compact that the mirror will not cover => api_error),
+// the mirror
 // (L2, one call), then the SOLE terminal emit. A Failure => emitError; ClientAbandoned =>
 // abandon(); a stream that never started + failure still emits an honest error frame.
 package splice.gateway.pipeline
 
 import splice.core.turn.ErrorType
-import splice.core.turn.HONESTY_MIN_CHARS
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.pickModelText
 import splice.gateway.compact.CompactStats
 import splice.gateway.reasoning.mirrorInto
+import splice.gateway.reasoning.willMirror
 import splice.gateway.wire.TurnTerminal
 
 public class TurnPipeline(
@@ -78,7 +79,7 @@ public class TurnPipeline(
                 recordCompact("empty_model", elapsedMs, error = "api_error")
                 emitter.emitError(ErrorType.API_ERROR, "claudex: compact returned no content from model — retry")
                 return "empty_compact"
-            } else if (outcome.thinkingText.trim().length < HONESTY_MIN_CHARS) {
+            } else if (nothingReachesTheClient(outcome, meta)) {
                 emitter.emitError(ErrorType.API_ERROR, "claudex: model returned no content (empty response) — retry")
                 return "empty_model"
             }
@@ -117,4 +118,29 @@ public class TurnPipeline(
     private suspend fun mirrorGated(sink: splice.spi.WireSink, thinkingText: String?, meta: TurnMeta) {
         if (mirrorReasoning) mirrorInto(sink, thinkingText, meta.showReasoning, meta.compact)
     }
+
+    /** CX-09: the empty-turn verdict — nothing reached the client this turn and nothing will.
+     *
+     *  Both halves matter. [TurnOutcome.Success.emittedThinking] covers what ALREADY went out: the
+     *  translators stream native thinking blocks regardless of the mirror knob and regardless of
+     *  showReasoning, so a thinking-only turn is not empty just because the text mirror will stay
+     *  quiet. [willMirrorHere] covers what still might go out. Only when both are false has the
+     *  client genuinely received nothing — which today means the harvest fallback, where the
+     *  thinking buffer is refilled from the completed response without the sink ever being
+     *  touched. */
+    private fun nothingReachesTheClient(outcome: TurnOutcome.Success, meta: TurnMeta): Boolean =
+        !outcome.emittedThinking && !willMirrorHere(outcome.thinkingText, meta)
+
+    /** CX-09: the same predicate [mirrorGated] obeys, including the operator knob.
+     *
+     *  This answers only "will the TEXT MIRROR emit?" — it is NOT the whole question. Translators
+     *  emit native thinking blocks independently of both the knob and showReasoning, and on
+     *  anthropic-passthrough `showReasoning = THINKING` is set PRECISELY BECAUSE reasoning already
+     *  rides the wire natively (PassthroughRequestBuilder: "pick the showReasoning value that makes
+     *  mirrorInto a no-op"). Reading that sentinel as "nothing will cover this turn" turned every
+     *  thinking-only kimi turn into an API_ERROR — a regression caught in adversarial review before
+     *  it shipped. So the honesty gate asks [TurnOutcome.Success.emittedThinking] FIRST, and only
+     *  falls back to this predicate when nothing reached the wire at all. */
+    private fun willMirrorHere(thinkingText: String?, meta: TurnMeta): Boolean =
+        mirrorReasoning && willMirror(thinkingText, meta.showReasoning, meta.compact)
 }

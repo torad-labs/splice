@@ -74,6 +74,9 @@ public data class ToolResultBlock(
     @SerialName("tool_use_id") val toolUseId: String = "",
     @Serializable(with = ContentSerializer::class)
     val content: List<ContentBlock> = emptyList(),
+    /** Anthropic's structured failure verdict. `null` means the client said nothing — NOT `false`;
+     *  consumers fall back to text heuristics only in that case. */
+    @SerialName("is_error") val isError: Boolean? = null,
 ) : ContentBlock()
 
 /** Unknown block kinds decode losslessly instead of throwing (forward compatibility). */

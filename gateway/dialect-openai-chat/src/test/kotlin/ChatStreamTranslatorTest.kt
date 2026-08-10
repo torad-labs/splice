@@ -2,46 +2,13 @@
 // text + tool_calls + finish_reason mapping, truncated + failure paths.
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.test.runTest
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.dialect.chat.ChatStreamTranslator
-import splice.dialect.chat.ChatTurnContext
-import splice.spi.WireSink
-
-private class Rec : WireSink {
-    val calls = mutableListOf<String>()
-    val toolOpens = mutableListOf<Pair<String, String>>() // (id, name) — inspect ids without disturbing `calls`
-    private var n = 0
-    override suspend fun openText() = WireBlockIndex(n++).also { calls.add("openText") }
-    override suspend fun openThinking() = WireBlockIndex(n++).also { calls.add("openThinking") }
-    override suspend fun openTool(id: String, name: String) = WireBlockIndex(n++).also {
-        calls.add("openTool:$name")
-        toolOpens.add(id to name)
-    }
-    override suspend fun textDelta(index: WireBlockIndex, text: String) { calls.add("text:$text") }
-    override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) { calls.add("think:$thinking") }
-    override suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String) { calls.add("json:$partialJson") }
-    override suspend fun closeBlock(index: WireBlockIndex) { calls.add("close") }
-    override suspend fun closeAll() { calls.add("closeAll") }
-    override suspend fun addTextBlock(text: String) { calls.add("addText:$text") }
-    override suspend fun addRedactedThinking(data: String) = Unit
-}
-
-private fun ev(json: String): JsonObject = Json.parseToJsonElement(json).jsonObject
-private fun ctx() = ChatTurnContext({ false }, { null }, 180_000, 900_000)
-
-private fun firedCtx(fired: splice.spi.WatchdogFired?) = ChatTurnContext({ false }, { fired }, 180_000, 900_000)
-
-private suspend fun driveEvents(vararg evs: JsonObject): TurnOutcome =
-    ChatStreamTranslator(ctx()).driveTurn(evs.toList().asFlow(), Rec())
 
 class ChatStreamTranslatorTest {
 
@@ -250,49 +217,6 @@ class ChatStreamTranslatorTest {
         // exactly one thinking block (the null didn't open one) and it precedes the text block
         assertEquals(1, sink.calls.count { it == "openThinking" })
         assertTrue(sink.calls.indexOf("openThinking") < sink.calls.indexOf("openText"))
-    }
-
-    @Test
-    fun `usage captures cached tokens from prompt_tokens_details`() = runTest {
-        val s = driveEvents(
-            ev("""{"choices":[{"delta":{"content":"x"},"finish_reason":null}]}"""),
-            ev(
-                """{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":5,"prompt_tokens_details":{"cached_tokens":80}}}""",
-            ),
-        ) as TurnOutcome.Success
-        assertEquals(100, s.usage.inputTokens)
-        assertEquals(5, s.usage.outputTokens)
-        assertEquals(80, s.usage.cachedTokens)
-    }
-
-    @Test
-    fun `usage cached tokens fall back to flat cached_tokens`() = runTest {
-        val s = driveEvents(
-            ev(
-                """{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":5,"cached_tokens":40}}""",
-            ),
-        ) as TurnOutcome.Success
-        assertEquals(40, s.usage.cachedTokens)
-    }
-
-    @Test
-    fun `usage cached tokens fall back to deepseek prompt_cache_hit_tokens`() = runTest {
-        val s = driveEvents(
-            ev(
-                """{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":5,"prompt_cache_hit_tokens":25}}""",
-            ),
-        ) as TurnOutcome.Success
-        assertEquals(25, s.usage.cachedTokens)
-    }
-
-    @Test
-    fun `usage cached tokens absent defaults to zero`() = runTest {
-        val s = driveEvents(
-            ev(
-                """{"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":5}}""",
-            ),
-        ) as TurnOutcome.Success
-        assertEquals(0, s.usage.cachedTokens)
     }
 
     @Test

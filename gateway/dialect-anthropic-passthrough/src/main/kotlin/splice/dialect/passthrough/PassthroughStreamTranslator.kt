@@ -22,6 +22,7 @@ import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.util.firstLong
 import splice.core.util.strOrEmpty
 import splice.spi.BufferCapacity
 import splice.spi.StreamTranslator
@@ -50,6 +51,7 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
     private val blocks = HashMap<Int, Block>()
     private var hasToolUse = false
     private var emittedText = false
+    private var emittedThinking = false
     private var incomplete = false
     private var finished = false
     private val textBuf = StringBuilder()
@@ -131,6 +133,7 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
         thinkingText = thinkingBuf.toString(),
         bodyText = textBuf.toString(),
         emittedText = emittedText,
+        emittedThinking = emittedThinking,
     )
 
     private suspend fun onEvent(evt: JsonObject, sink: WireSink) {
@@ -153,7 +156,10 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
         val cb = evt["content_block"] as? JsonObject
         blocks[index] = when (strOrEmpty(cb?.get("type"))) {
             "text" -> Block(Kind.TEXT, sink.openText())
-            "thinking" -> Block(Kind.THINKING, sink.openThinking())
+            // CX-09: this block IS content the client receives — record it so the empty-turn
+            // honesty gate never calls a thinking-only turn empty (passthrough pins
+            // showReasoning=THINKING precisely BECAUSE reasoning rides natively here).
+            "thinking" -> Block(Kind.THINKING, sink.openThinking()).also { emittedThinking = true }
             "tool_use" -> {
                 // Pass Kimi's tool id VERBATIM: it round-trips back to Kimi on the next turn — a
                 // JsonNull id must never leak as the literal string "null" into that round-trip (L3);
@@ -242,15 +248,31 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
 
     private fun harvestUsage(u: JsonObject?) {
         u ?: return
-        num(u, "input_tokens")?.let { inputTokens = it }
-        num(u, "cache_read_input_tokens")?.let { cacheRead = it }
-        num(u, "cache_creation_input_tokens")?.let { cacheCreation = it }
-        num(u, "output_tokens")?.let { outputTokens = it }
+        u.firstLong("input_tokens")?.let { inputTokens = it }
+        u.firstLong("cache_read_input_tokens")?.let { cacheRead = it }
+        cacheCreationTokens(u)?.let { cacheCreation = it }
+        u.firstLong("output_tokens")?.let { outputTokens = it }
     }
 
-    private fun intIndex(evt: JsonObject): Int? = (evt["index"] as? JsonPrimitive)?.content?.toIntOrNull()
+    /** CX-18: the flat total, else the sum of Anthropic's newer per-TTL `cache_creation` buckets.
+     *  Flat wins so a backend sending both is not double-counted, and the sum (not a first-of read)
+     *  is what the two TTL buckets mean. These tokens fold into inputTokens in [successOutcome],
+     *  so missing them understated the whole context-window percentage on cache-writing turns. */
+    private fun cacheCreationTokens(u: JsonObject): Long? =
+        u.firstLong("cache_creation_input_tokens")
+            ?: (u["cache_creation"] as? JsonObject)?.let { nested ->
+                // SCOPED to *_input_tokens, not every value in the object. Summing everything
+                // picks up a future non-additive sibling — a `total`, a `ttl` in seconds — and
+                // folds it into inputTokens and therefore used_percentage, i.e. premature
+                // auto-compaction: the same class CX-18 exists to prevent, in the other
+                // direction. Naming the two known TTL keys instead would miss a new
+                // ephemeral_1d_input_tokens bucket, so the suffix is the right seam.
+                val parts = nested.filterKeys { it.endsWith("_input_tokens") }
+                    .values.mapNotNull { (it as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong() }
+                parts.sum().takeIf { parts.isNotEmpty() }
+            }
 
-    private fun num(obj: JsonObject, key: String): Long? = (obj[key] as? JsonPrimitive)?.content?.toLongOrNull()
+    private fun intIndex(evt: JsonObject): Int? = (evt["index"] as? JsonPrimitive)?.content?.toIntOrNull()
 
     private companion object {
         // Short stable constant — Kimi never verifies signatures; Claude Code only needs one present.

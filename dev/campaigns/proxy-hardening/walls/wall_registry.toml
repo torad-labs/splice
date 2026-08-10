@@ -164,17 +164,17 @@ wall = "dev/campaigns/proxy-hardening/walls/w4_a_refusal_honesty.py"
 [[item]]
 id = "CX-09"
 phase = "W4-correctness-walls"
-wall = ""
+wall = "dev/campaigns/proxy-hardening/walls/cx_09_empty_turn_covered.py"
 
 [[item]]
 id = "CX-11"
 phase = "W4-correctness-walls"
-wall = ""
+wall = "dev/campaigns/proxy-hardening/walls/cx_11_is_error_structured.py"
 
 [[item]]
 id = "CX-18"
 phase = "W4-correctness-walls"
-wall = ""
+wall = "dev/campaigns/proxy-hardening/walls/cx_18_usage_aliases.py"
 
 [[item]]
 id = "CX-20"

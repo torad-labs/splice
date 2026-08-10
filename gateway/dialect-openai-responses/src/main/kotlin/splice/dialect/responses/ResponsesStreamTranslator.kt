@@ -20,6 +20,7 @@ package splice.dialect.responses
 import kotlinx.coroutines.flow.Flow
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -32,6 +33,7 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.isWeakSummaryText
 import splice.core.util.str
+import splice.core.util.strIfString
 import splice.core.util.strOrEmpty
 import splice.spi.BufferCapacity
 import splice.spi.ClassifiedFailure
@@ -227,7 +229,7 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
                     providerReported = true,
                     partial = partialOrNull(reducer),
                 )
-            } ?: contentFilterFailure(reducer),
+            } ?: refusalFailure(reducer) ?: contentFilterFailure(reducer),
             finished = reducer.finalResponse != null,
             watchdogFired = ctx.watchdogFired(),
         ),
@@ -235,6 +237,23 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
         onWatchdog = ::watchdogOutcome,
         onUnfinished = { noCompletionOutcome(reducer) },
     )
+
+    // W4-A (L3): the backend REFUSED. OpenAI's refusal channel arrives with status `completed`, so
+    // the incomplete-only gate below never sees it and the turn used to end as a clean Success
+    // carrying zero text — or worse, as a normal turn once the pipeline promoted the streamed chain
+    // of thought to the answer. The model's stated reason IS the verdict.
+    // Deliberately carries NO `partial`, unlike every other failure here: a refusal is
+    // deterministic, and ResponsesReanchorController re-POSTs any API_ERROR that carries salvage
+    // (RETRYABLE = {OVERLOADED, API_ERROR}), so a partial would buy an identical refusal at full
+    // upstream cost.
+    private fun refusalFailure(reducer: ResponsesEventReducer): TurnOutcome.Failure? =
+        reducer.refusalBuf.toString().takeIf { it.isNotBlank() }?.let {
+            TurnOutcome.Failure(
+                ErrorType.API_ERROR,
+                "ChatGPT backend: model refused — $it",
+                providerReported = true, // the `refusal` the backend sent, not a local verdict (G20)
+            )
+        }
 
     // response.incomplete with a non-max_output_tokens reason is a CENSORED turn — a clean
     // Success(incomplete=true) would let a blocked generation masquerade as complete (the same
@@ -316,8 +335,26 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
         toolSearches = reducer.toolSearches.ifEmpty { harvestToolSearchCalls(reducer.finalResponse) },
     )
 
+    /** W4-A: the completed response's `refusal`-typed content parts — the third refusal carrier,
+     *  and the only one a backend that streams neither `response.refusal.delta` nor
+     *  `response.refusal.done` uses. A stream that never reaches a terminal has no
+     *  [ResponsesEventReducer.finalResponse] and already fails as truncated, so reading the
+     *  terminal object here loses nothing. The part object carries `refusal` and no `delta`, so
+     *  [addRefusal] routes it to the whole-copy branch on its own. */
+    private fun harvestRefusalParts(reducer: ResponsesEventReducer, resp: JsonObject) {
+        val output = resp["output"] as? JsonArray ?: return
+        output.forEach { item ->
+            val content = (item as? JsonObject)?.get("content") as? JsonArray ?: return@forEach
+            content.forEach { part ->
+                val obj = part as? JsonObject ?: return@forEach
+                if (strOrEmpty(obj["type"]) == "refusal") reducer.addRefusal(obj)
+            }
+        }
+    }
+
     private fun harvestFallback(reducer: ResponsesEventReducer) {
         val resp = reducer.finalResponse ?: return
+        harvestRefusalParts(reducer, resp)
         val harvested = harvestResponsesOutput(resp)
         // CharSequence checks avoid an intermediate toString() when the streamed buffer is large
         // and the harvest path is a no-op (the common case once deltas have been flowing).
@@ -352,6 +389,13 @@ private class ResponsesEventReducer(val ctx: StreamTurnContext) {
     // response.incomplete carrying a non-max_output_tokens reason (content_filter, etc.) — the
     // L3 honesty hole ChatStreamTranslator's contentFiltered branch closes for the chat dialect.
     var contentFiltered = false
+
+    // W4-A (L3): an OpenAI REFUSAL, which is a different wire path from the content filter above —
+    // it rides `status: completed`, so [contentFiltered] can never see it. THREE carriers, all
+    // previously unread (`grep refusal` over this module returned nothing): the
+    // `response.refusal.delta` event, the `response.refusal.done` event that finalizes the refusal
+    // text, and a `refusal`-typed content part on the completed item.
+    val refusalBuf = StringBuilder()
     var thinkingBuf = StringBuilder()
     var textBuf = StringBuilder()
     var finalResponse: JsonObject? = null
@@ -406,6 +450,16 @@ private class ResponsesEventReducer(val ctx: StreamTurnContext) {
             "response.output_text.delta" -> onTextDelta(evt, sink)
             "response.function_call_arguments.delta", "response.function_call_arguments.done" ->
                 onArgs(evt, sink)
+            // W4-A (L3): the streamed refusal carriers. Both used to fall into the `else` below
+            // and the turn finished clean with no text at all. `.done` is not an edge case — the
+            // documented order is refusal.delta xN -> refusal.done -> content_part.done, and
+            // ResponseRefusalDoneEvent carries the COMPLETE refusal string, so a backend that
+            // finalizes without streaming deltas is covered only here. ONE two-label arm calling
+            // addRefusal(evt): onStreamEvent sits at cyclomatic 9 of detekt's 10, so a second arm
+            // (or an elvis picking the carrier here) fails the budget — the carrier selection
+            // lives inside addRefusal instead. The literal "delta" is used there rather than the
+            // DELTA constant, which is private to this class's companion.
+            "response.refusal.delta", "response.refusal.done" -> addRefusal(evt)
             // *_text.done / *_part.done fire PER PART — closing here was the v24 truncation bug
             else -> Unit
         }
@@ -633,6 +687,39 @@ private suspend fun ResponsesEventReducer.emitReplayedReasoning(item: JsonObject
     val envelope = ctx.encodeReasoningEnvelope(item) ?: return
     if (shouldEmitReasoning(ctx, item)) sink.addRedactedThinking(envelope)
     if (ctx.collectReasoningEnvelopes) reasoningEnvelopes.add(envelope)
+}
+
+/** W4-A: fold a refusal fragment into the reducer's latch, from any of THREE carriers.
+ *
+ *  Carrier selection lives here, not at the call sites: `response.refusal.delta` puts the text in
+ *  `delta`, while `response.refusal.done` and a `refusal`-typed content part both put a WHOLE copy
+ *  in `refusal`. The presence of a `delta` key is the discriminator, so one two-label `when` arm in
+ *  onStreamEvent and the harvest walk all route through this one function (onStreamEvent sits at
+ *  cyclomatic 9 of 10 — a second arm, or an elvis at the call site, fails detekt).
+ *
+ *  TWO guards, closing two different axes; neither replaces the other.
+ *  · TYPE — [strIfString], not [strOrEmpty]. OpenAI types ResponseOutputRefusal.refusal and
+ *    ResponseRefusalDoneEvent.refusal as `string`, so a vendor shipping a boolean/number FLAG is
+ *    deviating; strOrEmpty would return the non-blank "false" / "0" and fail every working turn of
+ *    that vendor as a provider-reported refusal, inverting G20 onto a backend that denied refusing.
+ *  · BLANK — an empty `refusal` field must never trip the gate.
+ *
+ *  DELTA-WINS accumulation, NOT a prefix/substring dedup. Deltas own the buffer and are appended
+ *  VERBATIM; a whole-copy carrier is used only when no delta arrived. Running a whole-message dedup
+ *  over the INCREMENTAL carrier deleted every already-seen token, so a token-streamed refusal
+ *  shipped garbled ("I won't do that. I won't do anything illegal." → "I won't do that. I anything
+ *  illegal") — and carrying the model's own words is the whole point of this gate. The one
+ *  condition also keeps the overlapping carriers from double-appending. Capped by the NF-06 buffer
+ *  law. Top-level extension — the reducer is at its function ceiling. */
+private fun ResponsesEventReducer.addRefusal(obj: JsonObject) {
+    val isDelta = obj["delta"] != null
+    val text = strIfString(if (isDelta) obj["delta"] else obj["refusal"])
+    // Round-2 review: same category error as chat's carrier — isBlank() is a whole-value predicate
+    // applied per-frame, which deleted whitespace-only refusal fragments and garbled the verdict.
+    if (text.isEmpty()) return
+    if (!isDelta && text.isBlank()) return
+    if (!isDelta && refusalBuf.isNotBlank()) return
+    if (refusalBuf.length < BufferCapacity.MAX_BUFFERED_CHARS) refusalBuf.append(text)
 }
 
 /** Gated encrypted-reasoning EMISSION predicate — kept out of the handler so its condition stays flat. */

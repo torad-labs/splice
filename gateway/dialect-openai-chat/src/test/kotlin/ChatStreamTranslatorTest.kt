@@ -543,3 +543,215 @@ class ChatToolArgsValidationTest {
         )
     }
 }
+
+// CX-08 / W4-A: OpenAI carries a model refusal in a DEDICATED `refusal` field on the delta and on
+// the final message. `grep refusal` over this dialect's main sources returned nothing, so the one
+// text that explains the turn was discarded. A NEW class — ChatStreamTranslatorTest is at detekt's
+// LargeClass budget; the file-private ev / Rec / ctx helpers are visible here.
+class ChatRefusalHonestyTest {
+    // ROUND-2 REVIEW COUNTEREXAMPLE, now a required case: the refusal carrier is INCREMENTAL, so a
+    // whole-value isBlank() guard applied per-frame deleted every whitespace-only fragment and
+    // shipped the verdict garbled ("I can't help with that.I won't"). Whitespace frames are real:
+    // tokenisers emit " " and "\n" as their own deltas.
+    @Test
+    fun `whitespace-only refusal fragments are preserved verbatim - round2 counterexample`() = runTest {
+        val outcome = driveEvents(
+            ev("""{"choices":[{"delta":{"refusal":"I can't help with that."}}]}"""),
+            ev("""{"choices":[{"delta":{"refusal":" "}}]}"""),
+            ev("""{"choices":[{"delta":{"refusal":"I won't help with anything illegal."}}]}"""),
+            ev("""{"choices":[{"delta":{},"finish_reason":"stop"}]}"""),
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertTrue(
+            f.message.contains("I can't help with that. I won't help with anything illegal."),
+            "the separating space frame must survive: ${f.message}",
+        )
+    }
+
+    // The blank negative control must keep its teeth: a buffer of ONLY whitespace is not a refusal.
+    @Test
+    fun `an all-whitespace refusal buffer is not a refusal - round2 control`() = runTest {
+        val outcome = driveEvents(
+            ev("""{"choices":[{"delta":{"content":"Here you go.","refusal":" "}}]}"""),
+            ev("""{"choices":[{"delta":{},"finish_reason":"stop"}]}"""),
+        )
+        assertTrue(outcome is TurnOutcome.Success, "got $outcome")
+    }
+
+    @Test
+    fun `a streamed refusal is a provider-reported failure carrying the model's words`() = runTest {
+        val sink = Rec()
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"choices":[{"delta":{"refusal":"I can't help with "}}]}"""),
+                ev("""{"choices":[{"delta":{"refusal":"that request."}}]}"""),
+                ev("""{"choices":[{"delta":{},"finish_reason":"stop"}]}"""),
+            ).asFlow(),
+            sink,
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, f.type)
+        assertTrue(f.providerReported, "the BACKEND populated `refusal` — G20 provenance is upstream")
+        assertTrue(f.message.contains("I can't help with that request."), f.message)
+        // the refusal is the VERDICT, not content: nothing was written to the wire as text
+        assertFalse(sink.calls.any { it.startsWith("text:") }, sink.calls.toString())
+    }
+
+    // Non-stream / final-message shape: the second carrier. Pre-fix this turn ended as a clean
+    // Success with the chain of thought promoted to the answer by the pipeline.
+    @Test
+    fun `a final-message refusal beside streamed reasoning fails instead of shipping the CoT`() = runTest {
+        val outcome = driveEvents(
+            ev("""{"choices":[{"delta":{"reasoning_content":"the user is asking for something I refuse"}}]}"""),
+            ev("""{"choices":[{"message":{"refusal":"Sorry, I cannot do that."},"finish_reason":"stop"}]}"""),
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, f.type)
+        assertTrue(f.providerReported)
+        assertTrue(f.message.contains("Sorry, I cannot do that."), f.message)
+    }
+
+    // Backends repeat the whole refusal on the final message after streaming it. It must appear ONCE.
+    @Test
+    fun `a refusal echoed whole on the final message is not double-appended`() = runTest {
+        val outcome = driveEvents(
+            ev("""{"choices":[{"delta":{"refusal":"No."}}]}"""),
+            ev("""{"choices":[{"message":{"refusal":"No."},"finish_reason":"stop"}]}"""),
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertEquals(1, Regex("No\\.").findAll(f.message).count(), f.message)
+    }
+
+    // must_not / the documented risk on the item: a vendor emitting an EMPTY refusal on every frame
+    // must not trip the gate, and a normal turn must be byte-for-byte what it was.
+    @Test
+    fun `an empty or null refusal on every frame leaves a normal turn untouched`() = runTest {
+        val sink = Rec()
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"choices":[{"delta":{"content":"Hi ","refusal":""}}]}"""),
+                ev("""{"choices":[{"delta":{"content":"there","refusal":null}}]}"""),
+                ev("""{"choices":[{"delta":{"refusal":"   "},"finish_reason":"stop"}]}"""),
+            ).asFlow(),
+            sink,
+        )
+        val s = outcome as TurnOutcome.Success
+        assertEquals("Hi there", s.bodyText)
+        assertTrue(sink.calls.contains("text:Hi "))
+        assertTrue(sink.calls.contains("text:there"))
+    }
+
+    // ---- repair round 2 -------------------------------------------------------------------
+    // Closing the CLASS, not the named inputs. Two axes were open: the TYPE of the `refusal`
+    // carrier, and the ACCUMULATION rule over the incremental one.
+
+    // TYPE AXIS. OpenAI types delta.refusal as anyOf[string, null] ("the refusal message generated
+    // by the model"), so a vendor shipping it as a did-the-model-refuse FLAG is off-contract — the
+    // same compat-vendor class already invoked to justify the open-safe stop_reason remainder.
+    // strOrEmpty returns the .content of ANY primitive, so `false` was the non-blank string "false"
+    // and 100% of that vendor's WORKING turns became Failure(providerReported=true) — a G20
+    // inversion blaming the backend for a refusal it explicitly denied, with the complete answer
+    // already on the wire. Every non-string primitive shape, on both carriers.
+    @Test
+    fun `a boolean refusal flag riding a working stream is not a refusal`() = runTest {
+        val sink = Rec()
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"choices":[{"delta":{"content":"Hi ","refusal":false}}]}"""),
+                ev("""{"choices":[{"delta":{"content":"there","refusal":null}}]}"""),
+                ev("""{"choices":[{"delta":{},"finish_reason":"stop"}]}"""),
+            ).asFlow(),
+            sink,
+        )
+        val s = outcome as TurnOutcome.Success
+        assertEquals("Hi there", s.bodyText)
+        assertTrue(sink.calls.contains("text:Hi "), sink.calls.toString())
+        assertTrue(sink.calls.contains("text:there"), sink.calls.toString())
+    }
+
+    @Test
+    fun `a numeric refusal flag is not a refusal`() = runTest {
+        val outcome = driveEvents(
+            ev("""{"choices":[{"delta":{"content":"ok","refusal":0}}]}"""),
+            ev("""{"choices":[{"delta":{},"finish_reason":"stop"}]}"""),
+        )
+        assertEquals("ok", (outcome as TurnOutcome.Success).bodyText)
+    }
+
+    @Test
+    fun `a boolean refusal flag on a non-streaming final message is not a refusal`() = runTest {
+        val outcome = driveEvents(
+            ev("""{"choices":[{"message":{"content":"All done.","refusal":false},"finish_reason":"stop"}]}"""),
+        )
+        assertEquals("All done.", (outcome as TurnOutcome.Success).bodyText)
+    }
+
+    // ACCUMULATION AXIS. The dedup rule was a WHOLE-MESSAGE compare applied to the INCREMENTAL
+    // carrier, so any token already in the buffer was deleted: the real streaming shape (one token
+    // per frame, the sibling channels append verbatim) shipped "I can't help with that. I anything
+    // illegal". Carrying the model's own words is this gate's entire value over the pre-existing
+    // generic error, so a garbled verdict is a dishonest one.
+    @Test
+    fun `a token-streamed refusal keeps every word, repeats included`() = runTest {
+        val tokens = listOf(
+            "I", " can", "'t", " help", " with", " that", ".",
+            " I", " can", "'t", " help", " with", " anything", " illegal", ".",
+        )
+        val frames = tokens.map { ev("""{"choices":[{"delta":{"refusal":"$it"}}]}""") } +
+            ev("""{"choices":[{"delta":{},"finish_reason":"stop"}]}""")
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(frames.asFlow(), Rec())
+        val f = outcome as TurnOutcome.Failure
+        assertTrue(
+            f.message.contains("I can't help with that. I can't help with anything illegal."),
+            f.message,
+        )
+    }
+
+    // The degenerate two-chunk form of the same bug: chunk 2 was a substring of the buffer, so half
+    // the refusal was discarded and the turn was failed on a truncated quote.
+    @Test
+    fun `a refusal whose second chunk repeats the first keeps both`() = runTest {
+        val outcome = driveEvents(
+            ev("""{"choices":[{"delta":{"refusal":"No. "}}]}"""),
+            ev("""{"choices":[{"delta":{"refusal":"No."}}]}"""),
+            ev("""{"choices":[{"delta":{},"finish_reason":"stop"}]}"""),
+        )
+        assertTrue((outcome as TurnOutcome.Failure).message.contains("No. No."), outcome.message)
+    }
+
+    // The refusal branch was deliberately ranked ABOVE the pre-existing contentFiltered branch.
+    // Both are Failure(API_ERROR, providerReported=true) — only the wording changes, from a generic
+    // content-filter phrase to the model's own words — so there is no honesty regression, but the
+    // moved precedence was unpinned. Pin it in both directions.
+    @Test
+    fun `a refusal on the content_filter frame carries the model's words, not the generic phrase`() = runTest {
+        val outcome = driveEvents(
+            ev("""{"choices":[{"delta":{"refusal":"I refuse."},"finish_reason":"content_filter"}]}"""),
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, f.type)
+        assertTrue(f.providerReported)
+        assertTrue(f.message.contains("I refuse."), f.message)
+    }
+
+    // Prose already delivered, THEN a refusal. Failing the whole turn is correct under L3 (the
+    // backend did refuse) and is the same shape the pre-existing contentFiltered path produces —
+    // but nothing stopped a future edit from silently reversing it back to a half-refused Success.
+    @Test
+    fun `a refusal after real prose fails the turn and the prose still reached the wire`() = runTest {
+        val sink = Rec()
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"choices":[{"delta":{"content":"Sure, here goes. "}}]}"""),
+                ev("""{"choices":[{"delta":{"refusal":"but I stop here"}}]}"""),
+                ev("""{"choices":[{"delta":{},"finish_reason":"stop"}]}"""),
+            ).asFlow(),
+            sink,
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, f.type)
+        assertTrue(f.providerReported)
+        assertTrue(f.message.contains("but I stop here"), f.message)
+        assertTrue(sink.calls.contains("text:Sure, here goes. "), sink.calls.toString())
+    }
+}

@@ -254,3 +254,93 @@ class PassthroughStreamTranslatorTest {
         assertTrue(deltas in 20..21, "expected the guard to stop the stream at the cap, saw $deltas deltas")
     }
 }
+
+// CX-07 / W4-A: Anthropic ships SEVEN stop_reason values; onMessageDelta branched on TWO and sent
+// the rest to `else -> Unit`, so a turn the BACKEND refused, paused, or could not fit in the model
+// context window reached the client as a clean, complete Success. A NEW class rather than more
+// @Test methods above: the class above is at detekt's LargeClass budget, and the file-private
+// helpers (ev / Rec / drive) are visible here.
+class PassthroughStopReasonHonestyTest {
+
+    // A turn that produced prose and terminated properly, ending on the given stop_reason. Every
+    // case below differs ONLY in that one value — the L3 verdict must come from it and nothing else.
+    private suspend fun turnEndingWith(stopReason: String): TurnOutcome = drive(
+        Rec(),
+        ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""),
+        ev("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"partial"}}"""),
+        ev("""{"type":"content_block_stop","index":0}"""),
+        ev("""{"type":"message_delta","delta":{"stop_reason":"$stopReason"},"usage":{"output_tokens":3}}"""),
+        ev("""{"type":"message_stop"}"""),
+    )
+
+    @Test
+    fun `stop_reason refusal is an honest provider-reported failure, never a clean success`() = runTest {
+        val f = turnEndingWith("refusal") as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, f.type)
+        assertTrue(f.providerReported, "the BACKEND sent stop_reason=refusal — G20 provenance is upstream")
+        assertTrue(f.message.contains("refused"), f.message)
+        assertTrue(f.message.contains("stop_reason=refusal"), f.message)
+    }
+
+    @Test
+    fun `stop_reason pause_turn is a retryable overloaded failure, not a finished answer`() = runTest {
+        val f = turnEndingWith("pause_turn") as TurnOutcome.Failure
+        assertEquals(ErrorType.OVERLOADED, f.type)
+        assertTrue(f.providerReported)
+        assertTrue(f.message.contains("paused"), f.message)
+    }
+
+    // The item's own wording named only refusal + pause_turn. This third value is a HARD truncation
+    // the protocol added separately from max_tokens; folding it into `incomplete` would report the
+    // ordinary "ran out of room" stop for a turn the backend could not run at all.
+    @Test
+    fun `stop_reason model_context_window_exceeded fails and is NOT folded into incomplete`() = runTest {
+        val f = turnEndingWith("model_context_window_exceeded") as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, f.type)
+        assertTrue(f.providerReported)
+        assertTrue(f.message.contains("context window"), f.message)
+    }
+
+    // must_not: a false Failure on working traffic is worse than the silent success it replaces.
+    // The four clean values, an absent stop_reason, and an UNRECOGNIZED vendor value all stay
+    // Success — the remainder is deliberately open-safe (see stopReasonFailure's rationale).
+    @Test
+    fun `clean, absent and unrecognized stop_reasons are untouched`() = runTest {
+        listOf("end_turn", "stop_sequence", "tool_use", "max_tokens", "stop", "eos", "").forEach { reason ->
+            val outcome = turnEndingWith(reason)
+            val s = outcome as? TurnOutcome.Success
+                ?: throw AssertionError("stop_reason='$reason' must stay a Success, got $outcome")
+            assertEquals("partial", s.bodyText, "stop_reason='$reason' altered the turn's text")
+        }
+    }
+
+    @Test
+    fun `a genuine SSE error event is never overwritten by a later refusal stop_reason`() = runTest {
+        val outcome = drive(
+            Rec(),
+            ev("""{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}"""),
+            ev("""{"type":"message_delta","delta":{"stop_reason":"refusal"}}"""),
+            ev("""{"type":"message_stop"}"""),
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.RATE_LIMIT, f.type)
+        assertTrue(f.message.contains("slow down"), f.message)
+    }
+
+    // The reverse of the first-latch test above. onError assigns failureType UNCONDITIONALLY, so a
+    // genuine SSE error wins in BOTH orderings and the client always gets the more actionable
+    // retryability class. Measured, not assumed — pinned so the property cannot silently reverse.
+    @Test
+    fun `a genuine SSE error after a latched refusal still owns the verdict`() = runTest {
+        val outcome = drive(
+            Rec(),
+            ev("""{"type":"message_delta","delta":{"stop_reason":"refusal"}}"""),
+            ev("""{"type":"error","error":{"type":"overloaded_error","message":"try later"}}"""),
+            ev("""{"type":"message_stop"}"""),
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.OVERLOADED, f.type)
+        assertTrue(f.message.contains("try later"), f.message)
+        assertTrue(f.providerReported)
+    }
+}

@@ -6,8 +6,7 @@ Structural walls enforce these at write time (`.rules/kotlin-splice/` for the
 gateway, `.rules/rules/` for the webui, orchestrated by
 `.claude/hooks/orchestrator.py`) and permanent tests enforce the behavioral
 half (the `gateway/` module suites, plus the migration oracle's 11 byte-exact
-fixtures — `npm run oracle:replay`). Do not weaken either; walls are
-grant-gated behind `SPLICE_WALLS_OK=1`.
+fixtures — `npm run oracle:replay`). Do not weaken either.
 
 1. **L1 — hard lock RETIRED (2026-07-14); replay DEFAULT-OFF (2026-07-15,
    measured).** Was "no reasoning-item replay." Replay is now a supported,

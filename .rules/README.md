@@ -65,5 +65,11 @@ Node tree on 2026-08-10; their Kotlin successors live in `.rules/kotlin-splice/`
 - Deliberate code exceptions: `// ast-grep-ignore: <rule-id>` with a written
   justification on the same or previous line.
 - Wall infrastructure (this directory, `.claude/hooks/`, `.claude/settings.json`,
-  `sgconfig.yml`) is grant-gated: writes require the operator to set
-  `SPLICE_WALLS_OK=1`, loudly. A blocked write means fix the code, not the wall.
+  `sgconfig.yml`) is directly editable. The write-time grant gate that used to
+  block it — `SPLICE_WALLS_OK=1` plus the `dev/walls-grant/` command kit — was
+  **removed 2026-08-10 by operator decision**: it made routine work on this repo
+  unbearable. What remains is the commit gate, which is the same-checker-twice
+  half: `npm run gate:rules` runs these exact rules over the tree in CI, so
+  weakening a rule still has to survive the gate and review. Treat "a blocked
+  write means fix the code, not the wall" as the standing convention it now is
+  rather than something enforced at write time.

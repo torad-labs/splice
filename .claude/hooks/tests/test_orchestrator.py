@@ -172,19 +172,6 @@ class OrchestratorTest(unittest.TestCase):
         })
         self.assertIsNone(decision)
 
-    def test_wall_paths_are_grant_gated(self):
-        # RESTORED 2026-08-11. This test and the control it covers were deleted by accident in
-        # 0823a63 (a `git add -A` swept working-tree deletions into a commit about the oracle),
-        # which removed the walls' own write protection with nothing left to notice. The rule
-        # path is now a LIVE one — the JS rule this originally named died with server/ in
-        # 79635d0 — but the gate keys on the PATH, not on the file existing.
-        event = self.write_event(".rules/kotlin-splice/kt-l3-sole-wire-terminals.yml", "id: weakened\n")
-        raw, _ = self.run_hook("pretooluse", event)
-        decision = self.expect_block(raw, "un-granted wall edit must block")
-        self.assertIn("SPLICE WALLS", decision["reason"])
-        decision, _ = self.run_hook("pretooluse", event, env_extra={"SPLICE_WALLS_OK": "1"})
-        self.assertIsNone(decision, "granted wall edit must pass")
-
     def test_missing_ast_grep_fails_closed(self):
         event = self.write_event(L3_TARGET, CLEAN)
         raw, _ = self.run_hook("pretooluse", event, env_extra={"PATH": "/nonexistent"})

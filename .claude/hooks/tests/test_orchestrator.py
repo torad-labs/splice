@@ -25,9 +25,16 @@ REPO = HOOKS_DIR.parents[1]
 # An error-severity finding used to prove the orchestrator routes a violation to
 # a block. Uses L3 (a `message_stop` literal outside the sole emitter) — the
 # former L1 include example was retired 2026-07-14 when reasoning replay shipped.
-VIOLATION = 'export function endTurn(res) {\n  res.write("message_stop");\n}\n'
-CLEAN = "export function endTurn(res) {\n  res.end();\n}\n"
-L3_TARGET = "server/src/codex/stream.mjs"  # a server module that is NOT the emitter
+# Re-based onto the KOTLIN wall on 2026-08-10: these fixtures used the JavaScript
+# rules scoped to `server/**`, and P8-CUT deleted that tree along with them. The
+# Kotlin `kt-l3-sole-wire-terminals` is the same invariant on the live stack —
+# same error severity, same sole-emitter shape with a path `ignores` — so the
+# routing mechanics under test are unchanged.
+VIOLATION = 'fun endTurn(out: Writer) {\n    out.write("message_stop")\n}\n'
+CLEAN = "fun endTurn(out: Writer) {\n    out.close()\n}\n"
+L3_TARGET = "gateway/core/src/main/kotlin/splice/core/Probe.kt"  # in scope, NOT the emitter
+L3_EXEMPT = "gateway/gateway/src/main/kotlin/splice/gateway/wire/SseEmitter.kt"  # the sole emitter
+L3_RULE = "kt-l3-sole-wire-terminals"
 
 
 class OrchestratorTest(unittest.TestCase):
@@ -78,8 +85,8 @@ class OrchestratorTest(unittest.TestCase):
     def test_write_violation_blocks_with_rule_id_and_note(self):
         raw, _ = self.run_hook("pretooluse", self.write_event(L3_TARGET, VIOLATION))
         decision = self.expect_block(raw, "violation write must block")
-        self.assertIn("l3-sole-message-stop-emitter", decision["reason"])
-        self.assertIn("emitTerminal", decision["reason"])
+        self.assertIn(L3_RULE, decision["reason"])
+        self.assertIn("SseEmitter", decision["reason"])
 
     def test_write_clean_passes(self):
         decision, _ = self.run_hook("pretooluse", self.write_event(L3_TARGET, CLEAN))
@@ -87,13 +94,13 @@ class OrchestratorTest(unittest.TestCase):
 
     def test_files_glob_binds_same_shape_elsewhere_passes(self):
         # l3 is path-scoped: it ignores the sole emitter, so the identical
-        # message_stop shape inside anthropic/sse.mjs is legal.
-        decision, _ = self.run_hook("pretooluse", self.write_event("server/src/anthropic/sse.mjs", VIOLATION))
+        # message_stop shape inside SseEmitter.kt is legal.
+        decision, _ = self.run_hook("pretooluse", self.write_event(L3_EXEMPT, VIOLATION))
         self.assertIsNone(decision)
 
     def test_inline_suppression_is_honored(self):
         suppressed = VIOLATION.replace(
-            "  res.write", "  // ast-grep-ignore: l3-sole-message-stop-emitter\n  res.write"
+            "    out.write", f"    // ast-grep-ignore: {L3_RULE}\n    out.write"
         )
         decision, _ = self.run_hook("pretooluse", self.write_event(L3_TARGET, suppressed))
         self.assertIsNone(decision)
@@ -112,41 +119,44 @@ class OrchestratorTest(unittest.TestCase):
     # --- PreToolUse: Edit routing --------------------------------------------------
 
     def test_edit_introducing_violation_blocks(self):
-        target = self.root / "server/src/codex/stream.mjs"
+        target = self.root / L3_TARGET
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text("export function onDone(res) {\n  finish(res);\n}\n", encoding="utf-8")
+        target.write_text("fun onDone(out: Writer) {\n    finish(out)\n}\n", encoding="utf-8")
         event = {
             "tool_name": "Edit",
             "tool_input": {
                 "file_path": str(target),
-                "old_string": "finish(res);",
-                "new_string": 'res.write(`event: message_stop\\n`);',
+                "old_string": "finish(out)",
+                "new_string": 'out.write("message_stop")',
             },
             "cwd": str(self.root),
         }
         raw, _ = self.run_hook("pretooluse", event)
-        decision = self.expect_block(raw, "edit that introduces message_stop outside sse.mjs must block")
-        self.assertIn("l3-sole-message-stop-emitter", decision["reason"])
+        decision = self.expect_block(raw, "edit introducing message_stop outside SseEmitter must block")
+        self.assertIn(L3_RULE, decision["reason"])
         target.unlink()
 
     def test_edit_clean_passes_and_multiedit_applies_sequentially(self):
-        target = self.root / "server/src/http/server.mjs"
+        target = self.root / "gateway/gateway/src/main/kotlin/splice/gateway/head/Boot.kt"
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text("server.listen(PORT, '127.0.0.1');\n", encoding="utf-8")
+        target.write_text(
+            'fun boot() {\n    embeddedServer(Netty, port = PORT, host = "127.0.0.1")\n}\n',
+            encoding="utf-8",
+        )
         event = {
             "tool_name": "MultiEdit",
             "tool_input": {
                 "file_path": str(target),
                 "edits": [
                     {"old_string": "PORT", "new_string": "3099"},
-                    {"old_string": "'127.0.0.1'", "new_string": "'0.0.0.0'"},
+                    {"old_string": '"127.0.0.1"', "new_string": '"0.0.0.0"'},
                 ],
             },
             "cwd": str(self.root),
         }
         raw, _ = self.run_hook("pretooluse", event)
         decision = self.expect_block(raw, "second edit rebinds to 0.0.0.0 — must block")
-        self.assertIn("loopback-bind-only", decision["reason"])
+        self.assertIn("kt-embedded-server-loopback", decision["reason"])
         target.unlink()
 
     # --- Jurisdiction and walls ----------------------------------------------------
@@ -177,12 +187,12 @@ class OrchestratorTest(unittest.TestCase):
             shutil.copytree(REPO / ".rules", root / ".rules")
             decision, _ = self.run_hook("stop", {}, root=root)
             self.assertIsNone(decision, "clean tree must not block stop")
-            bad = root / "server/src/codex/stream.mjs"
+            bad = root / L3_TARGET
             bad.parent.mkdir(parents=True)
             bad.write_text(VIOLATION, encoding="utf-8")
             raw, _ = self.run_hook("stop", {}, root=root)
             decision = self.expect_block(raw, "dirty tree must block stop")
-            self.assertIn("l3-sole-message-stop-emitter", decision["reason"])
+            self.assertIn(L3_RULE, decision["reason"])
             decision, _ = self.run_hook("stop", {"stop_hook_active": True}, root=root)
             self.assertIsNone(decision, "stop_hook_active must not re-block")
 

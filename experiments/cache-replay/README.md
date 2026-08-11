@@ -1,3 +1,8 @@
+> **`real-ab.sh` was deleted on 2026-08-10** with the `server/` Node tree (P8-CUT): it drove the
+> A/B by spawning `node server/src/codex-proxy.mjs` on :3097, so it could not survive the
+> cutover. Its FINDINGS are preserved in `capture/RESULTS.md`; `run.mjs` and
+> `replay-captured.mjs` do not depend on the Node stack and still work.
+
 # cache-replay: does encrypted-reasoning replay bust the Codex prompt cache?
 
 A controlled A/B that isolates a single variable: **whether prior encrypted

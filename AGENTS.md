@@ -2,9 +2,11 @@
 
 ## The invariants (L1 retired; L2–L4 locked)
 
-Structural walls enforce these at write time (`.rules/rules/`, orchestrated by
+Structural walls enforce these at write time (`.rules/kotlin-splice/` for the
+gateway, `.rules/rules/` for the webui, orchestrated by
 `.claude/hooks/orchestrator.py`) and permanent tests enforce the behavioral
-half (`server/test/invariants.test.mjs`). Do not weaken either; walls are
+half (the `gateway/` module suites, plus the migration oracle's 11 byte-exact
+fixtures — `npm run oracle:replay`). Do not weaken either; walls are
 grant-gated behind `SPLICE_WALLS_OK=1`.
 
 1. **L1 — hard lock RETIRED (2026-07-14); replay DEFAULT-OFF (2026-07-15,
@@ -53,10 +55,12 @@ grant-gated behind `SPLICE_WALLS_OK=1`.
 
 ## Management API
 
-> **Legacy Node stack.** This section describes `server/` (`src/control-server.mjs`,
-> `codex-proxy.mjs`, `reasoning/mirror.mjs`, `anthropic/sse.mjs`) — kept runnable during cutover
-> but no longer the documented entry point. The **`gateway/` Kotlin daemon (spliced) is the
-> primary stack**; see [README.md](README.md#layout).
+> **Wire contract, Kotlin implementation.** The behaviour below is the contract; the `server/`
+> Node tree that first implemented it was **deleted on 2026-08-10** (P8-CUT). The live sources are
+> `gateway/control/.../ControlServer.kt`, `gateway/gateway/.../wire/SseEmitter.kt` and
+> `gateway/gateway/.../reasoning/Mirror.kt`. Where this section still reads as prose about a
+> `.mjs` file, treat the contract as authoritative and the filename as history — the 11 byte-exact
+> oracle fixtures pin the wire itself.
 
 Bearer-guarded (`Authorization: Bearer $(cat ~/.claude-codex/state/mgmt-key)`),
 loopback-only, both proxies:
@@ -88,9 +92,9 @@ is the flat GLOBAL layer sourced from the topology file. The per-head map is
 
 ## Control plane (spliced)
 
-> **Legacy Node stack.** Same caveat as above: `src/control-server.mjs` is part of the legacy
-> `server/` stack. The **`gateway/` Kotlin daemon is the primary stack**; see
-> [README.md](README.md#layout).
+> **Wire contract, Kotlin implementation.** Same caveat as above: the control plane is now
+> `gateway/control/src/main/kotlin/splice/control/ControlServer.kt`. The Node
+> `src/control-server.mjs` it replaced was deleted on 2026-08-10.
 
 The dashboard is centralized. `spliced` (`src/control-server.mjs`, loopback
 `:3096`, `controlPort`) hosts the single webui at `/` and a bearer-guarded

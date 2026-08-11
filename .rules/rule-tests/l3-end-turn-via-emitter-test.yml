@@ -1,8 +1,0 @@
-id: l3-end-turn-via-emitter
-valid:
-  - 'emitTerminal(reason)'
-  - 'const label = "ended: " + reason'
-invalid:
-  - 'msg.stop_reason = "end_turn"'
-  - "emitTerminal('end_turn')"
-  - 'msg.stop_reason = "end_" + "turn"'

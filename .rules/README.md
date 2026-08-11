@@ -21,12 +21,6 @@ design constraint, 2026-07-13).
 
 | rule | scope | wall |
 |---|---|---|
-| l2-single-mirror-definition | server/src (not reasoning/mirror.mjs) | invariant L2: one mirrorInto |
-| l3-sole-message-stop-emitter | server/src (not anthropic/sse.mjs) | invariant L3: one wire emitter |
-| l3-end-turn-via-emitter | server/src (not sse/translate-response) | invariant L3: no fabricated end_turn |
-| no-claudex-magic-props | server/** | pure {req, meta} contract |
-| loopback-bind-only | server/** | listen() carries literal '127.0.0.1' |
-| launcher-no-pkill | server/launcher/** | pgrep loop, never pkill self-match |
 | webui-fetch-only-in-api(-tsx) | webui/src | FSD: UI strictly via state |
 | webui-no-emdash-ui-text | webui/src *.tsx | locked copy gate |
 | webui-css-tokens-only | webui/src *.css | --space/--text token scales only |
@@ -51,7 +45,9 @@ because measurements found that it thinned fresh reasoning. The mirror (L2)
 remains the load-bearing thesis — reasoning still surfaces as visible text.
 
 Invariant L4 (no fake summaries) and the L2 both-paths-call assertion are
-test-plane invariants (`server/test/`), not lintable shapes.
+test-plane invariants, not lintable shapes. (The six JavaScript rules that guarded
+`server/**` — the L2/L3 emitter walls, the launcher and magic-props rules — were deleted with the
+Node tree on 2026-08-10; their Kotlin successors live in `.rules/kotlin-splice/`.)
 
 ## Authoring doctrine
 

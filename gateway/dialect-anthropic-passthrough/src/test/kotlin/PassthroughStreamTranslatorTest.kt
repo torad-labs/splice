@@ -212,6 +212,53 @@ class PassthroughStreamTranslatorTest {
         assertEquals(14, s.usage.inputTokens) // 10 + flat 4; the nested object is not double-counted
     }
 
+    // CX-09 REGRESSION GUARD. emittedThinking must mean "the client received reasoning", not
+    // "a thinking block was opened". Kimi can open a thinking block and close it having sent no
+    // delta; if that counts as content, TurnPipeline's empty-turn gate short-circuits and a turn
+    // carrying literally nothing ends as a clean terminal — the exact L3 violation CX-09 closed.
+    // Caught in review 2026-08-11 after the first cut set the flag at openThinking.
+    @Test
+    fun `an opened but empty thinking block does not count as delivered content`() = runTest {
+        val s = drive(
+            Rec(),
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}"""),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":0}}"""),
+            ev("""{"type":"message_stop"}"""),
+        ) as TurnOutcome.Success
+        assertEquals("", s.thinkingText)
+        assertFalse(s.emittedThinking, "an empty thinking block delivered nothing to the client")
+    }
+
+    @Test
+    fun `a whitespace-only thinking delta does not count as delivered content`() = runTest {
+        val s = drive(
+            Rec(),
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}"""),
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"   "}}"""),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":0}}"""),
+            ev("""{"type":"message_stop"}"""),
+        ) as TurnOutcome.Success
+        assertFalse(s.emittedThinking, "whitespace is not content")
+    }
+
+    @Test
+    fun `real thinking content DOES count - the case CX-09 exists to protect`() = runTest {
+        val s = drive(
+            Rec(),
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}"""),
+            ev(
+                """{"type":"content_block_delta","index":0,""" +
+                    """"delta":{"type":"thinking_delta","thinking":"real reasoning"}}""",
+            ),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}"""),
+            ev("""{"type":"message_stop"}"""),
+        ) as TurnOutcome.Success
+        assertTrue(s.emittedThinking, "a kimi thinking-only turn must NOT be graded empty")
+    }
+
     @Test
     fun `explicit JSON nulls never leak into buffers`() = runTest {
         val sink = Rec()

@@ -1,5 +1,5 @@
 // CX-09: the honesty floor and the promote floor left a band uncovered. A non-compact turn with
-// no text, no tools and thinking in [HONESTY_MIN_CHARS, PROMOTE_MIN_CHARS) is too short to promote
+// no text, no tools and thinking in [MIRROR_MIN_CHARS, PROMOTE_MIN_CHARS) is too short to promote
 // and too long to trip the empty-model error, so the ONLY thing that could still put content on
 // the wire was the mirror — and the mirror is gated on an operator knob (mirror_reasoning) and on
 // showReasoning==TEXT. With either gate shut, the turn reached the client as a clean, EMPTY
@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
-import splice.core.turn.HONESTY_MIN_CHARS
+import splice.core.turn.MIRROR_MIN_CHARS
 import splice.core.turn.PROMOTE_MIN_CHARS
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
@@ -103,7 +103,7 @@ class TurnPipelineTest {
     )
 
     /** In the uncovered band by construction: too short to promote, too long for the old check. */
-    private val bandThinking = "x".repeat((HONESTY_MIN_CHARS + PROMOTE_MIN_CHARS) / 2)
+    private val bandThinking = "x".repeat((MIRROR_MIN_CHARS + PROMOTE_MIN_CHARS) / 2)
 
     private suspend fun run(
         mirrorReasoning: Boolean,
@@ -174,8 +174,8 @@ class TurnPipelineTest {
     }
 
     @Test
-    fun `below the honesty floor is an error regardless of the mirror`() = runTest {
-        val short = "x".repeat(HONESTY_MIN_CHARS - 1)
+    fun `below the mirror floor is an error regardless of the mirror`() = runTest {
+        val short = "x".repeat(MIRROR_MIN_CHARS - 1)
         assertEquals("error", run(true, "text", short).ending)
         assertEquals("error", run(false, "text", short).ending)
     }

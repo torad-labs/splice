@@ -156,10 +156,7 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
         val cb = evt["content_block"] as? JsonObject
         blocks[index] = when (strOrEmpty(cb?.get("type"))) {
             "text" -> Block(Kind.TEXT, sink.openText())
-            // CX-09: this block IS content the client receives — record it so the empty-turn
-            // honesty gate never calls a thinking-only turn empty (passthrough pins
-            // showReasoning=THINKING precisely BECAUSE reasoning rides natively here).
-            "thinking" -> Block(Kind.THINKING, sink.openThinking()).also { emittedThinking = true }
+            "thinking" -> Block(Kind.THINKING, sink.openThinking())
             "tool_use" -> {
                 // Pass Kimi's tool id VERBATIM: it round-trips back to Kimi on the next turn — a
                 // JsonNull id must never leak as the literal string "null" into that round-trip (L3);
@@ -191,6 +188,12 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
             "thinking_delta" -> {
                 val t = strOrEmpty(delta["thinking"])
                 thinkingBuf.append(t)
+                // CX-09: the flag means "the client RECEIVED reasoning", not "a block was opened".
+                // Kimi can open a thinking block and close it having sent nothing; counting that
+                // as content short-circuits the empty-turn honesty gate and lets a turn carrying
+                // literally zero characters end as a clean terminal — the L3 violation CX-09
+                // exists to close. Set it where chat and responses set theirs: on real content.
+                if (t.isNotBlank()) emittedThinking = true
                 sink.thinkingDelta(wire, t)
             }
             "input_json_delta" -> sink.inputJsonDelta(wire, strOrEmpty(delta["partial_json"]))

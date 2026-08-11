@@ -74,9 +74,11 @@ REQUIRED = {
     # The signal itself must be produced, or the gate above reads a permanently-false flag and the
     # regression returns silently. One site per dialect that actually opens a thinking block.
     "passthrough": [
-        ("sink.openThinking()).also { emittedThinking = true }",
-         "the passthrough translator opens a thinking block without recording it, so the honesty "
-         "gate cannot know the client received content"),
+        ("if (t.isNotBlank()) emittedThinking = true",
+         "passthrough does not record the flag ON CONTENT. Pinning the block-OPEN site instead was "
+         "the 2026-08-11 review finding: kimi can open a thinking block and close it having sent "
+         "nothing, and counting that as delivered content short-circuits the empty-turn gate, so a "
+         "turn carrying zero characters ends as a clean terminal — the L3 hole CX-09 exists to close"),
         ("emittedThinking = emittedThinking,",
          "the recorded flag never reaches the outcome the pipeline reads"),
     ],

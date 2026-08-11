@@ -4,9 +4,12 @@
 // `model`, forces `stream`, deep-strips every `cache_control`, filters content/tool_result blocks
 // to Kimi's accepted tag allowlist, runs tool input_schema through the MFJS sanitizer, and remaps
 // Anthropic thinking config into Kimi's adaptive-thinking + output_config.effort ladder. Compact
-// turns additionally drop tools + tool_choice (splice compaction doctrine). Invariants: no field is
-// invented except the adaptive thinking/output_config pair; thinking blocks pass VERBATIM (signature
-// included); the effort ladder never emits "medium" (Kimi vocab is low|high|max).
+// turns additionally drop tools + tool_choice (splice compaction doctrine). Invariants: TWO things
+// are invented and nothing else — the adaptive thinking/output_config pair, and (CX-02, 2026-08-10)
+// the compaction directive appended to `system` on a compact turn, without which a kimi compaction
+// turn is an ordinary tool-stripped turn and a chatty reply is stored silently as the summary;
+// thinking blocks pass VERBATIM (signature included); the effort ladder never emits "medium"
+// (Kimi vocab is low|high|max).
 package splice.dialect.passthrough
 
 import kotlinx.serialization.json.JsonArray

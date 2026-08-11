@@ -893,6 +893,16 @@ internal class FoldRunner(
         val foldNext = success?.let { fold.continuation(FoldRound(body, it, roundIndex)) }
         if (foldNext != null) {
             buffer.discard()
+            // CX-09: a fold round whose reasoning reached the client must say so, or a turn whose
+            // FINAL round comes back empty is graded "nothing reached the client" and errors after
+            // the user already saw thinking (BufferingWireSink forwards openThinking/thinkingDelta
+            // straight to the real sink). Pre-dates CX-09; closed here because it is its class.
+            // thinkingText is deliberately NOT carried: a fold continuation re-accumulates the
+            // whole turn's reasoning, so merging this round's copy in duplicates it — that is the
+            // 2026-07-26 mirror-duplication incident, and HeadServerFoldTest's summary-dedup case
+            // fails immediately if you try. usage is not carried either; the caller folds it into
+            // `acc` separately. ONLY the honesty flag rides, which no other field can express.
+            salvaged.add(TurnOutcome.PartialRound(emittedThinking = success.emittedThinking))
             log(
                 "[$key] fold round ${roundIndex + 1}: reasoning truncated at " +
                     "${success.usage.reasoningTokens} tokens, continuing\n",

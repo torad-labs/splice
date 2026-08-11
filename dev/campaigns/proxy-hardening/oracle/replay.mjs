@@ -40,6 +40,7 @@ import { once } from 'node:events';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '../../../..');
 const SOURCE = join(ROOT, 'server/test/codex-proxy.test.mjs');
+const VENDORED = join(HERE, 'mock-upstream.vendored.mjs');
 const FIXTURES = join(HERE, 'fixtures');
 const EXPECTATIONS = join(HERE, 'expectations.toml');
 const JAR = join(ROOT, 'gateway/app/build/libs/app-all.jar');
@@ -58,11 +59,32 @@ const flag = (n) => args.includes(n);
 const opt = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : null; };
 
 // ── the vendored mock: same extraction, same integrity gate as capture ──────
-function extractMock() {
-  const src = readFileSync(SOURCE, 'utf8');
+function regionFrom(src, where) {
   const a = src.indexOf(START); const b = src.indexOf(END);
-  if (a < 0 || b < 0 || b <= a) throw Object.assign(new Error(`mock markers not found in ${SOURCE}`), { harness: true });
-  const region = src.slice(a, b);
+  if (a < 0 || b < 0 || b <= a) throw Object.assign(new Error(`mock markers not found in ${where}`), { harness: true });
+  return src.slice(a, b);
+}
+
+// The mock is VENDORED (mock-upstream.vendored.mjs) rather than read out of server/ at runtime:
+// P8-CUT deletes server/ wholesale, and reading it here would have taken the 11 byte-exact
+// fixtures down with the Node tree. The sha256 gate against _manifest.json is unchanged, so the
+// bytes are still pinned. While server/ SURVIVES we additionally re-extract from it and fail on
+// divergence — so vendoring drops the dependency without dropping the drift alarm. Once server/ is
+// gone that cross-check silently stops applying, which is correct: there is nothing left to drift.
+function extractMock() {
+  if (!existsSync(VENDORED)) {
+    throw Object.assign(new Error(`vendored mock missing: ${VENDORED}`), { harness: true });
+  }
+  const region = regionFrom(readFileSync(VENDORED, 'utf8'), VENDORED);
+  if (existsSync(SOURCE)) {
+    const live = regionFrom(readFileSync(SOURCE, 'utf8'), SOURCE);
+    if (live !== region) {
+      throw Object.assign(
+        new Error(`vendored mock diverges from ${SOURCE} — re-vendor deliberately or revert the edit`),
+        { harness: true },
+      );
+    }
+  }
   return { region, sha256: createHash('sha256').update(region).digest('hex') };
 }
 

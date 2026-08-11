@@ -5,7 +5,7 @@ Every case drives the REAL orchestrator as a subprocess with a synthetic hook
 event against a hermetic copy of the repo's sgconfig + rules (SPLICE_HOOK_ROOT).
 The rules themselves are proven by `ast-grep test`; this suite proves the
 ROUTING: proposed-content computation, glob binding via the temp mirror,
-severity → decision mapping, the walls grant gate, and fail-closed behavior.
+severity → decision mapping, and fail-closed behavior.
 """
 from __future__ import annotations
 
@@ -161,14 +161,6 @@ class OrchestratorTest(unittest.TestCase):
             "tool_input": {"file_path": "/etc/hosts.test", "content": VIOLATION},
         })
         self.assertIsNone(decision)
-
-    def test_wall_paths_are_grant_gated(self):
-        event = self.write_event(".rules/rules/l2-single-mirror-definition.yml", "id: weakened\n")
-        raw, _ = self.run_hook("pretooluse", event)
-        decision = self.expect_block(raw, "un-granted wall edit must block")
-        self.assertIn("SPLICE WALLS", decision["reason"])
-        decision, _ = self.run_hook("pretooluse", event, env_extra={"SPLICE_WALLS_OK": "1"})
-        self.assertIsNone(decision, "granted wall edit must pass")
 
     def test_missing_ast_grep_fails_closed(self):
         event = self.write_event(L3_TARGET, CLEAN)

@@ -210,7 +210,7 @@ private fun headChecks(snapshot: DaemonSnapshot, topology: Topology?): List<Doct
             ":${cfg.port} ${if (listening) "listening" else "not listening"}",
         )
     }
-    return listOfNotNull(headSummary(h)) + perHead
+    return listOfNotNull(turnPathCheck(h), headSummary(h)) + perHead
 }
 
 /** The heads/readyHeads/failedHeads verdict; null on a foreign/ancient listener without the

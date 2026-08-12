@@ -82,3 +82,29 @@ internal fun perfRow(line: String): Pair<String, Long>? = runCatchingCancellable
 
 private const val PERF_TAIL_TURNS = 20
 private const val MS_PER_MINUTE = 60_000L
+
+/** The TURN-PATH verdict — ranked ABOVE the head counters by its caller, because it outranks them:
+ *  during the 91h wedge every counter was perfect (4 ready, 0 failed) while not one turn could
+ *  complete, so a doctor reading only counters certifies a total outage as healthy. This file's
+ *  reason for existing, applied to liveness: a configured install with dying turns must not print
+ *  "Everything checks out."
+ *
+ *  Null on a pre-probe daemon that omits `ok` — absent evidence is not evidence of health, so
+ *  nothing is claimed. FAIL (not WARN) when a head is named: unlike the rest of this file's
+ *  counters, a wedged turn path is not a diagnosis of degraded quality, it is the outage.
+ *  Lives here rather than in DoctorCommand.kt only because that file sits at detekt's function
+ *  budget — same reason JW-05 split this file off in the first place. */
+internal fun turnPathCheck(h: ControlPlaneClient.HealthView): DoctorCheck? = when {
+    h.ok == null -> null
+    h.turnPathStalled.isNotEmpty() -> DoctorCheck(
+        "turn path",
+        CheckStatus.FAIL,
+        "WEDGED on ${h.turnPathStalled.joinToString(", ")} — requests are accepted but never " +
+            "answered (loopback probes timed out). This is the 91h-outage signature.",
+        "splice restart (then: splice logs --head <key> --tail 100)",
+    )
+    // ok:false naming no head is still a refusal to certify health; reporting it beats falling
+    // through to the counters, which is the exact false green being fenced off.
+    h.ok == false -> DoctorCheck("turn path", CheckStatus.WARN, "the daemon reports ok:false without naming a head")
+    else -> DoctorCheck("turn path", CheckStatus.OK, "loopback probes are completing")
+}

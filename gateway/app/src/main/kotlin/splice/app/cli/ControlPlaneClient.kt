@@ -7,6 +7,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import splice.core.util.int
@@ -31,6 +32,12 @@ internal object ControlPlaneClient {
         val topologyDigest: String? = null,
         val configPath: String? = null,
         val topologyStale: Boolean? = null,
+        // 2026-08-12: the turn-path liveness verdict. WITHOUT these, doctor reads only the head
+        // COUNTERS — which is exactly what made the 91h wedge invisible: every head was configured
+        // and "ready" while no turn could complete, so doctor would have reported "4 of 4 head(s)
+        // ready" straight through a total outage. Nullable because a pre-probe daemon omits them.
+        val ok: Boolean? = null,
+        val turnPathStalled: List<String> = emptyList(),
     )
 
     /** The /health payload of any splice-shaped listener, or null when nothing answers.
@@ -48,6 +55,10 @@ internal object ControlPlaneClient {
                 topologyDigest = obj.str("topologyDigest"),
                 configPath = obj.str("configPath"),
                 topologyStale = (obj["topologyStale"] as? JsonPrimitive)?.booleanOrNull,
+                ok = (obj["ok"] as? JsonPrimitive)?.booleanOrNull,
+                turnPathStalled = (obj["turnPathStalled"] as? JsonArray)
+                    ?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull }
+                    .orEmpty(),
             )
         }
     }.getOrNull()

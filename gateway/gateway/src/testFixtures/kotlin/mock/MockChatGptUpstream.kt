@@ -85,13 +85,28 @@ class MockChatGptUpstream {
         pool.shutdownNow()
     }
 
+    private companion object {
+        /** Bound for the test mock's zstd decode — far above any fixture request. */
+        const val MAX_DECOMPRESSED_BYTES = 8 * 1024 * 1024
+    }
+
     private fun sse(ex: HttpExchange, json: String) {
         ex.responseBody.write("data: $json\n\n".toByteArray())
         ex.responseBody.flush()
     }
 
     private fun handle(ex: HttpExchange) {
-        val raw = ex.requestBody.readBytes().decodeToString()
+        // CX-03: the real ChatGPT endpoint accepts `content-encoding: zstd` (codex-cli 0.145.0
+        // sends it), and splice now does the same on the codex head. A mock that only reads
+        // plaintext would silently fall through to the "basic" scenario below on every compressed
+        // request — which is exactly what happened when zstd first landed: one test failed and the
+        // rest passed for the wrong reason. Decode like the real upstream.
+        val rawBytes = ex.requestBody.readBytes()
+        val raw = if (ex.requestHeaders.getFirst("Content-Encoding")?.contains("zstd") == true) {
+            com.github.luben.zstd.Zstd.decompress(rawBytes, MAX_DECOMPRESSED_BYTES).decodeToString()
+        } else {
+            rawBytes.decodeToString()
+        }
         val body = runCatching { Json.parseToJsonElement(raw).jsonObject }.getOrNull()
         // responses-lite turns carry instructions as a developer input item, not the top-level
         // field — scan the whole raw body so scenarios ride either shape.

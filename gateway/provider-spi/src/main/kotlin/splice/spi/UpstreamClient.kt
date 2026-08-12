@@ -46,6 +46,10 @@ public class UpstreamClient(
     private val firstByteTimeoutMs: Long,
     private val totalTimeoutMs: Long,
     private val maxRetries: Int,
+    /** zstd-compress the request body (CX-03). DEFAULT OFF and set PER PROVIDER: measured on
+     *  codex-cli 0.145.0 against ChatGPT (2.7x), unproven anywhere else, and the sibling gzip ban
+     *  exists because xAI 400d on a compressed body and broke grok live on 2026-07-18. */
+    private val zstdRequestBody: Boolean = false,
     private val client: HttpClient = defaultClient(firstByteTimeoutMs, totalTimeoutMs),
     // Exponential backoff, ±10% jitter (codex shape — synchronized retry herds re-collide without
     // it), capped at MAX_BACKOFF_MS; a server Retry-After rides in as a FLOOR via minDelayMs (G3).
@@ -125,13 +129,13 @@ public class UpstreamClient(
     ): T {
         val ctx = PostContext(url, auth, extraHeaders, onRetry, perf, clientFrameEmitted, amendBodyOnFailure)
         // Encode ONCE; retries resend the same bytes (no per-attempt string re-encode). Never gzip.
-        var body = RequestBody(bodyJson)
+        var body = RequestBody(bodyJson, zstdRequestBody)
         val state = RetryState()
         val t0 = clock()
         while (state.attempt < maxRetries) {
             when (val step = runAttempt(ctx, body, state, t0, block)) {
                 is LoopStep.Done -> return step.value
-                is LoopStep.Amend -> body = RequestBody(step.bodyJson)
+                is LoopStep.Amend -> body = RequestBody(step.bodyJson, zstdRequestBody)
                 LoopStep.Continue -> Unit
             }
         }
@@ -139,8 +143,19 @@ public class UpstreamClient(
     }
 
     /** The current request payload: json for the RC-4 amender, bytes for the wire — encoded once. */
-    private data class RequestBody(val json: String) {
-        val bytes: ByteArray = json.toByteArray(Charsets.UTF_8)
+    /** [json] for the RC-4 amender; [bytes] for the wire, encoded once.
+     *
+     *  ZSTD (CX-03, 2026-08-11): measured from codex-cli 0.145.0, which sends
+     *  `content-encoding: zstd` to this exact endpoint — 73,473 bytes compressed to 27,590 (2.7x).
+     *  splice turns run 200KB-900KB of request body, so this is 120-550KB saved per turn.
+     *
+     *  PER-PROVIDER AND DEFAULT OFF, deliberately: the no-compression rule exists because xAI 400d
+     *  on a GZIPPED body and broke grok live on 2026-07-18. This is zstd, not gzip, and it is
+     *  proven only for ChatGPT by its own first-party client — so it is opt-in per provider and
+     *  the gzip ban stands untouched. */
+    private data class RequestBody(val json: String, val zstd: Boolean = false) {
+        val bytes: ByteArray =
+            json.toByteArray(Charsets.UTF_8).let { if (zstd) com.github.luben.zstd.Zstd.compress(it) else it }
     }
 
     /** Mutable loop state threaded through [runAttempt] — extracted (with it) so `post()` stays
@@ -349,7 +364,10 @@ public class UpstreamClient(
         val allHeaders = applyAuth(creds, ctx.extraHeaders(creds))
         val statement = client.preparePost(ctx.url) {
             contentType(ContentType.Application.Json)
-            headers { allHeaders.forEach { (k, v) -> append(k, v) } }
+            headers {
+                allHeaders.forEach { (k, v) -> append(k, v) }
+                if (zstdRequestBody) append("Content-Encoding", "zstd")
+            }
             setBody(ByteArrayContent(bodyBytes, ContentType.Application.Json))
         }
         return statement.execute { resp ->

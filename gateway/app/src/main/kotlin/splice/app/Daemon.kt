@@ -697,6 +697,11 @@ public class Daemon(
                     cfg.firstByteTimeoutMs,
                     cfg.upstreamTimeoutMs,
                     cfg.upstreamRetries,
+                    // CX-03: zstd request bodies, ON for the ChatGPT/codex dialect ONLY. codex-cli
+                    // 0.145.0 sends content-encoding: zstd to this endpoint (measured 2.7x), which
+                    // is the only vendor for which compression is proven. Everyone else stays
+                    // plaintext — xAI 400d on a compressed body and broke grok live 2026-07-18.
+                    zstdRequestBody = zstdEligible(head.provider, topology),
                     client = UpstreamClient.defaultClient(cfg.firstByteTimeoutMs, cfg.upstreamTimeoutMs, log),
                 ),
                 inferenceToken = mgmtKey.get(),
@@ -806,3 +811,10 @@ private fun modelOptionsCache(providerCfg: ProviderConfig): JsonElement = buildJ
         }
     }
 }
+
+/** CX-03: which heads may zstd their request body. ChatGPT/codex ONLY, because codex-cli 0.145.0
+ *  is the only client measured sending `content-encoding: zstd` to its endpoint (2.7x on a real
+ *  turn). Every other provider stays plaintext: xAI 400d on a compressed body and broke grok live
+ *  on 2026-07-18, which is why the sibling gzip ban is gateway-wide default-deny. */
+private fun zstdEligible(providerKey: String, topology: Topology): Boolean =
+    topology.providers[providerKey]?.dialect == Dialect.OPENAI_RESPONSES && providerKey == "codex"

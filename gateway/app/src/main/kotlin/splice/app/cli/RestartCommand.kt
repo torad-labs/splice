@@ -4,17 +4,22 @@
 // (doctor and the launch warning both point here). :app is wall-exempt for println.
 package splice.app.cli
 
+import splice.app.TopologyLoader
 import splice.core.config.StatePaths
 
 internal fun restart(): Boolean {
-    val port = AdminSupport.controlPort()
-    if (!stopIfRunning(port)) return false
+    // Load topology once: controlPort AND head ports come from it. The head ports feed the stop
+    // check so a restart never declares success while a head port is still bound (F3).
+    val topology = runCatching { TopologyLoader.loadOrMaterialize(TopologyLoader.configPath()) }.getOrNull()
+    val port = AdminSupport.controlPort(topology)
+    val headPorts = topology?.heads?.values?.map { it.port } ?: emptyList()
+    if (!stopIfRunning(port, headPorts)) return false
     val started = AdminSupport.ensureDaemon(port)
     if (started) println("splice: daemon restarted with this shell's environment")
     return started
 }
 
-private fun stopIfRunning(port: Int): Boolean {
+private fun stopIfRunning(port: Int, headPorts: List<Int>): Boolean {
     val running = ControlPlaneClient.healthVersion(port) ?: return true
     val key = AdminSupport.mgmtKey()
     return if (key == null) {
@@ -22,7 +27,7 @@ private fun stopIfRunning(port: Int): Boolean {
         false
     } else {
         println("splice: stopping daemon $running on :$port…")
-        ControlPlaneClient.stopDaemon(port, key).also { stopped ->
+        ControlPlaneClient.stopDaemon(port, key, headPorts).also { stopped ->
             if (!stopped) println("splice: the daemon did not stop — terminate it manually and retry")
         }
     }

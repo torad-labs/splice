@@ -147,7 +147,10 @@ public class UpstreamClient(
      *
      *  ZSTD (CX-03, 2026-08-11): measured from codex-cli 0.145.0, which sends
      *  `content-encoding: zstd` to this exact endpoint — 73,473 bytes compressed to 27,590 (2.7x).
-     *  splice turns run 200KB-900KB of request body, so this is 120-550KB saved per turn.
+     *  The 2.7x is PER SSE-PATH TURN only: on a head with `websocket = true` (codex, live) the
+     *  chained majority of rounds ride raw WsUpstream text frames that never reach this method, so
+     *  compression covers the SSE-fallback minority. Codex-head bandwidth is dominated by WS, not
+     *  this path — see the CX-03 follow-up on compressing WS frames if the wire cost is the goal.
      *
      *  PER-PROVIDER AND DEFAULT OFF, deliberately: the no-compression rule exists because xAI 400d
      *  on a GZIPPED body and broke grok live on 2026-07-18. This is zstd, not gzip, and it is

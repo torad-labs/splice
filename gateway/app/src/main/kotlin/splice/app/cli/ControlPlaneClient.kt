@@ -9,7 +9,6 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import splice.core.util.discard
 import splice.core.util.int
 import splice.core.util.long
 import splice.core.util.runCatchingCancellable
@@ -78,65 +77,71 @@ internal object ControlPlaneClient {
      *  The POST is fire-and-observe: a graceful teardown can drop the connection mid-response
      *  (read-timeout) before it 2xx's, so the POST outcome is NOT the signal — the stop poll is.
      *  Failure is reported only when the port is still bound after the whole poll budget. */
-    fun stopDaemon(port: Int, key: String): Boolean {
-        // The POST outcome is fire-and-observe for TRANSPORT errors (a graceful teardown drops the
-        // connection mid-response) — but an AUTH failure must be surfaced, not discarded: a 401
-        // here means shutdownDaemon() never ran, and the old code silently polled 15s watching a
-        // daemon nobody had asked to stop, then told the operator to "terminate manually"
-        // (observed twice on 2026-08-11).
-        runCatchingCancellable {
-            request("http://127.0.0.1:$port/api/daemon/shutdown", method = "POST", bearer = key) { conn ->
-                if (conn.responseCode == HTTP_UNAUTHORIZED || conn.responseCode == HTTP_FORBIDDEN) {
-                    println(
-                        "splice: shutdown request REJECTED (${conn.responseCode}) — the mgmt key on disk " +
-                            "does not match the running daemon's; escalating to signals",
-                    )
-                }
-                true
-            }
-        }.discard("transport failure on graceful teardown is expected; the poll + ladder below decide")
+    fun stopDaemon(port: Int, key: String, headPorts: List<Int> = emptyList()): Boolean {
+        // F1: SEE the shutdown status — a 401/403 names the root cause (mgmt-key mismatch), which
+        // the old fire-and-forget silently swallowed, then escalated as if the daemon were merely
+        // slow (observed twice on 2026-08-11). statusOf does not gate on 2xx the way request() does.
+        when (statusOf("http://127.0.0.1:$port/api/daemon/shutdown", "POST", key)) {
+            HTTP_UNAUTHORIZED, HTTP_FORBIDDEN -> println(
+                "splice: shutdown request REJECTED — the mgmt key on disk does not match the " +
+                    "running daemon's. Escalating to OS signals (scoped to the daemon on :$port).",
+            )
+            null -> Unit // transport drop on graceful teardown is expected; the poll decides
+            else -> Unit // 202 Accepted: the daemon is stopping cooperatively
+        }
 
-        // Escalation ladder. Each rung only advances when the LISTENER is still bound — port
-        // release is the sole success signal (BS-4). SIGTERM engages the daemon's own shutdown
-        // hook, which carries an 8s cooperative stop and a 10s halt(0) floor, so the SIGTERM rung
-        // waits past that floor before reaching for SIGKILL.
-        if (pollStopped(port, GRACEFUL_POLLS)) return true
-        spliceDaemons().forEach {
-            println("splice: daemon pid ${it.pid()} ignored the shutdown request — sending SIGTERM")
+        // Escalation ladder. Each rung advances only while a port is still bound (release is the
+        // sole success signal — BS-4), and every kill is SCOPED to the process actually holding the
+        // TARGET control port (F2): a bare cmdline match would SIGKILL every splice daemon on the
+        // box, production and a mid-run oracle daemon included. SIGTERM engages the daemon's own
+        // 8s cooperative stop + 10s halt(0) floor, so the SIGTERM rung waits past that floor.
+        if (pollStopped(port, headPorts, GRACEFUL_POLLS)) return true
+        daemonOnPort(port)?.let {
+            println("splice: daemon pid ${it.pid()} on :$port ignored the shutdown request — SIGTERM")
             it.destroy()
         }
-        if (pollStopped(port, SIGTERM_POLLS)) return true
-        spliceDaemons().forEach {
-            println("splice: daemon pid ${it.pid()} survived SIGTERM past the halt floor — SIGKILL")
+        if (pollStopped(port, headPorts, SIGTERM_POLLS)) return true
+        daemonOnPort(port)?.let {
+            println("splice: daemon pid ${it.pid()} on :$port survived SIGTERM past the halt floor — SIGKILL")
             it.destroyForcibly()
         }
-        return pollStopped(port, SIGKILL_POLLS)
+        return pollStopped(port, headPorts, SIGKILL_POLLS)
     }
 
-    private fun pollStopped(port: Int, polls: Int): Boolean {
+    private fun pollStopped(port: Int, headPorts: List<Int>, polls: Int): Boolean {
         repeat(polls) {
-            if (stopped(port)) return true
+            if (stopped(port, headPorts)) return true
             Thread.sleep(POLL_INTERVAL_MS)
         }
-        return stopped(port)
+        return stopped(port, headPorts)
     }
 
-    /** Every live splice DAEMON process, identified by cmdline. Matches both the installed jar
-     *  (splice.jar) and a dev-tree jar (app-all.jar); never anything else — the same scoping that
-     *  keeps the oracle harness's self-heal away from processes it does not own. */
-    private fun spliceDaemons(): List<ProcessHandle> = ProcessHandle.allProcesses()
-        .filter { ph ->
-            val cmd = ph.info().commandLine().orElse("")
-            cmd.contains("java") && cmd.contains("daemon") &&
-                (cmd.contains("splice.jar") || cmd.contains("app-all.jar"))
+    /** The splice daemon PROCESS bound to [port], or null — identified by the port's own listener
+     *  (`ss`) intersected with a splice-jar cmdline, never a bare cmdline substring. This is what
+     *  keeps a restart of one daemon from signalling a concurrent oracle daemon or a second head
+     *  (F2), and it mirrors the oracle harness's own port+cmdline scoping. */
+    private fun daemonOnPort(port: Int): ProcessHandle? = pidsOnPort(port)
+        .firstNotNullOfOrNull { pid ->
+            ProcessHandle.of(pid).orElse(null)?.takeIf { ph ->
+                val cmd = ph.info().commandLine().orElse("")
+                cmd.contains("daemon") && (cmd.contains("splice.jar") || cmd.contains("app-all.jar"))
+            }
         }
-        .toList()
 
-    /** "Stopped" means the LISTENER is gone, not merely that /health went null: a daemon whose control
-     *  server quit answering can still linger with the port bound on non-daemon Netty threads, and
-     *  reporting a premature "stopped" is what invited the restart-into-a-still-bound-port race (BS-4). */
-    private fun stopped(port: Int): Boolean =
-        healthVersion(port) == null && !AdminSupport.controlPortBound(port)
+    private fun pidsOnPort(port: Int): List<Long> = runCatchingCancellable {
+        ProcessBuilder("ss", "-ltnpH", "( sport = :$port )").redirectErrorStream(true).start()
+            .inputStream.bufferedReader().use { it.readText() }
+            .let { Regex("pid=(\\d+)").findAll(it).map { m -> m.groupValues[1].toLong() }.toList() }
+    }.getOrDefault(emptyList())
+
+    /** "Stopped" means EVERY port this daemon owned is free — the control port AND the head ports.
+     *  Checking only the control port (F3) let the ladder report success while :3099 lingered on
+     *  non-daemon Netty threads; the next restart then boots a head into EADDRINUSE and it lands
+     *  permanently failed. A daemon whose control server quit answering can still hold its ports. */
+    private fun stopped(port: Int, headPorts: List<Int>): Boolean =
+        healthVersion(port) == null &&
+            !AdminSupport.controlPortBound(port) &&
+            headPorts.none { AdminSupport.controlPortBound(it) }
 
     /** Per-head credential presence as the DAEMON sees it (`/api/auth`), or null when unreachable.
      *  Doctor compares this against shell-side presence to catch the exported-after-boot trap. */
@@ -167,6 +172,22 @@ internal object ControlPlaneClient {
             connection.disconnect()
         }
     }
+
+    /** The raw HTTP status of a request, or null if it never connected. Unlike [request] this does
+     *  NOT swallow non-2xx — stopDaemon needs to SEE a 401/403, since that names the root cause
+     *  (mgmt-key mismatch) the escalation ladder would otherwise silently paper over (F1). */
+    private fun statusOf(url: String, method: String, bearer: String?): Int? = runCatchingCancellable {
+        val connection = URI(url).toURL().openConnection() as HttpURLConnection
+        try {
+            connection.requestMethod = method
+            bearer?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
+            connection.connectTimeout = PROBE_TIMEOUT_MS
+            connection.readTimeout = PROBE_TIMEOUT_MS
+            connection.responseCode
+        } finally {
+            connection.disconnect()
+        }
+    }.getOrNull()
 
     private fun body(connection: HttpURLConnection): String =
         connection.inputStream.bufferedReader().use { it.readText() }

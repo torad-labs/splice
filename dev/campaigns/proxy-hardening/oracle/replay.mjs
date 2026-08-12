@@ -32,7 +32,7 @@ import http from 'node:http';
 import net from 'node:net';
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -102,9 +102,32 @@ function portInUse(port) {
   });
 }
 
+/** Atomic exclusive run lock via O_EXCL (portable; node has no flock). Returns true on acquire.
+ *  A stale lock whose recorded PID is dead is reclaimed — an interrupted run that never ran its
+ *  exit handler must not wedge every future run. A lock held by a LIVE pid → refuse (F6). */
+function acquireRunLock(lockPath) {
+  try {
+    const fd = openSync(lockPath, 'wx'); // wx = O_CREAT|O_EXCL: fails if the file exists
+    writeFileSync(fd, String(process.pid));
+    closeSync(fd);
+    return true;
+  } catch {
+    const owner = Number(runCatchRead(lockPath));
+    const ownerDead = !owner || !pidAlive(owner);
+    if (ownerDead) {
+      try { rmSync(lockPath, { force: true }); } catch { /* raced */ }
+      try { const fd = openSync(lockPath, 'wx'); writeFileSync(fd, String(process.pid)); closeSync(fd); return true; } catch { return false; }
+    }
+    return false;
+  }
+}
+function runCatchRead(p) { try { return readFileSync(p, 'utf8'); } catch { return ''; } }
+function pidAlive(pid) { try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; } }
+
 /** SIGKILL a leaked ORACLE daemon holding [port]; true if one was killed. Scoped by cmdline to
  *  the build-tree jar (app-all.jar) — the production daemon runs ~/.local/share/splice/splice.jar,
- *  so the real gateway on :3099/:3096 is unreachable from here by construction. */
+ *  so the real gateway on :3099/:3096 is unreachable from here by construction. Only reached while
+ *  we hold the run lock, so a squatter here is a prior interrupted run, never a live concurrent one. */
 function killLeakedOracleDaemon(port) {
   try {
     const out = execFileSync('ss', ['-ltnpH', `( sport = :${port} )`], { encoding: 'utf8' });
@@ -275,12 +298,25 @@ command = "claudex"
     CODEX_OAUTH_TOKEN_URL: `http://127.0.0.1:${mockPort}/oauth/token`,
   });
 
-  // PREFLIGHT (2026-08-11). These ports are FIXED, so a daemon leaked by an earlier interrupted
-  // run answers the health check while this run's own state dir stays empty — the run then dies
-  // on a missing mgmt-key, and one transient failure poisons every run after it (13 stale scratch
-  // dirs accumulated before this was caught). If the squatter is OUR OWN leaked oracle daemon
-  // (identified by the app-all.jar cmdline — production runs splice.jar, so this can never touch
-  // the real gateway), kill it and continue. Anything else on the port: refuse loudly.
+  // EXCLUSIVE RUN LOCK (F6, 2026-08-12). The ports are FIXED and shared, so two concurrent runs
+  // cannot coexist. Before this lock the second run's preflight SIGKILLed the FIRST run's LIVE
+  // daemon (mislabelled "leaked"), so two CI jobs on one runner mutually assassinated at ~50%.
+  // An exclusive, non-blocking lock makes concurrent = fail-fast-and-refuse; only after we hold it
+  // does the preflight treat a port-squatter as a genuine leak from an interrupted PRIOR run.
+  const lockPath = join(tmpdir(), 'splice-oracle-replay.lock');
+  const heldLock = acquireRunLock(lockPath);
+  if (!heldLock) {
+    throw Object.assign(
+      new Error('another oracle replay holds the run lock — concurrent runs share fixed ports; retry when it finishes'),
+      { harness: true },
+    );
+  }
+  process.on('exit', () => { try { rmSync(lockPath, { force: true }); } catch { /* already gone */ } });
+
+  // PREFLIGHT (2026-08-11). Now that we hold the lock, any daemon still on these ports is a leak
+  // from an interrupted PRIOR run, never a live concurrent one. If the squatter is OUR OWN oracle
+  // daemon (app-all.jar cmdline — production runs splice.jar, so this can never touch the real
+  // gateway), kill it and continue. Anything else on the port: refuse loudly.
   for (const port of [HEAD_PORT, CONTROL_PORT]) {
     if (!(await portInUse(port))) continue;
     const killed = killLeakedOracleDaemon(port);
@@ -301,10 +337,16 @@ command = "claudex"
   daemon.stdout.on('data', (c) => { dlog += c; });
   daemon.stderr.on('data', (c) => { dlog += c; });
   const dead = new Promise((r) => daemon.once('exit', (code) => r(code)));
-  // LAST LINE OF DEFENSE: whatever kills node — uncaught exception in the vendored mock's own
-  // handlers (the zstd crash), unhandled rejection, a signal — the daemon dies with us. This is
-  // what makes a harness crash cost one run instead of poisoning every run after it.
-  process.on('exit', () => { try { daemon.kill('SIGKILL'); } catch { /* already gone */ } });
+  // LAST LINE OF DEFENSE against a leaked daemon. process.on('exit') covers a normal return and
+  // an uncaught throw (the zstd-crash shape), but NOT a signal — node's default SIGINT/SIGTERM
+  // termination skips 'exit' handlers (verified 2026-08-12). So Ctrl-C mid-run — the exact
+  // "earlier interrupted run" the preflight self-heal exists for — needs its own handlers. With
+  // both, an interrupted run kills its own daemon; the preflight is the backstop, not the only net.
+  const killDaemon = () => { try { daemon.kill('SIGKILL'); } catch { /* already gone */ } };
+  process.on('exit', killDaemon);
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    process.on(sig, () => { killDaemon(); process.exit(130); });
+  }
   // A rejecting twin of `dead` for the boot race ONLY. It must be marked handled immediately:
   // if health wins the race, the daemon's LATER exit (including our own SIGTERM in cleanup)
   // still triggers this rejection, and an unhandled rejection is fatal in modern node — the

@@ -4,7 +4,6 @@
 package splice.app.cli
 
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import splice.app.TopologyLoader
@@ -57,8 +56,11 @@ internal object AdminSupport {
             if (connection.responseCode != HttpURLConnection.HTTP_OK) return@runCatchingCancellable false
             val health = connection.inputStream.bufferedReader().use { it.readText() }
             val obj = json.parseToJsonElement(health).jsonObject
-            obj["ok"]?.jsonPrimitive?.booleanOrNull == true &&
-                obj["version"]?.jsonPrimitive?.content == GATEWAY_VERSION
+            // "Up" is the control server answering with the matching version — NOT health `ok`.
+            // Since 2026-08-12 `ok` means "a turn can complete", so a stalled head flips it false
+            // while the daemon is very much alive; reading `ok` here made `splice status` report a
+            // running daemon as "stopped" and ensureDaemon loop on a bound port (F4/F10).
+            obj["version"]?.jsonPrimitive?.content == GATEWAY_VERSION
         } finally {
             connection.disconnect()
         }

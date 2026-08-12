@@ -3,6 +3,10 @@
 // These tests drive the probe against both shapes — a server that ANSWERS (even with an error
 // status: a 400 is proof of life) and a server that ACCEPTS-THEN-HANGS (the wedge) — and pin
 // that only the second flips the stalled flag, after exactly the threshold, with recovery back.
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
@@ -102,5 +106,33 @@ class TurnPathProbeLoopTest {
         val p = probe(dead, stalled)
         repeat(2) { p.tick() }
         assertTrue(stalled["t"] == true)
+    }
+
+    // F5 (review 2026-08-12): an alarm that cannot report must itself read as an alarm. The probe
+    // loop dying left stalled[key] frozen at its last value — false, in the overwhelmingly common
+    // case where the head was healthy right up until the probe broke — so /health kept serving
+    // ok:true with liveness no longer being measured at all. That is precisely the silent-green
+    // wedge the probe was built to kill, resurrected one level up.
+    @Test
+    fun `a probe loop that dies abnormally marks the head stalled`() = runBlocking {
+        val stalled = ConcurrentHashMap<String, Boolean>()
+        stalled["t"] = false // healthy right up until the probe breaks — the dangerous case
+        val boom = RuntimeException("probe internals exploded")
+        val scope = CoroutineScope(Job())
+        // A loop whose body throws a non-cancellation error, supervised by the SAME completion
+        // handler start() installs. Driven through the real class so the handler under test is
+        // the shipped one.
+        val loop = TurnPathProbeLoop("t", port = 1, stalled = stalled, log = { logs += it }, intervalMs = 1)
+        val job = loop.start(scope)
+        job.cancel() // clean shutdown first: cancellation must NOT page
+        job.join()
+        assertFalse(stalled["t"] == true, "a cancelled probe is an orderly shutdown, not an outage")
+
+        // Now the abnormal death, through the same public seam.
+        val dying = scope.launch { throw boom }
+        loop.supervise(dying)
+        dying.join()
+        assertTrue(stalled["t"] == true, "a dead probe must fail toward alarm, not freeze healthy")
+        assertTrue(logs.any { "PROBE DIED" in it }, "the death must be loud in the log")
     }
 }

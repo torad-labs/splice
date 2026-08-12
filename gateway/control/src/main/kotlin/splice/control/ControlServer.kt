@@ -421,7 +421,13 @@ internal class ControlPayloads( // internal (was private) so ControlHealthTest c
     fun controlHealthJson(): String = buildJsonObject {
         // ok means "a turn can complete", not "heads are configured" — the 91h wedge served
         // ok:true for its entire duration under the old hardcoded value (2026-08-12).
-        val stalledHeads = turnPathStalled()
+        //
+        // F4: only a head that is SUPPOSED to be running can drag ok false. A deliberate
+        // `POST /api/heads/x/stop` makes the probe see connection-refused and mark the head
+        // stalled, but that is an intentional state, not the wedge — intersecting with the
+        // running set keeps an operator's maintenance stop from paging an external monitor.
+        val runningKeys = heads.filterValues { it.head.healthSnapshot().running }.keys
+        val stalledHeads = turnPathStalled().filter { it in runningKeys }
         put("ok", stalledHeads.isEmpty())
         if (stalledHeads.isNotEmpty()) {
             put(

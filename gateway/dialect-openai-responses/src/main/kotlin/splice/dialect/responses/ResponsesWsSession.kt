@@ -24,6 +24,14 @@ import splice.core.util.str
  *  count that must move when chaining engages, and must NOT when it bails. */
 internal data class WsFrame(val json: String, val chained: Boolean)
 
+/** The frame AND the epoch it was built under, captured under ONE lock acquisition (F7). Two
+ *  acquisitions — frameFor then epochOf — left a window where a concurrent [ResponsesWsSession.cleared]
+ *  bumped the epoch AFTER the frame was built on now-invalidated context: the frame chained onto
+ *  dropped state while its captured (post-bump) epoch still matched at commit, resurrecting exactly
+ *  what cleared existed to bar (a bypassed SSE turn's messages then classify as server-held and
+ *  silently vanish). Capturing both atomically closes it. */
+internal data class WsFrameAndEpoch(val frame: WsFrame, val epoch: Long)
+
 /**
  * Per-conversation chaining state for ONE provider. THREAD-SAFE: every method takes [lock].
  *
@@ -91,14 +99,21 @@ internal class ResponsesWsSession {
      * Build the frame for this round. [request] is the full request the builder produced.
      * Returns the incremental frame when every chaining precondition holds, else the full frame.
      */
-    fun frameFor(key: String, request: JsonObject, generation: Long): WsFrame = synchronized(lock) {
+    fun frameFor(key: String, request: JsonObject, generation: Long): WsFrame =
+        frameAndEpoch(key, request, generation).frame
+
+    /** Build the frame AND capture the commit epoch under ONE lock (F7) — the WS runner must use
+     *  this, never frameFor + epochOf, or a concurrent clear between the two invalidates the chain
+     *  after the frame is built while the captured epoch still matches at commit. */
+    fun frameAndEpoch(key: String, request: JsonObject, generation: Long): WsFrameAndEpoch = synchronized(lock) {
         val chain = chains[key]
         val delta = if (chain == null) null else chainableDelta(chain, request, generation)
-        if (chain == null || delta == null) {
+        val frame = if (chain == null || delta == null) {
             WsFrame(frame(request, previousResponseId = null, input = null), chained = false)
         } else {
             WsFrame(frame(request, previousResponseId = chain.responseId, input = JsonArray(delta)), chained = true)
         }
+        WsFrameAndEpoch(frame, epochs[key] ?: seq)
     }
 
     /** The items to send incrementally, or null when ANY precondition fails (bail closed). */

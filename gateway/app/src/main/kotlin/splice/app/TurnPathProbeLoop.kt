@@ -14,6 +14,7 @@
 // Mirrors the AuthProbeLoop delay-loop idiom; blocking HttpURLConnection rides Dispatchers.IO.
 package splice.app
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -34,11 +35,34 @@ public class TurnPathProbeLoop(
 ) {
     private var consecutiveFailures = 0
 
-    public fun start(scope: CoroutineScope): Job = scope.launch(Dispatchers.IO) {
-        while (isActive) {
-            delay(intervalMs)
-            tick()
+    public fun start(scope: CoroutineScope): Job {
+        val launched = scope.launch(Dispatchers.IO) {
+            while (isActive) {
+                delay(intervalMs)
+                tick()
+            }
         }
+        return supervise(launched)
+    }
+
+    /** F5: FAIL TOWARD ALARM. A dead probe leaves stalled[key] frozen at its last value, and if that
+     *  value was false the head reports healthy forever — the exact silent-green wedge this probe
+     *  exists to kill, resurrected one level up. Supervision (not a broad tick catch) owns the
+     *  unknown-throwable class here, mirroring AuthProbeLoop.launchSupervised: the repo's walls pull
+     *  in opposite directions on `catch (t: Throwable)` (detekt TooGenericExceptionCaught vs the
+     *  kt-catch-swallows-cancellation ast-grep rule), so the completion handler is the sanctioned
+     *  seam. An alarm that cannot report is itself the alarm. Cancellation is an orderly shutdown
+     *  and must NOT page. Internal so the test drives the SHIPPED handler, not a copy of it. */
+    internal fun supervise(job: Job): Job {
+        job.invokeOnCompletion { cause ->
+            if (cause == null || cause is CancellationException) return@invokeOnCompletion
+            stalled[key] = true
+            log(
+                "[$key] TURN PATH PROBE DIED ($cause) — marking the head stalled: liveness is no " +
+                    "longer being measured, so /health must not keep claiming ok.\n",
+            )
+        }
+        return job
     }
 
     /** One probe. Exposed for tests, which drive ticks directly instead of waiting on the loop. */

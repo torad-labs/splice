@@ -25,9 +25,16 @@ import splice.core.util.str
 internal data class WsFrame(val json: String, val chained: Boolean)
 
 /**
- * Per-conversation chaining state for ONE provider. Not thread-safe by itself; the WS transport
- * serializes rounds per conversation (one in-flight round per connection), and every method here
- * runs inside that serialized window.
+ * Per-conversation chaining state for ONE provider. THREAD-SAFE: every method takes [lock].
+ *
+ * It used to say "not thread-safe by itself; the WS transport serializes rounds per conversation,
+ * and every method here runs inside that serialized window." That contract was never sufficient for
+ * this structure, and the 2026-08-11 outage is what it cost. The serialization the transport offers
+ * is PER CONVERSATION; [chains] and [epochs] are GLOBAL maps shared by every conversation. Two
+ * different conversations completing at the same instant both mutate the same LinkedHashMap — fully
+ * permitted by that contract — which corrupts its internal list into a cycle. `trimLocked` makes it
+ * unavoidable rather than merely possible: eviction touches keys belonging to OTHER conversations,
+ * so even a strict per-key lock would not have serialized it.
  *
  * State is committed ONLY on a clean terminal ([completed]); any other ending clears it, so the
  * next round full-sends. That asymmetry is deliberate: an uncommitted response id is worthless,
@@ -55,6 +62,17 @@ internal class ResponsesWsSession {
     private val chains = LinkedHashMap<String, Chain>()
     private val epochs = LinkedHashMap<String, Long>()
 
+    /** THE lock for [chains], [epochs] and [seq]. Every method that reads or writes them holds it.
+     *
+     *  This existed only as a naming convention (`trimLocked`) until 2026-08-11, when a daemon that
+     *  had been up 91h stopped serving: `completed`/`cleared` are driven from Netty event-loop
+     *  threads, several conversations run at once, and concurrent mutation of a LinkedHashMap
+     *  corrupts its internal list into a cycle. Six event loops were found spinning inside
+     *  HashMap.remove at ~2 CPU-hours EACH — and because event loops are shared, every connection
+     *  they served was accepted and never dispatched. The control plane stayed green throughout
+     *  (different loop group), so health reported 4/4 ready while nothing could complete a turn. */
+    private val lock = Any()
+
     /** A MONOTONIC counter, never per-key. Each [cleared] stamps a fresh value strictly greater
      *  than anything previously handed out, so a captured epoch can only still match when nothing
      *  invalidated the conversation in between. */
@@ -67,16 +85,16 @@ internal class ResponsesWsSession {
      *  LESS than [seq] (a clear always stamps ++seq), so a late commit can never match and can
      *  never resurrect a chain the server no longer honours. Falling back to 0 would have
      *  re-opened exactly the ordering hole the epoch exists to close. */
-    fun epochOf(key: String): Long = epochs[key] ?: seq
+    fun epochOf(key: String): Long = synchronized(lock) { epochs[key] ?: seq }
 
     /**
      * Build the frame for this round. [request] is the full request the builder produced.
      * Returns the incremental frame when every chaining precondition holds, else the full frame.
      */
-    fun frameFor(key: String, request: JsonObject, generation: Long): WsFrame {
+    fun frameFor(key: String, request: JsonObject, generation: Long): WsFrame = synchronized(lock) {
         val chain = chains[key]
         val delta = if (chain == null) null else chainableDelta(chain, request, generation)
-        return if (chain == null || delta == null) {
+        if (chain == null || delta == null) {
             WsFrame(frame(request, previousResponseId = null, input = null), chained = false)
         } else {
             WsFrame(frame(request, previousResponseId = chain.responseId, input = JsonArray(delta)), chained = true)
@@ -100,10 +118,16 @@ internal class ResponsesWsSession {
 
     /** Commit after a clean terminal: the round's FULL logical input becomes the next turn's
      *  prefix (never the delta — the server now holds the chained context PLUS what we sent). */
-    fun completed(key: String, request: JsonObject, responseId: String?, generation: Long, epoch: Long) {
+    fun completed(
+        key: String,
+        request: JsonObject,
+        responseId: String?,
+        generation: Long,
+        epoch: Long,
+    ): Unit = synchronized(lock) {
         val input = request[FIELD_INPUT] as? JsonArray
         // A stale epoch means something invalidated this conversation while the round was in flight.
-        val committable = responseId != null && input != null && epoch == epochOf(key)
+        val committable = responseId != null && input != null && epoch == (epochs[key] ?: seq)
         if (!committable) {
             // Committing now would anchor the next turn onto context the server lacks.
             chains.remove(key)
@@ -116,7 +140,7 @@ internal class ResponsesWsSession {
 
     /** Any non-clean ending (tear, cancel, failure, SSE fallback): the next round full-sends, AND
      *  any round still in flight is barred from committing (the epoch bump). */
-    fun cleared(key: String) {
+    fun cleared(key: String): Unit = synchronized(lock) {
         chains.remove(key)
         epochs.remove(key)
         epochs[key] = ++seq
@@ -126,8 +150,21 @@ internal class ResponsesWsSession {
     /** Drop the oldest records past the cap. Order is by last WRITE, which for a live conversation
      *  is every completed round, so an active one is never the eviction victim. */
     private fun trimLocked() {
-        while (chains.size > MAX_CONVERSATIONS) chains.remove(chains.keys.first())
-        while (epochs.size > MAX_CONVERSATIONS) epochs.remove(epochs.keys.first())
+        // Iterator removal, not `while (size > cap) remove(keys.first())`. The old shape re-entered
+        // the map on every pass, so a map already corrupted by unsynchronized writes spun in
+        // HashMap.remove forever instead of failing. The lock is what makes corruption impossible;
+        // this is the shape that cannot spin even if that ever stops being true.
+        evictOldest(chains.keys.iterator(), chains.size)
+        evictOldest(epochs.keys.iterator(), epochs.size)
+    }
+
+    private fun evictOldest(keys: MutableIterator<String>, size: Int) {
+        var over = size - MAX_CONVERSATIONS
+        while (over > 0 && keys.hasNext()) {
+            keys.next()
+            keys.remove()
+            over--
+        }
     }
 
     /** [input] null = keep the request's own input array (the full send). */

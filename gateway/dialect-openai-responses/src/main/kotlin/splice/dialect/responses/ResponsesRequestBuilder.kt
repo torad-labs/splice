@@ -87,6 +87,10 @@ public data class ResponsesQuirks(
      *  the whole context. UNTESTED against the live backend — see the 30-50 parallel Task spray in
      *  this class's header, which came from omitting the field entirely. */
     val liteParallelToolCalls: Boolean = false,
+    /** codex parity: `text.verbosity` on lite turns. codex-cli 0.145.0 sends "low"; null omits. */
+    val liteTextVerbosity: String? = "low",
+    /** codex parity: send a client_metadata block identifying SPLICE (never codex). Off = omitted. */
+    val sendClientMetadata: Boolean = true,
     /** ws-transport WS-3: serve rounds over the Responses WebSocket, with previous_response_id
      *  chaining, falling back to SSE on ANY failure. DEFAULT FALSE — the overlay must be invisible
      *  until an operator opts in, and with it off no WebSocket is ever constructed. */
@@ -316,6 +320,8 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
             toolChoice = toolChoiceFor(emitToolChoice, lite, body),
             parallelToolCalls = parallelToolCallsFor(emitToolChoice, body, opts),
             reasoning = parts.reasoning,
+            text = liteTextBlock(quirks, lite),
+            clientMetadata = clientMetadataBlock(quirks, lite, opts, cacheKey(body, opts)),
             streamOptions = summaryDeliveryOptions(parts.reasoning),
         )
         val req = responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), dto) as JsonObject
@@ -873,3 +879,7 @@ private const val BUDGET_MAX = 64_000L
 private const val BUDGET_XHIGH = 32_000L
 private const val BUDGET_HIGH = 10_000L
 private const val BUDGET_MEDIUM = 2_000L
+
+/** codex parity: `text: {"verbosity": ...}`, LITE ONLY — that is where codex-cli was measured
+ *  sending it, and every migration-oracle fixture is gpt-5-codex (non-lite), so the 11 pinned
+ *  byte-exact fixtures cannot move. */

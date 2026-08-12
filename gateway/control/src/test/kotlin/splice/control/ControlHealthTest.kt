@@ -48,10 +48,14 @@ class ControlHealthTest {
         authKind = "x",
     )
 
-    private fun payloads(heads: Map<String, ManagedHead>, stalled: List<String>) = ControlPayloads(
+    private fun payloads(
+        heads: Map<String, ManagedHead>,
+        stalled: List<String>,
+        failed: Int = 0,
+    ) = ControlPayloads(
         heads = heads,
         config = ConfigService(StatePaths(baseOverride = Files.createTempDirectory("ctl-health"))),
-        failedHeads = { 0 },
+        failedHeads = { failed },
         configuredHeads = heads.size,
         turnPathStalled = { stalled },
     )
@@ -80,11 +84,42 @@ class ControlHealthTest {
     @Test
     fun `a stalled STOPPED head does NOT page - deliberate stop is not an outage`() {
         // The probe marks a deliberately-stopped head stalled (its port refuses), but an operator
-        // maintenance stop must never flip global ok:false. F4.
+        // maintenance stop must never flip global ok:false. F4. Note the OTHER head is up: what
+        // makes this benign is that the daemon can still serve, not merely that a head is down.
         val h = Json.parseToJsonElement(
-            payloads(mapOf("codex" to managed("codex", running = false)), listOf("codex")).controlHealthJson(),
+            payloads(
+                mapOf("codex" to managed("codex", running = false), "grok" to managed("grok", running = true)),
+                listOf("codex"),
+            ).controlHealthJson(),
         ).jsonObject
-        assertEquals(true, ok(h), "a stopped head is intentional, not the wedge")
+        assertEquals(true, ok(h), "a stopped head alongside a live one is intentional, not the wedge")
         assertNull(h["turnPathStalled"])
+    }
+
+    // Review 2026-08-12: the F4 intersection alone read a CRASHED head as "not supposed to be
+    // running" and discarded its stall entry, so a daemon whose heads all died on EADDRINUSE served
+    // {ok:true, readyHeads:0, failedHeads:4} — green through a total outage, the very shape the ok
+    // rewrite exists to kill. "Not running" is not self-certifying; only failedHeads separates a
+    // crash from a deliberate stop.
+    @Test
+    fun `heads that FAILED to start flip ok false even though none is running`() {
+        val h = Json.parseToJsonElement(
+            payloads(
+                mapOf("codex" to managed("codex", running = false)),
+                stalled = listOf("codex"),
+                failed = 1,
+            ).controlHealthJson(),
+        ).jsonObject
+        assertEquals(false, ok(h), "every head dead on boot is an outage, not a maintenance window")
+    }
+
+    @Test
+    fun `a configured daemon with nothing running cannot claim ok`() {
+        // No recorded failure (the heads were stopped one by one) but zero capacity remains: a turn
+        // cannot complete, so ok must not say it can.
+        val h = Json.parseToJsonElement(
+            payloads(mapOf("codex" to managed("codex", running = false)), emptyList()).controlHealthJson(),
+        ).jsonObject
+        assertEquals(false, ok(h))
     }
 }

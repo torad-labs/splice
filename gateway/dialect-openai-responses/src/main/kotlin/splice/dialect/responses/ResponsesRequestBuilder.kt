@@ -879,7 +879,3 @@ private const val BUDGET_MAX = 64_000L
 private const val BUDGET_XHIGH = 32_000L
 private const val BUDGET_HIGH = 10_000L
 private const val BUDGET_MEDIUM = 2_000L
-
-/** codex parity: `text: {"verbosity": ...}`, LITE ONLY — that is where codex-cli was measured
- *  sending it, and every migration-oracle fixture is gpt-5-codex (non-lite), so the 11 pinned
- *  byte-exact fixtures cannot move. */

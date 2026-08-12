@@ -108,6 +108,17 @@ class MockChatGptUpstream {
             rawBytes.decodeToString()
         }
         val body = runCatching { Json.parseToJsonElement(raw).jsonObject }.getOrNull()
+        // FALSE-GREEN GENERATOR, closed (review 2026-08-12). When the mock cannot read the request
+        // it used to fall through to the `?: "basic"` default below and serve the HAPPY PATH: that
+        // is how the zstd change made `authfail` silently receive a success stream and its sibling
+        // "pass" for the wrong reason. `?: "basic"` is a legitimate default for a parseable body
+        // with no SCENARIO marker; it is never a legitimate answer to "I could not decode this".
+        if (body == null) {
+            val err = """{"error":{"message":"mock could not parse the request body"}}"""
+            ex.sendResponseHeaders(400, err.length.toLong())
+            ex.responseBody.use { it.write(err.toByteArray()) }
+            return
+        }
         // responses-lite turns carry instructions as a developer input item, not the top-level
         // field — scan the whole raw body so scenarios ride either shape.
         val scenario = Regex("SCENARIO:(\\w+)").find(raw)?.groupValues?.get(1) ?: "basic"

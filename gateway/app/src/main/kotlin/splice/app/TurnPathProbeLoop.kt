@@ -4,12 +4,28 @@
 // health reported that heads were CONFIGURED, not that the gateway could WORK. Any external
 // uptime monitor pointed at it would have shown green through a total outage.
 //
-// The probe exercises the exact surface that wedged: a real loopback POST to the head's own
-// /v1/messages. It carries no auth and a garbage body ON PURPOSE — the pipeline's quick rejection
-// (401/400) IS the liveness proof, because a wedged event loop returns nothing at all (measured:
-// a 60s curl got zero bytes). Any HTTP status = alive; only a timeout/connection-hang counts as
-// a failure, and two consecutive failures flip the head to stalled. /health then reports
-// ok:false + turnPathStalled:[...], which is the flip that makes 99.9% monitorable.
+// The probe exercises the surface that wedged: a real loopback POST to the head's own
+// /v1/messages. It carries no auth ON PURPOSE — the pipeline's quick rejection IS the liveness
+// proof, because a wedged event loop returns nothing at all (measured: a 60s curl got zero bytes).
+// Any HTTP status = alive; only a timeout/connection-hang counts as a failure, and two consecutive
+// failures flip the head to stalled. /health then reports ok:false + turnPathStalled:[...], which
+// is the flip that makes 99.9% monitorable.
+//
+// EXACTLY WHAT THIS PROVES, and what it does not (review 2026-08-12 — the earlier wording claimed
+// more than the code does). HeadServer.handleMessages runs `authorize(call)` FIRST, so an
+// unauthenticated probe is answered 401 and returns before acceptingOrRespond, the InflightGate,
+// the TurnDriver, or any upstream client. So this proves the head's Netty acceptor and request
+// path are RESPONSIVE — which is precisely the 91h wedge, where the event loops spun and nothing,
+// 401 included, ever came back. It does NOT prove an end-to-end turn completes: a saturated or
+// deadlocked gate, a HeadServer stuck draining in stopLocked, a wedged upstream client or a hung
+// translator would all keep answering 401s at 30s intervals while real turns died.
+//
+// Going deeper was considered and REJECTED for now: an authenticated probe reaches
+// acquireSlotOrRespond, so it would consume a real inflight slot every 30s and, under legitimate
+// heavy load, either queue (probe times out -> false STALL, paging on a healthy-but-busy gateway)
+// or 429 (an HTTP status, i.e. "alive" — no new coverage). A liveness alarm that fires during a
+// traffic spike is worse than one with a documented ceiling. Deepening it needs a slot-exempt
+// internal route, which is a design change, not a comment fix.
 //
 // Mirrors the AuthProbeLoop delay-loop idiom; blocking HttpURLConnection rides Dispatchers.IO.
 package splice.app
@@ -38,6 +54,13 @@ public class TurnPathProbeLoop(
     public fun start(scope: CoroutineScope): Job {
         val launched = scope.launch(Dispatchers.IO) {
             while (isActive) {
+                // delay FIRST, deliberately: the head is still binding its port at t=0, so an
+                // immediate tick (AuthProbeLoop's idiom, which has no port to wait on) would count
+                // boot as a failure. The cost is a stated blind spot — no entry exists for this key
+                // until the first tick, so a daemon that boots straight into a wedge serves ok:true
+                // for 30s and cannot be marked stalled before 60s (two failures). A boot-time false
+                // ALARM was judged worse than a 60s detection floor on a fault that has already
+                // lasted hours by the time anyone looks.
                 delay(intervalMs)
                 tick()
             }
@@ -85,20 +108,28 @@ public class TurnPathProbeLoop(
         }
     }
 
-    /** ANY HTTP status is life; only a hang/timeout is death. */
-    private fun probeOnce(): Boolean = try {
+    /** ANY HTTP status is life; only a hang/timeout is death.
+     *
+     *  disconnect() is in a `finally` because the FAILURE path is the long-lived one by
+     *  construction: a stalled head keeps failing every 30s, and disconnecting only on success
+     *  abandoned one connection per failed probe — ~2,880/day/head, leaked by the very component
+     *  that exists to protect uptime. */
+    private fun probeOnce(): Boolean {
         val conn = URI("http://127.0.0.1:$port/v1/messages").toURL().openConnection() as HttpURLConnection
-        conn.requestMethod = "POST"
-        conn.connectTimeout = timeoutMs
-        conn.readTimeout = timeoutMs
-        conn.doOutput = true
-        conn.setRequestProperty("Content-Type", "application/json")
-        conn.outputStream.use { it.write(PROBE_BODY) }
-        conn.responseCode // blocks up to readTimeout; a wedge never answers
-        conn.disconnect()
-        true
-    } catch (ignored: java.io.IOException) {
-        false
+        return try {
+            conn.requestMethod = "POST"
+            conn.connectTimeout = timeoutMs
+            conn.readTimeout = timeoutMs
+            conn.doOutput = true
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.outputStream.use { it.write(PROBE_BODY) }
+            conn.responseCode // blocks up to readTimeout; a wedge never answers
+            true
+        } catch (ignored: java.io.IOException) {
+            false
+        } finally {
+            conn.disconnect()
+        }
     }
 
     private companion object {

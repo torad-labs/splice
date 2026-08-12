@@ -419,16 +419,27 @@ internal class ControlPayloads( // internal (was private) so ControlHealthTest c
     private val turnPathStalled: () -> List<String> = { emptyList() },
 ) {
     fun controlHealthJson(): String = buildJsonObject {
-        // ok means "a turn can complete", not "heads are configured" — the 91h wedge served
-        // ok:true for its entire duration under the old hardcoded value (2026-08-12).
+        // ok means "this gateway can serve", not "heads are configured" — the 91h wedge served
+        // ok:true for its entire duration under the old hardcoded value (2026-08-12). Precisely: no
+        // head is unresponsive at its request path, none failed to start, and at least one is up.
+        // It is NOT an end-to-end turn assertion — see TurnPathProbeLoop's header for the probe's
+        // documented ceiling (it is answered at the 401 before the gate and driver).
         //
         // F4: only a head that is SUPPOSED to be running can drag ok false. A deliberate
         // `POST /api/heads/x/stop` makes the probe see connection-refused and mark the head
         // stalled, but that is an intentional state, not the wedge — intersecting with the
         // running set keeps an operator's maintenance stop from paging an external monitor.
+        //
+        // ...but "not running" is NOT self-certifying. The F4 intersection alone read a head that
+        // CRASHED or never started as "not supposed to be running", so its stall entry was
+        // discarded and a daemon whose every head died on EADDRINUSE served
+        // {ok:true, readyHeads:0, failedHeads:4} — the same green-through-an-outage shape as the
+        // 91h wedge, one layer over. failedHeads() is what separates a crash from a deliberate
+        // stop, and a configured daemon with nothing running cannot complete a turn either way.
         val runningKeys = heads.filterValues { it.head.healthSnapshot().running }.keys
         val stalledHeads = turnPathStalled().filter { it in runningKeys }
-        put("ok", stalledHeads.isEmpty())
+        val running = runningKeys.size
+        put("ok", stalledHeads.isEmpty() && failedHeads() == 0 && (configuredHeads == 0 || running > 0))
         if (stalledHeads.isNotEmpty()) {
             put(
                 "turnPathStalled",
@@ -443,8 +454,7 @@ internal class ControlPayloads( // internal (was private) so ControlHealthTest c
         // startDaemonHeads) — NOT readyHeads == heads: a start-failed head stays in `heads`
         // forever with running=false, so the old equality-wait spun forever on a degraded boot
         // (review 2026-07-22 round 3).
-        val ready = heads.values.count { it.head.healthSnapshot().running }
-        put("readyHeads", ready)
+        put("readyHeads", running)
         put("failedHeads", failedHeads())
         // JW-04: the booted config identity — an edited splice.toml used to be silently inert
         // (topology loads once by design; nothing anywhere compared disk to boot). Stale is

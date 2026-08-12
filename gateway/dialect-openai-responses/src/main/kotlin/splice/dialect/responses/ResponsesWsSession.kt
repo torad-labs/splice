@@ -96,8 +96,15 @@ internal class ResponsesWsSession {
     fun epochOf(key: String): Long = synchronized(lock) { epochs[key] ?: seq }
 
     /**
-     * Build the frame for this round. [request] is the full request the builder produced.
-     * Returns the incremental frame when every chaining precondition holds, else the full frame.
+     * Build the frame for this round — the incremental one when every chaining precondition holds,
+     * else the full frame. [request] is the full request the builder produced.
+     *
+     * TESTS ONLY; production must call [frameAndEpoch], and the `kt-ws-frame-without-epoch` wall
+     * enforces that on src/main. Pairing this with a separate [epochOf] is the F7 defect: two lock
+     * acquisitions leave a window where a concurrent [cleared] bumps the epoch after the frame was
+     * built on invalidated context, and the captured post-bump epoch still matches at commit. There
+     * is no correct way to use this inside a round; it survives only because ~17 unit tests build
+     * frames without ever committing them, which is safe.
      */
     fun frameFor(key: String, request: JsonObject, generation: Long): WsFrame =
         frameAndEpoch(key, request, generation).frame

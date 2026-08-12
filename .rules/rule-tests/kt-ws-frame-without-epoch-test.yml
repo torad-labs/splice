@@ -1,0 +1,11 @@
+id: kt-ws-frame-without-epoch
+valid:
+  # the atomic accessor is the whole point
+  - 'val built = session.frameAndEpoch(chain, request, conn.generation)'
+  - 'val e = session.epochOf(chain)'
+invalid:
+  - 'val frame = session.frameFor(chain, request, conn.generation)'
+  # the two-acquisition pairing this exists to stop
+  - |
+    val frame = session.frameFor(chain, request, conn.generation)
+    pending = PendingCommit(request, conn.generation, session.epochOf(chain))

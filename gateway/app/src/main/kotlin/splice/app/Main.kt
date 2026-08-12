@@ -122,8 +122,12 @@ internal fun runBoundedTeardown(deadlineMs: Long, halt: () -> Unit, teardown: ()
     halted.set(true)
 }
 
-// Below the CLI's 15s stop-poll budget (ControlPlaneClient) so a bounded stop is never mistaken for a
-// hung one, and above the head-stop phase's HEAD_STOP_BUDGET_MS so the graceful path wins the common case.
+// The cooperative cap. Its floor — this + TEARDOWN_TAIL_GRACE_MS = 10s — must stay BELOW the CLI's
+// graceful stop rung (ControlPlaneClient.GRACEFUL_POLLS, 11s), so a bounded stop is never mistaken
+// for a hung one and SIGTERM cannot land mid-tail. The two constants are a pair: change one, check
+// the other. (The comment here previously cited a 15s CLI budget that the escalation ladder
+// replaced, while the real rung had shrunk to exactly 8s — equal to this cap, zero margin.)
+// Also above the head-stop phase's HEAD_STOP_BUDGET_MS so the graceful path wins the common case.
 private const val STOP_DEADLINE_MS = 8_000L
 private const val TEARDOWN_TAIL_GRACE_MS = 2_000L
 

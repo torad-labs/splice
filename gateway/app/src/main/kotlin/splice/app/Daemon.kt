@@ -158,19 +158,26 @@ private fun assembleDaemonHeads(
     return failed
 }
 
+/** The two per-head probe sinks startDaemonHeads writes into (detekt LongParameterList). */
+internal data class HeadProbeSinks(
+    val authProbes: MutableMap<String, AuthProbeLoop>,
+    val turnPathStalled: java.util.concurrent.ConcurrentHashMap<String, Boolean>,
+)
+
 private suspend fun startDaemonHeads(
     heads: Map<String, ManagedHead>,
     failed: MutableMap<String, String>,
     probeScope: CoroutineScope,
     log: (String) -> Unit,
-    authProbes: MutableMap<String, AuthProbeLoop>,
+    sinks: HeadProbeSinks,
 ) {
     heads.forEach { (key, managed) ->
         runCatchingDaemonBoundary { managed.head.start() }.onFailure {
             failed[key] = "start failed: ${it.message}"
             log("[$key][boot] failed to start: ${it.message}\n")
         }
-        startAuthProbeIfRefreshable(key, managed.auth, probeScope, log, authProbes)
+        startAuthProbeIfRefreshable(key, managed.auth, probeScope, log, sinks.authProbes)
+        TurnPathProbeLoop(key, managed.head.port, sinks.turnPathStalled, log).start(probeScope)
     }
 }
 
@@ -297,6 +304,10 @@ public class Daemon(
     private val probeScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val authProbes = LinkedHashMap<String, AuthProbeLoop>()
 
+    // Turn-path liveness (2026-08-12): key -> stalled. Written by TurnPathProbeLoop, read by
+    // /health. The 91h wedge proved head liveness and head CONFIGURATION are different facts.
+    private val turnPathStalled = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
     public suspend fun start() {
         val cfg = config.getConfig()
         // TOML feeds ConfigService's topology layer; state/env/runtime override it consistently.
@@ -327,11 +338,12 @@ public class Daemon(
             topologyDigest = topologyDigest,
             configPath = topologyPath?.toString().orEmpty(),
             topologyStale = topologyStaleProbe(topologyPath, topologyDigest),
+            turnPathStalled = { turnPathStalled.filterValues { it }.keys.sorted() },
         )
         control = srv
         // Start heads BEFORE opening the control plane so a launch-shim that sees /health and
         // immediately POSTs /launch/<head> does not race a still-binding head (503 head is not running).
-        startDaemonHeads(heads, failed, probeScope, log, authProbes)
+        startDaemonHeads(heads, failed, probeScope, log, HeadProbeSinks(authProbes, turnPathStalled))
         // Defense in depth for the restart-into-a-still-bound-port race (BS-4 DEFECT B): unlike the
         // per-head starts above, an uncaught EADDRINUSE here (a prior daemon that freed the lock but
         // not yet the control port) would crash the new daemon to /dev/null, leaving zero serving.

@@ -92,10 +92,20 @@ public class ControlServer(
     private val topologyDigest: String = "",
     private val configPath: String = "",
     private val topologyStale: () -> Boolean = { false },
+    private val turnPathStalled: () -> List<String> = { emptyList() },
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val payloads =
-        ControlPayloads(heads, config, failedHeads, configuredHeads, topologyDigest, configPath, topologyStale)
+        ControlPayloads(
+            heads,
+            config,
+            failedHeads,
+            configuredHeads,
+            topologyDigest,
+            configPath,
+            topologyStale,
+            turnPathStalled,
+        )
 
     @Volatile
     private var server: EmbeddedServer<NettyApplicationEngine, *>? = null
@@ -398,7 +408,7 @@ private class StatuslineBodyTooLarge : RuntimeException()
 // PORT-OF server/src/control/api.mjs payload shapes @ pre-public-port-baseline — the read-only JSON builders for the
 // control API, split out of ControlServer so the server class stays focused on routing/lifecycle.
 // The P4-WEBUI wire field names (the dashboard contract) live here.
-private class ControlPayloads(
+internal class ControlPayloads( // internal (was private) so ControlHealthTest can pin the ok/stall contract
     private val heads: Map<String, ManagedHead>,
     private val config: ConfigService,
     private val failedHeads: () -> Int,
@@ -406,9 +416,19 @@ private class ControlPayloads(
     private val topologyDigest: String = "",
     private val configPath: String = "",
     private val topologyStale: () -> Boolean = { false },
+    private val turnPathStalled: () -> List<String> = { emptyList() },
 ) {
     fun controlHealthJson(): String = buildJsonObject {
-        put("ok", true)
+        // ok means "a turn can complete", not "heads are configured" — the 91h wedge served
+        // ok:true for its entire duration under the old hardcoded value (2026-08-12).
+        val stalledHeads = turnPathStalled()
+        put("ok", stalledHeads.isEmpty())
+        if (stalledHeads.isNotEmpty()) {
+            put(
+                "turnPathStalled",
+                kotlinx.serialization.json.JsonArray(stalledHeads.map { kotlinx.serialization.json.JsonPrimitive(it) }),
+            )
+        }
         put("version", GATEWAY_VERSION)
         put("wantShimVersion", SHIM_VERSION)
         // Configured total, NOT heads.size (assembled only) — see the ControlServer ctor comment.

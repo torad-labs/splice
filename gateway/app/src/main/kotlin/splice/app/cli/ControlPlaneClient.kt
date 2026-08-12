@@ -16,6 +16,7 @@ import splice.core.util.runCatchingCancellable
 import splice.core.util.str
 import java.net.HttpURLConnection
 import java.net.URI
+import kotlin.streams.toList
 
 internal object ControlPlaneClient {
     private val json = Json { ignoreUnknownKeys = true }
@@ -78,15 +79,58 @@ internal object ControlPlaneClient {
      *  (read-timeout) before it 2xx's, so the POST outcome is NOT the signal — the stop poll is.
      *  Failure is reported only when the port is still bound after the whole poll budget. */
     fun stopDaemon(port: Int, key: String): Boolean {
+        // The POST outcome is fire-and-observe for TRANSPORT errors (a graceful teardown drops the
+        // connection mid-response) — but an AUTH failure must be surfaced, not discarded: a 401
+        // here means shutdownDaemon() never ran, and the old code silently polled 15s watching a
+        // daemon nobody had asked to stop, then told the operator to "terminate manually"
+        // (observed twice on 2026-08-11).
         runCatchingCancellable {
-            request("http://127.0.0.1:$port/api/daemon/shutdown", method = "POST", bearer = key) { true }
-        }.discard("POST may fail on graceful teardown; the stop poll below is the real stop signal")
-        repeat(STOP_POLLS) {
+            request("http://127.0.0.1:$port/api/daemon/shutdown", method = "POST", bearer = key) { conn ->
+                if (conn.responseCode == HTTP_UNAUTHORIZED || conn.responseCode == HTTP_FORBIDDEN) {
+                    println(
+                        "splice: shutdown request REJECTED (${conn.responseCode}) — the mgmt key on disk " +
+                            "does not match the running daemon's; escalating to signals",
+                    )
+                }
+                true
+            }
+        }.discard("transport failure on graceful teardown is expected; the poll + ladder below decide")
+
+        // Escalation ladder. Each rung only advances when the LISTENER is still bound — port
+        // release is the sole success signal (BS-4). SIGTERM engages the daemon's own shutdown
+        // hook, which carries an 8s cooperative stop and a 10s halt(0) floor, so the SIGTERM rung
+        // waits past that floor before reaching for SIGKILL.
+        if (pollStopped(port, GRACEFUL_POLLS)) return true
+        spliceDaemons().forEach {
+            println("splice: daemon pid ${it.pid()} ignored the shutdown request — sending SIGTERM")
+            it.destroy()
+        }
+        if (pollStopped(port, SIGTERM_POLLS)) return true
+        spliceDaemons().forEach {
+            println("splice: daemon pid ${it.pid()} survived SIGTERM past the halt floor — SIGKILL")
+            it.destroyForcibly()
+        }
+        return pollStopped(port, SIGKILL_POLLS)
+    }
+
+    private fun pollStopped(port: Int, polls: Int): Boolean {
+        repeat(polls) {
             if (stopped(port)) return true
             Thread.sleep(POLL_INTERVAL_MS)
         }
         return stopped(port)
     }
+
+    /** Every live splice DAEMON process, identified by cmdline. Matches both the installed jar
+     *  (splice.jar) and a dev-tree jar (app-all.jar); never anything else — the same scoping that
+     *  keeps the oracle harness's self-heal away from processes it does not own. */
+    private fun spliceDaemons(): List<ProcessHandle> = ProcessHandle.allProcesses()
+        .filter { ph ->
+            val cmd = ph.info().commandLine().orElse("")
+            cmd.contains("java") && cmd.contains("daemon") &&
+                (cmd.contains("splice.jar") || cmd.contains("app-all.jar"))
+        }
+        .toList()
 
     /** "Stopped" means the LISTENER is gone, not merely that /health went null: a daemon whose control
      *  server quit answering can still linger with the port bound on non-daemon Netty threads, and
@@ -128,6 +172,10 @@ internal object ControlPlaneClient {
         connection.inputStream.bufferedReader().use { it.readText() }
 
     private const val PROBE_TIMEOUT_MS = 400
-    private const val STOP_POLLS = 60
+    private const val GRACEFUL_POLLS = 32 // 8s: the daemon's own cooperative stop budget
+    private const val SIGTERM_POLLS = 48 // 12s: past the 10s halt(0) floor the SIGTERM hook guarantees
+    private const val SIGKILL_POLLS = 12 // 3s: kernel teardown + port release
+    private const val HTTP_UNAUTHORIZED = 401
+    private const val HTTP_FORBIDDEN = 403
     private const val POLL_INTERVAL_MS = 250L
 }

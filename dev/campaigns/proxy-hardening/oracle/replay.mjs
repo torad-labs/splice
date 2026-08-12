@@ -29,6 +29,7 @@
  */
 
 import http from 'node:http';
+import net from 'node:net';
 import { spawn, execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -89,6 +90,37 @@ function extractMock() {
 }
 
 // ── minimal field-wise deep diff for upstream request objects ────────────────
+/** True when something is already listening — used to fail closed on a leaked daemon. */
+function portInUse(port) {
+  return new Promise((resolve) => {
+    const sock = new net.Socket();
+    sock.setTimeout(400);
+    sock.once('connect', () => { sock.destroy(); resolve(true); });
+    sock.once('timeout', () => { sock.destroy(); resolve(false); });
+    sock.once('error', () => resolve(false));
+    sock.connect(port, '127.0.0.1');
+  });
+}
+
+/** SIGKILL a leaked ORACLE daemon holding [port]; true if one was killed. Scoped by cmdline to
+ *  the build-tree jar (app-all.jar) — the production daemon runs ~/.local/share/splice/splice.jar,
+ *  so the real gateway on :3099/:3096 is unreachable from here by construction. */
+function killLeakedOracleDaemon(port) {
+  try {
+    const out = execFileSync('ss', ['-ltnpH', `( sport = :${port} )`], { encoding: 'utf8' });
+    let killed = false;
+    for (const pid of new Set([...out.matchAll(/pid=(\d+)/g)].map((m) => m[1]))) {
+      const cmd = readFileSync(`/proc/${pid}/cmdline`, 'utf8').replace(/\0/g, ' ');
+      if (cmd.includes('app-all.jar') && cmd.includes('daemon')) {
+        console.error(`[preflight] killing oracle daemon pid ${pid} leaked by an earlier run (held :${port})`);
+        process.kill(Number(pid), 'SIGKILL');
+        killed = true;
+      }
+    }
+    return killed;
+  } catch { return false; }
+}
+
 function jsonDiff(exp, obs, path = '', out = []) {
   if (typeof exp !== typeof obs || (exp === null) !== (obs === null)) { out.push({ path, exp, obs }); return out; }
   if (Array.isArray(exp)) {
@@ -243,19 +275,52 @@ command = "claudex"
     CODEX_OAUTH_TOKEN_URL: `http://127.0.0.1:${mockPort}/oauth/token`,
   });
 
+  // PREFLIGHT (2026-08-11). These ports are FIXED, so a daemon leaked by an earlier interrupted
+  // run answers the health check while this run's own state dir stays empty — the run then dies
+  // on a missing mgmt-key, and one transient failure poisons every run after it (13 stale scratch
+  // dirs accumulated before this was caught). If the squatter is OUR OWN leaked oracle daemon
+  // (identified by the app-all.jar cmdline — production runs splice.jar, so this can never touch
+  // the real gateway), kill it and continue. Anything else on the port: refuse loudly.
+  for (const port of [HEAD_PORT, CONTROL_PORT]) {
+    if (!(await portInUse(port))) continue;
+    const killed = killLeakedOracleDaemon(port);
+    if (killed) {
+      for (let i = 0; i < 30 && await portInUse(port); i++) await sleep(100);
+    }
+    if (await portInUse(port)) {
+      throw Object.assign(
+        new Error(`port ${port} is held by a process that is not a leaked oracle daemon — refusing to validate against another process's gateway`),
+        { harness: true },
+      );
+    }
+  }
+
   const logFd = join(tmp, 'daemon.stdout.log');
   const daemon = spawn('java', ['-Xmx1024m', '-jar', JAR, 'daemon'], { env, stdio: ['ignore', 'pipe', 'pipe'] });
   let dlog = '';
   daemon.stdout.on('data', (c) => { dlog += c; });
   daemon.stderr.on('data', (c) => { dlog += c; });
   const dead = new Promise((r) => daemon.once('exit', (code) => r(code)));
+  // LAST LINE OF DEFENSE: whatever kills node — uncaught exception in the vendored mock's own
+  // handlers (the zstd crash), unhandled rejection, a signal — the daemon dies with us. This is
+  // what makes a harness crash cost one run instead of poisoning every run after it.
+  process.on('exit', () => { try { daemon.kill('SIGKILL'); } catch { /* already gone */ } });
+  // A rejecting twin of `dead` for the boot race ONLY. It must be marked handled immediately:
+  // if health wins the race, the daemon's LATER exit (including our own SIGTERM in cleanup)
+  // still triggers this rejection, and an unhandled rejection is fatal in modern node — the
+  // process died mid-cleanup with a bare "Node.js v24.16.0" tail, a 0-byte daemon.stdout.log,
+  // and a leaked daemon holding the fixed ports. That was the entire leak chain.
+  const deadBeforeHealthy = dead.then((code) => {
+    throw Object.assign(new Error(`daemon exited (${code}) before healthy`), { harness: true });
+  });
+  deadBeforeHealthy.catch(() => {}); // mark handled; the race keeps its own rejecting reference
 
   const verdicts = {};
   let exit = 0;
   try {
     await Promise.race([
       (async () => { await waitHttp(CONTROL_PORT, '/health'); await waitHttp(HEAD_PORT, '/health', 40).catch(() => waitHttp(HEAD_PORT, '/', 40)); })(),
-      dead.then((code) => { throw Object.assign(new Error(`daemon exited (${code}) before healthy`), { harness: true }); }),
+      deadBeforeHealthy,
     ]);
 
     const only = opt('--scenario');
@@ -322,8 +387,15 @@ command = "claudex"
     console.error(`HARNESS FAILURE: ${e.message}`);
     exit = 2;
   } finally {
+    // SIGTERM, bounded wait, then SIGKILL — and only trust the PORTS, not kill()'s return.
     daemon.kill('SIGTERM');
-    await Promise.race([dead, sleep(5000).then(() => daemon.kill('SIGKILL'))]);
+    await Promise.race([dead, sleep(5000)]);
+    if (daemon.exitCode === null) daemon.kill('SIGKILL');
+    await Promise.race([dead, sleep(2000)]);
+    for (let i = 0; i < 20 && (await portInUse(HEAD_PORT) || await portInUse(CONTROL_PORT)); i++) await sleep(100);
+    if (await portInUse(HEAD_PORT)) {
+      console.error(`WARNING: :${HEAD_PORT} still held after cleanup — the next replay will self-heal it.`);
+    }
     m.mock.close();
     writeFileSync(logFd, dlog);
   }
@@ -339,4 +411,15 @@ command = "claudex"
   return exit;
 }
 
-main().then((c) => process.exit(c), (e) => { console.error(e); process.exit(2); });
+main().then((c) => process.exit(c), (e) => {
+  // A harness-tagged throw is a HARNESS problem, not a gateway verdict — report it the same way
+  // the in-run failures are reported, so a leaked-port refusal reads as infrastructure and never
+  // as "the gateway diverged".
+  if (e && e.harness) {
+    console.error(`HARNESS FAILURE: ${e.message}`);
+    console.error('\nreplay: 0/0 scenarios byte-match the oracle (HARNESS FAILURE — not a gateway verdict)');
+  } else {
+    console.error(e);
+  }
+  process.exit(2);
+});

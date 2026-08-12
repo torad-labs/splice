@@ -131,6 +131,11 @@ public data class QuirksConfig(
      *  chaining (ws-transport). NULLABLE overlay — absent keeps the provider default (false), so
      *  the feature is invisible until an operator opts in. Any failure degrades to the SSE path. */
     @SerialName("websocket") val webSocket: Boolean? = null,
+    /** zstd-compress upstream request bodies (CX-03). NULLABLE overlay — absent keeps the
+     *  provider default (false: plaintext). Proven ONLY for ChatGPT, by codex-cli 0.145.0 itself
+     *  (content-encoding: zstd, 2.7x measured); xAI 400d on a compressed body 2026-07-18, so this
+     *  is opt-in per provider and never a global default. */
+    @SerialName("zstd_request_body") val zstdRequestBody: Boolean? = null,
     /** openai-chat only: emit reasoning_effort/reasoning fields (DeepSeek/xAI/OpenRouter-style
      *  backends read them). null keeps the provider's own default (true); set false for strict
      *  OpenAI-compatible vendors (Fireworks — issue #21) that 400 on unrecognized fields. */

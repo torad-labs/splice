@@ -1,0 +1,20 @@
+# JW-03 (2026-08-07): head-scoped log tags START with the [<headKey>] prefix. The per-head Logs
+# panel and `splice logs --head` filter daemon.log on the literal `[<headKey>]` substring
+# (LogFileSource); the legacy shapes — `[auth-probe:<key>]` and `[daemon] head '<key>' ...` — never
+# contain it, so every auth-probe transition, credential-refresh outcome and head boot failure
+# silently vanished from the one view that exists to show them.
+id: kt-head-log-prefix
+language: kotlin
+severity: error
+message: "Head-scoped log tags start with [<headKey>] — [auth-probe:key] / [daemon] head '<key>' shapes are invisible to the per-head log tail (JW-03)."
+note: >
+  Emit "[$key][auth-probe] ..." / "[$key][boot] ..." directly, or wrap the sink with
+  splice.core.util.headScopedLog(key, log) so provider-internal tags ([codex-auth] ...) gain the
+  head prefix at the injection point.
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  kind: string_literal
+  any:
+    - regex: '^"\[auth-probe:'
+    - regex: "^\"\\[daemon\\] head '"

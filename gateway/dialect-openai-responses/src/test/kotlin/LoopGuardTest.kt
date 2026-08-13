@@ -143,6 +143,60 @@ class LoopGuardTest {
         assertTrue(outputs[2].contains("File has been modified since read."))
     }
 
+    // CX-11: the structured signal. <tool_use_error> is a Claude Code formatting detail with no
+    // canary; is_error is Anthropic's documented field. Both must arm the guard, so a wording
+    // change upstream cannot silently disarm the circuit breaker.
+    private fun structured(repeats: Int, isError: Boolean, idPrefix: String = "s"): String {
+        val calls = StringBuilder()
+        for (i in 1..repeats) {
+            calls.append(
+                """{"role":"assistant","content":[{"type":"tool_use","id":"$idPrefix$i","name":"Edit",""" +
+                    """"input":{"file_path":"/x"}}]},""",
+            )
+            calls.append(
+                """{"role":"user","content":[{"type":"tool_result","tool_use_id":"$idPrefix$i",""" +
+                    """"content":"File has been modified since read.","is_error":$isError}]},""",
+            )
+        }
+        return calls.toString().trimEnd(',')
+    }
+
+    @Test
+    fun `is_error arms the guard with no marker text present`() {
+        val directives = analyze(body(structured(3, isError = true)))
+        assertEquals(setOf("s3"), directives.keys)
+        assertTrue(directives.getValue("s3").contains("3 times"))
+    }
+
+    @Test
+    fun `is_error false never arms even on identical repeats`() {
+        assertTrue(analyze(body(structured(5, isError = false))).isEmpty())
+    }
+
+    @Test
+    fun `is_error false wins over a marker the tool output happens to contain`() {
+        // A tool whose OUTPUT quotes the marker (a grep hit, a test log) is not a failed call.
+        // The client's structured verdict is authoritative; the string is only the fallback.
+        val calls = StringBuilder()
+        for (i in 1..3) {
+            calls.append(
+                """{"role":"assistant","content":[{"type":"tool_use","id":"q$i","name":"Bash",""" +
+                    """"input":{"cmd":"grep tool_use_error"}}]},""",
+            )
+            calls.append(
+                """{"role":"user","content":[{"type":"tool_result","tool_use_id":"q$i",""" +
+                    """"content":"<tool_use_error>matched in log</tool_use_error>","is_error":false}]},""",
+            )
+        }
+        assertTrue(analyze(body(calls.toString().trimEnd(','))).isEmpty())
+    }
+
+    @Test
+    fun `the marker still arms the guard when is_error is absent`() {
+        // The fallback stays live: a client that never sends is_error is unaffected by CX-11.
+        assertEquals(setOf("c3"), analyze(body(conversation(3))).keys)
+    }
+
     @Test
     fun `quirk off restores plain passthrough`() {
         val parsed = parseAnthropicBody(body(conversation(4)))

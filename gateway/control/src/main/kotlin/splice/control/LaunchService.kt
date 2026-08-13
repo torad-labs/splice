@@ -143,17 +143,28 @@ public class LaunchService(
             .distinct()
             .joinToString(",")
 
-    // opus/sonnet/haiku/fable → distinct models when the catalog offers them (else the pinned one).
-    // haiku is the "fast" tier, so it prefers a mini/fast model rather than whatever sorts last.
+    // opus/sonnet/haiku/fable → Claude Code's tier env slots. Prefer Codex 5.6 tier names when the
+    // catalog carries them (sol=frontier, terra=mid, luna=fast); otherwise fall back to catalog
+    // order, with haiku still preferring a mini/fast id. Fable shares the frontier (opus) slot —
+    // positional at(2) used to park it on luna whenever sol/terra/luna were listed in that order.
     private fun aliasSlots(spec: LaunchSpec): List<Pair<String, String>> {
         val ids = (listOf(spec.pinnedModel) + spec.availableModelIds).distinct()
         fun at(i: Int) = ids.getOrElse(i) { spec.pinnedModel }
-        val fast = ids.firstOrNull { it.contains("mini") || it.contains("fast") } ?: at(1)
+        fun named(tier: String): String? =
+            ids.firstOrNull { id ->
+                val tail = id.substringAfterLast('-', missingDelimiterValue = id)
+                tail.equals(tier, ignoreCase = true)
+            }
+        val frontier = named("sol") ?: ids.first()
+        val mid = named("terra") ?: at(1)
+        val fast = named("luna")
+            ?: ids.firstOrNull { it.contains("mini", ignoreCase = true) || it.contains("fast", ignoreCase = true) }
+            ?: at(1)
         return listOf(
-            "OPUS" to ids.first(),
-            "SONNET" to at(1),
+            "OPUS" to frontier,
+            "SONNET" to mid,
             "HAIKU" to fast,
-            "FABLE" to at(2),
+            "FABLE" to frontier,
         )
     }
 

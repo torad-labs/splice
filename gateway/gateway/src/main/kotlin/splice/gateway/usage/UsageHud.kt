@@ -22,6 +22,7 @@ import kotlinx.serialization.json.put
 import splice.core.usage.RateLimitState
 import splice.core.util.AsyncFileIo
 import splice.core.util.SecureFile
+import splice.core.util.firstLong
 import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
 import java.nio.file.Path
@@ -38,9 +39,10 @@ private const val OUTPUT_TOKENS = "output_tokens"
 private fun num(el: JsonElement?): Long? =
     (el as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong()
 
-/** First key whose value parses as a number — the ported alias-fallback chain, single-sourced. */
-private fun JsonObject.firstNum(vararg keys: String): Long? =
-    keys.firstNotNullOfOrNull { num(this[it]) }
+/** First key whose value parses as a number. CX-18: this chain moved to :core (JsonScalars
+ *  firstLong) so the dialects, the Responses harvest and this payload builder share ONE
+ *  definition; the local name is kept so the call sites below read unchanged. */
+private fun JsonObject.firstNum(vararg keys: String): Long? = firstLong(*keys)
 
 /** Usage aliases: Anthropic names + OpenAI Responses names + cached-token detail. */
 public data class TurnUsage(

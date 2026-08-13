@@ -60,6 +60,14 @@
         "summary": "detailed",
         "context": "all_turns"
     },
+    "text": {
+        "verbosity": "low"
+    },
+    "client_metadata": {
+        "client": "splice",
+        "session_id": "contract-fixture",
+        "thread_id": "splice-7d6e0aa0474b35db01b1f13cba38ea78"
+    },
     "stream_options": {
         "reasoning_summary_delivery": "sequential_cutoff"
     }

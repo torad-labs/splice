@@ -8,6 +8,7 @@ dependencies {
     api(libs.kotlinx.coroutines.core)
     api(libs.ktor.client.core)
     implementation(libs.ktor.client.java)
+    implementation(libs.zstd.jni)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.ktor.client.mock)
 }

@@ -7,7 +7,7 @@ public fun runCli(args: Array<String>): Int {
     val command = Command.parse(args) ?: run {
         System.err.println(
             "usage: splice [setup|status|restart|dashboard|login <head>|key <set|list|unset>|" +
-                "install|uninstall|init|doctor|daemon|version]",
+                "logs [--head <key>] [--tail N] [--follow]|install|uninstall|init|doctor|daemon|version]",
         )
         return 2
     }

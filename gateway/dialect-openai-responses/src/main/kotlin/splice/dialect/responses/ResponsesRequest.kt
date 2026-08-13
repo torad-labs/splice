@@ -29,6 +29,13 @@ internal data class ResponsesRequest(
     @SerialName("tool_choice") val toolChoice: JsonElement? = null,
     @SerialName("parallel_tool_calls") val parallelToolCalls: Boolean? = null,
     val reasoning: JsonObject? = null,
+    /** codex parity, measured from codex-cli 0.145.0 (2026-08-11): the real client sends
+     *  `text: {"verbosity": ...}`. Lite-only, which is where it was observed. */
+    val text: JsonObject? = null,
+    /** codex sends client_metadata with ITS identifiers (installation/window/thread/turn). We send
+     *  SPLICE's own — never impersonate the codex CLI: the backend may meter or route on these,
+     *  and claiming to be a client we are not is both dishonest and fragile. */
+    @SerialName("client_metadata") val clientMetadata: JsonObject? = null,
     /** Responses-native summary delivery (codex-rs sends it whenever a summary is requested);
      *  NOT the Chat-only stream_options.include_usage that broke codex 2026-07-18 — this named
      *  field is exactly the reviewable type change the closed DTO exists to force. */

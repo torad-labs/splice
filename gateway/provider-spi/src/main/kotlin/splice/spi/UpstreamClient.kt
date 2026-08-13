@@ -46,6 +46,10 @@ public class UpstreamClient(
     private val firstByteTimeoutMs: Long,
     private val totalTimeoutMs: Long,
     private val maxRetries: Int,
+    /** zstd-compress the request body (CX-03). DEFAULT OFF and set PER PROVIDER: measured on
+     *  codex-cli 0.145.0 against ChatGPT (2.7x), unproven anywhere else, and the sibling gzip ban
+     *  exists because xAI 400d on a compressed body and broke grok live on 2026-07-18. */
+    private val zstdRequestBody: Boolean = false,
     private val client: HttpClient = defaultClient(firstByteTimeoutMs, totalTimeoutMs),
     // Exponential backoff, ±10% jitter (codex shape — synchronized retry herds re-collide without
     // it), capped at MAX_BACKOFF_MS; a server Retry-After rides in as a FLOOR via minDelayMs (G3).
@@ -74,6 +78,16 @@ public class UpstreamClient(
     // attempt that observes a 429; while armed, every post() fails fast with a synthesized 429 and
     // ZERO upstream calls. Benign write race: concurrent arms only differ by ms; latest-max wins.
     private val rateLimitedUntilMs = AtomicLong(0L)
+
+    /** NF-01: head restart is a real escape hatch — HeadServer.startLocked() clears the armed
+     *  horizon alongside driver.resetHealth(), instead of the cooldown outliving the restart. */
+    public fun clearRateLimitCooldown() {
+        rateLimitedUntilMs.set(0L)
+    }
+
+    /** NF-01: remaining armed cooldown (0 when idle) — surfaced so doctor/status views can name
+     *  WHY a head is failing fast (NF-10/JW-11 read this). */
+    public val rateLimitedForMs: Long get() = maxOf(0L, rateLimitedUntilMs.get() - clock())
 
     /** The per-post collaborators threaded through every attempt (grouped: one cohesive argument). */
     private data class PostContext(
@@ -115,13 +129,13 @@ public class UpstreamClient(
     ): T {
         val ctx = PostContext(url, auth, extraHeaders, onRetry, perf, clientFrameEmitted, amendBodyOnFailure)
         // Encode ONCE; retries resend the same bytes (no per-attempt string re-encode). Never gzip.
-        var body = RequestBody(bodyJson)
+        var body = RequestBody(bodyJson, zstdRequestBody)
         val state = RetryState()
         val t0 = clock()
         while (state.attempt < maxRetries) {
             when (val step = runAttempt(ctx, body, state, t0, block)) {
                 is LoopStep.Done -> return step.value
-                is LoopStep.Amend -> body = RequestBody(step.bodyJson)
+                is LoopStep.Amend -> body = RequestBody(step.bodyJson, zstdRequestBody)
                 LoopStep.Continue -> Unit
             }
         }
@@ -129,8 +143,22 @@ public class UpstreamClient(
     }
 
     /** The current request payload: json for the RC-4 amender, bytes for the wire — encoded once. */
-    private data class RequestBody(val json: String) {
-        val bytes: ByteArray = json.toByteArray(Charsets.UTF_8)
+    /** [json] for the RC-4 amender; [bytes] for the wire, encoded once.
+     *
+     *  ZSTD (CX-03, 2026-08-11): measured from codex-cli 0.145.0, which sends
+     *  `content-encoding: zstd` to this exact endpoint — 73,473 bytes compressed to 27,590 (2.7x).
+     *  The 2.7x is PER SSE-PATH TURN only: on a head with `websocket = true` (codex, live) the
+     *  chained majority of rounds ride raw WsUpstream text frames that never reach this method, so
+     *  compression covers the SSE-fallback minority. Codex-head bandwidth is dominated by WS, not
+     *  this path — see the CX-03 follow-up on compressing WS frames if the wire cost is the goal.
+     *
+     *  PER-PROVIDER AND DEFAULT OFF, deliberately: the no-compression rule exists because xAI 400d
+     *  on a GZIPPED body and broke grok live on 2026-07-18. This is zstd, not gzip, and it is
+     *  proven only for ChatGPT by its own first-party client — so it is opt-in per provider and
+     *  the gzip ban stands untouched. */
+    private data class RequestBody(val json: String, val zstd: Boolean = false) {
+        val bytes: ByteArray =
+            json.toByteArray(Charsets.UTF_8).let { if (zstd) com.github.luben.zstd.Zstd.compress(it) else it }
     }
 
     /** Mutable loop state threaded through [runAttempt] — extracted (with it) so `post()` stays
@@ -339,7 +367,10 @@ public class UpstreamClient(
         val allHeaders = applyAuth(creds, ctx.extraHeaders(creds))
         val statement = client.preparePost(ctx.url) {
             contentType(ContentType.Application.Json)
-            headers { allHeaders.forEach { (k, v) -> append(k, v) } }
+            headers {
+                allHeaders.forEach { (k, v) -> append(k, v) }
+                if (zstdRequestBody) append("Content-Encoding", "zstd")
+            }
             setBody(ByteArrayContent(bodyBytes, ContentType.Application.Json))
         }
         return statement.execute { resp ->
@@ -356,10 +387,6 @@ public class UpstreamClient(
             }
         }
     }
-
-    /** Seconds-form Retry-After → ms; HTTP-date form and garbage → null (backoff curve decides). */
-    private fun retryAfterMs(header: String?): Long? =
-        header?.trim()?.toLongOrNull()?.takeIf { it >= 0 }?.times(MS_PER_S)
 
     /** Cross-attempt wall-clock budget (route-timeout analog to the per-try [firstByteTimeoutMs]). */
     private fun deadlineExceeded(t0: Long): Boolean = clock() - t0 >= totalTimeoutMs
@@ -404,7 +431,16 @@ public class UpstreamClient(
         // fast instead of each burning their own attempts into the same limited account
         // (latest-max wins; the benign race only shifts the horizon by ms).
         if (failed.status == RATE_LIMITED) {
-            val until = clock() + (failed.retryAfterMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS)
+            // NF-01: arm at most MAX_RATE_LIMIT_COOLDOWN_MS — the full pushback is not lost, it
+            // rides in the upstream body this GIVE_UP surfaces; only the fail-fast horizon clamps.
+            val pushbackMs = failed.retryAfterMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS
+            if (pushbackMs > MAX_RATE_LIMIT_COOLDOWN_MS) {
+                ctx.onRetry(
+                    "429 Retry-After ${pushbackMs}ms exceeds the cooldown ceiling — " +
+                        "arming ${MAX_RATE_LIMIT_COOLDOWN_MS}ms",
+                )
+            }
+            val until = clock() + minOf(pushbackMs, MAX_RATE_LIMIT_COOLDOWN_MS)
             rateLimitedUntilMs.accumulateAndGet(until) { current, candidate -> maxOf(current, candidate) }
             // A concurrent wave can receive 429 before any member sees the shared cooldown.
             // Retrying each member would amplify one upstream limit into N×maxRetries requests;
@@ -586,7 +622,6 @@ public class UpstreamClient(
             status == RATE_LIMITED || status == REQUEST_TIMEOUT ||
                 (status in SERVER_ERRORS && status != NOT_IMPLEMENTED)
 
-        private const val MS_PER_S = 1000L
         private const val MAX_BACKOFF_MS = 10_000L
 
         // 60s→15s (2026-07-19 storm): a wait the CLIENT would outlive is the client's to make.
@@ -598,6 +633,14 @@ public class UpstreamClient(
         // {"detail":"Rate limit exceeded"}). Long enough to starve a herd, short enough that a
         // recovered account resumes within one client-retry cycle.
         private const val DEFAULT_RATE_LIMIT_COOLDOWN_MS = 20_000L
+
+        // NF-01: ceiling on the ARMED horizon, whatever the pushback says. ChatGPT quota errors
+        // legitimately carry multi-day resets (142h observed 2026-07-26) and accumulateAndGet(max)
+        // makes the longest value ever seen win permanently — one malformed pushback would poison
+        // the head for every future turn with no operator escape short of killing the daemon.
+        // 120s starves a herd but lets a recovering account resume inside one client-retry cycle;
+        // the true pushback still reaches the operator in the surfaced upstream body.
+        private const val MAX_RATE_LIMIT_COOLDOWN_MS = 120_000L
         private const val JITTER_LO = 0.9
         private const val JITTER_HI = 1.1
 
@@ -681,3 +724,22 @@ public class UpstreamFailed(
     public val body: String,
     public val status: Int? = null,
 ) : RuntimeException("upstream failed after retries (status=$status)")
+
+private const val MS_PER_S = 1000L
+
+/** Retry-After → ms, both RFC 7231 forms; garbage → null (backoff curve decides). Strict seconds
+ *  FIRST so nothing on the pre-NF-04 path changes; the HTTP-date fallback (NF-04: Cloudflare and
+ *  gateway fronts emit it) converts against the WALL clock deliberately — an HTTP-date is wall
+ *  time, MonoClock has no epoch — clamping past dates to 0. A skewed clock can only inflate the
+ *  delta into NF-01's 120s cooldown ceiling / the 15s give-up, never wedge the head.
+ *  Top-level (not an UpstreamClient method): the class sits at its detekt function budget. */
+private fun retryAfterMs(header: String?, nowEpochMs: () -> Long = System::currentTimeMillis): Long? {
+    val value = header?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+    value.toLongOrNull()?.let { seconds -> return seconds.takeIf { it >= 0 }?.times(MS_PER_S) }
+    return try {
+        val at = java.time.ZonedDateTime.parse(value, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME)
+        (at.toInstant().toEpochMilli() - nowEpochMs()).coerceAtLeast(0L)
+    } catch (ignored: java.time.format.DateTimeParseException) {
+        null // not seconds, not an HTTP-date: garbage stays null BY CONTRACT — the curve decides
+    }
+}

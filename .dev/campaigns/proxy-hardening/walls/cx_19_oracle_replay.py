@@ -86,6 +86,36 @@ def _grade_status(ident: str, row: Mapping, counts: dict, problems: list) -> Non
         problems.append(f"BAD STATUS   {ident}: unknown status '{status}'")
 
 
+# The field the RUNNER reads to decide whether an observed value is the sanctioned one. A row that
+# carries neither is a WILDCARD in replay.mjs: isSanctioned() matched the leaf and accepted any
+# value at all, at any depth. Naming them here is what keeps the two checkers on the same field.
+_RUNNER_PINS = ("pinned_value", "expected_without_session_header")
+
+
+def _grade_divergence_pin(ident: str, row: Mapping, problems: list) -> None:
+    """A sanctioned DIVERGENCE must pin bytes the runner can actually enforce.
+
+    Before this (review 2026-08-12) the wall required `pinned_sha256` while replay.mjs read
+    `pinned_value` / `expected_without_session_header` — two checkers, two different fields, both
+    reporting green over a row that sanctioned every observed value. Requiring the sha to be the
+    hash OF the runner-readable pin makes drift between them structurally impossible, and caught a
+    live defect on day one: the prompt_cache_key row's `pinned_sha256` was 32 hex characters (the
+    cache-key suffix, pasted) and had never been a hash of anything.
+    """
+    if row.get("status") != SANCTIONED:
+        return
+    pin = next((str(row[k]) for k in _RUNNER_PINS if str(row.get(k, "")).strip()), None)
+    if pin is None:
+        problems.append(f"WILDCARD     {ident}: sanctioned with no {' / '.join(_RUNNER_PINS)} — the "
+                        "runner would accept ANY observed value at this field")
+        return
+    declared = str(row.get("pinned_sha256", "")).strip()
+    actual = hashlib.sha256(pin.encode("utf-8")).hexdigest()
+    if declared and declared != actual:
+        problems.append(f"PIN MISMATCH {ident}: pinned_sha256 is not the sha256 of the pinned value "
+                        f"(declared {declared[:16]}…, actual {actual[:16]}…)")
+
+
 def detect(rows: list[dict], on_disk: set[str], manifest: Mapping[str, dict],
            digests: Mapping[str, str], server_present: bool,
            divergences: list[dict] | None = None) -> tuple[list[str], dict]:
@@ -123,6 +153,7 @@ def detect(rows: list[dict], on_disk: set[str], manifest: Mapping[str, dict],
         if not str(d.get("field", "")).strip():
             problems.append(f"NO FIELD     {ident}: a divergence row without a field cannot be tracked or retired")
         _grade_status(ident, d, counts, problems)
+        _grade_divergence_pin(ident, d, problems)
     return problems, counts
 
 
@@ -182,6 +213,15 @@ def selftest() -> int:
         ("divergence uncited", {"field": "f.x", "status": SANCTIONED, "pinned_sha256": "p"}, "UNCITED"),
         ("divergence unpinned", {"field": "f.x", "status": SANCTIONED, "authority": "PR#58"}, "UNPINNED"),
         ("divergence fieldless", {"status": SANCTIONED, "authority": "PR#58", "pinned_sha256": "p"}, "NO FIELD"),
+        # 2026-08-12: a sanction the RUNNER cannot enforce. This shape satisfied every wall check
+        # while replay.mjs accepted any value at all at that leaf — two checkers, two fields, both
+        # green over an unmonitored hole.
+        ("divergence wildcard", {"field": "f.x", "status": SANCTIONED, "authority": "PR#58",
+                                 "pinned_sha256": "p"}, "WILDCARD"),
+        # ...and the sha must actually BE the hash of that pin (the live prompt_cache_key row
+        # carried a 32-char cache-key suffix in the sha256 field and nothing ever noticed).
+        ("divergence pin mismatch", {"field": "f.x", "status": SANCTIONED, "authority": "PR#58",
+                                     "pinned_value": "v", "pinned_sha256": "deadbeef"}, "PIN MISMATCH"),
     ]:
         got, _ = detect([{"name": "s1", "status": PASSING, "proof": "replay"}], {"s1"}, man, {"s1": sha_a},
                         True, divergences=[div])
@@ -192,7 +232,8 @@ def selftest() -> int:
          {"s1"}, man, {"s1": sha_a}, True, False)
     got, _ = detect(
         [{"name": "s1", "status": PASSING, "proof": "replay 2026-08-07"}], {"s1"}, man, {"s1": sha_a}, True,
-        divergences=[{"field": "f.x", "status": SANCTIONED, "authority": "PR#58", "pinned_sha256": "p"}],
+        divergences=[{"field": "f.x", "status": SANCTIONED, "authority": "PR#58",
+                      "pinned_value": "v", "pinned_sha256": "4c94485e0c21ae6c41ce1dfe7b6bfaceea5ab68e40a2476f50208e526f506080"}],
     )
     if got:
         fails.append(f"green passing+divergence: must be GREEN, got {got}")

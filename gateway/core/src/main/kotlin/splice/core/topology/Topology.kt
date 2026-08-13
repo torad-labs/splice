@@ -30,7 +30,17 @@ public data class Topology(
     /** The single topology key for [name], or null when unknown OR ambiguous (several heads share
      *  the wrapper command). Callers that must tell those apart use [resolveHeadKeys]. */
     public fun resolveHeadKey(name: String): String? = resolveHeadKeys(name).singleOrNull()
+
+    /** JW-13: ports mapped to the >1 heads that share them — the port analogue of the
+     *  wrapper-command collision install already validates. A copy-pasted [heads.X] with an
+     *  unchanged port otherwise surfaces only as an opaque per-head "Address already in use". */
+    public fun portCollisions(): Map<Int, List<String>> =
+        heads.entries.groupBy({ it.value.port }, { it.key }).filterValues { it.size > 1 }
 }
+
+/** Names both heads and the port so the operator sees the collision, not a phantom bind error. */
+public fun portCollisionMessage(port: Int, keys: List<String>): String =
+    "port $port is claimed by ${keys.joinToString(" and ")} — give each head its own port"
 
 /** Distinct-from-"unknown-head" message for the ambiguous case: [keys] heads all map to [command].
  *  Naming both heads points the operator at the topology collision instead of a phantom head. */
@@ -121,6 +131,11 @@ public data class QuirksConfig(
      *  chaining (ws-transport). NULLABLE overlay — absent keeps the provider default (false), so
      *  the feature is invisible until an operator opts in. Any failure degrades to the SSE path. */
     @SerialName("websocket") val webSocket: Boolean? = null,
+    /** zstd-compress upstream request bodies (CX-03). NULLABLE overlay — absent keeps the
+     *  provider default (false: plaintext). Proven ONLY for ChatGPT, by codex-cli 0.145.0 itself
+     *  (content-encoding: zstd, 2.7x measured); xAI 400d on a compressed body 2026-07-18, so this
+     *  is opt-in per provider and never a global default. */
+    @SerialName("zstd_request_body") val zstdRequestBody: Boolean? = null,
     /** openai-chat only: emit reasoning_effort/reasoning fields (DeepSeek/xAI/OpenRouter-style
      *  backends read them). null keeps the provider's own default (true); set false for strict
      *  OpenAI-compatible vendors (Fireworks — issue #21) that 400 on unrecognized fields. */

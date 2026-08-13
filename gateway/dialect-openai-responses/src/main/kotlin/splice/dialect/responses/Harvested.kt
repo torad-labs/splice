@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.turn.ToolSearchCall
 import splice.core.turn.Usage
+import splice.core.util.firstLong
 import splice.core.util.strOrEmpty
 
 public data class Harvested(val text: String, val thinking: String)
@@ -120,18 +121,15 @@ private const val TYPE_TOOL_SEARCH_CALL = "tool_search_call"
  *  with the flat cache_read_input_tokens as the fallback) — so the real cache hit rate is visible. */
 public fun usageFrom(resp: JsonObject?): Usage {
     val usage = resp?.get("usage") as? JsonObject ?: return Usage()
-    fun num(obj: JsonObject, vararg keys: String): Long = keys.firstNotNullOfOrNull {
-        (obj[it] as? JsonPrimitive)?.content?.toLongOrNull()
-    } ?: 0L
     val details = usage["input_tokens_details"] as? JsonObject
-    val cached = details?.let { num(it, "cached_tokens") }?.takeIf { it > 0 }
-        ?: num(usage, "cache_read_input_tokens")
+    val cached = details?.firstLong("cached_tokens")?.takeIf { it > 0 }
+        ?: usage.firstLong("cache_read_input_tokens") ?: 0L
     // output_tokens_details.reasoning_tokens carries the 518n-2 truncation fingerprint; absent on
     // non-reasoning backends (→ 0 → never fold).
-    val reasoning = (usage["output_tokens_details"] as? JsonObject)?.let { num(it, "reasoning_tokens") } ?: 0L
+    val reasoning = (usage["output_tokens_details"] as? JsonObject)?.firstLong("reasoning_tokens") ?: 0L
     return Usage(
-        inputTokens = num(usage, "input_tokens", "prompt_tokens"),
-        outputTokens = num(usage, "output_tokens", "completion_tokens"),
+        inputTokens = usage.firstLong("input_tokens", "prompt_tokens") ?: 0L,
+        outputTokens = usage.firstLong("output_tokens", "completion_tokens") ?: 0L,
         cachedTokens = cached,
         reasoningTokens = reasoning,
     )

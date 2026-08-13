@@ -72,6 +72,10 @@ public class ConfigService(
         file = fileLayer(),
         env = envLayer(),
         runtime = synchronized(runtimeLock) { runtimeLayer.toMap() },
+        // JW-06: [heads.<key>.overrides] folds into mergedRaw but was invisible here — the
+        // dashboard's provenance feature was silently wrong for exactly the heads that were
+        // tuned. Heads with no overrides are absent (the webui renders only what differs).
+        perHead = perHeadOverrides.filterValues { it.isNotEmpty() }.mapValues { (_, v) -> coerceAll(v) },
     )
 
     // The guard cascade is the literal port of config.mjs's patch loop (each `when` arm is one of
@@ -387,6 +391,9 @@ public data class ConfigLayers(
     val file: Map<String, Any?>,
     val env: Map<String, Any?>,
     val runtime: Map<String, Any?>,
+    /** JW-06: headKey -> its [heads.<key>.overrides] knobs, precedence position directly above
+     *  the global TOML layer (mergedRaw's real order). Empty when no head overrides anything. */
+    val perHead: Map<String, Map<String, Any?>> = emptyMap(),
 )
 
 public data class PatchResult(

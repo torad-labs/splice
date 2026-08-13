@@ -37,6 +37,9 @@ public sealed class Command {
     public data class Key(val args: List<String>) : Command() {
         override fun run(): Int = outcomeExitCode(key(args))
     }
+    public data class Logs(val args: List<String>) : Command() {
+        override fun run(): Int = outcomeExitCode(logs(args))
+    }
 
     public companion object {
         // parse table (verb -> factory): a map keeps parse() at trivial complexity (no 10-arm `when`,
@@ -50,6 +53,7 @@ public sealed class Command {
             "setup" to { Setup }, "status" to { Status }, "restart" to { Restart },
             "dashboard" to { Dashboard },
             "key" to { a -> Key(a.drop(1)) },
+            "logs" to { a -> Logs(a.drop(1)) },
         )
 
         /** argv -> Command, or null for an unknown/empty verb (caller prints usage). */

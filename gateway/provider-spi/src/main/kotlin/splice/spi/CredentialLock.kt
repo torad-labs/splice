@@ -13,46 +13,111 @@
 package splice.spi
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.nio.channels.FileChannel
+import java.nio.channels.FileLock
+import java.nio.channels.OverlappingFileLockException
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.random.Random
 
 /** Serializes a credential-file refresh across processes (FileLock) and threads (per-path Mutex). */
 public object CredentialLock {
+
+    // SH-06: bounded wait. The old blocking whole-file lock call was justified by POSIX auto-release on
+    // a DEAD peer — true, but the real case is a LIVE slow peer: the refresh HTTP hop runs inside
+    // the lock (3 attempts x 30s timeouts + backoff ≈ 96s hold), parking every blocking-tier
+    // credentials() call here. 15s is comfortably above a healthy refresh RTT, well below the
+    // pathological hold. On expiry the refresh runs UNLOCKED (kimi-cli's judgment: bounded beats
+    // hung) — G1's other three layers (re-read inside the lock, peer-rotation adoption by token
+    // identity, one-shot reread-on-rejection) are precisely the defence for the residual race.
+    public const val CREDENTIAL_LOCK_WAIT_MS: Long = 15_000L
+    private const val POLL_BASE_MS = 50L
+    private const val POLL_MAX_MS = 1_000L
+    private const val JITTER_LO = 0.9
+    private const val JITTER_HI = 1.1
+    private const val CONTENTION_LOG_MS = 1_000L
 
     // One Mutex per credential path — the intra-JVM half (a FileLock alone would throw
     // OverlappingFileLockException on a same-JVM overlap instead of queueing). Bounded: one entry per
     // distinct authPath (≤3 per process), so no unbounded growth / no eviction needed.
     private val inProcess = ConcurrentHashMap<Path, Mutex>()
 
-    /** Runs [block] while holding an exclusive cross-process lock on `<path>.lock`, released after. */
-    public suspend fun <T> withLock(path: Path, block: suspend () -> T): T =
+    /** Runs [block] while holding an exclusive cross-process lock on `<path>.lock` — or, after
+     *  [waitMs] of a peer refusing to yield, WITHOUT it, honestly logged (SH-06). [log] surfaces
+     *  contention (waits over 1s) and the unlocked degrade; production wires the head log. */
+    public suspend fun <T> withLock(
+        path: Path,
+        waitMs: Long = CREDENTIAL_LOCK_WAIT_MS,
+        log: (String) -> Unit = {},
+        block: suspend () -> T,
+    ): T =
         inProcess.computeIfAbsent(path) { Mutex() }.withLock {
-            withFileLock(path, block)
+            withFileLock(path, waitMs, log, block)
         }
 
-    private suspend fun <T> withFileLock(path: Path, block: suspend () -> T): T {
+    private suspend fun <T> withFileLock(
+        path: Path,
+        waitMs: Long,
+        log: (String) -> Unit,
+        block: suspend () -> T,
+    ): T {
         // Lock a SIBLING `<name>.lock` file, NEVER the credential file itself — an advisory lock on
         // the auth JSON would make a plain read of it block, which must never happen.
         val lockPath = path.resolveSibling("${path.fileName}.lock")
         val channel = FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE)
         try {
-            // channel.lock() BLOCKS a real thread until a peer PROCESS releases (POSIX auto-releases
-            // the lock if the holding process dies, so a crashed peer can't wedge it — no timeout knob
-            // needed). Push it to the IO pool so it never parks a shared coroutine-dispatcher thread.
-            // Fixed process-wide primitive, not a caller-injectable seam; the IO pool owns the block.
-            val lock = withContext(Dispatchers.IO) { channel.lock() }
+            // tryLock is non-blocking; the poll loop delays on the IO context so no shared
+            // coroutine-dispatcher thread ever parks (the old blocking lock() parked a real one).
+            val lock = withContext(Dispatchers.IO) { acquireBounded(channel, lockPath, waitMs, log) }
             try {
                 return block()
             } finally {
-                lock.release()
+                lock?.release()
             }
         } finally {
             channel.close()
         }
     }
+
+    /** Jittered tryLock poll up to [waitMs]; null = budget spent, caller proceeds UNLOCKED.
+     *  OverlappingFileLockException reads as "held by this JVM through another channel" (the
+     *  official CLIs normally contend as separate processes; a same-JVM holder shows up in tests
+     *  and in any future shared-path topology) — held is held, keep polling. */
+    private suspend fun acquireBounded(
+        channel: FileChannel,
+        lockPath: Path,
+        waitMs: Long,
+        log: (String) -> Unit,
+    ): FileLock? {
+        val t0 = System.nanoTime()
+        var backoffMs = POLL_BASE_MS
+        while (true) {
+            val waited = (System.nanoTime() - t0) / NANOS_PER_MS
+            val lock = try {
+                channel.tryLock()
+            } catch (ignored: OverlappingFileLockException) {
+                null // held by this JVM via another channel — same contention, same poll
+            }
+            if (lock != null) {
+                if (waited >= CONTENTION_LOG_MS) log("[credential-lock] waited ${waited}ms for a peer on $lockPath")
+                return lock
+            }
+            if (waited >= waitMs) {
+                log(
+                    "[credential-lock] waited ${waited}ms for a peer on $lockPath; proceeding unlocked — " +
+                        "bounded-and-unlocked beats hung; G1's re-read/adopt/reread-on-rejection layers cover the race",
+                )
+                return null
+            }
+            delay((backoffMs * Random.nextDouble(JITTER_LO, JITTER_HI)).toLong())
+            backoffMs = minOf(backoffMs * 2, POLL_MAX_MS)
+        }
+    }
+
+    private const val NANOS_PER_MS = 1_000_000L
 }

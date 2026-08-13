@@ -122,22 +122,64 @@ class UpstreamClientRetryPolicyTest {
     }
 
     @Test
-    fun `malformed retry-after falls back to the curve`() = runTest {
+    fun `garbage retry-after falls back to the curve`() = runTest {
+        // NF-04 REWRITE: the old fixture used an HTTP-date as its "malformed" header — that form
+        // is now PARSED (RFC 7231), so genuine garbage carries the null-means-curve contract.
         val calls = AtomicInteger()
         val capture = Capture()
         val engine = MockEngine {
             if (calls.incrementAndGet() == 1) {
-                respond(
-                    "busy",
-                    HttpStatusCode.ServiceUnavailable,
-                    headersOf("Retry-After", "Wed, 21 Oct 2026 07:28:00 GMT"),
-                )
+                respond("busy", HttpStatusCode.ServiceUnavailable, headersOf("Retry-After", "soon"))
             } else {
                 respond("fine", HttpStatusCode.OK, headersOf())
             }
         }
         assertEquals("ok", postOnce(clientOver(engine, capture)))
         assertEquals(listOf(0L), capture.minDelays) // no parseable floor — curve alone decides
+    }
+
+    @Test
+    fun `http-date retry-after is honoured - arms the cooldown like its seconds twin`() = runTest {
+        // NF-04: a date ~30s out behaves exactly like "Retry-After: 30" — give up at once
+        // (>15s interactive budget), arm the shared cooldown for the served horizon.
+        val httpDate = java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME
+            .format(java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC).plusSeconds(30))
+        var now = 0L
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            respond("slow down", HttpStatusCode.TooManyRequests, headersOf("Retry-After", httpDate))
+        }
+        val client = clientOver(engine, clock = { now })
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(1, calls.get()) // >15s pushback: no retry
+        now += 20_000 // past the 20s no-header default but inside the served ~30s
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(1, calls.get(), "a date-form pushback must arm its horizon, not the 20s guess")
+        now += 20_000 // comfortably past the served horizon (margin for test wall-clock drift)
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(2, calls.get())
+    }
+
+    @Test
+    fun `http-date retry-after in the past clamps to zero`() = runTest {
+        // NF-04: a stale date must not arm anything (negative deltas clamp to 0) — and must not
+        // be treated as garbage either (no accidental 20s default via the null path).
+        var now = 0L
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            respond(
+                "slow down",
+                HttpStatusCode.TooManyRequests,
+                headersOf("Retry-After", "Wed, 21 Oct 2020 07:28:00 GMT"),
+            )
+        }
+        val client = clientOver(engine, clock = { now })
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(1, calls.get())
+        assertThrows<UpstreamFailed> { postOnce(client) } // zero-length horizon: straight upstream
+        assertEquals(2, calls.get(), "a past date clamps to 0 — no cooldown, no 20s fallback")
     }
 
     // Shared 429 cooldown (2026-07-19 storm): one post's rate-limit discovery teaches the whole
@@ -166,7 +208,9 @@ class UpstreamClientRetryPolicyTest {
     }
 
     @Test
-    fun `retry-after beyond the interactive budget gives up at once and arms its full cooldown`() = runTest {
+    fun `retry-after below the cooldown ceiling gives up at once and arms its full pushback`() = runTest {
+        // NF-01 REWRITE of the old honour-the-full-pushback pin: below MAX_RATE_LIMIT_COOLDOWN_MS
+        // the served value still wins verbatim; only horizons past the ceiling clamp (next test).
         var now = 0L
         val calls = AtomicInteger()
         val engine = MockEngine {
@@ -182,6 +226,53 @@ class UpstreamClientRetryPolicyTest {
         now += 6_000 // past the 30s Retry-After
         assertThrows<UpstreamFailed> { postOnce(client) }
         assertEquals(2, calls.get()) // attempted again
+    }
+
+    @Test
+    fun `a multi-day retry-after arms a horizon no longer than the cooldown ceiling`() = runTest {
+        // NF-01: one 86400s pushback (ChatGPT quota resets legitimately run to days — 142h
+        // observed 2026-07-26) must not poison the head permanently. The armed horizon clamps to
+        // MAX_RATE_LIMIT_COOLDOWN_MS (120s); the TRUE pushback still reaches the caller in the
+        // surfaced upstream body.
+        var now = 0L
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            respond(
+                """{"detail":"Rate limit exceeded","resets_in_seconds":86400}""",
+                HttpStatusCode.TooManyRequests,
+                headersOf("Retry-After", "86400"),
+            )
+        }
+        val client = clientOver(engine, clock = { now })
+        val armed = assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(1, calls.get())
+        assertTrue(armed.body.contains("86400"), "true pushback surfaces in the upstream body: ${armed.body}")
+        now += 119_000 // inside the 120s ceiling — still failing fast
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(1, calls.get())
+        now += 2_000 // 121s: the clamp has expired — traffic is attempted again, not in 24h
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(2, calls.get())
+    }
+
+    @Test
+    fun `clearRateLimitCooldown drops an armed horizon immediately`() = runTest {
+        // NF-01: the restart escape hatch — HeadServer.startLocked() calls this.
+        var now = 0L
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            respond("slow down", HttpStatusCode.TooManyRequests, headersOf("Retry-After", "60"))
+        }
+        val client = clientOver(engine, clock = { now })
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(1, calls.get())
+        assertTrue(client.rateLimitedForMs > 0L)
+        client.clearRateLimitCooldown()
+        assertEquals(0L, client.rateLimitedForMs)
+        assertThrows<UpstreamFailed> { postOnce(client) } // straight to upstream, no fail-fast
+        assertEquals(2, calls.get())
     }
 
     @Test

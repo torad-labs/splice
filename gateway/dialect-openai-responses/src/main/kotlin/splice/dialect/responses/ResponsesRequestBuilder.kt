@@ -40,6 +40,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.withCompactDirective
 import splice.core.util.str
 import splice.core.wire.AnthropicMessage
 import splice.core.wire.AnthropicRequest
@@ -86,6 +87,10 @@ public data class ResponsesQuirks(
      *  the whole context. UNTESTED against the live backend — see the 30-50 parallel Task spray in
      *  this class's header, which came from omitting the field entirely. */
     val liteParallelToolCalls: Boolean = false,
+    /** codex parity: `text.verbosity` on lite turns. codex-cli 0.145.0 sends "low"; null omits. */
+    val liteTextVerbosity: String? = "low",
+    /** codex parity: send a client_metadata block identifying SPLICE (never codex). Off = omitted. */
+    val sendClientMetadata: Boolean = true,
     /** ws-transport WS-3: serve rounds over the Responses WebSocket, with previous_response_id
      *  chaining, falling back to SSE on ANY failure. DEFAULT FALSE — the overlay must be invisible
      *  until an operator opts in, and with it off no WebSocket is ever constructed. */
@@ -315,6 +320,8 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
             toolChoice = toolChoiceFor(emitToolChoice, lite, body),
             parallelToolCalls = parallelToolCallsFor(emitToolChoice, body, opts),
             reasoning = parts.reasoning,
+            text = liteTextBlock(quirks, lite),
+            clientMetadata = clientMetadataBlock(quirks, lite, opts, cacheKey(body, opts)),
             streamOptions = summaryDeliveryOptions(parts.reasoning),
         )
         val req = responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), dto) as JsonObject
@@ -401,18 +408,12 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
 
     // ── knobs ────────────────────────────────────────────────────────────────
 
+    // CX-02: the directive text moved to :core (withCompactDirective) so chat and passthrough emit
+    // the SAME one. The composition is unchanged — the Node .filter(Boolean) that dropped the ""
+    // separator is what withCompactDirective's filter reproduces — so the wire bytes are identical.
     private fun compactAwareInstructions(system: String?, compact: Boolean): String {
-        val base = system.orEmpty()
-        if (!compact) return base.ifEmpty { "You are a helpful assistant." }
-        return listOf(
-            base,
-            "",
-            "COMPACT MODE (critical): You are summarizing a coding session for another agent.",
-            "Respond with ONLY a detailed plain-text summary. No tools. No function calls.",
-            "Do not put the summary only in reasoning — the final message text MUST contain the full summary.",
-            "Structure with headings: Goal, Decisions, Files touched, Current state, Errors, Next steps, Constraints.",
-            "Be concrete (paths, commands, numbers). Omit boilerplate.",
-        ).filter { it.isNotEmpty() }.joinToString("\n") // Node .filter(Boolean): drops the "" separator
+        if (!compact) return system.orEmpty().ifEmpty { "You are a helpful assistant." }
+        return withCompactDirective(system, compact = true)
     }
 
     private fun cacheKey(body: AnthropicRequest, opts: BuildOptions): String? = when (quirks.cacheKeyStrategy) {

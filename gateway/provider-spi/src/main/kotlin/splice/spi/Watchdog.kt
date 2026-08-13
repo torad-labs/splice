@@ -86,6 +86,32 @@ public class TurnWatchdog(
             }
         }
 
+    /** NF-03: the whole-turn wall clock, armed from admission to terminal. [launchIn]'s totalCap
+     *  check only runs while an upstream stream is open, so connect, headers-wait, retry backoff,
+     *  refresh, and between-round gaps were previously uncounted — an N-round fold/re-anchor turn
+     *  got N x the per-round budget against one totalCap while pinning its gate slot. Idle tiers
+     *  stay with [launchIn] (they need the slot); breach semantics are identical: the typed
+     *  sentinel is set FIRST, then [target] is cancelled. */
+    public fun launchTotalCap(scope: CoroutineScope, target: Job): Job =
+        scope.launch {
+            // Paced against totalCap as well as streamIdle: pollInterval() alone is streamIdle/3,
+            // so a cap tighter than the idle budget would be sampled too late to matter.
+            val capThird = budget.totalCap.inWholeMilliseconds / IDLE_DIVISOR
+            val interval = minOf(
+                pollInterval().inWholeMilliseconds,
+                capThird.coerceIn(MIN_POLL_MS, MAX_POLL_MS),
+            ).milliseconds
+            while (isActive) {
+                delay(interval)
+                val elapsed = clock() - startedAt
+                if (elapsed >= budget.totalCap.inWholeMilliseconds) {
+                    firedRef.compareAndSet(null, WatchdogFired.TotalCap(elapsed))
+                    target.cancel()
+                    return@launch
+                }
+            }
+        }
+
     private companion object {
         const val IDLE_DIVISOR = 3
         const val MIN_POLL_MS = 250L

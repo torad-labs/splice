@@ -177,6 +177,88 @@ class PassthroughStreamTranslatorTest {
         assertEquals(listOf("closeAll"), sink.calls) // nothing opened, nothing closed
     }
 
+    // CX-18: Anthropic's newer per-TTL shape reports cache creation as a nested object instead of
+    // the flat cache_creation_input_tokens. Reading only the flat key scored those tokens as zero,
+    // and since successOutcome folds cacheCreation back into inputTokens, the whole context-window
+    // percentage came out low on every cache-writing turn.
+    @Test
+    fun `nested cache_creation buckets sum into the input total`() = runTest {
+        val sink = Rec()
+        val s = drive(
+            sink,
+            ev(
+                """{"type":"message_start","message":{"usage":{"input_tokens":10,"cache_read_input_tokens":5,""" +
+                    """"cache_creation":{"ephemeral_5m_input_tokens":30,"ephemeral_1h_input_tokens":7}}}}""",
+            ),
+            ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}"""),
+            ev("""{"type":"message_stop"}"""),
+        ) as TurnOutcome.Success
+        assertEquals(52, s.usage.inputTokens) // 10 + cache_read 5 + cache_creation (30 + 7)
+        assertEquals(5, s.usage.cachedTokens)
+    }
+
+    @Test
+    fun `the flat cache_creation key still wins over the nested object`() = runTest {
+        val sink = Rec()
+        val s = drive(
+            sink,
+            ev(
+                """{"type":"message_start","message":{"usage":{"input_tokens":10,""" +
+                    """"cache_creation_input_tokens":4,"cache_creation":{"ephemeral_5m_input_tokens":999}}}}""",
+            ),
+            ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}"""),
+            ev("""{"type":"message_stop"}"""),
+        ) as TurnOutcome.Success
+        assertEquals(14, s.usage.inputTokens) // 10 + flat 4; the nested object is not double-counted
+    }
+
+    // CX-09 REGRESSION GUARD. emittedThinking must mean "the client received reasoning", not
+    // "a thinking block was opened". Kimi can open a thinking block and close it having sent no
+    // delta; if that counts as content, TurnPipeline's empty-turn gate short-circuits and a turn
+    // carrying literally nothing ends as a clean terminal — the exact L3 violation CX-09 closed.
+    // Caught in review 2026-08-11 after the first cut set the flag at openThinking.
+    @Test
+    fun `an opened but empty thinking block does not count as delivered content`() = runTest {
+        val s = drive(
+            Rec(),
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}"""),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":0}}"""),
+            ev("""{"type":"message_stop"}"""),
+        ) as TurnOutcome.Success
+        assertEquals("", s.thinkingText)
+        assertFalse(s.emittedThinking, "an empty thinking block delivered nothing to the client")
+    }
+
+    @Test
+    fun `a whitespace-only thinking delta does not count as delivered content`() = runTest {
+        val s = drive(
+            Rec(),
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}"""),
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"   "}}"""),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":0}}"""),
+            ev("""{"type":"message_stop"}"""),
+        ) as TurnOutcome.Success
+        assertFalse(s.emittedThinking, "whitespace is not content")
+    }
+
+    @Test
+    fun `real thinking content DOES count - the case CX-09 exists to protect`() = runTest {
+        val s = drive(
+            Rec(),
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}"""),
+            ev(
+                """{"type":"content_block_delta","index":0,""" +
+                    """"delta":{"type":"thinking_delta","thinking":"real reasoning"}}""",
+            ),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}"""),
+            ev("""{"type":"message_stop"}"""),
+        ) as TurnOutcome.Success
+        assertTrue(s.emittedThinking, "a kimi thinking-only turn must NOT be graded empty")
+    }
+
     @Test
     fun `explicit JSON nulls never leak into buffers`() = runTest {
         val sink = Rec()
@@ -220,5 +302,127 @@ class PassthroughStreamTranslatorTest {
         )
         assertTrue(outcome is TurnOutcome.Success, "got $outcome")
         assertEquals("done", (outcome as TurnOutcome.Success).bodyText)
+    }
+
+    @Test
+    fun `runaway upstream trips the shared buffer cap into an honest local failure - NF-06`() = runTest {
+        // 25 x 1M-char text deltas, never a message_stop — the misbehaving-upstream shape.
+        val chunk = "x".repeat(1_000_000)
+        val sink = Rec()
+        val events = kotlinx.coroutines.flow.flow {
+            emit(ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""))
+            repeat(25) {
+                emit(
+                    kotlinx.serialization.json.buildJsonObject {
+                        put("type", kotlinx.serialization.json.JsonPrimitive("content_block_delta"))
+                        put("index", kotlinx.serialization.json.JsonPrimitive(0))
+                        put(
+                            "delta",
+                            kotlinx.serialization.json.buildJsonObject {
+                                put("type", kotlinx.serialization.json.JsonPrimitive("text_delta"))
+                                put("text", kotlinx.serialization.json.JsonPrimitive(chunk))
+                            },
+                        )
+                    },
+                )
+            }
+        }
+        val outcome = PassthroughStreamTranslator(ctx()).driveTurn(events, sink)
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, failure.type)
+        assertFalse(failure.providerReported, "the runaway verdict is LOCAL — never provider-attributed")
+        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        val deltas = sink.calls.count { it.startsWith("text:") }
+        assertTrue(deltas in 20..21, "expected the guard to stop the stream at the cap, saw $deltas deltas")
+    }
+}
+
+// CX-07 / W4-A: Anthropic ships SEVEN stop_reason values; onMessageDelta branched on TWO and sent
+// the rest to `else -> Unit`, so a turn the BACKEND refused, paused, or could not fit in the model
+// context window reached the client as a clean, complete Success. A NEW class rather than more
+// @Test methods above: the class above is at detekt's LargeClass budget, and the file-private
+// helpers (ev / Rec / drive) are visible here.
+class PassthroughStopReasonHonestyTest {
+
+    // A turn that produced prose and terminated properly, ending on the given stop_reason. Every
+    // case below differs ONLY in that one value — the L3 verdict must come from it and nothing else.
+    private suspend fun turnEndingWith(stopReason: String): TurnOutcome = drive(
+        Rec(),
+        ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""),
+        ev("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"partial"}}"""),
+        ev("""{"type":"content_block_stop","index":0}"""),
+        ev("""{"type":"message_delta","delta":{"stop_reason":"$stopReason"},"usage":{"output_tokens":3}}"""),
+        ev("""{"type":"message_stop"}"""),
+    )
+
+    @Test
+    fun `stop_reason refusal is an honest provider-reported failure, never a clean success`() = runTest {
+        val f = turnEndingWith("refusal") as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, f.type)
+        assertTrue(f.providerReported, "the BACKEND sent stop_reason=refusal — G20 provenance is upstream")
+        assertTrue(f.message.contains("refused"), f.message)
+        assertTrue(f.message.contains("stop_reason=refusal"), f.message)
+    }
+
+    @Test
+    fun `stop_reason pause_turn is a retryable overloaded failure, not a finished answer`() = runTest {
+        val f = turnEndingWith("pause_turn") as TurnOutcome.Failure
+        assertEquals(ErrorType.OVERLOADED, f.type)
+        assertTrue(f.providerReported)
+        assertTrue(f.message.contains("paused"), f.message)
+    }
+
+    // The item's own wording named only refusal + pause_turn. This third value is a HARD truncation
+    // the protocol added separately from max_tokens; folding it into `incomplete` would report the
+    // ordinary "ran out of room" stop for a turn the backend could not run at all.
+    @Test
+    fun `stop_reason model_context_window_exceeded fails and is NOT folded into incomplete`() = runTest {
+        val f = turnEndingWith("model_context_window_exceeded") as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, f.type)
+        assertTrue(f.providerReported)
+        assertTrue(f.message.contains("context window"), f.message)
+    }
+
+    // must_not: a false Failure on working traffic is worse than the silent success it replaces.
+    // The four clean values, an absent stop_reason, and an UNRECOGNIZED vendor value all stay
+    // Success — the remainder is deliberately open-safe (see stopReasonFailure's rationale).
+    @Test
+    fun `clean, absent and unrecognized stop_reasons are untouched`() = runTest {
+        listOf("end_turn", "stop_sequence", "tool_use", "max_tokens", "stop", "eos", "").forEach { reason ->
+            val outcome = turnEndingWith(reason)
+            val s = outcome as? TurnOutcome.Success
+                ?: throw AssertionError("stop_reason='$reason' must stay a Success, got $outcome")
+            assertEquals("partial", s.bodyText, "stop_reason='$reason' altered the turn's text")
+        }
+    }
+
+    @Test
+    fun `a genuine SSE error event is never overwritten by a later refusal stop_reason`() = runTest {
+        val outcome = drive(
+            Rec(),
+            ev("""{"type":"error","error":{"type":"rate_limit_error","message":"slow down"}}"""),
+            ev("""{"type":"message_delta","delta":{"stop_reason":"refusal"}}"""),
+            ev("""{"type":"message_stop"}"""),
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.RATE_LIMIT, f.type)
+        assertTrue(f.message.contains("slow down"), f.message)
+    }
+
+    // The reverse of the first-latch test above. onError assigns failureType UNCONDITIONALLY, so a
+    // genuine SSE error wins in BOTH orderings and the client always gets the more actionable
+    // retryability class. Measured, not assumed — pinned so the property cannot silently reverse.
+    @Test
+    fun `a genuine SSE error after a latched refusal still owns the verdict`() = runTest {
+        val outcome = drive(
+            Rec(),
+            ev("""{"type":"message_delta","delta":{"stop_reason":"refusal"}}"""),
+            ev("""{"type":"error","error":{"type":"overloaded_error","message":"try later"}}"""),
+            ev("""{"type":"message_stop"}"""),
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.OVERLOADED, f.type)
+        assertTrue(f.message.contains("try later"), f.message)
+        assertTrue(f.providerReported)
     }
 }

@@ -29,6 +29,7 @@ import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.auth.credentialsOrNull
+import splice.core.auth.synthesizedExpiryMs
 import splice.core.util.DaemonLog
 import splice.core.util.SecureFile
 import splice.core.util.long
@@ -80,6 +81,23 @@ public class CodexAuthProvider(
     @Volatile
     private var cache: Cache? = null
 
+    // SH-01: one shape-drift log per distinct auth.json mtime, not one per cached read.
+    @Volatile
+    private var synthLoggedMtime: Long = -1L
+
+    /** SH-01: the shared missing-expiry policy, logged once per distinct mtime so a drifted
+     *  auth.json shape (opaque token, exp-less JWT) is visible to the operator, not just felt. */
+    private fun synthesizeExpiry(mtimeMs: Long): Long {
+        if (synthLoggedMtime != mtimeMs) {
+            synthLoggedMtime = mtimeMs
+            log(
+                "[codex-auth] access token carries no decodable exp — synthesized expiry " +
+                    "mtime+4h (auth.json shape drifted?)",
+            )
+        }
+        return synthesizedExpiryMs(mtimeMs)
+    }
+
     private data class Cache(val snapshot: Snapshot, val mtimeMs: Long, val loadedAt: Long, val sizeBytes: Long)
 
     private data class Snapshot(val access: String, val accountId: String?, val expiresAtMs: Long?)
@@ -119,7 +137,10 @@ public class CodexAuthProvider(
         val tokens = json.parseToJsonElement(Files.readString(authPath)).jsonObject[FIELD_TOKENS] as? JsonObject
         tokens?.str(FIELD_ACCESS_TOKEN)?.let { access ->
             val accountId = tokens.str(FIELD_ACCOUNT_ID)
+            // SH-01 (G18's codex twin): a token with no decodable exp was cached FOREVER — no
+            // proactive refresh, first signal a mid-turn 401. Shared policy: synthesize mtime+TTL.
             val expiresAtMs = decodeJwtClaims(access).long(FIELD_EXP)?.let { it * MS_PER_S }
+                ?: synthesizeExpiry(mtime)
             val snapshot = Snapshot(access, accountId, expiresAtMs)
             cache = Cache(snapshot, mtime, now, size)
             snapshot

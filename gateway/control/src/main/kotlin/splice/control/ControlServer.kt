@@ -86,9 +86,26 @@ public class ControlServer(
     // against the configured total: an assembly-failed head is counted in failedHeads but is NEVER
     // in the `heads` map, so reporting heads.size broke the invariant for it (review 2026-07-23).
     private val configuredHeads: Int = heads.size,
+    // JW-04: the booted config identity + a per-request staleness recompute (fail-open lambda).
+    // Topology stays deliberately non-hot-reloadable; these only make the required restart VISIBLE
+    // to the shim, doctor, and the dashboard.
+    private val topologyDigest: String = "",
+    private val configPath: String = "",
+    private val topologyStale: () -> Boolean = { false },
+    private val turnPathStalled: () -> List<String> = { emptyList() },
 ) {
     private val json = Json { ignoreUnknownKeys = true }
-    private val payloads = ControlPayloads(heads, config, failedHeads, configuredHeads)
+    private val payloads =
+        ControlPayloads(
+            heads,
+            config,
+            failedHeads,
+            configuredHeads,
+            topologyDigest,
+            configPath,
+            topologyStale,
+            turnPathStalled,
+        )
 
     @Volatile
     private var server: EmbeddedServer<NettyApplicationEngine, *>? = null
@@ -115,7 +132,10 @@ public class ControlServer(
                         shutdownDaemon()
                     }
                 }
-                get("/api/config") { guarded(call) { respond(call, payloads.configJson()) } }
+                get("/api/config") {
+                    // JW-06: ?head=<key> folds that head's override layer into `effective`.
+                    guarded(call) { respond(call, payloads.configJson(call.request.queryParameters["head"])) }
+                }
                 patch("/api/config") { guarded(call) { patchConfig(call) } }
                 get("/api/usage") { guarded(call) { respond(call, payloads.usageJson()) } }
                 get("/api/perf") {
@@ -230,7 +250,7 @@ public class ControlServer(
                 buildJsonObject {
                     put("ok", refreshed != null)
                     put("head", key)
-                    if (refreshed == null) put("note", "refresh failed — check daemon.log; re-login likely required")
+                    if (refreshed == null) put("note", "refresh failed — run: splice logs; re-login likely required")
                 }.toString(),
             )
         } else {
@@ -388,14 +408,44 @@ private class StatuslineBodyTooLarge : RuntimeException()
 // PORT-OF server/src/control/api.mjs payload shapes @ pre-public-port-baseline — the read-only JSON builders for the
 // control API, split out of ControlServer so the server class stays focused on routing/lifecycle.
 // The P4-WEBUI wire field names (the dashboard contract) live here.
-private class ControlPayloads(
+internal class ControlPayloads( // internal (was private) so ControlHealthTest can pin the ok/stall contract
     private val heads: Map<String, ManagedHead>,
     private val config: ConfigService,
     private val failedHeads: () -> Int,
     private val configuredHeads: Int,
+    private val topologyDigest: String = "",
+    private val configPath: String = "",
+    private val topologyStale: () -> Boolean = { false },
+    private val turnPathStalled: () -> List<String> = { emptyList() },
 ) {
     fun controlHealthJson(): String = buildJsonObject {
-        put("ok", true)
+        // ok means "this gateway can serve", not "heads are configured" — the 91h wedge served
+        // ok:true for its entire duration under the old hardcoded value (2026-08-12). Precisely: no
+        // head is unresponsive at its request path, none failed to start, and at least one is up.
+        // It is NOT an end-to-end turn assertion — see TurnPathProbeLoop's header for the probe's
+        // documented ceiling (it is answered at the 401 before the gate and driver).
+        //
+        // F4: only a head that is SUPPOSED to be running can drag ok false. A deliberate
+        // `POST /api/heads/x/stop` makes the probe see connection-refused and mark the head
+        // stalled, but that is an intentional state, not the wedge — intersecting with the
+        // running set keeps an operator's maintenance stop from paging an external monitor.
+        //
+        // ...but "not running" is NOT self-certifying. The F4 intersection alone read a head that
+        // CRASHED or never started as "not supposed to be running", so its stall entry was
+        // discarded and a daemon whose every head died on EADDRINUSE served
+        // {ok:true, readyHeads:0, failedHeads:4} — the same green-through-an-outage shape as the
+        // 91h wedge, one layer over. failedHeads() is what separates a crash from a deliberate
+        // stop, and a configured daemon with nothing running cannot complete a turn either way.
+        val runningKeys = heads.filterValues { it.head.healthSnapshot().running }.keys
+        val stalledHeads = turnPathStalled().filter { it in runningKeys }
+        val running = runningKeys.size
+        put("ok", stalledHeads.isEmpty() && failedHeads() == 0 && (configuredHeads == 0 || running > 0))
+        if (stalledHeads.isNotEmpty()) {
+            put(
+                "turnPathStalled",
+                kotlinx.serialization.json.JsonArray(stalledHeads.map { kotlinx.serialization.json.JsonPrimitive(it) }),
+            )
+        }
         put("version", GATEWAY_VERSION)
         put("wantShimVersion", SHIM_VERSION)
         // Configured total, NOT heads.size (assembled only) — see the ControlServer ctor comment.
@@ -404,9 +454,14 @@ private class ControlPayloads(
         // startDaemonHeads) — NOT readyHeads == heads: a start-failed head stays in `heads`
         // forever with running=false, so the old equality-wait spun forever on a degraded boot
         // (review 2026-07-22 round 3).
-        val ready = heads.values.count { it.head.healthSnapshot().running }
-        put("readyHeads", ready)
+        put("readyHeads", running)
         put("failedHeads", failedHeads())
+        // JW-04: the booted config identity — an edited splice.toml used to be silently inert
+        // (topology loads once by design; nothing anywhere compared disk to boot). Stale is
+        // recomputed per request and fails OPEN on an unreadable file.
+        put("topologyDigest", topologyDigest)
+        put("configPath", configPath)
+        put("topologyStale", topologyStale())
     }.toString()
 
     fun statusJson(): String = buildJsonObject {
@@ -467,17 +522,25 @@ private class ControlPayloads(
         putJsonArray("pids") {}
     }
 
-    fun configJson(): String {
+    fun configJson(headKey: String? = null): String {
         val layers = config.layers()
-        val effective = config.getConfig().asMap()
+        // JW-06: ?head=<key> answers "why is THIS head's knob X" — effective folds the head's
+        // override layer exactly as admission does; unknown/absent key stays the global view.
+        val effective = config.getConfig(headKey).asMap()
         return buildJsonObject {
             put("effective", mapToJson(effective))
+            headKey?.let { put("head", it) }
             putJsonObject("layers") {
                 put("defaults", mapToJson(layers.defaults))
                 // The operator-facing layer: ~/.config/splice/splice.toml [daemon]/[defaults].
                 // Shown in precedence position (beats defaults, loses to file/env/runtime) so
                 // "why is this knob X?" is answerable from the payload alone.
                 put("toml", mapToJson(layers.headOverrides))
+                // JW-06: [heads.<key>.overrides] — precedence directly above the global TOML
+                // layer (mergedRaw's real order); only override-carrying heads appear.
+                putJsonObject("perHead") {
+                    layers.perHead.forEach { (key, knobs) -> put(key, mapToJson(knobs)) }
+                }
                 put("file", mapToJson(layers.file))
                 put("env", mapToJson(layers.env))
                 put("runtime", mapToJson(layers.runtime))

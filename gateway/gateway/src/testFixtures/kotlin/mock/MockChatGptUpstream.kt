@@ -26,6 +26,9 @@ import splice.core.util.discard
 const val SUMMARY_SECTION_A: String = "**Analyzing CLI exit and async error handling**"
 const val SUMMARY_SECTION_B: String = "**Deploying the hardened fleet build**"
 
+// NF-01 quota429 scenario: the HTTP status a real ChatGPT quota rejection carries.
+const val RATE_LIMITED_STATUS: Int = 429
+
 class MockChatGptUpstream {
     val upstreamAuths = CopyOnWriteArrayList<Pair<String, String?>>()
     val upstreamBodies = CopyOnWriteArrayList<Pair<String, String>>()
@@ -82,14 +85,40 @@ class MockChatGptUpstream {
         pool.shutdownNow()
     }
 
+    private companion object {
+        /** Bound for the test mock's zstd decode — far above any fixture request. */
+        const val MAX_DECOMPRESSED_BYTES = 8 * 1024 * 1024
+    }
+
     private fun sse(ex: HttpExchange, json: String) {
         ex.responseBody.write("data: $json\n\n".toByteArray())
         ex.responseBody.flush()
     }
 
     private fun handle(ex: HttpExchange) {
-        val raw = ex.requestBody.readBytes().decodeToString()
+        // CX-03: the real ChatGPT endpoint accepts `content-encoding: zstd` (codex-cli 0.145.0
+        // sends it), and splice now does the same on the codex head. A mock that only reads
+        // plaintext would silently fall through to the "basic" scenario below on every compressed
+        // request — which is exactly what happened when zstd first landed: one test failed and the
+        // rest passed for the wrong reason. Decode like the real upstream.
+        val rawBytes = ex.requestBody.readBytes()
+        val raw = if (ex.requestHeaders.getFirst("Content-Encoding")?.contains("zstd") == true) {
+            com.github.luben.zstd.Zstd.decompress(rawBytes, MAX_DECOMPRESSED_BYTES).decodeToString()
+        } else {
+            rawBytes.decodeToString()
+        }
         val body = runCatching { Json.parseToJsonElement(raw).jsonObject }.getOrNull()
+        // FALSE-GREEN GENERATOR, closed (review 2026-08-12). When the mock cannot read the request
+        // it used to fall through to the `?: "basic"` default below and serve the HAPPY PATH: that
+        // is how the zstd change made `authfail` silently receive a success stream and its sibling
+        // "pass" for the wrong reason. `?: "basic"` is a legitimate default for a parseable body
+        // with no SCENARIO marker; it is never a legitimate answer to "I could not decode this".
+        if (body == null) {
+            val err = """{"error":{"message":"mock could not parse the request body"}}"""
+            ex.sendResponseHeaders(400, err.length.toLong())
+            ex.responseBody.use { it.write(err.toByteArray()) }
+            return
+        }
         // responses-lite turns carry instructions as a developer input item, not the top-level
         // field — scan the whole raw body so scenarios ride either shape.
         val scenario = Regex("SCENARIO:(\\w+)").find(raw)?.groupValues?.get(1) ?: "basic"
@@ -124,6 +153,23 @@ class MockChatGptUpstream {
                 ex.responseBody.write("data: {\"type\":\"resp".toByteArray())
                 ex.responseBody.flush()
             }.discard("tear: drop mid-frame")
+            ex.close()
+            return
+        }
+        if (scenario == "stall") {
+            // ADDED (named change, NF-03): sleep past a tiny totalCap BEFORE response headers —
+            // the connect/headers window no stream-scoped poller ever covered. The turn must be
+            // reaped by the whole-turn cap poller while this thread is still sleeping.
+            Thread.sleep(3_000)
+        }
+        if (scenario == "quota429") {
+            // ADDED (named change, NF-01): a hard 429 with a sub-ceiling Retry-After — arms the
+            // UpstreamClient's shared head-wide cooldown so restart-clears-it is testable.
+            ex.responseHeaders.add("Content-Type", "application/json")
+            ex.responseHeaders.add("Retry-After", "60")
+            val body429 = """{"detail":"Rate limit exceeded","resets_in_seconds":60}""".toByteArray()
+            ex.sendResponseHeaders(RATE_LIMITED_STATUS, body429.size.toLong())
+            ex.responseBody.use { it.write(body429) }
             ex.close()
             return
         }

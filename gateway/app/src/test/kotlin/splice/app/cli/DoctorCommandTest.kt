@@ -12,6 +12,7 @@ import java.io.PrintStream
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 
 // Generous relative to OVERALL_BOUND_SECONDS (PROBE_SECONDS * 3): proves a hang is bounded at
 // all, not a tight race against it.
@@ -84,6 +85,18 @@ class DoctorCommandTest {
         """auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }""",
         """auth = { kind = "api-key" }""",
     )
+
+    // JW-13: a second head copy-pasted onto the same port (4501) — the most likely TOML mistake.
+    private val starterTomlDupPort = starterToml + "\n" + """
+        [heads.openrouter2]
+        provider = "openrouter"
+        port = 4501
+        discovery_prefix = "claude-openrouter2--"
+        pinned_model = "m"
+
+        [heads.openrouter2.claude]
+        command = "claude-openrouter2"
+    """.trimIndent()
 
     @Test
     fun `an api-key head with no explicit env resolves the derived KEY_API_KEY`() {
@@ -230,5 +243,168 @@ class DoctorCommandTest {
         assertFalse(ok)
         assertTrue(out.contains("OPENROUTER_API_KEY is not set"), out)
         assertTrue(out.contains("export OPENROUTER_API_KEY"), out)
+    }
+
+    @Test
+    fun `a daemon with failed heads is a FAIL, never everything-checks-out - JW-02`() {
+        val tmp = Files.createTempDirectory("doctor-degraded")
+        val bin = Files.createDirectories(tmp.resolve("bin"))
+        val share = Files.createDirectories(tmp.resolve("share"))
+        val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
+        Files.writeString(configDir.resolve("splice.toml"), starterToml)
+        val shim = share.resolve("splice-launch")
+        Files.writeString(shim, "#!/usr/bin/env bash\nSPLICE_SHIM_VERSION=\"$SHIM_VERSION\"\n")
+        shim.toFile().setExecutable(true)
+        fakeBinaries(bin, "claude", "node", "python3", "curl", "bash")
+        Files.createSymbolicLink(bin.resolve("claude-openrouter"), shim)
+        Files.createSymbolicLink(bin.resolve("splice"), shim)
+
+        // A live /health reporting a degraded boot: 3 configured, 1 ready, 2 dead. Pre-fix the
+        // doctor extracted only `version` and closed with "Everything checks out."
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+        val healthJson =
+            """{"ok":true,"version":"${splice.core.GATEWAY_VERSION}","heads":3,"readyHeads":1,"failedHeads":2}"""
+        server.createContext("/health") { ex ->
+            val bytes = healthJson.toByteArray()
+            ex.responseHeaders.add("Content-Type", "application/json")
+            ex.sendResponseHeaders(200, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        try {
+            // state dir carries a mgmt-key so the running-daemon key check stays green — this
+            // test is about the HEAD rows.
+            val state = Files.createDirectories(tmp.resolve("state"))
+            Files.writeString(state.resolve("mgmt-key"), "k\n")
+            val envMap = env(
+                tmp,
+                bin,
+                share,
+                mapOf(
+                    "OPENROUTER_API_KEY" to "k",
+                    "CLAUDEX_STATE_DIR" to state.toString(),
+                    "SPLICE_CONTROL_PORT" to server.address.port.toString(),
+                ),
+            )
+            val (ok, out) = runDoctor(envMap)
+            assertTrue(!ok, "failed heads must be a doctor FAILURE:\n$out")
+            assertTrue(out.contains("2 of 3 head(s) FAILED to start"), out)
+            assertTrue(out.contains("splice restart"), out)
+            assertTrue(!out.contains("Everything checks out"), out)
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun `an edited splice_toml shows a stale-topology WARN with the restart fix - JW-04`() {
+        val tmp = Files.createTempDirectory("doctor-stale-topo")
+        val bin = Files.createDirectories(tmp.resolve("bin"))
+        val share = Files.createDirectories(tmp.resolve("share"))
+        val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
+        Files.writeString(configDir.resolve("splice.toml"), starterToml)
+        val shim = share.resolve("splice-launch")
+        Files.writeString(shim, "#!/usr/bin/env bash\nSPLICE_SHIM_VERSION=\"$SHIM_VERSION\"\n")
+        shim.toFile().setExecutable(true)
+        fakeBinaries(bin, "claude", "node", "python3", "curl", "bash")
+        Files.createSymbolicLink(bin.resolve("claude-openrouter"), shim)
+        Files.createSymbolicLink(bin.resolve("splice"), shim)
+
+        // A healthy daemon whose booted digest does NOT match the file on disk (the operator
+        // edited splice.toml after boot). Pre-fix: no consumer ever compared them.
+        val server = com.sun.net.httpserver.HttpServer.create(java.net.InetSocketAddress("127.0.0.1", 0), 0)
+        val healthJson =
+            """{"ok":true,"version":"${splice.core.GATEWAY_VERSION}","heads":1,"readyHeads":1,""" +
+                """"failedHeads":0,"topologyDigest":"digest-of-what-it-booted-with","topologyStale":true}"""
+        server.createContext("/health") { ex ->
+            val bytes = healthJson.toByteArray()
+            ex.sendResponseHeaders(200, bytes.size.toLong())
+            ex.responseBody.use { it.write(bytes) }
+        }
+        server.start()
+        try {
+            val state = Files.createDirectories(tmp.resolve("state"))
+            Files.writeString(state.resolve("mgmt-key"), "k\n")
+            val (ok, out) = runDoctor(
+                env(
+                    tmp,
+                    bin,
+                    share,
+                    mapOf(
+                        "OPENROUTER_API_KEY" to "k",
+                        "CLAUDEX_STATE_DIR" to state.toString(),
+                        "SPLICE_CONTROL_PORT" to server.address.port.toString(),
+                    ),
+                ),
+            )
+            assertTrue(ok, "a stale topology is a WARN, not a failure:\n$out")
+            assertTrue(out.contains("running topology is stale"), out)
+            assertTrue(out.contains("splice restart"), out)
+            assertTrue(!out.contains("Everything checks out"), out)
+        } finally {
+            server.stop(0)
+        }
+    }
+
+    @Test
+    fun `doctor names the logs path in the logs dir, not the state dir - JW-08`() {
+        val tmp = Files.createTempDirectory("doctor-logs")
+        val bin = Files.createDirectories(tmp.resolve("bin"))
+        val share = Files.createDirectories(tmp.resolve("share"))
+        fakeBinaries(bin, "claude", "node", "python3", "curl", "bash")
+        val (_, out) = runDoctor(env(tmp, bin, share, hermetic(tmp)))
+        // the row must point at <root>/logs/daemon.log and mention the verb — NOT the state dir
+        assertTrue(out.contains("logs/daemon.log"), out)
+        assertTrue(out.contains("splice logs"), out)
+    }
+
+    @Test
+    fun `two heads on one port is a config FAIL naming both - JW-13`() {
+        val tmp = Files.createTempDirectory("doctor-dupport")
+        val bin = Files.createDirectories(tmp.resolve("bin"))
+        val share = Files.createDirectories(tmp.resolve("share"))
+        val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
+        Files.writeString(configDir.resolve("splice.toml"), starterTomlDupPort)
+        fakeBinaries(bin, "claude", "node", "python3", "curl", "bash")
+        val (ok, out) = runDoctor(env(tmp, bin, share, hermetic(tmp, mapOf("OPENROUTER_API_KEY" to "k"))))
+        assertTrue(!ok, "a duplicate port must be a doctor FAILURE:\n$out")
+        assertTrue(out.contains("port 4501 is claimed by"), out)
+        assertTrue(out.contains("openrouter") && out.contains("openrouter2"), out)
+        assertTrue(out.contains("change one head's port"), out)
+    }
+
+    @Test
+    fun `an unwritable state dir is a FAIL with a chmod fix, and the probe is cleaned up - JW-17`() {
+        val tmp = Files.createTempDirectory("doctor-unwritable")
+        val bin = Files.createDirectories(tmp.resolve("bin"))
+        val share = Files.createDirectories(tmp.resolve("share"))
+        fakeBinaries(bin, "claude", "node", "python3", "curl", "bash")
+        val state = Files.createDirectories(tmp.resolve("state"))
+        // 0500: readable + executable, NOT writable. Skip if the test user is root (chmod is
+        // advisory for uid 0).
+        org.junit.jupiter.api.Assumptions.assumeFalse(System.getProperty("user.name") == "root")
+        Files.setPosixFilePermissions(state, PosixFilePermissions.fromString("r-x------"))
+        try {
+            val env = mapOf(
+                "XDG_CONFIG_HOME" to tmp.resolve("config").toString(),
+                "SPLICE_BIN_DIR" to bin.toString(),
+                "SPLICE_SHARE_DIR" to share.toString(),
+                "PATH" to bin.toString(),
+                "CLAUDEX_STATE_DIR" to state.toString(),
+                "SPLICE_CONTROL_PORT" to ServerSocket(0).use { it.localPort }.toString(),
+                "OPENROUTER_API_KEY" to "k",
+            )
+            val (ok, out) = runDoctor(env)
+            assertTrue(!ok, "an unwritable state dir must be a doctor FAILURE:\n$out")
+            assertTrue(out.contains("state dir") && out.contains("not writable"), out)
+            assertTrue(out.contains("chmod u+rwx"), out)
+            // non-mutating in spirit: no probe file survives
+            val noProbe = Files.list(state).use { s ->
+                s.noneMatch { it.fileName.toString().contains("probe") }
+            }
+            assertTrue(noProbe, "probe leaked")
+        } finally {
+            Files.setPosixFilePermissions(state, PosixFilePermissions.fromString("rwx------"))
+        }
     }
 }

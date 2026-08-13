@@ -10,7 +10,10 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import splice.core.parse.parseAnthropicBody
+import splice.core.turn.COMPACT_DIRECTIVE_HEAD
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.compactDirective
+import splice.core.turn.withCompactDirective
 import splice.dialect.passthrough.BuiltPassthroughRequest
 import splice.dialect.passthrough.PassthroughQuirks
 import splice.dialect.passthrough.PassthroughRequestBuilder
@@ -35,6 +38,48 @@ private fun JsonObject.blocks(msg: Int) = messages()[msg]["content"]!!.jsonArray
 private fun JsonObject.blockTypes(msg: Int) = blocks(msg).map { it["type"]?.jsonPrimitive?.content }
 
 class PassthroughRequestBuilderTest {
+
+    // CX-02: passthrough forwards verbatim by design, so the directive is the ONE thing it invents
+    // beyond the thinking pair — without it a kimi compaction turn is an ordinary tool-stripped
+    // turn and a chatty reply is stored silently as the session summary. Anthropic's `system` is
+    // legal as a string OR a block array, and a compact turn may carry neither.
+    @Test
+    fun `compact appends a directive block to an array system`() {
+        val req = build(
+            """{"model":"m","system":[{"type":"text","text":"be brief"}],
+                "messages":[{"role":"user","content":"summarize"}]}""",
+            compact = true,
+        )
+        val blocks = req["system"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(2, blocks.size)
+        assertEquals("be brief", blocks[0]["text"]?.jsonPrimitive?.content)
+        assertEquals("text", blocks[1]["type"]?.jsonPrimitive?.content)
+        assertEquals(compactDirective, blocks[1]["text"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `compact appends to a string system without changing its type`() {
+        val req = build(
+            """{"model":"m","system":"be brief","messages":[{"role":"user","content":"summarize"}]}""",
+            compact = true,
+        )
+        val system = req["system"]!!.jsonPrimitive.content
+        assertEquals(withCompactDirective("be brief", compact = true), system)
+    }
+
+    @Test
+    fun `compact with no system at all still emits the directive`() {
+        val req = build("""{"model":"m","messages":[{"role":"user","content":"summarize"}]}""", compact = true)
+        val blocks = req["system"]!!.jsonArray.map { it.jsonObject }
+        assertEquals(compactDirective, blocks.single()["text"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `a non-compact turn invents no system field and carries no directive`() {
+        val req = build("""{"model":"m","messages":[{"role":"user","content":"hi"}]}""")
+        assertNull(req["system"])
+        assertFalse(req.toString().contains(COMPACT_DIRECTIVE_HEAD))
+    }
 
     @Test
     fun `model is replaced with upstream id and stream forced true`() {

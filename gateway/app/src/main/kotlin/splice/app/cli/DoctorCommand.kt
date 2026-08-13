@@ -12,6 +12,7 @@ import splice.core.topology.AuthKind
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.topology.effectiveApiKeyEnv
+import splice.core.topology.portCollisionMessage
 import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
 import java.nio.file.Path
@@ -40,8 +41,9 @@ internal data class DoctorCheck(
 /** Resolved control port + the version the listener there reports (null = nothing answering).
  *  Computed ONCE in doctor() and threaded into both the daemon and auth sections so the port is
  *  resolved a single time and /health is probed a single time (was: twice each). */
-internal data class DaemonSnapshot(val port: Int, val healthVersion: String?) {
-    val running: Boolean get() = healthVersion != null
+internal data class DaemonSnapshot(val port: Int, val health: ControlPlaneClient.HealthView?) {
+    val healthVersion: String? get() = health?.version
+    val running: Boolean get() = health != null
 }
 
 /** The topology as doctor sees it: not written yet, readable, or broken (with the parse error). */
@@ -58,13 +60,16 @@ internal fun doctor(envReader: (String) -> String? = System::getenv): Boolean {
     // so a busy daemon is contacted a single time and the split-brain check can't silently self-skip.
     val topology = (topo as? DoctorTopology.Parsed)?.topology
     val port = AdminSupport.controlPort(topology, envReader)
-    val snapshot = DaemonSnapshot(port, ControlPlaneClient.healthVersion(port))
+    val snapshot = DaemonSnapshot(port, ControlPlaneClient.healthView(port))
     val sections = listOf(
         "prerequisites" to guarded { prerequisiteChecks(envReader) },
         "installation" to guarded { installationChecks(topo, envReader) },
         "configuration" to guarded { configurationChecks(topo, configPath) },
-        CHECK_DAEMON to guarded { daemonChecks(snapshot, envReader) },
+        CHECK_DAEMON to guarded { daemonChecks(snapshot, envReader, topology, configPath) },
         "auth" to guarded { authChecks(topo, envReader, snapshot) },
+        // JW-05: what actually HAPPENED — every section above reads configuration and presence;
+        // this one reads the runtime instruments (health counters + perf outcome tail).
+        "runtime" to guarded { runtimeChecks(snapshot, envReader) },
     )
     println("${BOLD}splice doctor$RESET $DIM— every ✗ and ! comes with its fix$RESET")
     sections.forEach { (title, checks) -> renderSection(title, checks) }
@@ -121,11 +126,26 @@ private fun configurationChecks(topo: DoctorTopology, configPath: Path): List<Do
                 "add [providers.${head.provider}] to $configPath or fix the head's provider",
             )
         }
-        listOf(summary) + brokenRefs
+        // JW-13: a duplicate port is a pre-flight FAIL naming both heads (mirrors the
+        // wrapper-command collision install validates), not an opaque per-head bind error.
+        val portDupes = topology.portCollisions().map { (port, keys) ->
+            DoctorCheck(
+                CHECK_TOPOLOGY,
+                CheckStatus.FAIL,
+                portCollisionMessage(port, keys),
+                "change one head's port in $configPath",
+            )
+        }
+        listOf(summary) + brokenRefs + portDupes
     }
 }
 
-private fun daemonChecks(snapshot: DaemonSnapshot, envReader: (String) -> String?): List<DoctorCheck> {
+private fun daemonChecks(
+    snapshot: DaemonSnapshot,
+    envReader: (String) -> String?,
+    topology: Topology?,
+    configPath: Path? = null,
+): List<DoctorCheck> {
     val statePaths = StatePaths(envReader = envReader)
     val daemon = when (val running = snapshot.healthVersion) {
         null -> DoctorCheck(CHECK_DAEMON, CheckStatus.INFO, "stopped (starts on first launch)")
@@ -141,10 +161,80 @@ private fun daemonChecks(snapshot: DaemonSnapshot, envReader: (String) -> String
     // presence proves nothing about liveness (DaemonLock.kt) — report the path only, never a
     // fabricated staleness WARN. The state dir path is the same kind of orientation detail.
     val stateInfo = listOf(
-        DoctorCheck("state dir", CheckStatus.INFO, statePaths.stateDir.toString()),
+        // JW-17: PROVE writability, don't just print the path — an unwritable ~/.claude-codex
+        // degrades daemon.log, config persistence, and usage/perf/compact appends all silently.
+        writableProbe("state dir", statePaths.stateDir),
+        // JW-08: daemon.log lives in the SIBLING logs dir, not state/ — printing only the state
+        // dir sent operators to a directory that does not contain the logs. Name the real path
+        // and the verb that reaches it (works with the daemon stopped).
+        writableProbe("logs dir", statePaths.logsDir, "${statePaths.logsDir.resolve("daemon.log")}  (splice logs)"),
         DoctorCheck("daemon.lock", CheckStatus.INFO, statePaths.daemonLockFile.toString()),
     )
-    return listOf(daemon, mgmtKeyCheck(statePaths, snapshot.running)) + stateInfo
+    return listOf(daemon) + headChecks(snapshot, topology) +
+        listOfNotNull(topologyFreshness(snapshot, configPath), mgmtKeyCheck(statePaths, snapshot.running)) +
+        stateInfo
+}
+
+/** JW-04: is the file on disk still the one the daemon booted from? Compared digest-to-digest
+ *  (the doctor hashes the local file; the daemon published what it parsed), with the daemon's
+ *  own topologyStale recompute as the belt. Fail-open: no health, no published digest, or an
+ *  unreadable local file all mean no row — never a fabricated verdict. */
+private fun topologyFreshness(snapshot: DaemonSnapshot, configPath: Path?): DoctorCheck? {
+    val h = snapshot.health
+    val booted = h?.topologyDigest?.takeIf { it.isNotEmpty() }
+    val local = booted?.let { configPath?.let(TopologyLoader::currentDigest) } ?: return null
+    return if (local == booted && h?.topologyStale != true) {
+        DoctorCheck("topology", CheckStatus.OK, "running config matches the file on disk")
+    } else {
+        DoctorCheck(
+            "topology",
+            CheckStatus.WARN,
+            "splice.toml changed since the daemon booted — the running topology is stale",
+            "splice restart",
+        )
+    }
+}
+
+/** JW-02: the degraded-boot rows doctor was structurally blind to. /health has carried
+ *  heads/readyHeads/failedHeads since the shim's converge-wait; a green "daemon running" over
+ *  dead heads plus "Everything checks out." was the exact lie this command exists to prevent.
+ *  Per-head TCP probes distinguish a bound-but-unassembled head from an unbound one; probed only
+ *  while the daemon runs (a stopped daemon's closed ports are expected, not findings). */
+private fun headChecks(snapshot: DaemonSnapshot, topology: Topology?): List<DoctorCheck> {
+    val h = snapshot.health ?: return emptyList()
+    val perHead = topology?.heads.orEmpty().map { (key, cfg) ->
+        val listening = AdminSupport.controlPortBound(cfg.port)
+        DoctorCheck(
+            "head $key",
+            if (listening) CheckStatus.INFO else CheckStatus.WARN,
+            ":${cfg.port} ${if (listening) "listening" else "not listening"}",
+        )
+    }
+    return listOfNotNull(turnPathCheck(h), headSummary(h)) + perHead
+}
+
+/** The heads/readyHeads/failedHeads verdict; null on a foreign/ancient listener without the
+ *  counters (a real daemon always sends all three) — nothing honest to report then. */
+private fun headSummary(h: ControlPlaneClient.HealthView): DoctorCheck? {
+    val heads = h.heads
+    val ready = h.readyHeads
+    val failed = h.failedHeads
+    val countersPresent = listOf(heads, ready, failed).none { it == null }
+    if (!countersPresent) return null
+    checkNotNull(heads)
+    checkNotNull(ready)
+    checkNotNull(failed)
+    return when {
+        failed > 0 -> DoctorCheck(
+            "heads",
+            CheckStatus.FAIL,
+            "$failed of $heads head(s) FAILED to start",
+            "splice restart (then: splice logs --head <key> --tail 50 to see why)",
+        )
+        ready + failed < heads ->
+            DoctorCheck("heads", CheckStatus.WARN, "still converging: $ready ready + $failed failed of $heads")
+        else -> DoctorCheck("heads", CheckStatus.OK, "$ready of $heads head(s) ready")
+    }
 }
 
 // LOST-COVERAGE fix: a missing mgmt-key file 401s every bearer endpoint. Present → OK; absent while

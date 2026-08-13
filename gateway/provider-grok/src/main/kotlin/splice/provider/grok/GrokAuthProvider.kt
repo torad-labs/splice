@@ -39,6 +39,7 @@ import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.auth.credentialsOrNull
+import splice.core.auth.synthesizedExpiryMs
 import splice.core.util.DaemonLog
 import splice.core.util.SecureFile
 import splice.core.util.long
@@ -93,6 +94,18 @@ public class GrokAuthProvider(
     @Volatile
     private var cache: Cache? = null
 
+    // SH-02(b): set when a refresh persisted an expiry still inside the stale floor; the blocking
+    // tier serves the current token until the backoff lapses. (c): counted for the dashboard.
+    @Volatile
+    // MIN_VALUE/2, not MIN_VALUE: `clock() - MIN_VALUE` overflows negative and would read as
+    // "backoff active" from boot with small/injected clocks.
+    private var lastIneffectiveRefreshAtMs: Long = Long.MIN_VALUE / 2
+    private val ineffectiveRefreshes = java.util.concurrent.atomic.AtomicLong()
+
+    /** SH-02(c): how many refreshes succeeded without satisfying the tier logic — nonzero here is
+     *  the early warning that used to arrive as provider-side credential death. */
+    public val ineffectiveRefreshCount: Long get() = ineffectiveRefreshes.get()
+
     private data class Cache(val snapshot: Snapshot, val mtimeMs: Long, val loadedAt: Long)
 
     private data class Snapshot(val access: String, val expiresAtMs: Long?)
@@ -117,11 +130,16 @@ public class GrokAuthProvider(
             // credentialsOrNull still owns the one logging flatten (discipline L3).
             prefetchScope.launch { singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) } }
             current
+        } else if (clock() - lastIneffectiveRefreshAtMs < REFRESH_INEFFECTIVE_BACKOFF_MS) {
+            // SH-02(b): the last refresh succeeded without advancing past the stale floor — another
+            // one would too. Serve the current token through the backoff window instead of burning
+            // a rotating refresh token per request.
+            current
         } else {
             // stale floor: too close to hard expiry to risk it — block for a confirmed-fresh token,
             // same as pre-G17 behavior.
             val refreshed = singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) }
-            refreshed ?: (if (clock() < expiresAt) current else null)
+            refreshed ?: current.takeIf { clock() < expiresAt }
         }
     }
 
@@ -138,7 +156,7 @@ public class GrokAuthProvider(
         // stripped it) is otherwise never-expiring — synthesize a ceiling off the mtime already
         // read above, no new I/O.
         parseSnapshot()
-            ?.let { it.copy(expiresAtMs = it.expiresAtMs ?: (mtime + SYNTHETIC_EXPIRY_TTL_MS)) }
+            ?.let { it.copy(expiresAtMs = it.expiresAtMs ?: synthesizedExpiryMs(mtime)) } // SH-01: shared policy
             ?.also { cache = Cache(it, mtime, now) }
     }.onFailure {
         log("[grok-auth] failed to read $authPath: $it — treating as not logged in")
@@ -248,7 +266,24 @@ public class GrokAuthProvider(
     }
 
     private fun persistRotation(refreshToken: String, fresh: GrokRefreshedTokens, access: String): RefreshOutcome {
-        val expiresAtMs = fresh.expiresIn?.let { clock() + it * MS_PER_S }
+        // SH-02(a): an endpoint response with no expires_in used to persist a NULL expiry, and the
+        // merge then carried the stale on-disk value — the very next credentials() re-entered the
+        // blocking tier and refreshed AGAIN, per request, burning rotating refresh tokens (the
+        // 2026-07-18 credential-death shape). A just-minted token is not older than the one it
+        // replaced: synthesize now+TTL (the SH-01 shared policy) so the expiry always advances.
+        val expiresAtMs = fresh.expiresIn?.let { clock() + it * MS_PER_S } ?: synthesizedExpiryMs(clock())
+        // SH-02(b): even with (a), a sub-floor grant (expires_in shorter than the stale floor)
+        // leaves the next read inside the blocking tier — a SUCCESSFUL refresh that cannot satisfy
+        // the tier logic. Back off instead of looping (CLIProxyAPI refreshIneffectiveBackoff),
+        // log once per trip, and count it for the dashboard.
+        if (expiresAtMs - clock() < STALE_FLOOR_MS) {
+            lastIneffectiveRefreshAtMs = clock()
+            ineffectiveRefreshes.incrementAndGet()
+            log(
+                "[$LOG_TAG] refresh succeeded but expiry did not advance past the stale floor — " +
+                    "backing off ${REFRESH_INEFFECTIVE_BACKOFF_MS / MS_PER_S}s",
+            )
+        }
         // The endpoint already consumed the old refresh_token (Granted) by the time we get here — a
         // throwing write must degrade to a typed PersistFailed, never a raw throw through SingleFlight
         // out of credentials()/refresh(), so the not-yet-expired current token still gets served.
@@ -315,6 +350,10 @@ public class GrokAuthProvider(
 
     private companion object {
         const val LOG_TAG = "grok-auth"
+
+        // SH-02(b): CLIProxyAPI's refreshIneffectiveBackoff value — long enough to stop a tight
+        // success/re-check loop, short enough that a genuinely recovering endpoint retries soon.
+        const val REFRESH_INEFFECTIVE_BACKOFF_MS = 30_000L
         const val DEFAULT_CACHE_MS = 30_000L
         const val MS_PER_S = 1000L
 
@@ -327,7 +366,6 @@ public class GrokAuthProvider(
 
         /** 4h ceiling synthesized for auth files with no `expires` field (legacy/foreign CLI writes,
          *  G18) — otherwise readSnapshot() would treat them as never-expiring. */
-        const val SYNTHETIC_EXPIRY_TTL_MS = 4 * 60 * 60 * 1000L
         const val FIELD_TOKENS = "tokens"
         const val FIELD_ACCESS_TOKEN = "access_token"
         const val FIELD_REFRESH_TOKEN = "refresh_token"

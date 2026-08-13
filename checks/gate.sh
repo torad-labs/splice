@@ -77,7 +77,6 @@ run "pr title"       bash checks/pr-title.sh
 # selftest is defence in depth over its OUTPUT, so a bug in the generator itself still gets caught.
 run "secret-scan allowlist generated" python3 checks/gen-secret-scan-allow.py --check
 run "secret-scan allowlist" bash checks/secret-scan-allow-selftest.sh
-run "server tests"   npm test -w server
 run "webui lint"     npm run lint -w webui
 run "webui tests"    npm test -w webui
 webui_dist_before="$(mktemp)"

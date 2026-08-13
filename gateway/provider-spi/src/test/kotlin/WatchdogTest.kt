@@ -92,6 +92,32 @@ class WatchdogTest {
     }
 
     @Test
+    fun `turn-scoped cap poller reaps with NO open stream - the NF-03 case`() {
+        runBlocking {
+            // No slot, no launchIn: this is the connect/backoff/refresh/between-rounds window the
+            // stream-scoped poller never covers. launchTotalCap alone must fire the typed sentinel.
+            val dog = TurnWatchdog(budget(firstByteMs = 10_000, idleMs = 5_000, capMs = 400))
+            val target = launch { delay(10.seconds) }
+            val capPoller = dog.launchTotalCap(this, target)
+            target.join()
+            assertTrue(dog.fired is WatchdogFired.TotalCap, "expected TotalCap, got ${dog.fired}")
+            capPoller.cancel()
+        }
+    }
+
+    @Test
+    fun `turn-scoped cap poller stays silent under the cap`() {
+        runBlocking {
+            val dog = TurnWatchdog(budget(2_000, 2_000, 60_000))
+            val target = launch { delay(150) }
+            val capPoller = dog.launchTotalCap(this, target)
+            target.join()
+            capPoller.cancel()
+            assertNull(dog.fired, "a turn well under totalCap must not be reaped")
+        }
+    }
+
+    @Test
     fun `clean exit - poller cancelled, nothing fired`() {
         runBlocking {
             val gate = InflightGate({ 0 })

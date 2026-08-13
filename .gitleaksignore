@@ -5,6 +5,11 @@
 # GrokProviderTest pair was vetted in the 2026-07-19 pre-publication audit
 # (audit-splice-public-refs-gitleaks-20260719). A NEW finding must be triaged, not
 # appended here blindly.
+# 2026-08-13: wire-compare capture session UUID — a Claude Code session id riding as
+# prompt_cache_key in a dev/research wire dump (codex-0.145.0-responses-request.json,
+# commit cde3ea1). Not a credential; no auth power; same class as the 13 fixture keys
+# above. The file at HEAD now carries redacted placeholders; this entry covers the
+# historical blob the scanner flags.
 561d7ec0eb8a2bef8d724832211a3896b2af3bd1:dev/campaigns/proxy-hardening/oracle/fixtures/bigout.json:generic-api-key:29
 561d7ec0eb8a2bef8d724832211a3896b2af3bd1:dev/campaigns/proxy-hardening/oracle/fixtures/failed.json:generic-api-key:29
 561d7ec0eb8a2bef8d724832211a3896b2af3bd1:dev/campaigns/proxy-hardening/oracle/fixtures/basic.json:generic-api-key:29
@@ -21,3 +26,4 @@ c0a91614361f847917972c29c56a209286b5ce4c:gateway/dialect-openai-responses/src/te
 2c8f0a4d5074ca9a3525544e896770417390249f:gateway/dialect-openai-responses/src/test/resources/contract/responses-canonical.json:generic-api-key:14
 dd2a6783fd349d253b4e1fd70cd36f33471b4bc7:gateway/provider-grok/src/test/kotlin/grok/GrokProviderTest.kt:generic-api-key:73
 5910ee1866fa962cac25fd9c17b416b869a654f8:dev/campaigns/manifest.py:generic-api-key:116
+cde3ea158f8f99962a1c3ae8c31fe72d793f185a:dev/research/wire-compare/codex-0.145.0-responses-request.json:generic-api-key:1

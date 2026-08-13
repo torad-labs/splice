@@ -16,7 +16,10 @@ import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.util.firstLong
+import splice.core.util.strIfString
 import splice.core.util.strOrEmpty
+import splice.spi.BufferCapacity
 import splice.spi.StreamTranslator
 import splice.spi.TerminalStates
 import splice.spi.WatchdogFired
@@ -37,8 +40,18 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     private var textBlock: WireBlockIndex? = null
     private var thinkingBlock: WireBlockIndex? = null
     private val toolBlocks = HashMap<Int, WireBlockIndex>()
+
+    // CX-01: full accumulated argument text per opened tool index — the streamed chunks go
+    // straight to the wire, so this is the only place the WHOLE buffer exists for a JSON parse
+    // at terminal. Capped by BufferCapacity (NF-06).
+    private val toolArgsByIndex = HashMap<Int, StringBuilder>()
+    private var toolArgsInvalid: String? = null
     private var hasToolUse = false
     private var emittedText = false
+
+    // CX-09: a thinking block reaching the sink is content the client got; the empty-turn
+    // honesty gate reads this so it never grades a thinking-only turn as empty.
+    private var emittedThinking = false
     private var incomplete = false
     private val textBuf = StringBuilder()
     private val thinkingBuf = StringBuilder()
@@ -48,6 +61,15 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     private var outputTokens = 0L
     private var cachedTokens = 0L
     private var failure: String? = null
+
+    // CX-08 (L3): OpenAI carries a model refusal in a DEDICATED `refusal` field on the streamed
+    // delta and on the final message — never in `content`. Unread, the one text that explains the
+    // turn was discarded: a refusal with no prose fell through to the pipeline's generic
+    // "model returned no content (empty response) — retry" (locally synthesized, so the G20 health
+    // split blamed splice for the backend's verdict, and the operator was told to retry a request
+    // the backend will refuse identically), and a refusal that followed streamed reasoning ended as
+    // a clean Success with the chain of thought promoted to the answer.
+    private val refusalBuf = StringBuilder()
 
     // WIRE-2/3/6: textBuf/thinkingBuf/toolIndexById exist for legitimate dedup/replay and must
     // stay unbounded on the normal path; this local safety valve (never provider-reported) only
@@ -85,7 +107,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
                 // so an entry count alone leaves those chars unbounded — review #49. Normally a
                 // handful of entries; the count cap bounds the sum's worst case.
                 val pendingArgsChars = pendingTools.values.sumOf { it.args.length }
-                if (bufferOverCapacity(textBuf.length, thinkingBuf.length, toolCount, pendingArgsChars)) {
+                if (BufferCapacity.over(textBuf.length, thinkingBuf.length, toolCount, pendingArgsChars)) {
                     runawayGuard = RUNAWAY_GUARD_MESSAGE
                     return@collect
                 }
@@ -102,6 +124,9 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
             // malformed value in a frame: surface via the honest terminal decision
         }
         flushPendingTools(sink)
+        // CX-01: parse each opened tool's accumulated args at terminal; a corrupt/empty tool call
+        // becomes a Failure in terminalOutcome, never a Success with a malformed tool_use.
+        if (toolArgsInvalid == null) toolArgsInvalid = firstInvalidToolArgs(toolBlocks.keys, toolArgsByIndex)
         sink.closeAll()
         return terminalOutcome()
     }
@@ -112,8 +137,26 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         val runaway = runawayGuard
         val providerFailure = when {
             runaway != null -> TurnOutcome.Failure(ErrorType.API_ERROR, runaway, providerReported = false)
+            // CX-01: a terminated turn whose tool arguments are corrupt must not reach the client
+            // as a Success — provider-reported (the backend produced the bytes), so it retries.
+            toolArgsInvalid != null -> TurnOutcome.Failure(
+                ErrorType.API_ERROR,
+                "chat backend: $toolArgsInvalid in tool call — retry",
+                providerReported = true,
+            )
             failure != null ->
                 TurnOutcome.Failure(ErrorType.API_ERROR, "chat backend: $failure", providerReported = true)
+            // CX-08: the backend populated `refusal` — a censored generation whose STATED REASON is
+            // the only honest verdict available. Ranked above the content_filter branch below
+            // because it carries the model's own words instead of a generic phrase; it outranks
+            // `finished` for the same reason content_filter does (the same frame sets both).
+            // isNotBlank, not isNotEmpty: a buffer of only whitespace fragments must still read as
+            // "no refusal" now that fragments are accepted verbatim (round-2 review).
+            refusalBuf.isNotBlank() -> TurnOutcome.Failure(
+                ErrorType.API_ERROR,
+                "chat backend: model refused — $refusalBuf",
+                providerReported = true, // the `refusal` the backend sent, not a local verdict (G20)
+            )
             // finish_reason=content_filter is a CENSORED turn — a clean end_turn would let a
             // blocked generation masquerade as complete (honesty invariant); it outranks
             // `finished` (the same frame sets both). Retry an api_error honestly.
@@ -152,6 +195,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         thinkingText = thinkingBuf.toString(),
         bodyText = textBuf.toString(),
         emittedText = emittedText,
+        emittedThinking = emittedThinking,
     )
 
     private suspend fun onEvent(evt: JsonObject, sink: WireSink) {
@@ -173,6 +217,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     private suspend fun applyFinalMessage(msg: JsonObject, sink: WireSink) {
         foldFinalProse(msg, sink)
         foldFinalToolCalls(msg, sink)
+        appendRefusal(refusalBuf, msg, isDelta = false) // CX-08: the whole-copy final-message carrier
     }
 
     /** The reasoning + text halves of the final-message fold, both prefix-aware via
@@ -182,6 +227,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
             val toEmit = unseenSuffix(thinkingBuf.toString(), r)
             if (toEmit.isNotEmpty()) {
                 val idx = thinkingBlock ?: sink.openThinking().also { thinkingBlock = it }
+                emittedThinking = true // CX-09: a thinking block is on the wire from here on
                 thinkingBuf.append(toEmit)
                 sink.thinkingDelta(idx, toEmit)
             }
@@ -250,6 +296,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         // DeepSeek/xAI chat → reasoning_content; some OpenRouter/vLLM → reasoning; a few → thinking.
         reasoningDeltaText(delta)?.let { r ->
             val idx = thinkingBlock ?: sink.openThinking().also { thinkingBlock = it }
+            emittedThinking = true // CX-09: a thinking block is on the wire from here on
             thinkingBuf.append(r)
             sink.thinkingDelta(idx, r)
         }
@@ -260,6 +307,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
             sink.textDelta(idx, c)
         }
         (delta["tool_calls"] as? JsonArray)?.forEach { tc -> applyToolCall(tc as? JsonObject ?: return@forEach, sink) }
+        appendRefusal(refusalBuf, delta, isDelta = true) // CX-08: the incremental streamed carrier
     }
 
     private suspend fun applyToolCall(tc: JsonObject, sink: WireSink) {
@@ -270,7 +318,10 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         val args = strOrEmpty(fn?.get("arguments"))
         val opened = toolBlocks[index]
         if (opened != null) {
-            if (args.isNotEmpty()) sink.inputJsonDelta(opened, args)
+            if (args.isNotEmpty()) {
+                sink.inputJsonDelta(opened, args)
+                accumulateToolArgs(toolArgsByIndex, index, args)
+            }
             return
         }
         val pending = pendingTools.getOrPut(index) {
@@ -293,7 +344,10 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         openedToolIds.add(pending.id)
         hasToolUse = true
         pendingTools.remove(index)
-        if (pending.args.isNotEmpty()) sink.inputJsonDelta(opened, pending.args.toString())
+        if (pending.args.isNotEmpty()) {
+            sink.inputJsonDelta(opened, pending.args.toString())
+            accumulateToolArgs(toolArgsByIndex, index, pending.args.toString())
+        }
     }
 
     private suspend fun flushPendingTools(sink: WireSink) {
@@ -326,17 +380,19 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
 
     private fun usage(evt: JsonObject) {
         val u = evt["usage"] as? JsonObject ?: return
-        fun num(obj: JsonObject, vararg keys: String): Long =
-            keys.firstNotNullOfOrNull { (obj[it] as? JsonPrimitive)?.content?.toLongOrNull() } ?: 0L
-        (u["prompt_tokens"] as? JsonPrimitive)?.content?.toLongOrNull()?.let { inputTokens = it }
-        (u["completion_tokens"] as? JsonPrimitive)?.content?.toLongOrNull()?.let { outputTokens = it }
+        // CX-18: OpenRouter's Responses-shaped routes and several OpenAI-compatible servers report
+        // the two main buckets under the input_/output_ spelling; reading only prompt_/completion_
+        // landed those turns at zero usage. Canonical spelling first — a backend emitting both is
+        // read by the standard field.
+        u.firstLong("prompt_tokens", "input_tokens")?.let { inputTokens = it }
+        u.firstLong("completion_tokens", "output_tokens")?.let { outputTokens = it }
         // Prompt-cache read tokens — surfaced so the HUD/cache-log see a real hit rate. Details
         // field first (OpenAI standard: prompt_tokens_details.cached_tokens), then flat `cached_tokens`,
         // then DeepSeek's `prompt_cache_hit_tokens`. RAW here: prompt_tokens already INCLUDES this
         // cached portion and HeadServer disjoints them, so subtracting here would double-subtract.
         val details = u["prompt_tokens_details"] as? JsonObject
-        val cached = details?.let { num(it, "cached_tokens") }?.takeIf { it > 0 }
-            ?: num(u, "cached_tokens", "prompt_cache_hit_tokens")
+        val cached = details?.firstLong("cached_tokens")?.takeIf { it > 0 }
+            ?: u.firstLong("cached_tokens", "prompt_cache_hit_tokens") ?: 0L
         if (cached > 0) cachedTokens = cached
     }
 
@@ -348,23 +404,9 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
 
 private val REASONING_KEYS = listOf("reasoning_content", "reasoning", "thinking", "reasoning_text")
 
-// WIRE-2/3/6 runaway-upstream guard: far above any legitimate response (200K-token completions
-// run well under 1M chars; real turns use a handful of tool calls).
-private const val MAX_BUFFERED_CHARS = 20_000_000
-private const val MAX_TOOL_INDEX_ENTRIES = 50_000
+// WIRE-2/3/6 runaway-upstream guard message; the cap itself lives in spi.BufferCapacity (NF-06:
+// one definition, three dialects).
 private const val RUNAWAY_GUARD_MESSAGE = "chat backend: response exceeded max buffered size — aborting"
-
-/** True once textBuf/thinkingBuf, the tool-index map, or the not-yet-opened tools' buffered
- *  arguments have grown past their cap. Top-level (off the class function budget) — reads only its
- *  arguments; the caller latches [ChatStreamTranslator]'s own runawayGuard state. */
-private fun bufferOverCapacity(
-    textLen: Int,
-    thinkingLen: Int,
-    toolIndexCount: Int,
-    pendingArgsLen: Int,
-): Boolean =
-    textLen >= MAX_BUFFERED_CHARS || thinkingLen >= MAX_BUFFERED_CHARS ||
-        toolIndexCount >= MAX_TOOL_INDEX_ENTRIES || pendingArgsLen >= MAX_BUFFERED_CHARS
 
 /** First non-empty cleartext reasoning field on a chat delta/message. Top-level (off the class
  *  function budget) — reads only its argument. */
@@ -388,4 +430,64 @@ private fun unseenSuffix(already: String, final: String): String = when {
     final.startsWith(already) -> final.substring(already.length)
     already.contains(final) -> ""
     else -> final
+}
+
+/** CX-08: fold an OpenAI `refusal` field into [buf] from either of its two carriers.
+ *
+ *  TWO guards, closing two different axes; neither replaces the other.
+ *  · TYPE — [strIfString], not [strOrEmpty]. OpenAI types `delta.refusal` as anyOf[string, null]
+ *    ("the refusal message generated by the model"), so a vendor that ships it as a did-the-model-
+ *    refuse FLAG (`"refusal": false`, `"refusal": 0`) is deviating from the wire contract, and
+ *    strOrEmpty would hand back the non-blank strings "false" / "0" and fail 100% of that vendor's
+ *    WORKING turns as a provider-reported refusal. A non-string primitive is not a refusal message.
+ *  · BLANK — `refusal: ""` / JSON null / whitespace on every frame must never trip the gate.
+ *
+ *  DELTA-WINS accumulation, NOT [unseenSuffix]. The carriers are (i) incremental `delta.refusal`
+ *  fragments and (ii) a whole-copy echo on the final message. Deltas own the buffer: each one is
+ *  appended VERBATIM (what the vendor SDK does — openai-python builds `message.refusal` by
+ *  concatenating every `delta.refusal`), and the whole-copy carrier is used only when no delta ever
+ *  arrived. Running a whole-message dedup over an INCREMENTAL carrier deleted every token that had
+ *  occurred before, so a real streamed refusal shipped garbled ("I can't help with that. I can't
+ *  help with anything illegal." → "I can't help with that. I anything illegal"); carrying the
+ *  model's own words is the entire value of this gate. One condition also kills the double-append.
+ *  Capped by the NF-06 buffer law. The refusal is NOT written to the wire — it is the turn's
+ *  verdict, not its content. Top-level — off ChatStreamTranslator's detekt function budget. */
+private fun appendRefusal(buf: StringBuilder, obj: JsonObject, isDelta: Boolean) {
+    val refusal = strIfString(obj["refusal"])
+    // Round-2 review: isBlank() is a WHOLE-VALUE predicate and this is an INCREMENTAL carrier —
+    // applying it per-frame silently deleted every whitespace-only fragment (a newline token
+    // between sentences, a lone space), shipping the refusal garbled. A FRAGMENT is dropped only
+    // when empty; a WHOLE COPY is still dropped when blank, so the blank negative control keeps
+    // its teeth. Three statements, not a merged condition: the && form trips ComplexCondition(3).
+    if (refusal.isEmpty()) return
+    if (!isDelta && refusal.isBlank()) return
+    if (!isDelta && buf.isNotBlank()) return
+    if (buf.length < BufferCapacity.MAX_BUFFERED_CHARS) buf.append(refusal)
+}
+
+/** CX-01: the first opened tool whose accumulated args are empty or not valid JSON, or null when
+ *  all parse. Top-level (off ChatStreamTranslator's detekt function budget) — reads only its
+ *  arguments. An opened tool with zero argument text is malformed ({} for a tool that needed args). */
+// CX-01: bounded accumulation of an opened tool's full argument text (streamed chunks go to the
+// wire; this is the only place the whole buffer exists to parse at terminal). Top-level — off the
+// class function budget. NF-06 cap.
+private fun accumulateToolArgs(argsByIndex: MutableMap<Int, StringBuilder>, index: Int, chunk: String) {
+    val buf = argsByIndex.getOrPut(index) { StringBuilder() }
+    if (buf.length < BufferCapacity.MAX_BUFFERED_CHARS) buf.append(chunk)
+}
+
+private fun firstInvalidToolArgs(indices: Set<Int>, argsByIndex: Map<Int, StringBuilder>): String? =
+    indices.firstNotNullOfOrNull { index -> invalidArgsReason(argsByIndex[index]?.toString().orEmpty()) }
+
+/** null when [text] is valid non-empty tool-argument JSON, else the reason. */
+private fun invalidArgsReason(text: String): String? {
+    if (text.isBlank()) return "empty arguments for an opened tool call"
+    return try {
+        kotlinx.serialization.json.Json.parseToJsonElement(text)
+        null
+    } catch (ignored: kotlinx.serialization.SerializationException) {
+        "malformed JSON"
+    } catch (ignored: IllegalArgumentException) {
+        "malformed JSON"
+    }
 }

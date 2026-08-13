@@ -64,8 +64,16 @@ val licenses = complianceDir.map { it.file("dependency-licenses.json") }
 val thirdPartyLicenses = complianceDir.map { it.file("THIRD_PARTY_LICENSES.txt") }
 val thirdPartyNotices = repositoryRoot.file("THIRD_PARTY_NOTICES.md")
 val dashboard = repositoryRoot.file("webui/dist/index.html")
+// The set was written 2026-07-20 when every dependency was Apache-2.0/MIT/EPL; BSD was never
+// considered rather than rejected. BSD 2-Clause is strictly MORE permissive than Apache-2.0, which
+// is already allowed — no patent clause, no NOTICE obligation, no copyleft, OSI-approved — and the
+// attribution it does require is already emitted by generateThirdPartyLicenses. Added 2026-08-11
+// for com.github.luben:zstd-jni, the canonical JVM zstd binding (Kafka/Spark/Netty use it); the
+// alternatives cannot compress (aircompressor is decompress-only) or shell out to it anyway.
 val allowedReleaseLicenses = setOf(
     "Apache License, Version 2.0",
+    "BSD 2-Clause License",
+    "BSD-2-Clause",
     "Apache Software License - Version 2.0",
     "Apache-2.0",
     "Eclipse Public License - Version 1.0",

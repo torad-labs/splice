@@ -4,7 +4,6 @@
 package splice.app.cli
 
 import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import splice.app.TopologyLoader
@@ -35,15 +34,17 @@ internal object AdminSupport {
      *  never MATERIALIZES the starter config as a side effect. [envReader] threads through the
      *  whole port resolution (StatePaths + ConfigService env layer) so a hermetic caller never
      *  reads the real process environment or state dir. */
-    fun controlPort(topology: Topology?, envReader: (String) -> String? = System::getenv): Int = if (topology == null) {
-        DEFAULT_CONTROL_PORT
-    } else {
+    fun controlPort(topology: Topology?, envReader: (String) -> String? = System::getenv): Int =
         ConfigService(
             StatePaths(envReader = envReader),
-            headOverrides = topology.configOverrides(),
+            // No topology (fresh machine / broken TOML) still resolves through the layered config:
+            // the old null-branch returned the hardcoded default, silently IGNORING the state
+            // config.json and SPLICE_CONTROL_PORT layers — which both broke hermetic test rigs
+            // (an ambient real daemon answered instead) and diverged from the launch shim's own
+            // resolution (JW-05 discovery, 2026-08-07).
+            headOverrides = topology?.configOverrides() ?: emptyMap(),
             envReader = envReader,
         ).getConfig().controlPort
-    }
 
     /** True only when the listener answers splice's versioned HTTP health contract. */
     fun daemonUp(port: Int = controlPort()): Boolean = runCatchingCancellable {
@@ -55,8 +56,11 @@ internal object AdminSupport {
             if (connection.responseCode != HttpURLConnection.HTTP_OK) return@runCatchingCancellable false
             val health = connection.inputStream.bufferedReader().use { it.readText() }
             val obj = json.parseToJsonElement(health).jsonObject
-            obj["ok"]?.jsonPrimitive?.booleanOrNull == true &&
-                obj["version"]?.jsonPrimitive?.content == GATEWAY_VERSION
+            // "Up" is the control server answering with the matching version — NOT health `ok`.
+            // Since 2026-08-12 `ok` means "a turn can complete", so a stalled head flips it false
+            // while the daemon is very much alive; reading `ok` here made `splice status` report a
+            // running daemon as "stopped" and ensureDaemon loop on a bound port (F4/F10).
+            obj["version"]?.jsonPrimitive?.content == GATEWAY_VERSION
         } finally {
             connection.disconnect()
         }
@@ -77,7 +81,11 @@ internal object AdminSupport {
         if (daemonUp(port)) return true
         val jar = startableJar(port) ?: return false
         println("splice: starting the daemon…")
-        return spawnDaemon(jar) && waitUntilUp(port)
+        val up = spawnDaemon(jar) && waitUntilUp(port)
+        // JW-01: when the daemon never answers, the reason is in the boot log — print it here
+        // instead of leaving "starting the daemon…" as the last line the operator ever sees.
+        if (!up) printBootLogTail()
+        return up
     }
 
     /** True while something still holds [port] — a TCP connect succeeds (or is ambiguous: timeout/IO).
@@ -119,11 +127,7 @@ internal object AdminSupport {
      *  same default, so both cold-start paths agree (audit 2026-07-18: no -Xmx → 1000-stream OOM). */
     private fun spawnDaemon(jar: Path): Boolean =
         runCatchingCancellable {
-            ProcessBuilder(
-                "sh",
-                "-c",
-                "nohup java \${SPLICE_JVM_OPTS:-$DEFAULT_JVM_OPTS} -jar '$jar' daemon >/dev/null 2>&1 &",
-            )
+            ProcessBuilder(daemonLaunchArgv(jar, StatePaths().logsDir))
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
                 .start()
@@ -177,7 +181,6 @@ internal object AdminSupport {
         }
     }
 
-    private const val DEFAULT_CONTROL_PORT = 3096
     private const val PROBE_TIMEOUT_MS = 400
     private const val STARTUP_POLLS = 60
     private const val POLL_INTERVAL_MS = 250L
@@ -192,3 +195,41 @@ internal object AdminSupport {
     // pages to the OS instead of holding them until the next GC is triggered by allocation.
     internal const val DEFAULT_JVM_OPTS = "-Xmx2048m -XX:+UseStringDeduplication -XX:G1PeriodicGCInterval=60000"
 }
+
+/** The cold-start command as argv. The jar and logs dir ride as positional $1/$2 DATA, never
+ *  interpolated into the script text: an apostrophe in the install path ("/home/o'brien")
+ *  broke out of the old single-quoted literal and the cold start died on a shell parse error
+ *  (review #94, F149). SPLICE_JVM_OPTS stays a shell expansion by design (see spawnDaemon).
+ *  Top-level — AdminSupport sits at detekt's function budget, same reason printBootLogTail is. */
+internal fun daemonLaunchArgv(jar: Path, logsDir: Path): List<String> {
+    val opts = AdminSupport.DEFAULT_JVM_OPTS
+    return listOf(
+        "sh",
+        "-c",
+        // JW-01: the spawned JVM's output lands in daemon-boot.log (rolled at 1MB, one
+        // generation), never /dev/null; an unwritable logs dir degrades the redirect
+        // instead of breaking the launch. Mirrors bin/splice-launch byte-for-byte in
+        // behaviour — the two cold-start paths must not drift.
+        "L=\"\$2\"; " +
+            "B=\"\$L/daemon-boot.log\"; mkdir -p \"\$L\" 2>/dev/null; " +
+            "[ -f \"\$B\" ] && [ \"\$(wc -c <\"\$B\" 2>/dev/null || echo 0)\" -gt 1048576 ] " +
+            "&& mv -f \"\$B\" \"\$B.1\" 2>/dev/null; " +
+            "if ( : >>\"\$B\" ) 2>/dev/null; then " +
+            "nohup java \${SPLICE_JVM_OPTS:-$opts} -jar \"\$1\" daemon >>\"\$B\" 2>&1 & " +
+            "else nohup java \${SPLICE_JVM_OPTS:-$opts} -jar \"\$1\" daemon >/dev/null 2>&1 & fi",
+        "sh",
+        jar.toString(),
+        logsDir.toString(),
+    )
+}
+
+/** JW-01: shown when the daemon never answers after a cold start. Top-level (off AdminSupport's
+ *  detekt function budget) — reads only the filesystem. */
+private fun printBootLogTail() {
+    val bootLog = StatePaths().logsDir.resolve("daemon-boot.log")
+    if (!Files.exists(bootLog)) return
+    println("splice: daemon did not come up — last boot output ($bootLog):")
+    runCatchingCancellable { Files.readAllLines(bootLog).takeLast(BOOT_LOG_TAIL_LINES).forEach(::println) }
+}
+
+private const val BOOT_LOG_TAIL_LINES = 15

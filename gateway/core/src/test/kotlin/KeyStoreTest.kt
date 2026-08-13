@@ -90,4 +90,48 @@ class KeyStoreTest {
         val withNothing = KeyStore.defaultPath { null }
         assertEquals(Path.of(System.getProperty("user.home"), ".config", "splice", "keys.toml"), withNothing)
     }
+
+    @Test
+    fun `unreadable store aborts the write and the file is byte-identical after - SH-11`() {
+        val dir = Files.createTempDirectory("keys-unreadable")
+        val path = dir.resolve("keys.toml")
+        val store = KeyStore(path)
+        store.write("OPENROUTER_API_KEY", "sk-a")
+        store.write("FIREWORKS_API_KEY", "sk-b")
+        val before = Files.readAllBytes(path)
+        // strip read permission: entries() used to collapse this to "empty store" and the next
+        // persist() rebuilt a ONE-key file, silently deleting every sibling key.
+        Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("-wx------"))
+        try {
+            val thrown = try {
+                store.write("MOONSHOT_API_KEY", "sk-c")
+                null
+            } catch (e: IllegalStateException) {
+                e
+            }
+            assertTrue(thrown != null, "an unreadable store must abort the write loudly")
+            assertTrue(thrown!!.message!!.contains("refusing to write"), "got: " + thrown.message)
+        } finally {
+            Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------"))
+        }
+        assertTrue(before.contentEquals(Files.readAllBytes(path)), "the store must be byte-identical")
+        assertEquals(setOf("OPENROUTER_API_KEY", "FIREWORKS_API_KEY"), store.names())
+    }
+
+    @Test
+    fun `two concurrent writers of different names both land - SH-11`() {
+        val dir = Files.createTempDirectory("keys-concurrent")
+        val path = dir.resolve("keys.toml")
+        // two INSTANCES (distinct channels — the cross-process shape, same-JVM variant)
+        val a = KeyStore(path)
+        val b = KeyStore(path)
+        val t1 = Thread { repeat(20) { i -> a.write("AAA_KEY", "a-$i") } }
+        val t2 = Thread { repeat(20) { i -> b.write("BBB_KEY", "b-$i") } }
+        t1.start()
+        t2.start()
+        t1.join()
+        t2.join()
+        assertEquals("a-19", a.read("AAA_KEY"), "no lost update on AAA")
+        assertEquals("b-19", a.read("BBB_KEY"), "no lost update on BBB")
+    }
 }

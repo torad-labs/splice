@@ -48,6 +48,10 @@ JAR="${SPLICE_JAR:-${SPLICE_SHARE_DIR:-$HOME/.local/share/splice}/splice.jar}"
 # inflight cap existed; 2G rides out a full 48-inflight + 512-queue burst with headroom.
 SPLICE_JVM_OPTS="${SPLICE_JVM_OPTS:--Xmx2048m -XX:+UseStringDeduplication -XX:G1PeriodicGCInterval=60000}"
 STATE_DIR="${CLAUDEX_STATE_DIR:-$HOME/.claude-codex/state}"
+# JW-01: the spawned JVM's output lands here, never /dev/null — a boot-dead daemon must leave a
+# tailable stack trace. One rolled generation at 1MB, same cap discipline as daemon.log.
+LOGS_DIR="$STATE_DIR/../logs"
+BOOT_LOG="$LOGS_DIR/daemon-boot.log"
 KEY_FILE="${STATE_DIR}/mgmt-key"
 # Safe by default: the daemon never adds --dangerously-skip-permissions unless explicitly told to.
 # CLAUDEX_DANGEROUSLY_SKIP_PERMISSIONS=1 is the named opt-in here AND on the legacy Node shim —
@@ -132,8 +136,17 @@ if [ -z "$HEALTH_JSON" ]; then
     exit 1
   fi
   echo "splice: starting daemon…" >&2
+  mkdir -p "$LOGS_DIR" 2>/dev/null || true
+  if [ -f "$BOOT_LOG" ] && [ "$(wc -c <"$BOOT_LOG" 2>/dev/null || echo 0)" -gt 1048576 ]; then
+    mv -f "$BOOT_LOG" "$BOOT_LOG.1" 2>/dev/null || true
+  fi
   # shellcheck disable=SC2086 # word-splitting of JVM opts is intentional
-  nohup java $SPLICE_JVM_OPTS -jar "$JAR" daemon >/dev/null 2>&1 &
+  if ( : >>"$BOOT_LOG" ) 2>/dev/null; then
+    nohup java $SPLICE_JVM_OPTS -jar "$JAR" daemon >>"$BOOT_LOG" 2>&1 &
+  else
+    # a read-only home must degrade the redirect, never break launching (JW-01 risk note)
+    nohup java $SPLICE_JVM_OPTS -jar "$JAR" daemon >/dev/null 2>&1 &
+  fi
   for ((i = 0; i < 50; i++)); do
     HEALTH_JSON="$(health)"
     [ -n "$HEALTH_JSON" ] && break
@@ -143,6 +156,12 @@ fi
 RUNNING_VERSION="$(health_field version)"
 if [ "$RUNNING_VERSION" != "$SPLICE_GATEWAY_VERSION" ]; then
   echo "splice: daemon failed version handshake (expected $SPLICE_GATEWAY_VERSION, got ${RUNNING_VERSION:-<none>})" >&2
+  # JW-01: the answer to "why?" is in the boot log — show it instead of making the operator
+  # know to hand-run the jar.
+  if [ -s "$BOOT_LOG" ]; then
+    echo "splice: last boot output ($BOOT_LOG):" >&2
+    tail -n 15 "$BOOT_LOG" >&2
+  fi
   exit 1
 fi
 
@@ -151,6 +170,14 @@ fi
 WANT_SHIM="$(health_field wantShimVersion)"
 if [ -n "$WANT_SHIM" ] && [ -n "$SPLICE_SHIM_VERSION" ] && [ "$WANT_SHIM" != "$SPLICE_SHIM_VERSION" ]; then
   echo "splice: WARNING — installed launch shim ($0) is stale (marker=$SPLICE_SHIM_VERSION, daemon expects=$WANT_SHIM). Run: splice install (or ./install.sh) to refresh it." >&2
+fi
+
+# JW-04, same non-fatal shape: topology loads once by design, so an edited splice.toml is inert
+# until a restart — the daemon re-compares its booted digest to the file per /health request
+# (topologyStale, fail-open), and this names the fix instead of leaving the edit silently dead.
+TOPOLOGY_STALE="$(health_field topologyStale)"
+if [ "$TOPOLOGY_STALE" = "True" ] || [ "$TOPOLOGY_STALE" = "true" ]; then
+  echo "splice: WARNING — splice.toml changed since the daemon booted; the running topology is stale. Run: splice restart" >&2
 fi
 
 KEY="$(cat "$KEY_FILE" 2>/dev/null || true)"

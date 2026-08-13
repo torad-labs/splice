@@ -236,15 +236,18 @@ The cache effect remains workload-dependent, but the reasoning-depth result was 
 ```
 gateway/       Kotlin daemon (spliced) — Gradle multi-module, JDK 21; the PRIMARY stack
 config/        splice.example.toml — the sample multi-provider topology
-bin/           splice-launch (the installed wrapper) + legacy Node shims (claudex, claudex-next)
+bin/           splice-launch (the installed wrapper) + claudex (the codex-head entry)
 install.sh     fetch/build the jar, install the shim, link wrapper commands
 webui/         React 19 + Vite + Zustand dashboard, single-file build
 experiments/   cache-replay A/B reproducer
-server/        LEGACY Node proxy stack — still runnable during cutover, not the primary path
 .rules/        ast-grep "walls" enforced write-time AND at the commit gate (same rules twice)
 ```
 
-The **gateway/** Kotlin daemon is the primary stack. The **server/** Node stack (and the `bin/claudex` / `bin/claudex-next` shims that drive it) is legacy, kept runnable during cutover but no longer the documented entry point.
+The **gateway/** Kotlin daemon is the only stack. The legacy `server/` Node proxy and its
+`bin/claudex-next` shim were **deleted on 2026-08-10** (P8-CUT), after the Kotlin daemon had
+owned the production ports for three days and 32,326 turns at 99.14% clean. The wire behaviour it
+established survives as 11 byte-exact fixtures in the migration oracle
+(`npm run oracle:replay`), whose mock upstream is vendored so it no longer depends on the deleted tree.
 
 ## Development
 

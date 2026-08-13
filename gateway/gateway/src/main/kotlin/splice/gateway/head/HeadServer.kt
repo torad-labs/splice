@@ -139,6 +139,9 @@ public class HeadServer(
         // live on the long-lived TurnDriver, so reset them here (review 2026-07-19).
         // restart() is stop-then-start, so this reset alone suffices — a bare stop keeps counters intact.
         driver.resetHealth()
+        // NF-01: the 429 cooldown lives on the long-lived UpstreamClient too — restart must be a
+        // real escape hatch from an armed horizon, not a no-op the operator discovers mid-outage.
+        deps.upstream.clearRateLimitCooldown()
         // G26: local (not a class field) so a control-plane restart (POST /api/heads/:head/restart)
         // re-arms verification instead of going permanently silent after the first restart.
         val nodelayLogged = AtomicBoolean(false)

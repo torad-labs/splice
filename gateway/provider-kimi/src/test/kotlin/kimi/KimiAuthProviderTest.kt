@@ -463,3 +463,74 @@ class KimiAuthProviderTest {
         assertEquals("invalid_grant", auth.describe().fields["refresh_latched"])
     }
 }
+
+// SH-01 lives in its own class: KimiAuthProviderTest sits at detekt's LargeClass ceiling.
+class KimiSynthesizedExpiryTest {
+
+    @Test
+    fun `missing expires_at synthesizes one ceiling - one refresh across N calls - SH-01`() = runTest {
+        // Pre-fix, a file with no expires_at floored to 0: every credentials() call sat below the
+        // hard floor and fired its own blocking refresh. The shared policy synthesizes mtime+4h:
+        // fresh file => N calls, ZERO refreshes.
+        val dir = Files.createTempDirectory("kimi-noexp")
+        val file = dir.resolve(".kimi").resolve("credentials").resolve("kimi-code.json")
+        Files.createDirectories(file.parent)
+        Files.writeString(
+            file,
+            """{"access_token":"kimi-access","refresh_token":"kimi-refresh",
+                "scope":"coding","token_type":"Bearer"}""",
+        )
+        val mtime = Files.getLastModifiedTime(file).toMillis()
+        val calls = AtomicInteger(0)
+        val auth = KimiAuthProvider(
+            authPath = file,
+            clock = { mtime + 1_000 },
+            refreshCall = {
+                calls.incrementAndGet()
+                RefreshAttempt.Denied("must-not-be-called")
+            },
+        )
+        repeat(5) {
+            val creds = auth.credentials()
+            assertTrue(creds is Credentials.ApiKey, "got $creds")
+        }
+        assertEquals(0, calls.get(), "a fresh expires_at-less file must not refresh per call")
+    }
+
+    @Test
+    fun `refresh merges onto the on-disk file - foreign fields survive rotation - SH-10`() = runTest {
+        // Pre-fix, a successful refresh wrote a fixed six-key object from scratch: device_id and
+        // any vendor field kimi-cli stores beside ours vanished on every rotation.
+        val dir = Files.createTempDirectory("kimi-merge")
+        val file = dir.resolve(".kimi").resolve("credentials").resolve("kimi-code.json")
+        Files.createDirectories(file.parent)
+        Files.writeString(
+            file,
+            """{"access_token":"old-access","refresh_token":"old-refresh","expires_at":1,
+                "scope":"coding","token_type":"Bearer","expires_in":3600,
+                "device_id":"dev-123","vendor_future_field":{"nested":true}}""",
+        )
+        val auth = KimiAuthProvider(
+            authPath = file,
+            clock = { 1_000_000L },
+            refreshCall = {
+                RefreshAttempt.Granted(
+                    KimiRefreshedTokens(
+                        accessToken = "new-access",
+                        refreshToken = "new-refresh",
+                        expiresIn = 7200,
+                        scope = "coding",
+                        tokenType = "Bearer",
+                    ),
+                )
+            },
+        )
+        auth.refresh()
+        val onDisk = Json.parseToJsonElement(Files.readString(file)).jsonObject
+        assertEquals("new-access", onDisk["access_token"]!!.jsonPrimitive.content)
+        assertEquals("new-refresh", onDisk["refresh_token"]!!.jsonPrimitive.content)
+        assertEquals("dev-123", onDisk["device_id"]!!.jsonPrimitive.content, "foreign key must survive")
+        assertTrue("vendor_future_field" in onDisk, "unknown vendor field must survive: $onDisk")
+        assertEquals("7200", onDisk["expires_in"]!!.jsonPrimitive.content, "rotation fields must replace")
+    }
+}

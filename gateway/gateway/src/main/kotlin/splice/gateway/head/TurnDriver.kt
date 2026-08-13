@@ -192,6 +192,14 @@ internal class TurnDriver(
             catchingTurnFailure { driveOneTurn(drive, pingClient) }
                 .onFailure { e -> emitFailure(drive, e) }
         } catch (e: CancellationException) {
+            // NF-03: a watchdog-fired cancellation names its reason. Pre-stream reaps (total cap
+            // during connect/backoff/refresh) land HERE, not in a translator's watchdogOutcome —
+            // the generic "cancelled" hid them. Computed before the when: depth stays 3.
+            val cancelMsg = if (drive.watchdog.fired != null) {
+                "${provider.key}: upstream stalled (watchdog) — aborted; retry"
+            } else {
+                "${provider.key}: turn cancelled — retry"
+            }
             // Flat when (not nested if) so the still-connected try/catch stays at nesting depth 3:
             // catch → if(seal) → if(clientGone) → try would trip NestedBlockDepth's depth-4 ceiling.
             when {
@@ -207,10 +215,7 @@ internal class TurnDriver(
                 // abandon, not an error:cancelled (review 2026-07-22 round 3).
                 else ->
                     try {
-                        drive.emitter.emitError(
-                            ErrorType.OVERLOADED,
-                            "${provider.key}: turn cancelled — retry",
-                        )
+                        drive.emitter.emitError(ErrorType.OVERLOADED, cancelMsg)
                         log(telemetry.errTurn("cancelled", drive, ": turn cancelled before terminal"))
                         telemetry.recordPerf(drive, "error:cancelled")
                         health.local()
@@ -376,6 +381,10 @@ internal class TurnDriver(
                 // OFF for the non-stream collect path: there is no open SSE channel to ping (the
                 // whole body is buffered and sent once), so liveness can't be probed mid-turn.
                 val pinger = if (pingClient) self.launchClientPinger(drive, turnJob) else null
+                // NF-03: whole-turn totalCap poller, unconditional (non-stream turns burn wall
+                // clock too). launchIn keeps the idle tiers stream-scoped; this one only samples
+                // elapsed, so connect/backoff/refresh/between-rounds time finally counts.
+                val capPoller = drive.watchdog.launchTotalCap(self, turnJob)
                 try {
                     // Folding is null for sol / every non-codex head → the single-round path is
                     // byte-for-byte the pre-fold behaviour (drive straight to the real emitter,
@@ -407,6 +416,7 @@ internal class TurnDriver(
                     }
                 } finally {
                     pinger?.cancel()
+                    capPoller.cancel()
                 }
             }
         } finally {
@@ -795,6 +805,9 @@ internal fun searchContinuation(
  *  (non-Success outcomes pass through; searchContinuation's own type guard ignores them anyway). */
 internal fun bufferedForSearch(outcome: TurnOutcome): TurnOutcome =
     if (outcome is TurnOutcome.Success) outcome.copy(bodyText = "", emittedText = false) else outcome
+// CX-09 note: emittedThinking is deliberately NOT stripped here — BufferingWireSink buffers only
+// text/tool ops and forwards openThinking/thinkingDelta straight through, so a reasoning block from
+// a buffered round DID reach the client and must keep the honesty gate quiet.
 
 internal class FoldRunner(
     // Only the buffer's `real` sink — never a terminal here (L3: FoldRunner finishes via [finish]).
@@ -854,6 +867,7 @@ internal class FoldRunner(
                 // (emittedText=true over empty content would defeat the empty-model honesty
                 // gate — review-pr 2026-07-24). thinkingText STAYS: fold-mode reasoning streams
                 // LIVE to the wire, so it legitimately belongs in the mirror merge.
+                // emittedThinking rides along with thinkingText for the same reason.
                 salvaged.add(p.copy(bodyText = "", emittedText = false))
                 acc = acc.plusRound(p.usage)
             }
@@ -879,6 +893,16 @@ internal class FoldRunner(
         val foldNext = success?.let { fold.continuation(FoldRound(body, it, roundIndex)) }
         if (foldNext != null) {
             buffer.discard()
+            // CX-09: a fold round whose reasoning reached the client must say so, or a turn whose
+            // FINAL round comes back empty is graded "nothing reached the client" and errors after
+            // the user already saw thinking (BufferingWireSink forwards openThinking/thinkingDelta
+            // straight to the real sink). Pre-dates CX-09; closed here because it is its class.
+            // thinkingText is deliberately NOT carried: a fold continuation re-accumulates the
+            // whole turn's reasoning, so merging this round's copy in duplicates it — that is the
+            // 2026-07-26 mirror-duplication incident, and HeadServerFoldTest's summary-dedup case
+            // fails immediately if you try. usage is not carried either; the caller folds it into
+            // `acc` separately. ONLY the honesty flag rides, which no other field can express.
+            salvaged.add(TurnOutcome.PartialRound(emittedThinking = success.emittedThinking))
             log(
                 "[$key] fold round ${roundIndex + 1}: reasoning truncated at " +
                     "${success.usage.reasoningTokens} tokens, continuing\n",
@@ -980,12 +1004,21 @@ internal data class RoundUsage(
  *  fires on a round that carried one. */
 internal fun searchPartial(success: TurnOutcome.Success, buffered: Boolean): TurnOutcome.PartialRound =
     if (buffered) {
-        TurnOutcome.PartialRound(thinkingText = success.thinkingText, bodyText = "", emittedText = false)
+        TurnOutcome.PartialRound(
+            thinkingText = success.thinkingText,
+            bodyText = "",
+            emittedText = false,
+            // CX-09: reasoning is NOT buffered (BufferingWireSink forwards openThinking/
+            // thinkingDelta to the real sink), so it genuinely reached the client — the same
+            // reason thinkingText itself survives this strip.
+            emittedThinking = success.emittedThinking,
+        )
     } else {
         TurnOutcome.PartialRound(
             thinkingText = success.thinkingText,
             bodyText = success.bodyText,
             emittedText = success.emittedText,
+            emittedThinking = success.emittedThinking,
         )
     }
 
@@ -1012,6 +1045,7 @@ internal fun mergedAcrossRounds(
     return outcome.copy(
         hasToolUse = outcome.hasToolUse || salvaged.any { it.hasToolUse },
         emittedText = outcome.emittedText || salvaged.any { it.emittedText },
+        emittedThinking = outcome.emittedThinking || salvaged.any { it.emittedThinking },
         thinkingText = (salvaged.map { it.thinkingText } + outcome.thinkingText)
             .filter { it.isNotEmpty() }
             .joinToString("\n\n"),

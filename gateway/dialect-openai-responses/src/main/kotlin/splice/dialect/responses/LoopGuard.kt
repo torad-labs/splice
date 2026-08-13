@@ -50,7 +50,13 @@ internal object LoopGuard {
             val (name, input) = calls[block.toolUseId] ?: return
             val key = "$name|$input"
             val text = block.content.filterIsInstance<TextBlock>().joinToString("") { it.text }
-            if (ERROR_MARKER in text) {
+            // CX-11: prefer Anthropic's structured verdict; ERROR_MARKER is a Claude Code
+            // formatting detail with no canary, so it is the fallback for clients that omit
+            // is_error — never an override of a client that sent is_error:false (a tool whose
+            // output merely quotes the marker is not a failed call).
+            // On drift: if Claude Code renames the marker, add the new spelling HERE, next to
+            // the structured signal that keeps working regardless.
+            if (block.isError ?: (ERROR_MARKER in text)) {
                 val n = (failures[key] ?: 0) + 1
                 failures[key] = n
                 if (n >= TRIGGER) directives[block.toolUseId] = directive(name, n)

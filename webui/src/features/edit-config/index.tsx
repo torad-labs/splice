@@ -21,7 +21,7 @@ const ENUM_OPTIONS: Record<string, readonly string[]> = {
   debug: ['true', 'false'],
 };
 
-export function EditConfig() {
+export function EditConfig({ head }: { head: string | undefined }) {
   const data = useConfig((s) => s.data);
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const [pending, setPending] = useState<DiffEntry[] | null>(null);
@@ -58,7 +58,7 @@ export function EditConfig() {
     try {
       const patch: Record<string, ConfigValue> = {};
       for (const entry of pending) patch[entry.key] = entry.to;
-      const result = await applyConfigPatch(patch);
+      const result = await applyConfigPatch(patch, head);
       const applied = Object.keys(result.applied).join(', ') || 'nothing';
       const restart = result.restart_required.length
         ? `; restart required for ${result.restart_required.join(', ')}`

@@ -197,7 +197,7 @@ public enum class Knob(
         "grokModel",
         KnobKind.STRING,
         listOf("CLAUDE_GROK_MODEL", "CLAUDE_GROK_PINNED_MODEL"),
-        "grok-4.5",
+        "grok-4.6",
         restartRequired = true,
     ),
     XAI_API_BASE(

@@ -21,13 +21,17 @@ import java.nio.file.Path
  *  unreachable endpoint each degrade to one INFO row, never a crash and never a fabricated OK. */
 internal fun runtimeChecks(snapshot: DaemonSnapshot, envReader: (String) -> String?): List<DoctorCheck> {
     val statePaths = StatePaths(envReader = envReader)
+    // Read the key ONCE (review #94, F154): the old guard-and-use double read raced key rotation —
+    // a key emptying between reads threw checkNotNull, and `guarded` printed a FAIL row,
+    // contradicting this section's own contract that an unreadable key degrades to INFO.
+    val key = readMgmtKey(statePaths)
     val skip = when {
         !snapshot.running -> "skipped (daemon stopped)"
-        readMgmtKey(statePaths) == null -> "skipped (mgmt-key unreadable)"
+        key == null -> "skipped (mgmt-key unreadable)"
         else -> null
     }
     if (skip != null) return listOf(DoctorCheck("runtime", CheckStatus.INFO, skip))
-    val heads = ControlPlaneClient.headsRuntime(snapshot.port, checkNotNull(readMgmtKey(statePaths)))
+    val heads = ControlPlaneClient.headsRuntime(snapshot.port, checkNotNull(key))
         ?: return listOf(DoctorCheck("runtime", CheckStatus.INFO, "skipped (/api/heads unreachable)"))
     return heads.flatMap { h -> headRuntimeRows(h, statePaths) }
 }

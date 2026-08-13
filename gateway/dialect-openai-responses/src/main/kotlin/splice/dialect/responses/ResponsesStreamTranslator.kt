@@ -695,7 +695,12 @@ private suspend fun ResponsesEventReducer.closeOpenBlocks(oi: Int?, sink: WireSi
  *  comment for why this rides right after the summary closes. */
 private suspend fun ResponsesEventReducer.emitReplayedReasoning(item: JsonObject, sink: WireSink) {
     val envelope = ctx.encodeReasoningEnvelope(item) ?: return
-    if (shouldEmitReasoning(ctx, item)) sink.addRedactedThinking(envelope)
+    if (shouldEmitReasoning(ctx, item)) {
+        sink.addRedactedThinking(envelope)
+        // CX-09: the redacted block reached the sink too — without this flag an
+        // encrypted-reasoning-ONLY turn reads as empty and earns a false empty_model api_error.
+        emittedThinking = true
+    }
     if (ctx.collectReasoningEnvelopes) reasoningEnvelopes.add(envelope)
 }
 

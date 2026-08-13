@@ -127,21 +127,7 @@ internal object AdminSupport {
      *  same default, so both cold-start paths agree (audit 2026-07-18: no -Xmx → 1000-stream OOM). */
     private fun spawnDaemon(jar: Path): Boolean =
         runCatchingCancellable {
-            ProcessBuilder(
-                "sh",
-                "-c",
-                // JW-01: the spawned JVM's output lands in daemon-boot.log (rolled at 1MB, one
-                // generation), never /dev/null; an unwritable logs dir degrades the redirect
-                // instead of breaking the launch. Mirrors bin/splice-launch byte-for-byte in
-                // behaviour — the two cold-start paths must not drift.
-                "L='${StatePaths().logsDir}'; " +
-                    "B=\"\$L/daemon-boot.log\"; mkdir -p \"\$L\" 2>/dev/null; " +
-                    "[ -f \"\$B\" ] && [ \"\$(wc -c <\"\$B\" 2>/dev/null || echo 0)\" -gt 1048576 ] " +
-                    "&& mv -f \"\$B\" \"\$B.1\" 2>/dev/null; " +
-                    "if ( : >>\"\$B\" ) 2>/dev/null; then " +
-                    "nohup java \${SPLICE_JVM_OPTS:-$DEFAULT_JVM_OPTS} -jar '$jar' daemon >>\"\$B\" 2>&1 & " +
-                    "else nohup java \${SPLICE_JVM_OPTS:-$DEFAULT_JVM_OPTS} -jar '$jar' daemon >/dev/null 2>&1 & fi",
-            )
+            ProcessBuilder(daemonLaunchArgv(jar, StatePaths().logsDir))
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
                 .start()
@@ -208,6 +194,33 @@ internal object AdminSupport {
     // G1PeriodicGCInterval: idle heap uncommit — a daemon that goes quiet still returns freed
     // pages to the OS instead of holding them until the next GC is triggered by allocation.
     internal const val DEFAULT_JVM_OPTS = "-Xmx2048m -XX:+UseStringDeduplication -XX:G1PeriodicGCInterval=60000"
+}
+
+/** The cold-start command as argv. The jar and logs dir ride as positional $1/$2 DATA, never
+ *  interpolated into the script text: an apostrophe in the install path ("/home/o'brien")
+ *  broke out of the old single-quoted literal and the cold start died on a shell parse error
+ *  (review #94, F149). SPLICE_JVM_OPTS stays a shell expansion by design (see spawnDaemon).
+ *  Top-level — AdminSupport sits at detekt's function budget, same reason printBootLogTail is. */
+internal fun daemonLaunchArgv(jar: Path, logsDir: Path): List<String> {
+    val opts = AdminSupport.DEFAULT_JVM_OPTS
+    return listOf(
+        "sh",
+        "-c",
+        // JW-01: the spawned JVM's output lands in daemon-boot.log (rolled at 1MB, one
+        // generation), never /dev/null; an unwritable logs dir degrades the redirect
+        // instead of breaking the launch. Mirrors bin/splice-launch byte-for-byte in
+        // behaviour — the two cold-start paths must not drift.
+        "L=\"\$2\"; " +
+            "B=\"\$L/daemon-boot.log\"; mkdir -p \"\$L\" 2>/dev/null; " +
+            "[ -f \"\$B\" ] && [ \"\$(wc -c <\"\$B\" 2>/dev/null || echo 0)\" -gt 1048576 ] " +
+            "&& mv -f \"\$B\" \"\$B.1\" 2>/dev/null; " +
+            "if ( : >>\"\$B\" ) 2>/dev/null; then " +
+            "nohup java \${SPLICE_JVM_OPTS:-$opts} -jar \"\$1\" daemon >>\"\$B\" 2>&1 & " +
+            "else nohup java \${SPLICE_JVM_OPTS:-$opts} -jar \"\$1\" daemon >/dev/null 2>&1 & fi",
+        "sh",
+        jar.toString(),
+        logsDir.toString(),
+    )
 }
 
 /** JW-01: shown when the daemon never answers after a cold start. Top-level (off AdminSupport's

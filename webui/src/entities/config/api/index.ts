@@ -12,10 +12,16 @@ export async function fetchConfig(head?: string): Promise<void> {
 }
 
 /** PATCH /api/config, fanned out to every running head (runtime layer wins
- * over env), then refresh the layered view. */
-export async function applyConfigPatch(patch: Record<string, ConfigValue>): Promise<PatchResult> {
+ * over env), then refresh the layered view. The refresh must read the SAME
+ * view the operator is looking at (review #94, F142): a bare fetchConfig()
+ * repopulated the store with the GLOBAL view while the page's selector still
+ * showed a head, rendering global data under a per-head label. */
+export async function applyConfigPatch(
+  patch: Record<string, ConfigValue>,
+  head?: string,
+): Promise<PatchResult> {
   const result = await control.patchConfig(patch);
-  await fetchConfig();
+  await fetchConfig(head);
   return result;
 }
 

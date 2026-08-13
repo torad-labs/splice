@@ -210,6 +210,15 @@ class HeadServerCapacityTest {
                     "system":"You are a test. SCENARIO:quota429",
                     "messages":[{"role":"user","content":"go"}]}""",
             )
+        }.also { response ->
+            // Precondition (review #94, F156): pin that the quota429 scenario actually fired, or a
+            // mock drift and a broken cooldown read identically at the next assert. The head relays
+            // upstream failures as a 200 + SSE error event (never an HTTP error status mid-stream).
+            val body = response.bodyAsText()
+            assertTrue(
+                body.contains("rate_limit_error"),
+                "the quota429 scenario must surface a rate_limit_error event, got: ${body.take(200)}",
+            )
         }
         assertTrue(upstreamClient.rateLimitedForMs > 0L, "the 429 should have armed the cooldown")
         head.restart()

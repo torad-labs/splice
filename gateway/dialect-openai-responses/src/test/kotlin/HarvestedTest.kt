@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
 import splice.dialect.responses.harvestResponsesOutput
+import splice.dialect.responses.usageFrom
 
 class HarvestedTest {
 
@@ -36,6 +37,28 @@ class HarvestedTest {
         )
         assertEquals("answer", h.text)
         assertFalse(h.text.contains("null"), "a null text part must not leak \"null\": ${h.text}")
+    }
+
+    @Test
+    fun `usage alias chain reads prompt_tokens and completion_tokens spellings`() {
+        // CX-18 follow-up (review #94, F155): the translator fixtures all used the canonical
+        // spellings, so the alias fallback was unpinned — a regression dropping it (or flipping
+        // precedence) stayed green. usageFrom is a pure function; pin the chain directly.
+        val u = usageFrom(resp("""{"usage":{"prompt_tokens":100,"completion_tokens":7}}"""))
+        assertEquals(100, u.inputTokens)
+        assertEquals(7, u.outputTokens)
+    }
+
+    @Test
+    fun `canonical usage spelling wins when both spellings are present`() {
+        val u = usageFrom(
+            resp(
+                """{"usage":{"input_tokens":100,"prompt_tokens":999,
+                   "output_tokens":7,"completion_tokens":888}}""",
+            ),
+        )
+        assertEquals(100, u.inputTokens)
+        assertEquals(7, u.outputTokens)
     }
 
     @Test

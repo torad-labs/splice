@@ -36,7 +36,7 @@ export function ConfigPage() {
         ) : null}
         {error ? <ErrorNote message={error} /> : null}
         {loading && !data ? <SkeletonRows rows={8} cols={2} /> : null}
-        {data ? <EditConfig /> : null}
+        {data ? <EditConfig head={head === 'global' ? undefined : head} /> : null}
         {data ? <p className="myx-footnote">effective config observed from: {data.source}</p> : null}
       </Panel>
       {data ? (

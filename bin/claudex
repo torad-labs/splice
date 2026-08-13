@@ -1,16 +1,6 @@
 #!/usr/bin/env bash
-# claudex — Claude Code on ChatGPT Codex via the splice proxy (thin shim).
-# ALL logic lives in server/launcher/; this shim only execs what it prints.
-# Usage: claudex | claudex -c | claudex -p "…" | CLAUDEX_SAFE=1 claudex
-#
-# DEPRECATED — legacy Node launch path. The documented entry is now the Kotlin
-# daemon via bin/splice-launch (see README). Kept runnable during cutover, not
-# documented as primary. Requires bash >= 4 (uses `mapfile`).
-set -euo pipefail
-# Repo root resolves script-relative (this file lives in <repo>/bin/); override with CLAUDEX_ROOT.
-REPO="${CLAUDEX_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-NODE_BIN="${CLAUDEX_NODE:-$(command -v node)}"
-[[ -n "$NODE_BIN" ]] || { echo "claudex: node not found" >&2; exit 1; }
-mapfile -d '' -t CMD < <("$NODE_BIN" "$REPO/server/launcher/ensure-proxy.mjs" claudex "$@")
-[[ ${#CMD[@]} -gt 0 ]] || { echo "claudex: launcher failed (see messages above)" >&2; exit 1; }
-exec env "${CMD[@]}"
+# claudex — launches Claude Code against the codex head via the splice daemon.
+# The installed version is an argv[0] symlink to splice-launch; this is the in-repo entry.
+# (Was bin/claudex-kt until the 2026-08-10 cutover, when the Node bin/claudex it had to avoid
+#  colliding with was deleted along with server/.)
+exec env SPLICE_HEAD=claudex "$(dirname "$0")/splice-launch" "$@"

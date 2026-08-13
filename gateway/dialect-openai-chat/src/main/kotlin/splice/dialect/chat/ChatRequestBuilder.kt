@@ -17,6 +17,7 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.withCompactDirective
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.DocumentBlock
 import splice.core.wire.ImageBlock
@@ -64,7 +65,10 @@ public class ChatRequestBuilder(
         sessionId: String? = null,
     ): BuiltChatRequest {
         val messages = buildJsonArray {
-            body.system?.let { sys ->
+            // CX-02: on a compact turn the directive rides the system message — and a compact turn
+            // with no system prompt at all still gets one, because stripping tools alone never told
+            // the backend it was summarizing. Non-compact is untouched: no system, no message.
+            compactAwareSystem(body.system, compact)?.let { sys ->
                 addJsonObject {
                     put(ROLE, "system")
                     put(CONTENT, sys)
@@ -91,6 +95,12 @@ public class ChatRequestBuilder(
         )
         return BuiltChatRequest(req, meta)
     }
+
+    /** CX-02: the system text for this turn, or null when there is no system message to emit.
+     *  Compact ALWAYS produces one (the directive is the point); non-compact passes through
+     *  unchanged, including the null that means "emit no system message at all". */
+    private fun compactAwareSystem(system: String?, compact: Boolean): String? =
+        if (compact) withCompactDirective(system, compact = true) else system
 
     // The CLOSED request object: the fixed fields via the ChatRequest DTO, plus max_tokens injected
     // by its vendor-dynamic key (max_tokens vs max_completion_tokens) — the one field a fixed DTO

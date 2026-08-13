@@ -40,13 +40,19 @@ public fun main(args: Array<String>) {
 
 private fun runDaemon() {
     val statePaths = StatePaths()
+    // JW-01: the boot-failure net exists BEFORE anything that can throw (lock, TOML parse,
+    // daemon.start). Both cold-start paths used to launch the JVM with output discarded, so a
+    // pre-logger stack trace died in /dev/null and the operator saw only "failed version
+    // handshake (got <none>)".
+    Thread.setDefaultUncaughtExceptionHandler(bootFailureHandler(statePaths))
     val lock = DaemonLock(statePaths.daemonLockFile)
     if (!lock.tryAcquire()) {
         System.err.println("[daemon] another splice daemon holds the lock — exiting (the winner serves)")
         return
     }
     val topologyPath = TopologyLoader.configPath()
-    val topology = TopologyLoader.loadOrMaterialize(topologyPath)
+    val loaded = TopologyLoader.loadOrMaterializeWithDigest(topologyPath)
+    val topology = loaded.topology
     val distPath = Paths.get(System.getProperty("user.dir"), "..", "webui", "dist", "index.html")
     val log = persistentLogger(statePaths.logsDir)
     // Components that would otherwise fall back to bare stderr (auth providers, ConfigService,
@@ -61,6 +67,10 @@ private fun runDaemon() {
         Daemon.dashboardFrom(distPath),
         log = log,
         shutdownDaemon = { shutdownSignal.complete(Unit) },
+        // JW-04: the booted config identity, published on /health so an edited-but-inert
+        // splice.toml is visible to the shim, doctor, and the dashboard.
+        topologyDigest = loaded.digest,
+        topologyPath = topologyPath,
     )
 
     Runtime.getRuntime().addShutdownHook(Thread { shutdown(daemon, lock) })
@@ -112,8 +122,12 @@ internal fun runBoundedTeardown(deadlineMs: Long, halt: () -> Unit, teardown: ()
     halted.set(true)
 }
 
-// Below the CLI's 15s stop-poll budget (ControlPlaneClient) so a bounded stop is never mistaken for a
-// hung one, and above the head-stop phase's HEAD_STOP_BUDGET_MS so the graceful path wins the common case.
+// The cooperative cap. Its floor — this + TEARDOWN_TAIL_GRACE_MS = 10s — must stay BELOW the CLI's
+// graceful stop rung (ControlPlaneClient.GRACEFUL_POLLS, 11s), so a bounded stop is never mistaken
+// for a hung one and SIGTERM cannot land mid-tail. The two constants are a pair: change one, check
+// the other. (The comment here previously cited a 15s CLI budget that the escalation ladder
+// replaced, while the real rung had shrunk to exactly 8s — equal to this cap, zero margin.)
+// Also above the head-stop phase's HEAD_STOP_BUDGET_MS so the graceful path wins the common case.
 private const val STOP_DEADLINE_MS = 8_000L
 private const val TEARDOWN_TAIL_GRACE_MS = 2_000L
 
@@ -132,7 +146,7 @@ private const val TEARDOWN_TAIL_GRACE_MS = 2_000L
 // line in daemon.log. /mgmt/logs splits on "\n" (ControlServer.logsJson), so the endpoint this
 // whole change exists to feed emitted concatenated garbage. Exactly one terminator is appended
 // here, which is a no-op for the callers that already pass one and makes the class unrepeatable.
-internal fun persistentLogger(logsDir: Path): (String) -> Unit {
+internal fun persistentLogger(logsDir: Path, maxBytes: Long = MAX_LOG_BYTES): (String) -> Unit {
     runCatchingCancellable { Files.createDirectories(logsDir) }
     val file = logsDir.resolve("daemon.log")
     val rolled = logsDir.resolve("daemon.log.1")
@@ -143,7 +157,7 @@ internal fun persistentLogger(logsDir: Path): (String) -> Unit {
         AsyncFileIo.submit {
             System.err.print(line)
             runCatchingCancellable {
-                if (written >= MAX_LOG_BYTES) {
+                if (written >= maxBytes) {
                     writer?.close()
                     Files.move(file, rolled, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
                     writer = null
@@ -153,9 +167,16 @@ internal fun persistentLogger(logsDir: Path): (String) -> Unit {
                 w.write(line)
                 w.flush()
                 written += line.toByteArray(Charsets.UTF_8).size
-            }.onFailure {
+            }.onFailure { failure ->
                 runCatchingCancellable { writer?.close() }
                 writer = null
+                // SH-14: a failed rotate used to leave `written` >= the cap forever — every later
+                // line re-entered the rotate branch, threw BEFORE reaching newBufferedWriter, and
+                // daemon.log went silent permanently. Reconcile from disk so the next line
+                // self-corrects, and say so on stderr (the one lane still alive here).
+                written = runCatchingCancellable { if (Files.exists(file)) Files.size(file) else 0L }
+                    .getOrDefault(0L)
+                System.err.print("[daemon-log] write/rotate failed ($failure) — size reconciled to $written\n")
             }
         }
     }
@@ -163,3 +184,19 @@ internal fun persistentLogger(logsDir: Path): (String) -> Unit {
 
 // One rolled generation at 64MB caps daemon.log disk at ~128MB — plenty of tail history, bounded.
 private const val MAX_LOG_BYTES = 64L * 1024 * 1024
+
+/** JW-01: the last-resort boot net. Writes SYNCHRONOUSLY — the async file lane is a daemon
+ *  thread that dies with the JVM, and this fires when the JVM is dying. No catch clause on the
+ *  boot path itself (an uncaught-exception handler needs none), so the cancellation and
+ *  broad-catch walls stay untouched. Covers runtime uncaught throwables on other threads too —
+ *  a net, not a boot-only special case. */
+internal fun bootFailureHandler(statePaths: StatePaths): Thread.UncaughtExceptionHandler =
+    Thread.UncaughtExceptionHandler { thread, e ->
+        val line = "[${LocalTime.now().truncatedTo(ChronoUnit.SECONDS)}] [daemon] UNCAUGHT on " +
+            "${thread.name}: ${e.stackTraceToString()}\n"
+        System.err.print(line)
+        runCatchingCancellable {
+            Files.createDirectories(statePaths.logsDir)
+            Files.writeString(statePaths.logsDir.resolve("daemon.log"), line, CREATE, APPEND)
+        }
+    }

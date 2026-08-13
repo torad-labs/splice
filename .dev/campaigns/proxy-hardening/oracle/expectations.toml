@@ -159,7 +159,7 @@ regression and must go kotlin-wrong.
 field = "expected_upstream_requests[].prompt_cache_key"
 status = "sanctioned"
 authority = "cache-key strategy quirk: ResponsesRequestBuilder.kt:141 CacheKeyStrategy.SESSION_ID (TOML cache_key = \"session-id\", shipped for grok at config/splice.example.toml:94); review repair 2026-07-30"
-pinned_sha256 = "ab79a7c5bb0a3cec72e01e4e19b47fac"
+pinned_sha256 = "a40bd9951ce456fd2535274196d7ad10b857894d24f2ddbbaa1272b6adc9b28e"
 affects = "all 11 frozen fixtures — every one pins splice-ab79a7c5bb0a3cec72e01e4e19b47fac (the first-message-hash fallback)"
 expected_with_session_header = "claudex:<x-claude-code-session-id>"
 expected_without_session_header = "splice-ab79a7c5bb0a3cec72e01e4e19b47fac"

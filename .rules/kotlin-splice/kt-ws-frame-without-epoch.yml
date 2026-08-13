@@ -1,0 +1,21 @@
+# F7 (review 2026-08-12): ResponsesWsSession.frameFor builds a chaining frame WITHOUT capturing the
+# commit epoch, so a caller must pair it with a separate epochOf() — two lock acquisitions with a
+# window between them. A concurrent cleared() lands in that window, invalidates the conversation,
+# and bumps the epoch AFTER the frame was already built on the dropped state; the captured
+# (post-bump) epoch then still matches at commit time, so the round commits chaining state the
+# clear existed to bar. The downstream symptom is silent, not an error: a later bypassed SSE turn's
+# messages classify as server-held and vanish from the request.
+#
+# frameAndEpoch() captures both under ONE acquisition and is the only correct production entry
+# point. frameFor survives because ~17 unit tests build frames without ever committing, which is
+# safe — hence a wall scoped to src/main rather than an @Deprecated that would emit 17 warnings at
+# legitimate call sites. Verified 0 hits on the tree at d21c2b5 (the sole production caller,
+# ResponsesWsRunner, already uses frameAndEpoch).
+id: kt-ws-frame-without-epoch
+language: kotlin
+severity: error
+message: "frameFor() without the epoch re-opens the F7 commit race — use frameAndEpoch(), which captures both under one lock."
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  pattern: $X.frameFor($$$ARGS)

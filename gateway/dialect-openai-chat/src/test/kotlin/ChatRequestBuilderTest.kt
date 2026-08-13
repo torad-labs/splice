@@ -10,6 +10,9 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.parseAnthropicBody
+import splice.core.turn.COMPACT_DIRECTIVE_HEAD
+import splice.core.turn.compactDirective
+import splice.core.turn.withCompactDirective
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.ChatRequestBuilder
 import splice.dialect.chat.withReasoningEffortToml
@@ -249,6 +252,40 @@ class ChatRequestBuilderTest {
         assertEquals("high", compact["reasoning_effort"]?.jsonPrimitive?.content)
         assertFalse(compact.containsKey("tools"))
         assertFalse(compact.containsKey("tool_choice"))
+    }
+
+    // CX-02: stripping tools was the ONLY thing chat did on a compact turn, so the backend was
+    // never told it was summarizing and a conversational reply became the stored summary.
+    @Test
+    fun `compact appends the shared directive to the system message`() {
+        val msgs = build(
+            """{"model":"m","system":"You are helpful.",
+                "messages":[{"role":"user","content":"summarize"}]}""",
+            compact = true,
+        ).messages()
+        val system = msgs.first()
+        assertEquals("system", system["role"]?.jsonPrimitive?.content)
+        val content = system["content"]!!.jsonPrimitive.content
+        assertTrue(content.startsWith("You are helpful."), "the client's system prompt stays first")
+        assertTrue(content.contains(COMPACT_DIRECTIVE_HEAD), "the directive must ride: $content")
+        assertEquals(withCompactDirective("You are helpful.", compact = true), content)
+    }
+
+    @Test
+    fun `compact with no system prompt still gets one carrying the directive`() {
+        val msgs = build(
+            """{"model":"m","messages":[{"role":"user","content":"summarize"}]}""",
+            compact = true,
+        ).messages()
+        assertEquals("system", msgs.first()["role"]?.jsonPrimitive?.content)
+        assertEquals(compactDirective, msgs.first()["content"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `a non-compact turn carries no directive and no invented system message`() {
+        val plain = build("""{"model":"m","messages":[{"role":"user","content":"hi"}]}""")
+        assertFalse(plain.toString().contains(COMPACT_DIRECTIVE_HEAD))
+        assertEquals("user", plain.messages().first()["role"]?.jsonPrimitive?.content)
     }
 
     @Test

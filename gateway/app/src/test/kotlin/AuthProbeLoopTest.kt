@@ -63,7 +63,7 @@ class AuthProbeLoopTest {
         loop.probeOnce() // tick 1: healthy
         auth.credsOk = false
         loop.probeOnce() // tick 2: unhealthy
-        assertEquals(listOf("[auth-probe:head1] health healthy -> unhealthy\n"), lines)
+        assertEquals(listOf("[head1][auth-probe] health healthy -> unhealthy\n"), lines)
         assertEquals(1, auth.refreshCalls.get())
     }
 
@@ -87,7 +87,7 @@ class AuthProbeLoopTest {
             val lines = logs()
             val loop = AuthProbeLoop("head1", auth, log = { lines += it })
             loop.probeOnce()
-            assertEquals(listOf("[auth-probe:head1] initial health check: unhealthy\n"), lines)
+            assertEquals(listOf("[head1][auth-probe] initial health check: unhealthy\n"), lines)
             assertEquals(1, auth.refreshCalls.get())
         }
 
@@ -101,8 +101,8 @@ class AuthProbeLoopTest {
         loop.probeOnce() // recovered
         assertEquals(
             listOf(
-                "[auth-probe:head1] initial health check: unhealthy\n",
-                "[auth-probe:head1] health unhealthy -> healthy\n",
+                "[head1][auth-probe] initial health check: unhealthy\n",
+                "[head1][auth-probe] health unhealthy -> healthy\n",
             ),
             lines,
         )
@@ -154,5 +154,60 @@ class AuthProbeLoopTest {
         assertEquals(3, auth.credentialsCalls.get())
         assertTrue(lines.all { it.contains("probe tick threw") })
         loop.stop()
+    }
+
+    @Test
+    fun `a loop-killing throwable restarts the probe under the budget - SH-04`() = runTest {
+        // IllegalStateException is outside runCatchingCancellable's catch list: pre-fix the
+        // coroutine died silently and start() refused to re-arm — zero further ticks, ever.
+        val auth = object : RefreshableAuthProvider {
+            val calls = AtomicInteger(0)
+            override suspend fun credentials(): Credentials? {
+                if (calls.incrementAndGet() == 1) check(false) { "provider invariant blew up" }
+                return Credentials.ApiKey("k")
+            }
+            override suspend fun refresh(): Credentials? = credentials()
+            override suspend fun describe() = AuthDescription(present = true, kind = "fake")
+        }
+        val logs = mutableListOf<String>()
+        val loop = AuthProbeLoop("codex", auth, intervalMs = 1_000, log = logs::add, clock = { 0L })
+        // production runs probes under a SupervisorJob (Daemon.probeScope) — mirror it, or the
+        // dying child cancels the test scope itself.
+        val scope = kotlinx.coroutines.CoroutineScope(
+            StandardTestDispatcher(testScheduler) + kotlinx.coroutines.SupervisorJob() +
+                kotlinx.coroutines.CoroutineExceptionHandler { _, _ -> }, // JVM default-handler analog
+        )
+        loop.start(scope)
+        advanceTimeBy(3_500)
+        loop.stop()
+        assertTrue(logs.any { it.contains("loop died") && it.contains("restarting (1/5)") }, "$logs")
+        assertTrue(auth.calls.get() >= 2, "the restarted loop must tick again, saw ${auth.calls.get()}")
+    }
+
+    @Test
+    fun `restart budget exhaustion announces permanently down - SH-04`() = runTest {
+        val auth = object : RefreshableAuthProvider {
+            val calls = AtomicInteger(0)
+            override suspend fun credentials(): Credentials? {
+                calls.incrementAndGet()
+                check(false) { "always dies" }
+                return null
+            }
+            override suspend fun refresh(): Credentials? = credentials()
+            override suspend fun describe() = AuthDescription(present = true, kind = "fake")
+        }
+        val logs = mutableListOf<String>()
+        // fixed clock: every death lands in ONE rolling window, so the 6th exhausts the budget
+        val loop = AuthProbeLoop("codex", auth, intervalMs = 1_000, log = logs::add, clock = { 0L })
+        val scope = kotlinx.coroutines.CoroutineScope(
+            StandardTestDispatcher(testScheduler) + kotlinx.coroutines.SupervisorJob() +
+                kotlinx.coroutines.CoroutineExceptionHandler { _, _ -> }, // JVM default-handler analog
+        )
+        loop.start(scope)
+        advanceTimeBy(20_000)
+        loop.stop()
+        assertEquals(5, logs.count { it.contains("restarting (") }, "$logs")
+        assertEquals(1, logs.count { it.contains("permanently down") }, "$logs")
+        assertEquals(6, auth.calls.get(), "5 restarts + the original = 6 first-ticks, then silence")
     }
 }

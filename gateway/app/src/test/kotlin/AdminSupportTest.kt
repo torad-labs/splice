@@ -6,9 +6,11 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.app.cli.AdminSupport
+import splice.app.cli.daemonLaunchArgv
 import splice.core.GATEWAY_VERSION
 import java.net.InetSocketAddress
 import java.net.ServerSocket
+import java.nio.file.Path
 
 class AdminSupportTest {
 
@@ -71,5 +73,19 @@ class AdminSupportTest {
         } finally {
             server.close()
         }
+    }
+
+    // F149 (review #94): jar and logsDir ride as argv DATA, never interpolated into the sh -c
+    // string — an apostrophe in the install path ("/home/o'brien") used to break out of the
+    // single-quoted literal and kill the cold start on a shell parse error.
+    @Test
+    fun `daemon launch passes jar and logsDir as positional argv, never inside the shell string`() {
+        val jar = Path.of("/home/o'brien/splice.jar")
+        val logs = Path.of("/home/o'brien/.claude-codex/logs")
+        val argv = daemonLaunchArgv(jar, logs)
+        val script = argv[argv.indexOf("-c") + 1]
+        assertFalse(script.contains("o'brien"), "paths must not be interpolated into the shell script")
+        assertTrue(argv.takeLast(2) == listOf(jar.toString(), logs.toString()), "paths ride as positional argv")
+        assertTrue(script.contains("\"\$1\"") && script.contains("\"\$2\""), "the script reads them as data")
     }
 }

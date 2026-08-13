@@ -22,7 +22,9 @@ import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.util.firstLong
 import splice.core.util.strOrEmpty
+import splice.spi.BufferCapacity
 import splice.spi.StreamTranslator
 import splice.spi.TerminalStates
 import splice.spi.WatchdogFired
@@ -49,6 +51,7 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
     private val blocks = HashMap<Int, Block>()
     private var hasToolUse = false
     private var emittedText = false
+    private var emittedThinking = false
     private var incomplete = false
     private var finished = false
     private val textBuf = StringBuilder()
@@ -60,9 +63,19 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
     private var failureType: ErrorType? = null
     private var failureMessage: String = ""
 
+    // NF-06: latched when BufferCapacity trips; never provider-reported (the verdict is local).
+    private var runawayGuard: String? = null
+
     override suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome {
         try {
-            upstream.collect { evt -> onEvent(evt, sink) }
+            upstream.collect { evt ->
+                // NF-06: the shared runaway valve Chat already had.
+                if (BufferCapacity.over(textBuf.length, thinkingBuf.length)) {
+                    runawayGuard = RUNAWAY_GUARD_MESSAGE
+                    return@collect
+                }
+                onEvent(evt, sink)
+            }
         } catch (e: CancellationException) {
             // Only a watchdog fire may swallow cancellation; a real cancel propagates.
             if (ctx.watchdogFired() == null) throw e
@@ -81,8 +94,12 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
     // watchdog fire — preferring watchdog here discarded successful kimi turns and burned quota).
     private fun terminalOutcome(): TurnOutcome = terminalPrecedence(
         TerminalStates(
-            providerFailure = failureType?.let {
-                // a genuine upstream SSE error event (e.g. overloaded_error) — provider-reported (G20)
+            // NF-06: a tripped runaway valve outranks the provider slot — the buffers were truncated.
+            providerFailure = runawayGuard?.let {
+                TurnOutcome.Failure(ErrorType.API_ERROR, it, providerReported = false)
+            } ?: failureType?.let {
+                // a signal the BACKEND sent — an upstream SSE error event (e.g. overloaded_error) or
+                // a non-clean stop_reason (CX-07, see [stopReasonFailure]) — provider-reported (G20)
                 TurnOutcome.Failure(it, "kimi: $failureMessage", providerReported = true)
             },
             finished = finished,
@@ -116,6 +133,7 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
         thinkingText = thinkingBuf.toString(),
         bodyText = textBuf.toString(),
         emittedText = emittedText,
+        emittedThinking = emittedThinking,
     )
 
     private suspend fun onEvent(evt: JsonObject, sink: WireSink) {
@@ -170,6 +188,12 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
             "thinking_delta" -> {
                 val t = strOrEmpty(delta["thinking"])
                 thinkingBuf.append(t)
+                // CX-09: the flag means "the client RECEIVED reasoning", not "a block was opened".
+                // Kimi can open a thinking block and close it having sent nothing; counting that
+                // as content short-circuits the empty-turn honesty gate and lets a turn carrying
+                // literally zero characters end as a clean terminal — the L3 violation CX-09
+                // exists to close. Set it where chat and responses set theirs: on real content.
+                if (t.isNotBlank()) emittedThinking = true
                 sink.thinkingDelta(wire, t)
             }
             "input_json_delta" -> sink.inputJsonDelta(wire, strOrEmpty(delta["partial_json"]))
@@ -197,7 +221,18 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
         when (reason) {
             "tool_use" -> hasToolUse = true
             "max_tokens" -> incomplete = true
-            else -> Unit // stop_sequence / end_turn / other -> end_turn semantics
+            // CX-07 (L3): every OTHER value used to land in a bare `else -> Unit` with end_turn
+            // semantics, so a generation the BACKEND refused, paused or hard-truncated reached the
+            // client as a clean, complete Success. The three non-clean Anthropic terminals now latch
+            // the provider slot; end_turn / stop_sequence / an absent stop_reason / an unrecognized
+            // vendor value keep end_turn semantics (see [stopReasonFailure]). First latch wins so a
+            // later genuine `error` event can never be overwritten by a trailing message_delta.
+            else -> stopReasonFailure(reason)?.let { (type, why) ->
+                if (failureType == null) {
+                    failureType = type
+                    failureMessage = why
+                }
+            }
         }
         harvestUsage(evt["usage"] as? JsonObject)
     }
@@ -216,19 +251,71 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
 
     private fun harvestUsage(u: JsonObject?) {
         u ?: return
-        num(u, "input_tokens")?.let { inputTokens = it }
-        num(u, "cache_read_input_tokens")?.let { cacheRead = it }
-        num(u, "cache_creation_input_tokens")?.let { cacheCreation = it }
-        num(u, "output_tokens")?.let { outputTokens = it }
+        u.firstLong("input_tokens")?.let { inputTokens = it }
+        u.firstLong("cache_read_input_tokens")?.let { cacheRead = it }
+        cacheCreationTokens(u)?.let { cacheCreation = it }
+        u.firstLong("output_tokens")?.let { outputTokens = it }
     }
 
-    private fun intIndex(evt: JsonObject): Int? = (evt["index"] as? JsonPrimitive)?.content?.toIntOrNull()
+    /** CX-18: the flat total, else the sum of Anthropic's newer per-TTL `cache_creation` buckets.
+     *  Flat wins so a backend sending both is not double-counted, and the sum (not a first-of read)
+     *  is what the two TTL buckets mean. These tokens fold into inputTokens in [successOutcome],
+     *  so missing them understated the whole context-window percentage on cache-writing turns. */
+    private fun cacheCreationTokens(u: JsonObject): Long? =
+        u.firstLong("cache_creation_input_tokens")
+            ?: (u["cache_creation"] as? JsonObject)?.let { nested ->
+                // SCOPED to *_input_tokens, not every value in the object. Summing everything
+                // picks up a future non-additive sibling — a `total`, a `ttl` in seconds — and
+                // folds it into inputTokens and therefore used_percentage, i.e. premature
+                // auto-compaction: the same class CX-18 exists to prevent, in the other
+                // direction. Naming the two known TTL keys instead would miss a new
+                // ephemeral_1d_input_tokens bucket, so the suffix is the right seam.
+                val parts = nested.filterKeys { it.endsWith("_input_tokens") }
+                    .values.mapNotNull { (it as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong() }
+                parts.sum().takeIf { parts.isNotEmpty() }
+            }
 
-    private fun num(obj: JsonObject, key: String): Long? = (obj[key] as? JsonPrimitive)?.content?.toLongOrNull()
+    private fun intIndex(evt: JsonObject): Int? = (evt["index"] as? JsonPrimitive)?.content?.toIntOrNull()
 
     private companion object {
         // Short stable constant — Kimi never verifies signatures; Claude Code only needs one present.
         const val SYNTHETIC_SIGNATURE = "splice-synth-v1"
         val EMPTY = JsonObject(emptyMap())
     }
+}
+
+// NF-06 runaway-upstream guard message; the cap lives in spi.BufferCapacity (one source, three dialects).
+private const val RUNAWAY_GUARD_MESSAGE = "kimi: response exceeded max buffered size — aborting"
+
+private const val CONTEXT_EXCEEDED_MESSAGE =
+    "generation stopped: the model context window was exceeded (stop_reason=model_context_window_exceeded)"
+
+/**
+ * CX-07 (L3): the Anthropic `stop_reason` values that are NOT a clean completion, mapped to the
+ * honest failure each one is. The protocol ships SEVEN stop reasons; four are clean — `end_turn`,
+ * `stop_sequence`, `tool_use`, `max_tokens` — and these three are not:
+ *   · `refusal` — the model refused to generate; a censored turn, same class as Chat's content_filter;
+ *   · `pause_turn` — the backend paused a long-running turn; retryable, not a finished answer;
+ *   · `model_context_window_exceeded` — a HARD truncation distinct from `max_tokens`, so it must not
+ *     fold into `incomplete` (that would report the ordinary "ran out of room" stop for a turn the
+ *     backend could not run at all).
+ * Returns null for a clean value, for an absent stop_reason (`""`), and for an unrecognized one.
+ *
+ * WHY THE REMAINDER STAYS OPEN-SAFE instead of failing everything outside the clean four (decision
+ * 2026-08-09; the open-remainder alternative was considered and rejected): this dialect serves
+ * exactly one backend, Kimi's `/coding` surface, and OpenAI-compatible vendors demonstrably invent
+ * enumeration values — `ChatStreamTranslator.onFinish` already carries a `max_tokens` arm for
+ * vendors that ignore the spec's `length`. An open remainder would turn one off-spec value on a
+ * WORKING turn into a failed turn, and a false Failure on working traffic is worse than the silent
+ * success it replaces. The cost is that stop_reason #8 arrives invisible; making unknown
+ * discriminator values COUNTED needs a per-turn telemetry channel the dialects do not have (see the
+ * ledger note on W4-A) and is proposed as its own item rather than smuggled in here.
+ *
+ * Top-level — off the class function budget; reads only its argument.
+ */
+private fun stopReasonFailure(reason: String): Pair<ErrorType, String>? = when (reason) {
+    "refusal" -> ErrorType.API_ERROR to "generation refused by the model (stop_reason=refusal)"
+    "pause_turn" -> ErrorType.OVERLOADED to "backend paused the turn (stop_reason=pause_turn) — retry"
+    "model_context_window_exceeded" -> ErrorType.API_ERROR to CONTEXT_EXCEEDED_MESSAGE
+    else -> null
 }

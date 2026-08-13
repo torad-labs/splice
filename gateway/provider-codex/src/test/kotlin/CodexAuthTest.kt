@@ -476,4 +476,31 @@ class CodexAuthTest {
         assertNull(auth.refresh())
         assertEquals("invalid_grant", auth.describe().fields["refresh_latched"])
     }
+
+    @Test
+    fun `non-jwt access token ages out at the synthesized ceiling - SH-01`(@TempDir tmp: Path) = runTest {
+        // G18's codex twin: an opaque (non-JWT) access token used to yield expiresAtMs=null and
+        // be served FOREVER. The shared policy synthesizes mtime+4h: before the ceiling the token
+        // serves with zero refresh traffic; past it, the stale floor forces a blocking refresh.
+        var now = 0L
+        val calls = AtomicInteger(0)
+        val (auth, path) = provider(tmp, { now }) {
+            calls.incrementAndGet()
+            RefreshAttempt.Granted(
+                RefreshedTokens(accessToken = jwt("""{"exp":99999999999}"""), refreshToken = "r2", idToken = null),
+            )
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"opaque-no-jwt","refresh_token":"r1","account_id":"a"}}""")
+        val mtime = Files.getLastModifiedTime(path).toMillis()
+
+        now = mtime + 1_000 // fresh file, hours from the synthesized ceiling
+        assertEquals("opaque-no-jwt", (auth.credentials() as Credentials.Bearer).token)
+        assertEquals(0, calls.get(), "inside the synthesized ceiling: no refresh")
+
+        now = mtime + 4 * 60 * 60 * 1000L + 1_000 // past mtime+4h: below the stale floor
+        val refreshed = auth.credentials() as Credentials.Bearer
+        assertEquals(1, calls.get(), "past the synthesized ceiling: exactly one blocking refresh")
+        assertTrue(refreshed.token != "opaque-no-jwt", "the refreshed token must serve")
+    }
 }

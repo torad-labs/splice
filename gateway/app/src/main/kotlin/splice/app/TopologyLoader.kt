@@ -7,6 +7,7 @@ package splice.app
 import com.akuleshov7.ktoml.Toml
 import kotlinx.serialization.decodeFromString
 import splice.core.topology.Topology
+import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -53,13 +54,29 @@ command = "claude-openrouter"
         return base.resolve("splice").resolve("splice.toml")
     }
 
-    public fun loadOrMaterialize(path: Path): Topology {
+    public fun loadOrMaterialize(path: Path): Topology = loadOrMaterializeWithDigest(path).topology
+
+    /** JW-04: the parsed topology PLUS the sha-256 of the exact bytes it came from. The digest
+     *  rides /health so shim/doctor/dashboard can tell "the file changed since boot" — topology
+     *  stays deliberately non-hot-reloadable; this only makes the required restart visible. */
+    public data class LoadedTopology(val topology: Topology, val digest: String)
+
+    public fun loadOrMaterializeWithDigest(path: Path): LoadedTopology {
         if (!Files.exists(path)) {
             path.parent?.let(Files::createDirectories)
             Files.writeString(path, DEFAULT_TOML.trimIndent() + "\n")
         }
-        return parse(Files.readString(path))
+        val bytes = Files.readAllBytes(path)
+        return LoadedTopology(parse(bytes.toString(Charsets.UTF_8)), sha256Hex(bytes))
     }
+
+    /** Digest of the file as it is on disk RIGHT NOW; null when unreadable (fail open — an
+     *  unreadable file must degrade the staleness signal, never break /health or a launch). */
+    public fun currentDigest(path: Path): String? =
+        runCatchingCancellable { sha256Hex(Files.readAllBytes(path)) }.getOrNull()
+
+    private fun sha256Hex(bytes: ByteArray): String =
+        java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
     public fun parse(text: String): Topology = Toml.decodeFromString(text)
 

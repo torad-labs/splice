@@ -87,6 +87,23 @@ class AnthropicParseTest {
     }
 
     @Test
+    fun `tool_result carries the structured is_error flag`() {
+        val body = parseAnthropicBody(
+            """
+            {"model":"m","messages":[{"role":"user","content":[
+              {"type":"tool_result","tool_use_id":"t1","content":"boom","is_error":true},
+              {"type":"tool_result","tool_use_id":"t2","content":"fine","is_error":false},
+              {"type":"tool_result","tool_use_id":"t3","content":"unsaid"}
+            ]}]}
+            """.trimIndent(),
+        )
+        val results = body.typed.messages.single().content.filterIsInstance<ToolResultBlock>()
+        // null is NOT false: a client that omits the field says nothing, and LoopGuard falls back
+        // to the <tool_use_error> marker only in that case.
+        assertEquals(listOf(true, false, null), results.map { it.isError })
+    }
+
+    @Test
     fun `raw view preserves loose fields the typed schema does not model`() {
         val body = parseAnthropicBody(
             """{"model":"m","messages":[],"reasoning_effort":"xhigh","metadata":{"effort":"low"}}""",

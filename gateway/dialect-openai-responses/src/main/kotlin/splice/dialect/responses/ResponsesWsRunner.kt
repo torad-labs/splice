@@ -82,12 +82,14 @@ internal class ResponsesWsRunner(
             wssUrl = wssUrl,
             isTerminal = { it[FIELD_TYPE].str() in ResponsesRoundEnd.ALL },
         ) { conn ->
-            val frame = session.frameFor(chain, request, conn.generation)
-            // Capture the epoch the frame was built under: if anything invalidates this conversation
-            // before the terminal lands, the commit is discarded rather than resurrecting it.
-            pending = PendingCommit(request, conn.generation, session.epochOf(chain))
-            if (frame.chained) log("[ws] ${logKey(key)} chained onto the previous response\n")
-            frame.json
+            // F7: frame + epoch captured atomically. Two calls (frameFor then epochOf) left a
+            // window where a concurrent clear bumped the epoch after the frame was built on
+            // now-stale context, and the post-bump epoch still matched at commit — resurrecting the
+            // state the clear existed to bar.
+            val built = session.frameAndEpoch(chain, request, conn.generation)
+            pending = PendingCommit(request, conn.generation, built.epoch)
+            if (built.frame.chained) log("[ws] ${logKey(key)} chained onto the previous response\n")
+            built.frame.json
         }
         // No clear here: the transport declining (busy / connect failure) is a BYPASS, and the head
         // calls roundBypassed for exactly that. Clearing in both places bumped the epoch twice for

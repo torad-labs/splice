@@ -839,3 +839,308 @@ class ToolSearchCaptureTest {
         assertTrue(sink.calls.any { it.startsWith("openTool") && it.contains("mcp__exa__web_search_exa") })
     }
 }
+
+// NF-06 lives in its own class: ResponsesStreamTranslatorTest sits at detekt's LargeClass ceiling.
+class ResponsesRunawayGuardTest {
+    @Test
+    fun `runaway upstream trips the shared buffer cap into an honest local failure - NF-06`() = runTest {
+        // 25 x 1M-char text deltas, never a response.completed — the misbehaving-upstream shape.
+        // The guard must latch at the shared cap, stop feeding the buffers, and end the turn as a
+        // non-provider-reported API_ERROR (never a crash, never a provider attribution).
+        val chunk = "x".repeat(1_000_000)
+        val sink = RecordingSink()
+        val events = kotlinx.coroutines.flow.flow {
+            repeat(25) {
+                emit(
+                    kotlinx.serialization.json.buildJsonObject {
+                        put("type", kotlinx.serialization.json.JsonPrimitive("response.output_text.delta"))
+                        put("output_index", kotlinx.serialization.json.JsonPrimitive(0))
+                        put("delta", kotlinx.serialization.json.JsonPrimitive(chunk))
+                    },
+                )
+            }
+        }
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(events, sink)
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, failure.type)
+        assertFalse(failure.providerReported, "the runaway verdict is LOCAL — never provider-attributed")
+        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        // consumption stopped at the latch: 20 x 1M reaches the cap, later deltas never emit
+        val deltas = sink.calls.count { it.startsWith("text#") }
+        assertTrue(deltas in 20..21, "expected the guard to stop the stream at the cap, saw $deltas deltas")
+    }
+}
+
+// CX-01 in its own class: ResponsesStreamTranslatorTest sits at detekt's LargeClass ceiling.
+class ResponsesToolArgsValidationTest {
+    @Test
+    fun `truncated tool arguments plus a terminal is a Failure, not corrupt Success - CX-01`() = runTest {
+        // .done arrives with a mid-string-truncated buffer; pre-fix the block closed as Success.
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,
+                       "item":{"type":"function_call","call_id":"toolu_1","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"c\":"}"""),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, failure.type)
+        assertTrue(failure.message.contains("malformed JSON"), failure.message)
+    }
+
+    @Test
+    fun `an opened tool with zero argument deltas is a Failure - CX-01`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,
+                       "item":{"type":"function_call","call_id":"toolu_1","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertTrue((outcome as TurnOutcome.Failure).message.contains("empty arguments"), outcome.message)
+    }
+
+    @Test
+    fun `valid tool arguments still succeed - CX-01`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,
+                       "item":{"type":"function_call","call_id":"toolu_1","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"c\":"}"""),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"1}"}"""),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertTrue((outcome as TurnOutcome.Success).hasToolUse)
+    }
+}
+
+// W4-A (WIDENED past the item's two named dialects): openai-responses carries the SAME hole. Its
+// contentFiltered gate only fires on `status: incomplete`, but an OpenAI refusal arrives with
+// `status: completed`, and both refusal carriers fell into `else -> Unit` — so a refused turn ended
+// `finished = true` with zero text. This dialect serves 2 of the 4 providers (codex + grok).
+class ResponsesRefusalHonestyTest {
+    // Round-2 review (UNVERIFIED_CLAIM): the artifact claimed the refusal-vs-content_filter
+    // co-occurrence was "pinned by test in BOTH dialects". It was pinned in chat only; a mutation
+    // reversing the elvis at ResponsesStreamTranslator.kt:232 stayed green here. This is the twin
+    // of chat's `a refusal on the content_filter frame carries the model's words` test. The
+    // model's stated reason IS the verdict — the generic content-filter phrase discards it.
+    @Test
+    fun `a refusal that also trips the content filter carries the model's words - CX-08 ranking`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.refusal.delta","output_index":0,"delta":"Refusing: policy."}"""),
+                ev(
+                    """{"type":"response.incomplete","response":{"id":"r1",
+                       "incomplete_details":{"reason":"content_filter"}}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, f.type)
+        assertTrue(f.providerReported)
+        assertTrue(f.message.contains("Refusing: policy."), f.message)
+        assertTrue(!f.message.contains("stopped by content filter"), f.message)
+        assertEquals(null, f.partial)
+    }
+
+    @Test
+    fun `a streamed refusal delta is a provider-reported failure, not a clean completed turn`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.refusal.delta","output_index":0,"delta":"I won't "}"""),
+                ev("""{"type":"response.refusal.delta","output_index":0,"delta":"do that."}"""),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, failure.type)
+        assertTrue(failure.providerReported, "the BACKEND sent the refusal — G20 provenance is upstream")
+        assertTrue(failure.message.contains("I won't do that."), failure.message)
+        // A refusal is deterministic: no salvage may ride it, or the re-anchor loop re-POSTs it.
+        assertEquals(null, failure.partial)
+    }
+
+    // The second carrier: a `refusal`-typed content part on the completed response's output. This
+    // is the only one a backend that streams no refusal deltas uses.
+    @Test
+    fun `a refusal content part on the completed response fails the turn`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.completed","response":{"id":"r1","status":"completed",
+                       "output":[{"type":"message","content":[{"type":"refusal",
+                       "refusal":"Refusing: policy."}]}]}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, failure.type)
+        assertTrue(failure.providerReported)
+        assertTrue(failure.message.contains("Refusing: policy."), failure.message)
+    }
+
+    @Test
+    fun `the streamed and completed carriers of one refusal do not double-append`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.refusal.delta","output_index":0,"delta":"Nope."}"""),
+                ev(
+                    """{"type":"response.completed","response":{"id":"r1","status":"completed",
+                       "output":[{"type":"message","content":[{"type":"refusal","refusal":"Nope."}]}]}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(1, Regex("Nope\\.").findAll(failure.message).count(), failure.message)
+    }
+
+    // must_not: an empty refusal part, and an ordinary text turn, must be completely unaffected.
+    @Test
+    fun `an empty refusal part leaves an ordinary completed turn a Success`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"hello"}"""),
+                ev(
+                    """{"type":"response.completed","response":{"id":"r1","status":"completed",
+                       "output":[{"type":"message","content":[{"type":"output_text","text":"hello"},
+                       {"type":"refusal","refusal":""}]}]}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val success = outcome as TurnOutcome.Success
+        assertEquals("hello", success.bodyText)
+    }
+
+    // ---- repair round 2 -------------------------------------------------------------------
+    // Same two axes as chat (TYPE of the carrier, ACCUMULATION over the incremental one), plus the
+    // carrier this dialect was missing outright.
+
+    // TYPE AXIS. ResponseOutputRefusal.refusal and ResponseRefusalDoneEvent.refusal are typed
+    // `string`; a boolean/number is a vendor flag, and strOrEmpty turned `false` into the non-blank
+    // string "false" — failing a working turn and blaming the backend for it (G20 inverted).
+    @Test
+    fun `a boolean refusal delta riding a working stream is not a refusal`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.refusal.delta","output_index":0,"delta":false}"""),
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"hello"}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertEquals("hello", (outcome as TurnOutcome.Success).bodyText)
+    }
+
+    @Test
+    fun `a boolean refusal content part beside real output is not a refusal`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.completed","response":{"id":"r1","status":"completed",
+                       "output":[{"type":"message","content":[{"type":"output_text","text":"hello"},
+                       {"type":"refusal","refusal":false}]}]}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertEquals("hello", (outcome as TurnOutcome.Success).bodyText)
+    }
+
+    // ACCUMULATION AXIS. onTextDelta appends verbatim in the very same reducer; only the refusal
+    // arm deduped, so a token-streamed refusal lost every repeated token.
+    @Test
+    fun `a token-streamed refusal keeps every word, repeats included`() = runTest {
+        val tokens = listOf(
+            "I", " won", "'t", " do", " that", ".",
+            " I", " won", "'t", " do", " anything", " illegal", ".",
+        )
+        val frames = tokens.map {
+            ev("""{"type":"response.refusal.delta","output_index":0,"delta":"$it"}""")
+        } + completed
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(frames.asFlow(), RecordingSink())
+        val f = outcome as TurnOutcome.Failure
+        assertTrue(f.message.contains("I won't do that. I won't do anything illegal."), f.message)
+    }
+
+    // THE MISSING CARRIER. ResponseRefusalDoneEvent ("emitted when refusal text is finalized")
+    // carries the COMPLETE refusal string, and the documented order is refusal.delta xN ->
+    // refusal.done -> content_part.done -> output_item.done. A backend that finalizes without
+    // streaming deltas reached the client as a clean, zero-text Success.
+    @Test
+    fun `a refusal delivered only on response refusal done fails the turn`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.refusal.done","output_index":0,"refusal":"I won't do that."}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, f.type)
+        assertTrue(f.providerReported, "the BACKEND finalized the refusal — G20 provenance is upstream")
+        assertTrue(f.message.contains("I won't do that."), f.message)
+        assertEquals(null, f.partial)
+    }
+
+    // Three carriers, one refusal: the guard that dropping the dedup did not regress into
+    // duplication. delta-wins means the two whole-copy carriers are both no-ops here.
+    @Test
+    fun `all three carriers of one refusal appear exactly once`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.refusal.delta","output_index":0,"delta":"Nope."}"""),
+                ev("""{"type":"response.refusal.done","output_index":0,"refusal":"Nope."}"""),
+                ev(
+                    """{"type":"response.completed","response":{"id":"r1","status":"completed",
+                       "output":[{"type":"message","content":[{"type":"refusal","refusal":"Nope."}]}]}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertEquals(1, Regex("Nope\\.").findAll(f.message).count(), f.message)
+    }
+
+    // A NON-EMPTY refusal part beside real prose. HEAD returned Success with the text; failing the
+    // turn is correct under L3 and matches the pre-existing contentFiltered shape — pin the
+    // deliberate choice so it cannot silently reverse. (The EMPTY-part control above is its twin.)
+    @Test
+    fun `a non-empty refusal part beside real prose fails the turn`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"here is some prose"}"""),
+                ev(
+                    """{"type":"response.completed","response":{"id":"r1","status":"completed",
+                       "output":[{"type":"message","content":[{"type":"output_text","text":"prose"},
+                       {"type":"refusal","refusal":"but I stop here"}]}]}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, f.type)
+        assertTrue(f.providerReported)
+        assertTrue(f.message.contains("but I stop here"), f.message)
+        assertEquals(null, f.partial)
+    }
+}

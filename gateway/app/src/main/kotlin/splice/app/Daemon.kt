@@ -43,8 +43,10 @@ import splice.core.topology.Topology
 import splice.core.topology.catalogFor
 import splice.core.topology.configOverrides
 import splice.core.topology.effectiveApiKeyEnv
+import splice.core.topology.portCollisionMessage
 import splice.core.turn.WatchdogBudget
 import splice.core.util.discard
+import splice.core.util.headScopedLog
 import splice.core.util.runCatchingCancellable
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.withReasoningEffortToml
@@ -129,36 +131,53 @@ private fun assembleDaemonHeads(
     assemble: (String, HeadConfig, ProviderConfig) -> ManagedHead,
 ): LinkedHashMap<String, String> {
     val failed = LinkedHashMap<String, String>()
-    for ((key, head) in topology.heads) {
+    // JW-13: name a duplicate-port collision before the loser hits an opaque "Address already in
+    // use". Both colliding heads are marked failed with a message pointing at the sibling.
+    val portDupes = topology.portCollisions()
+    val collidingHeads = portDupes.values.flatten().toSet()
+    for ((port, keys) in portDupes) {
+        keys.forEach { failed[it] = portCollisionMessage(port, keys) }
+        log("[daemon][boot] ${portCollisionMessage(port, keys)}\n")
+    }
+    // Colliding heads already failed above with a named reason — filter them out so the assembly
+    // loop keeps a single continue (detekt LoopWithTooManyJumpStatements).
+    for ((key, head) in topology.heads.filterKeys { it !in collidingHeads }) {
         val providerCfg = topology.providers[head.provider]
         if (providerCfg == null) {
             failed[key] = "unknown provider '${head.provider}'"
-            log("[daemon] head '$key' SKIPPED: unknown provider '${head.provider}'\n")
+            log("[$key][boot] SKIPPED: unknown provider '${head.provider}'\n")
             continue
         }
         runCatchingDaemonBoundary { assemble(key, head, providerCfg) }
             .onSuccess { heads[key] = it }
             .onFailure {
                 failed[key] = it.message ?: it.javaClass.simpleName
-                log("[daemon] head '$key' SKIPPED (build failed): ${it.message}\n")
+                log("[$key][boot] SKIPPED (build failed): ${it.message}\n")
             }
     }
     return failed
 }
+
+/** The two per-head probe sinks startDaemonHeads writes into (detekt LongParameterList). */
+internal data class HeadProbeSinks(
+    val authProbes: MutableMap<String, AuthProbeLoop>,
+    val turnPathStalled: java.util.concurrent.ConcurrentHashMap<String, Boolean>,
+)
 
 private suspend fun startDaemonHeads(
     heads: Map<String, ManagedHead>,
     failed: MutableMap<String, String>,
     probeScope: CoroutineScope,
     log: (String) -> Unit,
-    authProbes: MutableMap<String, AuthProbeLoop>,
+    sinks: HeadProbeSinks,
 ) {
     heads.forEach { (key, managed) ->
         runCatchingDaemonBoundary { managed.head.start() }.onFailure {
             failed[key] = "start failed: ${it.message}"
-            log("[daemon] head '$key' failed to start: ${it.message}\n")
+            log("[$key][boot] failed to start: ${it.message}\n")
         }
-        startAuthProbeIfRefreshable(key, managed.auth, probeScope, log, authProbes)
+        startAuthProbeIfRefreshable(key, managed.auth, probeScope, log, sinks.authProbes)
+        TurnPathProbeLoop(key, managed.head.port, sinks.turnPathStalled, log).start(probeScope)
     }
 }
 
@@ -256,6 +275,10 @@ public class Daemon(
     private val shutdownDaemon: () -> Unit = {},
     private val refreshCall: suspend (tokenUrl: String, refreshToken: String) -> RefreshAttempt<RefreshedTokens> =
         ::codexRefresh,
+    // JW-04: the booted config identity (sha-256 of the parsed bytes + the resolved path).
+    // Defaults keep every existing test constructor compiling; Main always passes both.
+    private val topologyDigest: String = "",
+    private val topologyPath: Path? = null,
 ) {
     // Topology TOML ([daemon] + [defaults]) feeds the headOverrides layer so reasoning
     // display is operator-editable without recompiling. Env and runtime PATCH still win.
@@ -280,6 +303,10 @@ public class Daemon(
     // another's — same isolation shape as SingleFlight.kt:33-36.
     private val probeScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
     private val authProbes = LinkedHashMap<String, AuthProbeLoop>()
+
+    // Turn-path liveness (2026-08-12): key -> stalled. Written by TurnPathProbeLoop, read by
+    // /health. The 91h wedge proved head liveness and head CONFIGURATION are different facts.
+    private val turnPathStalled = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
 
     public suspend fun start() {
         val cfg = config.getConfig()
@@ -308,11 +335,15 @@ public class Daemon(
             // Configured total so readyHeads + failedHeads == heads holds even when a head fails to
             // ASSEMBLE (it never enters `heads`) — review 2026-07-23.
             topology.heads.size,
+            topologyDigest = topologyDigest,
+            configPath = topologyPath?.toString().orEmpty(),
+            topologyStale = topologyStaleProbe(topologyPath, topologyDigest),
+            turnPathStalled = { turnPathStalled.filterValues { it }.keys.sorted() },
         )
         control = srv
         // Start heads BEFORE opening the control plane so a launch-shim that sees /health and
         // immediately POSTs /launch/<head> does not race a still-binding head (503 head is not running).
-        startDaemonHeads(heads, failed, probeScope, log, authProbes)
+        startDaemonHeads(heads, failed, probeScope, log, HeadProbeSinks(authProbes, turnPathStalled))
         // Defense in depth for the restart-into-a-still-bound-port race (BS-4 DEFECT B): unlike the
         // per-head starts above, an uncaught EADDRINUSE here (a prior daemon that freed the lock but
         // not yet the control port) would crash the new daemon to /dev/null, leaving zero serving.
@@ -410,6 +441,8 @@ public class Daemon(
                     authCacheMs = ctx.cfg.authCacheMs,
                     refreshCall = { rt -> grokRefresh(tokenUrl, rt) },
                     prefetchScope = probeScope,
+                    // JW-03: [<headKey>] first, so [grok-auth] refresh lines reach the head's tail
+                    log = headScopedLog(ctx.key, log),
                 )
             }
             else -> ApiKeyAuthProvider(
@@ -466,6 +499,8 @@ public class Daemon(
                     authCacheMs = cfg.authCacheMs,
                     refreshCall = { rt -> kimiRefresh(tokenUrl, rt, identityHeaders) },
                     prefetchScope = probeScope,
+                    // JW-03: [<headKey>] first, so [kimi-auth] refresh lines reach the head's tail
+                    log = headScopedLog(key, log),
                 )
                 Wired(kimiProvider(ctx, label, auth, identity), auth)
             }
@@ -531,6 +566,8 @@ public class Daemon(
                     authCacheMs = cfg.authCacheMs,
                     refreshCall = { rt -> refreshCall(tokenUrl, rt) },
                     prefetchScope = probeScope,
+                    // JW-03: [<headKey>] first, so [codex-auth] refresh lines reach the head's tail
+                    log = headScopedLog(key, log),
                 )
                 Wired(
                     CodexProvider(
@@ -577,6 +614,8 @@ public class Daemon(
             authCacheMs = cfg.authCacheMs,
             refreshCall = { rt -> grokRefresh(tokenUrl, rt) },
             prefetchScope = probeScope,
+            // JW-03: [<headKey>] first, so [grok-auth] refresh lines reach the head's tail
+            log = headScopedLog(key, log),
         )
         return Wired(
             GrokProvider(
@@ -649,17 +688,6 @@ public class Daemon(
 
     // The /model picker option list Claude Code caches in .claude.json — every model with its
     // label, description, and window, so all of them appear in the picker (not just the pinned one).
-    private fun modelOptionsCache(providerCfg: ProviderConfig): JsonElement = buildJsonArray {
-        providerCfg.models.forEach { model ->
-            addJsonObject {
-                put("value", model.id)
-                put("label", model.label.ifEmpty { model.id })
-                put("description", model.description.ifEmpty { model.label.ifEmpty { model.id } })
-                put("context_window", model.contextWindow)
-            }
-        }
-    }
-
     // Common assembly shared by every provider: stores, the generic HeadServer, launch spec.
     // The sign-in plan (OAuth browser flow vs api-key masked prompt + token capture) lives in
     // SignInPlan.kt — factored out of this class (detekt LargeClass).
@@ -681,6 +709,14 @@ public class Daemon(
                     cfg.firstByteTimeoutMs,
                     cfg.upstreamTimeoutMs,
                     cfg.upstreamRetries,
+                    // CX-03: zstd request bodies — a TOML quirk, absent = plaintext. A quirk and
+                    // not a hardcoded provider check for two reasons: the operator opts in per
+                    // provider (proven only for ChatGPT, by codex-cli itself; xAI 400d on a
+                    // compressed body 2026-07-18), and the migration oracle's scratch topology
+                    // carries no quirk, so its 11 byte-exact fixtures replay plaintext — the
+                    // hardcoded check compressed the oracle's bodies and crashed its vendored
+                    // mock's JSON.parse, which was the source of every leaked harness daemon.
+                    zstdRequestBody = ctx.providerCfg.quirks.zstdRequestBody == true,
                     client = UpstreamClient.defaultClient(cfg.firstByteTimeoutMs, cfg.upstreamTimeoutMs, log),
                 ),
                 inferenceToken = mgmtKey.get(),
@@ -767,6 +803,26 @@ public class Daemon(
                 .getOrNull()
                 ?: runCatchingCancellable { classpathHtml() }.getOrNull()
                 ?: "<!doctype html><title>splice</title><p>dashboard build missing</p>"
+        }
+    }
+}
+
+/** JW-04: per-request staleness recompute, failing OPEN — an unreadable file degrades the
+ *  signal, never /health. Top-level: Daemon sits at detekt's LargeClass ceiling. */
+private fun topologyStaleProbe(topologyPath: Path?, bootDigest: String): () -> Boolean = {
+    val now = topologyPath?.let { TopologyLoader.currentDigest(it) }
+    now != null && bootDigest.isNotEmpty() && now != bootDigest
+}
+
+/** Pure roster -> dropdown-cache projection. Top-level: Daemon sits at detekt's LargeClass
+ *  ceiling (JW-04 relocation; SignInPlan.kt was the same move). */
+private fun modelOptionsCache(providerCfg: ProviderConfig): JsonElement = buildJsonArray {
+    providerCfg.models.forEach { model ->
+        addJsonObject {
+            put("value", model.id)
+            put("label", model.label.ifEmpty { model.id })
+            put("description", model.description.ifEmpty { model.label.ifEmpty { model.id } })
+            put("context_window", model.contextWindow)
         }
     }
 }

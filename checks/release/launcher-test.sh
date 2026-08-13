@@ -47,7 +47,7 @@ done
 case "$url" in
   */health)
     case "$(cat "$LAUNCHER_DAEMON_STATE")" in
-      up|new) printf '{"ok":true,"version":"%s","wantShimVersion":"%s"}\n' "$LAUNCHER_GATEWAY_VERSION" "$LAUNCHER_SHIM_VERSION" ;;
+      up|new) printf '{"ok":true,"version":"%s","wantShimVersion":"%s","topologyStale":%s}\n' "$LAUNCHER_GATEWAY_VERSION" "$LAUNCHER_SHIM_VERSION" "${LAUNCHER_TOPOLOGY_STALE:-false}" ;;
       old) printf '{"ok":true,"version":"0.0.9","wantShimVersion":"shim-1"}\n' ;;
       down) ;;
     esac
@@ -76,6 +76,12 @@ SH
 cat > "$SANDBOX/bin/java" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
+if [ "${LAUNCHER_JAVA_BOOT_FAILS:-0}" = "1" ]; then
+  # JW-01: a boot-dead daemon — the stack trace goes to stderr, which the launcher must be
+  # redirecting into daemon-boot.log (pre-fix it went to /dev/null).
+  echo "Exception in thread main: kaboom-at-boot" >&2
+  exit 1
+fi
 printf 'new\n' > "$LAUNCHER_DAEMON_STATE"
 SH
 chmod +x "$SANDBOX/bin/curl" "$SANDBOX/bin/java"
@@ -94,6 +100,8 @@ run_launcher() {
   LAUNCHER_BODY_CAPTURE="$SANDBOX/body" \
   LAUNCHER_SHUTDOWN_CAPTURE="$SANDBOX/shutdown" \
   LAUNCHER_INJECT_ENV_KEY="${LAUNCHER_INJECT_ENV_KEY:-0}" \
+  LAUNCHER_JAVA_BOOT_FAILS="${LAUNCHER_JAVA_BOOT_FAILS:-0}" \
+  LAUNCHER_TOPOLOGY_STALE="${LAUNCHER_TOPOLOGY_STALE:-false}" \
   LAUNCHER_PWNED_FILE="$SANDBOX/pwned" \
     "$ROOT/bin/splice-launch" "$@"
 }
@@ -130,5 +138,26 @@ printf 'new\n' > "$SANDBOX/daemon-state"
 rm -f "$SANDBOX/pwned"
 LAUNCHER_INJECT_ENV_KEY=1 run_launcher
 test ! -e "$SANDBOX/pwned"
+
+# JW-01: a boot-dead daemon must leave a tailable trace, and the launcher must SHOW it on the
+# handshake failure instead of just "got <none>". The java stub writes its stack trace to
+# stderr, which the launcher's redirect must capture in daemon-boot.log.
+printf 'down\n' > "$SANDBOX/daemon-state"
+rm -f "$SANDBOX/logs/daemon-boot.log"
+set +e
+BOOT_ERR="$(LAUNCHER_JAVA_BOOT_FAILS=1 run_launcher 2>&1)"
+BOOT_RC=$?
+set -e
+test "$BOOT_RC" -ne 0
+grep -q "daemon-boot.log" <<<"$BOOT_ERR" || { echo "JW-01: launcher must name the boot log, got: $BOOT_ERR" >&2; exit 1; }
+grep -q "kaboom-at-boot" <<<"$BOOT_ERR" || { echo "JW-01: launcher must print the boot-log tail, got: $BOOT_ERR" >&2; exit 1; }
+grep -q "kaboom-at-boot" "$SANDBOX/logs/daemon-boot.log"
+
+# JW-04: a daemon reporting topologyStale=true must produce the non-fatal restart warning while
+# the launch still proceeds (warning shape mirrors the shim-staleness one).
+printf 'up\n' > "$SANDBOX/daemon-state"
+STALE_ERR="$(LAUNCHER_TOPOLOGY_STALE=true run_launcher 2>&1 >/dev/null)"
+grep -q "running topology is stale" <<<"$STALE_ERR" || { echo "JW-04: expected the stale-topology warning, got: $STALE_ERR" >&2; exit 1; }
+grep -q "splice restart" <<<"$STALE_ERR" || { echo "JW-04: the warning must name the fix, got: $STALE_ERR" >&2; exit 1; }
 
 echo "launcher test: OK"

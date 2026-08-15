@@ -81,6 +81,10 @@ public data class HeadDeps(
     val requestReadTimeoutMs: Long = DEFAULT_REQUEST_READ_TIMEOUT_MS,
     // mirror_reasoning knob, threaded to TurnPipeline (restart-required like the other reasoning knobs)
     val mirrorReasoning: Boolean = true,
+    /** TRUE only for a head whose auth kind is `client` (campaign claude-head): splice holds no
+     *  credential for it, so the caller's own auth headers are forwarded upstream and the
+     *  mgmt-key front door is bypassed. FALSE for every other head, which keeps enforcing it. */
+    val forwardClientAuth: Boolean = false,
 ) {
     init {
         require(inferenceToken.isNotBlank()) { "inferenceToken must not be blank" }
@@ -88,6 +92,14 @@ public data class HeadDeps(
     }
 
     public companion object {
+        /** See [forwardedClientHeaders]: the caller's credential plus the wire knobs it chose. */
+        internal val FORWARDED_CLIENT_HEADERS: List<String> = listOf(
+            "Authorization",
+            "x-api-key",
+            "anthropic-version",
+            "anthropic-beta",
+        )
+
         public const val DEFAULT_MAX_REQUEST_BYTES: Int = 8 * 1024 * 1024
         public const val DEFAULT_REQUEST_READ_TIMEOUT_MS: Long = 30_000
     }
@@ -367,10 +379,33 @@ public class HeadServer(
         val compactProbe = classifyCompact(parsed.typed)
         shadow.record(parsed.typed, compactProbe)
         perf.mark(PerfKeys.PARSE)
-        val built = provider.buildTurn(parsed, compactProbe.compact, call.request.headers["x-claude-code-session-id"])
+        val prepared = provider.buildTurn(
+            parsed,
+            compactProbe.compact,
+            call.request.headers["x-claude-code-session-id"],
+        )
+        // Per-turn headers already outrank the provider's own in TurnDriver's merge, so a forwarded
+        // value REPLACES a configured default (e.g. the caller's anthropic-version wins over the
+        // provider's), and UpstreamClient folds the casing.
+        val built = if (deps.forwardClientAuth) {
+            prepared.copy(extraHeaders = prepared.extraHeaders + forwardedClientHeaders(call))
+        } else {
+            prepared
+        }
         perf.mark(PerfKeys.BUILD)
         return Preparation.Ready(built, parsed.typed.stream)
     }
+
+    /** The inbound headers a client-auth head forwards upstream, by EXPLICIT allowlist.
+     *
+     *  An allowlist, never "forward everything": Host, Content-Length, Accept-Encoding and friends
+     *  describe the hop to the gateway, not the hop to the vendor, and copying them corrupts the
+     *  upstream request. What rides is the caller's credential and the two Anthropic wire knobs it
+     *  chose — exactly what Claude Code would have sent had it called the vendor directly. */
+    private fun forwardedClientHeaders(call: ApplicationCall): Map<String, String> =
+        HeadDeps.FORWARDED_CLIENT_HEADERS.mapNotNull { name ->
+            call.request.headers[name]?.let { name to it }
+        }.toMap()
 
     private suspend fun handleCountTokens(call: ApplicationCall) {
         if (!authorize(call)) return
@@ -426,6 +461,13 @@ public class HeadServer(
     }
 
     private suspend fun authorize(call: ApplicationCall): Boolean {
+        // A client-auth head has NO splice-held credential to protect: the mgmt key is what the
+        // launcher plants in a client whose own credentials it replaced, and this head does the
+        // opposite — it leaves the client's native auth intact and forwards it. Comparing the
+        // inbound header against the mgmt key would therefore reject exactly the requests this
+        // head exists to serve. The listener is loopback-only, and an unauthenticated caller
+        // simply forwards no valid upstream credential and gets the upstream's own 401.
+        if (deps.forwardClientAuth) return true
         // Scheme parsing shared with MgmtKey.matchesBearer (core bearerToken) — the two planes
         // drifted on case-sensitivity when each carried its own regex.
         val bearer = bearerToken(call.request.headers[HttpHeaders.Authorization])

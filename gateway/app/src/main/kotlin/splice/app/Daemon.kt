@@ -788,6 +788,10 @@ public class Daemon(
                     client = UpstreamClient.defaultClient(cfg.firstByteTimeoutMs, cfg.upstreamTimeoutMs, log),
                 ),
                 inferenceToken = mgmtKey.get(),
+                // Only a client-auth head: it holds no splice credential, so the mgmt-key door
+                // would reject exactly the requests it exists to serve, and the caller's own auth
+                // headers are what ride upstream. Every other head keeps enforcing the key.
+                forwardClientAuth = ctx.providerCfg.auth.kind == CLIENT,
                 // Re-read per head on EVERY admission (still hot-resizable): the ceiling belongs to
                 // the upstream ACCOUNT, not the gateway. One shared value meant a workflow fan-out
                 // admitted 100 concurrent streams into a single account, 429'd, and armed the shared

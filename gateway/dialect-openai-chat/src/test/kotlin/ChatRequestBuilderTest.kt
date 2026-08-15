@@ -19,10 +19,15 @@ import splice.dialect.chat.withReasoningEffortToml
 
 private val CHAT = ChatQuirks(providerTag = "kimi")
 
-private fun build(json: String, quirks: ChatQuirks = CHAT, compact: Boolean = false): JsonObject {
+private fun build(
+    json: String,
+    quirks: ChatQuirks = CHAT,
+    compact: Boolean = false,
+    model: String = "kimi-k2",
+): JsonObject {
     val body = parseAnthropicBody(json).typed
     return ChatRequestBuilder(quirks)
-        .build(body, upstreamModel = "kimi-k2", originalModel = "claude-kimi--kimi-k2", compact = compact)
+        .build(body, upstreamModel = model, originalModel = "claude-kimi--$model", compact = compact)
         .req
 }
 
@@ -193,6 +198,18 @@ class ChatRequestBuilderTest {
         )
         assertFalse(off.containsKey("reasoning_effort"))
         assertFalse(off.containsKey("reasoning"))
+    }
+
+    @Test
+    fun `top thinking budget emits xhigh on grok-4_6, high elsewhere`() {
+        // Grok 4.6 adds the xhigh rung (xAI docs 2026-08: native on 4.6+; older models clamp it
+        // to high upstream). The chat dialect serves arbitrary vendors, so the rung is gated on
+        // the upstream model — an unknown vendor must never see an enum it may reject.
+        val withBudget = """{"model":"m","messages":[{"role":"user","content":"hard"}],
+            "thinking":{"type":"enabled","budget_tokens":64000}}"""
+        assertEquals("xhigh", build(withBudget, model = "grok-4.6")["reasoning_effort"]?.jsonPrimitive?.content)
+        assertEquals("high", build(withBudget, model = "grok-4.5")["reasoning_effort"]?.jsonPrimitive?.content)
+        assertEquals("high", build(withBudget, model = "deepseek-reasoner")["reasoning_effort"]?.jsonPrimitive?.content)
     }
 
     @Test

@@ -1,4 +1,4 @@
-# claude-max head — live probe receipt
+# claude-splice head — live probe receipt
 
 Campaign `claude-head`, item CH-11. 2026-08-15.
 
@@ -18,8 +18,7 @@ invalid bearer.
 Through the head:
 
     event: error
-    data: {"type":"error","error":{"type":"authentication_error",
-           "message":"Invalid bearer token — run: claude-max login"}}
+    data: {"type":"error","error":{"type":"authentication_error","message":"Invalid bearer token"}}
 
 Directly against the vendor, same body shape, same invalid bearer
 (`PROBE` holds a deliberately non-credential string — the probe never uses a real one):
@@ -43,8 +42,10 @@ What that establishes:
    the probe asserts the absence of `invalid_request_error` precisely to catch that.
 3. **Splice injected no credential of its own.** The invalid bearer the caller sent is the one that
    was judged; had the head added anything, the outcome would differ.
-4. **The failure surfaces honestly to the client**, as `authentication_error` carrying this head's
-   own sign-in hint (`claude-max login`) rather than a bare or misleading error.
+4. **The failure surfaces honestly to the client**, as `authentication_error` with the vendor's own
+   message and NO splice-invented sign-in hint — deliberate: on a client-auth head the client's
+   native `/login` is the remedy, and a `claude-splice login` hint would point at a command that
+   does nothing.
 
 What it does NOT establish: that an authenticated turn succeeds, that streaming/thinking blocks
 render, that prompt caching is credited, or that rate-limit headers land in telemetry.
@@ -55,9 +56,9 @@ Needs the operator's own Claude login, spends a little subscription quota, and c
 splice never reads, stores or refreshes an Anthropic credential, so the only way this turn happens
 is a real client authenticating natively.
 
-1. Add the `[providers.anthropic]` + `[heads.claude-max]` blocks from `config/splice.example.toml`
+1. Add the `[providers.anthropic]` + `[heads.claude-splice]` blocks from `config/splice.example.toml`
    to `~/.config/splice/splice.toml`, then restart the daemon.
-2. `splice install` (or the usual wrapper install) so `claude-max` is on PATH, then run `claude-max`.
+2. `splice install` (or the usual wrapper install) so `claude-splice` is on PATH, then run `claude-splice`.
    Because this is a client-auth head, the launcher leaves your credentials, keychain and `/login`
    alone — if it is not signed in, `/login` inside the session works normally.
 3. Send one prompt, then one that uses a tool (a round trip).

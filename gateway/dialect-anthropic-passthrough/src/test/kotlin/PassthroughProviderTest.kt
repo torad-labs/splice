@@ -94,7 +94,7 @@ class PassthroughProviderTest {
     // The claude head's shape: no vendor identity, no vendor UA — only what it declared.
     @Test
     fun `a head that declares nothing emits nothing vendor-specific`() {
-        val headers = provider(PassthroughQuirks(providerTag = "claude-max")).extraHeaders(creds)
+        val headers = provider(PassthroughQuirks(providerTag = "claude-splice")).extraHeaders(creds)
         assertEquals(mapOf("Accept" to "text/event-stream"), headers)
         assertFalse(headers.keys.any { it.startsWith("X-Msh-") })
         assertFalse(headers.values.any { it.contains("KimiCLI") })
@@ -103,7 +103,7 @@ class PassthroughProviderTest {
     @Test
     fun `static headers ride without an identity supplier`() {
         val headers = provider(
-            quirks = PassthroughQuirks(providerTag = "claude-max"),
+            quirks = PassthroughQuirks(providerTag = "claude-splice"),
             staticHeaders = mapOf("anthropic-version" to "2023-06-01"),
         ).extraHeaders(creds)
         assertEquals(setOf("Accept", "anthropic-version"), headers.keys)
@@ -127,7 +127,7 @@ class PassthroughProviderTest {
             {"type":"text","text":"hi","cache_control":{"type":"ephemeral"}}]}]}"""
         val kimiReq = provider(PassthroughQuirks.kimi("kimi"))
             .buildTurn(parseAnthropicBody(body), compact = false, sessionId = null).requestBody
-        val neutralReq = provider(PassthroughQuirks(providerTag = "claude-max"))
+        val neutralReq = provider(PassthroughQuirks(providerTag = "claude-splice"))
             .buildTurn(parseAnthropicBody(body), compact = false, sessionId = null).requestBody
 
         assertNull(firstBlock(kimiReq)["cache_control"], "kimi strips cache_control")

@@ -103,7 +103,7 @@ class HeadServerClientAuthTest {
     private lateinit var tmp: java.nio.file.Path
 
     private val catalog = ModelCatalog(
-        discoveryPrefix = "claude-max--",
+        discoveryPrefix = "claude-splice--",
         models = listOf(ModelEntry("claude-fable-5", "Claude Fable 5", contextWindow = 200_000)),
         defaultContextWindow = 200_000,
     )
@@ -112,18 +112,18 @@ class HeadServerClientAuthTest {
 
     private fun startHead(forwardClientAuth: Boolean): Int {
         val port = ServerSocket(0).use { it.localPort }
-        val auth = if (forwardClientAuth) ClientAuthProvider("claude-max") else FakeApiKeyAuth()
+        val auth = if (forwardClientAuth) ClientAuthProvider("claude-splice") else FakeApiKeyAuth()
         val provider = PassthroughProvider(
             tuning = ProviderTuning(
                 key = "anthropic",
-                label = "claude-max",
+                label = "claude-splice",
                 catalog = catalog,
                 pinnedModel = "claude-fable-5",
                 auth = auth,
                 baseUrl = upstream.baseUrl,
                 watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
             ),
-            quirks = PassthroughQuirks(providerTag = "claude-max"),
+            quirks = PassthroughQuirks(providerTag = "claude-splice"),
             staticHeaders = mapOf("anthropic-version" to "2023-06-01"),
         )
         val head = HeadServer(
@@ -164,7 +164,7 @@ class HeadServerClientAuthTest {
             headers.forEach { (k, v) -> header(k, v) }
             header("Content-Type", "application/json")
             setBody(
-                """{"model":"claude-max--claude-fable-5","max_tokens":16,""" +
+                """{"model":"claude-splice--claude-fable-5","max_tokens":16,""" +
                     """"messages":[{"role":"user","content":"hi"}],"stream":true}""",
             )
         }

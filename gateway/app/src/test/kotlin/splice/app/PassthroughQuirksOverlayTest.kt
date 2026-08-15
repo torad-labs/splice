@@ -57,7 +57,7 @@ class PassthroughQuirksOverlayTest {
     // A neutral base (the claude head) declares nothing and must stay faithful.
     @Test
     fun `a neutral base with no declarations stays faithful`() {
-        val neutral = PassthroughQuirks(providerTag = "claude-max")
+        val neutral = PassthroughQuirks(providerTag = "claude-splice")
         val quirks = provider(QuirksConfig()).passthroughQuirks(neutral)
         assertEquals(false, quirks.stripCacheControl)
         assertEquals(false, quirks.mfjsSanitize)

@@ -435,7 +435,7 @@ class PassthroughStopReasonHonestyTest {
     @Test
     fun `neutral never synthesizes a thinking signature`() = runTest {
         val sink = Rec()
-        PassthroughStreamTranslator(ctx(), PassthroughQuirks(providerTag = "claude-max")).driveTurn(
+        PassthroughStreamTranslator(ctx(), PassthroughQuirks(providerTag = "claude-splice")).driveTurn(
             listOf(
                 ev("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}"""),
                 ev("""{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"t"}}"""),
@@ -449,19 +449,19 @@ class PassthroughStopReasonHonestyTest {
 
     @Test
     fun `failure text carries the head's own provider tag`() = runTest {
-        val outcome = PassthroughStreamTranslator(ctx(), PassthroughQuirks(providerTag = "claude-max")).driveTurn(
+        val outcome = PassthroughStreamTranslator(ctx(), PassthroughQuirks(providerTag = "claude-splice")).driveTurn(
             listOf(ev("""{"type":"error","error":{"type":"api_error","message":"boom"}}""")).asFlow(),
             Rec(),
         )
         val f = outcome as TurnOutcome.Failure
-        assertTrue(f.message.startsWith("claude-max: "), f.message)
+        assertTrue(f.message.startsWith("claude-splice: "), f.message)
     }
 }
 
-// NF-06 addendum (PR #99 review): `return@collect` only SKIPPED events after the capacity breach —
-// the collector kept consuming a runaway upstream, holding the turn slot and quota until the
-// upstream chose to close. The guard must CANCEL collection so Flow unwinds the producer. A
-// separate class: the main class above is at detekt's LargeClass budget.
+// NF-06's second half: skipping events past the breach is not enough — a guard that merely skips
+// keeps CONSUMING a runaway upstream, holding the turn slot and quota until the upstream chooses
+// to close. The breach must CANCEL collection so Flow unwinds the producer. A separate class: the
+// main class above is at detekt's LargeClass budget.
 class PassthroughRunawayCancellationTest {
 
     @Test

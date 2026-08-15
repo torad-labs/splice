@@ -58,10 +58,10 @@ private fun topologyToml(controlPort: Int, headPort: Int): String = """
     id = "claude-fable-5"
     context_window = 200000
 
-    [heads.claude-max]
+    [heads.claude-splice]
     provider = "anthropic"
     port = $headPort
-    discovery_prefix = "claude-max--"
+    discovery_prefix = "claude-splice--"
     pinned_model = "claude-fable-5"
 """.trimIndent()
 
@@ -109,7 +109,7 @@ class ClaudeHeadLiveProbeTest {
             header("Authorization", "Bearer invalid-probe-credential")
             header("Content-Type", "application/json")
             setBody(
-                """{"model":"claude-max--claude-fable-5","max_tokens":16,""" +
+                """{"model":"claude-splice--claude-fable-5","max_tokens":16,""" +
                     """"messages":[{"role":"user","content":"probe"}],"stream":true}""",
             )
         }

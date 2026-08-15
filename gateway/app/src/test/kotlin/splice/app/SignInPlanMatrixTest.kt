@@ -138,7 +138,7 @@ class SignInPlanMatrixTest {
      *  message stands instead of an instruction that cannot succeed. */
     @Test
     fun `a client-auth head gets NO splice login command — the client's own door stays the only one`() {
-        val plan = signInPlan(providerCfg("client"), head("anthropic", "claude-max"), "anthropic")
+        val plan = signInPlan(providerCfg("client"), head("anthropic", "claude-splice"), "anthropic")
         assertTrue(
             plan.command.isBlank(),
             "a non-blank command makes wire() plant a /login that can never succeed: '${plan.command}'",

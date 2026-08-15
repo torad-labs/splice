@@ -310,7 +310,7 @@ private fun headAuthOf(
 ): HeadAuth {
     val isOAuth = AuthKind.isOAuth(provider.auth.kind)
     // A client-auth head keeps a NULL env var like an OAuth head: it has no api key, and the
-    // derived default would be nonsense — `effectiveApiKeyEnv("claude-max", …)` is
+    // derived default would be nonsense — `effectiveApiKeyEnv("claude-splice", …)` is
     // "CLAUDE-MAX_API_KEY", a name `export` cannot even accept, offered as the fix for a head
     // that works.
     val selfManaged = isClientAuth(provider)

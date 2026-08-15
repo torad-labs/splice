@@ -288,12 +288,12 @@ id = "claude-haiku-4-5"
 label = "Claude Haiku 4.5"
 context_window = 200000
 
-[heads.claude-max]
+[heads.claude-splice]
 provider = "anthropic"
 port = 3104                    # 3103 is fireworks above
-discovery_prefix = "claude-max--"
+discovery_prefix = "claude-splice--"
 pinned_model = "claude-fable-5"
-[heads.claude-max.claude]
+[heads.claude-splice.claude]
 # MUST NOT be `claude`: that is the real binary this head launches, and shadowing it on PATH
 # would make the wrapper invoke itself.
-command = "claude-max"
+command = "claude-splice"

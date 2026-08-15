@@ -174,6 +174,7 @@ verify = "cd gateway && ./gradlew :core:test --console=plain && cd .. && bash ch
 # [2026-08-15] VERDICT: outcome=accepted
 # [2026-08-15] ATTEST: scoped diffstat: config/splice.example.toml | 49 ++++++++++++++++++++++++++++++++++++++++++++++ | 1 file changed, 49 insertions(+); sidecar: .claude/ledger-diffs/CH-9.diff; off-scope: gateway/app/src/test/kotlin/ExampleConfigTest.kt
 # [2026-08-15] GATE: npm run gate GATE: PASS exit 0, twice consecutively (logs captured). HONEST NOTE: an earlier gate run in this session printed GATE: FAIL, but I had piped it through tail -25 and never saw which leg's ✗ scrolled past — so the cause is UNKNOWN, not diagnosed. Two clean full runs afterwards with zero ✗ in the captured output. Recorded rather than waved away; if it recurs the log must be captured whole, never tailed.
+# [2026-08-15] OPERATOR RENAME (pre-merge): the head is claude-splice, not claude-max — head key, discovery_prefix claude-splice--, wrapper command claude-splice; port 3104 and all semantics unchanged. Renamed across example TOML, tests, doctor comment and the CH-11 receipt; the live probe was RE-RUN against real api.anthropic.com under the new name (SPLICE_LIVE_PROBE=1, green) and the receipt's observed block refreshed from that run — which also confirms the blank sign-in hint: the vendor message arrives with no splice-invented 'claude-splice login' decoy. Spec doc and ledger titles keep the old name as history.
 
 [[items]]
 id = "CH-10"

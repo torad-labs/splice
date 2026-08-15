@@ -114,14 +114,14 @@ class DoctorCommandTest {
         id = "claude-fable-5"
         context_window = 200000
 
-        [heads.claude-max]
+        [heads.claude-splice]
         provider = "anthropic"
         port = 4599
-        discovery_prefix = "claude-max--"
+        discovery_prefix = "claude-splice--"
         pinned_model = "claude-fable-5"
 
-        [heads.claude-max.claude]
-        command = "claude-max"
+        [heads.claude-splice.claude]
+        command = "claude-splice"
     """.trimIndent()
 
     @Test
@@ -135,7 +135,7 @@ class DoctorCommandTest {
         Files.writeString(shim, "#!/usr/bin/env bash\nSPLICE_SHIM_VERSION=\"$SHIM_VERSION\"\n")
         shim.toFile().setExecutable(true)
         fakeBinaries(bin, "claude", "node", "python3", "curl", "bash")
-        Files.createSymbolicLink(bin.resolve("claude-max"), shim)
+        Files.createSymbolicLink(bin.resolve("claude-splice"), shim)
         Files.createSymbolicLink(bin.resolve("splice"), shim)
 
         // no credential env at all — the caller supplies it per request, not the environment

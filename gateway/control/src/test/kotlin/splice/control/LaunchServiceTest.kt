@@ -114,7 +114,7 @@ class LaunchServiceTest {
     // stripping removes what gets forwarded, planting the bearer overrides it, and disabling /login
     // shuts the only door that can heal a rejected credential.
 
-    private fun nativeSpec() = spec("claude-max").copy(nativeClientAuth = true)
+    private fun nativeSpec() = spec("claude-splice").copy(nativeClientAuth = true)
 
     @Test
     fun `a native-auth head keeps the client's own credentials`() {

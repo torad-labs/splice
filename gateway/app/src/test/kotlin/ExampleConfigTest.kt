@@ -28,7 +28,7 @@ class ExampleConfigTest {
     fun `example topology parses into the documented heads`() {
         val topology = TopologyLoader.parse(exampleToml())
         assertEquals(
-            setOf("claudex", "claude-grok", "openrouter", "fireworks", "claude-kimi", "claude-max"),
+            setOf("claudex", "claude-grok", "openrouter", "fireworks", "claude-kimi", "claude-splice"),
             topology.heads.keys,
         )
         assertEquals(3096, topology.daemon.controlPort)
@@ -96,7 +96,7 @@ class ExampleConfigTest {
         val topology = TopologyLoader.parse(exampleToml())
         // The claude head: pure TOML, no provider code, and FAITHFUL — it must declare no quirks
         // at all, or it would deform the one upstream that accepts everything as sent.
-        val anthropic = topology.providers[topology.heads["claude-max"]!!.provider]!!
+        val anthropic = topology.providers[topology.heads["claude-splice"]!!.provider]!!
         assertEquals(Dialect.ANTHROPIC_PASSTHROUGH, anthropic.dialect)
         assertEquals("client", anthropic.auth.kind)
         assertEquals("https://api.anthropic.com", anthropic.baseUrl)
@@ -106,10 +106,10 @@ class ExampleConfigTest {
         assertNull(anthropic.quirks.mapThinkingAdaptive)
         assertNull(anthropic.quirks.blockAllowlist)
         assertEquals("2023-06-01", anthropic.staticHeaders["anthropic-version"])
-        assertEquals("claude-fable-5", topology.heads["claude-max"]!!.pinnedModel)
-        assertEquals(3104, topology.heads["claude-max"]!!.port)
+        assertEquals("claude-fable-5", topology.heads["claude-splice"]!!.pinnedModel)
+        assertEquals(3104, topology.heads["claude-splice"]!!.port)
         // shadowing the real binary would make the wrapper invoke itself
-        assertEquals("claude-max", topology.heads["claude-max"]!!.claude.command)
+        assertEquals("claude-splice", topology.heads["claude-splice"]!!.claude.command)
     }
 
     // 2026-07-26 review: the per-head block documented knob names in prose, and the prose had

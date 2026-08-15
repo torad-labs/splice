@@ -22,7 +22,7 @@ import splice.dialect.passthrough.PassthroughRequestBuilder
 private val PASS = PassthroughQuirks.kimi("kimi")
 
 /** The inverted defaults: a faithful passthrough, which is what the claude head rides. */
-private val NEUTRAL = PassthroughQuirks(providerTag = "claude-max")
+private val NEUTRAL = PassthroughQuirks(providerTag = "claude-splice")
 
 private fun buildFull(
     json: String,

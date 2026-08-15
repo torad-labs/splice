@@ -11,7 +11,7 @@ import splice.core.auth.Credentials
 
 class ClientAuthProviderTest {
 
-    private val provider = ClientAuthProvider("claude-max")
+    private val provider = ClientAuthProvider("claude-splice")
 
     // A null here would raise UpstreamAuthMissing and kill the turn before the request goes out —
     // and there is no missing credential: the one that matters arrives on the inbound call.
@@ -25,7 +25,7 @@ class ClientAuthProviderTest {
         val described = provider.describe()
         assertTrue(described.present)
         assertEquals("client", described.kind)
-        assertEquals("claude-max", described.fields["head"])
+        assertEquals("claude-splice", described.fields["head"])
         assertEquals("inbound request", described.fields["source"])
     }
 

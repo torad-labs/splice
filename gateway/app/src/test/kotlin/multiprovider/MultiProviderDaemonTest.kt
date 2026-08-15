@@ -211,10 +211,10 @@ class MultiProviderDaemonTest {
         discovery_prefix = "claude-openrouter--"
         pinned_model = "meta/llama-4"
 
-        [heads.claude-max]
+        [heads.claude-splice]
         provider = "anthropic"
         port = $claudePort
-        discovery_prefix = "claude-max--"
+        discovery_prefix = "claude-splice--"
         pinned_model = "claude-fable-5"
     """.trimIndent()
 
@@ -286,7 +286,7 @@ class MultiProviderDaemonTest {
             header("anthropic-beta", "oauth-2025-04-20")
             header("Content-Type", "application/json")
             setBody(
-                """{"model":"claude-max--claude-fable-5","max_tokens":16,""" +
+                """{"model":"claude-splice--claude-fable-5","max_tokens":16,""" +
                     """"messages":[{"role":"user","content":"hi"}],"stream":true}""",
             )
         }.bodyAsText()
@@ -308,7 +308,7 @@ class MultiProviderDaemonTest {
         val heads = client.get("http://127.0.0.1:$controlPort/api/heads") {
             header("Authorization", "Bearer $key")
         }.bodyAsText()
-        assertTrue(heads.contains("claude-max"), heads)
+        assertTrue(heads.contains("claude-splice"), heads)
         assertTrue(client.get("http://127.0.0.1:$claudePort/health").bodyAsText().contains("\"ok\":true"))
     }
 }

@@ -61,6 +61,11 @@ run() { # run <label> <cmd...> — runs the command, records its REAL exit, neve
 }
 
 echo "══ splice gate ══  (JAVA_HOME=$JAVA_HOME)"
+# Dependabot edits the catalog but cannot regenerate verification metadata, so gradle bumps used
+# to arrive red six minutes into the gradle leg (#91). State the same fact statically, first and
+# in under a second, with the regeneration remedy attached. Selftest guards the checker itself.
+run "catalog metadata sync" python3 checks/catalog-metadata-sync.py
+run "catalog metadata selftest" bash checks/catalog-metadata-selftest.sh
 run "gradle clean check" bash -c 'cd gateway && ./gradlew clean check'
 run "ast-grep walls" npm run --silent gate:rules
 run "hook tests"     npm run --silent test:hooks

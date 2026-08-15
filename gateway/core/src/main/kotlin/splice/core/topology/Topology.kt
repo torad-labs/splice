@@ -161,28 +161,29 @@ public data class QuirksConfig(
     @SerialName("tool_surface") val toolSurface: ToolSurfaceConfig? = null,
     // ── anthropic-passthrough only ────────────────────────────────────────────────────────────
     // The dialect forwards the client's bytes faithfully by DEFAULT; each knob below opts into one
-    // vendor deformation (campaign claude-head, CH-2/CH-4). They are `false`/absent for a head that
-    // declares nothing, which is what an api.anthropic.com-shaped upstream needs — and every one of
-    // them is ON for kimi, whose entry in the example TOML declares them explicitly.
+    // vendor deformation (campaign claude-head). NULLABLE like every overlay knob here — absent
+    // keeps the head's BASE profile (neutral for a plain api-key/client head, Kimi's deformation
+    // set for a kimi-oauth head), so a splice.toml written before these existed keeps working.
+    // Kimi's example entry declares them explicitly anyway, as documentation.
     /** Rewrite tool `input_schema` into Moonshot-Flavored JSON Schema (and drop `strict` / invent an
      *  empty `description`). Leave OFF for an upstream that accepts full JSON Schema: the sanitizer
      *  discards `format`, `prefixItems`, `$ref` siblings and tuple `items`, changing tool semantics. */
-    @SerialName("mfjs") val mfjs: Boolean = false,
+    @SerialName("mfjs") val mfjs: Boolean? = null,
     /** Content-block types the upstream accepts; every other block is DROPPED. ABSENT = every block
      *  rides. Kimi's list comes from its own 400 and excludes `redacted_thinking`, which a client
      *  round-trips — dropping it corrupts the thinking chain. */
     @SerialName("block_allowlist") val blockAllowlist: List<String>? = null,
     /** Deep-strip every `cache_control` marker. Against an upstream WITH prompt caching this is a
      *  silent cold read on every turn (no error, just cost), so it stays opt-in. */
-    @SerialName("strip_cache_control") val stripCacheControl: Boolean = false,
+    @SerialName("strip_cache_control") val stripCacheControl: Boolean? = null,
     /** Synthesize ONE thinking-block signature when the upstream sent none. Required for Kimi (never
      *  signs; Claude Code discards unsigned thinking blocks), WRONG for an upstream that verifies. */
-    @SerialName("synthesize_signatures") val synthesizeSignatures: Boolean = false,
+    @SerialName("synthesize_signatures") val synthesizeSignatures: Boolean? = null,
     /** Remap Anthropic thinking config into Kimi's adaptive-thinking + output_config.effort ladder.
      *  OFF forwards the client's `thinking` verbatim and leaves `output_config` to the client. */
-    @SerialName("map_thinking_adaptive") val mapThinkingAdaptive: Boolean = false,
+    @SerialName("map_thinking_adaptive") val mapThinkingAdaptive: Boolean? = null,
     /** Drop temperature/top_p/top_k when a live probe shows the endpoint rejects them. */
-    @SerialName("strip_sampling_params") val stripSamplingParams: Boolean = false,
+    @SerialName("strip_sampling_params") val stripSamplingParams: Boolean? = null,
 )
 
 /** openai-responses only: the deferred tool surface (tool_search) for responses-lite turns.

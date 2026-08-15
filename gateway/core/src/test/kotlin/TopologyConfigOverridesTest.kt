@@ -131,14 +131,16 @@ class TopologyConfigOverridesTest {
         assertEquals(quoted.staticHeaders, bare.staticHeaders)
     }
 
-    // A head that declares nothing gets a faithful passthrough — the claude head's contract.
+    // ABSENT means "keep the head's base profile", never "false" — the nullable-overlay idiom.
+    // Non-nullable knobs would make a pre-campaign splice.toml silently neuter a kimi head.
     @Test
-    fun `passthrough quirk defaults are neutral`() {
+    fun `passthrough quirks are absent by default so a base profile survives`() {
         val q = QuirksConfig()
-        assertEquals(false, q.mfjs)
-        assertEquals(false, q.stripCacheControl)
-        assertEquals(false, q.synthesizeSignatures)
-        assertEquals(false, q.mapThinkingAdaptive)
+        assertNull(q.mfjs)
+        assertNull(q.stripCacheControl)
+        assertNull(q.synthesizeSignatures)
+        assertNull(q.mapThinkingAdaptive)
+        assertNull(q.stripSamplingParams)
         assertNull(q.blockAllowlist)
     }
 }

@@ -62,10 +62,10 @@ class ExampleConfigTest {
         // Kimi needs is now DECLARED, and the same round-trip law as reasoning_cache above applies —
         // a knob that never reaches the parsed field is decorative, which is how five of them
         // shipped once already. Values, not just presence.
-        assertTrue(kimi.quirks.mfjs)
-        assertTrue(kimi.quirks.stripCacheControl)
-        assertTrue(kimi.quirks.synthesizeSignatures)
-        assertTrue(kimi.quirks.mapThinkingAdaptive)
+        assertEquals(true, kimi.quirks.mfjs)
+        assertEquals(true, kimi.quirks.stripCacheControl)
+        assertEquals(true, kimi.quirks.synthesizeSignatures)
+        assertEquals(true, kimi.quirks.mapThinkingAdaptive)
         assertEquals(
             listOf("text", "image", "thinking", "tool_use", "tool_result", "server_tool_use", "web_search_tool_result"),
             kimi.quirks.blockAllowlist,
@@ -76,8 +76,8 @@ class ExampleConfigTest {
         assertEquals("KimiCLI/1.5", kimi.staticHeaders["User-Agent"])
         // A head that declares nothing must stay faithful: the openai-dialect providers above carry
         // no passthrough knobs, and their defaults are the neutral (false/absent) ones.
-        assertEquals(false, codex.quirks.mfjs)
-        assertEquals(false, codex.quirks.stripCacheControl)
+        assertNull(codex.quirks.mfjs)
+        assertNull(codex.quirks.stripCacheControl)
         assertNull(codex.quirks.blockAllowlist)
 
         // the isolate override survives the round-trip

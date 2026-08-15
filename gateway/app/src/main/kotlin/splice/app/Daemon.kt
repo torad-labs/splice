@@ -50,6 +50,8 @@ import splice.core.util.headScopedLog
 import splice.core.util.runCatchingCancellable
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.withReasoningEffortToml
+import splice.dialect.passthrough.PassthroughProvider
+import splice.dialect.passthrough.PassthroughQuirks
 import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ToolDeferralPolicy
@@ -75,7 +77,6 @@ import splice.provider.grok.GrokProvider
 import splice.provider.kimi.KimiAuthProvider
 import splice.provider.kimi.KimiDeviceIdentity
 import splice.provider.kimi.KimiOAuthEndpoints
-import splice.provider.kimi.KimiProvider
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.provider.openai.OpenAiChatProvider
 import splice.provider.openai.OpenAiResponsesProvider
@@ -232,6 +233,60 @@ private fun resolveProviderConfig(key: String, provider: ProviderConfig, cfg: Sp
             provider.copy(baseUrl = cfg.xaiApiBase)
         else -> provider
     }
+
+/** Kimi's static vendor headers as they were hardcoded before the TOML surface existed: its
+ *  /coding endpoint 403s an unrecognized UA, and the Anthropic wire needs its version on every
+ *  request. Kept as the kimi arms' BASE (the example TOML declares the same values as
+ *  documentation) so an operator who never edited splice.toml keeps a working head. */
+private val KIMI_BASE_HEADERS = mapOf(
+    "anthropic-version" to "2023-06-01",
+    "User-Agent" to "KimiCLI/1.5",
+)
+
+/** Top-level (not a Daemon member): the class sits at detekt's LargeClass ceiling, and this
+ *  helper reads only its arguments — the same reason chatQuirks/toolDeferralPolicy live here. */
+/** The dialect's ONE provider, fed DECLARED data: TOML quirks overlaid on the head's base
+ *  profile, TOML static headers, and (kimi only) the computed device identity. */
+private fun passthroughProviderFor(
+    ctx: Daemon.ProviderBuild,
+    label: String,
+    auth: RefreshableAuthProvider,
+    base: PassthroughQuirks,
+    baseHeaders: Map<String, String> = emptyMap(),
+    identityHeaders: () -> Map<String, String> = { emptyMap() },
+): Provider = PassthroughProvider(
+    tuning = ProviderTuning(
+        key = ctx.key,
+        label = label,
+        catalog = ctx.catalog,
+        pinnedModel = ctx.head.pinnedModel,
+        auth = auth,
+        baseUrl = ctx.providerCfg.baseUrl,
+        watchdog = ctx.watchdog,
+        loginCommand = ctx.loginCommand,
+    ),
+    quirks = ctx.providerCfg.passthroughQuirks(base),
+    // Base FIRST so an operator's TOML overrides it, and absent TOML keeps the head serving: these
+    // headers used to be hardcoded in the provider, so a splice.toml written before extra_headers
+    // existed would otherwise lose kimi's UA — which its /coding endpoint 403s on.
+    staticHeaders = baseHeaders + ctx.providerCfg.staticHeaders,
+    identityHeaders = identityHeaders,
+)
+
+/** Overlay the head's TOML [providers.*.quirks] onto a passthrough head's BASE quirk profile.
+ *  Absent (null) keeps the base, which is what makes a splice.toml written before these knobs
+ *  existed keep serving a kimi head unchanged; an explicitly-set knob wins. Same shape as
+ *  [chatQuirks]/[responsesQuirks], and the mapping lives HERE, at the assembly point, so the
+ *  dialect never imports a topology config type. */
+private fun ProviderConfig.passthroughQuirks(base: PassthroughQuirks): PassthroughQuirks = base.copy(
+    mapThinkingToAdaptive = quirks.mapThinkingAdaptive ?: base.mapThinkingToAdaptive,
+    compactEffort = quirks.compactEffort ?: base.compactEffort,
+    stripSamplingParams = quirks.stripSamplingParams ?: base.stripSamplingParams,
+    mfjsSanitize = quirks.mfjs ?: base.mfjsSanitize,
+    blockAllowlist = quirks.blockAllowlist?.toSet() ?: base.blockAllowlist,
+    stripCacheControl = quirks.stripCacheControl ?: base.stripCacheControl,
+    synthesizeSignatures = quirks.synthesizeSignatures ?: base.synthesizeSignatures,
+)
 
 /** Overlay the head's TOML [providers.*.quirks] onto a chat-dialect provider's base quirk profile.
  *  Top-level (not a Daemon member): the class sits at detekt's TooManyFunctions ceiling. */
@@ -480,59 +535,59 @@ public class Daemon(
 
     // anthropic-passthrough dispatch: kimi-oauth (device flow, x-api-key, proactive refresh) vs any
     // other kind (ApiKeyAuthProvider → Bearer, correct for Moonshot's anthropic pay-per-token base).
-    // Both instantiate the SAME KimiProvider — the passthrough dialect and X-Msh-* identity headers
-    // are shared; only the auth differs.
+    // Both build the SAME generic PassthroughProvider; what differs is DATA — the auth, the base
+    // quirk profile, and whether a computed device identity rides along.
+    //
+    // The base profile is what a pre-campaign splice.toml relies on: a kimi-oauth head bases on
+    // Kimi's deformation set, so an operator who never declared the new quirks keeps working, while
+    // any knob their TOML DOES set still overrides. The api-key arm bases on Kimi's set too, because
+    // that arm exists for Moonshot's own anthropic endpoint (the pay-per-token twin of the OAuth
+    // head) — an unrelated anthropic-compatible vendor declares what it needs in TOML.
     private fun passthroughProvider(ctx: ProviderBuild, label: String): Wired {
         val key = ctx.key
         val providerCfg = ctx.providerCfg
-        val cfg = ctx.cfg
-        return when (providerCfg.auth.kind) {
-            KIMI_OAUTH -> {
-                val authPath = Paths.get(
-                    TopologyLoader.expandHome(providerCfg.auth.file ?: "~/.kimi/credentials/kimi-code.json"),
-                )
-                val identity = KimiDeviceIdentity(deviceIdPath = authPath.resolveSibling("device_id"))
-                val identityHeaders = identity.headers()
-                val tokenUrl = KimiOAuthEndpoints.tokenUrl(System::getenv)
-                val auth = KimiAuthProvider(
-                    authPath = authPath,
-                    authCacheMs = cfg.authCacheMs,
-                    refreshCall = { rt -> kimiRefresh(tokenUrl, rt, identityHeaders) },
-                    prefetchScope = probeScope,
-                    // JW-03: [<headKey>] first, so [kimi-auth] refresh lines reach the head's tail
-                    log = headScopedLog(key, log),
-                )
-                Wired(kimiProvider(ctx, label, auth, identity), auth)
-            }
+        val (auth, identity) = when (providerCfg.auth.kind) {
+            KIMI_OAUTH -> kimiOauthAuth(ctx)
             else -> {
-                val auth = ApiKeyAuthProvider(
+                val apiKey = ApiKeyAuthProvider(
                     envVar = effectiveApiKeyEnv(key, providerCfg.auth),
                     keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
                 )
-                val identity = KimiDeviceIdentity(deviceIdPath = statePaths.stateDir.resolve("$key-device_id"))
-                Wired(kimiProvider(ctx, label, auth, identity), auth)
+                apiKey to KimiDeviceIdentity(deviceIdPath = statePaths.stateDir.resolve("$key-device_id"))
             }
         }
+        return Wired(
+            passthroughProviderFor(
+                ctx = ctx,
+                label = label,
+                auth = auth,
+                base = PassthroughQuirks.kimi(key),
+                baseHeaders = KIMI_BASE_HEADERS,
+                identityHeaders = identity::headers,
+            ),
+            auth,
+        )
     }
 
-    private fun kimiProvider(
-        ctx: ProviderBuild,
-        label: String,
-        auth: RefreshableAuthProvider,
-        identity: KimiDeviceIdentity,
-    ): Provider = KimiProvider(
-        tuning = ProviderTuning(
-            key = ctx.key,
-            label = label,
-            catalog = ctx.catalog,
-            pinnedModel = ctx.head.pinnedModel,
-            auth = auth,
-            baseUrl = ctx.providerCfg.baseUrl,
-            watchdog = ctx.watchdog,
-            loginCommand = ctx.loginCommand,
-        ),
-        identity = identity,
-    )
+    /** Kimi's device-flow OAuth: the device identity is built FIRST because its X-Msh-* headers
+     *  ride the refresh call itself, then the auth provider that refreshes against them. */
+    private fun kimiOauthAuth(ctx: ProviderBuild): Pair<RefreshableAuthProvider, KimiDeviceIdentity> {
+        val authPath = Paths.get(
+            TopologyLoader.expandHome(ctx.providerCfg.auth.file ?: "~/.kimi/credentials/kimi-code.json"),
+        )
+        val identity = KimiDeviceIdentity(deviceIdPath = authPath.resolveSibling("device_id"))
+        val identityHeaders = identity.headers()
+        val tokenUrl = KimiOAuthEndpoints.tokenUrl(System::getenv)
+        val auth = KimiAuthProvider(
+            authPath = authPath,
+            authCacheMs = ctx.cfg.authCacheMs,
+            refreshCall = { rt -> kimiRefresh(tokenUrl, rt, identityHeaders) },
+            prefetchScope = probeScope,
+            // JW-03: [<headKey>] first, so [kimi-auth] refresh lines reach the head's tail
+            log = headScopedLog(ctx.key, log),
+        )
+        return auth to identity
+    }
 
     /** Overlay the head's TOML [providers.*.quirks] onto a provider's base quirk profile. */
     // quirks.effortCeiling is intentionally not passed: the effort ladder clamps per provider.

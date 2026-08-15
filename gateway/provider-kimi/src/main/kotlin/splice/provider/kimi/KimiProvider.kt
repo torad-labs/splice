@@ -37,7 +37,11 @@ public class KimiProvider(
     override val showReasoning: ReasoningDisplay = ReasoningDisplay.OFF
     override val replayReasoning: Boolean = false
 
-    private val builder = PassthroughRequestBuilder(PassthroughQuirks(providerTag = tuning.key))
+    // Kimi opts INTO the dialect's deformations explicitly — the defaults are a faithful
+    // passthrough since the claude head joined this dialect (campaign claude-head, CH-2).
+    private val quirks = PassthroughQuirks.kimi(tuning.key)
+
+    private val builder = PassthroughRequestBuilder(quirks)
 
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
         val upstreamModel = catalog.stripSuffixes(body.typed.model)
@@ -58,6 +62,7 @@ public class KimiProvider(
                 idleCapMs = watchdog.streamIdle.inWholeMilliseconds,
                 totalCapMs = watchdog.totalCap.inWholeMilliseconds,
             ),
+            quirks,
         )
 
     // Auth arrives as Credentials.ApiKey(x-api-key) — UpstreamClient applies it; we add NO Authorization.

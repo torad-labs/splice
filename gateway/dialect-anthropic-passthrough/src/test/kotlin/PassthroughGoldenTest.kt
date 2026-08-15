@@ -46,7 +46,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 
 /** KIMI's deformation set — see the CH-2 note in the file header. */
-private val KIMI_QUIRKS = PassthroughQuirks(providerTag = "kimi")
+private val KIMI_QUIRKS = PassthroughQuirks.kimi("kimi")
 
 private val GOLDEN_DIR: Path = Path.of("src", "test", "resources", "goldens")
 private val JSON = Json {
@@ -201,7 +201,7 @@ class PassthroughGoldenTest {
     @Test
     fun `signature synthesis on an unsigned thinking block is byte-stable`() = runTest {
         val sink = Recorder()
-        val outcome = PassthroughStreamTranslator(ctx()).driveTurn(
+        val outcome = PassthroughStreamTranslator(ctx(), KIMI_QUIRKS).driveTurn(
             listOf(
                 ev("""{"type":"message_start","message":{"usage":{"input_tokens":10}}}"""),
                 ev("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}"""),
@@ -224,7 +224,7 @@ class PassthroughGoldenTest {
     @Test
     fun `an upstream-signed thinking block is byte-stable and never double-signed`() = runTest {
         val sink = Recorder()
-        PassthroughStreamTranslator(ctx()).driveTurn(
+        PassthroughStreamTranslator(ctx(), KIMI_QUIRKS).driveTurn(
             listOf(
                 ev("""{"type":"message_start","message":{"usage":{"input_tokens":10}}}"""),
                 ev("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}"""),
@@ -246,7 +246,7 @@ class PassthroughGoldenTest {
     @Test
     fun `provider-tagged failure text is byte-stable`() = runTest {
         val sink = Recorder()
-        val outcome = PassthroughStreamTranslator(ctx()).driveTurn(
+        val outcome = PassthroughStreamTranslator(ctx(), KIMI_QUIRKS).driveTurn(
             listOf(
                 ev("""{"type":"message_start","message":{"usage":{"input_tokens":1}}}"""),
                 ev("""{"type":"error","error":{"type":"overloaded_error","message":"upstream busy"}}"""),

@@ -21,7 +21,7 @@ class PassthroughContractTest {
                 """"system":"You are Splice, a contract fixture.",""" +
                 """"messages":[{"role":"user","content":"Ping."}]}"""
         val body = parseAnthropicBody(anthropic)
-        val req = PassthroughRequestBuilder(PassthroughQuirks(providerTag = "kimi"))
+        val req = PassthroughRequestBuilder(PassthroughQuirks.kimi("kimi"))
             .build(body, upstreamModel = "k3", originalModel = "claude-kimi--k3[1m]", compact = false)
             .req
         assertGoldenContract("passthrough-canonical", req) { PassthroughContractTest::class.java }

@@ -1,15 +1,18 @@
-// NEW: (no Node source) near-identity Anthropic Messages -> Kimi Anthropic-surface request. Kimi's
-// /coding endpoint speaks the Anthropic wire, so this builder preserves the RAW body (unknown
-// fields ride through verbatim) and only SCRUBS the handful of shapes Kimi rejects: it retargets
-// `model`, forces `stream`, deep-strips every `cache_control`, filters content/tool_result blocks
-// to Kimi's accepted tag allowlist, runs tool input_schema through the MFJS sanitizer, and remaps
-// Anthropic thinking config into Kimi's adaptive-thinking + output_config.effort ladder. Compact
-// turns additionally drop tools + tool_choice (splice compaction doctrine). Invariants: TWO things
-// are invented and nothing else — the adaptive thinking/output_config pair, and (CX-02, 2026-08-10)
-// the compaction directive appended to `system` on a compact turn, without which a kimi compaction
-// turn is an ordinary tool-stripped turn and a chatty reply is stored silently as the summary;
-// thinking blocks pass VERBATIM (signature included); the effort ladder never emits "medium"
-// (Kimi vocab is low|high|max).
+// NEW: (no Node source) Anthropic Messages -> an Anthropic-surface upstream. The body is preserved
+// (unknown fields ride through verbatim) and only these happen unconditionally: `model` is retargeted, `stream` is
+// forced, compact turns drop tools + tool_choice, and (CX-02, 2026-08-10) the compaction directive
+// is appended to `system` on a compact turn — without which a compaction turn is an ordinary
+// tool-stripped turn and a chatty reply is stored silently as the session summary.
+//
+// EVERY OTHER TRANSFORM IS A DECLARED QUIRK, OFF BY DEFAULT (see PassthroughQuirks): cache_control
+// stripping, the content-block allowlist, MFJS schema rewriting, and the adaptive-thinking +
+// output_config.effort ladder. They were hardcoded while Kimi was the only consumer; a faithful
+// upstream (api.anthropic.com) needs its prompt-cache markers, full JSON Schema, and its own
+// thinking config to survive the trip. `PassthroughQuirks.kimi(tag)` is the one definition of
+// Kimi's set, and its bytes are frozen by PassthroughGoldenTest.
+//
+// Invariants that hold for every head: thinking blocks pass VERBATIM (signature included), and the
+// effort ladder never emits "medium" (Kimi vocab is low|high|max).
 package splice.dialect.passthrough
 
 import kotlinx.serialization.json.JsonArray
@@ -28,11 +31,24 @@ import splice.core.turn.withCompactDirective
 import splice.core.util.strOrEmpty
 import splice.core.wire.AnthropicRequest
 
+/**
+ * The knobs that turn a FAITHFUL Anthropic passthrough into one vendor's accepted shape.
+ *
+ * DEFAULTS ARE NEUTRAL, and that inversion is the point (campaign claude-head, CH-2). Every knob
+ * below was hardcoded ON when Kimi was the dialect's only consumer, which made "passthrough" a
+ * misnomer: a real Anthropic upstream loses prompt caching to [stripCacheControl], has its tool
+ * schemas rewritten by [mfjsSanitize], has `redacted_thinking` silently dropped by
+ * [blockAllowlist], and can be handed a forged thinking signature by [synthesizeSignatures] that
+ * a signature-VERIFYING upstream later rejects. A vendor now opts INTO its own deformations
+ * ([kimi] is the one definition of Kimi's set); a head that declares nothing gets its bytes
+ * forwarded as sent.
+ */
 public data class PassthroughQuirks(
     val providerTag: String,
     /** Kimi's Anthropic surface accepts ONLY adaptive-style thinking for effort control;
-     *  budget-based inference fails for Kimi model ids. */
-    val mapThinkingToAdaptive: Boolean = true,
+     *  budget-based inference fails for Kimi model ids. Neutral forwards `thinking` verbatim
+     *  (and stops owning `output_config`, so a client's own rides through). */
+    val mapThinkingToAdaptive: Boolean = false,
     /** Compact-turn effort pin. null (the default) = compact INHERITS the session's own effort
      *  (v27 doctrine: compact turns inherit the session's model AND effort — a mismatch on either
      *  invalidates the prompt cache and re-reads the whole transcript cold). Set ONLY to
@@ -40,7 +56,51 @@ public data class PassthroughQuirks(
     val compactEffort: String? = null,
     /** Drop temperature/top_p/top_k when a live probe shows the endpoint rejects them. */
     val stripSamplingParams: Boolean = false,
-)
+    /** Rewrite tool `input_schema` into Moonshot-Flavored JSON Schema (and drop `strict` / invent
+     *  an empty `description`). An upstream that accepts full JSON Schema must leave this OFF:
+     *  the sanitizer discards `format`, `prefixItems`, `$ref` siblings and tuple `items`, which
+     *  CHANGES tool semantics. */
+    val mfjsSanitize: Boolean = false,
+    /** Content-block types the upstream accepts; every other block is DROPPED. null (neutral) =
+     *  every block rides. Kimi's list comes from its own 400 and excludes `redacted_thinking`,
+     *  `document` and `search_result` — silent content loss against an upstream that accepts them. */
+    val blockAllowlist: Set<String>? = null,
+    /** Deep-strip every `cache_control` marker. Neutral PRESERVES them: against an upstream with
+     *  prompt caching, stripping is a silent cold-read on every turn, not an error. */
+    val stripCacheControl: Boolean = false,
+    /** Synthesize ONE thinking-block signature at close when the upstream sent none. Required for
+     *  Kimi (never signs; Claude Code discards unsigned thinking blocks) and WRONG for an upstream
+     *  that signs and verifies — a truncated block would otherwise persist a forged signature into
+     *  the transcript and return it upstream on the next turn. */
+    val synthesizeSignatures: Boolean = false,
+) {
+    public companion object {
+        /** KIMI's deformation set — the shape that was hardcoded before the inversion. ONE
+         *  definition, so provider wiring and the byte-identity goldens cannot drift apart. */
+        public fun kimi(providerTag: String): PassthroughQuirks = PassthroughQuirks(
+            providerTag = providerTag,
+            mapThinkingToAdaptive = true,
+            mfjsSanitize = true,
+            blockAllowlist = KIMI_BLOCK_TYPES,
+            stripCacheControl = true,
+            synthesizeSignatures = true,
+        )
+
+        /** Kimi's own 400 enumerates the accepted content tags; everything else is dropped. */
+        public val KIMI_BLOCK_TYPES: Set<String> = setOf(
+            "text",
+            "image",
+            TYPE_THINKING,
+            "tool_use",
+            TYPE_TOOL_RESULT,
+            "server_tool_use",
+            "web_search_tool_result",
+        )
+    }
+}
+
+private const val TYPE_THINKING = "thinking"
+private const val TYPE_TOOL_RESULT = "tool_result"
 
 public data class BuiltPassthroughRequest(val req: JsonObject, val meta: TurnMeta)
 
@@ -89,10 +149,21 @@ public class PassthroughRequestBuilder(private val quirks: PassthroughQuirks) {
      *  params optionally dropped. Unknown client fields ride through here verbatim. */
     private fun JsonObjectBuilder.copyUnhandledFields(raw: JsonObject) {
         for ((key, value) in raw) {
-            val dropped = key in HANDLED_KEYS || (key in SAMPLING_KEYS && quirks.stripSamplingParams)
+            val dropped = key in handledKeys || (key in SAMPLING_KEYS && quirks.stripSamplingParams)
             if (!dropped) put(key, stripCacheControl(value))
         }
     }
+
+    /** `output_config` is owned by the thinking mapping ONLY when that mapping is on; a neutral
+     *  passthrough has no business dropping a field the client chose to send. */
+    /** Tool keys this head drops outright — fixed by the quirks, so computed once. */
+    private val droppedToolKeys: Set<String> = buildSet {
+        if (quirks.mfjsSanitize) add(STRICT)
+        if (quirks.stripCacheControl) add(CACHE_CONTROL)
+    }
+
+    private val handledKeys: Set<String> =
+        if (quirks.mapThinkingToAdaptive) HANDLED_KEYS else HANDLED_KEYS - OUTPUT_CONFIG
 
     // --- thinking mapping ------------------------------------------------------------------------
 
@@ -157,7 +228,7 @@ public class PassthroughRequestBuilder(private val quirks: PassthroughQuirks) {
     /** Keep an accepted block (cache_control stripped, tool_result inner content filtered) or drop. */
     private fun scrubBlock(block: JsonObject): JsonObject? {
         val type = strOrEmpty(block["type"])
-        if (type !in ALLOWED_BLOCK_TYPES) return null
+        quirks.blockAllowlist?.let { if (type !in it) return null }
         if (isEmptyThinking(type, block)) return null
         return rebuildBlock(block, type)
     }
@@ -171,7 +242,7 @@ public class PassthroughRequestBuilder(private val quirks: PassthroughQuirks) {
     private fun rebuildBlock(block: JsonObject, type: String): JsonObject = buildJsonObject {
         for ((key, value) in block) {
             when {
-                key == CACHE_CONTROL -> Unit
+                key == CACHE_CONTROL && quirks.stripCacheControl -> Unit
                 key == CONTENT && type == TYPE_TOOL_RESULT -> put(CONTENT, scrubContent(value))
                 else -> put(key, stripCacheControl(value))
             }
@@ -189,13 +260,16 @@ public class PassthroughRequestBuilder(private val quirks: PassthroughQuirks) {
 
     private fun sanitizeTool(tool: JsonObject): JsonObject = buildJsonObject {
         for ((key, value) in tool) {
-            when (key) {
-                STRICT, CACHE_CONTROL -> Unit
-                INPUT_SCHEMA -> put(INPUT_SCHEMA, MfjsSanitizer.sanitize(value as? JsonObject ?: EMPTY_OBJECT))
+            when {
+                key in droppedToolKeys -> Unit
+                key == INPUT_SCHEMA && quirks.mfjsSanitize ->
+                    put(INPUT_SCHEMA, MfjsSanitizer.sanitize(value as? JsonObject ?: EMPTY_OBJECT))
                 else -> put(key, stripCacheControl(value))
             }
         }
-        if (DESCRIPTION !in tool) put(DESCRIPTION, "")
+        // Kimi 400s a tool with no description; inventing one on a faithful passthrough would be
+        // splice putting words in the client's request, so it rides with the schema shaping.
+        if (quirks.mfjsSanitize && DESCRIPTION !in tool) put(DESCRIPTION, "")
     }
 
     // --- helpers ---------------------------------------------------------------------------------
@@ -238,6 +312,7 @@ public class PassthroughRequestBuilder(private val quirks: PassthroughQuirks) {
      *  passed through AS-IS beyond that point — cache_control stripping at extreme depth is
      *  immaterial, and this must never StackOverflow on adversarially nested input. */
     private fun stripCacheControl(element: JsonElement, depth: Int = 0): JsonElement {
+        if (!quirks.stripCacheControl) return element
         if (depth >= DEPTH_CAP) return element
         return when (element) {
             is JsonObject -> buildJsonObject {
@@ -271,9 +346,6 @@ public class PassthroughRequestBuilder(private val quirks: PassthroughQuirks) {
         const val INPUT_SCHEMA = "input_schema"
         const val DESCRIPTION = "description"
 
-        const val TYPE_THINKING = "thinking"
-        const val TYPE_TOOL_RESULT = "tool_result"
-
         // Passthrough emits native thinking blocks, so the transcript text-mirror stays off.
 
         const val EFFORT_LOW = "low"
@@ -295,17 +367,6 @@ public class PassthroughRequestBuilder(private val quirks: PassthroughQuirks) {
             TOOL_CHOICE,
         )
         val SAMPLING_KEYS = setOf(TEMPERATURE, TOP_P, TOP_K)
-
-        // Kimi's own 400 enumerates the accepted content tags; everything else is dropped.
-        val ALLOWED_BLOCK_TYPES = setOf(
-            "text",
-            "image",
-            TYPE_THINKING,
-            "tool_use",
-            TYPE_TOOL_RESULT,
-            "server_tool_use",
-            "web_search_tool_result",
-        )
         val EMPTY_OBJECT = JsonObject(emptyMap())
     }
 }

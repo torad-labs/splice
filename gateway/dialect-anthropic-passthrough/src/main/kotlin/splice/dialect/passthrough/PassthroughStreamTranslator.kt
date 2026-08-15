@@ -1,9 +1,12 @@
 // NEW: (no Node source) upstream Anthropic Messages SSE -> shared WireSink. Kimi's /coding surface
 // already speaks the Anthropic event grammar, so this is a near-passthrough that only re-indexes
 // blocks onto the sink and enforces two subtle contracts:
-//   1. SIGNATURE SYNTHESIS EXACTLY-ONCE: Claude Code silently discards a response whose thinking
-//      blocks never receive a signature_delta; Kimi never sends one. We forward an upstream
-//      signature if it arrives, else synthesize ONE synthetic signature at block close — never both.
+//   1. SIGNATURE SYNTHESIS EXACTLY-ONCE, and only when the head asks for it
+//      (PassthroughQuirks.synthesizeSignatures): Claude Code silently discards a response whose
+//      thinking blocks never receive a signature_delta, and Kimi never sends one. We forward an
+//      upstream signature if it arrives, else synthesize ONE at block close — never both. An
+//      upstream that SIGNS and VERIFIES leaves this off: a block truncated before its signature
+//      would otherwise persist a forged signature into the transcript and hand it back next turn.
 //   2. USAGE NORMALIZATION: Anthropic usage is already disjoint (input excludes cache), but
 //      HeadServer's generic payload builder subtracts cachedTokens from inputTokens (OpenAI
 //      inclusive convention). So we pre-add the cache buckets back into inputTokens and report
@@ -40,7 +43,10 @@ public data class PassthroughTurnContext(
     val totalCapMs: Long,
 )
 
-public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext) : StreamTranslator {
+public class PassthroughStreamTranslator(
+    private val ctx: PassthroughTurnContext,
+    private val quirks: PassthroughQuirks,
+) : StreamTranslator {
 
     private enum class Kind { TEXT, THINKING, TOOL, IGNORED }
 
@@ -71,7 +77,7 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
             upstream.collect { evt ->
                 // NF-06: the shared runaway valve Chat already had.
                 if (BufferCapacity.over(textBuf.length, thinkingBuf.length)) {
-                    runawayGuard = RUNAWAY_GUARD_MESSAGE
+                    runawayGuard = runawayGuardMessage(quirks.providerTag)
                     return@collect
                 }
                 onEvent(evt, sink)
@@ -100,13 +106,15 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
             } ?: failureType?.let {
                 // a signal the BACKEND sent — an upstream SSE error event (e.g. overloaded_error) or
                 // a non-clean stop_reason (CX-07, see [stopReasonFailure]) — provider-reported (G20)
-                TurnOutcome.Failure(it, "kimi: $failureMessage", providerReported = true)
+                TurnOutcome.Failure(it, "${quirks.providerTag}: $failureMessage", providerReported = true)
             },
             finished = finished,
             watchdogFired = ctx.watchdogFired(),
         ),
         onFinished = ::successOutcome,
-        onWatchdog = { TurnOutcome.Failure(ErrorType.OVERLOADED, "kimi: upstream stalled — aborted; retry") },
+        onWatchdog = {
+            TurnOutcome.Failure(ErrorType.OVERLOADED, "${quirks.providerTag}: upstream stalled — aborted; retry")
+        },
         onUnfinished = ::unfinishedOutcome,
     )
 
@@ -116,7 +124,7 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
         } else {
             TurnOutcome.Failure(
                 ErrorType.OVERLOADED,
-                "kimi: stream ended without a terminal event (truncated); retry",
+                "${quirks.providerTag}: stream ended without a terminal event (truncated); retry",
             )
         }
 
@@ -208,8 +216,11 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
     private suspend fun onBlockStop(evt: JsonObject, sink: WireSink) {
         val block = blocks[intIndex(evt) ?: return] ?: return
         val wire = block.wire ?: return // ignored block: nothing was opened
-        if (block.kind == Kind.THINKING && !block.signatureSeen) {
-            // Synthesize EXACTLY ONE signature so Claude Code keeps the thinking block.
+        val unsignedThinking = block.kind == Kind.THINKING && !block.signatureSeen
+        if (quirks.synthesizeSignatures && unsignedThinking) {
+            // Synthesize EXACTLY ONE signature so Claude Code keeps the thinking block. Quirk-gated:
+            // an upstream that SIGNS and VERIFIES must never receive this back — a block truncated
+            // before its signature would otherwise persist a forged one into the transcript.
             sink.signatureDelta(wire, SYNTHETIC_SIGNATURE)
             block.signatureSeen = true
         }
@@ -285,7 +296,8 @@ public class PassthroughStreamTranslator(private val ctx: PassthroughTurnContext
 }
 
 // NF-06 runaway-upstream guard message; the cap lives in spi.BufferCapacity (one source, three dialects).
-private const val RUNAWAY_GUARD_MESSAGE = "kimi: response exceeded max buffered size — aborting"
+private fun runawayGuardMessage(providerTag: String): String =
+    "$providerTag: response exceeded max buffered size — aborting"
 
 private const val CONTEXT_EXCEEDED_MESSAGE =
     "generation stopped: the model context window was exceeded (stop_reason=model_context_window_exceeded)"

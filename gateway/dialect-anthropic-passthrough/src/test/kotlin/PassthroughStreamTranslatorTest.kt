@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
+import splice.dialect.passthrough.PassthroughQuirks
 import splice.dialect.passthrough.PassthroughStreamTranslator
 import splice.dialect.passthrough.PassthroughTurnContext
 import splice.spi.WireSink
@@ -37,11 +38,13 @@ private class Rec : WireSink {
     override suspend fun addRedactedThinking(data: String) = Unit
 }
 
+private val KIMI = PassthroughQuirks.kimi("kimi")
+
 private fun ev(json: String): JsonObject = Json.parseToJsonElement(json).jsonObject
 private fun ctx() = PassthroughTurnContext({ false }, { null }, 180_000, 900_000)
 
 private suspend fun drive(sink: Rec, vararg evs: JsonObject): TurnOutcome =
-    PassthroughStreamTranslator(ctx()).driveTurn(evs.toList().asFlow(), sink)
+    PassthroughStreamTranslator(ctx(), KIMI).driveTurn(evs.toList().asFlow(), sink)
 
 // thinking (no upstream signature) -> text -> tool_use -> stop_reason tool_use -> stop.
 private fun fullTurnEvents(): List<JsonObject> = listOf(
@@ -70,7 +73,7 @@ class PassthroughStreamTranslatorTest {
     @Test
     fun `full turn re-indexes blocks, synthesizes one signature, and normalizes usage`() = runTest {
         val sink = Rec()
-        val outcome = PassthroughStreamTranslator(ctx()).driveTurn(fullTurnEvents().asFlow(), sink)
+        val outcome = PassthroughStreamTranslator(ctx(), KIMI).driveTurn(fullTurnEvents().asFlow(), sink)
         val s = outcome as TurnOutcome.Success
         assertEquals(
             listOf(
@@ -289,7 +292,7 @@ class PassthroughStreamTranslatorTest {
             900_000,
         )
         val sink = Rec()
-        val outcome = PassthroughStreamTranslator(late).driveTurn(
+        val outcome = PassthroughStreamTranslator(late, KIMI).driveTurn(
             listOf(
                 ev("""{"type":"message_start","message":{"usage":{"input_tokens":1}}}"""),
                 ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""),
@@ -327,7 +330,7 @@ class PassthroughStreamTranslatorTest {
                 )
             }
         }
-        val outcome = PassthroughStreamTranslator(ctx()).driveTurn(events, sink)
+        val outcome = PassthroughStreamTranslator(ctx(), KIMI).driveTurn(events, sink)
         val failure = outcome as TurnOutcome.Failure
         assertEquals(ErrorType.API_ERROR, failure.type)
         assertFalse(failure.providerReported, "the runaway verdict is LOCAL — never provider-attributed")
@@ -424,5 +427,33 @@ class PassthroughStopReasonHonestyTest {
         assertEquals(ErrorType.OVERLOADED, f.type)
         assertTrue(f.message.contains("try later"), f.message)
         assertTrue(f.providerReported)
+    }
+
+    // NEUTRAL: an upstream that SIGNS and VERIFIES must never receive a synthesized signature back.
+    // A thinking block truncated before its signature would otherwise persist "splice-synth-v1" into
+    // the client transcript and hand that forgery upstream on the next turn.
+    @Test
+    fun `neutral never synthesizes a thinking signature`() = runTest {
+        val sink = Rec()
+        PassthroughStreamTranslator(ctx(), PassthroughQuirks(providerTag = "claude-max")).driveTurn(
+            listOf(
+                ev("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}"""),
+                ev("""{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"t"}}"""),
+                ev("""{"type":"content_block_stop","index":0}"""),
+                ev("""{"type":"message_stop"}"""),
+            ).asFlow(),
+            sink,
+        )
+        assertFalse(sink.calls.any { it.startsWith("sig:") }, sink.calls.toString())
+    }
+
+    @Test
+    fun `failure text carries the head's own provider tag`() = runTest {
+        val outcome = PassthroughStreamTranslator(ctx(), PassthroughQuirks(providerTag = "claude-max")).driveTurn(
+            listOf(ev("""{"type":"error","error":{"type":"api_error","message":"boom"}}""")).asFlow(),
+            Rec(),
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertTrue(f.message.startsWith("claude-max: "), f.message)
     }
 }

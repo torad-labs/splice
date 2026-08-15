@@ -93,6 +93,28 @@ class ResponsesRequestBuilderTest {
     }
 
     @Test
+    fun `grok ladder reaches xhigh on the top budget rung and the ultracode alias`() {
+        // Grok 4.6 adds the xhigh rung (xAI docs 2026-08: native on 4.6+; older groks clamp it
+        // to high upstream), so the ladder emits it model-blind — a stale gate would silently
+        // cap every future grok at high. Before this the GROK ladder topped out at high and the
+        // ultracode alias clamped to high.
+        var req = build(
+            """{"model":"grok-4.6","thinking":{"type":"enabled","budget_tokens":64000},
+                "messages":[{"role":"user","content":"x"}]}""",
+            quirks = GROK,
+            options = opts(model = "grok-4.6"),
+        )
+        assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        req = build(
+            """{"model":"grok-4.6","effort":"ultracode","thinking":{"type":"enabled","budget_tokens":2000},
+                "messages":[{"role":"user","content":"x"}]}""",
+            quirks = GROK,
+            options = opts(model = "grok-4.6"),
+        )
+        assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+    }
+
+    @Test
     fun `visibility floor lifts none-minimal to low but never a deliberate pick`() {
         var req = build(
             """{"model":"m","effort":"minimal","messages":[{"role":"user","content":"x"}]}""",
@@ -332,14 +354,18 @@ class ResponsesRequestBuilderTest {
     }
 
     @Test
-    fun `grok ladder clamps xhigh to high, emits tool_choice, floors disabled to low`() {
+    fun `grok ladder passes xhigh through (upstream clamps pre-4_6), emits tool_choice, floors disabled to low`() {
+        // 2026-08-13: the clamp moved UPSTREAM. xhigh is native on grok-4.6+; xAI documents
+        // treating it as high on older models, and this provider only ever talks to api.x.ai,
+        // so the ladder emits it model-blind instead of keeping a client-side gate that would
+        // silently cap every future grok at high.
         val req = build(
             """{"model":"grok-4.5","effort":"xhigh","tools":[{"name":"t","input_schema":{"type":"object"}}],
                 "tool_choice":{"type":"any"},"messages":[{"role":"user","content":"x"}]}""",
             quirks = GROK,
             options = opts(model = "grok-4.5"),
         )
-        assertEquals("high", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
         // Full reasoning visibility: detailed summary is requested so the stream fills the
         // thinking channel (xAI's public form of "full" reasoning text).
         assertEquals("detailed", req["reasoning"]?.jsonObject?.get("summary")?.jsonPrimitive?.content)

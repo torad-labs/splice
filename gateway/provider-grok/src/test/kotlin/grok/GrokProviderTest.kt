@@ -144,14 +144,16 @@ class GrokProviderTest {
     }
 
     @Test
-    fun `grok quirks - effort clamps to high, detailed summary for full thinking, session cache key`() = runBlocking {
+    fun `grok quirks - xhigh passes through (upstream clamps pre-4_6), detailed summary, session cache key`() = runBlocking {
         val parsed = parseAnthropicBody(
             """{"model":"grok-4.5","effort":"xhigh","messages":[{"role":"user","content":"first"}]}""",
         )
         val grokProvider = provider(oauthAuth(Files.createTempDirectory("q")))
         val built = grokProvider.buildTurn(parsed, compact = false, sessionId = "s1")
         val reasoning = built.requestBody["reasoning"]!!.jsonObject
-        assertEquals("high", reasoning["effort"]?.jsonPrimitive?.content) // xhigh clamped to high
+        // 2026-08-13: xhigh is native on grok-4.6+; on 4.5 xAI clamps it to high server-side.
+        // Emitted model-blind — a client-side gate would silently cap every future grok at high.
+        assertEquals("xhigh", reasoning["effort"]?.jsonPrimitive?.content)
         // detailed summary is the fullest public form of Grok reasoning Claude Code can display
         assertEquals("detailed", reasoning["summary"]?.jsonPrimitive?.content)
         assertEquals("claude-grok:s1", built.requestBody["prompt_cache_key"]?.jsonPrimitive?.content)

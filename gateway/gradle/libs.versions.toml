@@ -3,7 +3,7 @@
 # index was stale — always check metadata <latest>, not search "latestVersion").
 [versions]
 kotlin = "2.3.21"
-ktor = "3.5.1"
+ktor = "3.5.2"
 coroutines = "1.11.0"
 serialization = "1.11.0"
 ktoml = "0.7.1"

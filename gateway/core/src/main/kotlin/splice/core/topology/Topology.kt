@@ -75,11 +75,27 @@ public data class ProviderConfig(
     @SerialName("base_url") val baseUrl: String,
     val auth: AuthConfig,
     val quirks: QuirksConfig = QuirksConfig(),
+    /** Static vendor headers every upstream request carries (e.g. `anthropic-version`). Operator-
+     *  owned and pure TOML, so an anthropic-compatible vendor needs no provider code at all. On a
+     *  head that forwards the client's own headers, a forwarded value WINS over these defaults. */
+    @SerialName("extra_headers") val extraHeaders: Map<String, String> = emptyMap(),
     val models: List<ModelEntry> = emptyList(),
     @SerialName("extra_windows") val extraWindows: List<ExtraWindow> = emptyList(),
     @SerialName("window_rules") val windowRules: List<WindowRule> = emptyList(),
     @SerialName("default_context_window") val defaultContextWindow: Long = 0,
-)
+) {
+    /**
+     * [extraHeaders] with TOML key quoting removed — THE accessor every consumer must use.
+     *
+     * `extra_headers = { "anthropic-version" = "..." }` is valid TOML and the natural thing to
+     * write (a header name contains a dash), but ktoml hands back the key WITH its quote
+     * characters, which would put a literally malformed name on the wire. Bare keys parse clean;
+     * both forms must behave identically, so the quotes are stripped here rather than in each
+     * consumer. Header names never legitimately contain a double quote.
+     */
+    public val staticHeaders: Map<String, String>
+        get() = extraHeaders.mapKeys { (key, _) -> key.trim('"') }
+}
 
 @Serializable
 public enum class Dialect {
@@ -143,6 +159,30 @@ public data class QuirksConfig(
     /** openai-responses only: the deferred tool surface (tool_search) for responses-lite turns.
      *  ABSENT TABLE = feature off — the reasoning_cache nullable-overlay idiom (Topology.kt:109-113). */
     @SerialName("tool_surface") val toolSurface: ToolSurfaceConfig? = null,
+    // ── anthropic-passthrough only ────────────────────────────────────────────────────────────
+    // The dialect forwards the client's bytes faithfully by DEFAULT; each knob below opts into one
+    // vendor deformation (campaign claude-head, CH-2/CH-4). They are `false`/absent for a head that
+    // declares nothing, which is what an api.anthropic.com-shaped upstream needs — and every one of
+    // them is ON for kimi, whose entry in the example TOML declares them explicitly.
+    /** Rewrite tool `input_schema` into Moonshot-Flavored JSON Schema (and drop `strict` / invent an
+     *  empty `description`). Leave OFF for an upstream that accepts full JSON Schema: the sanitizer
+     *  discards `format`, `prefixItems`, `$ref` siblings and tuple `items`, changing tool semantics. */
+    @SerialName("mfjs") val mfjs: Boolean = false,
+    /** Content-block types the upstream accepts; every other block is DROPPED. ABSENT = every block
+     *  rides. Kimi's list comes from its own 400 and excludes `redacted_thinking`, which a client
+     *  round-trips — dropping it corrupts the thinking chain. */
+    @SerialName("block_allowlist") val blockAllowlist: List<String>? = null,
+    /** Deep-strip every `cache_control` marker. Against an upstream WITH prompt caching this is a
+     *  silent cold read on every turn (no error, just cost), so it stays opt-in. */
+    @SerialName("strip_cache_control") val stripCacheControl: Boolean = false,
+    /** Synthesize ONE thinking-block signature when the upstream sent none. Required for Kimi (never
+     *  signs; Claude Code discards unsigned thinking blocks), WRONG for an upstream that verifies. */
+    @SerialName("synthesize_signatures") val synthesizeSignatures: Boolean = false,
+    /** Remap Anthropic thinking config into Kimi's adaptive-thinking + output_config.effort ladder.
+     *  OFF forwards the client's `thinking` verbatim and leaves `output_config` to the client. */
+    @SerialName("map_thinking_adaptive") val mapThinkingAdaptive: Boolean = false,
+    /** Drop temperature/top_p/top_k when a live probe shows the endpoint rejects them. */
+    @SerialName("strip_sampling_params") val stripSamplingParams: Boolean = false,
 )
 
 /** openai-responses only: the deferred tool surface (tool_search) for responses-lite turns.

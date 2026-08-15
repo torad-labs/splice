@@ -150,6 +150,22 @@ base_url = "https://api.kimi.com/coding"
 # third-party integration. kimi-code.json is password-equivalent; splice reads AND refreshes it in place.
 # Documented alternative: a Moonshot API key (kind = "api-key", env = "MOONSHOT_API_KEY").
 auth = { kind = "kimi-oauth", file = "~/.kimi/credentials/kimi-code.json" }
+# The anthropic-passthrough dialect forwards the client's bytes FAITHFULLY by default; each knob
+# below opts into one deformation Kimi's /coding surface requires. They were hardcoded while Kimi
+# was the dialect's only consumer — declaring them here is what lets an api.anthropic.com-shaped
+# vendor share the dialect without inheriting Moonshot's wire (see the [providers.anthropic] entry).
+#   mfjs                  — rewrite tool input_schema into Moonshot-Flavored JSON Schema (drops
+#                           format, prefix-item schemas, $ref siblings; collapses tuple items)
+#   block_allowlist       — Kimi's own 400 enumerates these tags; every other block is DROPPED
+#   strip_cache_control   — Kimi rejects cache_control markers (no prompt caching to lose here)
+#   synthesize_signatures — Kimi never signs thinking blocks and Claude Code discards unsigned ones
+#   map_thinking_adaptive — Kimi takes adaptive thinking + output_config.effort, not budget_tokens
+quirks = { mfjs = true, strip_cache_control = true, synthesize_signatures = true, map_thinking_adaptive = true, block_allowlist = ["text", "image", "thinking", "tool_use", "tool_result", "server_tool_use", "web_search_tool_result"] }
+# Static vendor headers, pure TOML. Kimi's /coding endpoint 403s unrecognized user agents (this
+# exact UA is proven-accepted), and the Anthropic wire needs its version header on every request.
+# `Accept` and the X-Msh-* device identity stay in code: one is a dialect invariant, the other is
+# COMPUTED per install rather than declared.
+extra_headers = { anthropic-version = "2023-06-01", User-Agent = "KimiCLI/1.5" }
 # Window lookups happen on the STRIPPED id ("k3"), while the picker entry below keeps the "[1m]"
 # hint — this exact-match row keeps K3's 1M window independent of model-list order.
 [[providers.kimi.extra_windows]]

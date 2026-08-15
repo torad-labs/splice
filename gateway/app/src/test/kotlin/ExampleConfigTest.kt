@@ -2,6 +2,7 @@
 // must parse and yield the three documented heads with the right dialects/auth. If someone edits
 // the example into an invalid shape, this fails.
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.app.TopologyLoader
@@ -57,6 +58,27 @@ class ExampleConfigTest {
         assertEquals(Dialect.ANTHROPIC_PASSTHROUGH, kimi.dialect)
         assertEquals("kimi-oauth", kimi.auth.kind)
         assertEquals("k3[1m]", topology.heads["claude-kimi"]!!.pinnedModel)
+        // The passthrough dialect is faithful by DEFAULT (campaign claude-head): every deformation
+        // Kimi needs is now DECLARED, and the same round-trip law as reasoning_cache above applies —
+        // a knob that never reaches the parsed field is decorative, which is how five of them
+        // shipped once already. Values, not just presence.
+        assertTrue(kimi.quirks.mfjs)
+        assertTrue(kimi.quirks.stripCacheControl)
+        assertTrue(kimi.quirks.synthesizeSignatures)
+        assertTrue(kimi.quirks.mapThinkingAdaptive)
+        assertEquals(
+            listOf("text", "image", "thinking", "tool_use", "tool_result", "server_tool_use", "web_search_tool_result"),
+            kimi.quirks.blockAllowlist,
+        )
+        // Static vendor headers as pure TOML — the seam that lets an anthropic-compatible vendor
+        // need no provider code at all.
+        assertEquals("2023-06-01", kimi.staticHeaders["anthropic-version"])
+        assertEquals("KimiCLI/1.5", kimi.staticHeaders["User-Agent"])
+        // A head that declares nothing must stay faithful: the openai-dialect providers above carry
+        // no passthrough knobs, and their defaults are the neutral (false/absent) ones.
+        assertEquals(false, codex.quirks.mfjs)
+        assertEquals(false, codex.quirks.stripCacheControl)
+        assertNull(codex.quirks.blockAllowlist)
 
         // the isolate override survives the round-trip
         assertTrue(topology.heads["claude-grok"]!!.claude.isolate.contains("commands"))

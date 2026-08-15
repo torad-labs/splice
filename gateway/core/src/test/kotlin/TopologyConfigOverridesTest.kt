@@ -113,4 +113,32 @@ class TopologyConfigOverridesTest {
         assertEquals(5, table.searchLimit)
         assertEquals(2, table.searchRounds)
     }
+
+    // ktoml hands back a QUOTED TOML key with its quote characters intact, and
+    // `extra_headers = { "anthropic-version" = "..." }` is both valid TOML and the natural thing
+    // to write for a dashed header name. Unnormalized, that ships a header literally named
+    // "anthropic-version" — quotes included — to the upstream. Both spellings must agree.
+    @Test
+    fun `staticHeaders strips TOML key quoting so both spellings agree`() {
+        val quoted = ProviderConfig(
+            dialect = Dialect.ANTHROPIC_PASSTHROUGH,
+            baseUrl = "https://api.anthropic.com",
+            auth = AuthConfig("client"),
+            extraHeaders = mapOf("\"anthropic-version\"" to "2023-06-01"),
+        )
+        val bare = quoted.copy(extraHeaders = mapOf("anthropic-version" to "2023-06-01"))
+        assertEquals(mapOf("anthropic-version" to "2023-06-01"), quoted.staticHeaders)
+        assertEquals(quoted.staticHeaders, bare.staticHeaders)
+    }
+
+    // A head that declares nothing gets a faithful passthrough — the claude head's contract.
+    @Test
+    fun `passthrough quirk defaults are neutral`() {
+        val q = QuirksConfig()
+        assertEquals(false, q.mfjs)
+        assertEquals(false, q.stripCacheControl)
+        assertEquals(false, q.synthesizeSignatures)
+        assertEquals(false, q.mapThinkingAdaptive)
+        assertNull(q.blockAllowlist)
+    }
 }

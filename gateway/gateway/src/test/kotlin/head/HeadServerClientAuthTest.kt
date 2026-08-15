@@ -50,22 +50,23 @@ import splice.spi.UpstreamClient
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.nio.file.Files
-import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.time.Duration.Companion.seconds
 
 private const val MGMT_KEY = "mgmt-key-for-this-test"
 
-/** An Anthropic-shaped upstream that records every request's headers. */
+/** An Anthropic-shaped upstream that records every request's headers — APPEND-ONLY, so a test can
+ *  pin "exactly one NEW request" with a size boundary instead of reading whatever request (possibly
+ *  a previous test's) happened to arrive last. */
 private class RecordingUpstream {
-    val received = ConcurrentHashMap<String, MutableList<String>>()
+    val requests = CopyOnWriteArrayList<Map<String, List<String>>>()
     private val server: HttpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
     val baseUrl: String get() = "http://127.0.0.1:${server.address.port}"
 
     fun start() {
         server.createContext("/v1/messages") { ex: HttpExchange ->
             ex.requestBody.readAllBytes()
-            received.clear()
-            ex.requestHeaders.forEach { (name, values) -> received[name.lowercase()] = values.toMutableList() }
+            requests += ex.requestHeaders.entries.associate { it.key.lowercase() to it.value.toList() }
             val body = buildString {
                 append("event: message_start\ndata: {\"type\":\"message_start\",")
                 append("\"message\":{\"usage\":{\"input_tokens\":1}}}\n\n")
@@ -86,8 +87,6 @@ private class RecordingUpstream {
     }
 
     fun stop() = server.stop(0)
-
-    fun valuesOf(header: String): List<String> = received[header.lowercase()].orEmpty()
 }
 
 private class FakeApiKeyAuth : RefreshableAuthProvider {
@@ -184,7 +183,8 @@ class HeadServerClientAuthTest {
     @Test
     fun `a client-auth head forwards the caller's credential and wire knobs upstream, once`() {
         val port = startHead(forwardClientAuth = true)
-        turn(
+        val before = upstream.requests.size
+        val (status, _) = turn(
             port,
             mapOf(
                 "Authorization" to "Bearer caller-own-token",
@@ -192,19 +192,25 @@ class HeadServerClientAuthTest {
                 "anthropic-version" to "2099-01-01", // caller's choice must beat the configured default
             ),
         )
-        assertEquals(listOf("Bearer caller-own-token"), upstream.valuesOf("Authorization"))
-        assertEquals(listOf("oauth-2025-04-20"), upstream.valuesOf("anthropic-beta"))
+        assertEquals(HttpStatusCode.OK, status)
+        assertEquals(before + 1, upstream.requests.size, "one turn must produce one upstream request")
+        val sent = upstream.requests[before]
+        assertEquals(listOf("Bearer caller-own-token"), sent["authorization"].orEmpty())
+        assertEquals(listOf("oauth-2025-04-20"), sent["anthropic-beta"].orEmpty())
         // exactly one, and it is the caller's — not the provider's configured 2023-06-01
-        assertEquals(listOf("2099-01-01"), upstream.valuesOf("anthropic-version"))
+        assertEquals(listOf("2099-01-01"), sent["anthropic-version"].orEmpty())
         // splice holds no credential on this head, so nothing of its own is written
-        assertFalse(upstream.valuesOf("Authorization").any { it.contains("splice-held-secret") })
+        assertFalse(sent["authorization"].orEmpty().any { it.contains("splice-held-secret") })
     }
 
     @Test
     fun `the configured default still rides when the caller sends none`() {
         val port = startHead(forwardClientAuth = true)
-        turn(port, mapOf("Authorization" to "Bearer caller-own-token"))
-        assertEquals(listOf("2023-06-01"), upstream.valuesOf("anthropic-version"))
+        val before = upstream.requests.size
+        val (status, _) = turn(port, mapOf("Authorization" to "Bearer caller-own-token"))
+        assertEquals(HttpStatusCode.OK, status)
+        assertEquals(before + 1, upstream.requests.size, "one turn must produce one upstream request")
+        assertEquals(listOf("2023-06-01"), upstream.requests[before]["anthropic-version"].orEmpty())
     }
 
     // ── the wall ──────────────────────────────────────────────────────────────────────────────
@@ -220,6 +226,7 @@ class HeadServerClientAuthTest {
     @Test
     fun `a non-client head forwards NO inbound header and uses its own credential`() {
         val port = startHead(forwardClientAuth = false)
+        val before = upstream.requests.size
         val (status, _) = turn(
             port,
             mapOf(
@@ -229,10 +236,12 @@ class HeadServerClientAuthTest {
             ),
         )
         assertEquals(HttpStatusCode.OK, status)
+        assertEquals(before + 1, upstream.requests.size, "one turn must produce one upstream request")
+        val sent = upstream.requests[before]
         // the head's OWN credential reached the upstream, and the caller's mgmt key did not
-        assertEquals(listOf("splice-held-secret"), upstream.valuesOf("x-api-key"))
-        assertNull(upstream.received["authorization"])
-        assertTrue(upstream.valuesOf("anthropic-beta").isEmpty(), "a non-client head forwards nothing")
-        assertEquals(listOf("2023-06-01"), upstream.valuesOf("anthropic-version"))
+        assertEquals(listOf("splice-held-secret"), sent["x-api-key"].orEmpty())
+        assertNull(sent["authorization"])
+        assertTrue(sent["anthropic-beta"].orEmpty().isEmpty(), "a non-client head forwards nothing")
+        assertEquals(listOf("2023-06-01"), sent["anthropic-version"].orEmpty())
     }
 }

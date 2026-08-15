@@ -28,10 +28,13 @@ import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
+import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
+import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
 import mock.awaitListening
 import mock.freshPort
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -78,18 +81,29 @@ class ClaudeHeadLiveProbeTest {
                 log = {},
                 refreshCall = { _, _ -> RefreshAttempt.Denied("live-probe") },
             )
-            daemon.start()
-            awaitListening(controlPort, headPort)
-            val client = HttpClient(CIO)
+            // start/awaitListening under the daemon's own finally: a bind or readiness failure
+            // must still stop the daemon, not leave the test worker holding live resources.
             try {
-                assertRejectedAtAuth(probe(client, headPort))
+                daemon.start()
+                awaitListening(controlPort, headPort)
+                val client = HttpClient(CIO)
+                try {
+                    val response = probe(client, headPort)
+                    // A streaming turn commits 200 + SSE headers BEFORE the upstream resolves
+                    // (TurnDriver.stream), so the upstream's 401 arrives as an `event: error`
+                    // frame INSIDE the 200. Pinning the status proves the SSE turn path ran —
+                    // a non-200 here would be a head-local rejection, not Anthropic's verdict.
+                    assertEquals(HttpStatusCode.OK, response.status)
+                    assertRejectedAtAuth(response.bodyAsText())
+                } finally {
+                    client.close()
+                }
             } finally {
-                client.close()
                 daemon.stop()
             }
         }
 
-    private suspend fun probe(client: HttpClient, headPort: Int): String =
+    private suspend fun probe(client: HttpClient, headPort: Int): HttpResponse =
         client.post("http://127.0.0.1:$headPort/v1/messages") {
             // deliberately invalid: rejected at auth, before any inference, so no quota is spent
             header("Authorization", "Bearer invalid-probe-credential")
@@ -98,10 +112,18 @@ class ClaudeHeadLiveProbeTest {
                 """{"model":"claude-max--claude-fable-5","max_tokens":16,""" +
                     """"messages":[{"role":"user","content":"probe"}],"stream":true}""",
             )
-        }.bodyAsText()
+        }
 
     private fun assertRejectedAtAuth(body: String) {
         println("LIVE PROBE RESPONSE: ${body.take(400)}")
+        // The rejection must be the honest SSE error frame, and it must be ANTHROPIC's rejection —
+        // the head's own auth wall answers with this exact body text, and a client-auth head must
+        // never take that branch.
+        assertTrue(body.contains("event: error"), "expected an SSE error frame, got: $body")
+        assertFalse(
+            body.contains("invalid local gateway credentials"),
+            "rejected by the head's own auth wall, never forwarded to Anthropic: $body",
+        )
         // Anthropic authenticated the request and rejected the credential — which means the host,
         // path, version header and body SHAPE all satisfied it.
         assertTrue(

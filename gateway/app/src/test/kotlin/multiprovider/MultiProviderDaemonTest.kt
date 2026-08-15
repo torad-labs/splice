@@ -20,6 +20,7 @@ import mock.MockChatGptUpstream
 import mock.awaitListening
 import mock.freshPort
 import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -291,8 +292,8 @@ class MultiProviderDaemonTest {
         }.bodyAsText()
         assertTrue(body.contains("hi"), body)
 
-        assertTrue(anthropicMock.seen.size > before, "the turn must reach the upstream")
-        val sent = anthropicMock.seen.last()
+        assertEquals(before + 1, anthropicMock.seen.size, "one turn must produce one upstream request")
+        val sent = anthropicMock.seen[before]
         // the caller's credential rode through, exactly once
         assertTrue(sent["authorization"] == listOf("Bearer callers-own-credential"), sent.toString())
         assertTrue(sent["anthropic-beta"] == listOf("oauth-2025-04-20"), sent.toString())

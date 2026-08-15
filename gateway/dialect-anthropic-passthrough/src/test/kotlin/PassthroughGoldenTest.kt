@@ -272,12 +272,28 @@ class PassthroughGoldenTest {
             "the adaptive-thinking golden no longer detects the rewrite — the wall has gone vacuous"
         }
 
-        val goldenCache = Files.readString(GOLDEN_DIR.resolve("request-cache-control.json"))
+        // Both sides from the SAME fixture, differing only in the knob — comparing against a
+        // different fixture's golden passes trivially and cannot detect a no-op strip.
+        val unstrippedSampling = buildKimi(
+            THINKING_FIXTURE,
+            quirks = KIMI_QUIRKS.copy(stripSamplingParams = false),
+        ) + "\n"
         val strippedSampling = buildKimi(
             THINKING_FIXTURE,
             quirks = KIMI_QUIRKS.copy(stripSamplingParams = true),
         ) + "\n"
-        assertNotEquals(goldenCache, strippedSampling)
+        val samplingKeys = listOf("\"temperature\"", "\"top_p\"", "\"top_k\"")
+        assertNotEquals(unstrippedSampling, strippedSampling) {
+            "stripSamplingParams no longer moves the bytes — the sampling canary has gone vacuous"
+        }
+        assertTrue(samplingKeys.any { it in unstrippedSampling }) {
+            "the fixture must carry sampling params for this canary to mean anything"
+        }
+        assertTrue(samplingKeys.none { it in strippedSampling }) {
+            "stripSamplingParams left a sampling key on the wire"
+        }
+
+        val goldenCache = Files.readString(GOLDEN_DIR.resolve("request-cache-control.json"))
         assertTrue(goldenCache.contains("\"metadata\"")) {
             "the cache_control golden must still carry the verbatim-copied unknown fields it pins"
         }

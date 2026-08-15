@@ -248,3 +248,52 @@ maxInflight = "8"
 # kimi K3 reasons 10-20 min; keep the long cap HERE instead of [defaults], where it also handed
 # codex and grok a 40-min ceiling (a wedged turn holds its inflight slot for the whole budget).
 upstreamTimeoutMs = "2400000"
+
+# ── Claude on the CLIENT's OWN login (the "no shortcuts" head) ───────────────────
+# The only head whose upstream is Anthropic itself, and the only one where splice holds NO
+# credential: `kind = "client"` forwards the caller's own Authorization / x-api-key /
+# anthropic-version / anthropic-beta upstream and keeps Claude Code's native auth lifecycle —
+# credentials, keychain, refresh and /login all stay the client's. Nothing to sign into here,
+# nothing for splice to rotate, and no vendor OAuth reimplemented.
+#
+# It exists so a Claude session gets the same gateway machinery every other head has — unified
+# usage/telemetry, per-head knobs, the model picker, the dashboard — without changing how it
+# authenticates. Two consequences worth knowing:
+#   · this head's port does NOT enforce the local gateway credential (there is none to protect:
+#     a caller that forwards no valid Anthropic auth simply gets Anthropic's own 401). It is
+#     loopback-only, like every head.
+#   · being a faithful passthrough, it declares no quirks at all — cache_control markers, full
+#     JSON Schema tool definitions and native thinking blocks all reach Anthropic untouched.
+[providers.anthropic]
+dialect = "anthropic-passthrough"
+base_url = "https://api.anthropic.com"
+auth = { kind = "client" }
+# A DEFAULT: whatever the client sends wins. Present so a caller that omits the header still
+# produces a valid Anthropic request.
+extra_headers = { anthropic-version = "2023-06-01" }
+[[providers.anthropic.models]]
+id = "claude-fable-5"
+label = "Claude Fable 5"
+context_window = 200000
+[[providers.anthropic.models]]
+id = "claude-opus-5"
+label = "Claude Opus 5"
+context_window = 200000
+[[providers.anthropic.models]]
+id = "claude-sonnet-5"
+label = "Claude Sonnet 5"
+context_window = 200000
+[[providers.anthropic.models]]
+id = "claude-haiku-4-5"
+label = "Claude Haiku 4.5"
+context_window = 200000
+
+[heads.claude-max]
+provider = "anthropic"
+port = 3104                    # 3103 is fireworks above
+discovery_prefix = "claude-max--"
+pinned_model = "claude-fable-5"
+[heads.claude-max.claude]
+# MUST NOT be `claude`: that is the real binary this head launches, and shadowing it on PATH
+# would make the wrapper invoke itself.
+command = "claude-max"

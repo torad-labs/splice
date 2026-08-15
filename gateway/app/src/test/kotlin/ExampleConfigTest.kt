@@ -27,7 +27,10 @@ class ExampleConfigTest {
     @Test
     fun `example topology parses into the documented heads`() {
         val topology = TopologyLoader.parse(exampleToml())
-        assertEquals(setOf("claudex", "claude-grok", "openrouter", "fireworks", "claude-kimi"), topology.heads.keys)
+        assertEquals(
+            setOf("claudex", "claude-grok", "openrouter", "fireworks", "claude-kimi", "claude-max"),
+            topology.heads.keys,
+        )
         assertEquals(3096, topology.daemon.controlPort)
 
         val codex = topology.providers[topology.heads["claudex"]!!.provider]!!
@@ -83,6 +86,30 @@ class ExampleConfigTest {
         // the isolate override survives the round-trip
         assertTrue(topology.heads["claude-grok"]!!.claude.isolate.contains("commands"))
         assertEquals("claudex", topology.heads["claudex"]!!.claude.command)
+    }
+
+    // The campaign's whole claim, asserted on the shipped example: a head whose upstream is
+    // Anthropic itself, declared with no provider code and NO quirks — a declared quirk here would
+    // be a bug, since this is the one upstream that accepts everything as sent.
+    @Test
+    fun `the claude head is declared as pure TOML with no quirks`() {
+        val topology = TopologyLoader.parse(exampleToml())
+        // The claude head: pure TOML, no provider code, and FAITHFUL — it must declare no quirks
+        // at all, or it would deform the one upstream that accepts everything as sent.
+        val anthropic = topology.providers[topology.heads["claude-max"]!!.provider]!!
+        assertEquals(Dialect.ANTHROPIC_PASSTHROUGH, anthropic.dialect)
+        assertEquals("client", anthropic.auth.kind)
+        assertEquals("https://api.anthropic.com", anthropic.baseUrl)
+        assertNull(anthropic.quirks.mfjs)
+        assertNull(anthropic.quirks.stripCacheControl)
+        assertNull(anthropic.quirks.synthesizeSignatures)
+        assertNull(anthropic.quirks.mapThinkingAdaptive)
+        assertNull(anthropic.quirks.blockAllowlist)
+        assertEquals("2023-06-01", anthropic.staticHeaders["anthropic-version"])
+        assertEquals("claude-fable-5", topology.heads["claude-max"]!!.pinnedModel)
+        assertEquals(3104, topology.heads["claude-max"]!!.port)
+        // shadowing the real binary would make the wrapper invoke itself
+        assertEquals("claude-max", topology.heads["claude-max"]!!.claude.command)
     }
 
     // 2026-07-26 review: the per-head block documented knob names in prose, and the prose had

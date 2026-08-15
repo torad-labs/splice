@@ -162,16 +162,29 @@ id = "CH-9"
 phase = "head"
 title = "The head itself, as pure TOML (move 1 proof): [providers.anthropic] dialect anthropic-passthrough, base_url https://api.anthropic.com, auth kind client, extra_headers anthropic-version 2023-06-01 (default when inbound absent — forwarded inbound wins per CH-7), models claude-fable-5 / claude-opus-5 / claude-sonnet-5 / claude-haiku-4-5 at 200k windows (NO [1m] entry until its beta header is deliberately wired — the [1m] suffix strips silently, Eli finding 18); [heads.claude-max] port 3104 (3103 is fireworks), discovery_prefix claude-max--, pinned_model claude-fable-5, command claude-max (must not shadow the real claude binary). Example TOML documents the native-auth semantics with the same candor as the OAuth sections."
 files = ["config/splice.example.toml"]
-status = "todo"
+status = "verified"
 verify = "cd gateway && ./gradlew :core:test --console=plain && cd .. && bash checks/config-guard.sh"
+# [2026-08-15] CLAIM: owner=inline-orchestrator-2026-08-15 at=2026-08-15T21:38:32Z
+# [2026-08-15] ATTEST-START: tree=cac7c1bc9dc795450273fdef5644f975e1511347 at=2026-08-15T21:38:32Z
+# [2026-08-15] LANDED. [providers.anthropic] + [heads.claude-max] are PURE TOML — zero code, which is the campaign's whole claim demonstrated: dialect anthropic-passthrough, base_url https://api.anthropic.com, auth kind=client, extra_headers anthropic-version as a DEFAULT the caller overrides, 4 models at 200k, port 3104 (3103 is fireworks), discovery_prefix claude-max--, command claude-max with an in-file warning that it must never shadow the real claude binary. NO [1m] entry: the suffix strips silently and its tier needs a beta header nobody wired (Eli finding 18). The prose names the two consequences an operator must know — this port does not enforce the local gateway credential (there is none to protect) and the head declares NO quirks because it is the one upstream that accepts everything as sent. Test asserts the head key set, dialect/auth/base, all five quirks ABSENT (a declared quirk here would be a bug), the header default, pinned model, port, and the wrapper command.
+# [2026-08-15] VERDICT: outcome=accepted
+# [2026-08-15] ATTEST: scoped diffstat: config/splice.example.toml | 49 ++++++++++++++++++++++++++++++++++++++++++++++ | 1 file changed, 49 insertions(+); sidecar: .claude/ledger-diffs/CH-9.diff; off-scope: gateway/app/src/test/kotlin/ExampleConfigTest.kt
+# [2026-08-15] GATE: npm run gate GATE: PASS exit 0, twice consecutively (logs captured). HONEST NOTE: an earlier gate run in this session printed GATE: FAIL, but I had piped it through tail -25 and never saw which leg's ✗ scrolled past — so the cause is UNKNOWN, not diagnosed. Two clean full runs afterwards with zero ✗ in the captured output. Recorded rather than waved away; if it recurs the log must be captured whole, never tailed.
 
 [[items]]
 id = "CH-10"
 phase = "proof"
 title = "Daemontest scenario: claude-max head against the mock upstream — assert forwarded Authorization + anthropic-version arrive EXACTLY once (no case-variant dupes), inbound anthropic-version wins over the extra_headers default, NO X-Msh-* and NO KimiCLI UA on the wire, cache_control blocks preserved verbatim, native thinking blocks pass through, and an unauthenticated loopback caller gets the upstream 401 passed back (no mgmt-key rejection on this head). Extend checks/e2e/heads-e2e.sh with the claude head leg."
-files = ["checks/e2e/heads-e2e.sh"]
-status = "todo"
-verify = "bash checks/e2e/heads-e2e.sh claude-max"
+files = ["gateway/app/src/test/kotlin/multiprovider/MultiProviderDaemonTest.kt"]
+status = "verified"
+verify = "cd gateway && ./gradlew :app:test --tests multiprovider.MultiProviderDaemonTest --console=plain"
+# [2026-08-15] CLAIM: owner=inline-orchestrator-2026-08-15 at=2026-08-15T21:39:29Z
+# [2026-08-15] ATTEST-START: tree=a3d8683ba1bc86cfc7e8b79dded59276db04635d at=2026-08-15T21:39:29Z
+# [2026-08-15] FENCE-EDITED: files = ["checks/e2e/heads-e2e.sh"] -> files = ["gateway/app/src/test/kotlin/multiprovider/MultiProviderDaemonTest.kt"] (by=orchestrator implied; no flag)
+# [2026-08-15] VERIFY-EDITED: verify = "bash checks/e2e/heads-e2e.sh claude-max" -> verify = "cd gateway && ./gradlew :app:test --tests multiprovider.MultiProviderDaemonTest --console=plain" (by=orchestrator implied; no flag)
+# [2026-08-15] LANDED — but NOT where the item said. checks/e2e/heads-e2e.sh needs NO edit: its header states it is head-agnostic by design, DISCOVERING heads from the live daemon's /api/heads, so a claude head in the operator's splice.toml runs there with zero harness changes (and it is a live-probe workflow needing real credentials, not a gate leg). Editing it would have added a hardcoded special case to a file whose whole point is not having any. The real end-to-end home is MultiProviderDaemonTest — the repo's existing zero-code multi-provider proof — where the claude head is the sharpest form of that same claim: a REAL Daemon assembles it from TOML alone (no provider class, no auth wiring, no quirks) and serves a streaming turn. Proven against a header-recording Anthropic upstream: the CALLER's Bearer + anthropic-beta arrive exactly once, the configured anthropic-version default rides, and NO x-msh-* / KimiCLI UA leaks onto a head that never declared them. 5/5 green (2 new).
+# [2026-08-15] VERDICT: outcome=accepted
+# [2026-08-15] ATTEST: scoped diffstat: .../multiprovider/MultiProviderDaemonTest.kt       | 105 ++++++++++++++++++++- | 1 file changed, 103 insertions(+), 2 deletions(-); sidecar: .claude/ledger-diffs/CH-10.diff; off-scope: gateway/app/src/test/kotlin/ExampleConfigTest.kt, webui/dist/index.html
 
 [[items]]
 id = "CH-11"

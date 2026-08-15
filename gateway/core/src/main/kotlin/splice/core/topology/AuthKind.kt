@@ -22,8 +22,13 @@ public sealed class AuthKind(
     public data object GrokOAuth : OAuth("grok-oauth", "~/.grok/auth.json")
     public data object KimiOAuth : OAuth("kimi-oauth", null) // device-flow token at a provider-computed path
 
+    /** The head holds NO credential: the caller's own auth headers are forwarded upstream, and its
+     *  native login stays enabled (campaign claude-head). No auth file, no refresh, no sign-in flow
+     *  splice can run — which is why it is not an OAuth kind and has no default auth file. */
+    public data object Client : AuthKind("client", null, isOAuth = false)
+
     public companion object {
-        private val KNOWN: List<AuthKind> = listOf(ChatgptOAuth, GrokOAuth, KimiOAuth)
+        private val KNOWN: List<AuthKind> = listOf(ChatgptOAuth, GrokOAuth, KimiOAuth, Client)
 
         /** The typed scheme for a wire kind, or null for an operator's custom/unknown kind. */
         public fun from(wire: String): AuthKind? = KNOWN.firstOrNull { it.wire == wire }

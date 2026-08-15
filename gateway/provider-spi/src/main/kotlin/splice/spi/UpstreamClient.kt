@@ -368,7 +368,7 @@ public class UpstreamClient(
         val statement = client.preparePost(ctx.url) {
             contentType(ContentType.Application.Json)
             headers {
-                allHeaders.forEach { (k, v) -> append(k, v) }
+                dedupeCaseInsensitive(allHeaders).forEach { (k, v) -> append(k, v) }
                 if (zstdRequestBody) append("Content-Encoding", "zstd")
             }
             setBody(ByteArrayContent(bodyBytes, ContentType.Application.Json))
@@ -467,13 +467,8 @@ public class UpstreamClient(
         val minDelayMs: Long = 0L,
     )
 
-    private fun applyAuth(creds: Credentials, extra: Map<String, String>): Map<String, String> {
-        val base = when (creds) {
-            is Credentials.Bearer -> mapOf("Authorization" to "Bearer ${creds.token}")
-            is Credentials.ApiKey -> mapOf(creds.header to "${creds.prefix}${creds.key}")
-        }
-        return base + extra
-    }
+    private fun applyAuth(creds: Credentials, extra: Map<String, String>): Map<String, String> =
+        authHeaders(creds) + extra
 
     private enum class RetryDecision { RETRY, BACKOFF, GIVE_UP }
 
@@ -525,6 +520,27 @@ public class UpstreamClient(
         )
 
         /** Does this upstream failure warrant the single-flight token refresh? */
+        /** The auth header this credential writes, if any. FORWARD MODE writes NOTHING: the head
+         *  holds no credential and the caller's own auth rides in the per-turn extra headers, so
+         *  emitting anything here would either overwrite it or sit beside it as a second, empty
+         *  Authorization (campaign claude-head, CH-5). */
+        public fun authHeaders(creds: Credentials): Map<String, String> = when (creds) {
+            is Credentials.Bearer -> mapOf("Authorization" to "Bearer ${creds.token}")
+            is Credentials.ApiKey -> mapOf(creds.header to "${creds.prefix}${creds.key}")
+            Credentials.ClientForwarded -> emptyMap()
+        }
+
+        /** Ktor's header builder APPENDS and HTTP header names are case-INSENSITIVE, while a Kotlin
+         *  map merge is case-SENSITIVE — so a configured `anthropic-version` plus a forwarded
+         *  `Anthropic-Version` would survive the merge as two entries and reach the wire twice.
+         *  Last-wins on the case-folded name, which makes a forwarded header REPLACE a configured
+         *  default (the intent) instead of duplicating it. Casing of the surviving entry is kept. */
+        public fun dedupeCaseInsensitive(headers: Map<String, String>): Map<String, String> =
+            headers.entries
+                .associateBy({ it.key.lowercase() }, { it.key to it.value })
+                .values
+                .toMap()
+
         internal fun isAuthRefreshableFailure(status: Int, body: String): Boolean =
             status == UNAUTHORIZED || (status == FORBIDDEN && authBodyRe.containsMatchIn(body))
 

@@ -24,6 +24,7 @@ import splice.control.ControlServer
 import splice.control.LaunchService
 import splice.control.LaunchSpec
 import splice.control.ManagedHead
+import splice.core.auth.ClientAuthProvider
 import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.config.ConfigService
@@ -103,6 +104,9 @@ private fun foldConfigFrom(cfg: SpliceConfig): FoldConfig = FoldConfig(
 internal const val CHATGPT_OAUTH = "chatgpt-oauth"
 internal const val GROK_OAUTH = "grok-oauth"
 internal const val KIMI_OAUTH = "kimi-oauth"
+
+/** The head forwards the CALLER's own auth and holds none itself (campaign claude-head). */
+internal const val CLIENT = ClientAuthProvider.KIND
 
 // The whole head-stop phase's deadline (see [stopHeads]). Kept below Main's STOP_DEADLINE_MS so the
 // graceful stop + control shutdown finish before Main's hard halt watchdog would ever need to fire.
@@ -546,6 +550,15 @@ public class Daemon(
     private fun passthroughProvider(ctx: ProviderBuild, label: String): Wired {
         val key = ctx.key
         val providerCfg = ctx.providerCfg
+        // A client-auth head holds NO credential and declares its vendor facts in TOML, so it takes
+        // the NEUTRAL base: no Kimi deformations, no Kimi headers, no device identity.
+        if (providerCfg.auth.kind == CLIENT) {
+            val auth = ClientAuthProvider(key)
+            return Wired(
+                passthroughProviderFor(ctx, label, auth, PassthroughQuirks(providerTag = key)),
+                auth,
+            )
+        }
         val (auth, identity) = when (providerCfg.auth.kind) {
             KIMI_OAUTH -> kimiOauthAuth(ctx)
             else -> {

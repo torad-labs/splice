@@ -186,6 +186,9 @@ public abstract class ResponsesProvider(
                     val auth = when (creds) {
                         is Credentials.Bearer -> mapOf("Authorization" to "Bearer ${creds.token}")
                         is Credentials.ApiKey -> mapOf(creds.header to "${creds.prefix}${creds.key}")
+                        // Forward mode is an anthropic-passthrough concept; this WS overlay is
+                        // codex-only and never sees it. Emit nothing rather than invent a header.
+                        Credentials.ClientForwarded -> emptyMap()
                     }
                     auth + extraHeaders(creds) + mapOf("OpenAI-Beta" to WS_BETA_HEADER)
                 },

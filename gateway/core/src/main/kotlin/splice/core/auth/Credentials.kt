@@ -13,6 +13,19 @@ public sealed class Credentials {
         val header: String = "Authorization",
         val prefix: String = "Bearer ",
     ) : Credentials()
+
+    /**
+     * FORWARD MODE: the head holds no credential of its own — the CALLER's own auth headers ride
+     * to the upstream untouched (campaign claude-head: a claude head serves Claude Code against
+     * api.anthropic.com on the client's native login, so splice never reads, stores or refreshes
+     * an Anthropic credential).
+     *
+     * Deliberately a SEALED VARIANT rather than a sentinel string or a null: every consumer of
+     * [Credentials] matches exhaustively, so adding it turned each auth-writing site into a
+     * compile error that had to be answered — which is exactly how a "forward mode" must land.
+     * It carries no secret because there is none to carry.
+     */
+    public data object ClientForwarded : Credentials()
 }
 
 /** Masked, wire-safe view of an auth state (never a secret). */

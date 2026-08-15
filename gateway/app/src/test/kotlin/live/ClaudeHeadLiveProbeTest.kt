@@ -92,7 +92,7 @@ class ClaudeHeadLiveProbeTest {
     private suspend fun probe(client: HttpClient, headPort: Int): String =
         client.post("http://127.0.0.1:$headPort/v1/messages") {
             // deliberately invalid: rejected at auth, before any inference, so no quota is spent
-            header("Authorization", "Bearer sk-ant-invalid-live-probe")
+            header("Authorization", "Bearer invalid-probe-credential")
             header("Content-Type", "application/json")
             setBody(
                 """{"model":"claude-max--claude-fable-5","max_tokens":16,""" +

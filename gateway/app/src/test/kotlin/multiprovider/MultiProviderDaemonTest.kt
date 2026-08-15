@@ -281,7 +281,7 @@ class MultiProviderDaemonTest {
         val before = anthropicMock.seen.size
         val body = client.post("http://127.0.0.1:$claudePort/v1/messages") {
             // deliberately NOT the mgmt key: this head has no splice-held credential to present
-            header("Authorization", "Bearer sk-ant-callers-own")
+            header("Authorization", "Bearer callers-own-credential")
             header("anthropic-beta", "oauth-2025-04-20")
             header("Content-Type", "application/json")
             setBody(
@@ -294,7 +294,7 @@ class MultiProviderDaemonTest {
         assertTrue(anthropicMock.seen.size > before, "the turn must reach the upstream")
         val sent = anthropicMock.seen.last()
         // the caller's credential rode through, exactly once
-        assertTrue(sent["authorization"] == listOf("Bearer sk-ant-callers-own"), sent.toString())
+        assertTrue(sent["authorization"] == listOf("Bearer callers-own-credential"), sent.toString())
         assertTrue(sent["anthropic-beta"] == listOf("oauth-2025-04-20"), sent.toString())
         assertTrue(sent["anthropic-version"] == listOf("2023-06-01"), sent.toString())
         // and none of kimi's vendor identity leaked onto a head that never declared it

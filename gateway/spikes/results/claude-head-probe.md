@@ -21,7 +21,8 @@ Through the head:
     data: {"type":"error","error":{"type":"authentication_error",
            "message":"Invalid bearer token — run: claude-max login"}}
 
-Directly against the vendor, same body shape, same invalid bearer:
+Directly against the vendor, same body shape, same invalid bearer
+(`PROBE` holds a deliberately non-credential string — the probe never uses a real one):
 
     curl -sS https://api.anthropic.com/v1/messages \
       -H "Authorization: Bearer $PROBE" \

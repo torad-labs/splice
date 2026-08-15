@@ -18,6 +18,7 @@
 package splice.dialect.passthrough
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.takeWhile
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
@@ -74,14 +75,17 @@ public class PassthroughStreamTranslator(
 
     override suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome {
         try {
-            upstream.collect { evt ->
-                // NF-06: the shared runaway valve Chat already had.
-                if (BufferCapacity.over(textBuf.length, thinkingBuf.length)) {
-                    runawayGuard = runawayGuardMessage(quirks.providerTag)
-                    return@collect
+            upstream
+                // NF-06: the shared runaway valve Chat already had. takeWhile (not a skip inside
+                // collect) so the first breach CANCELS collection and Flow unwinds the upstream —
+                // otherwise a still-streaming upstream keeps the turn slot and quota live until it
+                // chooses to close, with every later event consumed and thrown away.
+                .takeWhile {
+                    val withinCapacity = !BufferCapacity.over(textBuf.length, thinkingBuf.length)
+                    if (!withinCapacity) runawayGuard = runawayGuardMessage(quirks.providerTag)
+                    withinCapacity
                 }
-                onEvent(evt, sink)
-            }
+                .collect { evt -> onEvent(evt, sink) }
         } catch (e: CancellationException) {
             // Only a watchdog fire may swallow cancellation; a real cancel propagates.
             if (ctx.watchdogFired() == null) throw e

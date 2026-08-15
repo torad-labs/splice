@@ -457,3 +457,26 @@ class PassthroughStopReasonHonestyTest {
         assertTrue(f.message.startsWith("claude-max: "), f.message)
     }
 }
+
+// NF-06 addendum (PR #99 review): `return@collect` only SKIPPED events after the capacity breach —
+// the collector kept consuming a runaway upstream, holding the turn slot and quota until the
+// upstream chose to close. The guard must CANCEL collection so Flow unwinds the producer. A
+// separate class: the main class above is at detekt's LargeClass budget.
+class PassthroughRunawayCancellationTest {
+
+    @Test
+    fun `the capacity breach cancels the upstream instead of draining it`() = runTest {
+        val chunk = "x".repeat(1_000_000)
+        var emitted = 0
+        val events = kotlinx.coroutines.flow.flow {
+            emit(ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""))
+            repeat(25) {
+                emitted += 1
+                emit(ev("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"$chunk"}}"""))
+            }
+        }
+        val outcome = PassthroughStreamTranslator(ctx(), KIMI).driveTurn(events, Rec())
+        assertTrue(outcome is TurnOutcome.Failure, "got $outcome")
+        assertTrue(emitted < 25, "the guard must unwind the upstream at the breach, not drain it; emitted=$emitted")
+    }
+}

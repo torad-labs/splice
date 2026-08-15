@@ -36,7 +36,7 @@ jobs:
 
   walls-annotate:
     # Annotation-only surface for ast-grep wall violations.
-    # The gate job at checks/gate.sh:65 remains the SOLE pass/fail authority
+    # The gate job at checks/gate.sh:70 remains the SOLE pass/fail authority
     # (same checker run twice deliberately). The `|| true` is deliberate:
     # this job exists only to surface violations as PR diff annotations, not
     # to block merges. GitHub caps annotations at roughly 10 error + 10 warning

@@ -1,0 +1,107 @@
+{
+  "model": "k3",
+  "stream": true,
+  "messages": [
+    {
+      "role": "user",
+      "content": "go"
+    }
+  ],
+  "tools": [
+    {
+      "name": "deep",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "tuple": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "prefixed": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            }
+          },
+          "when": {
+            "type": "string"
+          },
+          "bounded": {
+            "type": "integer"
+          },
+          "contains": {
+            "type": "array",
+            "contains": {
+              "type": "string"
+            }
+          },
+          "reffed": {
+            "$ref": "#/definitions/x"
+          },
+          "typeless": {
+            "type": "object",
+            "properties": {
+              "inner": {
+                "type": "string"
+              }
+            }
+          },
+          "nested": {
+            "type": "object",
+            "properties": {
+              "l1": {
+                "type": "object",
+                "properties": {
+                  "l2": {
+                    "type": "object",
+                    "properties": {
+                      "l3": {
+                        "type": "object",
+                        "properties": {
+                          "l4": {
+                            "type": "object",
+                            "properties": {
+                              "l5": {
+                                "type": "object",
+                                "properties": {
+                                  "l6": {
+                                    "type": "object",
+                                    "properties": {
+                                      "l7": {
+                                        "type": "object",
+                                        "properties": {
+                                          "l8": {
+                                            "type": "object",
+                                            "properties": {
+                                              "l9": {
+                                                "type": "object"
+                                              }
+                                            }
+                                          }
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "tuple"
+        ]
+      },
+      "description": ""
+    }
+  ]
+}

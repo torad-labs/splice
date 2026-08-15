@@ -56,6 +56,7 @@ private fun row(
     val command = head.claude.command ?: key
     val authed = authPresent(key, provider, envReader)
     val auth = when {
+        isClientAuth(provider) -> "$GREEN✓ client-native$RESET"
         AuthKind.isOAuth(provider.auth.kind) && authed -> "$GREEN✓ signed in$RESET"
         AuthKind.isOAuth(provider.auth.kind) -> "$YELLOW— $command login$RESET"
         authed -> "$GREEN✓ key set$RESET"
@@ -69,23 +70,36 @@ private fun row(
 private fun backendLabel(provider: ProviderConfig): String = when (provider.auth.kind) {
     "chatgpt-oauth" -> "codex / ChatGPT"
     "grok-oauth" -> "xAI Grok"
+    "client" -> "Anthropic (your login)"
     else -> if (provider.dialect.name == "OPENAI_CHAT") "OpenAI-compatible" else "OpenAI platform"
 }
 
-internal fun authPresent(key: String, provider: ProviderConfig, envReader: (String) -> String?): Boolean {
+/** A head whose credential is the CALLER's, not splice's — nothing here can be "missing". */
+internal fun isClientAuth(provider: ProviderConfig): Boolean =
+    AuthKind.from(provider.auth.kind) == AuthKind.Client
+
+internal fun authPresent(key: String, provider: ProviderConfig, envReader: (String) -> String?): Boolean =
+    // Splice holds no credential for a client-auth head BY DESIGN, so "is it configured?" is
+    // always yes. Without this it falls through to the api-key branch and reads as permanently
+    // unconfigured, against a head that serves fine.
+    isClientAuth(provider) || credentialConfigured(key, provider, envReader)
+
+/** File / env / KeyStore presence for a head whose credential SPLICE holds. */
+private fun credentialConfigured(
+    key: String,
+    provider: ProviderConfig,
+    envReader: (String) -> String?,
+): Boolean {
     val file = provider.auth.file ?: AuthKind.defaultAuthFileFor(provider.auth.kind)
     val filePresent = file?.let { Files.exists(Paths.get(TopologyLoader.expandHome(it))) } == true
     // OAuth heads authenticate by file only; api-key heads read the effective env var (the explicit
     // auth.env OR the derived <KEY>_API_KEY default the daemon wires) so the derived path matches.
-    val envVar = if (AuthKind.isOAuth(provider.auth.kind)) {
-        provider.auth.env
-    } else {
-        effectiveApiKeyEnv(key, provider.auth)
-    }
+    val oauth = AuthKind.isOAuth(provider.auth.kind)
+    val envVar = if (oauth) provider.auth.env else effectiveApiKeyEnv(key, provider.auth)
     val envPresent = envVar?.let { envReader(it)?.isNotBlank() } == true
     // The KeyStore is the third presence source for api-key heads — a key stored by
     // `splice key set` / `<head> login` / token capture reads as configured here too.
-    val storePresent = !AuthKind.isOAuth(provider.auth.kind) && envVar != null &&
+    val storePresent = !oauth && envVar != null &&
         KeyStore(KeyStore.defaultPath(envReader)).read(envVar) != null
     return filePresent || envPresent || storePresent
 }

@@ -127,4 +127,23 @@ class SignInPlanMatrixTest {
             "an explicit auth.env must win, or the key is stored under a name nothing reads",
         )
     }
+
+    /** THE INVERSE of the load-bearing case above, and it is load-bearing for the opposite reason.
+     *  A client-auth head is the ONE head that keeps the client's own /login enabled (the launcher
+     *  does not set DISABLE_LOGIN_COMMAND for it). A non-blank command here would make
+     *  LoginInterception.wire() plant splice's OWN /login into that head's config dir, competing
+     *  with the door that actually works — and its flow ends at `<command> login`, which for this
+     *  kind prints "no browser login for that kind" and fails forever. Blank is the fix, and the
+     *  same blank drops TurnDriver's "— run: <command>" clause from a 401 so the upstream's own
+     *  message stands instead of an instruction that cannot succeed. */
+    @Test
+    fun `a client-auth head gets NO splice login command — the client's own door stays the only one`() {
+        val plan = signInPlan(providerCfg("client"), head("anthropic", "claude-max"), "anthropic")
+        assertTrue(
+            plan.command.isBlank(),
+            "a non-blank command makes wire() plant a /login that can never succeed: '${plan.command}'",
+        )
+        assertFalse(plan.viaBrowser, "splice runs no browser flow for this kind")
+        assertEquals(null, plan.tokenCapture, "there is no token for splice to capture")
+    }
 }

@@ -55,11 +55,15 @@ internal fun signInPlan(providerCfg: ProviderConfig, head: HeadConfig, key: Stri
         GROK_OAUTH -> SignInPlan(command, "Grok (xAI)", viaBrowser = true, tokenCapture = null)
         KIMI_OAUTH -> SignInPlan(command, "Kimi (Moonshot)", viaBrowser = true, tokenCapture = null)
         API_KEY -> apiKeySignIn(providerCfg, head, command)
-        // A client-auth head has no splice-run sign-in: the client kept its OWN login (this head
-        // does not strip its credentials), so `<command> login` is where auth happens — inside the
-        // client, not through the gateway. Naming the command keeps a 401 pointing somewhere real
-        // instead of surfacing the empty plan an unknown kind falls back to.
-        CLIENT -> SignInPlan(command, "Claude (client's own login)", viaBrowser = false, tokenCapture = null)
+        // A client-auth head has NO splice-run sign-in, and the command must be EMPTY — not a
+        // plausible-looking one. A non-blank command makes LoginInterception.wire plant splice's
+        // own /login into this head's config dir plus a UserPromptSubmit hook, and that flow ends
+        // at `<command> login`, which for this kind prints "no browser login for that kind" and
+        // fails forever. On the ONE head that keeps the client's native /login enabled, that is a
+        // decoy competing with the door that actually works. Empty also drops TurnDriver's
+        // "— run: <command>" clause from a 401, so the upstream's own message stands instead of an
+        // instruction that cannot succeed.
+        CLIENT -> SignInPlan("", "Claude (client's own login)", viaBrowser = false, tokenCapture = null)
         else -> SignInPlan("", "", viaBrowser = true, tokenCapture = null)
     }
 }

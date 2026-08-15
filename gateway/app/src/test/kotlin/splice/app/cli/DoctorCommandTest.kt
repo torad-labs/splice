@@ -98,6 +98,54 @@ class DoctorCommandTest {
         command = "claude-openrouter2"
     """.trimIndent()
 
+    // A client-auth head holds NO splice credential by design (campaign claude-head). Falling
+    // through to the api-key branch made doctor FAIL a working head and offer
+    // `export CLAUDE-MAX_API_KEY=…` as the fix — a name `export` cannot even accept.
+    private val clientAuthToml = """
+        [daemon]
+        control_port = 4499
+
+        [providers.anthropic]
+        dialect = "anthropic-passthrough"
+        base_url = "https://api.anthropic.com"
+        auth = { kind = "client" }
+
+        [[providers.anthropic.models]]
+        id = "claude-fable-5"
+        context_window = 200000
+
+        [heads.claude-max]
+        provider = "anthropic"
+        port = 4599
+        discovery_prefix = "claude-max--"
+        pinned_model = "claude-fable-5"
+
+        [heads.claude-max.claude]
+        command = "claude-max"
+    """.trimIndent()
+
+    @Test
+    fun `a client-auth head reads as configured, never as a missing api key`() {
+        val tmp = Files.createTempDirectory("doctor-client-auth")
+        val bin = Files.createDirectories(tmp.resolve("bin"))
+        val share = Files.createDirectories(tmp.resolve("share"))
+        val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
+        Files.writeString(configDir.resolve("splice.toml"), clientAuthToml)
+        val shim = share.resolve("splice-launch")
+        Files.writeString(shim, "#!/usr/bin/env bash\nSPLICE_SHIM_VERSION=\"$SHIM_VERSION\"\n")
+        shim.toFile().setExecutable(true)
+        fakeBinaries(bin, "claude", "node", "python3", "curl", "bash")
+        Files.createSymbolicLink(bin.resolve("claude-max"), shim)
+        Files.createSymbolicLink(bin.resolve("splice"), shim)
+
+        // no credential env at all — the caller supplies it per request, not the environment
+        val (ok, out) = runDoctor(env(tmp, bin, share, hermetic(tmp, emptyMap())))
+        assertTrue(ok, "a client-auth head must not fail doctor:\n$out")
+        assertTrue(out.contains("client-native"), out)
+        assertFalse(out.contains("CLAUDE-MAX_API_KEY"), "never offer an illegal env var name:\n$out")
+        assertFalse(out.contains("export CLAUDE"), out)
+    }
+
     @Test
     fun `an api-key head with no explicit env resolves the derived KEY_API_KEY`() {
         val tmp = Files.createTempDirectory("doctor-derived")

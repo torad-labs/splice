@@ -263,6 +263,8 @@ private data class HeadAuth(
     val envVar: String?,
     val isOAuth: Boolean,
     val present: Boolean,
+    /** The CALLER supplies the credential; splice holds none, so there is nothing to configure. */
+    val selfManaged: Boolean = false,
 )
 
 private fun authChecks(
@@ -307,12 +309,23 @@ private fun headAuthOf(
     envReader: (String) -> String?,
 ): HeadAuth {
     val isOAuth = AuthKind.isOAuth(provider.auth.kind)
-    val envVar = if (isOAuth) provider.auth.env else effectiveApiKeyEnv(key, provider.auth)
-    return HeadAuth(key, command, envVar, isOAuth, authPresent(key, provider, envReader))
+    // A client-auth head keeps a NULL env var like an OAuth head: it has no api key, and the
+    // derived default would be nonsense — `effectiveApiKeyEnv("claude-max", …)` is
+    // "CLAUDE-MAX_API_KEY", a name `export` cannot even accept, offered as the fix for a head
+    // that works.
+    val selfManaged = isClientAuth(provider)
+    val envVar = when {
+        isOAuth || selfManaged -> provider.auth.env
+        else -> effectiveApiKeyEnv(key, provider.auth)
+    }
+    return HeadAuth(key, command, envVar, isOAuth, authPresent(key, provider, envReader), selfManaged)
 }
 
-private fun credentialLabel(auth: HeadAuth): String =
-    if (auth.envVar != null) "${auth.envVar} is set" else "signed in"
+private fun credentialLabel(auth: HeadAuth): String = when {
+    auth.selfManaged -> "client-native — splice holds no credential for this head"
+    auth.envVar != null -> "${auth.envVar} is set"
+    else -> "signed in"
+}
 
 // The daemon reads api-key env vars from ITS OWN environment. A key exported after the daemon
 // booted is present in this shell but invisible upstream — the single most confusing first-run

@@ -282,12 +282,16 @@ private fun passthroughProviderFor(
  *  existed keep serving a kimi head unchanged; an explicitly-set knob wins. Same shape as
  *  [chatQuirks]/[responsesQuirks], and the mapping lives HERE, at the assembly point, so the
  *  dialect never imports a topology config type. */
-private fun ProviderConfig.passthroughQuirks(base: PassthroughQuirks): PassthroughQuirks = base.copy(
+internal fun ProviderConfig.passthroughQuirks(base: PassthroughQuirks): PassthroughQuirks = base.copy(
     mapThinkingToAdaptive = quirks.mapThinkingAdaptive ?: base.mapThinkingToAdaptive,
     compactEffort = quirks.compactEffort ?: base.compactEffort,
     stripSamplingParams = quirks.stripSamplingParams ?: base.stripSamplingParams,
     mfjsSanitize = quirks.mfjs ?: base.mfjsSanitize,
-    blockAllowlist = quirks.blockAllowlist?.toSet() ?: base.blockAllowlist,
+    // takeIf isNotEmpty: `block_allowlist = []` is the ONLY thing an operator can write to mean
+    // "no allowlist" on a head whose base profile has one, and read literally it is an allowlist
+    // that permits nothing — every content block of every message dropped, silently, leaving the
+    // upstream an empty conversation. Empty means OFF.
+    blockAllowlist = quirks.blockAllowlist?.takeIf { it.isNotEmpty() }?.toSet() ?: base.blockAllowlist,
     stripCacheControl = quirks.stripCacheControl ?: base.stripCacheControl,
     synthesizeSignatures = quirks.synthesizeSignatures ?: base.synthesizeSignatures,
 )

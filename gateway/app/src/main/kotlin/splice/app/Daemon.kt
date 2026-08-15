@@ -833,6 +833,9 @@ public class Daemon(
         val signIn = signInPlan(providerCfg, head, key)
         return LaunchSpec(
             configDir = configDir,
+            // A client-auth head serves ANTHROPIC on the client's own login, so the recipe must not
+            // strip its credentials, plant the gateway bearer, or disable /login (campaign claude-head).
+            nativeClientAuth = providerCfg.auth.kind == CLIENT,
             pinnedModel = head.pinnedModel,
             availableModelIds = ctx.catalog.availableModelIds(),
             modelLabels = providerCfg.models.associate { it.id to it.label.ifEmpty { it.id } },

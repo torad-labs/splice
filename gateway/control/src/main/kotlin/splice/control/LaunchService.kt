@@ -39,6 +39,14 @@ public data class LaunchSpec(
     val port: Int,
     /** Per-install local gateway credential; shared with the head's inbound verifier. */
     val inferenceToken: String,
+    /**
+     * TRUE for a client-auth head: the client keeps its OWN Anthropic credentials and its own
+     * /login (campaign claude-head). Every other head serves a FOREIGN vendor, so the recipe must
+     * strip the client's Anthropic session and plant the gateway bearer instead — here that would
+     * replace exactly the credential the head forwards upstream, and disabling /login would nail
+     * shut the only door that can heal a 401.
+     */
+    val nativeClientAuth: Boolean = false,
 )
 
 public data class LaunchRecipe(
@@ -79,12 +87,17 @@ public class LaunchService(
             ),
         )
         val env = buildEnv(spec)
-        // Clear anything ambient that would override the proxy or a stale Anthropic session.
-        val unset = listOf(
-            "ANTHROPIC_API_KEY",
-            "CLAUDE_CODE_OAUTH_TOKEN",
-            "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
-        )
+        // Clear anything ambient that would override the proxy or a stale Anthropic session —
+        // EXCEPT on a native-auth head, where those variables ARE the credential being forwarded.
+        val unset = if (spec.nativeClientAuth) {
+            emptyList()
+        } else {
+            listOf(
+                "ANTHROPIC_API_KEY",
+                "CLAUDE_CODE_OAUTH_TOKEN",
+                "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
+            )
+        }
         val argv = buildList {
             add(claudeBinary)
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
@@ -107,8 +120,9 @@ public class LaunchService(
             put("ANTHROPIC_BASE_URL", "http://127.0.0.1:${spec.port}")
             // AUTH_TOKEN (bearer), NOT API_KEY — a bearer avoids Claude Code's custom-api-key
             // approval flow. The head validates this per-install credential before any quota-
-            // consuming work.
-            put("ANTHROPIC_AUTH_TOKEN", spec.inferenceToken)
+            // consuming work. A native-auth head plants NOTHING: the client's own credential must
+            // reach the head untouched, and this would override it.
+            if (!spec.nativeClientAuth) put("ANTHROPIC_AUTH_TOKEN", spec.inferenceToken)
             put("CLAUDE_CONFIG_DIR", spec.configDir.toString())
             // THE fix for "only one model shows": lets the /model picker list every /v1/models id.
             put("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY", "1")
@@ -128,8 +142,14 @@ public class LaunchService(
             // proxy bearer above, so /login (a local-jsx command hardwired to platform.claude.com —
             // no hook or base-url override can reach it) and /logout are dead doors. These are the
             // CLI's own boolean env flags (Pe.bool over process.env), so the commands never register.
-            put("DISABLE_LOGIN_COMMAND", "1")
-            put("DISABLE_LOGOUT_COMMAND", "1")
+            //
+            // A native-auth head keeps BOTH: its upstream really is Anthropic, so /login is a live
+            // door and the only one that can heal a rejected credential — splice runs no sign-in
+            // flow of its own for this head precisely because the client's still works.
+            if (!spec.nativeClientAuth) {
+                put("DISABLE_LOGIN_COMMAND", "1")
+                put("DISABLE_LOGOUT_COMMAND", "1")
+            }
             put("SPLICE", "1")
         }
     }

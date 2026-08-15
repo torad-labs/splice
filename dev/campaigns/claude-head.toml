@@ -147,9 +147,15 @@ verify = "cd gateway && ./gradlew :gateway:test --console=plain"
 id = "CH-8"
 phase = "auth"
 title = "Launch recipe variant for client-auth heads (LaunchService): keep native env — do NOT unset ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_*, do NOT set ANTHROPIC_AUTH_TOKEN, do NOT set DISABLE_LOGIN_COMMAND / DISABLE_LOGOUT_COMMAND; set only ANTHROPIC_BASE_URL (the head loopback port) + the model/window surface. Claude Code authenticates and heals 401s natively; /login works. Test pins the client-auth env set AND that every foreign-vendor head recipe is byte-identical to today."
-files = ["gateway/control/src/main/kotlin/splice/control/LaunchService.kt", "gateway/control/src/test/kotlin/LaunchServiceTest.kt"]
-status = "todo"
+files = ["gateway/control/src/main/kotlin/splice/control/LaunchService.kt"]
+status = "verified"
 verify = "cd gateway && ./gradlew :control:test --console=plain"
+# [2026-08-15] CLAIM: owner=inline-orchestrator-2026-08-15 at=2026-08-15T21:35:26Z
+# [2026-08-15] ATTEST-START: tree=82b72f8beb2260a190d351aab5458e68a2243ac7 at=2026-08-15T21:35:26Z
+# [2026-08-15] LANDED. LaunchSpec.nativeClientAuth (default FALSE) set from auth.kind == client. On a native-auth head the recipe: (a) unsets NOTHING (the ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_* it normally strips ARE the credential being forwarded), (b) plants NO ANTHROPIC_AUTH_TOKEN (it would override the client's own), (c) leaves DISABLE_LOGIN_COMMAND/DISABLE_LOGOUT_COMMAND unset — for this head /login is a LIVE door (its upstream really is Anthropic) and the only one that can heal a rejected credential, which is also why splice runs no sign-in flow of its own here. Base URL + model surface + SPLICE=1 still apply. RED PROOF via the Edit tool (a str.replace would no-op silently and fake the proof — the hook caught me reaching for it): ungating the strip made 'a native-auth head keeps the client's own credentials' FAIL; restored, and git diff confirms zero stray if(true)/if(false) injections. The 4th test is the one that matters most — a foreign head is byte-identical (bearer planted, session stripped, login disabled), because a default-valued flag is easy to leak into the wrong branch. ./gradlew check whole gateway BUILD SUCCESSFUL.
+# [2026-08-15] VERDICT: outcome=accepted
+# [2026-08-15] ATTEST: scoped diffstat: .../main/kotlin/splice/control/LaunchService.kt    | 40 ++++++++++++++++------ | 1 file changed, 30 insertions(+), 10 deletions(-); sidecar: .claude/ledger-diffs/CH-8.diff; off-scope: gateway/app/src/main/kotlin/splice/app/Daemon.kt, gateway/control/src/test/kotlin/splice/control/LaunchServiceTest.kt
+# [2026-08-15] FENCE-AUTONARROWED: files = ["gateway/control/src/main/kotlin/splice/control/LaunchService.kt", "gateway/control/src/test/kotlin/LaunchServiceTest.kt"] -> files = ["gateway/control/src/main/kotlin/splice/control/LaunchService.kt"] (by=orchestrator implied; no flag)
 
 [[items]]
 id = "CH-9"

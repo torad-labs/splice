@@ -22,6 +22,12 @@ TESTS/ORACLE: self-test via `manifest.py selftest` (runs get/list/note/
 set-status/edit-fence/edit-verify/packet against a temp copy and
 diff-checks the results).
 
+LOCAL DIVERGENCE [2026-08-15, promote upstream via the toolkit pipeline]:
+ONE-REVIEW-PER-ROW guard in `verdict` (operator law, claude-head campaign;
+the ledger record agrees — the only historical double-accept was P2-GOLD,
+reopened as FALSE-VERIFIED). Allowed: accepted | blocked | redo->accepted
+| redo->blocked. Selftest covers the full lifecycle red-green.
+
 USAGE:
   manifest.py list [--status S] [--phase P]     compact id|phase|status|title table
   manifest.py get <ID>                          the full item block incl. its notes
@@ -3767,6 +3773,35 @@ def cmd_verdict(
     if contradiction is not None and not locus:
         sys.exit("error: --contradiction requires a non-empty locus")
 
+    # ONE-REVIEW-PER-ROW (operator law 2026-08-15, claude-head campaign; enforced globally
+    # because the ledger record agrees: 84 historical verdicts, the single double-accept was
+    # P2-GOLD — reopened as FALSE-VERIFIED). An item gets ONE adversarial review round.
+    # Allowed sequences: accepted | blocked | redo→accepted | redo→blocked. A second redo is a
+    # second review round (fix the named gap forward and CLOSE instead); a verdict after a
+    # terminal outcome silently reopens a closed row.
+    with open(path, encoding="utf-8") as handle:
+        prior_lines = handle.readlines()
+    ps, pe = _find(prior_lines, item_id)
+    prior_outcomes = [
+        m.group(1)
+        for line in prior_lines[ps:pe]
+        for m in [re.search(r"VERDICT: outcome=(\w+)", line)]
+        if m
+    ]
+    if any(o in ("accepted", "blocked") for o in prior_outcomes):
+        sys.exit(
+            f"error: {item_id} already carries a terminal verdict "
+            f"({', '.join(prior_outcomes)}) — ONE-REVIEW-PER-ROW: a closed row is never "
+            "re-reviewed. Reopening is an operator act (dated note + set-status), never a "
+            "second verdict."
+        )
+    if outcome == "redo" and "redo" in prior_outcomes:
+        sys.exit(
+            f"error: {item_id} already has a redo verdict — ONE-REVIEW-PER-ROW: one "
+            "adversarial review round per item. Fix the named gap forward and close with "
+            "accepted|blocked; a second redo is a second review round."
+        )
+
     parts = [f"VERDICT: outcome={outcome}"]
     if gap_named:
         parts.append(f"gap={gap_named}")
@@ -5161,6 +5196,54 @@ def _cmd_selftest_body(path):
             "a refused verdict must journal NOTHING"
         )
 
+        # ONE-REVIEW-PER-ROW (operator law 2026-08-15): one adversarial review round per item.
+        # Green path: redo -> accepted closes a row. Red paths: a SECOND redo on an open review,
+        # any verdict after a terminal accepted|blocked. Refusals journal NOTHING.
+        cmd_add(
+            journal_fixture.as_posix(), "ONEREV", "Z", "one-review lifecycle item", "z/onerev.txt", "n/a",
+        )
+        cmd_verdict(
+            journal_fixture.as_posix(), "ONEREV", "redo", gap="first and only review round",
+            _this_file=journal_fixture_script.as_posix(), _journal_root=journal_root_dir,
+        )
+        one_review_len_before = len(s34_journal_path.read_text(encoding="utf-8").splitlines())
+        try:
+            cmd_verdict(
+                journal_fixture.as_posix(), "ONEREV", "redo", gap="second round",
+                _this_file=journal_fixture_script.as_posix(), _journal_root=journal_root_dir,
+            )
+            raise AssertionError("a second redo must be refused (second review round)")
+        except SystemExit as exc:
+            assert exc.code != 0
+        cmd_verdict(
+            journal_fixture.as_posix(), "ONEREV", "accepted",
+            _this_file=journal_fixture_script.as_posix(), _journal_root=journal_root_dir,
+        )
+        for terminal_case in (
+            ("ONEREV", {"outcome": "accepted"}),
+            ("ONEREV", {"outcome": "redo", "gap": "reopen attempt"}),
+            ("S34HANDOVER", {"outcome": "accepted"}),
+        ):
+            try:
+                cmd_verdict(
+                    journal_fixture.as_posix(), terminal_case[0],
+                    _this_file=journal_fixture_script.as_posix(), _journal_root=journal_root_dir,
+                    **terminal_case[1],
+                )
+                raise AssertionError(f"verdict after terminal must be refused: {terminal_case}")
+            except SystemExit as exc:
+                assert exc.code != 0, terminal_case
+        one_review_tail = [
+            json.loads(l) for l in s34_journal_path.read_text(encoding="utf-8").splitlines() if l.strip()
+        ][-1]
+        assert one_review_tail["outcome"] == "accepted" and one_review_tail["itemId"] == "ONEREV", (
+            "the redo->accepted closure must be the last journal record; refusals journal NOTHING: "
+            f"{one_review_tail}"
+        )
+        assert len(s34_journal_path.read_text(encoding="utf-8").splitlines()) == one_review_len_before + 1, (
+            "exactly ONE record (the closure) may land after the refusals"
+        )
+
         # GYM-VERDICT-NUDGE: `verified` with NO typed verdict record prints the one-line
         # reminder naming the verdict command; `verified` on an item whose verdict exists
         # (S34ITEM got one above) stays silent. Advisory only — both transitions succeed.
@@ -5215,7 +5298,8 @@ def _cmd_selftest_body(path):
         assert "verdict-coverage:      1/2" in kpi_text, kpi_text
         assert "; 0 via backfill" in kpi_text, kpi_text
         assert "overall 2/2 claims lineage-attributed (100.0%)" in kpi_text, kpi_text
-        assert "trajectories-7d:       3 distinct episodes active" in kpi_text, kpi_text
+        # 4 = the 3 original fixture episodes + ONEREV from the one-review lifecycle sweep above.
+        assert "trajectories-7d:       4 distinct episodes active" in kpi_text, kpi_text
         assert "honesty-yield:         1 typed contradiction record(s)" in kpi_text, kpi_text
         assert s34_journal_path.read_bytes() == kpi_bytes_before, "gym-kpi must be READ-ONLY"
 

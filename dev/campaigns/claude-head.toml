@@ -1,0 +1,131 @@
+# LAW: concept #945 — this manifest IS the memory; access ONLY via dev/campaigns/manifest.py
+# LAW [2026-08-15]: PROVENANCE — spec docs/superpowers/specs/2026-08-15-claude-head-design.md
+#   (operator-approved after 3 revisions + Eli parallax review). Contract: adding a head is one of
+#   three moves — reuse a schema (pure TOML) | declare a new one (dialect/auth grammar) | reuse but
+#   reshape (quirks). The claude head is the proof case; kimi is re-expressed as move 3.
+# LAW [2026-08-15]: ONE-REVIEW-PER-ROW (operator law): each item receives EXACTLY ONE adversarial
+#   review, captured as ONE `verdict` record when the builder reports done. A redo's findings are
+#   fixed forward inside the item and the orchestrator re-verifies the FIXES against the diff and
+#   the item's own verify gate directly — NEVER a second review round, never a review panel.
+#   3 failed fix-forward rounds -> dated BLOCKED note and move on (the block IS a result).
+# LAW [2026-08-15]: NEVER-BELOW-STATUS-QUO / KIMI-BYTE-IDENTITY — kimi's built requests and
+#   translator behavior stay byte-identical through the quirks inversion. The golden harness
+#   (CH-1) is the WALL and lands red-green-proven BEFORE any refactor item (walls first, #960):
+#   goldens pass on unmodified HEAD and demonstrably FAIL when a deformation knob is flipped.
+# LAW [2026-08-15]: SECURITY SEAM — the HeadServer.authorize() bypass is gated on auth kind
+#   "client" ONLY and lands IN THE SAME ITEM as its wall test (every other head still rejects a
+#   non-mgmt-key caller). A bypass commit without the wall test never merges.
+# LAW [2026-08-15]: NATIVE-AUTH — splice never holds, reads, or refreshes Claude credentials.
+#   The client's native auth lifecycle (creds, keychain, refresh, /login) stays untouched; the
+#   head forwards inbound Authorization/x-api-key/anthropic-version/anthropic-beta verbatim,
+#   exactly once, case-normalized. Splice-held Max OAuth is the REJECTED alternative (spec §3).
+# LAW [2026-08-15]: NO PUSH, CLI-ONLY — builders never push or rewrite history; ledger updates
+#   only via manifest.py; the orchestrator owns the single gated commit chain on the wave branch.
+# LAW [2026-08-15]: BUILDERS EDIT + TARGETED MODULE TESTS ONLY (serial, one builder at a time);
+#   `npm run gate` (full ladder) is the ORCHESTRATOR's verify act, never claimed by a builder.
+# LAW [2026-08-15]: FENCES are exclusive within a wave — every file exactly ONE owner slot.
+#   Wave 1 = CH-1..CH-2 (walls+quirks), wave 2 = CH-3..CH-4 (provider+topology), wave 3 = CH-5..CH-8 (auth+seam: core/spi/gateway/control disjoint), wave 4 = CH-9..CH-12 (head+proof).
+# LAW [2026-08-15]: BASE — orchestrator cuts feat/claude-head from the main tip; record the sha
+#   in a CH-1 note at cut time. Stacked work stays on that one branch until the gate-green PR.
+
+[campaign]
+name = "claude-head"
+goal = "Add the claude-max head: Anthropic passthrough on the client's NATIVE auth, by making the passthrough dialect neutral-base + opt-in quirks (kimi byte-identical), one generic PassthroughProvider, and a declared client auth kind — so the next head is pure TOML"
+next = ["CH-1", "CH-2", "CH-4", "CH-3", "CH-5", "CH-6", "CH-7", "CH-8", "CH-9", "CH-10", "CH-11", "CH-12"]
+
+[[items]]
+id = "CH-2"
+phase = "dialect"
+title = "Quirks inversion: PassthroughQuirks (lives in PassthroughRequestBuilder.kt) grows explicit knobs — mfjsSanitize, blockAllowlist (nullable = all block types pass), stripCacheControl, synthesizeSignatures; mapThinkingToAdaptive already exists — with NEUTRAL defaults = faithful passthrough; builder + translator consume the knobs; error strings become providerTag-driven (the hardcoded kimi: literals are the bug, Eli finding 13); KimiProvider constructs quirks with EVERY deformation ON (temporary hardcode until CH-4 moves it to TOML), so kimi behavior is unchanged. Existing dialect tests updated to construct kimi-shaped quirks where they assert deformations. Acceptance: CH-1 goldens green UNMODIFIED."
+files = ["gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughRequestBuilder.kt", "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughStreamTranslator.kt", "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/MfjsSanitizer.kt", "gateway/dialect-anthropic-passthrough/src/test/kotlin/PassthroughRequestBuilderTest.kt", "gateway/dialect-anthropic-passthrough/src/test/kotlin/PassthroughStreamTranslatorTest.kt", "gateway/dialect-anthropic-passthrough/src/test/kotlin/PassthroughContractTest.kt", "gateway/dialect-anthropic-passthrough/src/test/kotlin/MfjsSanitizerTest.kt", "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiProvider.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :dialect-anthropic-passthrough:test :provider-kimi:test --console=plain"
+
+[[items]]
+id = "CH-4"
+phase = "provider"
+title = "Topology surface for move-1 heads (RUNS BEFORE CH-3 — it defines what CH-3 consumes): ProviderConfig gains extra_headers (static vendor header map) and the passthrough quirks TOML surface (mfjs, block_allowlist, strip_cache_control, synthesize_signatures, map_thinking_adaptive) with a core mapping fn TOML -> PassthroughQuirks-shaped values; parsing tests; example TOML kimi entry documents the opt-ins explicitly. After CH-3+CH-4 a new anthropic-compatible api-key vendor is PURE TOML."
+files = ["gateway/core/src/main/kotlin/splice/core/topology/Topology.kt", "gateway/core/src/test/kotlin/TopologyConfigOverridesTest.kt", "gateway/core/src/test/kotlin/TopologyResolveHeadKeyTest.kt", "config/splice.example.toml"]
+status = "todo"
+verify = "cd gateway && ./gradlew :core:test --console=plain"
+
+[[items]]
+id = "CH-3"
+phase = "provider"
+title = "One generic PassthroughProvider (dialect module): upstreamUrl = baseUrl + /v1/messages, static extra headers from CH-4 config, optional identity-supplier plug for computed vendor state; KimiProvider the CLASS dissolves into config + KimiDeviceIdentity supplier; Daemon.passthroughProvider dispatch updated — kimi-oauth arm plugs the supplier + TOML quirks, the api-key arm stops manufacturing a device identity for non-kimi vendors (Eli finding 22). Test: kimi shape reproduced EXACTLY when supplier+quirks are plugged; CH-1 goldens green. The claude head needs NO provider class after this."
+files = ["gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughProvider.kt", "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiProvider.kt", "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiDeviceIdentity.kt", "gateway/provider-kimi/src/test/kotlin/kimi/", "gateway/app/src/main/kotlin/splice/app/Daemon.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :provider-kimi:test :dialect-anthropic-passthrough:test :app:test --console=plain"
+
+[[items]]
+id = "CH-1"
+phase = "walls"
+title = "Golden byte-identity harness for the kimi passthrough (THE WALL, lands before any refactor): pin built-request bytes for representative turns — cache_control-carrying system+tools, MFJS-needing tool schemas (tuple items / format / dollar-ref siblings), thinking config rewrite, compact turn, out-of-allowlist content blocks — plus translator goldens for signature-synthesis-on-truncation and the kimi: error strings. Goldens PASS on unmodified HEAD; red proof = flip one deformation in a scratch build and show the golden FAIL (record the command as a note). Golden files are READ-ONLY to every later item; CH-2 must keep them green UNMODIFIED."
+files = ["gateway/dialect-anthropic-passthrough/src/test/kotlin/PassthroughGoldenTest.kt", "gateway/dialect-anthropic-passthrough/src/test/resources/goldens/"]
+status = "todo"
+verify = "cd gateway && ./gradlew :dialect-anthropic-passthrough:test --tests PassthroughGoldenTest --console=plain"
+# [2026-08-15] BASE: feat/claude-head cut from main tip 36e87bd (2026-08-15). Spec: docs/superpowers/specs/2026-08-15-claude-head-design.md. ONE-REVIEW guard live in manifest.py verdict (selftest green).
+
+[[items]]
+id = "CH-5"
+phase = "auth"
+title = "Declare the client auth kind and thread it everywhere app-side: AuthKind gains client (isOAuth=false); ClientAuthProvider (core auth, next to Credentials) — credentials() returns a non-secret sentinel the transport recognizes as forward-mode (never a fabricated Bearer, Eli finding 3), describe() = client-native for doctor/dashboard, refresh inert; Daemon.passthroughProvider gains the client arm (generic PassthroughProvider, no identity supplier, no manufactured device id) and threads the head auth kind into HeadServer deps for CH-7; SignInPlan + LoginCommand register the kind with guidance (login happens in the client: run claude /login outside splice) so a 401 names its remedy instead of an empty command (Eli finding 23)."
+files = ["gateway/core/src/main/kotlin/splice/core/topology/AuthKind.kt", "gateway/core/src/main/kotlin/splice/core/auth/ClientAuthProvider.kt", "gateway/app/src/main/kotlin/splice/app/Daemon.kt", "gateway/app/src/main/kotlin/splice/app/SignInPlan.kt", "gateway/app/src/main/kotlin/splice/app/cli/LoginCommand.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :core:test :app:test --console=plain"
+
+[[items]]
+id = "CH-6"
+phase = "auth"
+title = "Transport forward-mode: UpstreamClient recognizes the ClientAuthProvider sentinel — no UpstreamAuthMissing throw, applyAuth writes NO synthetic Authorization header in forward-mode (the forwarded inbound rides via extraHeaders), and the base+extra header merge becomes case-insensitive-safe so a case-variant duplicate is impossible (Ktor appends case-insensitively while the Kotlin map merge is case-sensitive — Eli finding 4b); 401-refresh machinery inert for the kind. Tests pin: forward-mode request carries exactly the extra headers and nothing synthetic; every other auth kind byte-identical."
+files = ["gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamClient.kt", "gateway/provider-spi/src/test/kotlin/UpstreamClientTest.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :provider-spi:test --console=plain"
+
+[[items]]
+id = "CH-7"
+phase = "auth"
+title = "Front door + forwarding seam (HeadServer + TurnDriver, ONE item because bypass and capture are one security decision): authorize() bypasses the mgmt-key comparison ONLY when the head auth kind is client (loopback-only listener, splice holds no credential, an unauthenticated caller just gets the upstream 401); inbound Authorization / x-api-key / anthropic-version / anthropic-beta are captured case-normalized into the buildTurn extraHeaders channel (the x-claude-code-session-id seam, HeadServer.kt:370) and reach the upstream EXACTLY once; TurnDriver merge keeps forwarded inbound winning over provider extra_headers defaults. WALL TESTS in this same item (SECURITY SEAM law): every non-client head still rejects a non-mgmt-key caller; non-client heads forward NOTHING inbound; duplicate case-variant headers impossible end-to-end."
+files = ["gateway/gateway/src/main/kotlin/splice/gateway/head/HeadServer.kt", "gateway/gateway/src/main/kotlin/splice/gateway/head/TurnDriver.kt", "gateway/gateway/src/test/kotlin/HeadServerAuthTest.kt", "gateway/gateway/src/test/kotlin/TurnDriverTest.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :gateway:test --console=plain"
+
+[[items]]
+id = "CH-8"
+phase = "auth"
+title = "Launch recipe variant for client-auth heads (LaunchService): keep native env — do NOT unset ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_*, do NOT set ANTHROPIC_AUTH_TOKEN, do NOT set DISABLE_LOGIN_COMMAND / DISABLE_LOGOUT_COMMAND; set only ANTHROPIC_BASE_URL (the head loopback port) + the model/window surface. Claude Code authenticates and heals 401s natively; /login works. Test pins the client-auth env set AND that every foreign-vendor head recipe is byte-identical to today."
+files = ["gateway/control/src/main/kotlin/splice/control/LaunchService.kt", "gateway/control/src/test/kotlin/LaunchServiceTest.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :control:test --console=plain"
+
+[[items]]
+id = "CH-9"
+phase = "head"
+title = "The head itself, as pure TOML (move 1 proof): [providers.anthropic] dialect anthropic-passthrough, base_url https://api.anthropic.com, auth kind client, extra_headers anthropic-version 2023-06-01 (default when inbound absent — forwarded inbound wins per CH-7), models claude-fable-5 / claude-opus-5 / claude-sonnet-5 / claude-haiku-4-5 at 200k windows (NO [1m] entry until its beta header is deliberately wired — the [1m] suffix strips silently, Eli finding 18); [heads.claude-max] port 3104 (3103 is fireworks), discovery_prefix claude-max--, pinned_model claude-fable-5, command claude-max (must not shadow the real claude binary). Example TOML documents the native-auth semantics with the same candor as the OAuth sections."
+files = ["config/splice.example.toml"]
+status = "todo"
+verify = "cd gateway && ./gradlew :core:test --console=plain && cd .. && bash checks/config-guard.sh"
+
+[[items]]
+id = "CH-10"
+phase = "proof"
+title = "Daemontest scenario: claude-max head against the mock upstream — assert forwarded Authorization + anthropic-version arrive EXACTLY once (no case-variant dupes), inbound anthropic-version wins over the extra_headers default, NO X-Msh-* and NO KimiCLI UA on the wire, cache_control blocks preserved verbatim, native thinking blocks pass through, and an unauthenticated loopback caller gets the upstream 401 passed back (no mgmt-key rejection on this head). Extend checks/e2e/heads-e2e.sh with the claude head leg."
+files = ["checks/e2e/heads-e2e.sh"]
+status = "todo"
+verify = "bash checks/e2e/heads-e2e.sh claude-max"
+
+[[items]]
+id = "CH-11"
+phase = "proof"
+title = "Live probe (OPERATOR-RUN, gates campaign done): launch claude-max via the CH-8 recipe against the real api.anthropic.com on the Max subscription; one real turn + one tool round-trip; record receipt to gateway/spikes/results/claude-head-probe.md — model served, auth mode observed by the client, prompt-cache hit evidence (cache_creation/cache_read in usage), thinking blocks present, anthropic-ratelimit headers seen by telemetry. Whether Anthropic accepts its native client through a proxied base URL is only provable live (spec risk 2)."
+files = ["gateway/spikes/results/claude-head-probe.md"]
+status = "todo"
+verify = "receipt exists and states model + cache evidence + auth mode; operator confirms the turn was served"
+
+[[items]]
+id = "CH-12"
+phase = "land"
+title = "Land the campaign (ORCHESTRATOR): full npm run gate ladder green on the feat/claude-head tip (artifact hash beside the result), spec docs/superpowers/specs/2026-08-15-claude-head-design.md + this ledger committed in the chain, PR with org-valid title, required checks green, squash-merged. Only the orchestrator sets verified on any item; this item closes when main carries the head and the gate is green on main."
+files = ["docs/superpowers/specs/2026-08-15-claude-head-design.md", "dev/campaigns/claude-head.toml"]
+status = "todo"
+verify = "npm run gate && gh pr checks <pr> all green && git log main --oneline -1 names the claude-head PR"

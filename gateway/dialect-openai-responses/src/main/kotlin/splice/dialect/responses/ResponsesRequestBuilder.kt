@@ -498,7 +498,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
     }
 }
 
-private val GROK_EFFORTS = setOf("low", EFFORT_MEDIUM, "high")
+private val GROK_EFFORTS = setOf("low", EFFORT_MEDIUM, "high", EFFORT_XHIGH)
 
 /**
  * Visibility floor: never RAISES a deliberate low/medium/high pick, only floors none/minimal to
@@ -826,8 +826,10 @@ private fun normalizeCodexEffort(s: String): String? = when (s) {
 }
 
 private fun normalizeGrokEffort(s: String): String? = when (s) {
-    "high", EFFORT_XHIGH, "max", "ultra", "ultracode", "extra_high", "extra-high",
-    "extrahigh", "heavy", "extended",
+    // grok-4.6+ (xAI docs 2026-08): xhigh is the top rung; older groks clamp it to high upstream.
+    "max", "ultra", "ultracode", "extra_high", "extra-high", "extrahigh", EFFORT_XHIGH,
+    -> EFFORT_XHIGH
+    "high", "heavy", "extended",
     -> "high"
     EFFORT_MEDIUM, "standard", "normal" -> EFFORT_MEDIUM
     "low", EFFORT_MINIMAL, "none", "off", "fast", "light" -> "low"
@@ -861,6 +863,7 @@ public fun normalizeSummary(raw: String?): String? {
 public fun effortFromBudget(budget: Long, ladder: EffortLadder): String? = when (ladder) {
     EffortLadder.CODEX -> codexBudgetEffort(budget)
     EffortLadder.GROK -> when {
+        budget >= BUDGET_MAX -> EFFORT_XHIGH
         budget >= BUDGET_HIGH -> "high"
         budget >= BUDGET_MEDIUM -> EFFORT_MEDIUM
         else -> "low"

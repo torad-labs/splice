@@ -14,6 +14,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.INVALID_GRANT_REASON
@@ -25,6 +27,7 @@ import splice.core.auth.credentialsOrNull
 import splice.core.auth.mergedCredentialJson
 import splice.core.auth.synthesizedExpiryMs
 import splice.core.util.DaemonLog
+import splice.core.util.SecureFile
 import splice.core.util.long
 import splice.core.util.runCatchingCancellable
 import splice.core.util.str
@@ -32,6 +35,15 @@ import splice.spi.CredentialLock
 import splice.spi.SingleFlight
 import java.nio.file.Files
 import java.nio.file.Path
+
+private const val LOG_TAG = "kimi-auth"
+private const val DEFAULT_CACHE_MS = 30_000L
+
+// proactive-refresh floor: never let a token get within 5 minutes of expiry.
+private const val MIN_PROACTIVE_S = 300L
+
+// G17 hard floor: below this many seconds of validity the refresh blocks the request.
+private const val HARD_FLOOR_S = 60L
 
 /** Parsed result of the kimi token-endpoint refresh POST; refresh_token rotation is mandatory. */
 public data class KimiRefreshedTokens(
@@ -61,6 +73,10 @@ public class KimiAuthProvider(
     private val json = Json { ignoreUnknownKeys = true }
     private val singleFlight = SingleFlight<Credentials?>()
     private val invalidGrantLatch = InvalidGrantLatch()
+
+    // The plan-tier probe and the auth-file shaper moved to KimiOAuth with the rest of the kimi
+    // OAuth wire helpers (HD-M5); this class reaches them through one collaborator.
+    private val oauth = KimiOAuth()
 
     init {
         // Lifecycle ownership: when prefetchScope ends (Daemon.stop cancels probeScope), cancel the
@@ -106,7 +122,7 @@ public class KimiAuthProvider(
         singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) }
 
     override fun allowRefreshAfterFailure(status: Int, body: String): Boolean =
-        !isPlanTierRejection(body)
+        !oauth.isPlanTierRejection(body)
 
     // Sealed per-mode outcome (discipline L3): a dead refresh token, a transport blip, and a
     // corrupt file are DIFFERENT stories; credentialsOrNull is the single logging flatten.
@@ -177,7 +193,7 @@ public class KimiAuthProvider(
                     log("[kimi-auth] could not re-read $authPath before persist ($it) — writing tokens-only")
                 }.getOrNull()
                 runCatchingCancellable {
-                    val merged = mergedCredentialJson(onDisk, kimiAuthJson(attempt.tokens, clock()))
+                    val merged = mergedCredentialJson(onDisk, oauth.kimiAuthJson(attempt.tokens, clock()))
                     writeSecure(authPath, merged.toString())
                 }
                     .getOrElse { return RefreshOutcome.PersistFailed("credentials write failed: $it") }
@@ -261,24 +277,22 @@ public class KimiAuthProvider(
         )
     }
 
-    private companion object {
-        const val LOG_TAG = "kimi-auth"
-        const val DEFAULT_CACHE_MS = 30_000L
-
-        // proactive-refresh floor: never let a token get within 5 minutes of expiry.
-        const val MIN_PROACTIVE_S = 300L
-
-        // G17 hard floor: below this many seconds of validity the refresh blocks the request.
-        const val HARD_FLOOR_S = 60L
+    // Atomic 0600 credential write — routes to the shared primitive, mirroring the private member
+    // CodexAuthProvider/GrokAuthProvider already carry.
+    private fun writeSecure(path: Path, content: String) {
+        SecureFile.writeAtomic0600(path, content)
     }
-}
 
-// G15: best-effort mtime probe for the invalid_grant latch gate. Top-level (not a class member) so
-// KimiAuthProvider stays under the TooManyFunctions ceiling; shared by doRefresh() and describe().
-// The failure is logged, not swallowed, before collapsing to null — a stat failure is "unknown",
-// which InvalidGrantLatch treats as fail-open (never suppresses), NOT "file unchanged".
-private fun kimiAuthMtimeOrNull(authPath: Path, log: (String) -> Unit): Long? = runCatchingCancellable {
-    Files.getLastModifiedTime(authPath).toMillis()
-}.onFailure {
-    log("[kimi-auth] failed to stat $authPath mtime: $it — invalid_grant latch check skipped")
-}.getOrNull()
+    // JsonNull IS a JsonPrimitive with content "null"; every string extraction must filter it.
+    private fun JsonElement.jsonObjectOrEmpty(): JsonObject =
+        this as? JsonObject ?: JsonObject(emptyMap())
+
+    // G15: best-effort mtime probe for the invalid_grant latch gate; shared by doRefresh() and
+    // describe(). The failure is logged, not swallowed, before collapsing to null — a stat failure is
+    // "unknown", which InvalidGrantLatch treats as fail-open (never suppresses), NOT "file unchanged".
+    private fun kimiAuthMtimeOrNull(authPath: Path, log: (String) -> Unit): Long? = runCatchingCancellable {
+        Files.getLastModifiedTime(authPath).toMillis()
+    }.onFailure {
+        log("[kimi-auth] failed to stat $authPath mtime: $it — invalid_grant latch check skipped")
+    }.getOrNull()
+}

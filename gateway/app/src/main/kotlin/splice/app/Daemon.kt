@@ -84,10 +84,12 @@ import splice.gateway.usage.UsageStore
 import splice.provider.codex.CodexAuthProvider
 import splice.provider.codex.CodexOAuthEndpoints
 import splice.provider.codex.CodexProvider
+import splice.provider.codex.CodexQuirks
 import splice.provider.codex.RefreshedTokens
 import splice.provider.grok.GrokAuthProvider
 import splice.provider.grok.GrokOAuthEndpoints
 import splice.provider.grok.GrokProvider
+import splice.provider.grok.GrokQuirks
 import splice.provider.kimi.KimiAuthProvider
 import splice.provider.kimi.KimiDeviceIdentity
 import splice.provider.kimi.KimiOAuthEndpoints
@@ -639,7 +641,7 @@ internal class ProviderAssembly(
                         replayReasoning = cfg.replayReasoning,
                         configEffort = cfg.effort,
                         configSummary = cfg.summary,
-                        quirks = providerCfg.responsesQuirks(CodexProvider.defaultQuirks(), cfg),
+                        quirks = providerCfg.responsesQuirks(CodexQuirks().defaultQuirks(), cfg),
                         // Reasoning-continuation folding (codex 518n-2) — codex head ONLY; grok/openai
                         // never receive a fold config, so they stay pure passthrough.
                         foldConfig = buildInputs.foldConfigFrom(cfg),
@@ -687,7 +689,7 @@ internal class ProviderAssembly(
                 replayReasoning = cfg.replayReasoning,
                 configEffort = cfg.effort,
                 configSummary = cfg.summary,
-                quirks = providerCfg.responsesQuirks(GrokProvider.defaultQuirks(), cfg),
+                quirks = providerCfg.responsesQuirks(GrokQuirks().defaultQuirks(), cfg),
             ),
             auth,
         )
@@ -725,7 +727,7 @@ internal class ProviderAssembly(
                 replayReasoning = cfg.replayReasoning,
                 configEffort = cfg.effort,
                 configSummary = cfg.summary,
-                quirks = providerCfg.responsesQuirks(GrokProvider.defaultQuirks(), cfg),
+                quirks = providerCfg.responsesQuirks(GrokQuirks().defaultQuirks(), cfg),
             )
         } else {
             OpenAiResponsesProvider(

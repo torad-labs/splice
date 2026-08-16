@@ -22,9 +22,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.util.runCatchingCancellable
 import splice.provider.kimi.KimiDeviceAuthorization
-import splice.provider.kimi.kimiDeviceAuthorizationForm
-import splice.provider.kimi.kimiTokenPollForm
-import splice.provider.kimi.parseKimiDeviceAuthorization
+import splice.provider.kimi.KimiOAuth
 import java.nio.file.Path
 
 /** Everything the device flow needs for one provider's login (built by LoginCommand per head). */
@@ -43,6 +41,7 @@ public data class DeviceLoginSpec(
 public object DeviceLoginFlow {
 
     private val loginIo = LoginIo()
+    private val kimiOAuth = KimiOAuth()
     private val authClients = AuthHttpClientFactory()
 
     private const val MAX_EXPIRED_RESTARTS = 2
@@ -96,14 +95,14 @@ public object DeviceLoginFlow {
     private suspend fun requestDeviceAuth(client: HttpClient, spec: DeviceLoginSpec): KimiDeviceAuthorization? {
         val resp = client.post(spec.deviceAuthUrl) {
             formHeaders(spec.identityHeaders)
-            setBody(kimiDeviceAuthorizationForm(spec.clientId))
+            setBody(kimiOAuth.kimiDeviceAuthorizationForm(spec.clientId))
         }
         val body = resp.bodyAsText()
         if (!resp.status.isSuccess()) {
             println("splice: could not start device login (HTTP ${resp.status.value}): ${sanitize(body)}")
             return null
         }
-        return parseKimiDeviceAuthorization(body)
+        return kimiOAuth.parseKimiDeviceAuthorization(body)
     }
 
     private fun announce(spec: DeviceLoginSpec, auth: KimiDeviceAuthorization) {
@@ -163,7 +162,7 @@ public object DeviceLoginFlow {
     private suspend fun postToken(client: HttpClient, spec: DeviceLoginSpec, deviceCode: String): HttpResponse =
         client.post(spec.tokenUrl) {
             formHeaders(spec.identityHeaders)
-            setBody(kimiTokenPollForm(deviceCode, spec.clientId))
+            setBody(kimiOAuth.kimiTokenPollForm(deviceCode, spec.clientId))
         }
 
     private fun HttpRequestBuilder.formHeaders(identityHeaders: Map<String, String>) {

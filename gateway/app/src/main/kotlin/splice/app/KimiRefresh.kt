@@ -23,12 +23,13 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.auth.RefreshAttempt
 import splice.core.util.runCatchingCancellable
 import splice.core.util.str
+import splice.provider.kimi.KimiOAuth
 import splice.provider.kimi.KimiRefreshedTokens
-import splice.provider.kimi.kimiRefreshForm
 
 public class KimiRefresh {
 
     private val retry = RefreshRetry()
+    private val kimiOAuth = KimiOAuth()
 
     /**
      * Refresh the kimi access token. Returns Granted rotated tokens, InvalidGrant when auth is
@@ -75,7 +76,7 @@ public class KimiRefresh {
         header("Content-Type", "application/x-www-form-urlencoded")
         header("Accept", "application/json")
         identityHeaders.forEach { (k, v) -> header(k, v) }
-        setBody(kimiRefreshForm(refreshToken))
+        setBody(kimiOAuth.kimiRefreshForm(refreshToken))
     }
 
     /** Rotation is mandatory: a response missing access_token OR refresh_token → null (re-prompt). */

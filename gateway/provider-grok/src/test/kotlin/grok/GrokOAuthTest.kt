@@ -10,15 +10,12 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.provider.grok.GrokOAuth
 import splice.provider.grok.GrokOAuthEndpoints
-import splice.provider.grok.buildGrokAuthorizeUrl
-import splice.provider.grok.grokAuthJsonFromTokenResponse
-import splice.provider.grok.grokCodeExchangeForm
-import splice.provider.grok.grokRefreshForm
-import splice.provider.grok.makeGrokPkce
 
 class GrokOAuthTest {
 
+    private val oauth = GrokOAuth()
     private val noEnv: (String) -> String? = { null }
 
     @Test
@@ -33,8 +30,8 @@ class GrokOAuthTest {
 
     @Test
     fun `authorize url has the pkce challenge, state, nonce and %20-encoded scope`() {
-        val pkce = makeGrokPkce()
-        val url = buildGrokAuthorizeUrl(
+        val pkce = oauth.makeGrokPkce()
+        val url = oauth.buildGrokAuthorizeUrl(
             pkce.challenge,
             "state-1",
             "nonce-1",
@@ -52,7 +49,7 @@ class GrokOAuthTest {
 
     @Test
     fun `pkce verifier and challenge are distinct base64url`() {
-        val pkce = makeGrokPkce()
+        val pkce = oauth.makeGrokPkce()
         assertTrue(pkce.verifier.isNotEmpty() && pkce.challenge.isNotEmpty())
         assertTrue(pkce.verifier != pkce.challenge)
         assertTrue(pkce.verifier.none { it == '+' || it == '/' || it == '=' }) // base64url, no padding
@@ -60,7 +57,7 @@ class GrokOAuthTest {
 
     @Test
     fun `exchange and refresh forms carry the right grant and client id`() {
-        val exchange = grokCodeExchangeForm(
+        val exchange = oauth.grokCodeExchangeForm(
             "the-code",
             "the-verifier",
             "the-challenge",
@@ -71,7 +68,7 @@ class GrokOAuthTest {
         assertTrue(exchange.contains("code=the-code"))
         assertTrue(exchange.contains("code_verifier=the-verifier"))
         assertTrue(exchange.contains("code_challenge_method=S256"))
-        val refresh = grokRefreshForm("the-refresh", "cid")
+        val refresh = oauth.grokRefreshForm("the-refresh", "cid")
         assertTrue(refresh.contains("grant_type=refresh_token"))
         assertTrue(refresh.contains("refresh_token=the-refresh"))
         assertTrue(refresh.contains("client_id=cid"))
@@ -80,7 +77,7 @@ class GrokOAuthTest {
     @Test
     fun `token response maps to a grok auth json with tokens and expiry`() {
         val body = """{"access_token":"at","refresh_token":"rt","expires_in":3600,"token_type":"Bearer"}"""
-        val auth = grokAuthJsonFromTokenResponse(
+        val auth = oauth.grokAuthJsonFromTokenResponse(
             body,
             fallbackRefresh = null,
             nowMs = 1000L,
@@ -96,7 +93,7 @@ class GrokOAuthTest {
     @Test
     fun `token response without a new refresh token keeps the fallback`() {
         val body = """{"access_token":"at2","expires_in":3600}"""
-        val auth = grokAuthJsonFromTokenResponse(body, fallbackRefresh = "old-refresh", nowMs = 0L, nowIso = "z")
+        val auth = oauth.grokAuthJsonFromTokenResponse(body, fallbackRefresh = "old-refresh", nowMs = 0L, nowIso = "z")
         val tokens = Json.parseToJsonElement(auth.toString()).jsonObject["tokens"]!!.jsonObject
         assertEquals("old-refresh", tokens["refresh_token"]?.jsonPrimitive?.content)
     }

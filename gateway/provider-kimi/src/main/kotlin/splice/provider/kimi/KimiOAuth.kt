@@ -15,10 +15,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import splice.core.util.FormEncoding
-import splice.core.util.SecureFile
 import splice.core.util.long
 import splice.core.util.str
-import java.nio.file.Path
 
 public object KimiOAuthEndpoints {
     // public, shared with Moonshot's own CLIs — reused verbatim (no secret exists).
@@ -49,26 +47,6 @@ private const val F_REFRESH_TOKEN = "refresh_token"
 private const val F_ACCESS_TOKEN = "access_token"
 private const val F_EXPIRES_IN = "expires_in"
 
-/** Device-authorization request body: `client_id=<id>` — NO scope param. */
-public fun kimiDeviceAuthorizationForm(clientId: String = KimiOAuthEndpoints.CLIENT_ID): String =
-    FormEncoding.formEncode(F_CLIENT_ID to clientId)
-
-/** Token-poll body: client_id + device_code + the percent-encoded device-code grant_type. */
-public fun kimiTokenPollForm(deviceCode: String, clientId: String = KimiOAuthEndpoints.CLIENT_ID): String =
-    FormEncoding.formEncode(
-        F_CLIENT_ID to clientId,
-        "device_code" to deviceCode,
-        F_GRANT_TYPE to KimiOAuthEndpoints.DEVICE_CODE_GRANT_TYPE,
-    )
-
-/** Refresh body: `client_id=<id>&grant_type=refresh_token&refresh_token=<rt>`. */
-public fun kimiRefreshForm(refreshToken: String, clientId: String = KimiOAuthEndpoints.CLIENT_ID): String =
-    FormEncoding.formEncode(
-        F_CLIENT_ID to clientId,
-        F_GRANT_TYPE to F_REFRESH_TOKEN,
-        F_REFRESH_TOKEN to refreshToken,
-    )
-
 /** Parsed device_authorization response (expires_in default 1800; interval default 5, clamp >= 1). */
 public data class KimiDeviceAuthorization(
     val userCode: String,
@@ -79,70 +57,88 @@ public data class KimiDeviceAuthorization(
     val intervalS: Long,
 )
 
-public fun parseKimiDeviceAuthorization(responseBody: String): KimiDeviceAuthorization {
-    val obj = kimiJson.parseToJsonElement(responseBody).jsonObjectOrEmpty()
-    return KimiDeviceAuthorization(
-        userCode = obj.str("user_code").orEmpty(),
-        deviceCode = obj.str("device_code").orEmpty(),
-        verificationUri = obj.str("verification_uri").orEmpty(),
-        verificationUriComplete = obj.str("verification_uri_complete").orEmpty(),
-        expiresInS = obj.long("expires_in") ?: KimiOAuthEndpoints.DEFAULT_EXPIRES_IN_S,
-        intervalS = maxOf(
-            KimiOAuthEndpoints.MIN_INTERVAL_S,
-            obj.long("interval") ?: KimiOAuthEndpoints.DEFAULT_INTERVAL_S,
-        ),
-    )
-}
+/** The kimi device-flow wire builders and response parsers. Stateless — collaborators construct one. */
+public class KimiOAuth {
 
-/**
- * Build the flat kimi-cli-compatible auth-file JSON from a token-endpoint response. access_token,
- * refresh_token and expires_in are REQUIRED — a missing field is a hard error (rotation is
- * mandatory, so refresh_token must always be present). `scope` is persisted verbatim.
- */
-public fun kimiAuthJsonFromTokenResponse(responseBody: String, nowMs: Long): JsonObject {
-    val obj = kimiJson.parseToJsonElement(responseBody).jsonObjectOrEmpty()
-    val tokens = KimiRefreshedTokens(
-        accessToken = obj.str(F_ACCESS_TOKEN) ?: error("kimi token response missing access_token"),
-        refreshToken = obj.str(F_REFRESH_TOKEN) ?: error("kimi token response missing refresh_token"),
-        expiresIn = obj.long(F_EXPIRES_IN) ?: error("kimi token response missing expires_in"),
-        scope = obj.str("scope").orEmpty(),
-        tokenType = obj.str("token_type") ?: "Bearer",
-    )
-    return kimiAuthJson(tokens, nowMs)
-}
+    /** Device-authorization request body: `client_id=<id>` — NO scope param. */
+    public fun kimiDeviceAuthorizationForm(clientId: String = KimiOAuthEndpoints.CLIENT_ID): String =
+        FormEncoding.formEncode(F_CLIENT_ID to clientId)
 
-/** The flat auth-file shape (expires_at = now/1000 + expires_in, unix SECONDS). */
-internal fun kimiAuthJson(tokens: KimiRefreshedTokens, nowMs: Long): JsonObject = buildJsonObject {
-    put(F_ACCESS_TOKEN, JsonPrimitive(tokens.accessToken))
-    put(F_REFRESH_TOKEN, JsonPrimitive(tokens.refreshToken))
-    put("expires_at", JsonPrimitive(nowMs / MS_PER_S + tokens.expiresIn))
-    put("scope", JsonPrimitive(tokens.scope))
-    put("token_type", JsonPrimitive(tokens.tokenType))
-    put(F_EXPIRES_IN, JsonPrimitive(tokens.expiresIn))
-}
+    /** Token-poll body: client_id + device_code + the percent-encoded device-code grant_type. */
+    public fun kimiTokenPollForm(deviceCode: String, clientId: String = KimiOAuthEndpoints.CLIENT_ID): String =
+        FormEncoding.formEncode(
+            F_CLIENT_ID to clientId,
+            "device_code" to deviceCode,
+            F_GRANT_TYPE to KimiOAuthEndpoints.DEVICE_CODE_GRANT_TYPE,
+        )
 
-/**
- * Plan-tier 401s are entitlement rejections, NOT token expiry — a refresh will not fix them.
- * KimiAuthProvider uses this to veto the transport's otherwise-correct single refresh on 401.
- */
-public fun isPlanTierRejection(body: String): Boolean {
-    val lower = body.lowercase()
-    return lower.contains("current subscription does not have access") ||
-        lower.contains("supports only kimi-k3 up to 256k")
+    /** Refresh body: `client_id=<id>&grant_type=refresh_token&refresh_token=<rt>`. */
+    public fun kimiRefreshForm(refreshToken: String, clientId: String = KimiOAuthEndpoints.CLIENT_ID): String =
+        FormEncoding.formEncode(
+            F_CLIENT_ID to clientId,
+            F_GRANT_TYPE to F_REFRESH_TOKEN,
+            F_REFRESH_TOKEN to refreshToken,
+        )
+
+    public fun parseKimiDeviceAuthorization(responseBody: String): KimiDeviceAuthorization {
+        val obj = kimiJson.parseToJsonElement(responseBody).jsonObjectOrEmpty()
+        return KimiDeviceAuthorization(
+            userCode = obj.str("user_code").orEmpty(),
+            deviceCode = obj.str("device_code").orEmpty(),
+            verificationUri = obj.str("verification_uri").orEmpty(),
+            verificationUriComplete = obj.str("verification_uri_complete").orEmpty(),
+            expiresInS = obj.long("expires_in") ?: KimiOAuthEndpoints.DEFAULT_EXPIRES_IN_S,
+            intervalS = maxOf(
+                KimiOAuthEndpoints.MIN_INTERVAL_S,
+                obj.long("interval") ?: KimiOAuthEndpoints.DEFAULT_INTERVAL_S,
+            ),
+        )
+    }
+
+    /**
+     * Build the flat kimi-cli-compatible auth-file JSON from a token-endpoint response. access_token,
+     * refresh_token and expires_in are REQUIRED — a missing field is a hard error (rotation is
+     * mandatory, so refresh_token must always be present). `scope` is persisted verbatim.
+     */
+    public fun kimiAuthJsonFromTokenResponse(responseBody: String, nowMs: Long): JsonObject {
+        val obj = kimiJson.parseToJsonElement(responseBody).jsonObjectOrEmpty()
+        val tokens = KimiRefreshedTokens(
+            accessToken = obj.str(F_ACCESS_TOKEN) ?: error("kimi token response missing access_token"),
+            refreshToken = obj.str(F_REFRESH_TOKEN) ?: error("kimi token response missing refresh_token"),
+            expiresIn = obj.long(F_EXPIRES_IN) ?: error("kimi token response missing expires_in"),
+            scope = obj.str("scope").orEmpty(),
+            tokenType = obj.str("token_type") ?: "Bearer",
+        )
+        return kimiAuthJson(tokens, nowMs)
+    }
+
+    /** The flat auth-file shape (expires_at = now/1000 + expires_in, unix SECONDS). */
+    internal fun kimiAuthJson(tokens: KimiRefreshedTokens, nowMs: Long): JsonObject = buildJsonObject {
+        put(F_ACCESS_TOKEN, JsonPrimitive(tokens.accessToken))
+        put(F_REFRESH_TOKEN, JsonPrimitive(tokens.refreshToken))
+        put("expires_at", JsonPrimitive(nowMs / MS_PER_S + tokens.expiresIn))
+        put("scope", JsonPrimitive(tokens.scope))
+        put("token_type", JsonPrimitive(tokens.tokenType))
+        put(F_EXPIRES_IN, JsonPrimitive(tokens.expiresIn))
+    }
+
+    /**
+     * Plan-tier 401s are entitlement rejections, NOT token expiry — a refresh will not fix them.
+     * KimiAuthProvider uses this to veto the transport's otherwise-correct single refresh on 401.
+     */
+    public fun isPlanTierRejection(body: String): Boolean {
+        val lower = body.lowercase()
+        return lower.contains("current subscription does not have access") ||
+            lower.contains("supports only kimi-k3 up to 256k")
+    }
+
+    // JsonNull IS a JsonPrimitive with content "null"; every string extraction must filter it.
+    private fun JsonElement.jsonObjectOrEmpty(): JsonObject =
+        this as? JsonObject ?: JsonObject(emptyMap())
 }
 
 internal const val MS_PER_S: Long = 1000
 
+// FILE SCOPE ON PURPOSE: one configured Json parser shared by every call. As a member it would be
+// rebuilt per KimiOAuth construction, and the device-flow callers construct one per poll tick.
 internal val kimiJson: Json = Json { ignoreUnknownKeys = true }
-
-// JsonNull IS a JsonPrimitive with content "null"; every string extraction must filter it.
-
-internal fun JsonElement.jsonObjectOrEmpty(): JsonObject =
-    this as? JsonObject ?: JsonObject(emptyMap())
-
-// Atomic 0600 write (auth + device_id files) — routes to the shared primitive. The old body here
-// was write-then-chmod, which left the token world-readable for a window and could tear under a
-// concurrent reader (the exact gap the other providers' comments call out); SecureFile closes it.
-internal fun writeSecure(path: Path, content: String) {
-    SecureFile.writeAtomic0600(path, content)
-}

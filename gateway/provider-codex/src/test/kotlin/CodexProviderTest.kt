@@ -21,6 +21,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ToolDeferralPolicy
 import splice.provider.codex.CodexProvider
+import splice.provider.codex.CodexQuirks
 import splice.spi.ProviderTuning
 import kotlin.time.Duration.Companion.seconds
 
@@ -54,7 +55,7 @@ class CodexProviderTest {
         replayReasoning = false,
         configEffort = "high",
         configSummary = "detailed",
-        quirks = CodexProvider.defaultQuirks().copy(toolSurface = toolSurface),
+        quirks = CodexQuirks().defaultQuirks().copy(toolSurface = toolSurface),
         accountIdHeader = accountIdHeader,
         log = log,
     )

@@ -41,6 +41,26 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
 
+private const val REFRESH_ERROR_SNIPPET = 160
+private const val LOG_TAG = "codex-auth"
+private const val KIND = "chatgpt-oauth"
+private const val MASK_KEEP = 4
+private const val MS_PER_S = 1000L
+
+// Refresh this long before the JWT `exp` claim — codex reference
+// (CHATGPT_ACCESS_TOKEN_REFRESH_WINDOW_MINUTES) uses 5 minutes; mirrors grok's PROACTIVE_WINDOW_MS.
+private const val PROACTIVE_WINDOW_MS = 300_000L
+
+// G17 stale floor: below this the refresh blocks the request (mirrors grok's STALE_FLOOR_MS).
+private const val STALE_FLOOR_MS = 30_000L
+private const val FIELD_TOKENS = "tokens"
+private const val FIELD_ACCESS_TOKEN = "access_token"
+private const val FIELD_REFRESH_TOKEN = "refresh_token"
+private const val FIELD_ID_TOKEN = "id_token"
+private const val FIELD_ACCOUNT_ID = "account_id"
+private const val FIELD_LAST_REFRESH = "last_refresh"
+private const val FIELD_EXP = "exp"
+
 /** Result of the token endpoint's refresh POST (only the fields we persist). */
 public data class RefreshedTokens(
     val accessToken: String?,
@@ -70,6 +90,10 @@ public class CodexAuthProvider(
     private val json = Json { ignoreUnknownKeys = true }
     private val singleFlight = SingleFlight<Credentials?>()
     private val invalidGrantLatch = InvalidGrantLatch()
+
+    // The JWT claim reader moved to CodexOAuth with the rest of the codex OAuth wire helpers
+    // (HD-M5); this class reads `exp` and the account id through it.
+    private val oauth = CodexOAuth()
 
     init {
         // Lifecycle ownership: when prefetchScope ends (Daemon.stop cancels probeScope), cancel the
@@ -139,7 +163,7 @@ public class CodexAuthProvider(
             val accountId = tokens.str(FIELD_ACCOUNT_ID)
             // SH-01 (G18's codex twin): a token with no decodable exp was cached FOREVER — no
             // proactive refresh, first signal a mid-turn 401. Shared policy: synthesize mtime+TTL.
-            val expiresAtMs = decodeJwtClaims(access).long(FIELD_EXP)?.let { it * MS_PER_S }
+            val expiresAtMs = oauth.decodeJwtClaims(access).long(FIELD_EXP)?.let { it * MS_PER_S }
                 ?: synthesizeExpiry(mtime)
             val snapshot = Snapshot(access, accountId, expiresAtMs)
             cache = Cache(snapshot, mtime, now, size)
@@ -198,7 +222,7 @@ public class CodexAuthProvider(
         if (priorAccess == null || freshAccess == null) return null
         if (freshAccess == priorAccess) return null
         val accountId = tokens.str(FIELD_ACCOUNT_ID)
-        val expiresAtMs = decodeJwtClaims(freshAccess).long(FIELD_EXP)?.let { it * MS_PER_S }
+        val expiresAtMs = oauth.decodeJwtClaims(freshAccess).long(FIELD_EXP)?.let { it * MS_PER_S }
         val snapshot = Snapshot(freshAccess, accountId, expiresAtMs)
         cache = Cache(snapshot, Files.getLastModifiedTime(authPath).toMillis(), clock(), Files.size(authPath))
         return RefreshOutcome.Refreshed(Credentials.Bearer(freshAccess, accountId))
@@ -320,35 +344,12 @@ public class CodexAuthProvider(
         SecureFile.writeAtomic0600(path, content)
     }
 
-    private companion object {
-        const val REFRESH_ERROR_SNIPPET = 160
-        const val LOG_TAG = "codex-auth"
-        const val KIND = "chatgpt-oauth"
-        const val MASK_KEEP = 4
-        const val MS_PER_S = 1000L
-
-        // Refresh this long before the JWT `exp` claim — codex reference
-        // (CHATGPT_ACCESS_TOKEN_REFRESH_WINDOW_MINUTES) uses 5 minutes; mirrors grok's PROACTIVE_WINDOW_MS.
-        const val PROACTIVE_WINDOW_MS = 300_000L
-
-        // G17 stale floor: below this the refresh blocks the request (mirrors grok's STALE_FLOOR_MS).
-        const val STALE_FLOOR_MS = 30_000L
-        const val FIELD_TOKENS = "tokens"
-        const val FIELD_ACCESS_TOKEN = "access_token"
-        const val FIELD_REFRESH_TOKEN = "refresh_token"
-        const val FIELD_ID_TOKEN = "id_token"
-        const val FIELD_ACCOUNT_ID = "account_id"
-        const val FIELD_LAST_REFRESH = "last_refresh"
-        const val FIELD_EXP = "exp"
-    }
+    // G15: best-effort mtime probe for the invalid_grant latch gate; shared by doRefresh() and
+    // describe(). The failure is logged, not swallowed, before collapsing to null — a stat failure is
+    // "unknown", which InvalidGrantLatch treats as fail-open (never suppresses), NOT "file unchanged".
+    private fun codexAuthMtimeOrNull(authPath: Path, log: (String) -> Unit): Long? = runCatchingCancellable {
+        Files.getLastModifiedTime(authPath).toMillis()
+    }.onFailure {
+        log("[codex-auth] failed to stat $authPath mtime: $it — invalid_grant latch check skipped")
+    }.getOrNull()
 }
-
-// G15: best-effort mtime probe for the invalid_grant latch gate. Top-level (not a class member) so
-// CodexAuthProvider stays under the TooManyFunctions ceiling; shared by doRefresh() and describe().
-// The failure is logged, not swallowed, before collapsing to null — a stat failure is "unknown",
-// which InvalidGrantLatch treats as fail-open (never suppresses), NOT "file unchanged".
-private fun codexAuthMtimeOrNull(authPath: Path, log: (String) -> Unit): Long? = runCatchingCancellable {
-    Files.getLastModifiedTime(authPath).toMillis()
-}.onFailure {
-    log("[codex-auth] failed to stat $authPath mtime: $it — invalid_grant latch check skipped")
-}.getOrNull()

@@ -41,98 +41,104 @@ public object GrokOAuthEndpoints {
 // 48 = PKCE verifier byte length used by the grok CLI (base64url ~64 chars).
 private const val PKCE_VERIFIER_BYTES = 48
 
-public fun makeGrokPkce(random: SecureRandom = SecureRandom()): Pkce {
-    val verifier = grokBase64Url(ByteArray(PKCE_VERIFIER_BYTES).also { random.nextBytes(it) })
-    val challenge = grokBase64Url(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray()))
-    return Pkce(verifier, challenge)
-}
-
-public data class Pkce(val verifier: String, val challenge: String)
-
-private fun grokBase64Url(bytes: ByteArray): String =
-    Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
-
-/** Authorize URL with the grok-CLI param set + %20 (not +) encoding. */
-public fun buildGrokAuthorizeUrl(
-    challenge: String,
-    state: String,
-    nonce: String,
-    clientId: String,
-    env: (String) -> String?,
-    redirectUri: String = GrokOAuthEndpoints.REDIRECT_URI,
-): String {
-    val params = listOf(
-        "response_type" to "code",
-        "client_id" to clientId,
-        "redirect_uri" to redirectUri,
-        "scope" to GrokOAuthEndpoints.SCOPE,
-        "code_challenge" to challenge,
-        "code_challenge_method" to "S256",
-        "state" to state,
-        "nonce" to nonce,
-        "plan" to "generic",
-        "referrer" to "splice",
-    )
-    val query = params.joinToString("&") { (k, v) -> "$k=${FormEncoding.percentEncode(v)}" }
-    return "${GrokOAuthEndpoints.authorizeUrl(env)}?$query"
-}
-
-/** Form body for the authorization-code exchange (x-www-form-urlencoded). */
-public fun grokCodeExchangeForm(
-    code: String,
-    verifier: String,
-    challenge: String,
-    clientId: String,
-    redirectUri: String,
-): String =
-    FormEncoding.formEncode(
-        "grant_type" to "authorization_code",
-        "code" to code,
-        "redirect_uri" to redirectUri,
-        "client_id" to clientId,
-        "code_verifier" to verifier,
-        "code_challenge" to challenge,
-        "code_challenge_method" to "S256",
-    )
-
 // The refresh-token grant name doubles as the persisted token field key (the wire contract).
 private const val WIRE_REFRESH_TOKEN = "refresh_token"
 
-/** Form body for the refresh-token grant. */
-public fun grokRefreshForm(refreshToken: String, clientId: String): String =
-    FormEncoding.formEncode(
-        "grant_type" to WIRE_REFRESH_TOKEN,
-        "client_id" to clientId,
-        WIRE_REFRESH_TOKEN to refreshToken,
-    )
-
-private val grokJson = Json { ignoreUnknownKeys = true }
-
-/** Parse a token endpoint response into the ~/.grok/auth.json object GrokAuthProvider reads. */
-public fun grokAuthJsonFromTokenResponse(
-    responseBody: String,
-    fallbackRefresh: String?,
-    nowMs: Long,
-    nowIso: String,
-): JsonObject {
-    val obj = grokJson.parseToJsonElement(responseBody).jsonObjectOrEmpty()
-    val access = obj.str("access_token").orEmpty()
-    val refresh = obj.str(WIRE_REFRESH_TOKEN) ?: fallbackRefresh
-    val expiresIn = obj.long("expires_in")
-    return buildJsonObject {
-        put(
-            "tokens",
-            buildJsonObject {
-                put("access_token", JsonPrimitive(access))
-                if (refresh != null) put(WIRE_REFRESH_TOKEN, JsonPrimitive(refresh))
-            },
-        )
-        if (expiresIn != null) put("expires", JsonPrimitive(nowMs + expiresIn * MS_PER_S))
-        put("last_refresh", JsonPrimitive(nowIso))
-    }
-}
-
 private const val MS_PER_S = 1000L
 
-private fun JsonElement.jsonObjectOrEmpty(): JsonObject =
-    this as? JsonObject ?: JsonObject(emptyMap())
+// FILE SCOPE ON PURPOSE: one configured Json parser shared by every call. As a member it would be
+// rebuilt per GrokOAuth construction, and the callers construct one per login/refresh.
+private val grokJson = Json { ignoreUnknownKeys = true }
+
+public data class Pkce(val verifier: String, val challenge: String)
+
+/** The grok OAuth wire builders and response parsers. Stateless — collaborators construct one. */
+public class GrokOAuth {
+
+    public fun makeGrokPkce(random: SecureRandom = SecureRandom()): Pkce {
+        val verifier = grokBase64Url(ByteArray(PKCE_VERIFIER_BYTES).also { random.nextBytes(it) })
+        val challenge = grokBase64Url(MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray()))
+        return Pkce(verifier, challenge)
+    }
+
+    private fun grokBase64Url(bytes: ByteArray): String =
+        Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
+
+    /** Authorize URL with the grok-CLI param set + %20 (not +) encoding. */
+    public fun buildGrokAuthorizeUrl(
+        challenge: String,
+        state: String,
+        nonce: String,
+        clientId: String,
+        env: (String) -> String?,
+        redirectUri: String = GrokOAuthEndpoints.REDIRECT_URI,
+    ): String {
+        val params = listOf(
+            "response_type" to "code",
+            "client_id" to clientId,
+            "redirect_uri" to redirectUri,
+            "scope" to GrokOAuthEndpoints.SCOPE,
+            "code_challenge" to challenge,
+            "code_challenge_method" to "S256",
+            "state" to state,
+            "nonce" to nonce,
+            "plan" to "generic",
+            "referrer" to "splice",
+        )
+        val query = params.joinToString("&") { (k, v) -> "$k=${FormEncoding.percentEncode(v)}" }
+        return "${GrokOAuthEndpoints.authorizeUrl(env)}?$query"
+    }
+
+    /** Form body for the authorization-code exchange (x-www-form-urlencoded). */
+    public fun grokCodeExchangeForm(
+        code: String,
+        verifier: String,
+        challenge: String,
+        clientId: String,
+        redirectUri: String,
+    ): String =
+        FormEncoding.formEncode(
+            "grant_type" to "authorization_code",
+            "code" to code,
+            "redirect_uri" to redirectUri,
+            "client_id" to clientId,
+            "code_verifier" to verifier,
+            "code_challenge" to challenge,
+            "code_challenge_method" to "S256",
+        )
+
+    /** Form body for the refresh-token grant. */
+    public fun grokRefreshForm(refreshToken: String, clientId: String): String =
+        FormEncoding.formEncode(
+            "grant_type" to WIRE_REFRESH_TOKEN,
+            "client_id" to clientId,
+            WIRE_REFRESH_TOKEN to refreshToken,
+        )
+
+    /** Parse a token endpoint response into the ~/.grok/auth.json object GrokAuthProvider reads. */
+    public fun grokAuthJsonFromTokenResponse(
+        responseBody: String,
+        fallbackRefresh: String?,
+        nowMs: Long,
+        nowIso: String,
+    ): JsonObject {
+        val obj = grokJson.parseToJsonElement(responseBody).jsonObjectOrEmpty()
+        val access = obj.str("access_token").orEmpty()
+        val refresh = obj.str(WIRE_REFRESH_TOKEN) ?: fallbackRefresh
+        val expiresIn = obj.long("expires_in")
+        return buildJsonObject {
+            put(
+                "tokens",
+                buildJsonObject {
+                    put("access_token", JsonPrimitive(access))
+                    if (refresh != null) put(WIRE_REFRESH_TOKEN, JsonPrimitive(refresh))
+                },
+            )
+            if (expiresIn != null) put("expires", JsonPrimitive(nowMs + expiresIn * MS_PER_S))
+            put("last_refresh", JsonPrimitive(nowIso))
+        }
+    }
+
+    private fun JsonElement.jsonObjectOrEmpty(): JsonObject =
+        this as? JsonObject ?: JsonObject(emptyMap())
+}

@@ -52,6 +52,29 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
 
+private const val LOG_TAG = "grok-auth"
+
+// SH-02(b): CLIProxyAPI's refreshIneffectiveBackoff value — long enough to stop a tight
+// success/re-check loop, short enough that a genuinely recovering endpoint retries soon.
+private const val REFRESH_INEFFECTIVE_BACKOFF_MS = 30_000L
+private const val DEFAULT_CACHE_MS = 30_000L
+private const val MS_PER_S = 1000L
+
+/** Refresh this long before `expires` — well inside a 6h grok token, generous vs clock skew. */
+private const val PROACTIVE_WINDOW_MS = 300_000L
+
+/** Below this, block instead of prefetching: comfortably above the refreshCall's measured
+ *  RTT (sub-second) and well below the 300s window, so most of the window stays non-blocking. */
+private const val STALE_FLOOR_MS = 30_000L
+
+/** 4h ceiling synthesized for auth files with no `expires` field (legacy/foreign CLI writes,
+ *  G18) — otherwise readSnapshot() would treat them as never-expiring. */
+private const val FIELD_TOKENS = "tokens"
+private const val FIELD_ACCESS_TOKEN = "access_token"
+private const val FIELD_REFRESH_TOKEN = "refresh_token"
+private const val FIELD_LAST_REFRESH = "last_refresh"
+private const val FIELD_EXPIRES = "expires"
+
 /** Parsed result of the grok token-endpoint refresh POST. */
 public data class GrokRefreshedTokens(
     val accessToken: String?,
@@ -84,6 +107,12 @@ public class GrokAuthProvider(
     private val json = Json { ignoreUnknownKeys = true }
     private val singleFlight = SingleFlight<Credentials?>()
     private val invalidGrantLatch = InvalidGrantLatch()
+
+    // G15: the mtime probe lives on its own collaborator, not on this class. Measured, not assumed:
+    // GrokAuthProvider holds 14 non-override functions and TooManyFunctions flags at 15 (overrides
+    // are ignored), so folding grokAuthMtimeOrNull in here fails the build. HD-M5 red-proved this
+    // with a synthetic 15th member; codex/kimi sit at 13 and DO host their own probe.
+    private val authFile = GrokAuthFile()
 
     init {
         // Lifecycle ownership: when prefetchScope ends (Daemon.stop cancels probeScope), cancel the
@@ -192,7 +221,7 @@ public class GrokAuthProvider(
     // mtime changes (re-login), so a genuinely stale latch never outlives the credentials it named.
     private suspend fun doRefresh(): RefreshOutcome {
         if (!Files.exists(authPath)) return RefreshOutcome.NoCredentialsFile
-        val mtime = grokAuthMtimeOrNull(authPath, log)
+        val mtime = authFile.grokAuthMtimeOrNull(authPath, log)
         if (invalidGrantLatch.isLatched(mtime)) return RefreshOutcome.Rejected(INVALID_GRANT_REASON)
         val priorAccess = cache?.snapshot?.access
         // AUTH-002: wire the daemon log sink so the lock's proceed-unlocked fallback is observable
@@ -338,7 +367,7 @@ public class GrokAuthProvider(
         val present = runCatchingCancellable {
             Files.exists(authPath) && tokensOf()?.get(FIELD_ACCESS_TOKEN) != null
         }.getOrDefault(false)
-        val mtime = grokAuthMtimeOrNull(authPath, log)
+        val mtime = authFile.grokAuthMtimeOrNull(authPath, log)
         return AuthDescription(
             present = present,
             kind = "grok-oauth",
@@ -354,39 +383,17 @@ public class GrokAuthProvider(
     private fun writeSecure(path: Path, content: String) {
         SecureFile.writeAtomic0600(path, content)
     }
-
-    private companion object {
-        const val LOG_TAG = "grok-auth"
-
-        // SH-02(b): CLIProxyAPI's refreshIneffectiveBackoff value — long enough to stop a tight
-        // success/re-check loop, short enough that a genuinely recovering endpoint retries soon.
-        const val REFRESH_INEFFECTIVE_BACKOFF_MS = 30_000L
-        const val DEFAULT_CACHE_MS = 30_000L
-        const val MS_PER_S = 1000L
-
-        /** Refresh this long before `expires` — well inside a 6h grok token, generous vs clock skew. */
-        const val PROACTIVE_WINDOW_MS = 300_000L
-
-        /** Below this, block instead of prefetching: comfortably above the refreshCall's measured
-         *  RTT (sub-second) and well below the 300s window, so most of the window stays non-blocking. */
-        const val STALE_FLOOR_MS = 30_000L
-
-        /** 4h ceiling synthesized for auth files with no `expires` field (legacy/foreign CLI writes,
-         *  G18) — otherwise readSnapshot() would treat them as never-expiring. */
-        const val FIELD_TOKENS = "tokens"
-        const val FIELD_ACCESS_TOKEN = "access_token"
-        const val FIELD_REFRESH_TOKEN = "refresh_token"
-        const val FIELD_LAST_REFRESH = "last_refresh"
-        const val FIELD_EXPIRES = "expires"
-    }
 }
 
-// G15: best-effort mtime probe for the invalid_grant latch gate. Top-level (not a class member) so
-// GrokAuthProvider stays under the TooManyFunctions ceiling; shared by doRefresh() and describe().
-// The failure is logged, not swallowed, before collapsing to null — a stat failure is "unknown",
-// which InvalidGrantLatch treats as fail-open (never suppresses), NOT "file unchanged".
-private fun grokAuthMtimeOrNull(authPath: Path, log: (String) -> Unit): Long? = runCatchingCancellable {
-    Files.getLastModifiedTime(authPath).toMillis()
-}.onFailure {
-    log("[grok-auth] failed to stat $authPath mtime: $it — invalid_grant latch check skipped")
-}.getOrNull()
+// G15: best-effort mtime probe for the invalid_grant latch gate. Its own collaborator (not a
+// GrokAuthProvider member) so GrokAuthProvider stays under the TooManyFunctions ceiling; shared by
+// doRefresh() and describe(). The failure is logged, not swallowed, before collapsing to null — a
+// stat failure is "unknown", which InvalidGrantLatch treats as fail-open (never suppresses), NOT
+// "file unchanged".
+private class GrokAuthFile {
+    fun grokAuthMtimeOrNull(authPath: Path, log: (String) -> Unit): Long? = runCatchingCancellable {
+        Files.getLastModifiedTime(authPath).toMillis()
+    }.onFailure {
+        log("[grok-auth] failed to stat $authPath mtime: $it — invalid_grant latch check skipped")
+    }.getOrNull()
+}

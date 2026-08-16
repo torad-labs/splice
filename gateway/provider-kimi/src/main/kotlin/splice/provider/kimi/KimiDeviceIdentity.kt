@@ -7,16 +7,19 @@
 package splice.provider.kimi
 
 import splice.core.GATEWAY_VERSION
+import splice.core.util.SecureFile
 import splice.core.util.runCatchingCancellable
 import java.net.InetAddress
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
 
+private const val ASCII_CEILING = 0x80
+
 public class KimiDeviceIdentity(
     private val deviceIdPath: Path,
     private val version: String = GATEWAY_VERSION,
-    private val rawHostname: String = defaultHostname(),
+    private val rawHostname: String = KimiHostname().defaultHostname(),
     private val osName: String = System.getProperty("os.name").orEmpty(),
     private val osVersion: String = System.getProperty("os.version").orEmpty(),
     private val osArch: String = System.getProperty("os.arch").orEmpty(),
@@ -43,14 +46,23 @@ public class KimiDeviceIdentity(
         "X-Msh-Os-Version" to asciiSanitize(osVersion),
     )
 
-    private companion object {
-        const val ASCII_CEILING = 0x80
+    private fun asciiSanitize(value: String): String =
+        value.filter { it.code < ASCII_CEILING }.ifEmpty { "unknown" }
 
-        fun asciiSanitize(value: String): String =
-            value.filter { it.code < ASCII_CEILING }.ifEmpty { "unknown" }
-
-        fun defaultHostname(): String =
-            // ast-grep-ignore: kt-no-silent-result-collapse -- hostname is cosmetic header data; "unknown" is the designed fallback
-            runCatchingCancellable { InetAddress.getLocalHost().hostName }.getOrNull() ?: "unknown"
+    // Atomic 0600 write (device_id file) — routes to the shared primitive, mirroring the private
+    // member CodexAuthProvider/GrokAuthProvider already carry. The old body here was
+    // write-then-chmod, which left the file world-readable for a window; SecureFile closes it.
+    private fun writeSecure(path: Path, content: String) {
+        SecureFile.writeAtomic0600(path, content)
     }
+}
+
+// FILE SCOPE ON PURPOSE: `rawHostname`'s constructor default is evaluated before an instance of
+// KimiDeviceIdentity exists, so the lookup cannot be an instance member. A one-method class keeps
+// it out of the top-level function namespace AND preserves per-construction evaluation (a top-level
+// `val` would resolve the hostname once per classloader instead of once per identity).
+private class KimiHostname {
+    fun defaultHostname(): String =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- hostname is cosmetic header data; "unknown" is the designed fallback
+        runCatchingCancellable { InetAddress.getLocalHost().hostName }.getOrNull() ?: "unknown"
 }

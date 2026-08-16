@@ -19,19 +19,13 @@ import splice.core.topology.Topology
 import splice.core.topology.ambiguousHeadMessage
 import splice.core.topology.effectiveApiKeyEnv
 import splice.core.util.str
+import splice.provider.codex.CodexOAuth
 import splice.provider.codex.CodexOAuthEndpoints
-import splice.provider.codex.authJsonFromTokens
-import splice.provider.codex.buildAuthorizeUrl
-import splice.provider.codex.codexCodeExchangeForm
-import splice.provider.codex.makePkce
+import splice.provider.grok.GrokOAuth
 import splice.provider.grok.GrokOAuthEndpoints
-import splice.provider.grok.buildGrokAuthorizeUrl
-import splice.provider.grok.grokAuthJsonFromTokenResponse
-import splice.provider.grok.grokCodeExchangeForm
-import splice.provider.grok.makeGrokPkce
 import splice.provider.kimi.KimiDeviceIdentity
+import splice.provider.kimi.KimiOAuth
 import splice.provider.kimi.KimiOAuthEndpoints
-import splice.provider.kimi.kimiAuthJsonFromTokenResponse
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.security.SecureRandom
@@ -48,6 +42,11 @@ private val env: (String) -> String? = System::getenv
  *  carry no top-level functions). Every member keeps the old function's name, so the diff at each
  *  call site is a receiver insertion. */
 internal class LoginCommand {
+
+    // The vendor OAuth wire builders (HD-M5 moved them off file scope onto their own types).
+    private val codexOAuth = CodexOAuth()
+    private val grokOAuth = GrokOAuth()
+    private val kimiOAuth = KimiOAuth()
 
     internal suspend fun login(headArg: String?): Boolean {
         val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath())
@@ -162,12 +161,12 @@ internal class LoginCommand {
     }
 
     private fun codexSpec(head: String, provider: ProviderConfig): LoginSpec {
-        val pkce = makePkce()
+        val pkce = codexOAuth.makePkce()
         val state = randomToken()
         val clientId = CodexOAuthEndpoints.clientId(env)
         return LoginSpec(
             head = head,
-            authorizeUrl = buildAuthorizeUrl(pkce.challenge, state, clientId, env),
+            authorizeUrl = codexOAuth.buildAuthorizeUrl(pkce.challenge, state, clientId, env),
             redirectPort = CodexOAuthEndpoints.REDIRECT_PORT,
             redirectPath = "/auth/callback",
             expectedState = state,
@@ -175,7 +174,7 @@ internal class LoginCommand {
             // env-overridable via CODEX_OAUTH_TOKEN_URL, matching the daemon's refresh path.
             tokenUrl = CodexOAuthEndpoints.tokenUrl(env),
             exchangeForm = { code ->
-                codexCodeExchangeForm(code, pkce.verifier, clientId, CodexOAuthEndpoints.REDIRECT_URI)
+                codexOAuth.codexCodeExchangeForm(code, pkce.verifier, clientId, CodexOAuthEndpoints.REDIRECT_URI)
             },
             authPath = oauthAuthPath(provider, "~/.codex/auth.json"),
             toAuthJson = { body -> codexAuthJson(body) },
@@ -185,7 +184,7 @@ internal class LoginCommand {
     private fun codexAuthJson(body: String): String {
         val obj = json.parseToJsonElement(body).jsonObject
         fun s(k: String) = obj.str(k)
-        return authJsonFromTokens(
+        return codexOAuth.authJsonFromTokens(
             idToken = s("id_token"),
             accessToken = s("access_token").orEmpty(),
             refreshToken = s("refresh_token"),
@@ -195,19 +194,19 @@ internal class LoginCommand {
     }
 
     private fun grokSpec(head: String, provider: ProviderConfig): LoginSpec {
-        val pkce = makeGrokPkce()
+        val pkce = grokOAuth.makeGrokPkce()
         val state = randomToken()
         val nonce = randomToken()
         val clientId = GrokOAuthEndpoints.clientId(env)
         return LoginSpec(
             head = head,
-            authorizeUrl = buildGrokAuthorizeUrl(pkce.challenge, state, nonce, clientId, env),
+            authorizeUrl = grokOAuth.buildGrokAuthorizeUrl(pkce.challenge, state, nonce, clientId, env),
             redirectPort = GrokOAuthEndpoints.REDIRECT_PORT,
             redirectPath = "/callback",
             expectedState = state,
             tokenUrl = GrokOAuthEndpoints.tokenUrl(env),
             exchangeForm = { code ->
-                grokCodeExchangeForm(
+                grokOAuth.grokCodeExchangeForm(
                     code = code,
                     verifier = pkce.verifier,
                     challenge = pkce.challenge,
@@ -217,7 +216,7 @@ internal class LoginCommand {
             },
             authPath = oauthAuthPath(provider, "~/.grok/auth.json"),
             toAuthJson = { body ->
-                grokAuthJsonFromTokenResponse(
+                grokOAuth.grokAuthJsonFromTokenResponse(
                     body,
                     fallbackRefresh = null,
                     nowMs = System.currentTimeMillis(),
@@ -241,7 +240,9 @@ internal class LoginCommand {
             tokenUrl = KimiOAuthEndpoints.tokenUrl(env),
             authPath = authPath,
             identityHeaders = identity.headers(),
-            toAuthJson = { body -> kimiAuthJsonFromTokenResponse(body, System.currentTimeMillis()).toString() },
+            toAuthJson = { body ->
+                kimiOAuth.kimiAuthJsonFromTokenResponse(body, System.currentTimeMillis()).toString()
+            },
         )
     }
 

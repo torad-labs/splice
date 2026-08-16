@@ -10,6 +10,8 @@
 
 ## Global Constraints
 
+- **KOTLIN STYLE LAW (operator, 2026-08-15 — supersedes any snippet below that violates it):** no top-level functions, no `companion object`, anywhere in main sources. Top-level `const val` is allowed; test paths are exempt. Global PreToolUse hooks 34/36 enforce this WHOLE-FILE: an edit to a main-source `.kt` only writes if the file ends fully clean. Consequently **every task migrates each main-source file it touches in the same edit** — behavior-preserving, goldens frozen, detekt budgets met by decomposing into injected/helper classes (never suppression), konsist `NEW:`/`PORT-OF` header on new files. Where a snippet below shows a `companion object` or top-level `fun`, implement the same contract without one (e.g. `PassthroughProfile.fromWire(x)` becomes `PassthroughProfile.entries.firstOrNull { it.wire == x }` at call sites; file-level helpers become private methods or small injected classes). Task 10 sweeps every file the earlier tasks didn't touch.
+
 - **KIMI BYTE-IDENTITY:** kimi's built requests and translator behavior stay byte-identical. `PassthroughGoldenTest` goldens under `gateway/dialect-anthropic-passthrough/src/test/resources/goldens/` are FROZEN — if their bytes move, the change is wrong.
 - **NEVER-BELOW-STATUS-QUO:** a live `splice.toml` that boots and works today must keep booting with identical wire behavior. Profile defaults derive from auth kind exactly as the current arms do: `kimi-oauth` → KIMI, `api-key` → KIMI, `client` → NEUTRAL. Validation only rejects configs that are *already wrong* (typo'd kind, inert key, malformed header name) — never a working one.
 - **FAIL-CLOSED BOOT + REPAIR OFFER (operator decision, 2026-08-15):** a validation finding refuses daemon boot listing every finding at once; the CLI then reports the issues, detects installed harnesses, and offers an interactive fix session. Never boot with a finding; never fix silently.
@@ -919,7 +921,20 @@ Write both with the file's real konsist idiom (read its 17+ existing laws first;
 
 ---
 
-### Task 10: Close-out (orchestrator only)
+### Task 10: Full migration sweep (HD-10)
+
+The style-law capstone: every gateway main-source file NOT already cleaned by Tasks 1–9 is refactored to zero top-level functions and zero companion objects. Runs after Tasks 1–9, before close-out.
+
+**Files:** every `gateway/*/src/main/**/*.kt` still containing a violation (enumerate at dispatch time with `grep -rlE "^(public |private |internal )?(suspend )?fun |companion object" --include="*.kt" */src/main`). Baseline at law time: 336 top-level funs + 58 companions across 105/151 files.
+
+**Rules per file:** behavior-preserving ONLY — no signature drift visible to other modules beyond mechanical relocation, kimi goldens byte-identical, detekt budgets met by decomposition into cohesive injected/helper classes (never suppression), each file fully clean in ONE edit (strict hooks refuse anything less). Public top-level API consumed across modules moves to a named home and every consumer updates in the same slice; slices stay compile-green.
+
+- [ ] **Step 1:** Enumerate remaining violating files; group into module-sized slices (one implementer per slice, sequential when slices share consumers).
+- [ ] **Step 2:** Per slice: dispatch implementer (migrate + run the owning module tests + `./gradlew check`), then task review as usual.
+- [ ] **Step 3:** Final: both grep counts hit 0 (`fun` pattern and `companion object` over `*/src/main`), whole-gateway `check` green, goldens diff empty.
+- [ ] **Step 4:** Ledger + commit per slice.
+
+### Task 11: Close-out (orchestrator only)
 
 - [ ] **Step 1:** every HD item `done` → orchestrator independently re-runs each item's verify, reads each diff, sets `verified` via `$M set-status <ID> verified`.
 - [ ] **Step 2:** `npm run gate` on the final tip — GATE: PASS with the tip hash printed beside the result in the same command block; record as an `$M note` on the last item.

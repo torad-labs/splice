@@ -3,18 +3,24 @@
 # LAW [2026-08-15]: NEVER-BELOW-STATUS-QUO — kimi goldens frozen; profile defaults reproduce today's arm behavior exactly; validation never rejects a working config.
 # LAW [2026-08-15]: FAIL-CLOSED BOOT + REPAIR OFFER (operator, 2026-08-15) — findings refuse boot listing ALL at once; CLI detects installed harnesses (claude/kimi/codex/grok) and offers an interactive fix session. Never boot on a finding, never fix silently.
 # LAW [2026-08-15]: BRANCH feat/claude-head; builders module-tests only, no push; gate + commit chain are the orchestrator's.
+# LAW [2026-08-15]: KOTLIN STYLE LAW (operator, 2026-08-15 evening): NO new top-level functions, NO new companion objects — hooks 34/36 enforce; extractions forced by detekt budgets go to injected helper classes; top-level const val allowed; test paths exempt. Plan snippets predating the law are amended before dispatch.
+# LAW [2026-08-15]: STRICT-HOOKS FILE-BY-FILE (operator, 2026-08-15): hooks 34/36 stay whole-file strict — an edit to a main-source .kt only writes if the file ENDS with zero top-level functions and zero companion objects. Therefore every HD item MIGRATES each main-source file it touches in the same edit: behavior-preserving, goldens frozen, detekt budgets met by decomposing into injected/helper classes (never suppression), konsist PORT-OF/NEW header on new files. Migration is FOLDED into this campaign (HD-10 sweeps the remainder); one branch, one PR — operator accepted the diff size.
 [campaign]
 name = "head-decoupling"
 created = "2026-08-15"
-next = ["HD-1", "HD-2", "HD-3", "HD-4", "HD-5", "HD-6", "HD-7", "HD-8", "HD-9"]
+next = ["HD-1", "HD-2", "HD-3", "HD-4", "HD-5", "HD-6", "HD-7", "HD-8", "HD-9", "HD-10"]
 
 [[items]]
 id = "HD-1"
 phase = "profile"
 title = "PassthroughProfile registry (dialect module): named data bundle {quirks base, base headers, usesDeviceIdentity} for NEUTRAL and KIMI; ProviderConfig gains nullable profile key; Daemon resolves explicit > auth-kind default (kimi-oauth->KIMI, api-key->KIMI, client->NEUTRAL) and all dispatch arms consume the resolved profile; KIMI_BASE_HEADERS moves into the profile; example TOML documents it on kimi's entry. Goldens green UNMODIFIED."
 files = ["gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughProfile.kt", "gateway/dialect-anthropic-passthrough/src/test/kotlin/PassthroughProfileTest.kt", "gateway/core/src/main/kotlin/splice/core/topology/Topology.kt", "gateway/core/src/test/kotlin/TopologyConfigOverridesTest.kt", "gateway/app/src/main/kotlin/splice/app/Daemon.kt", "gateway/app/src/test/kotlin/splice/app/PassthroughQuirksOverlayTest.kt", "gateway/app/src/test/kotlin/ExampleConfigTest.kt", "config/splice.example.toml"]
-status = "todo"
+status = "in_flight"
 verify = "cd gateway && ./gradlew :dialect-anthropic-passthrough:test :core:test :app:test --console=plain"
+# [2026-08-15] CLAIM: owner=sdd-orchestrator-2026-08-15 at=2026-08-16T01:39:41Z
+# [2026-08-15] ATTEST-START: tree=f3886b7932730fa20180c3f7c4984c7721492a1f at=2026-08-16T01:39:41Z
+# [2026-08-15] BLOCKED: global hooks 36_no_companion_objects.py + 34_no_top_level_functions.py (~/.claude/hooks/modules/pretooluse/, installed 2026-08-15 20:43:09, ~7min after the last Daemon.kt commit) hard-block EVERY Edit/Write to Daemon.kt, Topology.kt, and a new PassthroughProfile.kt: applies() scans the FULL post-edit file (not the diff) and this codebase's established style uses top-level fns + companion objects throughout (Daemon.kt has 8+ top-level funs, PassthroughQuirks.kt/PassthroughRequestBuilder.kt already use companion object), so literally any edit to those files self-triggers on pre-existing code. Confirmed via real Edit/Write tool calls (not simulated) on all three files. Only PassthroughProfileTest.kt landed (test path is hook-exempt); ran red as expected (PassthroughProfile unresolved, gradle :dialect-anthropic-passthrough:test --tests PassthroughProfileTest). No main-source touched; goldens dir clean. Needs an operator/global-hook fix (repo exemption or applies() path check) before any Kotlin main-source edit in this repo can land, not just HD-1. Full evidence in task-1-report.md.
+# [2026-08-15] BLOCKED (orchestrator, 20:56): (1) global PreToolUse hooks installed 20:43:09 (~/.claude/hooks/modules/pretooluse/ batch incl. 34_no_top_level_functions, 36_no_companion_objects) hard-block every Kotlin main-source Edit/Write in this repo — they encode another project's laws and fire on this codebase's own mandated idioms; (2) a concurrent session is actively writing inside HD-1's fence right now (PassthroughRequestBuilder.kt, MfjsSanitizer.kt, AnthropicRequest.kt, WsRoundDriver.kt through 20:55). Only PassthroughProfileTest.kt landed (red-proven). Resume: operator decides hook scope + concurrent session; then re-dispatch implementer a5be70a08a2893a85 from task-1-report.md.
 
 [[items]]
 id = "HD-2"
@@ -79,3 +85,11 @@ title = "Konsist arch laws (#924 capstone): (1) PassthroughQuirks constructed on
 files = ["gateway/arch-tests/src/test/kotlin/ArchitectureLawsTest.kt"]
 status = "todo"
 verify = "cd gateway && ./gradlew :arch-tests:test --console=plain"
+
+[[items]]
+id = "HD-10"
+phase = "migrate"
+title = "Full Kotlin style migration sweep: every gateway main-source file NOT already cleaned by HD-1..9 refactored file-by-file to zero top-level functions and zero companion objects (top-level const val allowed; plain objects pass but prefer injected classes). Behavior-preserving only; kimi goldens byte-identical; detekt satisfied structurally; each file fully clean in one edit (strict hooks will not write otherwise). Baseline at law time: 336 top-level funs + 58 companions across 105/151 files."
+files = ["gateway/app/src/main", "gateway/core/src/main", "gateway/control/src/main", "gateway/gateway/src/main", "gateway/provider-spi/src/main", "gateway/provider-codex/src/main", "gateway/provider-grok/src/main", "gateway/provider-kimi/src/main", "gateway/dialect-anthropic-passthrough/src/main", "gateway/dialect-openai-responses/src/main", "gateway/dialect-openai-chat/src/main"]
+status = "todo"
+verify = "cd gateway && ./gradlew check --console=plain && test 0 -eq $(grep -rE '^(public |private |internal )?(suspend )?fun ' --include='*.kt' */src/main | wc -l) && test 0 -eq $(grep -r 'companion object' --include='*.kt' */src/main | wc -l)"

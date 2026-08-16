@@ -15,7 +15,6 @@ import splice.core.turn.compactDirective
 import splice.core.turn.withCompactDirective
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.ChatRequestBuilder
-import splice.dialect.chat.withReasoningEffortToml
 
 private val CHAT = ChatQuirks(providerTag = "kimi")
 

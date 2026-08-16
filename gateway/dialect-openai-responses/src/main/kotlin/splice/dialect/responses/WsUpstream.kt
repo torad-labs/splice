@@ -91,7 +91,9 @@ public class WsUpstream(
     /** Injectable socket factory — tests script a fake WebSocket without a live server. Receives
      *  the wss URI, the handshake headers, and the listener the socket must feed. */
     private val connector: suspend (URI, Map<String, String>, WebSocket.Listener) -> WebSocket =
-        { uri, headers, listener -> jdkConnect(uri, headers, listener, CONNECT_TIMEOUT_MS) },
+        { uri, headers, listener ->
+            JdkWebSocketConnector().jdkConnect(uri, headers, listener, CONNECT_TIMEOUT_MS)
+        },
 ) {
 
     // LRU by round-completion (touched on successful reuse); oldest evicted at the cap. Same
@@ -335,35 +337,45 @@ public class WsUpstream(
         conn.kill()
         synchronized(lock) { if (connections[key] === conn) connections.remove(key) }
     }
+}
 
-    public companion object {
-        private const val CONNECT_TIMEOUT_MS = 10_000L // same budget as UpstreamClient's TCP connect
+/**
+ * The real JDK handshake, behind a type because Kotlin main sources carry no `companion` blocks and
+ * this is the DEFAULT VALUE of [WsUpstream.connector] — a default argument is evaluated before the
+ * instance exists, so it cannot call an instance member ("Cannot access '<this>' before the instance
+ * has been initialized"). A fresh instance per default-argument evaluation is free: the type holds
+ * no state, and the HttpClient it builds was already per-call.
+ */
+private class JdkWebSocketConnector {
 
-        // response.created is an immediate ack (probed live: arrives instantly even ahead of a
-        // long prefill), so a missing first event is a broken round, not a slow model.
-        private const val FIRST_EVENT_TIMEOUT_MS = 15_000L
-        private const val MAX_CONNECTIONS = 32
-        private const val ERR_SNIPPET = 160
-
-        // Bounded so a stalled consumer cannot buffer unboundedly; the turn watchdog fires long
-        // before a healthy translator falls 1024 events behind. Overflow = kill (InboxListener).
-        private const val INBOX_CAPACITY = 1024
-
-        private suspend fun jdkConnect(
-            uri: URI,
-            headers: Map<String, String>,
-            listener: WebSocket.Listener,
-            connectTimeoutMs: Long,
-        ): WebSocket {
-            val builder = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofMillis(connectTimeoutMs))
-                .build()
-                .newWebSocketBuilder()
-            headers.forEach { (k, v) -> builder.header(k, v) }
-            return builder.buildAsync(uri, listener).await()
-        }
+    suspend fun jdkConnect(
+        uri: URI,
+        headers: Map<String, String>,
+        listener: WebSocket.Listener,
+        connectTimeoutMs: Long,
+    ): WebSocket {
+        val builder = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofMillis(connectTimeoutMs))
+            .build()
+            .newWebSocketBuilder()
+        headers.forEach { (k, v) -> builder.header(k, v) }
+        return builder.buildAsync(uri, listener).await()
     }
 }
+
+// The transport's budgets, at file scope because Kotlin main sources carry no `companion` blocks.
+// Every one was already `private` inside that companion, so nothing gained reach.
+private const val CONNECT_TIMEOUT_MS = 10_000L // same budget as UpstreamClient's TCP connect
+
+// response.created is an immediate ack (probed live: arrives instantly even ahead of a
+// long prefill), so a missing first event is a broken round, not a slow model.
+private const val FIRST_EVENT_TIMEOUT_MS = 15_000L
+private const val MAX_CONNECTIONS = 32
+private const val ERR_SNIPPET = 160
+
+// Bounded so a stalled consumer cannot buffer unboundedly; the turn watchdog fires long
+// before a healthy translator falls 1024 events behind. Overflow = kill (InboxListener).
+private const val INBOX_CAPACITY = 1024
 
 /** Assembles (possibly fragmented) text frames into JSON events and feeds the inbox. Every
  *  overridden callback must re-arm request(1) itself — overriding a Listener method REPLACES the

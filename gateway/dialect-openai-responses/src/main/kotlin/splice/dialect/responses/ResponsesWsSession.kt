@@ -201,60 +201,64 @@ internal class ResponsesWsSession {
     private fun propsOf(request: JsonObject): String =
         JsonObject(request.filterKeys { it != FIELD_INPUT }).toString()
 
-    internal companion object {
-        /** Same order as the reasoning cache's bound: far more than any real concurrent-session
-         *  count on one head, and an evicted record costs only a full send. */
-        const val MAX_CONVERSATIONS = 256
+    private enum class Disposition { SERVER_HAS_IT, SEND, BAIL }
 
-        /** Item kinds the server ALREADY holds after the previous response: it produced them, so
-         *  the builder's rebuild of them is a duplicate that must be dropped from the delta. */
-        private val SERVER_HELD = setOf("reasoning", "function_call", "tool_search_call", "tool_search_output")
-
-        /** Item kinds that are genuinely NEW client-side input and must be sent. */
-        private val CLIENT_NEW = setOf("function_call_output", "message")
-
-        /**
-         * The suffix beyond [previous] that must be sent, or null to bail.
-         *
-         * Bails when the new input does not EXTEND the previous one elementwise (a rewritten
-         * prefix means the builder changed history — cache-key drift, a compaction, an amended
-         * body), or when the suffix holds any item that is neither a known server-held rebuild nor
-         * a known client-new item. An assistant `message` in the suffix is server-held (it produced
-         * that text) — distinguished from a user message by role.
-         */
-        fun deltaOf(previous: List<String>, current: List<JsonObject>): List<JsonObject>? {
-            if (!extendsPrefix(previous, current)) return null
-            val send = mutableListOf<JsonObject>()
-            for (item in current.drop(previous.size)) {
-                when (dispositionOf(item)) {
-                    Disposition.SERVER_HAS_IT -> Unit // it produced this; re-sending would duplicate
-                    Disposition.SEND -> send += item
-                    Disposition.BAIL -> return null
-                }
-            }
-            return send
-        }
-
-        private fun extendsPrefix(previous: List<String>, current: List<JsonObject>): Boolean =
-            current.size >= previous.size &&
-                previous.indices.all { previous[it] == current[it].toString() }
-
-        private enum class Disposition { SERVER_HAS_IT, SEND, BAIL }
-
-        private fun dispositionOf(item: JsonObject): Disposition {
-            // The builder emits plain role/content messages with no explicit `type`.
-            val type = item[FIELD_TYPE].str() ?: item[FIELD_ROLE]?.let { MESSAGE } ?: return Disposition.BAIL
-            val assistantMessage = type == MESSAGE && item[FIELD_ROLE].str() == "assistant"
-            return when {
-                type in SERVER_HELD || assistantMessage -> Disposition.SERVER_HAS_IT
-                type in CLIENT_NEW -> Disposition.SEND
-                else -> Disposition.BAIL // unknown shape
+    /**
+     * The suffix beyond [previous] that must be sent, or null to bail.
+     *
+     * Bails when the new input does not EXTEND the previous one elementwise (a rewritten
+     * prefix means the builder changed history — cache-key drift, a compaction, an amended
+     * body), or when the suffix holds any item that is neither a known server-held rebuild nor
+     * a known client-new item. An assistant `message` in the suffix is server-held (it produced
+     * that text) — distinguished from a user message by role.
+     *
+     * A member rather than the companion function it used to be (Kotlin main sources carry no
+     * `companion` blocks); it reads only its arguments, and its one caller is [chainableDelta]
+     * inside this class, so the call site is unchanged.
+     */
+    private fun deltaOf(previous: List<String>, current: List<JsonObject>): List<JsonObject>? {
+        if (!extendsPrefix(previous, current)) return null
+        val send = mutableListOf<JsonObject>()
+        for (item in current.drop(previous.size)) {
+            when (dispositionOf(item)) {
+                Disposition.SERVER_HAS_IT -> Unit // it produced this; re-sending would duplicate
+                Disposition.SEND -> send += item
+                Disposition.BAIL -> return null
             }
         }
+        return send
+    }
 
-        private const val FIELD_INPUT = "input"
-        private const val FIELD_TYPE = "type"
-        private const val FIELD_ROLE = "role"
-        private const val MESSAGE = "message"
+    private fun extendsPrefix(previous: List<String>, current: List<JsonObject>): Boolean =
+        current.size >= previous.size &&
+            previous.indices.all { previous[it] == current[it].toString() }
+
+    private fun dispositionOf(item: JsonObject): Disposition {
+        // The builder emits plain role/content messages with no explicit `type`.
+        val type = item[FIELD_TYPE].str() ?: item[FIELD_ROLE]?.let { MESSAGE } ?: return Disposition.BAIL
+        val assistantMessage = type == MESSAGE && item[FIELD_ROLE].str() == "assistant"
+        return when {
+            type in SERVER_HELD || assistantMessage -> Disposition.SERVER_HAS_IT
+            type in CLIENT_NEW -> Disposition.SEND
+            else -> Disposition.BAIL // unknown shape
+        }
     }
 }
+
+/** Same order as the reasoning cache's bound: far more than any real concurrent-session
+ *  count on one head, and an evicted record costs only a full send. Narrowed from the
+ *  companion's module-visible `const` to file scope — grep shows no consumer outside this file. */
+private const val MAX_CONVERSATIONS = 256
+
+/** Item kinds the server ALREADY holds after the previous response: it produced them, so
+ *  the builder's rebuild of them is a duplicate that must be dropped from the delta.
+ *  FILE SCOPE ON PURPOSE: one shared immutable set, read per delta item. */
+private val SERVER_HELD = setOf("reasoning", "function_call", "tool_search_call", "tool_search_output")
+
+/** Item kinds that are genuinely NEW client-side input and must be sent. */
+private val CLIENT_NEW = setOf("function_call_output", "message")
+
+private const val FIELD_INPUT = "input"
+private const val FIELD_TYPE = "type"
+private const val FIELD_ROLE = "role"
+private const val MESSAGE = "message"

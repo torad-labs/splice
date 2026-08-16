@@ -9,7 +9,7 @@ import kotlinx.serialization.json.JsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.core.parse.parseAnthropicBody
-import splice.dialect.passthrough.PassthroughQuirks
+import splice.dialect.passthrough.PassthroughQuirksDefaults
 import splice.dialect.passthrough.PassthroughRequestBuilder
 import java.io.File
 
@@ -21,7 +21,7 @@ class PassthroughContractTest {
                 """"system":"You are Splice, a contract fixture.",""" +
                 """"messages":[{"role":"user","content":"Ping."}]}"""
         val body = parseAnthropicBody(anthropic)
-        val req = PassthroughRequestBuilder(PassthroughQuirks.kimi("kimi"))
+        val req = PassthroughRequestBuilder(PassthroughQuirksDefaults().kimi("kimi"))
             .build(body, upstreamModel = "k3", originalModel = "claude-kimi--k3[1m]", compact = false)
             .req
         assertGoldenContract("passthrough-canonical", req) { PassthroughContractTest::class.java }

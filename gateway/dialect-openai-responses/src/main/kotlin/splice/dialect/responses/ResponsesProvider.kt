@@ -46,6 +46,13 @@ public abstract class ResponsesProvider(
     final override val upstreamUrl: String = "${tuning.baseUrl}/responses"
     private val builder = ResponsesRequestBuilder(quirks)
 
+    // Collaborators that used to be file-level functions in ReasoningCache.kt / ToolSurfaceRecovery.kt
+    // / ResponsesRequestBuilder.kt. Each member kept its name and argument list, so the call sites
+    // below only gained a receiver.
+    private val cachePolicy = ReasoningCachePolicy()
+    private val surfaceRecovery = ToolSurfaceRecovery()
+    private val ids = ResponsesStableIds()
+
     /** Per-turn upstream headers beyond the shared Accept set (grok's x-grok-conv-id). Empty by
      *  default — a header that depends on the turn/session rides HERE, never on shared state. */
     protected open fun perTurnHeaders(sessionId: String?): Map<String, String> = emptyMap()
@@ -77,7 +84,7 @@ public abstract class ResponsesProvider(
                 // Ask for the opaque encrypted handle whenever reasoning is visible OR the
                 // reasoning cache needs it (RC-5: the cache can only hold what the server returns).
                 includeEncryptedReasoning = RequestEncryptedReasoning(
-                    (showOn && !compact) || reasoningCacheActive(quirks, compact),
+                    (showOn && !compact) || cachePolicy.reasoningCacheActive(quirks, compact),
                 ),
                 sessionId = sessionId,
                 decodeReasoningEnvelope = { data ->
@@ -96,10 +103,10 @@ public abstract class ResponsesProvider(
                 // tear across a concurrent eviction (rounds 1..k injected, k+1.. missing), re-ran
                 // the first-message SHA-256 per block, and re-touched the conversation per block.
                 // Lazy so a build with no tool_use blocks never touches the cache at all.
-                reasoningLookup = if (!reasoningCacheActive(quirks, compact)) {
+                reasoningLookup = if (!cachePolicy.reasoningCacheActive(quirks, compact)) {
                     { null }
                 } else {
-                    val snapshot = lazy { reasoningCache.snapshot(stablePromptCacheKey(body.typed)) }
+                    val snapshot = lazy { reasoningCache.snapshot(ids.stablePromptCacheKey(body.typed)) }
                     ({ id -> snapshot.value[id] })
                 },
                 // The provider's capability latch, read at build time: false = a shape-400 already
@@ -150,9 +157,9 @@ public abstract class ResponsesProvider(
                 // (Failure side) — i.e. every non-compact responses turn since re-anchor landed
                 // (2026-07-24). Compact turns keep the collection off.
                 collectReasoningEnvelopes = foldController(meta) != null || reanchorController(meta) != null ||
-                    reasoningCacheActive(quirks, meta.compact),
+                    cachePolicy.reasoningCacheActive(quirks, meta.compact),
                 onTurnReasoning = { ids, envs ->
-                    if (reasoningCacheActive(quirks, meta.compact)) {
+                    if (cachePolicy.reasoningCacheActive(quirks, meta.compact)) {
                         reasoningCache.put(meta.conversationKey, ids, envs)
                     }
                 },
@@ -235,10 +242,12 @@ public abstract class ResponsesProvider(
      *  the latch restores every later turn. [logToolSurfaceLatchClosed] makes that one-time degrade
      *  observable instead of silent. */
     final override fun amendBodyOnFailure(status: Int, responseText: String, bodyJson: String): String? = when {
-        UpstreamClient.isEncryptedContentError(status, responseText) -> stripStaleReasoning(bodyJson, reasoningCache)
-        isToolSurfaceRejection(status, responseText) -> dropToolSearchTool(bodyJson)?.also {
-            if (toolSurfaceLatch.close()) logToolSurfaceLatchClosed()
-        }
+        UpstreamClient.isEncryptedContentError(status, responseText) ->
+            cachePolicy.stripStaleReasoning(bodyJson, reasoningCache)
+        surfaceRecovery.isToolSurfaceRejection(status, responseText) ->
+            surfaceRecovery.dropToolSearchTool(bodyJson)?.also {
+                if (toolSurfaceLatch.close()) logToolSurfaceLatchClosed()
+            }
         else -> null
     }
 
@@ -268,10 +277,9 @@ public abstract class ResponsesProvider(
         if (meta.compact) null else reanchorPolicy
 
     private fun showOn(): Boolean = !showReasoning.isOff
-
-    private companion object {
-        /** The v2 Responses-WebSocket beta value codex-rs sends (codex-rs/core/src/client.rs:155),
-         *  confirmed accepted by the live backend in the WS-0 spike. */
-        const val WS_BETA_HEADER = "responses_websockets=2026-02-06"
-    }
 }
+
+/** The v2 Responses-WebSocket beta value codex-rs sends (codex-rs/core/src/client.rs:155),
+ *  confirmed accepted by the live backend in the WS-0 spike. At file scope because Kotlin main
+ *  sources carry no `companion` blocks; it was already private, so nothing gained reach. */
+private const val WS_BETA_HEADER = "responses_websockets=2026-02-06"

@@ -245,45 +245,53 @@ internal class ReasoningCache(
         totalBytes -= round.bytes
         roundCount--
     }
-
-    internal companion object {
-        // The TTL is an IDLE timer for keyed conversations (each build re-touches), an insertion
-        // TTL for the null-key class. 30 min of genuine inactivity, with an order of magnitude
-        // over any realistic tool-loop gap (eli risk 4).
-        const val TTL_MS: Long = 30 * 60 * 1000L
-
-        // Total ROUNDS across all conversations on the head (one entry per tool round).
-        const val MAX_ENTRIES: Int = 256
-        const val MAX_TOTAL_BYTES: Long = 64L * 1024 * 1024
-
-        // "splice-" + 7 hash chars: identifiable in logs, not noisy.
-        const val KEY_LOG_CHARS: Int = 14
-    }
 }
 
-/** The ONE gate for every reasoning-cache touch point (capture, collect, lookup, include-widening):
- *  quirks-enabled AND not a compaction turn. Named so the `!compact` conjunct is a tested seam
- *  instead of four copy-pasted lambda conditions (review 2026-07-24: nothing pinned the conjunct;
- *  a regression dropping it would have let compaction turns read and write the cache unseen). */
-internal fun reasoningCacheActive(quirks: ResponsesQuirks, compact: Boolean): Boolean =
-    quirks.reasoningCache && !compact
+// The ReasoningCache bounds, at file scope because Kotlin main sources carry no `companion` blocks.
+// The TTL is an IDLE timer for keyed conversations (each build re-touches), an insertion TTL for the
+// null-key class. 30 min of genuine inactivity, with an order of magnitude over any realistic
+// tool-loop gap (eli risk 4).
+private const val TTL_MS: Long = 30 * 60 * 1000L
 
-/** RC-4: the invalid_encrypted_content recovery — strip every reasoning input item from the
- *  request (degrade to per-item amnesia, never fail the turn on cache contents) and evict the
- *  cache for the rounds those items belonged to, i.e. the function_calls that immediately follow
- *  each dropped reasoning item up to the next one. Eviction is conversation-wholesale (2026-07-31,
- *  review of #71 round 2): the old per-round eviction left the surviving rounds injecting around a
- *  permanent hole, shifting the prefix on every later build.
- *  Returns null when the body carries no reasoning items (the amendment is not ours to make).
- *  Decode/encode rides the closed ResponsesRequest DTO (#924) — no field invented or lost. */
-internal fun stripStaleReasoning(bodyJson: String, cache: ReasoningCache): String? {
-    val previous = kotlinx.serialization.json.Json.parseToJsonElement(bodyJson).jsonObject
-    val base = responsesRequestJson.decodeFromJsonElement(ResponsesRequest.serializer(), previous)
-    val walk = StaleReasoningWalk(cache)
-    val kept = buildJsonArray { base.input.forEach { walk.visit(this, it) } }
-    if (walk.dropped == 0) return null
-    val next = base.copy(input = kept)
-    return responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), next).toString()
+// Total ROUNDS across all conversations on the head (one entry per tool round).
+private const val MAX_ENTRIES: Int = 256
+private const val MAX_TOTAL_BYTES: Long = 64L * 1024 * 1024
+
+// "splice-" + 7 hash chars: identifiable in logs, not noisy.
+private const val KEY_LOG_CHARS: Int = 14
+
+/**
+ * The reasoning cache's two policy seams, as a type rather than the file-level functions they used
+ * to be (Kotlin main sources carry no top-level functions). Stateless; both members keep their old
+ * name and argument list, so a call site only gained a receiver.
+ */
+internal class ReasoningCachePolicy {
+
+    /** The ONE gate for every reasoning-cache touch point (capture, collect, lookup,
+     *  include-widening): quirks-enabled AND not a compaction turn. Named so the `!compact`
+     *  conjunct is a tested seam instead of four copy-pasted lambda conditions (review 2026-07-24:
+     *  nothing pinned the conjunct; a regression dropping it would have let compaction turns read
+     *  and write the cache unseen). */
+    fun reasoningCacheActive(quirks: ResponsesQuirks, compact: Boolean): Boolean =
+        quirks.reasoningCache && !compact
+
+    /** RC-4: the invalid_encrypted_content recovery — strip every reasoning input item from the
+     *  request (degrade to per-item amnesia, never fail the turn on cache contents) and evict the
+     *  cache for the rounds those items belonged to, i.e. the function_calls that immediately follow
+     *  each dropped reasoning item up to the next one. Eviction is conversation-wholesale
+     *  (2026-07-31, review of #71 round 2): the old per-round eviction left the surviving rounds
+     *  injecting around a permanent hole, shifting the prefix on every later build.
+     *  Returns null when the body carries no reasoning items (the amendment is not ours to make).
+     *  Decode/encode rides the closed ResponsesRequest DTO (#924) — no field invented or lost. */
+    fun stripStaleReasoning(bodyJson: String, cache: ReasoningCache): String? {
+        val previous = kotlinx.serialization.json.Json.parseToJsonElement(bodyJson).jsonObject
+        val base = responsesRequestJson.decodeFromJsonElement(ResponsesRequest.serializer(), previous)
+        val walk = StaleReasoningWalk(cache)
+        val kept = buildJsonArray { base.input.forEach { walk.visit(this, it) } }
+        if (walk.dropped == 0) return null
+        val next = base.copy(input = kept)
+        return responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), next).toString()
+    }
 }
 
 /** The strip's item walk: drop reasoning items, and evict the rounds they belonged to — a round
@@ -295,7 +303,7 @@ private class StaleReasoningWalk(private val cache: ReasoningCache) {
 
     fun visit(sink: JsonArrayBuilder, el: JsonElement) {
         val item = el as? JsonObject
-        when (item?.get(FIELD_TYPE).str()) {
+        when (item?.get(WALK_FIELD_TYPE).str()) {
             "reasoning" -> {
                 dropped++
                 inDroppedRound = true
@@ -310,8 +318,6 @@ private class StaleReasoningWalk(private val cache: ReasoningCache) {
             }
         }
     }
-
-    private companion object {
-        const val FIELD_TYPE = "type"
-    }
 }
+
+private const val WALK_FIELD_TYPE = "type"

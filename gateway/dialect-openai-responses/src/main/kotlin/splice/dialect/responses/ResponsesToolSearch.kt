@@ -68,20 +68,13 @@ internal class ToolSearchIndex(private val deferred: List<ToolDefinition>) {
 
     private fun fieldHit(field: String, term: String, weight: Int): Int = if (field.contains(term)) weight else 0
 
-    private companion object {
-        val QUERY_SPLIT = Regex("\\s+")
-        const val NAME_WEIGHT = 3
-        const val DESCRIPTION_WEIGHT = 2
-        const val PROPERTY_WEIGHT = 1
-    }
-}
-
-/** Top-level schema property names + their descriptions, space-joined — the "structured schema
- *  property names and their descriptions" leg of the codex-rs corpus (tool_search.rs:67-94). */
-private fun propertyCorpus(t: ToolDefinition): String {
-    val props = t.inputSchema?.get(FIELD_PROPERTIES) as? JsonObject ?: return ""
-    return props.entries.joinToString(" ") { (name, schema) ->
-        "$name ${(schema as? JsonObject)?.get(FIELD_DESCRIPTION).str().orEmpty()}"
+    /** Top-level schema property names + their descriptions, space-joined — the "structured schema
+     *  property names and their descriptions" leg of the codex-rs corpus (tool_search.rs:67-94). */
+    private fun propertyCorpus(t: ToolDefinition): String {
+        val props = t.inputSchema?.get(FIELD_PROPERTIES) as? JsonObject ?: return ""
+        return props.entries.joinToString(" ") { (name, schema) ->
+            "$name ${(schema as? JsonObject)?.get(FIELD_DESCRIPTION).str().orEmpty()}"
+        }
     }
 }
 
@@ -94,6 +87,9 @@ internal class ResponsesToolSearchController(
     private val forceStrictFalse: Boolean,
     private val decodeReasoningEnvelope: (String) -> JsonObject?,
 ) : ToolSearchController {
+
+    private val continuation = ResponsesContinuation()
+    private val output = ToolSearchOutput()
 
     override fun continuationForSearch(round: ToolSearchRound): JsonObject? {
         if (stopSearching(round)) return null
@@ -112,10 +108,17 @@ internal class ResponsesToolSearchController(
             }
             answeredOnce(round.outcome.toolSearches).forEach { call ->
                 add(call.raw) // verbatim — the backend's own shape, never a re-authored guess
-                add(toolSearchOutputItem(call.callId.v, answerFor(call, exhaustive), emitStrict, forceStrictFalse))
+                add(
+                    output.toolSearchOutputItem(
+                        call.callId.v,
+                        answerFor(call, exhaustive),
+                        emitStrict,
+                        forceStrictFalse,
+                    ),
+                )
             }
         }
-        return continuationRequest(round.requestBody, items)
+        return continuation.continuationRequest(round.requestBody, items)
     }
 
     /** The round's prose the client already saw, replayed as context — mirrors
@@ -150,23 +153,43 @@ internal class ResponsesToolSearchController(
     private fun clampedLimit(requested: Int?): Int = (requested ?: policy.searchLimit).coerceIn(1, policy.searchLimit)
 }
 
-/** The tool_search_output shape (type, call_id, status, execution, tools[]) — the ONE builder for
- *  both callers: the within-turn answer above ([ResponsesToolSearchController.continuationForSearch])
- *  and the declaration-replay injection (ResponsesRequestBuilder.kt CHANGE 2, cache-prefix
- *  stability 2026-07-25) that re-declares a deferred tool's schema in history before its
- *  function_call. Never re-authored as a second shape — see this file's header and ToolSurface.kt's. */
-internal fun toolSearchOutputItem(
-    callId: String,
-    tools: List<ToolDefinition>,
-    emitStrict: Boolean,
-    forceStrictFalse: Boolean,
-): JsonObject = buildJsonObject {
-    put(FIELD_TYPE, TYPE_TOOL_SEARCH_OUTPUT)
-    put(FIELD_CALL_ID, callId)
-    put(FIELD_STATUS, STATUS_COMPLETED)
-    put(FIELD_EXECUTION, EXECUTION_CLIENT)
-    put(FIELD_TOOLS, buildJsonArray { tools.forEach { add(deferredToolObject(it, emitStrict, forceStrictFalse)) } })
+/**
+ * The tool_search_output shape (type, call_id, status, execution, tools[]) — the ONE builder for
+ * both callers: the within-turn answer above ([ResponsesToolSearchController.continuationForSearch])
+ * and the declaration-replay injection (ResponsesRequestBuilder.kt CHANGE 2, cache-prefix
+ * stability 2026-07-25) that re-declares a deferred tool's schema in history before its
+ * function_call. Never re-authored as a second shape — see this file's header and ToolSurface.kt's.
+ * A type rather than a file-level function (Kotlin main sources carry no top-level functions); the
+ * member keeps its old name and argument list.
+ */
+internal class ToolSearchOutput {
+
+    private val toolWire = ToolWireObjects()
+
+    fun toolSearchOutputItem(
+        callId: String,
+        tools: List<ToolDefinition>,
+        emitStrict: Boolean,
+        forceStrictFalse: Boolean,
+    ): JsonObject = buildJsonObject {
+        put(FIELD_TYPE, TYPE_TOOL_SEARCH_OUTPUT)
+        put(FIELD_CALL_ID, callId)
+        put(FIELD_STATUS, STATUS_COMPLETED)
+        put(FIELD_EXECUTION, EXECUTION_CLIENT)
+        put(
+            FIELD_TOOLS,
+            buildJsonArray {
+                tools.forEach { add(toolWire.deferredToolObject(it, emitStrict, forceStrictFalse)) }
+            },
+        )
+    }
 }
+
+// FILE SCOPE ON PURPOSE: one compiled Regex, split against every search query.
+private val QUERY_SPLIT = Regex("\\s+")
+private const val NAME_WEIGHT = 3
+private const val DESCRIPTION_WEIGHT = 2
+private const val PROPERTY_WEIGHT = 1
 
 private const val FIELD_TYPE = "type"
 private const val FIELD_CALL_ID = "call_id"

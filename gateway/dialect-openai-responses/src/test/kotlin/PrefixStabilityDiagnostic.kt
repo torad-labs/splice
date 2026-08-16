@@ -26,7 +26,9 @@ import splice.dialect.responses.ReasoningCache
 import splice.dialect.responses.RequestEncryptedReasoning
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesRequestBuilder
-import splice.dialect.responses.stablePromptCacheKey
+import splice.dialect.responses.ResponsesStableIds
+
+private val stableIds = ResponsesStableIds()
 
 private val CODEX = ResponsesQuirks(providerTag = "claudex")
 
@@ -79,7 +81,7 @@ class PrefixStabilityDiagnostic {
         // 100ms TTL against ~90s of simulated conversation: the ratio a multi-hour Claude Code
         // session has against the real 30-minute TTL, compressed.
         val cache = ReasoningCache(ttlMs = 100, clock = { now })
-        val convKey = stablePromptCacheKey(parseAnthropicBody(conversation(1)).typed)
+        val convKey = stableIds.stablePromptCacheKey(parseAnthropicBody(conversation(1)).typed)
         val lookup: (String) -> List<String>? = { id -> cache.lookup(convKey, id) }
 
         var previous = inputItems(conversation(0), lookup)

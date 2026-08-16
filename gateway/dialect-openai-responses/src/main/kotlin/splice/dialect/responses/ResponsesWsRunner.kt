@@ -7,12 +7,12 @@
 // class rather than an error:
 //
 //  1. CONNECTION IDENTITY IS NOT stablePromptCacheKey. That key is a hash of the FIRST USER
-//     MESSAGE'S TEXT ONLY (ResponsesRequestBuilder.kt:752), so two conversations that open with
-//     the same words are ONE key — by design, not by collision. Used as the chain key it would
-//     hand conversation X's previous_response_id to conversation Y as its anchor, and the delta
-//     classifier cannot catch it: the very thing that makes them share a key (identical first
-//     item) is what makes Y's input look like a legitimate prefix-extension of X's. The session
-//     id is mixed in, so distinct sessions can never share a chain.
+//     MESSAGE'S TEXT ONLY (ResponsesRequestBuilder.kt, ResponsesStableIds), so two conversations
+//     that open with the same words are ONE key — by design, not by collision. Used as the chain
+//     key it would hand conversation X's previous_response_id to conversation Y as its anchor, and
+//     the delta classifier cannot catch it: the very thing that makes them share a key (identical
+//     first item) is what makes Y's input look like a legitimate prefix-extension of X's. The
+//     session id is mixed in, so distinct sessions can never share a chain.
 //  2. PER-TURN HEADERS PARTICIPATE IN IDENTITY. A WebSocket's handshake headers are fixed for the
 //     socket's life, but the head's per-turn set is not — the responses-lite marker keys off
 //     `!meta.compact`, so a compact turn on the same conversation wants it OFF on a socket opened
@@ -34,15 +34,7 @@ import splice.core.util.str
 import splice.spi.WsRoundRunner
 import java.security.MessageDigest
 
-/** ws-transport WS-3 overlay, NULLABLE like its siblings — absent TOML keeps the provider default
- *  (false). A non-nullable field would stomp the provider default; that is exactly how
- *  supportsSummary became an unreachable dead lever. Lives HERE, not beside its sibling overlays,
- *  because ResponsesRequestBuilder.kt is at detekt's TooManyFunctions ceiling and this knob is
- *  WS-specific anyway. */
-public fun ResponsesQuirks.withWebSocketToml(webSocket: Boolean?): ResponsesQuirks =
-    copy(webSocket = webSocket ?: this.webSocket)
-
-/** Round-terminal vocabulary, mirrored from ResponsesStreamTranslator.kt:352-353. Both sets end a
+/** Round-terminal vocabulary, mirrored from ResponsesStreamTranslator.kt. Both sets end a
  *  round: the flow must complete on EITHER, or the connection never returns to the pool and the
  *  round hangs — strictly worse than an error. Failure terminals additionally let the head bail to
  *  SSE while the client has still seen nothing. */
@@ -176,12 +168,10 @@ internal class ResponsesWsRunner(
         runCatchingCancellable { responsesRequestJson.parseToJsonElement(bodyJson) as? JsonObject }
             .onFailure { log("[ws] unparseable request body — round rides SSE: ${it::class.simpleName}\n") }
             .getOrNull()
-
-    private companion object {
-        const val FIELD_TYPE = "type"
-
-        /** 8 bytes of SHA-256: collision-free enough to key a per-head connection pool, and short
-         *  enough that the key stays readable. */
-        const val DIGEST_BYTES = 8
-    }
 }
+
+private const val FIELD_TYPE = "type"
+
+/** 8 bytes of SHA-256: collision-free enough to key a per-head connection pool, and short
+ *  enough that the key stays readable. */
+private const val DIGEST_BYTES = 8

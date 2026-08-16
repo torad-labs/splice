@@ -8,8 +8,8 @@
 // stripping, the content-block allowlist, MFJS schema rewriting, and the adaptive-thinking +
 // output_config.effort ladder. They were hardcoded while Kimi was the only consumer; a faithful
 // upstream (api.anthropic.com) needs its prompt-cache markers, full JSON Schema, and its own
-// thinking config to survive the trip. `PassthroughQuirks.kimi(tag)` is the one definition of
-// Kimi's set, and its bytes are frozen by PassthroughGoldenTest.
+// thinking config to survive the trip. `PassthroughQuirksDefaults.kimi(tag)` is the one definition
+// of Kimi's set, and its bytes are frozen by PassthroughGoldenTest.
 //
 // Invariants that hold for every head: thinking blocks pass VERBATIM (signature included), and the
 // effort ladder never emits "medium" (Kimi vocab is low|high|max).
@@ -42,8 +42,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * schemas rewritten by [mfjsSanitize], has `redacted_thinking` silently dropped by
  * [blockAllowlist], and can be handed a forged thinking signature by [synthesizeSignatures] that
  * a signature-VERIFYING upstream later rejects. A vendor now opts INTO its own deformations
- * ([kimi] is the one definition of Kimi's set); a head that declares nothing gets its bytes
- * forwarded as sent.
+ * ([PassthroughQuirksDefaults.kimi] is the one definition of Kimi's set); a head that declares
+ * nothing gets its bytes forwarded as sent.
  */
 public data class PassthroughQuirks(
     val providerTag: String,
@@ -75,37 +75,45 @@ public data class PassthroughQuirks(
      *  that signs and verifies — a truncated block would otherwise persist a forged signature into
      *  the transcript and return it upstream on the next turn. */
     val synthesizeSignatures: Boolean = false,
-) {
-    public companion object {
-        /** KIMI's deformation set — the shape that was hardcoded before the inversion. ONE
-         *  definition, so provider wiring and the byte-identity goldens cannot drift apart. */
-        public fun kimi(providerTag: String): PassthroughQuirks = PassthroughQuirks(
-            providerTag = providerTag,
-            mapThinkingToAdaptive = true,
-            mfjsSanitize = true,
-            blockAllowlist = KIMI_BLOCK_TYPES,
-            stripCacheControl = true,
-            synthesizeSignatures = true,
-        )
+)
 
-        /** Kimi's own 400 enumerates the accepted content tags; everything else is dropped. */
-        public val KIMI_BLOCK_TYPES: Set<String> = setOf(
-            "text",
-            "image",
-            TYPE_THINKING,
-            "tool_use",
-            TYPE_TOOL_RESULT,
-            "server_tool_use",
-            "web_search_tool_result",
-        )
-    }
+/**
+ * The vendor deformation sets this dialect ships. A type rather than a companion factory on
+ * [PassthroughQuirks] (Kotlin main sources carry no `companion` blocks); the member keeps the old
+ * factory's exact name and argument, so a call site only gains a receiver.
+ */
+public class PassthroughQuirksDefaults {
+
+    /** KIMI's deformation set — the shape that was hardcoded before the inversion. ONE
+     *  definition, so provider wiring and the byte-identity goldens cannot drift apart. */
+    public fun kimi(providerTag: String): PassthroughQuirks = PassthroughQuirks(
+        providerTag = providerTag,
+        mapThinkingToAdaptive = true,
+        mfjsSanitize = true,
+        blockAllowlist = KIMI_BLOCK_TYPES,
+        stripCacheControl = true,
+        synthesizeSignatures = true,
+    )
 }
+
+/** Kimi's own 400 enumerates the accepted content tags; everything else is dropped. FILE SCOPE ON
+ *  PURPOSE: one shared immutable table, and [PassthroughQuirksDefaults.kimi] is its only reader. */
+private val KIMI_BLOCK_TYPES: Set<String> = setOf(
+    "text",
+    "image",
+    TYPE_THINKING,
+    "tool_use",
+    TYPE_TOOL_RESULT,
+    "server_tool_use",
+    "web_search_tool_result",
+)
 
 private const val TYPE_THINKING = "thinking"
 private const val TYPE_TOOL_RESULT = "tool_result"
 
 // Kimi effort ladder vocab — top-level (not PassthroughRequestBuilder members) because
-// [budgetEffort] below is ALSO top-level: the class sits at its detekt TooManyFunctions budget.
+// [PassthroughEffortLadder] below is a separate collaborator: the class sits at its detekt
+// TooManyFunctions budget.
 private const val EFFORT_LOW = "low"
 private const val EFFORT_HIGH = "high"
 private const val EFFORT_MAX = "max"
@@ -137,6 +145,10 @@ public class PassthroughRequestBuilder(
     // falls back — visible ONCE per builder lifetime (the builder rides the whole daemon
     // process), not once per turn.
     private val configEffortFallbackWarned = AtomicBoolean(false)
+
+    // The budget->rung mapping rides a collaborator, not this class: the builder holds 14 members
+    // against detekt's TooManyFunctions ceiling of 15, so folding both rules in fails the build.
+    private val effortRules = PassthroughEffortLadder()
 
     public fun build(
         body: AnthropicTurnBody,
@@ -239,14 +251,15 @@ public class PassthroughRequestBuilder(
      *  SCH-006: an unrecognized-but-set [configEffort] (e.g. "medium" — a valid rung for another
      *  provider sharing the same EFFORT knob, see CODEX_REASONING_EFFORT) used to fall all the way
      *  through to EFFORT_MAX — a silent cost ESCALATION for a realistic multi-provider config. See
-     *  [fallbackEffort]: it now falls to the cheapest rung instead (never pricier than whatever the
-     *  operator asked for) and logs the substitution once per builder lifetime, not once per turn. */
+     *  [PassthroughEffortLadder.fallbackEffort]: it now falls to the cheapest rung instead (never
+     *  pricier than whatever the operator asked for) and logs the substitution once per builder
+     *  lifetime, not once per turn. */
     private fun effortLadder(typed: AnthropicRequest, compact: Boolean): String {
         if (compact) quirks.compactEffort?.let { return it }
         // PT-002: the ONLY branch [configEffort] can reach — see this function's KDoc for why.
         val thinking = typed.thinking
-            ?: return fallbackEffort(configEffort, quirks.providerTag, configEffortFallbackWarned, log)
-        return budgetEffort(thinking.budgetTokens)
+            ?: return effortRules.fallbackEffort(configEffort, quirks.providerTag, configEffortFallbackWarned, log)
+        return effortRules.budgetEffort(thinking.budgetTokens)
     }
 
     // --- content-block scrubbing -----------------------------------------------------------------
@@ -371,79 +384,85 @@ public class PassthroughRequestBuilder(
             else -> element
         }
     }
-
-    private companion object {
-        // stripCacheControl's recursion guard (WIRE-1) — far above any legitimate request's
-        // nesting, well below a stack-overflow depth.
-        const val DEPTH_CAP = 200
-        const val MODEL = "model"
-        const val STREAM = "stream"
-        const val THINKING = "thinking"
-        const val OUTPUT_CONFIG = "output_config"
-        const val MESSAGES = "messages"
-        const val SYSTEM = "system"
-        const val TOOLS = "tools"
-        const val TOOL_CHOICE = "tool_choice"
-        const val TEMPERATURE = "temperature"
-        const val TOP_P = "top_p"
-        const val TOP_K = "top_k"
-        const val CONTENT = "content"
-        const val CACHE_CONTROL = "cache_control"
-        const val STRICT = "strict"
-        const val INPUT_SCHEMA = "input_schema"
-        const val DESCRIPTION = "description"
-
-        // Passthrough emits native thinking blocks, so the transcript text-mirror stays off.
-
-        // Fields the specialized scrubs own (skipped by the verbatim copy); output_config is owned
-        // by the thinking mapping, so a client-sent one is dropped.
-        val HANDLED_KEYS = setOf(
-            MODEL,
-            STREAM,
-            THINKING,
-            OUTPUT_CONFIG,
-            MESSAGES,
-            SYSTEM,
-            TOOLS,
-            TOOL_CHOICE,
-        )
-        val SAMPLING_KEYS = setOf(TEMPERATURE, TOP_P, TOP_K)
-        val EMPTY_OBJECT = JsonObject(emptyMap())
-    }
 }
 
-// Top-level (not a PassthroughRequestBuilder member): effortLadder's split-out budget-to-rung
-// mapping — the class sits at its detekt TooManyFunctions budget, same idiom as UpstreamClient's
-// top-level retryAfterMs. A null budget (thinking present, no budget_tokens) is the wire-frozen
-// EFFORT_MAX case KIMI BYTE-IDENTITY requires — see effortLadder's KDoc.
-private fun budgetEffort(budget: Long?): String = when {
-    budget == null -> EFFORT_MAX
-    budget >= MAX_BUDGET_FLOOR -> EFFORT_MAX
-    budget >= HIGH_BUDGET_FLOOR -> EFFORT_HIGH
-    budget > 0L -> EFFORT_LOW
-    else -> EFFORT_MAX
-}
+// stripCacheControl's recursion guard (WIRE-1) — far above any legitimate request's
+// nesting, well below a stack-overflow depth.
+private const val DEPTH_CAP = 200
+private const val MODEL = "model"
+private const val STREAM = "stream"
+private const val THINKING = "thinking"
+private const val OUTPUT_CONFIG = "output_config"
+private const val MESSAGES = "messages"
+private const val SYSTEM = "system"
+private const val TOOLS = "tools"
+private const val TOOL_CHOICE = "tool_choice"
+private const val TEMPERATURE = "temperature"
+private const val TOP_P = "top_p"
+private const val TOP_K = "top_k"
+private const val CONTENT = "content"
+private const val CACHE_CONTROL = "cache_control"
+private const val STRICT = "strict"
+private const val INPUT_SCHEMA = "input_schema"
+private const val DESCRIPTION = "description"
 
-// Top-level (not a PassthroughRequestBuilder member, same ceiling reason as budgetEffort above):
-// SCH-006's unrecognized-configEffort fallback. An effort value valid for another provider's vocab
-// (CODEX_REASONING_EFFORT's "medium") but not one of kimi's own {low, high, max} rungs must never
-// silently ESCALATE to the priciest rung — it falls to the CHEAPEST one instead (never pricier than
-// whatever the operator actually asked for), and the substitution is logged ONCE per builder
-// lifetime via [warned] (an AtomicBoolean owned by the calling builder instance, not by this
-// function) rather than once per turn.
-private fun fallbackEffort(
-    configEffort: String?,
-    providerTag: String,
-    warned: AtomicBoolean,
-    log: (String) -> Unit,
-): String {
-    val trimmed = configEffort?.trim()?.lowercase() ?: return EFFORT_MAX
-    if (trimmed in KIMI_EFFORTS) return trimmed
-    if (warned.compareAndSet(false, true)) {
-        log(
-            "[$providerTag] configured effort '$trimmed' is not a kimi rung (low|high|max) — " +
-                "using '$EFFORT_LOW' instead of silently escalating to '$EFFORT_MAX'\n",
-        )
+// Passthrough emits native thinking blocks, so the transcript text-mirror stays off.
+
+// Fields the specialized scrubs own (skipped by the verbatim copy); output_config is owned
+// by the thinking mapping, so a client-sent one is dropped.
+private val HANDLED_KEYS = setOf(
+    MODEL,
+    STREAM,
+    THINKING,
+    OUTPUT_CONFIG,
+    MESSAGES,
+    SYSTEM,
+    TOOLS,
+    TOOL_CHOICE,
+)
+private val SAMPLING_KEYS = setOf(TEMPERATURE, TOP_P, TOP_K)
+
+// FILE SCOPE ON PURPOSE: one shared empty object read on the tool-sanitizing path; as a member it
+// would be rebuilt per builder instance.
+private val EMPTY_OBJECT = JsonObject(emptyMap())
+
+/**
+ * [PassthroughRequestBuilder.effortLadder]'s two split-out rules, on their own type because the
+ * builder holds 14 members against detekt's TooManyFunctions ceiling of 15 — the same reason they
+ * were file-level before. Both read only their arguments.
+ */
+private class PassthroughEffortLadder {
+
+    /** The budget-to-rung mapping. A null budget (thinking present, no budget_tokens) is the
+     *  wire-frozen EFFORT_MAX case KIMI BYTE-IDENTITY requires — see effortLadder's KDoc. */
+    fun budgetEffort(budget: Long?): String = when {
+        budget == null -> EFFORT_MAX
+        budget >= MAX_BUDGET_FLOOR -> EFFORT_MAX
+        budget >= HIGH_BUDGET_FLOOR -> EFFORT_HIGH
+        budget > 0L -> EFFORT_LOW
+        else -> EFFORT_MAX
     }
-    return EFFORT_LOW
+
+    /** SCH-006's unrecognized-configEffort fallback. An effort value valid for another provider's
+     *  vocab (CODEX_REASONING_EFFORT's "medium") but not one of kimi's own {low, high, max} rungs
+     *  must never silently ESCALATE to the priciest rung — it falls to the CHEAPEST one instead
+     *  (never pricier than whatever the operator actually asked for), and the substitution is
+     *  logged ONCE per builder lifetime via [warned] (an AtomicBoolean owned by the calling builder
+     *  instance, not by this type) rather than once per turn. */
+    fun fallbackEffort(
+        configEffort: String?,
+        providerTag: String,
+        warned: AtomicBoolean,
+        log: (String) -> Unit,
+    ): String {
+        val trimmed = configEffort?.trim()?.lowercase() ?: return EFFORT_MAX
+        if (trimmed in KIMI_EFFORTS) return trimmed
+        if (warned.compareAndSet(false, true)) {
+            log(
+                "[$providerTag] configured effort '$trimmed' is not a kimi rung (low|high|max) — " +
+                    "using '$EFFORT_LOW' instead of silently escalating to '$EFFORT_MAX'\n",
+            )
+        }
+        return EFFORT_LOW
+    }
 }

@@ -14,9 +14,10 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.dialect.responses.ReasoningCache
+import splice.dialect.responses.ReasoningCachePolicy
 import splice.dialect.responses.ResponsesQuirks
-import splice.dialect.responses.reasoningCacheActive
-import splice.dialect.responses.stripStaleReasoning
+
+private val cachePolicy = ReasoningCachePolicy()
 
 private const val CONV = "conv-1"
 
@@ -297,10 +298,13 @@ class ReasoningCacheActiveTest {
 
     @Test
     fun `active only when the quirk is on AND the turn is not a compaction`() {
-        assertTrue(reasoningCacheActive(quirksOn, compact = false))
-        assertFalse(reasoningCacheActive(quirksOn, compact = true), "compaction turns never touch the cache")
-        assertFalse(reasoningCacheActive(quirksOn.copy(reasoningCache = false), compact = false))
-        assertFalse(reasoningCacheActive(quirksOn.copy(reasoningCache = false), compact = true))
+        assertTrue(cachePolicy.reasoningCacheActive(quirksOn, compact = false))
+        assertFalse(
+            cachePolicy.reasoningCacheActive(quirksOn, compact = true),
+            "compaction turns never touch the cache",
+        )
+        assertFalse(cachePolicy.reasoningCacheActive(quirksOn.copy(reasoningCache = false), compact = false))
+        assertFalse(cachePolicy.reasoningCacheActive(quirksOn.copy(reasoningCache = false), compact = true))
     }
 }
 
@@ -324,7 +328,7 @@ class StripStaleReasoningTest {
         // request equals the original with ONLY the reasoning input items removed
         val cache = ReasoningCache(clock = { 0L })
         cache.put(CONV, listOf("call_a"), listOf("stale"))
-        val amended = stripStaleReasoning(body, cache)!!
+        val amended = cachePolicy.stripStaleReasoning(body, cache)!!
         val original = Json.parseToJsonElement(body).jsonObject
         val expectedInput = original.getValue("input").jsonArray.filterNot {
             it.jsonObject["type"]?.jsonPrimitive?.content == "reasoning"
@@ -357,7 +361,7 @@ class StripStaleReasoningTest {
         cache.put(CONV, listOf("call_a"), listOf("stale1"))
         cache.put(CONV, listOf("call_orphan"), listOf("healthy"))
         cache.put("conv-bystander", listOf("call_z"), listOf("ez"))
-        val amended = stripStaleReasoning(twoRounds, cache)!!
+        val amended = cachePolicy.stripStaleReasoning(twoRounds, cache)!!
         assertFalse(amended.contains("\"reasoning\""))
         assertNull(cache.lookup(CONV, "call_a"), "the round under the dropped reasoning is evicted")
         assertNull(
@@ -371,6 +375,6 @@ class StripStaleReasoningTest {
     fun `a body with no reasoning items is not ours to amend`() {
         val plain =
             """{"model":"m","input":[{"role":"user","content":"go"}],"store":false,"stream":true}"""
-        assertNull(stripStaleReasoning(plain, ReasoningCache(clock = { 0L })))
+        assertNull(cachePolicy.stripStaleReasoning(plain, ReasoningCache(clock = { 0L })))
     }
 }

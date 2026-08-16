@@ -18,7 +18,6 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
-import splice.dialect.responses.withWebSocketToml
 import splice.spi.ProviderTuning
 import kotlin.time.Duration.Companion.seconds
 

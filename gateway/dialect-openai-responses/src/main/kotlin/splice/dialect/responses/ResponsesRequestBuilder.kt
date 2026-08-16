@@ -123,55 +123,75 @@ public data class ResponsesQuirks(
      *  (probed 2026-07-19: 30 parts/1546ch vs 14/646 on the same prompt) — the same value
      *  codex-rs sends. null = field omitted (grok/openai-platform). */
     val summaryDelivery: String? = null,
-)
+) {
+    // ── TOML overlays ────────────────────────────────────────────────────────
+    // All five were file-level extensions on this type, spread across three files because
+    // ResponsesRequestBuilder.kt used to sit at detekt's per-FILE TooManyFunctions ceiling. Kotlin
+    // main sources carry no top-level functions, so they are members now — and since the receiver
+    // was always a ResponsesQuirks, every call site is unchanged; consumers only drop the import.
+
+    /**
+     * Overlay the TOML `[providers.*.quirks]` primitives onto a provider's base profile so the parsed
+     * table is REAL, not decorative (audit 2026-07-18: five of seven quirks were hard-coded and
+     * ignored). Unset TOML fields keep the base value.
+     */
+    // NB: TOML's effort_ceiling is deliberately NOT an overlay input — the effort LADDER (CODEX/GROK)
+    // already clamps the ceiling per provider; accepting a dead parameter here would just lie.
+    public fun withToml(
+        store: Boolean? = null,
+        cacheKey: String? = null,
+        summaryField: Boolean? = null,
+        compactEffort: String? = null,
+        toolChoice: Boolean? = null,
+    ): ResponsesQuirks = copy(
+        store = store ?: this.store,
+        cacheKeyStrategy = when (cacheKey) {
+            "session-id" -> CacheKeyStrategy.SESSION_ID
+            "off" -> CacheKeyStrategy.OFF
+            "first-message-hash" -> CacheKeyStrategy.FIRST_MESSAGE_HASH
+            else -> this.cacheKeyStrategy
+        },
+        supportsSummary = summaryField ?: this.supportsSummary,
+        compactEffortPin = compactEffort ?: this.compactEffortPin,
+        emitToolChoice = toolChoice ?: this.emitToolChoice,
+    )
+
+    /** RC-5 overlay, chained after [withToml] (which sits at detekt's complexity ceiling). */
+    public fun withReasoningCacheToml(reasoningCache: Boolean?): ResponsesQuirks =
+        copy(reasoningCache = reasoningCache ?: this.reasoningCache)
+
+    /** parallel_tool_calls overlay (2026-07-31), chained like [withReasoningCacheToml] for the same
+     *  reason. NULLABLE — absent TOML keeps the provider's own default, so the overlay can never stomp
+     *  it. (`summary_field` is non-nullable and DOES stomp `supportsSummary`, which is how that knob
+     *  became unreachable from a provider default; not repeating it here.) */
+    public fun withParallelToolCallsToml(parallelToolCalls: Boolean?): ResponsesQuirks =
+        copy(liteParallelToolCalls = parallelToolCalls ?: this.liteParallelToolCalls)
+
+    /** Overlay the head's TOML `[providers.*.quirks.tool_surface]` table — a DIRECT set, not the
+     *  null-preserves-base merge [withReasoningCacheToml] uses: toolSurface's null means literally
+     *  OFF (the field's own KDoc), and no provider's defaultQuirks() ever presets a non-null base to
+     *  inherit from, so a direct set is both simpler and exactly as correct. Chained (not folded into
+     *  [withToml]) because that function already sits at detekt's complexity ceiling. */
+    public fun withToolSurfaceToml(policy: ToolDeferralPolicy?): ResponsesQuirks =
+        copy(toolSurface = policy)
+
+    /** ws-transport WS-3 overlay, NULLABLE like its siblings — absent TOML keeps the provider default
+     *  (false). A non-nullable field would stomp the provider default; that is exactly how
+     *  supportsSummary became an unreachable dead lever. */
+    public fun withWebSocketToml(webSocket: Boolean?): ResponsesQuirks =
+        copy(webSocket = webSocket ?: this.webSocket)
+}
 
 public enum class CacheKeyStrategy { FIRST_MESSAGE_HASH, SESSION_ID, OFF }
-
-/**
- * Overlay the TOML `[providers.*.quirks]` primitives onto a provider's base profile so the parsed
- * table is REAL, not decorative (audit 2026-07-18: five of seven quirks were hard-coded and
- * ignored). Unset TOML fields keep the base value.
- */
-// NB: TOML's effort_ceiling is deliberately NOT an overlay input — the effort LADDER (CODEX/GROK)
-// already clamps the ceiling per provider; accepting a dead parameter here would just lie.
-public fun ResponsesQuirks.withToml(
-    store: Boolean? = null,
-    cacheKey: String? = null,
-    summaryField: Boolean? = null,
-    compactEffort: String? = null,
-    toolChoice: Boolean? = null,
-): ResponsesQuirks = copy(
-    store = store ?: this.store,
-    cacheKeyStrategy = when (cacheKey) {
-        "session-id" -> CacheKeyStrategy.SESSION_ID
-        "off" -> CacheKeyStrategy.OFF
-        "first-message-hash" -> CacheKeyStrategy.FIRST_MESSAGE_HASH
-        else -> this.cacheKeyStrategy
-    },
-    supportsSummary = summaryField ?: this.supportsSummary,
-    compactEffortPin = compactEffort ?: this.compactEffortPin,
-    emitToolChoice = toolChoice ?: this.emitToolChoice,
-)
-
-/** RC-5 overlay, chained after [withToml] (which sits at detekt's complexity ceiling). */
-public fun ResponsesQuirks.withReasoningCacheToml(reasoningCache: Boolean?): ResponsesQuirks =
-    copy(reasoningCache = reasoningCache ?: this.reasoningCache)
-
-/** parallel_tool_calls overlay (2026-07-31), chained like [withReasoningCacheToml] for the same
- *  reason. NULLABLE — absent TOML keeps the provider's own default, so the overlay can never stomp
- *  it. (`summary_field` is non-nullable and DOES stomp `supportsSummary`, which is how that knob
- *  became unreachable from a provider default; not repeating it here.) */
-public fun ResponsesQuirks.withParallelToolCallsToml(parallelToolCalls: Boolean?): ResponsesQuirks =
-    copy(liteParallelToolCalls = parallelToolCalls ?: this.liteParallelToolCalls)
 
 public enum class EffortLadder { CODEX, GROK }
 
 public data class BuiltRequest(val req: JsonObject, val meta: TurnMeta, val toolSearch: ToolSearchController? = null)
 
-/** [buildRequestObject]'s internal return — the request bytes plus the tool-surface facts only
- *  the builder knows (the partition sizes for TurnMeta, the search controller for BuiltRequest).
- *  Keeping these OFF buildRequestObject's parameter list is why it stays under LongParameterList's
- *  function threshold instead of growing a 6th argument. */
+/** [ResponsesRequestBuilder.buildRequestObject]'s internal return — the request bytes plus the
+ *  tool-surface facts only the builder knows (the partition sizes for TurnMeta, the search
+ *  controller for BuiltRequest). Keeping these OFF buildRequestObject's parameter list is why it
+ *  stays under LongParameterList's function threshold instead of growing a 6th argument. */
 internal data class BuiltBody(
     val req: JsonObject,
     val toolSearch: ToolSearchController?,
@@ -238,13 +258,23 @@ public data class BuildOptions(
 
 public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
 
+    // Collaborators that used to be file-level functions. Each is bound to THIS builder's quirks
+    // where it needs them, so every relocated member kept its original argument list.
+    private val partitioner = ToolPartitioner(quirks)
+    private val liteShape = ResponsesLiteShape(quirks)
+    private val toolWire = ToolWireObjects()
+    private val hints = ResponsesClientHints()
+    private val effortRules = ResponsesEffort()
+    private val ids = ResponsesStableIds()
+
     public fun build(body: AnthropicRequest, raw: JsonObject, opts: BuildOptions): BuiltRequest {
         // Partition FIRST, before the message walk: it is a pure function of (body.tools, policy)
         // ONLY (ToolSurface.kt header) and the declaration-replay injection below needs to know,
         // per ToolUseBlock, whether that tool is THIS request's deferred set — moving it earlier
         // costs nothing (buildRequestObject no longer recomputes it) and keeps position 0 of the
         // wire input untouched by anything the walk discovers.
-        val partition = if (!opts.compact && body.tools.isNotEmpty()) quirks.partitionTools(body, opts) else null
+        val partition =
+            if (!opts.compact && body.tools.isNotEmpty()) partitioner.partitionTools(body, opts) else null
         val declareByName = declarationCandidates(body, partition)
         // The loop guard walks the same conversation (stateless) and marks identical-failed-call
         // streaks for a directive in that result's output. Compaction turns are excluded: their
@@ -280,7 +310,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
             budgetTokens = body.thinking?.budgetTokens,
             // The reasoning cache's conversation scope — the SAME derivation the provider's
             // lookup closure uses, so capture (which only sees TurnMeta) and injection agree.
-            conversationKey = stablePromptCacheKey(body),
+            conversationKey = ids.stablePromptCacheKey(body),
             sessionId = opts.sessionId,
             // summaryParts is NOT passed: TurnMeta's default constructs the turn's one instance.
             // Every continuation round reuses this meta object (continuationRequest bypasses
@@ -297,8 +327,10 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         // field on ResponsesRequest, a reviewable type change. Byte-identical to the old put() set
         // (ResponsesRequestBuilderTest pins it): fields in declaration order, null optionals omitted.
         val searchLimit = quirks.toolSurface?.searchLimit ?: DEFAULT_SEARCH_LIMIT
-        val tools = parts.partition?.let { toolsSection(it, quirks.emitStrict, quirks.forceStrictFalse, searchLimit) }
-        val lite = quirks.isLite(opts)
+        val tools = parts.partition?.let {
+            toolWire.toolsSection(it, quirks.emitStrict, quirks.forceStrictFalse, searchLimit)
+        }
+        val lite = liteShape.isLite(opts)
         // Lite turns carry tools as an additional_tools input item, not top-level `tools`; without
         // an explicit tool_choice the backend never enables function-calling from them (the model
         // then improvises tool calls in text — stuck/looping turns). codex-rs sends tool_choice:"auto"
@@ -307,7 +339,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         val emitToolChoice = tools != null && (quirks.emitToolChoice || lite)
         val include =
             if (!opts.compact && opts.includeEncryptedReasoning.v) listOf(ENCRYPTED_CONTENT_INCLUDE) else null
-        val shape = wireShape(lite, parts.input, parts.instructions, tools)
+        val shape = liteShape.wireShape(lite, parts.input, parts.instructions, tools)
         val dto = ResponsesRequest(
             model = opts.upstreamModel,
             input = shape.input,
@@ -320,8 +352,8 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
             toolChoice = toolChoiceFor(emitToolChoice, lite, body),
             parallelToolCalls = parallelToolCallsFor(emitToolChoice, body, opts),
             reasoning = parts.reasoning,
-            text = liteTextBlock(quirks, lite),
-            clientMetadata = clientMetadataBlock(quirks, lite, opts, cacheKey(body, opts)),
+            text = hints.liteTextBlock(quirks, lite),
+            clientMetadata = hints.clientMetadataBlock(quirks, lite, opts, cacheKey(body, opts)),
             streamOptions = summaryDeliveryOptions(parts.reasoning),
         )
         val req = responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), dto) as JsonObject
@@ -342,7 +374,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
 
     /** Non-null only when this request actually deferred something — a bare partition (deferral
      *  off, non-lite, below the floor) yields an empty deferred list, so [ToolPartition.deferring]
-     *  is the single source both this and [toolsSection] read. */
+     *  is the single source both this and [ToolWireObjects.toolsSection] read. */
     private fun toolSearchControllerFor(partition: ToolPartition?, opts: BuildOptions): ToolSearchController? {
         val policy = quirks.toolSurface ?: return null
         if (partition == null || !partition.deferring) return null
@@ -358,15 +390,16 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
     /** The declaration-replay input for CHANGE 2 (cache-prefix stability, 2026-07-25): every
      *  DEFERRED tool this turn's transcript already named via a ToolUseBlock, keyed by name so
      *  [ResponsesInputBuilder] can hand its full schema straight to the injector without a second
-     *  body.tools lookup. [warmToolNames] used to gate the (now-removed) always-eager promotion in
-     *  ToolSurface.kt; it feeds this instead — see that file's header. A tool warm but NOT in this
-     *  map (eager, or dropped from body.tools since it was last used) gets no declaration on
-     *  purpose: eager tools are already declared via tools[] every turn, and a dropped tool has no
-     *  schema to declare — the degrade-to-status-quo path [appendToolUse] documents. */
+     *  body.tools lookup. [ToolPartitioner.warmToolNames] used to gate the (now-removed)
+     *  always-eager promotion in ToolSurface.kt; it feeds this instead — see that file's header. A
+     *  tool warm but NOT in this map (eager, or dropped from body.tools since it was last used)
+     *  gets no declaration on purpose: eager tools are already declared via tools[] every turn, and
+     *  a dropped tool has no schema to declare — the degrade-to-status-quo path [appendToolUse]
+     *  documents. */
     private fun declarationCandidates(body: AnthropicRequest, partition: ToolPartition?): Map<String, ToolDefinition> {
         val deferred = partition?.deferred
         if (deferred.isNullOrEmpty()) return emptyMap()
-        val warm = warmToolNames(body)
+        val warm = partitioner.warmToolNames(body)
         return deferred.filter { it.name in warm }.associateBy { it.name }
     }
 
@@ -398,7 +431,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         // disable_parallel_tool_use=true wins — the gateway must not override a request the
         // client asked to serialize — and a TOOLLESS turn stays false (nothing to parallelize,
         // and explicit-true-without-tools is an untested combination upstream).
-        quirks.isLite(opts) ->
+        liteShape.isLite(opts) ->
             quirks.liteParallelToolCalls &&
                 body.tools.isNotEmpty() &&
                 body.toolChoice?.disableParallelToolUse != true
@@ -421,7 +454,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         // Prefix from quirks.providerTag (not a hard-coded "claude-grok:") so TOML cache_key=session-id
         // on any Responses provider stays in its own cache namespace.
         CacheKeyStrategy.SESSION_ID -> opts.sessionId?.let { "${quirks.providerTag}:$it" }
-        CacheKeyStrategy.FIRST_MESSAGE_HASH -> stablePromptCacheKey(body)
+        CacheKeyStrategy.FIRST_MESSAGE_HASH -> ids.stablePromptCacheKey(body)
     }
 
     private fun resolveEffort(body: AnthropicRequest, raw: JsonObject, opts: BuildOptions): String? {
@@ -436,12 +469,12 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
             val budgetEffort = body.thinking
                 ?.takeIf { !it.disabled }
                 ?.budgetTokens
-                ?.let { effortFromBudget(it, quirks.effortLadder) }
-            effort = budgetEffort ?: normalizeEffort(opts.configEffort, quirks.effortLadder) ?: "high"
+                ?.let { effortRules.effortFromBudget(it, quirks.effortLadder) }
+            effort = budgetEffort ?: effortRules.normalizeEffort(opts.configEffort, quirks.effortLadder) ?: "high"
         }
-        effort = flooredForVisibility(effort, opts.showReasoning)
-        effort = flooredForGrok(effort, quirks.effortLadder)
-        return clampedForModelCeiling(effort, opts.upstreamModel, quirks.effortMaxRejectModelRegex)
+        effort = effortRules.flooredForVisibility(effort, opts.showReasoning)
+        effort = effortRules.flooredForGrok(effort, quirks.effortLadder)
+        return effortRules.clampedForModelCeiling(effort, opts.upstreamModel, quirks.effortMaxRejectModelRegex)
     }
 
     // NB: `as? JsonObject` NOT `?.jsonObject` — the latter THROWS on a non-object (e.g. a client
@@ -453,7 +486,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         (raw["metadata"] as? JsonObject)?.get(FIELD_EFFORT),
         (raw[FIELD_REASONING] as? JsonObject)?.get(FIELD_EFFORT),
     ).mapNotNull { it.str() }
-        .mapNotNull { normalizeEffort(it, quirks.effortLadder) }
+        .mapNotNull { effortRules.normalizeEffort(it, quirks.effortLadder) }
         .firstOrNull()
 
     private fun resolveSummary(raw: JsonObject, opts: BuildOptions, effort: String?): String? {
@@ -467,7 +500,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
             raw["reasoning_summary"],
             (raw["output_config"] as? JsonObject)?.get("reasoning_summary"),
         ).mapNotNull { it.str() }
-            .mapNotNull { normalizeSummary(it) }
+            .mapNotNull { effortRules.normalizeSummary(it) }
             .firstOrNull()
         // v27 visibility fold (the header's "folds summary to detailed" clause — was unimplemented,
         // audit 2026-07-18): when reasoning is VISIBLE, a REQUEST-level weak summary (none/auto/
@@ -475,7 +508,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         // fills. The OPERATOR's configSummary stays authoritative (a deliberate `concise` in
         // TOML/env is respected) — the fold defends against the request, not the operator.
         val folded = requested?.let { if (it in SUMMARY_FLOOR_TO_DETAILED) SUMMARY_DETAILED else it }
-        return folded ?: normalizeSummary(opts.configSummary) ?: SUMMARY_DETAILED
+        return folded ?: effortRules.normalizeSummary(opts.configSummary) ?: SUMMARY_DETAILED
     }
 
     /** codex-rs parity: delivery rides ONLY alongside an actual summary request. */
@@ -493,33 +526,149 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
             put(FIELD_EFFORT, effort)
             if (!dropSummary) put(FIELD_SUMMARY, summary)
             // codex-rs lite parity: reasoning context spans the session, not just the current turn.
-            if (quirks.isLite(opts)) put("context", "all_turns")
+            if (liteShape.isLite(opts)) put("context", "all_turns")
         }
     }
 }
 
-private val GROK_EFFORTS = setOf("low", EFFORT_MEDIUM, "high", EFFORT_XHIGH)
+/**
+ * The effort/summary vocabulary: the alias tables, the budget tiers, and the three post-resolution
+ * clamps. A type rather than the file-level functions it used to be (Kotlin main sources carry no
+ * top-level functions) — folding them into [ResponsesRequestBuilder] instead would put it at 16
+ * members against detekt's TooManyFunctions ceiling of 15. Every member reads only its arguments
+ * and keeps its old name and argument list.
+ */
+public class ResponsesEffort {
+
+    // the alias table IS the contract
+    public fun normalizeEffort(raw: String?, ladder: EffortLadder): String? {
+        val s = raw?.trim()?.lowercase().orEmpty()
+        if (s.isEmpty()) return null
+        return when (ladder) {
+            EffortLadder.CODEX -> normalizeCodexEffort(s)
+            EffortLadder.GROK -> normalizeGrokEffort(s)
+        }
+    }
+
+    private fun normalizeCodexEffort(s: String): String? = when (s) {
+        "ultracode", "ultra" -> "max"
+        "extra_high", "extra-high", "extrahigh" -> EFFORT_XHIGH
+        "standard", "normal" -> EFFORT_MEDIUM
+        "light", "fast" -> "low"
+        "heavy", "extended" -> "high"
+        in CODEX_EFFORTS -> s
+        else -> null
+    }
+
+    private fun normalizeGrokEffort(s: String): String? = when (s) {
+        // grok-4.6+ (xAI docs 2026-08): xhigh is the top rung; older groks clamp it to high upstream.
+        "max", "ultra", "ultracode", "extra_high", "extra-high", "extrahigh", EFFORT_XHIGH,
+        -> EFFORT_XHIGH
+        "high", "heavy", "extended",
+        -> "high"
+        EFFORT_MEDIUM, "standard", "normal" -> EFFORT_MEDIUM
+        "low", EFFORT_MINIMAL, "none", "off", "fast", "light" -> "low"
+        else -> null
+    }
+
+    public fun normalizeSummary(raw: String?): String? {
+        val s = raw?.trim()?.lowercase().orEmpty()
+        return when {
+            s.isEmpty() -> null
+            s in SUMMARY_CANONICAL -> s
+            s in SUMMARY_AS_DETAILED -> SUMMARY_DETAILED
+            s in SUMMARY_AS_CONCISE -> SUMMARY_CONCISE
+            s in SUMMARY_AS_NONE -> "none"
+            else -> null
+        }
+    }
+
+    // tier table
+    public fun effortFromBudget(budget: Long, ladder: EffortLadder): String? = when (ladder) {
+        EffortLadder.CODEX -> codexBudgetEffort(budget)
+        EffortLadder.GROK -> when {
+            budget >= BUDGET_MAX -> EFFORT_XHIGH
+            budget >= BUDGET_HIGH -> "high"
+            budget >= BUDGET_MEDIUM -> EFFORT_MEDIUM
+            else -> "low"
+        }
+    }
+
+    private fun codexBudgetEffort(budget: Long): String = when {
+        budget >= BUDGET_MAX -> "max"
+        budget >= BUDGET_XHIGH -> EFFORT_XHIGH
+        budget >= BUDGET_HIGH -> "high"
+        budget >= BUDGET_MEDIUM -> EFFORT_MEDIUM
+        else -> "low"
+    }
+
+    /**
+     * Visibility floor: never RAISES a deliberate low/medium/high pick, only floors none/minimal to
+     * low so a hidden reasoning knob still surfaces something when showReasoning != off.
+     */
+    internal fun flooredForVisibility(effort: String?, showReasoning: ReasoningDisplay): String? {
+        if (showReasoning.isOff) return effort
+        val hidden = effort == EFFORT_MINIMAL || effort == "none"
+        return if (hidden) "low" else effort
+    }
+
+    /** grok reasoning cannot be disabled — floor anything off the grok ladder to low. */
+    internal fun flooredForGrok(effort: String?, ladder: EffortLadder): String? {
+        if (ladder != EffortLadder.GROK) return effort
+        return effort?.takeIf { it in GROK_EFFORTS } ?: "low"
+    }
+
+    /** Per-model effort ceiling: models matching the quirk regex reject effort=max — clamp to xhigh. */
+    internal fun clampedForModelCeiling(effort: String?, upstreamModel: String, rejectMax: Regex?): String? {
+        if (effort != "max" || rejectMax?.containsMatchIn(upstreamModel) != true) return effort
+        return EFFORT_XHIGH
+    }
+}
 
 /**
- * Visibility floor: never RAISES a deliberate low/medium/high pick, only floors none/minimal to
- * low so a hidden reasoning knob still surfaces something when showReasoning != off.
+ * The two sha256-hex-prefix id derivations. A type rather than the file-level functions they used to
+ * be (Kotlin main sources carry no top-level functions); both members keep their old name and
+ * argument list, so a call site only gained a receiver.
  */
-private fun flooredForVisibility(effort: String?, showReasoning: ReasoningDisplay): String? {
-    if (showReasoning.isOff) return effort
-    val hidden = effort == EFFORT_MINIMAL || effort == "none"
-    return if (hidden) "low" else effort
-}
+public class ResponsesStableIds {
 
-/** grok reasoning cannot be disabled — floor anything off the grok ladder to low. */
-private fun flooredForGrok(effort: String?, ladder: EffortLadder): String? {
-    if (ladder != EffortLadder.GROK) return effort
-    return effort?.takeIf { it in GROK_EFFORTS } ?: "low"
-}
+    /** Codex-parity cache key: sha256 of the FIRST user message's text, stable per conversation. */
+    public fun stablePromptCacheKey(body: AnthropicRequest): String? {
+        val first = body.messages.firstOrNull { it.role == "user" } ?: return null
+        val seed = first.content.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
+        if (seed.isEmpty()) return null
+        val md = SHA256.get()
+        md.reset()
+        val digest = md.digest(seed.toByteArray(Charsets.UTF_8))
+        // Only the first HASH_PREFIX_LEN/2 bytes → HASH_PREFIX_LEN hex chars ("splice-" + 32).
+        val hexChars = CharArray(HASH_PREFIX_LEN)
+        var hi = 0
+        for (i in 0 until HASH_PREFIX_BYTES) {
+            val b = digest[i].toInt() and BYTE_MASK
+            hexChars[hi++] = HEX_DIGITS[b ushr NIBBLE_BITS]
+            hexChars[hi++] = HEX_DIGITS[b and NIBBLE_MASK]
+        }
+        return "splice-" + String(hexChars)
+    }
 
-/** Per-model effort ceiling: models matching the quirk regex reject effort=max — clamp to xhigh. */
-private fun clampedForModelCeiling(effort: String?, upstreamModel: String, rejectMax: Regex?): String? {
-    if (effort != "max" || rejectMax?.containsMatchIn(upstreamModel) != true) return effort
-    return EFFORT_XHIGH
+    /** CHANGE 2's call_id (cache-prefix stability, 2026-07-25): a pure function of the tool NAME
+     *  alone — same sha256-hex-prefix idiom as [stablePromptCacheKey] just above, so a deferred
+     *  tool's declaration pair carries the identical call_id on every turn it is replayed on (no
+     *  transcript position, no counters, no randomness — any of those would reintroduce the exact
+     *  cache bust this feature exists to fix). */
+    internal fun stableToolSearchCallId(toolName: String): String {
+        val md = SHA256.get()
+        md.reset()
+        val digest = md.digest(toolName.toByteArray(Charsets.UTF_8))
+        val hexChars = CharArray(CALL_ID_HEX_LEN)
+        var hi = 0
+        for (i in 0 until CALL_ID_HEX_LEN / 2) {
+            val b = digest[i].toInt() and BYTE_MASK
+            hexChars[hi++] = HEX_DIGITS[b ushr NIBBLE_BITS]
+            hexChars[hi++] = HEX_DIGITS[b and NIBBLE_MASK]
+        }
+        return CALL_ID_PREFIX + String(hexChars)
+    }
 }
 
 /**
@@ -531,6 +680,9 @@ private class ResponsesInputBuilder(
     private val quirks: ResponsesQuirks,
     private val loopGuardDirectives: Map<String, String> = emptyMap(),
 ) {
+
+    private val ids = ResponsesStableIds()
+    private val toolSearchOutput = ToolSearchOutput()
 
     fun appendMessage(
         sink: JsonArrayBuilder,
@@ -634,12 +786,13 @@ private class ResponsesInputBuilder(
     /** The synthetic pair CHANGE 2 injects for a deferred tool a ToolUseBlock already named: a
      *  tool_search_call, then the tool_search_output carrying its FULL schema — the exact shape
      *  [ResponsesToolSearchController] emits for a REAL within-turn search, reused via
-     *  [toolSearchOutputItem] (ResponsesToolSearch.kt) and never re-authored as a second shape. The
-     *  call_id is a pure function of the tool NAME alone ([stableToolSearchCallId]) — no transcript
-     *  position, no counters, no randomness — so the whole pair is byte-identical on every turn
-     *  that replays this tool's declaration, which is the property this feature exists to buy. */
+     *  [ToolSearchOutput.toolSearchOutputItem] (ResponsesToolSearch.kt) and never re-authored as a
+     *  second shape. The call_id is a pure function of the tool NAME alone
+     *  ([ResponsesStableIds.stableToolSearchCallId]) — no transcript position, no counters, no
+     *  randomness — so the whole pair is byte-identical on every turn that replays this tool's
+     *  declaration, which is the property this feature exists to buy. */
     private fun appendToolDeclaration(sink: JsonArrayBuilder, tool: ToolDefinition) {
-        val callId = stableToolSearchCallId(tool.name)
+        val callId = ids.stableToolSearchCallId(tool.name)
         sink.add(
             buildJsonObject {
                 put("type", "tool_search_call")
@@ -648,7 +801,14 @@ private class ResponsesInputBuilder(
                 put("arguments", buildJsonObject { put("query", tool.name) })
             },
         )
-        sink.add(toolSearchOutputItem(callId, listOf(tool), quirks.emitStrict, quirks.forceStrictFalse))
+        sink.add(
+            toolSearchOutput.toolSearchOutputItem(
+                callId,
+                listOf(tool),
+                quirks.emitStrict,
+                quirks.forceStrictFalse,
+            ),
+        )
     }
 
     private fun appendImage(sink: JsonArrayBuilder, block: ImageBlock, opts: BuildOptions) {
@@ -754,91 +914,26 @@ private const val EFFORT_MINIMAL = "minimal"
 private const val SUMMARY_DETAILED = "detailed"
 private const val SUMMARY_CONCISE = "concise"
 
-/** Codex-parity cache key: sha256 of the FIRST user message's text, stable per conversation. */
-public fun stablePromptCacheKey(body: AnthropicRequest): String? {
-    val first = body.messages.firstOrNull { it.role == "user" } ?: return null
-    val seed = first.content.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
-    if (seed.isEmpty()) return null
-    val md = SHA256.get()
-    md.reset()
-    val digest = md.digest(seed.toByteArray(Charsets.UTF_8))
-    // Only the first HASH_PREFIX_LEN/2 bytes → HASH_PREFIX_LEN hex chars ("splice-" + 32).
-    val hexChars = CharArray(HASH_PREFIX_LEN)
-    var hi = 0
-    for (i in 0 until HASH_PREFIX_BYTES) {
-        val b = digest[i].toInt() and BYTE_MASK
-        hexChars[hi++] = HEX_DIGITS[b ushr NIBBLE_BITS]
-        hexChars[hi++] = HEX_DIGITS[b and NIBBLE_MASK]
-    }
-    return "splice-" + String(hexChars)
-}
-
 private const val HASH_PREFIX_LEN = 32
 private const val HASH_PREFIX_BYTES = HASH_PREFIX_LEN / 2
 private const val BYTE_MASK = 0xff
 private const val NIBBLE_BITS = 4
 private const val NIBBLE_MASK = 0x0f
+
+// FILE SCOPE ON PURPOSE: one shared hex table.
 private val HEX_DIGITS = "0123456789abcdef".toCharArray()
 
-// MessageDigest is not thread-safe; a ThreadLocal avoids the provider lookup per turn without sharing.
+// FILE SCOPE ON PURPOSE: MessageDigest is not thread-safe; a ThreadLocal avoids the provider lookup
+// per turn without sharing. As a member it would be re-created per builder instance.
 private val SHA256 = ThreadLocal.withInitial { MessageDigest.getInstance("SHA-256") }
-
-/** CHANGE 2's call_id (cache-prefix stability, 2026-07-25): a pure function of the tool NAME
- *  alone — same sha256-hex-prefix idiom as [stablePromptCacheKey] just above, so a deferred
- *  tool's declaration pair carries the identical call_id on every turn it is replayed on (no
- *  transcript position, no counters, no randomness — any of those would reintroduce the exact
- *  cache bust this feature exists to fix). */
-internal fun stableToolSearchCallId(toolName: String): String {
-    val md = SHA256.get()
-    md.reset()
-    val digest = md.digest(toolName.toByteArray(Charsets.UTF_8))
-    val hexChars = CharArray(CALL_ID_HEX_LEN)
-    var hi = 0
-    for (i in 0 until CALL_ID_HEX_LEN / 2) {
-        val b = digest[i].toInt() and BYTE_MASK
-        hexChars[hi++] = HEX_DIGITS[b ushr NIBBLE_BITS]
-        hexChars[hi++] = HEX_DIGITS[b and NIBBLE_MASK]
-    }
-    return CALL_ID_PREFIX + String(hexChars)
-}
 
 private const val CALL_ID_PREFIX = "ts_decl_"
 private const val CALL_ID_HEX_LEN = 24
 
-// the alias table IS the contract
-public fun normalizeEffort(raw: String?, ladder: EffortLadder): String? {
-    val s = raw?.trim()?.lowercase().orEmpty()
-    if (s.isEmpty()) return null
-    return when (ladder) {
-        EffortLadder.CODEX -> normalizeCodexEffort(s)
-        EffortLadder.GROK -> normalizeGrokEffort(s)
-    }
-}
-
-private fun normalizeCodexEffort(s: String): String? = when (s) {
-    "ultracode", "ultra" -> "max"
-    "extra_high", "extra-high", "extrahigh" -> EFFORT_XHIGH
-    "standard", "normal" -> EFFORT_MEDIUM
-    "light", "fast" -> "low"
-    "heavy", "extended" -> "high"
-    in CODEX_EFFORTS -> s
-    else -> null
-}
-
-private fun normalizeGrokEffort(s: String): String? = when (s) {
-    // grok-4.6+ (xAI docs 2026-08): xhigh is the top rung; older groks clamp it to high upstream.
-    "max", "ultra", "ultracode", "extra_high", "extra-high", "extrahigh", EFFORT_XHIGH,
-    -> EFFORT_XHIGH
-    "high", "heavy", "extended",
-    -> "high"
-    EFFORT_MEDIUM, "standard", "normal" -> EFFORT_MEDIUM
-    "low", EFFORT_MINIMAL, "none", "off", "fast", "light" -> "low"
-    else -> null
-}
-
+// FILE SCOPE ON PURPOSE: the effort/summary alias tables — hoisted so the resolvers never allocate
+// a fresh set per call on the request-build path.
+private val GROK_EFFORTS = setOf("low", EFFORT_MEDIUM, "high", EFFORT_XHIGH)
 private val CODEX_EFFORTS = setOf("none", EFFORT_MINIMAL, "low", EFFORT_MEDIUM, "high", EFFORT_XHIGH, "max")
-
-// Hoisted so resolvers never allocate a fresh set per call on the request-build path.
 private val SUMMARY_CANONICAL = setOf("auto", SUMMARY_CONCISE, SUMMARY_DETAILED, "none")
 
 // v27 visibility fold: these weak/absent summaries floor to detailed when reasoning is shown.
@@ -846,37 +941,6 @@ private val SUMMARY_FLOOR_TO_DETAILED = setOf("none", "auto", SUMMARY_CONCISE)
 private val SUMMARY_AS_DETAILED = setOf("full", "verbose", "long")
 private val SUMMARY_AS_CONCISE = setOf("short", "brief")
 private val SUMMARY_AS_NONE = setOf("off", "false", "0")
-
-public fun normalizeSummary(raw: String?): String? {
-    val s = raw?.trim()?.lowercase().orEmpty()
-    return when {
-        s.isEmpty() -> null
-        s in SUMMARY_CANONICAL -> s
-        s in SUMMARY_AS_DETAILED -> SUMMARY_DETAILED
-        s in SUMMARY_AS_CONCISE -> SUMMARY_CONCISE
-        s in SUMMARY_AS_NONE -> "none"
-        else -> null
-    }
-}
-
-// tier table
-public fun effortFromBudget(budget: Long, ladder: EffortLadder): String? = when (ladder) {
-    EffortLadder.CODEX -> codexBudgetEffort(budget)
-    EffortLadder.GROK -> when {
-        budget >= BUDGET_MAX -> EFFORT_XHIGH
-        budget >= BUDGET_HIGH -> "high"
-        budget >= BUDGET_MEDIUM -> EFFORT_MEDIUM
-        else -> "low"
-    }
-}
-
-private fun codexBudgetEffort(budget: Long): String = when {
-    budget >= BUDGET_MAX -> "max"
-    budget >= BUDGET_XHIGH -> EFFORT_XHIGH
-    budget >= BUDGET_HIGH -> "high"
-    budget >= BUDGET_MEDIUM -> EFFORT_MEDIUM
-    else -> "low"
-}
 
 private const val BUDGET_MAX = 64_000L
 private const val BUDGET_XHIGH = 32_000L

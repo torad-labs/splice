@@ -63,17 +63,13 @@ import splice.core.util.discard
 import splice.core.util.headScopedLog
 import splice.core.util.runCatchingCancellable
 import splice.dialect.chat.ChatQuirks
-import splice.dialect.chat.withReasoningEffortToml
 import splice.dialect.passthrough.PassthroughProvider
 import splice.dialect.passthrough.PassthroughQuirks
+import splice.dialect.passthrough.PassthroughQuirksDefaults
+import splice.dialect.responses.DEFAULT_MARKER_TEXT
 import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ToolDeferralPolicy
-import splice.dialect.responses.withParallelToolCallsToml
-import splice.dialect.responses.withReasoningCacheToml
-import splice.dialect.responses.withToml
-import splice.dialect.responses.withToolSurfaceToml
-import splice.dialect.responses.withWebSocketToml
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.HeadDeps
@@ -383,7 +379,7 @@ internal class HeadBuildInputs {
     internal fun foldConfigFrom(cfg: SpliceConfig): FoldConfig = FoldConfig(
         models = cfg.foldReasoningModels,
         maxContinue = cfg.foldMaxContinue,
-        markerText = cfg.foldMarkerText.ifEmpty { FoldConfig.DEFAULT_MARKER_TEXT },
+        markerText = cfg.foldMarkerText.ifEmpty { DEFAULT_MARKER_TEXT },
         maxTierN = cfg.foldMaxTier,
     )
 
@@ -562,7 +558,7 @@ internal class ProviderAssembly(
                 ctx = ctx,
                 label = label,
                 auth = auth,
-                base = PassthroughQuirks.kimi(key),
+                base = PassthroughQuirksDefaults().kimi(key),
                 baseHeaders = KIMI_BASE_HEADERS,
                 identityHeaders = identity::headers,
             ),

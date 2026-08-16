@@ -22,6 +22,7 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.passthrough.PassthroughProvider
 import splice.dialect.passthrough.PassthroughQuirks
+import splice.dialect.passthrough.PassthroughQuirksDefaults
 import splice.spi.ProviderTuning
 import kotlin.time.Duration.Companion.seconds
 
@@ -68,7 +69,7 @@ class PassthroughProviderTest {
     fun `upstream url is the Anthropic Messages path on the configured base`() {
         assertEquals(
             "https://api.kimi.com/coding/v1/messages",
-            provider(PassthroughQuirks.kimi("kimi")).upstreamUrl,
+            provider(PassthroughQuirksDefaults().kimi("kimi")).upstreamUrl,
         )
     }
 
@@ -76,7 +77,7 @@ class PassthroughProviderTest {
     @Test
     fun `kimi's header set is reproduced from declared data alone`() {
         val headers = provider(
-            quirks = PassthroughQuirks.kimi("kimi"),
+            quirks = PassthroughQuirksDefaults().kimi("kimi"),
             staticHeaders = mapOf("anthropic-version" to "2023-06-01", "User-Agent" to "KimiCLI/1.5"),
             identityHeaders = { mapOf("X-Msh-Device-Id" to "dev-1", "X-Msh-Platform" to "linux") },
         ).extraHeaders(creds)
@@ -111,7 +112,7 @@ class PassthroughProviderTest {
 
     @Test
     fun `the wrapped picker id is stripped to the upstream model`() {
-        val built = provider(PassthroughQuirks.kimi("kimi")).buildTurn(
+        val built = provider(PassthroughQuirksDefaults().kimi("kimi")).buildTurn(
             parseAnthropicBody("""{"model":"claude-kimi--k3[1m]","messages":[{"role":"user","content":"hi"}]}"""),
             compact = false,
             sessionId = null,
@@ -125,7 +126,7 @@ class PassthroughProviderTest {
     fun `quirks reach the builder — kimi deforms where a neutral head does not`() {
         val body = """{"model":"m","messages":[{"role":"user","content":[
             {"type":"text","text":"hi","cache_control":{"type":"ephemeral"}}]}]}"""
-        val kimiReq = provider(PassthroughQuirks.kimi("kimi"))
+        val kimiReq = provider(PassthroughQuirksDefaults().kimi("kimi"))
             .buildTurn(parseAnthropicBody(body), compact = false, sessionId = null).requestBody
         val neutralReq = provider(PassthroughQuirks(providerTag = "claude-splice"))
             .buildTurn(parseAnthropicBody(body), compact = false, sessionId = null).requestBody
@@ -136,7 +137,7 @@ class PassthroughProviderTest {
 
     @Test
     fun `reasoning display is off so the text mirror never double-renders thinking`() = runTest {
-        val p = provider(PassthroughQuirks.kimi("kimi"))
+        val p = provider(PassthroughQuirksDefaults().kimi("kimi"))
         assertEquals(ReasoningDisplay.OFF, p.showReasoning)
         assertFalse(p.replayReasoning)
     }

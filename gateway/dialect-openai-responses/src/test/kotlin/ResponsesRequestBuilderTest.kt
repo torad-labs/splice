@@ -22,10 +22,10 @@ import splice.dialect.responses.InjectPriorReasoning
 import splice.dialect.responses.RequestEncryptedReasoning
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesRequestBuilder
+import splice.dialect.responses.ResponsesStableIds
 import splice.dialect.responses.ToolDeferralPolicy
-import splice.dialect.responses.stablePromptCacheKey
-import splice.dialect.responses.withParallelToolCallsToml
-import splice.dialect.responses.withReasoningCacheToml
+
+private val stableIds = ResponsesStableIds()
 
 private val CODEX = ResponsesQuirks(providerTag = "claudex")
 private val GROK = ResponsesQuirks(
@@ -348,7 +348,7 @@ class ResponsesRequestBuilderTest {
         assertEquals(a, b)
         assertTrue(a!!.startsWith("splice-") && a.length == "splice-".length + 32)
         val parsed = parseAnthropicBody("""{"model":"m","messages":[]}""")
-        assertNull(stablePromptCacheKey(parsed.typed))
+        assertNull(stableIds.stablePromptCacheKey(parsed.typed))
         val grokReq = build(body, quirks = GROK, options = opts(sessionId = "sess-1"))
         assertEquals("claude-grok:sess-1", grokReq["prompt_cache_key"]?.jsonPrimitive?.content)
     }

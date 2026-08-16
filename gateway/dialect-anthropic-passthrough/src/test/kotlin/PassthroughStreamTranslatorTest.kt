@@ -14,6 +14,7 @@ import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.dialect.passthrough.PassthroughQuirks
+import splice.dialect.passthrough.PassthroughQuirksDefaults
 import splice.dialect.passthrough.PassthroughStreamTranslator
 import splice.dialect.passthrough.PassthroughTurnContext
 import splice.spi.WireSink
@@ -38,7 +39,7 @@ private class Rec : WireSink {
     override suspend fun addRedactedThinking(data: String) = Unit
 }
 
-private val KIMI = PassthroughQuirks.kimi("kimi")
+private val KIMI = PassthroughQuirksDefaults().kimi("kimi")
 
 private fun ev(json: String): JsonObject = Json.parseToJsonElement(json).jsonObject
 private fun ctx() = PassthroughTurnContext({ false }, { null }, 180_000, 900_000)

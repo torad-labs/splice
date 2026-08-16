@@ -43,12 +43,14 @@ public data class ChatQuirks(
     val sessionCacheKeyPrefix: String? = null,
     /** Emit stream_options.include_usage (usage frames are opt-in on OpenAI-compat streams). */
     val emitUsageInStream: Boolean = false,
-)
-
-/** Overlay TOML `[providers.*.quirks].reasoning_effort` onto a chat-dialect quirk profile — null
- *  keeps the provider's own default (see [ChatQuirks.emitReasoningEffort]). */
-public fun ChatQuirks.withReasoningEffortToml(reasoningEffort: Boolean?): ChatQuirks =
-    copy(emitReasoningEffort = reasoningEffort ?: this.emitReasoningEffort)
+) {
+    /** Overlay TOML `[providers.*.quirks].reasoning_effort` onto a chat-dialect quirk profile — null
+     *  keeps the provider's own default (see [emitReasoningEffort]). A member rather than the
+     *  file-level extension it used to be (Kotlin main sources carry no top-level functions); the
+     *  receiver was already a ChatQuirks, so every call site is unchanged. */
+    public fun withReasoningEffortToml(reasoningEffort: Boolean?): ChatQuirks =
+        copy(emitReasoningEffort = reasoningEffort ?: this.emitReasoningEffort)
+}
 
 public data class BuiltChatRequest(val req: JsonObject, val meta: TurnMeta)
 
@@ -94,6 +96,28 @@ public class ChatRequestBuilder(
             budgetTokens = body.thinking?.budgetTokens,
         )
         return BuiltChatRequest(req, meta)
+    }
+
+    /**
+     * Map Anthropic thinking budget → chat `reasoning_effort`. Default high so backends that
+     * support cleartext CoT actually emit `reasoning_content`. Compact turns INHERIT the session
+     * effort (AGENTS cache law — a mismatched effort cold-starts the prompt cache); tools are
+     * stripped separately, effort is deliberately not compact-aware.
+     */
+    private fun chatReasoningEffort(body: AnthropicRequest, upstreamModel: String): String? {
+        if (body.thinking?.disabled == true) return null
+        val budget = body.thinking?.budgetTokens
+        return when {
+            budget == null -> "high"
+            // grok-4.6+ (xAI docs 2026-08; older groks clamp xhigh to high). Gated on the model
+            // because this dialect also serves arbitrary OpenAI-compatible vendors, and an unknown
+            // enum there may be an error rather than a clamp.
+            budget >= XHIGH_BUDGET_FLOOR && XHIGH_MODELS.containsMatchIn(upstreamModel) -> "xhigh"
+            budget >= HIGH_BUDGET_FLOOR -> "high"
+            budget >= MEDIUM_BUDGET_FLOOR -> "medium"
+            budget > 0L -> "low"
+            else -> "high"
+        }
     }
 
     /** CX-02: the system text for this turn, or null when there is no system message to emit.
@@ -314,43 +338,19 @@ public class ChatRequestBuilder(
         }
         else -> null
     }
-
-    private companion object {
-        // Chat wire field names — repeated across the message/tool/image mappings.
-        const val ROLE = "role"
-        const val CONTENT = "content"
-        const val TYPE = "type"
-        const val NAME = "name"
-        const val TEXT = "text"
-        const val URL = "url"
-        const val FUNCTION = "function"
-        const val IMAGE_URL = "image_url"
-        const val DATA_URL_PREFIX = "data:"
-        const val BASE64_SEPARATOR = ";base64,"
-    }
 }
 
-/**
- * Map Anthropic thinking budget → chat `reasoning_effort`. Default high so backends that
- * support cleartext CoT actually emit `reasoning_content`. Compact turns INHERIT the session
- * effort (AGENTS cache law — a mismatched effort cold-starts the prompt cache); tools are
- * stripped separately, effort is deliberately not compact-aware.
- */
-private fun chatReasoningEffort(body: AnthropicRequest, upstreamModel: String): String? {
-    if (body.thinking?.disabled == true) return null
-    val budget = body.thinking?.budgetTokens
-    return when {
-        budget == null -> "high"
-        // grok-4.6+ (xAI docs 2026-08; older groks clamp xhigh to high). Gated on the model
-        // because this dialect also serves arbitrary OpenAI-compatible vendors, and an unknown
-        // enum there may be an error rather than a clamp.
-        budget >= XHIGH_BUDGET_FLOOR && XHIGH_MODELS.containsMatchIn(upstreamModel) -> "xhigh"
-        budget >= HIGH_BUDGET_FLOOR -> "high"
-        budget >= MEDIUM_BUDGET_FLOOR -> "medium"
-        budget > 0L -> "low"
-        else -> "high"
-    }
-}
+// Chat wire field names — repeated across the message/tool/image mappings.
+private const val ROLE = "role"
+private const val CONTENT = "content"
+private const val TYPE = "type"
+private const val NAME = "name"
+private const val TEXT = "text"
+private const val URL = "url"
+private const val FUNCTION = "function"
+private const val IMAGE_URL = "image_url"
+private const val DATA_URL_PREFIX = "data:"
+private const val BASE64_SEPARATOR = ";base64,"
 
 // /effort picker budget_tokens -> chat reasoning_effort tier floors
 private const val XHIGH_BUDGET_FLOOR = 64_000L
@@ -359,4 +359,5 @@ private const val MEDIUM_BUDGET_FLOOR = 8_000L
 
 // xhigh is native on grok-4.6 and later (4.6..4.9, 4.10+). grok-5+ lands here when it exists —
 // a one-line extension, not a silent cap on a shipped model.
+// FILE SCOPE ON PURPOSE: one compiled Regex; as a member it would recompile per builder instance.
 private val XHIGH_MODELS = Regex("grok-4\\.(?:[6-9]|[1-9]\\d)")

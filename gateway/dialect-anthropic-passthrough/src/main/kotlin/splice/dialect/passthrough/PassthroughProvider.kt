@@ -76,9 +76,7 @@ public class PassthroughProvider(
         putAll(staticHeaders)
         putAll(identityHeaders())
     }
-
-    private companion object {
-        const val ACCEPT = "Accept"
-        const val SSE_CONTENT_TYPE = "text/event-stream"
-    }
 }
+
+private const val ACCEPT = "Accept"
+private const val SSE_CONTENT_TYPE = "text/event-stream"

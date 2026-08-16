@@ -92,6 +92,11 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     // arrives (or finish_reason forces a flush).
     private val pendingTools = HashMap<Int, PendingTool>()
 
+    // The prose-fold and tool-argument rules ride collaborators, not this class: the translator
+    // holds 15 members, exactly detekt's TooManyFunctions ceiling, so nothing more can fold in.
+    private val prose = ChatProseFold()
+    private val toolArgs = ChatToolArgs()
+
     private data class PendingTool(
         var id: String,
         var name: String = "",
@@ -126,7 +131,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         flushPendingTools(sink)
         // CX-01: parse each opened tool's accumulated args at terminal; a corrupt/empty tool call
         // becomes a Failure in terminalOutcome, never a Success with a malformed tool_use.
-        if (toolArgsInvalid == null) toolArgsInvalid = firstInvalidToolArgs(toolBlocks.keys, toolArgsByIndex)
+        if (toolArgsInvalid == null) toolArgsInvalid = toolArgs.firstInvalidToolArgs(toolBlocks.keys, toolArgsByIndex)
         sink.closeAll()
         return terminalOutcome()
     }
@@ -217,14 +222,14 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     private suspend fun applyFinalMessage(msg: JsonObject, sink: WireSink) {
         foldFinalProse(msg, sink)
         foldFinalToolCalls(msg, sink)
-        appendRefusal(refusalBuf, msg, isDelta = false) // CX-08: the whole-copy final-message carrier
+        prose.appendRefusal(refusalBuf, msg, isDelta = false) // CX-08: the whole-copy final-message carrier
     }
 
     /** The reasoning + text halves of the final-message fold, both prefix-aware via
-     *  [unseenSuffix] (extracted so applyFinalMessage stays under the complexity gate). */
+     *  [ChatProseFold.unseenSuffix] (extracted so applyFinalMessage stays under the complexity gate). */
     private suspend fun foldFinalProse(msg: JsonObject, sink: WireSink) {
-        reasoningDeltaText(msg)?.let { r ->
-            val toEmit = unseenSuffix(thinkingBuf.toString(), r)
+        prose.reasoningDeltaText(msg)?.let { r ->
+            val toEmit = prose.unseenSuffix(thinkingBuf.toString(), r)
             if (toEmit.isNotEmpty()) {
                 val idx = thinkingBlock ?: sink.openThinking().also { thinkingBlock = it }
                 emittedThinking = true // CX-09: a thinking block is on the wire from here on
@@ -233,7 +238,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
             }
         }
         strOrEmpty(msg["content"]).takeIf { it.isNotEmpty() }?.let { c ->
-            val toEmit = unseenSuffix(textBuf.toString(), c)
+            val toEmit = prose.unseenSuffix(textBuf.toString(), c)
             if (toEmit.isNotEmpty()) {
                 val idx = textBlock ?: sink.openText().also { textBlock = it }
                 emittedText = true
@@ -294,7 +299,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     private suspend fun applyDelta(delta: JsonObject, sink: WireSink) {
         // Vendors disagree on the cleartext CoT field name:
         // DeepSeek/xAI chat → reasoning_content; some OpenRouter/vLLM → reasoning; a few → thinking.
-        reasoningDeltaText(delta)?.let { r ->
+        prose.reasoningDeltaText(delta)?.let { r ->
             val idx = thinkingBlock ?: sink.openThinking().also { thinkingBlock = it }
             emittedThinking = true // CX-09: a thinking block is on the wire from here on
             thinkingBuf.append(r)
@@ -307,7 +312,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
             sink.textDelta(idx, c)
         }
         (delta["tool_calls"] as? JsonArray)?.forEach { tc -> applyToolCall(tc as? JsonObject ?: return@forEach, sink) }
-        appendRefusal(refusalBuf, delta, isDelta = true) // CX-08: the incremental streamed carrier
+        prose.appendRefusal(refusalBuf, delta, isDelta = true) // CX-08: the incremental streamed carrier
     }
 
     private suspend fun applyToolCall(tc: JsonObject, sink: WireSink) {
@@ -320,7 +325,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         if (opened != null) {
             if (args.isNotEmpty()) {
                 sink.inputJsonDelta(opened, args)
-                accumulateToolArgs(toolArgsByIndex, index, args)
+                toolArgs.accumulateToolArgs(toolArgsByIndex, index, args)
             }
             return
         }
@@ -346,7 +351,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         pendingTools.remove(index)
         if (pending.args.isNotEmpty()) {
             sink.inputJsonDelta(opened, pending.args.toString())
-            accumulateToolArgs(toolArgsByIndex, index, pending.args.toString())
+            toolArgs.accumulateToolArgs(toolArgsByIndex, index, pending.args.toString())
         }
     }
 
@@ -395,99 +400,112 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
             ?: u.firstLong("cached_tokens", "prompt_cache_hit_tokens") ?: 0L
         if (cached > 0) cachedTokens = cached
     }
-
-    private companion object {
-        // Synthesized tool slots live far above any real streamed index (OpenAI streams 0..n).
-        const val SYNTH_INDEX_BASE = 1_000_000
-    }
 }
 
+// Synthesized tool slots live far above any real streamed index (OpenAI streams 0..n).
+private const val SYNTH_INDEX_BASE = 1_000_000
+
+// FILE SCOPE ON PURPOSE: one shared key list walked per delta; as a member it would be rebuilt per
+// translator instance (one per turn).
 private val REASONING_KEYS = listOf("reasoning_content", "reasoning", "thinking", "reasoning_text")
 
 // WIRE-2/3/6 runaway-upstream guard message; the cap itself lives in spi.BufferCapacity (NF-06:
 // one definition, three dialects).
 private const val RUNAWAY_GUARD_MESSAGE = "chat backend: response exceeded max buffered size — aborting"
 
-/** First non-empty cleartext reasoning field on a chat delta/message. Top-level (off the class
- *  function budget) — reads only its argument. */
-private fun reasoningDeltaText(obj: JsonObject): String? {
-    for (key in REASONING_KEYS) {
-        val v = strOrEmpty(obj[key])
-        if (v.isNotEmpty()) return v
+/**
+ * The prose channels' read/fold rules, on their own type because [ChatStreamTranslator] holds 15
+ * members, exactly detekt's TooManyFunctions ceiling. Stateless — every buffer stays on the
+ * translator and is passed in.
+ */
+private class ChatProseFold {
+
+    /** First non-empty cleartext reasoning field on a chat delta/message. */
+    fun reasoningDeltaText(obj: JsonObject): String? {
+        for (key in REASONING_KEYS) {
+            val v = strOrEmpty(obj[key])
+            if (v.isNotEmpty()) return v
+        }
+        return null
     }
-    return null
+
+    /** Prefix-aware fold shared by the reasoning and text final-message channels: emit only what the
+     *  streamed deltas haven't already carried ("Hello" streamed + "Hello world" final → " world";
+     *  full duplicate → nothing; disjoint payload → all of it). A plain contains() check appended
+     *  "Hello world" onto "Hello" → "HelloHello world". Known gap (left as-is): a final message that
+     *  re-emits the streamed prose with NORMALIZED whitespace is neither a clean prefix nor a
+     *  substring, so it falls to the `else` and re-sends in full — a whitespace-aware compare can't be
+     *  made provably safe (it would drop legitimately-repeated content). */
+    fun unseenSuffix(already: String, final: String): String = when {
+        already.isEmpty() -> final
+        final.startsWith(already) -> final.substring(already.length)
+        already.contains(final) -> ""
+        else -> final
+    }
+
+    /** CX-08: fold an OpenAI `refusal` field into [buf] from either of its two carriers.
+     *
+     *  TWO guards, closing two different axes; neither replaces the other.
+     *  · TYPE — [strIfString], not [strOrEmpty]. OpenAI types `delta.refusal` as anyOf[string, null]
+     *    ("the refusal message generated by the model"), so a vendor that ships it as a did-the-model-
+     *    refuse FLAG (`"refusal": false`, `"refusal": 0`) is deviating from the wire contract, and
+     *    strOrEmpty would hand back the non-blank strings "false" / "0" and fail 100% of that vendor's
+     *    WORKING turns as a provider-reported refusal. A non-string primitive is not a refusal message.
+     *  · BLANK — `refusal: ""` / JSON null / whitespace on every frame must never trip the gate.
+     *
+     *  DELTA-WINS accumulation, NOT [unseenSuffix]. The carriers are (i) incremental `delta.refusal`
+     *  fragments and (ii) a whole-copy echo on the final message. Deltas own the buffer: each one is
+     *  appended VERBATIM (what the vendor SDK does — openai-python builds `message.refusal` by
+     *  concatenating every `delta.refusal`), and the whole-copy carrier is used only when no delta ever
+     *  arrived. Running a whole-message dedup over an INCREMENTAL carrier deleted every token that had
+     *  occurred before, so a real streamed refusal shipped garbled ("I can't help with that. I can't
+     *  help with anything illegal." → "I can't help with that. I anything illegal"); carrying the
+     *  model's own words is the entire value of this gate. One condition also kills the double-append.
+     *  Capped by the NF-06 buffer law. The refusal is NOT written to the wire — it is the turn's
+     *  verdict, not its content. */
+    fun appendRefusal(buf: StringBuilder, obj: JsonObject, isDelta: Boolean) {
+        val refusal = strIfString(obj["refusal"])
+        // Round-2 review: isBlank() is a WHOLE-VALUE predicate and this is an INCREMENTAL carrier —
+        // applying it per-frame silently deleted every whitespace-only fragment (a newline token
+        // between sentences, a lone space), shipping the refusal garbled. A FRAGMENT is dropped only
+        // when empty; a WHOLE COPY is still dropped when blank, so the blank negative control keeps
+        // its teeth. Three statements, not a merged condition: the && form trips ComplexCondition(3).
+        if (refusal.isEmpty()) return
+        if (!isDelta && refusal.isBlank()) return
+        if (!isDelta && buf.isNotBlank()) return
+        if (buf.length < BufferCapacity.MAX_BUFFERED_CHARS) buf.append(refusal)
+    }
 }
 
-/** Prefix-aware fold shared by the reasoning and text final-message channels: emit only what the
- *  streamed deltas haven't already carried ("Hello" streamed + "Hello world" final → " world";
- *  full duplicate → nothing; disjoint payload → all of it). A plain contains() check appended
- *  "Hello world" onto "Hello" → "HelloHello world". Known gap (left as-is): a final message that
- *  re-emits the streamed prose with NORMALIZED whitespace is neither a clean prefix nor a
- *  substring, so it falls to the `else` and re-sends in full — a whitespace-aware compare can't be
- *  made provably safe (it would drop legitimately-repeated content). */
-private fun unseenSuffix(already: String, final: String): String = when {
-    already.isEmpty() -> final
-    final.startsWith(already) -> final.substring(already.length)
-    already.contains(final) -> ""
-    else -> final
-}
+/**
+ * CX-01's tool-argument accumulation and terminal validation, on their own type for the same
+ * ceiling reason as [ChatProseFold]. Stateless — the buffers live on the translator.
+ */
+private class ChatToolArgs {
 
-/** CX-08: fold an OpenAI `refusal` field into [buf] from either of its two carriers.
- *
- *  TWO guards, closing two different axes; neither replaces the other.
- *  · TYPE — [strIfString], not [strOrEmpty]. OpenAI types `delta.refusal` as anyOf[string, null]
- *    ("the refusal message generated by the model"), so a vendor that ships it as a did-the-model-
- *    refuse FLAG (`"refusal": false`, `"refusal": 0`) is deviating from the wire contract, and
- *    strOrEmpty would hand back the non-blank strings "false" / "0" and fail 100% of that vendor's
- *    WORKING turns as a provider-reported refusal. A non-string primitive is not a refusal message.
- *  · BLANK — `refusal: ""` / JSON null / whitespace on every frame must never trip the gate.
- *
- *  DELTA-WINS accumulation, NOT [unseenSuffix]. The carriers are (i) incremental `delta.refusal`
- *  fragments and (ii) a whole-copy echo on the final message. Deltas own the buffer: each one is
- *  appended VERBATIM (what the vendor SDK does — openai-python builds `message.refusal` by
- *  concatenating every `delta.refusal`), and the whole-copy carrier is used only when no delta ever
- *  arrived. Running a whole-message dedup over an INCREMENTAL carrier deleted every token that had
- *  occurred before, so a real streamed refusal shipped garbled ("I can't help with that. I can't
- *  help with anything illegal." → "I can't help with that. I anything illegal"); carrying the
- *  model's own words is the entire value of this gate. One condition also kills the double-append.
- *  Capped by the NF-06 buffer law. The refusal is NOT written to the wire — it is the turn's
- *  verdict, not its content. Top-level — off ChatStreamTranslator's detekt function budget. */
-private fun appendRefusal(buf: StringBuilder, obj: JsonObject, isDelta: Boolean) {
-    val refusal = strIfString(obj["refusal"])
-    // Round-2 review: isBlank() is a WHOLE-VALUE predicate and this is an INCREMENTAL carrier —
-    // applying it per-frame silently deleted every whitespace-only fragment (a newline token
-    // between sentences, a lone space), shipping the refusal garbled. A FRAGMENT is dropped only
-    // when empty; a WHOLE COPY is still dropped when blank, so the blank negative control keeps
-    // its teeth. Three statements, not a merged condition: the && form trips ComplexCondition(3).
-    if (refusal.isEmpty()) return
-    if (!isDelta && refusal.isBlank()) return
-    if (!isDelta && buf.isNotBlank()) return
-    if (buf.length < BufferCapacity.MAX_BUFFERED_CHARS) buf.append(refusal)
-}
+    // CX-01: bounded accumulation of an opened tool's full argument text (streamed chunks go to the
+    // wire; this is the only place the whole buffer exists to parse at terminal). NF-06 cap.
+    fun accumulateToolArgs(argsByIndex: MutableMap<Int, StringBuilder>, index: Int, chunk: String) {
+        val buf = argsByIndex.getOrPut(index) { StringBuilder() }
+        if (buf.length < BufferCapacity.MAX_BUFFERED_CHARS) buf.append(chunk)
+    }
 
-/** CX-01: the first opened tool whose accumulated args are empty or not valid JSON, or null when
- *  all parse. Top-level (off ChatStreamTranslator's detekt function budget) — reads only its
- *  arguments. An opened tool with zero argument text is malformed ({} for a tool that needed args). */
-// CX-01: bounded accumulation of an opened tool's full argument text (streamed chunks go to the
-// wire; this is the only place the whole buffer exists to parse at terminal). Top-level — off the
-// class function budget. NF-06 cap.
-private fun accumulateToolArgs(argsByIndex: MutableMap<Int, StringBuilder>, index: Int, chunk: String) {
-    val buf = argsByIndex.getOrPut(index) { StringBuilder() }
-    if (buf.length < BufferCapacity.MAX_BUFFERED_CHARS) buf.append(chunk)
-}
+    /** CX-01: the first opened tool whose accumulated args are empty or not valid JSON, or null when
+     *  all parse. An opened tool with zero argument text is malformed ({} for a tool that needed
+     *  args). */
+    fun firstInvalidToolArgs(indices: Set<Int>, argsByIndex: Map<Int, StringBuilder>): String? =
+        indices.firstNotNullOfOrNull { index -> invalidArgsReason(argsByIndex[index]?.toString().orEmpty()) }
 
-private fun firstInvalidToolArgs(indices: Set<Int>, argsByIndex: Map<Int, StringBuilder>): String? =
-    indices.firstNotNullOfOrNull { index -> invalidArgsReason(argsByIndex[index]?.toString().orEmpty()) }
-
-/** null when [text] is valid non-empty tool-argument JSON, else the reason. */
-private fun invalidArgsReason(text: String): String? {
-    if (text.isBlank()) return "empty arguments for an opened tool call"
-    return try {
-        kotlinx.serialization.json.Json.parseToJsonElement(text)
-        null
-    } catch (ignored: kotlinx.serialization.SerializationException) {
-        "malformed JSON"
-    } catch (ignored: IllegalArgumentException) {
-        "malformed JSON"
+    /** null when [text] is valid non-empty tool-argument JSON, else the reason. */
+    private fun invalidArgsReason(text: String): String? {
+        if (text.isBlank()) return "empty arguments for an opened tool call"
+        return try {
+            kotlinx.serialization.json.Json.parseToJsonElement(text)
+            null
+        } catch (ignored: kotlinx.serialization.SerializationException) {
+            "malformed JSON"
+        } catch (ignored: IllegalArgumentException) {
+            "malformed JSON"
+        }
     }
 }

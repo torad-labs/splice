@@ -7,8 +7,9 @@ import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
-import splice.dialect.responses.harvestResponsesOutput
-import splice.dialect.responses.usageFrom
+import splice.dialect.responses.ResponsesHarvest
+
+private val harvest = ResponsesHarvest()
 
 class HarvestedTest {
 
@@ -16,7 +17,7 @@ class HarvestedTest {
 
     @Test
     fun `a null free-form reasoning field falls back to the summary parts`() {
-        val h = harvestResponsesOutput(
+        val h = harvest.harvestResponsesOutput(
             resp(
                 """{"output":[{"type":"reasoning","content":null,
                    "summary":[{"type":"summary_text","text":"the plan"}]}]}""",
@@ -28,7 +29,7 @@ class HarvestedTest {
 
     @Test
     fun `a null output_text part is skipped and the real answer is retained`() {
-        val h = harvestResponsesOutput(
+        val h = harvest.harvestResponsesOutput(
             resp(
                 """{"output":[{"type":"message","content":[
                    {"type":"output_text","text":null},
@@ -44,14 +45,14 @@ class HarvestedTest {
         // CX-18 follow-up (review #94, F155): the translator fixtures all used the canonical
         // spellings, so the alias fallback was unpinned — a regression dropping it (or flipping
         // precedence) stayed green. usageFrom is a pure function; pin the chain directly.
-        val u = usageFrom(resp("""{"usage":{"prompt_tokens":100,"completion_tokens":7}}"""))
+        val u = harvest.usageFrom(resp("""{"usage":{"prompt_tokens":100,"completion_tokens":7}}"""))
         assertEquals(100, u.inputTokens)
         assertEquals(7, u.outputTokens)
     }
 
     @Test
     fun `canonical usage spelling wins when both spellings are present`() {
-        val u = usageFrom(
+        val u = harvest.usageFrom(
             resp(
                 """{"usage":{"input_tokens":100,"prompt_tokens":999,
                    "output_tokens":7,"completion_tokens":888}}""",
@@ -65,7 +66,7 @@ class HarvestedTest {
     fun `two reasoning items join as one paragraph break with no spurious separators`() {
         // First item: null free-form → summary fallback. Second: empty free-form array → also
         // summary fallback. They must join with exactly one blank line, no leading/trailing breaks.
-        val h = harvestResponsesOutput(
+        val h = harvest.harvestResponsesOutput(
             resp(
                 """{"output":[
                    {"type":"reasoning","content":null,"summary":[{"type":"summary_text","text":"first"}]},

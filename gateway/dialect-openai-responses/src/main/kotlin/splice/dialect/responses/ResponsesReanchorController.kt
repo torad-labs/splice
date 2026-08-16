@@ -21,6 +21,8 @@ public class ResponsesReanchorController(
     private val maxContinuations: Int = DEFAULT_MAX_CONTINUATIONS,
 ) : ReanchorController {
 
+    private val continuation = ResponsesContinuation()
+
     override fun continuationForFailure(round: ReanchorRound): JsonObject? {
         val partial = round.failure.partial ?: return null
         if (!eligible(round, partial)) return null
@@ -29,7 +31,7 @@ public class ResponsesReanchorController(
             if (partial.bodyText.isNotEmpty()) add(assistantText(partial.bodyText))
             add(reanchorMarker())
         }
-        return continuationRequest(round.requestBody, items)
+        return continuation.continuationRequest(round.requestBody, items)
     }
 
     // Tool blocks end eligibility both ways: an OPEN tear committed partial args JSON to the
@@ -68,13 +70,18 @@ public class ResponsesReanchorController(
         put("phase", "commentary")
         put("content", MARKER_TEXT)
     }
-
-    public companion object {
-        public const val DEFAULT_MAX_CONTINUATIONS: Int = 2
-        public const val MARKER_TEXT: String =
-            "Your previous stream was interrupted mid-answer. Continue EXACTLY where the text " +
-                "above stops — do not repeat or restate anything already written, and do not " +
-                "restate reasoning you have already given."
-        private val RETRYABLE = setOf(ErrorType.OVERLOADED, ErrorType.API_ERROR)
-    }
 }
+
+// The re-anchor defaults, at file scope because Kotlin main sources carry no `companion` blocks.
+// Narrowed from the companion's `public` to `private`: grep shows no consumer outside this file,
+// in :app, or in any test, and a bare top-level `MARKER_TEXT` would otherwise be importable
+// package-wide.
+private const val DEFAULT_MAX_CONTINUATIONS: Int = 2
+
+private const val MARKER_TEXT: String =
+    "Your previous stream was interrupted mid-answer. Continue EXACTLY where the text " +
+        "above stops — do not repeat or restate anything already written, and do not " +
+        "restate reasoning you have already given."
+
+// FILE SCOPE ON PURPOSE: one shared immutable set, read per failure classification.
+private val RETRYABLE = setOf(ErrorType.OVERLOADED, ErrorType.API_ERROR)

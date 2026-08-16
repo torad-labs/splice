@@ -40,7 +40,7 @@ dependencies {
     // the fixtures compiled by the test reference splice.core.annotation.MustConsume; the test JVM's
     // own classpath (java.class.path) carries :core, so -cp resolves the annotation.
     testImplementation(project(":core"))
-    testImplementation(platform("org.junit:junit-bom:6.1.2"))
+    testImplementation(platform("org.junit:junit-bom:6.1.3"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
     detektPlugins("io.gitlab.arturbosch.detekt:detekt-formatting:1.23.8")

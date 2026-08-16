@@ -10,15 +10,19 @@ import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
 import splice.gateway.wire.SseEmitter
+import splice.gateway.wire.SseEmitterFactory
+import splice.gateway.wire.TerminalEnvelope
 import splice.gateway.wire.TerminalMessage
 import java.io.IOException
 import java.util.concurrent.CancellationException
 
 class SseEmitterTest {
 
+    private val emitters = SseEmitterFactory()
+
     private fun collector(): Pair<MutableList<String>, SseEmitter> {
         val frames = mutableListOf<String>()
-        val emitter = SseEmitter.create(
+        val emitter = emitters.create(
             write = { frames.add(it) },
             model = "claude-codex--gpt-5.6-sol",
             usagePayload = { u ->
@@ -160,7 +164,7 @@ class SseEmitterTest {
 
     @Test
     fun `non-stream terminal message derives the same stop reasons`() {
-        val msg = SseEmitter.terminalMessageJson(
+        val msg = TerminalEnvelope().terminalMessageJson(
             TerminalMessage(
                 id = "msg_1",
                 model = "m",
@@ -181,7 +185,7 @@ class SseEmitterTest {
         // wire — not no-op against a held claim and leave the client a truncated 200.
         val frames = mutableListOf<String>()
         var failOnce = true
-        val emitter = SseEmitter.create(
+        val emitter = emitters.create(
             write = { frame ->
                 if (failOnce && frame.startsWith("event: message_delta")) {
                     failOnce = false
@@ -214,7 +218,7 @@ class SseEmitterTest {
         // escaped its recordPerf/health telemetry. Client-gone must stay ENDED (unlike a
         // cancellation, which releases), leaving a follow-up emitError a clean no-op.
         val frames = mutableListOf<String>()
-        val emitter = SseEmitter.create(
+        val emitter = emitters.create(
             write = { frame ->
                 if (frame.startsWith("event: message_stop")) {
                     throw IOException("client gone mid-terminal")

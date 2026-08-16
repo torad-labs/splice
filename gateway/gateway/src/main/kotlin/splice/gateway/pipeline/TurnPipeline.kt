@@ -14,8 +14,7 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.pickModelText
 import splice.gateway.compact.CompactStats
-import splice.gateway.reasoning.mirrorInto
-import splice.gateway.reasoning.willMirror
+import splice.gateway.reasoning.Mirror
 import splice.gateway.wire.TurnTerminal
 
 public class TurnPipeline(
@@ -26,6 +25,10 @@ public class TurnPipeline(
     // display is unaffected. Default true = the measured codex distillation-loop doctrine.
     private val mirrorReasoning: Boolean = true,
 ) {
+    // The L2 mirror, whose definition still lives (once) in Mirror.kt — held as a collaborator
+    // rather than called at file scope. Stateless; one per pipeline.
+    private val mirror = Mirror()
+
     /**
      * Finish a streamed turn: apply promote/honesty/mirror to the machine's outcome and drive
      * the emitter to its SOLE terminal. Returns a short outcome tag for the debug log.
@@ -116,7 +119,7 @@ public class TurnPipeline(
     // The mirror_reasoning knob gates the CALL — mirrorInto stays the single L2 definition
     // (the ast-grep wall pins it to Mirror.kt); off = no transcript reinjection, display untouched.
     private suspend fun mirrorGated(sink: splice.spi.WireSink, thinkingText: String?, meta: TurnMeta) {
-        if (mirrorReasoning) mirrorInto(sink, thinkingText, meta.showReasoning, meta.compact)
+        if (mirrorReasoning) mirror.mirrorInto(sink, thinkingText, meta.showReasoning, meta.compact)
     }
 
     /** CX-09: the empty-turn verdict — nothing reached the client this turn and nothing will.
@@ -142,5 +145,5 @@ public class TurnPipeline(
      *  it shipped. So the honesty gate asks [TurnOutcome.Success.emittedThinking] FIRST, and only
      *  falls back to this predicate when nothing reached the wire at all. */
     private fun willMirrorHere(thinkingText: String?, meta: TurnMeta): Boolean =
-        mirrorReasoning && willMirror(thinkingText, meta.showReasoning, meta.compact)
+        mirrorReasoning && mirror.willMirror(thinkingText, meta.showReasoning, meta.compact)
 }

@@ -27,6 +27,11 @@ public data class PerfRowMeta(
     val compact: Boolean,
 )
 
+private const val DEFAULT_TAIL = 200
+
+// ~256 KiB of trailing JSONL bounds parse cost regardless of file age.
+private const val READ_TAIL_BYTES = 256 * 1024
+
 public class PerfStats(private val file: Path, private val clock: () -> Long = System::currentTimeMillis) {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -63,16 +68,9 @@ public class PerfStats(private val file: Path, private val clock: () -> Long = S
         return rows.takeLast(tailN).map { it.numericFields() }
     }
 
-    private companion object {
-        const val DEFAULT_TAIL = 200
-
-        // ~256 KiB of trailing JSONL bounds parse cost regardless of file age.
-        const val READ_TAIL_BYTES = 256 * 1024
-
-        fun JsonObject.numericFields(): Map<String, Long> = buildMap {
-            this@numericFields.forEach { (k, v) ->
-                (v as? JsonPrimitive)?.longOrNull?.let { put(k, it) }
-            }
+    private fun JsonObject.numericFields(): Map<String, Long> = buildMap {
+        this@numericFields.forEach { (k, v) ->
+            (v as? JsonPrimitive)?.longOrNull?.let { put(k, it) }
         }
     }
 }

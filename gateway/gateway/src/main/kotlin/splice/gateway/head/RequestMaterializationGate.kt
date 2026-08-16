@@ -4,6 +4,10 @@ package splice.gateway.head
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
+/** Default permits. Was `RequestMaterializationGate.DEFAULT_MAX_CONCURRENT` (a companion const);
+ *  same package-visible name, now at file scope. */
+public const val DEFAULT_MAX_CONCURRENT: Int = 16
+
 /**
  * Process-shared bound on requests concurrently being decoded and translated.
  *
@@ -28,9 +32,5 @@ public class RequestMaterializationGate(maxConcurrent: Int = DEFAULT_MAX_CONCURR
         } finally {
             semaphore.release()
         }
-    }
-
-    public companion object {
-        public const val DEFAULT_MAX_CONCURRENT: Int = 16
     }
 }

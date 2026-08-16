@@ -9,14 +9,15 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.parse.parseAnthropicBody
 import splice.gateway.compact.COMPACT_MARKER
+import splice.gateway.compact.CompactClassifier
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
-import splice.gateway.compact.classifyCompact
 import splice.gateway.compact.compactMarkers
-import splice.gateway.compact.markerPresent
 import java.nio.file.Path
 
 private fun body(json: String) = parseAnthropicBody(json).typed
+
+private val classifier = CompactClassifier()
 
 class CompactTest {
 
@@ -33,11 +34,13 @@ class CompactTest {
     fun `every marker detects in the system prompt and in the last user message`() {
         for (marker in compactMarkers) {
             assertTrue(
-                classifyCompact(body("""{"model":"m","system":"You are $marker now.","messages":[]}""")).compact,
+                classifier.classifyCompact(
+                    body("""{"model":"m","system":"You are $marker now.","messages":[]}"""),
+                ).compact,
                 "system: $marker",
             )
             assertTrue(
-                classifyCompact(
+                classifier.classifyCompact(
                     body(
                         """{"model":"m","messages":[{"role":"user","content":"Please: ${marker.uppercase()}"}]}""",
                     ),
@@ -50,7 +53,7 @@ class CompactTest {
     @Test
     fun `detection is tools-agnostic - real compactions carry tools`() {
         assertTrue(
-            classifyCompact(
+            classifier.classifyCompact(
                 body(
                     """{"model":"m","system":"$COMPACT_MARKER",
                         "tools":[{"name":"Read","input_schema":{"type":"object"}}],"messages":[]}""",
@@ -66,7 +69,7 @@ class CompactTest {
             append("x".repeat(50_000))
             append(""""}]}""")
         }
-        assertFalse(classifyCompact(body(bigResume)).compact)
+        assertFalse(classifier.classifyCompact(body(bigResume)).compact)
     }
 
     @Test
@@ -78,14 +81,14 @@ class CompactTest {
                 {"role":"user","content":"now do normal work"}
             ]}""",
         )
-        assertFalse(classifyCompact(quoted).compact)
-        assertFalse(markerPresent(quoted))
+        assertFalse(classifier.classifyCompact(quoted).compact)
+        assertFalse(classifier.markerPresent(quoted))
     }
 
     @Test
     fun `explicit compaction affordances match`() {
         assertTrue(
-            classifyCompact(
+            classifier.classifyCompact(
                 body(
                     """{"model":"m","messages":[
                         {"role":"user","content":"The compaction agent should only produce TEXT."}]}""",
@@ -93,7 +96,7 @@ class CompactTest {
             ).compact,
         )
         assertTrue(
-            classifyCompact(
+            classifier.classifyCompact(
                 body(
                     """{"model":"m","messages":[
                         {"role":"user","content":"Tool use is not allowed during compaction."}]}""",

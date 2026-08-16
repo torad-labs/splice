@@ -24,12 +24,19 @@ import splice.core.turn.Usage
 import java.util.concurrent.CancellationException
 import java.util.concurrent.atomic.AtomicReference
 
+private const val TYPE = "type"
+private const val MESSAGE = "message"
+
+// Reused frame buffer: sized to hold a typical delta frame without a regrow; it keeps
+// whatever capacity the largest frame needed, so steady-state hot-delta writes never realloc.
+private const val FRAME_BUF_CAPACITY = 256
+
 /** Builds the (non-standard) usage payload Claude Code reads from gateways — injected so the
  *  emitter stays hud-agnostic; the real builder lands with the usage port (P3-USE). */
 public typealias UsagePayloadBuilder = (Usage?) -> JsonObject
 
 /** The fields of the non-stream terminal message envelope, grouped so its builder
- *  ([SseEmitter.terminalMessageJson]) keeps a single cohesive argument (L3 wire mirror). */
+ *  ([TerminalEnvelope.terminalMessageJson]) keeps a single cohesive argument (L3 wire mirror). */
 public data class TerminalMessage(
     val id: String,
     val model: String,
@@ -38,6 +45,44 @@ public data class TerminalMessage(
     val incomplete: Boolean,
     val usagePayload: JsonObject,
 )
+
+/** The stop_reason derivation and the non-stream terminal envelope that carries it. Declared in
+ *  THIS file because the L3 walls pin the `end_turn` / `message_*` literals here; it is a class
+ *  (not a static namespace) so [SseEmitter] and [CollectingTerminal] each hold one. */
+public class TerminalEnvelope {
+    /** Non-stream terminal message (translateResponse envelope) — built HERE because the
+     *  stop_reason derivation and its literals are walled to this file (L3). The envelope
+     *  fields are grouped into [TerminalMessage] so the builder stays a single L3 argument. */
+    public fun terminalMessageJson(msg: TerminalMessage): JsonObject = buildJsonObject {
+        put("id", msg.id)
+        put(TYPE, MESSAGE)
+        put("role", "assistant")
+        put("content", buildJsonArray { msg.content.forEach { add(it) } })
+        put("model", msg.model)
+        put("stop_reason", deriveStopReason(msg.hasToolUse, msg.incomplete))
+        put("stop_sequence", null as String?)
+        put("usage", msg.usagePayload)
+    }
+
+    // `internal`, not `private`: a Kotlin private member is CLASS-private, and SseEmitter (a
+    // different top-level class in this file) must reach it — a second copy is what L3 forbids.
+    internal fun deriveStopReason(hasToolUse: Boolean, incomplete: Boolean): String = when {
+        hasToolUse -> "tool_use"
+        incomplete -> "max_tokens"
+        else -> "end_turn"
+    }
+}
+
+/** The one construction seam for [SseEmitter] (its constructor stays `internal`) — injected as a
+ *  collaborator rather than reached as a static `SseEmitter.create`. */
+public class SseEmitterFactory {
+    public fun create(
+        write: suspend (String) -> Unit,
+        model: String,
+        usagePayload: UsagePayloadBuilder,
+        messageId: String = MessageIds().generateMessageId(),
+    ): SseEmitter = SseEmitter(write, model, usagePayload, messageId)
+}
 
 public class SseEmitter internal constructor(
     private val write: suspend (String) -> Unit,
@@ -58,6 +103,9 @@ public class SseEmitter internal constructor(
     private var started = false
     private var nextBlockIndex = 0
     private val open = LinkedHashSet<Int>()
+
+    // The shared stop_reason derivation (L3) — one definition, held rather than copied.
+    private val envelope = TerminalEnvelope()
 
     // Reused for every frame assembly — never escapes the emitter; not concurrent.
     private val frameBuf = StringBuilder(FRAME_BUF_CAPACITY)
@@ -230,7 +278,7 @@ public class SseEmitter internal constructor(
                 buildJsonObject {
                     put(TYPE, "message_delta")
                     putJsonObject("delta") {
-                        put("stop_reason", deriveStopReason(hasToolUse, incomplete))
+                        put("stop_reason", envelope.deriveStopReason(hasToolUse, incomplete))
                         put("stop_sequence", null as String?)
                     }
                     put("usage", usagePayload(usage))
@@ -283,40 +331,41 @@ public class SseEmitter internal constructor(
         seal.set(SealState.ENDED)
     }
 
-    public companion object {
-        private const val TYPE = "type"
-        private const val MESSAGE = "message"
-
-        // Reused frame buffer: sized to hold a typical delta frame without a regrow; it keeps
-        // whatever capacity the largest frame needed, so steady-state hot-delta writes never realloc.
-        private const val FRAME_BUF_CAPACITY = 256
-
-        public fun create(
-            write: suspend (String) -> Unit,
-            model: String,
-            usagePayload: UsagePayloadBuilder,
-            messageId: String = generateMessageId(),
-        ): SseEmitter = SseEmitter(write, model, usagePayload, messageId)
-
-        /** Non-stream terminal message (translateResponse envelope) — built HERE because the
-         *  stop_reason derivation and its literals are walled to this file (L3). The envelope
-         *  fields are grouped into [TerminalMessage] so the builder stays a single L3 argument. */
-        public fun terminalMessageJson(msg: TerminalMessage): JsonObject = buildJsonObject {
-            put("id", msg.id)
-            put(TYPE, MESSAGE)
-            put("role", "assistant")
-            put("content", buildJsonArray { msg.content.forEach { add(it) } })
-            put("model", msg.model)
-            put("stop_reason", deriveStopReason(msg.hasToolUse, msg.incomplete))
-            put("stop_sequence", null as String?)
-            put("usage", msg.usagePayload)
+    /** RFC 8259 string escape into [this] builder — only the value payload of a hot delta.
+     *  MUST stay byte-identical to kotlinx-serialization's escaper (L3: the golden differential
+     *  diffs bytes): kotlinx emits the SHORT forms for backspace (0x08) and form feed (0x0C);
+     *  the \uXXXX forms would be valid JSON but a byte divergence (audit 2026-07-18; the whole
+     *  control range is pinned by SseEscapingParityTest). */
+    private fun StringBuilder.appendJsonEscaped(s: String): StringBuilder {
+        for (i in s.indices) {
+            val c = s[i]
+            val shortEsc = shortEscape(c)
+            when {
+                shortEsc != null -> append(shortEsc)
+                c.code < CONTROL_CHAR_BOUND -> appendUnicodeEscape(c)
+                else -> append(c)
+            }
         }
+        return this
+    }
 
-        private fun deriveStopReason(hasToolUse: Boolean, incomplete: Boolean): String = when {
-            hasToolUse -> "tool_use"
-            incomplete -> "max_tokens"
-            else -> "end_turn"
-        }
+    /** The six two-char JSON escapes kotlinx emits; null = not a short-escaped char. */
+    private fun shortEscape(c: Char): String? = when (c.code) {
+        '\\'.code -> "\\\\"
+        '"'.code -> "\\\""
+        CH_NEWLINE -> "\\n"
+        CH_RETURN -> "\\r"
+        CH_TAB -> "\\t"
+        CH_BACKSPACE -> "\\b"
+        CH_FORMFEED -> "\\f"
+        else -> null
+    }
+
+    private fun StringBuilder.appendUnicodeEscape(c: Char) {
+        append("\\u")
+        val hex = c.code.toString(HEX_RADIX)
+        repeat(UNICODE_ESCAPE_DIGITS - hex.length) { append('0') }
+        append(hex)
     }
 }
 
@@ -325,46 +374,9 @@ private const val CONTROL_CHAR_BOUND = 0x20
 private const val HEX_RADIX = 16
 private const val UNICODE_ESCAPE_DIGITS = 4
 
-/** RFC 8259 string escape into [this] builder — only the value payload of a hot delta.
- *  MUST stay byte-identical to kotlinx-serialization's escaper (L3: the golden differential
- *  diffs bytes): kotlinx emits the SHORT forms for backspace (0x08) and form feed (0x0C);
- *  the \uXXXX forms would be valid JSON but a byte divergence (audit 2026-07-18; the whole
- *  control range is pinned by SseEscapingParityTest). */
-private fun StringBuilder.appendJsonEscaped(s: String): StringBuilder {
-    for (i in s.indices) {
-        val c = s[i]
-        val shortEsc = shortEscape(c)
-        when {
-            shortEsc != null -> append(shortEsc)
-            c.code < CONTROL_CHAR_BOUND -> appendUnicodeEscape(c)
-            else -> append(c)
-        }
-    }
-    return this
-}
-
 // Control-char code points kotlinx short-escapes (named so the escaper carries no magic numbers).
 private const val CH_BACKSPACE = 0x08
 private const val CH_TAB = 0x09
 private const val CH_NEWLINE = 0x0A
 private const val CH_FORMFEED = 0x0C
 private const val CH_RETURN = 0x0D
-
-/** The six two-char JSON escapes kotlinx emits; null = not a short-escaped char. */
-private fun shortEscape(c: Char): String? = when (c.code) {
-    '\\'.code -> "\\\\"
-    '"'.code -> "\\\""
-    CH_NEWLINE -> "\\n"
-    CH_RETURN -> "\\r"
-    CH_TAB -> "\\t"
-    CH_BACKSPACE -> "\\b"
-    CH_FORMFEED -> "\\f"
-    else -> null
-}
-
-private fun StringBuilder.appendUnicodeEscape(c: Char) {
-    append("\\u")
-    val hex = c.code.toString(HEX_RADIX)
-    repeat(UNICODE_ESCAPE_DIGITS - hex.length) { append('0') }
-    append(hex)
-}

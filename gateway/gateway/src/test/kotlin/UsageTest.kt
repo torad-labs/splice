@@ -14,15 +14,16 @@ import splice.core.turn.Usage
 import splice.core.usage.RateLimitState
 import splice.core.usage.computeUsageWarn
 import splice.gateway.head.RoundUsage
-import splice.gateway.usage.TurnUsage
+import splice.gateway.usage.UsageHud
+import splice.gateway.usage.UsageJson
 import splice.gateway.usage.UsageStore
-import splice.gateway.usage.buildUsagePayload
-import splice.gateway.usage.cacheLogLine
-import splice.gateway.usage.makeOutputClamp
 import java.nio.file.Path
 import java.util.concurrent.Executors
 
 private fun obj(json: String) = Json.parseToJsonElement(json).jsonObject
+
+private val hud = UsageHud()
+private val usageJson = UsageJson()
 
 class UsageTest {
 
@@ -76,19 +77,19 @@ class UsageTest {
 
     @Test
     fun `payload - aliases, cached detail, and the non-standard context fields`() {
-        val usage = TurnUsage.from(
+        val usage = usageJson.from(
             obj("""{"prompt_tokens":100,"completion_tokens":7,"input_tokens_details":{"cached_tokens":60}}"""),
         )
         assertEquals(100, usage.inputTokens)
         assertEquals(7, usage.outputTokens)
         assertEquals(60, usage.cacheReadInputTokens)
-        val payload = buildUsagePayload(usage, contextWindow = 272_000)
+        val payload = hud.buildUsagePayload(usage, contextWindow = 272_000)
         assertEquals("100", payload["input_tokens"]?.jsonPrimitive?.content)
         assertEquals("272000", payload["context_window"]?.jsonPrimitive?.content)
         assertEquals("272000", payload["context_window_size"]?.jsonPrimitive?.content)
         val pct = payload["used_percentage"]?.jsonPrimitive?.content?.toDouble() ?: 0.0
         assertTrue(pct > 0.058 && pct < 0.06, "used pct = $pct") // 160/272000*100
-        assertNull(buildUsagePayload(usage, contextWindow = null)["context_window"])
+        assertNull(hud.buildUsagePayload(usage, contextWindow = null)["context_window"])
     }
 
     @Test
@@ -96,29 +97,29 @@ class UsageTest {
         // The migration oracle byte-compares our SSE against the legacy Node reference, and
         // JSON.stringify prints an integral double bare ("0", never "0.0"). CX-19 replay
         // 2026-08-07: every streaming fixture diverged at exactly this byte.
-        val zero = TurnUsage.from(obj("""{"input_tokens":0,"output_tokens":0}"""))
-        val payload = buildUsagePayload(zero, contextWindow = 272_000)
+        val zero = usageJson.from(obj("""{"input_tokens":0,"output_tokens":0}"""))
+        val payload = hud.buildUsagePayload(zero, contextWindow = 272_000)
         assertEquals("0", payload["used_percentage"]?.jsonPrimitive?.content)
-        val full = TurnUsage.from(obj("""{"input_tokens":136000,"output_tokens":0}"""))
+        val full = usageJson.from(obj("""{"input_tokens":136000,"output_tokens":0}"""))
         assertEquals(
             "50",
-            buildUsagePayload(full, contextWindow = 272_000)["used_percentage"]?.jsonPrimitive?.content,
+            hud.buildUsagePayload(full, contextWindow = 272_000)["used_percentage"]?.jsonPrimitive?.content,
         )
-        val frac = TurnUsage.from(obj("""{"input_tokens":160,"output_tokens":0}"""))
-        val content = buildUsagePayload(frac, contextWindow = 272_000)["used_percentage"]?.jsonPrimitive?.content
+        val frac = usageJson.from(obj("""{"input_tokens":160,"output_tokens":0}"""))
+        val content = hud.buildUsagePayload(frac, contextWindow = 272_000)["used_percentage"]?.jsonPrimitive?.content
         assertTrue(content!!.startsWith("0.0588"), "non-integral stays decimal: $content")
         // Below 1e-3 the JVM flips to E-notation where JS stays decimal — the basic fixture's
         // exact value (1 input token against the 272k default window).
-        val tiny = TurnUsage.from(obj("""{"input_tokens":1,"output_tokens":0}"""))
+        val tiny = usageJson.from(obj("""{"input_tokens":1,"output_tokens":0}"""))
         assertEquals(
             "0.0003676470588235294",
-            buildUsagePayload(tiny, contextWindow = 272_000)["used_percentage"]?.jsonPrimitive?.content,
+            hud.buildUsagePayload(tiny, contextWindow = 272_000)["used_percentage"]?.jsonPrimitive?.content,
         )
     }
 
     @Test
     fun `cache log line format is exact`() {
-        val line = cacheLogLine(
+        val line = hud.cacheLogLine(
             "codex-proxy",
             "gpt-5.6-sol",
             obj("""{"input_tokens":200,"input_tokens_details":{"cached_tokens":150},"output_tokens":9}"""),
@@ -133,11 +134,11 @@ class UsageTest {
     @Test
     fun `output clamp - over clamps with the log line, under passes, null max passes`() {
         val logs = mutableListOf<String>()
-        val clamp = makeOutputClamp(32_000, compact = false, headTag = "codex-proxy", log = { logs.add(it) })
+        val clamp = hud.makeOutputClamp(32_000, compact = false, headTag = "codex-proxy", log = { logs.add(it) })
         assertEquals(32_000, clamp(200_000))
         assertTrue(logs.single().contains("output_tokens 200000 > client max_tokens 32000 compact=false"))
         assertEquals(10, clamp(10))
-        val noMax = makeOutputClamp(null, compact = false, headTag = "t", log = { logs.add(it) })
+        val noMax = hud.makeOutputClamp(null, compact = false, headTag = "t", log = { logs.add(it) })
         assertEquals(999_999, noMax(999_999))
     }
 

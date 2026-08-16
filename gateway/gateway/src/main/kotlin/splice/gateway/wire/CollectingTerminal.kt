@@ -17,10 +17,28 @@ import splice.core.turn.Usage
 import splice.core.util.runCatchingCancellable
 import java.util.concurrent.atomic.AtomicBoolean
 
+private const val OK_STATUS = 200
+private const val DEFAULT_ERROR_STATUS = 502
+private const val STATUS_INVALID = 400
+private const val STATUS_AUTH = 401
+private const val STATUS_PERMISSION = 403
+private const val STATUS_NOT_FOUND = 404
+private const val STATUS_RATE_LIMIT = 429
+private const val STATUS_OVERLOADED = 529
+
+private const val FIELD_TYPE = "type"
+private const val FIELD_TEXT = "text"
+private const val FIELD_THINKING = "thinking"
+private const val FIELD_ERROR = "error"
+
+// FILE SCOPE ON PURPOSE: one shared immutable empty JsonObject. As a member it would allocate per
+// CollectingTerminal, i.e. per non-stream turn, for a value that can never differ.
+private val EMPTY_INPUT = JsonObject(emptyMap())
+
 public class CollectingTerminal(
     private val model: String,
     private val usagePayload: UsagePayloadBuilder,
-    private val messageId: String = generateMessageId(),
+    private val messageId: String = MessageIds().generateMessageId(),
 ) : TurnTerminal {
 
     private sealed class Blk {
@@ -33,6 +51,9 @@ public class CollectingTerminal(
     // Blocks in OPEN order — the Anthropic content array order. Index handles are list positions.
     private val blocks = mutableListOf<Blk>()
     private val ended = AtomicBoolean(false)
+
+    // The L3 terminal envelope (stop_reason derivation lives in SseEmitter.kt), held not copied.
+    private val envelope = TerminalEnvelope()
 
     override val hasEnded: Boolean get() = ended.get()
 
@@ -123,7 +144,7 @@ public class CollectingTerminal(
             status = statusFor(ErrorType.API_ERROR)
             return
         }
-        body = SseEmitter.terminalMessageJson(
+        body = envelope.terminalMessageJson(
             TerminalMessage(
                 id = messageId,
                 model = model,
@@ -198,49 +219,31 @@ public class CollectingTerminal(
         return parsed ?: EMPTY_INPUT
     }
 
-    public companion object {
-        private const val OK_STATUS = 200
-        private const val DEFAULT_ERROR_STATUS = 502
-        private const val STATUS_INVALID = 400
-        private const val STATUS_AUTH = 401
-        private const val STATUS_PERMISSION = 403
-        private const val STATUS_NOT_FOUND = 404
-        private const val STATUS_RATE_LIMIT = 429
-        private const val STATUS_OVERLOADED = 529
-
-        private const val FIELD_TYPE = "type"
-        private const val FIELD_TEXT = "text"
-        private const val FIELD_THINKING = "thinking"
-        private const val FIELD_ERROR = "error"
-
-        private val EMPTY_INPUT = JsonObject(emptyMap())
-
-        // RG2-001: [usage] is null for every OTHER caller of this envelope (the responseBody()
-        // fallback has none to give) — only the malformed-tool-use path in emitTerminal has a real
-        // turn usage in scope, so it is the only caller that passes one.
-        private fun errorEnvelope(type: String, message: String, usage: JsonObject? = null): JsonObject =
-            buildJsonObject {
-                put(FIELD_TYPE, FIELD_ERROR)
-                put(
-                    FIELD_ERROR,
-                    buildJsonObject {
-                        put(FIELD_TYPE, type)
-                        put("message", message)
-                    },
-                )
-                usage?.let { put("usage", it) }
-            }
-
-        // ErrorType -> HTTP status. api_error maps to 502 to match the Node non-stream path's
-        // upstream-error/empty-model response; the rest mirror the Anthropic status conventions.
-        private fun statusFor(type: ErrorType): Int = when (type) {
-            ErrorType.INVALID_REQUEST -> STATUS_INVALID
-            ErrorType.AUTHENTICATION -> STATUS_AUTH
-            ErrorType.PERMISSION -> STATUS_PERMISSION
-            ErrorType.NOT_FOUND -> STATUS_NOT_FOUND
-            ErrorType.RATE_LIMIT -> STATUS_RATE_LIMIT
-            ErrorType.OVERLOADED -> STATUS_OVERLOADED
-            ErrorType.API_ERROR -> DEFAULT_ERROR_STATUS
+    // RG2-001: [usage] is null for every OTHER caller of this envelope (the responseBody()
+    // fallback has none to give) — only the malformed-tool-use path in emitTerminal has a real
+    // turn usage in scope, so it is the only caller that passes one.
+    private fun errorEnvelope(type: String, message: String, usage: JsonObject? = null): JsonObject =
+        buildJsonObject {
+            put(FIELD_TYPE, FIELD_ERROR)
+            put(
+                FIELD_ERROR,
+                buildJsonObject {
+                    put(FIELD_TYPE, type)
+                    put("message", message)
+                },
+            )
+            usage?.let { put("usage", it) }
         }
+
+    // ErrorType -> HTTP status. api_error maps to 502 to match the Node non-stream path's
+    // upstream-error/empty-model response; the rest mirror the Anthropic status conventions.
+    private fun statusFor(type: ErrorType): Int = when (type) {
+        ErrorType.INVALID_REQUEST -> STATUS_INVALID
+        ErrorType.AUTHENTICATION -> STATUS_AUTH
+        ErrorType.PERMISSION -> STATUS_PERMISSION
+        ErrorType.NOT_FOUND -> STATUS_NOT_FOUND
+        ErrorType.RATE_LIMIT -> STATUS_RATE_LIMIT
+        ErrorType.OVERLOADED -> STATUS_OVERLOADED
+        ErrorType.API_ERROR -> DEFAULT_ERROR_STATUS
     }
 }

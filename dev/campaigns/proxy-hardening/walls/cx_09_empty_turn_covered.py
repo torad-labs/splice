@@ -63,7 +63,16 @@ REQUIRED = {
          "the two can drift apart, silently re-opening the uncovered band"),
     ],
     "pipeline": [
-        ("mirrorReasoning && willMirror(thinkingText, meta.showReasoning, meta.compact)",
+        # 2026-08-16 — the head-decoupling style migration (HD-M4) moved `willMirror` from a
+        # top-level function in Mirror.kt onto `class Mirror`, so the pipeline holds the collaborator
+        # (`private val mirror = Mirror()`) and the call gains a receiver. Same predicate, same
+        # arguments, same conjunction with the operator knob — behaviour did not change. The
+        # invariant either spelling satisfies is that the pipeline's mirror question is
+        # `mirrorReasoning && <the one willMirror predicate>`; dropping the knob, or dropping the
+        # call, still satisfies neither. This is the same remedy the W4-A wall records for its
+        # isNotEmpty/isNotBlank entry: an entry may be a TUPLE of equivalent spellings.
+        (("mirrorReasoning && mirror.willMirror(thinkingText, meta.showReasoning, meta.compact)",
+          "mirrorReasoning && willMirror(thinkingText, meta.showReasoning, meta.compact)"),
          "the pipeline's mirror question ignores the operator knob, so a turn with the mirror "
          "switched off is still graded as covered and ends clean and empty"),
         ("!outcome.emittedThinking && !willMirrorHere(outcome.thinkingText, meta)",
@@ -124,6 +133,16 @@ def code_only(text: str | None) -> str | None:
     return _IMPORT_LINE.sub("", stripped)
 
 
+def _alts(token: str | tuple[str, ...]) -> tuple[str, ...]:
+    """Equivalent spellings of ONE call site. A bare string is its own only spelling.
+
+    Not a relaxation: every entry must still be matched by SOMETHING in the file, each spelling
+    still names a whole call site rather than a bare identifier, and deleting the wiring removes
+    every spelling at once. See the dated note on the pipeline entry above.
+    """
+    return (token,) if isinstance(token, str) else token
+
+
 def detect(sources: Mapping[str, str | None]) -> list[str]:
     """Pure detection. No I/O — the selftest feeds it derived sources directly."""
     problems: list[str] = []
@@ -133,8 +152,9 @@ def detect(sources: Mapping[str, str | None]) -> list[str]:
             problems.append(f"{key} source missing — refusing to pass vacuously")
             continue
         for token, why in REQUIRED[key]:
-            if token not in text:
-                problems.append(f"{key}: {why} (missing `{token}`)")
+            alts = _alts(token)
+            if not any(alt in text for alt in alts):
+                problems.append(f"{key}: {why} (missing `{alts[0]}`)")
     return problems
 
 
@@ -166,11 +186,22 @@ def selftest() -> int:
     else:
         for key, checks in REQUIRED.items():
             for token, _why in checks:
+                alts = _alts(token)
+                text = live[key] or ""
+                # ANY-OF entries hold equivalent spellings, so only the spelling actually PRESENT can
+                # be deleted to derive the half-fix; requiring every spelling to exist would make the
+                # control fail the moment a legitimate refactor changed one.
+                present = [alt for alt in alts if alt in text]
+                if not present:
+                    fails.append(f"cannot derive a {key} half-fix: none of {alts!r} is in the real source")
+                    continue
+                for alt in present:
+                    text = text.replace(alt, "")
                 mutant = dict(live)
-                mutant[key] = (live[key] or "").replace(token, "")
+                mutant[key] = text
                 problems = detect(mutant)
-                if not any(p.startswith(f"{key}:") and token in p for p in problems):
-                    fails.append(f"deleting `{token}` from {key} must be RED for its own reason, got {problems}")
+                if not any(p.startswith(f"{key}:") and alts[0] in p for p in problems):
+                    fails.append(f"deleting `{alts[0]}` from {key} must be RED for its own reason, got {problems}")
 
     if not detect(dict(PREFIX_SHAPE)):
         fails.append("the pre-fix shape must be RED")

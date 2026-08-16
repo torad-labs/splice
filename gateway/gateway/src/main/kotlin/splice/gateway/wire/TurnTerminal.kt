@@ -50,7 +50,14 @@ public interface TurnTerminal : WireSink {
 // process-wide monotonic sequence appended to the timestamp makes every id distinct regardless of
 // concurrency; shared here (both terminal implementations already live in this file's package)
 // rather than duplicated per sink.
+// FILE SCOPE ON PURPOSE: the sequence must be PROCESS-wide. Held on MessageIds it would restart at
+// 0 per instance, and the two sinks below each construct their own — reintroducing HEAD-001.
 private val messageIdSeq = AtomicLong(0)
 
-/** A fresh Anthropic-shaped message id, unique even across turns starting in the same millisecond. */
-public fun generateMessageId(): String = "msg_${System.currentTimeMillis()}_${messageIdSeq.incrementAndGet()}"
+/** The message-id minter. A class, not a file-scope function: both terminal sinks read it from a
+ *  constructor DEFAULT (so it cannot be a member of either), and it stays stateless — the
+ *  process-wide sequence above is what actually carries the uniqueness. */
+public class MessageIds {
+    /** A fresh Anthropic-shaped message id, unique even across turns starting in the same ms. */
+    public fun generateMessageId(): String = "msg_${System.currentTimeMillis()}_${messageIdSeq.incrementAndGet()}"
+}

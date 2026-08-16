@@ -15,9 +15,7 @@ import splice.core.reasoning.encodeReasoningEnvelope
 import splice.core.turn.ReasoningDisplay
 import splice.core.wire.TextBlock
 import splice.core.wire.ThinkingBlock
-import splice.gateway.reasoning.extractThinking
-import splice.gateway.reasoning.mirrorInto
-import splice.gateway.reasoning.mirrorWireText
+import splice.gateway.reasoning.Mirror
 
 // node -e "import('./server/src/reasoning/replay.mjs').then(m => console.log(m.encodeReasoningEnvelope(...)))"
 private const val NODE_WITH_SUMMARY =
@@ -74,17 +72,20 @@ class ReplayMirrorTest {
     fun `mirror gates - compact off, non-text off, short off, emits wire format`() = runTest {
         val texts = mutableListOf<String>()
         val sink = sinkCapturing(texts)
-        assertFalse(mirrorInto(sink, "long enough reasoning summary", ReasoningDisplay.TEXT, compact = true))
-        assertFalse(mirrorInto(sink, "long enough reasoning summary", ReasoningDisplay.THINKING, compact = false))
-        assertFalse(mirrorInto(sink, "too short", ReasoningDisplay.TEXT, compact = false))
-        assertTrue(mirrorInto(sink, "  long enough reasoning summary  ", ReasoningDisplay.TEXT, compact = false))
+        val mirror = Mirror()
+        assertFalse(mirror.mirrorInto(sink, "long enough reasoning summary", ReasoningDisplay.TEXT, compact = true))
+        assertFalse(
+            mirror.mirrorInto(sink, "long enough reasoning summary", ReasoningDisplay.THINKING, compact = false),
+        )
+        assertFalse(mirror.mirrorInto(sink, "too short", ReasoningDisplay.TEXT, compact = false))
+        assertTrue(mirror.mirrorInto(sink, "  long enough reasoning summary  ", ReasoningDisplay.TEXT, compact = false))
         assertEquals(listOf("\n[reasoning summary]\nlong enough reasoning summary\n"), texts)
-        assertEquals("\n[reasoning summary]\nx\n", mirrorWireText(" x "))
+        assertEquals("\n[reasoning summary]\nx\n", mirror.mirrorWireText(" x "))
     }
 
     @Test
     fun `extractThinking joins thinking blocks with paragraph breaks`() {
-        val joined = extractThinking(
+        val joined = Mirror().extractThinking(
             listOf(
                 ThinkingBlock(" first "),
                 TextBlock("not thinking"),

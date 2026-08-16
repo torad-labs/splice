@@ -37,13 +37,11 @@ import splice.gateway.perf.PerfRowMeta
 import splice.gateway.perf.PerfStats
 import splice.gateway.pipeline.TurnPipeline
 import splice.gateway.usage.TurnUsage
-import splice.gateway.usage.buildUsagePayload
-import splice.gateway.usage.cacheLogLine
-import splice.gateway.usage.makeOutputClamp
+import splice.gateway.usage.UsageHud
 import splice.gateway.wire.BufferingWireSink
 import splice.gateway.wire.CollectingTerminal
 import splice.gateway.wire.ImmediateSseWriter
-import splice.gateway.wire.SseEmitter
+import splice.gateway.wire.SseEmitterFactory
 import splice.gateway.wire.TurnTerminal
 import splice.gateway.wire.UsagePayloadBuilder
 import splice.spi.BuiltTurn
@@ -68,6 +66,22 @@ import splice.spi.WireSink
 import splice.spi.sseJsonEvents
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
+
+// MERGED: TurnDriver's and TurnTelemetry's private companions each carried an identical
+// `ERR_SNIPPET = 200`. Two file-scope consts cannot share a name, and the two values were never
+// meant to diverge — one declaration now serves both.
+private const val ERR_SNIPPET = 200
+
+// G2: cap the raw pre-JSON body buffered for zero-event classification (~1KB).
+private const val ZERO_EVENT_SNIPPET_CHARS = 1024
+
+// SSE comment keepalive: pure transport, invisible to SSE parsers (spec: lines starting
+// with ':' are comments) — exists ONLY so a dead client fails a write promptly.
+private const val SSE_KEEPALIVE_COMMENT = ": ping\n\n"
+
+// HEAD-008: 10s left a dead-without-FIN client (and the paid upstream stream + inflight
+// slot behind it) undetected for up to 10s; tightened to 2s. Same mechanism, smaller tick.
+private const val CLIENT_PING_INTERVAL_MS = 2_000L
 
 /** The per-turn collaborators + data the drive needs, grouped so the drive signature stays one
  *  cohesive argument (they are all created together per request inside the SSE writer). */
@@ -94,7 +108,11 @@ internal data class TurnDrive(
     /** The provider's answering policy for THIS turn's deferred tool surface. Null = no deferral
      *  this turn, or the feature is off — the round loop is byte-for-byte unchanged. */
     val toolSearch: ToolSearchController?,
-)
+) {
+    // `internal`, not `private`: TurnDrive is an internal type and TurnDriver (a different class)
+    // reads this — a private member would be unreachable. Reads only this drive's own `perf`.
+    internal fun perfCounter(key: String): Long = perf.snapshot().counters[key] ?: 0L
+}
 
 /** Per-turn client write surface: the coalesced writer, a mutex serializing the emitter vs the
  *  keepalive pinger, and the clientGone flag a failed write flips. */
@@ -113,9 +131,6 @@ internal data class TurnInputs(
     val perf: TurnPerf,
 )
 
-private fun connectionResetMessage(error: Throwable): String? =
-    if (error is StreamTornBeforeClient) error.cause?.message else error.message
-
 /** Drives one streamed turn end-to-end. Owned by HeadServer; one instance per head. */
 internal class TurnDriver(
     private val provider: Provider,
@@ -130,6 +145,10 @@ internal class TurnDriver(
     private val telemetry = TurnTelemetry(provider.key, deps.perfStats, deps.log, deps.clock)
     private val wsDriver = WsRoundDriver(provider, deps.log, ::classifyZeroEventFailure)
     private val health = HeadHealthCounters()
+    private val wiring = TurnWiring()
+    private val failures = TurnFailures()
+    private val hud = UsageHud()
+    private val emitters = SseEmitterFactory()
 
     /** G20: passive health snapshot for HeadServer.healthSnapshot() — the control-plane's
      *  /api/heads aggregation, never the per-head /health liveness route (external contract). */
@@ -146,14 +165,14 @@ internal class TurnDriver(
                 writeMutex = Mutex(),
                 clientGone = AtomicBoolean(false),
             )
-            val emitter = SseEmitter.create(
+            val emitter = emitters.create(
                 write = { frame ->
                     channel.writeMutex.withLock {
-                        timedClientWrite(channel.coalesced, frame, perf, channel.clientGone, clock)
+                        wiring.timedClientWrite(channel.coalesced, frame, perf, channel.clientGone, clock)
                     }
                 },
                 model = built.meta.originalModel,
-                usagePayload = usagePayloadBuilder(provider.catalog, built.meta),
+                usagePayload = wiring.usagePayloadBuilder(provider.catalog, built.meta),
             )
             val drive = assembleDrive(inputs, emitter, channel)
             try {
@@ -189,7 +208,7 @@ internal class TurnDriver(
         seal: Boolean = true,
     ) {
         try {
-            catchingTurnFailure { driveOneTurn(drive, pingClient) }
+            failures.catchingTurnFailure { driveOneTurn(drive, pingClient) }
                 .onFailure { e -> emitFailure(drive, e) }
         } catch (e: CancellationException) {
             // NF-03: a watchdog-fired cancellation names its reason. Pre-stream reaps (total cap
@@ -238,7 +257,10 @@ internal class TurnDriver(
      *  fold/translator/honesty machinery into a [CollectingTerminal], then writes ONE Anthropic
      *  Messages JSON body — no SSE channel, no liveness pinger. */
     suspend fun collect(call: ApplicationCall, built: BuiltTurn, slot: InflightGate.Slot, t0: Long, perf: TurnPerf) {
-        val terminal = CollectingTerminal(built.meta.originalModel, usagePayloadBuilder(provider.catalog, built.meta))
+        val terminal = CollectingTerminal(
+            built.meta.originalModel,
+            wiring.usagePayloadBuilder(provider.catalog, built.meta),
+        )
         // Inert channel: the collect path never writes SSE frames, but postRound reads clientGone
         // (stays false — a buffered client can't be observed gone mid-turn) and the drive needs one.
         val channel = ClientChannel(
@@ -298,7 +320,7 @@ internal class TurnDriver(
             pipeline = TurnPipeline(
                 compactStats,
                 log,
-                makeOutputClamp(meta.clientMaxTokens, meta.compact, provider.key, log),
+                hud.makeOutputClamp(meta.clientMaxTokens, meta.compact, provider.key, log),
                 mirrorReasoning = deps.mirrorReasoning,
             ),
             t0 = inputs.t0,
@@ -319,7 +341,7 @@ internal class TurnDriver(
                 log(telemetry.errTurn("auth-missing", drive, ": ${e.message}"))
                 drive.emitter.emitError(
                     ErrorType.AUTHENTICATION,
-                    "${provider.key}: no upstream credentials${provider.loginHint()}",
+                    "${provider.key}: no upstream credentials${failures.loginHint(provider)}",
                 )
                 telemetry.recordPerf(drive, "error:auth-missing")
                 health.local() // no upstream call ever happened: missing local credentials
@@ -341,7 +363,7 @@ internal class TurnDriver(
             // reissue budget exhausted (or non-retryable tear) before any client frame — an
             // upstream connection failure, honestly retryable; never "internal gateway error".
             // post-handoff socket failure: our side of the wire
-            is StreamTornBeforeClient, is IOException -> emitConnReset(drive, connectionResetMessage(e))
+            is StreamTornBeforeClient, is IOException -> emitConnReset(drive, failures.connectionResetMessage(e))
             is SseFrameTooLargeException -> {
                 log(telemetry.errTurn("upstream-frame-too-large", drive, ": ${e.message}"))
                 drive.emitter.emitError(ErrorType.API_ERROR, "upstream sent an oversized streaming event — retry")
@@ -583,7 +605,7 @@ internal class TurnDriver(
             ),
         )
         val message = if (classified.type == ErrorType.AUTHENTICATION) {
-            "${classified.message}${provider.loginHint()}"
+            "${classified.message}${failures.loginHint(provider)}"
         } else {
             classified.message
         }
@@ -610,7 +632,7 @@ internal class TurnDriver(
                 put("output_tokens", s.usage.outputTokens)
                 put("input_tokens_details", buildJsonObject { put("cached_tokens", s.usage.cachedTokens) })
             }
-            log(cacheLogLine(provider.key, drive.upstreamModel, usageObj, drive.meta.compact))
+            log(hud.cacheLogLine(provider.key, drive.upstreamModel, usageObj, drive.meta.compact))
         }
         // Salvaged usage from absorbed rounds of an ultimately-FAILED turn: real billed tokens
         // that would otherwise vanish from the usage store and perf row (review-pr 2026-07-24).
@@ -667,27 +689,7 @@ internal class TurnDriver(
     /** Head restart = fresh diagnostic baseline (the HeadHealth doc's promised behavior; the
      *  counters lived through control-plane restarts before — review 2026-07-19). */
     internal fun resetHealth() = health.reset()
-
-    private companion object {
-        const val ERR_SNIPPET = 200
-
-        // G2: cap the raw pre-JSON body buffered for zero-event classification (~1KB).
-        const val ZERO_EVENT_SNIPPET_CHARS = 1024
-
-        // SSE comment keepalive: pure transport, invisible to SSE parsers (spec: lines starting
-        // with ':' are comments) — exists ONLY so a dead client fails a write promptly.
-        const val SSE_KEEPALIVE_COMMENT = ": ping\n\n"
-
-        // HEAD-008: 10s left a dead-without-FIN client (and the paid upstream stream + inflight
-        // slot behind it) undetected for up to 10s; tightened to 2s. Same mechanism, smaller tick.
-        const val CLIENT_PING_INTERVAL_MS = 2_000L
-    }
 }
-
-/** G19-consistent per-head hint — every AUTHENTICATION surface uses the SAME provider-threaded
- *  command (review 2026-07-19: two paths still hardcoded "claudex login" on non-codex heads). */
-private fun Provider.loginHint(): String =
-    if (loginCommand.isNotEmpty()) " — run: $loginCommand" else ""
 
 // first_delta detection reads the frame prefix — the emitter's event name, not a literal
 // stop-reason (L3 walls stay intact; this only OBSERVES the already-built frame).
@@ -695,85 +697,196 @@ private const val DELTA_FRAME_PREFIX = "event: content_block_delta"
 private const val START_FRAME_PREFIX = "event: message_start"
 private const val PING_FRAME_PREFIX = "event: ping"
 
-/** Client-side write instrumented: frame counts/bytes, first-frame/first-delta marks, and the
- *  summed write+flush time (a slow reader shows up as write_ms, not as fake stream time).
- *  A failed write flips [clientGone] BEFORE rethrowing — the translator's terminal decision
- *  reads it to classify the ending as ClientAbandoned instead of upstream truncation.
- *  Top-level (not a TurnDriver method) so it doesn't grow the class's function budget. */
-private fun timedClientWrite(
-    coalesced: ImmediateSseWriter,
-    frame: String,
-    perf: TurnPerf,
-    clientGone: AtomicBoolean,
-    clock: () -> Long,
-) {
-    val t = clock()
-    try {
-        coalesced.write(frame)
-    } catch (e: IOException) {
-        clientGone.set(true)
-        throw e
+/** The per-turn client write surface, shared by [TurnDriver.stream] and [TurnDriver.collect].
+ *  A collaborator (not TurnDriver members) because TurnDriver already sits at its 14-function
+ *  budget — which is exactly why these two were file-level before. No instance state. */
+internal class TurnWiring {
+    private val hud = UsageHud()
+
+    /** Client-side write instrumented: frame counts/bytes, first-frame/first-delta marks, and the
+     *  summed write+flush time (a slow reader shows up as write_ms, not as fake stream time).
+     *  A failed write flips [clientGone] BEFORE rethrowing — the translator's terminal decision
+     *  reads it to classify the ending as ClientAbandoned instead of upstream truncation. */
+    fun timedClientWrite(
+        coalesced: ImmediateSseWriter,
+        frame: String,
+        perf: TurnPerf,
+        clientGone: AtomicBoolean,
+        clock: () -> Long,
+    ) {
+        val t = clock()
+        try {
+            coalesced.write(frame)
+        } catch (e: IOException) {
+            clientGone.set(true)
+            throw e
+        }
+        perf.add(PerfKeys.WRITE_MS, clock() - t)
+        perf.add(PerfKeys.FRAMES_OUT, 1)
+        // Structural opener carries no content — see PerfKeys.CONTENT_FRAMES_OUT for why G5 must not
+        // count it as "the client saw output".
+        if (!frame.startsWith(START_FRAME_PREFIX) && !frame.startsWith(PING_FRAME_PREFIX)) {
+            perf.add(PerfKeys.CONTENT_FRAMES_OUT, 1)
+        }
+        perf.add(PerfKeys.BYTES_OUT, frame.length.toLong())
+        perf.markOnce(PerfKeys.FIRST_FRAME)
+        if (frame.startsWith(DELTA_FRAME_PREFIX)) perf.markOnce(PerfKeys.FIRST_DELTA)
     }
-    perf.add(PerfKeys.WRITE_MS, clock() - t)
-    perf.add(PerfKeys.FRAMES_OUT, 1)
-    // Structural opener carries no content — see PerfKeys.CONTENT_FRAMES_OUT for why G5 must not
-    // count it as "the client saw output".
-    if (!frame.startsWith(START_FRAME_PREFIX) && !frame.startsWith(PING_FRAME_PREFIX)) {
-        perf.add(PerfKeys.CONTENT_FRAMES_OUT, 1)
+
+    /** The Anthropic usage payload builder — shared by the stream emitter and the non-stream
+     *  collector so both report tokens identically. */
+    fun usagePayloadBuilder(catalog: ModelCatalog, meta: TurnMeta): UsagePayloadBuilder = { usage ->
+        // Anthropic convention (Claude Code HUD/autocompact): input_tokens and cache_read_input_tokens
+        // are DISJOINT. OpenAI's input_tokens INCLUDES the cached portion, so subtract it — else
+        // input+cache_read double-counts and the context bar/autocompact fire ~2x early (the
+        // "compaction ate my quota" class).
+        val cached = usage?.cachedTokens ?: 0
+        val nonCachedInput = ((usage?.inputTokens ?: 0) - cached).coerceAtLeast(0)
+        hud.buildUsagePayload(
+            TurnUsage(nonCachedInput, usage?.outputTokens ?: 0, 0, cached),
+            catalog.contextWindowFor(meta.upstreamModel),
+        )
     }
-    perf.add(PerfKeys.BYTES_OUT, frame.length.toLong())
-    perf.markOnce(PerfKeys.FIRST_FRAME)
-    if (frame.startsWith(DELTA_FRAME_PREFIX)) perf.markOnce(PerfKeys.FIRST_DELTA)
 }
 
-/** The per-turn error boundary — captures exactly the failure classes [TurnDriver.emitFailure]
- *  dispatches on: the custom transport signals, I/O, and the two documented gateway-bug classes
- *  (IllegalArgument/IllegalState — a bad base_url parse, a Ktor internal state error), which
- *  previously escaped as a truncated 200 with no error frame (review 2026-07-19). Top-level (not a
- *  TurnDriver method) so the stream and collect entries share one boundary without growing the
- *  class's function budget. */
-private inline fun <R> catchingTurnFailure(block: () -> R): Result<R> =
-    try {
-        Result.success(block())
-    } catch (e: UpstreamAuthMissing) {
-        Result.failure(e)
-    } catch (e: UpstreamFailed) {
-        Result.failure(e)
-    } catch (e: StreamTornBeforeClient) {
-        // Plain RuntimeException (so translators don't swallow it into a terminal). After
-        // UpstreamClient exhausts MAX_STREAM_REISSUES it rethrows here — must become emitConnReset,
-        // not escape respondTextWriter as a truncated HTTP 200 SSE.
-        Result.failure(e)
-    } catch (e: SseFrameTooLargeException) {
-        Result.failure(e)
-    } catch (e: IOException) {
-        Result.failure(e)
-    } catch (e: CancellationException) {
-        // CancellationException extends IllegalStateException — rethrown BEFORE it so a
-        // cancelled turn actually stops; stream()/collect() seal the emitter then rethrow.
-        throw e
-    } catch (e: IllegalArgumentException) {
-        // e.g. a URL-parse error from a bad base_url (review 2026-07-19: previously escaped
-        // as a truncated 200 with no error frame — emitFailure's branch was unreachable)
-        Result.failure(e)
-    } catch (e: IllegalStateException) {
-        // e.g. an IllegalState out of Ktor internals — same escape class as above
-        Result.failure(e)
+/** The per-turn error boundary and the failure-message shaping around it. A collaborator for the
+ *  same budget reason as [TurnWiring]; no instance state. */
+internal class TurnFailures {
+    /** Captures exactly the failure classes [TurnDriver.emitFailure] dispatches on: the custom
+     *  transport signals, I/O, and the two documented gateway-bug classes (IllegalArgument/
+     *  IllegalState — a bad base_url parse, a Ktor internal state error), which previously escaped
+     *  as a truncated 200 with no error frame (review 2026-07-19). The stream and collect entries
+     *  share ONE boundary. */
+    inline fun <R> catchingTurnFailure(block: () -> R): Result<R> =
+        try {
+            Result.success(block())
+        } catch (e: UpstreamAuthMissing) {
+            Result.failure(e)
+        } catch (e: UpstreamFailed) {
+            Result.failure(e)
+        } catch (e: StreamTornBeforeClient) {
+            // Plain RuntimeException (so translators don't swallow it into a terminal). After
+            // UpstreamClient exhausts MAX_STREAM_REISSUES it rethrows here — must become emitConnReset,
+            // not escape respondTextWriter as a truncated HTTP 200 SSE.
+            Result.failure(e)
+        } catch (e: SseFrameTooLargeException) {
+            Result.failure(e)
+        } catch (e: IOException) {
+            Result.failure(e)
+        } catch (e: CancellationException) {
+            // CancellationException extends IllegalStateException — rethrown BEFORE it so a
+            // cancelled turn actually stops; stream()/collect() seal the emitter then rethrow.
+            throw e
+        } catch (e: IllegalArgumentException) {
+            // e.g. a URL-parse error from a bad base_url (review 2026-07-19: previously escaped
+            // as a truncated 200 with no error frame — emitFailure's branch was unreachable)
+            Result.failure(e)
+        } catch (e: IllegalStateException) {
+            // e.g. an IllegalState out of Ktor internals — same escape class as above
+            Result.failure(e)
+        }
+
+    fun connectionResetMessage(error: Throwable): String? =
+        if (error is StreamTornBeforeClient) error.cause?.message else error.message
+
+    /** G19-consistent per-head hint — every AUTHENTICATION surface uses the SAME provider-threaded
+     *  command (review 2026-07-19: two paths still hardcoded "claudex login" on non-codex heads).
+     *  [provider] is a PARAMETER, not an extension receiver: `Provider` lives in :provider-spi, a
+     *  module this slice may not edit. Same call, same single argument. */
+    fun loginHint(provider: Provider): String =
+        if (provider.loginCommand.isNotEmpty()) " — run: ${provider.loginCommand}" else ""
+}
+
+private const val ROUND_FAILURE_SNIPPET = 160
+
+/** The round-splicing laws BOTH runners obey (never two copies — the v29 law). Each runner holds
+ *  its own `private val rounds = RoundSplice()`; the bodies below are the single definition. */
+internal class RoundSplice {
+    /** The search-continuation gate, shared by both runners (never two copies — the v29 law). A
+     *  search NEVER continues past a watchdog fire or a dead client (the same rule re-anchor
+     *  applies), and never past a round that already committed a real tool_use to the client's wire
+     *  — that check lives inside ResponsesToolSearchController itself (TurnOutcome.Success.hasToolUse),
+     *  so it need not be repeated here. */
+    fun searchContinuation(
+        search: ToolSearchController?,
+        outcome: TurnOutcome,
+        body: JsonObject,
+        roundIndex: Int,
+        signals: RunnerSignals,
+    ): JsonObject? {
+        if (search == null || outcome !is TurnOutcome.Success) return null
+        if (signals.watchdogFired() || signals.clientGone()) return null
+        return search.continuationForSearch(ToolSearchRound(body, outcome, roundIndex))
     }
 
-/** The Anthropic usage payload builder — shared by the stream emitter and the non-stream collector
- *  so both report tokens identically. Top-level to keep it off TurnDriver's function budget. */
-private fun usagePayloadBuilder(catalog: ModelCatalog, meta: TurnMeta): UsagePayloadBuilder = { usage ->
-    // Anthropic convention (Claude Code HUD/autocompact): input_tokens and cache_read_input_tokens
-    // are DISJOINT. OpenAI's input_tokens INCLUDES the cached portion, so subtract it — else
-    // input+cache_read double-counts and the context bar/autocompact fire ~2x early (the
-    // "compaction ate my quota" class).
-    val cached = usage?.cachedTokens ?: 0
-    val nonCachedInput = ((usage?.inputTokens ?: 0) - cached).coerceAtLeast(0)
-    buildUsagePayload(
-        TurnUsage(nonCachedInput, usage?.outputTokens ?: 0, 0, cached),
-        catalog.contextWindowFor(meta.upstreamModel),
-    )
+    /** FoldRunner's rounds run through a BufferingWireSink: [TurnOutcome.Success.emittedText]/
+     *  [TurnOutcome.Success.bodyText] reflect what the round PRODUCED, not what reached the client.
+     *  Strips both before a search continuation can replay them — the same rule FoldRunner's own
+     *  re-anchor branch (trigger B) applies to its salvage. A no-op for ReanchorRunner's LIVE rounds
+     *  (non-Success outcomes pass through; searchContinuation's own type guard ignores them anyway). */
+    fun bufferedForSearch(outcome: TurnOutcome): TurnOutcome =
+        if (outcome is TurnOutcome.Success) outcome.copy(bodyText = "", emittedText = false) else outcome
+    // CX-09 note: emittedThinking is deliberately NOT stripped here — BufferingWireSink buffers only
+    // text/tool ops and forwards openThinking/thinkingDelta straight through, so a reasoning block from
+    // a buffered round DID reach the client and must keep the honesty gate quiet.
+
+    /** The search-round salvage entry, shared by both runners so they cannot drift (the v29 law).
+     *  [buffered]=true (FoldRunner) means the round's output never reached the client — text signals
+     *  are stripped so a discarded round cannot vouch for content in the merge (the same rule the
+     *  fold re-anchor branch applies just above). [buffered]=false (ReanchorRunner) carries the
+     *  round's REAL emitted text truthfully — it already reached the wire. usage is zeroed on both;
+     *  the caller already folded it into acc. hasToolUse is always false: [searchContinuation] never
+     *  fires on a round that carried one. */
+    fun searchPartial(success: TurnOutcome.Success, buffered: Boolean): TurnOutcome.PartialRound =
+        if (buffered) {
+            TurnOutcome.PartialRound(
+                thinkingText = success.thinkingText,
+                bodyText = "",
+                emittedText = false,
+                // CX-09: reasoning is NOT buffered (BufferingWireSink forwards openThinking/
+                // thinkingDelta to the real sink), so it genuinely reached the client — the same
+                // reason thinkingText itself survives this strip.
+                emittedThinking = success.emittedThinking,
+            )
+        } else {
+            TurnOutcome.PartialRound(
+                thinkingText = success.thinkingText,
+                bodyText = success.bodyText,
+                emittedText = success.emittedText,
+                emittedThinking = success.emittedThinking,
+            )
+        }
+
+    /** A turn that absorbed re-anchor rounds and STILL failed burned real billed tokens on those
+     *  rounds; carry them on the Failure so finishTurn can account them (review-pr 2026-07-24 —
+     *  before re-anchoring a Failure was always single-round, so there was nothing to lose). */
+    fun withFailureSalvage(outcome: TurnOutcome, acc: RoundUsage): TurnOutcome =
+        if (outcome is TurnOutcome.Failure && acc.outSum + acc.reasoningSum > 0) {
+            outcome.copy(salvagedUsage = acc.toUsage())
+        } else {
+            outcome
+        }
+
+    /** Cross-round merge (code-review 2026-07-24): the post-stream pipeline — empty-model honesty
+     *  gate, promote-to-text, reasoning mirror — is round-blind; it sees ONE outcome. A spliced
+     *  turn's Success must carry the WHOLE turn's facts, or a round-2 empty completion after a lost
+     *  terminal frame turns an already-delivered answer into a client-visible error, and earlier
+     *  rounds' reasoning vanishes from the mirror. Usage on [outcome] must already be round-summed. */
+    fun mergedAcrossRounds(
+        outcome: TurnOutcome,
+        salvaged: List<TurnOutcome.PartialRound>,
+    ): TurnOutcome {
+        if (outcome !is TurnOutcome.Success || salvaged.isEmpty()) return outcome
+        return outcome.copy(
+            hasToolUse = outcome.hasToolUse || salvaged.any { it.hasToolUse },
+            emittedText = outcome.emittedText || salvaged.any { it.emittedText },
+            emittedThinking = outcome.emittedThinking || salvaged.any { it.emittedThinking },
+            thinkingText = (salvaged.map { it.thinkingText } + outcome.thinkingText)
+                .filter { it.isNotEmpty() }
+                .joinToString("\n\n"),
+            bodyText = (salvaged.map { it.bodyText } + outcome.bodyText).joinToString(""),
+        )
+    }
 }
 
 /** The reasoning-continuation fold state machine (codex 518n-2), split from TurnDriver (its function
@@ -781,38 +894,6 @@ private fun usagePayloadBuilder(catalog: ModelCatalog, meta: TurnMeta): UsagePay
  *  reasoning streams live; a truncated round's output is DISCARDED and the next round re-POSTed with
  *  its reasoning replayed; the terminal round's output is FLUSHED and [finish] called exactly ONCE
  *  with usage summed across every round — one honest terminal downstream (L3). */
-private fun TurnDrive.perfCounter(key: String): Long = perf.snapshot().counters[key] ?: 0L
-
-private const val ROUND_FAILURE_SNIPPET = 160
-
-/** The search-continuation gate, shared by both runners (never two copies — the v29 law). A
- *  search NEVER continues past a watchdog fire or a dead client (the same rule re-anchor
- *  applies), and never past a round that already committed a real tool_use to the client's wire
- *  — that check lives inside ResponsesToolSearchController itself (TurnOutcome.Success.hasToolUse),
- *  so it need not be repeated here. */
-internal fun searchContinuation(
-    search: ToolSearchController?,
-    outcome: TurnOutcome,
-    body: JsonObject,
-    roundIndex: Int,
-    signals: RunnerSignals,
-): JsonObject? {
-    if (search == null || outcome !is TurnOutcome.Success) return null
-    if (signals.watchdogFired() || signals.clientGone()) return null
-    return search.continuationForSearch(ToolSearchRound(body, outcome, roundIndex))
-}
-
-/** FoldRunner's rounds run through a BufferingWireSink: [TurnOutcome.Success.emittedText]/
- *  [TurnOutcome.Success.bodyText] reflect what the round PRODUCED, not what reached the client.
- *  Strips both before a search continuation can replay them — the same rule FoldRunner's own
- *  re-anchor branch (trigger B) applies to its salvage. A no-op for ReanchorRunner's LIVE rounds
- *  (non-Success outcomes pass through; searchContinuation's own type guard ignores them anyway). */
-internal fun bufferedForSearch(outcome: TurnOutcome): TurnOutcome =
-    if (outcome is TurnOutcome.Success) outcome.copy(bodyText = "", emittedText = false) else outcome
-// CX-09 note: emittedThinking is deliberately NOT stripped here — BufferingWireSink buffers only
-// text/tool ops and forwards openThinking/thinkingDelta straight through, so a reasoning block from
-// a buffered round DID reach the client and must keep the honesty gate quiet.
-
 internal class FoldRunner(
     // Only the buffer's `real` sink — never a terminal here (L3: FoldRunner finishes via [finish]).
     private val emitter: WireSink,
@@ -824,6 +905,8 @@ internal class FoldRunner(
     private val signals: RunnerSignals = RunnerSignals(),
     private val toolSearch: ToolSearchController? = null,
 ) {
+    private val rounds = RoundSplice()
+
     suspend fun run(initialBody: JsonObject, fold: FoldController) {
         var body = initialBody
         var acc = RoundUsage()
@@ -860,7 +943,7 @@ internal class FoldRunner(
             if (retry == null) {
                 // health for absorbed rounds only on ultimate success — see ReanchorRunner.
                 if (outcome is TurnOutcome.Success) absorbedFailures.forEach(signals.onRoundFailure)
-                finalize(withFailureSalvage(outcome, acc), buffer, salvaged, acc.toUsage())
+                finalize(rounds.withFailureSalvage(outcome, acc), buffer, salvaged, acc.toUsage())
                 return
             }
             val failure = outcome as TurnOutcome.Failure
@@ -918,10 +1001,16 @@ internal class FoldRunner(
         // controller ever sees them, so a buffered-and-discarded round can never "vouch" for
         // prose the client never saw in the search continuation's own replay (review 2026-07-24;
         // the same rule this loop's own re-anchor branch below already applies).
-        val searchNext = searchContinuation(toolSearch, bufferedForSearch(outcome), body, searchIndex, signals)
+        val searchNext = rounds.searchContinuation(
+            toolSearch,
+            rounds.bufferedForSearch(outcome),
+            body,
+            searchIndex,
+            signals,
+        )
         if (searchNext != null) {
             buffer.discard() // the buffered final output never reached the client
-            salvaged.add(searchPartial(outcome as TurnOutcome.Success, buffered = true))
+            salvaged.add(rounds.searchPartial(outcome as TurnOutcome.Success, buffered = true))
             val nextSearchIndex = searchIndex + 1
             signals.onSearchRound(nextSearchIndex)
             log("[$key] tool search round $nextSearchIndex: answering locally, continuing\n")
@@ -952,7 +1041,7 @@ internal class FoldRunner(
     ) {
         if (outcome is TurnOutcome.Success) {
             buffer.flush()
-            finish(mergedAcrossRounds(outcome.copy(usage = summed), salvaged))
+            finish(rounds.mergedAcrossRounds(outcome.copy(usage = summed), salvaged))
         } else {
             // a failed/abandoned round has no honest final output to flush — drop the buffer, then
             // emit the round's real (error/abandon) outcome. Never a fabricated clean stop (L3).
@@ -999,64 +1088,6 @@ internal data class RoundUsage(
     )
 }
 
-/** The search-round salvage entry, shared by both runners so they cannot drift (the v29 law).
- *  [buffered]=true (FoldRunner) means the round's output never reached the client — text signals
- *  are stripped so a discarded round cannot vouch for content in the merge (the same rule the
- *  fold re-anchor branch applies just above). [buffered]=false (ReanchorRunner) carries the
- *  round's REAL emitted text truthfully — it already reached the wire. usage is zeroed on both;
- *  the caller already folded it into acc. hasToolUse is always false: [searchContinuation] never
- *  fires on a round that carried one. */
-internal fun searchPartial(success: TurnOutcome.Success, buffered: Boolean): TurnOutcome.PartialRound =
-    if (buffered) {
-        TurnOutcome.PartialRound(
-            thinkingText = success.thinkingText,
-            bodyText = "",
-            emittedText = false,
-            // CX-09: reasoning is NOT buffered (BufferingWireSink forwards openThinking/
-            // thinkingDelta to the real sink), so it genuinely reached the client — the same
-            // reason thinkingText itself survives this strip.
-            emittedThinking = success.emittedThinking,
-        )
-    } else {
-        TurnOutcome.PartialRound(
-            thinkingText = success.thinkingText,
-            bodyText = success.bodyText,
-            emittedText = success.emittedText,
-            emittedThinking = success.emittedThinking,
-        )
-    }
-
-/** A turn that absorbed re-anchor rounds and STILL failed burned real billed tokens on those
- *  rounds; carry them on the Failure so finishTurn can account them (review-pr 2026-07-24 —
- *  before re-anchoring a Failure was always single-round, so there was nothing to lose). */
-internal fun withFailureSalvage(outcome: TurnOutcome, acc: RoundUsage): TurnOutcome =
-    if (outcome is TurnOutcome.Failure && acc.outSum + acc.reasoningSum > 0) {
-        outcome.copy(salvagedUsage = acc.toUsage())
-    } else {
-        outcome
-    }
-
-/** Cross-round merge (code-review 2026-07-24): the post-stream pipeline — empty-model honesty
- *  gate, promote-to-text, reasoning mirror — is round-blind; it sees ONE outcome. A spliced
- *  turn's Success must carry the WHOLE turn's facts, or a round-2 empty completion after a lost
- *  terminal frame turns an already-delivered answer into a client-visible error, and earlier
- *  rounds' reasoning vanishes from the mirror. Usage on [outcome] must already be round-summed. */
-internal fun mergedAcrossRounds(
-    outcome: TurnOutcome,
-    salvaged: List<TurnOutcome.PartialRound>,
-): TurnOutcome {
-    if (outcome !is TurnOutcome.Success || salvaged.isEmpty()) return outcome
-    return outcome.copy(
-        hasToolUse = outcome.hasToolUse || salvaged.any { it.hasToolUse },
-        emittedText = outcome.emittedText || salvaged.any { it.emittedText },
-        emittedThinking = outcome.emittedThinking || salvaged.any { it.emittedThinking },
-        thinkingText = (salvaged.map { it.thinkingText } + outcome.thinkingText)
-            .filter { it.isNotEmpty() }
-            .joinToString("\n\n"),
-        bodyText = (salvaged.map { it.bodyText } + outcome.bodyText).joinToString(""),
-    )
-}
-
 /** Mid-stream re-anchoring loop (eli design 2026-07-24): the LIVE-emitter counterpart of
  *  [FoldRunner]. Rounds drive the real wire directly — committed blocks stay; a round that fails
  *  with a continuable partial re-POSTs the continuation and APPENDS; everything else finishes with
@@ -1071,6 +1102,8 @@ internal class ReanchorRunner(
     private val signals: RunnerSignals,
     private val toolSearch: ToolSearchController? = null,
 ) {
+    private val rounds = RoundSplice()
+
     // [reanchor] is nullable — a turn may reach this runner with search-only continuation (no
     // ReanchorController at all): driveOneTurn routes here whenever EITHER exists, so the seam is
     // total rather than resting on an undocumented cross-object invariant.
@@ -1091,10 +1124,10 @@ internal class ReanchorRunner(
                 // A search round is inserted HERE — after the failure-continuation is computed and
                 // found null, so it never competes with re-anchor for a retryable failure, and
                 // only ever fires on a Success (searchContinuation's own type guard).
-                val searchNext = searchContinuation(toolSearch, outcome, body, searchIndex, signals)
+                val searchNext = rounds.searchContinuation(toolSearch, outcome, body, searchIndex, signals)
                 if (searchNext != null) {
                     val searched = outcome as TurnOutcome.Success
-                    salvaged.add(searchPartial(searched, buffered = false))
+                    salvaged.add(rounds.searchPartial(searched, buffered = false))
                     acc = acc.plusRound(searched.usage)
                     body = searchNext
                     searchIndex++
@@ -1107,7 +1140,7 @@ internal class ReanchorRunner(
                 // ultimately FAILS is attributed exactly once by finishTurn — firing per absorbed
                 // round would triple-count one logical failure (HeadServerIntegrationTest).
                 if (outcome is TurnOutcome.Success) absorbedFailures.forEach(signals.onRoundFailure)
-                finish(withFailureSalvage(finalOutcome(outcome, salvaged, acc), acc))
+                finish(rounds.withFailureSalvage(finalOutcome(outcome, salvaged, acc), acc))
                 return
             }
             absorbedFailures.add(failure)
@@ -1130,7 +1163,7 @@ internal class ReanchorRunner(
         acc: RoundUsage,
     ): TurnOutcome {
         if (outcome !is TurnOutcome.Success || salvaged.isEmpty()) return outcome
-        return mergedAcrossRounds(outcome.copy(usage = acc.plusRound(outcome.usage).toUsage()), salvaged)
+        return rounds.mergedAcrossRounds(outcome.copy(usage = acc.plusRound(outcome.usage).toUsage()), salvaged)
     }
 }
 
@@ -1164,9 +1197,5 @@ internal class TurnTelemetry(
                 " FAILURE type=${outcome.type.wireName} msg=${outcome.message.take(ERR_SNIPPET)}\n"
             TurnOutcome.ClientAbandoned -> " client-abandoned\n"
         }
-    }
-
-    private companion object {
-        const val ERR_SNIPPET = 200
     }
 }

@@ -37,13 +37,44 @@ private const val FULL_PCT = 100.0
 // wire contract single-sourced (the others stay inline — they don't repeat enough to warrant it).
 private const val OUTPUT_TOKENS = "output_tokens"
 
-private fun num(el: JsonElement?): Long? =
-    (el as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong()
+/** JS switches to exponent notation only below 1e-7 (ECMA-262 Number::toString step 5 bound). */
+private const val JS_DECIMAL_MIN_EXP = -6
 
-/** First key whose value parses as a number. CX-18: this chain moved to :core (JsonScalars
- *  firstLong) so the dialects, the Responses harvest and this payload builder share ONE
- *  definition; the local name is kept so the call sites below read unchanged. */
-private fun JsonObject.firstNum(vararg keys: String): Long? = firstLong(*keys)
+// MUST comfortably exceed MAX_RING_ENTRIES x ~50 bytes/row — at 2MB the reader treated a
+// legitimately capped ring file (~2.25MB) as corrupt and DROPPED the whole live window on
+// restart (audit 2026-07-18). 8MB keeps the corrupt-file guard with real headroom.
+private const val MAX_USAGE_FILE_BYTES = 8L * 1024 * 1024
+
+// New writes aggregate by minute (~300 rows/5h); retain the legacy high cap so existing
+// per-turn files load without data loss and are compacted naturally as the window advances.
+private const val MAX_RING_ENTRIES = 50_000
+private const val USAGE_BUCKET_MS = 60_000L
+private const val USAGE_FLUSH_DELAY_MS = 1_000L
+
+/** Usage-JSON scalar reading, shared by [TurnUsage] construction, the HUD payload and the store.
+ *  A collaborator rather than file-level helpers: a Kotlin `private` member is CLASS-private, and
+ *  three types here need the same reader — a second copy is exactly what CX-18 forbade. */
+public class UsageJson {
+    internal fun num(el: JsonElement?): Long? =
+        (el as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong()
+
+    /** First key whose value parses as a number. CX-18: this chain moved to :core (JsonScalars
+     *  firstLong) so the dialects, the Responses harvest and this payload builder share ONE
+     *  definition; the local name is kept so the call sites below read unchanged. */
+    private fun JsonObject.firstNum(vararg keys: String): Long? = firstLong(*keys)
+
+    /** Parse a raw usage object into the alias-normalized [TurnUsage]. */
+    public fun from(usage: JsonObject?): TurnUsage {
+        val u = usage ?: JsonObject(emptyMap())
+        val cachedDetail = (u["input_tokens_details"] as? JsonObject)?.let { num(it["cached_tokens"]) }
+        return TurnUsage(
+            inputTokens = u.firstNum("input_tokens", "prompt_tokens") ?: 0,
+            outputTokens = u.firstNum(OUTPUT_TOKENS, "completion_tokens") ?: 0,
+            cacheCreationInputTokens = num(u["cache_creation_input_tokens"]) ?: 0,
+            cacheReadInputTokens = num(u["cache_read_input_tokens"]) ?: cachedDetail ?: 0,
+        )
+    }
+}
 
 /** Usage aliases: Anthropic names + OpenAI Responses names + cached-token detail. */
 public data class TurnUsage(
@@ -51,91 +82,81 @@ public data class TurnUsage(
     val outputTokens: Long,
     val cacheCreationInputTokens: Long,
     val cacheReadInputTokens: Long,
-) {
-    public companion object {
-        public fun from(usage: JsonObject?): TurnUsage {
-            val u = usage ?: JsonObject(emptyMap())
-            val cachedDetail = (u["input_tokens_details"] as? JsonObject)?.let { num(it["cached_tokens"]) }
-            return TurnUsage(
-                inputTokens = u.firstNum("input_tokens", "prompt_tokens") ?: 0,
-                outputTokens = u.firstNum(OUTPUT_TOKENS, "completion_tokens") ?: 0,
-                cacheCreationInputTokens = num(u["cache_creation_input_tokens"]) ?: 0,
-                cacheReadInputTokens = num(u["cache_read_input_tokens"]) ?: cachedDetail ?: 0,
-            )
-        }
-    }
-}
+)
 
-/** The gateway usage payload with Claude Code's non-standard context fields. */
-public fun buildUsagePayload(usage: TurnUsage, contextWindow: Long?): JsonObject {
-    val totalInput = usage.inputTokens + usage.cacheCreationInputTokens + usage.cacheReadInputTokens
-    return buildJsonObject {
-        put("input_tokens", usage.inputTokens)
-        put(OUTPUT_TOKENS, usage.outputTokens)
-        put("cache_creation_input_tokens", usage.cacheCreationInputTokens)
-        put("cache_read_input_tokens", usage.cacheReadInputTokens)
-        if (contextWindow != null && contextWindow > 0) {
-            put("context_window", contextWindow)
-            put("context_window_size", contextWindow)
-            // JS-number parity: the legacy reference emits this via JSON.stringify and the
-            // migration oracle byte-compares. Two notation gaps vs JVM: an integral double prints
-            // bare ("0", never "0.0"), and JS stays in decimal notation down to 1e-7 where the
-            // JVM flips to E-notation below 1e-3 (0.000367…, never 3.67E-4).
-            val pct = totalInput.toDouble() / contextWindow * FULL_PCT
-            if (pct == kotlin.math.floor(pct)) {
-                put("used_percentage", pct.toLong())
-            } else {
-                put("used_percentage", jsNumber(pct))
+/** The HUD surface: the gateway usage payload, the per-turn cache line, and the reported-output
+ *  clamp. Stateless; collaborators construct one (`private val hud = UsageHud()`). */
+public class UsageHud {
+    private val json = UsageJson()
+
+    /** The gateway usage payload with Claude Code's non-standard context fields. */
+    public fun buildUsagePayload(usage: TurnUsage, contextWindow: Long?): JsonObject {
+        val totalInput = usage.inputTokens + usage.cacheCreationInputTokens + usage.cacheReadInputTokens
+        return buildJsonObject {
+            put("input_tokens", usage.inputTokens)
+            put(OUTPUT_TOKENS, usage.outputTokens)
+            put("cache_creation_input_tokens", usage.cacheCreationInputTokens)
+            put("cache_read_input_tokens", usage.cacheReadInputTokens)
+            if (contextWindow != null && contextWindow > 0) {
+                put("context_window", contextWindow)
+                put("context_window_size", contextWindow)
+                // JS-number parity: the legacy reference emits this via JSON.stringify and the
+                // migration oracle byte-compares. Two notation gaps vs JVM: an integral double prints
+                // bare ("0", never "0.0"), and JS stays in decimal notation down to 1e-7 where the
+                // JVM flips to E-notation below 1e-3 (0.000367…, never 3.67E-4).
+                val pct = totalInput.toDouble() / contextWindow * FULL_PCT
+                if (pct == kotlin.math.floor(pct)) {
+                    put("used_percentage", pct.toLong())
+                } else {
+                    put("used_percentage", jsNumber(pct))
+                }
             }
         }
     }
-}
 
-/** JVM Double.toString rendered in JS decimal notation for the E-notation window JS doesn't use
- *  (exponents -1..-6): the digit sequence is shortest-round-trip in both runtimes, only the
- *  notation differs. Exponents <= -7 are E-notation in JS too and cannot arise for a percentage
- *  of a real context window, so any other repr rides through untouched. */
-/** JS switches to exponent notation only below 1e-7 (ECMA-262 Number::toString step 5 bound). */
-private const val JS_DECIMAL_MIN_EXP = -6
+    /** JVM Double.toString rendered in JS decimal notation for the E-notation window JS doesn't use
+     *  (exponents -1..-6): the digit sequence is shortest-round-trip in both runtimes, only the
+     *  notation differs. Exponents <= -7 are E-notation in JS too and cannot arise for a percentage
+     *  of a real context window, so any other repr rides through untouched. */
+    @OptIn(ExperimentalSerializationApi::class)
+    private fun jsNumber(v: Double): JsonElement {
+        val s = v.toString()
+        val e = s.indexOf('E')
+        if (e < 0) return JsonPrimitive(v)
+        val exp = s.substring(e + 1).toInt()
+        if (exp > 0 || exp < JS_DECIMAL_MIN_EXP) return JsonPrimitive(v)
+        val neg = s.startsWith("-")
+        val digits = s.substring(if (neg) 1 else 0, e).replace(".", "").trimEnd('0').ifEmpty { "0" }
+        return JsonUnquotedLiteral((if (neg) "-" else "") + "0." + "0".repeat(-exp - 1) + digits)
+    }
 
-@OptIn(ExperimentalSerializationApi::class)
-private fun jsNumber(v: Double): JsonElement {
-    val s = v.toString()
-    val e = s.indexOf('E')
-    if (e < 0) return JsonPrimitive(v)
-    val exp = s.substring(e + 1).toInt()
-    if (exp > 0 || exp < JS_DECIMAL_MIN_EXP) return JsonPrimitive(v)
-    val neg = s.startsWith("-")
-    val digits = s.substring(if (neg) 1 else 0, e).replace(".", "").trimEnd('0').ifEmpty { "0" }
-    return JsonUnquotedLiteral((if (neg) "-" else "") + "0." + "0".repeat(-exp - 1) + digits)
-}
+    /** One concise line per completed turn so the cache hit rate is watchable live. Parses via the
+     *  SAME [UsageJson.from] the payload uses — a second inline parser here had drifted to the OPPOSITE
+     *  cached-token precedence, so the logged hit-rate could disagree with the wire (craft review). */
+    public fun cacheLogLine(headTag: String, model: String, usage: JsonObject?, compact: Boolean): String {
+        val u = json.from(usage)
+        val cached = u.cacheReadInputTokens
+        val pct = if (u.inputTokens > 0) (cached.toDouble() / u.inputTokens * FULL_PCT).toInt() else 0
+        val compactSuffix = if (compact) " compact" else ""
+        return "[$headTag] cache: input=${u.inputTokens} cached=$cached hit=$pct% " +
+            "output=${u.outputTokens}$compactSuffix model=$model\n"
+    }
 
-/** One concise line per completed turn so the cache hit rate is watchable live. Parses via the
- *  SAME [TurnUsage.from] the payload uses — a second inline parser here had drifted to the OPPOSITE
- *  cached-token precedence, so the logged hit-rate could disagree with the wire (craft review). */
-public fun cacheLogLine(headTag: String, model: String, usage: JsonObject?, compact: Boolean): String {
-    val u = TurnUsage.from(usage)
-    val cached = u.cacheReadInputTokens
-    val pct = if (u.inputTokens > 0) (cached.toDouble() / u.inputTokens * FULL_PCT).toInt() else 0
-    val compactSuffix = if (compact) " compact" else ""
-    return "[$headTag] cache: input=${u.inputTokens} cached=$cached hit=$pct% " +
-        "output=${u.outputTokens}$compactSuffix model=$model\n"
-}
-
-/** Clamp REPORTED output_tokens to the client's max_tokens (v26). */
-public fun makeOutputClamp(
-    clientMaxTokens: Long?,
-    compact: Boolean,
-    headTag: String,
-    log: (String) -> Unit,
-): (Long) -> Long {
-    val max = clientMaxTokens?.takeIf { it > 0 }
-    return { n ->
-        if (max != null && n > max) {
-            log("[$headTag] output_tokens $n > client max_tokens $max compact=$compact — clamping reported usage\n")
-            max
-        } else {
-            n
+    /** Clamp REPORTED output_tokens to the client's max_tokens (v26). */
+    public fun makeOutputClamp(
+        clientMaxTokens: Long?,
+        compact: Boolean,
+        headTag: String,
+        log: (String) -> Unit,
+    ): (Long) -> Long {
+        val max = clientMaxTokens?.takeIf { it > 0 }
+        return { n ->
+            if (max != null && n > max) {
+                log("[$headTag] output_tokens $n > client max_tokens $max compact=$compact — clamping reported usage\n")
+                max
+            } else {
+                n
+            }
         }
     }
 }
@@ -145,15 +166,6 @@ public data class UsageState(
     val entries: Int,
     val outputTokens5h: Long,
     val ratelimit: RateLimitState?,
-)
-
-/** RateLimitState field mapping, single-sourced so [UsageStore.readRateLimit]'s pending-payload
- *  and on-disk paths cannot drift (review 2026-07-22 round 3). */
-private fun rateLimitStateFrom(obj: JsonObject): RateLimitState = RateLimitState(
-    limitTokens = num(obj["limit_tokens"]),
-    remainingTokens = num(obj["remaining_tokens"]),
-    resetTokens = (obj["reset_tokens"] as? JsonPrimitive)?.takeIf { it.isString }?.content,
-    updatedAt = num(obj["updated_at"]),
 )
 
 /** Pending ratelimit payload paired with its already-parsed state, so readRateLimit() — polled
@@ -169,6 +181,7 @@ public class UsageStore(
     private val log: (String) -> Unit = DaemonLog::write,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
+    private val usageJson = UsageJson()
 
     // In-memory updates are immediate. Persistence is coalesced onto the bounded file-I/O lane,
     // minute-bucketed, serialized, and atomically replaced: completion bursts neither block turn
@@ -179,11 +192,11 @@ public class UsageStore(
         synchronized(ringLock) {
             val ring = loadRingUnderLock(now - FIVE_HOURS_MS)
             val previous = ring.lastOrNull()
-            val previousTs = previous?.let { num(it["timestamp"]) }
+            val previousTs = previous?.let { usageJson.num(it["timestamp"]) }
             val sameBucket = previousTs?.let { it / USAGE_BUCKET_MS == now / USAGE_BUCKET_MS } == true
             if (previous != null && sameBucket) {
                 ring.removeLast()
-                ring.addLast(usageEntry(now, (num(previous[OUTPUT_TOKENS]) ?: 0) + outputTokens))
+                ring.addLast(usageEntry(now, (usageJson.num(previous[OUTPUT_TOKENS]) ?: 0) + outputTokens))
             } else {
                 ring.addLast(usageEntry(now, outputTokens))
             }
@@ -231,6 +244,15 @@ public class UsageStore(
         }
     }
 
+    /** RateLimitState field mapping, single-sourced so [readRateLimit]'s pending-payload
+     *  and on-disk paths cannot drift (review 2026-07-22 round 3). */
+    private fun rateLimitStateFrom(obj: JsonObject): RateLimitState = RateLimitState(
+        limitTokens = usageJson.num(obj["limit_tokens"]),
+        remainingTokens = usageJson.num(obj["remaining_tokens"]),
+        resetTokens = (obj["reset_tokens"] as? JsonPrimitive)?.takeIf { it.isString }?.content,
+        updatedAt = usageJson.num(obj["updated_at"]),
+    )
+
     /**
      * CAS-guarded debounce shared by the usage-ring and ratelimit lanes: [flag] gates a single
      * in-flight [flush] submission. Rolling [flag] back when [AsyncFileIo.submit] rejects is the
@@ -263,7 +285,7 @@ public class UsageStore(
         val cutoff = clock() - FIVE_HOURS_MS
         val (entries, tokens) = synchronized(ringLock) {
             val ring = loadRingUnderLock(cutoff)
-            ring.size to ring.sumOf { num(it[OUTPUT_TOKENS]) ?: 0 }
+            ring.size to ring.sumOf { usageJson.num(it[OUTPUT_TOKENS]) ?: 0 }
         }
         return UsageState(
             windowHours = 5,
@@ -315,7 +337,7 @@ public class UsageStore(
             cachedRing.addAll(readEntriesFromDisk())
             ringLoaded = true
         }
-        while (cachedRing.isNotEmpty() && (num(cachedRing.first()["timestamp"]) ?: 0) <= cutoff) {
+        while (cachedRing.isNotEmpty() && (usageJson.num(cachedRing.first()["timestamp"]) ?: 0) <= cutoff) {
             cachedRing.removeFirst()
         }
         return cachedRing
@@ -382,18 +404,5 @@ public class UsageStore(
             val written = runCatchingCancellable { SecureFile.writeAtomic0600(usageFile, encoded) }.isSuccess
             if (written) persistedVersion = version
         }
-    }
-
-    private companion object {
-        // MUST comfortably exceed MAX_RING_ENTRIES x ~50 bytes/row — at 2MB the reader treated a
-        // legitimately capped ring file (~2.25MB) as corrupt and DROPPED the whole live window on
-        // restart (audit 2026-07-18). 8MB keeps the corrupt-file guard with real headroom.
-        const val MAX_USAGE_FILE_BYTES = 8L * 1024 * 1024
-
-        // New writes aggregate by minute (~300 rows/5h); retain the legacy high cap so existing
-        // per-turn files load without data loss and are compacted naturally as the window advances.
-        const val MAX_RING_ENTRIES = 50_000
-        const val USAGE_BUCKET_MS = 60_000L
-        const val USAGE_FLUSH_DELAY_MS = 1_000L
     }
 }

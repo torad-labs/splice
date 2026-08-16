@@ -24,7 +24,7 @@ import kotlinx.coroutines.flow.flow
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
-import splice.core.util.runCatchingCancellable
+import splice.core.util.Cancellables
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.CharBuffer
@@ -290,7 +290,7 @@ private class SseEventAssembler(
         val payload = dataBuffer.toString()
         dataBuffer.setLength(0)
         if (payload == DONE_SENTINEL) return
-        runCatchingCancellable { lenient.parseToJsonElement(payload).jsonObject }
+        Cancellables.runCatchingCancellable { lenient.parseToJsonElement(payload).jsonObject }
             .onFailure { onMalformed(payload) }
             .getOrNull()
             ?.let { collector.emit(it) }

@@ -8,7 +8,6 @@ package splice.app
 import splice.core.launch.TokenCaptureSpec
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
-import splice.core.topology.effectiveApiKeyEnv
 
 internal const val API_KEY = "api-key"
 
@@ -62,7 +61,7 @@ internal class SignInPlanner {
         val label = API_KEY_LABELS[head.provider] ?: head.provider
         // Capture only where the token shape is KNOWN and unambiguous (v1: OpenRouter).
         val capture = API_KEY_TOKEN_PATTERNS[head.provider]?.let { pattern ->
-            TokenCaptureSpec(effectiveApiKeyEnv(head.provider, providerCfg.auth), pattern, label)
+            TokenCaptureSpec(providerCfg.auth.effectiveApiKeyEnv(head.provider), pattern, label)
         }
         // EVERY head keeps /login — each one has its own sign-in path, and being in the topology is
         // what makes it supported. What differs is only the WORDING: a head that can capture a pasted

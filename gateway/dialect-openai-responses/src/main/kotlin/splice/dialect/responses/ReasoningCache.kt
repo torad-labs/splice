@@ -29,8 +29,8 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.jsonObject
+import splice.core.util.JsonScalars
 import splice.core.util.MonoClock
-import splice.core.util.str
 
 internal class ReasoningCache(
     private val maxEntries: Int = MAX_ENTRIES,
@@ -303,14 +303,14 @@ private class StaleReasoningWalk(private val cache: ReasoningCache) {
 
     fun visit(sink: JsonArrayBuilder, el: JsonElement) {
         val item = el as? JsonObject
-        when (item?.get(WALK_FIELD_TYPE).str()) {
+        when (JsonScalars.str(item?.get(WALK_FIELD_TYPE))) {
             "reasoning" -> {
                 dropped++
                 inDroppedRound = true
             }
             "function_call" -> {
                 sink.add(el)
-                if (inDroppedRound) item?.get("call_id").str()?.let { cache.evictByToolId(it) }
+                if (inDroppedRound) JsonScalars.str(item?.get("call_id"))?.let { cache.evictByToolId(it) }
             }
             else -> {
                 sink.add(el)

@@ -17,8 +17,8 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.parse.parseAnthropicBody
-import splice.core.turn.ReasoningDisplay
+import splice.core.parse.AnthropicParse
+import splice.core.turn.ReasoningDisplayParser
 import splice.dialect.responses.BuildOptions
 import splice.dialect.responses.InjectPriorReasoning
 import splice.dialect.responses.RequestEncryptedReasoning
@@ -36,7 +36,7 @@ private fun opts(effort: String? = null) = BuildOptions(
     upstreamModel = "gpt-5.6-sol",
     configEffort = effort,
     configSummary = null,
-    showReasoning = ReasoningDisplay.from("text"),
+    showReasoning = ReasoningDisplayParser.from("text"),
     replayReasoning = InjectPriorReasoning(false),
     includeEncryptedReasoning = RequestEncryptedReasoning(true),
     decodeReasoningEnvelope = { data ->
@@ -50,7 +50,9 @@ private fun opts(effort: String? = null) = BuildOptions(
 )
 
 private fun build(json: String, effort: String? = null): JsonObject =
-    parseAnthropicBody(json).let { ResponsesRequestBuilder(CODEX).build(it.typed, it.raw, opts(effort)).req }
+    AnthropicParse.parseAnthropicBody(json).let {
+        ResponsesRequestBuilder(CODEX).build(it.typed, it.raw, opts(effort)).req
+    }
 
 /** A conversation after [rounds] completed tool round-trips, optionally with a trailing text turn. */
 private fun convo(rounds: Int, trailingUserText: String? = null, assistantText: String? = null): String {

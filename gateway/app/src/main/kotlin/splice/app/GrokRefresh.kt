@@ -18,9 +18,8 @@ import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import splice.core.auth.RefreshAttempt
-import splice.core.util.long
-import splice.core.util.runCatchingCancellable
-import splice.core.util.str
+import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
 import splice.provider.grok.GrokOAuthEndpoints
 import splice.provider.grok.GrokRefreshedTokens
 
@@ -75,13 +74,13 @@ public class GrokRefresh {
     }
 
     /** Defensive against malformed JSON on a 200 — a bad success body terminates cleanly, not via retry. */
-    private fun parseGrokRefresh(body: String): GrokRefreshedTokens? = runCatchingCancellable {
+    private fun parseGrokRefresh(body: String): GrokRefreshedTokens? = Cancellables.runCatchingCancellable {
         val obj = grokRefreshJson.parseToJsonElement(body).jsonObject
-        val access = obj.str("access_token") ?: return@runCatchingCancellable null
+        val access = JsonScalars.str(obj, "access_token") ?: return@runCatchingCancellable null
         GrokRefreshedTokens(
             accessToken = access,
-            refreshToken = obj.str("refresh_token"),
-            expiresIn = obj.long("expires_in"),
+            refreshToken = JsonScalars.str(obj, "refresh_token"),
+            expiresIn = JsonScalars.long(obj, "expires_in"),
         )
     }.getOrNull()
 }

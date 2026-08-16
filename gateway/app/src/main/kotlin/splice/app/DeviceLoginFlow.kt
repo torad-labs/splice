@@ -20,7 +20,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
-import splice.core.util.runCatchingCancellable
+import splice.core.util.Cancellables
 import splice.provider.kimi.KimiDeviceAuthorization
 import splice.provider.kimi.KimiOAuth
 import java.nio.file.Path
@@ -79,7 +79,7 @@ public object DeviceLoginFlow {
     private suspend fun attempt(spec: DeviceLoginSpec): Outcome {
         val client = authClients.create()
         return try {
-            runCatchingCancellable {
+            Cancellables.runCatchingCancellable {
                 val auth = requestDeviceAuth(client, spec) ?: return@runCatchingCancellable Outcome.ABORT
                 announce(spec, auth)
                 poll(client, spec, auth)
@@ -122,7 +122,7 @@ public object DeviceLoginFlow {
         val deadline = System.currentTimeMillis() + auth.expiresInS * MS_PER_S
         while (System.currentTimeMillis() < deadline) {
             delay(intervalS * MS_PER_S)
-            val resp = runCatchingCancellable { postToken(client, spec, auth.deviceCode) }.getOrNull()
+            val resp = Cancellables.runCatchingCancellable { postToken(client, spec, auth.deviceCode) }.getOrNull()
             val step = if (resp == null) PollStep.Wait(intervalS) else classifyPoll(resp, spec, intervalS)
             when (step) {
                 is PollStep.Stop -> return step.outcome
@@ -171,7 +171,7 @@ public object DeviceLoginFlow {
         identityHeaders.forEach { (k, v) -> header(k, v) }
     }
 
-    private fun errorCode(body: String): String = runCatchingCancellable {
+    private fun errorCode(body: String): String = Cancellables.runCatchingCancellable {
         (deviceJson.parseToJsonElement(body) as? JsonObject)?.let { obj ->
             (obj["error"] as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content
         }

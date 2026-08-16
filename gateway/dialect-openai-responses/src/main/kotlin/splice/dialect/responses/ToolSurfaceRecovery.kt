@@ -20,7 +20,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
-import splice.core.util.strOrEmpty
+import splice.core.util.JsonScalars
 
 /**
  * The amend path, as a type rather than the file-level functions it used to be (Kotlin main sources
@@ -104,7 +104,7 @@ internal class ToolSurfaceRecovery {
     private fun isSearchCallOrOutput(type: String): Boolean =
         type == TYPE_TOOL_SEARCH_CALL || type == TYPE_TOOL_SEARCH_OUTPUT
 
-    private fun itemType(t: JsonElement): String = strOrEmpty((t as? JsonObject)?.get(FIELD_TYPE))
+    private fun itemType(t: JsonElement): String = JsonScalars.strOrEmpty((t as? JsonObject)?.get(FIELD_TYPE))
 }
 
 private const val REJECTION_STATUS_MIN = 400

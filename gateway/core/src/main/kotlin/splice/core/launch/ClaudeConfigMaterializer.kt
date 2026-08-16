@@ -23,7 +23,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
-import splice.core.util.runCatchingCancellable
+import splice.core.util.Cancellables
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
@@ -160,7 +160,7 @@ public class ClaudeConfigMaterializer(
         val src = globalDir().resolve(item)
         if (!Files.exists(src, NOFOLLOW_LINKS)) return
         // Best-effort: an I/O race here just leaves whatever is already on disk.
-        runCatchingCancellable { replaceWithSymlink(src, configDir.resolve(item)) }
+        Cancellables.runCatchingCancellable { replaceWithSymlink(src, configDir.resolve(item)) }
     }
 
     private fun replaceWithSymlink(src: Path, dst: Path) {
@@ -199,7 +199,7 @@ public class ClaudeConfigMaterializer(
     private fun breakSettingsSymlinkAndRead(dst: Path): JsonObject {
         if (!Files.exists(dst, NOFOLLOW_LINKS)) return EMPTY_JSON
         if (dst.isSymbolicLink()) {
-            runCatchingCancellable { Files.delete(dst) }
+            Cancellables.runCatchingCancellable { Files.delete(dst) }
             return EMPTY_JSON
         }
         return readJson(dst)
@@ -250,14 +250,15 @@ public class ClaudeConfigMaterializer(
 
     private fun readJson(path: Path): JsonObject {
         if (path.isSymbolicLink() || !Files.exists(path)) return EMPTY_JSON
-        return runCatchingCancellable { json.parseToJsonElement(Files.readString(path)).jsonObject }
+        return Cancellables.runCatchingCancellable { json.parseToJsonElement(Files.readString(path)).jsonObject }
             .getOrDefault(EMPTY_JSON)
     }
-
-    private companion object {
-        val EMPTY_JSON = JsonObject(emptyMap())
-    }
 }
+
+// Companion dissolved to file scope (Kotlin style law, 2026-08-16 — HD-M8), same name, same value.
+// FILE SCOPE ON PURPOSE: one immutable empty object shared by every read path, as the companion's
+// single instance already was — a per-instance field would allocate one per materializer.
+private val EMPTY_JSON = JsonObject(emptyMap())
 
 /** The `~/.claude*` path fragments and `.claude.json` keys are the byte-for-byte state contract with
  *  Claude Code; naming them once keeps the contract in a single place instead of duplicated literals. */

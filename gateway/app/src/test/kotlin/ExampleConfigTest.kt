@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.app.TopologyLoader
-import splice.core.config.Knob
+import splice.core.config.knobsByKey
 import splice.core.topology.Dialect
 import java.nio.file.Files
 import java.nio.file.Paths
@@ -124,7 +124,7 @@ class ExampleConfigTest {
         // 1. Live [heads.<key>.overrides] tables — a typo here ships a silently-ignored knob.
         val used = topology.heads.values.flatMap { it.overrides.keys }.toSet()
         assertTrue(used.isNotEmpty(), "the example must keep demonstrating per-head overrides")
-        used.forEach { assertTrue(Knob.byKey.containsKey(it), "example sets unknown knob '$it'") }
+        used.forEach { assertTrue(knobsByKey.containsKey(it), "example sets unknown knob '$it'") }
 
         // 2. Knob names the COMMENTS teach. Anything camelCase-and-backticked-or-listed in the
         //    per-head doc block must resolve; that is what went stale and got hand-fixed once.
@@ -148,14 +148,14 @@ class ExampleConfigTest {
         val prose = setOf("xAI")
         prose.forEach {
             assertTrue(
-                !Knob.byKey.containsKey(it),
+                !knobsByKey.containsKey(it),
                 "'$it' is a real knob — remove it from the prose allowlist",
             )
         }
 
         (docNames - prose).forEach {
             assertTrue(
-                Knob.byKey.containsKey(it),
+                knobsByKey.containsKey(it),
                 "example comment names unknown knob '$it' " +
                     "(add it to the prose allowlist only if it is not a knob)",
             )

@@ -28,7 +28,6 @@ import kotlinx.serialization.json.put
 import splice.core.model.ModelCatalog
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
-import splice.core.perf.perfLine
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
@@ -1180,7 +1179,7 @@ internal class TurnTelemetry(
         drive.perf.mark(PerfKeys.TOTAL)
         val snap = drive.perf.snapshot()
         perfStats.record(PerfRowMeta(drive.upstreamModel, outcomeTag, drive.meta.compact), snap)
-        log(perfLine(headKey, outcomeTag, drive.meta.compact, drive.upstreamModel, snap))
+        log(snap.perfLine(headKey, outcomeTag, drive.meta.compact, drive.upstreamModel))
     }
 
     fun errTurn(kind: String, drive: TurnDrive, detail: String): String =

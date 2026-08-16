@@ -35,7 +35,7 @@ import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
-import splice.core.parse.parseAnthropicBody
+import splice.core.parse.AnthropicParse
 import splice.core.turn.TurnOutcome
 import splice.dialect.passthrough.PassthroughQuirks
 import splice.dialect.passthrough.PassthroughQuirksDefaults
@@ -88,7 +88,7 @@ private fun buildKimi(
     quirks: PassthroughQuirks = KIMI_QUIRKS,
 ): String {
     val built = PassthroughRequestBuilder(quirks).build(
-        parseAnthropicBody(json),
+        AnthropicParse.parseAnthropicBody(json),
         upstreamModel = "k3",
         originalModel = "claude-kimi--k3[1m]",
         compact = compact,

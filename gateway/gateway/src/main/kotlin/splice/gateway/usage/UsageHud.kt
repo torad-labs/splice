@@ -21,10 +21,10 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.usage.RateLimitState
 import splice.core.util.AsyncFileIo
+import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
+import splice.core.util.JsonScalars
 import splice.core.util.SecureFile
-import splice.core.util.firstLong
-import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
@@ -61,7 +61,7 @@ public class UsageJson {
     /** First key whose value parses as a number. CX-18: this chain moved to :core (JsonScalars
      *  firstLong) so the dialects, the Responses harvest and this payload builder share ONE
      *  definition; the local name is kept so the call sites below read unchanged. */
-    private fun JsonObject.firstNum(vararg keys: String): Long? = firstLong(*keys)
+    private fun JsonObject.firstNum(vararg keys: String): Long? = JsonScalars.firstLong(this, *keys)
 
     /** Parse a raw usage object into the alias-normalized [TurnUsage]. */
     public fun from(usage: JsonObject?): TurnUsage {
@@ -213,7 +213,7 @@ public class UsageStore(
     // (review 2026-07-22). flushNow() forces the pending payload out synchronously; readRateLimit()
     // serves it straight from memory instead (review 2026-07-22 round 3).
     public fun persistRateLimit(header: (String) -> String?) {
-        runCatchingCancellable {
+        Cancellables.runCatchingCancellable {
             val limit = header("x-ratelimit-limit-tokens")?.toLongOrNull() ?: return
             val remaining = header("x-ratelimit-remaining-tokens")?.toLongOrNull()
             val reset = header("x-ratelimit-reset-tokens")?.takeIf { it.isNotEmpty() }
@@ -273,7 +273,7 @@ public class UsageStore(
      *  descheduled flusher commit an OLDER payload over a newer one (review 2026-07-22). */
     private fun flushRateLimit() {
         rlWriteScheduled.set(false)
-        runCatchingCancellable {
+        Cancellables.runCatchingCancellable {
             synchronized(writeLock) {
                 val encoded = pendingRateLimit.getAndSet(null)?.encoded ?: return@synchronized
                 SecureFile.writeAtomic0600(ratelimitFile, encoded)
@@ -311,7 +311,7 @@ public class UsageStore(
     // parsed once in persistRateLimit) no re-parse of the same JSON on every /statusline tick and
     // /api/usage poll (review 2026-07-22). The inline flush this replaces had re-added, on the read
     // path, the churn coalescing removed from the round path (review 2026-07-22 round 3).
-    public fun readRateLimit(): RateLimitState? = runCatchingCancellable {
+    public fun readRateLimit(): RateLimitState? = Cancellables.runCatchingCancellable {
         val pending = pendingRateLimit.get()
         if (pending != null) {
             pending.parsed
@@ -351,12 +351,12 @@ public class UsageStore(
     // disappearing from the HUD must leave a trace.
     private fun readEntriesFromDisk(): List<JsonObject> {
         if (!Files.exists(usageFile)) return emptyList()
-        val size = runCatchingCancellable { Files.size(usageFile) }.getOrDefault(0L)
+        val size = Cancellables.runCatchingCancellable { Files.size(usageFile) }.getOrDefault(0L)
         if (size > MAX_USAGE_FILE_BYTES) {
             log("[usage] $usageFile is ${size}B > ${MAX_USAGE_FILE_BYTES}B cap — treating as empty, 5h window reset\n")
             return emptyList()
         }
-        return runCatchingCancellable {
+        return Cancellables.runCatchingCancellable {
             json.parseToJsonElement(Files.readString(usageFile)).jsonArray.mapNotNull { it as? JsonObject }
         }.getOrElse {
             log("[usage] $usageFile unreadable/corrupt (${it.message}) — treating as empty, 5h window reset\n")
@@ -401,7 +401,9 @@ public class UsageStore(
         synchronized(writeLock) {
             if (version <= persistedVersion) return
             val encoded = buildJsonArray { snapshot.forEach { add(it) } }.toString() + "\n"
-            val written = runCatchingCancellable { SecureFile.writeAtomic0600(usageFile, encoded) }.isSuccess
+            val written = Cancellables
+                .runCatchingCancellable { SecureFile.writeAtomic0600(usageFile, encoded) }
+                .isSuccess
             if (written) persistedVersion = version
         }
     }

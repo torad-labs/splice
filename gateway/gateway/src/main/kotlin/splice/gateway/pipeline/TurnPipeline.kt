@@ -9,10 +9,10 @@
 package splice.gateway.pipeline
 
 import splice.core.turn.ErrorType
+import splice.core.turn.ModelTextPicker
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.core.turn.pickModelText
 import splice.gateway.compact.CompactStats
 import splice.gateway.reasoning.Mirror
 import splice.gateway.wire.TurnTerminal
@@ -66,7 +66,7 @@ public class TurnPipeline(
 
         // Promote model thinking → text when no text AND no tools (compact needs a text channel).
         if (!emittedText && !outcome.hasToolUse) {
-            val picked = pickModelText(outcome.thinkingText, outcome.bodyText)
+            val picked = ModelTextPicker.pickModelText(outcome.thinkingText, outcome.bodyText)
             if (picked.text.isNotEmpty()) {
                 log(
                     "[gateway] promote-to-text compact=${meta.compact} " +

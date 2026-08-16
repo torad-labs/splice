@@ -15,8 +15,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import splice.core.util.FormEncoding
-import splice.core.util.long
-import splice.core.util.str
+import splice.core.util.JsonScalars
 
 public object KimiOAuthEndpoints {
     // public, shared with Moonshot's own CLIs — reused verbatim (no secret exists).
@@ -83,14 +82,14 @@ public class KimiOAuth {
     public fun parseKimiDeviceAuthorization(responseBody: String): KimiDeviceAuthorization {
         val obj = kimiJson.parseToJsonElement(responseBody).jsonObjectOrEmpty()
         return KimiDeviceAuthorization(
-            userCode = obj.str("user_code").orEmpty(),
-            deviceCode = obj.str("device_code").orEmpty(),
-            verificationUri = obj.str("verification_uri").orEmpty(),
-            verificationUriComplete = obj.str("verification_uri_complete").orEmpty(),
-            expiresInS = obj.long("expires_in") ?: KimiOAuthEndpoints.DEFAULT_EXPIRES_IN_S,
+            userCode = JsonScalars.str(obj, "user_code").orEmpty(),
+            deviceCode = JsonScalars.str(obj, "device_code").orEmpty(),
+            verificationUri = JsonScalars.str(obj, "verification_uri").orEmpty(),
+            verificationUriComplete = JsonScalars.str(obj, "verification_uri_complete").orEmpty(),
+            expiresInS = JsonScalars.long(obj, "expires_in") ?: KimiOAuthEndpoints.DEFAULT_EXPIRES_IN_S,
             intervalS = maxOf(
                 KimiOAuthEndpoints.MIN_INTERVAL_S,
-                obj.long("interval") ?: KimiOAuthEndpoints.DEFAULT_INTERVAL_S,
+                JsonScalars.long(obj, "interval") ?: KimiOAuthEndpoints.DEFAULT_INTERVAL_S,
             ),
         )
     }
@@ -103,11 +102,12 @@ public class KimiOAuth {
     public fun kimiAuthJsonFromTokenResponse(responseBody: String, nowMs: Long): JsonObject {
         val obj = kimiJson.parseToJsonElement(responseBody).jsonObjectOrEmpty()
         val tokens = KimiRefreshedTokens(
-            accessToken = obj.str(F_ACCESS_TOKEN) ?: error("kimi token response missing access_token"),
-            refreshToken = obj.str(F_REFRESH_TOKEN) ?: error("kimi token response missing refresh_token"),
-            expiresIn = obj.long(F_EXPIRES_IN) ?: error("kimi token response missing expires_in"),
-            scope = obj.str("scope").orEmpty(),
-            tokenType = obj.str("token_type") ?: "Bearer",
+            accessToken = JsonScalars.str(obj, F_ACCESS_TOKEN) ?: error("kimi token response missing access_token"),
+            refreshToken = JsonScalars.str(obj, F_REFRESH_TOKEN)
+                ?: error("kimi token response missing refresh_token"),
+            expiresIn = JsonScalars.long(obj, F_EXPIRES_IN) ?: error("kimi token response missing expires_in"),
+            scope = JsonScalars.str(obj, "scope").orEmpty(),
+            tokenType = JsonScalars.str(obj, "token_type") ?: "Bearer",
         )
         return kimiAuthJson(tokens, nowMs)
     }

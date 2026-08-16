@@ -8,9 +8,8 @@ package splice.app.cli
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import splice.core.config.StatePaths
-import splice.core.util.long
-import splice.core.util.runCatchingCancellable
-import splice.core.util.str
+import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -42,7 +41,7 @@ internal class DoctorRuntime {
     }
 
     private fun readMgmtKey(statePaths: StatePaths): String? =
-        runCatchingCancellable { Files.readString(statePaths.mgmtKeyFile).trim() }
+        Cancellables.runCatchingCancellable { Files.readString(statePaths.mgmtKeyFile).trim() }
             .getOrNull()?.takeIf { it.isNotEmpty() }
 
     internal fun headRuntimeRows(
@@ -65,7 +64,7 @@ internal class DoctorRuntime {
     /** Last-N turn outcomes from the per-head perf JSONL — "last failure: 4m ago (upstream_failed)"
      *  is the sentence doctor exists to say. Missing/empty file = INFO (a fresh head has no turns). */
     internal fun perfTailRow(headKey: String, perfFile: Path): DoctorCheck {
-        val rows = runCatchingCancellable {
+        val rows = Cancellables.runCatchingCancellable {
             Files.readAllLines(perfFile).takeLast(PERF_TAIL_TURNS).mapNotNull { line -> perfRow(line) }
         }.getOrNull().orEmpty()
         if (rows.isEmpty()) return DoctorCheck("head $headKey turns", CheckStatus.INFO, "no turns recorded yet")
@@ -84,10 +83,10 @@ internal class DoctorRuntime {
     }
 
     /** One perf JSONL row -> (outcome, ts); null on a malformed line (tail readers stay tolerant). */
-    internal fun perfRow(line: String): Pair<String, Long>? = runCatchingCancellable {
+    internal fun perfRow(line: String): Pair<String, Long>? = Cancellables.runCatchingCancellable {
         val obj = kotlinx.serialization.json.Json.parseToJsonElement(line).jsonObject
-        val outcome = obj.str("outcome")
-        if (outcome == null) null else outcome to (obj.long("ts") ?: 0L)
+        val outcome = JsonScalars.str(obj, "outcome")
+        if (outcome == null) null else outcome to (JsonScalars.long(obj, "ts") ?: 0L)
     }.getOrNull()
 
     /** The TURN-PATH verdict — ranked ABOVE the head counters by its caller, because it outranks them:

@@ -10,10 +10,8 @@ import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import splice.core.util.int
-import splice.core.util.long
-import splice.core.util.runCatchingCancellable
-import splice.core.util.str
+import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
 import java.net.HttpURLConnection
 import java.net.URI
 import kotlin.streams.toList
@@ -44,16 +42,16 @@ internal object ControlPlaneClient {
      *  Unlike AdminSupport.daemonUp this accepts a STALE daemon — restart must be able to stop one.
      *  str() (JsonNull-filtering) keeps a foreign listener's {"version": null} from reading back as
      *  the literal string "null". */
-    fun healthView(port: Int): HealthView? = runCatchingCancellable {
+    fun healthView(port: Int): HealthView? = Cancellables.runCatchingCancellable {
         request("http://127.0.0.1:$port/health") { connection ->
             val obj = json.parseToJsonElement(body(connection)).jsonObject
             HealthView(
-                version = obj.str("version"),
-                heads = obj.int("heads"),
-                readyHeads = obj.int("readyHeads"),
-                failedHeads = obj.int("failedHeads"),
-                topologyDigest = obj.str("topologyDigest"),
-                configPath = obj.str("configPath"),
+                version = JsonScalars.str(obj, "version"),
+                heads = JsonScalars.int(obj, "heads"),
+                readyHeads = JsonScalars.int(obj, "readyHeads"),
+                failedHeads = JsonScalars.int(obj, "failedHeads"),
+                topologyDigest = JsonScalars.str(obj, "topologyDigest"),
+                configPath = JsonScalars.str(obj, "configPath"),
                 topologyStale = (obj["topologyStale"] as? JsonPrimitive)?.booleanOrNull,
                 ok = (obj["ok"] as? JsonPrimitive)?.booleanOrNull,
                 turnPathStalled = (obj["turnPathStalled"] as? JsonArray)
@@ -69,16 +67,16 @@ internal object ControlPlaneClient {
      *  local-origin vs provider-error split G20 built for exactly this diagnosis. */
     data class HeadRuntime(val key: String, val localOriginErrors: Long, val providerErrors: Long)
 
-    fun headsRuntime(port: Int, bearer: String): List<HeadRuntime>? = runCatchingCancellable {
+    fun headsRuntime(port: Int, bearer: String): List<HeadRuntime>? = Cancellables.runCatchingCancellable {
         request("http://127.0.0.1:$port/api/heads", bearer = bearer) { connection ->
             val obj = json.parseToJsonElement(body(connection)).jsonObject
             (obj["heads"] as? JsonArray).orEmpty().mapNotNull { el ->
                 val head = el as? JsonObject ?: return@mapNotNull null
                 val health = head["health"] as? JsonObject ?: return@mapNotNull null
                 HeadRuntime(
-                    key = head.str("key") ?: return@mapNotNull null,
-                    localOriginErrors = health.long("localOriginErrors") ?: 0L,
-                    providerErrors = health.long("providerErrors") ?: 0L,
+                    key = JsonScalars.str(head, "key") ?: return@mapNotNull null,
+                    localOriginErrors = JsonScalars.long(health, "localOriginErrors") ?: 0L,
+                    providerErrors = JsonScalars.long(health, "providerErrors") ?: 0L,
                 )
             }
         }
@@ -162,7 +160,7 @@ internal object ControlPlaneClient {
             }
         }
 
-    private fun pidsOnPort(port: Int): List<Long> = runCatchingCancellable {
+    private fun pidsOnPort(port: Int): List<Long> = Cancellables.runCatchingCancellable {
         ProcessBuilder("ss", "-ltnpH", "( sport = :$port )").redirectErrorStream(true).start()
             .inputStream.bufferedReader().use { it.readText() }
             .let { Regex("pid=(\\d+)").findAll(it).map { m -> m.groupValues[1].toLong() }.toList() }
@@ -185,16 +183,16 @@ internal object ControlPlaneClient {
      *  file would then check the NEW port while the old daemon still holds the OLD one, so the stop
      *  reports success against a port nothing ever bound. It also survives a malformed TOML, which
      *  no file-sourced list can. */
-    fun headPorts(port: Int, bearer: String): List<Int>? = runCatchingCancellable {
+    fun headPorts(port: Int, bearer: String): List<Int>? = Cancellables.runCatchingCancellable {
         request("http://127.0.0.1:$port/api/heads", bearer = bearer) { connection ->
             val obj = json.parseToJsonElement(body(connection)).jsonObject
-            (obj["heads"] as? JsonArray).orEmpty().mapNotNull { (it as? JsonObject)?.int("port") }
+            (obj["heads"] as? JsonArray).orEmpty().mapNotNull { JsonScalars.int(it as? JsonObject, "port") }
         }
     }.getOrNull()
 
     /** Per-head credential presence as the DAEMON sees it (`/api/auth`), or null when unreachable.
      *  Doctor compares this against shell-side presence to catch the exported-after-boot trap. */
-    fun authPresence(port: Int, key: String): Map<String, Boolean>? = runCatchingCancellable {
+    fun authPresence(port: Int, key: String): Map<String, Boolean>? = Cancellables.runCatchingCancellable {
         request("http://127.0.0.1:$port/api/auth", bearer = key) { connection ->
             json.parseToJsonElement(body(connection)).jsonObject.mapValues { (_, v) ->
                 v.jsonObject["present"]?.jsonPrimitive?.booleanOrNull == true
@@ -234,7 +232,7 @@ internal object ControlPlaneClient {
         method: String,
         bearer: String?,
         readTimeoutMs: Int = STATUS_TIMEOUT_MS,
-    ): Int? = runCatchingCancellable {
+    ): Int? = Cancellables.runCatchingCancellable {
         val connection = URI(url).toURL().openConnection() as HttpURLConnection
         try {
             connection.requestMethod = method

@@ -4,7 +4,7 @@
 // but never touched it.
 package splice.app.cli
 
-import splice.core.util.runCatchingCancellable
+import splice.core.util.Cancellables
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -28,7 +28,7 @@ internal class DoctorProbeWrite {
         } catch (e: java.io.IOException) {
             DoctorCheck(name, CheckStatus.FAIL, "$dir is not writable (${e.message})", "check free space: df -h $dir")
         } finally {
-            runCatchingCancellable { Files.deleteIfExists(probe) }
+            Cancellables.runCatchingCancellable { Files.deleteIfExists(probe) }
         }
     }
 }

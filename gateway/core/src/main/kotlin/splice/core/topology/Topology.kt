@@ -1,6 +1,11 @@
 // NEW: the TOML topology schema (shape proven by spike P0-TOML incl. @SerialName mapping;
 // gateway/spikes/results/ktoml.md). Loaded once at daemon start by :app — adding a
 // provider or head is an operator action and implies a restart (no hot topology).
+// 2026-08-16 (HD-M8): the file's top-level functions were relocated without changing any body.
+// The extensions on types THIS file owns became members of those types, so `provider.catalogFor(...)`
+// and `topology.configOverrides()` read exactly as before; the three operator-facing diagnostics
+// became members of TopologyMessages; effectiveApiKeyEnv became a member of AuthConfig, which is
+// the type it interrogates.
 package splice.core.topology
 
 import kotlinx.serialization.SerialName
@@ -42,25 +47,88 @@ public data class Topology(
      *  never names the offending [heads.X] entry. Same idiom as [portCollisions]. */
     public fun invalidPortHeads(): Map<String, Int> =
         heads.filterValues { it.port !in VALID_PORT_RANGE }.mapValues { it.value.port }
+
+    /**
+     * Flat knob map from topology TOML for ConfigService's headOverrides layer.
+     * Order: free-form [defaults] first, then explicit [daemon] fields (win on conflict).
+     * Values are strings because ConfigService coerces by KnobKind.
+     */
+    public fun configOverrides(): Map<String, String> {
+        val out = LinkedHashMap(defaults)
+        daemon.controlPort?.let { out["controlPort"] = it.toString() }
+        daemon.showReasoning?.let { out["showReasoning"] = it }
+        daemon.summary?.let { out["summary"] = it }
+        daemon.effort?.let { out["effort"] = it }
+        daemon.replayReasoning?.let { out["replayReasoning"] = it.toString() }
+        daemon.mirrorReasoning?.let { out["mirrorReasoning"] = it.toString() }
+        daemon.putFoldOverrides(out)
+        putLegacyProviderOverrides(out)
+        return out
+    }
+
+    /**
+     * The management API retains the original codex/grok knob names. Seed those knobs from TOML so
+     * their effective values describe the topology, then let state/env/runtime override them through
+     * ConfigService's normal precedence.
+     */
+    private fun putLegacyProviderOverrides(out: MutableMap<String, String>) {
+        val codex = heads.entries.firstOrNull { (_, head) ->
+            providers[head.provider]?.auth?.kind == "chatgpt-oauth"
+        }
+        codex?.let { (_, head) ->
+            val provider = providers.getValue(head.provider)
+            out["port"] = head.port.toString()
+            out["pinnedModel"] = head.pinnedModel
+            out["chatgptApiBase"] = provider.baseUrl
+            provider.auth.file?.let { out["codexAuthPath"] = it }
+        }
+
+        val grok = heads.entries.firstOrNull { (key, head) ->
+            providers[head.provider]?.auth?.kind == "grok-oauth" || key.contains("grok", ignoreCase = true)
+        }
+        grok?.let { (_, head) ->
+            val provider = providers.getValue(head.provider)
+            out["grokPort"] = head.port.toString()
+            out["grokModel"] = head.pinnedModel
+            out["xaiApiBase"] = provider.baseUrl
+            provider.auth.file?.let { out["grokAuthPath"] = it }
+        }
+    }
+
+    /** Reasoning-continuation fold knobs, split out so [configOverrides] stays under the complexity cap.
+     *  The comma-joined model list is what the STRING knob coerces (SpliceConfig splits it back).
+     *  Kept an EXTENSION (now a member one, HD-M8) so [configOverrides]'s body is unchanged. */
+    private fun DaemonConfig.putFoldOverrides(out: MutableMap<String, String>) {
+        foldReasoningModels?.let { out["foldReasoningModels"] = it.joinToString(",") }
+        foldMaxContinue?.let { out["foldMaxContinue"] = it.toString() }
+        foldMarkerText?.let { out["foldMarkerText"] = it }
+        foldMaxTier?.let { out["foldMaxTier"] = it.toString() }
+    }
 }
-
-/** Names both heads and the port so the operator sees the collision, not a phantom bind error. */
-public fun portCollisionMessage(port: Int, keys: List<String>): String =
-    "port $port is claimed by ${keys.joinToString(" and ")} — give each head its own port"
-
-/** Names the head and its out-of-range port so the operator sees the config problem, not a
- *  phantom bind error (CTL-005). */
-public fun invalidPortMessage(key: String, port: Int): String =
-    "head '$key' has an invalid port $port (must be $VALID_PORT_RANGE) — fix [heads.$key] port in splice.toml"
 
 private const val MIN_TCP_PORT = 1
 private const val MAX_TCP_PORT = 65535
 private val VALID_PORT_RANGE = MIN_TCP_PORT..MAX_TCP_PORT
 
-/** Distinct-from-"unknown-head" message for the ambiguous case: [keys] heads all map to [command].
- *  Naming both heads points the operator at the topology collision instead of a phantom head. */
-public fun ambiguousHeadMessage(command: String, keys: List<String>): String =
-    "ambiguous head '$command' — heads ${keys.joinToString(" and ")} both use that command; fix the topology"
+/** The operator-facing topology diagnostics — pure text over values the caller already holds, which
+ *  is why they are a named object rather than members of [Topology]: every call site has the port,
+ *  the key and the head list in hand but not always the topology (HD-M8, migration pattern 5). */
+public object TopologyMessages {
+
+    /** Names both heads and the port so the operator sees the collision, not a phantom bind error. */
+    public fun portCollisionMessage(port: Int, keys: List<String>): String =
+        "port $port is claimed by ${keys.joinToString(" and ")} — give each head its own port"
+
+    /** Names the head and its out-of-range port so the operator sees the config problem, not a
+     *  phantom bind error (CTL-005). */
+    public fun invalidPortMessage(key: String, port: Int): String =
+        "head '$key' has an invalid port $port (must be $VALID_PORT_RANGE) — fix [heads.$key] port in splice.toml"
+
+    /** Distinct-from-"unknown-head" message for the ambiguous case: [keys] heads all map to [command].
+     *  Naming both heads points the operator at the topology collision instead of a phantom head. */
+    public fun ambiguousHeadMessage(command: String, keys: List<String>): String =
+        "ambiguous head '$command' — heads ${keys.joinToString(" and ")} both use that command; fix the topology"
+}
 
 @Serializable
 public data class DaemonConfig(
@@ -110,6 +178,29 @@ public data class ProviderConfig(
      */
     public val staticHeaders: Map<String, String>
         get() = extraHeaders.mapKeys { (key, _) -> key.trim('"') }
+
+    public fun catalogFor(head: HeadConfig, contextWindowOverride: Long? = null): ModelCatalog {
+        val override = contextWindowOverride?.takeIf { it > 0 }
+        return ModelCatalog(
+            discoveryPrefix = head.discoveryPrefix,
+            models = models.map { model ->
+                if (override == null) model else model.copy(contextWindow = override)
+            },
+            extraWindows = extraWindows.map { extra ->
+                if (override == null) extra else extra.copy(contextWindow = override)
+            },
+            windowRules = windowRules.map { rule ->
+                if (override == null) rule else rule.copy(contextWindow = override)
+            },
+            defaultContextWindow = if (override != null) {
+                override
+            } else if (defaultContextWindow > 0) {
+                defaultContextWindow
+            } else {
+                models.firstOrNull()?.contextWindow ?: DEFAULT_WINDOW_FLOOR
+            },
+        )
+    }
 }
 
 @Serializable
@@ -129,13 +220,12 @@ public data class AuthConfig(
     val kind: String,
     val file: String? = null,
     val env: String? = null,
-)
-
-/** The api-key env var a head actually reads: the explicit [AuthConfig.env], else the derived
- *  `<KEY>_API_KEY` default the daemon synthesizes. One source for daemon wiring AND the CLI so a
- *  head on the derived default never reads as "not signed in" while the daemon serves it fine. */
-public fun effectiveApiKeyEnv(key: String, auth: AuthConfig): String =
-    auth.env ?: "${key.uppercase()}_API_KEY"
+) {
+    /** The api-key env var a head actually reads: the explicit [env], else the derived
+     *  `<KEY>_API_KEY` default the daemon synthesizes. One source for daemon wiring AND the CLI so a
+     *  head on the derived default never reads as "not signed in" while the daemon serves it fine. */
+    public fun effectiveApiKeyEnv(key: String): String = env ?: "${key.uppercase()}_API_KEY"
+}
 
 /** The finite quirk surface of the openai dialects — everything a vendor varies without code. */
 @Serializable
@@ -245,84 +335,5 @@ public data class ClaudeSharingDefaults(
         "claude_md",
     ),
 )
-
-public fun ProviderConfig.catalogFor(head: HeadConfig, contextWindowOverride: Long? = null): ModelCatalog {
-    val override = contextWindowOverride?.takeIf { it > 0 }
-    return ModelCatalog(
-        discoveryPrefix = head.discoveryPrefix,
-        models = models.map { model ->
-            if (override == null) model else model.copy(contextWindow = override)
-        },
-        extraWindows = extraWindows.map { extra ->
-            if (override == null) extra else extra.copy(contextWindow = override)
-        },
-        windowRules = windowRules.map { rule ->
-            if (override == null) rule else rule.copy(contextWindow = override)
-        },
-        defaultContextWindow = if (override != null) {
-            override
-        } else if (defaultContextWindow > 0) {
-            defaultContextWindow
-        } else {
-            models.firstOrNull()?.contextWindow ?: DEFAULT_WINDOW_FLOOR
-        },
-    )
-}
-
-/**
- * Flat knob map from topology TOML for ConfigService's headOverrides layer.
- * Order: free-form [defaults] first, then explicit [daemon] fields (win on conflict).
- * Values are strings because ConfigService coerces by KnobKind.
- */
-public fun Topology.configOverrides(): Map<String, String> {
-    val out = LinkedHashMap(defaults)
-    daemon.controlPort?.let { out["controlPort"] = it.toString() }
-    daemon.showReasoning?.let { out["showReasoning"] = it }
-    daemon.summary?.let { out["summary"] = it }
-    daemon.effort?.let { out["effort"] = it }
-    daemon.replayReasoning?.let { out["replayReasoning"] = it.toString() }
-    daemon.mirrorReasoning?.let { out["mirrorReasoning"] = it.toString() }
-    daemon.putFoldOverrides(out)
-    putLegacyProviderOverrides(out)
-    return out
-}
-
-/**
- * The management API retains the original codex/grok knob names. Seed those knobs from TOML so
- * their effective values describe the topology, then let state/env/runtime override them through
- * ConfigService's normal precedence.
- */
-private fun Topology.putLegacyProviderOverrides(out: MutableMap<String, String>) {
-    val codex = heads.entries.firstOrNull { (_, head) ->
-        providers[head.provider]?.auth?.kind == "chatgpt-oauth"
-    }
-    codex?.let { (_, head) ->
-        val provider = providers.getValue(head.provider)
-        out["port"] = head.port.toString()
-        out["pinnedModel"] = head.pinnedModel
-        out["chatgptApiBase"] = provider.baseUrl
-        provider.auth.file?.let { out["codexAuthPath"] = it }
-    }
-
-    val grok = heads.entries.firstOrNull { (key, head) ->
-        providers[head.provider]?.auth?.kind == "grok-oauth" || key.contains("grok", ignoreCase = true)
-    }
-    grok?.let { (_, head) ->
-        val provider = providers.getValue(head.provider)
-        out["grokPort"] = head.port.toString()
-        out["grokModel"] = head.pinnedModel
-        out["xaiApiBase"] = provider.baseUrl
-        provider.auth.file?.let { out["grokAuthPath"] = it }
-    }
-}
-
-/** Reasoning-continuation fold knobs, split out so [configOverrides] stays under the complexity cap.
- *  The comma-joined model list is what the STRING knob coerces (SpliceConfig splits it back). */
-private fun DaemonConfig.putFoldOverrides(out: MutableMap<String, String>) {
-    foldReasoningModels?.let { out["foldReasoningModels"] = it.joinToString(",") }
-    foldMaxContinue?.let { out["foldMaxContinue"] = it.toString() }
-    foldMarkerText?.let { out["foldMarkerText"] = it }
-    foldMaxTier?.let { out["foldMaxTier"] = it.toString() }
-}
 
 private const val DEFAULT_WINDOW_FLOOR: Long = 200_000

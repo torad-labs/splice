@@ -4,8 +4,8 @@
 // exact same secure-write pattern instead of re-deriving it. :app is wall-exempt.
 package splice.app
 
+import splice.core.util.Cancellables
 import splice.core.util.SecureFile
-import splice.core.util.runCatchingCancellable
 import java.nio.file.Path
 
 /** The shared login I/O primitives, held as a collaborator by each flow (Kotlin style law,
@@ -14,7 +14,7 @@ import java.nio.file.Path
 internal class LoginIo {
 
     /** Best-effort open of a URL in the operator's default browser; false when unsupported/failed. */
-    internal fun openBrowser(url: String): Boolean = runCatchingCancellable {
+    internal fun openBrowser(url: String): Boolean = Cancellables.runCatchingCancellable {
         val os = System.getProperty("os.name").lowercase()
         val cmd = when {
             os.contains("mac") -> listOf("open", url)

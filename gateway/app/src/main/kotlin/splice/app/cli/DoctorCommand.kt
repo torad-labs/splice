@@ -8,12 +8,11 @@ package splice.app.cli
 import splice.app.TopologyLoader
 import splice.core.GATEWAY_VERSION
 import splice.core.config.StatePaths
-import splice.core.topology.AuthKind
+import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
-import splice.core.topology.effectiveApiKeyEnv
-import splice.core.topology.portCollisionMessage
-import splice.core.util.runCatchingCancellable
+import splice.core.topology.TopologyMessages
+import splice.core.util.Cancellables
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -102,13 +101,14 @@ internal class DoctorCommand {
 
     // One crashing check must not kill the report (nor masquerade as healthy).
     private fun guarded(block: () -> List<DoctorCheck>): List<DoctorCheck> =
-        runCatchingCancellable(block).getOrElse { e ->
+        Cancellables.runCatchingCancellable(block).getOrElse { e ->
             listOf(DoctorCheck("doctor", CheckStatus.FAIL, "check crashed: ${e.message}"))
         }
 
     private fun loadTopology(configPath: Path): DoctorTopology {
         if (!Files.exists(configPath)) return DoctorTopology.Absent
-        return runCatchingCancellable { DoctorTopology.Parsed(TopologyLoader.parse(Files.readString(configPath))) }
+        return Cancellables
+            .runCatchingCancellable { DoctorTopology.Parsed(TopologyLoader.parse(Files.readString(configPath))) }
             .getOrElse { e -> DoctorTopology.Broken(e.message ?: "unreadable") }
     }
 
@@ -146,7 +146,7 @@ internal class DoctorCommand {
                 DoctorCheck(
                     CHECK_TOPOLOGY,
                     CheckStatus.FAIL,
-                    portCollisionMessage(port, keys),
+                    TopologyMessages.portCollisionMessage(port, keys),
                     "change one head's port in $configPath",
                 )
             }
@@ -263,7 +263,9 @@ internal class DoctorCommand {
     // is benign (minted on first launch).
     private fun mgmtKeyCheck(statePaths: StatePaths, daemonRunning: Boolean): DoctorCheck {
         val keyFile = statePaths.mgmtKeyFile
-        val present = runCatchingCancellable { Files.readString(keyFile).trim().isNotEmpty() }.getOrDefault(false)
+        val present = Cancellables
+            .runCatchingCancellable { Files.readString(keyFile).trim().isNotEmpty() }
+            .getOrDefault(false)
         return when {
             present -> DoctorCheck("mgmt-key", CheckStatus.OK, keyFile.toString())
             daemonRunning -> DoctorCheck(
@@ -317,7 +319,7 @@ internal class DoctorCommand {
         provider: ProviderConfig,
         envReader: (String) -> String?,
     ): HeadAuth {
-        val isOAuth = AuthKind.isOAuth(provider.auth.kind)
+        val isOAuth = AuthKindRegistry.isOAuth(provider.auth.kind)
         // A client-auth head keeps a NULL env var like an OAuth head: it has no api key, and the
         // derived default would be nonsense — `effectiveApiKeyEnv("claude-splice", …)` is
         // "CLAUDE-MAX_API_KEY", a name `export` cannot even accept, offered as the fix for a head
@@ -325,7 +327,7 @@ internal class DoctorCommand {
         val selfManaged = statusCommand.isClientAuth(provider)
         val envVar = when {
             isOAuth || selfManaged -> provider.auth.env
-            else -> effectiveApiKeyEnv(key, provider.auth)
+            else -> provider.auth.effectiveApiKeyEnv(key)
         }
         return HeadAuth(
             key,

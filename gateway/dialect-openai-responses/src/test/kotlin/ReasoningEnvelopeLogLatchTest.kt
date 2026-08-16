@@ -14,8 +14,8 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
-import splice.core.parse.parseAnthropicBody
-import splice.core.turn.ReasoningDisplay
+import splice.core.parse.AnthropicParse
+import splice.core.turn.ReasoningDisplayParser
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
@@ -44,7 +44,7 @@ private class LatchProbeProvider(logs: MutableList<String>) : ResponsesProvider(
         baseUrl = "https://chatgpt.com/backend-api/codex",
         watchdog = WatchdogBudget(5.seconds, 3.seconds, 30.seconds),
     ),
-    showReasoning = ReasoningDisplay.from("text"),
+    showReasoning = ReasoningDisplayParser.from("text"),
     replayReasoning = true,
     configEffort = null,
     configSummary = null,
@@ -62,7 +62,7 @@ class ReasoningEnvelopeLogLatchTest {
         val provider = LatchProbeProvider(logs)
         // Five foreign/garbled envelopes across two assistant turns in one transcript — none of
         // them base64-decode to the splice-reasoning v1 shape, so all five hit the drop path.
-        val body = parseAnthropicBody(
+        val body = AnthropicParse.parseAnthropicBody(
             """{"model":"m","messages":[
                 {"role":"assistant","content":[
                     {"type":"redacted_thinking","data":"not-a-real-envelope-1"},

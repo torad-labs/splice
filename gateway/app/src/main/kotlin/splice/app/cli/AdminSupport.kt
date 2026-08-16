@@ -11,8 +11,7 @@ import splice.core.GATEWAY_VERSION
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.topology.Topology
-import splice.core.topology.configOverrides
-import splice.core.util.runCatchingCancellable
+import splice.core.util.Cancellables
 import java.io.IOException
 import java.net.ConnectException
 import java.net.HttpURLConnection
@@ -52,7 +51,7 @@ internal object AdminSupport {
         ).getConfig().controlPort
 
     /** True only when the listener answers splice's versioned HTTP health contract. */
-    fun daemonUp(port: Int = controlPort()): Boolean = runCatchingCancellable {
+    fun daemonUp(port: Int = controlPort()): Boolean = Cancellables.runCatchingCancellable {
         val connection = URI("http://127.0.0.1:$port/health").toURL().openConnection() as HttpURLConnection
         try {
             connection.requestMethod = "GET"
@@ -131,7 +130,7 @@ internal object AdminSupport {
      *  wall keeping System.getenv out of non-config code stays intact — splice-launch exports the
      *  same default, so both cold-start paths agree (audit 2026-07-18: no -Xmx → 1000-stream OOM). */
     private fun spawnDaemon(jar: Path): Boolean =
-        runCatchingCancellable {
+        Cancellables.runCatchingCancellable {
             ProcessBuilder(launch.daemonLaunchArgv(jar, StatePaths().logsDir))
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
@@ -153,7 +152,7 @@ internal object AdminSupport {
         return daemonUp(port)
     }
 
-    fun openUrl(url: String): Boolean = runCatchingCancellable {
+    fun openUrl(url: String): Boolean = Cancellables.runCatchingCancellable {
         val os = System.getProperty("os.name").lowercase()
         val cmd = when {
             os.contains("mac") -> listOf("open", url)
@@ -178,7 +177,7 @@ internal object AdminSupport {
     fun confirm(prompt: String, default: Boolean = true): Boolean {
         if (System.console() == null) return default
         print("$prompt ${if (default) "[Y/n]" else "[y/N]"} ")
-        val line = runCatchingCancellable { readlnOrNull()?.trim()?.lowercase() }.getOrNull()
+        val line = Cancellables.runCatchingCancellable { readlnOrNull()?.trim()?.lowercase() }.getOrNull()
         return when (line) {
             null, "" -> default
             "y", "yes" -> true
@@ -238,7 +237,9 @@ internal class DaemonLaunch {
         val bootLog = StatePaths().logsDir.resolve("daemon-boot.log")
         if (!Files.exists(bootLog)) return
         println("splice: daemon did not come up — last boot output ($bootLog):")
-        runCatchingCancellable { Files.readAllLines(bootLog).takeLast(BOOT_LOG_TAIL_LINES).forEach(::println) }
+        Cancellables.runCatchingCancellable {
+            Files.readAllLines(bootLog).takeLast(BOOT_LOG_TAIL_LINES).forEach(::println)
+        }
     }
 }
 

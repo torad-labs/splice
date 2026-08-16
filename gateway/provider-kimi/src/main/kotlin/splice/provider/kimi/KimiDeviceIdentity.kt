@@ -7,8 +7,8 @@
 package splice.provider.kimi
 
 import splice.core.GATEWAY_VERSION
+import splice.core.util.Cancellables
 import splice.core.util.SecureFile
-import splice.core.util.runCatchingCancellable
 import java.net.InetAddress
 import java.nio.file.Files
 import java.nio.file.Path
@@ -28,7 +28,7 @@ public class KimiDeviceIdentity(
     /** Read-or-create the persisted device_id (uuid, 0600). */
     public fun deviceId(): String {
         // ast-grep-ignore: kt-no-silent-result-collapse -- unreadable device-id file regenerates a fresh uuid below; identity continuity is best-effort
-        val existing = runCatchingCancellable {
+        val existing = Cancellables.runCatchingCancellable {
             if (Files.exists(deviceIdPath)) Files.readString(deviceIdPath).trim() else null
         }.getOrNull()
         if (!existing.isNullOrEmpty()) return existing
@@ -64,5 +64,5 @@ public class KimiDeviceIdentity(
 private class KimiHostname {
     fun defaultHostname(): String =
         // ast-grep-ignore: kt-no-silent-result-collapse -- hostname is cosmetic header data; "unknown" is the designed fallback
-        runCatchingCancellable { InetAddress.getLocalHost().hostName }.getOrNull() ?: "unknown"
+        Cancellables.runCatchingCancellable { InetAddress.getLocalHost().hostName }.getOrNull() ?: "unknown"
 }

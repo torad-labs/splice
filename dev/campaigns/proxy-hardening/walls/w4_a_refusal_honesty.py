@@ -114,10 +114,20 @@ REQUIRED = {
         # and THIS guarded read still hand their carrier to addRefusal; deleting the arm, or dropping
         # the `refusal`-typed part back into an unread branch, still satisfies neither. The middle
         # carrier is untouched by the migration and stays a single spelling.
+        #
+        # 2026-08-16 (second entry on the same carrier) — HD-M8, the core slice: `strOrEmpty` was a
+        # top-level EXTENSION on kotlinx's JsonElement and could not become a member of a foreign
+        # receiver, so it moved onto `object JsonScalars` and the receiver became the argument —
+        # `strOrEmpty(obj["type"])` reads `JsonScalars.strOrEmpty(obj["type"])`. Same function, same
+        # JsonNull filtering, same argument. Only the guarded READ's spelling moved; the arm it
+        # guards (`ops.addRefusal(reducer, obj)`) is byte-identical, so deleting that arm still
+        # removes every spelling at once. The two `strIfString(...)` carriers above need no new
+        # entry: the qualified call CONTAINS the old token as a substring and still matches.
         [('"response.refusal.delta", "response.refusal.done" -> ops.addRefusal(this, evt)',
           '"response.refusal.delta", "response.refusal.done" -> addRefusal(evt)'),
          'strIfString(if (isDelta) obj["delta"] else obj["refusal"])',
-         ('if (strOrEmpty(obj["type"]) == "refusal") ops.addRefusal(reducer, obj)',
+         ('if (JsonScalars.strOrEmpty(obj["type"]) == "refusal") ops.addRefusal(reducer, obj)',
+          'if (strOrEmpty(obj["type"]) == "refusal") ops.addRefusal(reducer, obj)',
           'if (strOrEmpty(obj["type"]) == "refusal") reducer.addRefusal(obj)')],
         ["?: refusalFailure(reducer)"],
     ),

@@ -13,7 +13,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import splice.core.usage.RateLimitState
-import splice.core.usage.computeUsageWarn
+import splice.core.usage.UsageWarnPolicy
 import java.util.concurrent.TimeUnit
 
 public class StatuslineRenderer(
@@ -95,7 +95,7 @@ public class StatuslineRenderer(
         val ratelimit = snapshot.ratelimit?.let {
             RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens)
         }
-        val warn = computeUsageWarn(snapshot.outputTokens5h, ratelimit, warnPct, warnTokens5h)
+        val warn = UsageWarnPolicy.computeUsageWarn(snapshot.outputTokens5h, ratelimit, warnPct, warnTokens5h)
         return when (warn.level) {
             "critical" -> "$RED⚠ ${warn.pct}%$RESET"
             "warn" -> "$YELLOW⚠ ${warn.pct}%$RESET"

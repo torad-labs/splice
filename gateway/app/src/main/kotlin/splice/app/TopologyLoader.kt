@@ -7,7 +7,7 @@ package splice.app
 import com.akuleshov7.ktoml.Toml
 import kotlinx.serialization.decodeFromString
 import splice.core.topology.Topology
-import splice.core.util.runCatchingCancellable
+import splice.core.util.Cancellables
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -73,7 +73,7 @@ command = "claude-openrouter"
     /** Digest of the file as it is on disk RIGHT NOW; null when unreadable (fail open — an
      *  unreadable file must degrade the staleness signal, never break /health or a launch). */
     public fun currentDigest(path: Path): String? =
-        runCatchingCancellable { sha256Hex(Files.readAllBytes(path)) }.getOrNull()
+        Cancellables.runCatchingCancellable { sha256Hex(Files.readAllBytes(path)) }.getOrNull()
 
     /** JW-04: per-request staleness recompute, failing OPEN — an unreadable file degrades the
      *  signal, never /health. Lives here rather than beside its Daemon caller because the fact it

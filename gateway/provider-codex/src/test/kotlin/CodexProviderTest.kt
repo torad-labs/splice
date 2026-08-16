@@ -16,7 +16,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
-import splice.core.parse.parseAnthropicBody
+import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ToolDeferralPolicy
@@ -77,7 +77,7 @@ class CodexProviderTest {
     }
 
     // A turn body with 1 builtin (eager) + 10 mcp-prefixed tools (deferrable at minDeferred=4).
-    private fun deferrableTurnBody() = parseAnthropicBody(
+    private fun deferrableTurnBody() = AnthropicParse.parseAnthropicBody(
         """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":1024,"system":"s",""" +
             """"tools":[{"name":"Read","input_schema":{"type":"object"}},$TEN_MCP_TOOLS],""" +
             """"messages":[{"role":"user","content":"hi"}]}""",

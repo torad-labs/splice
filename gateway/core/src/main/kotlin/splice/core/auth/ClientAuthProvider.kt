@@ -10,6 +10,12 @@
 // was rejected, and the caller — which kept its native /login — is the only party that can fix it.
 package splice.core.auth
 
+/** The `auth.kind` wire word for this provider. Was `ClientAuthProvider.KIND`; the companion it
+ *  lived in is illegal since the 2026-08-16 style migration (HD-M8) and the law's sanctioned home
+ *  for a constant is file scope. RENAMED on the way out — at package scope a bare `KIND` says
+ *  nothing, and `import splice.core.auth.KIND` would be unreadable at the one call site. */
+public const val CLIENT_AUTH_KIND: String = "client"
+
 public class ClientAuthProvider(private val headKey: String) : RefreshableAuthProvider {
 
     /** Never null: a null would make the transport raise auth-missing before the request, and
@@ -18,7 +24,7 @@ public class ClientAuthProvider(private val headKey: String) : RefreshableAuthPr
 
     override suspend fun describe(): AuthDescription = AuthDescription(
         present = true,
-        kind = KIND,
+        kind = CLIENT_AUTH_KIND,
         fields = mapOf("head" to headKey, "source" to "inbound request"),
     )
 
@@ -29,8 +35,4 @@ public class ClientAuthProvider(private val headKey: String) : RefreshableAuthPr
     /** A 401 here is the CALLER's credential being rejected upstream, never a stale splice token,
      *  so the refresh-and-retry dance can only burn a second upstream call. Let it surface. */
     override fun allowRefreshAfterFailure(status: Int, body: String): Boolean = false
-
-    public companion object {
-        public const val KIND: String = "client"
-    }
 }

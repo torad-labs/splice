@@ -8,8 +8,8 @@ import splice.app.TopologyLoader
 import splice.core.SHIM_VERSION
 import splice.core.config.InstallPaths
 import splice.core.topology.Topology
-import splice.core.topology.ambiguousHeadMessage
-import splice.core.util.runCatchingCancellable
+import splice.core.topology.TopologyMessages
+import splice.core.util.Cancellables
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
@@ -90,7 +90,7 @@ internal class InstallCommand {
             if (keys.isEmpty()) {
                 "splice: no matching head '$headArg' in the topology"
             } else {
-                "splice: " + ambiguousHeadMessage(headArg, keys)
+                "splice: " + TopologyMessages.ambiguousHeadMessage(headArg, keys)
             },
         )
         return null
@@ -156,7 +156,7 @@ internal class InstallCommand {
         var ok = true
         for (command in commands) {
             val link = bin.resolve(command)
-            runCatchingCancellable {
+            Cancellables.runCatchingCancellable {
                 if (link.isSymbolicLink()) {
                     Files.delete(link)
                     println("splice: removed '$command'")
@@ -182,7 +182,7 @@ internal class InstallCommand {
     internal fun installedShimVersion(env: (String) -> String? = System::getenv): String? {
         val shim = launchShimPath(env)
         if (!Files.exists(shim)) return null
-        return runCatchingCancellable {
+        return Cancellables.runCatchingCancellable {
             SHIM_VERSION_LINE.find(Files.readString(shim))?.groupValues?.get(1)
         }.getOrNull()
     }

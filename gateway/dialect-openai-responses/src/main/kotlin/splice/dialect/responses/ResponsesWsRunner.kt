@@ -29,8 +29,8 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.serialization.json.JsonObject
 import splice.core.auth.Credentials
 import splice.core.turn.TurnMeta
-import splice.core.util.runCatchingCancellable
-import splice.core.util.str
+import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
 import splice.spi.WsRoundRunner
 import java.security.MessageDigest
 
@@ -72,7 +72,7 @@ internal class ResponsesWsRunner(
             key = key,
             headers = headers,
             wssUrl = wssUrl,
-            isTerminal = { it[FIELD_TYPE].str() in ResponsesRoundEnd.ALL },
+            isTerminal = { JsonScalars.str(it[FIELD_TYPE]) in ResponsesRoundEnd.ALL },
         ) { conn ->
             // F7: frame + epoch captured atomically. Two calls (frameFor then epochOf) left a
             // window where a concurrent clear bumped the epoch after the frame was built on
@@ -94,7 +94,7 @@ internal class ResponsesWsRunner(
     }
 
     private fun observeTerminal(chain: String, pending: PendingCommit?, event: JsonObject) {
-        val type = event[FIELD_TYPE].str()
+        val type = JsonScalars.str(event[FIELD_TYPE])
         if (type !in ResponsesRoundEnd.ALL) return
         val commit = pending
         if (type !in ResponsesRoundEnd.SUCCESS || commit == null) {
@@ -104,14 +104,14 @@ internal class ResponsesWsRunner(
         session.completed(
             chain,
             commit.request,
-            (event["response"] as? JsonObject)?.get("id").str(),
+            JsonScalars.str((event["response"] as? JsonObject)?.get("id")),
             commit.generation,
             commit.epoch,
         )
     }
 
     override fun isFailureTerminal(event: JsonObject): Boolean =
-        event[FIELD_TYPE].str() in ResponsesRoundEnd.FAILED
+        JsonScalars.str(event[FIELD_TYPE]) in ResponsesRoundEnd.FAILED
 
     override fun roundEnded(meta: TurnMeta, ok: Boolean) {
         if (!ok) chainKey(meta)?.let { session.cleared(it) }
@@ -165,7 +165,7 @@ internal class ResponsesWsRunner(
     /** A body we cannot parse is a body we must not chain: fall back to SSE, which sends the
      *  original bytes untouched. */
     private fun parseRequest(bodyJson: String): JsonObject? =
-        runCatchingCancellable { responsesRequestJson.parseToJsonElement(bodyJson) as? JsonObject }
+        Cancellables.runCatchingCancellable { responsesRequestJson.parseToJsonElement(bodyJson) as? JsonObject }
             .onFailure { log("[ws] unparseable request body — round rides SSE: ${it::class.simpleName}\n") }
             .getOrNull()
 }

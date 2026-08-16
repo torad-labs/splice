@@ -32,7 +32,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
-import splice.core.util.runCatchingCancellable
+import splice.core.util.Cancellables
 import java.io.IOException
 import java.net.URI
 import java.net.http.HttpClient
@@ -67,7 +67,7 @@ public class WsConnection internal constructor(
      *  the very stall being escaped. */
     internal fun kill() {
         if (dead.compareAndSet(false, true)) {
-            runCatchingCancellable { socket.abort() }
+            Cancellables.runCatchingCancellable { socket.abort() }
                 .onFailure { log("[ws] abort of a torn socket failed (already dead): ${it::class.simpleName}\n") }
             inbox.close()
         }
@@ -151,7 +151,7 @@ public class WsUpstream(
      *  Why this exists (adversarial review of WS-1, 2026-07-31): `receive()` signals closure by
      *  THROWING ClosedReceiveChannelException, which extends NoSuchElementException -> RuntimeException
      *  and is therefore outside runCatchingCancellable's {IOException, SerializationException,
-     *  IllegalArgumentException} (core/util/Cancellation.kt:20-25). A server closing cleanly before
+     *  IllegalArgumentException} (core/util/Cancellables.kt). A server closing cleanly before
      *  answering threw straight out of round(), past withTimeoutOrNull, so the caller never received
      *  the `null` the whole SSE-fallback design depends on — a NEVER-BELOW-STATUS-QUO violation that
      *  surfaced as a client-visible error where SSE would have served the turn.
@@ -186,7 +186,7 @@ public class WsUpstream(
             log,
             terminalSeen = { holder[0]?.terminalSeen?.get() == true },
         ) { holder[0]?.kill() }
-        val socket = runCatchingCancellable {
+        val socket = Cancellables.runCatchingCancellable {
             connector(URI.create(wssUrl), headers, listener)
         }.getOrElse { e ->
             log("[ws] ${logKey(key)} connect failed (${e::class.simpleName}: ${e.message?.take(ERR_SNIPPET)}) — SSE\n")
@@ -407,7 +407,7 @@ internal class InboxListener(
         if (last) {
             val payload = assembly.toString()
             assembly.setLength(0)
-            val event = runCatchingCancellable { wsJson.parseToJsonElement(payload).jsonObject }
+            val event = Cancellables.runCatchingCancellable { wsJson.parseToJsonElement(payload).jsonObject }
                 .onFailure { log("[ws] unparseable frame (${payload.length} chars) — anomaly\n") }
                 .getOrNull()
             if (event == null) {

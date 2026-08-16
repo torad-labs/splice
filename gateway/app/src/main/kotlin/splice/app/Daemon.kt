@@ -36,6 +36,7 @@ import splice.control.LaunchService
 import splice.control.LaunchSpec
 import splice.control.ManagedHead
 import splice.core.auth.AuthProvider
+import splice.core.auth.CLIENT_AUTH_KIND
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshableAuthProvider
@@ -53,15 +54,10 @@ import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.ToolSurfaceConfig
 import splice.core.topology.Topology
-import splice.core.topology.catalogFor
-import splice.core.topology.configOverrides
-import splice.core.topology.effectiveApiKeyEnv
-import splice.core.topology.invalidPortMessage
-import splice.core.topology.portCollisionMessage
+import splice.core.topology.TopologyMessages
 import splice.core.turn.WatchdogBudget
-import splice.core.util.discard
-import splice.core.util.headScopedLog
-import splice.core.util.runCatchingCancellable
+import splice.core.util.Cancellables
+import splice.core.util.HeadScopedLogs
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.passthrough.PassthroughProvider
 import splice.dialect.passthrough.PassthroughQuirks
@@ -109,7 +105,7 @@ internal const val GROK_OAUTH = "grok-oauth"
 internal const val KIMI_OAUTH = "kimi-oauth"
 
 /** The head forwards the CALLER's own auth and holds none itself (campaign claude-head). */
-internal const val CLIENT = ClientAuthProvider.KIND
+internal const val CLIENT = CLIENT_AUTH_KIND
 
 // The whole head-stop phase's deadline (see [HeadLifecycle.stopHeads]). Kept below Main's
 // STOP_DEADLINE_MS so the graceful stop + control shutdown finish before Main's hard halt
@@ -165,16 +161,16 @@ internal class HeadLifecycle {
         // CTL-005: name an out-of-range port before the head hits an opaque bind-time error.
         val invalidPorts = topology.invalidPortHeads()
         for ((key, port) in invalidPorts) {
-            failed[key] = invalidPortMessage(key, port)
-            log("[daemon][boot] ${invalidPortMessage(key, port)}\n")
+            failed[key] = TopologyMessages.invalidPortMessage(key, port)
+            log("[daemon][boot] ${TopologyMessages.invalidPortMessage(key, port)}\n")
         }
         // JW-13: name a duplicate-port collision before the loser hits an opaque "Address already in
         // use". Both colliding heads are marked failed with a message pointing at the sibling.
         val portDupes = topology.portCollisions()
         val collidingHeads = portDupes.values.flatten().toSet()
         for ((port, keys) in portDupes) {
-            keys.forEach { failed[it] = portCollisionMessage(port, keys) }
-            log("[daemon][boot] ${portCollisionMessage(port, keys)}\n")
+            keys.forEach { failed[it] = TopologyMessages.portCollisionMessage(port, keys) }
+            log("[daemon][boot] ${TopologyMessages.portCollisionMessage(port, keys)}\n")
         }
         // Invalid-port and colliding heads already failed above with a named reason — filter them
         // out so the assembly loop keeps a single continue (detekt LoopWithTooManyJumpStatements).
@@ -269,8 +265,10 @@ internal class HeadLifecycle {
                 supervisorScope {
                     heads.forEach { head ->
                         launch(stopFailureHandler) {
-                            boundary.runCatchingDaemonBoundary { head.stop() }
-                                .discard("shutdown: one head failing to stop must not block the rest")
+                            Cancellables.discard(
+                                boundary.runCatchingDaemonBoundary { head.stop() },
+                                "shutdown: one head failing to stop must not block the rest",
+                            )
                         }
                     }
                 }
@@ -485,11 +483,11 @@ internal class ProviderAssembly(
                     refreshCall = { rt -> grokRefresh.refresh(tokenUrl, rt) },
                     prefetchScope = probeScope,
                     // JW-03: [<headKey>] first, so [grok-auth] refresh lines reach the head's tail
-                    log = headScopedLog(ctx.key, log),
+                    log = HeadScopedLogs.headScopedLog(ctx.key, log),
                 )
             }
             else -> ApiKeyAuthProvider(
-                envVar = effectiveApiKeyEnv(key, providerCfg.auth),
+                envVar = providerCfg.auth.effectiveApiKeyEnv(key),
                 keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
             )
         }
@@ -548,7 +546,7 @@ internal class ProviderAssembly(
             KIMI_OAUTH -> kimiOauthAuth(ctx)
             else -> {
                 val apiKey = ApiKeyAuthProvider(
-                    envVar = effectiveApiKeyEnv(key, providerCfg.auth),
+                    envVar = providerCfg.auth.effectiveApiKeyEnv(key),
                     keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
                 )
                 apiKey to KimiDeviceIdentity(deviceIdPath = statePaths.stateDir.resolve("$key-device_id"))
@@ -582,7 +580,7 @@ internal class ProviderAssembly(
             refreshCall = { rt -> kimiRefresh.refresh(tokenUrl, rt, identityHeaders) },
             prefetchScope = probeScope,
             // JW-03: [<headKey>] first, so [kimi-auth] refresh lines reach the head's tail
-            log = headScopedLog(ctx.key, log),
+            log = HeadScopedLogs.headScopedLog(ctx.key, log),
         )
         return auth to identity
     }
@@ -620,7 +618,7 @@ internal class ProviderAssembly(
                     refreshCall = { rt -> refreshCall(tokenUrl, rt) },
                     prefetchScope = probeScope,
                     // JW-03: [<headKey>] first, so [codex-auth] refresh lines reach the head's tail
-                    log = headScopedLog(key, log),
+                    log = HeadScopedLogs.headScopedLog(key, log),
                 )
                 Wired(
                     CodexProvider(
@@ -668,7 +666,7 @@ internal class ProviderAssembly(
             refreshCall = { rt -> grokRefresh.refresh(tokenUrl, rt) },
             prefetchScope = probeScope,
             // JW-03: [<headKey>] first, so [grok-auth] refresh lines reach the head's tail
-            log = headScopedLog(key, log),
+            log = HeadScopedLogs.headScopedLog(key, log),
         )
         return Wired(
             GrokProvider(
@@ -702,7 +700,7 @@ internal class ProviderAssembly(
         val watchdog = ctx.watchdog
         val cfg = ctx.cfg
         val auth = ApiKeyAuthProvider(
-            envVar = effectiveApiKeyEnv(key, providerCfg.auth),
+            envVar = providerCfg.auth.effectiveApiKeyEnv(key),
             keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
         )
         // Identical in both branches — factored out so adding loginCommand didn't push this past
@@ -752,9 +750,9 @@ internal class DashboardHtml {
                 ?.use { it.readText() }
         },
     ): () -> String = {
-        runCatchingCancellable { Files.readString(distPath) }
+        Cancellables.runCatchingCancellable { Files.readString(distPath) }
             .getOrNull()
-            ?: runCatchingCancellable { classpathHtml() }.getOrNull()
+            ?: Cancellables.runCatchingCancellable { classpathHtml() }.getOrNull()
             ?: "<!doctype html><title>splice</title><p>dashboard build missing</p>"
     }
 }

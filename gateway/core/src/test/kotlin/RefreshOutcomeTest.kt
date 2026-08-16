@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshOutcome
-import splice.core.auth.credentialsOrNull
 import java.io.IOException
 
 class RefreshOutcomeTest {

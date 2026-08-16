@@ -6,7 +6,7 @@
 package splice.app.cli
 
 import splice.app.TopologyLoader
-import splice.core.topology.AuthKind
+import splice.core.topology.AuthKindRegistry
 import splice.core.topology.Topology
 
 private const val BOLD = "\u001B[1m"
@@ -52,7 +52,9 @@ internal class SetupCommand {
     private fun pendingOAuthHeads(topology: Topology): List<PendingOAuthHead> =
         topology.heads.entries.mapNotNull { (key, head) ->
             val provider = topology.providers[head.provider] ?: return@mapNotNull null
-            if (AuthKind.isOAuth(provider.auth.kind) && !authPresent(provider.auth.file, provider.auth.kind)) {
+            if (AuthKindRegistry.isOAuth(provider.auth.kind) &&
+                !authPresent(provider.auth.file, provider.auth.kind)
+            ) {
                 PendingOAuthHead(key, head.claude.command ?: key)
             } else {
                 null
@@ -80,7 +82,7 @@ internal class SetupCommand {
     }
 
     private fun authPresent(file: String?, kind: String): Boolean {
-        val path = file ?: AuthKind.defaultAuthFileFor(kind) ?: return false
+        val path = file ?: AuthKindRegistry.defaultAuthFileFor(kind) ?: return false
         return AdminSupport.authPresent(path)
     }
 }

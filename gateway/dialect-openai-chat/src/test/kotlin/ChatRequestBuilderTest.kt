@@ -9,10 +9,10 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.parse.parseAnthropicBody
+import splice.core.parse.AnthropicParse
 import splice.core.turn.COMPACT_DIRECTIVE_HEAD
+import splice.core.turn.CompactInstructions
 import splice.core.turn.compactDirective
-import splice.core.turn.withCompactDirective
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.ChatRequestBuilder
 
@@ -24,7 +24,7 @@ private fun build(
     compact: Boolean = false,
     model: String = "kimi-k2",
 ): JsonObject {
-    val body = parseAnthropicBody(json).typed
+    val body = AnthropicParse.parseAnthropicBody(json).typed
     return ChatRequestBuilder(quirks)
         .build(body, upstreamModel = model, originalModel = "claude-kimi--$model", compact = compact)
         .req
@@ -284,7 +284,7 @@ class ChatRequestBuilderTest {
         val content = system["content"]!!.jsonPrimitive.content
         assertTrue(content.startsWith("You are helpful."), "the client's system prompt stays first")
         assertTrue(content.contains(COMPACT_DIRECTIVE_HEAD), "the directive must ride: $content")
-        assertEquals(withCompactDirective("You are helpful.", compact = true), content)
+        assertEquals(CompactInstructions.withCompactDirective("You are helpful.", compact = true), content)
     }
 
     @Test

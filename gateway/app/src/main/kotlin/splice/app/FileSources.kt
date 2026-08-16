@@ -9,8 +9,8 @@ import splice.control.HeadPerfSource
 import splice.control.HeadUsageSource
 import splice.control.RateLimitView
 import splice.control.UsageView
+import splice.core.util.Cancellables
 import splice.core.util.JsonlSink
-import splice.core.util.runCatchingCancellable
 import splice.gateway.compact.CompactStats
 import splice.gateway.perf.PerfStats
 import splice.gateway.usage.UsageStore
@@ -43,7 +43,7 @@ public class LogFileSource(
     private val logFile: Path,
     private val headTag: String? = null,
 ) : HeadLogSource {
-    override fun tail(lines: Int): String = runCatchingCancellable {
+    override fun tail(lines: Int): String = Cancellables.runCatchingCancellable {
         if (!Files.exists(logFile) || lines <= 0) {
             ""
         } else {

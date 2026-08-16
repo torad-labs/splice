@@ -16,9 +16,7 @@ import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.core.util.firstLong
-import splice.core.util.strIfString
-import splice.core.util.strOrEmpty
+import splice.core.util.JsonScalars
 import splice.spi.BufferCapacity
 import splice.spi.StreamTranslator
 import splice.spi.TerminalStates
@@ -203,7 +201,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
 
     private suspend fun onEvent(evt: JsonObject, sink: WireSink) {
         (evt["error"] as? JsonObject)?.let {
-            failure = strOrEmpty(it["message"]).ifEmpty { "error" }
+            failure = JsonScalars.strOrEmpty(it["message"]).ifEmpty { "error" }
             return
         }
         usage(evt)
@@ -213,7 +211,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         (choice["message"] as? JsonObject)?.let { applyFinalMessage(it, sink) }
         // A null finish_reason would trip `finished` and let a truncated stream masquerade as a
         // clean end (L3) — strOrEmpty (core JsonScalars) filters the JsonNull first (review 2026-07-22 round 3).
-        strOrEmpty(choice["finish_reason"]).takeIf { it.isNotEmpty() }?.let { onFinish(it) }
+        JsonScalars.strOrEmpty(choice["finish_reason"]).takeIf { it.isNotEmpty() }?.let { onFinish(it) }
     }
 
     /** The final-message fold: only fills channels the streamed deltas left empty/unseen. */
@@ -235,7 +233,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
                 sink.thinkingDelta(idx, toEmit)
             }
         }
-        strOrEmpty(msg["content"]).takeIf { it.isNotEmpty() }?.let { c ->
+        JsonScalars.strOrEmpty(msg["content"]).takeIf { it.isNotEmpty() }?.let { c ->
             val toEmit = prose.unseenSuffix(textBuf.toString(), c)
             if (toEmit.isNotEmpty()) {
                 val idx = textBlock ?: sink.openText().also { textBlock = it }
@@ -271,7 +269,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     }
 
     private suspend fun applyFinalToolCall(obj: JsonObject, sink: WireSink) {
-        val id = strOrEmpty(obj["id"])
+        val id = JsonScalars.strOrEmpty(obj["id"])
         if (id.isNotEmpty() && id in openedToolIds) return // echo of an already-open block
         val fn = obj["function"] as? JsonObject
         val slot = if (id.isEmpty()) null else pendingTools.entries.firstOrNull { it.value.id == id }
@@ -285,10 +283,10 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
             // take its arguments too only when the deltas buffered none (name AND args both final-
             // only, finding 3); a non-empty buffer is never double-appended (append("") is a no-op).
             val pending = slot.value
-            val name = strOrEmpty(fn?.get("name"))
+            val name = JsonScalars.strOrEmpty(fn?.get("name"))
             if (name.isNotEmpty() && pending.name.isEmpty()) {
                 pending.name = name
-                if (pending.args.isEmpty()) pending.args.append(strOrEmpty(fn?.get("arguments")))
+                if (pending.args.isEmpty()) pending.args.append(JsonScalars.strOrEmpty(fn?.get("arguments")))
                 openPendingTool(slot.key, pending, sink)
             }
         }
@@ -303,7 +301,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
             thinkingBuf.append(r)
             sink.thinkingDelta(idx, r)
         }
-        strOrEmpty(delta["content"]).takeIf { it.isNotEmpty() }?.let { c ->
+        JsonScalars.strOrEmpty(delta["content"]).takeIf { it.isNotEmpty() }?.let { c ->
             val idx = textBlock ?: sink.openText().also { textBlock = it }
             emittedText = true
             textBuf.append(c)
@@ -316,9 +314,9 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
     private suspend fun applyToolCall(tc: JsonObject, sink: WireSink) {
         val index = resolveToolIndex(tc)
         val fn = tc["function"] as? JsonObject
-        val name = strOrEmpty(fn?.get("name"))
-        val idChunk = strOrEmpty(tc["id"])
-        val args = strOrEmpty(fn?.get("arguments"))
+        val name = JsonScalars.strOrEmpty(fn?.get("name"))
+        val idChunk = JsonScalars.strOrEmpty(tc["id"])
+        val args = JsonScalars.strOrEmpty(fn?.get("arguments"))
         val opened = toolBlocks[index]
         if (opened != null) {
             if (args.isNotEmpty()) {
@@ -365,7 +363,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
      *  slot, and an id-less index-less call gets a fresh slot per event (complete-call shape). */
     private fun resolveToolIndex(tc: JsonObject): Int {
         (tc["index"] as? JsonPrimitive)?.content?.toIntOrNull()?.let { return it }
-        val id = strOrEmpty(tc["id"])
+        val id = JsonScalars.strOrEmpty(tc["id"])
         if (id.isEmpty()) return nextSynthToolIndex++
         return toolIndexById.getOrPut(id) { nextSynthToolIndex++ }
     }
@@ -387,15 +385,15 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         // the two main buckets under the input_/output_ spelling; reading only prompt_/completion_
         // landed those turns at zero usage. Canonical spelling first — a backend emitting both is
         // read by the standard field.
-        u.firstLong("prompt_tokens", "input_tokens")?.let { inputTokens = it }
-        u.firstLong("completion_tokens", "output_tokens")?.let { outputTokens = it }
+        JsonScalars.firstLong(u, "prompt_tokens", "input_tokens")?.let { inputTokens = it }
+        JsonScalars.firstLong(u, "completion_tokens", "output_tokens")?.let { outputTokens = it }
         // Prompt-cache read tokens — surfaced so the HUD/cache-log see a real hit rate. Details
         // field first (OpenAI standard: prompt_tokens_details.cached_tokens), then flat `cached_tokens`,
         // then DeepSeek's `prompt_cache_hit_tokens`. RAW here: prompt_tokens already INCLUDES this
         // cached portion and HeadServer disjoints them, so subtracting here would double-subtract.
         val details = u["prompt_tokens_details"] as? JsonObject
-        val cached = details?.firstLong("cached_tokens")?.takeIf { it > 0 }
-            ?: u.firstLong("cached_tokens", "prompt_cache_hit_tokens") ?: 0L
+        val cached = JsonScalars.firstLong(details, "cached_tokens")?.takeIf { it > 0 }
+            ?: JsonScalars.firstLong(u, "cached_tokens", "prompt_cache_hit_tokens") ?: 0L
         if (cached > 0) cachedTokens = cached
     }
 }
@@ -421,7 +419,7 @@ private class ChatProseFold {
     /** First non-empty cleartext reasoning field on a chat delta/message. */
     fun reasoningDeltaText(obj: JsonObject): String? {
         for (key in REASONING_KEYS) {
-            val v = strOrEmpty(obj[key])
+            val v = JsonScalars.strOrEmpty(obj[key])
             if (v.isNotEmpty()) return v
         }
         return null
@@ -462,7 +460,7 @@ private class ChatProseFold {
      *  Capped by the NF-06 buffer law. The refusal is NOT written to the wire — it is the turn's
      *  verdict, not its content. */
     fun appendRefusal(buf: StringBuilder, obj: JsonObject, isDelta: Boolean) {
-        val refusal = strIfString(obj["refusal"])
+        val refusal = JsonScalars.strIfString(obj["refusal"])
         // Round-2 review: isBlank() is a WHOLE-VALUE predicate and this is an INCREMENTAL carrier —
         // applying it per-frame silently deleted every whitespace-only fragment (a newline token
         // between sentences, a lone space), shipping the refusal garbled. A FRAGMENT is dropped only

@@ -10,7 +10,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import splice.core.parse.parseAnthropicBody
+import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.dialect.responses.BuildOptions
 import splice.dialect.responses.InjectPriorReasoning
@@ -52,7 +52,7 @@ class ResponsesContractTest {
     fun `responses canonical request matches the golden bytes`() {
         // This golden's green IS the default-off proof: neither emitStrict nor toolSurface moves
         // it — the fixture builds with the bare ResponsesQuirks(providerTag = "claudex").
-        val parsed = parseAnthropicBody(canonicalAnthropic)
+        val parsed = AnthropicParse.parseAnthropicBody(canonicalAnthropic)
         val req = ResponsesRequestBuilder(ResponsesQuirks(providerTag = "claudex"))
             .build(parsed.typed, parsed.raw, canonicalOpts())
             .req
@@ -70,7 +70,7 @@ class ResponsesContractTest {
             """"tools":[{"name":"Read","input_schema":{"type":"object"}},""" +
             """{"name":"Bash","input_schema":{"type":"object"},"strict":true}],""" +
             """"messages":[{"role":"user","content":"Ping."}]}"""
-        val parsed = parseAnthropicBody(toolBody)
+        val parsed = AnthropicParse.parseAnthropicBody(toolBody)
         val req = ResponsesRequestBuilder(codexProfileQuirks())
             .build(parsed.typed, parsed.raw, canonicalOpts())
             .req
@@ -86,7 +86,7 @@ class ResponsesContractTest {
             """"system":"You are Splice, a contract fixture.",""" +
             """"tools":[{"name":"Read","input_schema":{"type":"object"}},$mcpTools],""" +
             """"messages":[{"role":"user","content":"Ping."}]}"""
-        val parsed = parseAnthropicBody(toolBody)
+        val parsed = AnthropicParse.parseAnthropicBody(toolBody)
         val quirks = codexProfileQuirks(toolSurface = ToolDeferralPolicy(minDeferred = 4))
         val req = ResponsesRequestBuilder(quirks)
             .build(parsed.typed, parsed.raw, canonicalOpts())

@@ -8,8 +8,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 import splice.core.config.StatePaths
 import splice.core.util.AsyncFileIo
+import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
-import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -159,16 +159,18 @@ internal class DaemonProcess {
     // whole change exists to feed emitted concatenated garbage. Exactly one terminator is appended
     // here, which is a no-op for the callers that already pass one and makes the class unrepeatable.
     internal fun persistentLogger(logsDir: Path, maxBytes: Long = MAX_LOG_BYTES): (String) -> Unit {
-        runCatchingCancellable { Files.createDirectories(logsDir) }
+        Cancellables.runCatchingCancellable { Files.createDirectories(logsDir) }
         val file = logsDir.resolve("daemon.log")
         val rolled = logsDir.resolve("daemon.log.1")
         var writer: java.io.Writer? = null
-        var written = runCatchingCancellable { if (Files.exists(file)) Files.size(file) else 0L }.getOrDefault(0L)
+        var written = Cancellables
+            .runCatchingCancellable { if (Files.exists(file)) Files.size(file) else 0L }
+            .getOrDefault(0L)
         return { msg ->
             val line = "[${LocalTime.now().truncatedTo(ChronoUnit.SECONDS)}] ${msg.trimEnd('\n')}\n"
             AsyncFileIo.submit {
                 System.err.print(line)
-                runCatchingCancellable {
+                Cancellables.runCatchingCancellable {
                     if (written >= maxBytes) {
                         writer?.close()
                         Files.move(file, rolled, java.nio.file.StandardCopyOption.REPLACE_EXISTING)
@@ -180,13 +182,13 @@ internal class DaemonProcess {
                     w.flush()
                     written += line.toByteArray(Charsets.UTF_8).size
                 }.onFailure { failure ->
-                    runCatchingCancellable { writer?.close() }
+                    Cancellables.runCatchingCancellable { writer?.close() }
                     writer = null
                     // SH-14: a failed rotate used to leave `written` >= the cap forever — every later
                     // line re-entered the rotate branch, threw BEFORE reaching newBufferedWriter, and
                     // daemon.log went silent permanently. Reconcile from disk so the next line
                     // self-corrects, and say so on stderr (the one lane still alive here).
-                    written = runCatchingCancellable { if (Files.exists(file)) Files.size(file) else 0L }
+                    written = Cancellables.runCatchingCancellable { if (Files.exists(file)) Files.size(file) else 0L }
                         .getOrDefault(0L)
                     System.err.print("[daemon-log] write/rotate failed ($failure) — size reconciled to $written\n")
                 }
@@ -204,7 +206,7 @@ internal class DaemonProcess {
             val line = "[${LocalTime.now().truncatedTo(ChronoUnit.SECONDS)}] [daemon] UNCAUGHT on " +
                 "${thread.name}: ${e.stackTraceToString()}\n"
             System.err.print(line)
-            runCatchingCancellable {
+            Cancellables.runCatchingCancellable {
                 Files.createDirectories(statePaths.logsDir)
                 Files.writeString(statePaths.logsDir.resolve("daemon.log"), line, CREATE, APPEND)
             }

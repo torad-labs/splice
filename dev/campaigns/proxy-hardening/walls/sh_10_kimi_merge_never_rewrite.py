@@ -19,7 +19,15 @@ import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
-CORE = ROOT / "gateway/core/src/main/kotlin/splice/core/auth/MergedCredentialJson.kt"
+# 2026-08-16 — HD-M8, the :core style slice. `mergedCredentialJson` was a top-level function; the
+# Kotlin style law bans those, and both of its arguments are kotlinx JsonObjects (a foreign receiver
+# that cannot host a member), so it became a member of `object CredentialJson`. detekt then forces
+# two things at once: MatchingDeclarationName wants the file named after its single declaration, and
+# MemberNameEqualsClassName forbids `object MergedCredentialJson { fun mergedCredentialJson }` — so
+# the FILE moved, MergedCredentialJson.kt -> CredentialJson.kt. Same primitive, same function name,
+# same merge order; the token below is unchanged and the "core source missing" arm still refuses a
+# vacuous pass if this path ever goes stale again.
+CORE = ROOT / "gateway/core/src/main/kotlin/splice/core/auth/CredentialJson.kt"
 KIMI = ROOT / "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiAuthProvider.kt"
 
 

@@ -10,8 +10,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.reasoning.decodeReasoningEnvelope
-import splice.core.reasoning.encodeReasoningEnvelope
+import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ReasoningDisplay
 import splice.core.wire.TextBlock
 import splice.core.wire.ThinkingBlock
@@ -31,7 +30,7 @@ class ReplayMirrorTest {
     fun `encode is byte-identical to the Node envelope - with and without summary`() {
         assertEquals(
             NODE_WITH_SUMMARY,
-            encodeReasoningEnvelope(
+            ReasoningReplay.encodeReasoningEnvelope(
                 obj(
                     """{"id":"rs_fix","encrypted_content":"ENC123",
                         "summary":[{"type":"summary_text","text":"sum"}]}""",
@@ -40,32 +39,34 @@ class ReplayMirrorTest {
         )
         assertEquals(
             NODE_NO_SUMMARY,
-            encodeReasoningEnvelope(obj("""{"id":"rs_fix2","encrypted_content":"ENC456","summary":[]}""")),
+            ReasoningReplay.encodeReasoningEnvelope(
+                obj("""{"id":"rs_fix2","encrypted_content":"ENC456","summary":[]}"""),
+            ),
         )
     }
 
     @Test
     fun `decode round-trips a Node envelope and always carries a summary array`() {
-        val decoded = decodeReasoningEnvelope(NODE_NO_SUMMARY)!!
+        val decoded = ReasoningReplay.decodeReasoningEnvelope(NODE_NO_SUMMARY)!!
         assertEquals("reasoning", decoded["type"]?.jsonPrimitive?.content)
         assertEquals("rs_fix2", decoded["id"]?.jsonPrimitive?.content)
         assertEquals("ENC456", decoded["encrypted_content"]?.jsonPrimitive?.content)
         assertEquals("[]", decoded["summary"].toString())
-        val withSummary = decodeReasoningEnvelope(NODE_WITH_SUMMARY)!!
+        val withSummary = ReasoningReplay.decodeReasoningEnvelope(NODE_WITH_SUMMARY)!!
         assertTrue(withSummary["summary"].toString().contains("summary_text"))
     }
 
     @Test
     fun `decode rejects foreign, garbled, and incomplete payloads`() {
-        assertNull(decodeReasoningEnvelope(null))
-        assertNull(decodeReasoningEnvelope(""))
-        assertNull(decodeReasoningEnvelope("not-base64!!"))
+        assertNull(ReasoningReplay.decodeReasoningEnvelope(null))
+        assertNull(ReasoningReplay.decodeReasoningEnvelope(""))
+        assertNull(ReasoningReplay.decodeReasoningEnvelope("not-base64!!"))
         val foreignTag = java.util.Base64.getEncoder()
             .encodeToString("""{"tag":"other","v":1,"item":{"id":"x","encrypted_content":"y"}}""".toByteArray())
-        assertNull(decodeReasoningEnvelope(foreignTag))
+        assertNull(ReasoningReplay.decodeReasoningEnvelope(foreignTag))
         val missingId = java.util.Base64.getEncoder()
             .encodeToString("""{"tag":"splice-reasoning","v":1,"item":{"encrypted_content":"y"}}""".toByteArray())
-        assertNull(decodeReasoningEnvelope(missingId))
+        assertNull(ReasoningReplay.decodeReasoningEnvelope(missingId))
     }
 
     @Test

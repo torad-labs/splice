@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.parse.parseAnthropicBody
+import splice.core.parse.AnthropicParse
 import splice.core.wire.ImageBlock
 import splice.core.wire.RedactedThinkingBlock
 import splice.core.wire.TextBlock
@@ -19,7 +19,7 @@ class AnthropicParseTest {
 
     @Test
     fun `string content becomes a single text block`() {
-        val body = parseAnthropicBody(
+        val body = AnthropicParse.parseAnthropicBody(
             """{"model":"m","messages":[{"role":"user","content":"hello"}]}""",
         )
         val blocks = body.typed.messages.single().content
@@ -28,7 +28,7 @@ class AnthropicParseTest {
 
     @Test
     fun `rich fixture - tools, results, images, replay, unknown blocks, system blocks`() {
-        val body = parseAnthropicBody(FIXTURE)
+        val body = AnthropicParse.parseAnthropicBody(FIXTURE)
         val req = body.typed
 
         assertEquals("claude-codex--gpt-5.6-sol", req.model)
@@ -66,7 +66,7 @@ class AnthropicParseTest {
         // Byte-preservation: two blocks with NO trailing whitespace must NOT gain a newline/space
         // between them (Anthropic joins system blocks back-to-back). Inventing a delimiter would
         // break cache-control prefixes and identifiers split across blocks (review 2026-07-23).
-        val body = parseAnthropicBody(
+        val body = AnthropicParse.parseAnthropicBody(
             """{"model":"m","system":[{"type":"text","text":"prefix="},{"type":"text","text":"VALUE"}],
                "messages":[{"role":"user","content":"x"}]}""",
         )
@@ -77,7 +77,7 @@ class AnthropicParseTest {
     // `content` must decode as no content, not as a TextBlock carrying the literal word "null".
     @Test
     fun `null message content decodes as empty, not the literal text null`() {
-        val body = parseAnthropicBody(
+        val body = AnthropicParse.parseAnthropicBody(
             """{"model":"m","messages":[{"role":"user","content":null}]}""",
         )
         assertEquals(emptyList<Any>(), body.typed.messages.single().content)
@@ -87,7 +87,7 @@ class AnthropicParseTest {
     // treated as absent, not as the literal word "null" injected into the system prompt.
     @Test
     fun `a null system text block is treated as absent, not the literal text null`() {
-        val body = parseAnthropicBody(
+        val body = AnthropicParse.parseAnthropicBody(
             """{"model":"m","system":[{"type":"text","text":null},{"type":"text","text":"kept"}],
                "messages":[{"role":"user","content":"x"}]}""",
         )
@@ -96,7 +96,7 @@ class AnthropicParseTest {
 
     @Test
     fun `tool_result with bare string content parses`() {
-        val body = parseAnthropicBody(
+        val body = AnthropicParse.parseAnthropicBody(
             """
             {"model":"m","messages":[{"role":"user","content":[
               {"type":"tool_result","tool_use_id":"t1","content":"plain output"}
@@ -109,7 +109,7 @@ class AnthropicParseTest {
 
     @Test
     fun `tool_result carries the structured is_error flag`() {
-        val body = parseAnthropicBody(
+        val body = AnthropicParse.parseAnthropicBody(
             """
             {"model":"m","messages":[{"role":"user","content":[
               {"type":"tool_result","tool_use_id":"t1","content":"boom","is_error":true},
@@ -126,7 +126,7 @@ class AnthropicParseTest {
 
     @Test
     fun `raw view preserves loose fields the typed schema does not model`() {
-        val body = parseAnthropicBody(
+        val body = AnthropicParse.parseAnthropicBody(
             """{"model":"m","messages":[],"reasoning_effort":"xhigh","metadata":{"effort":"low"}}""",
         )
         assertEquals("xhigh", body.raw["reasoning_effort"]?.jsonPrimitive?.content)

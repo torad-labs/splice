@@ -21,7 +21,7 @@ import io.ktor.client.request.preparePost
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.util.discard
+import splice.core.util.Cancellables
 import splice.spi.UpstreamClient
 
 private const val BLACKHOLE_URL = "http://192.0.2.1:9999/v1"
@@ -55,11 +55,15 @@ class UpstreamClientConnectTimeoutTest {
         // connect still derived from firstByteTimeoutMs, this would fail around 3s instead of 10s.
         val client = UpstreamClient.Transport().defaultClient(firstByteTimeoutMs = 3_000L, totalTimeoutMs = 900_000L)
         val start = System.nanoTime()
-        runCatching {
+        val attempted = runCatching {
             runBlocking {
                 client.preparePost(BLACKHOLE_URL) {}.execute { it.status }
             }
-        }.discard("only the elapsed time is asserted; the failure itself is pinned by the other test")
+        }
+        Cancellables.discard(
+            attempted,
+            "only the elapsed time is asserted; the failure itself is pinned by the other test",
+        )
         val elapsedMs = (System.nanoTime() - start) / 1_000_000
         assertTrue(
             elapsedMs > 5_000,

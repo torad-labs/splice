@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.reasoning.encodeReasoningEnvelope
+import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ToolSearchCall
 import splice.core.turn.ToolSearchCallId
 import splice.core.turn.TurnOutcome
@@ -26,7 +26,7 @@ import splice.dialect.responses.ToolDeferralPolicy
 import splice.dialect.responses.ToolSearchIndex
 import splice.dialect.responses.responsesRequestJson
 import splice.spi.ToolSearchRound
-import splice.core.reasoning.decodeReasoningEnvelope as coreDecode
+import splice.core.reasoning.ReasoningReplay.decodeReasoningEnvelope as coreDecode
 
 private val DEFERRED = List(12) { ToolDefinition(name = "mcp__exa__tool_$it", description = "tool number $it") }
 private val POLICY = ToolDeferralPolicy(searchLimit = 4, searchRounds = 3)
@@ -88,7 +88,7 @@ private fun appendedTail(next: JsonObject): List<JsonElement> {
     return nextInput.subList(prevSize, nextInput.size)
 }
 
-private fun envelopeFor(id: String): String = encodeReasoningEnvelope(
+private fun envelopeFor(id: String): String = ReasoningReplay.encodeReasoningEnvelope(
     buildJsonObject {
         put("type", "reasoning")
         put("id", id)

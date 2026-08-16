@@ -12,8 +12,6 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.QuirksConfig
 import splice.core.topology.ToolSurfaceConfig
 import splice.core.topology.Topology
-import splice.core.topology.catalogFor
-import splice.core.topology.configOverrides
 import java.nio.file.Files
 
 class TopologyConfigOverridesTest {

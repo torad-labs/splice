@@ -17,20 +17,18 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import splice.core.auth.AuthDescription
+import splice.core.auth.CredentialExpiry
+import splice.core.auth.CredentialJson
 import splice.core.auth.Credentials
 import splice.core.auth.INVALID_GRANT_REASON
 import splice.core.auth.InvalidGrantLatch
 import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
-import splice.core.auth.credentialsOrNull
-import splice.core.auth.mergedCredentialJson
-import splice.core.auth.synthesizedExpiryMs
+import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
+import splice.core.util.JsonScalars
 import splice.core.util.SecureFile
-import splice.core.util.long
-import splice.core.util.runCatchingCancellable
-import splice.core.util.str
 import splice.spi.CredentialLock
 import splice.spi.SingleFlight
 import java.nio.file.Files
@@ -150,7 +148,7 @@ public class KimiAuthProvider(
     // Runs holding the cross-process lock: re-read fresh, short-circuit if a peer already rotated,
     // else exchange. Split out of doRefresh so withLock's lambda stays a single call.
     private suspend fun refreshLocked(priorAccess: String?): RefreshOutcome {
-        val snap = runCatchingCancellable { parseSnapshot() }
+        val snap = Cancellables.runCatchingCancellable { parseSnapshot() }
             .getOrElse { return RefreshOutcome.ReadFailed(it) }
         peerRotation(priorAccess, snap)?.let { return it }
         val refreshToken = snap?.refresh
@@ -176,7 +174,7 @@ public class KimiAuthProvider(
     ): RefreshOutcome {
         // Guard the network hop: a thrown refreshCall must degrade to a typed outcome, not blow
         // through SingleFlight uncaught. Rotation is mandatory — a Denied response means no grant.
-        val attempt = runCatchingCancellable { refreshCall(refreshToken) }
+        val attempt = Cancellables.runCatchingCancellable { refreshCall(refreshToken) }
             .getOrElse { return RefreshOutcome.TransportFailed(it) }
         return when (attempt) {
             is RefreshAttempt.Granted -> {
@@ -187,13 +185,14 @@ public class KimiAuthProvider(
                 // SH-10: merge onto the on-disk object — a from-scratch rewrite dropped every
                 // field kimi-cli/kimi-code stores beside ours (the 2026-07-18 audit shape grok and
                 // codex already fixed). An unreadable file logs and degrades to tokens-only.
-                val onDisk = runCatchingCancellable {
+                val onDisk = Cancellables.runCatchingCancellable {
                     json.parseToJsonElement(Files.readString(authPath)).jsonObjectOrEmpty()
                 }.onFailure {
                     log("[kimi-auth] could not re-read $authPath before persist ($it) — writing tokens-only")
                 }.getOrNull()
-                runCatchingCancellable {
-                    val merged = mergedCredentialJson(onDisk, oauth.kimiAuthJson(attempt.tokens, clock()))
+                Cancellables.runCatchingCancellable {
+                    val merged =
+                        CredentialJson.mergedCredentialJson(onDisk, oauth.kimiAuthJson(attempt.tokens, clock()))
                     writeSecure(authPath, merged.toString())
                 }
                     .getOrElse { return RefreshOutcome.PersistFailed("credentials write failed: $it") }
@@ -215,7 +214,7 @@ public class KimiAuthProvider(
         reason: String,
     ): RefreshOutcome {
         if (!allowRereadRetry) return RefreshOutcome.Rejected(reason)
-        val newToken = runCatchingCancellable { parseSnapshot()?.refresh }
+        val newToken = Cancellables.runCatchingCancellable { parseSnapshot()?.refresh }
             .getOrElse { return RefreshOutcome.Rejected(reason) }
         return if (newToken != null && newToken != usedRefreshToken) {
             exchangeRefreshToken(newToken, allowRereadRetry = false)
@@ -227,7 +226,7 @@ public class KimiAuthProvider(
     private fun apiKey(token: String): Credentials =
         Credentials.ApiKey(key = token, header = "x-api-key", prefix = "")
 
-    private fun readSnapshot(): Snapshot? = runCatchingCancellable {
+    private fun readSnapshot(): Snapshot? = Cancellables.runCatchingCancellable {
         if (!Files.exists(authPath)) return@runCatchingCancellable null
         val mtime = Files.getLastModifiedTime(authPath).toMillis()
         val now = clock()
@@ -244,15 +243,20 @@ public class KimiAuthProvider(
     private fun parseSnapshot(): Snapshot? {
         if (!Files.exists(authPath)) return null
         val obj = json.parseToJsonElement(Files.readString(authPath)).jsonObjectOrEmpty()
-        val access = obj.str("access_token") ?: return null
+        val access = JsonScalars.str(obj, "access_token") ?: return null
         return Snapshot(
             access = access,
-            refresh = obj.str("refresh_token"),
+            refresh = JsonScalars.str(obj, "refresh_token"),
             // SH-01 shared missing-expiry policy: a file with no expires_at synthesizes
             // mtime+TTL — ONE refresh when the ceiling lapses, not one per call under the floor.
-            expiresAtS = obj.long("expires_at")
-                ?: (synthesizedExpiryMs(Files.getLastModifiedTime(authPath).toMillis(), clock()) / MS_PER_S),
-            expiresInS = obj.long("expires_in") ?: 0L,
+            expiresAtS = JsonScalars.long(obj, "expires_at")
+                ?: (
+                    CredentialExpiry.synthesizedExpiryMs(
+                        Files.getLastModifiedTime(authPath).toMillis(),
+                        clock(),
+                    ) / MS_PER_S
+                    ),
+            expiresInS = JsonScalars.long(obj, "expires_in") ?: 0L,
         )
     }
 
@@ -262,7 +266,7 @@ public class KimiAuthProvider(
 
     override suspend fun describe(): AuthDescription {
         // ast-grep-ignore: kt-no-silent-result-collapse -- introspection display only: a read failure renders as present=false, which is the displayed truth
-        val present = runCatchingCancellable {
+        val present = Cancellables.runCatchingCancellable {
             Files.exists(authPath) && parseSnapshot() != null
         }.getOrDefault(false)
         val mtime = kimiAuthMtimeOrNull(authPath, log)
@@ -290,9 +294,10 @@ public class KimiAuthProvider(
     // G15: best-effort mtime probe for the invalid_grant latch gate; shared by doRefresh() and
     // describe(). The failure is logged, not swallowed, before collapsing to null — a stat failure is
     // "unknown", which InvalidGrantLatch treats as fail-open (never suppresses), NOT "file unchanged".
-    private fun kimiAuthMtimeOrNull(authPath: Path, log: (String) -> Unit): Long? = runCatchingCancellable {
-        Files.getLastModifiedTime(authPath).toMillis()
-    }.onFailure {
-        log("[kimi-auth] failed to stat $authPath mtime: $it — invalid_grant latch check skipped")
-    }.getOrNull()
+    private fun kimiAuthMtimeOrNull(authPath: Path, log: (String) -> Unit): Long? =
+        Cancellables.runCatchingCancellable {
+            Files.getLastModifiedTime(authPath).toMillis()
+        }.onFailure {
+            log("[kimi-auth] failed to stat $authPath mtime: $it — invalid_grant latch check skipped")
+        }.getOrNull()
 }

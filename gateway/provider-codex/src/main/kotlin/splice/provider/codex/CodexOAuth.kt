@@ -13,9 +13,9 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import splice.core.util.Cancellables
 import splice.core.util.FormEncoding
-import splice.core.util.runCatchingCancellable
-import splice.core.util.str
+import splice.core.util.JsonScalars
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
@@ -111,7 +111,7 @@ public class CodexOAuth {
     public fun decodeJwtClaims(jwt: String?): JsonObject {
         val payload = jwt.orEmpty().split(".").getOrNull(1) ?: return JsonObject(emptyMap())
         // ast-grep-ignore: kt-no-silent-result-collapse -- empty claims IS the contract for a malformed jwt; the absence surfaces loudly as a missing account-id header
-        return runCatchingCancellable {
+        return Cancellables.runCatchingCancellable {
             // STANDARD decoder AFTER normalizing -_ to +/ — padBase64 converts to the standard
             // alphabet, so getUrlDecoder() (which REJECTS +/) failed on virtually every real
             // id_token and ChatGPT-Account-ID was never sent (audit 2026-07-18, JVM-repro'd).
@@ -127,8 +127,10 @@ public class CodexOAuth {
     }
 
     public fun accountIdFromIdToken(idToken: String?): String? =
-        (decodeJwtClaims(idToken)["https://api.openai.com/auth"] as? JsonObject)
-            ?.str("chatgpt_account_id")
+        JsonScalars.str(
+            decodeJwtClaims(idToken)["https://api.openai.com/auth"] as? JsonObject,
+            "chatgpt_account_id",
+        )
 
     /** Token strings -> the ~/.codex/auth.json object CodexAuthProvider reads (CLI-compatible shape). */
     public fun authJsonFromTokens(

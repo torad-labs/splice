@@ -16,8 +16,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.AsyncFileIo
+import splice.core.util.Cancellables
 import splice.core.util.JsonlSink
-import splice.core.util.runCatchingCancellable
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.TextBlock
 import java.nio.file.Files
@@ -185,7 +185,7 @@ public class CompactStats(private val file: Path, private val clock: () -> Long 
             }
         }.toString()
         AsyncFileIo.submit {
-            runCatchingCancellable {
+            Cancellables.runCatchingCancellable {
                 Files.createDirectories(file.parent)
                 JsonlSink.appendLine(file, row)
             }
@@ -200,9 +200,9 @@ public class CompactStats(private val file: Path, private val clock: () -> Long 
     public fun read(tailN: Int = STATS_DEFAULT_TAIL): CompactStatsSummary {
         AsyncFileIo.drain()
         if (!Files.exists(file)) return CompactStatsSummary(0, emptyMap(), emptyList())
-        val rows = runCatchingCancellable {
+        val rows = Cancellables.runCatchingCancellable {
             JsonlSink.readTail(file, READ_TAIL_BYTES).mapNotNull { line ->
-                runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
+                Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
             }
         }.getOrDefault(emptyList())
         val byOutcome = rows.groupingBy {

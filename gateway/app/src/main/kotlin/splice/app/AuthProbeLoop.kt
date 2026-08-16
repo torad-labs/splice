@@ -15,7 +15,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import splice.core.auth.RefreshableAuthProvider
-import splice.core.util.runCatchingCancellable
+import splice.core.util.Cancellables
 
 public class AuthProbeLoop(
     private val key: String,
@@ -46,7 +46,7 @@ public class AuthProbeLoop(
     private fun launchSupervised(scope: CoroutineScope) {
         val launched = scope.launch {
             while (isActive) {
-                runCatchingCancellable { probeOnce() }
+                Cancellables.runCatchingCancellable { probeOnce() }
                     .onFailure { log("[$key][auth-probe] probe tick threw: $it\n") }
                 delay(intervalMs)
             }

@@ -6,11 +6,12 @@ package splice.app.cli
 import splice.app.TopologyLoader
 import splice.core.config.InstallPaths
 import splice.core.config.KeyStore
+import splice.core.config.KeyStorePath
 import splice.core.topology.AuthKind
+import splice.core.topology.AuthKindRegistry
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
-import splice.core.topology.effectiveApiKeyEnv
 import java.nio.file.Files
 import java.nio.file.Paths
 
@@ -67,8 +68,8 @@ internal class StatusCommand {
         val authed = authPresent(key, provider, envReader)
         val auth = when {
             isClientAuth(provider) -> "$GREEN✓ client-native$RESET"
-            AuthKind.isOAuth(provider.auth.kind) && authed -> "$GREEN✓ signed in$RESET"
-            AuthKind.isOAuth(provider.auth.kind) -> "$YELLOW— $command login$RESET"
+            AuthKindRegistry.isOAuth(provider.auth.kind) && authed -> "$GREEN✓ signed in$RESET"
+            AuthKindRegistry.isOAuth(provider.auth.kind) -> "$YELLOW— $command login$RESET"
             authed -> "$GREEN✓ key set$RESET"
             else -> "$YELLOW— set key$RESET"
         }
@@ -86,7 +87,7 @@ internal class StatusCommand {
 
     /** A head whose credential is the CALLER's, not splice's — nothing here can be "missing". */
     internal fun isClientAuth(provider: ProviderConfig): Boolean =
-        AuthKind.from(provider.auth.kind) == AuthKind.Client
+        AuthKindRegistry.from(provider.auth.kind) == AuthKind.Client
 
     internal fun authPresent(key: String, provider: ProviderConfig, envReader: (String) -> String?): Boolean =
         // Splice holds no credential for a client-auth head BY DESIGN, so "is it configured?" is
@@ -100,17 +101,17 @@ internal class StatusCommand {
         provider: ProviderConfig,
         envReader: (String) -> String?,
     ): Boolean {
-        val file = provider.auth.file ?: AuthKind.defaultAuthFileFor(provider.auth.kind)
+        val file = provider.auth.file ?: AuthKindRegistry.defaultAuthFileFor(provider.auth.kind)
         val filePresent = file?.let { Files.exists(Paths.get(TopologyLoader.expandHome(it))) } == true
         // OAuth heads authenticate by file only; api-key heads read the effective env var (the explicit
         // auth.env OR the derived <KEY>_API_KEY default the daemon wires) so the derived path matches.
-        val oauth = AuthKind.isOAuth(provider.auth.kind)
-        val envVar = if (oauth) provider.auth.env else effectiveApiKeyEnv(key, provider.auth)
+        val oauth = AuthKindRegistry.isOAuth(provider.auth.kind)
+        val envVar = if (oauth) provider.auth.env else provider.auth.effectiveApiKeyEnv(key)
         val envPresent = envVar?.let { envReader(it)?.isNotBlank() } == true
         // The KeyStore is the third presence source for api-key heads — a key stored by
         // `splice key set` / `<head> login` / token capture reads as configured here too.
         val storePresent = !oauth && envVar != null &&
-            KeyStore(KeyStore.defaultPath(envReader)).read(envVar) != null
+            KeyStore(KeyStorePath.defaultPath(envReader)).read(envVar) != null
         return filePresent || envPresent || storePresent
     }
 
@@ -122,7 +123,7 @@ internal class StatusCommand {
         println("  ${DIM}Launch $RESET " + launchable.joinToString("$DIM · $RESET") { "$CYAN$it$RESET" })
         val needLogin = topology.heads.entries.filter { (k, h) ->
             val p = topology.providers[h.provider]
-            p != null && AuthKind.isOAuth(p.auth.kind) && !authPresent(k, p, envReader)
+            p != null && AuthKindRegistry.isOAuth(p.auth.kind) && !authPresent(k, p, envReader)
         }.map { (k, h) -> h.claude.command ?: k }
         if (needLogin.isNotEmpty()) {
             println("  ${DIM}Sign in$RESET " + needLogin.joinToString("$DIM · $RESET") { "$CYAN$it login$RESET" })

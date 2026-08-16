@@ -12,8 +12,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import splice.core.util.FormEncoding
-import splice.core.util.long
-import splice.core.util.str
+import splice.core.util.JsonScalars
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
@@ -123,9 +122,9 @@ public class GrokOAuth {
         nowIso: String,
     ): JsonObject {
         val obj = grokJson.parseToJsonElement(responseBody).jsonObjectOrEmpty()
-        val access = obj.str("access_token").orEmpty()
-        val refresh = obj.str(WIRE_REFRESH_TOKEN) ?: fallbackRefresh
-        val expiresIn = obj.long("expires_in")
+        val access = JsonScalars.str(obj, "access_token").orEmpty()
+        val refresh = JsonScalars.str(obj, WIRE_REFRESH_TOKEN) ?: fallbackRefresh
+        val expiresIn = JsonScalars.long(obj, "expires_in")
         return buildJsonObject {
             put(
                 "tokens",

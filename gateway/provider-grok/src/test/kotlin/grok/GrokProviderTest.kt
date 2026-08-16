@@ -31,7 +31,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
-import splice.core.parse.parseAnthropicBody
+import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.gateway.compact.CompactStats
@@ -145,7 +145,7 @@ class GrokProviderTest {
 
     @Test
     fun `grok quirks - xhigh passes through (upstream clamps pre-4_6), detailed summary, session cache key`() = runBlocking {
-        val parsed = parseAnthropicBody(
+        val parsed = AnthropicParse.parseAnthropicBody(
             """{"model":"grok-4.5","effort":"xhigh","messages":[{"role":"user","content":"first"}]}""",
         )
         val grokProvider = provider(oauthAuth(Files.createTempDirectory("q")))
@@ -170,7 +170,7 @@ class GrokProviderTest {
     fun `conv-id affinity rides the per-turn BuiltTurn, never shared provider state`() {
         // A @Volatile lastSessionId raced concurrent sessions into each other's affinity header
         // (audit 2026-07-18) — the header now travels with the turn it belongs to.
-        val parsed = parseAnthropicBody(
+        val parsed = AnthropicParse.parseAnthropicBody(
             """{"model":"grok-4.5","messages":[{"role":"user","content":"hi"}]}""",
         )
         val grokProvider = provider(oauthAuth(Files.createTempDirectory("hdr")))

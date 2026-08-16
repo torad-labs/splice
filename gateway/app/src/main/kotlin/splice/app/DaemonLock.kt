@@ -4,7 +4,7 @@
 // startup gate — the loser waits briefly, health-checks the winner, exits 0 LOUD (never a loop).
 package splice.app
 
-import splice.core.util.discard
+import splice.core.util.Cancellables
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
 import java.nio.channels.OverlappingFileLockException
@@ -42,7 +42,13 @@ public class DaemonLock(private val lockFile: Path) : AutoCloseable {
     }
 
     override fun close() {
-        runCatching { lock?.release() }.discard("process-exit cleanup; the OS reclaims the lock regardless")
-        runCatching { channel?.close() }.discard("process-exit cleanup; the OS reclaims the fd regardless")
+        Cancellables.discard(
+            runCatching { lock?.release() },
+            "process-exit cleanup; the OS reclaims the lock regardless",
+        )
+        Cancellables.discard(
+            runCatching { channel?.close() },
+            "process-exit cleanup; the OS reclaims the fd regardless",
+        )
     }
 }

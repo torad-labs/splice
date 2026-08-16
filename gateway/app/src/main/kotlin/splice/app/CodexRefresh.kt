@@ -18,8 +18,8 @@ import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import splice.core.auth.RefreshAttempt
-import splice.core.util.runCatchingCancellable
-import splice.core.util.str
+import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
 import splice.provider.codex.CodexOAuthEndpoints
 import splice.provider.codex.RefreshedTokens
 
@@ -79,13 +79,13 @@ public class CodexRefresh {
     }
 
     /** Defensive against malformed JSON on a 200 — a bad success body terminates cleanly, not via retry. */
-    private fun parseCodexRefresh(body: String): RefreshedTokens? = runCatchingCancellable {
+    private fun parseCodexRefresh(body: String): RefreshedTokens? = Cancellables.runCatchingCancellable {
         val obj = json.parseToJsonElement(body).jsonObject
-        val access = obj.str("access_token") ?: return@runCatchingCancellable null
+        val access = JsonScalars.str(obj, "access_token") ?: return@runCatchingCancellable null
         RefreshedTokens(
             accessToken = access,
-            refreshToken = obj.str("refresh_token"),
-            idToken = obj.str("id_token"),
+            refreshToken = JsonScalars.str(obj, "refresh_token"),
+            idToken = JsonScalars.str(obj, "id_token"),
         )
     }.getOrNull()
 }

@@ -8,7 +8,7 @@
 // dashboard re-auth and one line tells the operator exactly what happened and where the key is.
 package splice.core.config
 
-import splice.core.auth.bearerToken
+import splice.core.auth.BearerScheme
 import splice.core.util.DaemonLog
 import splice.core.util.SecureFile
 import java.io.IOException
@@ -63,15 +63,14 @@ public class MgmtKey(
     }
 
     /** Constant-time bearer check (`Authorization: Bearer <key>`) — scheme parsing shared with
-     *  HeadServer.authorize via [bearerToken] so the same token bytes work on both planes. */
+     *  HeadServer.authorize via [BearerScheme.bearerToken] so the same token bytes work on both planes. */
     public fun matchesBearer(header: String?): Boolean {
-        val presented = bearerToken(header) ?: return false
+        val presented = BearerScheme.bearerToken(header) ?: return false
         val a = presented.toByteArray()
         val b = value.toByteArray()
         return a.size == b.size && MessageDigest.isEqual(a, b)
     }
-
-    private companion object {
-        const val KEY_BYTES = 32
-    }
 }
+
+// Companion dissolved to file scope (Kotlin style law, 2026-08-16 — HD-M8), same name, same value.
+private const val KEY_BYTES = 32

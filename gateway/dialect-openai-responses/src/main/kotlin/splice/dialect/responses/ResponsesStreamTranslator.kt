@@ -26,15 +26,13 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
+import splice.core.turn.ModelTextPicker
 import splice.core.turn.SharedSummaryParts
 import splice.core.turn.ToolSearchCall
 import splice.core.turn.ToolSearchCallId
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.core.turn.isWeakSummaryText
-import splice.core.util.str
-import splice.core.util.strIfString
-import splice.core.util.strOrEmpty
+import splice.core.util.JsonScalars
 import splice.spi.BufferCapacity
 import splice.spi.ClassifiedFailure
 import splice.spi.FailureSource
@@ -351,7 +349,7 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
             val content = (item as? JsonObject)?.get("content") as? JsonArray ?: return@forEach
             content.forEach { part ->
                 val obj = part as? JsonObject ?: return@forEach
-                if (strOrEmpty(obj["type"]) == "refusal") ops.addRefusal(reducer, obj)
+                if (JsonScalars.strOrEmpty(obj["type"]) == "refusal") ops.addRefusal(reducer, obj)
             }
         }
     }
@@ -446,7 +444,7 @@ private class ResponsesEventReducer(val ctx: StreamTurnContext) {
     private val harvest = ResponsesHarvest()
 
     suspend fun onEvent(evt: JsonObject, sink: WireSink) {
-        when (strOrEmpty(evt["type"])) {
+        when (JsonScalars.strOrEmpty(evt["type"])) {
             "response.completed", "response.done", "response.incomplete" -> onTerminal(evt)
             "response.failed", "response.error", "error" -> onFailure(evt)
             else -> onStreamEvent(evt, sink)
@@ -454,7 +452,7 @@ private class ResponsesEventReducer(val ctx: StreamTurnContext) {
     }
 
     private suspend fun onStreamEvent(evt: JsonObject, sink: WireSink) {
-        when (strOrEmpty(evt["type"])) {
+        when (JsonScalars.strOrEmpty(evt["type"])) {
             "response.output_item.added" -> onItemAdded(evt, sink)
             "response.output_item.done" -> onItemDone(evt, sink)
             "response.reasoning_summary_part.added" -> onSummaryPartAdded(evt, sink)
@@ -480,9 +478,11 @@ private class ResponsesEventReducer(val ctx: StreamTurnContext) {
     private fun onTerminal(evt: JsonObject) {
         val resp = (evt["response"] as? JsonObject) ?: evt
         finalResponse = resp
-        if (strOrEmpty(evt["type"]) == "response.incomplete" || strOrEmpty(resp["status"]) == "incomplete") {
+        if (JsonScalars.strOrEmpty(evt["type"]) == "response.incomplete" ||
+            JsonScalars.strOrEmpty(resp["status"]) == "incomplete"
+        ) {
             incomplete = true
-            val reason = (resp["incomplete_details"] as? JsonObject)?.str("reason").orEmpty()
+            val reason = JsonScalars.str(resp["incomplete_details"] as? JsonObject, "reason").orEmpty()
             // max_output_tokens is the honest "ran out of room" stop; any other reason
             // (content_filter, etc.) is a censored generation, never a clean incomplete.
             if (reason.isNotEmpty() && reason != INCOMPLETE_REASON_MAX_TOKENS) contentFiltered = true
@@ -496,8 +496,10 @@ private class ResponsesEventReducer(val ctx: StreamTurnContext) {
         val e = (evt["response"] as? JsonObject)?.get("error") as? JsonObject
             ?: evt["error"] as? JsonObject
             ?: evt
-        val code = strOrEmpty(e["code"]).ifEmpty { strOrEmpty(e["type"]) }.ifEmpty { "upstream_failed" }
-        val message = strOrEmpty(e["message"]).ifEmpty { "ChatGPT backend reported failure" }
+        val code = JsonScalars.strOrEmpty(e["code"])
+            .ifEmpty { JsonScalars.strOrEmpty(e["type"]) }
+            .ifEmpty { "upstream_failed" }
+        val message = JsonScalars.strOrEmpty(e["message"]).ifEmpty { "ChatGPT backend reported failure" }
         upstreamFailure = UpstreamFailureClassifier.classify(FailureSource.SSE, "$code $message")
         // A response.failed payload can carry the round's usage — harvest it so the salvage
         // accounting is real (code-review 2026-07-24: the terminal-only harvest left
@@ -508,14 +510,14 @@ private class ResponsesEventReducer(val ctx: StreamTurnContext) {
     private suspend fun onItemAdded(evt: JsonObject, sink: WireSink) {
         val item = evt["item"] as? JsonObject ?: return
         val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: frames.intOr(item["index"]) ?: blocks.size
-        if (strOrEmpty(item["type"]) == "function_call") {
+        if (JsonScalars.strOrEmpty(item["type"]) == "function_call") {
             // A JsonNull call_id/name must not leak onto the wire as the literal string "null" —
             // strOrEmpty keeps both filtered so the empty-fallback chain below still triggers
             // (review 2026-07-22 round 3).
-            val rawId = strOrEmpty(item["call_id"]).ifEmpty { strOrEmpty(item["id"]) }
+            val rawId = JsonScalars.strOrEmpty(item["call_id"]).ifEmpty { JsonScalars.strOrEmpty(item["id"]) }
             val id = rawId.ifEmpty { "toolu_synth_${toolSynthCounter++}_$oi" }
             if (rawId.isNotEmpty()) turnToolIds.add(rawId)
-            val idx = sink.openTool(id = id, name = strOrEmpty(item["name"]))
+            val idx = sink.openTool(id = id, name = JsonScalars.strOrEmpty(item["name"]))
             blocks[oi] = BlockState(idx, sawDelta = false)
             hasToolUse = true
             toolSalvage.opened(oi)
@@ -531,7 +533,7 @@ private class ResponsesEventReducer(val ctx: StreamTurnContext) {
         val item = evt["item"] as? JsonObject
         // tool_search_call has no open wire block and must not touch hasToolUse/turnToolIds — a
         // synthetic/foreign id there would mis-key the reasoning cache (a known prior bug class).
-        if (item != null && strOrEmpty(item["type"]) == TOOL_SEARCH_CALL) {
+        if (item != null && JsonScalars.strOrEmpty(item["type"]) == TOOL_SEARCH_CALL) {
             ops.captureToolSearch(this, item)
             return
         }
@@ -547,7 +549,7 @@ private class ResponsesEventReducer(val ctx: StreamTurnContext) {
 
     private suspend fun maybeEmitLateReasoning(item: JsonObject?, oi: Int?, sink: WireSink) {
         if (item == null || oi == null) return
-        if (strOrEmpty(item["type"]) != "reasoning") return
+        if (JsonScalars.strOrEmpty(item["type"]) != "reasoning") return
         emitReasoningItemText(item, oi, sink)
     }
 
@@ -611,7 +613,7 @@ private class ResponsesEventReducer(val ctx: StreamTurnContext) {
     }
 
     private suspend fun onThinkingDelta(evt: JsonObject, sink: WireSink) {
-        val delta = strOrEmpty(evt[DELTA])
+        val delta = JsonScalars.strOrEmpty(evt[DELTA])
         if (delta.isEmpty()) return
         // sequential_cutoff: whole parts arrive as single deltas; drop a delta that is either the
         // continuation of this item's leading cross-item recap or an exact within-item repeat.
@@ -635,7 +637,7 @@ private class ResponsesEventReducer(val ctx: StreamTurnContext) {
     }
 
     private suspend fun onTextDelta(evt: JsonObject, sink: WireSink) {
-        val delta = strOrEmpty(evt[DELTA])
+        val delta = JsonScalars.strOrEmpty(evt[DELTA])
         if (delta.isEmpty()) return
         val key = frames.intOr(evt[OUTPUT_INDEX]) ?: 0
         val b = blocks[key] ?: BlockState(sink.openText(), sawDelta = false).also { blocks[key] = it }
@@ -650,8 +652,8 @@ private class ResponsesEventReducer(val ctx: StreamTurnContext) {
     private suspend fun onArgs(evt: JsonObject, sink: WireSink) {
         val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: return
         val b = blocks[oi] ?: return
-        if (strOrEmpty(evt["type"]) == "response.function_call_arguments.done") {
-            if (!b.sawDelta) ops.emitToolArgText(b, strOrEmpty(evt["arguments"]), sink)
+        if (JsonScalars.strOrEmpty(evt["type"]) == "response.function_call_arguments.done") {
+            if (!b.sawDelta) ops.emitToolArgText(b, JsonScalars.strOrEmpty(evt["arguments"]), sink)
             // CX-01: a backend can truncate arguments mid-string and STILL send .done — the block
             // would close as a Success carrying corrupt tool JSON that Claude Code then parses or
             // dispatches. Validate the accumulated buffer; an opened tool with zero args is equally
@@ -660,7 +662,7 @@ private class ResponsesEventReducer(val ctx: StreamTurnContext) {
             sink.closeBlock(b.index)
             toolSalvage.closedClean(oi)
         } else {
-            ops.emitToolArgText(b, strOrEmpty(evt[DELTA]), sink)
+            ops.emitToolArgText(b, JsonScalars.strOrEmpty(evt[DELTA]), sink)
         }
     }
 }
@@ -723,7 +725,7 @@ private class ResponsesEventOps {
      *  law. */
     fun addRefusal(reducer: ResponsesEventReducer, obj: JsonObject) {
         val isDelta = obj["delta"] != null
-        val text = strIfString(if (isDelta) obj["delta"] else obj["refusal"])
+        val text = JsonScalars.strIfString(if (isDelta) obj["delta"] else obj["refusal"])
         // Round-2 review: same category error as chat's carrier — isBlank() is a whole-value predicate
         // applied per-frame, which deleted whitespace-only refusal fragments and garbled the verdict.
         if (text.isEmpty()) return
@@ -735,7 +737,8 @@ private class ResponsesEventOps {
     /** Gated encrypted-reasoning EMISSION predicate — kept out of the handler so its condition stays flat. */
     private fun shouldEmitReasoning(ctx: StreamTurnContext, item: JsonObject): Boolean =
         ctx.emitEncryptedReasoning.v && !ctx.compact &&
-            strOrEmpty(item["type"]) == "reasoning" && strOrEmpty(item["encrypted_content"]).isNotEmpty()
+            JsonScalars.strOrEmpty(item["type"]) == "reasoning" &&
+            JsonScalars.strOrEmpty(item["encrypted_content"]).isNotEmpty()
 
     /** Shared usage harvest for terminal AND failure payloads. Guarded >0 so a later, richer
      *  payload never zeroes an earlier one. */
@@ -773,20 +776,20 @@ internal class ResponsesFrameParse {
     /** Leave the positive int space for message/tool output_index; reasoning lives above. */
     fun reasoningKey(outputIndex: Int): Int = REASONING_KEY_BASE + outputIndex
 
-    fun intOr(el: JsonElement?): Int? = el.str()?.toIntOrNull()
+    fun intOr(el: JsonElement?): Int? = JsonScalars.str(el)?.toIntOrNull()
 
     /** Parses one tool_search_call item into a [ToolSearchCall], or null when it should be skipped
      *  (server-executed — execution:"server" means the backend already answered, protocol/src/
      *  models.rs:3693-3728 — or carries no call_id). */
     fun parseToolSearchCall(item: JsonObject): ToolSearchCall? {
-        val execution = strOrEmpty(item["execution"])
+        val execution = JsonScalars.strOrEmpty(item["execution"])
         if (execution.isNotEmpty() && execution != TOOL_SEARCH_EXECUTION_CLIENT) return null
         // NB: no `id` fallback here (unlike function_call's onItemAdded) — call.raw is echoed
         // VERBATIM into the continuation, so a synthesized id would produce a tool_search_output
         // keyed by a value the echoed call itself doesn't carry: an unpairable item the backend
         // 400s (review 2026-07-24). Skipping is the spec behavior and matches codex-rs's own
         // catch-all (a client-execution call always carries call_id; this is defensive-only).
-        val callId = strOrEmpty(item["call_id"])
+        val callId = JsonScalars.strOrEmpty(item["call_id"])
         if (callId.isEmpty()) return null
         val (query, limit) = parseToolSearchArguments(item["arguments"])
         return ToolSearchCall(callId = ToolSearchCallId(callId), query = query, limit = limit, raw = item)
@@ -798,10 +801,10 @@ internal class ResponsesFrameParse {
     private fun parseToolSearchArguments(arguments: JsonElement?): Pair<String, Int?> {
         val obj = when (arguments) {
             is JsonObject -> arguments
-            is JsonPrimitive -> parseArgumentsString(strOrEmpty(arguments))
+            is JsonPrimitive -> parseArgumentsString(JsonScalars.strOrEmpty(arguments))
             else -> null
         } ?: return "" to null
-        return strOrEmpty(obj["query"]) to intOr(obj["limit"])
+        return JsonScalars.strOrEmpty(obj["query"]) to intOr(obj["limit"])
     }
 
     private fun parseArgumentsString(text: String): JsonObject? {
@@ -834,7 +837,8 @@ internal class ResponsesFrameParse {
      */
     fun shouldPreferHarvestedText(current: CharSequence, harvested: String): Boolean {
         if (harvested.isEmpty()) return false
-        return current.isEmpty() || (isWeakSummaryText(current.toString()) && !isWeakSummaryText(harvested))
+        return current.isEmpty() ||
+            (ModelTextPicker.isWeakSummaryText(current.toString()) && !ModelTextPicker.isWeakSummaryText(harvested))
     }
 }
 

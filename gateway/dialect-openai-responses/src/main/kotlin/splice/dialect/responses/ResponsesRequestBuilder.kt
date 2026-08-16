@@ -38,10 +38,10 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.turn.CompactInstructions
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
-import splice.core.turn.withCompactDirective
-import splice.core.util.str
+import splice.core.util.JsonScalars
 import splice.core.wire.AnthropicMessage
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.ContentBlock
@@ -51,11 +51,11 @@ import splice.core.wire.MediaSource
 import splice.core.wire.RedactedThinkingBlock
 import splice.core.wire.TextBlock
 import splice.core.wire.ThinkingBlock
+import splice.core.wire.ToolChoiceMapping
 import splice.core.wire.ToolDefinition
 import splice.core.wire.ToolResultBlock
 import splice.core.wire.ToolUseBlock
 import splice.core.wire.UnknownBlock
-import splice.core.wire.openAiToolChoice
 import splice.spi.ToolSearchController
 import java.security.MessageDigest
 
@@ -296,7 +296,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         val built = buildRequestObject(body, opts, RequestParts(input, instructions, reasoning, partition))
         // meta.summary reflects what was ACTUALLY sent (spark drops it → "none"), like Node's
         // `req.reasoning?.summary ?? 'none'` — not the computed-but-maybe-dropped value.
-        val sentSummary = reasoning?.get(FIELD_SUMMARY).str() ?: "none"
+        val sentSummary = JsonScalars.str(reasoning?.get(FIELD_SUMMARY)) ?: "none"
 
         val meta = TurnMeta(
             compact = opts.compact,
@@ -408,7 +408,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
     private fun toolChoiceFor(emitToolChoice: Boolean, lite: Boolean, body: AnthropicRequest): JsonElement? = when {
         !emitToolChoice -> null
         lite -> JsonPrimitive("auto")
-        else -> openAiToolChoice(body.toolChoice)
+        else -> ToolChoiceMapping.openAiToolChoice(body.toolChoice)
     }
 
     /** codex-rs parity: 5.6-family models get parallel_tool_calls=false whenever tools ride —
@@ -446,7 +446,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
     // separator is what withCompactDirective's filter reproduces — so the wire bytes are identical.
     private fun compactAwareInstructions(system: String?, compact: Boolean): String {
         if (!compact) return system.orEmpty().ifEmpty { "You are a helpful assistant." }
-        return withCompactDirective(system, compact = true)
+        return CompactInstructions.withCompactDirective(system, compact = true)
     }
 
     private fun cacheKey(body: AnthropicRequest, opts: BuildOptions): String? = when (quirks.cacheKeyStrategy) {
@@ -485,7 +485,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
         (raw["output_config"] as? JsonObject)?.get(FIELD_EFFORT),
         (raw["metadata"] as? JsonObject)?.get(FIELD_EFFORT),
         (raw[FIELD_REASONING] as? JsonObject)?.get(FIELD_EFFORT),
-    ).mapNotNull { it.str() }
+    ).mapNotNull { JsonScalars.str(it) }
         .mapNotNull { effortRules.normalizeEffort(it, quirks.effortLadder) }
         .firstOrNull()
 
@@ -499,7 +499,7 @@ public class ResponsesRequestBuilder(private val quirks: ResponsesQuirks) {
             (raw[FIELD_REASONING] as? JsonObject)?.get(FIELD_SUMMARY),
             raw["reasoning_summary"],
             (raw["output_config"] as? JsonObject)?.get("reasoning_summary"),
-        ).mapNotNull { it.str() }
+        ).mapNotNull { JsonScalars.str(it) }
             .mapNotNull { effortRules.normalizeSummary(it) }
             .firstOrNull()
         // v27 visibility fold (the header's "folds summary to detailed" clause — was unimplemented,
@@ -744,7 +744,7 @@ private class ResponsesInputBuilder(
     private fun addReasoningOnce(sink: JsonArrayBuilder, item: JsonObject, opts: BuildOptions) {
         // Dedup is an rs_-id concept; an id-less item (possible only through a custom decoder —
         // the Replay codec always carries one) has nothing to collide with and passes through.
-        val id = item["id"].str()
+        val id = JsonScalars.str(item["id"])
         if (id == null || opts.injectedReasoningIds.add(id)) sink.add(item)
     }
 

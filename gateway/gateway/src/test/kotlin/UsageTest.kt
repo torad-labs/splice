@@ -12,7 +12,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.turn.Usage
 import splice.core.usage.RateLimitState
-import splice.core.usage.computeUsageWarn
+import splice.core.usage.UsageWarnPolicy
 import splice.gateway.head.RoundUsage
 import splice.gateway.usage.UsageHud
 import splice.gateway.usage.UsageJson
@@ -29,18 +29,18 @@ class UsageTest {
 
     @Test
     fun `warn - ratelimit signal has priority and bounds`() {
-        val ninety = computeUsageWarn(ratelimit = RateLimitState(1000, 100, "6m0s"), warnPct = 80)
+        val ninety = UsageWarnPolicy.computeUsageWarn(ratelimit = RateLimitState(1000, 100, "6m0s"), warnPct = 80)
         assertEquals("warn", ninety.level)
         assertEquals(90, ninety.pct)
         assertEquals("ratelimit", ninety.source)
         assertEquals("6m0s", ninety.reset)
-        assertEquals("critical", computeUsageWarn(ratelimit = RateLimitState(1000, 0, null)).level)
-        assertEquals("critical", computeUsageWarn(ratelimit = RateLimitState(1000, 15, null)).level)
-        assertEquals("ok", computeUsageWarn(ratelimit = RateLimitState(1000, 500, null)).level)
+        assertEquals("critical", UsageWarnPolicy.computeUsageWarn(ratelimit = RateLimitState(1000, 0, null)).level)
+        assertEquals("critical", UsageWarnPolicy.computeUsageWarn(ratelimit = RateLimitState(1000, 15, null)).level)
+        assertEquals("ok", UsageWarnPolicy.computeUsageWarn(ratelimit = RateLimitState(1000, 500, null)).level)
         // ratelimit present but incomplete -> falls through to tokens5h
         assertEquals(
             "tokens5h",
-            computeUsageWarn(
+            UsageWarnPolicy.computeUsageWarn(
                 outputTokens5h = 10,
                 ratelimit = RateLimitState(null, null, null),
                 warnTokens5h = 100,
@@ -50,11 +50,11 @@ class UsageTest {
 
     @Test
     fun `warn - tokens5h fallback thresholds and none`() {
-        assertEquals("ok", computeUsageWarn(outputTokens5h = 10, warnTokens5h = 100).level)
-        assertEquals("warn", computeUsageWarn(outputTokens5h = 85, warnTokens5h = 100).level)
-        assertEquals("critical", computeUsageWarn(outputTokens5h = 120, warnTokens5h = 100).level)
-        assertEquals(100, computeUsageWarn(outputTokens5h = 120, warnTokens5h = 100).pct)
-        val none = computeUsageWarn(outputTokens5h = 999_999, warnTokens5h = 0)
+        assertEquals("ok", UsageWarnPolicy.computeUsageWarn(outputTokens5h = 10, warnTokens5h = 100).level)
+        assertEquals("warn", UsageWarnPolicy.computeUsageWarn(outputTokens5h = 85, warnTokens5h = 100).level)
+        assertEquals("critical", UsageWarnPolicy.computeUsageWarn(outputTokens5h = 120, warnTokens5h = 100).level)
+        assertEquals(100, UsageWarnPolicy.computeUsageWarn(outputTokens5h = 120, warnTokens5h = 100).pct)
+        val none = UsageWarnPolicy.computeUsageWarn(outputTokens5h = 999_999, warnTokens5h = 0)
         assertEquals("ok", none.level)
         assertEquals("none", none.source)
     }

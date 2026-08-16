@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.parse.parseAnthropicBody
+import splice.core.parse.AnthropicParse
 import splice.gateway.compact.COMPACT_MARKER
 import splice.gateway.compact.CompactClassifier
 import splice.gateway.compact.CompactStats
@@ -15,7 +15,7 @@ import splice.gateway.compact.ShadowClassifier
 import splice.gateway.compact.compactMarkers
 import java.nio.file.Path
 
-private fun body(json: String) = parseAnthropicBody(json).typed
+private fun body(json: String) = AnthropicParse.parseAnthropicBody(json).typed
 
 private val classifier = CompactClassifier()
 

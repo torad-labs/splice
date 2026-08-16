@@ -6,7 +6,7 @@ package splice.app.cli
 import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
 import splice.core.config.InstallPaths
-import splice.core.util.runCatchingCancellable
+import splice.core.util.Cancellables
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
@@ -131,7 +131,7 @@ internal class DoctorProbes {
     private fun ghCheck(envReader: (String) -> String?): DoctorCheck {
         val gh = binaryOnPath("gh", envReader)
             ?: return DoctorCheck("gh", CheckStatus.INFO, "not installed (only needed to verify release-mode installs)")
-        val authed = runCatchingCancellable {
+        val authed = Cancellables.runCatchingCancellable {
             val process = ProcessBuilder(gh.toString(), "auth", "status")
                 .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
@@ -165,13 +165,13 @@ internal class DoctorProbes {
     // PATH can carry a malformed entry (garbage bytes under a non-UTF-8 jnu.encoding); Paths.get()
     // throws InvalidPathException (an IllegalArgumentException) on those — skip the entry, don't
     // let it collapse the whole PATH scan.
-    private fun safePath(raw: String): Path? = runCatchingCancellable { Paths.get(raw) }.getOrNull()
+    private fun safePath(raw: String): Path? = Cancellables.runCatchingCancellable { Paths.get(raw) }.getOrNull()
 
     // waitFor() runs BEFORE any read: a probed binary that blocks on its inherited stdin (or just
     // hangs) must not deadlock doctor waiting on output that will never come. Only after a clean or
     // forced exit do we read — the output is tiny --version text, far below the pipe buffer, so a
     // post-exit read cannot deadlock.
-    private fun capturedVersion(command: List<String>): String = runCatchingCancellable {
+    private fun capturedVersion(command: List<String>): String = Cancellables.runCatchingCancellable {
         val process = ProcessBuilder(command).redirectErrorStream(true).start()
         if (!process.waitFor(PROBE_SECONDS, TimeUnit.SECONDS)) {
             process.destroyForcibly()

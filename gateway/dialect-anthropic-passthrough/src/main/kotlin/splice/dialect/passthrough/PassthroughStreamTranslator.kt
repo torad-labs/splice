@@ -27,8 +27,7 @@ import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.DaemonLog
-import splice.core.util.firstLong
-import splice.core.util.strOrEmpty
+import splice.core.util.JsonScalars
 import splice.spi.BufferCapacity
 import splice.spi.StreamTranslator
 import splice.spi.TerminalStates
@@ -166,7 +165,7 @@ public class PassthroughStreamTranslator(
     )
 
     private suspend fun onEvent(evt: JsonObject, sink: WireSink) {
-        when (strOrEmpty(evt["type"])) {
+        when (JsonScalars.strOrEmpty(evt["type"])) {
             "message_start" -> harvestUsage((evt["message"] as? JsonObject)?.get("usage") as? JsonObject)
             "content_block_start" -> onBlockStart(evt, sink)
             "content_block_delta" -> onBlockDelta(evt, sink)
@@ -183,7 +182,7 @@ public class PassthroughStreamTranslator(
     private suspend fun onBlockStart(evt: JsonObject, sink: WireSink) {
         val index = intIndex(evt) ?: return
         val cb = evt["content_block"] as? JsonObject
-        blocks[index] = when (strOrEmpty(cb?.get("type"))) {
+        blocks[index] = when (JsonScalars.strOrEmpty(cb?.get("type"))) {
             "text" -> Block(Kind.TEXT, sink.openText())
             "thinking" -> Block(Kind.THINKING, sink.openThinking())
             "tool_use" -> {
@@ -191,7 +190,10 @@ public class PassthroughStreamTranslator(
                 // JsonNull id must never leak as the literal string "null" into that round-trip (L3);
                 // strOrEmpty keeps it filtered (review 2026-07-22 round 3).
                 hasToolUse = true
-                Block(Kind.TOOL, sink.openTool(strOrEmpty(cb?.get("id")), strOrEmpty(cb?.get("name"))))
+                Block(
+                    Kind.TOOL,
+                    sink.openTool(JsonScalars.strOrEmpty(cb?.get("id")), JsonScalars.strOrEmpty(cb?.get("name"))),
+                )
             }
             // server_tool_use / web_search_tool_result / unknown: record + swallow its deltas.
             else -> Block(Kind.IGNORED, null)
@@ -218,15 +220,15 @@ public class PassthroughStreamTranslator(
     }
 
     private suspend fun applyDelta(block: Block, wire: WireBlockIndex, delta: JsonObject, sink: WireSink) {
-        when (strOrEmpty(delta["type"])) {
+        when (JsonScalars.strOrEmpty(delta["type"])) {
             "text_delta" -> {
-                val t = strOrEmpty(delta["text"])
+                val t = JsonScalars.strOrEmpty(delta["text"])
                 textBuf.append(t)
                 emittedText = true
                 sink.textDelta(wire, t)
             }
             "thinking_delta" -> {
-                val t = strOrEmpty(delta["thinking"])
+                val t = JsonScalars.strOrEmpty(delta["thinking"])
                 thinkingBuf.append(t)
                 // CX-09: the flag means "the client RECEIVED reasoning", not "a block was opened".
                 // Kimi can open a thinking block and close it having sent nothing; counting that
@@ -236,9 +238,9 @@ public class PassthroughStreamTranslator(
                 if (t.isNotBlank()) emittedThinking = true
                 sink.thinkingDelta(wire, t)
             }
-            "input_json_delta" -> sink.inputJsonDelta(wire, strOrEmpty(delta["partial_json"]))
+            "input_json_delta" -> sink.inputJsonDelta(wire, JsonScalars.strOrEmpty(delta["partial_json"]))
             "signature_delta" -> {
-                sink.signatureDelta(wire, strOrEmpty(delta["signature"]))
+                sink.signatureDelta(wire, JsonScalars.strOrEmpty(delta["signature"]))
                 block.signatureSeen = true
             }
             else -> Unit
@@ -263,7 +265,7 @@ public class PassthroughStreamTranslator(
     }
 
     private fun onMessageDelta(evt: JsonObject) {
-        val reason = strOrEmpty((evt["delta"] as? JsonObject)?.get("stop_reason"))
+        val reason = JsonScalars.strOrEmpty((evt["delta"] as? JsonObject)?.get("stop_reason"))
         when (reason) {
             "tool_use" -> hasToolUse = true
             "max_tokens" -> incomplete = true
@@ -286,22 +288,22 @@ public class PassthroughStreamTranslator(
 
     private fun onError(evt: JsonObject) {
         val err = evt["error"] as? JsonObject
-        failureType = when (strOrEmpty(err?.get("type"))) {
+        failureType = when (JsonScalars.strOrEmpty(err?.get("type"))) {
             "overloaded_error" -> ErrorType.OVERLOADED
             "rate_limit_error" -> ErrorType.RATE_LIMIT
             "authentication_error" -> ErrorType.AUTHENTICATION
             "invalid_request_error" -> ErrorType.INVALID_REQUEST
             else -> ErrorType.API_ERROR
         }
-        failureMessage = strOrEmpty(err?.get("message")).ifEmpty { "error" }
+        failureMessage = JsonScalars.strOrEmpty(err?.get("message")).ifEmpty { "error" }
     }
 
     private fun harvestUsage(u: JsonObject?) {
         u ?: return
-        u.firstLong("input_tokens")?.let { inputTokens = it }
-        u.firstLong("cache_read_input_tokens")?.let { cacheRead = it }
+        JsonScalars.firstLong(u, "input_tokens")?.let { inputTokens = it }
+        JsonScalars.firstLong(u, "cache_read_input_tokens")?.let { cacheRead = it }
         cacheCreationTokens(u)?.let { cacheCreation = it }
-        u.firstLong("output_tokens")?.let { outputTokens = it }
+        JsonScalars.firstLong(u, "output_tokens")?.let { outputTokens = it }
     }
 
     /** CX-18: the flat total, else the sum of Anthropic's newer per-TTL `cache_creation` buckets.
@@ -309,7 +311,7 @@ public class PassthroughStreamTranslator(
      *  is what the two TTL buckets mean. These tokens fold into inputTokens in [successOutcome],
      *  so missing them understated the whole context-window percentage on cache-writing turns. */
     private fun cacheCreationTokens(u: JsonObject): Long? =
-        u.firstLong("cache_creation_input_tokens")
+        JsonScalars.firstLong(u, "cache_creation_input_tokens")
             ?: (u["cache_creation"] as? JsonObject)?.let { nested ->
                 // SCOPED to *_input_tokens, not every value in the object. Summing everything
                 // picks up a future non-additive sibling — a `total`, a `ttl` in seconds — and

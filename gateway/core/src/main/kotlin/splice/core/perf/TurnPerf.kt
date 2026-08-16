@@ -83,7 +83,29 @@ public object PerfKeys {
 public data class PerfSnapshot(
     val marks: Map<String, Long>,
     val counters: Map<String, Long>,
-)
+) {
+    /**
+     * The one-line perf summary: marks in pipeline order, then counters, skipping absent fields.
+     * `[codex] perf outcome=ok compact=false model=m recv=3 ... | auth_ms=1 ... out_tokens=850`
+     *
+     * A member since the 2026-08-16 style migration (HD-M8): it reads nothing but this snapshot, so
+     * the former trailing `snap` parameter became the receiver and the call site gained one.
+     */
+    public fun perfLine(head: String, outcome: String, compact: Boolean, model: String): String {
+        val markPart = PerfKeys.markOrder
+            .mapNotNull { k -> marks[k]?.let { "$k=$it" } }
+            .joinToString(" ")
+        val counterPart = counters.entries.joinToString(" ") { (k, v) -> "$k=$v" }
+        return buildString {
+            append("[").append(head).append("] perf outcome=").append(outcome)
+            append(" compact=").append(compact)
+            append(" model=").append(model)
+            if (markPart.isNotEmpty()) append(" ").append(markPart)
+            if (counterPart.isNotEmpty()) append(" | ").append(counterPart)
+            append("\n")
+        }
+    }
+}
 
 public class TurnPerf(private val clock: () -> Long = System::currentTimeMillis) {
 
@@ -136,25 +158,13 @@ public class TurnPerf(private val clock: () -> Long = System::currentTimeMillis)
     }
 }
 
-/** Time a suspending [block] into [counter] when perf is wired; run it plain otherwise. */
-public suspend fun <T> TurnPerf?.timedOr(counter: String, block: suspend () -> T): T =
-    if (this == null) block() else timed(counter, block)
+/** The NULLABLE-perf timing wrapper. A named object since the 2026-08-16 style migration (HD-M8):
+ *  the receiver is `TurnPerf?`, and Kotlin has no member function on a nullable type — so the
+ *  receiver became the first argument (`perf.timedOr(k) { … }` reads
+ *  `TurnPerfTiming.timedOr(perf, k) { … }`) rather than the call sites growing a null branch. */
+public object TurnPerfTiming {
 
-/**
- * The one-line perf summary: marks in pipeline order, then counters, skipping absent fields.
- * `[codex] perf outcome=ok compact=false model=m recv=3 ... | auth_ms=1 ... out_tokens=850`
- */
-public fun perfLine(head: String, outcome: String, compact: Boolean, model: String, snap: PerfSnapshot): String {
-    val markPart = PerfKeys.markOrder
-        .mapNotNull { k -> snap.marks[k]?.let { "$k=$it" } }
-        .joinToString(" ")
-    val counterPart = snap.counters.entries.joinToString(" ") { (k, v) -> "$k=$v" }
-    return buildString {
-        append("[").append(head).append("] perf outcome=").append(outcome)
-        append(" compact=").append(compact)
-        append(" model=").append(model)
-        if (markPart.isNotEmpty()) append(" ").append(markPart)
-        if (counterPart.isNotEmpty()) append(" | ").append(counterPart)
-        append("\n")
-    }
+    /** Time a suspending [block] into [counter] when [perf] is wired; run it plain otherwise. */
+    public suspend fun <T> timedOr(perf: TurnPerf?, counter: String, block: suspend () -> T): T =
+        if (perf == null) block() else perf.timed(counter, block)
 }

@@ -30,7 +30,7 @@ import splice.app.TopologyLoader
 import splice.core.auth.RefreshAttempt
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
-import splice.core.util.discard
+import splice.core.util.Cancellables
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
@@ -66,8 +66,8 @@ private class ChatUpstream {
                 .toByteArray(),
         )
         ex.responseBody.write("\n\n".toByteArray())
-        runCatching { ex.responseBody.close() }.discard("test-server teardown")
-        runCatching { ex.close() }.discard("test-server teardown")
+        Cancellables.discard(runCatching { ex.responseBody.close() }, "test-server teardown")
+        Cancellables.discard(runCatching { ex.close() }, "test-server teardown")
     }
 }
 
@@ -103,8 +103,8 @@ private class AnthropicUpstream {
             """{"type":"message_stop"}""",
         )
         frames.forEach { ex.responseBody.write("data: $it\n\n".toByteArray()) }
-        runCatching { ex.responseBody.close() }.discard("test-server teardown")
-        runCatching { ex.close() }.discard("test-server teardown")
+        Cancellables.discard(runCatching { ex.responseBody.close() }, "test-server teardown")
+        Cancellables.discard(runCatching { ex.close() }, "test-server teardown")
     }
 }
 

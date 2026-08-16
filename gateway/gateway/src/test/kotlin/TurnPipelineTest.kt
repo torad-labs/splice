@@ -14,7 +14,7 @@ import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.MIRROR_MIN_CHARS
 import splice.core.turn.PROMOTE_MIN_CHARS
-import splice.core.turn.ReasoningDisplay
+import splice.core.turn.ReasoningDisplayParser
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
@@ -78,7 +78,7 @@ class TurnPipelineTest {
 
     private fun meta(showReasoning: String) = TurnMeta(
         compact = false,
-        showReasoning = ReasoningDisplay.from(showReasoning),
+        showReasoning = ReasoningDisplayParser.from(showReasoning),
         stream = true,
         originalModel = "claude-codex--gpt-5.6-sol",
         upstreamModel = "gpt-5.6-sol",

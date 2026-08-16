@@ -41,16 +41,16 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.GATEWAY_VERSION
-import splice.core.auth.bearerToken
+import splice.core.auth.BearerScheme
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 import splice.core.model.DiscoveryRow
-import splice.core.parse.parseAnthropicBody
+import splice.core.parse.AnthropicParse
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.util.AsyncFileIo
+import splice.core.util.Cancellables
 import splice.core.util.MonoClock
-import splice.core.util.runCatchingCancellable
 import splice.gateway.compact.CompactClassifier
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
@@ -376,7 +376,7 @@ public class HeadServer(
         val body = receiveBodyBounded(call, deps.maxRequestBytes)
         perf.mark(PerfKeys.RECV)
         perf.setCount(PerfKeys.REQ_BYTES, body.bytes.toLong())
-        val parsed = runCatchingCancellable { parseAnthropicBody(body.text) }.getOrNull()
+        val parsed = Cancellables.runCatchingCancellable { AnthropicParse.parseAnthropicBody(body.text) }.getOrNull()
             ?: return Preparation.Rejected("invalid request body")
         val unwrappedModel = provider.catalog.unwrap(parsed.typed.model)
         if (!provider.catalog.contains(parsed.typed.model)) {
@@ -425,7 +425,7 @@ public class HeadServer(
         val body = materializeOrRespond(call, fastFail = true) {
             receiveBodyBounded(call, deps.maxRequestBytes)
         } ?: return
-        val parsed = runCatchingCancellable { parseAnthropicBody(body.text) }.getOrNull()
+        val parsed = Cancellables.runCatchingCancellable { AnthropicParse.parseAnthropicBody(body.text) }.getOrNull()
         if (parsed == null) {
             call.respondText(
                 responses.errorBodyJson(INVALID_REQUEST_ERROR, "invalid request body"),
@@ -478,7 +478,7 @@ public class HeadServer(
         if (deps.forwardClientAuth) return true
         // Scheme parsing shared with MgmtKey.matchesBearer (core bearerToken) — the two planes
         // drifted on case-sensitivity when each carried its own regex.
-        val bearer = bearerToken(call.request.headers[HttpHeaders.Authorization])
+        val bearer = BearerScheme.bearerToken(call.request.headers[HttpHeaders.Authorization])
         val presented = bearer ?: call.request.headers["x-api-key"]
         val expectedBytes = deps.inferenceToken.toByteArray(Charsets.UTF_8)
         val presentedBytes = presented?.toByteArray(Charsets.UTF_8)

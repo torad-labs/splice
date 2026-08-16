@@ -12,13 +12,13 @@ import splice.app.LoginSpec
 import splice.app.OAuthLoginFlow
 import splice.app.TopologyLoader
 import splice.core.config.KeyStore
+import splice.core.config.KeyStorePath
 import splice.core.config.StatePaths
 import splice.core.launch.LoginOutcomeFile
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
-import splice.core.topology.ambiguousHeadMessage
-import splice.core.topology.effectiveApiKeyEnv
-import splice.core.util.str
+import splice.core.topology.TopologyMessages
+import splice.core.util.JsonScalars
 import splice.provider.codex.CodexOAuth
 import splice.provider.codex.CodexOAuthEndpoints
 import splice.provider.grok.GrokOAuth
@@ -93,7 +93,7 @@ internal class LoginCommand {
     // Masked read into ~/.config/splice/keys.toml — the key never hits shell history, ps, or a
     // transcript. Live daemons pick it up on the next request; restart only refreshes status.
     private fun apiKeyLogin(providerKey: String, provider: ProviderConfig): Boolean {
-        val envVar = effectiveApiKeyEnv(providerKey, provider.auth)
+        val envVar = provider.auth.effectiveApiKeyEnv(providerKey)
         val console = System.console()
         val value = when {
             console == null -> {
@@ -105,7 +105,7 @@ internal class LoginCommand {
         }
         if (value != null && value.isEmpty()) println("splice: empty key — nothing stored.")
         return !value.isNullOrEmpty() && runCatching {
-            val store = KeyStore(KeyStore.defaultPath())
+            val store = KeyStore(KeyStorePath.defaultPath())
             store.write(envVar, value)
             println("$envVar stored to ${store.path} (0600) — live daemons pick it up on the next request.")
         }.onFailure { System.err.println("splice: failed to store key: ${it.message}") }.isSuccess
@@ -120,7 +120,7 @@ internal class LoginCommand {
                 if (keys.isEmpty()) {
                     "splice: unknown head '$headArg' (heads: ${topology.heads.keys})"
                 } else {
-                    "splice: " + ambiguousHeadMessage(headArg, keys)
+                    "splice: " + TopologyMessages.ambiguousHeadMessage(headArg, keys)
                 },
             )
             return null
@@ -183,7 +183,7 @@ internal class LoginCommand {
 
     private fun codexAuthJson(body: String): String {
         val obj = json.parseToJsonElement(body).jsonObject
-        fun s(k: String) = obj.str(k)
+        fun s(k: String) = JsonScalars.str(obj, k)
         return codexOAuth.authJsonFromTokens(
             idToken = s("id_token"),
             accessToken = s("access_token").orEmpty(),

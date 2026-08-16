@@ -24,12 +24,12 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.parse.AnthropicTurnBody
+import splice.core.turn.CompactInstructions
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.compactDirective
-import splice.core.turn.withCompactDirective
 import splice.core.util.DaemonLog
-import splice.core.util.strOrEmpty
+import splice.core.util.JsonScalars
 import splice.core.wire.AnthropicRequest
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -287,7 +287,7 @@ public class PassthroughRequestBuilder(
 
     /** Keep an accepted block (cache_control stripped, tool_result inner content filtered) or drop. */
     private fun scrubBlock(block: JsonObject): JsonObject? {
-        val type = strOrEmpty(block["type"])
+        val type = JsonScalars.strOrEmpty(block["type"])
         quirks.blockAllowlist?.let { if (type !in it) return null }
         if (isEmptyThinking(type, block)) return null
         return rebuildBlock(block, type)
@@ -296,7 +296,8 @@ public class PassthroughRequestBuilder(
     /** A whitespace-only thinking block that carries no signature holds nothing worth keeping. */
     private fun isEmptyThinking(type: String, block: JsonObject): Boolean {
         if (type != TYPE_THINKING) return false
-        return strOrEmpty(block["thinking"]).isBlank() && strOrEmpty(block["signature"]).isEmpty()
+        return JsonScalars.strOrEmpty(block["thinking"]).isBlank() &&
+            JsonScalars.strOrEmpty(block["signature"]).isEmpty()
     }
 
     private fun rebuildBlock(block: JsonObject, type: String): JsonObject = buildJsonObject {
@@ -359,7 +360,9 @@ public class PassthroughRequestBuilder(
             // verbatim-forwarding dialect would silently replace a client's unusual-but-forwardable
             // system with the directive alone. Forward it untouched instead and append the
             // directive as its own block, so nothing the client sent is ever dropped.
-            is JsonPrimitive -> JsonPrimitive(withCompactDirective(strOrEmpty(scrubbed), compact = true))
+            is JsonPrimitive -> JsonPrimitive(
+                CompactInstructions.withCompactDirective(JsonScalars.strOrEmpty(scrubbed), compact = true),
+            )
             else -> buildJsonArray {
                 add(scrubbed)
                 add(directiveBlock)

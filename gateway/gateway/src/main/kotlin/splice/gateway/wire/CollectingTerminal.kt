@@ -14,7 +14,7 @@ import kotlinx.serialization.json.put
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
-import splice.core.util.runCatchingCancellable
+import splice.core.util.Cancellables
 import java.util.concurrent.atomic.AtomicBoolean
 
 private const val OK_STATUS = 200
@@ -214,7 +214,7 @@ public class CollectingTerminal(
 
     private fun parseToolInput(raw: String): JsonObject {
         if (raw.isBlank()) return EMPTY_INPUT // a tool with genuinely no args — not a parse failure
-        val parsed = runCatchingCancellable { Json.parseToJsonElement(raw).jsonObject }.getOrNull()
+        val parsed = Cancellables.runCatchingCancellable { Json.parseToJsonElement(raw).jsonObject }.getOrNull()
         if (parsed == null) malformedToolInput = true // HEAD-003: non-blank input that never parsed
         return parsed ?: EMPTY_INPUT
     }

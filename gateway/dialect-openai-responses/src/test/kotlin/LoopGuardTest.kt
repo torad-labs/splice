@@ -12,8 +12,8 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.parse.parseAnthropicBody
-import splice.core.turn.ReasoningDisplay
+import splice.core.parse.AnthropicParse
+import splice.core.turn.ReasoningDisplayParser
 import splice.dialect.responses.BuildOptions
 import splice.dialect.responses.InjectPriorReasoning
 import splice.dialect.responses.LoopGuard
@@ -29,7 +29,7 @@ private fun opts() = BuildOptions(
     upstreamModel = "gpt-5.6-sol",
     configEffort = null,
     configSummary = null,
-    showReasoning = ReasoningDisplay.from("text"),
+    showReasoning = ReasoningDisplayParser.from("text"),
     replayReasoning = InjectPriorReasoning(false),
     includeEncryptedReasoning = RequestEncryptedReasoning(true),
     sessionId = null,
@@ -58,7 +58,7 @@ class LoopGuardTest {
     }
 
     private fun analyze(bodyJson: String) =
-        LoopGuard.analyze(parseAnthropicBody(bodyJson).typed.messages)
+        LoopGuard.analyze(AnthropicParse.parseAnthropicBody(bodyJson).typed.messages)
 
     private fun body(tail: String) = """{
         "model":"claude-codex--gpt-5.6-sol","max_tokens":1024,"stream":true,
@@ -126,7 +126,7 @@ class LoopGuardTest {
 
     @Test
     fun `the directive rides the wire ahead of the error text`() {
-        val parsed = parseAnthropicBody(body(conversation(3)))
+        val parsed = AnthropicParse.parseAnthropicBody(body(conversation(3)))
         val built = ResponsesRequestBuilder(CODEX).build(
             parsed.typed,
             parsed.raw,
@@ -199,7 +199,7 @@ class LoopGuardTest {
 
     @Test
     fun `quirk off restores plain passthrough`() {
-        val parsed = parseAnthropicBody(body(conversation(4)))
+        val parsed = AnthropicParse.parseAnthropicBody(body(conversation(4)))
         val built = ResponsesRequestBuilder(CODEX.copy(loopGuard = false)).build(
             parsed.typed,
             parsed.raw,

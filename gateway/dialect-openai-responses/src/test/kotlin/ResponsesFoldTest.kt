@@ -16,14 +16,14 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.reasoning.encodeReasoningEnvelope
+import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesContinuation
 import splice.dialect.responses.ResponsesFoldController
 import splice.spi.FoldRound
-import splice.core.reasoning.decodeReasoningEnvelope as coreDecode
+import splice.core.reasoning.ReasoningReplay.decodeReasoningEnvelope as coreDecode
 
 private val CONFIG = FoldConfig(models = setOf("gpt-5.6-luna"))
 private val controller = ResponsesFoldController(CONFIG) { coreDecode(it) }
@@ -35,7 +35,7 @@ private val priorRequest: JsonObject = Json.parseToJsonElement(
         "store":false,"stream":true,"instructions":"You are a test."}""",
 ).jsonObject
 
-private fun envelopeFor(id: String): String = encodeReasoningEnvelope(
+private fun envelopeFor(id: String): String = ReasoningReplay.encodeReasoningEnvelope(
     buildJsonObject {
         put("type", "reasoning")
         put("id", id)

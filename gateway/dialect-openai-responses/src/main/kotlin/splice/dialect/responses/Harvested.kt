@@ -11,8 +11,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import splice.core.turn.ToolSearchCall
 import splice.core.turn.Usage
-import splice.core.util.firstLong
-import splice.core.util.strOrEmpty
+import splice.core.util.JsonScalars
 
 public data class Harvested(val text: String, val thinking: String)
 
@@ -37,8 +36,8 @@ public class ResponsesHarvest {
             (item["summary"] as? JsonArray ?: return "")
                 .joinToString(PARA) { part ->
                     when (part) {
-                        is JsonPrimitive -> strOrEmpty(part)
-                        is JsonObject -> strOrEmpty(part[FIELD_TEXT])
+                        is JsonPrimitive -> JsonScalars.strOrEmpty(part)
+                        is JsonObject -> JsonScalars.strOrEmpty(part[FIELD_TEXT])
                         else -> ""
                     }
                 },
@@ -56,17 +55,22 @@ public class ResponsesHarvest {
 
     /** One free-form reasoning field rendered readable, or null when absent/empty. */
     private fun freeFormReasoningText(v: JsonElement?): String? = when (v) {
-        is JsonPrimitive -> strOrEmpty(v).ifEmpty { null }
+        is JsonPrimitive -> JsonScalars.strOrEmpty(v).ifEmpty { null }
         is JsonArray -> normalizeParagraphs(
             v.joinToString(PARA) { part ->
                 when (part) {
-                    is JsonPrimitive -> strOrEmpty(part)
-                    is JsonObject -> strOrEmpty(part[FIELD_TEXT]).ifEmpty { strOrEmpty(part[FIELD_CONTENT]) }
+                    is JsonPrimitive -> JsonScalars.strOrEmpty(part)
+                    is JsonObject ->
+                        JsonScalars.strOrEmpty(part[FIELD_TEXT])
+                            .ifEmpty { JsonScalars.strOrEmpty(part[FIELD_CONTENT]) }
                     else -> ""
                 }
             },
         ).ifEmpty { null }
-        is JsonObject -> strOrEmpty(v[FIELD_TEXT]).ifEmpty { strOrEmpty(v[FIELD_CONTENT]) }.ifEmpty { null }
+        is JsonObject ->
+            JsonScalars.strOrEmpty(v[FIELD_TEXT])
+                .ifEmpty { JsonScalars.strOrEmpty(v[FIELD_CONTENT]) }
+                .ifEmpty { null }
         else -> null
     }
 
@@ -78,7 +82,7 @@ public class ResponsesHarvest {
         val thinking = StringBuilder()
         for (el in output) {
             val item = el as? JsonObject ?: continue
-            when (strOrEmpty(item["type"])) {
+            when (JsonScalars.strOrEmpty(item["type"])) {
                 "reasoning" -> appendReasoningText(thinking, item)
                 "message" -> text.append(messageText(item))
                 else -> Unit
@@ -101,8 +105,8 @@ public class ResponsesHarvest {
         val out = StringBuilder()
         for (c in content) {
             val obj = c as? JsonObject ?: continue
-            val type = strOrEmpty(obj["type"])
-            if (type == "output_text" || type == FIELD_TEXT) out.append(strOrEmpty(obj[FIELD_TEXT]))
+            val type = JsonScalars.strOrEmpty(obj["type"])
+            if (type == "output_text" || type == FIELD_TEXT) out.append(JsonScalars.strOrEmpty(obj[FIELD_TEXT]))
         }
         return out.toString()
     }
@@ -116,7 +120,7 @@ public class ResponsesHarvest {
         val output = resp?.get("output") as? JsonArray ?: return emptyList()
         return output.asSequence()
             .filterIsInstance<JsonObject>()
-            .filter { strOrEmpty(it["type"]) == TYPE_TOOL_SEARCH_CALL }
+            .filter { JsonScalars.strOrEmpty(it["type"]) == TYPE_TOOL_SEARCH_CALL }
             .mapNotNull(frames::parseToolSearchCall)
             .toList()
     }
@@ -126,14 +130,15 @@ public class ResponsesHarvest {
     public fun usageFrom(resp: JsonObject?): Usage {
         val usage = resp?.get("usage") as? JsonObject ?: return Usage()
         val details = usage["input_tokens_details"] as? JsonObject
-        val cached = details?.firstLong("cached_tokens")?.takeIf { it > 0 }
-            ?: usage.firstLong("cache_read_input_tokens") ?: 0L
+        val cached = JsonScalars.firstLong(details, "cached_tokens")?.takeIf { it > 0 }
+            ?: JsonScalars.firstLong(usage, "cache_read_input_tokens") ?: 0L
         // output_tokens_details.reasoning_tokens carries the 518n-2 truncation fingerprint; absent on
         // non-reasoning backends (→ 0 → never fold).
-        val reasoning = (usage["output_tokens_details"] as? JsonObject)?.firstLong("reasoning_tokens") ?: 0L
+        val reasoning =
+            JsonScalars.firstLong(usage["output_tokens_details"] as? JsonObject, "reasoning_tokens") ?: 0L
         return Usage(
-            inputTokens = usage.firstLong("input_tokens", "prompt_tokens") ?: 0L,
-            outputTokens = usage.firstLong("output_tokens", "completion_tokens") ?: 0L,
+            inputTokens = JsonScalars.firstLong(usage, "input_tokens", "prompt_tokens") ?: 0L,
+            outputTokens = JsonScalars.firstLong(usage, "output_tokens", "completion_tokens") ?: 0L,
             cachedTokens = cached,
             reasoningTokens = reasoning,
         )

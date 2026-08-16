@@ -10,11 +10,11 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.parse.parseAnthropicBody
+import splice.core.parse.AnthropicParse
 import splice.core.turn.COMPACT_DIRECTIVE_HEAD
+import splice.core.turn.CompactInstructions
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.compactDirective
-import splice.core.turn.withCompactDirective
 import splice.dialect.passthrough.BuiltPassthroughRequest
 import splice.dialect.passthrough.PassthroughQuirks
 import splice.dialect.passthrough.PassthroughQuirksDefaults
@@ -31,7 +31,7 @@ private fun buildFull(
     compact: Boolean = false,
     configEffort: String? = null,
 ): BuiltPassthroughRequest {
-    val body = parseAnthropicBody(json)
+    val body = AnthropicParse.parseAnthropicBody(json)
     return PassthroughRequestBuilder(quirks, configEffort)
         .build(body, upstreamModel = "k3", originalModel = "claude-kimi--k3[1m]", compact = compact)
 }
@@ -70,7 +70,7 @@ class PassthroughRequestBuilderTest {
             compact = true,
         )
         val system = req["system"]!!.jsonPrimitive.content
-        assertEquals(withCompactDirective("be brief", compact = true), system)
+        assertEquals(CompactInstructions.withCompactDirective("be brief", compact = true), system)
     }
 
     @Test
@@ -252,7 +252,7 @@ class PassthroughRequestBuilderTest {
     fun `the unrecognized-effort fallback logs once per builder lifetime, not per turn`() {
         val logged = mutableListOf<String>()
         val builder = PassthroughRequestBuilder(PASS, configEffort = "medium", log = logged::add)
-        val body = parseAnthropicBody("""{"model":"m","messages":[{"role":"user","content":"hi"}]}""")
+        val body = AnthropicParse.parseAnthropicBody("""{"model":"m","messages":[{"role":"user","content":"hi"}]}""")
         builder.build(body, upstreamModel = "k3", originalModel = "claude-kimi--k3", compact = false)
         builder.build(body, upstreamModel = "k3", originalModel = "claude-kimi--k3", compact = false)
         assertEquals(1, logged.size)

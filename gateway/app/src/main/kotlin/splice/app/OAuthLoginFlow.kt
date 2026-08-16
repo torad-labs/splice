@@ -12,8 +12,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
-import splice.core.util.discard
-import splice.core.util.runCatchingCancellable
+import splice.core.util.Cancellables
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.URLDecoder
@@ -128,7 +127,7 @@ public object OAuthLoginFlow {
         if (System.console() == null) return
         println("splice: if the browser cannot reach this machine, paste the redirect URL (or just the code) here:")
         val t = Thread {
-            runCatchingCancellable {
+            val pasted = Cancellables.runCatchingCancellable {
                 generateSequence(::readlnOrNull).forEach { line ->
                     if (latch.count == 0L) return@Thread // the loopback already won
                     extractCode(line)?.let { code ->
@@ -138,7 +137,8 @@ public object OAuthLoginFlow {
                     }
                     if (line.isNotBlank()) println("splice: that is not an authorization code — try again:")
                 }
-            }.discard("stdin closed or unreadable; the loopback callback is still live")
+            }
+            Cancellables.discard(pasted, "stdin closed or unreadable; the loopback callback is still live")
         }
         t.isDaemon = true
         t.name = "splice-login-paste-${spec.head}"
@@ -166,8 +166,10 @@ public object OAuthLoginFlow {
         // local page, another process, a malformed-escape probe) is answered but IGNORED, so the
         // genuine provider redirect can still land — a stray request can't abort the flow.
         if (params["state"] != spec.expectedState) {
-            runCatching { respondPage(ex, ok = false, head = spec.head, error = "unexpected callback") }
-                .discard("reply to a stray request is cosmetic; the flow keeps waiting either way")
+            Cancellables.discard(
+                runCatching { respondPage(ex, ok = false, head = spec.head, error = "unexpected callback") },
+                "reply to a stray request is cosmetic; the flow keeps waiting either way",
+            )
             return
         }
         try {
@@ -177,8 +179,10 @@ public object OAuthLoginFlow {
                 params["code"].isNullOrEmpty() -> errRef.set("no authorization code in callback")
                 else -> codeRef.set(params["code"])
             }
-            runCatching { respondPage(ex, ok = codeRef.get() != null, head = spec.head, error = errRef.get()) }
-                .discard("browser page is cosmetic; code/error refs are already recorded for the flow")
+            Cancellables.discard(
+                runCatching { respondPage(ex, ok = codeRef.get() != null, head = spec.head, error = errRef.get()) },
+                "browser page is cosmetic; code/error refs are already recorded for the flow",
+            )
         } finally {
             latch.countDown()
         }
@@ -277,7 +281,7 @@ public object OAuthLoginFlow {
     private suspend fun exchangeAndPersist(spec: LoginSpec, code: String): Boolean {
         val client = authClients.create()
         return try {
-            runCatchingCancellable {
+            Cancellables.runCatchingCancellable {
                 val resp: HttpResponse = client.post(spec.tokenUrl) {
                     header("Content-Type", "application/x-www-form-urlencoded")
                     header("Accept", "application/json")

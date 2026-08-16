@@ -18,8 +18,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import splice.core.parse.parseAnthropicBody
-import splice.core.turn.ReasoningDisplay
+import splice.core.parse.AnthropicParse
+import splice.core.turn.ReasoningDisplayParser
 import splice.dialect.responses.BuildOptions
 import splice.dialect.responses.InjectPriorReasoning
 import splice.dialect.responses.ReasoningCache
@@ -38,7 +38,7 @@ private fun opts(lookup: (String) -> List<String>?) = BuildOptions(
     upstreamModel = "gpt-5.6-sol",
     configEffort = null,
     configSummary = null,
-    showReasoning = ReasoningDisplay.from("text"),
+    showReasoning = ReasoningDisplayParser.from("text"),
     replayReasoning = InjectPriorReasoning(false),
     includeEncryptedReasoning = RequestEncryptedReasoning(true),
     decodeReasoningEnvelope = { data ->
@@ -61,7 +61,7 @@ private fun conversation(rounds: Int): String {
 }
 
 private fun inputItems(json: String, lookup: (String) -> List<String>?): List<String> {
-    val parsed = parseAnthropicBody(json)
+    val parsed = AnthropicParse.parseAnthropicBody(json)
     val req: JsonObject = ResponsesRequestBuilder(CODEX).build(parsed.typed, parsed.raw, opts(lookup)).req
     return req["input"]!!.jsonArray.map { it.toString() }
 }
@@ -81,7 +81,7 @@ class PrefixStabilityDiagnostic {
         // 100ms TTL against ~90s of simulated conversation: the ratio a multi-hour Claude Code
         // session has against the real 30-minute TTL, compressed.
         val cache = ReasoningCache(ttlMs = 100, clock = { now })
-        val convKey = stableIds.stablePromptCacheKey(parseAnthropicBody(conversation(1)).typed)
+        val convKey = stableIds.stablePromptCacheKey(AnthropicParse.parseAnthropicBody(conversation(1)).typed)
         val lookup: (String) -> List<String>? = { id -> cache.lookup(convKey, id) }
 
         var previous = inputItems(conversation(0), lookup)

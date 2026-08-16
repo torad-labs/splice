@@ -15,17 +15,17 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.turn.CompactInstructions
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
-import splice.core.turn.withCompactDirective
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.DocumentBlock
 import splice.core.wire.ImageBlock
 import splice.core.wire.MediaSource
 import splice.core.wire.TextBlock
+import splice.core.wire.ToolChoiceMapping
 import splice.core.wire.ToolResultBlock
 import splice.core.wire.ToolUseBlock
-import splice.core.wire.openAiToolChoice
 
 public data class ChatQuirks(
     val providerTag: String,
@@ -124,7 +124,7 @@ public class ChatRequestBuilder(
      *  Compact ALWAYS produces one (the directive is the point); non-compact passes through
      *  unchanged, including the null that means "emit no system message at all". */
     private fun compactAwareSystem(system: String?, compact: Boolean): String? =
-        if (compact) withCompactDirective(system, compact = true) else system
+        if (compact) CompactInstructions.withCompactDirective(system, compact = true) else system
 
     // The CLOSED request object: the fixed fields via the ChatRequest DTO, plus max_tokens injected
     // by its vendor-dynamic key (max_tokens vs max_completion_tokens) — the one field a fixed DTO
@@ -145,7 +145,7 @@ public class ChatRequestBuilder(
             messages = messages,
             stream = true,
             tools = if (emitTools) toolsArray(body) else null,
-            toolChoice = if (emitTools) openAiToolChoice(body.toolChoice) else null,
+            toolChoice = if (emitTools) ToolChoiceMapping.openAiToolChoice(body.toolChoice) else null,
             reasoningEffort = if (quirks.emitReasoningEffort) effort else null,
             reasoning = if (quirks.emitReasoningEffort && effort != null) {
                 buildJsonObject { put("effort", effort) }

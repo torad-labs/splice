@@ -19,8 +19,8 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
-import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
@@ -64,7 +64,7 @@ internal object LoginInterception {
         loginOutcomeFile: String = "",
     ): Map<String, List<JsonObject>> {
         if (loginCommand.isBlank() && tokenCapture == null) return emptyMap()
-        return runCatchingCancellable {
+        return Cancellables.runCatchingCancellable {
             buildMap {
                 val upsHooks = mutableListOf<JsonObject>()
                 if (loginCommand.isNotBlank()) {
@@ -72,7 +72,7 @@ internal object LoginInterception {
                     val script = writeHookScript(
                         configDir,
                         LOGIN_HOOK_SH,
-                        loginHookScript(
+                        LoginHookScripts.loginHookScript(
                             LoginHookSpec(
                                 loginCommand = loginCommand,
                                 signInLabel = signInLabel,
@@ -86,7 +86,8 @@ internal object LoginInterception {
                     upsHooks += hookEntry(script, HOOK_TIMEOUT_SECONDS)
                 }
                 if (tokenCapture != null) {
-                    val script = writeHookScript(configDir, CAPTURE_HOOK_SH, captureHookScript(tokenCapture))
+                    val script =
+                        writeHookScript(configDir, CAPTURE_HOOK_SH, LoginHookScripts.captureHookScript(tokenCapture))
                     upsHooks += hookEntry(script, HOOK_TIMEOUT_SECONDS)
                 }
                 if (upsHooks.isNotEmpty()) put(USER_PROMPT_SUBMIT, upsHooks)
@@ -101,8 +102,9 @@ internal object LoginInterception {
         spec: TokenCaptureSpec,
         loginCommand: String,
     ): Map<String, List<JsonObject>> =
-        runCatchingCancellable {
-            val script = writeHookScript(configDir, KEYSETUP_HOOK_SH, keySetupScript(spec, loginCommand))
+        Cancellables.runCatchingCancellable {
+            val script =
+                writeHookScript(configDir, KEYSETUP_HOOK_SH, LoginHookScripts.keySetupScript(spec, loginCommand))
             mapOf(SESSION_START to listOf(hookEntry(script, HOOK_TIMEOUT_SECONDS)))
         }.getOrElse { emptyMap() }
 
@@ -139,7 +141,7 @@ internal object LoginInterception {
         if (dst.isSymbolicLink()) Files.delete(dst)
         Files.createDirectories(dst)
         if (globalCommands != null) linkGlobalCommandsInto(dst, globalCommands)
-        Files.writeString(dst.resolve(LOGIN_MD), loginCommandMd(signInLabel, LOGIN_SENTINEL))
+        Files.writeString(dst.resolve(LOGIN_MD), LoginHookScripts.loginCommandMd(signInLabel, LOGIN_SENTINEL))
     }
 
     private fun linkGlobalCommandsInto(dst: Path, globalCommands: Path) {
@@ -167,7 +169,7 @@ internal object LoginInterception {
         Files.writeString(script, content)
         // LNC-005: non-fatal on a filesystem without POSIX perms (unchanged), but no longer silent —
         // a failed chmod here means the generated hook script keeps broader-than-intended modes.
-        val chmod = runCatchingCancellable {
+        val chmod = Cancellables.runCatchingCancellable {
             Files.setPosixFilePermissions(script, PosixFilePermissions.fromString("rwx------"))
         }
         if (chmod.isFailure) {

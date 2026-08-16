@@ -50,24 +50,44 @@ PATHS = {
     "passthrough": "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughStreamTranslator.kt",
 }
 
+# Every token below matches a LITERAL SOURCE SUBSTRING, so a pure-style migration can break one
+# while the invariant is fully intact — the class the W4-A wall's isNotEmpty/isNotBlank note
+# records. The remedy is that wall's, applied per token: an entry may be a TUPLE of equivalent
+# spellings, satisfied by any one of them (see `_alts`). This is not a relaxation — every required
+# call site still has to be matched by something in the file, each spelling still names a whole
+# call site rather than a bare identifier, and deleting the call site removes every spelling at once.
+#
+# 2026-08-16 — HD-M8, the :core style slice: `firstLong` (and its `str` siblings) were top-level
+# EXTENSIONS on kotlinx's JsonObject. That receiver is a foreign type, so the members could not move
+# onto it; they moved onto `object JsonScalars` and the receiver became the FIRST ARGUMENT —
+# `u.firstLong("a", "b")` reads `JsonScalars.firstLong(u, "a", "b")`, and the declaration reads
+# `public fun firstLong(obj: JsonObject?, vararg keys: String)`. Same function, same precedence
+# order, same `toDoubleOrNull()?.toLong()` parsing. The `obj` parameter is nullable only so the
+# former safe-call sites (`details?.firstLong(…)`) stay a receiver-to-argument move; a null obj
+# reads null exactly as the safe call did. The passthrough entries are untouched by the migration
+# (they name a raw `u["cache_creation"]` read and a `parts.sum()`) and stay single spellings.
 REQUIRED = {
     "core": [
-        ("public fun JsonObject.firstLong(vararg keys: String)",
+        (("public fun firstLong(obj: JsonObject?, vararg keys: String)",
+          "public fun JsonObject.firstLong(vararg keys: String)"),
          "the shared alias chain does not exist, so every translator still hand-rolls its own"),
     ],
     "chat": [
-        ('u.firstLong("prompt_tokens", "input_tokens")',
+        (('JsonScalars.firstLong(u, "prompt_tokens", "input_tokens")',
+          'u.firstLong("prompt_tokens", "input_tokens")'),
          "the input bucket has no alias chain — a backend emitting input_tokens lands at zero usage"),
-        ('u.firstLong("completion_tokens", "output_tokens")',
+        (('JsonScalars.firstLong(u, "completion_tokens", "output_tokens")',
+          'u.firstLong("completion_tokens", "output_tokens")'),
          "the output bucket has no alias chain — a backend emitting output_tokens lands at zero"),
     ],
     "harvest": [
-        ('usage.firstLong("input_tokens", "prompt_tokens")',
+        (('JsonScalars.firstLong(usage, "input_tokens", "prompt_tokens")',
+          'usage.firstLong("input_tokens", "prompt_tokens")'),
          "the Responses harvest still hand-rolls its own alias reader — the very 'fourth reader' "
          "the item forbade, and with the OPPOSITE precedence to the chat chain"),
     ],
     "hud": [
-        ("firstLong(*keys)",
+        (("JsonScalars.firstLong(this, *keys)", "firstLong(*keys)"),
          "the HUD payload builder keeps a SECOND shared chain with different numeric parsing "
          "(toDouble vs toLong), so the same bytes yield different usage depending on the reader"),
     ],
@@ -111,6 +131,11 @@ def code_only(text: str | None) -> str | None:
     return _IMPORT_LINE.sub("", stripped)
 
 
+def _alts(entry: str | tuple[str, ...]) -> tuple[str, ...]:
+    """Equivalent spellings of ONE call site. A bare string is its own only spelling."""
+    return (entry,) if isinstance(entry, str) else entry
+
+
 def detect(sources: Mapping[str, str | None]) -> list[str]:
     """Pure detection. No I/O — the selftest feeds it derived sources directly."""
     problems: list[str] = []
@@ -119,9 +144,10 @@ def detect(sources: Mapping[str, str | None]) -> list[str]:
         if text is None:
             problems.append(f"{key} source missing — refusing to pass vacuously")
             continue
-        for token, why in REQUIRED.get(key, []):
-            if token not in text:
-                problems.append(f"{key}: {why} (missing `{token}`)")
+        for entry, why in REQUIRED.get(key, []):
+            alts = _alts(entry)
+            if not any(token in text for token in alts):
+                problems.append(f"{key}: {why} (missing `{' | '.join(alts)}`)")
         found = FORBIDDEN_READER.search(text)
         if found:
             problems.append(f"{key}: {FORBIDDEN_WHY} (found `{found.group(0)}`)")
@@ -154,12 +180,25 @@ def selftest() -> int:
         fails.append(f"the real sources must be GREEN before half-fixes can be derived: {detect(live)}")
     else:
         for key, checks in REQUIRED.items():
-            for token, _why in checks:
+            for entry, _why in checks:
+                # ANY-OF entries hold equivalent spellings, so only the spelling actually PRESENT can
+                # be deleted to derive the half-fix — and every present spelling must go, or the
+                # remaining one keeps the wall green and proves nothing.
+                alts = _alts(entry)
+                text = live[key] or ""
+                present = [token for token in alts if token in text]
+                if not present:
+                    fails.append(f"cannot derive a {key} half-fix: none of {alts!r} is in the real source")
+                    continue
+                for token in present:
+                    text = text.replace(token, "")
                 mutant = dict(live)
-                mutant[key] = (live[key] or "").replace(token, "")
+                mutant[key] = text
                 problems = detect(mutant)
-                if not any(p.startswith(f"{key}:") and token in p for p in problems):
-                    fails.append(f"deleting `{token}` from {key} must be RED for its own reason, got {problems}")
+                if not any(p.startswith(f"{key}:") and any(t in p for t in alts) for p in problems):
+                    fails.append(
+                        f"deleting `{' | '.join(present)}` from {key} must be RED for its own reason, got {problems}",
+                    )
 
         # The forbidden-shape control: re-introducing the private reader must go RED even though
         # every required token is still present. This is the half a behavior-only wall misses.

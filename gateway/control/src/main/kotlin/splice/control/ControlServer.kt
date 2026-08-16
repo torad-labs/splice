@@ -43,13 +43,13 @@ import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
 import splice.core.auth.AuthDescription
 import splice.core.config.ConfigService
-import splice.core.config.Knob
 import splice.core.config.MgmtKey
+import splice.core.config.restartRequiredKnobKeys
 import splice.core.perf.PerfKeys
-import splice.core.topology.ambiguousHeadMessage
+import splice.core.topology.TopologyMessages
 import splice.core.usage.RateLimitState
-import splice.core.usage.computeUsageWarn
-import splice.core.util.runCatchingCancellable
+import splice.core.usage.UsageWarnPolicy
+import splice.core.util.Cancellables
 import java.io.ByteArrayOutputStream
 
 // the two identifier literals every payload row repeats — named once for the whole file
@@ -231,7 +231,9 @@ public class ControlServer(
     }
 
     private suspend fun patchConfig(call: ApplicationCall) {
-        val partial = runCatchingCancellable { json.parseToJsonElement(call.receiveText()).jsonObject }.getOrNull()
+        val partial = Cancellables
+            .runCatchingCancellable { json.parseToJsonElement(call.receiveText()).jsonObject }
+            .getOrNull()
         if (partial == null) {
             call.respondText(
                 payloads.errorJson("invalid body"),
@@ -317,7 +319,7 @@ public class ControlServer(
         val targets = resolver.launchTargets(key)
         if (targets.size > 1) {
             call.respondText(
-                payloads.errorJson(ambiguousHeadMessage(key, targets.map { it.head.key })),
+                payloads.errorJson(TopologyMessages.ambiguousHeadMessage(key, targets.map { it.head.key })),
                 ContentType.Application.Json,
                 HttpStatusCode.Conflict,
             )
@@ -354,7 +356,9 @@ public class ControlServer(
     }
 
     private suspend fun receiveLaunchRequest(call: ApplicationCall): LaunchRequest {
-        val body = runCatchingCancellable { json.parseToJsonElement(call.receiveText()).jsonObject }.getOrNull()
+        val body = Cancellables
+            .runCatchingCancellable { json.parseToJsonElement(call.receiveText()).jsonObject }
+            .getOrNull()
         // Safe by default: the caller must explicitly opt in with {"dangerouslySkipPermissions":"true"}
         // to get the flag; a missing key, malformed body, or any other value stays safe.
         val dangerouslySkipPermissions = body?.get("dangerouslySkipPermissions")?.jsonPrimitive?.content == "true"
@@ -565,7 +569,7 @@ internal class ControlPayloads( // internal (was private) so ControlHealthTest c
                 put("env", scalars.mapToJson(layers.env))
                 put("runtime", scalars.mapToJson(layers.runtime))
             }
-            putJsonArray("restart_required_keys") { Knob.restartRequiredKeys.forEach { add(it) } }
+            putJsonArray("restart_required_keys") { restartRequiredKnobKeys.forEach { add(it) } }
             put("source", "control")
         }.toString()
     }
@@ -583,7 +587,7 @@ internal class ControlPayloads( // internal (was private) so ControlHealthTest c
                     val usage = m.usage.snapshot()
                     val rlView = usage.ratelimit
                     val rl = rlView?.let { RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens) }
-                    val warn = computeUsageWarn(usage.outputTokens5h, rl, m.warnPct, m.warnTokens5h)
+                    val warn = UsageWarnPolicy.computeUsageWarn(usage.outputTokens5h, rl, m.warnPct, m.warnTokens5h)
                     addJsonObject {
                         put(KEY, m.head.key)
                         put(LABEL, m.head.label)
@@ -742,7 +746,7 @@ private class HeadResolver(
         return when {
             byLabel.size > 1 -> {
                 call.respondText(
-                    payloads.errorJson(ambiguousHeadMessage(name, byLabel.map { it.head.key })),
+                    payloads.errorJson(TopologyMessages.ambiguousHeadMessage(name, byLabel.map { it.head.key })),
                     ContentType.Application.Json,
                     HttpStatusCode.Conflict,
                 )

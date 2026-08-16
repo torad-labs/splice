@@ -19,9 +19,10 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.longOrNull
 import splice.core.turn.ReasoningDisplay
+import splice.core.turn.ReasoningDisplayParser
+import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.SecureFile
-import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
@@ -45,6 +46,10 @@ public class ConfigService(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
+    // The dissolved companion's coercion/normalization half (Kotlin style law, 2026-08-16).
+    // Stateless apart from the injected [envReader], so one instance per service is enough.
+    private val coercion = ConfigCoercion(envReader)
+
     // PATCH mutates on control-plane threads while every request thread merges — guard every
     // touch with [runtimeLock] and hand out COPIES only (audit 2026-07-18: CME risk + torn reads).
     private val runtimeLock = Any()
@@ -64,7 +69,8 @@ public class ConfigService(
     /** Effective config. [headKey] folds that head's [heads.<key>.overrides] in above the global
      *  TOML layer — an unknown/absent key is simply the global view, so callers never branch. */
     @JvmOverloads
-    public fun getConfig(headKey: String? = null): SpliceConfig = SpliceConfig(normalize(mergedRaw(headKey)))
+    public fun getConfig(headKey: String? = null): SpliceConfig =
+        SpliceConfig(coercion.normalize(mergedRaw(headKey)))
 
     public fun layers(): ConfigLayers = ConfigLayers(
         defaults = Knob.entries.associate { it.key to it.default },
@@ -84,7 +90,7 @@ public class ConfigService(
         val applied = LinkedHashMap<String, Any?>()
         val rejected = LinkedHashMap<String, String>()
         for ((key, raw) in partial) {
-            val knob = Knob.byKey[key]
+            val knob = knobsByKey[key]
             when {
                 knob == null -> rejected[key] = "unknown key"
                 raw == null -> {
@@ -92,7 +98,7 @@ public class ConfigService(
                     synchronized(runtimeLock) { runtimeLayer.remove(key) }
                 }
                 else -> {
-                    val coerced = coerce(knob, raw)
+                    val coerced = coercion.coerce(knob, raw)
                     if (coerced == null) {
                         rejected[key] = "invalid value"
                     } else {
@@ -103,7 +109,7 @@ public class ConfigService(
             }
         }
         if (applied.isNotEmpty()) persistApplied(applied)
-        val restartRequired = applied.keys.filter { it in Knob.restartRequiredKeys }
+        val restartRequired = applied.keys.filter { it in restartRequiredKnobKeys }
         return PatchResult(applied, rejected, restartRequired, getConfig())
     }
 
@@ -128,14 +134,14 @@ public class ConfigService(
 
     private fun coerceAll(raw: Map<String, String>): Map<String, Any?> =
         raw.entries.mapNotNull { (k, v) ->
-            val knob = Knob.byKey[k] ?: return@mapNotNull null
-            coerce(knob, v)?.let { k to it }
+            val knob = knobsByKey[k] ?: return@mapNotNull null
+            coercion.coerce(knob, v)?.let { k to it }
         }.toMap()
 
     // Best-effort by design (port fidelity): a broken/absent state file yields {} — the daemon
     // must never crash on config reads. Complexity is the flat coercion walk.
     private fun fileLayer(): Map<String, Any?> =
-        runCatchingCancellable { readFileLayer() }.getOrDefault(emptyMap())
+        Cancellables.runCatchingCancellable { readFileLayer() }.getOrDefault(emptyMap())
 
     private fun readFileLayer(): Map<String, Any?> {
         val path = statePaths.configFile
@@ -163,8 +169,8 @@ public class ConfigService(
 
     private fun fileScalar(parsed: JsonObject, knob: Knob): Any? {
         val el = parsed[knob.key] ?: return null
-        val scalar = jsonScalar(el) ?: return null
-        return coerce(knob, scalar)
+        val scalar = coercion.jsonScalar(el) ?: return null
+        return coercion.coerce(knob, scalar)
     }
 
     private fun envLayer(): Map<String, Any?> {
@@ -172,7 +178,7 @@ public class ConfigService(
         for (knob in Knob.entries) {
             val raw = knob.envNames.firstNotNullOfOrNull { name -> envReader(name)?.takeIf { it.isNotEmpty() } }
             if (raw != null) {
-                val coerced = coerce(knob, raw)
+                val coerced = coercion.coerce(knob, raw)
                 if (coerced != null) {
                     data[knob.key] = coerced
                 } else {
@@ -187,10 +193,11 @@ public class ConfigService(
     // runtime layer. Env still wins at next boot — the launcher is the boot authority.
     private fun persistApplied(applied: Map<String, Any?>) {
         // persistence is best-effort; the runtime layer already applied
-        runCatchingCancellable {
+        Cancellables.runCatchingCancellable {
             synchronized(persistLock) {
                 val path = statePaths.configFile
-                val onDisk = runCatchingCancellable { readOnDisk(path) }.getOrDefault(JsonObject(emptyMap()))
+                val onDisk =
+                    Cancellables.runCatchingCancellable { readOnDisk(path) }.getOrDefault(JsonObject(emptyMap()))
                 val next = mergePersisted(onDisk, applied)
                 SecureFile.writeAtomic0600(path, json.encodeToString(JsonObject.serializer(), next) + "\n")
                 fileCache = null
@@ -217,9 +224,37 @@ public class ConfigService(
                 }
             }
         }
+}
+
+// Companion dissolved to file scope (Kotlin style law, 2026-08-16 — HD-M8): these are plain
+// constants and a top-level `private const val` is their sanctioned home. `private` at file scope is
+// file-private in Kotlin, so nothing else in splice.core.config can see or collide with them.
+// Filesystem mtime granularity is 1s on many platforms; a same-second edit landing at an
+// identical byte count is otherwise indistinguishable from an unchanged file (CONF-3).
+private const val MTIME_RESOLUTION_WINDOW_MS = 2_000L
+private const val MIN_UPSTREAM_TIMEOUT_MS = 30_000L
+private const val MIN_FIRST_BYTE_MS = 10_000L
+private const val MIN_STREAM_IDLE_MS = 30_000L
+private const val TEST_IDLE_FLOOR_MS = 250L
+private const val MIN_AUTH_CACHE_MS = 5_000L
+private const val MAX_PORT = 65_535L
+private const val MAX_INT = Int.MAX_VALUE.toLong()
+private const val MAX_RETRIES = 100L
+private const val MAX_FOLD_ROUNDS = 100L
+private const val MAX_FOLD_TIER = 100L
+
+/**
+ * The knob COERCION + NORMALIZATION half of [ConfigService], split out because the class is at the
+ * 14-function ceiling and cannot absorb the dissolved companion (Kotlin style law, 2026-08-16 —
+ * HD-M8). Same functions, same names, same bodies; [ConfigService] holds one instance and reaches
+ * them through it. `internal` because nothing outside :core reads them — [normalizeShowReasoning]
+ * was `public` only because a top-level function had nowhere narrower to live, and its sole
+ * production caller is [normalize] two lines below it.
+ */
+internal class ConfigCoercion(private val envReader: (String) -> String?) {
 
     // A flat table of floors/clamps — splitting it would scatter the contract (port fidelity).
-    private fun normalize(raw: Map<String, Any?>): Map<String, Any?> {
+    fun normalize(raw: Map<String, Any?>): Map<String, Any?> {
         val out = LinkedHashMap(raw)
 
         listOf(Knob.CHATGPT_API_BASE, Knob.XAI_API_BASE).forEach { k ->
@@ -267,71 +302,55 @@ public class ConfigService(
         return out
     }
 
-    private companion object {
-        // Filesystem mtime granularity is 1s on many platforms; a same-second edit landing at an
-        // identical byte count is otherwise indistinguishable from an unchanged file (CONF-3).
-        const val MTIME_RESOLUTION_WINDOW_MS = 2_000L
-        const val MIN_UPSTREAM_TIMEOUT_MS = 30_000L
-        const val MIN_FIRST_BYTE_MS = 10_000L
-        const val MIN_STREAM_IDLE_MS = 30_000L
-        const val TEST_IDLE_FLOOR_MS = 250L
-        const val MIN_AUTH_CACHE_MS = 5_000L
-        const val MAX_PORT = 65_535L
-        const val MAX_INT = Int.MAX_VALUE.toLong()
-        const val MAX_RETRIES = 100L
-        const val MAX_FOLD_ROUNDS = 100L
-        const val MAX_FOLD_TIER = 100L
-
-        fun jsonScalar(el: JsonElement): Any? = when (el) {
-            is JsonPrimitive -> el.booleanOrNull ?: el.longOrNull ?: el.content
-            else -> null
+    fun normalizeShowReasoning(raw: String?): String {
+        val v = raw?.trim()?.lowercase().orEmpty()
+        return when {
+            v.isEmpty() || v in setOf("0", "false", "off", "none") -> "off"
+            v in setOf("text", "mirror", "full", "both", "2") -> "text"
+            else -> "thinking"
         }
+    }
 
-        fun coerce(knob: Knob, raw: Any?): Any? = when (knob.kind) {
-            KnobKind.BOOL -> when (raw) {
-                is Boolean -> raw
-                else -> Regex("^(1|true|yes|on)$", RegexOption.IGNORE_CASE).matches(raw.toString().trim())
-            }
-            KnobKind.NUMBER -> {
-                val s = raw.toString().trim().lowercase()
-                // maxInflight AND maxQueued both treat <=0 as unlimited in InflightGate — accept
-                // the same named sentinels so PATCH/env maxQueued=unlimited is not rejected.
-                if (knob in setOf(Knob.MAX_INFLIGHT, Knob.MAX_QUEUED) &&
-                    s in setOf("", "unlimited", "off", "none")
-                ) {
-                    0L
-                } else {
-                    s.toDoubleOrNull()?.takeIf { it.isFinite() }?.toLong()
-                }
-            }
-            KnobKind.STRING -> raw.toString().trim().ifEmpty { null }
+    fun jsonScalar(el: JsonElement): Any? = when (el) {
+        is JsonPrimitive -> el.booleanOrNull ?: el.longOrNull ?: el.content
+        else -> null
+    }
+
+    fun coerce(knob: Knob, raw: Any?): Any? = when (knob.kind) {
+        KnobKind.BOOL -> when (raw) {
+            is Boolean -> raw
+            else -> Regex("^(1|true|yes|on)$", RegexOption.IGNORE_CASE).matches(raw.toString().trim())
         }
-
-        // Shared reads over the merged map — one place each so `normalize` stays a flat clamp table.
-        fun str(out: Map<String, Any?>, k: Knob): String? = out[k.key]?.toString()
-
-        fun num(out: Map<String, Any?>, k: Knob): Long? = (out[k.key] as? Long) ?: str(out, k)?.toLongOrNull()
-
-        // Read [k] as a long, substitute [default] when absent, then apply the [floor].
-        fun clampLong(
-            out: Map<String, Any?>,
-            k: Knob,
-            floor: Long,
-            default: Long = 0L,
-            ceiling: Long = Long.MAX_VALUE,
-        ): Long = (num(out, k) ?: default).coerceIn(floor, ceiling)
-
-        fun positiveLong(out: Map<String, Any?>, k: Knob): Long? = num(out, k)?.takeIf { it > 0 }
+        KnobKind.NUMBER -> {
+            val s = raw.toString().trim().lowercase()
+            // maxInflight AND maxQueued both treat <=0 as unlimited in InflightGate — accept
+            // the same named sentinels so PATCH/env maxQueued=unlimited is not rejected.
+            if (knob in setOf(Knob.MAX_INFLIGHT, Knob.MAX_QUEUED) &&
+                s in setOf("", "unlimited", "off", "none")
+            ) {
+                0L
+            } else {
+                s.toDoubleOrNull()?.takeIf { it.isFinite() }?.toLong()
+            }
+        }
+        KnobKind.STRING -> raw.toString().trim().ifEmpty { null }
     }
-}
 
-public fun normalizeShowReasoning(raw: String?): String {
-    val v = raw?.trim()?.lowercase().orEmpty()
-    return when {
-        v.isEmpty() || v in setOf("0", "false", "off", "none") -> "off"
-        v in setOf("text", "mirror", "full", "both", "2") -> "text"
-        else -> "thinking"
-    }
+    // Shared reads over the merged map — one place each so `normalize` stays a flat clamp table.
+    fun str(out: Map<String, Any?>, k: Knob): String? = out[k.key]?.toString()
+
+    fun num(out: Map<String, Any?>, k: Knob): Long? = (out[k.key] as? Long) ?: str(out, k)?.toLongOrNull()
+
+    // Read [k] as a long, substitute [default] when absent, then apply the [floor].
+    fun clampLong(
+        out: Map<String, Any?>,
+        k: Knob,
+        floor: Long,
+        default: Long = 0L,
+        ceiling: Long = Long.MAX_VALUE,
+    ): Long = (num(out, k) ?: default).coerceIn(floor, ceiling)
+
+    fun positiveLong(out: Map<String, Any?>, k: Knob): Long? = num(out, k)?.takeIf { it > 0 }
 }
 
 /** Typed view over the merged+normalized map. */
@@ -342,7 +361,7 @@ public class SpliceConfig internal constructor(private val m: Map<String, Any?>)
     public val pinnedModel: String get() = string(Knob.PINNED_MODEL).orEmpty()
     public val effort: String? get() = string(Knob.EFFORT)
     public val summary: String? get() = string(Knob.SUMMARY)
-    public val showReasoning: ReasoningDisplay get() = ReasoningDisplay.from(string(Knob.SHOW_REASONING))
+    public val showReasoning: ReasoningDisplay get() = ReasoningDisplayParser.from(string(Knob.SHOW_REASONING))
     public val replayReasoning: Boolean get() = bool(Knob.REPLAY_REASONING)
     public val mirrorReasoning: Boolean get() = bool(Knob.MIRROR_REASONING)
 

@@ -18,7 +18,7 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.core.util.str
+import splice.core.util.JsonScalars
 
 /** What to send on the wire for one WS round. [chained] is diagnostics + the WS-5 instrument: the
  *  count that must move when chaining engages, and must NOT when it bails. */
@@ -235,8 +235,8 @@ internal class ResponsesWsSession {
 
     private fun dispositionOf(item: JsonObject): Disposition {
         // The builder emits plain role/content messages with no explicit `type`.
-        val type = item[FIELD_TYPE].str() ?: item[FIELD_ROLE]?.let { MESSAGE } ?: return Disposition.BAIL
-        val assistantMessage = type == MESSAGE && item[FIELD_ROLE].str() == "assistant"
+        val type = JsonScalars.str(item[FIELD_TYPE]) ?: item[FIELD_ROLE]?.let { MESSAGE } ?: return Disposition.BAIL
+        val assistantMessage = type == MESSAGE && JsonScalars.str(item[FIELD_ROLE]) == "assistant"
         return when {
             type in SERVER_HELD || assistantMessage -> Disposition.SERVER_HAS_IT
             type in CLIENT_NEW -> Disposition.SEND

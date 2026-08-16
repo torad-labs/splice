@@ -21,7 +21,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.turn.ToolSearchCall
-import splice.core.util.str
+import splice.core.util.JsonScalars
 import splice.core.wire.ToolDefinition
 import splice.spi.ToolSearchController
 import splice.spi.ToolSearchRound
@@ -73,7 +73,7 @@ internal class ToolSearchIndex(private val deferred: List<ToolDefinition>) {
     private fun propertyCorpus(t: ToolDefinition): String {
         val props = t.inputSchema?.get(FIELD_PROPERTIES) as? JsonObject ?: return ""
         return props.entries.joinToString(" ") { (name, schema) ->
-            "$name ${(schema as? JsonObject)?.get(FIELD_DESCRIPTION).str().orEmpty()}"
+            "$name ${JsonScalars.str((schema as? JsonObject)?.get(FIELD_DESCRIPTION)).orEmpty()}"
         }
     }
 }

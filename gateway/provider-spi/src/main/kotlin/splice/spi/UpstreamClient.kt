@@ -35,9 +35,9 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
-import splice.core.perf.timedOr
+import splice.core.perf.TurnPerfTiming
+import splice.core.util.Cancellables
 import splice.core.util.MonoClock
-import splice.core.util.runCatchingCancellable
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
@@ -224,7 +224,8 @@ public class UpstreamClient(
             retryRules.giveUp(state.lastErr)
         }
         failFastIfRateLimited(ctx)
-        val creds = ctx.perf.timedOr(PerfKeys.AUTH_MS) { ctx.auth.credentials() } ?: throw UpstreamAuthMissing()
+        val creds = TurnPerfTiming.timedOr(ctx.perf, PerfKeys.AUTH_MS) { ctx.auth.credentials() }
+            ?: throw UpstreamAuthMissing()
         ctx.perf?.add(PerfKeys.ATTEMPTS, 1)
         var streamHandedOff = false
         // runCatchingCancellable rethrows CancellationException (a cancelled turn aborts cleanly);
@@ -232,7 +233,7 @@ public class UpstreamClient(
         // backoff budget (a 2s DNS blip costs one silent retry, not a turn failure: the kimi
         // 07:00 burst, 37 UnresolvedAddressException turns, attempts=1 on every one).
         val attempted = try {
-            runCatchingCancellable {
+            Cancellables.runCatchingCancellable {
                 attemptRequest(ctx, body.bytes, creds, onStreamStart = { streamHandedOff = true }, block)
             }
         } catch (e: StreamTornBeforeClient) {
@@ -297,9 +298,9 @@ public class UpstreamClient(
      *  blip is slower than a TCP refusal or reset. */
     private suspend fun backoffTransportError(perf: TurnPerf?, error: Throwable, attempt: Int) {
         if (transport.isDnsFailureTransport(error)) {
-            perf.timedOr(PerfKeys.BACKOFF_MS) { dnsBackoff(attempt) }
+            TurnPerfTiming.timedOr(perf, PerfKeys.BACKOFF_MS) { dnsBackoff(attempt) }
         } else {
-            perf.timedOr(PerfKeys.BACKOFF_MS) { backoff(attempt, 0L) }
+            TurnPerfTiming.timedOr(perf, PerfKeys.BACKOFF_MS) { backoff(attempt, 0L) }
         }
     }
 
@@ -319,7 +320,7 @@ public class UpstreamClient(
             )
             retryRules.giveUp(state.lastErr)
         }
-        ctx.perf.timedOr(PerfKeys.BACKOFF_MS) { backoff(state.attempt, plan.minDelayMs) }
+        TurnPerfTiming.timedOr(ctx.perf, PerfKeys.BACKOFF_MS) { backoff(state.attempt, plan.minDelayMs) }
         state.attempt += 1
         return LoopStep.Continue
     }
@@ -419,7 +420,7 @@ public class UpstreamClient(
                 ctx.auth.allowRefreshAfterFailure(failed.status, failed.text) &&
                 !refreshedOnce
         if (refreshable) ctx.perf?.add(PerfKeys.REFRESHES, 1)
-        if (refreshable && ctx.perf.timedOr(PerfKeys.REFRESH_MS) { ctx.auth.refresh() } != null) {
+        if (refreshable && TurnPerfTiming.timedOr(ctx.perf, PerfKeys.REFRESH_MS) { ctx.auth.refresh() } != null) {
             return RetryPlan(RetryDecision.RETRY, refreshedOnce = true)
         }
         ctx.onRetry(

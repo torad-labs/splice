@@ -9,8 +9,7 @@ package splice.dialect.responses
 
 import splice.core.auth.Credentials
 import splice.core.parse.AnthropicTurnBody
-import splice.core.reasoning.decodeReasoningEnvelope
-import splice.core.reasoning.encodeReasoningEnvelope
+import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.util.DaemonLog
@@ -88,7 +87,7 @@ public abstract class ResponsesProvider(
                 ),
                 sessionId = sessionId,
                 decodeReasoningEnvelope = { data ->
-                    decodeReasoningEnvelope(data) { msg ->
+                    ReasoningReplay.decodeReasoningEnvelope(data) { msg ->
                         if (!reasoningEnvelopeDropLogged) {
                             reasoningEnvelopeDropLogged = true
                             log(msg)
@@ -145,7 +144,7 @@ public abstract class ResponsesProvider(
                 // The live summary thinking blocks (reasoning_summary_text deltas) are a SEPARATE path
                 // and still display. Fold's own intra-turn reasoning replay is independent of this.
                 emitEncryptedReasoning = EmitEncryptedReasoning(showOn() && replayReasoning),
-                encodeReasoningEnvelope = { encodeReasoningEnvelope(it) },
+                encodeReasoningEnvelope = { ReasoningReplay.encodeReasoningEnvelope(it) },
                 clientGone = signals.clientGone,
                 watchdogFired = signals.watchdogFired,
                 streamIdleMsForMessage = watchdog.streamIdle.inWholeMilliseconds,
@@ -172,7 +171,10 @@ public abstract class ResponsesProvider(
     final override fun foldController(meta: TurnMeta): FoldController? {
         val cfg = foldConfig ?: return null
         if (meta.compact || meta.upstreamModel !in cfg.models) return null
-        return ResponsesFoldController(cfg, decodeReasoningEnvelope = { decodeReasoningEnvelope(it) })
+        return ResponsesFoldController(
+            cfg,
+            decodeReasoningEnvelope = { ReasoningReplay.decodeReasoningEnvelope(it) },
+        )
     }
 
     /** Whether THIS provider's upstream actually speaks the Responses WebSocket. False by default:
@@ -267,7 +269,7 @@ public abstract class ResponsesProvider(
     // The controller is stateless — one cached instance serves every turn (a per-call
     // allocation here also ran per ROUND via the collectReasoningEnvelopes null-check).
     private val reanchorPolicy: ReanchorController by lazy {
-        ResponsesReanchorController(decodeReasoningEnvelope = { decodeReasoningEnvelope(it) })
+        ResponsesReanchorController(decodeReasoningEnvelope = { ReasoningReplay.decodeReasoningEnvelope(it) })
     }
 
     // Every non-compact responses turn is re-anchor eligible (compaction is unary/buffered — the

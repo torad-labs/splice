@@ -15,8 +15,8 @@ import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import splice.core.perf.PerfSnapshot
 import splice.core.util.AsyncFileIo
+import splice.core.util.Cancellables
 import splice.core.util.JsonlSink
-import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -48,7 +48,7 @@ public class PerfStats(private val file: Path, private val clock: () -> Long = S
             snap.counters.forEach { (k, v) -> put(k, v) }
         }.toString()
         AsyncFileIo.submit {
-            runCatchingCancellable {
+            Cancellables.runCatchingCancellable {
                 Files.createDirectories(file.parent)
                 JsonlSink.appendLine(file, row)
             }
@@ -60,9 +60,9 @@ public class PerfStats(private val file: Path, private val clock: () -> Long = S
     public fun tailNumeric(tailN: Int = DEFAULT_TAIL): List<Map<String, Long>> {
         AsyncFileIo.drain()
         if (!Files.exists(file)) return emptyList()
-        val rows = runCatchingCancellable {
+        val rows = Cancellables.runCatchingCancellable {
             JsonlSink.readTail(file, READ_TAIL_BYTES).mapNotNull { line ->
-                runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
+                Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
             }
         }.getOrDefault(emptyList())
         return rows.takeLast(tailN).map { it.numericFields() }

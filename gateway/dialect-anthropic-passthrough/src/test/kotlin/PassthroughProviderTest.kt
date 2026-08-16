@@ -17,7 +17,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
-import splice.core.parse.parseAnthropicBody
+import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.passthrough.PassthroughProvider
@@ -113,7 +113,9 @@ class PassthroughProviderTest {
     @Test
     fun `the wrapped picker id is stripped to the upstream model`() {
         val built = provider(PassthroughQuirksDefaults().kimi("kimi")).buildTurn(
-            parseAnthropicBody("""{"model":"claude-kimi--k3[1m]","messages":[{"role":"user","content":"hi"}]}"""),
+            AnthropicParse.parseAnthropicBody(
+                """{"model":"claude-kimi--k3[1m]","messages":[{"role":"user","content":"hi"}]}""",
+            ),
             compact = false,
             sessionId = null,
         )
@@ -127,9 +129,9 @@ class PassthroughProviderTest {
         val body = """{"model":"m","messages":[{"role":"user","content":[
             {"type":"text","text":"hi","cache_control":{"type":"ephemeral"}}]}]}"""
         val kimiReq = provider(PassthroughQuirksDefaults().kimi("kimi"))
-            .buildTurn(parseAnthropicBody(body), compact = false, sessionId = null).requestBody
+            .buildTurn(AnthropicParse.parseAnthropicBody(body), compact = false, sessionId = null).requestBody
         val neutralReq = provider(PassthroughQuirks(providerTag = "claude-splice"))
-            .buildTurn(parseAnthropicBody(body), compact = false, sessionId = null).requestBody
+            .buildTurn(AnthropicParse.parseAnthropicBody(body), compact = false, sessionId = null).requestBody
 
         assertNull(firstBlock(kimiReq)["cache_control"], "kimi strips cache_control")
         assertTrue(firstBlock(neutralReq)["cache_control"] != null, "a neutral head preserves it")

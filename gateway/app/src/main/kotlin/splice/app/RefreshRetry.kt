@@ -12,8 +12,8 @@ import io.ktor.client.statement.HttpResponse
 import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import splice.core.util.runCatchingCancellable
-import splice.core.util.str
+import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
 import kotlin.random.Random
 
 internal const val REFRESH_MAX_ATTEMPTS = 3
@@ -51,8 +51,8 @@ internal class RefreshRetry {
     internal fun isTerminalRefreshFailure(status: Int, body: String, json: Json): Boolean =
         status == HTTP_UNAUTHORIZED || status == HTTP_FORBIDDEN || isInvalidGrant(body, json)
 
-    private fun isInvalidGrant(body: String, json: Json): Boolean = runCatchingCancellable {
-        (json.parseToJsonElement(body) as? JsonObject)?.str("error") == "invalid_grant"
+    private fun isInvalidGrant(body: String, json: Json): Boolean = Cancellables.runCatchingCancellable {
+        JsonScalars.str(json.parseToJsonElement(body) as? JsonObject, "error") == "invalid_grant"
     }.getOrDefault(false)
 
     /**
@@ -67,7 +67,7 @@ internal class RefreshRetry {
     ): T? {
         var attempt = 0
         while (attempt < maxAttempts) {
-            val step = runCatchingCancellable { classify(call()) }.getOrDefault(RefreshStep.Retry)
+            val step = Cancellables.runCatchingCancellable { classify(call()) }.getOrDefault(RefreshStep.Retry)
             if (step is RefreshStep.Terminal) return step.value
             attempt++
             if (attempt < maxAttempts) {

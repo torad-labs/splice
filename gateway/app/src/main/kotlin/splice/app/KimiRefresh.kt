@@ -21,8 +21,8 @@ import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.core.auth.RefreshAttempt
-import splice.core.util.runCatchingCancellable
-import splice.core.util.str
+import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
 import splice.provider.kimi.KimiOAuth
 import splice.provider.kimi.KimiRefreshedTokens
 
@@ -80,17 +80,17 @@ public class KimiRefresh {
     }
 
     /** Rotation is mandatory: a response missing access_token OR refresh_token → null (re-prompt). */
-    private fun parseKimiRefresh(body: String): KimiRefreshedTokens? = runCatchingCancellable {
+    private fun parseKimiRefresh(body: String): KimiRefreshedTokens? = Cancellables.runCatchingCancellable {
         val obj = kimiRefreshJson.parseToJsonElement(body) as? JsonObject ?: return@runCatchingCancellable null
-        val access = obj.str("access_token") ?: return@runCatchingCancellable null
-        val refresh = obj.str("refresh_token") ?: return@runCatchingCancellable null
-        val expiresIn = obj.str("expires_in")?.toLongOrNull() ?: return@runCatchingCancellable null
+        val access = JsonScalars.str(obj, "access_token") ?: return@runCatchingCancellable null
+        val refresh = JsonScalars.str(obj, "refresh_token") ?: return@runCatchingCancellable null
+        val expiresIn = JsonScalars.str(obj, "expires_in")?.toLongOrNull() ?: return@runCatchingCancellable null
         KimiRefreshedTokens(
             accessToken = access,
             refreshToken = refresh,
             expiresIn = expiresIn,
-            scope = obj.str("scope").orEmpty(),
-            tokenType = obj.str("token_type") ?: "Bearer",
+            scope = JsonScalars.str(obj, "scope").orEmpty(),
+            tokenType = JsonScalars.str(obj, "token_type") ?: "Bearer",
         )
     }.getOrNull()
 }

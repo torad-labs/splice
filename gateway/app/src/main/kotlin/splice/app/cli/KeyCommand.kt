@@ -6,6 +6,7 @@
 package splice.app.cli
 
 import splice.core.config.KeyStore
+import splice.core.config.KeyStorePath
 
 private const val MASK_PROMPT = "API key: "
 
@@ -15,7 +16,7 @@ internal class KeyCommand {
 
     /** argv after `key`: set <ENV> [--value V | --stdin] | list | unset <ENV>. Store injectable
      *  for hermetic tests (the default is the operator's real ~/.config/splice/keys.toml). */
-    internal fun key(args: List<String>, store: KeyStore = KeyStore(KeyStore.defaultPath())): Boolean {
+    internal fun key(args: List<String>, store: KeyStore = KeyStore(KeyStorePath.defaultPath())): Boolean {
         return when (args.firstOrNull()) {
             "set" -> keySet(store, args.getOrNull(1), args.drop(2))
             "list" -> keyList(store)

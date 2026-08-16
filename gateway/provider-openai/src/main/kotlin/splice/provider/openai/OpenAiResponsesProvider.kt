@@ -19,7 +19,7 @@ public class OpenAiResponsesProvider(
     replayReasoning: Boolean,
     configEffort: String?,
     configSummary: String?,
-    quirks: ResponsesQuirks = defaultQuirks(),
+    quirks: ResponsesQuirks = OpenAiQuirks().defaultQuirks(),
     /** Daemon log sink — forwarded to ResponsesProvider so its diagnostics reach
      *  /mgmt/logs and not stderr alone (wall kt-no-println, 2026-07-27). */
     log: (String) -> Unit = DaemonLog::write,
@@ -27,15 +27,19 @@ public class OpenAiResponsesProvider(
 
     // api key rides as the standard bearer (UpstreamClient maps Credentials.ApiKey); no account header.
     override fun extraHeaders(creds: Credentials): Map<String, String> = mapOf("Accept" to "text/event-stream")
+}
 
-    public companion object {
-        /** The openai-platform quirk profile — injectable so TOML [providers.*.quirks] is REAL. */
-        public fun defaultQuirks(): ResponsesQuirks = ResponsesQuirks(
-            providerTag = "openai",
-            store = false,
-            cacheKeyStrategy = CacheKeyStrategy.FIRST_MESSAGE_HASH,
-            effortLadder = EffortLadder.CODEX,
-            supportsSummary = true,
-        )
-    }
+/** Holder for the openai-platform quirk profile. A class rather than a static namespace so the
+ *  profile is constructed by whoever needs it (the daemon overlays TOML on top of it), and so the
+ *  default is still re-evaluated per OpenAiResponsesProvider construction exactly as the companion's
+ *  function was. */
+public class OpenAiQuirks {
+    /** The openai-platform quirk profile — injectable so TOML [providers.*.quirks] is REAL. */
+    public fun defaultQuirks(): ResponsesQuirks = ResponsesQuirks(
+        providerTag = "openai",
+        store = false,
+        cacheKeyStrategy = CacheKeyStrategy.FIRST_MESSAGE_HASH,
+        effortLadder = EffortLadder.CODEX,
+        supportsSummary = true,
+    )
 }

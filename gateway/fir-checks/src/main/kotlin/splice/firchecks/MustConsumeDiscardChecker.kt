@@ -64,6 +64,10 @@ private object MustConsumeErrorMessages : BaseDiagnosticRendererFactory() {
     }
 }
 
+// FILE SCOPE ON PURPOSE: a singleton via the companion before the migration; a member val here
+// would recompute it on every MustConsumeDiscardChecker instantiation instead of once.
+private val MUST_CONSUME_ID: ClassId = ClassId.topLevel(FqName("splice.core.annotation.MustConsume"))
+
 internal class MustConsumeDiscardChecker : FirFunctionCallChecker(MppCheckerKind.Common) {
     context(context: CheckerContext, reporter: DiagnosticReporter)
     override fun check(expression: FirFunctionCall) {
@@ -138,9 +142,5 @@ internal class MustConsumeDiscardChecker : FirFunctionCallChecker(MppCheckerKind
         is FirSafeCallExpression -> parent.selector === child
         is FirElvisExpression -> parent.lhs === child || parent.rhs === child
         else -> false
-    }
-
-    private companion object {
-        val MUST_CONSUME_ID: ClassId = ClassId.topLevel(FqName("splice.core.annotation.MustConsume"))
     }
 }

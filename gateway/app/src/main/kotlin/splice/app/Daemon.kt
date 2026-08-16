@@ -87,6 +87,7 @@ import splice.provider.kimi.KimiDeviceIdentity
 import splice.provider.kimi.KimiOAuthEndpoints
 import splice.provider.openai.ApiKeyAuthProvider
 import splice.provider.openai.OpenAiChatProvider
+import splice.provider.openai.OpenAiQuirks
 import splice.provider.openai.OpenAiResponsesProvider
 import splice.spi.InflightGate
 import splice.spi.Provider
@@ -731,7 +732,7 @@ internal class ProviderAssembly(
                 replayReasoning = cfg.replayReasoning,
                 configEffort = cfg.effort,
                 configSummary = cfg.summary,
-                quirks = providerCfg.responsesQuirks(OpenAiResponsesProvider.defaultQuirks(), cfg),
+                quirks = providerCfg.responsesQuirks(OpenAiQuirks().defaultQuirks(), cfg),
             )
         }
         return Wired(provider, auth)

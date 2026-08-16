@@ -161,8 +161,10 @@ id = "HD-M3"
 phase = "migrate"
 title = "Style migration slice 3/8 — control/src/main (LaunchService.kt, ControlServer.kt and siblings): zero top-level functions, zero companion objects; behavior-preserving; launch recipe env/unset semantics byte-identical (LaunchServiceTest is the oracle)."
 files = ["gateway/control/src/main"]
-status = "todo"
+status = "in_flight"
 verify = "cd gateway && ./gradlew :control:test detekt --console=plain"
+# [2026-08-15] CLAIM: owner=sdd-hdm3-implementer at=2026-08-16T04:45:25Z
+# [2026-08-15] ATTEST-START: tree=a2caac429b884be08e5b34b6a173fc67910a49a0 at=2026-08-16T04:45:25Z
 
 [[items]]
 id = "HD-M4"
@@ -172,6 +174,7 @@ files = ["gateway/gateway/src/main"]
 status = "todo"
 verify = "cd gateway && ./gradlew :gateway:test detekt --console=plain"
 # [2026-08-15] PARKED DELTA (orchestrator, 2026-08-15): the concurrent session's WS/terminal robustness work is held out of the tree until this slice runs — patch at .superpowers/sdd/2026-08-15-head-decoupling/parked-ws-delta.patch (153 lines: TurnDriver.kt HD2-002 catch(RuntimeException) last-resort so an unexpected provider/translator throw after the 200 cannot escape as a truncated 200; WsRoundDriver.kt CON-003 same idea on the WS round path; WsRoundDriverTest.kt). WHY PARKED: (a) TurnDriver.kt is hook-blocked (10 top-level funs + 2 companions) so no edit lands until THIS slice migrates it; (b) both catches trip detekt TooGenericExceptionCaught and catchingTurnFailure hits CyclomaticComplexMethod at exactly 10 — must be resolved structurally during the migration, never suppressed; (c) review found the TurnDriver clause is exercised by NO test (WsRoundDriverTest throws IllegalStateException, which the pre-existing clause already caught) — re-apply it with a test that throws a plain RuntimeException. The CON-003 half IS a genuine red-green proof (endedFailed would be 0 on unmodified HEAD).
+# [2026-08-15] DISPATCHED via workflow wf_1a04286f-51d (operator asked for parallelism, 2026-08-15 ~23:00): HD-M4/M5/M6 run CONCURRENTLY, each implementer in its own git worktree (isolated copy, own branch, commits locally) followed by its own adversarial review reading that worktree. Safe to parallelize because the three fences are module-disjoint and every consumer that a moved symbol could force an edit into (:app) is ALREADY migrated and clean. HD-M7 (provider-spi) and HD-M8 (core) stay serial and last: their publics are consumed by these very modules, so they need them clean first. Orchestrator merges each worktree branch in dependency order, gating after each.
 
 [[items]]
 id = "HD-M5"
@@ -180,6 +183,7 @@ title = "Style migration slice 5/8 — provider-kimi, provider-codex, provider-g
 files = ["gateway/provider-kimi/src/main", "gateway/provider-codex/src/main", "gateway/provider-grok/src/main"]
 status = "todo"
 verify = "cd gateway && ./gradlew :provider-kimi:test :provider-codex:test :provider-grok:test detekt --console=plain"
+# [2026-08-15] DISPATCHED in workflow wf_1a04286f-51d alongside HD-M4 (see that item's note for the parallelism rationale and merge plan).
 
 [[items]]
 id = "HD-M6"
@@ -190,6 +194,7 @@ status = "todo"
 verify = "cd gateway && ./gradlew :dialect-anthropic-passthrough:test :dialect-openai-chat:test :dialect-openai-responses:test detekt --console=plain"
 # [2026-08-15] PRE-EXISTING RED (found 2026-08-15 by the orchestrator's pre-commit gate, NOT by review): the concurrent session's uncommitted MfjsSanitizer change moved kimi's frozen wire bytes — tuple-form 'items' is now DROPPED where it was collapsed to its first element, so array tool params reach kimi with no element type. PassthroughGoldenTest 'mfjs schema sanitizing is byte-stable' FAILS on the working tree; goldens themselves untouched. Evidence + byte diff: .superpowers/sdd/2026-08-15-head-decoupling/leftover-golden-failure.md. Must be resolved BEFORE this slice touches the sanitizer.
 # [2026-08-15] DEFERRED MINOR from the leftover-diff review: PassthroughRequestBuilder.kt now carries a NEW top-level private fun fallbackEffort (and KIMI_EFFORTS hoisted to file level) — migration debt this slice retires anyway; make it a private member so 'warned'/'log' need not be threaded as parameters. Also: MfjsSanitizer.kt and MfjsSanitizerTest.kt were RESTORED FROM HEAD by the orchestrator after the golden wall caught two wire-byte changes (SCH-003 tuple items dropped; SCH-002 mixed-type enum emitting no 'type' at all — the latter has NO golden coverage and, against a validator this file treats as type-mandatory, plausibly hard-400s). The reverted work is preserved at .superpowers/sdd/2026-08-15-head-decoupling/MfjsSanitizer.kt.reverted-backup + MfjsSanitizerTest.kt.reverted-backup; re-landing either behavior needs a live probe against the Moonshot endpoint and is an operator decision, never a fix-round one.
+# [2026-08-15] DISPATCHED in workflow wf_1a04286f-51d alongside HD-M4 (see that item's note for the parallelism rationale and merge plan).
 
 [[items]]
 id = "HD-M7"

@@ -33,6 +33,12 @@ public class PassthroughProvider(
     /** COMPUTED per-install identity a vendor requires (Kimi's persisted X-Msh-* device set). A
      *  function, not config, precisely because it cannot be declared; absent for every other head. */
     private val identityHeaders: () -> Map<String, String> = { emptyMap() },
+    /** PT-002/v27: the daemon's configured default effort ([daemon] effort / Knob.EFFORT) — the
+     *  session-stable proxy the request builder falls back to on a turn with no `thinking` config
+     *  at all. See PassthroughRequestBuilder.effortLadder: this can only ever inform TurnMeta.effort
+     *  — a turn that sends `thinking` without a budget keeps the wire-frozen EFFORT_MAX regardless
+     *  (KIMI BYTE-IDENTITY). */
+    private val configEffort: String? = null,
 ) : Provider, ProviderIdentity by tuning {
 
     // baseUrl carries no /v1 (topology supplies the host root); the Messages path is /v1/messages.
@@ -41,7 +47,7 @@ public class PassthroughProvider(
     override val showReasoning: ReasoningDisplay = ReasoningDisplay.OFF
     override val replayReasoning: Boolean = false
 
-    private val builder = PassthroughRequestBuilder(quirks)
+    private val builder = PassthroughRequestBuilder(quirks, configEffort)
 
     override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
         val upstreamModel = catalog.stripSuffixes(body.typed.model)

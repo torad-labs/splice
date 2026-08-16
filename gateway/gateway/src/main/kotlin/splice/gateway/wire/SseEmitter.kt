@@ -295,7 +295,7 @@ public class SseEmitter internal constructor(
             write: suspend (String) -> Unit,
             model: String,
             usagePayload: UsagePayloadBuilder,
-            messageId: String = "msg_${System.currentTimeMillis()}",
+            messageId: String = generateMessageId(),
         ): SseEmitter = SseEmitter(write, model, usagePayload, messageId)
 
         /** Non-stream terminal message (translateResponse envelope) — built HERE because the

@@ -95,7 +95,7 @@ public class CodexAuthProvider(
                     "mtime+4h (auth.json shape drifted?)",
             )
         }
-        return synthesizedExpiryMs(mtimeMs)
+        return synthesizedExpiryMs(mtimeMs, clock())
     }
 
     private data class Cache(val snapshot: Snapshot, val mtimeMs: Long, val loadedAt: Long, val sizeBytes: Long)
@@ -169,7 +169,10 @@ public class CodexAuthProvider(
         val mtime = codexAuthMtimeOrNull(authPath, log)
         if (invalidGrantLatch.isLatched(mtime)) return RefreshOutcome.Rejected(INVALID_GRANT_REASON)
         val priorAccess = cache?.snapshot?.access
-        val outcome = CredentialLock.withLock(authPath) { refreshLocked(priorAccess) }
+        // AUTH-002: wire the daemon log sink so the lock's proceed-unlocked fallback is observable
+        // (CredentialLock.withLock's `log` default is a silent no-op) instead of only greppable
+        // in a source comment.
+        val outcome = CredentialLock.withLock(authPath, log = log) { refreshLocked(priorAccess) }
         if (outcome is RefreshOutcome.Rejected && outcome.reason == INVALID_GRANT_REASON) {
             invalidGrantLatch.latch(mtime)
         }

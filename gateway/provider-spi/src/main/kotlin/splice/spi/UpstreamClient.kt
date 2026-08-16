@@ -348,9 +348,11 @@ public class UpstreamClient(
         // G16: SocketException/SocketTimeoutException can fire AFTER the request body has begun
         // or finished writing — the upstream may already have the POST and be processing/billing
         // it — unlike DNS/connect failures, which fire strictly before any byte leaves the client.
-        // Same retry budget/backoff either way (diagnostics-only); the label makes a double-token-
-        // burn incident greppable in the turn log instead of indistinguishable from a DNS blip.
+        // Same retry budget/backoff either way; the label makes a double-token-burn incident
+        // greppable in the turn log, and UP-004's POST_SEND_RETRIES counter makes its rate
+        // countable in the perf row instead of only greppable.
         val label = if (phase == TransportFailurePhase.POST_SEND) "transport-possible-duplicate" else "transport"
+        if (phase == TransportFailurePhase.POST_SEND) ctx.perf?.add(PerfKeys.POST_SEND_RETRIES, 1)
         ctx.onRetry(
             "$label ${e::class.simpleName} attempt ${attempt + 1}/$maxRetries: " +
                 e.message.orEmpty().take(ERR_SNIPPET),
@@ -427,36 +429,29 @@ public class UpstreamClient(
         attempt: Int,
         nextRefreshed: Boolean,
     ): RetryPlan {
-        // A real 429 teaches the whole head: arm the shared cooldown so concurrent turns fail
-        // fast instead of each burning their own attempts into the same limited account
-        // (latest-max wins; the benign race only shifts the horizon by ms).
         if (failed.status == RATE_LIMITED) {
-            // NF-01: arm at most MAX_RATE_LIMIT_COOLDOWN_MS — the full pushback is not lost, it
-            // rides in the upstream body this GIVE_UP surfaces; only the fail-fast horizon clamps.
-            val pushbackMs = failed.retryAfterMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS
-            if (pushbackMs > MAX_RATE_LIMIT_COOLDOWN_MS) {
-                ctx.onRetry(
-                    "429 Retry-After ${pushbackMs}ms exceeds the cooldown ceiling — " +
-                        "arming ${MAX_RATE_LIMIT_COOLDOWN_MS}ms",
-                )
-            }
-            val until = clock() + minOf(pushbackMs, MAX_RATE_LIMIT_COOLDOWN_MS)
-            rateLimitedUntilMs.accumulateAndGet(until) { current, candidate -> maxOf(current, candidate) }
-            // A concurrent wave can receive 429 before any member sees the shared cooldown.
-            // Retrying each member would amplify one upstream limit into N×maxRetries requests;
-            // terminate every observed 429 and let the client retry after the shared horizon.
-            return RetryPlan(RetryDecision.GIVE_UP, nextRefreshed)
+            return rateLimitedPlan(failed, rateLimitedUntilMs, clock(), ctx.onRetry, nextRefreshed)
         }
         // gRPC-A6-style negative pushback: a server explicitly asking us to wait longer than the
         // interactive budget means "go away", not "hammer me on a curve" — give up honestly. The
         // client owns any wait past 15s (it re-sends on its own backoff; the daemon holding the
         // slot for a minute is what stacked the 2026-07-19 zombie herd).
         val pushback = failed.retryAfterMs
+        val retryable = isRetryableStatus(failed.status)
         if (pushback != null && pushback > RETRY_AFTER_GIVE_UP_MS) {
             ctx.onRetry("upstream ${failed.status} Retry-After ${pushback}ms exceeds interactive budget (no retry)")
+            // UP-001: a retryable status (408/5xx — RATE_LIMITED already returned above) carrying
+            // the same long pushback means the same thing a 429 does — arm the SAME shared cooldown
+            // (clamped the same way) so the next turn doesn't immediately hammer an upstream that
+            // just asked for a long backoff. A NON-retryable status (400/401/403/404/...) is that
+            // turn's own problem — arming the head-wide cooldown on it would synthesize 429s for
+            // every OTHER turn over an error that says nothing about rate limits.
+            if (retryable) {
+                val until = clock() + minOf(pushback, MAX_RATE_LIMIT_COOLDOWN_MS)
+                rateLimitedUntilMs.accumulateAndGet(until) { current, candidate -> maxOf(current, candidate) }
+            }
             return RetryPlan(RetryDecision.GIVE_UP, nextRefreshed)
         }
-        val retryable = isRetryableStatus(failed.status)
         val decision = if (!retryable || attempt == maxRetries - 1) RetryDecision.GIVE_UP else RetryDecision.BACKOFF
         return RetryPlan(decision, refreshedOnce = nextRefreshed, minDelayMs = pushback ?: 0L)
     }
@@ -634,6 +629,35 @@ public class UpstreamClient(
         private const val NOT_IMPLEMENTED = 501
         private val SERVER_ERRORS = 500..599
 
+        /** A real 429 teaches the whole head: arm the shared cooldown so concurrent turns fail fast
+         *  instead of each burning their own attempts into the same limited account. Split out of
+         *  statusPlan for the same complexity wall that split statusPlan off planRetry; it lives in
+         *  the companion (not the class body) because the class sits at its function ceiling. */
+        private fun rateLimitedPlan(
+            failed: RetryOutcome.Failed,
+            armed: AtomicLong,
+            nowMs: Long,
+            onRetry: (String) -> Unit,
+            nextRefreshed: Boolean,
+        ): RetryPlan {
+            // NF-01: arm at most MAX_RATE_LIMIT_COOLDOWN_MS — the full pushback is not lost, it
+            // rides in the upstream body this GIVE_UP surfaces; only the fail-fast horizon clamps.
+            val pushbackMs = failed.retryAfterMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS
+            if (pushbackMs > MAX_RATE_LIMIT_COOLDOWN_MS) {
+                onRetry(
+                    "429 Retry-After ${pushbackMs}ms exceeds the cooldown ceiling — " +
+                        "arming ${MAX_RATE_LIMIT_COOLDOWN_MS}ms",
+                )
+            }
+            // Latest-max wins, so the benign concurrent-arm race only shifts the horizon by ms.
+            val until = nowMs + minOf(pushbackMs, MAX_RATE_LIMIT_COOLDOWN_MS)
+            armed.accumulateAndGet(until) { current, candidate -> maxOf(current, candidate) }
+            // A concurrent wave can receive 429 before any member sees the shared cooldown.
+            // Retrying each member would amplify one upstream limit into N×maxRetries requests;
+            // terminate every observed 429 and let the client retry after the shared horizon.
+            return RetryPlan(RetryDecision.GIVE_UP, nextRefreshed)
+        }
+
         private fun isRetryableStatus(status: Int): Boolean =
             status == RATE_LIMITED || status == REQUEST_TIMEOUT ||
                 (status in SERVER_ERRORS && status != NOT_IMPLEMENTED)
@@ -747,7 +771,9 @@ private const val MS_PER_S = 1000L
  *  FIRST so nothing on the pre-NF-04 path changes; the HTTP-date fallback (NF-04: Cloudflare and
  *  gateway fronts emit it) converts against the WALL clock deliberately — an HTTP-date is wall
  *  time, MonoClock has no epoch — clamping past dates to 0. A skewed clock can only inflate the
- *  delta into NF-01's 120s cooldown ceiling / the 15s give-up, never wedge the head.
+ *  delta into NF-01's 120s cooldown ceiling / the 15s give-up on a RETRYABLE status (429/408/5xx —
+ *  UP-001: statusPlan only arms the shared cooldown for those); a non-retryable status's inflated
+ *  delta never touches the cooldown at all, so it can never wedge the head for OTHER turns.
  *  Top-level (not an UpstreamClient method): the class sits at its detekt function budget. */
 private fun retryAfterMs(header: String?, nowEpochMs: () -> Long = System::currentTimeMillis): Long? {
     val value = header?.trim()?.takeIf { it.isNotEmpty() } ?: return null

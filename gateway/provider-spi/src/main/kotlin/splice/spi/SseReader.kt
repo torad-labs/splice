@@ -25,6 +25,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.core.util.runCatchingCancellable
+import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.CharBuffer
 import java.nio.charset.CharsetDecoder
@@ -136,7 +137,9 @@ private class DecodeScratch {
             // n == 0 on an open channel: readAvailable did NOT suspend (torn/half-closed peer).
             currentCoroutineContext().ensureActive() // a cancelled turn exits here, never spins
             if (!channel.awaitContent(1)) return -1 // suspends until content or close; false == closed
-            if (++spuriousWakeups >= MAX_SPURIOUS_WAKEUPS) return -1 // channel lies — end honestly
+            // UP-005: distinguish exhaustion from the clean EOF above — a channel that keeps lying
+            // about content never gets to look like a normal, successful end of stream.
+            if (++spuriousWakeups >= MAX_SPURIOUS_WAKEUPS) throw SseSpuriousWakeupException(MAX_SPURIOUS_WAKEUPS)
         }
     }
 
@@ -289,6 +292,17 @@ private fun Char.isAsciiWs(): Boolean =
 
 public class SseFrameTooLargeException(kind: String, limit: Int) :
     RuntimeException("$kind exceeds the $limit-character safety limit")
+
+/** UP-005: the exhaustion end of [DecodeScratch.readChunk]'s spurious-wakeup bound — a half-open
+ *  channel that kept CLAIMING content ([ByteReadChannel.awaitContent] = true) without ever
+ *  DELIVERING any byte, [limit] times running. Previously indistinguishable from a genuine clean
+ *  end of stream (both returned -1); an IOException instead so every existing "stream read error"
+ *  handler (the translators' catch lists, TurnDriver's tear-aware reissue) classifies it through
+ *  the SAME honest-failure path other transport errors already use — never a crash, just no
+ *  longer silently identical to EOF. The bound itself (MAX_SPURIOUS_WAKEUPS) is unchanged. */
+public class SseSpuriousWakeupException(limit: Int) : IOException(
+    "SSE channel claimed content $limit times running without delivering a byte — treating the stream as torn",
+)
 
 private const val MAX_SSE_LINE_CHARS = 1024 * 1024
 private const val MAX_SSE_EVENT_CHARS = 4 * 1024 * 1024

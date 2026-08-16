@@ -53,6 +53,13 @@ public abstract class ResponsesProvider(
     final override fun buildTurn(body: AnthropicTurnBody, compact: Boolean, sessionId: String?): BuiltTurn {
         val upstreamModel = catalog.stripSuffixes(body.typed.model)
         val showOn = !showReasoning.isOff
+        // CMP-002: a transcript can carry many redacted_thinking blocks (appendRedactedThinking)
+        // and many cached tool_use envelopes (appendToolUse's RC-3 lookup), both routed through
+        // decodeReasoningEnvelope — logging every drop is transcript-length-proportional,
+        // synchronous daemon.log I/O inside request building. Latched to ONE line per build (same
+        // idiom as PassthroughStreamTranslator.unmappedIndexLogged); scoped to this call's local
+        // var, not an instance field, since the provider itself is long-lived across many turns.
+        var reasoningEnvelopeDropLogged = false
         val built = builder.build(
             body.typed,
             body.raw,
@@ -73,7 +80,14 @@ public abstract class ResponsesProvider(
                     (showOn && !compact) || reasoningCacheActive(quirks, compact),
                 ),
                 sessionId = sessionId,
-                decodeReasoningEnvelope = { decodeReasoningEnvelope(it) },
+                decodeReasoningEnvelope = { data ->
+                    decodeReasoningEnvelope(data) { msg ->
+                        if (!reasoningEnvelopeDropLogged) {
+                            reasoningEnvelopeDropLogged = true
+                            log(msg)
+                        }
+                    }
+                },
                 // RC-5: gateway-held reasoning continuity — the turn that emitted these tool ids
                 // left its plan in the cache; reinject it so the model resumes instead of
                 // re-deriving (codex parity; repeated-tool-call amnesia otherwise). Scoped to

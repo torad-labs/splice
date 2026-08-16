@@ -39,6 +39,14 @@ public class StatePaths(
         else -> headKey
     }
 
+    /** IO-006: the codex/claudex (and grok/claude-grok) aliasing above is deliberate migration
+     *  continuity — a renamed head keeps its usage history instead of starting a fresh empty file.
+     *  But two of [headKeys] mapping to the SAME legacy key means two heads write the same
+     *  usage/ratelimit files with no cross-process coordination if both run at once. Same idiom as
+     *  Topology.portCollisions: name the collision rather than let it silently race. */
+    public fun usageKeyCollisions(headKeys: Collection<String>): Map<String, List<String>> =
+        headKeys.groupBy(::legacyStatKey).filterValues { it.size > 1 }
+
     /** Per-turn perf telemetry JSONL (bottleneck instrument) — additive, not a frozen HUD name. */
     public fun perfStatsFile(headKey: String): Path = stateDir.resolve("$headKey-perf.jsonl")
 

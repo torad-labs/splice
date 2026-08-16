@@ -34,6 +34,11 @@ public class KeyStore(
     public fun write(envVar: String, value: String) {
         require(envVar.matches(ENV_NAME)) { "invalid env name '$envVar' (want $ENV_NAME)" }
         require(value.isNotBlank()) { "empty key for '$envVar'" }
+        // LNC-004: persist() writes `name = "$value"` with no escaping; an embedded newline (survives
+        // the trim() below, which only strips leading/trailing whitespace) would split into multiple
+        // lines and the line-oriented parser would read back only the truncated prefix — a value must
+        // never silently persist as something different from what was given.
+        require('\n' !in value && '\r' !in value) { "key for '$envVar' contains a newline — cannot store" }
         withStoreLock {
             val next = entriesStrict().toMutableMap()
             next[envVar] = value.trim()

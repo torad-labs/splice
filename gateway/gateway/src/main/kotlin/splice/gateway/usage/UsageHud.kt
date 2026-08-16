@@ -21,6 +21,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.usage.RateLimitState
 import splice.core.util.AsyncFileIo
+import splice.core.util.DaemonLog
 import splice.core.util.SecureFile
 import splice.core.util.firstLong
 import splice.core.util.runCatchingCancellable
@@ -165,6 +166,7 @@ public class UsageStore(
     private val usageFile: Path,
     private val ratelimitFile: Path,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val log: (String) -> Unit = DaemonLog::write,
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -210,8 +212,21 @@ public class UsageStore(
                 if (reset != null) put("reset_tokens", reset) else put("reset_tokens", null as String?)
                 put("updated_at", clock())
             }
-            // Parse once here (not in readRateLimit) — see PendingRateLimit.
-            pendingRateLimit.set(PendingRateLimit(payload.toString() + "\n", rateLimitStateFrom(payload)))
+            // Parse once here (not in readRateLimit) — see PendingRateLimit. USG-003: two turns can
+            // race persistRateLimit concurrently with headers from different rounds; accumulateAndGet
+            // (the atomic-max idiom UpstreamClient.rateLimitedUntilMs already uses for the same
+            // shape of problem) keeps whichever snapshot is fresher instead of last-write-wins.
+            val candidate = PendingRateLimit(payload.toString() + "\n", rateLimitStateFrom(payload))
+            // The accumulator's second arg is typed PendingRateLimit? (the AtomicReference's nullable
+            // T) and no null-guard smart-casts it, so [candidate] — the same instance accumulateAndGet
+            // passes in, non-null by construction — is read directly instead of !!-asserting it.
+            pendingRateLimit.accumulateAndGet(candidate) { current, _ ->
+                if (current == null || (candidate.parsed.updatedAt ?: 0L) >= (current.parsed.updatedAt ?: 0L)) {
+                    candidate
+                } else {
+                    current
+                }
+            }
             scheduleCoalesced(rlWriteScheduled) { flushRateLimit() }
         }
     }
@@ -308,19 +323,24 @@ public class UsageStore(
 
     // best-effort by design: a missing/corrupt usage file reads as empty; cancellation propagates.
     // The file is a JSON array rewritten on every append (not JSONL). Growth is bounded by the
-    // 5h window filter + MAX_RING_ENTRIES; oversize files are treated as empty.
-    private fun readEntriesFromDisk(): List<JsonObject> = runCatchingCancellable {
-        if (!Files.exists(usageFile)) {
-            emptyList()
-        } else {
-            val size = Files.size(usageFile)
-            if (size > MAX_USAGE_FILE_BYTES) {
-                emptyList()
-            } else {
-                json.parseToJsonElement(Files.readString(usageFile)).jsonArray.mapNotNull { it as? JsonObject }
-            }
+    // 5h window filter + MAX_RING_ENTRIES; oversize files are treated as empty. USG-005: the drop
+    // still degrades to empty (never throws), but is now logged via the same sink every other
+    // component in this codebase defaults to (DaemonLog::write) — the user's real 5h spend
+    // disappearing from the HUD must leave a trace.
+    private fun readEntriesFromDisk(): List<JsonObject> {
+        if (!Files.exists(usageFile)) return emptyList()
+        val size = runCatchingCancellable { Files.size(usageFile) }.getOrDefault(0L)
+        if (size > MAX_USAGE_FILE_BYTES) {
+            log("[usage] $usageFile is ${size}B > ${MAX_USAGE_FILE_BYTES}B cap — treating as empty, 5h window reset\n")
+            return emptyList()
         }
-    }.getOrDefault(emptyList())
+        return runCatchingCancellable {
+            json.parseToJsonElement(Files.readString(usageFile)).jsonArray.mapNotNull { it as? JsonObject }
+        }.getOrElse {
+            log("[usage] $usageFile unreadable/corrupt (${it.message}) — treating as empty, 5h window reset\n")
+            emptyList()
+        }
+    }
 
     private val ringLock = Any()
     private val writeLock = Any()

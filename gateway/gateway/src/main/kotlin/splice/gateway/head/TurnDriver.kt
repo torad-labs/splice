@@ -615,6 +615,7 @@ internal class TurnDriver(
         // Salvaged usage from absorbed rounds of an ultimately-FAILED turn: real billed tokens
         // that would otherwise vanish from the usage store and perf row (review-pr 2026-07-24).
         (outcome as? TurnOutcome.Failure)?.salvagedUsage?.let { s ->
+            if (s.inputTokens > 0) drive.perf.setCount(PerfKeys.IN_TOKENS, s.inputTokens)
             if (s.outputTokens > 0) {
                 drive.perf.setCount(PerfKeys.OUT_TOKENS, s.outputTokens)
                 drive.perf.timed(PerfKeys.USAGE_MS) { usageStore.appendOutputTokens(s.outputTokens) }
@@ -676,7 +677,10 @@ internal class TurnDriver(
         // SSE comment keepalive: pure transport, invisible to SSE parsers (spec: lines starting
         // with ':' are comments) — exists ONLY so a dead client fails a write promptly.
         const val SSE_KEEPALIVE_COMMENT = ": ping\n\n"
-        const val CLIENT_PING_INTERVAL_MS = 10_000L
+
+        // HEAD-008: 10s left a dead-without-FIN client (and the paid upstream stream + inflight
+        // slot behind it) undetected for up to 10s; tightened to 2s. Same mechanism, smaller tick.
+        const val CLIENT_PING_INTERVAL_MS = 2_000L
     }
 }
 

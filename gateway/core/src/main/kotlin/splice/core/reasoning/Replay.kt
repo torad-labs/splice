@@ -14,6 +14,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
+import splice.core.util.DaemonLog
 import splice.core.util.runCatchingCancellable
 import java.util.Base64
 
@@ -53,7 +54,7 @@ public fun encodeReasoningEnvelope(item: JsonObject): String? {
 
 /** redacted_thinking `data` -> Responses `reasoning` input item, or null for foreign data. */
 // foreign/garbled payloads pass through as null
-public fun decodeReasoningEnvelope(data: String?): JsonObject? {
+public fun decodeReasoningEnvelope(data: String?, log: (String) -> Unit = DaemonLog::write): JsonObject? {
     val parsed = data?.takeIf { it.isNotEmpty() }?.let { encoded ->
         runCatchingCancellable {
             val text = Base64.getDecoder().decode(encoded).toString(Charsets.UTF_8)
@@ -65,7 +66,18 @@ public fun decodeReasoningEnvelope(data: String?): JsonObject? {
     val item = if (tagOk && versionOk) parsed?.get(FIELD_ITEM) as? JsonObject else null
     val id = (item?.get(FIELD_ID) as? JsonPrimitive)?.content
     val encrypted = (item?.get(FIELD_ENCRYPTED) as? JsonPrimitive)?.content
-    if (id.isNullOrEmpty() || encrypted.isNullOrEmpty()) return null
+    if (id.isNullOrEmpty() || encrypted.isNullOrEmpty()) {
+        // CMP-002: keep the drop (a foreign/garbled payload must still pass through as null, not
+        // throw) but stop it being silent — a dropped block is prior reasoning vanishing from the
+        // replayed transcript with zero indication.
+        if (!data.isNullOrEmpty()) {
+            log(
+                "[reasoning-replay] dropped an unusable reasoning envelope " +
+                    "(len=${data.length}) — omitted from replay\n",
+            )
+        }
+        return null
+    }
     return buildJsonObject {
         put("type", "reasoning")
         put(FIELD_ID, id)

@@ -36,11 +36,26 @@ public data class Topology(
      *  unchanged port otherwise surfaces only as an opaque per-head "Address already in use". */
     public fun portCollisions(): Map<Int, List<String>> =
         heads.entries.groupBy({ it.value.port }, { it.key }).filterValues { it.size > 1 }
+
+    /** CTL-005: heads whose port is outside the valid TCP range — 0, negative, or > 65535 all
+     *  parse fine as an Int and otherwise surface only at bind time, as an opaque error that
+     *  never names the offending [heads.X] entry. Same idiom as [portCollisions]. */
+    public fun invalidPortHeads(): Map<String, Int> =
+        heads.filterValues { it.port !in VALID_PORT_RANGE }.mapValues { it.value.port }
 }
 
 /** Names both heads and the port so the operator sees the collision, not a phantom bind error. */
 public fun portCollisionMessage(port: Int, keys: List<String>): String =
     "port $port is claimed by ${keys.joinToString(" and ")} — give each head its own port"
+
+/** Names the head and its out-of-range port so the operator sees the config problem, not a
+ *  phantom bind error (CTL-005). */
+public fun invalidPortMessage(key: String, port: Int): String =
+    "head '$key' has an invalid port $port (must be $VALID_PORT_RANGE) — fix [heads.$key] port in splice.toml"
+
+private const val MIN_TCP_PORT = 1
+private const val MAX_TCP_PORT = 65535
+private val VALID_PORT_RANGE = MIN_TCP_PORT..MAX_TCP_PORT
 
 /** Distinct-from-"unknown-head" message for the ambiguous case: [keys] heads all map to [command].
  *  Naming both heads points the operator at the topology collision instead of a phantom head. */

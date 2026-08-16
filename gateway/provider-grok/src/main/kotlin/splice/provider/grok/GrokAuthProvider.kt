@@ -38,6 +38,7 @@ import splice.core.auth.InvalidGrantLatch
 import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.auth.SYNTHETIC_EXPIRY_TTL_MS
 import splice.core.auth.credentialsOrNull
 import splice.core.auth.synthesizedExpiryMs
 import splice.core.util.DaemonLog
@@ -156,7 +157,7 @@ public class GrokAuthProvider(
         // stripped it) is otherwise never-expiring — synthesize a ceiling off the mtime already
         // read above, no new I/O.
         parseSnapshot()
-            ?.let { it.copy(expiresAtMs = it.expiresAtMs ?: synthesizedExpiryMs(mtime)) } // SH-01: shared policy
+            ?.let { it.copy(expiresAtMs = it.expiresAtMs ?: synthesizedExpiryMs(mtime, now)) } // SH-01: shared policy
             ?.also { cache = Cache(it, mtime, now) }
     }.onFailure {
         log("[grok-auth] failed to read $authPath: $it — treating as not logged in")
@@ -194,7 +195,10 @@ public class GrokAuthProvider(
         val mtime = grokAuthMtimeOrNull(authPath, log)
         if (invalidGrantLatch.isLatched(mtime)) return RefreshOutcome.Rejected(INVALID_GRANT_REASON)
         val priorAccess = cache?.snapshot?.access
-        val outcome = CredentialLock.withLock(authPath) { refreshLocked(priorAccess) }
+        // AUTH-002: wire the daemon log sink so the lock's proceed-unlocked fallback is observable
+        // (CredentialLock.withLock's `log` default is a silent no-op) instead of only greppable
+        // in a source comment.
+        val outcome = CredentialLock.withLock(authPath, log = log) { refreshLocked(priorAccess) }
         if (outcome is RefreshOutcome.Rejected && outcome.reason == INVALID_GRANT_REASON) {
             invalidGrantLatch.latch(mtime)
         }
@@ -271,7 +275,10 @@ public class GrokAuthProvider(
         // blocking tier and refreshed AGAIN, per request, burning rotating refresh tokens (the
         // 2026-07-18 credential-death shape). A just-minted token is not older than the one it
         // replaced: synthesize now+TTL (the SH-01 shared policy) so the expiry always advances.
-        val expiresAtMs = fresh.expiresIn?.let { clock() + it * MS_PER_S } ?: synthesizedExpiryMs(clock())
+        // Review finding: synthesizedExpiryMs(clock(), clock()) read the clock twice and clamped
+        // the second read against the first, making the clamp a guaranteed no-op — there is no
+        // real credential-file mtime here to clamp, only "now" itself, so write that directly.
+        val expiresAtMs = fresh.expiresIn?.let { clock() + it * MS_PER_S } ?: (clock() + SYNTHETIC_EXPIRY_TTL_MS)
         // SH-02(b): even with (a), a sub-floor grant (expires_in shorter than the stale floor)
         // leaves the next read inside the blocking tier — a SUCCESSFUL refresh that cannot satisfy
         // the tier logic. Back off instead of looping (CLIProxyAPI refreshIneffectiveBackoff),

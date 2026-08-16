@@ -256,6 +256,39 @@ class UpstreamClientRetryPolicyTest {
         assertEquals(2, calls.get())
     }
 
+    // UP-001 (review 2026-08-15): the pushback-arms-cooldown branch used to fire for ANY status
+    // carrying a long Retry-After, not just the rate-limit-adjacent ones — a 403 with Retry-After
+    // could arm the head-wide cooldown and synthesize 429s for every OTHER turn over an error that
+    // says nothing about rate limits. Paired with the 429/503 case below (isRetryableStatus's set).
+    @Test
+    fun `UP-001 - a non-retryable 403 with a long retry-after does not arm the shared cooldown`() = runTest {
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            respond("forbidden", HttpStatusCode.Forbidden, headersOf("Retry-After", "30"))
+        }
+        val client = clientOver(engine, clock = { 0L })
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(1, calls.get())
+        assertEquals(0L, client.rateLimitedForMs, "a 403 must never arm the shared rate-limit cooldown")
+        // proven not-wedged: the very next call reaches upstream immediately, no fail-fast
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(2, calls.get())
+    }
+
+    @Test
+    fun `UP-001 - a retryable 503 with a long retry-after DOES arm the shared cooldown`() = runTest {
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            respond("busy", HttpStatusCode.ServiceUnavailable, headersOf("Retry-After", "30"))
+        }
+        val client = clientOver(engine, clock = { 0L })
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(1, calls.get())
+        assertTrue(client.rateLimitedForMs > 0L, "a retryable status must arm the shared cooldown, same as 429")
+    }
+
     @Test
     fun `clearRateLimitCooldown drops an armed horizon immediately`() = runTest {
         // NF-01: the restart escape hatch — HeadServer.startLocked() calls this.

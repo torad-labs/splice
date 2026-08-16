@@ -21,6 +21,7 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.Arguments
 import org.junit.jupiter.params.provider.MethodSource
 import splice.spi.SseFrameTooLargeException
+import splice.spi.SseSpuriousWakeupException
 import splice.spi.sseJsonEvents
 
 class SseReaderTest {
@@ -187,10 +188,14 @@ class SseReaderTest {
     // explicit failure instead of an infinite loop.
     @Test
     fun `torn channel that never yields bytes terminates instead of hot-spinning`() = runTest {
-        val emitted = withTimeout(TORN_CHANNEL_TIMEOUT_MS) {
-            sseJsonEvents(TornChannel()).count()
+        // UP-005: the bound's exhaustion now throws (distinguishable from a clean EOF) instead of
+        // quietly completing — the critical invariant this regression test guards is unchanged:
+        // it TERMINATES PROMPTLY (withTimeout would fail on the old hot-spin) rather than hanging.
+        withTimeout(TORN_CHANNEL_TIMEOUT_MS) {
+            assertThrows<SseSpuriousWakeupException> {
+                sseJsonEvents(TornChannel()).count()
+            }
         }
-        assertEquals(0, emitted) // no frames, and — critically — it RETURNED
     }
 
     // G12 (WHATWG HTML §9.2 event-stream assembly): table-driven coverage of the behaviors the old

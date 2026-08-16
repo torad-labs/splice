@@ -28,7 +28,14 @@ public object SecureFile {
         val tmp = try {
             Files.createTempFile(parent, ".secure", ".tmp", PosixFilePermissions.asFileAttribute(OWNER_ONLY))
         } catch (_: UnsupportedOperationException) {
-            Files.createTempFile(parent, ".secure", ".tmp")
+            // IO-004: no POSIX attribute support at creation — the file briefly exists at default
+            // (often world-readable) perms. Close the window before any content is written: set
+            // owner-only perms first, best-effort (a non-POSIX filesystem has no perms to set, and
+            // the atomic move afterward still holds), THEN write the credential.
+            val fallback = Files.createTempFile(parent, ".secure", ".tmp")
+            runCatching { Files.setPosixFilePermissions(fallback, OWNER_ONLY) }
+                .discard("POSIX perms unsupported on this filesystem — nothing to lock down")
+            fallback
         }
         runCatchingCancellable {
             Files.writeString(tmp, content)

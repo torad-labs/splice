@@ -28,9 +28,10 @@ private fun buildFull(
     json: String,
     quirks: PassthroughQuirks = PASS,
     compact: Boolean = false,
+    configEffort: String? = null,
 ): BuiltPassthroughRequest {
     val body = parseAnthropicBody(json)
-    return PassthroughRequestBuilder(quirks)
+    return PassthroughRequestBuilder(quirks, configEffort)
         .build(body, upstreamModel = "k3", originalModel = "claude-kimi--k3[1m]", compact = compact)
 }
 
@@ -205,6 +206,34 @@ class PassthroughRequestBuilderTest {
         assertEquals("low", thinkingReq("1").effort()) // > 0
         assertEquals("low", thinkingReq("8191").effort())
         assertEquals("max", thinkingReq(null).effort()) // absent -> native default
+    }
+
+    // Review finding PT-002 (KIMI BYTE-IDENTITY): a configured daemon effort must never move
+    // kimi's wire bytes for a request shape the pre-diff builder produced identically. Guards the
+    // exact hole the review found — a non-null configEffort silently replacing EFFORT_MAX in
+    // output_config.effort whenever `thinking` carried no budget_tokens.
+    @Test
+    fun `a configured effort never moves the wire bytes for thinking-present-without-budget`() {
+        val built = buildFull(
+            """{"model":"m","messages":[{"role":"user","content":"hi"}],
+                "thinking":{"type":"enabled"}}""",
+            configEffort = "low",
+        )
+        assertEquals("max", built.req.effort())
+    }
+
+    // The companion case: configEffort is not dead code — it DOES inform TurnMeta.effort, but only
+    // on the one shape (`thinking` entirely absent) that never reaches kimi's wire at all, since
+    // putThinking omits both `thinking` and `output_config` in that case.
+    @Test
+    fun `a configured effort informs meta effort only when thinking is entirely absent`() {
+        val built = buildFull(
+            """{"model":"m","messages":[{"role":"user","content":"hi"}]}""",
+            configEffort = "low",
+        )
+        assertNull(built.req["thinking"])
+        assertNull(built.req["output_config"])
+        assertEquals("low", built.meta.effort)
     }
 
     @Test

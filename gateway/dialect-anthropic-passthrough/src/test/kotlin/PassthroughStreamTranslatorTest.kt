@@ -281,6 +281,28 @@ class PassthroughStreamTranslatorTest {
         assertEquals(10, s.usage.inputTokens)
     }
 
+    // PT-001 (review 2026-08-15): logging every dropped post-stop delta is unbounded — a chatty
+    // misbehaving upstream sending many stray deltas for an already-closed index used to write one
+    // daemon.log line PER delta. Latched like TurnDriver's malformedLogged (G9): still visible,
+    // exactly once per turn.
+    @Test
+    fun `many post-stop deltas for the same dead index log exactly once`() = runTest {
+        val logs = mutableListOf<String>()
+        val ctx = PassthroughTurnContext({ false }, { null }, 180_000, 900_000, log = { logs.add(it) })
+        val strayDeltas = List(20) {
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"stray"}}""")
+        }
+        val events = listOf(
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""),
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}"""),
+            ev("""{"type":"content_block_stop","index":0}"""),
+        ) + strayDeltas + listOf(ev("""{"type":"message_stop"}"""))
+        val outcome = PassthroughStreamTranslator(ctx, KIMI).driveTurn(events.asFlow(), Rec())
+        assertTrue(outcome is TurnOutcome.Success, "got $outcome")
+        assertEquals(1, logs.size, "20 post-stop deltas on one dead index must log once, not 20: $logs")
+        assertTrue(logs.single().contains("unmapped index=0"), logs.single())
+    }
+
     @Test
     fun `finished turn beats a late watchdog fire - success not overloaded`() = runTest {
         // Chat/Responses parity: message_stop already delivered, then poller fires on EOF wait.

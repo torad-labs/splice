@@ -102,9 +102,29 @@ public data class PassthroughQuirks(
 private const val TYPE_THINKING = "thinking"
 private const val TYPE_TOOL_RESULT = "tool_result"
 
+// Kimi effort ladder vocab — top-level (not PassthroughRequestBuilder members) because
+// [budgetEffort] below is ALSO top-level: the class sits at its detekt TooManyFunctions budget.
+private const val EFFORT_LOW = "low"
+private const val EFFORT_HIGH = "high"
+private const val EFFORT_MAX = "max"
+private const val HIGH_BUDGET_FLOOR = 8_192L
+private const val MAX_BUDGET_FLOOR = 24_576L
+
 public data class BuiltPassthroughRequest(val req: JsonObject, val meta: TurnMeta)
 
-public class PassthroughRequestBuilder(private val quirks: PassthroughQuirks) {
+public class PassthroughRequestBuilder(
+    private val quirks: PassthroughQuirks,
+    /** v27 doctrine (Knob.EFFORT doc): compaction MUST run on the session's own effort or the
+     *  warm prompt-cache prefix invalidates ("compaction ate my subscription"). This builder is
+     *  stateless per-request — it has no true session memory — so the daemon's configured default
+     *  effort (restart-required, stable for the head's whole lifetime) is the closest available
+     *  proxy for "the session's own effort" when a turn resends no `thinking` config AT ALL — the
+     *  only shape [effortLadder] lets it answer for. KIMI BYTE-IDENTITY (review, PT-002): a turn
+     *  that sends `thinking` WITHOUT `budget_tokens` DOES reach kimi's wire via
+     *  `output_config.effort`, so that shape keeps the pre-existing unconditional EFFORT_MAX no
+     *  matter what this is set to — see [effortLadder]. */
+    private val configEffort: String? = null,
+) {
 
     public fun build(
         body: AnthropicTurnBody,
@@ -190,16 +210,25 @@ public class PassthroughRequestBuilder(private val quirks: PassthroughQuirks) {
     }
 
     /** Kimi effort ladder — vocab is low|high|max (NO medium). Compact turns take the SAME
-     *  derivation as session turns (inherit; v27) unless a pin is explicitly configured. */
+     *  derivation as session turns (inherit; v27) unless a pin is explicitly configured.
+     *
+     *  PT-002 (scoped after review): a turn with NO `thinking` config AT ALL — the common shape of
+     *  a Claude Code compaction call, even on a session that runs its regular turns with real
+     *  thinking — falls back to the configured default effort, ONLY when it is already one of
+     *  Kimi's own three literal rungs (never a fuzzy floor/ceiling mapping of a foreign
+     *  vocabulary). That fallback can only ever inform [TurnMeta.effort]: [putThinking] omits BOTH
+     *  `thinking` and `output_config` when `thinking` is absent, so it never reaches kimi's wire.
+     *
+     *  A turn that DOES send `thinking` but omits `budget_tokens` is a DIFFERENT shape — it reaches
+     *  the wire via `output_config.effort`, so it keeps the pre-existing unconditional EFFORT_MAX
+     *  no matter what [configEffort] is set to (KIMI BYTE-IDENTITY: kimi's built request bytes are
+     *  frozen for every request shape). */
     private fun effortLadder(typed: AnthropicRequest, compact: Boolean): String {
         if (compact) quirks.compactEffort?.let { return it }
-        val budget = typed.thinking?.budgetTokens ?: return EFFORT_MAX
-        return when {
-            budget >= MAX_BUDGET_FLOOR -> EFFORT_MAX
-            budget >= HIGH_BUDGET_FLOOR -> EFFORT_HIGH
-            budget > 0L -> EFFORT_LOW
-            else -> EFFORT_MAX
-        }
+        // PT-002: the ONLY branch [configEffort] can reach — see this function's KDoc for why.
+        val thinking = typed.thinking
+            ?: return configEffort?.trim()?.lowercase()?.takeIf { it in KIMI_EFFORTS } ?: EFFORT_MAX
+        return budgetEffort(thinking.budgetTokens)
     }
 
     // --- content-block scrubbing -----------------------------------------------------------------
@@ -348,11 +377,7 @@ public class PassthroughRequestBuilder(private val quirks: PassthroughQuirks) {
 
         // Passthrough emits native thinking blocks, so the transcript text-mirror stays off.
 
-        const val EFFORT_LOW = "low"
-        const val EFFORT_HIGH = "high"
-        const val EFFORT_MAX = "max"
-        const val HIGH_BUDGET_FLOOR = 8_192L
-        const val MAX_BUDGET_FLOOR = 24_576L
+        val KIMI_EFFORTS = setOf(EFFORT_LOW, EFFORT_HIGH, EFFORT_MAX)
 
         // Fields the specialized scrubs own (skipped by the verbatim copy); output_config is owned
         // by the thinking mapping, so a client-sent one is dropped.
@@ -369,4 +394,16 @@ public class PassthroughRequestBuilder(private val quirks: PassthroughQuirks) {
         val SAMPLING_KEYS = setOf(TEMPERATURE, TOP_P, TOP_K)
         val EMPTY_OBJECT = JsonObject(emptyMap())
     }
+}
+
+// Top-level (not a PassthroughRequestBuilder member): effortLadder's split-out budget-to-rung
+// mapping — the class sits at its detekt TooManyFunctions budget, same idiom as UpstreamClient's
+// top-level retryAfterMs. A null budget (thinking present, no budget_tokens) is the wire-frozen
+// EFFORT_MAX case KIMI BYTE-IDENTITY requires — see effortLadder's KDoc.
+private fun budgetEffort(budget: Long?): String = when {
+    budget == null -> EFFORT_MAX
+    budget >= MAX_BUDGET_FLOOR -> EFFORT_MAX
+    budget >= HIGH_BUDGET_FLOOR -> EFFORT_HIGH
+    budget > 0L -> EFFORT_LOW
+    else -> EFFORT_MAX
 }

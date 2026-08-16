@@ -123,6 +123,16 @@ public class ShadowClassifier(
             "[shadow-compact] compact=${row.compact} has_marker=${row.hasMarker} " +
                 "tool_count=${row.toolCount} sys_len=${row.sysLen}\n",
         )
+        // CMP-001: literal matching can't be made version-proof, but a PARTIAL drift — the pinned
+        // compactMarkers miss while the looser fallback regexes still catch the turn as compact —
+        // is mechanically detectable from signals this classifier already computes. Tagged and
+        // logged separately from the per-request noise above so it is actually loud, not buried.
+        if (row.compact && !row.hasMarker) {
+            log(
+                "[compact-drift] fallback-only match (has_marker=false, compact=true) — " +
+                    "Claude Code's summarizer wording may have drifted from compactMarkers\n",
+            )
+        }
         return row
     }
 

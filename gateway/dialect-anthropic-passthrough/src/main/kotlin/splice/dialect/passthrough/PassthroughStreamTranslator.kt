@@ -26,6 +26,7 @@ import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.util.DaemonLog
 import splice.core.util.firstLong
 import splice.core.util.strOrEmpty
 import splice.spi.BufferCapacity
@@ -42,6 +43,13 @@ public data class PassthroughTurnContext(
     val watchdogFired: () -> WatchdogFired?,
     val idleCapMs: Long,
     val totalCapMs: Long,
+    /** Daemon log sink (Main.persistentLogger): writes BOTH stderr and daemon.log, which is what
+     *  /mgmt/logs tails (wall kt-no-println). The translator's only anomaly channel — it has no
+     *  per-turn perf handle (Provider.streamTranslator threads none). Uninstalled, DaemonLog is a
+     *  no-op — never a silent stderr write — so tests need not thread it; once Main installs the
+     *  process sink this same reference starts writing to it, so no call site (including
+     *  PassthroughProvider) needs to pass it explicitly. */
+    val log: (String) -> Unit = DaemonLog::write,
 )
 
 public class PassthroughStreamTranslator(
@@ -72,6 +80,12 @@ public class PassthroughStreamTranslator(
 
     // NF-06: latched when BufferCapacity trips; never provider-reported (the verdict is local).
     private var runawayGuard: String? = null
+
+    // PT-001: latched after the first unmapped-index delta is logged (TurnDriver.malformedLogged's
+    // idiom) — a chatty misbehaving upstream can emit many post-stop deltas in a row, and per-delta
+    // logging is unbounded, synchronous daemon.log I/O on the hot path. The anomaly stays visible;
+    // it just stops repeating.
+    private var unmappedIndexLogged = false
 
     override suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome {
         try {
@@ -184,7 +198,18 @@ public class PassthroughStreamTranslator(
     // The upstream delta type already matches the (non-ignored) block it targets, so we dispatch on
     // the delta type; the open block's wire is the only thing we need. Ignored blocks have no wire.
     private suspend fun onBlockDelta(evt: JsonObject, sink: WireSink) {
-        val block = blocks[intIndex(evt) ?: return] ?: return
+        val index = intIndex(evt) ?: return
+        val block = blocks[index]
+        if (block == null) {
+            // PT-001: an index with no live block entry (never opened, or already closed) drops
+            // its content — never silently: this is the translator's only anomaly channel. Logged
+            // ONCE per turn, not once per delta (a torn/misbehaving upstream can emit many).
+            if (!unmappedIndexLogged) {
+                ctx.log("[${quirks.providerTag}] content_block_delta for unmapped index=$index — dropped\n")
+                unmappedIndexLogged = true
+            }
+            return
+        }
         val wire = block.wire ?: return // ignored block: swallow
         applyDelta(block, wire, evt["delta"] as? JsonObject ?: EMPTY, sink)
     }
@@ -218,7 +243,10 @@ public class PassthroughStreamTranslator(
     }
 
     private suspend fun onBlockStop(evt: JsonObject, sink: WireSink) {
-        val block = blocks[intIndex(evt) ?: return] ?: return
+        // PT-006: remove on close — a delta arriving after this index's content_block_stop must
+        // find no entry (and drop honestly via onBlockDelta's unmapped-index path), not apply
+        // itself to a logically closed block.
+        val block = blocks.remove(intIndex(evt) ?: return) ?: return
         val wire = block.wire ?: return // ignored block: nothing was opened
         val unsignedThinking = block.kind == Kind.THINKING && !block.signatureSeen
         if (quirks.synthesizeSignatures && unsignedThinking) {

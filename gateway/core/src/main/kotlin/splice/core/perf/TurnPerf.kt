@@ -53,11 +53,24 @@ public object PerfKeys {
     /** Concurrent turns in flight on this head at admission — the live-concurrency gauge. */
     public const val INFLIGHT: String = "inflight"
 
+    /** IO-005: AsyncFileIo.droppedCount() at admission — the cumulative process-wide count of
+     *  state/telemetry writes dropped at queue capacity, riding every turn's perf row the same way
+     *  [INFLIGHT] rides a live gauge. A one-time stderr warning at the first drop otherwise leaves
+     *  every later drop silent; this makes the running total watchable via /mgmt/logs + the perf
+     *  aggregation without polling a new endpoint. */
+    public const val ASYNC_IO_DROPS: String = "async_io_drops"
+
     // Tool-surface deferral (responses-lite tool_search) — the expected-delta instrument (#959):
     // a deploy where TOOLS_DEFERRED stays 0 is a false landing, not a quiet success.
     public const val TOOLS_EAGER: String = "tools_eager"
     public const val TOOLS_DEFERRED: String = "tools_deferred"
     public const val SEARCH_ROUNDS: String = "search_rounds"
+
+    /** UP-004: retries of a SocketException/SocketTimeoutException that fired AFTER the request
+     *  body was (possibly) fully written — the upstream may already be processing/billing the
+     *  prior attempt. Diagnostics were label-only ("transport-possible-duplicate" in the retry
+     *  log); this makes the double-issue rate countable in the perf row, not only greppable. */
+    public const val POST_SEND_RETRIES: String = "post_send_retries"
 
     /** Mark keys in pipeline order — the aggregation and the log line render in THIS order. */
     public val markOrder: List<String> = listOf(

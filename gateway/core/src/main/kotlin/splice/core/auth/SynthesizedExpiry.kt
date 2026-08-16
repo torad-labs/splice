@@ -9,5 +9,8 @@ package splice.core.auth
  *  shape-drifted auth.json (opaque token, exp-less JWT, foreign CLI write) ages out same-day. */
 public const val SYNTHETIC_EXPIRY_TTL_MS: Long = 4 * 60 * 60 * 1000L
 
-/** The expiry to use when a credential file carries none: its mtime plus [SYNTHETIC_EXPIRY_TTL_MS]. */
-public fun synthesizedExpiryMs(mtimeMs: Long): Long = mtimeMs + SYNTHETIC_EXPIRY_TTL_MS
+/** The expiry to use when a credential file carries none: its mtime plus [SYNTHETIC_EXPIRY_TTL_MS].
+ *  AUTH-003: [mtimeMs] is clamped to at most [nowMs] first — a credential file whose mtime reads
+ *  in the future (clock skew, container/VM resume, hibernate) must not push the synthesized
+ *  ceiling further out than a healthy clock would; it can only ever be as stale as "now". */
+public fun synthesizedExpiryMs(mtimeMs: Long, nowMs: Long): Long = minOf(mtimeMs, nowMs) + SYNTHETIC_EXPIRY_TTL_MS

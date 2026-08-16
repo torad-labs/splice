@@ -48,6 +48,7 @@ import splice.core.model.DiscoveryRow
 import splice.core.parse.parseAnthropicBody
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.util.AsyncFileIo
 import splice.core.util.MonoClock
 import splice.core.util.runCatchingCancellable
 import splice.gateway.compact.CompactStats
@@ -280,6 +281,7 @@ public class HeadServer(
         val slot = acquireSlotOrRespond(call) ?: return
         perf.mark(PerfKeys.GATE)
         perf.setCount(PerfKeys.INFLIGHT, gate.snapshot().inflight.toLong())
+        perf.setCount(PerfKeys.ASYNC_IO_DROPS, AsyncFileIo.droppedCount().toLong())
 
         try {
             val prepared = materializeOrRespond(call) { prepareTurn(call, perf) } ?: return

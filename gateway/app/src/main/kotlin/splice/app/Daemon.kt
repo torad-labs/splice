@@ -44,6 +44,7 @@ import splice.core.topology.Topology
 import splice.core.topology.catalogFor
 import splice.core.topology.configOverrides
 import splice.core.topology.effectiveApiKeyEnv
+import splice.core.topology.invalidPortMessage
 import splice.core.topology.portCollisionMessage
 import splice.core.turn.WatchdogBudget
 import splice.core.util.discard
@@ -131,11 +132,18 @@ internal inline fun <T> runCatchingDaemonBoundary(block: () -> T): Result<T> = t
 
 private fun assembleDaemonHeads(
     topology: Topology,
+    statePaths: StatePaths,
     heads: MutableMap<String, ManagedHead>,
     log: (String) -> Unit,
     assemble: (String, HeadConfig, ProviderConfig) -> ManagedHead,
 ): LinkedHashMap<String, String> {
     val failed = LinkedHashMap<String, String>()
+    // CTL-005: name an out-of-range port before the head hits an opaque bind-time error.
+    val invalidPorts = topology.invalidPortHeads()
+    for ((key, port) in invalidPorts) {
+        failed[key] = invalidPortMessage(key, port)
+        log("[daemon][boot] ${invalidPortMessage(key, port)}\n")
+    }
     // JW-13: name a duplicate-port collision before the loser hits an opaque "Address already in
     // use". Both colliding heads are marked failed with a message pointing at the sibling.
     val portDupes = topology.portCollisions()
@@ -144,9 +152,9 @@ private fun assembleDaemonHeads(
         keys.forEach { failed[it] = portCollisionMessage(port, keys) }
         log("[daemon][boot] ${portCollisionMessage(port, keys)}\n")
     }
-    // Colliding heads already failed above with a named reason — filter them out so the assembly
-    // loop keeps a single continue (detekt LoopWithTooManyJumpStatements).
-    for ((key, head) in topology.heads.filterKeys { it !in collidingHeads }) {
+    // Invalid-port and colliding heads already failed above with a named reason — filter them
+    // out so the assembly loop keeps a single continue (detekt LoopWithTooManyJumpStatements).
+    for ((key, head) in topology.heads.filterKeys { it !in collidingHeads && it !in invalidPorts.keys }) {
         val providerCfg = topology.providers[head.provider]
         if (providerCfg == null) {
             failed[key] = "unknown provider '${head.provider}'"
@@ -160,7 +168,24 @@ private fun assembleDaemonHeads(
                 log("[$key][boot] SKIPPED (build failed): ${it.message}\n")
             }
     }
+    // IO-006: heads above that alias to the same legacy usage file (deliberate migration
+    // continuity, not a bug on its own — see [logUsageKeyCollisions]) share it with no
+    // cross-process coordination if both run at once. Split off the file's CyclomaticComplexMethod
+    // ceiling, same reason [portCollisionMessage] et al. already live top-level.
+    logUsageKeyCollisions(statePaths, heads.keys, log)
     return failed
+}
+
+/** IO-006: neither head is refused (that would break the codex/claudex usage-history migration
+ *  the alias exists for) — the collision is only named, loudly, same idiom as JW-13's
+ *  [portCollisionMessage]. */
+private fun logUsageKeyCollisions(statePaths: StatePaths, headKeys: Collection<String>, log: (String) -> Unit) {
+    statePaths.usageKeyCollisions(headKeys).forEach { (statKey, keys) ->
+        log(
+            "[daemon][boot] WARNING: heads ${keys.joinToString(" and ")} share the '$statKey' usage/ratelimit " +
+                "files with no cross-process write coordination — quota numbers may race\n",
+        )
+    }
 }
 
 /** The two per-head probe sinks startDaemonHeads writes into (detekt LongParameterList). */
@@ -275,6 +300,8 @@ private fun passthroughProviderFor(
     // existed would otherwise lose kimi's UA — which its /coding endpoint 403s on.
     staticHeaders = baseHeaders + ctx.providerCfg.staticHeaders,
     identityHeaders = identityHeaders,
+    // PT-002/v27: same session-stable effort proxy ResponsesProvider threads as configEffort.
+    configEffort = ctx.cfg.effort,
 )
 
 /** Overlay the head's TOML [providers.*.quirks] onto a passthrough head's BASE quirk profile.
@@ -379,7 +406,7 @@ public class Daemon(
         // PER-HEAD BOOT ISOLATION (audit 2026-07-18): one head that fails to assemble (a valid
         // TOML the builder can't wire, e.g. a not-yet-supported dialect) must NOT abort the whole
         // daemon with a stack trace to /dev/null. Log the degraded head and serve the rest.
-        val failed = assembleDaemonHeads(topology, heads, log) { key, head, providerCfg ->
+        val failed = assembleDaemonHeads(topology, statePaths, heads, log) { key, head, providerCfg ->
             assembleHead(providerContext(key, head, providerCfg), controlPort)
         }
         val srv = ControlServer(

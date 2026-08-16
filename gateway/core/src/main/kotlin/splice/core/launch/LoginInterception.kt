@@ -19,6 +19,7 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import splice.core.util.DaemonLog
 import splice.core.util.runCatchingCancellable
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
@@ -156,10 +157,25 @@ internal object LoginInterception {
         Files.createSymbolicLink(dst, src)
     }
 
-    private fun writeHookScript(configDir: Path, name: String, content: String): Path {
+    private fun writeHookScript(
+        configDir: Path,
+        name: String,
+        content: String,
+        log: (String) -> Unit = DaemonLog::write,
+    ): Path {
         val script = configDir.resolve(name)
         Files.writeString(script, content)
-        runCatchingCancellable { Files.setPosixFilePermissions(script, PosixFilePermissions.fromString("rwx------")) }
+        // LNC-005: non-fatal on a filesystem without POSIX perms (unchanged), but no longer silent —
+        // a failed chmod here means the generated hook script keeps broader-than-intended modes.
+        val chmod = runCatchingCancellable {
+            Files.setPosixFilePermissions(script, PosixFilePermissions.fromString("rwx------"))
+        }
+        if (chmod.isFailure) {
+            log(
+                "[login] chmod rwx------ failed for $script " +
+                    "(${chmod.exceptionOrNull()?.message}) — keeps broader perms\n",
+            )
+        }
         return script
     }
 

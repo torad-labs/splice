@@ -121,7 +121,10 @@ public class KimiAuthProvider(
         val mtime = kimiAuthMtimeOrNull(authPath, log)
         if (invalidGrantLatch.isLatched(mtime)) return RefreshOutcome.Rejected(INVALID_GRANT_REASON)
         val priorAccess = cache?.snapshot?.access
-        val outcome = CredentialLock.withLock(authPath) { refreshLocked(priorAccess) }
+        // AUTH-002: wire the daemon log sink so the lock's proceed-unlocked fallback is observable
+        // (CredentialLock.withLock's `log` default is a silent no-op) instead of only greppable
+        // in a source comment.
+        val outcome = CredentialLock.withLock(authPath, log = log) { refreshLocked(priorAccess) }
         if (outcome is RefreshOutcome.Rejected && outcome.reason == INVALID_GRANT_REASON) {
             invalidGrantLatch.latch(mtime)
         }
@@ -232,7 +235,7 @@ public class KimiAuthProvider(
             // SH-01 shared missing-expiry policy: a file with no expires_at synthesizes
             // mtime+TTL — ONE refresh when the ceiling lapses, not one per call under the floor.
             expiresAtS = obj.long("expires_at")
-                ?: (synthesizedExpiryMs(Files.getLastModifiedTime(authPath).toMillis()) / MS_PER_S),
+                ?: (synthesizedExpiryMs(Files.getLastModifiedTime(authPath).toMillis(), clock()) / MS_PER_S),
             expiresInS = obj.long("expires_in") ?: 0L,
         )
     }

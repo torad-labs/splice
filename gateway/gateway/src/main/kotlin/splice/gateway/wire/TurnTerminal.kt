@@ -9,6 +9,7 @@ package splice.gateway.wire
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
 import splice.spi.WireSink
+import java.util.concurrent.atomic.AtomicLong
 
 public interface TurnTerminal : WireSink {
     /** True once this turn's ending is SETTLED — a terminal or error durably reached the wire,
@@ -43,3 +44,13 @@ public interface TurnTerminal : WireSink {
      * which has no incremental wire to open. */
     public suspend fun ensureStarted() {}
 }
+
+// HEAD-001/HEAD-002: a bare "msg_${System.currentTimeMillis()}" collides whenever two turns start
+// within the same millisecond, violating the unique-id invariant the client relies on. A
+// process-wide monotonic sequence appended to the timestamp makes every id distinct regardless of
+// concurrency; shared here (both terminal implementations already live in this file's package)
+// rather than duplicated per sink.
+private val messageIdSeq = AtomicLong(0)
+
+/** A fresh Anthropic-shaped message id, unique even across turns starting in the same millisecond. */
+public fun generateMessageId(): String = "msg_${System.currentTimeMillis()}_${messageIdSeq.incrementAndGet()}"

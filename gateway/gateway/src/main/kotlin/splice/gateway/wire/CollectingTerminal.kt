@@ -20,7 +20,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 public class CollectingTerminal(
     private val model: String,
     private val usagePayload: UsagePayloadBuilder,
-    private val messageId: String = "msg_${System.currentTimeMillis()}",
+    private val messageId: String = generateMessageId(),
 ) : TurnTerminal {
 
     private sealed class Blk {
@@ -38,6 +38,15 @@ public class CollectingTerminal(
 
     private var body: JsonObject? = null
     private var status = DEFAULT_ERROR_STATUS
+
+    // HEAD-003: latched when a tool_use's accumulated input never parsed as JSON, OR (REG-001)
+    // when a tool_use has no usable name and is dropped from content — either way the client must
+    // never receive a turn whose stop_reason claims tool_use while content disagrees (dropped
+    // silently) or carries the wrong (silently emptied) arguments.
+    private var malformedToolInput = false
+
+    // HEAD-004: id fallback counter for a tool_use whose upstream id was blank.
+    private var toolSynthCounter = 0
 
     /** The single JSON body to write back (a terminal message or an error envelope). Never null
      *  after a driven turn — a turn always ends in emitTerminal or emitError; the fallback covers
@@ -96,11 +105,25 @@ public class CollectingTerminal(
     // ── terminal (TurnTerminal) ──────────────────────────────────────────────
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) {
         if (!ended.compareAndSet(false, true)) return
+        val content = contentBlocks()
+        if (malformedToolInput) {
+            // HEAD-003: a tool_use whose input never parsed as JSON must not reach the client as
+            // {} — a tool executing with the wrong (silently emptied) arguments is a wrong action
+            // taken on the user's machine. Fail the turn honestly instead. `ended` is already
+            // latched by this call's own CAS above, so this sets body/status directly rather than
+            // through emitError (its CAS would no-op against an already-ended terminal).
+            body = errorEnvelope(
+                ErrorType.API_ERROR.wireName,
+                "claudex: malformed tool_use input from upstream — retry",
+            )
+            status = statusFor(ErrorType.API_ERROR)
+            return
+        }
         body = SseEmitter.terminalMessageJson(
             TerminalMessage(
                 id = messageId,
                 model = model,
-                content = contentBlocks(),
+                content = content,
                 hasToolUse = hasToolUse,
                 incomplete = incomplete,
                 usagePayload = usagePayload(usage),
@@ -144,17 +167,32 @@ public class CollectingTerminal(
         if (sig.isNotEmpty()) put("signature", sig.toString())
     }
 
-    private fun toolBlock(tool: Blk.Tool): JsonObject = buildJsonObject {
-        put(FIELD_TYPE, "tool_use")
-        put("id", tool.id)
-        put("name", tool.name)
-        put("input", parseToolInput(tool.args.toString()))
+    // HEAD-004: a blank id is synthesized (opaque token, same idiom as
+    // ResponsesStreamTranslator's toolu_synth_ fallback) — a blank name has no safe stand-in, so
+    // the block is dropped from content. REG-001: dropping it silently left stop_reason="tool_use"
+    // (computed upstream from the raw event, before this filtering) disagreeing with an empty
+    // content array — protocol-invalid. Reuse the malformedToolInput honest-failure path (HEAD-003)
+    // instead of shipping the contradiction.
+    private fun toolBlock(tool: Blk.Tool): JsonObject? {
+        if (tool.name.isBlank()) {
+            malformedToolInput = true
+            return null
+        }
+        val id = tool.id.ifBlank { "toolu_synth_${toolSynthCounter++}" }
+        return buildJsonObject {
+            put(FIELD_TYPE, "tool_use")
+            put("id", id)
+            put("name", tool.name)
+            put("input", parseToolInput(tool.args.toString()))
+        }
     }
 
-    private fun parseToolInput(raw: String): JsonObject =
-        raw.takeIf { it.isNotBlank() }
-            ?.let { runCatchingCancellable { Json.parseToJsonElement(it).jsonObject }.getOrNull() }
-            ?: EMPTY_INPUT
+    private fun parseToolInput(raw: String): JsonObject {
+        if (raw.isBlank()) return EMPTY_INPUT // a tool with genuinely no args — not a parse failure
+        val parsed = runCatchingCancellable { Json.parseToJsonElement(raw).jsonObject }.getOrNull()
+        if (parsed == null) malformedToolInput = true // HEAD-003: non-blank input that never parsed
+        return parsed ?: EMPTY_INPUT
+    }
 
     public companion object {
         private const val OK_STATUS = 200

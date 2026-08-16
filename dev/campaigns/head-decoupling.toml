@@ -1,0 +1,81 @@
+
+# LAW [2026-08-15]: PROVENANCE — plan docs/superpowers/plans/2026-08-15-head-decoupling.md; boundaries from claude-head CH-12 deferred items (a)-(i). Concept #924: violations become impossible to express, not review comments.
+# LAW [2026-08-15]: NEVER-BELOW-STATUS-QUO — kimi goldens frozen; profile defaults reproduce today's arm behavior exactly; validation never rejects a working config.
+# LAW [2026-08-15]: FAIL-CLOSED BOOT + REPAIR OFFER (operator, 2026-08-15) — findings refuse boot listing ALL at once; CLI detects installed harnesses (claude/kimi/codex/grok) and offers an interactive fix session. Never boot on a finding, never fix silently.
+# LAW [2026-08-15]: BRANCH feat/claude-head; builders module-tests only, no push; gate + commit chain are the orchestrator's.
+[campaign]
+name = "head-decoupling"
+created = "2026-08-15"
+next = ["HD-1", "HD-2", "HD-3", "HD-4", "HD-5", "HD-6", "HD-7", "HD-8", "HD-9"]
+
+[[items]]
+id = "HD-1"
+phase = "profile"
+title = "PassthroughProfile registry (dialect module): named data bundle {quirks base, base headers, usesDeviceIdentity} for NEUTRAL and KIMI; ProviderConfig gains nullable profile key; Daemon resolves explicit > auth-kind default (kimi-oauth->KIMI, api-key->KIMI, client->NEUTRAL) and all dispatch arms consume the resolved profile; KIMI_BASE_HEADERS moves into the profile; example TOML documents it on kimi's entry. Goldens green UNMODIFIED."
+files = ["gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughProfile.kt", "gateway/dialect-anthropic-passthrough/src/test/kotlin/PassthroughProfileTest.kt", "gateway/core/src/main/kotlin/splice/core/topology/Topology.kt", "gateway/core/src/test/kotlin/TopologyConfigOverridesTest.kt", "gateway/app/src/main/kotlin/splice/app/Daemon.kt", "gateway/app/src/test/kotlin/splice/app/PassthroughQuirksOverlayTest.kt", "gateway/app/src/test/kotlin/ExampleConfigTest.kt", "config/splice.example.toml"]
+status = "todo"
+verify = "cd gateway && ./gradlew :dialect-anthropic-passthrough:test :core:test :app:test --console=plain"
+
+[[items]]
+id = "HD-2"
+phase = "validate"
+title = "TopologyValidator (core, pure): ConfigFinding{providerKey,key,problem,fix}; rules — unknown auth.kind per dialect (passthrough: kimi-oauth|api-key|client; openai: chatgpt-oauth|grok-oauth|api-key), unknown/misplaced profile (wires neutral|kimi, lockstep with PassthroughProfile.fromWire), passthrough-only quirks on non-passthrough dialects and tagged openai-only quirks on passthrough, extra_headers on non-consuming dialects, RFC 9110 header-name charset. Findings EXHAUSTIVE. Daemon throws TopologyValidationException(findings) before assembly. Shipped example config must validate clean (ExampleConfigTest)."
+files = ["gateway/core/src/main/kotlin/splice/core/topology/TopologyValidator.kt", "gateway/core/src/test/kotlin/TopologyValidatorTest.kt", "gateway/app/src/main/kotlin/splice/app/Daemon.kt", "gateway/app/src/main/kotlin/splice/app/Main.kt", "gateway/app/src/test/kotlin/ExampleConfigTest.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :core:test :app:test --console=plain"
+
+[[items]]
+id = "HD-3"
+phase = "validate"
+title = "ConfigRepair (app/cli): Harness{name,binary} for claude/kimi/codex/grok; detectHarnesses via injected binaryExists; repairPrompt(configPath,findings) carries path+every finding+fix+do-not-change-other-keys; offer() prints findings then TTY-launches chosen harness with the prompt as argv / non-TTY prints the command / no-harness prints editor hint. All effects injected (binaryExists,isTty,out,readLine,exec) so every path unit-tests. Wired: Main boot path catches TopologyValidationException; DoctorCommand runs validator + offer."
+files = ["gateway/app/src/main/kotlin/splice/app/cli/ConfigRepair.kt", "gateway/app/src/test/kotlin/splice/app/cli/ConfigRepairTest.kt", "gateway/app/src/main/kotlin/splice/app/Main.kt", "gateway/app/src/main/kotlin/splice/app/cli/DoctorCommand.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :app:test --console=plain"
+
+[[items]]
+id = "HD-4"
+phase = "observe"
+title = "Boot transparency: one greppable log line per assembled passthrough head via Daemon's injected log — head key, dialect, auth kind, resolved profile wire, declared quirk-override keys (non-null passthrough knobs), static header NAMES sorted (never values). Pinned by PassthroughQuirksOverlayTest log capture."
+files = ["gateway/app/src/main/kotlin/splice/app/Daemon.kt", "gateway/app/src/test/kotlin/splice/app/PassthroughQuirksOverlayTest.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :app:test --console=plain"
+
+[[items]]
+id = "HD-5"
+phase = "wire"
+title = "Forwarded-header fidelity (closes e+f): forwardedClientHeaders uses getAll — anthropic-beta values comma-joined (RFC 9110 list-field equivalence), other allowlisted headers first-value; caller's beta set REPLACES a configured default entirely, default rides only when caller silent. HTTP-level tests with repeated header lines + a startHead staticHeaders variant."
+files = ["gateway/gateway/src/main/kotlin/splice/gateway/head/HeadServer.kt", "gateway/gateway/src/test/kotlin/head/HeadServerClientAuthTest.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :gateway:test --console=plain"
+
+[[items]]
+id = "HD-6"
+phase = "wire"
+title = "Caller-fault health (closes d): HeadHealthCounters gains caller() + callerOrigin in HeadHealthCounts; TurnDriver UpstreamFailed arm routes AUTHENTICATION failures on deps.forwardClientAuth heads to caller(), everything else provider(); ControlServer /api/heads exposes callerOrigin (additive); reset() covers it. Test: RecordingUpstream 401s a reject-me bearer; caller bucket 1, provider 0; WebuiContractTest expectation extended if it pins the payload."
+files = ["gateway/gateway/src/main/kotlin/splice/gateway/head/HeadHealthCounters.kt", "gateway/gateway/src/main/kotlin/splice/gateway/head/TurnDriver.kt", "gateway/control/src/main/kotlin/splice/control/ControlServer.kt", "gateway/gateway/src/test/kotlin/head/HeadServerClientAuthTest.kt", "gateway/control/src/test/kotlin/splice/control/WebuiContractTest.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :gateway:test :control:test --console=plain"
+
+[[items]]
+id = "HD-7"
+phase = "observe"
+title = "Ambient-credential visibility (closes c): LaunchService recipe warning when nativeClientAuth && envReader(ANTHROPIC_API_KEY) != null — names the VAR never the value, composes with dangerous-perms warning via newline, foreign heads never warn (they unset it); HeadServer logs forwarded-client-auth header NAMES per turn via deps.log. Tests: LaunchServiceTest injected envReader both ways; HeadServerClientAuthTest log capture asserts names present, token value absent."
+files = ["gateway/control/src/main/kotlin/splice/control/LaunchService.kt", "gateway/control/src/test/kotlin/splice/control/LaunchServiceTest.kt", "gateway/gateway/src/main/kotlin/splice/gateway/head/HeadServer.kt", "gateway/gateway/src/test/kotlin/head/HeadServerClientAuthTest.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :control:test :gateway:test --console=plain"
+
+[[items]]
+id = "HD-8"
+phase = "docs"
+title = "Builder invariant comment (closes i): PassthroughRequestBuilder file header names the four unconditional transforms every head gets — disabled thinking dropped, empty unsigned thinking dropped, non-array content coerced, effort ladder populates TurnMeta.effort with adaptive mapping off — EACH verified against the code first, citing function names; a claim the code does not support is REPORTED not documented. Comment-only change; goldens untouched."
+files = ["gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughRequestBuilder.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :dialect-anthropic-passthrough:check --console=plain"
+
+[[items]]
+id = "HD-9"
+phase = "enforce"
+title = "Konsist arch laws (#924 capstone): (1) PassthroughQuirks constructed only under dialect-anthropic-passthrough/src/main + Daemon.kt (tests exempt); (2) files under */dialect-*/src/main import nothing from splice.core.topology. Mirror ArchitectureLawsTest's existing scope idiom. RED PROOF via synthetic violations (scratch topology import in a dialect file; scratch PassthroughQuirks construction in HeadServer.kt), both restored, commands recorded in the landing note."
+files = ["gateway/arch-tests/src/test/kotlin/ArchitectureLawsTest.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :arch-tests:test --console=plain"

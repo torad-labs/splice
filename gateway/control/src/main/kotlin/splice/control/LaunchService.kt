@@ -15,6 +15,10 @@ import splice.core.launch.TokenCaptureSpec
 import java.nio.file.Path
 import kotlin.math.max
 
+// Floor for CLAUDE_CODE_AUTO_COMPACT_WINDOW (buildEnv): a small context window must not shrink the
+// auto-compact window below this.
+private const val AUTO_COMPACT_FLOOR = 60_000
+
 /** What a head needs to produce a launch recipe (supplied by :app at wiring time). */
 public data class LaunchSpec(
     val configDir: Path,
@@ -186,9 +190,5 @@ public class LaunchService(
             "HAIKU" to fast,
             "FABLE" to frontier,
         )
-    }
-
-    private companion object {
-        const val AUTO_COMPACT_FLOOR = 60_000
     }
 }

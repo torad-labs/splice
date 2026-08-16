@@ -68,6 +68,10 @@ run "catalog metadata sync" python3 checks/catalog-metadata-sync.py
 run "catalog metadata selftest" bash checks/catalog-metadata-selftest.sh
 run "gradle clean check" bash -c 'cd gateway && ./gradlew clean check'
 run "ast-grep walls" npm run --silent gate:rules
+# The walls leg above proves the routed rules pass; it cannot prove they are ALL routed. .rules/kotlin
+# sat in the tree unreferenced for a month reporting zero findings, because ast-grep never errors on a
+# rule directory nobody named. This leg is that missing half — completeness, not conformance.
+run "rule routing"   bash checks/rule-routing.sh
 run "hook tests"     npm run --silent test:hooks
 # Campaign enforcement, BLOCKING half only (C1/C2/C3/C5/C6/C7/C9): a wall that lies, a status that
 # lies, a fence collision, or a broken law are never acceptable. The ADVISORY half (C4 unwalled /

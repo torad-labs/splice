@@ -42,6 +42,14 @@ by a tree with the L3 violation fully restored:
      that vendor's WORKING turns as a provider-reported refusal — a dishonest verdict in the other
      direction, and a G20 inversion blaming a backend that denied refusing.
 
+Both halves match LITERAL SOURCE SUBSTRINGS, so a pure-style migration can break a token while the
+invariant is fully intact. That is what the chat conversion entry's isNotEmpty/isNotBlank note
+records, and it happened again on 2026-08-16. The remedy is the same one, applied per token: an
+entry may be a TUPLE of equivalent spellings, satisfied by any one of them. This is not a
+relaxation — every carrier and every conversion still has to be matched by something in the file,
+each spelling still names a whole call site rather than a bare identifier, and deleting the arm
+removes every spelling at once.
+
 Deliberately NOT enforced: an OPEN remainder on `stop_reason`. The safe four stay safe and an
 unrecognized vendor value keeps end_turn semantics — a false Failure on working traffic is worse
 than the silent success it replaces (see the ledger note on W4-A for the rejected alternative).
@@ -70,12 +78,21 @@ PATHS = {"passthrough": PASS, "chat": CHAT, "responses": RESP}
 # Per dialect: ([carrier tokens that must be READ], [call sites proving the honest conversion]).
 # Every conversion token was measured at 0 occurrences in HEAD 5840979 and 1 after the fix, so it
 # cannot be satisfied by code that was already there.
+#
+# An entry is a string, or a TUPLE of equivalent spellings of the SAME call site (ANY-OF, see
+# `_alts`). The carrier LIST stays ALL-OF: every carrier must still be read, no carrier is optional.
 REQUIRED = {
     "passthrough": (
         ['"refusal" -> ErrorType.API_ERROR to',
          '"pause_turn" -> ErrorType.OVERLOADED to',
          '"model_context_window_exceeded" -> ErrorType.API_ERROR to'],
-        ["else -> stopReasonFailure(reason)"],
+        # 2026-08-16 — commit 6868086 ("retire top-level functions and companions from the three
+        # dialects", HD-M6 slice 6/8) moved `stopReasonFailure` onto PassthroughFailureRules, which
+        # inserts a receiver at the call site: `else -> failureRules.stopReasonFailure(reason)`. Same
+        # member, same name, same arguments — behaviour did not change. The invariant either spelling
+        # satisfies is that the `else ->` REMAINDER is still handed to the stop_reason verdict helper;
+        # deleting the arm, or restoring `else -> Unit`, still satisfies neither.
+        ["else -> failureRules.stopReasonFailure(reason)", "else -> stopReasonFailure(reason)"],
     ),
     "chat": (
         ['strIfString(obj["refusal"])',
@@ -89,14 +106,29 @@ REQUIRED = {
         ["refusalBuf.isNotBlank() -> TurnOutcome.Failure", "refusalBuf.isNotEmpty() -> TurnOutcome.Failure"],
     ),
     "responses": (
-        ['"response.refusal.delta", "response.refusal.done" -> addRefusal(evt)',
+        # 2026-08-16 — same migration as the passthrough conversion above (commit 6868086, HD-M6):
+        # `addRefusal` became a member of ResponsesEventOps, so its two call sites gained a receiver
+        # and the former extension receiver became the first argument — `addRefusal(evt)` reads
+        # `ops.addRefusal(this, evt)`, `reducer.addRefusal(obj)` reads `ops.addRefusal(reducer, obj)`.
+        # Behaviour did not change. The invariant either spelling satisfies is that THIS dispatch arm
+        # and THIS guarded read still hand their carrier to addRefusal; deleting the arm, or dropping
+        # the `refusal`-typed part back into an unread branch, still satisfies neither. The middle
+        # carrier is untouched by the migration and stays a single spelling.
+        [('"response.refusal.delta", "response.refusal.done" -> ops.addRefusal(this, evt)',
+          '"response.refusal.delta", "response.refusal.done" -> addRefusal(evt)'),
          'strIfString(if (isDelta) obj["delta"] else obj["refusal"])',
-         'if (strOrEmpty(obj["type"]) == "refusal") reducer.addRefusal(obj)'],
+         ('if (strOrEmpty(obj["type"]) == "refusal") ops.addRefusal(reducer, obj)',
+          'if (strOrEmpty(obj["type"]) == "refusal") reducer.addRefusal(obj)')],
         ["?: refusalFailure(reducer)"],
     ),
 }
 
 NO_VERDICT = "reads the signal but never turns it into a provider-reported Failure"
+
+
+def _alts(entry: str | tuple[str, ...]) -> tuple[str, ...]:
+    """Equivalent spellings of ONE call site. A bare string is its own only spelling."""
+    return (entry,) if isinstance(entry, str) else entry
 
 
 def detect(sources: dict[str, str | None]) -> list[str]:
@@ -107,7 +139,9 @@ def detect(sources: dict[str, str | None]) -> list[str]:
         if text is None:
             problems.append(f"{name} translator missing — refusing to pass vacuously")
             continue
-        missing = [c for c in carriers if c not in text]
+        # ALL-OF over carriers, ANY-OF within one carrier's spellings: every carrier must still be
+        # read, and a carrier whose spellings are all absent is a carrier nobody handles.
+        missing = [" | ".join(_alts(c)) for c in carriers if not any(a in text for a in _alts(c))]
         if missing:
             problems.append(
                 f"{name} never reads the backend's refusal/non-clean signal ({', '.join(missing)}) "

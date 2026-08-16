@@ -41,34 +41,41 @@ internal sealed class RefreshStep<out T> {
     data object Retry : RefreshStep<Nothing>()
 }
 
-private fun isInvalidGrant(body: String, json: Json): Boolean = runCatchingCancellable {
-    (json.parseToJsonElement(body) as? JsonObject)?.str("error") == "invalid_grant"
-}.getOrDefault(false)
+/** The retry loop and its terminal-failure classifier, held as a collaborator by each vendor's
+ *  refresh (Kotlin style law, 2026-08-15): a helper shared by several types is a small named
+ *  class they construct, not a pair of free functions. Stateless — every attempt's state lives
+ *  in [refreshWithRetry]'s own frame, so one instance per vendor is as correct as one per call. */
+internal class RefreshRetry {
 
-/** 401/403 are terminal by status alone; invalid_grant wins even under a nominally-retryable status. */
-internal fun isTerminalRefreshFailure(status: Int, body: String, json: Json): Boolean =
-    status == HTTP_UNAUTHORIZED || status == HTTP_FORBIDDEN || isInvalidGrant(body, json)
+    /** 401/403 are terminal by status alone; invalid_grant wins even under a nominally-retryable status. */
+    internal fun isTerminalRefreshFailure(status: Int, body: String, json: Json): Boolean =
+        status == HTTP_UNAUTHORIZED || status == HTTP_FORBIDDEN || isInvalidGrant(body, json)
 
-/**
- * Run [call] up to [maxAttempts] times, handing each response to [classify]. A thrown exception
- * from [call] or [classify] (network blip, malformed response) is treated as [RefreshStep.Retry],
- * not a permanent failure. Returns the terminal value, or null once retries are exhausted.
- */
-internal suspend fun <T> refreshWithRetry(
-    maxAttempts: Int = REFRESH_MAX_ATTEMPTS,
-    call: suspend () -> HttpResponse,
-    classify: suspend (HttpResponse) -> RefreshStep<T>,
-): T? {
-    var attempt = 0
-    while (attempt < maxAttempts) {
-        val step = runCatchingCancellable { classify(call()) }.getOrDefault(RefreshStep.Retry)
-        if (step is RefreshStep.Terminal) return step.value
-        attempt++
-        if (attempt < maxAttempts) {
-            val base = REFRESH_BACKOFF_BASE_MS shl attempt // 2^attempt seconds
-            val jittered = base * Random.nextDouble(REFRESH_JITTER_LO, REFRESH_JITTER_HI) // ±10%
-            delay(jittered.toLong())
+    private fun isInvalidGrant(body: String, json: Json): Boolean = runCatchingCancellable {
+        (json.parseToJsonElement(body) as? JsonObject)?.str("error") == "invalid_grant"
+    }.getOrDefault(false)
+
+    /**
+     * Run [call] up to [maxAttempts] times, handing each response to [classify]. A thrown exception
+     * from [call] or [classify] (network blip, malformed response) is treated as [RefreshStep.Retry],
+     * not a permanent failure. Returns the terminal value, or null once retries are exhausted.
+     */
+    internal suspend fun <T> refreshWithRetry(
+        maxAttempts: Int = REFRESH_MAX_ATTEMPTS,
+        call: suspend () -> HttpResponse,
+        classify: suspend (HttpResponse) -> RefreshStep<T>,
+    ): T? {
+        var attempt = 0
+        while (attempt < maxAttempts) {
+            val step = runCatchingCancellable { classify(call()) }.getOrDefault(RefreshStep.Retry)
+            if (step is RefreshStep.Terminal) return step.value
+            attempt++
+            if (attempt < maxAttempts) {
+                val base = REFRESH_BACKOFF_BASE_MS shl attempt // 2^attempt seconds
+                val jittered = base * Random.nextDouble(REFRESH_JITTER_LO, REFRESH_JITTER_HI) // ±10%
+                delay(jittered.toLong())
+            }
         }
+        return null
     }
-    return null
 }

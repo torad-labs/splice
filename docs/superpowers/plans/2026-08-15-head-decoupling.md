@@ -22,6 +22,12 @@
 
 ---
 
+## Execution order (amended 2026-08-15, after the style law)
+
+The migration runs FIRST, top-down by dependency, as eight ledger-owned slices (`HD-M1`..`HD-M8`: app/cli → app root → control → gateway → providers → dialects → provider-spi → core), then the zero-count verification (`HD-10`), then the feature tasks below (`HD-1`..`HD-9`) on an already-clean tree.
+
+Why top-down and why first: the hooks scan whole files, so moving a public symbol out of a file forces every consumer that imports it to end clean as well. Migrating bottom-up (core first) would cascade the entire repo into the first slice, and migrating inside each feature task would entangle feature review with a 100-file refactor. Top-down means a symbol only ever moves after its consumers are already clean, and feature code is then written compliant once instead of migrated twice. Slice briefs are generated from the ledger (`manifest.py packet HD-M<n>`), not from this document.
+
 ## File Structure
 
 | File | Responsibility |

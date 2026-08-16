@@ -40,6 +40,9 @@ public data class LoginSpec(
 
 public object OAuthLoginFlow {
 
+    private val loginIo = LoginIo()
+    private val authClients = AuthHttpClientFactory()
+
     private const val CALLBACK_TIMEOUT_S = 300L
 
     /** `code=` in a pasted redirect URL or query fragment. */
@@ -91,7 +94,7 @@ public object OAuthLoginFlow {
         errRef: AtomicReference<String?>,
     ): String? {
         println("splice: opening your browser to sign in (${spec.head})…")
-        if (!openBrowser(spec.authorizeUrl)) {
+        if (!loginIo.openBrowser(spec.authorizeUrl)) {
             println("splice: open this URL to sign in:")
             println(spec.authorizeUrl)
         }
@@ -272,7 +275,7 @@ public object OAuthLoginFlow {
         s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 
     private suspend fun exchangeAndPersist(spec: LoginSpec, code: String): Boolean {
-        val client = authHttpClient()
+        val client = authClients.create()
         return try {
             runCatchingCancellable {
                 val resp: HttpResponse = client.post(spec.tokenUrl) {
@@ -287,7 +290,7 @@ public object OAuthLoginFlow {
                     println("splice: token exchange failed (HTTP ${resp.status.value})")
                     false
                 } else {
-                    writeCredentialFile(spec.authPath, spec.toAuthJson(bodyText))
+                    loginIo.writeCredentialFile(spec.authPath, spec.toAuthJson(bodyText))
                     println("splice: signed in — credentials written to ${spec.authPath}")
                     true
                 }

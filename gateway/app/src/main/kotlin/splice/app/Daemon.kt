@@ -3,6 +3,17 @@
 // :3096 and each head port. suspend all the way (the runBlocking bridge lives in Main); version
 // handshake = /health version string equality (a daemon bump restarts all heads together — the
 // documented change).
+//
+// SHAPE (Kotlin style law, 2026-08-15): what used to be fourteen file-level helpers around the
+// Daemon class are now named collaborators — DaemonBoundary (the shared error boundary),
+// HeadLifecycle (boot + shutdown), HeadBuildInputs (pure declared-data -> typed build inputs),
+// PassthroughAssembly (the anthropic-passthrough construction site), ProviderAssembly (the whole
+// (dialect, auth.kind) dispatch), DashboardHtml (was a static factory on Daemon).
+//
+// Those helpers were at FILE level precisely because Daemon was already at detekt's LargeClass
+// ceiling (measured 396 of 400 counted lines before this slice), so folding them back in as
+// members overflowed it. ProviderAssembly is what buys the room back: Daemon keeps start/stop and
+// the per-head wiring (5 members, ~120 counted lines) and delegates provider construction.
 package splice.app
 
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -24,6 +35,7 @@ import splice.control.ControlServer
 import splice.control.LaunchService
 import splice.control.LaunchSpec
 import splice.control.ManagedHead
+import splice.core.auth.AuthProvider
 import splice.core.auth.ClientAuthProvider
 import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshableAuthProvider
@@ -93,15 +105,6 @@ import java.nio.file.Paths
 import java.util.concurrent.CancellationException
 import kotlin.time.Duration.Companion.milliseconds
 
-// Reasoning-continuation folding config (codex 518n-2), threaded from ConfigService like the other
-// reasoning knobs. Top-level (off Daemon's function count); an empty model set = feature off.
-private fun foldConfigFrom(cfg: SpliceConfig): FoldConfig = FoldConfig(
-    models = cfg.foldReasoningModels,
-    maxContinue = cfg.foldMaxContinue,
-    markerText = cfg.foldMarkerText.ifEmpty { FoldConfig.DEFAULT_MARKER_TEXT },
-    maxTierN = cfg.foldMaxTier,
-)
-
 internal const val CHATGPT_OAUTH = "chatgpt-oauth"
 internal const val GROK_OAUTH = "grok-oauth"
 internal const val KIMI_OAUTH = "kimi-oauth"
@@ -109,159 +112,174 @@ internal const val KIMI_OAUTH = "kimi-oauth"
 /** The head forwards the CALLER's own auth and holds none itself (campaign claude-head). */
 internal const val CLIENT = ClientAuthProvider.KIND
 
-// The whole head-stop phase's deadline (see [stopHeads]). Kept below Main's STOP_DEADLINE_MS so the
-// graceful stop + control shutdown finish before Main's hard halt watchdog would ever need to fire.
+// The whole head-stop phase's deadline (see [HeadLifecycle.stopHeads]). Kept below Main's
+// STOP_DEADLINE_MS so the graceful stop + control shutdown finish before Main's hard halt
+// watchdog would ever need to fire.
 private const val HEAD_STOP_BUDGET_MS = 6_000L
 
 /**
  * Best-effort isolation at daemon/head boundaries without turning cancellation or fatal JVM
  * failures into a merely degraded head. Expected I/O and assembly failures become [Result]
  * failures; cancellation and [Error] always escape.
+ *
+ * A constructed collaborator rather than a free function (Kotlin style law, 2026-08-15); every
+ * user holds one. `inline` is LOAD-BEARING and must stay: six call sites pass a lambda, and the
+ * non-local-return semantics plus the absent allocation are part of the boundary's contract.
  */
-internal inline fun <T> runCatchingDaemonBoundary(block: () -> T): Result<T> = try {
-    Result.success(block())
-} catch (cancelled: CancellationException) {
-    throw cancelled
-} catch (failure: IOException) {
-    Result.failure(failure)
-} catch (failure: IllegalArgumentException) {
-    Result.failure(failure)
-} catch (failure: IllegalStateException) {
-    Result.failure(failure)
-}
-
-private fun assembleDaemonHeads(
-    topology: Topology,
-    statePaths: StatePaths,
-    heads: MutableMap<String, ManagedHead>,
-    log: (String) -> Unit,
-    assemble: (String, HeadConfig, ProviderConfig) -> ManagedHead,
-): LinkedHashMap<String, String> {
-    val failed = LinkedHashMap<String, String>()
-    // CTL-005: name an out-of-range port before the head hits an opaque bind-time error.
-    val invalidPorts = topology.invalidPortHeads()
-    for ((key, port) in invalidPorts) {
-        failed[key] = invalidPortMessage(key, port)
-        log("[daemon][boot] ${invalidPortMessage(key, port)}\n")
-    }
-    // JW-13: name a duplicate-port collision before the loser hits an opaque "Address already in
-    // use". Both colliding heads are marked failed with a message pointing at the sibling.
-    val portDupes = topology.portCollisions()
-    val collidingHeads = portDupes.values.flatten().toSet()
-    for ((port, keys) in portDupes) {
-        keys.forEach { failed[it] = portCollisionMessage(port, keys) }
-        log("[daemon][boot] ${portCollisionMessage(port, keys)}\n")
-    }
-    // Invalid-port and colliding heads already failed above with a named reason — filter them
-    // out so the assembly loop keeps a single continue (detekt LoopWithTooManyJumpStatements).
-    for ((key, head) in topology.heads.filterKeys { it !in collidingHeads && it !in invalidPorts.keys }) {
-        val providerCfg = topology.providers[head.provider]
-        if (providerCfg == null) {
-            failed[key] = "unknown provider '${head.provider}'"
-            log("[$key][boot] SKIPPED: unknown provider '${head.provider}'\n")
-            continue
-        }
-        runCatchingDaemonBoundary { assemble(key, head, providerCfg) }
-            .onSuccess { heads[key] = it }
-            .onFailure {
-                failed[key] = it.message ?: it.javaClass.simpleName
-                log("[$key][boot] SKIPPED (build failed): ${it.message}\n")
-            }
-    }
-    // IO-006: heads above that alias to the same legacy usage file (deliberate migration
-    // continuity, not a bug on its own — see [logUsageKeyCollisions]) share it with no
-    // cross-process coordination if both run at once. Split off the file's CyclomaticComplexMethod
-    // ceiling, same reason [portCollisionMessage] et al. already live top-level.
-    logUsageKeyCollisions(statePaths, heads.keys, log)
-    return failed
-}
-
-/** IO-006: neither head is refused (that would break the codex/claudex usage-history migration
- *  the alias exists for) — the collision is only named, loudly, same idiom as JW-13's
- *  [portCollisionMessage]. */
-private fun logUsageKeyCollisions(statePaths: StatePaths, headKeys: Collection<String>, log: (String) -> Unit) {
-    statePaths.usageKeyCollisions(headKeys).forEach { (statKey, keys) ->
-        log(
-            "[daemon][boot] WARNING: heads ${keys.joinToString(" and ")} share the '$statKey' usage/ratelimit " +
-                "files with no cross-process write coordination — quota numbers may race\n",
-        )
+internal class DaemonBoundary {
+    internal inline fun <T> runCatchingDaemonBoundary(block: () -> T): Result<T> = try {
+        Result.success(block())
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (failure: IOException) {
+        Result.failure(failure)
+    } catch (failure: IllegalArgumentException) {
+        Result.failure(failure)
+    } catch (failure: IllegalStateException) {
+        Result.failure(failure)
     }
 }
 
-/** The two per-head probe sinks startDaemonHeads writes into (detekt LongParameterList). */
+/** The two per-head probe sinks [HeadLifecycle.startDaemonHeads] writes into (detekt LongParameterList). */
 internal data class HeadProbeSinks(
     val authProbes: MutableMap<String, AuthProbeLoop>,
     val turnPathStalled: java.util.concurrent.ConcurrentHashMap<String, Boolean>,
 )
 
-private suspend fun startDaemonHeads(
-    heads: Map<String, ManagedHead>,
-    failed: MutableMap<String, String>,
-    probeScope: CoroutineScope,
-    log: (String) -> Unit,
-    sinks: HeadProbeSinks,
-) {
-    heads.forEach { (key, managed) ->
-        runCatchingDaemonBoundary { managed.head.start() }.onFailure {
-            failed[key] = "start failed: ${it.message}"
-            log("[$key][boot] failed to start: ${it.message}\n")
-        }
-        startAuthProbeIfRefreshable(key, managed.auth, probeScope, log, sinks.authProbes)
-        TurnPathProbeLoop(key, managed.head.port, sinks.turnPathStalled, log).start(probeScope)
-    }
-}
+/**
+ * The daemon's head boot and shutdown phases. Held by Daemon as a collaborator (Kotlin style law,
+ * 2026-08-15) — these were file-level helpers for the same reason they are a separate type now:
+ * they carry no daemon state, and folding them into Daemon breaks its detekt budgets.
+ */
+internal class HeadLifecycle {
 
-// The daemon shutdown's head-stop phase, extracted so DaemonStopDeadlineTest can prove the two
-// invariants a wedged head must not break. (1) PARALLELISM: the N blocking HeadServer.stop() engine
-// stops run CONCURRENTLY on Dispatchers.IO instead of serializing on Main's single-thread runBlocking
-// event loop — the "PARALLEL" the old comment claimed but the missing dispatcher silently defeated (a
-// blocking server.stop() monopolized the sole thread, compounding shutdown to ~5s x N heads). (2)
-// DEADLINE: withTimeoutOrNull caps the whole phase at [budgetMs] so a head whose drain never converges
-// cannot extend shutdown unboundedly, and [stopControl] still runs afterward even when the cap trips.
-// A truly-uninterruptible thread is beyond this budget's reach — Main's halt watchdog is that guarantee.
-internal suspend fun stopHeads(
-    heads: Collection<Head>,
-    budgetMs: Long,
-    log: (String) -> Unit,
-    stopControl: () -> Unit,
-) {
-    val stopFailureHandler = CoroutineExceptionHandler { _, e ->
-        log("[daemon] head stop failed uncaught: ${e::class.simpleName}: ${e.message}\n")
+    private val boundary = DaemonBoundary()
+
+    internal fun assembleDaemonHeads(
+        topology: Topology,
+        statePaths: StatePaths,
+        heads: MutableMap<String, ManagedHead>,
+        log: (String) -> Unit,
+        assemble: (String, HeadConfig, ProviderConfig) -> ManagedHead,
+    ): LinkedHashMap<String, String> {
+        val failed = LinkedHashMap<String, String>()
+        // CTL-005: name an out-of-range port before the head hits an opaque bind-time error.
+        val invalidPorts = topology.invalidPortHeads()
+        for ((key, port) in invalidPorts) {
+            failed[key] = invalidPortMessage(key, port)
+            log("[daemon][boot] ${invalidPortMessage(key, port)}\n")
+        }
+        // JW-13: name a duplicate-port collision before the loser hits an opaque "Address already in
+        // use". Both colliding heads are marked failed with a message pointing at the sibling.
+        val portDupes = topology.portCollisions()
+        val collidingHeads = portDupes.values.flatten().toSet()
+        for ((port, keys) in portDupes) {
+            keys.forEach { failed[it] = portCollisionMessage(port, keys) }
+            log("[daemon][boot] ${portCollisionMessage(port, keys)}\n")
+        }
+        // Invalid-port and colliding heads already failed above with a named reason — filter them
+        // out so the assembly loop keeps a single continue (detekt LoopWithTooManyJumpStatements).
+        for ((key, head) in topology.heads.filterKeys { it !in collidingHeads && it !in invalidPorts.keys }) {
+            val providerCfg = topology.providers[head.provider]
+            if (providerCfg == null) {
+                failed[key] = "unknown provider '${head.provider}'"
+                log("[$key][boot] SKIPPED: unknown provider '${head.provider}'\n")
+                continue
+            }
+            boundary.runCatchingDaemonBoundary { assemble(key, head, providerCfg) }
+                .onSuccess { heads[key] = it }
+                .onFailure {
+                    failed[key] = it.message ?: it.javaClass.simpleName
+                    log("[$key][boot] SKIPPED (build failed): ${it.message}\n")
+                }
+        }
+        // IO-006: heads above that alias to the same legacy usage file (deliberate migration
+        // continuity, not a bug on its own — see [logUsageKeyCollisions]) share it with no
+        // cross-process coordination if both run at once.
+        logUsageKeyCollisions(statePaths, heads.keys, log)
+        return failed
     }
-    withContext(Dispatchers.IO) {
-        withTimeoutOrNull(budgetMs) {
-            supervisorScope {
-                heads.forEach { head ->
-                    launch(stopFailureHandler) {
-                        runCatchingDaemonBoundary { head.stop() }
-                            .discard("shutdown: one head failing to stop must not block the rest")
+
+    /** IO-006: neither head is refused (that would break the codex/claudex usage-history migration
+     *  the alias exists for) — the collision is only named, loudly, same idiom as JW-13's
+     *  [portCollisionMessage]. */
+    private fun logUsageKeyCollisions(statePaths: StatePaths, headKeys: Collection<String>, log: (String) -> Unit) {
+        statePaths.usageKeyCollisions(headKeys).forEach { (statKey, keys) ->
+            log(
+                "[daemon][boot] WARNING: heads ${keys.joinToString(" and ")} share the '$statKey' usage/ratelimit " +
+                    "files with no cross-process write coordination — quota numbers may race\n",
+            )
+        }
+    }
+
+    internal suspend fun startDaemonHeads(
+        heads: Map<String, ManagedHead>,
+        failed: MutableMap<String, String>,
+        probeScope: CoroutineScope,
+        log: (String) -> Unit,
+        sinks: HeadProbeSinks,
+    ) {
+        heads.forEach { (key, managed) ->
+            boundary.runCatchingDaemonBoundary { managed.head.start() }.onFailure {
+                failed[key] = "start failed: ${it.message}"
+                log("[$key][boot] failed to start: ${it.message}\n")
+            }
+            startAuthProbeIfRefreshable(key, managed.auth, probeScope, log, sinks.authProbes)
+            TurnPathProbeLoop(key, managed.head.port, sinks.turnPathStalled, log).start(probeScope)
+        }
+    }
+
+    /**
+     * Cast + start, no-op for a non-refreshable [AuthProvider] — currently always succeeds (every
+     * impl is RefreshableAuthProvider), defensive for a future non-refreshable provider, not dead
+     * code. Stores the started loop into [probes] under [key] so the caller can stop() it later.
+     */
+    private fun startAuthProbeIfRefreshable(
+        key: String,
+        auth: AuthProvider,
+        scope: CoroutineScope,
+        log: (String) -> Unit,
+        probes: MutableMap<String, AuthProbeLoop>,
+    ) {
+        val refreshable = auth as? RefreshableAuthProvider ?: return
+        val probe = AuthProbeLoop(key, refreshable, log = log)
+        probe.start(scope)
+        probes[key] = probe
+    }
+
+    // The daemon shutdown's head-stop phase, kept separate from Daemon so DaemonStopDeadlineTest can prove
+    // the two invariants a wedged head must not break. (1) PARALLELISM: the N blocking HeadServer.stop()
+    // engine stops run CONCURRENTLY on Dispatchers.IO instead of serializing on Main's single-thread
+    // runBlocking event loop — the "PARALLEL" the old comment claimed but the missing dispatcher silently
+    // defeated (a blocking server.stop() monopolized the sole thread, compounding shutdown to ~5s x N
+    // heads). (2) DEADLINE: withTimeoutOrNull caps the whole phase at [budgetMs] so a head whose drain
+    // never converges cannot extend shutdown unboundedly, and [stopControl] still runs afterward even when
+    // the cap trips. A truly-uninterruptible thread is beyond this budget's reach — Main's halt watchdog
+    // is that guarantee.
+    internal suspend fun stopHeads(
+        heads: Collection<Head>,
+        budgetMs: Long,
+        log: (String) -> Unit,
+        stopControl: () -> Unit,
+    ) {
+        val stopFailureHandler = CoroutineExceptionHandler { _, e ->
+            log("[daemon] head stop failed uncaught: ${e::class.simpleName}: ${e.message}\n")
+        }
+        withContext(Dispatchers.IO) {
+            withTimeoutOrNull(budgetMs) {
+                supervisorScope {
+                    heads.forEach { head ->
+                        launch(stopFailureHandler) {
+                            boundary.runCatchingDaemonBoundary { head.stop() }
+                                .discard("shutdown: one head failing to stop must not block the rest")
+                        }
                     }
                 }
             }
         }
+        stopControl()
     }
-    stopControl()
 }
-
-private fun resolveHeadConfig(
-    key: String,
-    head: HeadConfig,
-    provider: ProviderConfig,
-    cfg: SpliceConfig,
-): HeadConfig = when {
-    provider.auth.kind == CHATGPT_OAUTH -> head.copy(port = cfg.port, pinnedModel = cfg.pinnedModel)
-    provider.auth.kind == GROK_OAUTH || key.contains("grok", ignoreCase = true) ->
-        head.copy(port = cfg.grokPort, pinnedModel = cfg.grokModel)
-    else -> head
-}
-
-private fun resolveProviderConfig(key: String, provider: ProviderConfig, cfg: SpliceConfig): ProviderConfig =
-    when {
-        provider.auth.kind == CHATGPT_OAUTH -> provider.copy(baseUrl = cfg.chatgptApiBase)
-        provider.auth.kind == GROK_OAUTH || key.contains("grok", ignoreCase = true) ->
-            provider.copy(baseUrl = cfg.xaiApiBase)
-        else -> provider
-    }
 
 /** Kimi's static vendor headers as they were hardcoded before the TOML surface existed: its
  *  /coding endpoint 403s an unrecognized UA, and the Anthropic wire needs its version on every
@@ -272,240 +290,176 @@ private val KIMI_BASE_HEADERS = mapOf(
     "User-Agent" to "KimiCLI/1.5",
 )
 
-/** Top-level (not a Daemon member): the class sits at detekt's LargeClass ceiling, and this
- *  helper reads only its arguments — the same reason chatQuirks/toolDeferralPolicy live here. */
-/** The dialect's ONE provider, fed DECLARED data: TOML quirks overlaid on the head's base
- *  profile, TOML static headers, and (kimi only) the computed device identity. */
-private fun passthroughProviderFor(
-    ctx: Daemon.ProviderBuild,
-    label: String,
-    auth: RefreshableAuthProvider,
-    base: PassthroughQuirks,
-    baseHeaders: Map<String, String> = emptyMap(),
-    identityHeaders: () -> Map<String, String> = { emptyMap() },
-): Provider = PassthroughProvider(
-    tuning = ProviderTuning(
-        key = ctx.key,
-        label = label,
-        catalog = ctx.catalog,
-        pinnedModel = ctx.head.pinnedModel,
-        auth = auth,
-        baseUrl = ctx.providerCfg.baseUrl,
-        watchdog = ctx.watchdog,
-        loginCommand = ctx.loginCommand,
-    ),
-    quirks = ctx.providerCfg.passthroughQuirks(base),
-    // Base FIRST so an operator's TOML overrides it, and absent TOML keeps the head serving: these
-    // headers used to be hardcoded in the provider, so a splice.toml written before extra_headers
-    // existed would otherwise lose kimi's UA — which its /coding endpoint 403s on.
-    staticHeaders = baseHeaders + ctx.providerCfg.staticHeaders,
-    identityHeaders = identityHeaders,
-    // PT-002/v27: same session-stable effort proxy ResponsesProvider threads as configEffort.
-    configEffort = ctx.cfg.effort,
-)
+/**
+ * The anthropic-passthrough construction site: the dialect's ONE provider fed DECLARED data, plus
+ * the TOML quirk overlay it reads. Held by Daemon as a collaborator (Kotlin style law, 2026-08-15);
+ * both members read only their arguments, which is why they sat at file level before.
+ */
+internal class PassthroughAssembly {
 
-/** Overlay the head's TOML [providers.*.quirks] onto a passthrough head's BASE quirk profile.
- *  Absent (null) keeps the base, which is what makes a splice.toml written before these knobs
- *  existed keep serving a kimi head unchanged; an explicitly-set knob wins. Same shape as
- *  [chatQuirks]/[responsesQuirks], and the mapping lives HERE, at the assembly point, so the
- *  dialect never imports a topology config type. */
-internal fun ProviderConfig.passthroughQuirks(base: PassthroughQuirks): PassthroughQuirks = base.copy(
-    mapThinkingToAdaptive = quirks.mapThinkingAdaptive ?: base.mapThinkingToAdaptive,
-    compactEffort = quirks.compactEffort ?: base.compactEffort,
-    stripSamplingParams = quirks.stripSamplingParams ?: base.stripSamplingParams,
-    mfjsSanitize = quirks.mfjs ?: base.mfjsSanitize,
-    // takeIf isNotEmpty: `block_allowlist = []` is the ONLY thing an operator can write to mean
-    // "no allowlist" on a head whose base profile has one, and read literally it is an allowlist
-    // that permits nothing — every content block of every message dropped, silently, leaving the
-    // upstream an empty conversation. Empty means OFF.
-    blockAllowlist = quirks.blockAllowlist?.takeIf { it.isNotEmpty() }?.toSet() ?: base.blockAllowlist,
-    stripCacheControl = quirks.stripCacheControl ?: base.stripCacheControl,
-    synthesizeSignatures = quirks.synthesizeSignatures ?: base.synthesizeSignatures,
-)
-
-/** Overlay the head's TOML [providers.*.quirks] onto a chat-dialect provider's base quirk profile.
- *  Top-level (not a Daemon member): the class sits at detekt's TooManyFunctions ceiling. */
-private fun ProviderConfig.chatQuirks(base: ChatQuirks): ChatQuirks =
-    base.withReasoningEffortToml(quirks.reasoningEffort)
-
-/** TOML table -> dialect policy. Null (absent table, enabled=false, or the daemon-wide kill
- *  switch) = feature off. The mapping lives HERE, at the assembly point, so the dialect never
- *  imports a topology config type — the same reason withToml takes primitives. Top-level (not a
- *  Daemon member): the class sits at detekt's TooManyFunctions ceiling.
- *
- *  Clamped (review 2026-07-24): ToolSurfaceConfig does no validation of its own, so an operator
- *  TOML typo (e.g. `search_limit = 0`) reached `coerceIn(1, policy.searchLimit)` in
- *  ResponsesToolSearchController unclamped and THREW — a client-visible failed turn on every
- *  round that searched, the one place this feature's own NEVER-BELOW-STATUS-QUO law broke.
- *  Clamping here (like every other numeric knob — ConfigService.normalize) makes a bad value
- *  un-armable instead of a live crash. */
-private fun toolDeferralPolicy(t: ToolSurfaceConfig?, globalOff: Boolean): ToolDeferralPolicy? = when {
-    t == null -> null
-    !t.enabled -> null
-    globalOff -> null
-    else -> ToolDeferralPolicy(
-        deferPrefixes = t.deferPrefixes,
-        defer = t.defer.toSet(),
-        eager = t.eager.toSet(),
-        minDeferred = t.minDeferred.coerceAtLeast(MIN_TOOL_SURFACE_FLOOR),
-        searchLimit = t.searchLimit.coerceIn(MIN_TOOL_SURFACE_FLOOR, MAX_TOOL_SEARCH_LIMIT),
-        searchRounds = t.searchRounds.coerceIn(MIN_TOOL_SURFACE_FLOOR, MAX_TOOL_SEARCH_ROUNDS),
+    /** The dialect's ONE provider, fed DECLARED data: TOML quirks overlaid on the head's base
+     *  profile, TOML static headers, and (kimi only) the computed device identity. */
+    internal fun passthroughProviderFor(
+        ctx: Daemon.ProviderBuild,
+        label: String,
+        auth: RefreshableAuthProvider,
+        base: PassthroughQuirks,
+        baseHeaders: Map<String, String> = emptyMap(),
+        identityHeaders: () -> Map<String, String> = { emptyMap() },
+    ): Provider = PassthroughProvider(
+        tuning = ProviderTuning(
+            key = ctx.key,
+            label = label,
+            catalog = ctx.catalog,
+            pinnedModel = ctx.head.pinnedModel,
+            auth = auth,
+            baseUrl = ctx.providerCfg.baseUrl,
+            watchdog = ctx.watchdog,
+            loginCommand = ctx.loginCommand,
+        ),
+        quirks = passthroughQuirks(ctx.providerCfg, base),
+        // Base FIRST so an operator's TOML overrides it, and absent TOML keeps the head serving: these
+        // headers used to be hardcoded in the provider, so a splice.toml written before extra_headers
+        // existed would otherwise lose kimi's UA — which its /coding endpoint 403s on.
+        staticHeaders = baseHeaders + ctx.providerCfg.staticHeaders,
+        identityHeaders = identityHeaders,
+        // PT-002/v27: same session-stable effort proxy ResponsesProvider threads as configEffort.
+        configEffort = ctx.cfg.effort,
     )
+
+    /** Overlay the head's TOML [providers.*.quirks] onto a passthrough head's BASE quirk profile.
+     *  Absent (null) keeps the base, which is what makes a splice.toml written before these knobs
+     *  existed keep serving a kimi head unchanged; an explicitly-set knob wins. Same shape as
+     *  [HeadBuildInputs.chatQuirks]/[Daemon.responsesQuirks], and the mapping lives HERE, at the
+     *  assembly point, so the dialect never imports a topology config type. */
+    internal fun passthroughQuirks(providerCfg: ProviderConfig, base: PassthroughQuirks): PassthroughQuirks =
+        base.copy(
+            mapThinkingToAdaptive = providerCfg.quirks.mapThinkingAdaptive ?: base.mapThinkingToAdaptive,
+            compactEffort = providerCfg.quirks.compactEffort ?: base.compactEffort,
+            stripSamplingParams = providerCfg.quirks.stripSamplingParams ?: base.stripSamplingParams,
+            mfjsSanitize = providerCfg.quirks.mfjs ?: base.mfjsSanitize,
+            // takeIf isNotEmpty: `block_allowlist = []` is the ONLY thing an operator can write to mean
+            // "no allowlist" on a head whose base profile has one, and read literally it is an allowlist
+            // that permits nothing — every content block of every message dropped, silently, leaving the
+            // upstream an empty conversation. Empty means OFF.
+            blockAllowlist = providerCfg.quirks.blockAllowlist?.takeIf { it.isNotEmpty() }?.toSet()
+                ?: base.blockAllowlist,
+            stripCacheControl = providerCfg.quirks.stripCacheControl ?: base.stripCacheControl,
+            synthesizeSignatures = providerCfg.quirks.synthesizeSignatures ?: base.synthesizeSignatures,
+        )
+}
+
+/**
+ * Declared data -> the typed inputs a provider or launch spec needs. Every member is a pure
+ * function of its arguments and touches no daemon state, which is exactly why these lived at file
+ * level before the Kotlin style law (2026-08-15) gave them an owner. Held by Daemon.
+ */
+internal class HeadBuildInputs {
+
+    internal fun resolveHeadConfig(
+        key: String,
+        head: HeadConfig,
+        provider: ProviderConfig,
+        cfg: SpliceConfig,
+    ): HeadConfig = when {
+        provider.auth.kind == CHATGPT_OAUTH -> head.copy(port = cfg.port, pinnedModel = cfg.pinnedModel)
+        provider.auth.kind == GROK_OAUTH || key.contains("grok", ignoreCase = true) ->
+            head.copy(port = cfg.grokPort, pinnedModel = cfg.grokModel)
+        else -> head
+    }
+
+    internal fun resolveProviderConfig(key: String, provider: ProviderConfig, cfg: SpliceConfig): ProviderConfig =
+        when {
+            provider.auth.kind == CHATGPT_OAUTH -> provider.copy(baseUrl = cfg.chatgptApiBase)
+            provider.auth.kind == GROK_OAUTH || key.contains("grok", ignoreCase = true) ->
+                provider.copy(baseUrl = cfg.xaiApiBase)
+            else -> provider
+        }
+
+    // Reasoning-continuation folding config (codex 518n-2), threaded from ConfigService like the other
+    // reasoning knobs. An empty model set = feature off.
+    internal fun foldConfigFrom(cfg: SpliceConfig): FoldConfig = FoldConfig(
+        models = cfg.foldReasoningModels,
+        maxContinue = cfg.foldMaxContinue,
+        markerText = cfg.foldMarkerText.ifEmpty { FoldConfig.DEFAULT_MARKER_TEXT },
+        maxTierN = cfg.foldMaxTier,
+    )
+
+    /** Overlay the head's TOML [providers.*.quirks] onto a chat-dialect provider's base quirk profile. */
+    internal fun chatQuirks(providerCfg: ProviderConfig, base: ChatQuirks): ChatQuirks =
+        base.withReasoningEffortToml(providerCfg.quirks.reasoningEffort)
+
+    /** TOML table -> dialect policy. Null (absent table, enabled=false, or the daemon-wide kill
+     *  switch) = feature off. The mapping lives HERE, at the assembly point, so the dialect never
+     *  imports a topology config type — the same reason withToml takes primitives.
+     *
+     *  Clamped (review 2026-07-24): ToolSurfaceConfig does no validation of its own, so an operator
+     *  TOML typo (e.g. `search_limit = 0`) reached `coerceIn(1, policy.searchLimit)` in
+     *  ResponsesToolSearchController unclamped and THREW — a client-visible failed turn on every
+     *  round that searched, the one place this feature's own NEVER-BELOW-STATUS-QUO law broke.
+     *  Clamping here (like every other numeric knob — ConfigService.normalize) makes a bad value
+     *  un-armable instead of a live crash. */
+    internal fun toolDeferralPolicy(t: ToolSurfaceConfig?, globalOff: Boolean): ToolDeferralPolicy? = when {
+        t == null -> null
+        !t.enabled -> null
+        globalOff -> null
+        else -> ToolDeferralPolicy(
+            deferPrefixes = t.deferPrefixes,
+            defer = t.defer.toSet(),
+            eager = t.eager.toSet(),
+            minDeferred = t.minDeferred.coerceAtLeast(MIN_TOOL_SURFACE_FLOOR),
+            searchLimit = t.searchLimit.coerceIn(MIN_TOOL_SURFACE_FLOOR, MAX_TOOL_SEARCH_LIMIT),
+            searchRounds = t.searchRounds.coerceIn(MIN_TOOL_SURFACE_FLOOR, MAX_TOOL_SEARCH_ROUNDS),
+        )
+    }
+
+    /** Pure roster -> dropdown-cache projection (the /model picker option list Claude Code caches
+     *  in .claude.json — every model with its label, description, and window, so all of them appear
+     *  in the picker, not just the pinned one). */
+    internal fun modelOptionsCache(providerCfg: ProviderConfig): JsonElement = buildJsonArray {
+        providerCfg.models.forEach { model ->
+            addJsonObject {
+                put("value", model.id)
+                put("label", model.label.ifEmpty { model.id })
+                put("description", model.description.ifEmpty { model.label.ifEmpty { model.id } })
+                put("context_window", model.contextWindow)
+            }
+        }
+    }
 }
 
 private const val MIN_TOOL_SURFACE_FLOOR = 1
 private const val MAX_TOOL_SEARCH_LIMIT = 50
 private const val MAX_TOOL_SEARCH_ROUNDS = 5
 
-public class Daemon(
-    private val topology: Topology,
+/** Provider + its auth, chosen by (dialect, auth.kind) — the multi-provider dispatch. */
+internal data class Wired(val provider: Provider, val auth: RefreshableAuthProvider)
+
+/**
+ * The (dialect, auth.kind) dispatch: everything that turns one head's resolved [Daemon.ProviderBuild]
+ * into the provider + auth pair it serves with. Split out of Daemon (Kotlin style law, 2026-08-15):
+ * folding the fourteen former file-level helpers back in pushed Daemon past detekt's LargeClass
+ * ceiling, and provider CONSTRUCTION is the largest cohesive piece Daemon was doing besides wiring.
+ *
+ * [probeScope] is the daemon's OWN scope, passed by reference on purpose — every auth provider built
+ * here receives it as `prefetchScope`, and Daemon.stop() cancels exactly that scope. Constructing a
+ * second scope here would leave half the prefetch coroutines alive after stop().
+ */
+internal class ProviderAssembly(
     private val statePaths: StatePaths,
-    private val dashboardHtml: () -> String,
-    private val log: (String) -> Unit = { System.err.print(it) },
-    private val shutdownDaemon: () -> Unit = {},
-    private val refreshCall: suspend (tokenUrl: String, refreshToken: String) -> RefreshAttempt<RefreshedTokens> =
-        ::codexRefresh,
-    // JW-04: the booted config identity (sha-256 of the parsed bytes + the resolved path).
-    // Defaults keep every existing test constructor compiling; Main always passes both.
-    private val topologyDigest: String = "",
-    private val topologyPath: Path? = null,
+    private val probeScope: CoroutineScope,
+    private val log: (String) -> Unit,
+    private val refreshCall: suspend (tokenUrl: String, refreshToken: String) -> RefreshAttempt<RefreshedTokens>,
 ) {
-    // Topology TOML ([daemon] + [defaults]) feeds the headOverrides layer so reasoning
-    // display is operator-editable without recompiling. Env and runtime PATCH still win.
-    // [heads.<key>.overrides] rides the per-head layer: heads share ONE ConfigService (one JVM,
-    // unlike the Node lineage's process-per-head), so without this a knob tuned for one upstream
-    // hit all of them — e.g. kimi's 40-min upstreamTimeoutMs also gave codex a 40-min ceiling.
-    private val config = ConfigService(
-        statePaths,
-        headOverrides = topology.configOverrides(),
-        perHeadOverrides = topology.heads.mapValues { (_, head) -> head.overrides },
-    )
-    private val mgmtKey = MgmtKey(statePaths)
-    private val requestMaterializationGate = RequestMaterializationGate()
-
-    // set once in start(); the daemon is not usable before it
-    private var control: ControlServer? = null
-    private val heads = LinkedHashMap<String, ManagedHead>()
-    private val stopLock = Mutex()
-    private var stopped = false
-
-    // G8: per-head auth/health probe. SupervisorJob so one head's probe failure can't cancel
-    // another's — same isolation shape as SingleFlight.kt:33-36.
-    private val probeScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    private val authProbes = LinkedHashMap<String, AuthProbeLoop>()
-
-    // Turn-path liveness (2026-08-12): key -> stalled. Written by TurnPathProbeLoop, read by
-    // /health. The 91h wedge proved head liveness and head CONFIGURATION are different facts.
-    private val turnPathStalled = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
-
-    public suspend fun start() {
-        val cfg = config.getConfig()
-        // TOML feeds ConfigService's topology layer; state/env/runtime override it consistently.
-        // Resolved before the head loop so every launch recipe points at the actual listener.
-        val controlPort = cfg.controlPort
-        // PER-HEAD BOOT ISOLATION (audit 2026-07-18): one head that fails to assemble (a valid
-        // TOML the builder can't wire, e.g. a not-yet-supported dialect) must NOT abort the whole
-        // daemon with a stack trace to /dev/null. Log the degraded head and serve the rest.
-        val failed = assembleDaemonHeads(topology, statePaths, heads, log) { key, head, providerCfg ->
-            assembleHead(providerContext(key, head, providerCfg), controlPort)
-        }
-        val srv = ControlServer(
-            controlPort,
-            heads,
-            config,
-            mgmtKey,
-            dashboardHtml,
-            log,
-            LaunchService(ClaudeConfigMaterializer(statePaths.rootDir.parent ?: statePaths.rootDir)),
-            shutdownDaemon,
-            // `failed` fills during assembleDaemonHeads above and again in startDaemonHeads below
-            // (a head that assembles fine but fails to start); captured by reference, so this
-            // reads live rather than a stale snapshot taken before startDaemonHeads runs.
-            { failed.size },
-            // Configured total so readyHeads + failedHeads == heads holds even when a head fails to
-            // ASSEMBLE (it never enters `heads`) — review 2026-07-23.
-            topology.heads.size,
-            topologyDigest = topologyDigest,
-            configPath = topologyPath?.toString().orEmpty(),
-            topologyStale = topologyStaleProbe(topologyPath, topologyDigest),
-            turnPathStalled = { turnPathStalled.filterValues { it }.keys.sorted() },
-        )
-        control = srv
-        // Start heads BEFORE opening the control plane so a launch-shim that sees /health and
-        // immediately POSTs /launch/<head> does not race a still-binding head (503 head is not running).
-        startDaemonHeads(heads, failed, probeScope, log, HeadProbeSinks(authProbes, turnPathStalled))
-        // Defense in depth for the restart-into-a-still-bound-port race (BS-4 DEFECT B): unlike the
-        // per-head starts above, an uncaught EADDRINUSE here (a prior daemon that freed the lock but
-        // not yet the control port) would crash the new daemon to /dev/null, leaving zero serving.
-        // Exit cleanly instead — Main's finally stops the heads we started and releases the lock.
-        val controlBound = runCatchingDaemonBoundary { srv.start() }
-            .onFailure {
-                log("[daemon] control plane could not bind :$controlPort (${it.message}); another owns it, exiting\n")
-                shutdownDaemon()
-            }
-            .isSuccess
-        if (!controlBound) return
-        val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
-        log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
-    }
-
-    public suspend fun stop(): Unit = stopLock.withLock {
-        if (!stopped) {
-            stopped = true
-            authProbes.values.forEach { it.stop() }
-            probeScope.cancel()
-
-            // Heads stop in PARALLEL under a phase DEADLINE, then control stops — see [stopHeads].
-            // The supervisor scope + stopFailureHandler live there so an exception escaping one
-            // head's stop (a type outside runCatchingDaemonBoundary's list) can't cancel the
-            // siblings' drains/flushes nor skip control.stop — it surfaces on stderr/daemon.log
-            // instead of the JVM default, a black hole once production redirects stderr to /dev/null.
-            stopHeads(heads.values.map { it.head }, HEAD_STOP_BUDGET_MS, log) { control?.stop() }
-        }
-    }
-
-    /** Provider + its auth, chosen by (dialect, auth.kind) — the multi-provider dispatch. */
-    private data class Wired(val provider: Provider, val auth: RefreshableAuthProvider)
-
-    /** Resolve one head's build inputs against ITS OWN effective config. Heads share a single
-     *  ConfigService (one JVM), so every value here must come from `getConfig(key)` — reading the
-     *  global view is what made a knob tuned for one upstream govern all of them. */
-    // `internal`, not private: DaemonPerHeadConfigTest calls this directly to pin that each head
-    // resolves against getConfig(key). No production caller outside this class (2026-07-26 review).
-    internal fun providerContext(key: String, head: HeadConfig, providerCfg: ProviderConfig): ProviderBuild {
-        val headCfg = config.getConfig(key)
-        val resolvedHead = resolveHeadConfig(key, head, providerCfg, headCfg)
-        val resolvedProvider = resolveProviderConfig(key, providerCfg, headCfg)
-        return ProviderBuild(
-            key = key,
-            head = resolvedHead,
-            providerCfg = resolvedProvider,
-            catalog = resolvedProvider.catalogFor(resolvedHead, headCfg.contextWindowOverride),
-            watchdog = WatchdogBudget(
-                firstByteTimeout = headCfg.firstByteTimeoutMs.milliseconds,
-                streamIdle = headCfg.streamIdleMs.milliseconds,
-                totalCap = headCfg.upstreamTimeoutMs.milliseconds,
-            ),
-            cfg = headCfg,
-            loginCommand = signInPlan(resolvedProvider, resolvedHead, key).command,
-        )
-    }
-
-    /** The per-head inputs every provider builder threads through — a parameter object. */
-    internal data class ProviderBuild(
-        val key: String,
-        val head: HeadConfig,
-        val providerCfg: ProviderConfig,
-        val catalog: ModelCatalog,
-        val watchdog: WatchdogBudget,
-        val cfg: SpliceConfig,
-        val loginCommand: String,
-    )
+    private val buildInputs = HeadBuildInputs()
+    private val passthroughAssembly = PassthroughAssembly()
+    private val grokRefresh = GrokRefresh()
+    private val kimiRefresh = KimiRefresh()
 
     // The dispatch that makes the daemon genuinely multi-provider: codex (responses+oauth), grok
     // (responses or chat + grok-oauth), openai-platform (responses+api-key, hash cache key),
     // and ANY openai-compatible vendor (chat dialect + api-key) — the last is pure TOML, zero code.
-    private fun buildProvider(ctx: ProviderBuild): Wired {
+    internal fun buildProvider(ctx: Daemon.ProviderBuild): Wired {
         val label = ctx.head.claude.command ?: ctx.key
         return when (ctx.providerCfg.dialect) {
             Dialect.OPENAI_RESPONSES -> responsesProvider(ctx, label)
@@ -520,7 +474,7 @@ public class Daemon(
     // path) vs any api-key vendor. grok rides this dialect because xAI's /v1/chat/completions
     // streams the full readable CoT (`reasoning_content`) where the Responses summary channel
     // stops mid-reasoning (measured 2026-07-18; grok CLI / OpenCode parity).
-    private fun chatProvider(ctx: ProviderBuild, label: String): Wired {
+    private fun chatProvider(ctx: Daemon.ProviderBuild, label: String): Wired {
         val key = ctx.key
         val providerCfg = ctx.providerCfg
         val auth = when (providerCfg.auth.kind) {
@@ -529,7 +483,7 @@ public class Daemon(
                 GrokAuthProvider(
                     authPath = Paths.get(TopologyLoader.expandHome(providerCfg.auth.file ?: "~/.grok/auth.json")),
                     authCacheMs = ctx.cfg.authCacheMs,
-                    refreshCall = { rt -> grokRefresh(tokenUrl, rt) },
+                    refreshCall = { rt -> grokRefresh.refresh(tokenUrl, rt) },
                     prefetchScope = probeScope,
                     // JW-03: [<headKey>] first, so [grok-auth] refresh lines reach the head's tail
                     log = headScopedLog(ctx.key, log),
@@ -555,7 +509,8 @@ public class Daemon(
                 // grok-oauth rides session-pinned prompt caching + opt-in usage frames (probed
                 // 2026-07-19: 135k tokens, 1.7-2.8s TTFB, 99.97% cached — the two gaps that sank
                 // the 07-18 chat-dialect attempt). Unknown api-key vendors keep the bare quirks.
-                quirks = providerCfg.chatQuirks(
+                quirks = buildInputs.chatQuirks(
+                    providerCfg,
                     if (providerCfg.auth.kind == GROK_OAUTH) {
                         ChatQuirks(providerTag = key, sessionCacheKeyPrefix = label, emitUsageInStream = true)
                     } else {
@@ -578,7 +533,7 @@ public class Daemon(
     // any knob their TOML DOES set still overrides. The api-key arm bases on Kimi's set too, because
     // that arm exists for Moonshot's own anthropic endpoint (the pay-per-token twin of the OAuth
     // head) — an unrelated anthropic-compatible vendor declares what it needs in TOML.
-    private fun passthroughProvider(ctx: ProviderBuild, label: String): Wired {
+    private fun passthroughProvider(ctx: Daemon.ProviderBuild, label: String): Wired {
         val key = ctx.key
         val providerCfg = ctx.providerCfg
         // A client-auth head holds NO credential and declares its vendor facts in TOML, so it takes
@@ -586,7 +541,7 @@ public class Daemon(
         if (providerCfg.auth.kind == CLIENT) {
             val auth = ClientAuthProvider(key)
             return Wired(
-                passthroughProviderFor(ctx, label, auth, PassthroughQuirks(providerTag = key)),
+                passthroughAssembly.passthroughProviderFor(ctx, label, auth, PassthroughQuirks(providerTag = key)),
                 auth,
             )
         }
@@ -601,7 +556,7 @@ public class Daemon(
             }
         }
         return Wired(
-            passthroughProviderFor(
+            passthroughAssembly.passthroughProviderFor(
                 ctx = ctx,
                 label = label,
                 auth = auth,
@@ -615,7 +570,7 @@ public class Daemon(
 
     /** Kimi's device-flow OAuth: the device identity is built FIRST because its X-Msh-* headers
      *  ride the refresh call itself, then the auth provider that refreshes against them. */
-    private fun kimiOauthAuth(ctx: ProviderBuild): Pair<RefreshableAuthProvider, KimiDeviceIdentity> {
+    private fun kimiOauthAuth(ctx: Daemon.ProviderBuild): Pair<RefreshableAuthProvider, KimiDeviceIdentity> {
         val authPath = Paths.get(
             TopologyLoader.expandHome(ctx.providerCfg.auth.file ?: "~/.kimi/credentials/kimi-code.json"),
         )
@@ -625,7 +580,7 @@ public class Daemon(
         val auth = KimiAuthProvider(
             authPath = authPath,
             authCacheMs = ctx.cfg.authCacheMs,
-            refreshCall = { rt -> kimiRefresh(tokenUrl, rt, identityHeaders) },
+            refreshCall = { rt -> kimiRefresh.refresh(tokenUrl, rt, identityHeaders) },
             prefetchScope = probeScope,
             // JW-03: [<headKey>] first, so [kimi-auth] refresh lines reach the head's tail
             log = headScopedLog(ctx.key, log),
@@ -647,9 +602,9 @@ public class Daemon(
     ).withReasoningCacheToml(quirks.reasoningCache)
         .withParallelToolCallsToml(quirks.parallelToolCalls)
         .withWebSocketToml(quirks.webSocket)
-        .withToolSurfaceToml(toolDeferralPolicy(quirks.toolSurface, cfg.toolSurfaceOff))
+        .withToolSurfaceToml(buildInputs.toolDeferralPolicy(quirks.toolSurface, cfg.toolSurfaceOff))
 
-    private fun responsesProvider(ctx: ProviderBuild, label: String): Wired {
+    private fun responsesProvider(ctx: Daemon.ProviderBuild, label: String): Wired {
         val key = ctx.key
         val head = ctx.head
         val providerCfg = ctx.providerCfg
@@ -687,7 +642,7 @@ public class Daemon(
                         quirks = providerCfg.responsesQuirks(CodexProvider.defaultQuirks(), cfg),
                         // Reasoning-continuation folding (codex 518n-2) — codex head ONLY; grok/openai
                         // never receive a fold config, so they stay pure passthrough.
-                        foldConfig = foldConfigFrom(cfg),
+                        foldConfig = buildInputs.foldConfigFrom(cfg),
                         accountIdHeader = providerCfg.quirks.accountIdHeader,
                     ),
                     auth,
@@ -700,7 +655,7 @@ public class Daemon(
 
     // grok via the SuperGrok/X-Premium+ browser OAuth (~/.grok/auth.json, Bearer + refresh) — the
     // same Responses dialect + grok quirks, only the auth differs from the api-key path.
-    private fun grokOAuthProvider(ctx: ProviderBuild, label: String): Wired {
+    private fun grokOAuthProvider(ctx: Daemon.ProviderBuild, label: String): Wired {
         val key = ctx.key
         val head = ctx.head
         val providerCfg = ctx.providerCfg
@@ -711,7 +666,7 @@ public class Daemon(
         val auth = GrokAuthProvider(
             authPath = Paths.get(TopologyLoader.expandHome(cfg.grokAuthPath)),
             authCacheMs = cfg.authCacheMs,
-            refreshCall = { rt -> grokRefresh(tokenUrl, rt) },
+            refreshCall = { rt -> grokRefresh.refresh(tokenUrl, rt) },
             prefetchScope = probeScope,
             // JW-03: [<headKey>] first, so [grok-auth] refresh lines reach the head's tail
             log = headScopedLog(key, log),
@@ -740,7 +695,7 @@ public class Daemon(
 
     // api-key + responses: grok (session-id cache key) vs openai platform (first-message-hash).
     // Reasoning display knobs come from ConfigService (TOML [daemon] / env / state).
-    private fun apiKeyResponsesProvider(ctx: ProviderBuild, label: String): Wired {
+    private fun apiKeyResponsesProvider(ctx: Daemon.ProviderBuild, label: String): Wired {
         val key = ctx.key
         val head = ctx.head
         val providerCfg = ctx.providerCfg
@@ -784,9 +739,181 @@ public class Daemon(
         }
         return Wired(provider, auth)
     }
+}
 
-    // The /model picker option list Claude Code caches in .claude.json — every model with its
-    // label, description, and window, so all of them appear in the picker (not just the pinned one).
+/** The dashboard HTML the control plane serves: the built dist file, else the jar-bundled copy,
+ *  else a placeholder. A constructed collaborator rather than a static factory (Kotlin style law,
+ *  2026-08-15) — Main builds one and hands the result to [Daemon]. */
+internal class DashboardHtml {
+    internal fun source(
+        distPath: Path,
+        classpathHtml: () -> String? = {
+            Daemon::class.java.getResourceAsStream("/webui/index.html")
+                ?.bufferedReader()
+                ?.use { it.readText() }
+        },
+    ): () -> String = {
+        runCatchingCancellable { Files.readString(distPath) }
+            .getOrNull()
+            ?: runCatchingCancellable { classpathHtml() }.getOrNull()
+            ?: "<!doctype html><title>splice</title><p>dashboard build missing</p>"
+    }
+}
+
+public class Daemon(
+    private val topology: Topology,
+    private val statePaths: StatePaths,
+    private val dashboardHtml: () -> String,
+    private val log: (String) -> Unit = { System.err.print(it) },
+    private val shutdownDaemon: () -> Unit = {},
+    private val refreshCall: suspend (tokenUrl: String, refreshToken: String) -> RefreshAttempt<RefreshedTokens> =
+        CodexRefresh()::refresh,
+    // JW-04: the booted config identity (sha-256 of the parsed bytes + the resolved path).
+    // Defaults keep every existing test constructor compiling; Main always passes both.
+    private val topologyDigest: String = "",
+    private val topologyPath: Path? = null,
+) {
+    // Topology TOML ([daemon] + [defaults]) feeds the headOverrides layer so reasoning
+    // display is operator-editable without recompiling. Env and runtime PATCH still win.
+    // [heads.<key>.overrides] rides the per-head layer: heads share ONE ConfigService (one JVM,
+    // unlike the Node lineage's process-per-head), so without this a knob tuned for one upstream
+    // hit all of them — e.g. kimi's 40-min upstreamTimeoutMs also gave codex a 40-min ceiling.
+    private val config = ConfigService(
+        statePaths,
+        headOverrides = topology.configOverrides(),
+        perHeadOverrides = topology.heads.mapValues { (_, head) -> head.overrides },
+    )
+    private val mgmtKey = MgmtKey(statePaths)
+    private val requestMaterializationGate = RequestMaterializationGate()
+
+    // The collaborators the file-level helpers became (Kotlin style law, 2026-08-15). All are
+    // stateless; one instance each keeps the wiring readable and the allocations at construction.
+    private val boundary = DaemonBoundary()
+    private val headLifecycle = HeadLifecycle()
+    private val buildInputs = HeadBuildInputs()
+    private val signInPlanner = SignInPlanner()
+
+    // set once in start(); the daemon is not usable before it
+    private var control: ControlServer? = null
+    private val heads = LinkedHashMap<String, ManagedHead>()
+    private val stopLock = Mutex()
+    private var stopped = false
+
+    // G8: per-head auth/health probe. SupervisorJob so one head's probe failure can't cancel
+    // another's — same isolation shape as SingleFlight.kt:33-36.
+    private val probeScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    private val authProbes = LinkedHashMap<String, AuthProbeLoop>()
+
+    // DECLARED AFTER probeScope ON PURPOSE: property initializers run in declaration order, and
+    // ProviderAssembly must receive the SAME scope instance stop() cancels (see its KDoc).
+    private val providerAssembly = ProviderAssembly(statePaths, probeScope, log, refreshCall)
+
+    // Turn-path liveness (2026-08-12): key -> stalled. Written by TurnPathProbeLoop, read by
+    // /health. The 91h wedge proved head liveness and head CONFIGURATION are different facts.
+    private val turnPathStalled = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
+    public suspend fun start() {
+        val cfg = config.getConfig()
+        // TOML feeds ConfigService's topology layer; state/env/runtime override it consistently.
+        // Resolved before the head loop so every launch recipe points at the actual listener.
+        val controlPort = cfg.controlPort
+        // PER-HEAD BOOT ISOLATION (audit 2026-07-18): one head that fails to assemble (a valid
+        // TOML the builder can't wire, e.g. a not-yet-supported dialect) must NOT abort the whole
+        // daemon with a stack trace to /dev/null. Log the degraded head and serve the rest.
+        val failed = headLifecycle.assembleDaemonHeads(topology, statePaths, heads, log) { key, head, providerCfg ->
+            assembleHead(providerContext(key, head, providerCfg), controlPort)
+        }
+        val srv = ControlServer(
+            controlPort,
+            heads,
+            config,
+            mgmtKey,
+            dashboardHtml,
+            log,
+            LaunchService(ClaudeConfigMaterializer(statePaths.rootDir.parent ?: statePaths.rootDir)),
+            shutdownDaemon,
+            // `failed` fills during assembleDaemonHeads above and again in startDaemonHeads below
+            // (a head that assembles fine but fails to start); captured by reference, so this
+            // reads live rather than a stale snapshot taken before startDaemonHeads runs.
+            { failed.size },
+            // Configured total so readyHeads + failedHeads == heads holds even when a head fails to
+            // ASSEMBLE (it never enters `heads`) — review 2026-07-23.
+            topology.heads.size,
+            topologyDigest = topologyDigest,
+            configPath = topologyPath?.toString().orEmpty(),
+            topologyStale = TopologyLoader.staleProbe(topologyPath, topologyDigest),
+            turnPathStalled = { turnPathStalled.filterValues { it }.keys.sorted() },
+        )
+        control = srv
+        // Start heads BEFORE opening the control plane so a launch-shim that sees /health and
+        // immediately POSTs /launch/<head> does not race a still-binding head (503 head is not running).
+        headLifecycle.startDaemonHeads(heads, failed, probeScope, log, HeadProbeSinks(authProbes, turnPathStalled))
+        // Defense in depth for the restart-into-a-still-bound-port race (BS-4 DEFECT B): unlike the
+        // per-head starts above, an uncaught EADDRINUSE here (a prior daemon that freed the lock but
+        // not yet the control port) would crash the new daemon to /dev/null, leaving zero serving.
+        // Exit cleanly instead — Main's finally stops the heads we started and releases the lock.
+        val controlBound = boundary.runCatchingDaemonBoundary { srv.start() }
+            .onFailure {
+                log("[daemon] control plane could not bind :$controlPort (${it.message}); another owns it, exiting\n")
+                shutdownDaemon()
+            }
+            .isSuccess
+        if (!controlBound) return
+        val degraded = if (failed.isEmpty()) "" else " DEGRADED=${failed.keys}"
+        log("[daemon] up: control :$controlPort, heads ${heads.keys}$degraded\n")
+    }
+
+    public suspend fun stop(): Unit = stopLock.withLock {
+        if (!stopped) {
+            stopped = true
+            authProbes.values.forEach { it.stop() }
+            probeScope.cancel()
+
+            // Heads stop in PARALLEL under a phase DEADLINE, then control stops — see
+            // [HeadLifecycle.stopHeads]. The supervisor scope + stopFailureHandler live there so an
+            // exception escaping one head's stop (a type outside runCatchingDaemonBoundary's list)
+            // can't cancel the siblings' drains/flushes nor skip control.stop — it surfaces on
+            // stderr/daemon.log instead of the JVM default, a black hole once production redirects
+            // stderr to /dev/null.
+            headLifecycle.stopHeads(heads.values.map { it.head }, HEAD_STOP_BUDGET_MS, log) { control?.stop() }
+        }
+    }
+
+    /** Resolve one head's build inputs against ITS OWN effective config. Heads share a single
+     *  ConfigService (one JVM), so every value here must come from `getConfig(key)` — reading the
+     *  global view is what made a knob tuned for one upstream govern all of them. */
+    // `internal`, not private: DaemonPerHeadConfigTest calls this directly to pin that each head
+    // resolves against getConfig(key). No production caller outside this class (2026-07-26 review).
+    internal fun providerContext(key: String, head: HeadConfig, providerCfg: ProviderConfig): ProviderBuild {
+        val headCfg = config.getConfig(key)
+        val resolvedHead = buildInputs.resolveHeadConfig(key, head, providerCfg, headCfg)
+        val resolvedProvider = buildInputs.resolveProviderConfig(key, providerCfg, headCfg)
+        return ProviderBuild(
+            key = key,
+            head = resolvedHead,
+            providerCfg = resolvedProvider,
+            catalog = resolvedProvider.catalogFor(resolvedHead, headCfg.contextWindowOverride),
+            watchdog = WatchdogBudget(
+                firstByteTimeout = headCfg.firstByteTimeoutMs.milliseconds,
+                streamIdle = headCfg.streamIdleMs.milliseconds,
+                totalCap = headCfg.upstreamTimeoutMs.milliseconds,
+            ),
+            cfg = headCfg,
+            loginCommand = signInPlanner.signInPlan(resolvedProvider, resolvedHead, key).command,
+        )
+    }
+
+    /** The per-head inputs every provider builder threads through — a parameter object. */
+    internal data class ProviderBuild(
+        val key: String,
+        val head: HeadConfig,
+        val providerCfg: ProviderConfig,
+        val catalog: ModelCatalog,
+        val watchdog: WatchdogBudget,
+        val cfg: SpliceConfig,
+        val loginCommand: String,
+    )
+
     // Common assembly shared by every provider: stores, the generic HeadServer, launch spec.
     // The sign-in plan (OAuth browser flow vs api-key masked prompt + token capture) lives in
     // SignInPlan.kt — factored out of this class (detekt LargeClass).
@@ -795,7 +922,7 @@ public class Daemon(
         val key = ctx.key
         val head = ctx.head
         val cfg = ctx.cfg
-        val wired = buildProvider(ctx)
+        val wired = providerAssembly.buildProvider(ctx)
         val usageStore = UsageStore(statePaths.usageFile(key), statePaths.ratelimitFile(key))
         val compactStats = CompactStats(statePaths.compactStatsFile(key))
         val perfStats = PerfStats(statePaths.perfStatsFile(key))
@@ -861,7 +988,7 @@ public class Daemon(
         val head = ctx.head
         val providerCfg = ctx.providerCfg
         val configDir = Paths.get(TopologyLoader.expandHome(head.claude.configDir ?: "~/.claude-$key"))
-        val signIn = signInPlan(providerCfg, head, key)
+        val signIn = signInPlanner.signInPlan(providerCfg, head, key)
         return LaunchSpec(
             configDir = configDir,
             // A client-auth head serves ANTHROPIC on the client's own login, so the recipe must not
@@ -871,7 +998,7 @@ public class Daemon(
             availableModelIds = ctx.catalog.availableModelIds(),
             modelLabels = providerCfg.models.associate { it.id to it.label.ifEmpty { it.id } },
             contextWindow = ctx.catalog.contextWindowFor(head.pinnedModel).toInt(),
-            modelOptionsCache = modelOptionsCache(providerCfg),
+            modelOptionsCache = buildInputs.modelOptionsCache(providerCfg),
             statuslineCommand = "curl -sS --data-binary @- http://127.0.0.1:$controlPort/statusline/$key",
             // The installed wrapper (`<command> login`) runs this head's provider sign-in; the
             // materialized /login command + UserPromptSubmit hook route the user here. api-key
@@ -894,41 +1021,5 @@ public class Daemon(
             port = head.port,
             inferenceToken = mgmtKey.get(),
         )
-    }
-
-    public companion object {
-        public fun dashboardFrom(
-            distPath: Path,
-            classpathHtml: () -> String? = {
-                Daemon::class.java.getResourceAsStream("/webui/index.html")
-                    ?.bufferedReader()
-                    ?.use { it.readText() }
-            },
-        ): () -> String = {
-            runCatchingCancellable { Files.readString(distPath) }
-                .getOrNull()
-                ?: runCatchingCancellable { classpathHtml() }.getOrNull()
-                ?: "<!doctype html><title>splice</title><p>dashboard build missing</p>"
-        }
-    }
-}
-
-/** JW-04: per-request staleness recompute, failing OPEN — an unreadable file degrades the
- *  signal, never /health. Top-level: Daemon sits at detekt's LargeClass ceiling. */
-private fun topologyStaleProbe(topologyPath: Path?, bootDigest: String): () -> Boolean = {
-    val now = topologyPath?.let { TopologyLoader.currentDigest(it) }
-    now != null && bootDigest.isNotEmpty() && now != bootDigest
-}
-
-/** Pure roster -> dropdown-cache projection. Top-level: Daemon sits at detekt's LargeClass
- *  ceiling (JW-04 relocation; SignInPlan.kt was the same move). */
-private fun modelOptionsCache(providerCfg: ProviderConfig): JsonElement = buildJsonArray {
-    providerCfg.models.forEach { model ->
-        addJsonObject {
-            put("value", model.id)
-            put("label", model.label.ifEmpty { model.id })
-            put("description", model.description.ifEmpty { model.label.ifEmpty { model.id } })
-            put("context_window", model.contextWindow)
-        }
     }
 }

@@ -12,13 +12,14 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.app.RefreshRetry
 import splice.app.RefreshStep
-import splice.app.isTerminalRefreshFailure
-import splice.app.refreshWithRetry
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
 
 class RefreshRetryTest {
+
+    private val retry = RefreshRetry()
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -35,7 +36,7 @@ class RefreshRetryTest {
                 respond("ok", HttpStatusCode.OK, headersOf())
             },
         )
-        val result = refreshWithRetry(
+        val result = retry.refreshWithRetry(
             call = { call(client) },
             classify = { RefreshStep.Terminal("ok") },
         )
@@ -52,7 +53,7 @@ class RefreshRetryTest {
                 respond("body", HttpStatusCode.OK, headersOf())
             },
         )
-        val result = refreshWithRetry(
+        val result = retry.refreshWithRetry(
             call = { call(client) },
             classify = { if (calls.get() == 1) RefreshStep.Retry else RefreshStep.Terminal("ok") },
         )
@@ -69,7 +70,7 @@ class RefreshRetryTest {
                 respond("body", HttpStatusCode.OK, headersOf())
             },
         )
-        val result = refreshWithRetry<String>(
+        val result = retry.refreshWithRetry<String>(
             call = { call(client) },
             classify = { RefreshStep.Terminal(null) },
         )
@@ -86,7 +87,7 @@ class RefreshRetryTest {
                 respond("body", HttpStatusCode.OK, headersOf())
             },
         )
-        val result = refreshWithRetry<String>(
+        val result = retry.refreshWithRetry<String>(
             call = { call(client) },
             classify = { RefreshStep.Retry },
         )
@@ -98,7 +99,7 @@ class RefreshRetryTest {
     fun `a thrown exception during call is treated as retryable, not a permanent failure`() = runTest {
         val calls = AtomicInteger()
         val client = clientOf(MockEngine { respond("ok", HttpStatusCode.OK, headersOf()) })
-        val result = refreshWithRetry(
+        val result = retry.refreshWithRetry(
             call = {
                 if (calls.incrementAndGet() == 1) throw IOException("DNS blip") else call(client)
             },
@@ -110,6 +111,6 @@ class RefreshRetryTest {
 
     @Test
     fun `isTerminalRefreshFailure invalid_grant body wins even under a nominally-retryable status`() {
-        assertTrue(isTerminalRefreshFailure(500, """{"error":"invalid_grant"}""", json))
+        assertTrue(retry.isTerminalRefreshFailure(500, """{"error":"invalid_grant"}""", json))
     }
 }

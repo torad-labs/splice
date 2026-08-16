@@ -14,29 +14,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import splice.core.auth.AuthProvider
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.runCatchingCancellable
-
-/**
- * Daemon wiring helper (top-level, not a Daemon member, to keep Daemon's own function count
- * under detekt's TooManyFunctions): cast + start, no-op for a non-refreshable [AuthProvider] —
- * currently always succeeds (every impl is RefreshableAuthProvider), defensive for a future
- * non-refreshable provider, not dead code. Stores the started loop into [probes] under [key] so
- * the caller can stop() it later.
- */
-public fun startAuthProbeIfRefreshable(
-    key: String,
-    auth: AuthProvider,
-    scope: CoroutineScope,
-    log: (String) -> Unit,
-    probes: MutableMap<String, AuthProbeLoop>,
-) {
-    val refreshable = auth as? RefreshableAuthProvider ?: return
-    val probe = AuthProbeLoop(key, refreshable, log = log)
-    probe.start(scope)
-    probes[key] = probe
-}
 
 public class AuthProbeLoop(
     private val key: String,
@@ -127,15 +106,14 @@ public class AuthProbeLoop(
     }
 
     private fun state(v: Boolean) = if (v) "healthy" else "unhealthy"
-
-    private companion object {
-        const val DEFAULT_INTERVAL_MS = 60_000L
-
-        // SH-04 restart budget (systemd StartLimitBurst shape): sustained slow deaths keep
-        // restarting forever (the window rolls); only a hot death loop exhausts it, and that
-        // exhaustion is ANNOUNCED, never silent.
-        const val MAX_RESTARTS = 5
-        const val RESTART_WINDOW_MS = 600_000L
-        const val MS_PER_MIN = 60_000L
-    }
 }
+
+// AuthProbeLoop's tick cadence and SH-04 restart budget (systemd StartLimitBurst shape): sustained
+// slow deaths keep restarting forever (the window rolls); only a hot death loop exhausts it, and
+// that exhaustion is ANNOUNCED, never silent. File-scope declarations (Kotlin style law,
+// 2026-08-15): a top-level `private const val` is the sanctioned home for constants, never a
+// static block on the type.
+private const val DEFAULT_INTERVAL_MS = 60_000L
+private const val MAX_RESTARTS = 5
+private const val RESTART_WINDOW_MS = 600_000L
+private const val MS_PER_MIN = 60_000L

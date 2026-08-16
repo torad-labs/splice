@@ -22,6 +22,8 @@ private fun provider(quirks: QuirksConfig) = ProviderConfig(
 
 class PassthroughQuirksOverlayTest {
 
+    private val assembly = PassthroughAssembly()
+
     private val kimiBase = PassthroughQuirks.kimi("kimi")
 
     // Without the isNotEmpty guard this yields an EMPTY allowlist, and the builder then drops every
@@ -29,13 +31,13 @@ class PassthroughQuirksOverlayTest {
     // and nothing logged. Empty means OFF.
     @Test
     fun `an empty block_allowlist means OFF, never an allowlist that permits nothing`() {
-        val quirks = provider(QuirksConfig(blockAllowlist = emptyList())).passthroughQuirks(kimiBase)
+        val quirks = assembly.passthroughQuirks(provider(QuirksConfig(blockAllowlist = emptyList())), kimiBase)
         assertEquals(kimiBase.blockAllowlist, quirks.blockAllowlist, "empty must fall back to the base")
     }
 
     @Test
     fun `a declared allowlist replaces the base`() {
-        val quirks = provider(QuirksConfig(blockAllowlist = listOf("text"))).passthroughQuirks(kimiBase)
+        val quirks = assembly.passthroughQuirks(provider(QuirksConfig(blockAllowlist = listOf("text"))), kimiBase)
         assertEquals(setOf("text"), quirks.blockAllowlist)
     }
 
@@ -43,13 +45,16 @@ class PassthroughQuirksOverlayTest {
     // keep serving a kimi head unchanged.
     @Test
     fun `absent knobs keep the base profile`() {
-        val quirks = provider(QuirksConfig()).passthroughQuirks(kimiBase)
+        val quirks = assembly.passthroughQuirks(provider(QuirksConfig()), kimiBase)
         assertEquals(kimiBase, quirks)
     }
 
     @Test
     fun `an explicitly declared knob still wins over the base`() {
-        val quirks = provider(QuirksConfig(stripCacheControl = false, mfjs = false)).passthroughQuirks(kimiBase)
+        val quirks = assembly.passthroughQuirks(
+            provider(QuirksConfig(stripCacheControl = false, mfjs = false)),
+            kimiBase,
+        )
         assertEquals(false, quirks.stripCacheControl)
         assertEquals(false, quirks.mfjsSanitize)
     }
@@ -58,7 +63,7 @@ class PassthroughQuirksOverlayTest {
     @Test
     fun `a neutral base with no declarations stays faithful`() {
         val neutral = PassthroughQuirks(providerTag = "claude-splice")
-        val quirks = provider(QuirksConfig()).passthroughQuirks(neutral)
+        val quirks = assembly.passthroughQuirks(provider(QuirksConfig()), neutral)
         assertEquals(false, quirks.stripCacheControl)
         assertEquals(false, quirks.mfjsSanitize)
         assertEquals(false, quirks.synthesizeSignatures)

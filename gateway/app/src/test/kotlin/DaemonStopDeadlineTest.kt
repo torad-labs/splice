@@ -9,14 +9,17 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.app.runBoundedTeardown
-import splice.app.stopHeads
+import splice.app.DaemonProcess
+import splice.app.HeadLifecycle
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 class DaemonStopDeadlineTest {
+
+    private val headLifecycle = HeadLifecycle()
+    private val process = DaemonProcess()
 
     // A fake head whose stop() runs [onStop] — Thread.sleep models a BLOCKING engine stop (the
     // serialization hazard); delay models a cancellable drain that never converges.
@@ -40,7 +43,7 @@ class DaemonStopDeadlineTest {
         val heads = (1..3).map { FakeHead("h$it") { Thread.sleep(1_000) } }
         var controlStopped = false
         val elapsedMs = measureMs {
-            runBlocking { stopHeads(heads, budgetMs = 10_000, log = {}) { controlStopped = true } }
+            runBlocking { headLifecycle.stopHeads(heads, budgetMs = 10_000, log = {}) { controlStopped = true } }
         }
         assertTrue(elapsedMs < 2_500, "parallel head stops finish near one stop (~1s), was ${elapsedMs}ms")
         assertTrue(heads.all { it.stopped.get() }, "every head stop ran to completion")
@@ -53,7 +56,7 @@ class DaemonStopDeadlineTest {
         val slow = FakeHead("slow") { delay(60_000) }
         var controlStopped = false
         val elapsedMs = measureMs {
-            runBlocking { stopHeads(listOf(slow), budgetMs = 400, log = {}) { controlStopped = true } }
+            runBlocking { headLifecycle.stopHeads(listOf(slow), budgetMs = 400, log = {}) { controlStopped = true } }
         }
         assertTrue(elapsedMs < 3_000, "the phase is capped near the 400ms budget, was ${elapsedMs}ms")
         assertFalse(slow.stopped.get(), "the wedged head's stop was cancelled at the budget, not awaited")
@@ -63,7 +66,7 @@ class DaemonStopDeadlineTest {
     @Test
     fun `the halt watchdog force-terminates a teardown that overruns the deadline`() {
         val halts = AtomicInteger(0)
-        runBoundedTeardown(deadlineMs = 150, halt = { halts.incrementAndGet() }) {
+        process.runBoundedTeardown(deadlineMs = 150, halt = { halts.incrementAndGet() }) {
             Thread.sleep(600) // teardown that overruns the deadline
         }
         assertEquals(1, halts.get(), "the watchdog halts exactly once when teardown overruns")
@@ -72,7 +75,7 @@ class DaemonStopDeadlineTest {
     @Test
     fun `a clean teardown never halts`() {
         val halts = AtomicInteger(0)
-        runBoundedTeardown(deadlineMs = 200, halt = { halts.incrementAndGet() }) {
+        process.runBoundedTeardown(deadlineMs = 200, halt = { halts.incrementAndGet() }) {
             // returns immediately — well under the deadline
         }
         Thread.sleep(500) // wait past the deadline: the disarmed watchdog must not fire

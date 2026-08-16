@@ -8,21 +8,27 @@ import splice.core.util.SecureFile
 import splice.core.util.runCatchingCancellable
 import java.nio.file.Path
 
-/** Best-effort open of a URL in the operator's default browser; false when unsupported/failed. */
-internal fun openBrowser(url: String): Boolean = runCatchingCancellable {
-    val os = System.getProperty("os.name").lowercase()
-    val cmd = when {
-        os.contains("mac") -> listOf("open", url)
-        os.contains("nux") || os.contains("nix") -> listOf("xdg-open", url)
-        else -> return false
-    }
-    ProcessBuilder(cmd).redirectOutput(ProcessBuilder.Redirect.DISCARD)
-        .redirectError(ProcessBuilder.Redirect.DISCARD).start()
-    true
-}.getOrDefault(false)
+/** The shared login I/O primitives, held as a collaborator by each flow (Kotlin style law,
+ *  2026-08-15): a helper used by several types is a small named class they construct, not a pair
+ *  of free functions. */
+internal class LoginIo {
 
-// Write credentials atomically at 0600 — routes to the shared primitive. This file held the
-// canonical copy SecureFile was lifted from; delegating keeps a single source of truth.
-internal fun writeCredentialFile(path: Path, content: String) {
-    SecureFile.writeAtomic0600(path, content)
+    /** Best-effort open of a URL in the operator's default browser; false when unsupported/failed. */
+    internal fun openBrowser(url: String): Boolean = runCatchingCancellable {
+        val os = System.getProperty("os.name").lowercase()
+        val cmd = when {
+            os.contains("mac") -> listOf("open", url)
+            os.contains("nux") || os.contains("nix") -> listOf("xdg-open", url)
+            else -> return false
+        }
+        ProcessBuilder(cmd).redirectOutput(ProcessBuilder.Redirect.DISCARD)
+            .redirectError(ProcessBuilder.Redirect.DISCARD).start()
+        true
+    }.getOrDefault(false)
+
+    // Write credentials atomically at 0600 — routes to the shared primitive. This file held the
+    // canonical copy SecureFile was lifted from; delegating keeps a single source of truth.
+    internal fun writeCredentialFile(path: Path, content: String) {
+        SecureFile.writeAtomic0600(path, content)
+    }
 }

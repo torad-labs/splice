@@ -9,7 +9,7 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.app.codexRefresh
+import splice.app.CodexRefresh
 import splice.core.auth.RefreshAttempt
 import java.util.concurrent.atomic.AtomicInteger
 
@@ -31,7 +31,7 @@ class CodexRefreshTest {
                 )
             }
         }
-        val result = codexRefresh("https://auth.openai.com/token", "old-refresh", clientOver(engine))
+        val result = CodexRefresh().refresh("https://auth.openai.com/token", "old-refresh", clientOver(engine))
         val granted = result as RefreshAttempt.Granted
         assertEquals("new-access", granted.tokens.accessToken)
         assertEquals("new-refresh", granted.tokens.refreshToken)
@@ -46,7 +46,7 @@ class CodexRefreshTest {
             calls.incrementAndGet()
             respond("unauthorized", HttpStatusCode.Unauthorized, headersOf())
         }
-        val result = codexRefresh("https://auth.openai.com/token", "dead-refresh", clientOver(engine))
+        val result = CodexRefresh().refresh("https://auth.openai.com/token", "dead-refresh", clientOver(engine))
         assertTrue(result is RefreshAttempt.InvalidGrant)
         assertEquals(1, calls.get())
     }
@@ -58,7 +58,7 @@ class CodexRefreshTest {
             calls.incrementAndGet()
             respond("""{"error":"invalid_grant"}""", HttpStatusCode.BadRequest, headersOf())
         }
-        val result = codexRefresh("https://auth.openai.com/token", "dead-refresh", clientOver(engine))
+        val result = CodexRefresh().refresh("https://auth.openai.com/token", "dead-refresh", clientOver(engine))
         assertTrue(result is RefreshAttempt.InvalidGrant)
         assertEquals(1, calls.get())
     }
@@ -70,7 +70,7 @@ class CodexRefreshTest {
             calls.incrementAndGet()
             respond("down", HttpStatusCode.ServiceUnavailable, headersOf())
         }
-        val result = codexRefresh("https://auth.openai.com/token", "refresh", clientOver(engine))
+        val result = CodexRefresh().refresh("https://auth.openai.com/token", "refresh", clientOver(engine))
         assertTrue(result is RefreshAttempt.Denied)
         assertEquals(3, calls.get())
     }
@@ -78,7 +78,7 @@ class CodexRefreshTest {
     @Test
     fun `malformed JSON on a 200 response returns Denied without throwing`() = runTest {
         val engine = MockEngine { respond("not json", HttpStatusCode.OK, headersOf()) }
-        val result = codexRefresh("https://auth.openai.com/token", "refresh", clientOver(engine))
+        val result = CodexRefresh().refresh("https://auth.openai.com/token", "refresh", clientOver(engine))
         assertTrue(result is RefreshAttempt.Denied)
     }
 }

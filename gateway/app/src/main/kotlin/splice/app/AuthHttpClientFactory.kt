@@ -10,19 +10,24 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.java.Java
 import io.ktor.client.plugins.HttpTimeout
 
-/** JDK-HttpClient-backed client for :app's auth/refresh/login POSTs — never ktor CIO (see header). */
-internal fun authHttpClient(): HttpClient =
-    HttpClient(Java) {
-        install(HttpTimeout) {
-            connectTimeoutMillis = AUTH_CONNECT_TIMEOUT_MS
-            requestTimeoutMillis = AUTH_REQUEST_TIMEOUT_MS
-            socketTimeoutMillis = AUTH_SOCKET_TIMEOUT_MS
-        }
-        engine {
-            protocolVersion = java.net.http.HttpClient.Version.HTTP_1_1
-        }
-    }
-
 private const val AUTH_CONNECT_TIMEOUT_MS = 10_000L
 private const val AUTH_REQUEST_TIMEOUT_MS = 30_000L
 private const val AUTH_SOCKET_TIMEOUT_MS = 30_000L
+
+/** JDK-HttpClient-backed client for :app's auth/refresh/login POSTs — never ktor CIO (see header).
+ *
+ *  A constructed collaborator rather than a free function (Kotlin style law, 2026-08-15): the
+ *  sanctioned shape for a factory is an instance the caller holds, not a static entry point. */
+internal class AuthHttpClientFactory {
+    internal fun create(): HttpClient =
+        HttpClient(Java) {
+            install(HttpTimeout) {
+                connectTimeoutMillis = AUTH_CONNECT_TIMEOUT_MS
+                requestTimeoutMillis = AUTH_REQUEST_TIMEOUT_MS
+                socketTimeoutMillis = AUTH_SOCKET_TIMEOUT_MS
+            }
+            engine {
+                protocolVersion = java.net.http.HttpClient.Version.HTTP_1_1
+            }
+        }
+}

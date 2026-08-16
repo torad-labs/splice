@@ -75,6 +75,15 @@ command = "claude-openrouter"
     public fun currentDigest(path: Path): String? =
         runCatchingCancellable { sha256Hex(Files.readAllBytes(path)) }.getOrNull()
 
+    /** JW-04: per-request staleness recompute, failing OPEN — an unreadable file degrades the
+     *  signal, never /health. Lives here rather than beside its Daemon caller because the fact it
+     *  computes is this loader's (Kotlin style law, 2026-08-15: it can no longer be a file-level
+     *  helper, and [currentDigest] is the thing it wraps). */
+    public fun staleProbe(path: Path?, bootDigest: String): () -> Boolean = {
+        val now = path?.let { currentDigest(it) }
+        now != null && bootDigest.isNotEmpty() && now != bootDigest
+    }
+
     private fun sha256Hex(bytes: ByteArray): String =
         java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 

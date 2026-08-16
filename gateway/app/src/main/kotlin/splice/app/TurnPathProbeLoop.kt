@@ -131,11 +131,12 @@ public class TurnPathProbeLoop(
             conn.disconnect()
         }
     }
-
-    private companion object {
-        const val PROBE_INTERVAL_MS = 30_000L
-        const val PROBE_TIMEOUT_MS = 5_000
-        const val STALL_THRESHOLD = 2
-        val PROBE_BODY = """{"splice_liveness_probe":true}""".toByteArray()
-    }
 }
+
+// TurnPathProbeLoop's tick cadence, per-probe deadline, stall threshold, and the fixed body every
+// probe POSTs. File-scope declarations (Kotlin style law, 2026-08-15): a top-level `private const
+// val` / `private val` is the sanctioned home for constants, never a static block on the type.
+private const val PROBE_INTERVAL_MS = 30_000L
+private const val PROBE_TIMEOUT_MS = 5_000
+private const val STALL_THRESHOLD = 2
+private val PROBE_BODY = """{"splice_liveness_probe":true}""".toByteArray()

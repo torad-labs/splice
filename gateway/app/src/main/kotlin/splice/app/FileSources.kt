@@ -57,9 +57,9 @@ public class LogFileSource(
     }.getOrDefault("")
 
     override fun path(): String = logFile.toString()
-
-    private companion object {
-        const val LOG_TAIL_BYTES = 1024 * 1024
-        const val MAX_LOG_LINES = 2_000
-    }
 }
+
+// LogFileSource's tail bounds. File-scope consts (Kotlin style law, 2026-08-15): a top-level
+// `private const val` is the sanctioned home for constants, never a static namespace on the type.
+private const val LOG_TAIL_BYTES = 1024 * 1024
+private const val MAX_LOG_LINES = 2_000

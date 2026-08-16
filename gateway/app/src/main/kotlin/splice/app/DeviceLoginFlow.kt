@@ -42,6 +42,9 @@ public data class DeviceLoginSpec(
 
 public object DeviceLoginFlow {
 
+    private val loginIo = LoginIo()
+    private val authClients = AuthHttpClientFactory()
+
     private const val MAX_EXPIRED_RESTARTS = 2
     private const val SLOW_DOWN_INCREMENT_S = 5L
     private const val MS_PER_S = 1000L
@@ -75,7 +78,7 @@ public object DeviceLoginFlow {
     }
 
     private suspend fun attempt(spec: DeviceLoginSpec): Outcome {
-        val client = authHttpClient()
+        val client = authClients.create()
         return try {
             runCatchingCancellable {
                 val auth = requestDeviceAuth(client, spec) ?: return@runCatchingCancellable Outcome.ABORT
@@ -112,7 +115,7 @@ public object DeviceLoginFlow {
         println("")
         println("  $url")
         println("")
-        if (!openBrowser(url)) println("splice: open the URL above to finish signing in.")
+        if (!loginIo.openBrowser(url)) println("splice: open the URL above to finish signing in.")
     }
 
     private suspend fun poll(client: HttpClient, spec: DeviceLoginSpec, auth: KimiDeviceAuthorization): Outcome {
@@ -134,7 +137,7 @@ public object DeviceLoginFlow {
     private suspend fun classifyPoll(resp: HttpResponse, spec: DeviceLoginSpec, intervalS: Long): PollStep {
         val body = resp.bodyAsText()
         if (resp.status.isSuccess()) {
-            writeCredentialFile(spec.authPath, spec.toAuthJson(body))
+            loginIo.writeCredentialFile(spec.authPath, spec.toAuthJson(body))
             println("splice: signed in — credentials written to ${spec.authPath}")
             return PollStep.Stop(Outcome.SUCCESS)
         }

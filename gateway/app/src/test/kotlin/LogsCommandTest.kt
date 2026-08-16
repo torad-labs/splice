@@ -5,7 +5,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.cli.logs
+import splice.app.cli.LogsCommand
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.file.Files
@@ -18,7 +18,7 @@ class LogsCommandTest {
         val original = System.out
         System.setOut(PrintStream(buf, true))
         return try {
-            logs(args) { env[it] } to buf.toString()
+            LogsCommand().logs(args) { env[it] } to buf.toString()
         } finally {
             System.setOut(original)
         }

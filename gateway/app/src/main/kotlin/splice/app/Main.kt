@@ -34,7 +34,7 @@ public fun main(args: Array<String>) {
     Security.setProperty("networkaddress.cache.ttl", "30")
     when (args.firstOrNull()) {
         null, "daemon", "start" -> DaemonProcess().runDaemon()
-        else -> exitProcess(splice.app.cli.runCli(args))
+        else -> exitProcess(splice.app.cli.Cli().runCli(args))
     }
 }
 
@@ -68,7 +68,7 @@ internal class DaemonProcess {
         // /mgmt/logs. Injection still wins where a caller passes its own (wall kt-no-println).
         DaemonLog.install(log)
         val shutdownSignal = CompletableDeferred<Unit>()
-        splice.app.cli.shimStalenessWarning()?.let { log("$it\n") }
+        splice.app.cli.InstallCommand().shimStalenessWarning()?.let { log("$it\n") }
         val daemon = Daemon(
             topology,
             statePaths,

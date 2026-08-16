@@ -5,7 +5,7 @@
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.cli.doctor
+import splice.app.cli.DoctorCommand
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.net.InetSocketAddress
@@ -20,7 +20,7 @@ class DoctorRuntimeSectionTest {
         val original = System.out
         System.setOut(PrintStream(buf, true))
         return try {
-            doctor { name -> env[name] } to buf.toString()
+            DoctorCommand().doctor { name -> env[name] } to buf.toString()
         } finally {
             System.setOut(original)
         }

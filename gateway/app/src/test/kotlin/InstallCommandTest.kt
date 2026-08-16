@@ -9,10 +9,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
-import splice.app.cli.install
-import splice.app.cli.installedShimVersion
-import splice.app.cli.shimStalenessWarning
-import splice.app.cli.uninstall
+import splice.app.cli.InstallCommand
 import splice.core.SHIM_VERSION
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
@@ -75,7 +72,7 @@ class InstallCommandTest {
     fun `install links each head command to the shared shim`(@TempDir home: Path) {
         withHome(home) {
             seedTopology(home)
-            install("--all", env = noEnv)
+            InstallCommand().install("--all", env = noEnv)
             val bin = home.resolve(".local").resolve("bin")
             val claudex = bin.resolve("claudex")
             val grok = bin.resolve("grok")
@@ -89,7 +86,7 @@ class InstallCommandTest {
     fun `install a single head only`(@TempDir home: Path) {
         withHome(home) {
             seedTopology(home)
-            install("claudex", env = noEnv)
+            InstallCommand().install("claudex", env = noEnv)
             val bin = home.resolve(".local").resolve("bin")
             assertTrue(bin.resolve("claudex").isSymbolicLink())
             assertFalse(Files.exists(bin.resolve("grok"), NOFOLLOW_LINKS))
@@ -100,13 +97,13 @@ class InstallCommandTest {
     fun `install is idempotent and fails loudly rather than clobber a real file`(@TempDir home: Path) {
         withHome(home) {
             seedTopology(home)
-            install("claudex", env = noEnv)
-            install("claudex", env = noEnv) // re-run: replaces the symlink, no error
+            InstallCommand().install("claudex", env = noEnv)
+            InstallCommand().install("claudex", env = noEnv) // re-run: replaces the symlink, no error
             assertTrue(home.resolve(".local/bin/claudex").isSymbolicLink())
             // A real file makes the whole install fail so install.sh cannot print false success.
             val bin = home.resolve(".local").resolve("bin")
             bin.resolve("grok").writeString("real file")
-            assertThrows<IllegalStateException> { install("grok", env = noEnv) }
+            assertThrows<IllegalStateException> { InstallCommand().install("grok", env = noEnv) }
             assertFalse(bin.resolve("grok").isSymbolicLink())
             assertEquals("real file", Files.readString(bin.resolve("grok")))
         }
@@ -120,7 +117,7 @@ class InstallCommandTest {
             Files.createDirectories(bin)
             bin.resolve("grok").writeString("real file")
 
-            assertThrows<IllegalStateException> { install("--all", env = noEnv) }
+            assertThrows<IllegalStateException> { InstallCommand().install("--all", env = noEnv) }
 
             assertFalse(Files.exists(bin.resolve("claudex"), NOFOLLOW_LINKS))
             assertFalse(Files.exists(bin.resolve("splice"), NOFOLLOW_LINKS))
@@ -134,7 +131,7 @@ class InstallCommandTest {
             seedTopology(home)
             Files.delete(shimPath(home))
 
-            assertThrows<IllegalStateException> { install("--all", env = noEnv) }
+            assertThrows<IllegalStateException> { InstallCommand().install("--all", env = noEnv) }
 
             assertFalse(Files.exists(home.resolve(".local/bin/claudex"), NOFOLLOW_LINKS))
         }
@@ -144,8 +141,8 @@ class InstallCommandTest {
     fun `uninstall removes the links`(@TempDir home: Path) {
         withHome(home) {
             seedTopology(home)
-            install("--all", env = noEnv)
-            uninstall("--all", env = noEnv)
+            InstallCommand().install("--all", env = noEnv)
+            InstallCommand().uninstall("--all", env = noEnv)
             val bin = home.resolve(".local").resolve("bin")
             assertFalse(Files.exists(bin.resolve("claudex"), NOFOLLOW_LINKS))
             assertFalse(Files.exists(bin.resolve("grok"), NOFOLLOW_LINKS))
@@ -165,7 +162,7 @@ class InstallCommandTest {
     @Test
     fun `installedShimVersion returns null when no shim is installed`(@TempDir home: Path) {
         withHome(home) {
-            assertNull(installedShimVersion(env = noEnv))
+            assertNull(InstallCommand().installedShimVersion(env = noEnv))
         }
     }
 
@@ -181,7 +178,7 @@ class InstallCommandTest {
                 echo hi
                 """.trimIndent(),
             )
-            assertEquals("shim-1", installedShimVersion(env = noEnv))
+            assertEquals("shim-1", InstallCommand().installedShimVersion(env = noEnv))
         }
     }
 
@@ -189,7 +186,7 @@ class InstallCommandTest {
     fun `shimStalenessWarning is null when the marker matches SHIM_VERSION`(@TempDir home: Path) {
         withHome(home) {
             writeShim(home, "#!/usr/bin/env bash\nSPLICE_SHIM_VERSION=\"$SHIM_VERSION\"\n")
-            assertNull(shimStalenessWarning(env = noEnv))
+            assertNull(InstallCommand().shimStalenessWarning(env = noEnv))
         }
     }
 
@@ -197,12 +194,12 @@ class InstallCommandTest {
     fun `shimStalenessWarning warns when the marker is stale or missing`(@TempDir home: Path) {
         withHome(home) {
             writeShim(home, "#!/usr/bin/env bash\nSPLICE_SHIM_VERSION=\"shim-0\"\n")
-            val stale = shimStalenessWarning(env = noEnv)
+            val stale = InstallCommand().shimStalenessWarning(env = noEnv)
             assertTrue(stale != null && stale.contains("STALE") && stale.contains("splice install"))
         }
         withHome(home) {
             writeShim(home, "#!/usr/bin/env bash\necho no marker here\n")
-            val missing = shimStalenessWarning(env = noEnv)
+            val missing = InstallCommand().shimStalenessWarning(env = noEnv)
             assertTrue(missing != null && missing.contains("STALE") && missing.contains("splice install"))
         }
     }
@@ -210,7 +207,7 @@ class InstallCommandTest {
     @Test
     fun `shimStalenessWarning is null when no shim file exists at all`(@TempDir home: Path) {
         withHome(home) {
-            assertNull(shimStalenessWarning(env = noEnv))
+            assertNull(InstallCommand().shimStalenessWarning(env = noEnv))
         }
     }
 }

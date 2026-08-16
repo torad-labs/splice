@@ -27,7 +27,7 @@ class DoctorCommandTest {
         val original = System.out
         System.setOut(PrintStream(buffer, true, Charsets.UTF_8))
         return try {
-            doctor(reader) to buffer.toString(Charsets.UTF_8)
+            DoctorCommand().doctor(reader) to buffer.toString(Charsets.UTF_8)
         } finally {
             System.setOut(original)
         }

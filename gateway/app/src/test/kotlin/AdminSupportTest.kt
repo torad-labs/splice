@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.app.cli.AdminSupport
-import splice.app.cli.daemonLaunchArgv
+import splice.app.cli.DaemonLaunch
 import splice.core.GATEWAY_VERSION
 import java.net.InetSocketAddress
 import java.net.ServerSocket
@@ -82,7 +82,7 @@ class AdminSupportTest {
     fun `daemon launch passes jar and logsDir as positional argv, never inside the shell string`() {
         val jar = Path.of("/home/o'brien/splice.jar")
         val logs = Path.of("/home/o'brien/.claude-codex/logs")
-        val argv = daemonLaunchArgv(jar, logs)
+        val argv = DaemonLaunch().daemonLaunchArgv(jar, logs)
         val script = argv[argv.indexOf("-c") + 1]
         assertFalse(script.contains("o'brien"), "paths must not be interpolated into the shell script")
         assertTrue(argv.takeLast(2) == listOf(jar.toString(), logs.toString()), "paths ride as positional argv")

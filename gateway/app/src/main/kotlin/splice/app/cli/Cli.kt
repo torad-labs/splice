@@ -3,13 +3,21 @@
 // to stdout. Verbs live in Command.kt; doctor's checks in DoctorCommand.kt.
 package splice.app.cli
 
-public fun runCli(args: Array<String>): Int {
-    val command = Command.parse(args) ?: run {
-        System.err.println(
-            "usage: splice [setup|status|restart|dashboard|login <head>|key <set|list|unset>|" +
-                "logs [--head <key>] [--tail N] [--follow]|install|uninstall|init|doctor|daemon|version]",
-        )
-        return 2
+/** The CLI entry seam: argv in, process exit code out. A class rather than a top-level function
+ *  (Kotlin style law, 2026-08-15); `fun main` in Main.kt stays top-level because the JVM entry
+ *  point must be static, which the law exempts. The member keeps the old function's name. */
+public class Cli {
+
+    private val parser = CommandParser()
+
+    public fun runCli(args: Array<String>): Int {
+        val command = parser.parse(args) ?: run {
+            System.err.println(
+                "usage: splice [setup|status|restart|dashboard|login <head>|key <set|list|unset>|" +
+                    "logs [--head <key>] [--tail N] [--follow]|install|uninstall|init|doctor|daemon|version]",
+            )
+            return 2
+        }
+        return command.run()
     }
-    return command.run()
 }

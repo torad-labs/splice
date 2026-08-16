@@ -16,6 +16,9 @@ class LoginCommandTest {
             baseUrl = "https://example.invalid",
             auth = AuthConfig("chatgpt-oauth", file = "/tmp/splice-custom-auth.json"),
         )
-        assertEquals(Paths.get("/tmp/splice-custom-auth.json"), oauthAuthPath(provider, "~/.codex/auth.json"))
+        assertEquals(
+            Paths.get("/tmp/splice-custom-auth.json"),
+            LoginCommand().oauthAuthPath(provider, "~/.codex/auth.json"),
+        )
     }
 }

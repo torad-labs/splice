@@ -17,6 +17,7 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.JsonObject
@@ -63,11 +64,14 @@ private class WsFakeAuth : RefreshableAuthProvider {
 private fun ev(json: String): JsonObject =
     kotlinx.serialization.json.Json.parseToJsonElement(json) as JsonObject
 
-/** A runner that replays a scripted round, so the driver's decision is the only variable. */
-private class ScriptedRunner(private val events: List<String>) : WsRoundRunner {
+/** A runner that replays a scripted round, so the driver's decision is the only variable.
+ *  [throwAfter], when set, makes the round's flow throw once it has emitted that many events —
+ *  standing in for an unexpected throw out of the translator/reducer on a real round. */
+private class ScriptedRunner(private val events: List<String>, private val throwAfter: Int? = null) : WsRoundRunner {
     var attempts = 0
     var bypassed = 0
     var endedOk = 0
+    var endedNotOk = 0
 
     override suspend fun attempt(
         bodyJson: String,
@@ -76,14 +80,18 @@ private class ScriptedRunner(private val events: List<String>) : WsRoundRunner {
         creds: Credentials,
     ): Flow<JsonObject>? {
         attempts += 1
-        return flowOf(*events.map(::ev).toTypedArray())
+        if (throwAfter == null) return flowOf(*events.map(::ev).toTypedArray())
+        return flow {
+            events.take(throwAfter).forEach { emit(ev(it)) }
+            error("scripted translator blow-up")
+        }
     }
 
     override fun isFailureTerminal(event: JsonObject): Boolean =
         event["type"].toString().trim('"') in setOf("response.failed", "response.error", "error")
 
     override fun roundEnded(meta: TurnMeta, ok: Boolean) {
-        if (ok) endedOk += 1
+        if (ok) endedOk += 1 else endedNotOk += 1
     }
 
     override fun roundBypassed(meta: TurnMeta) {
@@ -169,6 +177,30 @@ class WsRoundDriverTest {
                     "messages":[{"role":"user","content":"hi"}]}""",
             )
         }.bodyAsText()
+    }
+
+    /** AN UNEXPECTED THROW still reports the round. [WsRoundRunner.roundEnded]'s contract is that
+     *  anything but a clean terminal must CLEAR the chaining state; before CON-003 the driver caught
+     *  only WsRoundNeedsSse, so any other exception left the round reported by neither roundEnded
+     *  nor roundBypassed and the chain stayed anchored on a response the server never finished —
+     *  the next turn would then anchor onto context that does not exist. */
+    @Test
+    fun `an unexpected throw mid-round clears the chain instead of leaving it anchored`() {
+        val runner = ScriptedRunner(
+            listOf("""{"type":"response.created","response":{"id":"r1"}}"""),
+            throwAfter = 1,
+        )
+        val port = freshPort()
+        val h = head(port, runner)
+        runBlocking { h.start() }
+        try {
+            turn(port)
+            assertEquals(1, runner.attempts, "the overlay served the round")
+            assertEquals(0, runner.endedOk, "a round that threw is not a clean terminal")
+            assertEquals(1, runner.endedNotOk, "and it MUST be reported not-ok so the chain is cleared")
+        } finally {
+            runBlocking { h.stop() }
+        }
     }
 
     /** FAILURE BEFORE ANY CLIENT FRAME -> the round is abandoned and SSE serves the turn, so the

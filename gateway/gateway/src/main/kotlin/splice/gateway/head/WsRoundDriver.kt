@@ -57,8 +57,15 @@ internal class WsRoundDriver(
         drive.emitter.ensureStarted()
         drive.watchdog.resetFirstByte()
         val poller = drive.watchdog.launchIn(inputs.scope, drive.slot, inputs.turnJob)
+        // CON-003: every exit below reports the round exactly once. [drive] reports ok=true on a
+        // clean terminal and the sentinel path reports a bypass; anything else — an unexpected throw
+        // out of the translator, or cancellation — leaves this false and the finally clears the
+        // chain, which is [WsRoundRunner.roundEnded]'s stated contract ("anything else must clear
+        // the chaining state"). Reported via a flag rather than a catch so the exception itself
+        // continues untouched.
+        var reported = false
         return try {
-            drive(inputs, runner, events)
+            drive(inputs, runner, events).also { reported = true }
         } catch (ignored: WsRoundNeedsSse) {
             // The round failed while the client had seen nothing, so it can still be re-served with
             // the full recovery machinery. Serving the failure raw over the WebSocket instead would
@@ -66,8 +73,10 @@ internal class WsRoundDriver(
             // the status quo.
             log("[${provider.key}] websocket round failed before any client frame — serving over SSE\n")
             runner.roundBypassed(drive.meta)
+            reported = true
             null
         } finally {
+            if (!reported) runner.roundEnded(drive.meta, ok = false)
             poller.cancel()
         }
     }

@@ -19,6 +19,7 @@ import kotlinx.serialization.json.JsonContentPolymorphicSerializer
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonEncoder
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
@@ -124,6 +125,9 @@ public object ContentSerializer : KSerializer<List<ContentBlock>> {
     override fun deserialize(decoder: Decoder): List<ContentBlock> {
         val input = decoder as JsonDecoder
         return when (val element = input.decodeJsonElement()) {
+            // SCH-005: JsonNull IS a JsonPrimitive (content == "null") — `content: null` must read
+            // as no content, not as the literal text "null" landing in the transcript.
+            is JsonNull -> emptyList()
             is JsonPrimitive -> listOf(TextBlock(element.content))
             else -> input.json.decodeFromJsonElement(listSerializer, element)
         }
@@ -158,7 +162,10 @@ public object SystemTextSerializer : KSerializer<String?> {
         // boundary put it in the block text (the fixtures carry their own trailing spaces).
         return arr.mapNotNull { el ->
             val obj = el as? JsonObject ?: return@mapNotNull null
-            if (obj["type"]?.jsonPrimitive?.content == "text") obj["text"]?.jsonPrimitive?.content else null
+            if (obj["type"]?.jsonPrimitive?.content != "text") return@mapNotNull null
+            // SCH-004: JsonNull IS a JsonPrimitive (content == "null") — a null "text" field must
+            // read as absent, not as the literal word "null" injected into the system prompt.
+            (obj["text"] as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content
         }.joinToString("")
     }
 }

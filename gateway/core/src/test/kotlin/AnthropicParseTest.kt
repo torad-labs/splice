@@ -73,6 +73,27 @@ class AnthropicParseTest {
         assertEquals("prefix=VALUE", body.typed.system)
     }
 
+    // SCH-005: kotlinx's JsonNull IS a JsonPrimitive whose .content == "null" — a null message
+    // `content` must decode as no content, not as a TextBlock carrying the literal word "null".
+    @Test
+    fun `null message content decodes as empty, not the literal text null`() {
+        val body = parseAnthropicBody(
+            """{"model":"m","messages":[{"role":"user","content":null}]}""",
+        )
+        assertEquals(emptyList<Any>(), body.typed.messages.single().content)
+    }
+
+    // SCH-004: same JsonNull mechanism — a system text block with a null "text" field must be
+    // treated as absent, not as the literal word "null" injected into the system prompt.
+    @Test
+    fun `a null system text block is treated as absent, not the literal text null`() {
+        val body = parseAnthropicBody(
+            """{"model":"m","system":[{"type":"text","text":null},{"type":"text","text":"kept"}],
+               "messages":[{"role":"user","content":"x"}]}""",
+        )
+        assertEquals("kept", body.typed.system)
+    }
+
     @Test
     fun `tool_result with bare string content parses`() {
         val body = parseAnthropicBody(

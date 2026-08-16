@@ -236,6 +236,27 @@ class PassthroughRequestBuilderTest {
         assertEquals("low", built.meta.effort)
     }
 
+    // SCH-006: a configured effort valid for another provider's vocab (CODEX_REASONING_EFFORT's
+    // "medium") but not one of kimi's own rungs must never silently escalate to the priciest one.
+    @Test
+    fun `an unrecognized configured effort falls to the cheapest rung, never escalates to max`() {
+        val built = buildFull(
+            """{"model":"m","messages":[{"role":"user","content":"hi"}]}""",
+            configEffort = "medium",
+        )
+        assertEquals("low", built.meta.effort)
+    }
+
+    @Test
+    fun `the unrecognized-effort fallback logs once per builder lifetime, not per turn`() {
+        val logged = mutableListOf<String>()
+        val builder = PassthroughRequestBuilder(PASS, configEffort = "medium", log = logged::add)
+        val body = parseAnthropicBody("""{"model":"m","messages":[{"role":"user","content":"hi"}]}""")
+        builder.build(body, upstreamModel = "k3", originalModel = "claude-kimi--k3", compact = false)
+        builder.build(body, upstreamModel = "k3", originalModel = "claude-kimi--k3", compact = false)
+        assertEquals(1, logged.size)
+    }
+
     @Test
     fun `disabled thinking omits both thinking and output_config`() {
         val req = build(

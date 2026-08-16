@@ -112,9 +112,13 @@ public class CollectingTerminal(
             // taken on the user's machine. Fail the turn honestly instead. `ended` is already
             // latched by this call's own CAS above, so this sets body/status directly rather than
             // through emitError (its CAS would no-op against an already-ended terminal).
+            // RG2-001: the turn's usage still rides the envelope — the client was billed for this
+            // turn even though it failed honestly, and the internal usage store already recorded
+            // it; the wire response must not be the one place that accounting goes missing.
             body = errorEnvelope(
                 ErrorType.API_ERROR.wireName,
                 "claudex: malformed tool_use input from upstream — retry",
+                usagePayload(usage),
             )
             status = statusFor(ErrorType.API_ERROR)
             return
@@ -211,16 +215,21 @@ public class CollectingTerminal(
 
         private val EMPTY_INPUT = JsonObject(emptyMap())
 
-        private fun errorEnvelope(type: String, message: String): JsonObject = buildJsonObject {
-            put(FIELD_TYPE, FIELD_ERROR)
-            put(
-                FIELD_ERROR,
-                buildJsonObject {
-                    put(FIELD_TYPE, type)
-                    put("message", message)
-                },
-            )
-        }
+        // RG2-001: [usage] is null for every OTHER caller of this envelope (the responseBody()
+        // fallback has none to give) — only the malformed-tool-use path in emitTerminal has a real
+        // turn usage in scope, so it is the only caller that passes one.
+        private fun errorEnvelope(type: String, message: String, usage: JsonObject? = null): JsonObject =
+            buildJsonObject {
+                put(FIELD_TYPE, FIELD_ERROR)
+                put(
+                    FIELD_ERROR,
+                    buildJsonObject {
+                        put(FIELD_TYPE, type)
+                        put("message", message)
+                    },
+                )
+                usage?.let { put("usage", it) }
+            }
 
         // ErrorType -> HTTP status. api_error maps to 502 to match the Node non-stream path's
         // upstream-error/empty-model response; the rest mirror the Anthropic status conventions.

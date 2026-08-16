@@ -28,8 +28,10 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.compactDirective
 import splice.core.turn.withCompactDirective
+import splice.core.util.DaemonLog
 import splice.core.util.strOrEmpty
 import splice.core.wire.AnthropicRequest
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * The knobs that turn a FAITHFUL Anthropic passthrough into one vendor's accepted shape.
@@ -109,6 +111,7 @@ private const val EFFORT_HIGH = "high"
 private const val EFFORT_MAX = "max"
 private const val HIGH_BUDGET_FLOOR = 8_192L
 private const val MAX_BUDGET_FLOOR = 24_576L
+private val KIMI_EFFORTS = setOf(EFFORT_LOW, EFFORT_HIGH, EFFORT_MAX)
 
 public data class BuiltPassthroughRequest(val req: JsonObject, val meta: TurnMeta)
 
@@ -124,7 +127,16 @@ public class PassthroughRequestBuilder(
      *  `output_config.effort`, so that shape keeps the pre-existing unconditional EFFORT_MAX no
      *  matter what this is set to — see [effortLadder]. */
     private val configEffort: String? = null,
+    /** Daemon log sink (Main.persistentLogger) — same injected-with-a-process-default idiom as
+     *  PassthroughTurnContext.log. Its only use here is the SCH-006 one-shot unrecognized-effort
+     *  notice in [effortLadder]. */
+    private val log: (String) -> Unit = DaemonLog::write,
 ) {
+
+    // SCH-006: latched the first time a configured effort that is not one of kimi's own rungs
+    // falls back — visible ONCE per builder lifetime (the builder rides the whole daemon
+    // process), not once per turn.
+    private val configEffortFallbackWarned = AtomicBoolean(false)
 
     public fun build(
         body: AnthropicTurnBody,
@@ -222,12 +234,18 @@ public class PassthroughRequestBuilder(
      *  A turn that DOES send `thinking` but omits `budget_tokens` is a DIFFERENT shape — it reaches
      *  the wire via `output_config.effort`, so it keeps the pre-existing unconditional EFFORT_MAX
      *  no matter what [configEffort] is set to (KIMI BYTE-IDENTITY: kimi's built request bytes are
-     *  frozen for every request shape). */
+     *  frozen for every request shape).
+     *
+     *  SCH-006: an unrecognized-but-set [configEffort] (e.g. "medium" — a valid rung for another
+     *  provider sharing the same EFFORT knob, see CODEX_REASONING_EFFORT) used to fall all the way
+     *  through to EFFORT_MAX — a silent cost ESCALATION for a realistic multi-provider config. See
+     *  [fallbackEffort]: it now falls to the cheapest rung instead (never pricier than whatever the
+     *  operator asked for) and logs the substitution once per builder lifetime, not once per turn. */
     private fun effortLadder(typed: AnthropicRequest, compact: Boolean): String {
         if (compact) quirks.compactEffort?.let { return it }
         // PT-002: the ONLY branch [configEffort] can reach — see this function's KDoc for why.
         val thinking = typed.thinking
-            ?: return configEffort?.trim()?.lowercase()?.takeIf { it in KIMI_EFFORTS } ?: EFFORT_MAX
+            ?: return fallbackEffort(configEffort, quirks.providerTag, configEffortFallbackWarned, log)
         return budgetEffort(thinking.budgetTokens)
     }
 
@@ -377,8 +395,6 @@ public class PassthroughRequestBuilder(
 
         // Passthrough emits native thinking blocks, so the transcript text-mirror stays off.
 
-        val KIMI_EFFORTS = setOf(EFFORT_LOW, EFFORT_HIGH, EFFORT_MAX)
-
         // Fields the specialized scrubs own (skipped by the verbatim copy); output_config is owned
         // by the thinking mapping, so a client-sent one is dropped.
         val HANDLED_KEYS = setOf(
@@ -406,4 +422,28 @@ private fun budgetEffort(budget: Long?): String = when {
     budget >= HIGH_BUDGET_FLOOR -> EFFORT_HIGH
     budget > 0L -> EFFORT_LOW
     else -> EFFORT_MAX
+}
+
+// Top-level (not a PassthroughRequestBuilder member, same ceiling reason as budgetEffort above):
+// SCH-006's unrecognized-configEffort fallback. An effort value valid for another provider's vocab
+// (CODEX_REASONING_EFFORT's "medium") but not one of kimi's own {low, high, max} rungs must never
+// silently ESCALATE to the priciest rung — it falls to the CHEAPEST one instead (never pricier than
+// whatever the operator actually asked for), and the substitution is logged ONCE per builder
+// lifetime via [warned] (an AtomicBoolean owned by the calling builder instance, not by this
+// function) rather than once per turn.
+private fun fallbackEffort(
+    configEffort: String?,
+    providerTag: String,
+    warned: AtomicBoolean,
+    log: (String) -> Unit,
+): String {
+    val trimmed = configEffort?.trim()?.lowercase() ?: return EFFORT_MAX
+    if (trimmed in KIMI_EFFORTS) return trimmed
+    if (warned.compareAndSet(false, true)) {
+        log(
+            "[$providerTag] configured effort '$trimmed' is not a kimi rung (low|high|max) — " +
+                "using '$EFFORT_LOW' instead of silently escalating to '$EFFORT_MAX'\n",
+        )
+    }
+    return EFFORT_LOW
 }

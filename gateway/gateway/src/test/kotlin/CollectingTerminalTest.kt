@@ -4,10 +4,12 @@
 // silently emptied/dropped tool call is a wrong action taken on the user's machine (L3 honesty).
 // Mirrors SseEmitterTest's construction idiom for the streaming sink.
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -19,10 +21,8 @@ private const val ERROR_STATUS = 502
 
 class CollectingTerminalTest {
 
-    private fun terminal() = CollectingTerminal(
-        model = "claude-kimi--k3",
-        usagePayload = { _ -> buildJsonObject { } },
-    )
+    private fun terminal(usagePayload: (Usage?) -> JsonObject = { _ -> buildJsonObject { } }) =
+        CollectingTerminal(model = "claude-kimi--k3", usagePayload = usagePayload)
 
     // HEAD-004/REG-001: a blank tool name has no safe stand-in (unlike a blank id, which is
     // synthesized) — the block is dropped, but stop_reason=tool_use still claims a tool call
@@ -43,6 +43,17 @@ class CollectingTerminalTest {
         assertTrue(
             body["error"]!!.jsonObject["message"]?.jsonPrimitive?.content.orEmpty().contains("tool_use"),
         )
+    }
+
+    // RG2-001: the malformed-tool-use error envelope used to drop the turn's usage entirely — the
+    // client was billed for a turn whose wire response then lost the token accounting.
+    @Test
+    fun `the malformed tool_use error envelope still carries the turn's usage`() = runTest {
+        val t = terminal(usagePayload = { u -> buildJsonObject { put("input_tokens", u?.inputTokens ?: -1) } })
+        t.openTool(id = "toolu_1", name = "")
+        t.emitTerminal(hasToolUse = true, incomplete = false, usage = Usage(inputTokens = 42))
+        val body = t.responseBody()
+        assertEquals(42, body["usage"]?.jsonObject?.get("input_tokens")?.jsonPrimitive?.content?.toInt())
     }
 
     // A whitespace-only name is blank too (String.isBlank), same honest-failure path.

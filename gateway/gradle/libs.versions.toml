@@ -10,7 +10,7 @@ ktoml = "0.7.1"
 konsist = "0.17.3"
 detekt = "1.23.8"
 kover = "0.9.9"
-junit = "6.1.2"
+junit = "6.1.3"
 # TRANSITIVE CVE FLOOR (2026-07-27). netty is not a dependency we declare — it arrives under
 # ktor-server-netty. Dependabot therefore could not fix it: every security-update job failed with
 # `security_update_dependency_not_found` because there was no declaration to edit, which is why the
@@ -25,7 +25,7 @@ netty = "4.2.16.Final"          # 4.2.15.Final resolved; CVEs in netty-codec-htt
 jackson = "2.21.5"              # 2.20.1 resolved; advisories in jackson-core/databind
 
 [libraries]
-zstd-jni = { module = "com.github.luben:zstd-jni", version = "1.5.6-9" }
+zstd-jni = { module = "com.github.luben:zstd-jni", version = "1.5.7-13" }
 kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-core", version.ref = "coroutines" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "coroutines" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "serialization" }

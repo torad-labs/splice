@@ -22,7 +22,7 @@ import splice.core.turn.TurnOutcome
 import splice.dialect.responses.EmitEncryptedReasoning
 import splice.dialect.responses.ResponsesStreamTranslator
 import splice.dialect.responses.StreamTurnContext
-import splice.spi.sseJsonEvents
+import splice.spi.SseReader
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ScenarioIntegrationTest {
@@ -55,7 +55,7 @@ class ScenarioIntegrationTest {
             client.preparePost("${mock.baseUrl}/responses") {
                 setBody("""{"model":"m","instructions":"You are a test. SCENARIO:$scenario","input":[]}""")
             }.execute { resp ->
-                val events = sseJsonEvents(resp.bodyAsChannel())
+                val events = SseReader().sseJsonEvents(resp.bodyAsChannel())
                 outcome = ResponsesStreamTranslator(ctx(replay)).driveTurn(events, sink)
             }
         }

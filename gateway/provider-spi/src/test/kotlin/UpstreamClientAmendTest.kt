@@ -71,7 +71,7 @@ class UpstreamClientAmendTest {
         }
         val result = post(clientOver(engine, maxRetries = 3)) { status, text, _ ->
             // gate like the real provider hook: the 503s also flow through the amender
-            if (UpstreamClient.isEncryptedContentError(status, text)) """{"input":"amended"}""" else null
+            if (UpstreamClient.FailureRules().isEncryptedContentError(status, text)) """{"input":"amended"}""" else null
         }
         assertEquals("ok", result)
         assertEquals(4, bodies.size, "the amended resend must go out even at the budget boundary")

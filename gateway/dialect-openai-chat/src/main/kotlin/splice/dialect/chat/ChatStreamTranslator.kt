@@ -24,7 +24,6 @@ import splice.spi.StreamTranslator
 import splice.spi.TerminalStates
 import splice.spi.WatchdogFired
 import splice.spi.WireSink
-import splice.spi.terminalPrecedence
 import java.io.IOException
 import java.util.concurrent.CancellationException
 
@@ -172,12 +171,11 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
             )
             else -> null
         }
-        return terminalPrecedence(
-            TerminalStates(
-                providerFailure = providerFailure,
-                finished = finished,
-                watchdogFired = ctx.watchdogFired(),
-            ),
+        return TerminalStates(
+            providerFailure = providerFailure,
+            finished = finished,
+            watchdogFired = ctx.watchdogFired(),
+        ).terminalPrecedence(
             onFinished = ::successOutcome,
             onWatchdog = { TurnOutcome.Failure(ErrorType.OVERLOADED, "chat: upstream stalled — aborted; retry") },
             onUnfinished = {

@@ -43,7 +43,6 @@ import splice.spi.TerminalStates
 import splice.spi.UpstreamFailureClassifier
 import splice.spi.WatchdogFired
 import splice.spi.WireSink
-import splice.spi.terminalPrecedence
 import java.io.IOException
 import java.util.concurrent.CancellationException
 
@@ -210,33 +209,32 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
     // late watchdog fire (the watchdog polls the whole enclosing coroutine, which stays suspended
     // on the socket-EOF read AFTER response.completed was already parsed — discarding that turn
     // would retry a successful compaction, the exact quota waste the watchdog exists to prevent).
-    private fun terminalOutcome(reducer: ResponsesEventReducer): TurnOutcome = terminalPrecedence(
-        TerminalStates(
-            // NF-06: a tripped runaway valve outranks everything — the buffers were truncated, so
-            // neither a late terminal nor a provider error can describe this turn honestly.
-            providerFailure = runawayGuard?.let {
-                TurnOutcome.Failure(ErrorType.API_ERROR, it, providerReported = false)
-            } ?: reducer.toolArgsInvalid?.let {
-                // CX-01: the backend sent a terminal, but a tool call's arguments are corrupt —
-                // provider-reported (the backend produced the bytes) so it retries, never a clean
-                // Success that dispatches garbage.
-                TurnOutcome.Failure(
-                    ErrorType.API_ERROR,
-                    "ChatGPT backend: $it in tool call — retry",
-                    providerReported = true,
-                )
-            } ?: reducer.upstreamFailure?.let {
-                // parsed from a response.failed/error event the backend actually sent (G20 provenance)
-                TurnOutcome.Failure(
-                    it.type,
-                    "ChatGPT backend: ${it.message}",
-                    providerReported = true,
-                    partial = partialOrNull(reducer),
-                )
-            } ?: refusalFailure(reducer) ?: contentFilterFailure(reducer),
-            finished = reducer.finalResponse != null,
-            watchdogFired = ctx.watchdogFired(),
-        ),
+    private fun terminalOutcome(reducer: ResponsesEventReducer): TurnOutcome = TerminalStates(
+        // NF-06: a tripped runaway valve outranks everything — the buffers were truncated, so
+        // neither a late terminal nor a provider error can describe this turn honestly.
+        providerFailure = runawayGuard?.let {
+            TurnOutcome.Failure(ErrorType.API_ERROR, it, providerReported = false)
+        } ?: reducer.toolArgsInvalid?.let {
+            // CX-01: the backend sent a terminal, but a tool call's arguments are corrupt —
+            // provider-reported (the backend produced the bytes) so it retries, never a clean
+            // Success that dispatches garbage.
+            TurnOutcome.Failure(
+                ErrorType.API_ERROR,
+                "ChatGPT backend: $it in tool call — retry",
+                providerReported = true,
+            )
+        } ?: reducer.upstreamFailure?.let {
+            // parsed from a response.failed/error event the backend actually sent (G20 provenance)
+            TurnOutcome.Failure(
+                it.type,
+                "ChatGPT backend: ${it.message}",
+                providerReported = true,
+                partial = partialOrNull(reducer),
+            )
+        } ?: refusalFailure(reducer) ?: contentFilterFailure(reducer),
+        finished = reducer.finalResponse != null,
+        watchdogFired = ctx.watchdogFired(),
+    ).terminalPrecedence(
         onFinished = { successOutcome(reducer) },
         onWatchdog = ::watchdogOutcome,
         onUnfinished = { noCompletionOutcome(reducer) },

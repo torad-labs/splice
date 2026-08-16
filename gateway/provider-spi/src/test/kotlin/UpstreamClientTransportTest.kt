@@ -340,20 +340,20 @@ class UpstreamClientTransportTest {
     @Test
     fun `canReissueStream predicate requires handoff, no client frame, retryable transport class, and remaining budget`() {
         assertTrue(
-            UpstreamClient.canReissueStream(true, ConnectException("torn"), { false }, 0),
+            UpstreamClient.Transport().canReissueStream(true, ConnectException("torn"), { false }, 0),
         )
         assertFalse(
-            UpstreamClient.canReissueStream(false, ConnectException("torn"), { false }, 0),
+            UpstreamClient.Transport().canReissueStream(false, ConnectException("torn"), { false }, 0),
         )
         assertFalse(
-            UpstreamClient.canReissueStream(true, ConnectException("torn"), { true }, 0),
+            UpstreamClient.Transport().canReissueStream(true, ConnectException("torn"), { true }, 0),
         )
         assertFalse(
-            UpstreamClient.canReissueStream(true, IllegalStateException("bug"), { false }, 0),
+            UpstreamClient.Transport().canReissueStream(true, IllegalStateException("bug"), { false }, 0),
         )
         // budget spent — the literal 2 mirrors MAX_STREAM_REISSUES (kept private, like maxRetries).
         assertFalse(
-            UpstreamClient.canReissueStream(true, ConnectException("torn"), { false }, 2),
+            UpstreamClient.Transport().canReissueStream(true, ConnectException("torn"), { false }, 2),
         )
     }
 
@@ -455,18 +455,18 @@ class UpstreamClientTransportTest {
 
     @Test
     fun `retryable predicate walks the cause chain and excludes cancellation`() {
-        assertTrue(UpstreamClient.isRetryableTransport(UnresolvedAddressException()))
-        assertTrue(UpstreamClient.isRetryableTransport(RuntimeException(ConnectException("wrapped"))))
-        assertFalse(UpstreamClient.isRetryableTransport(IllegalStateException("plain")))
-        assertFalse(UpstreamClient.isRetryableTransport(RuntimeException(RuntimeException("no io below"))))
+        assertTrue(UpstreamClient.Transport().isRetryableTransport(UnresolvedAddressException()))
+        assertTrue(UpstreamClient.Transport().isRetryableTransport(RuntimeException(ConnectException("wrapped"))))
+        assertFalse(UpstreamClient.Transport().isRetryableTransport(IllegalStateException("plain")))
+        assertFalse(UpstreamClient.Transport().isRetryableTransport(RuntimeException(RuntimeException("no io below"))))
     }
 
     @Test
     fun `dns predicate matches only name-resolution failures`() {
-        assertTrue(UpstreamClient.isDnsFailureTransport(UnresolvedAddressException()))
-        assertTrue(UpstreamClient.isDnsFailureTransport(UnknownHostException()))
-        assertFalse(UpstreamClient.isDnsFailureTransport(ConnectException("refused")))
-        assertFalse(UpstreamClient.isDnsFailureTransport(SocketException("reset")))
-        assertTrue(UpstreamClient.isDnsFailureTransport(RuntimeException(UnknownHostException())))
+        assertTrue(UpstreamClient.Transport().isDnsFailureTransport(UnresolvedAddressException()))
+        assertTrue(UpstreamClient.Transport().isDnsFailureTransport(UnknownHostException()))
+        assertFalse(UpstreamClient.Transport().isDnsFailureTransport(ConnectException("refused")))
+        assertFalse(UpstreamClient.Transport().isDnsFailureTransport(SocketException("reset")))
+        assertTrue(UpstreamClient.Transport().isDnsFailureTransport(RuntimeException(UnknownHostException())))
     }
 }

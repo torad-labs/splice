@@ -96,6 +96,7 @@ import splice.spi.InflightGate
 import splice.spi.Provider
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
+import splice.spi.UpstreamClient.Transport
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -941,7 +942,7 @@ public class Daemon(
                     // hardcoded check compressed the oracle's bodies and crashed its vendored
                     // mock's JSON.parse, which was the source of every leaked harness daemon.
                     zstdRequestBody = ctx.providerCfg.quirks.zstdRequestBody == true,
-                    client = UpstreamClient.defaultClient(cfg.firstByteTimeoutMs, cfg.upstreamTimeoutMs, log),
+                    client = Transport().defaultClient(cfg.firstByteTimeoutMs, cfg.upstreamTimeoutMs, log),
                 ),
                 inferenceToken = mgmtKey.get(),
                 // Only a client-auth head: it holds no splice credential, so the mgmt-key door

@@ -30,7 +30,7 @@ class UpstreamClientConnectTimeoutTest {
 
     @Test
     fun `connect timeout fires around 10s, decoupled from a much larger firstByteTimeoutMs`() {
-        val client = UpstreamClient.defaultClient(firstByteTimeoutMs = 300_000L, totalTimeoutMs = 900_000L)
+        val client = UpstreamClient.Transport().defaultClient(firstByteTimeoutMs = 300_000L, totalTimeoutMs = 900_000L)
         val start = System.nanoTime()
         val thrown = runCatching {
             runBlocking {
@@ -44,7 +44,7 @@ class UpstreamClientConnectTimeoutTest {
             "connect must fail fast (~10s), not ride the 300_000ms firstByteTimeoutMs; took ${elapsedMs}ms",
         )
         assertTrue(
-            UpstreamClient.isRetryableTransport(thrown!!),
+            UpstreamClient.Transport().isRetryableTransport(thrown!!),
             "the thrown exception must compose with the existing transport-retry loop: ${thrown::class}",
         )
     }
@@ -53,7 +53,7 @@ class UpstreamClientConnectTimeoutTest {
     fun `connect timeout does not inherit a shorter firstByteTimeoutMs`() {
         // firstByteTimeoutMs is deliberately SHORTER than the fixed 10s connect timeout — if
         // connect still derived from firstByteTimeoutMs, this would fail around 3s instead of 10s.
-        val client = UpstreamClient.defaultClient(firstByteTimeoutMs = 3_000L, totalTimeoutMs = 900_000L)
+        val client = UpstreamClient.Transport().defaultClient(firstByteTimeoutMs = 3_000L, totalTimeoutMs = 900_000L)
         val start = System.nanoTime()
         runCatching {
             runBlocking {

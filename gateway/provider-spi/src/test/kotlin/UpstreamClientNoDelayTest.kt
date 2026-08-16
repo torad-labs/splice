@@ -17,8 +17,8 @@ class UpstreamClientNoDelayTest {
     fun `client tcp_nodelay diagnostic logs exactly once per guard`() {
         val guard = AtomicBoolean(false)
         val logs = mutableListOf<String>()
-        UpstreamClient.defaultClient(1_000, 1_000, log = { logs.add(it) }, noDelayGuard = guard)
-        UpstreamClient.defaultClient(1_000, 1_000, log = { logs.add(it) }, noDelayGuard = guard)
+        UpstreamClient.Transport().defaultClient(1_000, 1_000, log = { logs.add(it) }, noDelayGuard = guard)
+        UpstreamClient.Transport().defaultClient(1_000, 1_000, log = { logs.add(it) }, noDelayGuard = guard)
         assertEquals(1, logs.count { it.contains("tcp_nodelay") })
     }
 }

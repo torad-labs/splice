@@ -111,10 +111,8 @@ public class TurnWatchdog(
                 }
             }
         }
-
-    private companion object {
-        const val IDLE_DIVISOR = 3
-        const val MIN_POLL_MS = 250L
-        const val MAX_POLL_MS = 15_000L
-    }
 }
+
+private const val IDLE_DIVISOR = 3
+private const val MIN_POLL_MS = 250L
+private const val MAX_POLL_MS = 15_000L

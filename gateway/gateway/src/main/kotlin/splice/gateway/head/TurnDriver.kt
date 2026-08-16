@@ -53,6 +53,7 @@ import splice.spi.Provider
 import splice.spi.ReanchorController
 import splice.spi.ReanchorRound
 import splice.spi.SseFrameTooLargeException
+import splice.spi.SseReader
 import splice.spi.StreamTornBeforeClient
 import splice.spi.ToolSearchController
 import splice.spi.ToolSearchRound
@@ -63,7 +64,6 @@ import splice.spi.UpstreamFailed
 import splice.spi.UpstreamFailureClassifier
 import splice.spi.UpstreamResponse
 import splice.spi.WireSink
-import splice.spi.sseJsonEvents
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -539,7 +539,7 @@ internal class TurnDriver(
         capture: ZeroEventCapture,
         frameEmittedThisRound: () -> Boolean,
     ) =
-        sseJsonEvents(
+        SseReader().sseJsonEvents(
             resp.bodyChannel(),
             onBytes = { chunkBytes ->
                 drive.slot.touch()

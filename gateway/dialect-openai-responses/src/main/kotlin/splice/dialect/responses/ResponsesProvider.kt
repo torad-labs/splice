@@ -242,7 +242,7 @@ public abstract class ResponsesProvider(
      *  the latch restores every later turn. [logToolSurfaceLatchClosed] makes that one-time degrade
      *  observable instead of silent. */
     final override fun amendBodyOnFailure(status: Int, responseText: String, bodyJson: String): String? = when {
-        UpstreamClient.isEncryptedContentError(status, responseText) ->
+        UpstreamClient.FailureRules().isEncryptedContentError(status, responseText) ->
             cachePolicy.stripStaleReasoning(bodyJson, reasoningCache)
         surfaceRecovery.isToolSurfaceRejection(status, responseText) ->
             surfaceRecovery.dropToolSearchTool(bodyJson)?.also {

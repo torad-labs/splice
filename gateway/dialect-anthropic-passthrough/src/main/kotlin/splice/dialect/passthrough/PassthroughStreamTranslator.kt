@@ -34,7 +34,6 @@ import splice.spi.StreamTranslator
 import splice.spi.TerminalStates
 import splice.spi.WatchdogFired
 import splice.spi.WireSink
-import splice.spi.terminalPrecedence
 import java.io.IOException
 import java.util.concurrent.CancellationException
 
@@ -120,20 +119,19 @@ public class PassthroughStreamTranslator(
 
     // Ordering enforced by the shared spi.terminalPrecedence (a FINISHED turn beats a late
     // watchdog fire — preferring watchdog here discarded successful kimi turns and burned quota).
-    private fun terminalOutcome(): TurnOutcome = terminalPrecedence(
-        TerminalStates(
-            // NF-06: a tripped runaway valve outranks the provider slot — the buffers were truncated.
-            providerFailure = runawayGuard?.let {
-                TurnOutcome.Failure(ErrorType.API_ERROR, it, providerReported = false)
-            } ?: failureType?.let {
-                // a signal the BACKEND sent — an upstream SSE error event (e.g. overloaded_error) or
-                // a non-clean stop_reason (CX-07, see [PassthroughFailureRules.stopReasonFailure]) —
-                // provider-reported (G20)
-                TurnOutcome.Failure(it, "${quirks.providerTag}: $failureMessage", providerReported = true)
-            },
-            finished = finished,
-            watchdogFired = ctx.watchdogFired(),
-        ),
+    private fun terminalOutcome(): TurnOutcome = TerminalStates(
+        // NF-06: a tripped runaway valve outranks the provider slot — the buffers were truncated.
+        providerFailure = runawayGuard?.let {
+            TurnOutcome.Failure(ErrorType.API_ERROR, it, providerReported = false)
+        } ?: failureType?.let {
+            // a signal the BACKEND sent — an upstream SSE error event (e.g. overloaded_error) or
+            // a non-clean stop_reason (CX-07, see [PassthroughFailureRules.stopReasonFailure]) —
+            // provider-reported (G20)
+            TurnOutcome.Failure(it, "${quirks.providerTag}: $failureMessage", providerReported = true)
+        },
+        finished = finished,
+        watchdogFired = ctx.watchdogFired(),
+    ).terminalPrecedence(
         onFinished = ::successOutcome,
         onWatchdog = {
             TurnOutcome.Failure(ErrorType.OVERLOADED, "${quirks.providerTag}: upstream stalled — aborted; retry")

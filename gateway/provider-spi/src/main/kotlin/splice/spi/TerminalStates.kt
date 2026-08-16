@@ -16,16 +16,18 @@ public data class TerminalStates(
     val providerFailure: TurnOutcome?,
     val finished: Boolean,
     val watchdogFired: WatchdogFired?,
-)
-
-public fun terminalPrecedence(
-    states: TerminalStates,
-    onFinished: () -> TurnOutcome,
-    onWatchdog: (WatchdogFired) -> TurnOutcome,
-    onUnfinished: () -> TurnOutcome,
-): TurnOutcome = when {
-    states.providerFailure != null -> states.providerFailure
-    states.finished -> onFinished()
-    states.watchdogFired != null -> onWatchdog(states.watchdogFired)
-    else -> onUnfinished()
+) {
+    /** The ONE ordering, unchanged: provider failure > finished > late watchdog > unfinished.
+     *  A member of the state bundle it ranks (it was the first parameter) — the receiver is the
+     *  only thing that moved. */
+    public fun terminalPrecedence(
+        onFinished: () -> TurnOutcome,
+        onWatchdog: (WatchdogFired) -> TurnOutcome,
+        onUnfinished: () -> TurnOutcome,
+    ): TurnOutcome = when {
+        providerFailure != null -> providerFailure
+        finished -> onFinished()
+        watchdogFired != null -> onWatchdog(watchdogFired)
+        else -> onUnfinished()
+    }
 }

@@ -9,11 +9,12 @@
 package splice.app
 
 import io.ktor.client.statement.HttpResponse
-import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.spi.ProcessWaiter
+import splice.spi.Waiter
 import kotlin.random.Random
 
 internal const val REFRESH_MAX_ATTEMPTS = 3
@@ -45,7 +46,12 @@ internal sealed class RefreshStep<out T> {
  *  refresh (Kotlin style law, 2026-08-15): a helper shared by several types is a small named
  *  class they construct, not a pair of free functions. Stateless — every attempt's state lives
  *  in [refreshWithRetry]'s own frame, so one instance per vendor is as correct as one per call. */
-internal class RefreshRetry {
+internal class RefreshRetry(
+    // HD-19: the backoff sleep, as a named port. Production wires ProcessWaiter (`delay`); a test
+    // wires a recorder, which turns "3 attempts at 2s then 4s (+/-10%)" from three real seconds of
+    // sleeping into an assertion on the captured intervals.
+    private val waiter: Waiter = ProcessWaiter(),
+) {
 
     /** 401/403 are terminal by status alone; invalid_grant wins even under a nominally-retryable status. */
     internal fun isTerminalRefreshFailure(status: Int, body: String, json: Json): Boolean =
@@ -73,7 +79,7 @@ internal class RefreshRetry {
             if (attempt < maxAttempts) {
                 val base = REFRESH_BACKOFF_BASE_MS shl attempt // 2^attempt seconds
                 val jittered = base * Random.nextDouble(REFRESH_JITTER_LO, REFRESH_JITTER_HI) // ±10%
-                delay(jittered.toLong())
+                waiter.wait(jittered.toLong())
             }
         }
         return null

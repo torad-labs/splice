@@ -12,9 +12,7 @@
 package splice.provider.codex
 
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -34,6 +32,8 @@ import splice.core.util.DaemonLog
 import splice.core.util.JsonScalars
 import splice.core.util.SecureFile
 import splice.spi.CredentialLock
+import splice.spi.LifecycleScope
+import splice.spi.ProcessDispatchers
 import splice.spi.SingleFlight
 import java.nio.file.Files
 import java.nio.file.Path
@@ -76,7 +76,10 @@ public class CodexAuthProvider(
     // Owned background scope for the G17 async-prefetch tier, decoupled from any single request's
     // coroutine. Injectable so the daemon can tie it to its lifecycle and tests can drain it before
     // teardown (an in-flight prefetch racing @TempDir cleanup was a CI-only flake). Mirrors GrokAuthProvider.
-    private val prefetchScope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob()),
+    // HD-19: LifecycleScope is the NAMED owner the bare CoroutineScope(...) factory lacked, and it
+    // applies the same SupervisorJob on the same background dispatcher — identical context, and the
+    // daemon still overrides this default with its own probeScope in production.
+    private val prefetchScope: CoroutineScope = LifecycleScope(ProcessDispatchers().background()),
     /** Daemon log sink (Main.persistentLogger): writes BOTH stderr and daemon.log, which is what
      *  /mgmt/logs tails. A bare System.err.println reaches stderr ONLY, so its line never appears in
      *  the log endpoint — the failure you most want to read is the one you cannot (wall

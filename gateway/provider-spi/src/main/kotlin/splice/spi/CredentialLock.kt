@@ -12,8 +12,6 @@
 // the cross-PROCESS half; the Mutex is the intra-process half.
 package splice.spi
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -54,16 +52,23 @@ public object CredentialLock {
         path: Path,
         waitMs: Long = CREDENTIAL_LOCK_WAIT_MS,
         log: (String) -> Unit = {},
+        // HD-19: the two runtime reaches this primitive used to make directly, as one cohesive
+        // argument — `runtime.waiter` paces the tryLock poll (was `delay`) and `runtime.dispatcher`
+        // is where the poll runs (was Dispatchers.IO). The default is the production runtime, so a
+        // caller that passes nothing is unchanged — and CredentialLockTest can now assert the
+        // backoff CURVE instead of waiting out 600ms of it.
+        runtime: PollRuntime = PollRuntime(),
         block: suspend () -> T,
     ): T =
         inProcess.computeIfAbsent(path) { Mutex() }.withLock {
-            withFileLock(path, waitMs, log, block)
+            withFileLock(path, waitMs, log, runtime, block)
         }
 
     private suspend fun <T> withFileLock(
         path: Path,
         waitMs: Long,
         log: (String) -> Unit,
+        runtime: PollRuntime,
         block: suspend () -> T,
     ): T {
         // Lock a SIBLING `<name>.lock` file, NEVER the credential file itself — an advisory lock on
@@ -73,7 +78,9 @@ public object CredentialLock {
         try {
             // tryLock is non-blocking; the poll loop delays on the IO context so no shared
             // coroutine-dispatcher thread ever parks (the old blocking lock() parked a real one).
-            val lock = withContext(Dispatchers.IO) { acquireBounded(channel, lockPath, waitMs, log) }
+            val lock = withContext(runtime.dispatcher) {
+                acquireBounded(channel, lockPath, waitMs, log, runtime.waiter)
+            }
             try {
                 return block()
             } finally {
@@ -93,6 +100,7 @@ public object CredentialLock {
         lockPath: Path,
         waitMs: Long,
         log: (String) -> Unit,
+        waiter: Waiter,
     ): FileLock? {
         val t0 = System.nanoTime()
         var backoffMs = POLL_BASE_MS
@@ -114,7 +122,7 @@ public object CredentialLock {
                 )
                 return null
             }
-            delay((backoffMs * Random.nextDouble(JITTER_LO, JITTER_HI)).toLong())
+            waiter.wait((backoffMs * Random.nextDouble(JITTER_LO, JITTER_HI)).toLong())
             backoffMs = minOf(backoffMs * 2, POLL_MAX_MS)
         }
     }

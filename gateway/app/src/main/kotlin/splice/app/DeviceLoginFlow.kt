@@ -15,7 +15,6 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
-import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
@@ -23,6 +22,8 @@ import kotlinx.serialization.json.JsonPrimitive
 import splice.core.util.Cancellables
 import splice.provider.kimi.KimiDeviceAuthorization
 import splice.provider.kimi.KimiOAuth
+import splice.spi.ProcessWaiter
+import splice.spi.Waiter
 import java.nio.file.Path
 
 /** Everything the device flow needs for one provider's login (built by LoginCommand per head). */
@@ -58,11 +59,15 @@ public object DeviceLoginFlow {
         data class Wait(val intervalS: Long) : PollStep()
     }
 
-    /** Runs the device flow to completion; returns true on success. */
-    public suspend fun run(spec: DeviceLoginSpec): Boolean {
+    /** Runs the device flow to completion; returns true on success.
+     *
+     *  HD-19: [waiter] is the RFC 8628 poll interval, threaded down to [poll] rather than reached
+     *  for as a bare `delay`. This is an `object`, so the seam rides the call instead of a
+     *  constructor; the default is the production behaviour, and LoginCommand passes nothing. */
+    public suspend fun run(spec: DeviceLoginSpec, waiter: Waiter = ProcessWaiter()): Boolean {
         var restarts = 0
         while (true) {
-            when (attempt(spec)) {
+            when (attempt(spec, waiter)) {
                 Outcome.SUCCESS -> return true
                 Outcome.ABORT -> return false
                 Outcome.EXPIRED -> {
@@ -76,13 +81,13 @@ public object DeviceLoginFlow {
         }
     }
 
-    private suspend fun attempt(spec: DeviceLoginSpec): Outcome {
+    private suspend fun attempt(spec: DeviceLoginSpec, waiter: Waiter): Outcome {
         val client = authClients.create()
         return try {
             Cancellables.runCatchingCancellable {
                 val auth = requestDeviceAuth(client, spec) ?: return@runCatchingCancellable Outcome.ABORT
                 announce(spec, auth)
-                poll(client, spec, auth)
+                poll(client, spec, auth, waiter)
             }.getOrElse { e ->
                 println("splice: login error: ${e.message}")
                 Outcome.ABORT
@@ -117,11 +122,16 @@ public object DeviceLoginFlow {
         if (!loginIo.openBrowser(url)) println("splice: open the URL above to finish signing in.")
     }
 
-    private suspend fun poll(client: HttpClient, spec: DeviceLoginSpec, auth: KimiDeviceAuthorization): Outcome {
+    private suspend fun poll(
+        client: HttpClient,
+        spec: DeviceLoginSpec,
+        auth: KimiDeviceAuthorization,
+        waiter: Waiter,
+    ): Outcome {
         var intervalS = auth.intervalS
         val deadline = System.currentTimeMillis() + auth.expiresInS * MS_PER_S
         while (System.currentTimeMillis() < deadline) {
-            delay(intervalS * MS_PER_S)
+            waiter.wait(intervalS * MS_PER_S)
             val resp = Cancellables.runCatchingCancellable { postToken(client, spec, auth.deviceCode) }.getOrNull()
             val step = if (resp == null) PollStep.Wait(intervalS) else classifyPoll(resp, spec, intervalS)
             when (step) {

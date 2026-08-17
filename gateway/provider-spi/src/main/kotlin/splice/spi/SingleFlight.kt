@@ -15,10 +15,7 @@
 // A settled Deferred is not reused, so the next wave starts a fresh refresh.
 package splice.spi
 
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.sync.Mutex
@@ -27,13 +24,17 @@ import kotlin.coroutines.CoroutineContext
 
 public class SingleFlight<T>(
     // The refresh runs here, off the caller's coroutine. Injectable for tests (a test dispatcher);
-    // Dispatchers.Default is only the production default for a background auth refresh.
-    context: CoroutineContext = Dispatchers.Default,
+    // the background dispatcher is only the production default for a background auth refresh.
+    // HD-19: the concrete Dispatchers.Default it used to name now comes from the process runtime
+    // edge, so the value is unchanged and this file no longer reaches for a global dispatcher.
+    context: CoroutineContext = ProcessDispatchers().background(),
 ) {
-    // SupervisorJob on the RIGHT so it unconditionally wins the Job key — even if a caller passes a
-    // context that carries its own Job (e.g. someScope.coroutineContext), isolation is preserved and
-    // the injected context can't tie this scope's lifetime/failure-propagation to a caller's Job.
-    private val scope = CoroutineScope(context + SupervisorJob())
+    // LifecycleScope applies SupervisorJob on the RIGHT of the caller's context so it unconditionally
+    // wins the Job key — even if a caller passes a context that carries its own Job (e.g.
+    // someScope.coroutineContext), isolation is preserved and the injected context can't tie this
+    // scope's lifetime/failure-propagation to a caller's Job. That invariant moved into the type
+    // (HD-19); the resulting context is identical to the old `CoroutineScope(context + SupervisorJob())`.
+    private val scope = LifecycleScope(context)
     private val mutex = Mutex()
     private var inflight: Deferred<T>? = null
 

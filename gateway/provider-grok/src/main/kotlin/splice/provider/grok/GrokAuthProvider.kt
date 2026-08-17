@@ -22,9 +22,7 @@
 package splice.provider.grok
 
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -45,6 +43,8 @@ import splice.core.util.DaemonLog
 import splice.core.util.JsonScalars
 import splice.core.util.SecureFile
 import splice.spi.CredentialLock
+import splice.spi.LifecycleScope
+import splice.spi.ProcessDispatchers
 import splice.spi.SingleFlight
 import java.nio.file.Files
 import java.nio.file.Path
@@ -93,7 +93,10 @@ public class GrokAuthProvider(
     // awaiting it must not be killed); the init block below ties that shared refresh to THIS scope's
     // lifetime, so Daemon.stop (probeScope.cancel) cancels an in-flight refresh instead of letting
     // it write the token file post-shutdown (review 2026-07-23).
-    private val prefetchScope: CoroutineScope = CoroutineScope(Dispatchers.Default + SupervisorJob()),
+    // HD-19: LifecycleScope is the NAMED owner the bare CoroutineScope(...) factory lacked, and it
+    // applies the same SupervisorJob on the same background dispatcher — identical context, and the
+    // daemon still overrides this default with its own probeScope in production.
+    private val prefetchScope: CoroutineScope = LifecycleScope(ProcessDispatchers().background()),
     /** Daemon log sink (Main.persistentLogger): writes BOTH stderr and daemon.log, which is what
      *  /mgmt/logs tails. A bare System.err.println reaches stderr ONLY, so its line never appears in
      *  the log endpoint — the failure you most want to read is the one you cannot (wall

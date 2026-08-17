@@ -14,7 +14,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.isActive
@@ -671,7 +670,10 @@ internal class TurnDriver(
     private fun CoroutineScope.launchClientPinger(drive: TurnDrive, turnJob: Job) =
         launch {
             while (isActive) {
-                delay(CLIENT_PING_INTERVAL_MS)
+                // HD-19: the ping cadence is a named Ticker (deps.ticker), not a bare delay.
+                // ProcessTicker always returns true, so this loop is exactly as unbounded as before;
+                // a test can wire a ticker that paces N pings instantly and then stops the loop.
+                if (!deps.ticker.awaitTick(CLIENT_PING_INTERVAL_MS)) return@launch
                 try {
                     drive.channel.writeMutex.withLock { drive.channel.coalesced.write(SSE_KEEPALIVE_COMMENT) }
                 } catch (e: IOException) {

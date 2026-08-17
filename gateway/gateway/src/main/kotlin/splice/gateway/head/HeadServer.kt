@@ -30,7 +30,6 @@ import io.ktor.utils.io.readAvailable
 import io.netty.channel.socket.SocketChannelConfig
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -59,8 +58,12 @@ import splice.gateway.usage.UsageStore
 import splice.spi.BuiltTurn
 import splice.spi.GatewayAtCapacityException
 import splice.spi.InflightGate
+import splice.spi.ProcessTicker
+import splice.spi.ProcessWaiter
 import splice.spi.Provider
+import splice.spi.Ticker
 import splice.spi.UpstreamClient
+import splice.spi.Waiter
 import java.io.ByteArrayOutputStream
 import java.security.MessageDigest
 import java.util.concurrent.atomic.AtomicBoolean
@@ -94,6 +97,12 @@ public data class HeadDeps(
     val perfStats: PerfStats,
     val log: (String) -> Unit,
     val clock: () -> Long = MonoClock::nowMs,
+    /** HD-19: the head's two runtime seams, defaulted to the exact behaviour they replaced.
+     *  [waiter] paces HeadServer's bounded stop-drain poll; [ticker] paces TurnDriver's client
+     *  keepalive pinger. Both are named ports rather than a bare `delay`, so a head test can drive
+     *  a drain or a ping cadence deterministically instead of sleeping through it. */
+    val waiter: Waiter = ProcessWaiter(),
+    val ticker: Ticker = ProcessTicker(),
     val requestMaterializationGate: RequestMaterializationGate = RequestMaterializationGate(),
     val maxRequestBytes: Int = DEFAULT_MAX_REQUEST_BYTES,
     val requestReadTimeoutMs: Long = DEFAULT_REQUEST_READ_TIMEOUT_MS,
@@ -221,7 +230,7 @@ public class HeadServer(
         val deadlineNs = System.nanoTime() + STOP_DRAIN_NS
         var inflight = gate.snapshot().inflight
         while (inflight > 0 && System.nanoTime() < deadlineNs) {
-            delay(STOP_DRAIN_POLL_MS)
+            deps.waiter.wait(STOP_DRAIN_POLL_MS)
             inflight = gate.snapshot().inflight
         }
         if (inflight > 0) {

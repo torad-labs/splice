@@ -16,10 +16,9 @@
 // the per-head wiring (5 members, ~120 counted lines) and delegates provider construction.
 package splice.app
 
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
@@ -90,6 +89,8 @@ import splice.provider.openai.OpenAiChatProvider
 import splice.provider.openai.OpenAiQuirks
 import splice.provider.openai.OpenAiResponsesProvider
 import splice.spi.InflightGate
+import splice.spi.LifecycleScope
+import splice.spi.ProcessDispatchers
 import splice.spi.Provider
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
@@ -158,7 +159,12 @@ internal data class HeadProbeSinks(
  * 2026-08-15) — these were file-level helpers for the same reason they are a separate type now:
  * they carry no daemon state, and folding them into Daemon breaks its detekt budgets.
  */
-internal class HeadLifecycle {
+internal class HeadLifecycle(
+    // HD-19: where the N blocking HeadServer.stop() engine stops run. Was a hardcoded
+    // Dispatchers.IO inside stopHeads; defaulted here to the same value, so shutdown is
+    // unchanged and DaemonStopDeadlineTest can pin the phase to a dispatcher it controls.
+    private val stopDispatcher: CoroutineDispatcher = ProcessDispatchers().io(),
+) {
 
     private val boundary = DaemonBoundary()
 
@@ -272,7 +278,7 @@ internal class HeadLifecycle {
         val stopFailureHandler = CoroutineExceptionHandler { _, e ->
             log("[daemon] head stop failed uncaught: ${e::class.simpleName}: ${e.message}\n")
         }
-        withContext(Dispatchers.IO) {
+        withContext(stopDispatcher) {
             withTimeoutOrNull(budgetMs) {
                 supervisorScope {
                     heads.forEach { head ->
@@ -815,7 +821,10 @@ public class Daemon(
 
     // G8: per-head auth/health probe. SupervisorJob so one head's probe failure can't cancel
     // another's — same isolation shape as SingleFlight.kt:33-36.
-    private val probeScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
+    // HD-19: LifecycleScope is the NAMED owner the bare CoroutineScope(...) factory lacked. Same
+    // background dispatcher, same SupervisorJob applied on the right of it, so the context is
+    // identical — and the Daemon is unambiguously the lifecycle owner that stop() cancels.
+    private val probeScope = LifecycleScope(ProcessDispatchers().background())
     private val authProbes = LinkedHashMap<String, AuthProbeLoop>()
 
     // DECLARED AFTER probeScope ON PURPOSE: property initializers run in declaration order, and

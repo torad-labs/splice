@@ -30,7 +30,6 @@ import io.ktor.http.ContentType
 import io.ktor.http.content.ByteArrayContent
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
-import kotlinx.coroutines.delay
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.perf.PerfKeys
@@ -51,6 +50,12 @@ public class UpstreamClient(
      *  exists because xAI 400d on a compressed body and broke grok live on 2026-07-18. */
     private val zstdRequestBody: Boolean = false,
     private val client: HttpClient = Transport().defaultClient(firstByteTimeoutMs, totalTimeoutMs),
+    // HD-19: the seam both backoff curves below sleep through. Declared BEFORE them so their default
+    // values can close over it (a Kotlin default may reference an earlier parameter), which is what
+    // lets a test replace the WAIT without also having to re-author the CURVE it is measuring —
+    // wire a recording waiter and the 200/400/800ms schedule becomes an assertion on a list instead
+    // of 1.4 seconds of real sleeping.
+    waiter: Waiter = ProcessWaiter(),
     // Exponential backoff, ±10% jitter (codex shape — synchronized retry herds re-collide without
     // it), capped at MAX_BACKOFF_MS; a server Retry-After rides in as a FLOOR via minDelayMs (G3).
     // DNS-class transport failures use dnsBackoff below instead (G14) — a resolver blip runs
@@ -58,7 +63,7 @@ public class UpstreamClient(
     private val backoff: suspend (attempt: Int, minDelayMs: Long) -> Unit = { attempt, minDelayMs ->
         val base = minOf(BACKOFF_BASE_MS shl attempt, MAX_BACKOFF_MS)
         val jittered = (base * Random.nextDouble(JITTER_LO, JITTER_HI)).toLong()
-        delay(maxOf(jittered, minDelayMs))
+        waiter.wait(maxOf(jittered, minDelayMs))
     },
     // DNS-class transport failures (G14) get their own 1s/2s/4s schedule — a real resolver
     // blip (kimi 07:00 burst: 37 UnresolvedAddressException turns) runs longer than the
@@ -67,7 +72,7 @@ public class UpstreamClient(
     private val dnsBackoff: suspend (attempt: Int) -> Unit = { attempt ->
         val base = minOf(DNS_BACKOFF_BASE_MS shl attempt, DNS_MAX_BACKOFF_MS)
         val jittered = (base * Random.nextDouble(JITTER_LO, JITTER_HI)).toLong()
-        delay(jittered)
+        waiter.wait(jittered)
     },
     // Default is monotonic — a wall-clock jump must not abort a healthy retry loop (forward) or
     // extend its deadline (backward). Same base as TurnWatchdog/InflightGate: two authorities

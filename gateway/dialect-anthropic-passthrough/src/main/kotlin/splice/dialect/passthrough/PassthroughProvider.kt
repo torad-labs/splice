@@ -52,7 +52,7 @@ public class PassthroughProvider(
     private val identityHeaders: IdentityHeaders = IdentityHeaders { emptyMap() },
     /** PT-002/v27: the daemon's configured default effort ([daemon] effort / Knob.EFFORT) — the
      *  session-stable proxy the request builder falls back to on a turn with no `thinking` config
-     *  at all. See PassthroughRequestBuilder.effortLadder: this can only ever inform TurnMeta.effort
+     *  at all. See PassthroughThinking.effortLadder: this can only ever inform TurnMeta.effort
      *  — a turn that sends `thinking` without a budget keeps the wire-frozen EFFORT_MAX regardless
      *  (KIMI BYTE-IDENTITY). */
     private val configEffort: String? = null,

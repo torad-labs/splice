@@ -32,15 +32,43 @@ Then, per file, the gradient against its neighbours:
                  down — this campaign's own edits then inflate the ratio of files nobody touched.
                  Measured on 647ed02 (ResponsesRequestBuilder -> 12 siblings): under the file-vote
                  denominator core/wire/AnthropicRequest.kt read 1.97 before and 5.57 after, band
-                 moderate -> HIGH, without one line of it changing. Package votes make the oracle
-                 invariant to how a neighbour is split, which is what an oracle for a splitting
-                 campaign has to be. Same reason the global median below is taken over packages.
+                 moderate -> HIGH, without one line of it changing. Same reason the global median
+                 below is taken over packages.
+
+                 WHAT THE PACKAGE VOTE DOES NOT BUY, stated because an earlier revision of this
+                 docstring claimed it did: it removes the vote-COUNT multiplication, it does NOT
+                 make the oracle invariant to a WITHIN-package split. A package votes with the
+                 median C of its own files, and redistributing that package's content across more
+                 files moves that median. Measured on 06002e6 (ChatRequestBuilder -> 5 same-package
+                 siblings): splice.dialect.chat went from files [20.5, 180.0, 216.5] to
+                 [17.0, 19.5, 20.5, 28.0, 44.5, 47.0, 105.0, 216.5], median C 180.0 -> 36.25, and
+                 47 files nobody edited moved — core/wire/AnthropicRequest.kt 3.34 -> 6.19 with C
+                 unchanged at 275.5, app/Daemon.kt 7.93 -> 8.95, spi/UpstreamClient.kt 4.98 -> 5.20,
+                 app/cli/Command.kt 1.95 -> 2.00 crossing low -> moderate. No file crossed the 1.8
+                 gate that time; nothing in the metric guarantees the next one will not.
+
+                 This is not a bug with a local repair. ANY file-scale denominator is a statistic of
+                 the file-size distribution, and splitting a file changes that distribution, so no
+                 choice of order statistic is invariant. The only partition-free denominator is the
+                 neighbouring package's AGGREGATE C, and it was measured rather than assumed: it is
+                 invariant (worst untouched drift 0.08 across both landings, zero band flips) but it
+                 re-scopes the campaign — at every scale constant tried it flips the 1.8 verdict of
+                 19-29 untouched files (over-1.8 40 -> 4..27, HIGH 22 -> 0..12), which would record 8
+                 of the 12 HD-24 targets as decomposed without a line being touched. Adopting it is a
+                 band-calibration decision for the orchestrator, not a property this script may change
+                 on its own.
+
+                 So the drift is not eliminated here, it is made non-silent: `--since <ref>` reports
+                 every file whose ratio moved between a commit and the working tree and labels the
+                 cause `own` (its own C changed) or `neighbourhood` (its C is identical and only the
+                 denominator moved). A landing note may not claim a ratio without it.
 
   BANDS:  ratio < 1.8 low  |  1.8-3.0 moderate  |  >= 3.0 HIGH (god object)
 
 The band that matters is HIGH. Note what the metric does NOT excuse: core/wire/AnthropicRequest.kt
-carries 19 domain types in 133 lines and reads 3.34 against its consumers — HIGH, identically
-before and after 647ed02. Whether a pure DTO hub should be scored by C at all is a calibration
+carries 19 domain types in 133 lines and reads HIGH against its consumers — identically before and
+after 647ed02, and 6.19 today, of which the 3.34 -> 6.19 step is neighbourhood drift from 06002e6
+and not one line of the file. Whether a pure DTO hub should be scored by C at all is a calibration
 question about C, not a regression, and is not decided here.
 
 USAGE
@@ -48,19 +76,24 @@ USAGE
     python3 checks/concentration.py --top 15             # worst 15 only
     python3 checks/concentration.py --max-ratio 1.8      # gate: non-zero exit if any file is above
     python3 checks/concentration.py --file <path>        # one file, with its neighbour list
+    python3 checks/concentration.py --since <ref>        # what moved since <ref>, and why
     python3 checks/concentration.py --json               # machine-readable
 """
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import pathlib
 import re
 import statistics
+import subprocess
 import sys
+import tarfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC_GLOB = "gateway/*/src/main"
+SRC_RE = re.compile(r"^gateway/[^/]+/src/main/.*\.kt$")
 
 TYPE_DECL = re.compile(
     r"^(public |internal |private )?(sealed |data |abstract |open |value |enum )*(class|interface|object) "
@@ -72,8 +105,8 @@ EXPORT_DECL = re.compile(
 SPLICE_IMPORT = re.compile(r"^import (splice\.[A-Za-z0-9_.]+)\.[A-Za-z0-9_]+")
 
 
-def measure(path: pathlib.Path) -> dict:
-    lines = path.read_text(errors="replace").splitlines()
+def measure(rel: str, text: str) -> dict:
+    lines = text.splitlines()
     logic = [
         line
         for line in lines
@@ -85,7 +118,6 @@ def measure(path: pathlib.Path) -> dict:
     types = [line for line in lines if TYPE_DECL.match(line)]
     subsystems = {m.group(1) for line in lines if (m := SPLICE_IMPORT.match(line))}
     concerns = len(types) + len(subsystems)
-    rel = str(path.relative_to(ROOT))
     return {
         "file": rel,
         "package": ".".join(rel.split("/kotlin/")[-1].split("/")[:-1]).replace("/", "."),
@@ -98,16 +130,34 @@ def measure(path: pathlib.Path) -> dict:
     }
 
 
-def scan() -> list[dict]:
+def collect() -> list[dict]:
     files = [p for d in ROOT.glob(SRC_GLOB) for p in d.rglob("*.kt")]
-    rows = [measure(p) for p in files]
+    return [measure(str(p.relative_to(ROOT)), p.read_text(errors="replace")) for p in files]
+
+
+def collect_ref(ref: str) -> list[dict]:
+    """Same measurement, taken from a git ref instead of the working tree."""
+    blob = subprocess.run(
+        ["git", "-C", str(ROOT), "archive", ref, "--", "gateway"], capture_output=True, check=True
+    ).stdout
+    rows = []
+    with tarfile.open(fileobj=io.BytesIO(blob)) as tar:
+        for member in tar.getmembers():
+            if member.isfile() and SRC_RE.match(member.name):
+                text = tar.extractfile(member).read().decode(errors="replace")
+                rows.append(measure(member.name, text))
+    return rows
+
+
+def scan(rows: list[dict]) -> list[dict]:
     by_package: dict[str, list[dict]] = {}
     for row in rows:
         by_package.setdefault(row["package"], []).append(row)
 
     # Each package votes once, with its own median C. See the module docstring: a per-file vote lets
     # a package that gets decomposed outvote every other neighbour, so the oracle moves on files
-    # nobody touched.
+    # nobody touched. This removes the vote-COUNT effect only — a package's own median still moves
+    # when its content is redistributed across more files, which is what `--since` exists to surface.
     package_median = {pkg: statistics.median([r["C"] for r in rs]) for pkg, rs in by_package.items()}
 
     # A ratio taken against a tiny neighbourhood is noise, not a god object: a 63-line file whose
@@ -133,15 +183,73 @@ def scan() -> list[dict]:
     return sorted(rows, key=lambda r: -r["ratio"])
 
 
+def movement(ref: str, rows: list[dict]) -> list[dict]:
+    """Every file whose ratio moved since `ref`, with the cause of the move.
+
+    `own` means the file's own C changed, i.e. somebody edited it. `neighbourhood` means its C is
+    byte-for-byte the same score and only the denominator moved — a number that belongs to whoever
+    split a neighbouring package, never to this file's density. See the docstring.
+    """
+    before = {r["file"]: r for r in scan(collect_ref(ref))}
+    after = {r["file"]: r for r in rows}
+    moved = []
+    for name in sorted(set(before) & set(after)):
+        was, now = before[name], after[name]
+        if was["ratio"] == now["ratio"]:
+            continue
+        moved.append(
+            {
+                "file": name,
+                "cause": "own" if was["C"] != now["C"] else "neighbourhood",
+                "C_before": was["C"],
+                "C_after": now["C"],
+                "ratio_before": was["ratio"],
+                "ratio_after": now["ratio"],
+                "band_before": was["band"],
+                "band_after": now["band"],
+            }
+        )
+    return moved
+
+
+def report_movement(ref: str, moved: list[dict], max_ratio: float | None) -> None:
+    print(f"{'file':58} {'ratio':>14}  {'band':>18}  cause")
+    for m in moved:
+        print(
+            f"{m['file'].replace('gateway/', '').replace('/src/main/kotlin/splice', '~')[:58]:58} "
+            f"{m['ratio_before']:6.2f} ->{m['ratio_after']:6.2f}  "
+            f"{m['band_before']:>8} ->{m['band_after']:>8}  {m['cause']}"
+        )
+    drift = [m for m in moved if m["cause"] == "neighbourhood"]
+    print(f"\n{len(moved)} file(s) moved since {ref} | own {len(moved) - len(drift)} | neighbourhood {len(drift)}")
+    if max_ratio is not None:
+        crossed = [m for m in drift if (m["ratio_before"] > max_ratio) != (m["ratio_after"] > max_ratio)]
+        if crossed:
+            print(f"\nWARNING: {len(crossed)} untouched file(s) crossed ratio {max_ratio} on neighbourhood drift:",
+                  file=sys.stderr)
+            for m in crossed:
+                print(f"  {m['file']}  {m['ratio_before']} -> {m['ratio_after']}  C unchanged at {m['C_after']}",
+                      file=sys.stderr)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--top", type=int, default=0, help="show only the worst N")
     ap.add_argument("--max-ratio", type=float, help="gate: fail if any file exceeds this ratio")
     ap.add_argument("--file", help="report one file and list its neighbours")
+    ap.add_argument("--since", help="report what moved since a git ref, and whether it was own or neighbourhood")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
 
-    rows = scan()
+    rows = scan(collect())
+
+    if args.since:
+        moved = movement(args.since, rows)
+        if args.json:
+            print(json.dumps(moved, indent=2))
+        else:
+            report_movement(args.since, moved, args.max_ratio)
+        return 0
 
     if args.file:
         target = next((r for r in rows if r["file"].endswith(args.file)), None)

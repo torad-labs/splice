@@ -143,14 +143,17 @@ def main():
         "max_tokens": args.max_tokens,
         "messages": [{"role": "user", "content": args.prompt}],
     })
-    # Every head route sits behind authorize(), so the probe must present the local gateway
-    # credential exactly as a real client does. SPLICE_MGMT_KEY is supplied by heads-e2e.sh from
-    # the same state file it reads for /api/heads; without it the head answers 401 and the probe
-    # reports "no SSE events" for what is really a missing header.
+    # Every head route sits behind authorize(), so the probe must present a credential exactly as a
+    # real client does; without one the head answers 401 and the probe reports "no SSE events" for
+    # what is really a missing header. WHICH credential is the caller's decision, not this script's,
+    # and the distinction is a safety boundary rather than a preference: on a splice-credentialed
+    # head this is the daemon's mgmt key, but on a CLIENT-auth head the gateway forwards this exact
+    # header verbatim to the vendor, so the mgmt key must never be what lands here. heads-e2e.sh
+    # (probe_bearer) owns that choice and hands the result down in SPLICE_PROBE_BEARER.
     headers = {"Content-Type": "application/json"}
-    mgmt = os.environ.get("SPLICE_MGMT_KEY", "")
-    if mgmt:
-        headers["Authorization"] = f"Bearer {mgmt}"
+    bearer = os.environ.get("SPLICE_PROBE_BEARER", "")
+    if bearer:
+        headers["Authorization"] = f"Bearer {bearer}"
     conn = http.client.HTTPConnection("127.0.0.1", args.port, timeout=60)
     t0 = time.monotonic()
     conn.request("POST", "/v1/messages", body=body, headers=headers)

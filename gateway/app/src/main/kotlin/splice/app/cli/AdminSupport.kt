@@ -12,6 +12,7 @@ import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
+import splice.core.util.EnvReader
 import java.io.IOException
 import java.net.ConnectException
 import java.net.HttpURLConnection
@@ -38,7 +39,7 @@ internal object AdminSupport {
      *  never MATERIALIZES the starter config as a side effect. [envReader] threads through the
      *  whole port resolution (StatePaths + ConfigService env layer) so a hermetic caller never
      *  reads the real process environment or state dir. */
-    fun controlPort(topology: Topology?, envReader: (String) -> String? = System::getenv): Int =
+    fun controlPort(topology: Topology?, envReader: EnvReader = EnvReader(System::getenv)): Int =
         ConfigService(
             StatePaths(envReader = envReader),
             // No topology (fresh machine / broken TOML) still resolves through the layered config:
@@ -181,7 +182,7 @@ internal object AdminSupport {
         true
     }.getOrDefault(false)
 
-    fun mgmtKey(envReader: (String) -> String? = System::getenv): String? =
+    fun mgmtKey(envReader: EnvReader = EnvReader(System::getenv)): String? =
         runCatching { Files.readString(StatePaths(envReader = envReader).mgmtKeyFile).trim() }
             .getOrNull()?.takeIf { it.isNotEmpty() }
 

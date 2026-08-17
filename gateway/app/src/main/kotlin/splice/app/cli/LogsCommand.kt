@@ -7,13 +7,14 @@ package splice.app.cli
 
 import splice.app.LogFileSource
 import splice.core.config.StatePaths
+import splice.core.util.EnvReader
 import java.nio.file.Files
 
 /** The `logs` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources
  *  carry no top-level functions). Every member keeps the old function's name. */
 public class LogsCommand {
 
-    public fun logs(args: List<String>, envReader: (String) -> String? = System::getenv): Boolean {
+    public fun logs(args: List<String>, envReader: EnvReader = EnvReader(System::getenv)): Boolean {
         val opts = parseLogsArgs(args) ?: return false
         val statePaths = StatePaths(envReader = envReader)
         val logFile = statePaths.logsDir.resolve("daemon.log")

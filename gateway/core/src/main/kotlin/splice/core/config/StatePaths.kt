@@ -4,12 +4,13 @@
 // only; this file is the ONLY place the `.claude-codex` literal may appear (ast-grep wall).
 package splice.core.config
 
+import splice.core.util.EnvReader
 import java.nio.file.Path
 import java.nio.file.Paths
 
 public class StatePaths(
     baseOverride: Path? = null,
-    envReader: (String) -> String? = System::getenv,
+    envReader: EnvReader = EnvReader(System::getenv),
 ) {
     public val stateDir: Path = baseOverride
         ?: envReader("CLAUDEX_STATE_DIR")?.let { Paths.get(it) }

@@ -22,8 +22,10 @@ import kotlinx.serialization.json.put
 import splice.core.usage.RateLimitState
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
+import splice.core.util.Clock
 import splice.core.util.DaemonLog
 import splice.core.util.JsonScalars
+import splice.core.util.LogSink
 import splice.core.util.SecureFile
 import java.nio.file.Files
 import java.nio.file.Path
@@ -148,7 +150,7 @@ public class UsageHud {
         clientMaxTokens: Long?,
         compact: Boolean,
         headTag: String,
-        log: (String) -> Unit,
+        log: LogSink,
     ): (Long) -> Long {
         val max = clientMaxTokens?.takeIf { it > 0 }
         return { n ->
@@ -178,8 +180,8 @@ private data class PendingRateLimit(val encoded: String, val parsed: RateLimitSt
 public class UsageStore(
     private val usageFile: Path,
     private val ratelimitFile: Path,
-    private val clock: () -> Long = System::currentTimeMillis,
-    private val log: (String) -> Unit = DaemonLog::write,
+    private val clock: Clock = Clock(System::currentTimeMillis),
+    private val log: LogSink = LogSink(DaemonLog::write),
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val usageJson = UsageJson()

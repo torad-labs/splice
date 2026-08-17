@@ -57,6 +57,7 @@ import splice.core.topology.TopologyMessages
 import splice.core.turn.WatchdogBudget
 import splice.core.util.Cancellables
 import splice.core.util.HeadScopedLogs
+import splice.core.util.LogSink
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.passthrough.PassthroughProvider
 import splice.dialect.passthrough.PassthroughQuirks
@@ -172,7 +173,7 @@ internal class HeadLifecycle(
         topology: Topology,
         statePaths: StatePaths,
         heads: MutableMap<String, ManagedHead>,
-        log: (String) -> Unit,
+        log: LogSink,
         assemble: (String, HeadConfig, ProviderConfig) -> ManagedHead,
     ): LinkedHashMap<String, String> {
         val failed = LinkedHashMap<String, String>()
@@ -216,7 +217,7 @@ internal class HeadLifecycle(
     /** IO-006: neither head is refused (that would break the codex/claudex usage-history migration
      *  the alias exists for) — the collision is only named, loudly, same idiom as JW-13's
      *  [portCollisionMessage]. */
-    private fun logUsageKeyCollisions(statePaths: StatePaths, headKeys: Collection<String>, log: (String) -> Unit) {
+    private fun logUsageKeyCollisions(statePaths: StatePaths, headKeys: Collection<String>, log: LogSink) {
         statePaths.usageKeyCollisions(headKeys).forEach { (statKey, keys) ->
             log(
                 "[daemon][boot] WARNING: heads ${keys.joinToString(" and ")} share the '$statKey' usage/ratelimit " +
@@ -229,7 +230,7 @@ internal class HeadLifecycle(
         heads: Map<String, ManagedHead>,
         failed: MutableMap<String, String>,
         probeScope: CoroutineScope,
-        log: (String) -> Unit,
+        log: LogSink,
         sinks: HeadProbeSinks,
     ) {
         heads.forEach { (key, managed) ->
@@ -251,7 +252,7 @@ internal class HeadLifecycle(
         key: String,
         auth: AuthProvider,
         scope: CoroutineScope,
-        log: (String) -> Unit,
+        log: LogSink,
         probes: MutableMap<String, AuthProbeLoop>,
     ) {
         val refreshable = auth as? RefreshableAuthProvider ?: return
@@ -272,7 +273,7 @@ internal class HeadLifecycle(
     internal suspend fun stopHeads(
         heads: Collection<Head>,
         budgetMs: Long,
-        log: (String) -> Unit,
+        log: LogSink,
         stopControl: () -> Unit,
     ) {
         val stopFailureHandler = CoroutineExceptionHandler { _, e ->
@@ -463,7 +464,7 @@ internal data class Wired(val provider: Provider, val auth: RefreshableAuthProvi
 internal class ProviderAssembly(
     private val statePaths: StatePaths,
     private val probeScope: CoroutineScope,
-    private val log: (String) -> Unit,
+    private val log: LogSink,
     private val refreshCall: suspend (tokenUrl: String, refreshToken: String) -> RefreshAttempt<RefreshedTokens>,
 ) {
     private val buildInputs = HeadBuildInputs()
@@ -785,7 +786,7 @@ public class Daemon(
     private val topology: Topology,
     private val statePaths: StatePaths,
     private val dashboardHtml: () -> String,
-    private val log: (String) -> Unit = { System.err.print(it) },
+    private val log: LogSink = LogSink { System.err.print(it) },
     private val shutdownDaemon: () -> Unit = {},
     private val refreshCall: suspend (tokenUrl: String, refreshToken: String) -> RefreshAttempt<RefreshedTokens> =
         CodexRefresh()::refresh,

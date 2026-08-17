@@ -50,6 +50,7 @@ import splice.core.topology.TopologyMessages
 import splice.core.usage.RateLimitState
 import splice.core.usage.UsageWarnPolicy
 import splice.core.util.Cancellables
+import splice.core.util.LogSink
 import java.io.ByteArrayOutputStream
 
 // the two identifier literals every payload row repeats — named once for the whole file
@@ -102,7 +103,7 @@ public class ControlServer(
     private val config: ConfigService,
     private val mgmtKey: MgmtKey,
     private val dashboardHtml: () -> String,
-    private val log: (String) -> Unit,
+    private val log: LogSink,
     private val launchService: LaunchService? = null,
     private val shutdownDaemon: () -> Unit = {},
     // Live count of heads that failed to assemble or start (Daemon.start's `failed` map) — lets

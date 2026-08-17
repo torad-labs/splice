@@ -18,6 +18,7 @@ import splice.core.launch.LoginOutcomeFile
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.topology.TopologyMessages
+import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.provider.codex.CodexOAuth
 import splice.provider.codex.CodexOAuthEndpoints
@@ -36,7 +37,7 @@ import java.util.Base64
 // they would be rebuilt for every LoginCommand instance (setup constructs one per run), and `env`
 // in particular is the single System::getenv seam the endpoint helpers are handed.
 private val json = Json { ignoreUnknownKeys = true }
-private val env: (String) -> String? = System::getenv
+private val env: EnvReader = EnvReader(System::getenv)
 
 /** The `login` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources
  *  carry no top-level functions). Every member keeps the old function's name, so the diff at each

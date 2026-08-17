@@ -21,6 +21,7 @@ import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
+import splice.core.util.LogSink
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
@@ -163,7 +164,7 @@ internal object LoginInterception {
         configDir: Path,
         name: String,
         content: String,
-        log: (String) -> Unit = DaemonLog::write,
+        log: LogSink = LogSink(DaemonLog::write),
     ): Path {
         val script = configDir.resolve(name)
         Files.writeString(script, content)

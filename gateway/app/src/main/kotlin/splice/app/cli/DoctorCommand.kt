@@ -13,6 +13,7 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.topology.TopologyMessages
 import splice.core.util.Cancellables
+import splice.core.util.EnvReader
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -66,7 +67,7 @@ internal class DoctorCommand {
     // than re-deriving the client-auth / file / env / KeyStore precedence a second time.
     private val statusCommand = StatusCommand()
 
-    internal fun doctor(envReader: (String) -> String? = System::getenv): Boolean {
+    internal fun doctor(envReader: EnvReader = EnvReader(System::getenv)): Boolean {
         val configPath = TopologyLoader.configPath(envReader)
         val topo = loadTopology(configPath)
         // Resolve the port and probe /health ONCE; both the daemon and auth sections read this snapshot
@@ -156,7 +157,7 @@ internal class DoctorCommand {
 
     private fun daemonChecks(
         snapshot: DaemonSnapshot,
-        envReader: (String) -> String?,
+        envReader: EnvReader,
         topology: Topology?,
         configPath: Path? = null,
     ): List<DoctorCheck> {
@@ -280,7 +281,7 @@ internal class DoctorCommand {
 
     private fun authChecks(
         topo: DoctorTopology,
-        envReader: (String) -> String?,
+        envReader: EnvReader,
         snapshot: DaemonSnapshot,
     ): List<DoctorCheck> {
         val topology = (topo as? DoctorTopology.Parsed)?.topology
@@ -317,7 +318,7 @@ internal class DoctorCommand {
         key: String,
         command: String,
         provider: ProviderConfig,
-        envReader: (String) -> String?,
+        envReader: EnvReader,
     ): HeadAuth {
         val isOAuth = AuthKindRegistry.isOAuth(provider.auth.kind)
         // A client-auth head keeps a NULL env var like an OAuth head: it has no api key, and the
@@ -360,7 +361,7 @@ internal class DoctorCommand {
     private fun splitBrainChecks(
         heads: List<HeadAuth>,
         snapshot: DaemonSnapshot,
-        envReader: (String) -> String?,
+        envReader: EnvReader,
     ): List<DoctorCheck> {
         if (!snapshot.running) return emptyList()
         val key = AdminSupport.mgmtKey(envReader)

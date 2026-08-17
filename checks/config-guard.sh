@@ -25,11 +25,22 @@ grep -qE 'warningsAsErrors:[[:space:]]*true' "$DETEKT" || err "detekt.yml config
 
 # 3. Every ast-grep rule definition stays a blocking error (no silent downgrade to
 # warning/hint). Rule-test fixtures also have an id but are not rule definitions.
+#
+# A fixture is identified STRUCTURALLY (`valid:`/`invalid:` cases, and no `rule:` block), not by
+# living at one hardcoded path. It used to be `-path .rules/rule-tests -prune`, which broke the
+# moment a second test directory appeared — .rules/kotlin/ast-grep/rule-tests, added 2026-08-17
+# (HD-21) so the dormant pack can red/green pin a matcher before it graduates. Deriving the
+# exemption from the file's SHAPE also closes the hole the old prune opened: a real rule definition
+# dropped into any directory named rule-tests skipped this check entirely, and now does not,
+# because it carries a `rule:` block. Fixture-shaped, exempt; rule-shaped, checked — wherever it sits.
 while IFS= read -r f; do
   grep -qE '^[[:space:]]*id:' "$f" || continue
+  if grep -qE '^[[:space:]]*(valid|invalid):' "$f" && ! grep -qE '^[[:space:]]*rule:' "$f"; then
+    continue # a rule-test fixture, not a rule definition
+  fi
   sev=$(grep -E '^[[:space:]]*severity:' "$f" | head -1 | awk '{print $2}')
   [ "$sev" = "error" ] || err "$f severity is '${sev:-unset}', must be 'error'"
-done < <(find .rules -path .rules/rule-tests -prune -o -type f -name '*.yml' -print)
+done < <(find .rules -type f -name '*.yml' -print)
 
 # 4. Dependabot Kotlin ignore block stays scoped to the compiler/toolchain (#18/#37),
 # not the independently-versioned kotlinx libraries (kover, coroutines, serialization).

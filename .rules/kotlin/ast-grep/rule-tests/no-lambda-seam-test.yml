@@ -1,0 +1,84 @@
+# HD-21 (2026-08-17): pins BOTH sides of the inline-parameter exemption.
+#
+# The exemption exists because converting an inline higher-order utility's `block` parameter into a
+# `fun interface` breaks inlining AND forbids non-local return — it would damage working code to
+# satisfy a matcher. What must NOT happen is the exemption quietly swallowing ordinary seams, so
+# every `valid` case below is a shape that must stay silent and every `invalid` case is a shape the
+# rule must still catch even when an `inline` keyword is somewhere nearby.
+id: no-lambda-seam
+valid:
+  # The named-port compliant form — the whole point of the rule (HD-21 landed 126 of these).
+  - 'class Cache(private val log: LogSink, private val clock: Clock, private val env: EnvReader)'
+  # THE EXEMPTION. Cancellables.runCatchingCancellable — `inline` is load-bearing and documented
+  # in-file; a fun interface parameter here costs an allocation and forbids `return` from the lambda.
+  - |
+    object Cancellables {
+        inline fun <R> runCatchingCancellable(block: () -> R): Result<R> = try {
+            Result.success(block())
+        } catch (e: java.io.IOException) {
+            Result.failure(e)
+        }
+    }
+  # The exemption must survive a `suspend` function type — `type_modifiers` sits between the
+  # parameter and the function_type, so a shape-blind ancestor walk would miss it.
+  - |
+    object Boundary {
+        inline fun <T> timed(block: suspend () -> T): T = TODO()
+    }
+  # ...and a PARENTHESIZED/nullable function type, where function_type is two levels down
+  # (nullable_type -> parenthesized_type -> function_type) rather than a direct child of parameter.
+  - |
+    object Boundary {
+        inline fun <T> optional(block: (() -> T)?): T = TODO()
+    }
+  # Other modifiers must not be confused for `inline`: `function_modifier` is the same node kind
+  # that spells suspend/operator/tailrec, which is why the regex is anchored.
+  - |
+    class Host {
+        inline fun <T> guarded(block: () -> T): T = block()
+    }
+invalid:
+  # A plain non-inline seam — the rule's whole reason to exist, still caught.
+  - 'class Server(private val log: (String) -> Unit)'
+  # A non-inline FUNCTION parameter of exactly the exempted shape. `suspend` is not `inline`:
+  # SingleFlight.run and CredentialLock.withLock are real examples and must stay flagged.
+  - |
+    class SingleFlight<T> {
+        suspend fun run(block: suspend () -> T): T = block()
+    }
+  # A RETURN type inside an inline declaration is not a parameter — the exemption must not reach it.
+  - |
+    object Loggers {
+        inline fun persistent(dir: String): (String) -> Unit = { }
+    }
+  # A non-inline LOCAL declaration in an inline function's BODY. (This one survives either stopBy —
+  # the outer parameter list is a sibling of the body, not an ancestor — but it is the shape a
+  # reader will worry about first, so it is pinned.)
+  - |
+    class Host {
+        inline fun outer(block: () -> Unit) {
+            fun inner(seam: (String) -> Unit) { seam("y") }
+            inner { }
+            block()
+        }
+    }
+  # THE stopBy PROOF. Here a non-inline member IS a descendant of the inline function's own
+  # parameter list (an object expression as a default value). This is the only shape that
+  # distinguishes `stopBy: {kind: function_value_parameters}` from `stopBy: end`: verified
+  # 2026-08-17 that widening it to `end` lets exactly this line go green while every other case in
+  # this file still passes. Without this case the narrow stopBy would be an unproven claim.
+  - |
+    object Host {
+        inline fun outer(
+            factory: Factory = object : Factory {
+                override fun make(seam: (String) -> Unit) {}
+            },
+            block: () -> Unit,
+        ) { block() }
+    }
+  # A constructor property on a class whose own methods are inline — the modifier belongs to the
+  # function, never to the enclosing class.
+  - |
+    class Host(private val onEvent: (String) -> Unit) {
+        inline fun run(block: () -> Unit) { block() }
+    }

@@ -7,6 +7,7 @@ package splice.provider.codex
 import splice.core.auth.Credentials
 import splice.core.turn.ReasoningDisplay
 import splice.core.util.DaemonLog
+import splice.core.util.LogSink
 import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
@@ -24,7 +25,7 @@ public class CodexProvider(
     private val accountIdHeader: Boolean = true,
     /** Daemon log sink — forwarded to ResponsesProvider so its diagnostics reach
      *  /mgmt/logs and not stderr alone (wall kt-no-println, 2026-07-27). */
-    log: (String) -> Unit = DaemonLog::write,
+    log: LogSink = LogSink(DaemonLog::write),
 ) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks, foldConfig, log) {
 
     /** Proven against the live ChatGPT backend by the WS-0 spike

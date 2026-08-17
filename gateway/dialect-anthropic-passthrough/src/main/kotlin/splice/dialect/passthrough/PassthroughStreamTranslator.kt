@@ -28,6 +28,7 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.DaemonLog
 import splice.core.util.JsonScalars
+import splice.core.util.LogSink
 import splice.spi.BufferCapacity
 import splice.spi.StreamTranslator
 import splice.spi.TerminalStates
@@ -47,7 +48,7 @@ public data class PassthroughTurnContext(
      *  no-op — never a silent stderr write — so tests need not thread it; once Main installs the
      *  process sink this same reference starts writing to it, so no call site (including
      *  PassthroughProvider) needs to pass it explicitly. */
-    val log: (String) -> Unit = DaemonLog::write,
+    val log: LogSink = LogSink(DaemonLog::write),
 )
 
 public class PassthroughStreamTranslator(

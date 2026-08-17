@@ -32,7 +32,7 @@ SGCONFIG=sgconfig.yml
 # exemption is how the next dormant pack hides. An entry whose path no longer exists is a hard
 # failure, not a no-op: a stale line is exactly the "referenced by nothing" state, one level up.
 UNROUTED_ALLOWLIST=(
-  ".rules/kotlin|2026-08-16: the torad-toolkit Android/Compose/XR pack, vendored 2026-07-16 for reference only. Its rules (Compose, ViewModel, no-mutable-var, no-runblocking) encode a different project type and contradict this Ktor gateway's mandated idioms, so routing it here would turn the gate red on correct code. Splice's own Kotlin walls live in .rules/kotlin-splice."
+  ".rules/kotlin|2026-08-17: the torad-toolkit Android/Compose/XR pack, vendored 2026-07-16 for reference only. Its rules (Compose, ViewModel, no-mutable-var, no-runblocking) encode a different project type and contradict this Ktor gateway's mandated idioms, so routing it here would turn the gate red on correct code. Splice's own Kotlin walls live in .rules/kotlin-splice. UNSCANNED IS NOT UNTESTED (HD-21): the pack now carries its own sgconfig testConfigs, and npm run gate:rules runs 'ast-grep test --config .rules/kotlin/ast-grep/sgconfig.yml' so a dormant matcher can be red/green pinned BEFORE it graduates — a rule-test dropped into the root .rules/rule-tests for a rule outside the root ruleDirs is silently skipped, not reported."
 )
 
 # A "rule file" is a .yml/.yaml carrying an `id:` key — the SAME test checks/config-guard.sh uses to

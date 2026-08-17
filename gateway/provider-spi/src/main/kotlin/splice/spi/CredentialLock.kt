@@ -15,6 +15,7 @@ package splice.spi
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import splice.core.util.LogSink
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
 import java.nio.channels.OverlappingFileLockException
@@ -51,7 +52,7 @@ public object CredentialLock {
     public suspend fun <T> withLock(
         path: Path,
         waitMs: Long = CREDENTIAL_LOCK_WAIT_MS,
-        log: (String) -> Unit = {},
+        log: LogSink = LogSink {},
         // HD-19: the two runtime reaches this primitive used to make directly, as one cohesive
         // argument — `runtime.waiter` paces the tryLock poll (was `delay`) and `runtime.dispatcher`
         // is where the poll runs (was Dispatchers.IO). The default is the production runtime, so a
@@ -67,7 +68,7 @@ public object CredentialLock {
     private suspend fun <T> withFileLock(
         path: Path,
         waitMs: Long,
-        log: (String) -> Unit,
+        log: LogSink,
         runtime: PollRuntime,
         block: suspend () -> T,
     ): T {
@@ -99,7 +100,7 @@ public object CredentialLock {
         channel: FileChannel,
         lockPath: Path,
         waitMs: Long,
-        log: (String) -> Unit,
+        log: LogSink,
         waiter: Waiter,
     ): FileLock? {
         val t0 = System.nanoTime()

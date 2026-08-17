@@ -13,7 +13,9 @@ import splice.core.config.KeyStore
 import splice.core.config.KeyStorePath
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
+import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
+import splice.core.util.LogSink
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -23,7 +25,7 @@ private const val MASK_KEEP = 4
 public class ApiKeyAuthProvider(
     private val envVar: String,
     private val keyFile: Path? = null,
-    private val envReader: (String) -> String? = System::getenv,
+    private val envReader: EnvReader = EnvReader(System::getenv),
     // Resolved once at construction (daemon restart moves it); the FILE is re-read per call, so
     // a `splice key set` lands on the very next request without a restart. Tests inject a hermetic
     // store — the default points at the operator's real ~/.config/splice/keys.toml.
@@ -33,7 +35,7 @@ public class ApiKeyAuthProvider(
      *  the log endpoint — the failure you most want to read is the one you cannot (wall
      *  kt-no-println, 2026-07-27). Defaults to a no-op so tests need not thread it; the daemon
      *  always injects the real sink. */
-    private val log: (String) -> Unit = DaemonLog::write,
+    private val log: LogSink = LogSink(DaemonLog::write),
 ) : RefreshableAuthProvider {
 
     private val json = Json { ignoreUnknownKeys = true }

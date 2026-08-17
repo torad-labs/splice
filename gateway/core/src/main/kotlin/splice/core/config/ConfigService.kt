@@ -22,6 +22,8 @@ import splice.core.turn.ReasoningDisplay
 import splice.core.turn.ReasoningDisplayParser
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
+import splice.core.util.EnvReader
+import splice.core.util.LogSink
 import splice.core.util.SecureFile
 import java.nio.file.Files
 import java.nio.file.Path
@@ -36,13 +38,13 @@ public class ConfigService(
     // headKey -> knob map, from [heads.<key>.overrides]. Applied only by getConfig(headKey), so a
     // head can hold its own maxInflight/timeouts without the value leaking onto its siblings.
     private val perHeadOverrides: Map<String, Map<String, String>> = emptyMap(),
-    private val envReader: (String) -> String? = System::getenv,
+    private val envReader: EnvReader = EnvReader(System::getenv),
     /** Daemon log sink (Main.persistentLogger): writes BOTH stderr and daemon.log, which is what
      *  /mgmt/logs tails. A bare System.err.println reaches stderr ONLY, so its line never appears in
      *  the log endpoint — the failure you most want to read is the one you cannot (wall
      *  kt-no-println, 2026-07-27). Defaults to a no-op so tests need not thread it; the daemon
      *  always injects the real sink. */
-    private val log: (String) -> Unit = DaemonLog::write,
+    private val log: LogSink = LogSink(DaemonLog::write),
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -251,7 +253,7 @@ private const val MAX_FOLD_TIER = 100L
  * was `public` only because a top-level function had nowhere narrower to live, and its sole
  * production caller is [normalize] two lines below it.
  */
-internal class ConfigCoercion(private val envReader: (String) -> String?) {
+internal class ConfigCoercion(private val envReader: EnvReader) {
 
     // A flat table of floors/clamps — splitting it would scatter the contract (port fidelity).
     fun normalize(raw: Map<String, Any?>): Map<String, Any?> {

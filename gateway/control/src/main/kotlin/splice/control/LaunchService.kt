@@ -12,6 +12,7 @@ import splice.core.launch.ClaudeConfigMaterializer
 import splice.core.launch.ClaudePolicy
 import splice.core.launch.MaterializeSpec
 import splice.core.launch.TokenCaptureSpec
+import splice.core.util.EnvReader
 import java.nio.file.Path
 import kotlin.math.max
 
@@ -65,7 +66,7 @@ public data class LaunchRecipe(
 public class LaunchService(
     private val materializer: ClaudeConfigMaterializer,
     private val claudeBinary: String = "claude",
-    private val envReader: (String) -> String? = System::getenv,
+    private val envReader: EnvReader = EnvReader(System::getenv),
 ) {
     /** Materialize the head's config + build the exec recipe. Safe by default: the flag is added
      *  ONLY when [dangerouslySkipPermissions] is true, and doing so returns a non-null warning. */

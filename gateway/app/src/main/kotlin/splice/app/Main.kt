@@ -10,6 +10,7 @@ import splice.core.config.StatePaths
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
+import splice.core.util.LogSink
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -177,7 +178,7 @@ internal class DaemonProcess {
     // line in daemon.log. /mgmt/logs splits on "\n" (ControlServer.logsJson), so the endpoint this
     // whole change exists to feed emitted concatenated garbage. Exactly one terminator is appended
     // here, which is a no-op for the callers that already pass one and makes the class unrepeatable.
-    internal fun persistentLogger(logsDir: Path, maxBytes: Long = MAX_LOG_BYTES): (String) -> Unit {
+    internal fun persistentLogger(logsDir: Path, maxBytes: Long = MAX_LOG_BYTES): LogSink {
         Cancellables.runCatchingCancellable { Files.createDirectories(logsDir) }
         val file = logsDir.resolve("daemon.log")
         val rolled = logsDir.resolve("daemon.log.1")
@@ -185,7 +186,7 @@ internal class DaemonProcess {
         var written = Cancellables
             .runCatchingCancellable { if (Files.exists(file)) Files.size(file) else 0L }
             .getOrDefault(0L)
-        return { msg ->
+        return LogSink { msg ->
             val line = "[${LocalTime.now().truncatedTo(ChronoUnit.SECONDS)}] ${msg.trimEnd('\n')}\n"
             AsyncFileIo.submit {
                 System.err.print(line)

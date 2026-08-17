@@ -15,6 +15,8 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.Cancellables
+import splice.core.util.Clock
+import splice.core.util.LogSink
 import splice.spi.ProcessTicker
 import splice.spi.Ticker
 
@@ -22,10 +24,10 @@ public class AuthProbeLoop(
     private val key: String,
     private val auth: RefreshableAuthProvider,
     private val intervalMs: Long = DEFAULT_INTERVAL_MS,
-    private val log: (String) -> Unit,
+    private val log: LogSink,
     // SH-04: wall clock for the restart-budget window only (never tick scheduling) — injectable
     // so the budget tests need no real waiting.
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val clock: Clock = Clock(System::currentTimeMillis),
     // HD-19: the tick cadence, as a NAMED port instead of a bare delay. ProcessTicker is
     // `delay(intervalMs); true`, so production paces exactly as before; a test wires a ticker that
     // returns instantly for N ticks and then false, which ends the loop through the SAME clean-

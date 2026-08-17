@@ -33,6 +33,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.core.util.Cancellables
+import splice.core.util.LogSink
 import java.io.IOException
 import java.net.URI
 import java.net.http.HttpClient
@@ -49,7 +50,7 @@ public class WsConnection internal constructor(
     internal val socket: WebSocket,
     internal val inbox: Channel<JsonObject>,
     public val generation: Long,
-    private val log: (String) -> Unit,
+    private val log: LogSink,
 ) {
     internal val busy = AtomicBoolean(false)
     internal val dead = AtomicBoolean(false)
@@ -87,7 +88,7 @@ public class WsConnection internal constructor(
 public class WsUpstream(
     private val firstEventTimeoutMs: Long = FIRST_EVENT_TIMEOUT_MS,
     private val maxConnections: Int = MAX_CONNECTIONS,
-    private val log: (String) -> Unit = {},
+    private val log: LogSink = LogSink {},
     /** Injectable socket factory — tests script a fake WebSocket without a live server. Receives
      *  the wss URI, the handshake headers, and the listener the socket must feed. */
     private val connector: suspend (URI, Map<String, String>, WebSocket.Listener) -> WebSocket =
@@ -384,7 +385,7 @@ private const val INBOX_CAPACITY = 1024
  *  owning connection (the caller falls back to SSE; NEVER-BELOW-STATUS-QUO). */
 internal class InboxListener(
     private val inbox: Channel<JsonObject>,
-    private val log: (String) -> Unit,
+    private val log: LogSink,
     private val terminalSeen: () -> Boolean,
     private val onAnomaly: () -> Unit,
 ) : WebSocket.Listener {

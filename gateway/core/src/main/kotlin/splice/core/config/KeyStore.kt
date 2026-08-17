@@ -11,6 +11,7 @@
 package splice.core.config
 
 import splice.core.util.Cancellables
+import splice.core.util.EnvReader
 import splice.core.util.SecureFile
 import java.nio.channels.FileChannel
 import java.nio.channels.OverlappingFileLockException
@@ -143,7 +144,7 @@ public object KeyStorePath {
 
     /** keys.toml beside splice.toml: SPLICE_CONFIG's sibling when set, else XDG
      *  (~/.config/splice). Mirrors TopologyLoader.configPath so test rigs stay hermetic. */
-    public fun defaultPath(envReader: (String) -> String? = System::getenv): Path {
+    public fun defaultPath(envReader: EnvReader = EnvReader(System::getenv)): Path {
         val override = envReader("SPLICE_CONFIG")
         if (override != null) {
             val expanded =

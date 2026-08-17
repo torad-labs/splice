@@ -9,7 +9,9 @@
 package splice.core.config
 
 import splice.core.auth.BearerScheme
+import splice.core.util.Clock
 import splice.core.util.DaemonLog
+import splice.core.util.LogSink
 import splice.core.util.SecureFile
 import java.io.IOException
 import java.nio.file.Files
@@ -18,8 +20,8 @@ import java.security.SecureRandom
 
 public class MgmtKey(
     private val statePaths: StatePaths,
-    private val log: (String) -> Unit = DaemonLog::write,
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val log: LogSink = LogSink(DaemonLog::write),
+    private val clock: Clock = Clock(System::currentTimeMillis),
 ) {
     private val value: String by lazy { ensure() }
 

@@ -19,6 +19,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
+import splice.core.util.LogSink
 import java.util.Base64
 
 public const val REASONING_ENVELOPE_TAG: String = "splice-reasoning"
@@ -59,7 +60,7 @@ public object ReasoningReplay {
 
     /** redacted_thinking `data` -> Responses `reasoning` input item, or null for foreign data. */
     // foreign/garbled payloads pass through as null
-    public fun decodeReasoningEnvelope(data: String?, log: (String) -> Unit = DaemonLog::write): JsonObject? {
+    public fun decodeReasoningEnvelope(data: String?, log: LogSink = LogSink(DaemonLog::write)): JsonObject? {
         val parsed = data?.takeIf { it.isNotEmpty() }?.let { encoded ->
             Cancellables.runCatchingCancellable {
                 val text = Base64.getDecoder().decode(encoded).toString(Charsets.UTF_8)

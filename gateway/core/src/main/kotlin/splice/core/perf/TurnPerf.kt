@@ -7,6 +7,8 @@
 // orphans its history. Recording is best-effort telemetry: it must never throw into the turn.
 package splice.core.perf
 
+import splice.core.util.Clock
+
 /** The single source of every perf field name (marks are *_ms-since-arrival; counters are raw). */
 public object PerfKeys {
     // stage completion marks (ms since arrival)
@@ -107,7 +109,7 @@ public data class PerfSnapshot(
     }
 }
 
-public class TurnPerf(private val clock: () -> Long = System::currentTimeMillis) {
+public class TurnPerf(private val clock: Clock = Clock(System::currentTimeMillis)) {
 
     private val startedAt: Long = clock()
     private val lock = Any()

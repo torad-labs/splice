@@ -9,6 +9,7 @@
 package splice.core.auth
 
 import splice.core.util.DaemonLog
+import splice.core.util.LogSink
 
 /** The Rejected.reason marker for a CONFIRMED invalid_grant (401/403/explicit invalid_grant body) —
  *  as opposed to any other non-retryable refresh rejection. Paired with [InvalidGrantLatch]. */
@@ -51,7 +52,7 @@ public sealed class RefreshOutcome {
         // (wall kt-no-println, 2026-07-27). The default now resolves to the process sink Main installs,
         // which writes daemon.log; daemon callers still pass their own injected sink explicitly, and
         // tests pass a capturing one. Uninstalled, DaemonLog is a no-op — never a silent stderr write.
-        log: (String) -> Unit = DaemonLog::write,
+        log: LogSink = LogSink(DaemonLog::write),
     ): Credentials? = when (this) {
         is Refreshed -> credentials
         NoCredentialsFile -> {

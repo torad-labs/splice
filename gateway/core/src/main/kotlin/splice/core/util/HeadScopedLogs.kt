@@ -12,8 +12,8 @@ public object HeadScopedLogs {
     /** A sink that guarantees every line starts with `[<headKey>]` — lines already carrying the
      *  prefix pass through untouched, everything else (e.g. a provider's own `[codex-auth] ...`)
      *  gains it, so the per-head substring filter sees every head-scoped diagnostic. */
-    public fun headScopedLog(headKey: String, sink: (String) -> Unit): (String) -> Unit {
+    public fun headScopedLog(headKey: String, sink: LogSink): LogSink {
         val prefix = "[$headKey]"
-        return { line -> sink(if (line.startsWith(prefix)) line else "$prefix$line") }
+        return LogSink { line -> sink(if (line.startsWith(prefix)) line else "$prefix$line") }
     }
 }

@@ -7,6 +7,7 @@ package splice.provider.openai
 import splice.core.auth.Credentials
 import splice.core.turn.ReasoningDisplay
 import splice.core.util.DaemonLog
+import splice.core.util.LogSink
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.EffortLadder
 import splice.dialect.responses.ResponsesProvider
@@ -22,7 +23,7 @@ public class OpenAiResponsesProvider(
     quirks: ResponsesQuirks = OpenAiQuirks().defaultQuirks(),
     /** Daemon log sink — forwarded to ResponsesProvider so its diagnostics reach
      *  /mgmt/logs and not stderr alone (wall kt-no-println, 2026-07-27). */
-    log: (String) -> Unit = DaemonLog::write,
+    log: LogSink = LogSink(DaemonLog::write),
 ) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks, log = log) {
 
     // api key rides as the standard bearer (UpstreamClient maps Credentials.ApiKey); no account header.

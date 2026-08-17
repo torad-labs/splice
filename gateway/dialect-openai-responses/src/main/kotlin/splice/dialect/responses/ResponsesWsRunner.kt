@@ -31,6 +31,7 @@ import splice.core.auth.Credentials
 import splice.core.turn.TurnMeta
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.core.util.LogSink
 import splice.spi.WsRoundRunner
 import java.security.MessageDigest
 
@@ -49,7 +50,7 @@ internal class ResponsesWsRunner(
     private val session: ResponsesWsSession,
     private val wssUrl: String,
     private val handshakeHeaders: (Credentials) -> Map<String, String>,
-    private val log: (String) -> Unit = {},
+    private val log: LogSink = LogSink {},
 ) : WsRoundRunner {
 
     override suspend fun attempt(

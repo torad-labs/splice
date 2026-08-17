@@ -7,6 +7,7 @@ import splice.core.GATEWAY_VERSION
 import splice.core.SHIM_VERSION
 import splice.core.config.InstallPaths
 import splice.core.util.Cancellables
+import splice.core.util.EnvReader
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
@@ -87,7 +88,7 @@ internal class DoctorProbes {
     // that verb rather than re-reading the file itself.
     private val installCommand = InstallCommand()
 
-    internal fun prerequisiteChecks(envReader: (String) -> String?): List<DoctorCheck> {
+    internal fun prerequisiteChecks(envReader: EnvReader): List<DoctorCheck> {
         val java = DoctorCheck("java", CheckStatus.OK, System.getProperty("java.version") ?: "unknown")
         // claude (~1s) and gh (up to PROBE_SECONDS of network) dominate sequential wall time — run
         // every probe concurrently; runProbes preserves this list's order regardless of finish order.
@@ -96,7 +97,7 @@ internal class DoctorProbes {
         return listOf(java) + runProbes(tasks)
     }
 
-    private fun binaryCheck(spec: BinarySpec, envReader: (String) -> String?): DoctorCheck {
+    private fun binaryCheck(spec: BinarySpec, envReader: EnvReader): DoctorCheck {
         val found = binaryOnPath(spec.name, envReader) ?: return spec.missing
         return DoctorCheck(spec.name, CheckStatus.OK, capturedVersion(listOf(found.toString()) + spec.versionArgs))
     }
@@ -128,7 +129,7 @@ internal class DoctorProbes {
 
     // gh matters only when installing from a GitHub Release (attestation verification); an
     // unauthenticated gh aborts that install — catch it here, before it costs a download.
-    private fun ghCheck(envReader: (String) -> String?): DoctorCheck {
+    private fun ghCheck(envReader: EnvReader): DoctorCheck {
         val gh = binaryOnPath("gh", envReader)
             ?: return DoctorCheck("gh", CheckStatus.INFO, "not installed (only needed to verify release-mode installs)")
         val authed = Cancellables.runCatchingCancellable {
@@ -155,7 +156,7 @@ internal class DoctorProbes {
         }
     }
 
-    private fun binaryOnPath(name: String, envReader: (String) -> String?): Path? =
+    private fun binaryOnPath(name: String, envReader: EnvReader): Path? =
         envReader("PATH").orEmpty().split(':').asSequence()
             .filter { it.isNotEmpty() }
             .mapNotNull { safePath(it) }
@@ -184,7 +185,7 @@ internal class DoctorProbes {
         }
     }.getOrDefault("present (version probe failed)")
 
-    internal fun installationChecks(topo: DoctorTopology, envReader: (String) -> String?): List<DoctorCheck> {
+    internal fun installationChecks(topo: DoctorTopology, envReader: EnvReader): List<DoctorCheck> {
         val paths = InstallPaths(envReader = envReader)
         val topology = (topo as? DoctorTopology.Parsed)?.topology
         val commands = topology?.heads?.map { (k, h) -> h.claude.command ?: k }.orEmpty() + "splice"
@@ -202,7 +203,7 @@ internal class DoctorProbes {
         }
     }
 
-    private fun shimCheck(shim: Path, envReader: (String) -> String?): DoctorCheck {
+    private fun shimCheck(shim: Path, envReader: EnvReader): DoctorCheck {
         if (!Files.exists(shim)) {
             return DoctorCheck(
                 "shim",
@@ -239,7 +240,7 @@ internal class DoctorProbes {
         else -> DoctorCheck(CHECK_WRAPPER, CheckStatus.OK, "'$command' → ${Files.readSymbolicLink(link)}")
     }
 
-    private fun pathCheck(binDir: Path, envReader: (String) -> String?): DoctorCheck {
+    private fun pathCheck(binDir: Path, envReader: EnvReader): DoctorCheck {
         val onPath = envReader("PATH").orEmpty().split(':')
             .filter { it.isNotEmpty() }
             .mapNotNull { safePath(it) }

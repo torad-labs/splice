@@ -30,6 +30,7 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.compactDirective
 import splice.core.util.DaemonLog
 import splice.core.util.JsonScalars
+import splice.core.util.LogSink
 import splice.core.wire.AnthropicRequest
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -138,7 +139,7 @@ public class PassthroughRequestBuilder(
     /** Daemon log sink (Main.persistentLogger) — same injected-with-a-process-default idiom as
      *  PassthroughTurnContext.log. Its only use here is the SCH-006 one-shot unrecognized-effort
      *  notice in [effortLadder]. */
-    private val log: (String) -> Unit = DaemonLog::write,
+    private val log: LogSink = LogSink(DaemonLog::write),
 ) {
 
     // SCH-006: latched the first time a configured effort that is not one of kimi's own rungs
@@ -461,7 +462,7 @@ private class PassthroughEffortLadder {
         configEffort: String?,
         providerTag: String,
         warned: AtomicBoolean,
-        log: (String) -> Unit,
+        log: LogSink,
     ): String {
         val trimmed = configEffort?.trim()?.lowercase() ?: return EFFORT_MAX
         if (trimmed in KIMI_EFFORTS) return trimmed

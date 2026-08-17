@@ -9,6 +9,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import splice.core.config.StatePaths
 import splice.core.util.Cancellables
+import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import java.nio.file.Files
 import java.nio.file.Path
@@ -23,7 +24,7 @@ internal class DoctorRuntime {
      *  block on. Counters are since-last-restart (G20 resets them); the perf tail is recency-framed
      *  (last N turns), never lifetime totals. Fail-open at every hop: no daemon, no key, or an
      *  unreachable endpoint each degrade to one INFO row, never a crash and never a fabricated OK. */
-    internal fun runtimeChecks(snapshot: DaemonSnapshot, envReader: (String) -> String?): List<DoctorCheck> {
+    internal fun runtimeChecks(snapshot: DaemonSnapshot, envReader: EnvReader): List<DoctorCheck> {
         val statePaths = StatePaths(envReader = envReader)
         // Read the key ONCE (review #94, F154): the old guard-and-use double read raced key rotation —
         // a key emptying between reads threw checkNotNull, and `guarded` printed a FAIL row,

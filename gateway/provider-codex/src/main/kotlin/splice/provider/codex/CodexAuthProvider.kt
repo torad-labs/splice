@@ -28,8 +28,10 @@ import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.Cancellables
+import splice.core.util.Clock
 import splice.core.util.DaemonLog
 import splice.core.util.JsonScalars
+import splice.core.util.LogSink
 import splice.core.util.SecureFile
 import splice.spi.CredentialLock
 import splice.spi.LifecycleScope
@@ -69,7 +71,7 @@ public data class RefreshedTokens(
 public class CodexAuthProvider(
     private val authPath: Path,
     private val authCacheMs: Long,
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val clock: Clock = Clock(System::currentTimeMillis),
     private val nowIso: () -> String = { Instant.ofEpochMilli(System.currentTimeMillis()).toString() },
     /** POST grant_type=refresh_token to the token URL; returns the classified attempt. */
     private val refreshCall: suspend (refreshToken: String) -> RefreshAttempt<RefreshedTokens>,
@@ -85,7 +87,7 @@ public class CodexAuthProvider(
      *  the log endpoint — the failure you most want to read is the one you cannot (wall
      *  kt-no-println, 2026-07-27). Defaults to a no-op so tests need not thread it; the daemon
      *  always injects the real sink. */
-    private val log: (String) -> Unit = DaemonLog::write,
+    private val log: LogSink = LogSink(DaemonLog::write),
 ) : RefreshableAuthProvider {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -349,7 +351,7 @@ public class CodexAuthProvider(
     // G15: best-effort mtime probe for the invalid_grant latch gate; shared by doRefresh() and
     // describe(). The failure is logged, not swallowed, before collapsing to null — a stat failure is
     // "unknown", which InvalidGrantLatch treats as fail-open (never suppresses), NOT "file unchanged".
-    private fun codexAuthMtimeOrNull(authPath: Path, log: (String) -> Unit): Long? =
+    private fun codexAuthMtimeOrNull(authPath: Path, log: LogSink): Long? =
         Cancellables.runCatchingCancellable {
             Files.getLastModifiedTime(authPath).toMillis()
         }.onFailure {

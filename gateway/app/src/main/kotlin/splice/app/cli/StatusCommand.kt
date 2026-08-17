@@ -12,6 +12,7 @@ import splice.core.topology.AuthKindRegistry
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
+import splice.core.util.EnvReader
 import java.nio.file.Files
 import java.nio.file.Paths
 
@@ -33,7 +34,7 @@ private val ansi = Regex("\\u001B\\[[0-9;]*m")
  *  constructs one rather than re-deriving them. Every member keeps the old function's name. */
 internal class StatusCommand {
 
-    internal fun status(envReader: (String) -> String? = System::getenv) {
+    internal fun status(envReader: EnvReader = EnvReader(System::getenv)) {
         val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath())
         val port = AdminSupport.controlPort()
         val up = AdminSupport.daemonUp(port)
@@ -62,7 +63,7 @@ internal class StatusCommand {
         key: String,
         head: HeadConfig,
         provider: ProviderConfig,
-        envReader: (String) -> String?,
+        envReader: EnvReader,
     ): String {
         val command = head.claude.command ?: key
         val authed = authPresent(key, provider, envReader)
@@ -96,7 +97,7 @@ internal class StatusCommand {
     internal fun isClientAuth(provider: ProviderConfig): Boolean =
         AuthKindRegistry.from(provider.auth.kind) == AuthKind.Client
 
-    internal fun authPresent(key: String, provider: ProviderConfig, envReader: (String) -> String?): Boolean =
+    internal fun authPresent(key: String, provider: ProviderConfig, envReader: EnvReader): Boolean =
         // A head that declares client auth has no splice-held credential to configure BY DESIGN, so
         // "is it configured?" is always yes. Without this it falls through to the api-key branch and
         // reads as permanently unconfigured, against a head that serves fine.
@@ -106,7 +107,7 @@ internal class StatusCommand {
     private fun credentialConfigured(
         key: String,
         provider: ProviderConfig,
-        envReader: (String) -> String?,
+        envReader: EnvReader,
     ): Boolean {
         val file = provider.auth.file ?: AuthKindRegistry.defaultAuthFileFor(provider.auth.kind)
         val filePresent = file?.let { Files.exists(Paths.get(TopologyLoader.expandHome(it))) } == true
@@ -122,10 +123,10 @@ internal class StatusCommand {
         return filePresent || envPresent || storePresent
     }
 
-    internal fun wrapperInstalled(command: String, envReader: (String) -> String?): Boolean =
+    internal fun wrapperInstalled(command: String, envReader: EnvReader): Boolean =
         Files.isSymbolicLink(InstallPaths(envReader = envReader).binDir.resolve(command))
 
-    private fun printNextSteps(topology: Topology, envReader: (String) -> String?) {
+    private fun printNextSteps(topology: Topology, envReader: EnvReader) {
         val launchable = topology.heads.map { (k, h) -> h.claude.command ?: k }
         println("  ${DIM}Launch $RESET " + launchable.joinToString("$DIM · $RESET") { "$CYAN$it$RESET" })
         val needLogin = topology.heads.entries.filter { (k, h) ->

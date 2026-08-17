@@ -37,6 +37,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import splice.core.util.LogSink
 import splice.spi.ProcessDispatchers
 import splice.spi.ProcessTicker
 import splice.spi.Ticker
@@ -48,7 +49,7 @@ public class TurnPathProbeLoop(
     private val key: String,
     private val port: Int,
     private val stalled: ConcurrentHashMap<String, Boolean>,
-    private val log: (String) -> Unit,
+    private val log: LogSink,
     private val intervalMs: Long = PROBE_INTERVAL_MS,
     private val timeoutMs: Int = PROBE_TIMEOUT_MS,
     // HD-19: the two runtime reaches this loop used to make directly. [dispatcher] is where the

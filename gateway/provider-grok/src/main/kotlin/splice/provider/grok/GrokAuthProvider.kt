@@ -39,8 +39,10 @@ import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.auth.SYNTHETIC_EXPIRY_TTL_MS
 import splice.core.util.Cancellables
+import splice.core.util.Clock
 import splice.core.util.DaemonLog
 import splice.core.util.JsonScalars
+import splice.core.util.LogSink
 import splice.core.util.SecureFile
 import splice.spi.CredentialLock
 import splice.spi.LifecycleScope
@@ -84,7 +86,7 @@ public data class GrokRefreshedTokens(
 public class GrokAuthProvider(
     private val authPath: Path,
     private val authCacheMs: Long = DEFAULT_CACHE_MS,
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val clock: Clock = Clock(System::currentTimeMillis),
     private val nowIso: () -> String = { Instant.ofEpochMilli(System.currentTimeMillis()).toString() },
     /** POST grant_type=refresh_token to auth.x.ai's token URL; returns the classified attempt. */
     private val refreshCall: suspend (refreshToken: String) -> RefreshAttempt<GrokRefreshedTokens>,
@@ -102,7 +104,7 @@ public class GrokAuthProvider(
      *  the log endpoint — the failure you most want to read is the one you cannot (wall
      *  kt-no-println, 2026-07-27). Defaults to a no-op so tests need not thread it; the daemon
      *  always injects the real sink. */
-    private val log: (String) -> Unit = DaemonLog::write,
+    private val log: LogSink = LogSink(DaemonLog::write),
 ) : RefreshableAuthProvider {
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -393,7 +395,7 @@ public class GrokAuthProvider(
 // stat failure is "unknown", which InvalidGrantLatch treats as fail-open (never suppresses), NOT
 // "file unchanged".
 private class GrokAuthFile {
-    fun grokAuthMtimeOrNull(authPath: Path, log: (String) -> Unit): Long? = Cancellables.runCatchingCancellable {
+    fun grokAuthMtimeOrNull(authPath: Path, log: LogSink): Long? = Cancellables.runCatchingCancellable {
         Files.getLastModifiedTime(authPath).toMillis()
     }.onFailure {
         log("[grok-auth] failed to stat $authPath mtime: $it — invalid_grant latch check skipped")

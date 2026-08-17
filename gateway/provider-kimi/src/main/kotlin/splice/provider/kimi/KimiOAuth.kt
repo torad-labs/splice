@@ -14,6 +14,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import splice.core.util.EnvReader
 import splice.core.util.FormEncoding
 import splice.core.util.JsonScalars
 
@@ -29,13 +30,13 @@ public object KimiOAuthEndpoints {
     public const val DEFAULT_INTERVAL_S: Long = 5
     public const val MIN_INTERVAL_S: Long = 1
 
-    public fun host(env: (String) -> String?): String =
+    public fun host(env: EnvReader): String =
         (env("KIMI_OAUTH_HOST") ?: "https://auth.kimi.com").trimEnd('/')
 
-    public fun deviceAuthorizationUrl(env: (String) -> String?): String =
+    public fun deviceAuthorizationUrl(env: EnvReader): String =
         "${host(env)}/api/oauth/device_authorization"
 
-    public fun tokenUrl(env: (String) -> String?): String =
+    public fun tokenUrl(env: EnvReader): String =
         "${host(env)}/api/oauth/token"
 }
 

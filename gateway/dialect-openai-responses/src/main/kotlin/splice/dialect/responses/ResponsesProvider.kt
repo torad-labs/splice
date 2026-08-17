@@ -13,6 +13,7 @@ import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.util.DaemonLog
+import splice.core.util.LogSink
 import splice.spi.BuiltTurn
 import splice.spi.FoldController
 import splice.spi.Provider
@@ -39,7 +40,7 @@ public abstract class ResponsesProvider(
      *  the log endpoint — the failure you most want to read is the one you cannot (wall
      *  kt-no-println, 2026-07-27). Defaults to a no-op so tests need not thread it; the daemon
      *  always injects the real sink. */
-    private val log: (String) -> Unit = DaemonLog::write,
+    private val log: LogSink = LogSink(DaemonLog::write),
 ) : Provider, ProviderIdentity by tuning {
 
     final override val upstreamUrl: String = "${tuning.baseUrl}/responses"

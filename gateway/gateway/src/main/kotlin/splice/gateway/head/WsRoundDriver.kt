@@ -16,6 +16,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.onEach
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
+import splice.core.util.LogSink
 import splice.spi.Provider
 import splice.spi.TurnSignals
 import splice.spi.WireSink
@@ -35,7 +36,7 @@ internal data class WsRoundInputs(
 
 internal class WsRoundDriver(
     private val provider: Provider,
-    private val log: (String) -> Unit,
+    private val log: LogSink,
     private val classifyZeroEvent: (TurnDrive, TurnOutcome, String, Long) -> TurnOutcome,
 ) {
 

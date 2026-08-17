@@ -31,6 +31,8 @@ import splice.core.turn.ErrorType
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
+import splice.core.util.Clock
+import splice.core.util.LogSink
 import splice.gateway.perf.PerfRowMeta
 import splice.gateway.perf.PerfStats
 import splice.gateway.pipeline.TurnPipeline
@@ -726,7 +728,7 @@ internal class TurnWiring {
         frame: String,
         perf: TurnPerf,
         clientGone: AtomicBoolean,
-        clock: () -> Long,
+        clock: Clock,
     ) {
         val t = clock()
         try {
@@ -912,7 +914,7 @@ internal class FoldRunner(
     // Only the buffer's `real` sink — never a terminal here (L3: FoldRunner finishes via [finish]).
     private val emitter: WireSink,
     private val key: String,
-    private val log: (String) -> Unit,
+    private val log: LogSink,
     private val postRound: suspend (bodyJson: String, sink: WireSink) -> TurnOutcome,
     private val finish: suspend (TurnOutcome) -> Unit,
     private val reanchor: ReanchorController? = null,
@@ -1110,7 +1112,7 @@ internal data class RoundUsage(
  *  continues — its cancellation owns the turn. */
 internal class ReanchorRunner(
     private val key: String,
-    private val log: (String) -> Unit,
+    private val log: LogSink,
     private val postRound: suspend (bodyJson: String) -> TurnOutcome,
     private val finish: suspend (TurnOutcome) -> Unit,
     private val signals: RunnerSignals,
@@ -1186,8 +1188,8 @@ internal class ReanchorRunner(
 internal class TurnTelemetry(
     private val headKey: String,
     private val perfStats: PerfStats,
-    private val log: (String) -> Unit,
-    private val clock: () -> Long,
+    private val log: LogSink,
+    private val clock: Clock,
 ) {
     /** The sole perf-row emitter: total mark, one JSONL row, one log line. Never throws. */
     fun recordPerf(drive: TurnDrive, outcomeTag: String) {

@@ -8,6 +8,7 @@ import com.akuleshov7.ktoml.Toml
 import kotlinx.serialization.decodeFromString
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
+import splice.core.util.EnvReader
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -46,7 +47,7 @@ pinned_model = "anthropic/claude-haiku-4.5"
 command = "claude-openrouter"
 """
 
-    public fun configPath(env: (String) -> String? = System::getenv): Path {
+    public fun configPath(env: EnvReader = EnvReader(System::getenv)): Path {
         val override = env("SPLICE_CONFIG")
         if (override != null) return Paths.get(expandHome(override))
         val xdg = env("XDG_CONFIG_HOME")

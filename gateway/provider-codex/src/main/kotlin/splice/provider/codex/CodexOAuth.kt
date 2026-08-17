@@ -14,6 +14,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.core.util.Cancellables
+import splice.core.util.EnvReader
 import splice.core.util.FormEncoding
 import splice.core.util.JsonScalars
 import java.security.MessageDigest
@@ -27,19 +28,19 @@ public object CodexOAuthEndpoints {
     public const val SCOPE: String =
         "openid profile email offline_access api.connectors.read api.connectors.invoke"
 
-    public fun issuer(env: (String) -> String?): String =
+    public fun issuer(env: EnvReader): String =
         (env("CODEX_OAUTH_ISSUER") ?: "https://auth.openai.com").trimEnd('/')
 
-    public fun tokenUrl(env: (String) -> String?): String =
+    public fun tokenUrl(env: EnvReader): String =
         env("CODEX_OAUTH_TOKEN_URL") ?: "${issuer(env)}/oauth/token"
 
-    public fun authorizeUrl(env: (String) -> String?): String =
+    public fun authorizeUrl(env: EnvReader): String =
         env("CODEX_OAUTH_AUTHORIZE_URL") ?: "${issuer(env)}/oauth/authorize"
 
-    public fun clientId(env: (String) -> String?): String =
+    public fun clientId(env: EnvReader): String =
         env("CODEX_OAUTH_CLIENT_ID") ?: DEFAULT_CLIENT_ID
 
-    public fun originator(env: (String) -> String?): String =
+    public fun originator(env: EnvReader): String =
         env("CODEX_OAUTH_ORIGINATOR") ?: "codex_cli_rs"
 }
 
@@ -73,7 +74,7 @@ public class CodexOAuth {
         challenge: String,
         state: String,
         clientId: String,
-        env: (String) -> String?,
+        env: EnvReader,
         redirectUri: String = CodexOAuthEndpoints.REDIRECT_URI,
     ): String {
         val params = listOf(

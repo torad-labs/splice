@@ -10,6 +10,7 @@ import splice.core.config.InstallPaths
 import splice.core.topology.Topology
 import splice.core.topology.TopologyMessages
 import splice.core.util.Cancellables
+import splice.core.util.EnvReader
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
@@ -32,20 +33,20 @@ internal class InstallCommand {
     // so `splice install` and install.sh always agree on where wrappers and the shim land. The env
     // reader threads through every entry point (TopologyLoader.configPath idiom) so tests can pin a
     // hermetic environment — the first real CI run failed on the runner's ambient XDG_CONFIG_HOME.
-    private fun localBin(env: (String) -> String?): Path = InstallPaths(envReader = env).binDir
+    private fun localBin(env: EnvReader): Path = InstallPaths(envReader = env).binDir
 
-    private fun shareDir(env: (String) -> String?): Path = InstallPaths(envReader = env).shareDir
+    private fun shareDir(env: EnvReader): Path = InstallPaths(envReader = env).shareDir
 
-    private fun launchShimPath(env: (String) -> String?): Path = shareDir(env).resolve("splice-launch")
+    private fun launchShimPath(env: EnvReader): Path = shareDir(env).resolve("splice-launch")
 
-    internal fun init(env: (String) -> String? = System::getenv) {
+    internal fun init(env: EnvReader = EnvReader(System::getenv)) {
         val path = TopologyLoader.configPath(env)
         val existed = Files.exists(path)
         TopologyLoader.loadOrMaterialize(path)
         println(if (existed) "splice: topology already at $path" else "splice: wrote starter topology to $path")
     }
 
-    internal fun install(headArg: String?, env: (String) -> String? = System::getenv): Boolean {
+    internal fun install(headArg: String?, env: EnvReader = EnvReader(System::getenv)): Boolean {
         val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath(env))
         val launchShim = launchShimPath(env)
         check(Files.exists(launchShim)) { "launch shim not found at $launchShim (run install.sh)" }
@@ -97,7 +98,7 @@ internal class InstallCommand {
     }
 
     /** Link the `splice` admin command itself (so `splice dashboard/status/...` work as commands). */
-    internal fun installSelf(env: (String) -> String? = System::getenv): Boolean {
+    internal fun installSelf(env: EnvReader = EnvReader(System::getenv)): Boolean {
         val launchShim = launchShimPath(env)
         check(Files.exists(launchShim)) { "launch shim not found at $launchShim (run install.sh)" }
         val bin = localBin(env)
@@ -136,7 +137,7 @@ internal class InstallCommand {
     // itself) for --all, else the one head named by topology key OR wrapper command. Returns null (and
     // prints) for an unknown or ambiguous specific arg, so uninstall fails loudly instead of exiting 0
     // with no output; a null/unreadable topology falls back to removing by the literal name typed.
-    private fun uninstallTargets(headArg: String?, env: (String) -> String?): List<String>? {
+    private fun uninstallTargets(headArg: String?, env: EnvReader): List<String>? {
         val topology = runCatching {
             TopologyLoader.parse(Files.readString(TopologyLoader.configPath(env)))
         }.getOrNull()
@@ -150,7 +151,7 @@ internal class InstallCommand {
         }
     }
 
-    internal fun uninstall(headArg: String?, env: (String) -> String? = System::getenv): Boolean {
+    internal fun uninstall(headArg: String?, env: EnvReader = EnvReader(System::getenv)): Boolean {
         val commands = uninstallTargets(headArg, env) ?: return false
         val bin = localBin(env)
         var ok = true
@@ -170,7 +171,7 @@ internal class InstallCommand {
     }
 
     /** Copy the repo's launch shim into the share dir (used by install.sh / dev). */
-    internal fun installShim(repoShim: Path, env: (String) -> String? = System::getenv) {
+    internal fun installShim(repoShim: Path, env: EnvReader = EnvReader(System::getenv)) {
         Files.createDirectories(shareDir(env))
         val dst = launchShimPath(env)
         Files.copy(repoShim, dst, StandardCopyOption.REPLACE_EXISTING)
@@ -179,7 +180,7 @@ internal class InstallCommand {
     }
 
     /** The SPLICE_SHIM_VERSION marker embedded in the installed shim, or null if none/unreadable. */
-    internal fun installedShimVersion(env: (String) -> String? = System::getenv): String? {
+    internal fun installedShimVersion(env: EnvReader = EnvReader(System::getenv)): String? {
         val shim = launchShimPath(env)
         if (!Files.exists(shim)) return null
         return Cancellables.runCatchingCancellable {
@@ -188,7 +189,7 @@ internal class InstallCommand {
     }
 
     /** Non-fatal staleness message for the installed shim, or null when absent/current. */
-    internal fun shimStalenessWarning(env: (String) -> String? = System::getenv): String? {
+    internal fun shimStalenessWarning(env: EnvReader = EnvReader(System::getenv)): String? {
         val shim = launchShimPath(env)
         if (!Files.exists(shim)) return null
         val installed = installedShimVersion(env)

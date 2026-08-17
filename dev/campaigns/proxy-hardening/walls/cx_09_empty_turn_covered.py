@@ -44,13 +44,26 @@ from collections.abc import Mapping
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 
+# Each key's source is a LIST of files, read and concatenated in order (the file-list mechanism,
+# HD-24): a decomposition can move a token to a sibling file without the wall going red for a
+# reason that is not a regression. ANY missing file in a key's list makes the whole key None (the
+# vacuity guard, unchanged and strengthened — a deleted file cannot go quiet).
 PATHS = {
-    "mirror": "gateway/gateway/src/main/kotlin/splice/gateway/reasoning/Mirror.kt",
-    "pipeline": "gateway/gateway/src/main/kotlin/splice/gateway/pipeline/TurnPipeline.kt",
-    "passthrough": "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughStreamTranslator.kt",
-    "chat": "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt",
-    "responses": "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt",
-    "test": "gateway/gateway/src/test/kotlin/TurnPipelineTest.kt",
+    "mirror": ["gateway/gateway/src/main/kotlin/splice/gateway/reasoning/Mirror.kt"],
+    "pipeline": ["gateway/gateway/src/main/kotlin/splice/gateway/pipeline/TurnPipeline.kt"],
+    "passthrough": [
+        "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/"
+        "PassthroughStreamTranslator.kt",
+    ],
+    "chat": ["gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt"],
+    # HD-24 (2026-08-17): ResponsesStreamTranslator decomposed; emittedThinking's set-site and its
+    # read-into-the-outcome site moved to these two siblings.
+    "responses": [
+        "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt",
+        "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesReasoningFold.kt",
+        "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesOutcomePayload.kt",
+    ],
+    "test": ["gateway/gateway/src/test/kotlin/TurnPipelineTest.kt"],
 }
 
 REQUIRED = {
@@ -97,7 +110,10 @@ REQUIRED = {
     ],
     "responses": [
         ("emittedThinking = true", "the responses translator opens a thinking block without recording it"),
-        ("emittedThinking = reducer.emittedThinking,", "the recorded flag never reaches the outcome"),
+        # HD-24 (2026-08-17): successOutcome moved onto ResponsesOutcomePayload, reading the shared
+        # ResponsesTurnState instead of the old reducer — same field, same invariant, new receiver.
+        (("emittedThinking = reducer.emittedThinking,", "emittedThinking = state.emittedThinking,"),
+         "the recorded flag never reaches the outcome"),
     ],
     # The BEHAVIOURAL proof. A substring wall cannot execute the pipeline, so it guards the
     # existence of the cells that do: adversarial review showed four mutants that re-open this
@@ -160,9 +176,12 @@ def detect(sources: Mapping[str, str | None]) -> list[str]:
 
 def _load() -> dict[str, str | None]:
     out: dict[str, str | None] = {}
-    for key, rel in PATHS.items():
-        p = ROOT / rel
-        out[key] = code_only(p.read_text(encoding="utf-8")) if p.exists() else None
+    for key, rels in PATHS.items():
+        texts = [ROOT / rel for rel in rels]
+        if any(not p.exists() for p in texts):
+            out[key] = None
+            continue
+        out[key] = code_only("\n".join(p.read_text(encoding="utf-8") for p in texts))
     return out
 
 

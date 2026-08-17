@@ -71,9 +71,17 @@ ROOT = pathlib.Path(__file__).resolve().parents[4]
 PASS = ROOT / ("gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/"
                "PassthroughStreamTranslator.kt")
 CHAT = ROOT / "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt"
-RESP = ROOT / ("gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/"
-               "ResponsesStreamTranslator.kt")
-PATHS = {"passthrough": PASS, "chat": CHAT, "responses": RESP}
+# LIST, not a single file (HD-24 decomposition, 2026-08-17, the file-list mechanism): the dispatch
+# arm, the terminal-object harvest and the conversion verdict moved to three siblings; none of them
+# is ResponsesStreamTranslator.kt itself anymore. ANY missing file makes the whole key None (the
+# vacuity guard, unchanged and strengthened).
+RESP = [
+    ROOT / "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesEventReducer.kt",
+    ROOT / "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTerminalBackfill.kt",
+    ROOT / "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnState.kt",
+    ROOT / "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTerminalDecision.kt",
+]
+PATHS: dict[str, pathlib.Path | list[pathlib.Path]] = {"passthrough": PASS, "chat": CHAT, "responses": RESP}
 
 # Per dialect: ([carrier tokens that must be READ], [call sites proving the honest conversion]).
 # Every conversion token was measured at 0 occurrences in HEAD 5840979 and 1 after the fix, so it
@@ -123,13 +131,22 @@ REQUIRED = {
         # guards (`ops.addRefusal(reducer, obj)`) is byte-identical, so deleting that arm still
         # removes every spelling at once. The two `strIfString(...)` carriers above need no new
         # entry: the qualified call CONTAINS the old token as a substring and still matches.
+        #
+        # 2026-08-17 (HD-24 decomposition) — `addRefusal` moved from ResponsesEventOps onto
+        # ResponsesTurnState as the latch's own member: `ops.addRefusal(this, evt)` /
+        # `ops.addRefusal(reducer, obj)` both read `state.addRefusal(...)`, no reducer-as-receiver
+        # idiom needed. Same two call sites, same invariant.
         [('"response.refusal.delta", "response.refusal.done" -> ops.addRefusal(this, evt)',
-          '"response.refusal.delta", "response.refusal.done" -> addRefusal(evt)'),
+          '"response.refusal.delta", "response.refusal.done" -> addRefusal(evt)',
+          '"response.refusal.delta", "response.refusal.done" -> state.addRefusal(evt)'),
          'strIfString(if (isDelta) obj["delta"] else obj["refusal"])',
          ('if (JsonScalars.strOrEmpty(obj["type"]) == "refusal") ops.addRefusal(reducer, obj)',
           'if (strOrEmpty(obj["type"]) == "refusal") ops.addRefusal(reducer, obj)',
-          'if (strOrEmpty(obj["type"]) == "refusal") reducer.addRefusal(obj)')],
-        ["?: refusalFailure(reducer)"],
+          'if (strOrEmpty(obj["type"]) == "refusal") reducer.addRefusal(obj)',
+          'if (JsonScalars.strOrEmpty(obj["type"]) == "refusal") state.addRefusal(obj)')],
+        # HD-24: refusalFailure moved onto ResponsesTerminalDecision, reading the shared
+        # ResponsesTurnState instead of the old reducer — same call, same invariant, new receiver.
+        ["?: refusalFailure(reducer)", "?: refusalFailure(state)"],
     ),
 }
 
@@ -172,8 +189,17 @@ def _read(p: pathlib.Path) -> str | None:
     return p.read_text(encoding="utf-8") if p.exists() else None
 
 
+def _read_source(source: pathlib.Path | list[pathlib.Path]) -> str | None:
+    """A source is one path or a LIST of paths, concatenated in order. ANY missing file in a list
+    makes the whole key None — a deleted file must never go quiet by dropping out silently."""
+    if isinstance(source, list):
+        texts = [_read(p) for p in source]
+        return None if any(t is None for t in texts) else "\n".join(t for t in texts if t is not None)
+    return _read(source)
+
+
 def _live() -> dict[str, str | None]:
-    return {name: _read(p) for name, p in PATHS.items()}
+    return {name: _read_source(p) for name, p in PATHS.items()}
 
 
 # The pre-fix shape, kept as a cheap synthetic floor alongside the derived cases below: none of the

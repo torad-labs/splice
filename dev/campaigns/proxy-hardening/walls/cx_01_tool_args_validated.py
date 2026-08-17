@@ -21,7 +21,14 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 CHAT = ROOT / "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt"
-RESP = ROOT / "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt"
+# LIST, not a single file (HD-24 decomposition, 2026-08-17): a target may move the validation latch
+# and its parser to siblings. Every path must exist or the whole key reads as missing (vacuity
+# guard unchanged — see the file-list mechanism note in cx_09/w4_a).
+RESP = [
+    ROOT / "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt",
+    ROOT / "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnState.kt",
+    ROOT / "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesToolSearchParse.kt",
+]
 
 
 def detect(chat: str | None, resp: str | None) -> list[str]:
@@ -41,6 +48,15 @@ def detect(chat: str | None, resp: str | None) -> list[str]:
 
 def _read(p: pathlib.Path) -> str | None:
     return p.read_text(encoding="utf-8") if p.exists() else None
+
+
+def _read_all(paths: list[pathlib.Path]) -> str | None:
+    """Concatenate a key's file list. ANY missing file makes the whole key None — a deleted file
+    must never go quiet by dropping out of the concatenation silently."""
+    texts = [_read(p) for p in paths]
+    if any(t is None for t in texts):
+        return None
+    return "\n".join(t for t in texts if t is not None)
 
 
 OK = "toolArgsInvalid\nJson.parseToJsonElement(args)"
@@ -74,7 +90,7 @@ def selftest() -> int:
 def main() -> int:
     if "--selftest" in sys.argv:
         return selftest()
-    problems = detect(_read(CHAT), _read(RESP))
+    problems = detect(_read(CHAT), _read_all(RESP))
     if problems:
         print("CX-01 WALL RED — tool-call arguments are not validated before Success:")
         for p in problems:

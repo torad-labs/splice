@@ -22,9 +22,9 @@ public data class Harvested(val text: String, val thinking: String)
  */
 public class ResponsesHarvest {
 
-    // The ONE tool_search_call parser (ResponsesStreamTranslator.kt) — never a second hand-rolled
+    // The ONE tool_search_call parser (ResponsesToolSearchParse.kt) — never a second hand-rolled
     // reader of the same shape (the v29 copies-drift law).
-    private val frames = ResponsesFrameParse()
+    private val frames = ResponsesToolSearchParse()
 
     /** Drop empty segments so joined parts render as clean blank-line paragraphs. */
     private fun normalizeParagraphs(joined: String): String =

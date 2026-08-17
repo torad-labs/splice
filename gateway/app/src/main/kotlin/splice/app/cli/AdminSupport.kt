@@ -12,7 +12,6 @@ import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
-import java.io.File
 import java.io.IOException
 import java.net.ConnectException
 import java.net.HttpURLConnection
@@ -73,17 +72,26 @@ internal object AdminSupport {
 
     /** The running jar, so a spawned daemon reuses the exact same build.
      *
-     *  Read from the JVM's own `java.class.path` rather than by reflecting on this class's
-     *  protection domain. `java -jar splice.jar` — the only shape that launches this CLI — sets
-     *  that property to exactly the one jar, which is the same file the protection domain named.
-     *  Every other shape (a Gradle test worker, an exploded classpath) yields several entries or a
-     *  directory, fails the single-entry `.jar` test below, and falls through to the installed copy
-     *  exactly as the old `.endsWith(".jar")` guard made it. The separator check is what keeps a
-     *  multi-entry classpath ending in ".jar" from being mistaken for one path. */
+     *  Located the way [splice.app.DashboardHtml] locates the web UI — by asking the class loader
+     *  for a resource by NAME — instead of by reflecting on this class's protection domain. The
+     *  resource asked for is this object's own class file, so a `jar:` URL answers exactly the
+     *  question the protection domain used to answer ("which archive is the code running right now
+     *  in?"), and a `file:` URL is an exploded classes dir (a dev build) that falls through to the
+     *  installed copy, exactly as the old `.endsWith(".jar")` guard made it.
+     *
+     *  NOT `java.class.path` (HD-18 review): that property describes how the JVM was LAUNCHED, and
+     *  a lone `.jar` entry is not proof of `java -jar splice.jar`. A pathing jar — an IDE or JUnit
+     *  long-classpath wrapper whose manifest carries the real Class-Path — is a single entry too,
+     *  and naming it would cold-start the daemon as `java -jar <wrapper>.jar daemon`, which has no
+     *  splice Main-Class. The resource lookup cannot make that mistake: it follows the loader that
+     *  actually holds these bytes. [SELF_CLASS_RESOURCE] is the one string this costs, and
+     *  AdminSupportTest pins it to the class it names. */
     fun selfJar(): Path? {
-        val classPath = System.getProperty("java.class.path").orEmpty()
-        val single = classPath.takeIf { it.endsWith(".jar") && !it.contains(File.pathSeparatorChar) }
-        val loc = single?.let { runCatching { Paths.get(it) }.getOrNull() }
+        val loc = runCatching {
+            ClassLoader.getSystemResource(SELF_CLASS_RESOURCE)
+                ?.takeIf { it.protocol == "jar" }
+                ?.let { Paths.get(URI(it.path.substringBefore(JAR_URL_SEPARATOR))) }
+        }.getOrNull()
         if (loc != null) return loc
         val installed = home().resolve(".local").resolve("share").resolve("splice").resolve("splice.jar")
         return installed.takeIf { Files.exists(it) }
@@ -253,3 +261,9 @@ internal class DaemonLaunch {
 }
 
 private const val BOOT_LOG_TAIL_LINES = 15
+
+/** [AdminSupport]'s own class file, the resource selfJar() locates this build by. */
+private const val SELF_CLASS_RESOURCE = "splice/app/cli/AdminSupport.class"
+
+/** What a `jar:` URL puts between the archive and the entry inside it. */
+private const val JAR_URL_SEPARATOR = "!/"

@@ -8,17 +8,21 @@ valid:
         } catch (_: java.nio.file.AccessDeniedException) {
             "unreadable (AccessDeniedException)"
         }
-  # A `when` over a closed set — the catch list upstream is what makes the mapping total.
+  # A `when` over a closed set — the catch list upstream is what makes the mapping total. Only
+  # compliant where the BASE class is the thing worth reporting; see the rule header on why the
+  # same shape was wrong for TurnDriver's `unexpected` line.
   - |
-    fun gatewayBugKind(e: RuntimeException): String = when (e) {
+    fun reason(failure: Throwable): String = failure.message ?: when (failure) {
         is IllegalArgumentException -> "IllegalArgumentException"
         is IllegalStateException -> "IllegalStateException"
-        else -> "RuntimeException"
+        else -> "boundary failure"
     }
+  # When the runtime class IS the information, the throwable renders itself.
+  - 'log(errTurn("unexpected", drive, ": $e"))'
   # Classpath resources come from the loader by name, not from a class token.
   - 'val html = ClassLoader.getSystemResourceAsStream("webui/index.html")'
-  # The running jar from the JVM's own property, not from a protection domain.
-  - 'val cp = System.getProperty("java.class.path")'
+  # The running jar from this class's own resource on the loader, not from a protection domain.
+  - 'val self = ClassLoader.getSystemResource("splice/app/cli/AdminSupport.class")'
   # `is` checks are compile-time type tests, not reflection — this wall must never touch them.
   - 'val io = failure is IOException'
 invalid:

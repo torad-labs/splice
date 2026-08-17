@@ -82,6 +82,17 @@ private class ThrowingProvider(delegate: Provider) : Provider by delegate {
     override fun extraHeaders(creds: Credentials): Map<String, String> = error("synthetic gateway bug")
 }
 
+/** The shape the real bugs have: a SUBCLASS of the base the turn boundary converts. Ktor's
+ *  io.ktor.http.URLParserException extends IllegalStateException and kotlinx.serialization's
+ *  SerializationException extends IllegalArgumentException — both named in emitFailure's comment —
+ *  so the `unexpected` turn line has to survive one level of subclassing to stay useful. */
+private class SyntheticUrlParseException(message: String) : IllegalStateException(message)
+
+private class SubclassThrowingProvider(delegate: Provider) : Provider by delegate {
+    override fun extraHeaders(creds: Credentials): Map<String, String> =
+        throw SyntheticUrlParseException("synthetic bad base_url")
+}
+
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class HeadServerFailureBranchTest {
 
@@ -202,6 +213,36 @@ class HeadServerFailureBranchTest {
             assertTrue(
                 scoped.any { it.contains("perf outcome=error:unexpected") },
                 "expected the error:unexpected perf row in: $scoped",
+            )
+        } finally {
+            head.stop()
+        }
+    }
+
+    // HD-18 review: the operator-facing `unexpected` line must name the class that identifies the
+    // BUG SOURCE, which is the runtime class, not the base class the boundary happens to convert.
+    // A `when` over IllegalArgumentException/IllegalStateException is total but it is a COARSENING:
+    // it turns "URLParserException Fail to parse url" into "IllegalStateException Fail to parse
+    // url" and erases the only token that says where to look. Red against that `when`, green once
+    // the throwable renders itself.
+    @Test
+    fun `the unexpected turn line names the throwing class, not the base the boundary converts`() = runBlocking {
+        val headPort = freshPort()
+        val head = buildHead(headPort, BranchFakeAuth(), wrap = { SubclassThrowingProvider(it) })
+        head.start()
+        awaitListening(headPort)
+        val before = logs.size
+        try {
+            turn(headPort, "basic")
+            val scoped = logs.drop(before)
+            val errLines = scoped.filter { it.contains("turn ERROR unexpected") }.joinToString("\n")
+            assertTrue(
+                errLines.contains("SyntheticUrlParseException"),
+                "the subclass that identifies the bug source must survive, was: $errLines",
+            )
+            assertTrue(
+                errLines.contains("synthetic bad base_url"),
+                "the message must survive alongside it, was: $errLines",
             )
         } finally {
             head.stop()

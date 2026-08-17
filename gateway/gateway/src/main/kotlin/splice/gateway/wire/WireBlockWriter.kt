@@ -15,9 +15,11 @@ import splice.spi.WireSink
 private const val TYPE = "type"
 
 /** The content-block half of an Anthropic SSE stream: opens/closes blocks and deltas their
- *  content, delegating actual byte assembly to [frames]. The delta open-guard
- *  (`if (index.value !in open) return`) lives here beside the [open] set it reads — L3
- *  block-pairing stays a property of the object that owns the state, not of caller discipline. */
+ *  content, delegating actual byte assembly to [frames]. Every delta shape goes through the ONE
+ *  private [hotDelta] choke point, which carries the open-guard (`if (index.value !in open)
+ *  return`) beside the [open] set it reads — L3 block-pairing stays a property of the object that
+ *  owns the state, not of caller discipline, and a delta shape added later inherits the guard
+ *  instead of having to remember to copy it. */
 internal class WireBlockWriter(
     private val frames: SseFrameWriter,
     private val start: MessageStart,
@@ -66,26 +68,34 @@ internal class WireBlockWriter(
             },
         )
 
-    override suspend fun textDelta(index: WireBlockIndex, text: String) {
+    /**
+     * The single guarded entry to the hot content_block_delta path — every delta shape below goes
+     * through here, and byte assembly is [SseFrameWriter.writeDeltaFrame]'s job. Guard symmetric
+     * with [closeBlock]: never write a delta to a block that isn't open (a delta after
+     * content_block_stop would corrupt the wire) — L3 block-pairing stays a property of THIS
+     * writer, not of caller discipline.
+     */
+    private suspend fun hotDelta(index: WireBlockIndex, deltaType: String, field: String, value: String) {
         if (index.value !in open) return
-        frames.hotDelta(index, "text_delta", "text", text)
+        frames.writeDeltaFrame(index, deltaType, field, value)
+    }
+
+    override suspend fun textDelta(index: WireBlockIndex, text: String) {
+        hotDelta(index, "text_delta", "text", text)
     }
 
     override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) {
-        if (index.value !in open) return
-        frames.hotDelta(index, "thinking_delta", "thinking", thinking)
+        hotDelta(index, "thinking_delta", "thinking", thinking)
     }
 
     override suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String) {
-        if (index.value !in open) return
-        frames.hotDelta(index, "input_json_delta", "partial_json", partialJson)
+        hotDelta(index, "input_json_delta", "partial_json", partialJson)
     }
 
-    // signature_delta rides the content_block_delta frame like the token deltas; the open-block
-    // guard makes a delta to a closed/unknown index a no-op (L3 block-pairing).
+    // signature_delta rides the content_block_delta frame like the token deltas; hotDelta's
+    // open-block guard makes a delta to a closed/unknown index a no-op (L3 block-pairing).
     override suspend fun signatureDelta(index: WireBlockIndex, signature: String) {
-        if (index.value !in open) return
-        frames.hotDelta(index, "signature_delta", "signature", signature)
+        hotDelta(index, "signature_delta", "signature", signature)
     }
 
     override suspend fun closeBlock(index: WireBlockIndex) {

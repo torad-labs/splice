@@ -14,7 +14,11 @@ private const val FRAME_BUF_CAPACITY = 256
 
 /** Writes SSE frames to [write], reusing one [frameBuf] across every frame shape this emitter
  *  produces — structural frames via [frame]/[writeRawFrame], and the hand-built hot-delta shape
- *  via [hotDelta] (no JsonObject map on the token-per-token path). */
+ *  via [writeDeltaFrame] (no JsonObject map on the token-per-token path).
+ *
+ *  All three are unguarded byte assemblers by design: block-pairing state lives in
+ *  [WireBlockWriter], so the caller is what decides a frame is legal. [WireBlockWriter.hotDelta]
+ *  is the sole caller of [writeDeltaFrame] and the sole place that guard is applied. */
 internal class SseFrameWriter(private val write: FrameWrite) {
 
     // Reused for every frame assembly — never escapes the writer; not concurrent.
@@ -37,12 +41,16 @@ internal class SseFrameWriter(private val write: FrameWrite) {
     /**
      * Hot-path delta: hand-build
      * `{"type":"content_block_delta","index":N,"delta":{"type":"<deltaType>","<field>":"<escaped>"}}`
-     * without a JsonObject map. JSON string escaping is applied to [value] only. The caller (a
-     * [WireBlockWriter] delta method) is the one open-block guard — a delta to a block that isn't
-     * open would corrupt the wire, and that guard lives beside the `open` set it reads (L3
-     * block-pairing stays a property of the object that owns the state).
+     * without a JsonObject map. JSON string escaping is applied to [value] only.
+     *
+     * UNGUARDED, and named for the frame it writes rather than for the path it serves — it holds no
+     * block-pairing state and cannot tell a legal delta from wire corruption. Call it ONLY through
+     * [WireBlockWriter.hotDelta], which carries the open-block guard beside the `open` set it reads
+     * (L3 block-pairing stays a property of the object that owns the state). Nothing in Kotlin's
+     * visibility model can narrow this below module-`internal`; the guard being a choke point one
+     * level up, rather than copied per delta shape, is what keeps an unpaired delta off the wire.
      */
-    internal suspend fun hotDelta(index: WireBlockIndex, deltaType: String, field: String, value: String) {
+    internal suspend fun writeDeltaFrame(index: WireBlockIndex, deltaType: String, field: String, value: String) {
         // Assemble the WHOLE frame directly into the reused frameBuf — one toString() per token, no
         // throwaway builder/String (the old path built the payload in a fresh buildString THEN copied
         // it into frameBuf and toString()'d again — two Strings/token on the hottest path, defeating

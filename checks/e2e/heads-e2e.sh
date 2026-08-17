@@ -100,7 +100,10 @@ done
 
 pick_model() { # port -> full discovery id (prefer a cheap-looking row)
   local port="$1"
-  curl -sS -m 5 "http://127.0.0.1:$port/v1/models" | python3 -c '
+  # /v1/models sits behind the head's authorize() like every other head route, so discovery must
+  # present the local gateway credential — the same $MGMT this script already loads for /api/heads.
+  # Without it the head correctly answers authentication_error and discovery died on a KeyError.
+  curl -sS -m 5 -H "Authorization: Bearer $MGMT" "http://127.0.0.1:$port/v1/models" | python3 -c '
 import json, re, sys
 rows = [d["id"] for d in json.load(sys.stdin)["data"]]
 cheap = [r for r in rows if re.search(r"mini|spark|flash|lite", r)]
@@ -114,7 +117,7 @@ tier1() {
   model="${!model_var:-}"
   [ -n "$model" ] || model="$(pick_model "$port")" || { fail "$key/wire" "model discovery failed"; return; }
   note "[$key] tier1 wire probe on :$port model=$model"
-  if summary="$(python3 "$PROBE" --head "$key" --port "$port" --model "$model" \
+  if summary="$(SPLICE_MGMT_KEY="$MGMT" python3 "$PROBE" --head "$key" --port "$port" --model "$model" \
       --ttfb-ms "${E2E_TTFB_MS:-20000}" --first-delta-ms "${E2E_FIRST_DELTA_MS:-45000}" \
       --total-ms "${E2E_TOTAL_MS:-120000}" --gap-ms "${E2E_GAP_MS:-30000}")"; then
     note "    $summary"
@@ -128,7 +131,7 @@ except Exception: print("probe crashed")')"
   fi
   local ct
   ct="$(curl -sS -m 10 "http://127.0.0.1:$port/v1/messages/count_tokens" \
-        -H 'Content-Type: application/json' \
+        -H 'Content-Type: application/json' -H "Authorization: Bearer $MGMT" \
         -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}]}")"
   if printf '%s' "$ct" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert isinstance(d["input_tokens"], int)' 2>/dev/null; then
     pass "$key/count_tokens"

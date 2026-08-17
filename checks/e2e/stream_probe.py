@@ -17,6 +17,7 @@ Stdlib only — no dependencies.
 import argparse
 import http.client
 import json
+import os
 import sys
 import time
 
@@ -142,9 +143,17 @@ def main():
         "max_tokens": args.max_tokens,
         "messages": [{"role": "user", "content": args.prompt}],
     })
+    # Every head route sits behind authorize(), so the probe must present the local gateway
+    # credential exactly as a real client does. SPLICE_MGMT_KEY is supplied by heads-e2e.sh from
+    # the same state file it reads for /api/heads; without it the head answers 401 and the probe
+    # reports "no SSE events" for what is really a missing header.
+    headers = {"Content-Type": "application/json"}
+    mgmt = os.environ.get("SPLICE_MGMT_KEY", "")
+    if mgmt:
+        headers["Authorization"] = f"Bearer {mgmt}"
     conn = http.client.HTTPConnection("127.0.0.1", args.port, timeout=60)
     t0 = time.monotonic()
-    conn.request("POST", "/v1/messages", body=body, headers={"Content-Type": "application/json"})
+    conn.request("POST", "/v1/messages", body=body, headers=headers)
     resp = conn.getresponse()
     ttfb_ms = int((time.monotonic() - t0) * 1000)
 

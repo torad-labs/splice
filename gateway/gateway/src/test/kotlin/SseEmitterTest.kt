@@ -11,7 +11,6 @@ import splice.core.turn.ErrorType
 import splice.core.turn.Usage
 import splice.gateway.wire.SseEmitter
 import splice.gateway.wire.SseEmitterFactory
-import splice.gateway.wire.TerminalEnvelope
 import splice.gateway.wire.TerminalMessage
 import java.io.IOException
 import java.util.concurrent.CancellationException
@@ -164,7 +163,7 @@ class SseEmitterTest {
 
     @Test
     fun `non-stream terminal message derives the same stop reasons`() {
-        val msg = TerminalEnvelope().terminalMessageJson(
+        val msg = SseEmitter.TerminalEnvelope().terminalMessageJson(
             TerminalMessage(
                 id = "msg_1",
                 model = "m",

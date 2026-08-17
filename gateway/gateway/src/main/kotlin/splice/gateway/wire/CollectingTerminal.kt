@@ -53,7 +53,7 @@ public class CollectingTerminal(
     private val ended = AtomicBoolean(false)
 
     // The L3 terminal envelope (stop_reason derivation lives in SseEmitter.kt), held not copied.
-    private val envelope = TerminalEnvelope()
+    private val envelope = SseEmitter.TerminalEnvelope()
 
     override val hasEnded: Boolean get() = ended.get()
 

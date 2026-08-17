@@ -28,6 +28,19 @@ public fun interface RawSseFlush {
 }
 
 /**
+ * Writes one already-serialized frame to the client.
+ *
+ * Suspending, which is the contract that matters: the write can back-pressure on the client socket,
+ * and a failure out of it is how the head learns the client is gone. [splice.gateway.wire.SseEmitter]
+ * is a strict frame-level user of it — it never batches, and every frame it hands over is complete.
+ * The third rung of this file's write-port ladder: FrameWrite -> ImmediateSseWriter.write ->
+ * RawSseWrite + RawSseFlush.
+ */
+public fun interface FrameWrite {
+    public suspend operator fun invoke(frame: String)
+}
+
+/**
  * Wraps a raw SSE [writeRaw]/[flushRaw] pair. Every frame is written AND flushed immediately.
  * [flush] stays public for the head's finally-block (abandon / exception paths); it is a plain
  * push of the underlying writer and safe to call after every frame already flushed.

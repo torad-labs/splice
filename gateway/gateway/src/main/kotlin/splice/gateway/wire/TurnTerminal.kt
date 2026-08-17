@@ -6,10 +6,26 @@
 // same machinery as the stream:true path instead of a drifting parallel copy.
 package splice.gateway.wire
 
+import kotlinx.serialization.json.JsonObject
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
 import splice.spi.WireSink
 import java.util.concurrent.atomic.AtomicLong
+
+/**
+ * Builds the (non-standard) usage payload Claude Code reads from gateways.
+ *
+ * Injected so the emitter stays hud-agnostic. Was a `typealias` for the raw function type, which is
+ * a NAME for a shape and not a type of its own: any `(Usage?) -> JsonObject` satisfied it, and the
+ * alias bought documentation without buying non-transposability (HD-22). Null usage is the ordinary
+ * "no usage known for this turn" case, not an error.
+ *
+ * Held here (both terminal implementations already live in this file's package) rather than
+ * duplicated per sink, the same reasoning [MessageIds] below states for the message-id minter.
+ */
+public fun interface UsagePayloadBuilder {
+    public operator fun invoke(usage: Usage?): JsonObject
+}
 
 public interface TurnTerminal : WireSink {
     /** True once this turn's ending is SETTLED — a terminal or error durably reached the wire,

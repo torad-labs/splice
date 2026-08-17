@@ -70,20 +70,38 @@ public sealed class Command {
     }
 }
 
+/**
+ * Builds one [Command] from the full argv — the value half of the verb table.
+ *
+ * It is handed the WHOLE `args` array, not the tail, which is the contract the raw shape hid: every
+ * arm indexes from 1 (`a.getOrNull(1)`, `a.drop(1)`) because element 0 is the verb that selected it.
+ * An arm written against a pre-stripped array would silently drop its first real argument.
+ *
+ * Named in HD-22 wave 4b, and the LAST seam the wave closed: it sits inside a generic type argument,
+ * which the dormant rule's `type_projection` carve-out exempted. That carve-out was dropped at
+ * promotion — measured, it was masking exactly this one declaration and nothing else.
+ */
+internal fun interface CommandFactory {
+    operator fun invoke(args: Array<String>): Command
+}
+
 // FILE SCOPE ON PURPOSE: the parse table (verb -> factory) is built ONCE for the process rather than
 // per parse. A map keeps parse() at trivial complexity (no 10-arm `when`, which would trip
 // CyclomaticComplexMethod). The COMMANDS are the sealed type; this is just parsing.
-private val verbs: Map<String, (Array<String>) -> Command> = mapOf(
-    "doctor" to { Command.Doctor }, "version" to { Command.Version },
-    "shim-version" to { Command.ShimVersion },
-    "init" to { Command.Init },
-    "install" to { a -> Command.Install(a.getOrNull(1)) },
-    "uninstall" to { a -> Command.Uninstall(a.getOrNull(1)) },
-    "login" to { a -> Command.Login(a.getOrNull(1)) },
-    "setup" to { Command.Setup }, "status" to { Command.Status }, "restart" to { Command.Restart },
-    "dashboard" to { Command.Dashboard },
-    "key" to { a -> Command.Key(a.drop(1)) },
-    "logs" to { a -> Command.Logs(a.drop(1)) },
+private val verbs: Map<String, CommandFactory> = mapOf(
+    "doctor" to CommandFactory { Command.Doctor },
+    "version" to CommandFactory { Command.Version },
+    "shim-version" to CommandFactory { Command.ShimVersion },
+    "init" to CommandFactory { Command.Init },
+    "install" to CommandFactory { a -> Command.Install(a.getOrNull(1)) },
+    "uninstall" to CommandFactory { a -> Command.Uninstall(a.getOrNull(1)) },
+    "login" to CommandFactory { a -> Command.Login(a.getOrNull(1)) },
+    "setup" to CommandFactory { Command.Setup },
+    "status" to CommandFactory { Command.Status },
+    "restart" to CommandFactory { Command.Restart },
+    "dashboard" to CommandFactory { Command.Dashboard },
+    "key" to CommandFactory { a -> Command.Key(a.drop(1)) },
+    "logs" to CommandFactory { a -> Command.Logs(a.drop(1)) },
 )
 
 /** argv -> Command. Was `Command.parse` on the type's own static block — the shape the same

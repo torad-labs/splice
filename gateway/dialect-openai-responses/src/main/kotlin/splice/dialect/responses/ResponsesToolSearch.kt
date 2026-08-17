@@ -85,7 +85,7 @@ internal class ResponsesToolSearchController(
     private val policy: ToolDeferralPolicy,
     private val emitStrict: Boolean,
     private val forceStrictFalse: Boolean,
-    private val decodeReasoningEnvelope: (String) -> JsonObject?,
+    private val decodeReasoningEnvelope: ReasoningEnvelopeDecoder,
 ) : ToolSearchController {
 
     private val continuation = ResponsesContinuation()
@@ -97,7 +97,7 @@ internal class ResponsesToolSearchController(
         val items = buildList {
             // this round's reasoning items, ONLY when non-empty (a dangling reasoning item with no
             // following item is a 400 — the same idiom ResponsesFoldController.continuation uses).
-            addAll(round.outcome.reasoningEnvelopes.mapNotNull(decodeReasoningEnvelope))
+            addAll(round.outcome.reasoningEnvelopes.mapNotNull(decodeReasoningEnvelope::invoke))
             // The round's own prose, already on the client's wire — replay it as context so the
             // model does not re-say it (ResponsesReanchorController.assistantText's sibling rule).
             // Gated on emittedText (not just bodyText.isNotEmpty()): on FoldRunner's buffered path

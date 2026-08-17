@@ -17,7 +17,7 @@ public const val DEFAULT_MAX_CONCURRENT: Int = 16
 public class RequestMaterializationGate(maxConcurrent: Int = DEFAULT_MAX_CONCURRENT) {
     private val semaphore = Semaphore(maxConcurrent.coerceAtLeast(1))
 
-    public suspend fun <T> withLease(block: suspend () -> T): T = semaphore.withPermit { block() }
+    public suspend fun <T> withLease(block: MaterializedRequest<T>): T = semaphore.withPermit { block() }
 
     /** Non-suspending lease attempt — null when every permit is busy. Cheap best-effort endpoints
      *  (count_tokens) fast-fail on contention instead of queueing unboundedly on the permits real
@@ -25,7 +25,7 @@ public class RequestMaterializationGate(maxConcurrent: Int = DEFAULT_MAX_CONCURR
      *  process-shared semaphore and stall every head's turn materialization). Null is exclusively
      *  the contention signal; the `Any` bound makes a legitimately-null block result unrepresentable
      *  at compile time (review 2026-07-22 round 3). */
-    public suspend fun <T : Any> tryWithLease(block: suspend () -> T): T? {
+    public suspend fun <T : Any> tryWithLease(block: MaterializedRequest<T>): T? {
         if (!semaphore.tryAcquire()) return null
         return try {
             block()

@@ -51,6 +51,45 @@ private const val MAX_SPURIOUS_WAKEUPS = 1024
 // UTF-8 codepoints are at most 4 bytes; carry never needs more than that across a chunk edge.
 private const val UTF8_MAX_BYTES = 4
 
+/**
+ * Reports the SIZE of one chunk lifted off the socket, before any decoding.
+ *
+ * Wire bytes, not characters and not events: this is what `sse_bytes_in` on the perf row means, and
+ * the reason it is a seam at all is that the reader is the only place those bytes are visible —
+ * after decode the chunk boundary is gone.
+ */
+public fun interface BytesRead {
+    public operator fun invoke(count: Int)
+}
+
+/**
+ * Reports one SSE line the reader could not make sense of, with the offending text.
+ *
+ * The contract is that it is a REPORT and not a throw: a malformed frame must never crash the
+ * stream (the port's literal invariant), so the reader keeps walking and this is where the evidence
+ * goes. Production wires the head log.
+ */
+public fun interface MalformedLine {
+    public operator fun invoke(line: String)
+}
+
+/**
+ * Opt-in observer of the FULL decoded body text as it arrives — every character, not only the
+ * `data:`-prefixed lines the event flow yields.
+ *
+ * Exists for exactly one job: letting a zero-event terminal classify a non-SSE dead-head body (an
+ * HTML or JSON login page), which is invisible to a reader that only parses `data:`. Null at every
+ * hot-path caller, matching the `perf: TurnPerf? = null` idiom, so the no-per-chunk-allocation
+ * invariant holds.
+ *
+ * The RETURN is the part the shape cannot say: false means "I have seen enough, stop calling me",
+ * and the reader drops the reference for the rest of the stream. It is not a success flag, and
+ * returning false does not end the stream.
+ */
+public fun interface RawTextObserver {
+    public operator fun invoke(text: CharSequence): Boolean
+}
+
 /** The SSE line/event reader. Stateless — every buffer it needs is per-[sseJsonEvents] local state,
  *  so callers construct one wherever they used to call the top-level function. */
 public class SseReader {
@@ -62,9 +101,9 @@ public class SseReader {
     // when null the added cost is one null check per chunk, preserving the no-per-chunk-alloc invariant.
     public fun sseJsonEvents(
         channel: ByteReadChannel,
-        onBytes: (Int) -> Unit = {},
-        onMalformed: (String) -> Unit = {},
-        onRawText: ((CharSequence) -> Boolean)? = null,
+        onBytes: BytesRead = BytesRead {},
+        onMalformed: MalformedLine = MalformedLine {},
+        onRawText: RawTextObserver? = null,
         maxLineChars: Int = MAX_SSE_LINE_CHARS,
         maxEventChars: Int = MAX_SSE_EVENT_CHARS,
     ): Flow<JsonObject> = flow {
@@ -96,10 +135,10 @@ public class SseReader {
     }
 
     private fun notifyRawObserver(
-        observer: ((CharSequence) -> Boolean)?,
+        observer: RawTextObserver?,
         lineBuffer: StringBuilder,
         before: Int,
-    ): ((CharSequence) -> Boolean)? {
+    ): RawTextObserver? {
         if (observer == null || lineBuffer.length <= before) return observer
         return observer.takeIf { it(lineBuffer.subSequence(before, lineBuffer.length)) }
     }
@@ -263,7 +302,7 @@ private class DecodeScratch {
  * pending buffer at EOF is discarded (the outer loop never flushes).
  */
 private class SseEventAssembler(
-    private val onMalformed: (String) -> Unit,
+    private val onMalformed: MalformedLine,
     private val maxEventChars: Int,
 ) {
     // Joined `data:` field values for the event not yet dispatched. A single `data:` line with an

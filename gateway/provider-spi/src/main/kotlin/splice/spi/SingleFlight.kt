@@ -22,6 +22,19 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.CoroutineContext
 
+/**
+ * The work a wave of concurrent callers COALESCES onto — in this tree, always a credential refresh.
+ *
+ * Its contract is the single-flight invariant itself and nothing weaker: it runs EXACTLY ONCE per
+ * wave however many callers pile up and however many of them are cancelled mid-wait, and it runs in
+ * a scope [SingleFlight] owns rather than any caller's. So it must not close over one caller's
+ * cancellation, one caller's deadline, or anything else that would make "whoever got there first"
+ * observable in the shared result every survivor receives.
+ */
+public fun interface CoalescedWork<T> {
+    public suspend operator fun invoke(): T
+}
+
 public class SingleFlight<T>(
     // The refresh runs here, off the caller's coroutine. Injectable for tests (a test dispatcher);
     // the background dispatcher is only the production default for a background auth refresh.
@@ -39,7 +52,7 @@ public class SingleFlight<T>(
     private var inflight: Deferred<T>? = null
 
     /** Runs [block] once even under concurrent callers; everyone awaits the same shared result. */
-    public suspend fun run(block: suspend () -> T): T {
+    public suspend fun run(block: CoalescedWork<T>): T {
         val shared = mutex.withLock {
             // reuse only a still-running refresh; a settled one means the next wave starts fresh.
             inflight?.takeIf { it.isActive } ?: scope.async { block() }.also { inflight = it }

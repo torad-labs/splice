@@ -31,13 +31,14 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.put
 import splice.control.ControlServer
+import splice.control.DashboardPage
 import splice.control.LaunchService
 import splice.control.LaunchSpec
 import splice.control.ManagedHead
+import splice.control.ShutdownDaemon
 import splice.core.auth.AuthProvider
 import splice.core.auth.CLIENT_AUTH_KIND
 import splice.core.auth.ClientAuthProvider
-import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
@@ -59,6 +60,7 @@ import splice.core.util.Cancellables
 import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
 import splice.dialect.chat.ChatQuirks
+import splice.dialect.passthrough.IdentityHeaders
 import splice.dialect.passthrough.PassthroughProvider
 import splice.dialect.passthrough.PassthroughQuirks
 import splice.dialect.passthrough.PassthroughQuirksDefaults
@@ -77,7 +79,6 @@ import splice.provider.codex.CodexAuthProvider
 import splice.provider.codex.CodexOAuthEndpoints
 import splice.provider.codex.CodexProvider
 import splice.provider.codex.CodexQuirks
-import splice.provider.codex.RefreshedTokens
 import splice.provider.grok.GrokAuthProvider
 import splice.provider.grok.GrokOAuthEndpoints
 import splice.provider.grok.GrokProvider
@@ -174,7 +175,7 @@ internal class HeadLifecycle(
         statePaths: StatePaths,
         heads: MutableMap<String, ManagedHead>,
         log: LogSink,
-        assemble: (String, HeadConfig, ProviderConfig) -> ManagedHead,
+        assemble: HeadAssembly,
     ): LinkedHashMap<String, String> {
         val failed = LinkedHashMap<String, String>()
         // CTL-005: name an out-of-range port before the head hits an opaque bind-time error.
@@ -274,7 +275,7 @@ internal class HeadLifecycle(
         heads: Collection<Head>,
         budgetMs: Long,
         log: LogSink,
-        stopControl: () -> Unit,
+        stopControl: StopControl,
     ) {
         val stopFailureHandler = CoroutineExceptionHandler { _, e ->
             log("[daemon] head stop failed uncaught: ${e::class.simpleName}: ${e.message}\n")
@@ -321,7 +322,7 @@ internal class PassthroughAssembly {
         auth: RefreshableAuthProvider,
         base: PassthroughQuirks,
         baseHeaders: Map<String, String> = emptyMap(),
-        identityHeaders: () -> Map<String, String> = { emptyMap() },
+        identityHeaders: IdentityHeaders = IdentityHeaders { emptyMap() },
     ): Provider = PassthroughProvider(
         tuning = ProviderTuning(
             key = ctx.key,
@@ -465,7 +466,7 @@ internal class ProviderAssembly(
     private val statePaths: StatePaths,
     private val probeScope: CoroutineScope,
     private val log: LogSink,
-    private val refreshCall: suspend (tokenUrl: String, refreshToken: String) -> RefreshAttempt<RefreshedTokens>,
+    private val refreshCall: TokenUrlRefreshCall,
 ) {
     private val buildInputs = HeadBuildInputs()
     private val passthroughAssembly = PassthroughAssembly()
@@ -764,7 +765,7 @@ internal class ProviderAssembly(
 internal class DashboardHtml {
     internal fun source(
         distPath: Path,
-        classpathHtml: () -> String? = {
+        classpathHtml: ClasspathHtml = ClasspathHtml {
             // Asked of the class loader by absolute resource name, not of a class token via
             // `Daemon::class.java`. The shadow jar packages the dashboard at `webui/index.html`
             // (app/build.gradle.kts `from(dashboard) { into("webui") }`) and the daemon runs as
@@ -774,7 +775,7 @@ internal class DashboardHtml {
                 ?.bufferedReader()
                 ?.use { it.readText() }
         },
-    ): () -> String = {
+    ): DashboardPage = DashboardPage {
         Cancellables.runCatchingCancellable { Files.readString(distPath) }
             .getOrNull()
             ?: Cancellables.runCatchingCancellable { classpathHtml() }.getOrNull()
@@ -785,11 +786,10 @@ internal class DashboardHtml {
 public class Daemon(
     private val topology: Topology,
     private val statePaths: StatePaths,
-    private val dashboardHtml: () -> String,
+    private val dashboardHtml: DashboardPage,
     private val log: LogSink = LogSink { System.err.print(it) },
-    private val shutdownDaemon: () -> Unit = {},
-    private val refreshCall: suspend (tokenUrl: String, refreshToken: String) -> RefreshAttempt<RefreshedTokens> =
-        CodexRefresh()::refresh,
+    private val shutdownDaemon: ShutdownDaemon = ShutdownDaemon {},
+    private val refreshCall: TokenUrlRefreshCall = TokenUrlRefreshCall(CodexRefresh()::refresh),
     // JW-04: the booted config identity (sha-256 of the parsed bytes + the resolved path).
     // Defaults keep every existing test constructor compiling; Main always passes both.
     private val topologyDigest: String = "",

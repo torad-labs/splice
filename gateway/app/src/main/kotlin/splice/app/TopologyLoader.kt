@@ -6,6 +6,7 @@ package splice.app
 
 import com.akuleshov7.ktoml.Toml
 import kotlinx.serialization.decodeFromString
+import splice.control.TopologyStale
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
@@ -80,7 +81,7 @@ command = "claude-openrouter"
      *  signal, never /health. Lives here rather than beside its Daemon caller because the fact it
      *  computes is this loader's (Kotlin style law, 2026-08-15: it can no longer be a file-level
      *  helper, and [currentDigest] is the thing it wraps). */
-    internal fun staleProbe(path: Path?, bootDigest: String): () -> Boolean = {
+    internal fun staleProbe(path: Path?, bootDigest: String): TopologyStale = TopologyStale {
         val now = path?.let { currentDigest(it) }
         now != null && bootDigest.isNotEmpty() && now != bootDigest
     }

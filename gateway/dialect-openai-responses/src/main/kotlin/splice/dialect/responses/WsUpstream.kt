@@ -76,6 +76,66 @@ public class WsConnection internal constructor(
 }
 
 /**
+ * Opens one upstream WebSocket to [java.net.URI] with the handshake headers, wiring the given
+ * listener as the socket's sole consumer.
+ *
+ * A seam because a live server is not a test dependency: production wires [JdkWebSocketConnector],
+ * and a test scripts a fake socket that feeds the listener frames on demand. Suspending because the
+ * real one is a network connect with its own timeout.
+ */
+public fun interface WsConnector {
+    public suspend operator fun invoke(
+        uri: URI,
+        headers: Map<String, String>,
+        listener: WebSocket.Listener,
+    ): WebSocket
+}
+
+/**
+ * Whether this event ENDS the round — the caller's dialect knowledge, which the transport does not
+ * have and must not guess.
+ *
+ * The consequence is ownership of the connection: true returns it to the pool for reuse, so a
+ * predicate that answers too early strands live frames in the next round's inbox, and one that
+ * never answers holds the connection until the stream tears.
+ */
+public fun interface TerminalEvent {
+    public operator fun invoke(event: JsonObject): Boolean
+}
+
+/**
+ * Builds the frame to SEND, given the live connection it will be sent on.
+ *
+ * It runs AFTER the connection is acquired, and that ordering is the whole reason it is a function
+ * rather than a `String` parameter: the chaining layer picks full-vs-incremental against the
+ * acquired connection's GENERATION, which does not exist until the connection does.
+ */
+public fun interface RoundFrame {
+    public operator fun invoke(connection: WsConnection): String
+}
+
+/**
+ * Whether this connection's round has already seen its terminal event.
+ *
+ * Read by the frame listener, on the socket's callback thread, to classify a late frame: after the
+ * terminal, an arriving frame belongs to a round that is over and cannot be delivered to anyone.
+ */
+public fun interface TerminalSeen {
+    public operator fun invoke(): Boolean
+}
+
+/**
+ * Reports a protocol anomaly — a binary frame, unparseable JSON, or an overflowing inbox.
+ *
+ * Not a log call: it KILLS the owning connection, and the caller falls back to SSE. That is the
+ * NEVER-BELOW-STATUS-QUO rule made mechanical — a WebSocket that misbehaves costs a reconnect and a
+ * slower path, never a failed turn.
+ */
+public fun interface ProtocolAnomaly {
+    public operator fun invoke()
+}
+
+/**
  * The WebSocket upstream: a bounded per-key connection registry plus the one operation the head
  * needs — [round]: send ONE request frame, get the round's events as a Flow, or `null` meaning
  * "use the SSE path for this round" (connect failed / connection busy / first event never came).
@@ -91,10 +151,9 @@ public class WsUpstream(
     private val log: LogSink = LogSink {},
     /** Injectable socket factory — tests script a fake WebSocket without a live server. Receives
      *  the wss URI, the handshake headers, and the listener the socket must feed. */
-    private val connector: suspend (URI, Map<String, String>, WebSocket.Listener) -> WebSocket =
-        { uri, headers, listener ->
-            JdkWebSocketConnector().jdkConnect(uri, headers, listener, CONNECT_TIMEOUT_MS)
-        },
+    private val connector: WsConnector = WsConnector { uri, headers, listener ->
+        JdkWebSocketConnector().jdkConnect(uri, headers, listener, CONNECT_TIMEOUT_MS)
+    },
 ) {
 
     // LRU by round-completion (touched on successful reuse); oldest evicted at the cap. Same
@@ -121,8 +180,8 @@ public class WsUpstream(
         key: String,
         headers: Map<String, String>,
         wssUrl: String,
-        isTerminal: (JsonObject) -> Boolean,
-        frameFor: (WsConnection) -> String,
+        isTerminal: TerminalEvent,
+        frameFor: RoundFrame,
     ): Flow<JsonObject>? {
         val conn = acquire(key, headers, wssUrl) ?: return null
         // Between winning the busy flag and handing back a flow there are two suspension points,
@@ -288,7 +347,7 @@ public class WsUpstream(
         conn: WsConnection,
         key: String,
         first: JsonObject,
-        isTerminal: (JsonObject) -> Boolean,
+        isTerminal: TerminalEvent,
     ): Flow<JsonObject> {
         var completed = isTerminal(first)
         if (completed) conn.terminalSeen.set(true)
@@ -386,8 +445,8 @@ private const val INBOX_CAPACITY = 1024
 internal class InboxListener(
     private val inbox: Channel<JsonObject>,
     private val log: LogSink,
-    private val terminalSeen: () -> Boolean,
-    private val onAnomaly: () -> Unit,
+    private val terminalSeen: TerminalSeen,
+    private val onAnomaly: ProtocolAnomaly,
 ) : WebSocket.Listener {
     private val assembly = StringBuilder()
 

@@ -16,12 +16,13 @@ import splice.core.turn.Usage
 import splice.core.util.LogSink
 import splice.gateway.compact.CompactStats
 import splice.gateway.reasoning.Mirror
+import splice.gateway.usage.OutputClamp
 import splice.gateway.wire.TurnTerminal
 
 public class TurnPipeline(
     private val compactStats: CompactStats,
     private val log: LogSink,
-    private val clampOutput: (Long) -> Long,
+    private val clampOutput: OutputClamp,
     // Operator knob (mirror_reasoning): false stops the transcript mirror while text-mode
     // display is unaffected. Default true = the measured codex distillation-loop doctrine.
     private val mirrorReasoning: Boolean = true,

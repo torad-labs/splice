@@ -30,16 +30,17 @@ import splice.core.util.DaemonLog
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.spi.BufferCapacity
+import splice.spi.ClientGone
 import splice.spi.StreamTranslator
 import splice.spi.TerminalStates
-import splice.spi.WatchdogFired
+import splice.spi.WatchdogProbe
 import splice.spi.WireSink
 import java.io.IOException
 import java.util.concurrent.CancellationException
 
 public data class PassthroughTurnContext(
-    val clientGone: () -> Boolean,
-    val watchdogFired: () -> WatchdogFired?,
+    val clientGone: ClientGone,
+    val watchdogFired: WatchdogProbe,
     val idleCapMs: Long,
     val totalCapMs: Long,
     /** Daemon log sink (Main.persistentLogger): writes BOTH stderr and daemon.log, which is what

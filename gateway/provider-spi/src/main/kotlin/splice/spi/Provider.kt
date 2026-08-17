@@ -37,8 +37,8 @@ public data class BuiltTurn(
  *  a REAL client-liveness probe (flipped when a downstream write fails — the head owns it; a
  *  provider must never hardcode it, that makes ClientAbandoned unreachable dead code). */
 public data class TurnSignals(
-    val watchdogFired: () -> WatchdogFired?,
-    val clientGone: () -> Boolean,
+    val watchdogFired: WatchdogProbe,
+    val clientGone: ClientGone,
 )
 
 /** The dialect-invariant identity a provider exposes: which head it is, its catalog, auth, budget.

@@ -23,6 +23,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.INVALID_GRANT_REASON
 import splice.core.auth.InvalidGrantLatch
 import splice.core.auth.RefreshAttempt
+import splice.core.auth.RefreshCall
 import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.Cancellables
@@ -59,7 +60,7 @@ public class KimiAuthProvider(
     private val authCacheMs: Long = DEFAULT_CACHE_MS,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
     /** POST grant_type=refresh_token to auth.kimi.com's token URL; returns the classified attempt. */
-    private val refreshCall: suspend (refreshToken: String) -> RefreshAttempt<KimiRefreshedTokens>,
+    private val refreshCall: RefreshCall<KimiRefreshedTokens>,
     /** G17: scope for background prefetch in the proactive window; null keeps the blocking path. */
     private val prefetchScope: CoroutineScope? = null,
     /** Daemon log sink (Main.persistentLogger): writes BOTH stderr and daemon.log, which is what

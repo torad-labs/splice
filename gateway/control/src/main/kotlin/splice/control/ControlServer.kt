@@ -102,14 +102,14 @@ public class ControlServer(
     private val heads: Map<String, ManagedHead>,
     private val config: ConfigService,
     private val mgmtKey: MgmtKey,
-    private val dashboardHtml: () -> String,
+    private val dashboardHtml: DashboardPage,
     private val log: LogSink,
     private val launchService: LaunchService? = null,
-    private val shutdownDaemon: () -> Unit = {},
+    private val shutdownDaemon: ShutdownDaemon = ShutdownDaemon {},
     // Live count of heads that failed to assemble or start (Daemon.start's `failed` map) — lets
     // the /health readyHeads protocol converge on a degraded boot instead of waiting forever for
     // a head that will never become ready (review 2026-07-22 round 3).
-    private val failedHeads: () -> Int = { 0 },
+    private val failedHeads: FailedHeads = FailedHeads { 0 },
     // Total CONFIGURED heads (topology). The readyHeads + failedHeads == heads invariant only holds
     // against the configured total: an assembly-failed head is counted in failedHeads but is NEVER
     // in the `heads` map, so reporting heads.size broke the invariant for it (review 2026-07-23).
@@ -119,8 +119,8 @@ public class ControlServer(
     // to the shim, doctor, and the dashboard.
     private val topologyDigest: String = "",
     private val configPath: String = "",
-    private val topologyStale: () -> Boolean = { false },
-    private val turnPathStalled: () -> List<String> = { emptyList() },
+    private val topologyStale: TopologyStale = TopologyStale { false },
+    private val turnPathStalled: TurnPathStalled = TurnPathStalled { emptyList() },
 ) {
     private val json = Json { ignoreUnknownKeys = true }
     private val scalars = ScalarJson()
@@ -195,7 +195,7 @@ public class ControlServer(
         server = null
     }
 
-    private suspend fun guarded(call: ApplicationCall, block: suspend () -> Unit) {
+    private suspend fun guarded(call: ApplicationCall, block: MgmtRoute) {
         if (!mgmtKey.matchesBearer(call.request.headers["Authorization"])) {
             call.respondText(
                 buildJsonObject { put("error", "unauthorized") }.toString(),
@@ -434,12 +434,12 @@ private class StatuslineBodyTooLarge : RuntimeException()
 internal class ControlPayloads( // internal (was private) so ControlHealthTest can pin the ok/stall contract
     private val heads: Map<String, ManagedHead>,
     private val config: ConfigService,
-    private val failedHeads: () -> Int,
+    private val failedHeads: FailedHeads,
     private val configuredHeads: Int,
     private val topologyDigest: String = "",
     private val configPath: String = "",
-    private val topologyStale: () -> Boolean = { false },
-    private val turnPathStalled: () -> List<String> = { emptyList() },
+    private val topologyStale: TopologyStale = TopologyStale { false },
+    private val turnPathStalled: TurnPathStalled = TurnPathStalled { emptyList() },
 ) {
     private val scalars = ScalarJson()
 

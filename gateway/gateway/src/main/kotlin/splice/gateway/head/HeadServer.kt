@@ -356,7 +356,7 @@ public class HeadServer(
     private suspend fun <T : Any> materializeOrRespond(
         call: ApplicationCall,
         fastFail: Boolean = false,
-        block: suspend () -> T,
+        block: MaterializedRequest<T>,
     ): T? = try {
         if (fastFail) {
             val leased = deps.requestMaterializationGate.tryWithLease(block)

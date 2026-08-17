@@ -35,6 +35,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.INVALID_GRANT_REASON
 import splice.core.auth.InvalidGrantLatch
 import splice.core.auth.RefreshAttempt
+import splice.core.auth.RefreshCall
 import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.auth.SYNTHETIC_EXPIRY_TTL_MS
@@ -44,6 +45,7 @@ import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
+import splice.core.util.WallClockIso
 import splice.spi.CredentialLock
 import splice.spi.LifecycleScope
 import splice.spi.ProcessDispatchers
@@ -87,9 +89,9 @@ public class GrokAuthProvider(
     private val authPath: Path,
     private val authCacheMs: Long = DEFAULT_CACHE_MS,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
-    private val nowIso: () -> String = { Instant.ofEpochMilli(System.currentTimeMillis()).toString() },
+    private val nowIso: WallClockIso = WallClockIso { Instant.ofEpochMilli(System.currentTimeMillis()).toString() },
     /** POST grant_type=refresh_token to auth.x.ai's token URL; returns the classified attempt. */
-    private val refreshCall: suspend (refreshToken: String) -> RefreshAttempt<GrokRefreshedTokens>,
+    private val refreshCall: RefreshCall<GrokRefreshedTokens>,
     // Injectable so the daemon runs the prefetch LAUNCH on probeScope and tests stay self-contained.
     // SingleFlight isolates the shared refresh from any single request's await cancellation (a peer
     // awaiting it must not be killed); the init block below ties that shared refresh to THIS scope's

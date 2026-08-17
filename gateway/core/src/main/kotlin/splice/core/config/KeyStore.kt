@@ -20,6 +20,22 @@ import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.StandardOpenOption
 
+/**
+ * One read-modify-write of `keys.toml`, performed while the sibling `.lock` is held.
+ *
+ * Named rather than left a bare `() -> T` (HD-22) because the seam is the SH-11 invariant itself:
+ * whatever runs here may re-read the file and rewrite it knowing no other process can interleave,
+ * and — the part the shape cannot say — everything that reads-then-writes MUST be inside one of
+ * these. A `set` that read outside the section and wrote inside it would still lose an update, so
+ * this type is the boundary of the lost-update fix, not a formatting of `{ … }`.
+ *
+ * Deliberately private: the lock is KeyStore's own, and nothing outside this file may claim to be
+ * running under it.
+ */
+private fun interface StoreEdit<T> {
+    operator fun invoke(): T
+}
+
 public class KeyStore(
     public val path: Path,
 ) {
@@ -86,7 +102,7 @@ public class KeyStore(
      *  Bounded, then FAILS LOUDLY — an unlocked concurrent RMW is the exact lost-update this
      *  exists to prevent, so unlike the read-mostly credential refresh there is no unlocked
      *  degrade for a WRITE. Holds are microseconds; 5s of contention means something is wedged. */
-    private fun <T> withStoreLock(block: () -> T): T {
+    private fun <T> withStoreLock(block: StoreEdit<T>): T {
         val lockPath = path.resolveSibling("${path.fileName}.lock")
         lockPath.parent?.let { Files.createDirectories(it) }
         FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE).use { channel ->

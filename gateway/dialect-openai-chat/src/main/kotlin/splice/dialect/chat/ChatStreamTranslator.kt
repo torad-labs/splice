@@ -18,16 +18,17 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.util.JsonScalars
 import splice.spi.BufferCapacity
+import splice.spi.ClientGone
 import splice.spi.StreamTranslator
 import splice.spi.TerminalStates
-import splice.spi.WatchdogFired
+import splice.spi.WatchdogProbe
 import splice.spi.WireSink
 import java.io.IOException
 import java.util.concurrent.CancellationException
 
 public data class ChatTurnContext(
-    val clientGone: () -> Boolean,
-    val watchdogFired: () -> WatchdogFired?,
+    val clientGone: ClientGone,
+    val watchdogFired: WatchdogProbe,
     val idleCapMs: Long,
     val totalCapMs: Long,
 )

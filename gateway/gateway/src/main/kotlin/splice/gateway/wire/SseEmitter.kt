@@ -31,9 +31,28 @@ private const val MESSAGE = "message"
 // whatever capacity the largest frame needed, so steady-state hot-delta writes never realloc.
 private const val FRAME_BUF_CAPACITY = 256
 
-/** Builds the (non-standard) usage payload Claude Code reads from gateways — injected so the
- *  emitter stays hud-agnostic; the real builder lands with the usage port (P3-USE). */
-public typealias UsagePayloadBuilder = (Usage?) -> JsonObject
+/**
+ * Builds the (non-standard) usage payload Claude Code reads from gateways.
+ *
+ * Injected so the emitter stays hud-agnostic. Was a `typealias` for the raw function type, which is
+ * a NAME for a shape and not a type of its own: any `(Usage?) -> JsonObject` satisfied it, and the
+ * alias bought documentation without buying non-transposability (HD-22). Null usage is the ordinary
+ * "no usage known for this turn" case, not an error.
+ */
+public fun interface UsagePayloadBuilder {
+    public operator fun invoke(usage: Usage?): JsonObject
+}
+
+/**
+ * Writes one already-serialized frame to the client.
+ *
+ * Suspending, which is the contract that matters: the write can back-pressure on the client socket,
+ * and a failure out of it is how the head learns the client is gone. [SseEmitter] is a strict
+ * frame-level user of it — it never batches, and every frame it hands over is complete.
+ */
+public fun interface FrameWrite {
+    public suspend operator fun invoke(frame: String)
+}
 
 /** The fields of the non-stream terminal message envelope, grouped so its builder
  *  ([TerminalEnvelope.terminalMessageJson]) keeps a single cohesive argument (L3 wire mirror). */
@@ -77,7 +96,7 @@ public class TerminalEnvelope {
  *  collaborator rather than reached as a static `SseEmitter.create`. */
 public class SseEmitterFactory {
     public fun create(
-        write: suspend (String) -> Unit,
+        write: FrameWrite,
         model: String,
         usagePayload: UsagePayloadBuilder,
         messageId: String = MessageIds().generateMessageId(),
@@ -85,7 +104,7 @@ public class SseEmitterFactory {
 }
 
 public class SseEmitter internal constructor(
-    private val write: suspend (String) -> Unit,
+    private val write: FrameWrite,
     private val model: String,
     private val usagePayload: UsagePayloadBuilder,
     private val messageId: String,

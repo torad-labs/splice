@@ -25,6 +25,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.INVALID_GRANT_REASON
 import splice.core.auth.InvalidGrantLatch
 import splice.core.auth.RefreshAttempt
+import splice.core.auth.RefreshCall
 import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.Cancellables
@@ -33,6 +34,7 @@ import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
+import splice.core.util.WallClockIso
 import splice.spi.CredentialLock
 import splice.spi.LifecycleScope
 import splice.spi.ProcessDispatchers
@@ -72,9 +74,9 @@ public class CodexAuthProvider(
     private val authPath: Path,
     private val authCacheMs: Long,
     private val clock: WallClock = WallClock(System::currentTimeMillis),
-    private val nowIso: () -> String = { Instant.ofEpochMilli(System.currentTimeMillis()).toString() },
+    private val nowIso: WallClockIso = WallClockIso { Instant.ofEpochMilli(System.currentTimeMillis()).toString() },
     /** POST grant_type=refresh_token to the token URL; returns the classified attempt. */
-    private val refreshCall: suspend (refreshToken: String) -> RefreshAttempt<RefreshedTokens>,
+    private val refreshCall: RefreshCall<RefreshedTokens>,
     // Owned background scope for the G17 async-prefetch tier, decoupled from any single request's
     // coroutine. Injectable so the daemon can tie it to its lifecycle and tests can drain it before
     // teardown (an in-flight prefetch racing @TempDir cleanup was a CI-only flake). Mirrors GrokAuthProvider.

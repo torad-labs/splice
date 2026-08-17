@@ -10,6 +10,24 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 /**
+ * One best-effort write handed to the [AsyncFileIo] lane — a perf/compact JSONL append, a usage
+ * flush, a state-file rewrite.
+ *
+ * Named rather than left a bare `() -> Unit` (HD-22) because the seam carries a real contract the
+ * shape does not: it runs on the single `splice-file-io` DAEMON thread, off the turn coroutine, so
+ * it must not assume a coroutine context, must not block for long (it holds the one lane every
+ * other writer queues behind), and MAY NEVER RUN AT ALL — [submit] returns false at the pending
+ * cap and on executor rejection, and a daemon thread is not drained at JVM exit. Anything that must
+ * happen is not one of these.
+ *
+ * The same role as `UsageHud.scheduleCoalesced`'s flush parameter, which exists only to be
+ * submitted here, so both name this one type.
+ */
+public fun interface FileIoTask {
+    public operator fun invoke()
+}
+
+/**
  * One bounded, process-wide lane for best-effort state/telemetry writes.
  *
  * Turn coroutines enqueue immutable payloads and continue; the daemon thread owns filesystem
@@ -35,7 +53,7 @@ public object AsyncFileIo {
         setExecuteExistingDelayedTasksAfterShutdownPolicy(false)
     }
 
-    public fun submit(delayMs: Long = 0L, task: () -> Unit): Boolean {
+    public fun submit(delayMs: Long = 0L, task: FileIoTask): Boolean {
         if (pending.incrementAndGet() > MAX_PENDING_TASKS) {
             pending.decrementAndGet()
             recordDrop()

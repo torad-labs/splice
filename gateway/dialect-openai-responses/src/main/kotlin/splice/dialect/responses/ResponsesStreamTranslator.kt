@@ -35,11 +35,13 @@ import splice.core.turn.Usage
 import splice.core.util.JsonScalars
 import splice.spi.BufferCapacity
 import splice.spi.ClassifiedFailure
+import splice.spi.ClientGone
 import splice.spi.FailureSource
 import splice.spi.StreamTranslator
 import splice.spi.TerminalStates
 import splice.spi.UpstreamFailureClassifier
 import splice.spi.WatchdogFired
+import splice.spi.WatchdogProbe
 import splice.spi.WireSink
 import java.io.IOException
 import java.util.concurrent.CancellationException
@@ -54,11 +56,11 @@ public data class StreamTurnContext(
     val emitEncryptedReasoning: EmitEncryptedReasoning,
     /** Encodes a reasoning item into the redacted_thinking envelope (gateway supplies; the
      *  envelope codec is splice-reasoning v1 and lands with P3-MIR). */
-    val encodeReasoningEnvelope: (JsonObject) -> String?,
+    val encodeReasoningEnvelope: ReasoningEnvelopeEncoder,
     /** True when the downstream client connection is already gone (client-abort detection). */
-    val clientGone: () -> Boolean,
+    val clientGone: ClientGone,
     /** The watchdog's typed sentinel, read AFTER the loop ends. */
-    val watchdogFired: () -> WatchdogFired?,
+    val watchdogFired: WatchdogProbe,
     val streamIdleMsForMessage: Long,
     val upstreamTimeoutMsForMessage: Long,
     /** sequential_cutoff delivery restates earlier summary parts on every new reasoning item
@@ -85,7 +87,7 @@ public data class StreamTurnContext(
      *  next tool-result request can reinject the model's plan in-position. Synthetic tool ids
      *  never key the cache (toolu_synth_* repeats across turns — cross-turn bleed). Default no-op
      *  keeps the reducer byte-identical when the provider wires no cache. */
-    val onTurnReasoning: (toolIds: List<String>, envelopes: List<String>) -> Unit = { _, _ -> },
+    val onTurnReasoning: TurnReasoningSink = TurnReasoningSink { _, _ -> },
 )
 
 private const val PART_SEPARATOR = "\n\n"

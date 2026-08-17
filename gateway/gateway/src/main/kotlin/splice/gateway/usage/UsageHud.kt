@@ -23,6 +23,7 @@ import splice.core.usage.RateLimitState
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
+import splice.core.util.FileIoTask
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.util.SecureFile
@@ -56,6 +57,35 @@ private const val USAGE_FLUSH_DELAY_MS = 1_000L
 /** Usage-JSON scalar reading, shared by [TurnUsage] construction, the HUD payload and the store.
  *  A collaborator rather than file-level helpers: a Kotlin `private` member is CLASS-private, and
  *  three types here need the same reader — a second copy is exactly what CX-18 forbade. */
+/**
+ * Clamps a REPORTED `output_tokens` count down to the client's `max_tokens` (v26).
+ *
+ * A reporting-only correction and never a generation cap: the backend rejects the cap params, and
+ * reasoning tokens count toward output, so an honest upstream number can legitimately exceed what
+ * the client asked for — and a client that sees `output > max_tokens` mis-draws its context bar.
+ *
+ * Built by [UsageHud.makeOutputClamp] and consumed by `TurnPipeline.clampOutput`, which were two
+ * declarations of the same `(Long) -> Long` with no type in common; the pipeline's parameter is the
+ * hud's return value at every call site, so this is ONE role and now one type. Identity (`{ it }`)
+ * is the correct clamp for a turn with no client `max_tokens`.
+ */
+public fun interface OutputClamp {
+    public operator fun invoke(outputTokens: Long): Long
+}
+
+/**
+ * Reads one response header by name from the upstream round that just completed, or null when it
+ * is absent.
+ *
+ * A LOOKUP over an already-received response, not a request: [UsageHud.persistRateLimit] is handed
+ * this so it can pull the `x-ratelimit-*` family without the hud ever seeing the response object.
+ * Absent headers are the ordinary case — most upstreams send no rate-limit family at all, and the
+ * whole persist is a no-op without a limit.
+ */
+public fun interface HeaderLookup {
+    public operator fun invoke(name: String): String?
+}
+
 public class UsageJson {
     internal fun num(el: JsonElement?): Long? =
         (el as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong()
@@ -151,7 +181,7 @@ public class UsageHud {
         compact: Boolean,
         headTag: String,
         log: LogSink,
-    ): (Long) -> Long {
+    ): OutputClamp {
         val max = clientMaxTokens?.takeIf { it > 0 }
         return { n ->
             if (max != null && n > max) {
@@ -215,7 +245,7 @@ public class UsageStore(
     // upstream round, and a per-round atomic rewrite of this tiny latest-wins file was pure churn
     // (review 2026-07-22). flushNow() forces the pending payload out synchronously; readRateLimit()
     // serves it straight from memory instead (review 2026-07-22 round 3).
-    public fun persistRateLimit(header: (String) -> String?) {
+    public fun persistRateLimit(header: HeaderLookup) {
         Cancellables.runCatchingCancellable {
             val limit = header("x-ratelimit-limit-tokens")?.toLongOrNull() ?: return
             val remaining = header("x-ratelimit-remaining-tokens")?.toLongOrNull()
@@ -262,7 +292,7 @@ public class UsageStore(
      * load-bearing subtlety here — a missed rollback wedges the lane forever (review 2026-07-22
      * round 3).
      */
-    private fun scheduleCoalesced(flag: AtomicBoolean, flush: () -> Unit) {
+    private fun scheduleCoalesced(flag: AtomicBoolean, flush: FileIoTask) {
         if (!flag.compareAndSet(false, true)) return
         if (!AsyncFileIo.submit(USAGE_FLUSH_DELAY_MS, flush)) {
             flag.set(false)

@@ -53,7 +53,7 @@ public val defaultFoldModels: Set<String> = setOf("gpt-5.6-luna", "gpt-5.6-terra
  */
 public class ResponsesFoldController(
     private val config: FoldConfig,
-    private val decodeReasoningEnvelope: (String) -> JsonObject?,
+    private val decodeReasoningEnvelope: ReasoningEnvelopeDecoder,
 ) : FoldController {
 
     private val continuation = ResponsesContinuation()

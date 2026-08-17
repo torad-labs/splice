@@ -20,9 +20,24 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
+/**
+ * A concurrency limit READ FRESH at every admission decision, never captured at construction.
+ *
+ * That freshness is the port's entire reason to exist and the reason kotlinx `Semaphore` is banned
+ * in [InflightGate]: a live `PATCH` of `maxInflight` must change the next admission without a head
+ * restart, and a semaphore cannot hot-resize. `0` means unlimited, the same convention for both
+ * limits.
+ *
+ * Distinct from a GAUGE (`ControlServer.failedHeads`), which is also `() -> Int` but reports what
+ * IS rather than bounding what may happen next.
+ */
+public fun interface LiveLimit {
+    public operator fun invoke(): Int
+}
+
 public class InflightGate(
-    private val maxInflight: () -> Int,
-    private val maxQueued: () -> Int = { 0 },
+    private val maxInflight: LiveLimit,
+    private val maxQueued: LiveLimit = LiveLimit { 0 },
     // Default is monotonic — wall-clock jumps must not invent idle timeouts or freeze slots.
     private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
 ) {

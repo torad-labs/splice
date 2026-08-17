@@ -95,12 +95,33 @@ public fun interface EnvReader {
  * every value above would silently stop being true calendar time for the life of the process.
  *
  * The inverse substitution is the one [ElapsedClock] exists to prevent; read its KDoc before moving
- * a site between the two. Also distinct from HD-19's Waiter, which SPENDS time rather than reads it,
- * and the same role as the repo's remaining `nowIso: () -> String` / `nowEpochMs` seams, which are
- * wall time in a different unit and are wave 4b's to name.
+ * a site between the two. Also distinct from HD-19's Waiter, which SPENDS time rather than reads it.
+ *
+ * Wave 4b resolved the two seams this KDoc left open. `nowEpochMs` (UpstreamClient.retryAfterMs) IS
+ * this role in this unit and now names this type; `nowIso` is this role in a DIFFERENT unit and is
+ * [WallClockIso], because an epoch-ms reading and an ISO-8601 rendering are not interchangeable at
+ * a `put(...)` call however identical their origin.
  */
 public fun interface WallClock {
     public operator fun invoke(): Long
+}
+
+/**
+ * Reads wall time already rendered as an ISO-8601 instant — the same reading as [WallClock], in the
+ * form a credential file stores it.
+ *
+ * Production wires `Instant.ofEpochMilli(System.currentTimeMillis()).toString()` at both of its
+ * sites (codex and grok), each of which writes it as `last_refresh` in the persisted `auth.json`.
+ * That is why it is wall and not [ElapsedClock]: the value outlives the process that wrote it and
+ * is read by a human and by the next daemon.
+ *
+ * A SEPARATE type from [WallClock] rather than a `String` alias for it, on the evidence of the two
+ * call sites: both are `put(FIELD_LAST_REFRESH, JsonPrimitive(nowIso()))`, where a [WallClock]
+ * would also compile and would silently persist `1755400000000` where an operator, and every other
+ * `last_refresh` ever written, expects `2026-08-17T…Z`. The unit is part of the role here.
+ */
+public fun interface WallClockIso {
+    public operator fun invoke(): String
 }
 
 /**

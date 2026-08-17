@@ -9,6 +9,22 @@ package splice.core.perf
 
 import splice.core.util.ElapsedClock
 
+/**
+ * A span of turn work whose DURATION is the measurement — the thing [TurnPerf.timed] brackets.
+ *
+ * Named rather than left a bare `suspend () -> T` (HD-22) because the seam is not "any function":
+ * it is the region an [ElapsedClock] difference is attributed to, and the counter name passed
+ * beside it is a claim about what ran inside. The `finally` in [TurnPerf.timed] is the contract —
+ * a span that throws is still charged to its counter, so a failed auth still shows up as
+ * `auth_ms` rather than vanishing from the row.
+ *
+ * NOT inlined, so there is no non-local return to lose: `timed` was already allocating a lambda
+ * object per call and the only change is that the object now has a name.
+ */
+public fun interface TimedWork<T> {
+    public suspend operator fun invoke(): T
+}
+
 /** The single source of every perf field name (marks are *_ms-since-arrival; counters are raw). */
 public object PerfKeys {
     // stage completion marks (ms since arrival)
@@ -153,7 +169,7 @@ public class TurnPerf(private val clock: ElapsedClock = ElapsedClock(System::cur
     }
 
     /** Time a suspending [block] into [counter] (summed across calls). */
-    public suspend fun <T> timed(counter: String, block: suspend () -> T): T {
+    public suspend fun <T> timed(counter: String, block: TimedWork<T>): T {
         val t0 = clock()
         try {
             return block()
@@ -174,6 +190,6 @@ public class TurnPerf(private val clock: ElapsedClock = ElapsedClock(System::cur
 public object TurnPerfTiming {
 
     /** Time a suspending [block] into [counter] when [perf] is wired; run it plain otherwise. */
-    public suspend fun <T> timedOr(perf: TurnPerf?, counter: String, block: suspend () -> T): T =
+    public suspend fun <T> timedOr(perf: TurnPerf?, counter: String, block: TimedWork<T>): T =
         if (perf == null) block() else perf.timed(counter, block)
 }

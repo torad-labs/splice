@@ -125,7 +125,7 @@ internal object ControlPlaneClient {
      *  nothing was ever signalled. destroy()/destroyForcibly() also RETURN whether the signal was
      *  delivered, and both returns were discarded while the preceding println already claimed it
      *  had been sent. */
-    private fun escalate(port: Int, signal: String, why: String, send: (ProcessHandle) -> Boolean) {
+    private fun escalate(port: Int, signal: String, why: String, send: SignalSend) {
         val handle = daemonOnPort(port)
         if (handle == null) {
             println(
@@ -204,7 +204,7 @@ internal object ControlPlaneClient {
         url: String,
         method: String = "GET",
         bearer: String? = null,
-        read: (HttpURLConnection) -> T,
+        read: ResponseRead<T>,
     ): T? {
         val connection = URI(url).toURL().openConnection() as HttpURLConnection
         return try {

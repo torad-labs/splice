@@ -230,11 +230,11 @@ public data class BuildOptions(
     public val includeEncryptedReasoning: RequestEncryptedReasoning = RequestEncryptedReasoning(true),
     public val sessionId: String? = null,
     /** Decodes a redacted_thinking envelope back into a Responses reasoning input item. */
-    public val decodeReasoningEnvelope: (String) -> JsonObject?,
+    public val decodeReasoningEnvelope: ReasoningEnvelopeDecoder,
     /** RC-3 (reasoning-cache 2026-07-24): the gateway-held cache lookup — tool_use id → the
      *  ordered envelopes of the turn that emitted it. Null = miss = today's behavior exactly.
      *  Wired by the provider; the default keeps unwired builds byte-identical. */
-    public val reasoningLookup: (String) -> List<String>? = { null },
+    public val reasoningLookup: ReasoningLookup = ReasoningLookup { null },
     /** The provider's tool-surface capability latch, read at build time. False = the backend
      *  rejected the shape on this daemon lifetime; build the full status-quo request. */
     public val toolSurfaceOpen: Boolean = true,

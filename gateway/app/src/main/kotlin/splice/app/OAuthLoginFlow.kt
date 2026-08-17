@@ -31,10 +31,10 @@ public data class LoginSpec(
     val expectedState: String,
     val tokenUrl: String,
     /** Builds the x-www-form-urlencoded exchange body for the real authorization code (encoded here). */
-    val exchangeForm: (code: String) -> String,
+    val exchangeForm: ExchangeForm,
     val authPath: Path,
     /** token-endpoint response body → the auth.json content to persist. */
-    val toAuthJson: (responseBody: String) -> String,
+    val toAuthJson: AuthJsonFromResponse,
 )
 
 public object OAuthLoginFlow {

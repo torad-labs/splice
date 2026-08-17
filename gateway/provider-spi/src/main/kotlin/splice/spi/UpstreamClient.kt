@@ -39,9 +39,80 @@ import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.MonoClock
+import splice.core.util.WallClock
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
+
+/**
+ * The pause between two connect-phase attempts, given the attempt index and a FLOOR in ms.
+ *
+ * The floor is the whole reason this is not [DnsBackoff]: a server `Retry-After` rides in as
+ * `minDelayMs` (G3), so the curve may stretch to obey upstream pushback but may never undercut it.
+ * The default is the exponential ±10% jitter curve; the jitter is not decoration, synchronized
+ * retry herds re-collide without it.
+ */
+public fun interface RetryBackoff {
+    public suspend operator fun invoke(attempt: Int, minDelayMs: Long): Unit
+}
+
+/**
+ * The pause after a DNS-class transport failure, given the attempt index.
+ *
+ * A separate role from [RetryBackoff] on measured evidence, not symmetry: a real resolver blip (the
+ * kimi 07:00 burst, 37 `UnresolvedAddressException` turns) outlasts the generic 200/400/800ms curve,
+ * so this one runs 1s/2s/4s. It takes NO floor, and that absence is the type telling the truth — no
+ * response was received, so there is no `Retry-After` to honour.
+ */
+public fun interface DnsBackoff {
+    public suspend operator fun invoke(attempt: Int): Unit
+}
+
+/**
+ * A caller's ONE-SHOT rewrite of the request body after a deterministic upstream rejection of its
+ * CONTENT — RC-4's case is a 400 for stale encrypted-reasoning items.
+ *
+ * Returns the amended body, or null to leave the failure alone. Non-null swaps the body and retries
+ * IMMEDIATELY, and fires at most once per post: this is a repair, not a retry policy, and a body
+ * that is rejected twice is not one the caller can fix.
+ */
+public fun interface BodyAmendment {
+    public operator fun invoke(status: Int, responseText: String, currentBodyJson: String): String?
+}
+
+/**
+ * What the caller does with the upstream response once headers have arrived and the body is still
+ * streaming.
+ *
+ * It runs INSIDE Ktor's `execute` block, which is the contract the shape hides: the response body
+ * channel is alive only for the duration of this call, so anything that outlives it must be read
+ * here, and cancelling the calling coroutine aborts the in-flight body (the lock-safe kill).
+ */
+public fun interface UpstreamHandler<T> {
+    public suspend operator fun invoke(response: UpstreamResponse): T
+}
+
+/**
+ * Fired once the upstream stream is handed off — a 2xx arrived and the body is flowing.
+ *
+ * The moment matters more than the notification: it is the boundary after which a retry becomes a
+ * RE-ISSUE, governed by the small dedicated budget and by [ClientFrameEmitted], rather than an
+ * ordinary connect-phase attempt.
+ */
+public fun interface StreamStart {
+    public operator fun invoke()
+}
+
+/**
+ * A test applied to each link of a Throwable's cause chain — Ktor wraps engine exceptions, so the
+ * class that decides "retryable transport" or "DNS" is never the one thrown.
+ *
+ * Shared so the retryable-transport and DNS-only rules do not each re-walk the chain, and so the
+ * MAX_CAUSE_DEPTH bound is written once rather than trusted twice.
+ */
+public fun interface CausePredicate {
+    public operator fun invoke(cause: Throwable): Boolean
+}
 
 public class UpstreamClient(
     private val firstByteTimeoutMs: Long,
@@ -62,7 +133,7 @@ public class UpstreamClient(
     // it), capped at MAX_BACKOFF_MS; a server Retry-After rides in as a FLOOR via minDelayMs (G3).
     // DNS-class transport failures use dnsBackoff below instead (G14) — a resolver blip runs
     // longer than a TCP refusal.
-    private val backoff: suspend (attempt: Int, minDelayMs: Long) -> Unit = { attempt, minDelayMs ->
+    private val backoff: RetryBackoff = RetryBackoff { attempt, minDelayMs ->
         val base = minOf(BACKOFF_BASE_MS shl attempt, MAX_BACKOFF_MS)
         val jittered = (base * Random.nextDouble(JITTER_LO, JITTER_HI)).toLong()
         waiter.wait(maxOf(jittered, minDelayMs))
@@ -71,7 +142,7 @@ public class UpstreamClient(
     // blip (kimi 07:00 burst: 37 UnresolvedAddressException turns) runs longer than the
     // generic 200/400/800ms curve above undershoots. No minDelayMs parameter — transport
     // errors never carry a Retry-After header (no response was received).
-    private val dnsBackoff: suspend (attempt: Int) -> Unit = { attempt ->
+    private val dnsBackoff: DnsBackoff = DnsBackoff { attempt ->
         val base = minOf(DNS_BACKOFF_BASE_MS shl attempt, DNS_MAX_BACKOFF_MS)
         val jittered = (base * Random.nextDouble(JITTER_LO, JITTER_HI)).toLong()
         waiter.wait(jittered)
@@ -107,11 +178,11 @@ public class UpstreamClient(
     private data class PostContext(
         val url: String,
         val auth: RefreshableAuthProvider,
-        val extraHeaders: suspend (Credentials) -> Map<String, String>,
-        val onRetry: (String) -> Unit,
+        val extraHeaders: CredentialHeaders,
+        val onRetry: RetryNotice,
         val perf: TurnPerf?,
-        val clientFrameEmitted: () -> Boolean,
-        val amendBodyOnFailure: (Int, String, String) -> String?,
+        val clientFrameEmitted: ClientFrameEmitted,
+        val amendBodyOnFailure: BodyAmendment,
     )
 
     /**
@@ -126,20 +197,20 @@ public class UpstreamClient(
         url: String,
         bodyJson: String,
         auth: RefreshableAuthProvider,
-        extraHeaders: suspend (Credentials) -> Map<String, String>,
-        onRetry: (String) -> Unit = {},
+        extraHeaders: CredentialHeaders,
+        onRetry: RetryNotice = RetryNotice {},
         perf: TurnPerf? = null,
         // Defaults to { true } — "assume the client already saw output" — so any caller that does
         // NOT wire this (there are none today besides TurnDriver, but keep the safe default) keeps
         // the pre-G5 commitment rule: never retry once handed off. Only TurnDriver, which can prove
         // FIRST_FRAME hasn't fired, passes a real probe.
-        clientFrameEmitted: () -> Boolean = { true },
+        clientFrameEmitted: ClientFrameEmitted = ClientFrameEmitted { true },
         // RC-4 (reasoning-cache 2026-07-24): a caller-supplied ONE-SHOT body amendment for
         // deterministic upstream rejections of request CONTENT (e.g. a 400 for stale
         // encrypted-reasoning items): (status, responseText, currentBodyJson) -> amended body
         // or null. Non-null swaps the body and retries immediately; fires at most once per post.
-        amendBodyOnFailure: (Int, String, String) -> String? = { _, _, _ -> null },
-        block: suspend (UpstreamResponse) -> T,
+        amendBodyOnFailure: BodyAmendment = BodyAmendment { _, _, _ -> null },
+        block: UpstreamHandler<T>,
     ): T {
         val ctx = PostContext(url, auth, extraHeaders, onRetry, perf, clientFrameEmitted, amendBodyOnFailure)
         // Encode ONCE; retries resend the same bytes (no per-attempt string re-encode). Never gzip.
@@ -221,7 +292,7 @@ public class UpstreamClient(
         body: RequestBody,
         state: RetryState,
         t0: Long,
-        block: suspend (UpstreamResponse) -> T,
+        block: UpstreamHandler<T>,
     ): LoopStep<T> {
         if (deadlineExceeded(t0)) {
             ctx.onRetry(
@@ -378,8 +449,8 @@ public class UpstreamClient(
         ctx: PostContext,
         bodyBytes: ByteArray,
         creds: Credentials,
-        onStreamStart: () -> Unit,
-        block: suspend (UpstreamResponse) -> T,
+        onStreamStart: StreamStart,
+        block: UpstreamHandler<T>,
     ): RetryOutcome<T> {
         val allHeaders = applyAuth(creds, ctx.extraHeaders(creds))
         val statement = client.preparePost(ctx.url) {
@@ -592,7 +663,7 @@ public class UpstreamClient(
         /** Walks the cause chain (Ktor wraps engine exceptions) looking for a match, bounded by
          *  MAX_CAUSE_DEPTH. Shared primitive so the retryable-transport and DNS-only predicates
          *  don't duplicate the loop. */
-        private fun causeChainMatches(e: Throwable, predicate: (Throwable) -> Boolean): Boolean {
+        private fun causeChainMatches(e: Throwable, predicate: CausePredicate): Boolean {
             var t: Throwable? = e
             var depth = 0
             while (t != null && depth < MAX_CAUSE_DEPTH) {
@@ -655,7 +726,7 @@ public class UpstreamClient(
         internal fun canReissueStream(
             streamHandedOff: Boolean,
             e: Throwable,
-            clientFrameEmitted: () -> Boolean,
+            clientFrameEmitted: ClientFrameEmitted,
             streamReissues: Int,
         ): Boolean = streamHandedOff &&
             !clientFrameEmitted() &&
@@ -679,7 +750,7 @@ public class UpstreamClient(
             failed: RetryOutcome.Failed,
             armed: AtomicLong,
             nowMs: Long,
-            onRetry: (String) -> Unit,
+            onRetry: RetryNotice,
             nextRefreshed: Boolean,
         ): RetryPlan {
             // NF-01: arm at most MAX_RATE_LIMIT_COOLDOWN_MS — the full pushback is not lost, it
@@ -715,7 +786,7 @@ public class UpstreamClient(
          *  those); a non-retryable status's inflated delta never touches the cooldown at all, so it
          *  can never wedge the head for OTHER turns. Here (not an UpstreamClient method): the class
          *  sits at its detekt function budget. */
-        fun retryAfterMs(header: String?, nowEpochMs: () -> Long = System::currentTimeMillis): Long? {
+        fun retryAfterMs(header: String?, nowEpochMs: WallClock = WallClock(System::currentTimeMillis)): Long? {
             val value = header?.trim()?.takeIf { it.isNotEmpty() } ?: return null
             value.toLongOrNull()?.let { seconds -> return seconds.takeIf { it >= 0 }?.times(MS_PER_S) }
             return try {

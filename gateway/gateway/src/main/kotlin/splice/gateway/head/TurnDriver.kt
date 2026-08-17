@@ -45,6 +45,8 @@ import splice.gateway.wire.SseEmitterFactory
 import splice.gateway.wire.TurnTerminal
 import splice.gateway.wire.UsagePayloadBuilder
 import splice.spi.BuiltTurn
+import splice.spi.ClientFrameEmitted
+import splice.spi.ClientGone
 import splice.spi.FailureSource
 import splice.spi.FoldController
 import splice.spi.FoldRound
@@ -477,7 +479,7 @@ internal class TurnDriver(
         // retryable overloaded_error, not a raw api_error).
         val framesBase = drive.perfCounter(PerfKeys.CONTENT_FRAMES_OUT)
         val eventsBase = drive.perfCounter(PerfKeys.EVENTS_IN)
-        val frameEmittedThisRound = { drive.perfCounter(PerfKeys.CONTENT_FRAMES_OUT) > framesBase }
+        val frameEmittedThisRound = ClientFrameEmitted { drive.perfCounter(PerfKeys.CONTENT_FRAMES_OUT) > framesBase }
         // ws-transport WS-3: try the WebSocket overlay first. It returns null for "ride SSE" on
         // EVERY failure, and WsRoundNeedsSse when a round failed before the client saw content —
         // both land on the unchanged post() below, so SSE keeps sole ownership of retry, the
@@ -547,7 +549,7 @@ internal class TurnDriver(
         drive: TurnDrive,
         resp: UpstreamResponse,
         capture: ZeroEventCapture,
-        frameEmittedThisRound: () -> Boolean,
+        frameEmittedThisRound: ClientFrameEmitted,
     ) =
         SseReader().sseJsonEvents(
             resp.bodyChannel(),
@@ -915,8 +917,8 @@ internal class FoldRunner(
     private val emitter: WireSink,
     private val key: String,
     private val log: LogSink,
-    private val postRound: suspend (bodyJson: String, sink: WireSink) -> TurnOutcome,
-    private val finish: suspend (TurnOutcome) -> Unit,
+    private val postRound: PostRoundToSink,
+    private val finish: FinishTurn,
     private val reanchor: ReanchorController? = null,
     private val signals: RunnerSignals = RunnerSignals(),
     private val toolSearch: ToolSearchController? = null,
@@ -958,7 +960,7 @@ internal class FoldRunner(
             val retry = continuationForFailedRound(outcome, body, reanchorAttempt)
             if (retry == null) {
                 // health for absorbed rounds only on ultimate success — see ReanchorRunner.
-                if (outcome is TurnOutcome.Success) absorbedFailures.forEach(signals.onRoundFailure)
+                if (outcome is TurnOutcome.Success) absorbedFailures.forEach(signals.onRoundFailure::invoke)
                 finalize(rounds.withFailureSalvage(outcome, acc), buffer, salvaged, acc.toUsage())
                 return
             }
@@ -1070,12 +1072,12 @@ internal class FoldRunner(
 /** Shared per-loop collaborators for the round runners: liveness gates + the health hook for
  *  absorbed failures (one construction site in driveOneTurn — the policies never drift apart). */
 internal data class RunnerSignals(
-    val watchdogFired: () -> Boolean = { false },
-    val clientGone: () -> Boolean = { false },
-    val onRoundFailure: (TurnOutcome.Failure) -> Unit = {},
+    val watchdogFired: WatchdogTripped = WatchdogTripped { false },
+    val clientGone: ClientGone = ClientGone { false },
+    val onRoundFailure: RoundFailureHook = RoundFailureHook {},
     /** Search-continuation counter sink — the expected-delta instrument. Stamped as an absolute
      *  count, so a turn that never searched records nothing and a turn that did records exactly N. */
-    val onSearchRound: (Int) -> Unit = {},
+    val onSearchRound: SearchRoundCounter = SearchRoundCounter {},
 )
 
 /** The round-usage law, ONE implementation for both runners (2026-07-20, unified in the
@@ -1113,8 +1115,8 @@ internal data class RoundUsage(
 internal class ReanchorRunner(
     private val key: String,
     private val log: LogSink,
-    private val postRound: suspend (bodyJson: String) -> TurnOutcome,
-    private val finish: suspend (TurnOutcome) -> Unit,
+    private val postRound: PostRound,
+    private val finish: FinishTurn,
     private val signals: RunnerSignals,
     private val toolSearch: ToolSearchController? = null,
 ) {
@@ -1155,7 +1157,7 @@ internal class ReanchorRunner(
                 // (a rescued turn must not report a degraded provider as healthy); a turn that
                 // ultimately FAILS is attributed exactly once by finishTurn — firing per absorbed
                 // round would triple-count one logical failure (HeadServerIntegrationTest).
-                if (outcome is TurnOutcome.Success) absorbedFailures.forEach(signals.onRoundFailure)
+                if (outcome is TurnOutcome.Success) absorbedFailures.forEach(signals.onRoundFailure::invoke)
                 finish(rounds.withFailureSalvage(finalOutcome(outcome, salvaged, acc), acc))
                 return
             }

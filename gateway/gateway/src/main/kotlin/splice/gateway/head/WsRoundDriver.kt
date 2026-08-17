@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.onEach
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
+import splice.spi.ClientFrameEmitted
 import splice.spi.Provider
 import splice.spi.TurnSignals
 import splice.spi.WireSink
@@ -30,14 +31,14 @@ internal data class WsRoundInputs(
     val sink: WireSink,
     val scope: CoroutineScope,
     val turnJob: Job,
-    val frameEmittedThisRound: () -> Boolean,
+    val frameEmittedThisRound: ClientFrameEmitted,
     val eventsBase: Long,
 )
 
 internal class WsRoundDriver(
     private val provider: Provider,
     private val log: LogSink,
-    private val classifyZeroEvent: (TurnDrive, TurnOutcome, String, Long) -> TurnOutcome,
+    private val classifyZeroEvent: ZeroEventClassifier,
 ) {
 
     /** Run the round, or null to fall through to the SSE path. */

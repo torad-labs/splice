@@ -36,7 +36,7 @@ public data class DeviceLoginSpec(
     /** X-Msh-* device identity headers sent on both OAuth calls. */
     val identityHeaders: Map<String, String>,
     /** token-endpoint success body → the auth.json content to persist. */
-    val toAuthJson: (responseBody: String) -> String,
+    val toAuthJson: AuthJsonFromResponse,
 )
 
 public object DeviceLoginFlow {

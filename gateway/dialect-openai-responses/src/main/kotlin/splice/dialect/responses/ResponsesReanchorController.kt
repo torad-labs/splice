@@ -17,7 +17,7 @@ import splice.spi.ReanchorController
 import splice.spi.ReanchorRound
 
 public class ResponsesReanchorController(
-    private val decodeReasoningEnvelope: (String) -> JsonObject?,
+    private val decodeReasoningEnvelope: ReasoningEnvelopeDecoder,
     private val maxContinuations: Int = DEFAULT_MAX_CONTINUATIONS,
 ) : ReanchorController {
 

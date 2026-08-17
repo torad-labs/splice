@@ -135,7 +135,7 @@ internal class DaemonProcess {
     // [deadlineMs]. A cancel (withTimeoutOrNull) can't kill a thread stuck in uninterruptible blocking work
     // (a wedged engine stop), so halt(0) is the floor that guarantees termination. On a clean finish the
     // watchdog is disarmed via [halted] so halt never fires. [halt] is injected so tests exercise both paths.
-    internal fun runBoundedTeardown(deadlineMs: Long, halt: () -> Unit, teardown: () -> Unit) {
+    internal fun runBoundedTeardown(deadlineMs: Long, halt: HaltJvm, teardown: Teardown) {
         val halted = AtomicBoolean(false)
         // A named single-thread scheduler holding ONE delayed task, not a raw thread parked in
         // Thread.sleep: same daemon-ness (the JVM never waits on it), same one-shot firing at

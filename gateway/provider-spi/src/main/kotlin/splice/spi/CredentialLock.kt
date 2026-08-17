@@ -24,6 +24,22 @@ import java.nio.file.StandardOpenOption
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.random.Random
 
+/**
+ * The read→POST→write of one credential refresh, run while the `<authPath>.lock` is held.
+ *
+ * The three steps being INSIDE one of these is the entire G1 fix, and is what the name has to
+ * carry: a refresh that read the file outside the lock and only wrote inside it would still POST a
+ * refresh_token a peer had already rotated, which is the incident (the kimi-code token, 2026-07-18).
+ * So this is not "some suspending work" — it is the whole indivisible unit, and anything split out
+ * of it leaves the race open.
+ *
+ * It may run WITHOUT the lock after the bounded wait expires (SH-06: bounded beats hung), honestly
+ * logged. That is deliberate and is why G1 keeps three more layers behind this one.
+ */
+public fun interface CredentialRefresh<T> {
+    public suspend operator fun invoke(): T
+}
+
 /** Serializes a credential-file refresh across processes (FileLock) and threads (per-path Mutex). */
 public object CredentialLock {
 
@@ -59,7 +75,7 @@ public object CredentialLock {
         // caller that passes nothing is unchanged — and CredentialLockTest can now assert the
         // backoff CURVE instead of waiting out 600ms of it.
         runtime: PollRuntime = PollRuntime(),
-        block: suspend () -> T,
+        block: CredentialRefresh<T>,
     ): T =
         inProcess.computeIfAbsent(path) { Mutex() }.withLock {
             withFileLock(path, waitMs, log, runtime, block)
@@ -70,7 +86,7 @@ public object CredentialLock {
         waitMs: Long,
         log: LogSink,
         runtime: PollRuntime,
-        block: suspend () -> T,
+        block: CredentialRefresh<T>,
     ): T {
         // Lock a SIBLING `<name>.lock` file, NEVER the credential file itself — an advisory lock on
         // the auth JSON would make a plain read of it block, which must never happen.

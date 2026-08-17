@@ -45,11 +45,25 @@ internal object ResponsesRoundEnd {
     val ALL = SUCCESS + FAILED
 }
 
+/**
+ * The headers that open the WebSocket, derived from the credentials in hand at connect time —
+ * `Authorization` plus the `OpenAI-Beta: responses_websockets=…` opt-in the v2 backend gates on.
+ *
+ * Read ONCE per connection and not per round, which is what separates it from
+ * [splice.spi.CredentialHeaders] despite the shape: those are rebuilt per ATTEMPT so a post-401
+ * refresh reaches the wire, while a WebSocket's handshake cannot be re-run without dropping the
+ * connection and the per-connection server context that is the whole point of reusing it.
+ * Non-suspending for the same reason — there is no refresh to await here.
+ */
+internal fun interface HandshakeHeaders {
+    operator fun invoke(credentials: Credentials): Map<String, String>
+}
+
 internal class ResponsesWsRunner(
     private val transport: WsUpstream,
     private val session: ResponsesWsSession,
     private val wssUrl: String,
-    private val handshakeHeaders: (Credentials) -> Map<String, String>,
+    private val handshakeHeaders: HandshakeHeaders,
     private val log: LogSink = LogSink {},
 ) : WsRoundRunner {
 

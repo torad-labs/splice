@@ -8,7 +8,6 @@
 // treated as retryable, not a permanent failure.
 package splice.app
 
-import io.ktor.client.statement.HttpResponse
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.Cancellables
@@ -68,8 +67,8 @@ internal class RefreshRetry(
      */
     internal suspend fun <T> refreshWithRetry(
         maxAttempts: Int = REFRESH_MAX_ATTEMPTS,
-        call: suspend () -> HttpResponse,
-        classify: suspend (HttpResponse) -> RefreshStep<T>,
+        call: RefreshPost,
+        classify: RefreshClassify<T>,
     ): T? {
         var attempt = 0
         while (attempt < maxAttempts) {

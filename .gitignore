@@ -59,3 +59,4 @@ credentials.json
 
 # transient operator wall grant (/grant) — never committed
 .claude/state/walls-grant.json
+.claude/tmp/

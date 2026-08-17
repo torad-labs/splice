@@ -18,6 +18,8 @@ import java.nio.file.StandardOpenOption.CREATE
 import java.security.Security
 import java.time.LocalTime
 import java.time.temporal.ChronoUnit
+import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.system.exitProcess
 
@@ -81,7 +83,12 @@ internal class DaemonProcess {
             topologyPath = topologyPath,
         )
 
-        Runtime.getRuntime().addShutdownHook(Thread { shutdown(daemon, lock) })
+        // `addShutdownHook` takes an unstarted Thread — the one place in this process where the JVM
+        // API itself demands the type. It comes from the platform factory rather than an ad-hoc
+        // `Thread(...)` so that thread creation has a single seam here as it does in every executor.
+        Runtime.getRuntime().addShutdownHook(
+            Executors.defaultThreadFactory().newThread { shutdown(daemon, lock) },
+        )
         serveUntilShutdown(daemon, lock, shutdownSignal)
     }
 
@@ -129,18 +136,30 @@ internal class DaemonProcess {
     // watchdog is disarmed via [halted] so halt never fires. [halt] is injected so tests exercise both paths.
     internal fun runBoundedTeardown(deadlineMs: Long, halt: () -> Unit, teardown: () -> Unit) {
         val halted = AtomicBoolean(false)
-        Thread {
-            Thread.sleep(deadlineMs)
-            if (halted.compareAndSet(false, true)) {
-                System.err.println("[daemon] stop exceeded ${deadlineMs}ms — halting")
-                halt()
+        // A named single-thread scheduler holding ONE delayed task, not a raw thread parked in
+        // Thread.sleep: same daemon-ness (the JVM never waits on it), same one-shot firing at
+        // [deadlineMs], and the disarm is now structural — shutdownNow() drops the pending task
+        // instead of leaving a thread asleep until the deadline to discover the CAS already lost.
+        // The CAS stays as the race floor for the case where the task is already running.
+        val watchdog = Executors.newSingleThreadScheduledExecutor { task ->
+            Executors.defaultThreadFactory().newThread(task).apply {
+                name = "splice-teardown-watchdog"
+                isDaemon = true
             }
-        }.apply {
-            isDaemon = true
-            start()
         }
+        watchdog.schedule(
+            Runnable {
+                if (halted.compareAndSet(false, true)) {
+                    System.err.println("[daemon] stop exceeded ${deadlineMs}ms — halting")
+                    halt()
+                }
+            },
+            deadlineMs,
+            TimeUnit.MILLISECONDS,
+        )
         teardown()
         halted.set(true)
+        watchdog.shutdownNow()
     }
 
     // Timestamps every log line and tees it to a persistent daemon.log (so failures and slow turns

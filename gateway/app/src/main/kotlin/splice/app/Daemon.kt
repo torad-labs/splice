@@ -134,6 +134,17 @@ internal class DaemonBoundary {
     } catch (failure: IllegalStateException) {
         Result.failure(failure)
     }
+
+    /** The operator-facing reason a boundary-captured failure carries, for the rare throwable with
+     *  no message. Named by BRANCH over the three classes [runCatchingDaemonBoundary] can actually
+     *  produce — the catch list above IS the closed set — rather than by reflecting on the runtime
+     *  class, which is what this used to do. */
+    internal fun reason(failure: Throwable): String = failure.message ?: when (failure) {
+        is IOException -> "IOException"
+        is IllegalArgumentException -> "IllegalArgumentException"
+        is IllegalStateException -> "IllegalStateException"
+        else -> "boundary failure"
+    }
 }
 
 /** The two per-head probe sinks [HeadLifecycle.startDaemonHeads] writes into (detekt LongParameterList). */
@@ -185,7 +196,7 @@ internal class HeadLifecycle {
             boundary.runCatchingDaemonBoundary { assemble(key, head, providerCfg) }
                 .onSuccess { heads[key] = it }
                 .onFailure {
-                    failed[key] = it.message ?: it.javaClass.simpleName
+                    failed[key] = boundary.reason(it)
                     log("[$key][boot] SKIPPED (build failed): ${it.message}\n")
                 }
         }
@@ -746,7 +757,12 @@ internal class DashboardHtml {
     internal fun source(
         distPath: Path,
         classpathHtml: () -> String? = {
-            Daemon::class.java.getResourceAsStream("/webui/index.html")
+            // Asked of the class loader by absolute resource name, not of a class token via
+            // `Daemon::class.java`. The shadow jar packages the dashboard at `webui/index.html`
+            // (app/build.gradle.kts `from(dashboard) { into("webui") }`) and the daemon runs as
+            // `java -jar`, so the system loader is the one holding that jar — same bytes, minus
+            // the reflective hop through a class whose only role was to name a loader.
+            ClassLoader.getSystemResourceAsStream("webui/index.html")
                 ?.bufferedReader()
                 ?.use { it.readText() }
         },

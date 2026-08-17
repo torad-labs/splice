@@ -319,24 +319,31 @@ public class ChatRequestBuilder(
         }
     }
 
-    private fun imagePart(source: MediaSource?): JsonObject? = when {
-        source == null || !quirks.supportsVision -> null
-        source.type == "base64" && !source.data.isNullOrEmpty() -> {
-            val mime = source.mediaType ?: "image/png"
-            val data = source.data!!
-            val dataUrl = StringBuilder(DATA_URL_PREFIX.length + mime.length + BASE64_SEPARATOR.length + data.length)
-                .append(DATA_URL_PREFIX).append(mime).append(BASE64_SEPARATOR).append(data)
-                .toString()
-            buildJsonObject {
-                put(TYPE, IMAGE_URL)
-                put(IMAGE_URL, buildJsonObject { put(URL, dataUrl) })
+    private fun imagePart(source: MediaSource?): JsonObject? {
+        // Bound to a local BEFORE the branch so `isNullOrEmpty`'s contract narrows the type the
+        // compiler actually tracks. `source.data` is a property of a class from another module, so
+        // a read of it is not smart-cast-stable and the guard above could not carry into the body —
+        // that, and only that, is why this used to end in `!!`. Same guard, same value, now proven.
+        val data = source?.data
+        return when {
+            source == null || !quirks.supportsVision -> null
+            source.type == "base64" && !data.isNullOrEmpty() -> {
+                val mime = source.mediaType ?: "image/png"
+                val size = DATA_URL_PREFIX.length + mime.length + BASE64_SEPARATOR.length + data.length
+                val dataUrl = StringBuilder(size)
+                    .append(DATA_URL_PREFIX).append(mime).append(BASE64_SEPARATOR).append(data)
+                    .toString()
+                buildJsonObject {
+                    put(TYPE, IMAGE_URL)
+                    put(IMAGE_URL, buildJsonObject { put(URL, dataUrl) })
+                }
             }
+            source.type == "url" && !source.url.isNullOrEmpty() -> buildJsonObject {
+                put(TYPE, IMAGE_URL)
+                put(IMAGE_URL, buildJsonObject { put(URL, source.url) })
+            }
+            else -> null
         }
-        source.type == "url" && !source.url.isNullOrEmpty() -> buildJsonObject {
-            put(TYPE, IMAGE_URL)
-            put(IMAGE_URL, buildJsonObject { put(URL, source.url) })
-        }
-        else -> null
     }
 }
 

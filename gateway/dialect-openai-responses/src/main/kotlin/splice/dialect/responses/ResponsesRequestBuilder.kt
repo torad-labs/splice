@@ -869,26 +869,33 @@ private class ResponsesInputBuilder(
             )
         }
 
-    private fun imagePart(source: MediaSource?): JsonObject? = when {
-        source == null -> null
-        source.type == "base64" && !source.data.isNullOrEmpty() -> {
-            // Build the data URL once into a capacity-sized buffer — the base64 payload is often
-            // multi-MB for screenshots; avoid intermediate template concat copies.
-            val mime = source.mediaType?.takeIf { it.isNotEmpty() } ?: "image/png"
-            val data = source.data!!
-            val url = StringBuilder(DATA_URL_PREFIX.length + mime.length + BASE64_SEPARATOR.length + data.length)
-                .append(DATA_URL_PREFIX).append(mime).append(BASE64_SEPARATOR).append(data)
-                .toString()
-            buildJsonObject {
-                put("type", "input_image")
-                put("image_url", url)
+    private fun imagePart(source: MediaSource?): JsonObject? {
+        // Bound to a local BEFORE the branch so `isNullOrEmpty`'s contract narrows the type the
+        // compiler actually tracks. `source.data` is a property of a class from another module, so
+        // a read of it is not smart-cast-stable and the guard above could not carry into the body —
+        // that, and only that, is why this used to end in `!!`. Same guard, same value, now proven.
+        val data = source?.data
+        return when {
+            source == null -> null
+            source.type == "base64" && !data.isNullOrEmpty() -> {
+                // Build the data URL once into a capacity-sized buffer — the base64 payload is often
+                // multi-MB for screenshots; avoid intermediate template concat copies.
+                val mime = source.mediaType?.takeIf { it.isNotEmpty() } ?: "image/png"
+                val size = DATA_URL_PREFIX.length + mime.length + BASE64_SEPARATOR.length + data.length
+                val url = StringBuilder(size)
+                    .append(DATA_URL_PREFIX).append(mime).append(BASE64_SEPARATOR).append(data)
+                    .toString()
+                buildJsonObject {
+                    put("type", "input_image")
+                    put("image_url", url)
+                }
             }
+            source.type == "url" && !source.url.isNullOrEmpty() -> buildJsonObject {
+                put("type", "input_image")
+                put("image_url", source.url)
+            }
+            else -> null
         }
-        source.type == "url" && !source.url.isNullOrEmpty() -> buildJsonObject {
-            put("type", "input_image")
-            put("image_url", source.url)
-        }
-        else -> null
     }
 
     private fun roleText(role: String, text: String): JsonObject = buildJsonObject {

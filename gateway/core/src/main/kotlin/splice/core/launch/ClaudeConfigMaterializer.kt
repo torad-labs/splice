@@ -232,7 +232,11 @@ public class ClaudeConfigMaterializer(
                 put(Keys.MCP_SERVERS, globalMcp)
             }
             for (k in portKeys) {
-                if (global[k] != null && local[k] == null) put(k, global[k]!!)
+                // Read once into a local: the map is looked up twice in the old shape and the
+                // second read had to be asserted non-null because the compiler cannot know a
+                // JsonObject returns the same value twice. One read, no assertion, same result.
+                val inherited = global[k]
+                if (inherited != null && local[k] == null) put(k, inherited)
             }
             put(Keys.CUSTOM_API_KEY_RESPONSES, customApiKeyResponses(local))
             put(Keys.ONBOARDING, true)

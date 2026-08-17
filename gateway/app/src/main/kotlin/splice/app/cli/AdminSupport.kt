@@ -12,6 +12,7 @@ import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
+import java.io.File
 import java.io.IOException
 import java.net.ConnectException
 import java.net.HttpURLConnection
@@ -70,12 +71,20 @@ internal object AdminSupport {
         }
     }.getOrDefault(false)
 
-    /** The running jar, so a spawned daemon reuses the exact same build. */
+    /** The running jar, so a spawned daemon reuses the exact same build.
+     *
+     *  Read from the JVM's own `java.class.path` rather than by reflecting on this class's
+     *  protection domain. `java -jar splice.jar` — the only shape that launches this CLI — sets
+     *  that property to exactly the one jar, which is the same file the protection domain named.
+     *  Every other shape (a Gradle test worker, an exploded classpath) yields several entries or a
+     *  directory, fails the single-entry `.jar` test below, and falls through to the installed copy
+     *  exactly as the old `.endsWith(".jar")` guard made it. The separator check is what keeps a
+     *  multi-entry classpath ending in ".jar" from being mistaken for one path. */
     fun selfJar(): Path? {
-        val loc = runCatching {
-            Paths.get(AdminSupport::class.java.protectionDomain.codeSource.location.toURI())
-        }.getOrNull()
-        if (loc != null && loc.toString().endsWith(".jar")) return loc
+        val classPath = System.getProperty("java.class.path").orEmpty()
+        val single = classPath.takeIf { it.endsWith(".jar") && !it.contains(File.pathSeparatorChar) }
+        val loc = single?.let { runCatching { Paths.get(it) }.getOrNull() }
+        if (loc != null) return loc
         val installed = home().resolve(".local").resolve("share").resolve("splice").resolve("splice.jar")
         return installed.takeIf { Files.exists(it) }
     }

@@ -23,8 +23,11 @@ internal class DoctorProbeWrite {
             Files.createDirectories(dir)
             Files.writeString(probe, "probe")
             DoctorCheck(name, CheckStatus.INFO, okDetail ?: dir.toString())
-        } catch (e: java.nio.file.AccessDeniedException) {
-            DoctorCheck(name, CheckStatus.FAIL, "$dir is not writable (${e.javaClass.simpleName})", "chmod u+rwx $dir")
+        } catch (_: java.nio.file.AccessDeniedException) {
+            // The label is read off the BRANCH, not off the caught throwable's runtime class: this
+            // clause only ever stands in for AccessDeniedException, so naming it is a compile-time
+            // fact and the reflective lookup that used to produce the same six syllables is gone.
+            DoctorCheck(name, CheckStatus.FAIL, "$dir is not writable (AccessDeniedException)", "chmod u+rwx $dir")
         } catch (e: java.io.IOException) {
             DoctorCheck(name, CheckStatus.FAIL, "$dir is not writable (${e.message})", "check free space: df -h $dir")
         } finally {

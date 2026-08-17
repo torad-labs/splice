@@ -149,14 +149,17 @@ internal class ResponsesWsSession {
     ): Unit = synchronized(lock) {
         val input = request[FIELD_INPUT] as? JsonArray
         // A stale epoch means something invalidated this conversation while the round was in flight.
-        val committable = responseId != null && input != null && epoch == (epochs[key] ?: seq)
-        if (!committable) {
-            // Committing now would anchor the next turn onto context the server lacks.
-            chains.remove(key)
-            return
-        }
+        val fresh = epoch == (epochs[key] ?: seq)
+        // Unconditional in the old shape too — the bail removed, and the commit removed before
+        // re-inserting, which is what moves the record to the LRU tail [trimLocked] evicts from.
         chains.remove(key)
-        chains[key] = Chain(input!!.map { it.toString() }, responseId!!, propsOf(request), generation)
+        // Two guards rather than one `committable` boolean: the null checks now sit in branches that
+        // RETURN, so past them the compiler itself knows `responseId` and `input` are non-null. The
+        // boolean form hid that and the commit line had to assert with `!!`. Same conditions, same
+        // order — committing without either would anchor the next turn onto context the server lacks.
+        if (responseId == null || input == null) return
+        if (!fresh) return
+        chains[key] = Chain(input.map { it.toString() }, responseId, propsOf(request), generation)
         trimLocked()
     }
 

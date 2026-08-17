@@ -372,7 +372,7 @@ internal class TurnDriver(
             is RuntimeException -> {
                 // e.g. a URL-parse error from a bad base_url, an IllegalState out of Ktor
                 // internals. Previously ESCAPED: truncated 200, no error frame, no perf row.
-                log(telemetry.errTurn("unexpected", drive, ": ${e.javaClass.simpleName} ${e.message}"))
+                log(telemetry.errTurn("unexpected", drive, ": ${failures.gatewayBugKind(e)} ${e.message}"))
                 drive.emitter.emitError(ErrorType.API_ERROR, "claudex: internal gateway error — retry")
                 telemetry.recordPerf(drive, "error:unexpected")
                 health.local() // internal gateway bug (e.g. bad base_url parse)
@@ -784,6 +784,18 @@ internal class TurnFailures {
             // e.g. an IllegalState out of Ktor internals — same escape class as above
             Result.failure(e)
         }
+
+    /** The gateway-bug class named in the `unexpected` turn line, read off a BRANCH instead of the
+     *  runtime class. The `when` is CLOSED, not a best-effort enumeration: [catchingTurnFailure]
+     *  converts exactly IllegalArgumentException and IllegalStateException into failures, and
+     *  [TurnDriver.emitFailure] is only ever reached from that boundary's `onFailure`, so no other
+     *  RuntimeException can arrive here — anything else propagates past the boundary uncaught. The
+     *  `else` therefore names a shape that cannot occur rather than papering over a gap. */
+    fun gatewayBugKind(e: RuntimeException): String = when (e) {
+        is IllegalArgumentException -> "IllegalArgumentException"
+        is IllegalStateException -> "IllegalStateException"
+        else -> "RuntimeException"
+    }
 
     fun connectionResetMessage(error: Throwable): String? =
         if (error is StreamTornBeforeClient) error.cause?.message else error.message

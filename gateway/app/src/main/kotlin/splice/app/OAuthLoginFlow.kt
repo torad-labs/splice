@@ -126,23 +126,32 @@ public object OAuthLoginFlow {
     private fun pasteFallback(spec: LoginSpec, latch: CountDownLatch, codeRef: AtomicReference<String?>) {
         if (System.console() == null) return
         println("splice: if the browser cannot reach this machine, paste the redirect URL (or just the code) here:")
-        val t = Thread {
+        // A named single-thread executor, the same seam [run] already uses for the loopback server's
+        // handler pool — not a raw thread. The reader thread keeps both properties the old one had:
+        // it is a daemon (see above) and it carries the per-head name a stack dump needs. shutdown()
+        // retires the executor once this one task finishes; it does NOT interrupt the parked read,
+        // so the "loopback wins while stdin is still blocked" case behaves exactly as before.
+        val reader = Executors.newSingleThreadExecutor { task ->
+            Executors.defaultThreadFactory().newThread(task).apply {
+                name = "splice-login-paste-${spec.head}"
+                isDaemon = true
+            }
+        }
+        reader.execute {
             val pasted = Cancellables.runCatchingCancellable {
                 generateSequence(::readlnOrNull).forEach { line ->
-                    if (latch.count == 0L) return@Thread // the loopback already won
+                    if (latch.count == 0L) return@execute // the loopback already won
                     extractCode(line)?.let { code ->
                         codeRef.compareAndSet(null, code)
                         latch.countDown()
-                        return@Thread
+                        return@execute
                     }
                     if (line.isNotBlank()) println("splice: that is not an authorization code — try again:")
                 }
             }
             Cancellables.discard(pasted, "stdin closed or unreadable; the loopback callback is still live")
         }
-        t.isDaemon = true
-        t.name = "splice-login-paste-${spec.head}"
-        t.start()
+        reader.shutdown()
     }
 
     /** A pasted redirect URL, a bare `code=...` fragment, or a bare code. Null when it is neither. */

@@ -43,8 +43,17 @@ public class MgmtKey(
                 val existing = Files.readString(path).trim()
                 if (existing.isNotEmpty()) return existing
                 readFailure = "present but blank"
-            } catch (e: IOException) {
-                readFailure = "unreadable (${e.javaClass.simpleName})"
+            } catch (_: java.nio.file.AccessDeniedException) {
+                // Named by BRANCH, not by reflecting on the caught throwable's runtime class. These
+                // are the two IOException shapes a state-dir read actually produces — a permissions
+                // change and a file that vanished between exists() and readString() — and each
+                // clause spells the label it already knows it is standing in. Most specific first:
+                // both extend FileSystemException, which extends IOException.
+                readFailure = "unreadable (AccessDeniedException)"
+            } catch (_: java.nio.file.NoSuchFileException) {
+                readFailure = "unreadable (NoSuchFileException)"
+            } catch (_: IOException) {
+                readFailure = "unreadable (IOException)"
             }
         }
         if (readFailure != null) {

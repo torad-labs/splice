@@ -2,6 +2,7 @@
 package splice.core.util
 
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
@@ -18,8 +19,17 @@ public object AsyncFileIo {
     private val pending = AtomicInteger()
     private val dropped = AtomicInteger()
     private val warned = AtomicBoolean(false)
+
+    // Threads come from the platform factory, never from an ad-hoc `Thread(...)`: the factory owns
+    // thread group and priority, and this lane only overrides the two properties that are its own
+    // contract — the name (so a stack dump says which lane is blocked) and daemon-ness (so a
+    // pending file write can never keep a dying JVM alive).
+    private val threads = Executors.defaultThreadFactory()
     private val executor = ScheduledThreadPoolExecutor(1) { task ->
-        Thread(task, "splice-file-io").apply { isDaemon = true }
+        threads.newThread(task).apply {
+            name = "splice-file-io"
+            isDaemon = true
+        }
     }.apply {
         removeOnCancelPolicy = true
         setExecuteExistingDelayedTasksAfterShutdownPolicy(false)

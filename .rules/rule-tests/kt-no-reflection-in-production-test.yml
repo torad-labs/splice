@@ -1,0 +1,30 @@
+id: kt-no-reflection-in-production
+valid:
+  # Named from the BRANCH: the clause already knows which type it stands in.
+  - |
+    fun probe(): String =
+        try {
+            write()
+        } catch (_: java.nio.file.AccessDeniedException) {
+            "unreadable (AccessDeniedException)"
+        }
+  # A `when` over a closed set — the catch list upstream is what makes the mapping total.
+  - |
+    fun gatewayBugKind(e: RuntimeException): String = when (e) {
+        is IllegalArgumentException -> "IllegalArgumentException"
+        is IllegalStateException -> "IllegalStateException"
+        else -> "RuntimeException"
+    }
+  # Classpath resources come from the loader by name, not from a class token.
+  - 'val html = ClassLoader.getSystemResourceAsStream("webui/index.html")'
+  # The running jar from the JVM's own property, not from a protection domain.
+  - 'val cp = System.getProperty("java.class.path")'
+  # `is` checks are compile-time type tests, not reflection — this wall must never touch them.
+  - 'val io = failure is IOException'
+invalid:
+  - 'val stream = Daemon::class.java.getResourceAsStream("/webui/index.html")'
+  - 'val loc = AdminSupport::class.java.protectionDomain.codeSource.location.toURI()'
+  - 'val fqn = Daemon::class.qualifiedName'
+  # The instance form — five of this wall's six original hits were exactly this, inside a catch.
+  - 'val reason = e.javaClass.simpleName'
+  - 'val c = Class.forName("splice.app.Daemon")'

@@ -24,10 +24,20 @@ CHAT = ROOT / "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/C
 # LIST, not a single file (HD-24 decomposition, 2026-08-17): a target may move the validation latch
 # and its parser to siblings. Every path must exist or the whole key reads as missing (vacuity
 # guard unchanged — see the file-list mechanism note in cx_09/w4_a).
+#
+# THE LIST NAMES THE IMPLEMENTATION, NOT THE PACKAGE (repair, 2026-08-17). The first cut of this
+# list carried ResponsesTurnState.kt and ResponsesToolSearchParse.kt, and BOTH tokens were then
+# satisfied by code that is not CX-01: `toolArgsInvalid` matched only the bare field DECLARATION,
+# and `parseToJsonElement` matched only the tool_search_call query parser. Measured: deleting the
+# latch assignment AND invalidToolArgsReason outright left this wall GREEN. Same lesson w4_a
+# recorded in its repair round 2 — a token must be satisfiable only by the file that does the work.
+# The four files below are exactly the CX-01 carrier chain: entry point, accumulate+latch, parse,
+# convert-to-Failure.
 RESP = [
     ROOT / "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt",
-    ROOT / "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnState.kt",
-    ROOT / "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesToolSearchParse.kt",
+    ROOT / "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesItemFold.kt",
+    ROOT / "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesFrameParse.kt",
+    ROOT / "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTerminalDecision.kt",
 ]
 
 

@@ -19,18 +19,29 @@ THE METRIC. For each production .kt file:
 
 Then, per file, the gradient against its neighbours:
 
-    ratio = C / median(C of neighbours)
+    ratio = C / median(median C of each neighbouring PACKAGE)
 
-  neighbours   — files in the packages this file imports from, plus files whose packages import
-                 this file's package. A file is only a god object RELATIVE to what it sits next to;
-                 a dense domain-type module with thin neighbours is fine, a dense orchestrator
-                 surrounded by thin helpers is not.
+  neighbours   — the packages this file imports from, plus the packages that import this file's
+                 package. A file is only a god object RELATIVE to what it sits next to; a dense
+                 domain-type module with thin neighbours is fine, a dense orchestrator surrounded
+                 by thin helpers is not.
+
+                 ONE VOTE PER PACKAGE, never one per file. A median taken over neighbour FILES
+                 gives a package as many votes as it has files, so decomposing one importer into
+                 twelve siblings multiplies that package's vote twelvefold and drags the median
+                 down — this campaign's own edits then inflate the ratio of files nobody touched.
+                 Measured on 647ed02 (ResponsesRequestBuilder -> 12 siblings): under the file-vote
+                 denominator core/wire/AnthropicRequest.kt read 1.97 before and 5.57 after, band
+                 moderate -> HIGH, without one line of it changing. Package votes make the oracle
+                 invariant to how a neighbour is split, which is what an oracle for a splitting
+                 campaign has to be. Same reason the global median below is taken over packages.
 
   BANDS:  ratio < 1.8 low  |  1.8-3.0 moderate  |  >= 3.0 HIGH (god object)
 
-A natural hub is allowed to be dense: core/wire/AnthropicRequest.kt carries 19 exports in 133 lines
-and scores 2.0, which is the right shape for a module that declares domain types. The band that
-matters is HIGH.
+The band that matters is HIGH. Note what the metric does NOT excuse: core/wire/AnthropicRequest.kt
+carries 19 domain types in 133 lines and reads 3.34 against its consumers — HIGH, identically
+before and after 647ed02. Whether a pure DTO hub should be scored by C at all is a calibration
+question about C, not a regression, and is not decided here.
 
 USAGE
     python3 checks/concentration.py                      # full table, exit 0
@@ -94,24 +105,25 @@ def scan() -> list[dict]:
     for row in rows:
         by_package.setdefault(row["package"], []).append(row)
 
+    # Each package votes once, with its own median C. See the module docstring: a per-file vote lets
+    # a package that gets decomposed outvote every other neighbour, so the oracle moves on files
+    # nobody touched.
+    package_median = {pkg: statistics.median([r["C"] for r in rs]) for pkg, rs in by_package.items()}
+
     # A ratio taken against a tiny neighbourhood is noise, not a god object: a 63-line file whose
-    # neighbours happen to score 1 would read as 63x while being smaller than the median file in the
-    # tree. Smooth the denominator with a floor at half the global median C, and require the file
-    # itself to clear the global median before any band above "low" can apply.
-    global_median = statistics.median([r["C"] for r in rows]) if rows else 0.0
+    # neighbours happen to score 1 would read as 63x while being smaller than the median package in
+    # the tree. Smooth the denominator with a floor at half the global median C, and require the
+    # file itself to clear the global median before any band above "low" can apply.
+    global_median = statistics.median(list(package_median.values())) if package_median else 0.0
     floor = global_median * 0.5
 
     for row in rows:
-        neighbours: list[dict] = []
-        for subsystem in row["subsystems"]:
-            neighbours.extend(by_package.get(subsystem, []))
-        for other in rows:
-            if row["package"] in other["subsystems"]:
-                neighbours.append(other)
-        neighbours = [n for n in neighbours if n["file"] != row["file"]]
-        median = statistics.median([n["C"] for n in neighbours]) if neighbours else row["C"]
+        neighbours = {pkg for pkg in row["subsystems"] if pkg in package_median}
+        neighbours |= {other["package"] for other in rows if row["package"] in other["subsystems"]}
+        neighbours.discard(row["package"])
+        median = statistics.median([package_median[p] for p in neighbours]) if neighbours else row["C"]
         denominator = max(median, floor)
-        row["neighbours"] = len(neighbours)
+        row["neighbour_packages"] = sorted(neighbours)
         row["neighbour_median_C"] = round(median, 1)
         row["ratio"] = round(row["C"] / denominator, 2) if denominator else 0.0
         if row["C"] < global_median:

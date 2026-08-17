@@ -29,7 +29,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.jsonObject
-import splice.core.util.Clock
+import splice.core.util.ElapsedClock
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.util.MonoClock
@@ -41,7 +41,7 @@ internal class ReasoningCache(
     // Monotonic, not wall clock: both sweeps' takeWhile early-exits are sound only while
     // iteration order matches timestamp order — an NTP step backward would break that invariant
     // and leave an expired record unswept (review 2026-07-24; same reasoning as UpstreamClient).
-    private val clock: Clock = Clock(MonoClock::nowMs),
+    private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
     /** Daemon log sink for the two one-way transitions worth an operator's eye (freeze, bound
      *  eviction). Defaults to a no-op so tests need not thread it. */
     private val log: LogSink = LogSink {},

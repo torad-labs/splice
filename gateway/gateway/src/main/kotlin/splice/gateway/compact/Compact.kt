@@ -17,9 +17,9 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
-import splice.core.util.Clock
 import splice.core.util.JsonlSink
 import splice.core.util.LogSink
+import splice.core.util.WallClock
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.TextBlock
 import java.nio.file.Files
@@ -117,7 +117,7 @@ public data class ShadowRow(
 /** In-memory shadow ring + one log line per request — the marker-drift instrument. */
 public class ShadowClassifier(
     private val log: LogSink,
-    private val clock: Clock = Clock(System::currentTimeMillis),
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
     private val ring = ArrayDeque<ShadowRow>()
     private val lock = Any()
@@ -167,7 +167,7 @@ public data class CompactStatsSummary(
 )
 
 /** Compact outcome stats — the JSONL contract file the HUD and dashboard read. */
-public class CompactStats(private val file: Path, private val clock: Clock = Clock(System::currentTimeMillis)) {
+public class CompactStats(private val file: Path, private val clock: WallClock = WallClock(System::currentTimeMillis)) {
 
     private val json = Json { ignoreUnknownKeys = true }
 

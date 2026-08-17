@@ -25,8 +25,9 @@
 # "any modifier"; it is checked against the grammar, never assumed.
 #
 # NOTE (2026-08-17): this rule is still DORMANT — it lives here, not in .rules/kotlin-splice, and
-# does not run in `ast-grep scan`. HD-21 named three roles (LogSink/EnvReader/Clock) and cleared
-# 126 of the 246 sites; 120 remain, so promoting it to a live wall is a later wave.
+# does not run in `ast-grep scan`. HD-21 named four roles (LogSink/EnvReader/WallClock/ElapsedClock
+# — the `() -> Long` shape carries two non-substitutable roles) and cleared 126 of the 246 sites;
+# 120 remain, so promoting it to a live wall is a later wave.
 id: no-lambda-seam
 language: kotlin
 severity: error

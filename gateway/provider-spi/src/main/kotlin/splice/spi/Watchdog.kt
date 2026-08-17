@@ -14,7 +14,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import splice.core.turn.WatchdogBudget
-import splice.core.util.Clock
+import splice.core.util.ElapsedClock
 import splice.core.util.MonoClock
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -30,7 +30,7 @@ public sealed class WatchdogFired {
 public class TurnWatchdog(
     private val budget: WatchdogBudget,
     // Default is monotonic — sleep/wake/NTP must not invent stalls or freeze totalCap.
-    private val clock: Clock = Clock(MonoClock::nowMs),
+    private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
     // HD-19: the poll cadence of both loops below. ProcessTicker is `delay(intervalMs); true`, so
     // production paces exactly as it did; a test wires a ticker that returns instantly and can stop
     // the loop after N samples instead of racing a cancellation against a real 250ms..15s sleep.

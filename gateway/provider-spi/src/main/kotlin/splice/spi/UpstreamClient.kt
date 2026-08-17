@@ -36,7 +36,7 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.perf.TurnPerfTiming
 import splice.core.util.Cancellables
-import splice.core.util.Clock
+import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.MonoClock
 import java.util.concurrent.atomic.AtomicBoolean
@@ -79,7 +79,7 @@ public class UpstreamClient(
     // Default is monotonic — a wall-clock jump must not abort a healthy retry loop (forward) or
     // extend its deadline (backward). Same base as TurnWatchdog/InflightGate: two authorities
     // enforce cfg.upstreamTimeoutMs and MUST NOT split-brain across clock bases (review 2026-07-22).
-    private val clock: Clock = Clock(MonoClock::nowMs),
+    private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
 ) {
     // The four stateless collaborators the ex-companion members moved to. Constructed once per
     // client (not per call) so the transport/header/failure/retry rules cost nothing per attempt.

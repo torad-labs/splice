@@ -7,7 +7,7 @@
 // orphans its history. Recording is best-effort telemetry: it must never throw into the turn.
 package splice.core.perf
 
-import splice.core.util.Clock
+import splice.core.util.ElapsedClock
 
 /** The single source of every perf field name (marks are *_ms-since-arrival; counters are raw). */
 public object PerfKeys {
@@ -109,7 +109,14 @@ public data class PerfSnapshot(
     }
 }
 
-public class TurnPerf(private val clock: Clock = Clock(System::currentTimeMillis)) {
+/** Every reading here is consumed as a DIFFERENCE (`clock() - startedAt`, `clock() - t0`) and none
+ *  is ever persisted or put on the wire, so this is an [ElapsedClock] seam, not a [WallClock] one.
+ *  Production always passes the head's monotonic clock explicitly — `TurnPerf(clock)` at
+ *  HeadServer.handleMessages, off `HeadDeps.clock` = `MonoClock::nowMs` — so the wall-clock DEFAULT
+ *  below is reached only by tests that construct a bare `TurnPerf()`. It is left as it was rather
+ *  than quietly retuned to `MonoClock::nowMs`: that would be a behaviour change on a frozen tree,
+ *  and it belongs to whoever measures it, not to a typing wave. */
+public class TurnPerf(private val clock: ElapsedClock = ElapsedClock(System::currentTimeMillis)) {
 
     private val startedAt: Long = clock()
     private val lock = Any()

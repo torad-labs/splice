@@ -22,11 +22,11 @@ import kotlinx.serialization.json.put
 import splice.core.usage.RateLimitState
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
-import splice.core.util.Clock
 import splice.core.util.DaemonLog
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.util.SecureFile
+import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
@@ -180,7 +180,7 @@ private data class PendingRateLimit(val encoded: String, val parsed: RateLimitSt
 public class UsageStore(
     private val usageFile: Path,
     private val ratelimitFile: Path,
-    private val clock: Clock = Clock(System::currentTimeMillis),
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
     private val log: LogSink = LogSink(DaemonLog::write),
 ) {
     private val json = Json { ignoreUnknownKeys = true }

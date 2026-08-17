@@ -26,11 +26,11 @@ import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.Cancellables
-import splice.core.util.Clock
 import splice.core.util.DaemonLog
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.util.SecureFile
+import splice.core.util.WallClock
 import splice.spi.CredentialLock
 import splice.spi.SingleFlight
 import java.nio.file.Files
@@ -57,7 +57,7 @@ public data class KimiRefreshedTokens(
 public class KimiAuthProvider(
     private val authPath: Path,
     private val authCacheMs: Long = DEFAULT_CACHE_MS,
-    private val clock: Clock = Clock(System::currentTimeMillis),
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
     /** POST grant_type=refresh_token to auth.kimi.com's token URL; returns the classified attempt. */
     private val refreshCall: suspend (refreshToken: String) -> RefreshAttempt<KimiRefreshedTokens>,
     /** G17: scope for background prefetch in the proactive window; null keeps the blocking path. */

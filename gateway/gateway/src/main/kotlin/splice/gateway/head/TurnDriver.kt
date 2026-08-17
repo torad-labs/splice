@@ -31,7 +31,7 @@ import splice.core.turn.ErrorType
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.core.util.Clock
+import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.gateway.perf.PerfRowMeta
 import splice.gateway.perf.PerfStats
@@ -728,7 +728,7 @@ internal class TurnWiring {
         frame: String,
         perf: TurnPerf,
         clientGone: AtomicBoolean,
-        clock: Clock,
+        clock: ElapsedClock,
     ) {
         val t = clock()
         try {
@@ -1189,7 +1189,7 @@ internal class TurnTelemetry(
     private val headKey: String,
     private val perfStats: PerfStats,
     private val log: LogSink,
-    private val clock: Clock,
+    private val clock: ElapsedClock,
 ) {
     /** The sole perf-row emitter: total mark, one JSONL row, one log line. Never throws. */
     fun recordPerf(drive: TurnDrive, outcomeTag: String) {

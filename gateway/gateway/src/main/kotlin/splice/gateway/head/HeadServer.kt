@@ -49,7 +49,7 @@ import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
-import splice.core.util.Clock
+import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.core.util.MonoClock
 import splice.gateway.compact.CompactClassifier
@@ -98,7 +98,7 @@ public data class HeadDeps(
     val usageStore: UsageStore,
     val perfStats: PerfStats,
     val log: LogSink,
-    val clock: Clock = Clock(MonoClock::nowMs),
+    val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
     /** HD-19: the head's two runtime seams, defaulted to the exact behaviour they replaced.
      *  [waiter] paces HeadServer's bounded stop-drain poll; [ticker] paces TurnDriver's client
      *  keepalive pinger. Both are named ports rather than a bare `delay`, so a head test can drive

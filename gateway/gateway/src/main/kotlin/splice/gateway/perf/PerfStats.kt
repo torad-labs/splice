@@ -16,8 +16,8 @@ import kotlinx.serialization.json.put
 import splice.core.perf.PerfSnapshot
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
-import splice.core.util.Clock
 import splice.core.util.JsonlSink
+import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -33,7 +33,7 @@ private const val DEFAULT_TAIL = 200
 // ~256 KiB of trailing JSONL bounds parse cost regardless of file age.
 private const val READ_TAIL_BYTES = 256 * 1024
 
-public class PerfStats(private val file: Path, private val clock: Clock = Clock(System::currentTimeMillis)) {
+public class PerfStats(private val file: Path, private val clock: WallClock = WallClock(System::currentTimeMillis)) {
 
     private val json = Json { ignoreUnknownKeys = true }
 

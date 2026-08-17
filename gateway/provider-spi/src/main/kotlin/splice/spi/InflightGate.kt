@@ -12,7 +12,7 @@ package splice.spi
 
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.suspendCancellableCoroutine
-import splice.core.util.Clock
+import splice.core.util.ElapsedClock
 import splice.core.util.MonoClock
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
@@ -24,7 +24,7 @@ public class InflightGate(
     private val maxInflight: () -> Int,
     private val maxQueued: () -> Int = { 0 },
     // Default is monotonic — wall-clock jumps must not invent idle timeouts or freeze slots.
-    private val clock: Clock = Clock(MonoClock::nowMs),
+    private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
 ) {
     private val lock = Any()
     private var inflight = 0
@@ -142,7 +142,7 @@ public class InflightGate(
 
     public class Slot internal constructor(
         private val gate: InflightGate,
-        private val clock: Clock,
+        private val clock: ElapsedClock,
     ) {
         private val released = AtomicBoolean(false)
         private val lastTouch = AtomicLong(clock())

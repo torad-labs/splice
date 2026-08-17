@@ -14,6 +14,7 @@ import splice.core.turn.Usage
 import splice.core.usage.RateLimitState
 import splice.core.usage.UsageWarnPolicy
 import splice.gateway.head.RoundUsage
+import splice.gateway.usage.OutputClampPolicy
 import splice.gateway.usage.UsageHud
 import splice.gateway.usage.UsageJson
 import splice.gateway.usage.UsageStore
@@ -134,11 +135,16 @@ class UsageTest {
     @Test
     fun `output clamp - over clamps with the log line, under passes, null max passes`() {
         val logs = mutableListOf<String>()
-        val clamp = hud.makeOutputClamp(32_000, compact = false, headTag = "codex-proxy", log = { logs.add(it) })
+        val clamp = OutputClampPolicy.makeOutputClamp(
+            32_000,
+            compact = false,
+            headTag = "codex-proxy",
+            log = { logs.add(it) },
+        )
         assertEquals(32_000, clamp(200_000))
         assertTrue(logs.single().contains("output_tokens 200000 > client max_tokens 32000 compact=false"))
         assertEquals(10, clamp(10))
-        val noMax = hud.makeOutputClamp(null, compact = false, headTag = "t", log = { logs.add(it) })
+        val noMax = OutputClampPolicy.makeOutputClamp(null, compact = false, headTag = "t", log = { logs.add(it) })
         assertEquals(999_999, noMax(999_999))
     }
 

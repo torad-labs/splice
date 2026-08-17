@@ -45,7 +45,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[4]
 PATHS = {
     "core": "gateway/core/src/main/kotlin/splice/core/util/JsonScalars.kt",
     "harvest": "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/Harvested.kt",
-    "hud": "gateway/gateway/src/main/kotlin/splice/gateway/usage/UsageHud.kt",
+    # HD-24 (2026-08-17): UsageHud decomposed; firstNum (the delegating alias-chain call) moved to
+    # UsageJson.kt (the usage-accounting owner) — single file to single file.
+    "hud": "gateway/gateway/src/main/kotlin/splice/gateway/usage/UsageJson.kt",
     # HD-24 (2026-08-17): ChatStreamTranslator decomposed; both usage-alias reads moved to
     # ChatUsage.kt (the usage-accounting owner) — single file to single file.
     "chat": "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatUsage.kt",

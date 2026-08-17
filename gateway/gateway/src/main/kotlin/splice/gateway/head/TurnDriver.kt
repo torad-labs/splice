@@ -36,6 +36,7 @@ import splice.core.util.LogSink
 import splice.gateway.perf.PerfRowMeta
 import splice.gateway.perf.PerfStats
 import splice.gateway.pipeline.TurnPipeline
+import splice.gateway.usage.OutputClampPolicy
 import splice.gateway.usage.TurnUsage
 import splice.gateway.usage.UsageHud
 import splice.gateway.wire.BufferingWireSink
@@ -322,7 +323,7 @@ internal class TurnDriver(
             pipeline = TurnPipeline(
                 compactStats,
                 log,
-                hud.makeOutputClamp(meta.clientMaxTokens, meta.compact, provider.key, log),
+                OutputClampPolicy.makeOutputClamp(meta.clientMaxTokens, meta.compact, provider.key, log),
                 mirrorReasoning = deps.mirrorReasoning,
             ),
             t0 = inputs.t0,

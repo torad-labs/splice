@@ -76,8 +76,8 @@ class TurnPipelineTest {
         mirrorReasoning = mirrorReasoning,
     )
 
-    private fun meta(showReasoning: String) = TurnMeta(
-        compact = false,
+    private fun meta(showReasoning: String, compact: Boolean = false) = TurnMeta(
+        compact = compact,
         showReasoning = ReasoningDisplayParser.from(showReasoning),
         stream = true,
         originalModel = "claude-codex--gpt-5.6-sol",
@@ -116,6 +116,19 @@ class TurnPipelineTest {
             .finishStream(rec, outcome(thinking, emittedThinking), meta(showReasoning), elapsedMs = 1)
         return rec
     }
+
+    /** [run]'s compact sibling, returning the pipeline's own OUTCOME TAG alongside the terminal:
+     *  `empty_compact` and `empty_model` both reach the wire as the same API_ERROR shape, so the
+     *  terminal alone cannot tell the compact gate from the non-compact one. */
+    private suspend fun runCompact(thinking: String, mirrorReasoning: Boolean = true): Pair<RecTerminal, String> {
+        val rec = RecTerminal()
+        val tag = pipeline(mirrorReasoning)
+            .finishStream(rec, outcome(thinking), meta("text", compact = true), elapsedMs = 1)
+        return rec to tag
+    }
+
+    /** The compact-stats JSONL the pipeline appended this turn (a fresh reader over the same file). */
+    private fun recordedCompact() = CompactStats(tmp.resolve("compact.jsonl")).read()
 
     @Test
     fun `the band is an honest error when the operator disabled the mirror`() = runTest {
@@ -186,5 +199,48 @@ class TurnPipelineTest {
         val rec = run(mirrorReasoning = false, showReasoning = "text", thinking = long)
         assertEquals("terminal", rec.ending)
         assertTrue(rec.texts.any { it == long }, "promote-to-text must emit the thinking verbatim")
+    }
+
+    // THE COMPACT HALF OF THE HONESTY GATE. Every case above builds `compact = false`, so only the
+    // `empty_model` arm was ever exercised — the `empty_compact` arm beside it had no coverage of
+    // any kind. It is the higher-stakes of the two: an empty SUCCESS on a compact turn makes Claude
+    // Code store a blank summary and lose the conversation thread, silently and unrecoverably. The
+    // gate must therefore fire on `compact` REGARDLESS of the mirror band the cases above map out,
+    // because the mirror is off for compact by construction (Mirror.willMirror: "compact is a
+    // text-only summarizer turn").
+
+    @Test
+    fun `an empty compact turn is an empty_compact error, never an empty success`() = runTest {
+        val (rec, tag) = runCompact(thinking = "")
+        assertEquals("empty_compact", tag)
+        assertEquals("error", rec.ending)
+        assertEquals(ErrorType.API_ERROR, rec.errorType)
+        assertTrue(rec.errorMessage.contains("compact returned no content"), rec.errorMessage)
+        assertTrue(rec.texts.isEmpty(), "a blank summary must never reach the wire: ${rec.texts}")
+        val stats = recordedCompact()
+        assertEquals(mapOf("empty_model" to 1), stats.byOutcome, "recordCompact must have fired")
+        assertTrue(stats.tail.single().toString().contains("\"error\":\"api_error\""), "${stats.tail}")
+    }
+
+    @Test
+    fun `the mirror band never rescues a compact turn - it is still empty_compact`() = runTest {
+        // The band is exactly where a non-compact turn stays a mirrored success (see above). On a
+        // compact turn the mirror is shut, so the same reasoning covers nothing and the gate fires.
+        val (rec, tag) = runCompact(thinking = bandThinking, mirrorReasoning = true)
+        assertEquals("empty_compact", tag)
+        assertEquals(ErrorType.API_ERROR, rec.errorType)
+        assertTrue(rec.texts.isEmpty(), "compact must not emit a mirror block: ${rec.texts}")
+    }
+
+    @Test
+    fun `a compact turn with promotable reasoning promotes and ends clean`() = runTest {
+        // The never-when half: the gate keys on "nothing to put in the text channel", not on
+        // `compact` itself — a promotable summary is what compaction is FOR.
+        val summary = "x".repeat(PROMOTE_MIN_CHARS + 5)
+        val (rec, tag) = runCompact(thinking = summary)
+        assertEquals("ok", tag)
+        assertEquals("terminal", rec.ending)
+        assertTrue(rec.texts.any { it == summary }, "the summary must reach the wire: ${rec.texts}")
+        assertEquals(mapOf("model_thinking" to 1), recordedCompact().byOutcome)
     }
 }

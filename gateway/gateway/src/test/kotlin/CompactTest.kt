@@ -126,6 +126,35 @@ class CompactTest {
         assertTrue(shadow.tail(1000).size <= 500)
     }
 
+    // CMP-001: the drift canary itself was untested — `compact-drift` appeared exactly once in the
+    // repo, in Compact.kt. It fires on the PARTIAL drift: the pinned verbatim compactMarkers all
+    // miss while a looser affordance regex still catches the turn as compact, which is what a
+    // Claude Code summarizer-wording change looks like from here. Untested, the instrument built to
+    // catch marker rot would have rotted silently with it.
+    @Test
+    fun `CMP-001 - a fallback-only match fires the compact-drift canary, a verbatim marker never does`() {
+        val lines = mutableListOf<String>()
+        val shadow = ShadowClassifier(log = { lines.add(it) }, clock = { 9L })
+
+        val verbatim = body("""{"model":"m","system":"You are $COMPACT_MARKER.","messages":[]}""")
+        val onMarker = shadow.record(verbatim, classifier.classifyCompact(verbatim))
+        assertTrue(onMarker.compact)
+        assertTrue(onMarker.hasMarker)
+        assertEquals(0, lines.count { it.startsWith("[compact-drift]") }, "a pinned marker is not drift: $lines")
+
+        // Matches compactionTextOnlyRe, carries none of the five verbatim marker sentences.
+        val fallbackOnly = body(
+            """{"model":"m","messages":[
+                {"role":"user","content":"The compaction agent should only produce TEXT."}]}""",
+        )
+        val onDrift = shadow.record(fallbackOnly, classifier.classifyCompact(fallbackOnly))
+        assertTrue(onDrift.compact, "the fallback regex must still classify this as compact")
+        assertFalse(onDrift.hasMarker, "the pinned markers must all miss — that IS the drift signal")
+        val drift = lines.filter { it.startsWith("[compact-drift]") }
+        assertEquals(1, drift.size, "the canary must fire exactly once: $lines")
+        assertTrue(drift.single().contains("has_marker=false, compact=true"), drift.single())
+    }
+
     @Test
     fun `compact stats jsonl round-trip with outcome grouping`(@TempDir tmp: Path) {
         val stats = CompactStats(tmp.resolve("claudex-compact-stats.jsonl"), clock = { 7L })

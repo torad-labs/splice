@@ -55,7 +55,12 @@ PATHS = {
         "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/"
         "PassthroughStreamTranslator.kt",
     ],
-    "chat": ["gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt"],
+    # HD-24 (2026-08-17): ChatStreamTranslator decomposed; emittedThinking's set-site moved to
+    # ChatProseChannels.kt and its read-into-the-outcome site stays in ChatStreamTranslator.kt.
+    "chat": [
+        "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatProseChannels.kt",
+        "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt",
+    ],
     # HD-24 (2026-08-17): ResponsesStreamTranslator decomposed; emittedThinking's set-site and its
     # read-into-the-outcome site moved to these two siblings.
     "responses": [
@@ -106,7 +111,11 @@ REQUIRED = {
     ],
     "chat": [
         ("emittedThinking = true", "the chat translator opens a thinking block without recording it"),
-        ("emittedThinking = emittedThinking,", "the recorded flag never reaches the outcome"),
+        # HD-24 (2026-08-17): successOutcome stayed on ChatStreamTranslator.kt, reading the shared
+        # ChatProseChannels collaborator instead of its own field — same field, same invariant, new
+        # receiver.
+        (("emittedThinking = emittedThinking,", "emittedThinking = channels.emittedThinking,"),
+         "the recorded flag never reaches the outcome"),
     ],
     "responses": [
         ("emittedThinking = true", "the responses translator opens a thinking block without recording it"),

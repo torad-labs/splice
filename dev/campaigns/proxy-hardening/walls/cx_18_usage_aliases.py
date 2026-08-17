@@ -46,7 +46,9 @@ PATHS = {
     "core": "gateway/core/src/main/kotlin/splice/core/util/JsonScalars.kt",
     "harvest": "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/Harvested.kt",
     "hud": "gateway/gateway/src/main/kotlin/splice/gateway/usage/UsageHud.kt",
-    "chat": "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt",
+    # HD-24 (2026-08-17): ChatStreamTranslator decomposed; both usage-alias reads moved to
+    # ChatUsage.kt (the usage-accounting owner) — single file to single file.
+    "chat": "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatUsage.kt",
     "passthrough": "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughStreamTranslator.kt",
 }
 

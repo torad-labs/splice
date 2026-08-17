@@ -20,7 +20,10 @@ import pathlib
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
-CHAT = ROOT / "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt"
+# HD-24 (2026-08-17): ChatStreamTranslator decomposed; the latch and its parser both moved to
+# ChatToolCalls.kt (the streamed tool-call state owner) — single file to single file, both tokens
+# land in the one place by design, so no list is needed here.
+CHAT = ROOT / "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatToolCalls.kt"
 # LIST, not a single file (HD-24 decomposition, 2026-08-17): a target may move the validation latch
 # and its parser to siblings. Every path must exist or the whole key reads as missing (vacuity
 # guard unchanged — see the file-list mechanism note in cx_09/w4_a).

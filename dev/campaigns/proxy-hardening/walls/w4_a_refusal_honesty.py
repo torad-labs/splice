@@ -70,7 +70,15 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 PASS = ROOT / ("gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/"
                "PassthroughStreamTranslator.kt")
-CHAT = ROOT / "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt"
+# LIST (HD-24 decomposition, 2026-08-17): the carrier `strIfString(obj["refusal"])` moved to
+# ChatProseFold.kt, the two appendRefusal call sites moved to ChatEventRouter.kt, and the verdict
+# `refusalBuf.isNotBlank() -> TurnOutcome.Failure` moved to ChatTerminalState.kt. ANY missing file
+# makes the whole key None (the vacuity guard, unchanged and strengthened).
+CHAT = [
+    ROOT / "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatProseFold.kt",
+    ROOT / "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatEventRouter.kt",
+    ROOT / "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatTerminalState.kt",
+]
 # LIST, not a single file (HD-24 decomposition, 2026-08-17, the file-list mechanism): the dispatch
 # arm, the terminal-object harvest and the conversion verdict moved to three siblings; none of them
 # is ResponsesStreamTranslator.kt itself anymore. ANY missing file makes the whole key None (the
@@ -103,9 +111,18 @@ REQUIRED = {
         ["else -> failureRules.stopReasonFailure(reason)", "else -> stopReasonFailure(reason)"],
     ),
     "chat": (
+        # HD-24 (2026-08-17): the two call sites moved onto ChatEventRouter, which holds its own
+        # ChatProseFold instance and reads the buffer through the ChatTerminalState collaborator —
+        # `appendRefusal(refusalBuf, ...)` reads `refusal.appendRefusal(terminal.refusalBuf, ...)`.
+        # Same function, same arguments in spirit, new receiver and new buffer owner. The invariant
+        # either spelling satisfies is that THIS call site still hands the carrier to appendRefusal
+        # against the ONE refusal buffer the terminal verdict reads; deleting the arm still
+        # satisfies neither.
         ['strIfString(obj["refusal"])',
-         "appendRefusal(refusalBuf, delta, isDelta = true)",
-         "appendRefusal(refusalBuf, msg, isDelta = false)"],
+         ("appendRefusal(refusalBuf, delta, isDelta = true)",
+          "appendRefusal(terminal.refusalBuf, delta, isDelta = true)"),
+         ("appendRefusal(refusalBuf, msg, isDelta = false)",
+          "appendRefusal(terminal.refusalBuf, msg, isDelta = false)")],
         # The conversion half must pin the INVARIANT (the refusal buffer produces a Failure), not
         # the incidental spelling of the emptiness predicate. Round-2 review required isNotBlank
         # here (a whitespace-only buffer is not a refusal once fragments append verbatim), and a

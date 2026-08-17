@@ -328,8 +328,8 @@ internal class PassthroughAssembly {
     /** Overlay the head's TOML [providers.*.quirks] onto a passthrough head's BASE quirk profile.
      *  Absent (null) keeps the base, which is what makes a splice.toml written before these knobs
      *  existed keep serving a kimi head unchanged; an explicitly-set knob wins. Same shape as
-     *  [HeadBuildInputs.chatQuirks]/[Daemon.responsesQuirks], and the mapping lives HERE, at the
-     *  assembly point, so the dialect never imports a topology config type. */
+     *  [HeadBuildInputs.chatQuirks]/[ProviderAssembly.responsesQuirks], and the mapping lives HERE,
+     *  at the assembly point, so the dialect never imports a topology config type. */
     internal fun passthroughQuirks(providerCfg: ProviderConfig, base: PassthroughQuirks): PassthroughQuirks =
         base.copy(
             mapThinkingToAdaptive = providerCfg.quirks.mapThinkingAdaptive ?: base.mapThinkingToAdaptive,
@@ -944,10 +944,16 @@ public class Daemon(
                     client = Transport().defaultClient(cfg.firstByteTimeoutMs, cfg.upstreamTimeoutMs, log),
                 ),
                 inferenceToken = mgmtKey.get(),
-                // Only a client-auth head: it holds no splice credential, so the mgmt-key door
-                // would reject exactly the requests it exists to serve, and the caller's own auth
-                // headers are what ride upstream. Every other head keeps enforcing the key.
-                forwardClientAuth = ctx.providerCfg.auth.kind == CLIENT,
+                // Derived from the CREDENTIAL, never from the declared string. The bypass is only
+                // safe because splice holds nothing for this head, so it reads the one artifact that
+                // IS that fact: `wired.auth`. Deriving it from `auth.kind == "client"` instead made
+                // the two halves independent — [ProviderAssembly.buildProvider] dispatches on
+                // DIALECT first, so `kind = "client"` on openai-chat / openai-responses fell through
+                // to ApiKeyAuthProvider and produced a head that opened the mgmt-key door while
+                // still holding a real vendor key. Structurally impossible now: no
+                // ClientAuthProvider, no bypass. The caller's own auth headers are what ride
+                // upstream on the heads that do get it; every other head keeps enforcing the key.
+                forwardClientAuth = wired.auth is ClientAuthProvider,
                 // Re-read per head on EVERY admission (still hot-resizable): the ceiling belongs to
                 // the upstream ACCOUNT, not the gateway. One shared value meant a workflow fan-out
                 // admitted 100 concurrent streams into a single account, 429'd, and armed the shared

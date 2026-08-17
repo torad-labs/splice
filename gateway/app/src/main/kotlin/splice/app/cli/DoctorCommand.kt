@@ -339,8 +339,14 @@ internal class DoctorCommand {
         )
     }
 
+    // The client-auth line reports what the head DECLARES, not what the daemon wired: doctor reads
+    // the topology TOML and cannot see the providers. "splice holds no credential for this head"
+    // was a claim about the running daemon that this process has no way to check — true whenever
+    // declaration and wiring agree (anthropic-passthrough, the one arm that builds a
+    // ClientAuthProvider), false on a dialect whose dispatch has no client arm and therefore keeps
+    // an api-key provider plus the mgmt-key door. Naming the declaration is the honest form.
     private fun credentialLabel(auth: HeadAuth): String = when {
-        auth.selfManaged -> "client-native — splice holds no credential for this head"
+        auth.selfManaged -> "client-native — declared auth.kind = client, so there is no key to set"
         auth.envVar != null -> "${auth.envVar} is set"
         else -> "signed in"
     }

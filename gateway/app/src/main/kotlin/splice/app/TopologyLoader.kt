@@ -79,7 +79,7 @@ command = "claude-openrouter"
      *  signal, never /health. Lives here rather than beside its Daemon caller because the fact it
      *  computes is this loader's (Kotlin style law, 2026-08-15: it can no longer be a file-level
      *  helper, and [currentDigest] is the thing it wraps). */
-    public fun staleProbe(path: Path?, bootDigest: String): () -> Boolean = {
+    internal fun staleProbe(path: Path?, bootDigest: String): () -> Boolean = {
         val now = path?.let { currentDigest(it) }
         now != null && bootDigest.isNotEmpty() && now != bootDigest
     }

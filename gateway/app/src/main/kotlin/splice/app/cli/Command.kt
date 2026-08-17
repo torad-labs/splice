@@ -54,9 +54,16 @@ public sealed class Command {
      *  law (2026-08-15) gave it the type it always belonged to. Visibility unchanged (internal). */
     internal fun outcomeExitCode(ok: Boolean): Int = if (ok) 0 else 1
 
-    /** A verb that cannot fail: run [block], exit 0. `protected` rather than the old file-private —
-     *  a case IS a subclass, so that is the narrowest visibility the nested arms can still reach,
-     *  and `Command` is sealed, so no type outside this file can widen the reach. */
+    /** A verb that cannot fail: run [block], exit 0.
+     *
+     *  `protected` rather than the old file-private, and that IS the narrowest that compiles: a case
+     *  is a subclass, and class-`private` is not reachable from the nested arms (measured — the
+     *  `Status` arm fails with "Cannot access 'fun success': it is private in Command").
+     *
+     *  What the widening actually costs: since Kotlin 1.5 a sealed subclass need only share the
+     *  PACKAGE and the compilation module, not the file, so the reach is any direct `: Command()` in
+     *  package `splice.app.cli` inside `:app` — not "this file only". Today all 13 cases are nested
+     *  right here, which is the whole of it, but a new file in this package could reach it. */
     protected inline fun success(block: () -> Unit): Int {
         block()
         return 0

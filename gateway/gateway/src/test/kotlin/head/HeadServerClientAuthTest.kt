@@ -110,9 +110,17 @@ class HeadServerClientAuthTest {
 
     private val heads = mutableListOf<HeadServer>()
 
-    private fun startHead(forwardClientAuth: Boolean): Int {
+    /** The default pairs the flag with the credential state the daemon derives it FROM, which is
+     *  also why this file only ever built the two agreeing cells — the `auth` override is what lets
+     *  the flag and the credential be chosen independently. */
+    private fun defaultAuthFor(forwardClientAuth: Boolean): RefreshableAuthProvider =
+        if (forwardClientAuth) ClientAuthProvider("claude-splice") else FakeApiKeyAuth()
+
+    private fun startHead(
+        forwardClientAuth: Boolean,
+        auth: RefreshableAuthProvider = defaultAuthFor(forwardClientAuth),
+    ): Int {
         val port = ServerSocket(0).use { it.localPort }
-        val auth = if (forwardClientAuth) ClientAuthProvider("claude-splice") else FakeApiKeyAuth()
         val provider = PassthroughProvider(
             tuning = ProviderTuning(
                 key = "anthropic",
@@ -243,5 +251,26 @@ class HeadServerClientAuthTest {
         assertNull(sent["authorization"])
         assertTrue(sent["anthropic-beta"].orEmpty().isEmpty(), "a non-client head forwards nothing")
         assertEquals(listOf("2023-06-01"), sent["anthropic-version"].orEmpty())
+    }
+
+    // ── the cell that was never built ─────────────────────────────────────────────────────────
+    //
+    // Bypass ON while splice STILL HOLDS a credential. Every case above ties the flag to the auth
+    // provider, so this DISAGREEING pairing — the one the daemon could actually reach while it
+    // derived the flag from the TOML string instead of from `wired.auth` — is the cell this wall
+    // never constructed, which is exactly why the defect survived it.
+    //
+    // What it pins is what the bypass COSTS when it is not backed by an empty credential: the door
+    // opens for a caller with no mgmt key AND splice's own secret is what reaches the vendor. The
+    // daemon-side wall that this is unreachable in practice lives in :app
+    // (ClientAuthDerivationTest); this one states why it must stay unreachable.
+    @Test
+    fun `bypass alongside a splice-held credential opens the door and spends splice's own key`() {
+        val port = startHead(forwardClientAuth = true, auth = FakeApiKeyAuth())
+        val before = upstream.requests.size
+        val (status, _) = turn(port) // no Authorization header at all
+        assertEquals(HttpStatusCode.OK, status)
+        assertEquals(before + 1, upstream.requests.size, "one turn must produce one upstream request")
+        assertEquals(listOf("splice-held-secret"), upstream.requests[before]["x-api-key"].orEmpty())
     }
 }

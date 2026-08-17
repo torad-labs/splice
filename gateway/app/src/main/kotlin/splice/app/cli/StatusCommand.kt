@@ -85,14 +85,21 @@ internal class StatusCommand {
         else -> if (provider.dialect.name == "OPENAI_CHAT") "OpenAI-compatible" else "OpenAI platform"
     }
 
-    /** A head whose credential is the CALLER's, not splice's — nothing here can be "missing". */
+    /** A head that DECLARES the caller's own credential rather than one splice holds.
+     *
+     *  DECLARED, not observed, and the distinction is load-bearing: the CLI reads the topology TOML
+     *  and never the daemon's wired providers. Declaration and wiring agree on the
+     *  anthropic-passthrough dialect — the one dispatch arm that builds a ClientAuthProvider — and
+     *  on any other dialect the daemon falls through to an api-key provider and keeps enforcing the
+     *  mgmt key. So this predicate answers "what does the head declare?", which is all this process
+     *  can see; the daemon derives the actual bypass from the wired credential, never from here. */
     internal fun isClientAuth(provider: ProviderConfig): Boolean =
         AuthKindRegistry.from(provider.auth.kind) == AuthKind.Client
 
     internal fun authPresent(key: String, provider: ProviderConfig, envReader: (String) -> String?): Boolean =
-        // Splice holds no credential for a client-auth head BY DESIGN, so "is it configured?" is
-        // always yes. Without this it falls through to the api-key branch and reads as permanently
-        // unconfigured, against a head that serves fine.
+        // A head that declares client auth has no splice-held credential to configure BY DESIGN, so
+        // "is it configured?" is always yes. Without this it falls through to the api-key branch and
+        // reads as permanently unconfigured, against a head that serves fine.
         isClientAuth(provider) || credentialConfigured(key, provider, envReader)
 
     /** File / env / KeyStore presence for a head whose credential SPLICE holds. */

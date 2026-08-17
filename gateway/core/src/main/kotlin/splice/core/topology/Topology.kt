@@ -6,6 +6,9 @@
 // and `topology.configOverrides()` read exactly as before; the three operator-facing diagnostics
 // became members of TopologyMessages; effectiveApiKeyEnv became a member of AuthConfig, which is
 // the type it interrogates.
+// 2026-08-17 (HD-20): the last MEMBER extension here — `DaemonConfig.putFoldOverrides`, declared
+// inside Topology — moved down onto DaemonConfig itself, the type it always read. Same body, same
+// name, byte-identical call site.
 package splice.core.topology
 
 import kotlinx.serialization.SerialName
@@ -94,16 +97,6 @@ public data class Topology(
             provider.auth.file?.let { out["grokAuthPath"] = it }
         }
     }
-
-    /** Reasoning-continuation fold knobs, split out so [configOverrides] stays under the complexity cap.
-     *  The comma-joined model list is what the STRING knob coerces (SpliceConfig splits it back).
-     *  Kept an EXTENSION (now a member one, HD-M8) so [configOverrides]'s body is unchanged. */
-    private fun DaemonConfig.putFoldOverrides(out: MutableMap<String, String>) {
-        foldReasoningModels?.let { out["foldReasoningModels"] = it.joinToString(",") }
-        foldMaxContinue?.let { out["foldMaxContinue"] = it.toString() }
-        foldMarkerText?.let { out["foldMarkerText"] = it }
-        foldMaxTier?.let { out["foldMaxTier"] = it.toString() }
-    }
 }
 
 private const val MIN_TCP_PORT = 1
@@ -150,7 +143,20 @@ public data class DaemonConfig(
     @SerialName("fold_max_continue") val foldMaxContinue: Int? = null,
     @SerialName("fold_marker_text") val foldMarkerText: String? = null,
     @SerialName("fold_max_tier") val foldMaxTier: Int? = null,
-)
+) {
+    /** Reasoning-continuation fold knobs, split out so [Topology.configOverrides] stays under the
+     *  complexity cap. The comma-joined model list is what the STRING knob coerces (SpliceConfig
+     *  splits it back). Was `private fun DaemonConfig.putFoldOverrides` inside [Topology] until HD-20
+     *  banned extension declarations; it is now a MEMBER of the type it always read, so
+     *  [Topology.configOverrides]'s `daemon.putFoldOverrides(out)` call site is byte-identical. It is
+     *  `internal` rather than `private` only because [Topology] — a different class — is the caller. */
+    internal fun putFoldOverrides(out: MutableMap<String, String>) {
+        foldReasoningModels?.let { out["foldReasoningModels"] = it.joinToString(",") }
+        foldMaxContinue?.let { out["foldMaxContinue"] = it.toString() }
+        foldMarkerText?.let { out["foldMarkerText"] = it }
+        foldMaxTier?.let { out["foldMaxTier"] = it.toString() }
+    }
+}
 
 @Serializable
 public data class ProviderConfig(

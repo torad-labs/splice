@@ -37,29 +37,32 @@ public object MfjsSanitizer {
         val hasCombinator = node.containsKey(ANY_OF) || node.containsKey(ONE_OF)
 
         return buildJsonObject {
-            putNodeType(node, hasCombinator)
+            putNodeType(this, node, hasCombinator)
             for ((key, value) in node) {
                 if (key == TYPE || key in STRIP_KEYS) continue
-                putSanitizedChild(key, value, depth)
+                putSanitizedChild(this, key, value, depth)
             }
         }
     }
 
-    /** Rule 1/2: a combinator hub carries no type; otherwise keep the explicit type or infer one. */
-    private fun JsonObjectBuilder.putNodeType(node: JsonObject, hasCombinator: Boolean) {
+    /** Rule 1/2: a combinator hub carries no type; otherwise keep the explicit type or infer one.
+     *  HD-20: the `JsonObjectBuilder` receiver became [sink], the first parameter — the emission
+     *  point and its ORDER relative to the loop below are unchanged, which is what keeps the built
+     *  bytes identical. */
+    private fun putNodeType(sink: JsonObjectBuilder, node: JsonObject, hasCombinator: Boolean) {
         if (hasCombinator) return
         val existing = node[TYPE]
-        if (existing != null) put(TYPE, existing) else put(TYPE, inferType(node))
+        if (existing != null) sink.put(TYPE, existing) else sink.put(TYPE, inferType(node))
     }
 
-    private fun JsonObjectBuilder.putSanitizedChild(key: String, value: JsonElement, depth: Int) {
+    private fun putSanitizedChild(sink: JsonObjectBuilder, key: String, value: JsonElement, depth: Int) {
         when (key) {
-            PROPERTIES -> put(PROPERTIES, sanitizeSchemaMap(value, depth))
-            ITEMS -> put(ITEMS, sanitizeItems(value, depth))
-            ADDITIONAL_PROPERTIES -> put(ADDITIONAL_PROPERTIES, sanitizeChild(value, depth + 1))
-            ANY_OF, ONE_OF -> put(key, sanitizeBranches(value, depth))
-            DEFS, DEFINITIONS -> put(key, sanitizeSchemaMap(value, depth))
-            else -> put(key, value)
+            PROPERTIES -> sink.put(PROPERTIES, sanitizeSchemaMap(value, depth))
+            ITEMS -> sink.put(ITEMS, sanitizeItems(value, depth))
+            ADDITIONAL_PROPERTIES -> sink.put(ADDITIONAL_PROPERTIES, sanitizeChild(value, depth + 1))
+            ANY_OF, ONE_OF -> sink.put(key, sanitizeBranches(value, depth))
+            DEFS, DEFINITIONS -> sink.put(key, sanitizeSchemaMap(value, depth))
+            else -> sink.put(key, value)
         }
     }
 

@@ -80,7 +80,7 @@ public class KimiOAuth {
         )
 
     public fun parseKimiDeviceAuthorization(responseBody: String): KimiDeviceAuthorization {
-        val obj = kimiJson.parseToJsonElement(responseBody).jsonObjectOrEmpty()
+        val obj = jsonObjectOrEmpty(kimiJson.parseToJsonElement(responseBody))
         return KimiDeviceAuthorization(
             userCode = JsonScalars.str(obj, "user_code").orEmpty(),
             deviceCode = JsonScalars.str(obj, "device_code").orEmpty(),
@@ -100,7 +100,7 @@ public class KimiOAuth {
      * mandatory, so refresh_token must always be present). `scope` is persisted verbatim.
      */
     public fun kimiAuthJsonFromTokenResponse(responseBody: String, nowMs: Long): JsonObject {
-        val obj = kimiJson.parseToJsonElement(responseBody).jsonObjectOrEmpty()
+        val obj = jsonObjectOrEmpty(kimiJson.parseToJsonElement(responseBody))
         val tokens = KimiRefreshedTokens(
             accessToken = JsonScalars.str(obj, F_ACCESS_TOKEN) ?: error("kimi token response missing access_token"),
             refreshToken = JsonScalars.str(obj, F_REFRESH_TOKEN)
@@ -133,8 +133,8 @@ public class KimiOAuth {
     }
 
     // JsonNull IS a JsonPrimitive with content "null"; every string extraction must filter it.
-    private fun JsonElement.jsonObjectOrEmpty(): JsonObject =
-        this as? JsonObject ?: JsonObject(emptyMap())
+    private fun jsonObjectOrEmpty(el: JsonElement): JsonObject =
+        el as? JsonObject ?: JsonObject(emptyMap())
 }
 
 internal const val MS_PER_S: Long = 1000

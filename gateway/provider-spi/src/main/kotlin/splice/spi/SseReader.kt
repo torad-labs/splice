@@ -84,7 +84,7 @@ public class SseReader {
             if (!bomChecked) bomChecked = stripLeadingBomWhenReady(lineBuffer)
             if (lineBuffer.length > maxLineChars) throw SseFrameTooLargeException("SSE line", maxLineChars)
             rawObserver = notifyRawObserver(rawObserver, lineBuffer, before)
-            emitCompleteLines(lineBuffer, assembler)
+            emitCompleteLines(this, lineBuffer, assembler)
             n = scratch.readChunk(channel)
         }
     }
@@ -112,7 +112,8 @@ public class SseReader {
      * resolve correctly. An unterminated trailing partial is LEFT untouched — that IS the discard-at-EOF
      * behavior (no flush anywhere on channel close).
      */
-    private suspend fun FlowCollector<JsonObject>.emitCompleteLines(
+    private suspend fun emitCompleteLines(
+        collector: FlowCollector<JsonObject>,
         lineBuffer: StringBuilder,
         assembler: SseEventAssembler,
     ) {
@@ -131,7 +132,7 @@ public class SseReader {
                 }
             }
             if (c == '\n' || c == '\r') {
-                processLine(lineBuffer, start, i, assembler)
+                processLine(collector, lineBuffer, start, i, assembler)
                 assembler.pendingCR = c == '\r' // a lone CR may still be the CR of a CRLF split next
                 i++
                 start = i
@@ -149,36 +150,37 @@ public class SseReader {
      * and appends it to the assembler's dataBuffer joined by `\n`; every other line shape (comments,
      * `event:`/`id:`/`retry:`, anything not matching [DATA_PREFIX]) is silently ignored.
      */
-    private suspend fun FlowCollector<JsonObject>.processLine(
+    private suspend fun processLine(
+        collector: FlowCollector<JsonObject>,
         buf: StringBuilder,
         start: Int,
         end: Int,
         assembler: SseEventAssembler,
     ) {
         if (end == start) {
-            assembler.dispatch(this)
+            assembler.dispatch(collector)
             return
         }
-        if (!buf.matchesAt(start, end, DATA_PREFIX)) return
+        if (!matchesAt(buf, start, end, DATA_PREFIX)) return
         // trim ASCII whitespace at both ends (SSE payloads are JSON — no full Unicode trim needed)
         var pStart = start + DATA_PREFIX.length
         var pEnd = end
-        while (pStart < pEnd && buf[pStart].isAsciiWs()) pStart++
-        while (pEnd > pStart && buf[pEnd - 1].isAsciiWs()) pEnd--
+        while (pStart < pEnd && isAsciiWs(buf[pStart])) pStart++
+        while (pEnd > pStart && isAsciiWs(buf[pEnd - 1])) pEnd--
         assembler.append(buf, pStart, pEnd)
     }
 
-    /** [literal] present at [start] within [start, end)? Char-wise — no substring allocation. */
-    private fun StringBuilder.matchesAt(start: Int, end: Int, literal: String): Boolean {
+    /** [literal] present at [start] within [start, end) of [buf]? Char-wise — no substring allocation. */
+    private fun matchesAt(buf: StringBuilder, start: Int, end: Int, literal: String): Boolean {
         if (end - start < literal.length) return false
         for (j in literal.indices) {
-            if (this[start + j] != literal[j]) return false
+            if (buf[start + j] != literal[j]) return false
         }
         return true
     }
 
-    private fun Char.isAsciiWs(): Boolean =
-        this == ' ' || this == '\t' || this == '\r' || this == '\n'
+    private fun isAsciiWs(c: Char): Boolean =
+        c == ' ' || c == '\t' || c == '\r' || c == '\n'
 }
 
 /**

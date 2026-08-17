@@ -65,11 +65,11 @@ public class PerfStats(private val file: Path, private val clock: () -> Long = S
                 Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
             }
         }.getOrDefault(emptyList())
-        return rows.takeLast(tailN).map { it.numericFields() }
+        return rows.takeLast(tailN).map { numericFields(it) }
     }
 
-    private fun JsonObject.numericFields(): Map<String, Long> = buildMap {
-        this@numericFields.forEach { (k, v) ->
+    private fun numericFields(row: JsonObject): Map<String, Long> = buildMap {
+        row.forEach { (k, v) ->
             (v as? JsonPrimitive)?.longOrNull?.let { put(k, it) }
         }
     }

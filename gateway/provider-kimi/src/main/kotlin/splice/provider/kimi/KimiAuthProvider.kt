@@ -186,7 +186,7 @@ public class KimiAuthProvider(
                 // field kimi-cli/kimi-code stores beside ours (the 2026-07-18 audit shape grok and
                 // codex already fixed). An unreadable file logs and degrades to tokens-only.
                 val onDisk = Cancellables.runCatchingCancellable {
-                    json.parseToJsonElement(Files.readString(authPath)).jsonObjectOrEmpty()
+                    jsonObjectOrEmpty(json.parseToJsonElement(Files.readString(authPath)))
                 }.onFailure {
                     log("[kimi-auth] could not re-read $authPath before persist ($it) — writing tokens-only")
                 }.getOrNull()
@@ -242,7 +242,7 @@ public class KimiAuthProvider(
 
     private fun parseSnapshot(): Snapshot? {
         if (!Files.exists(authPath)) return null
-        val obj = json.parseToJsonElement(Files.readString(authPath)).jsonObjectOrEmpty()
+        val obj = jsonObjectOrEmpty(json.parseToJsonElement(Files.readString(authPath)))
         val access = JsonScalars.str(obj, "access_token") ?: return null
         return Snapshot(
             access = access,
@@ -288,8 +288,8 @@ public class KimiAuthProvider(
     }
 
     // JsonNull IS a JsonPrimitive with content "null"; every string extraction must filter it.
-    private fun JsonElement.jsonObjectOrEmpty(): JsonObject =
-        this as? JsonObject ?: JsonObject(emptyMap())
+    private fun jsonObjectOrEmpty(el: JsonElement): JsonObject =
+        el as? JsonObject ?: JsonObject(emptyMap())
 
     // G15: best-effort mtime probe for the invalid_grant latch gate; shared by doRefresh() and
     // describe(). The failure is logged, not swallowed, before collapsing to null — a stat failure is

@@ -161,7 +161,7 @@ public class PassthroughRequestBuilder(
         val effort = effortLadder(typed, compact)
 
         val req = buildJsonObject {
-            copyUnhandledFields(raw)
+            copyUnhandledFields(this, raw)
             put(MODEL, upstreamModel)
             put(STREAM, true)
             compactAwareSystem(raw[SYSTEM], compact)?.let { put(SYSTEM, it) }
@@ -170,7 +170,7 @@ public class PassthroughRequestBuilder(
                 raw[TOOLS]?.let { put(TOOLS, sanitizeTools(it)) }
                 raw[TOOL_CHOICE]?.let { put(TOOL_CHOICE, stripCacheControl(it)) }
             }
-            putThinking(typed, raw[THINKING], effort)
+            putThinking(this, typed, raw[THINKING], effort)
         }
 
         val meta = TurnMeta(
@@ -191,10 +191,10 @@ public class PassthroughRequestBuilder(
 
     /** Copy every field the specialized scrubs do NOT own, cache_control stripped; sampling
      *  params optionally dropped. Unknown client fields ride through here verbatim. */
-    private fun JsonObjectBuilder.copyUnhandledFields(raw: JsonObject) {
+    private fun copyUnhandledFields(sink: JsonObjectBuilder, raw: JsonObject) {
         for ((key, value) in raw) {
             val dropped = key in handledKeys || (key in SAMPLING_KEYS && quirks.stripSamplingParams)
-            if (!dropped) put(key, stripCacheControl(value))
+            if (!dropped) sink.put(key, stripCacheControl(value))
         }
     }
 
@@ -211,7 +211,12 @@ public class PassthroughRequestBuilder(
 
     // --- thinking mapping ------------------------------------------------------------------------
 
-    private fun JsonObjectBuilder.putThinking(
+    // KIMI BYTE-IDENTITY: [sink] is the former `JsonObjectBuilder` receiver, moved to the first
+    // parameter by HD-20. Every emission below keeps its position and order, and the sole call site
+    // still runs LAST inside build()'s buildJsonObject, so `thinking` / `output_config` land in the
+    // same place in the serialized object as before.
+    private fun putThinking(
+        sink: JsonObjectBuilder,
         typed: AnthropicRequest,
         rawThinking: JsonElement?,
         effort: String,
@@ -220,17 +225,17 @@ public class PassthroughRequestBuilder(
         if (thinking.disabled) return // disabled -> OMIT thinking (never send type:"disabled")
         if (!quirks.mapThinkingToAdaptive) {
             // Fallback: forward the raw thinking config verbatim (cache_control scrubbed).
-            rawThinking?.let { put(THINKING, stripCacheControl(it)) }
+            rawThinking?.let { sink.put(THINKING, stripCacheControl(it)) }
             return
         }
-        put(
+        sink.put(
             THINKING,
             buildJsonObject {
                 put("type", "adaptive")
                 put("display", "summarized")
             },
         )
-        put(OUTPUT_CONFIG, buildJsonObject { put("effort", effort) })
+        sink.put(OUTPUT_CONFIG, buildJsonObject { put("effort", effort) })
     }
 
     /** Kimi effort ladder — vocab is low|high|max (NO medium). Compact turns take the SAME

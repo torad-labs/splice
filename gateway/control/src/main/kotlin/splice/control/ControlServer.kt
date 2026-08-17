@@ -657,7 +657,7 @@ internal class ControlPayloads( // internal (was private) so ControlHealthTest c
                     tail.forEach { (head, row) ->
                         addJsonObject {
                             put("head", head)
-                            row.forEach { (key, value) -> putCompactScalar(key, value) }
+                            row.forEach { (key, value) -> putCompactScalar(this, key, value) }
                         }
                     }
                 }
@@ -665,9 +665,16 @@ internal class ControlPayloads( // internal (was private) so ControlHealthTest c
         }.toString()
     }
 
-    private fun kotlinx.serialization.json.JsonObjectBuilder.putCompactScalar(key: String, value: String) {
+    // ARGUMENT ORDER (HD-20): the former `JsonObjectBuilder` receiver became the first parameter;
+    // [key] and [value] kept their order, so the sole call site's destructured
+    // `(key, value)` pair still maps key -> key. Both are String — a swap compiles silently.
+    private fun putCompactScalar(
+        sink: kotlinx.serialization.json.JsonObjectBuilder,
+        key: String,
+        value: String,
+    ) {
         val numeric = if (key in COMPACT_NUMERIC_FIELDS) value.toLongOrNull() else null
-        if (numeric == null) put(key, value) else put(key, numeric)
+        if (numeric == null) sink.put(key, value) else sink.put(key, numeric)
     }
 
     // NEW (bottleneck instrument): per-head stage aggregation over the recent perf rows.

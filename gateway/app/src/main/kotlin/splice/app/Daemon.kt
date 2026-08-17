@@ -605,19 +605,20 @@ internal class ProviderAssembly(
 
     /** Overlay the head's TOML [providers.*.quirks] onto a provider's base quirk profile. */
     // quirks.effortCeiling is intentionally not passed: the effort ladder clamps per provider.
-    private fun ProviderConfig.responsesQuirks(
+    private fun responsesQuirks(
+        providerCfg: ProviderConfig,
         base: ResponsesQuirks,
         cfg: SpliceConfig,
     ): ResponsesQuirks = base.withToml(
-        store = quirks.store,
-        cacheKey = quirks.cacheKey,
-        summaryField = quirks.summaryField,
-        compactEffort = quirks.compactEffort,
-        toolChoice = quirks.toolChoice,
-    ).withReasoningCacheToml(quirks.reasoningCache)
-        .withParallelToolCallsToml(quirks.parallelToolCalls)
-        .withWebSocketToml(quirks.webSocket)
-        .withToolSurfaceToml(buildInputs.toolDeferralPolicy(quirks.toolSurface, cfg.toolSurfaceOff))
+        store = providerCfg.quirks.store,
+        cacheKey = providerCfg.quirks.cacheKey,
+        summaryField = providerCfg.quirks.summaryField,
+        compactEffort = providerCfg.quirks.compactEffort,
+        toolChoice = providerCfg.quirks.toolChoice,
+    ).withReasoningCacheToml(providerCfg.quirks.reasoningCache)
+        .withParallelToolCallsToml(providerCfg.quirks.parallelToolCalls)
+        .withWebSocketToml(providerCfg.quirks.webSocket)
+        .withToolSurfaceToml(buildInputs.toolDeferralPolicy(providerCfg.quirks.toolSurface, cfg.toolSurfaceOff))
 
     private fun responsesProvider(ctx: Daemon.ProviderBuild, label: String): Wired {
         val key = ctx.key
@@ -654,7 +655,7 @@ internal class ProviderAssembly(
                         replayReasoning = cfg.replayReasoning,
                         configEffort = cfg.effort,
                         configSummary = cfg.summary,
-                        quirks = providerCfg.responsesQuirks(CodexQuirks().defaultQuirks(), cfg),
+                        quirks = responsesQuirks(providerCfg, CodexQuirks().defaultQuirks(), cfg),
                         // Reasoning-continuation folding (codex 518n-2) — codex head ONLY; grok/openai
                         // never receive a fold config, so they stay pure passthrough.
                         foldConfig = buildInputs.foldConfigFrom(cfg),
@@ -702,7 +703,7 @@ internal class ProviderAssembly(
                 replayReasoning = cfg.replayReasoning,
                 configEffort = cfg.effort,
                 configSummary = cfg.summary,
-                quirks = providerCfg.responsesQuirks(GrokQuirks().defaultQuirks(), cfg),
+                quirks = responsesQuirks(providerCfg, GrokQuirks().defaultQuirks(), cfg),
             ),
             auth,
         )
@@ -740,7 +741,7 @@ internal class ProviderAssembly(
                 replayReasoning = cfg.replayReasoning,
                 configEffort = cfg.effort,
                 configSummary = cfg.summary,
-                quirks = providerCfg.responsesQuirks(GrokQuirks().defaultQuirks(), cfg),
+                quirks = responsesQuirks(providerCfg, GrokQuirks().defaultQuirks(), cfg),
             )
         } else {
             OpenAiResponsesProvider(
@@ -749,7 +750,7 @@ internal class ProviderAssembly(
                 replayReasoning = cfg.replayReasoning,
                 configEffort = cfg.effort,
                 configSummary = cfg.summary,
-                quirks = providerCfg.responsesQuirks(OpenAiQuirks().defaultQuirks(), cfg),
+                quirks = responsesQuirks(providerCfg, OpenAiQuirks().defaultQuirks(), cfg),
             )
         }
         return Wired(provider, auth)

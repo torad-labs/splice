@@ -146,7 +146,7 @@ public object SystemTextSerializer : KSerializer<String?> {
         val input = decoder as JsonDecoder
         return when (val element = input.decodeJsonElement()) {
             is JsonPrimitive -> element.content
-            else -> element.jsonObjectListTexts()
+            else -> jsonObjectListTexts(element)
         }
     }
 
@@ -154,8 +154,8 @@ public object SystemTextSerializer : KSerializer<String?> {
         error("system text is read-only on the ingress side")
     }
 
-    private fun JsonElement.jsonObjectListTexts(): String? {
-        val arr = this as? JsonArray ?: return null
+    private fun jsonObjectListTexts(element: JsonElement): String? {
+        val arr = element as? JsonArray ?: return null
         // Byte-preserving concatenation with NO separator — Anthropic's own multi-block system
         // behavior joins text blocks back-to-back (verified 2026-07-23); a delimiter here invents a
         // character the client never sent and can break cache-control prefixes. Callers that want a

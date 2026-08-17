@@ -115,13 +115,13 @@ public class CodexOAuth {
             // STANDARD decoder AFTER normalizing -_ to +/ — padBase64 converts to the standard
             // alphabet, so getUrlDecoder() (which REJECTS +/) failed on virtually every real
             // id_token and ChatGPT-Account-ID was never sent (audit 2026-07-18, JVM-repro'd).
-            val decoded = Base64.getDecoder().decode(payload.padBase64()).toString(Charsets.UTF_8)
+            val decoded = Base64.getDecoder().decode(padBase64(payload)).toString(Charsets.UTF_8)
             jwtJson.parseToJsonElement(decoded).jsonObject
         }.getOrDefault(JsonObject(emptyMap()))
     }
 
-    private fun String.padBase64(): String {
-        val normalized = replace('-', '+').replace('_', '/')
+    private fun padBase64(s: String): String {
+        val normalized = s.replace('-', '+').replace('_', '/')
         val pad = (BASE64_QUANTUM - normalized.length % BASE64_QUANTUM) % BASE64_QUANTUM
         return normalized + "=".repeat(pad)
     }

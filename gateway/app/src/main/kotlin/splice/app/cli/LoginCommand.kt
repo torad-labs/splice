@@ -127,7 +127,7 @@ internal class LoginCommand {
         }
         // No arg: pick the sole sign-in-capable head, else make the user choose — never silently
         // sign into whichever head happens to be declared first.
-        val signIn = topology.signInHeads()
+        val signIn = signInHeads(topology)
         return signIn.singleOrNull() ?: run {
             if (signIn.isEmpty()) {
                 println("splice: no sign-in-capable heads in the topology.")
@@ -247,12 +247,12 @@ internal class LoginCommand {
     }
 
     /** Which heads support ANY sign-in flow (browser OAuth or api-key prompt) — keyed off auth.kind,
-     *  matching login()'s own dispatch. Stays an EXTENSION (now a member one) so `topology
-     *  .signInHeads()` reads unchanged at its call site; `Topology` lives in :core, outside this
-     *  slice's fence, so it cannot host the function itself. */
-    internal fun Topology.signInHeads(): List<String> =
-        heads.entries.filter { (_, h) ->
-            val kind = providers[h.provider]?.auth?.kind
+     *  matching login()'s own dispatch. HD-20 banned extension declarations; `Topology` lives in
+     *  :core, outside this slice's fence, so it cannot host the function as a member either. The
+     *  former receiver is therefore the first PARAMETER — same name, same body, one call site. */
+    internal fun signInHeads(topology: Topology): List<String> =
+        topology.heads.entries.filter { (_, h) ->
+            val kind = topology.providers[h.provider]?.auth?.kind
             kind?.endsWith("oauth") == true || kind == "api-key"
         }.map { it.key }
 }

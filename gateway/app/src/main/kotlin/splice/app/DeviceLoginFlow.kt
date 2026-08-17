@@ -99,7 +99,7 @@ public object DeviceLoginFlow {
 
     private suspend fun requestDeviceAuth(client: HttpClient, spec: DeviceLoginSpec): KimiDeviceAuthorization? {
         val resp = client.post(spec.deviceAuthUrl) {
-            formHeaders(spec.identityHeaders)
+            formHeaders(this, spec.identityHeaders)
             setBody(kimiOAuth.kimiDeviceAuthorizationForm(spec.clientId))
         }
         val body = resp.bodyAsText()
@@ -171,14 +171,14 @@ public object DeviceLoginFlow {
 
     private suspend fun postToken(client: HttpClient, spec: DeviceLoginSpec, deviceCode: String): HttpResponse =
         client.post(spec.tokenUrl) {
-            formHeaders(spec.identityHeaders)
+            formHeaders(this, spec.identityHeaders)
             setBody(kimiOAuth.kimiTokenPollForm(deviceCode, spec.clientId))
         }
 
-    private fun HttpRequestBuilder.formHeaders(identityHeaders: Map<String, String>) {
-        header("Content-Type", "application/x-www-form-urlencoded")
-        header("Accept", "application/json")
-        identityHeaders.forEach { (k, v) -> header(k, v) }
+    private fun formHeaders(request: HttpRequestBuilder, identityHeaders: Map<String, String>) {
+        request.header("Content-Type", "application/x-www-form-urlencoded")
+        request.header("Accept", "application/json")
+        identityHeaders.forEach { (k, v) -> request.header(k, v) }
     }
 
     private fun errorCode(body: String): String = Cancellables.runCatchingCancellable {

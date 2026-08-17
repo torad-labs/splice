@@ -66,6 +66,14 @@ PATHS = {
 # former safe-call sites (`details?.firstLong(…)`) stay a receiver-to-argument move; a null obj
 # reads null exactly as the safe call did. The passthrough entries are untouched by the migration
 # (they name a raw `u["cache_creation"]` read and a `parts.sum()`) and stay single spellings.
+#
+# 2026-08-17 — HD-20, the extension-declaration ban. UsageHud's thin local wrapper was the LAST
+# extension in the chain: `private fun JsonObject.firstNum(vararg keys: String) =
+# JsonScalars.firstLong(this, *keys)` became `private fun firstNum(obj: JsonObject, vararg keys:
+# String) = JsonScalars.firstLong(obj, *keys)`. It still delegates to the ONE :core chain — the
+# invariant this wall guards — so the `this` spelling gains `obj` as an equivalent alternative
+# rather than the wall being loosened: the hud file must still contain a whole delegating call
+# site, and deleting it is still RED (the selftest derives that half-fix from the real source).
 REQUIRED = {
     "core": [
         (("public fun firstLong(obj: JsonObject?, vararg keys: String)",
@@ -87,7 +95,7 @@ REQUIRED = {
          "the item forbade, and with the OPPOSITE precedence to the chat chain"),
     ],
     "hud": [
-        (("JsonScalars.firstLong(this, *keys)", "firstLong(*keys)"),
+        (("JsonScalars.firstLong(obj, *keys)", "JsonScalars.firstLong(this, *keys)", "firstLong(*keys)"),
          "the HUD payload builder keeps a SECOND shared chain with different numeric parsing "
          "(toDouble vs toLong), so the same bytes yield different usage depending on the reader"),
     ],

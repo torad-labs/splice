@@ -121,7 +121,7 @@ public class GrokOAuth {
         nowMs: Long,
         nowIso: String,
     ): JsonObject {
-        val obj = grokJson.parseToJsonElement(responseBody).jsonObjectOrEmpty()
+        val obj = jsonObjectOrEmpty(grokJson.parseToJsonElement(responseBody))
         val access = JsonScalars.str(obj, "access_token").orEmpty()
         val refresh = JsonScalars.str(obj, WIRE_REFRESH_TOKEN) ?: fallbackRefresh
         val expiresIn = JsonScalars.long(obj, "expires_in")
@@ -138,6 +138,6 @@ public class GrokOAuth {
         }
     }
 
-    private fun JsonElement.jsonObjectOrEmpty(): JsonObject =
-        this as? JsonObject ?: JsonObject(emptyMap())
+    private fun jsonObjectOrEmpty(el: JsonElement): JsonObject =
+        el as? JsonObject ?: JsonObject(emptyMap())
 }

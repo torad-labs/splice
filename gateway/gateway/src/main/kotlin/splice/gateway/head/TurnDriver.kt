@@ -410,7 +410,7 @@ internal class TurnDriver(
                 // slot and re-hammering the rate-limited account for a listener that was gone.
                 // OFF for the non-stream collect path: there is no open SSE channel to ping (the
                 // whole body is buffered and sent once), so liveness can't be probed mid-turn.
-                val pinger = if (pingClient) self.launchClientPinger(drive, turnJob) else null
+                val pinger = if (pingClient) launchClientPinger(self, drive, turnJob) else null
                 // NF-03: whole-turn totalCap poller, unconditional (non-stream turns burn wall
                 // clock too). launchIn keeps the idle tiers stream-scoped; this one only samples
                 // elapsed, so connect/backoff/refresh/between-rounds time finally counts.
@@ -667,8 +667,11 @@ internal class TurnDriver(
     // for the whole watchdog budget, and the 2026-07-19 429 storm stacked ~650 zombie turns whose
     // clients had re-sent minutes earlier. Whole-turn scope (driveOneTurn), NOT per-attempt.
     // A failed ping flips clientGone and cancels just the turn.
-    private fun CoroutineScope.launchClientPinger(drive: TurnDrive, turnJob: Job) =
-        launch {
+    // HD-20: the CoroutineScope receiver became [scope], the first parameter. The scope passed at the
+    // call site is still `self` — driveOneTurn's withContext(turnJob) scope — so the pinger's
+    // whole-turn lifetime and cancellation parentage are unchanged.
+    private fun launchClientPinger(scope: CoroutineScope, drive: TurnDrive, turnJob: Job) =
+        scope.launch {
             while (isActive) {
                 // HD-19: the ping cadence is a named Ticker (deps.ticker), not a bare delay.
                 // ProcessTicker always returns true, so this loop is exactly as unbounded as before;

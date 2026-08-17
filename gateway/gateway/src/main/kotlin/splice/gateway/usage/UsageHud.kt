@@ -60,16 +60,17 @@ public class UsageJson {
 
     /** First key whose value parses as a number. CX-18: this chain moved to :core (JsonScalars
      *  firstLong) so the dialects, the Responses harvest and this payload builder share ONE
-     *  definition; the local name is kept so the call sites below read unchanged. */
-    private fun JsonObject.firstNum(vararg keys: String): Long? = JsonScalars.firstLong(this, *keys)
+     *  definition; the local NAME is kept (HD-20 moved the receiver to the first parameter, the
+     *  JsonScalars shape this thin wrapper already delegates to). */
+    private fun firstNum(obj: JsonObject, vararg keys: String): Long? = JsonScalars.firstLong(obj, *keys)
 
     /** Parse a raw usage object into the alias-normalized [TurnUsage]. */
     public fun from(usage: JsonObject?): TurnUsage {
         val u = usage ?: JsonObject(emptyMap())
         val cachedDetail = (u["input_tokens_details"] as? JsonObject)?.let { num(it["cached_tokens"]) }
         return TurnUsage(
-            inputTokens = u.firstNum("input_tokens", "prompt_tokens") ?: 0,
-            outputTokens = u.firstNum(OUTPUT_TOKENS, "completion_tokens") ?: 0,
+            inputTokens = firstNum(u, "input_tokens", "prompt_tokens") ?: 0,
+            outputTokens = firstNum(u, OUTPUT_TOKENS, "completion_tokens") ?: 0,
             cacheCreationInputTokens = num(u["cache_creation_input_tokens"]) ?: 0,
             cacheReadInputTokens = num(u["cache_read_input_tokens"]) ?: cachedDetail ?: 0,
         )

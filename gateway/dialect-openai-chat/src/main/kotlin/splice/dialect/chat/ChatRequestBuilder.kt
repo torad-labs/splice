@@ -224,7 +224,7 @@ public class ChatRequestBuilder(
                         addJsonObject {
                             put("id", tu.id)
                             put(TYPE, FUNCTION)
-                            putFunction(tu.name, tu.input.toString())
+                            putFunction(this, tu.name, tu.input.toString())
                         }
                     }
                 },
@@ -293,8 +293,12 @@ public class ChatRequestBuilder(
             .filter { it.isNotEmpty() }
             .joinToString("\n")
 
-    private fun JsonObjectBuilder.putFunction(name: String, args: String) {
-        put(
+    // ARGUMENT ORDER (HD-20): the former `JsonObjectBuilder` receiver became the first parameter and
+    // [name]/[args] kept their order, so the sole call site reads `putFunction(this, tu.name,
+    // tu.input.toString())` — the tool NAME still lands on "name" and the serialized input on
+    // "arguments". Both are String, so a swap would compile and only show up as a corrupted tool call.
+    private fun putFunction(sink: JsonObjectBuilder, name: String, args: String) {
+        sink.put(
             FUNCTION,
             buildJsonObject {
                 put(NAME, name)

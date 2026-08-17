@@ -187,8 +187,10 @@ public class SseEmitter internal constructor(
             .append("\",\"")
             .append(field)
             .append("\":\"")
-            .appendJsonEscaped(value)
-            .append("\"}}\n\n")
+        // HD-20: appendJsonEscaped's StringBuilder receiver became its first parameter, so the
+        // fluent chain breaks here. Same builder, same order, same bytes — only the call shape moved.
+        appendJsonEscaped(frameBuf, value)
+        frameBuf.append("\"}}\n\n")
         write(frameBuf.toString())
     }
 
@@ -331,22 +333,21 @@ public class SseEmitter internal constructor(
         seal.set(SealState.ENDED)
     }
 
-    /** RFC 8259 string escape into [this] builder — only the value payload of a hot delta.
+    /** RFC 8259 string escape into the [sink] builder — only the value payload of a hot delta.
      *  MUST stay byte-identical to kotlinx-serialization's escaper (L3: the golden differential
      *  diffs bytes): kotlinx emits the SHORT forms for backspace (0x08) and form feed (0x0C);
      *  the \uXXXX forms would be valid JSON but a byte divergence (audit 2026-07-18; the whole
      *  control range is pinned by SseEscapingParityTest). */
-    private fun StringBuilder.appendJsonEscaped(s: String): StringBuilder {
+    private fun appendJsonEscaped(sink: StringBuilder, s: String) {
         for (i in s.indices) {
             val c = s[i]
             val shortEsc = shortEscape(c)
             when {
-                shortEsc != null -> append(shortEsc)
-                c.code < CONTROL_CHAR_BOUND -> appendUnicodeEscape(c)
-                else -> append(c)
+                shortEsc != null -> sink.append(shortEsc)
+                c.code < CONTROL_CHAR_BOUND -> appendUnicodeEscape(sink, c)
+                else -> sink.append(c)
             }
         }
-        return this
     }
 
     /** The six two-char JSON escapes kotlinx emits; null = not a short-escaped char. */
@@ -361,11 +362,11 @@ public class SseEmitter internal constructor(
         else -> null
     }
 
-    private fun StringBuilder.appendUnicodeEscape(c: Char) {
-        append("\\u")
+    private fun appendUnicodeEscape(sink: StringBuilder, c: Char) {
+        sink.append("\\u")
         val hex = c.code.toString(HEX_RADIX)
-        repeat(UNICODE_ESCAPE_DIGITS - hex.length) { append('0') }
-        append(hex)
+        repeat(UNICODE_ESCAPE_DIGITS - hex.length) { sink.append('0') }
+        sink.append(hex)
     }
 }
 

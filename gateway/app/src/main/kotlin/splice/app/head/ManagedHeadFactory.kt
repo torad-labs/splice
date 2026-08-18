@@ -56,7 +56,12 @@ internal class ManagedHeadFactory(
             warnPct = cfg.usageWarnPct,
             warnTokens5h = cfg.usageWarnTokens5h,
             authKind = ctx.providerCfg.auth.kind,
-            launchSpec = launchSpecFactory.launchSpecFor(ctx, controlPort, keyPresent = apiKeyPresent),
+            launchSpec = launchSpecFactory.launchSpecFor(
+                ctx,
+                controlPort,
+                keyPresent = apiKeyPresent,
+                clientAuth = forwardClientAuth,
+            ),
             perf = PerfStatsSource(stores.perfStats),
         )
     }

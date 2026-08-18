@@ -6,7 +6,6 @@ package splice.app.head
 
 import splice.app.SignInPlanner
 import splice.app.TopologyLoader
-import splice.app.provider.CLIENT
 import splice.app.provider.HeadBuildInputs
 import splice.app.provider.ProviderBuild
 import splice.control.LaunchSpec
@@ -23,7 +22,19 @@ internal class LaunchSpecFactory(
     private val mgmtKey: MgmtKey,
     private val buildInputs: HeadBuildInputs,
 ) {
-    internal fun launchSpecFor(ctx: ProviderBuild, controlPort: Int, keyPresent: Boolean): LaunchSpec {
+    /**
+     * [clientAuth] is [ManagedHeadFactory]'s `forwardClientAuth` — the STRUCTURAL read of the wired
+     * credential (`wired.auth is ClientAuthProvider`), passed in rather than re-derived here. One
+     * fact, one derivation: this spec decides whether ANTHROPIC_AUTH_TOKEN is planted into the
+     * launched Claude Code process, whether the operator's ambient credentials are stripped from it,
+     * and whether /login stays enabled, so it must agree with the door the gateway actually opened.
+     */
+    internal fun launchSpecFor(
+        ctx: ProviderBuild,
+        controlPort: Int,
+        keyPresent: Boolean,
+        clientAuth: Boolean,
+    ): LaunchSpec {
         val key = ctx.key
         val head = ctx.head
         val providerCfg = ctx.providerCfg
@@ -33,7 +44,12 @@ internal class LaunchSpecFactory(
             configDir = configDir,
             // A client-auth head serves ANTHROPIC on the client's own login, so the recipe must not
             // strip its credentials, plant the gateway bearer, or disable /login (campaign claude-head).
-            nativeClientAuth = providerCfg.auth.kind == CLIENT,
+            // Derived from the CREDENTIAL, never from the declared `auth.kind` string: kind and
+            // dialect are independent TOML fields and ClientAuthProvider is built on the
+            // anthropic-passthrough arm ALONE, so `kind = "client"` on any other dialect yields a
+            // head whose door stays shut while this recipe would have planted the token and left
+            // /login enabled anyway. See ManagedHeadFactory.forwardClientAuth for the same read.
+            nativeClientAuth = clientAuth,
             pinnedModel = head.pinnedModel,
             availableModelIds = ctx.catalog.availableModelIds(),
             modelLabels = providerCfg.models.associate { it.id to it.label.ifEmpty { it.id } },

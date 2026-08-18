@@ -120,6 +120,14 @@ laundry:
   - A CEILING, NOT A BLANKET. An excepted file is graded against its own recorded ceiling instead
     of --max-ratio. If its ratio RISES above that ceiling the gate still fails. An exception
     freezes a known state; it does not stop watching.
+  - AND IT MAY NOT SIT ABOVE THE FILE (2026-08-18). The rise test above was, until this date, the
+    ONLY ceiling comparison in this file, so the opposite direction — a ceiling RECORDED ABOVE the
+    file's real ratio — failed nothing at all. That is the padding this mechanism exists to
+    prevent, and it had already happened: UpstreamClient's ceiling sat at 6.14 against a file
+    measuring 2.79, 3.35 points of unearned room, invisible to every mode. exception_errors() now
+    fails when a recorded ceiling exceeds the measured ratio, with the number to record in the
+    message — the same two-directional discipline the HIGH baseline already has, whose own SLACK
+    text names this gap.
   - A BLANK OR MISSING JUSTIFICATION IS A HARD ERROR, not a pass. The justification is dated and
     mechanically shape-checked, exactly as UNROUTED_ALLOWLIST does it — an undated exemption is
     how the next one hides.
@@ -346,14 +354,14 @@ def exception_errors(rows: list[dict]) -> list[str]:
     A malformed exception list is a defect whatever question the caller asked, and a list that is
     only validated on the gate path is a list that goes quiet the moment somebody runs --file.
     """
-    known = {row["file"] for row in rows}
+    known = {row["file"]: row for row in rows}
     seen: set[str] = set()
     errors = []
     for entry in CEILING_EXCEPTIONS:
         if len(entry) != 3:
             errors.append(f"{entry!r} is not (path, ceiling, justification) — three fields, always")
             continue
-        path, _, why = entry
+        path, ceiling, why = entry
         if path in seen:
             errors.append(f"'{path}' is listed twice — one ceiling per file, or the stricter entry is dead text")
         seen.add(path)
@@ -367,6 +375,36 @@ def exception_errors(rows: list[dict]) -> list[str]:
             errors.append(
                 f"'{path}' is not a production .kt file any more — delete the entry. A stale exemption "
                 "is an ungraded file one rename later, which is the failure it was written to prevent."
+            )
+            continue
+        # THE CEILING MAY NOT SIT ABOVE THE FILE (2026-08-18). Every other ceiling comparison in
+        # this file is `row["ratio"] > ceiling`, so a ceiling that RISES above its file fails and a
+        # ceiling RECORDED ABOVE the file's real ratio failed NOTHING — the padding direction was
+        # unguarded in every mode. That is not hypothetical: this list carried UpstreamClient at
+        # 6.14 against a file measuring 2.79, i.e. 3.35 points of room the file never earned, and
+        # nothing in the repo could see it. It is the same defect the HIGH baseline's SLACK arm
+        # already treats as a hard error, and that arm's own message names this exact gap ("the
+        # same defect as a ceiling recorded above its file's measured ratio").
+        #
+        # DELIBERATELY ONE-DIRECTIONAL, and this is the split main() already draws between exit 2
+        # and exit 1. A padded ceiling is a stale LIST — nobody's code moved, the recorded number is
+        # simply wrong — so it is a broken instrument and fails every mode here. A ceiling BREACHED
+        # from below is a failing MEASUREMENT: the file or its neighbourhood moved, and ratchet(),
+        # --file and the --max-ratio path already report it at exit 1 with the cause, the C/denom
+        # split and the --since remedy attached. Re-reporting that as "CEILING_EXCEPTIONS is
+        # invalid" would call a real regression a malformed list and orphan the three branches that
+        # say it properly.
+        measured = known[path]["ratio"]
+        if round(float(ceiling), 2) > measured:
+            errors.append(
+                f"'{path}' has a PADDED CEILING: recorded {ceiling}, file measures {measured} "
+                f"(C={known[path]['C']}, denominator={known[path]['denominator']}). Record "
+                f"{measured}. A ceiling held above its file's measured ratio is "
+                f"{round(round(float(ceiling), 2) - measured, 2)} points of unearned room for the "
+                "next regression to hide in, and on its own it fails nothing — the gate only ever "
+                "asked whether the ratio ROSE above the ceiling. A ceiling freezes a MEASURED "
+                "state; a number nobody re-measured is an exemption, which is the laundering this "
+                "list exists to prevent."
             )
     return errors
 

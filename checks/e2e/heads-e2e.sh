@@ -97,7 +97,7 @@ MGMT="$(cat "$STATE_DIR/mgmt-key" 2>/dev/null || true)"
 
 # The whole point of SPLICE_E2E_CLIENT_TOKEN is that it is NOT the mgmt key: it rides into the
 # exact Authorization header a client-auth head forwards verbatim to api.anthropic.com
-# (HeadServer.kt:398-402). Reaching for "the token the harness already has" would re-create the
+# (ClientAuth.forwardedClientHeaders). Reaching for "the token the harness already has" would re-create the
 # leak this gate exists to prevent, so refuse before a single byte reaches a head.
 if [ -n "${SPLICE_E2E_CLIENT_TOKEN:-}" ] && [ "$SPLICE_E2E_CLIENT_TOKEN" = "$MGMT" ]; then
   echo "FATAL: SPLICE_E2E_CLIENT_TOKEN is the daemon mgmt key. A client-auth head forwards that header VERBATIM to the vendor — supply a REAL caller credential or unset it." >&2
@@ -157,9 +157,10 @@ print("%s\t%s" % ((cheap or rows)[0], why))'
 
 # The bearer a tier-1 probe presents to a head, or a nonzero exit when it must not be probed.
 #
-# SAFETY (HD-15): a client-auth head holds NO splice credential. HeadServer.authorize()
-# short-circuits to true for it (HeadServer.kt:472-478) and forwardedClientHeaders copies the
-# inbound Authorization header VERBATIM to the vendor (HeadServer.kt:398-402, :413-416). Presenting
+# SAFETY (HD-15): a client-auth head holds NO splice credential. ClientAuth.authorize()
+# short-circuits to true for it (`if (deps.forwardClientAuth) return true`) and
+# ClientAuth.forwardedClientHeaders copies the inbound Authorization header VERBATIM to the
+# vendor, via TurnPreparation. Both live in splice/gateway/head/ClientAuth.kt. Presenting
 # $MGMT there would ship the daemon's own 32-byte management key to api.anthropic.com — and
 # ClientAuthProvider.allowRefreshAfterFailure is false (ClientAuthProvider.kt:38), so it surfaces as
 # a bare 401 that reads like a product bug. Such a head is probed ONLY with a real caller

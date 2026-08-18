@@ -18,6 +18,7 @@ EXIT 0 = mutations safe. EXIT 1 = gap open. --selftest = the POSITIVE CONTROL (C
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
@@ -43,8 +44,31 @@ def detect(text: str | None) -> list[str]:
     return problems
 
 
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+_LINE_COMMENT = re.compile(r"//.*?$", re.M)
+_IMPORT_LINE = re.compile(r"^import .*$", re.M)
+
+
+def code_only(text: str | None) -> str | None:
+    """A mention is not a wiring. Without this the wall is satisfiable by a COMMENT: put the locked
+    mutation body back to `entries().toMutableMap()`, leave
+    `// TODO: restore entriesStrict() ... error("... refusing to write") ... channel.tryLock()`
+    behind, and all four required tokens still match while the blind read-modify-write is live
+    again. Proven against this file's own source before the stripper landed. Same stripper
+    cx_01/cx_02/cx_09/cx_18/jw_08 carry.
+
+    Every assertion here is a REQUIRED token — this wall carries no banned string — so stripping is
+    the strict direction throughout: it can only make a requirement harder to satisfy, never hide a
+    violation (the split jw_08 has to make between its two readers does not arise)."""
+    if text is None:
+        return None
+    stripped = _BLOCK_COMMENT.sub("", text)
+    stripped = _LINE_COMMENT.sub("", stripped)
+    return _IMPORT_LINE.sub("", stripped)
+
+
 def _read(p: pathlib.Path) -> str | None:
-    return p.read_text(encoding="utf-8") if p.exists() else None
+    return code_only(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
 OPEN_FIX = "fun write(\nfun unset(\nentries().toMutableMap()\n.getOrDefault(emptyMap())"

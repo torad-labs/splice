@@ -5,6 +5,18 @@
 // (HD-24) precisely because it is the L3 seal contract that must have exactly one copy shared by
 // stream and collect; the try/catch skeleton that rethrows stays in TurnDriver so the control flow
 // that owns the turn stays where the turn is driven.
+//
+// THE SEAL DOES NOT BILL (review of PR 99) — not obvious from reading it, so recorded here.
+// Arriving in this file means TurnFinish.finishTurn never ran, and its two calls are the ONLY
+// production callers of UsageStore.appendOutputTokens: output tokens the vendor already generated
+// and streamed before the abort never reach the usage store, so the HUD and the statusline
+// undercount every mid-stream cancel. Left that way deliberately, not overlooked. The accumulator
+// TurnOutcome.Failure.salvagedUsage is built from is a local `var acc` inside FoldRunner/
+// ReanchorRunner — it dies with the cancelled subtree and is reachable from no seam a TurnDrive
+// carries, so billing here would mean INVENTING one through the cancellation path. And the abort
+// normally lands before the terminal usage event (response.completed / message_delta), so the
+// figure is not merely unplumbed, it is unknown. Accounting only: the vendor billed those tokens
+// either way and nothing on the wire is dishonest — the L3 seal below is unaffected.
 package splice.gateway.head
 
 import kotlinx.coroutines.NonCancellable

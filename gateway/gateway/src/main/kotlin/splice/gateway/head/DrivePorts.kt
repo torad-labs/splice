@@ -34,6 +34,6 @@ internal fun interface ZeroEventClassifier {
  * `T : Any` at the fast-fail entry point is not incidental: null there means CONTENTION and nothing
  * else, so a legitimately-null result is made unrepresentable rather than ambiguous.
  */
-public fun interface MaterializedRequest<T> {
-    public suspend operator fun invoke(): T
+internal fun interface MaterializedRequest<T> {
+    suspend operator fun invoke(): T
 }

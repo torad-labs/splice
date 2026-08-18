@@ -17,6 +17,7 @@ EXIT 0 = probed. EXIT 1 = gap open. --selftest = the POSITIVE CONTROL (C6).
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
@@ -43,8 +44,27 @@ def detect(doctor: str | None) -> list[str]:
     return problems
 
 
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+_LINE_COMMENT = re.compile(r"//.*?$", re.M)
+_IMPORT_LINE = re.compile(r"^import .*$", re.M)
+
+
+def code_only(text: str | None) -> str | None:
+    """A mention is not a wiring: a token left behind in a `// TODO: restore ...` must not satisfy
+    this wall after the real call site is deleted. Same stripper cx_02/cx_09/cx_18 already carry.
+
+    Every assertion here is a REQUIRED token (a probe, a delete, an actionable fix) — this wall
+    carries no banned string — so BOTH readers are stripped. Stripping only ever makes a required
+    token harder to satisfy; the direction that must stay raw is a ban, and there is none."""
+    if text is None:
+        return None
+    stripped = _BLOCK_COMMENT.sub("", text)
+    stripped = _LINE_COMMENT.sub("", stripped)
+    return _IMPORT_LINE.sub("", stripped)
+
+
 def _read(p: pathlib.Path) -> str | None:
-    return p.read_text(encoding="utf-8") if p.exists() else None
+    return code_only(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
 OPEN_FIX = "stateInfo = listOf(state dir path only)"

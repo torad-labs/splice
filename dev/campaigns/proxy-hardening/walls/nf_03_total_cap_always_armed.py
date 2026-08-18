@@ -22,6 +22,7 @@ EXIT 0 = the cap is armed for the whole turn.  EXIT 1 = the gap is open.
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
@@ -49,8 +50,29 @@ def detect(watchdog_text: str | None, driver_text: str | None) -> list[str]:
     return problems
 
 
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+_LINE_COMMENT = re.compile(r"//.*?$", re.M)
+_IMPORT_LINE = re.compile(r"^import .*$", re.M)
+
+
+def code_only(text: str | None) -> str | None:
+    """A mention is not a wiring: a token left behind in a `// TODO: restore ...` must not satisfy
+    this wall after the real call site is deleted. Same stripper cx_02/cx_09/cx_18 already carry.
+
+    Both readers are stripped: every leg here is a REQUIRED token (launchIn, launchTotalCap, the
+    TurnDriver launch site) and this wall carries no banned string, which is the only direction
+    that would have to stay raw. It matters most for the driver leg — Watchdog's KDoc already
+    names [launchIn] and launchTotalCap in prose, so a commented-out launch site would read as a
+    live one."""
+    if text is None:
+        return None
+    stripped = _BLOCK_COMMENT.sub("", text)
+    stripped = _LINE_COMMENT.sub("", stripped)
+    return _IMPORT_LINE.sub("", stripped)
+
+
 def _read(p: pathlib.Path) -> str | None:
-    return p.read_text(encoding="utf-8") if p.exists() else None
+    return code_only(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
 WD_OPEN = "public fun launchIn(scope: CoroutineScope, slot: InflightGate.Slot, target: Job): Job ="

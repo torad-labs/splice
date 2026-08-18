@@ -88,8 +88,29 @@ def detect(cooldown: str | None, upstream: str | None, headserver: str | None) -
     return problems
 
 
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+_LINE_COMMENT = re.compile(r"//.*?$", re.M)
+_IMPORT_LINE = re.compile(r"^import .*$", re.M)
+
+
+def code_only(text: str | None) -> str | None:
+    """A mention is not a wiring: a token left behind in a `// TODO: restore ...` must not satisfy
+    this wall after the real call site is deleted. Same stripper cx_02/cx_09/cx_18 already carry.
+
+    All three readers are stripped because all three legs are REQUIRED tokens (clamp, clear,
+    delegate, call) — this wall carries no banned string, which is the direction that would have to
+    stay raw. It also un-poisons `arm_expr`: RateLimitCooldown's KDoc literally contains
+    "`val until = clock() + minOf(...)`", a comment line the clamp check would otherwise read as
+    part of the horizon expression."""
+    if text is None:
+        return None
+    stripped = _BLOCK_COMMENT.sub("", text)
+    stripped = _LINE_COMMENT.sub("", stripped)
+    return _IMPORT_LINE.sub("", stripped)
+
+
 def _read(p: pathlib.Path) -> str | None:
-    return p.read_text(encoding="utf-8") if p.exists() else None
+    return code_only(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
 _ARM_OPEN = ("val until = nowMs + (pushbackMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS)\n"

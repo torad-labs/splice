@@ -24,6 +24,7 @@ EXIT 0 = date form honoured, seconds first. EXIT 1 = gap open.
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
@@ -51,8 +52,28 @@ def detect(client_text: str | None) -> list[str]:
     return problems
 
 
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+_LINE_COMMENT = re.compile(r"//.*?$", re.M)
+_IMPORT_LINE = re.compile(r"^import .*$", re.M)
+
+
+def code_only(text: str | None) -> str | None:
+    """A mention is not a wiring: a token left behind in a `// TODO: restore ...` must not satisfy
+    this wall after the real call site is deleted. Same stripper cx_02/cx_09/cx_18 already carry.
+
+    The one reader is stripped: every leg is a REQUIRED token and this wall carries no banned
+    string, which is the only direction that would have to stay raw. The ORDERING leg needs it
+    twice over — RetryAfter.kt's KDoc discusses both parsers in prose, so a comment could reorder
+    the two `.index()` reads without a line of code moving."""
+    if text is None:
+        return None
+    stripped = _BLOCK_COMMENT.sub("", text)
+    stripped = _LINE_COMMENT.sub("", stripped)
+    return _IMPORT_LINE.sub("", stripped)
+
+
 def _read(p: pathlib.Path) -> str | None:
-    return p.read_text(encoding="utf-8") if p.exists() else None
+    return code_only(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
 OPEN_FIX = "fun retryAfterMs(header: String?): Long? =\n    header?.trim()?.toLongOrNull()"

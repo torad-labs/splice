@@ -257,6 +257,16 @@ def main() -> int:
             print(f"no such production file: {args.file}", file=sys.stderr)
             return 2
         print(json.dumps(target, indent=2))
+        # --max-ratio GATES a single file too. It used to be silently ignored here, so
+        # `--file <a HIGH file> --max-ratio 1.8` printed the offending ratio and still exited 0 —
+        # a per-target gate that could not fail is the same fake green this scan exists to find.
+        # Per-target acceptance (HD-24) is exactly this call, so it has to be able to go red.
+        if args.max_ratio is not None and target["ratio"] > args.max_ratio:
+            print(
+                f"FAIL: {target['file']} ratio {target['ratio']} is above {args.max_ratio}",
+                file=sys.stderr,
+            )
+            return 1
         return 0
 
     if args.json:

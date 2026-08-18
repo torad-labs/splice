@@ -12,6 +12,7 @@
   "scripts": {
     "gate": "bash checks/gate.sh",
     "gate:rules": "ast-grep scan && ast-grep test --skip-snapshot-tests && ast-grep test --config .rules/kotlin/ast-grep/sgconfig.yml --skip-snapshot-tests",
+    "gate:concentration": "python3 checks/concentration.py --ratchet --max-ratio 1.8",
     "gate:campaign": "python3 dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py",
     "gate:campaign:census": "python3 dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py --no-run",
     "gate:campaign:selftest": "python3 dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py --selftest",

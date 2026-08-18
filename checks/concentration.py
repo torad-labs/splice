@@ -110,10 +110,36 @@ laundry:
 Nothing else belongs here. Every other file above 1.8 is work HD-25 is about to do, and putting
 one on this list is the exact laundering the mechanism exists to prevent.
 
+THE RATCHET (--ratchet, 2026-08-18). Until this date NOTHING RAN THIS FILE. It was absent from
+checks/gate.sh, from every package.json script and from CI, so `npm run gate` printed GATE: PASS
+while saying nothing about concentration and every ratio in the campaign was advisory — the same
+defect class as the 2026-07-16 style pack that sat unrouted for a month while 336 top-level
+functions accumulated under a green gate (see checks/rule-routing.sh, the wall written for that
+scar). A wall nobody routes is a wall nobody has, and that was true of this oracle itself.
+
+`--max-ratio 1.8` cannot be the gate leg today: it is red on 42 files, so landing it would mean
+finishing HD-25 first or granting 42 exemptions, and an exemption pile is exactly the laundering
+CEILING_EXCEPTIONS exists to prevent. What IS enforceable today is the DIRECTION. `--ratchet`
+grades the measured census against RATCHET_MAX_OVER / RATCHET_MAX_HIGH below and fails when
+either count RISES, so a new file above the gate, or an untouched file pushed into HIGH, is red
+on the commit that does it while the existing debt stays visible in every run's output.
+
+  - IT CANNOT BE SATISFIED BY WEAKENING. Lowering --max-ratio raises the count it is measured
+    against; raising a baseline is a dated edit to this file that reads in the diff as exactly
+    what it is — a record that the tree got worse.
+  - IT TIGHTENS ITSELF. A count that FALLS is also a hard error, with the remedy in the message.
+    A baseline held above the measured count is unearned room for the next regression to hide in;
+    that is how the UpstreamClient ceiling came to sit at 6.14 against a file measuring 2.79.
+  - KNOWN LIMIT, stated here rather than discovered later: these are COUNTS. One file dropping
+    below the gate in the same commit that pushes another above it nets to zero and passes.
+    `--since <ref>` names files and causes and is the diff-time instrument; the counts are the
+    standing floor under it.
+
 USAGE
     python3 checks/concentration.py                      # full table, exit 0
     python3 checks/concentration.py --top 15             # worst 15 only
     python3 checks/concentration.py --max-ratio 1.8      # gate: non-zero exit if any file is above
+    python3 checks/concentration.py --ratchet --max-ratio 1.8   # gate leg: the counts may not rise
     python3 checks/concentration.py --file <path>        # one file, with its neighbour list
     python3 checks/concentration.py --since <ref>        # what moved since <ref>, and why
     python3 checks/concentration.py --json               # machine-readable
@@ -181,27 +207,49 @@ CEILING_EXCEPTIONS: list[tuple[str, float, str]] = [
     ),
     (
         "gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamClient.kt",
-        6.14,
-        "2026-08-18: unlike AnthropicRequest this file is mass, not declarations — 491 logic "
-        "lines against 4 types, 6 non-type exports and 3 subsystems, so 245.5 of its 319.5 C is "
-        "the logic term. That mass is one retry loop whose FOUR budgets share a single RetryState "
-        "(UpstreamClient.kt:251-277): `attempt` (connect-phase backoff), `refreshedOnce` (the 401 "
-        "single-flight refresh, which must NOT consume an attempt), `streamReissues` (G5 — spans "
-        "the whole turn, never reset per handoff, deliberately independent of maxRetries) and "
-        "`amendedOnce` (RC-4 — budgeted alone, never by the attempt counter). Their MUTUAL "
-        "INDEPENDENCE is the invariant, and it is load-bearing: the review recorded in-code at "
-        "UpstreamClient.kt:264-269 (2026-07-24) found that coupling just two of them, via a single "
-        "`attempt += 1` in the amend step, made the loop guard eat a valid amended resend at the "
-        "budget boundary — it computed a good body and then failed the turn on the stale "
-        "pre-amendment error. Splitting the loop across files puts that shared state on a seam. "
-        "The ceiling is its measured ratio, and it is NOT a licence to grow: any reduction that "
-        "keeps the four budgets in one object is welcome and should lower this number.",
+        2.79,
+        "2026-08-18: unlike AnthropicRequest this file is mass, not declarations — 226 logic "
+        "lines against 1 top-level type, 0 non-type exports and 3 subsystems, so 113.0 of its "
+        "145.0 C is the logic term. TIGHTENED from 6.14 to the measured ratio the same day: the "
+        "6.14 described a 491-logic-line file that no longer exists. HD-25 moved everything that "
+        "was not the loop out to same-module siblings, each named in this file's own header — "
+        "client construction to UpstreamTransport.kt, throwable classification to "
+        "TransportFailures.kt, the retry DECISION and the G5 re-issue interlock to RetryPolicy.kt, "
+        "the failure predicates to FailureRules.kt, request assembly to UpstreamRequest.kt, plus "
+        "RetryAfter/RateLimitCooldown/UpstreamAttempt/UpstreamPorts/UpstreamErrors. A ceiling "
+        "carried over from the pre-decomposition file is 3.35 points of room this one never "
+        "earned, which is the padding this mechanism was built to prevent. WHAT IS LEFT is one "
+        "retry loop whose FOUR budgets share a single RetryState (UpstreamClient.kt:148-174): "
+        "`attempt` (connect-phase backoff), `refreshedOnce` (the 401 single-flight refresh, which "
+        "must NOT consume an attempt), `streamReissues` (G5 — spans the whole turn, never reset "
+        "per handoff, deliberately independent of maxRetries) and `amendedOnce` (RC-4 — budgeted "
+        "alone, never by the attempt counter). Their MUTUAL INDEPENDENCE is the invariant, and it "
+        "is load-bearing: the review recorded in-code at UpstreamClient.kt:161-166 (2026-07-24) "
+        "found that coupling just two of them, via a single `attempt += 1` in the amend step, made "
+        "the loop guard eat a valid amended resend at the budget boundary — it computed a good "
+        "body and then failed the turn on the stale pre-amendment error. Splitting the loop across "
+        "files puts that shared state on a seam. The ceiling is its measured ratio with NO margin, "
+        "so a future breach may be neighbourhood drift rather than this file growing — its C is "
+        "145.0 over a denominator of 52.0, and any split inside a neighbour package lowers that "
+        "denominator with nothing here changing; run --since before reading a red as regression. "
+        "It is NOT a licence to grow: any reduction that keeps the four budgets in one object is "
+        "welcome and should lower this number again.",
     ),
 ]
 
 # Every exemption starts with a date, exactly as checks/rule-routing.sh requires of
 # UNROUTED_ALLOWLIST — an undated one is how the next exemption hides.
 EXCEPTION_JUSTIFICATION = re.compile(r"^\d{4}-\d{2}-\d{2}: \S")
+
+# --------------------------------------------------------------------------------------------
+# THE RATCHET BASELINE — the census this tree is held to, MEASURED, never estimated. Read THE
+# RATCHET in the module docstring first. Both counts EXCLUDE the ceiling-excepted files above,
+# which are graded against their own recorded ceilings by the same leg rather than counted twice.
+# Moving either number is a deliberate, dated edit: UP records that the tree got worse, DOWN is
+# the remedy the gate itself prints when work lands.
+RATCHET_RECORDED = "2026-08-18"
+RATCHET_MAX_OVER = 42  # files with ratio > the gate ratio  (measured 2026-08-18: 44 total - 2 excepted)
+RATCHET_MAX_HIGH = 8  # files in band HIGH                 (measured 2026-08-18:  9 total - 1 excepted)
 
 
 def ceilings() -> dict[str, float]:
@@ -254,6 +302,84 @@ def report_exceptions(rows: list[dict]) -> None:
         print(f"  {path}")
         print(f"    ratio {row['ratio']}  ceiling {ceiling}  C {row['C']}  [{state}]")
         print(textwrap.fill(why, width=96, initial_indent="    ", subsequent_indent="    "))
+
+
+def ratchet(rows: list[dict], max_ratio: float) -> int:
+    """The enforceable half of the 1.8 gate: the census may not RISE, and may not silently FALL.
+
+    Prints the baseline, the measured counts and the standing debt on every run — a ratchet whose
+    output shows only its own verdict hides the 42 files it is deliberately not gating. See THE
+    RATCHET in the module docstring for why this shape and not `--max-ratio 1.8` outright.
+    """
+    caps = ceilings()
+    graded = [r for r in rows if r["file"] not in caps]
+    over = [r for r in graded if r["ratio"] > max_ratio]
+    high = [r for r in graded if r["band"] == "HIGH"]
+
+    print(f"CONCENTRATION RATCHET — baseline recorded {RATCHET_RECORDED}, gate ratio {max_ratio}")
+    print(f"  {f'files over {max_ratio}':<14} baseline {RATCHET_MAX_OVER:>3}   measured {len(over):>3}")
+    print(f"  {'band HIGH':<14} baseline {RATCHET_MAX_HIGH:>3}   measured {len(high):>3}")
+    by_file = {row["file"]: row for row in rows}
+    for path, ceiling, _ in CEILING_EXCEPTIONS:
+        row = by_file[path]
+        state = "OVER CEILING" if row["ratio"] > ceiling else "within ceiling"
+        print(f"  ceiling exception  ratio {row['ratio']:5.2f}  ceiling {ceiling:<5} [{state}]  {path}")
+    if over:
+        print(
+            f"\n  DEBT: {len(over)} file(s) sit above {max_ratio} and their RATIO is not gated — this leg "
+            f"enforces direction only.\n"
+            f"        worst: " + " | ".join(f"{r['file'].rsplit('/', 1)[-1]} {r['ratio']}" for r in over[:5]) + "\n"
+            f"        full list `python3 checks/concentration.py --top {len(over)}`; every one is HD-25's "
+            f"work, not an exemption.\n"
+            f"        a ceiling exception's justification reads with `--file <path>`."
+        )
+    else:
+        # The state this ratchet exists to reach: nothing above the gate but the excepted files, so
+        # the direction-only leg has no debt left to hide and `--max-ratio` can replace it outright.
+        print(
+            f"\n  NO DEBT: nothing outside the {len(CEILING_EXCEPTIONS)} ceiling exception(s) is above "
+            f"{max_ratio}.\n"
+            f"        Retire this leg: make it `--max-ratio {max_ratio}` (the hard gate) and delete the "
+            f"baseline constants."
+        )
+
+    problems: list[str] = []
+    for label, measured, baseline, const in (
+        (f"files over {max_ratio}", len(over), RATCHET_MAX_OVER, "RATCHET_MAX_OVER"),
+        ("band HIGH", len(high), RATCHET_MAX_HIGH, "RATCHET_MAX_HIGH"),
+    ):
+        if measured > baseline:
+            problems.append(
+                f"REGRESSION: {label} rose {baseline} -> {measured}. A file crossed that nothing recorded. "
+                f"Run `python3 checks/concentration.py --since HEAD --max-ratio {max_ratio}`: cause `own` is "
+                f"code in this change, cause `neighbourhood` is a denominator that moved under a file nobody "
+                f"touched. Fix the file — raising {const} is a dated edit recording that the tree got worse."
+            )
+        elif measured < baseline:
+            problems.append(
+                f"SLACK: {label} fell {baseline} -> {measured}, and the baseline still claims {baseline}. Set "
+                f"{const} = {measured} and re-date RATCHET_RECORDED in checks/concentration.py. A baseline "
+                f"held above the measured count is unearned room for the next regression to hide in — the "
+                f"same defect as a ceiling recorded above its file's measured ratio."
+            )
+    for path, ceiling, _ in CEILING_EXCEPTIONS:
+        row = by_file[path]
+        if row["ratio"] > ceiling:
+            problems.append(
+                f"CEILING BREACHED: {path} ratio {row['ratio']} is above its recorded ceiling {ceiling} "
+                f"(C={row['C']}). A ceiling freezes a known state; it does not stop watching."
+            )
+
+    if problems:
+        print(f"\nFAIL: concentration ratchet — {len(problems)} problem(s):", file=sys.stderr)
+        for problem in problems:
+            print(textwrap.fill(problem, width=96, initial_indent="  ✗ ", subsequent_indent="    "), file=sys.stderr)
+        return 1
+    print(
+        f"\nOK: concentration ratchet holds — nothing rose above the {RATCHET_RECORDED} baseline, "
+        f"and all {len(CEILING_EXCEPTIONS)} exception(s) are within their own ceiling"
+    )
+    return 0
 
 
 def measure(rel: str, text: str) -> dict:
@@ -402,6 +528,12 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--top", type=int, default=0, help="show only the worst N")
     ap.add_argument("--max-ratio", type=float, help="gate: fail if any file exceeds this ratio")
+    ap.add_argument(
+        "--ratchet",
+        action="store_true",
+        help="gate leg: fail if the count of files over --max-ratio, or of HIGH files, moves off the "
+        "recorded baseline (rise = regression, fall = stale baseline). Requires --max-ratio.",
+    )
     ap.add_argument("--file", help="report one file and list its neighbours")
     ap.add_argument("--since", help="report what moved since a git ref, and whether it was own or neighbourhood")
     ap.add_argument("--json", action="store_true")
@@ -456,6 +588,16 @@ def main() -> int:
                 )
                 return 1
         return 0
+
+    if args.ratchet:
+        if args.max_ratio is None:
+            print(
+                "--ratchet needs --max-ratio: the baseline counts the files above a stated threshold, and a "
+                "threshold that is not stated at the call site is not auditable from the gate's own output.",
+                file=sys.stderr,
+            )
+            return 2
+        return ratchet(rows, args.max_ratio)
 
     if args.json:
         print(json.dumps(rows if not args.top else rows[: args.top], indent=2))

@@ -7,6 +7,8 @@
 // that owns the turn stays where the turn is driven.
 package splice.gateway.head
 
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import splice.core.turn.ErrorType
 import splice.core.util.LogSink
 import splice.spi.Provider
@@ -31,7 +33,7 @@ internal class CancellationSeal(
         } else {
             "${provider.key}: turn cancelled — retry"
         }
-        // Flat when (not nested if) so the still-connected try/catch stays at nesting depth 3:
+        // Flat when (not nested if) so the still-connected try/catch stays shallow:
         // catch → if(seal) → if(clientGone) → try would trip NestedBlockDepth's depth-4 ceiling.
         when {
             !seal || drive.emitter.hasEnded -> Unit
@@ -44,20 +46,32 @@ internal class CancellationSeal(
             // still "connected". Emit FIRST; if the error frame can't reach the wire the cancel
             // WAS a client disconnect the ping/write path hadn't flagged, so reclassify it as an
             // abandon, not an error:cancelled (review 2026-07-22 round 3).
+            //
+            // NonCancellable because seal() is called FROM a CancellationException catch, so the Job
+            // is ALREADY cancelling: emitError — the only suspend call in this function — would
+            // rethrow CancellationException at its first suspension point instead of writing the
+            // frame. That is not an IOException, so the catch below would MISS it and the log, the
+            // perf row, the health bump and the abandon() reclassification would all be skipped,
+            // handing the client exactly the truncated 200 this file exists to prevent.
+            // SseEmitter.emitError releases its seal claim on cancellation "so a later seal can
+            // still retry" — this IS that later seal, and nothing runs after it. Same leak-safe
+            // teardown idiom as the slot release in HeadAdmission/AdmissionGate.
             else ->
-                try {
-                    drive.emitter.emitError(ErrorType.OVERLOADED, cancelMsg)
-                    log(telemetry.errTurn("cancelled", drive, ": turn cancelled before terminal"))
-                    telemetry.recordPerf(drive, "error:cancelled")
-                    health.local()
-                } catch (io: IOException) {
-                    // emitError's error frame could not reach the wire — the cancel WAS a client
-                    // disconnect the ping/write path hadn't flagged. Reclassify as a benign
-                    // abandon (emitError already sealed on IOException; the set is idempotent),
-                    // NOT an error:cancelled — no health bump (review 2026-07-22 round 3).
-                    log("[${provider.key}] turn cancelled + error frame unwritable (${io.message}) — client gone\n")
-                    drive.emitter.abandon()
-                    telemetry.recordPerf(drive, "client_abort")
+                withContext(NonCancellable) {
+                    try {
+                        drive.emitter.emitError(ErrorType.OVERLOADED, cancelMsg)
+                        log(telemetry.errTurn("cancelled", drive, ": turn cancelled before terminal"))
+                        telemetry.recordPerf(drive, "error:cancelled")
+                        health.local()
+                    } catch (io: IOException) {
+                        // emitError's error frame could not reach the wire — the cancel WAS a client
+                        // disconnect the ping/write path hadn't flagged. Reclassify as a benign
+                        // abandon (emitError already sealed on IOException; the set is idempotent),
+                        // NOT an error:cancelled — no health bump (review 2026-07-22 round 3).
+                        log("[${provider.key}] turn cancelled + error frame unwritable (${io.message}) — client gone\n")
+                        drive.emitter.abandon()
+                        telemetry.recordPerf(drive, "client_abort")
+                    }
                 }
         }
     }

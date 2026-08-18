@@ -51,7 +51,12 @@ ROOT = pathlib.Path(__file__).resolve().parents[4]
 PATHS = {
     "mirror": ["gateway/gateway/src/main/kotlin/splice/gateway/reasoning/Mirror.kt"],
     "pipeline": ["gateway/gateway/src/main/kotlin/splice/gateway/pipeline/TurnPipeline.kt"],
+    # HD-25 (2026-08-18): PassthroughStreamTranslator decomposed; emittedThinking's set-site moved
+    # to PassthroughProseChannels.kt and its read-into-the-outcome site stays in
+    # PassthroughStreamTranslator.kt — the same two-file shape the chat key took in HD-24.
     "passthrough": [
+        "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/"
+        "PassthroughProseChannels.kt",
         "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/"
         "PassthroughStreamTranslator.kt",
     ],
@@ -106,7 +111,10 @@ REQUIRED = {
          "the 2026-08-11 review finding: kimi can open a thinking block and close it having sent "
          "nothing, and counting that as delivered content short-circuits the empty-turn gate, so a "
          "turn carrying zero characters ends as a clean terminal — the L3 hole CX-09 exists to close"),
-        ("emittedThinking = emittedThinking,",
+        # HD-25 (2026-08-18): successOutcome stayed on PassthroughStreamTranslator.kt, reading the
+        # shared PassthroughProseChannels collaborator instead of its own field — same field, same
+        # invariant, new receiver. Exactly the chat entry's remedy below, applied here.
+        (("emittedThinking = emittedThinking,", "emittedThinking = channels.emittedThinking,"),
          "the recorded flag never reaches the outcome the pipeline reads"),
     ],
     "chat": [

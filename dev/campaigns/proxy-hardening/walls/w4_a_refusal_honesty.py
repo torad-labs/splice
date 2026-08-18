@@ -69,8 +69,17 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
-PASS = ROOT / ("gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/"
-               "PassthroughStreamTranslator.kt")
+# LIST (HD-25 decomposition, 2026-08-18, the file-list mechanism the chat/responses keys already
+# use): PassthroughStreamTranslator was decomposed and BOTH halves of this dialect's entry — the
+# three stop_reason carriers (PassthroughFailureRules) and the `else ->` conversion arm that hands
+# the remainder to them — moved together onto PassthroughTerminalState.kt, the L3 verdict owner.
+# One file, because the rule table moved WITH its only caller: the conversion call site is
+# byte-identical, so no new spelling is needed. ANY missing file makes the whole key None (the
+# vacuity guard, unchanged and strengthened).
+PASS = [
+    ROOT / ("gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/"
+            "PassthroughTerminalState.kt"),
+]
 # LIST (HD-24 decomposition, 2026-08-17): the carrier `strIfString(obj["refusal"])` moved to
 # ChatProseFold.kt, the two appendRefusal call sites moved to ChatEventRouter.kt, and the verdict
 # `refusalBuf.isNotBlank() -> TurnOutcome.Failure` moved to ChatTerminalState.kt. ANY missing file

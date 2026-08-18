@@ -175,6 +175,15 @@ def scan(rows: list[dict]) -> list[dict]:
         denominator = max(median, floor)
         row["neighbour_packages"] = sorted(neighbours)
         row["neighbour_median_C"] = round(median, 1)
+        # REPORT THE DIVISOR ACTUALLY USED, not just the raw median. When the floor bites, the two
+        # differ and every reader who reproduces C / neighbour_median_C gets a different number than
+        # the tool printed — app/cli/Command.kt reports a median of 1.0 against a ratio of 2.29,
+        # which reads as 63x by hand. Ten of 306 files are floored today, and two of the eight HIGH
+        # rows are HIGH *because of* the floor rather than because of their neighbours, which is a
+        # materially different finding. A gate whose arithmetic cannot be reproduced from its own
+        # output is not auditable.
+        row["denominator"] = round(denominator, 1)
+        row["denominator_floored"] = median < floor
         row["ratio"] = round(row["C"] / denominator, 2) if denominator else 0.0
         if row["C"] < global_median:
             row["band"] = "low"
@@ -273,11 +282,16 @@ def main() -> int:
         print(json.dumps(rows if not args.top else rows[: args.top], indent=2))
     else:
         shown = rows[: args.top] if args.top else [r for r in rows if r["band"] != "low"]
-        print(f"{'file':58} {'C':>7} {'nbrMed':>7} {'ratio':>6}  band")
+        # `denom` is the divisor actually used, so ratio = C / denom always reproduces by hand; a
+        # trailing * marks a row where the neighbourhood median was below the floor and the floor
+        # was substituted, i.e. the score is graded against the tree's scale rather than against
+        # that file's own neighbours.
+        print(f"{'file':58} {'C':>7} {'denom':>7} {'ratio':>6}  band")
         for r in shown:
             print(
                 f"{r['file'].replace('gateway/', '').replace('/src/main/kotlin/splice', '~')[:58]:58} "
-                f"{r['C']:7.0f} {r['neighbour_median_C']:7.0f} {r['ratio']:6.2f}  {r['band']}"
+                f"{r['C']:7.0f} {r['denominator']:6.0f}{'*' if r['denominator_floored'] else ' '} "
+                f"{r['ratio']:6.2f}  {r['band']}"
             )
         high = [r for r in rows if r["band"] == "HIGH"]
         med = [r for r in rows if r["band"] == "moderate"]

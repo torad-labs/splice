@@ -660,19 +660,19 @@ public class UpstreamClient(
             }
         }
 
-        /** Walks the cause chain (Ktor wraps engine exceptions) looking for a match, bounded by
-         *  MAX_CAUSE_DEPTH. Shared primitive so the retryable-transport and DNS-only predicates
-         *  don't duplicate the loop. */
-        private fun causeChainMatches(e: Throwable, predicate: CausePredicate): Boolean {
-            var t: Throwable? = e
-            var depth = 0
-            while (t != null && depth < MAX_CAUSE_DEPTH) {
-                if (predicate(t)) return true
-                t = t.cause
-                depth++
-            }
-            return false
-        }
+        /** The cause chain as a bounded sequence — [e] itself, then its causes, at most
+         *  MAX_CAUSE_DEPTH links (Ktor wraps engine exceptions, so the class that decides
+         *  "retryable transport" or "DNS" is never the one thrown). THE walk: every rule below
+         *  reads the chain through this one, lazily, so the bound is written once rather than
+         *  trusted twice and the phase and DNS rules cannot drift apart. */
+        private fun causeChain(e: Throwable): Sequence<Throwable> =
+            generateSequence(e) { it.cause }.take(MAX_CAUSE_DEPTH)
+
+        /** Does any link of the chain satisfy [predicate]? The boolean special case of the same
+         *  walk [classifyTransport] maps over — the loop used to be written out twice, and the
+         *  copy drifted no further than luck. */
+        private fun causeChainMatches(e: Throwable, predicate: CausePredicate): Boolean =
+            causeChain(e).any { predicate(it) }
 
         /** Per-node classification, split out of [classifyTransport] so the loop shape and the
          *  allowlist `when` each stay under detekt's CyclomaticComplexMethod ceiling. */
@@ -687,21 +687,13 @@ public class UpstreamClient(
             else -> null
         }
 
-        /** Walks the cause chain (Ktor wraps engine exceptions), same shape as [causeChainMatches],
-         *  classifying the retryable set by phase instead of a bare Boolean. Deliberately
-         *  conservative — everything else (TLS trust failures, protocol errors, the HttpTimeout
-         *  plugin's overall budget) still fails the turn. Not an added/removed exception type —
-         *  a pure reclassification of the existing retryable set (G16). */
-        internal fun classifyTransport(e: Throwable): TransportFailurePhase? {
-            var t: Throwable? = e
-            var depth = 0
-            while (t != null && depth < MAX_CAUSE_DEPTH) {
-                transportPhaseOf(t)?.let { return it }
-                t = t.cause
-                depth++
-            }
-            return null
-        }
+        /** The first link of [causeChain] that classifies as a transport failure — the retryable
+         *  set by phase instead of a bare Boolean. Deliberately conservative — everything else
+         *  (TLS trust failures, protocol errors, the HttpTimeout plugin's overall budget) still
+         *  fails the turn. Not an added/removed exception type — a pure reclassification of the
+         *  existing retryable set (G16). */
+        internal fun classifyTransport(e: Throwable): TransportFailurePhase? =
+            causeChain(e).firstNotNullOfOrNull { transportPhaseOf(it) }
 
         /**
          * Connection-phase failures worth a silent retry: name resolution, TCP connect/reset,

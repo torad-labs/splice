@@ -36,7 +36,7 @@ DAEMON = ROOT / "gateway/app/src/main/kotlin/splice/app/head/HeadBoot.kt"
 
 def detect(topo: str | None, doctor: str | None, daemon: str | None) -> list[str]:
     """Pure detection. No I/O — the selftest feeds it directly."""
-    for name, text in (("Topology.kt", topo), ("DoctorConfigChecks.kt", doctor), ("Daemon.kt", daemon)):
+    for name, text in (("Topology.kt", topo), ("DoctorConfigChecks.kt", doctor), ("HeadBoot.kt", daemon)):
         if text is None:
             return [f"{name} missing — refusing to pass vacuously"]
     problems: list[str] = []

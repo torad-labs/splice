@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import splice.core.auth.Pkce
 import splice.core.util.EnvReader
 import splice.core.util.FormEncoding
 import splice.core.util.JsonScalars
@@ -49,8 +50,6 @@ private const val MS_PER_S = 1000L
 // FILE SCOPE ON PURPOSE: one configured Json parser shared by every call. As a member it would be
 // rebuilt per GrokOAuth construction, and the callers construct one per login/refresh.
 private val grokJson = Json { ignoreUnknownKeys = true }
-
-public data class Pkce(val verifier: String, val challenge: String)
 
 /** The grok OAuth wire builders and response parsers. Stateless — collaborators construct one. */
 public class GrokOAuth {

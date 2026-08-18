@@ -13,6 +13,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import splice.core.auth.Pkce
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.FormEncoding
@@ -43,8 +44,6 @@ public object CodexOAuthEndpoints {
     public fun originator(env: EnvReader): String =
         env("CODEX_OAUTH_ORIGINATOR") ?: "codex_cli_rs"
 }
-
-public data class Pkce(val verifier: String, val challenge: String)
 
 // 32 = PKCE verifier byte length per RFC 7636.
 private const val PKCE_VERIFIER_BYTES = 32

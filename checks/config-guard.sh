@@ -46,5 +46,11 @@ done < <(find .rules -type f -name '*.yml' -print)
 # not the independently-versioned kotlinx libraries (kover, coroutines, serialization).
 python3 checks/config/dependabot-kotlin-scope.py || fail=1
 
+# 5. The concentration leg is routed AND still ratchets. package.json is a config surface like any
+# other here, and `"gate:concentration": "python3 checks/concentration.py --top 5"` is a one-line
+# edit that exits 0 forever while checks/gate.sh keeps printing a green concentration leg. Same
+# completeness shape checks/rule-routing.sh applies to ast-grep rule directories, one surface up.
+python3 checks/config/concentration-leg-routed.py || fail=1
+
 if [ "$fail" -eq 0 ]; then echo "config-guard: PASS"; else echo "config-guard: FAIL"; fi
 exit "$fail"

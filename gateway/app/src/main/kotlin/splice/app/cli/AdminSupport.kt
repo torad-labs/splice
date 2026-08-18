@@ -11,6 +11,7 @@ import splice.core.GATEWAY_VERSION
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
 import splice.core.topology.Topology
+import splice.core.topology.TopologyKnobLayer
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import java.io.IOException
@@ -47,7 +48,7 @@ internal object AdminSupport {
             // config.json and SPLICE_CONTROL_PORT layers — which both broke hermetic test rigs
             // (an ambient real daemon answered instead) and diverged from the launch shim's own
             // resolution (JW-05 discovery, 2026-08-07).
-            headOverrides = topology?.configOverrides() ?: emptyMap(),
+            headOverrides = topology?.let { TopologyKnobLayer(it).configOverrides() } ?: emptyMap(),
             envReader = envReader,
         ).getConfig().controlPort
 

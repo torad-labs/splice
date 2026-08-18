@@ -83,7 +83,11 @@ internal class WsConnectionPool(
     internal fun release(key: String, conn: WsConnection) {
         conn.busy.set(false)
         synchronized(lock) { // touch: completed rounds move their connection to MRU
-            connections.remove(key)?.let { connections[key] = it }
+            // Identity-guarded like failRound below: by the time a round ends, the key may hold a
+            // DIFFERENT connection (this one was killed and a successor registered), and an
+            // unconditional remove+reinsert would promote that stranger to MRU on our round's
+            // completion — skewing which entry the cap evicts next.
+            if (connections[key] === conn) connections.remove(key)?.let { connections[key] = it }
         }
     }
 

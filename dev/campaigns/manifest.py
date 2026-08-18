@@ -189,6 +189,10 @@ class _CampaignProofRefusal(Exception):
     """A strict-mode verified transition refused while holding the manifest flock."""
 
 
+class _OneReviewPerRowRefusal(Exception):
+    """A ONE-REVIEW-PER-ROW verdict refused while holding the manifest flock."""
+
+
 def _campaign_proof_required() -> bool:
     return os.environ.get(CAMPAIGN_REQUIRE_PROOF_ENV) == "1"
 
@@ -3744,6 +3748,43 @@ def cmd_note(path, item_id, text, _notify=None, _this_file=None, _journal_root=N
         notify(path, f"{item_id} BLOCKED — see ledger ({Path(path).stem})")
 
 
+def _one_review_per_row_error(lines: list[str], item_id: str, outcome: str) -> str | None:
+    """ONE-REVIEW-PER-ROW (operator law 2026-08-15, claude-head campaign; enforced globally
+    because the ledger record agrees: 84 historical verdicts, the single double-accept was
+    P2-GOLD — reopened as FALSE-VERIFIED). An item gets ONE adversarial review round.
+    Allowed sequences: accepted | blocked | redo→accepted | redo→blocked. A second redo is a
+    second review round (fix the named gap forward and CLOSE instead); a verdict after a
+    terminal outcome silently reopens a closed row.
+
+    Returns the refusal message, or None when `outcome` is this row's allowed next verdict.
+    Called TWICE per verdict: once on an unlocked read as a fast path (same refusal without
+    paying for the flock in the common case), and once inside cmd_verdict's mutate() on the
+    lines _locked_rewrite freshly read under the flock. Only the second one is authoritative —
+    a check outside the lock cannot make the append it guards conditional, so two overlapping
+    `verdict <ID>` runs would both read the pre-verdict state, both pass, and both append."""
+    s, e = _find(lines, item_id)
+    prior_outcomes = [
+        m.group(1)
+        for line in lines[s:e]
+        for m in [re.search(r"VERDICT: outcome=(\w+)", line)]
+        if m
+    ]
+    if any(o in ("accepted", "blocked") for o in prior_outcomes):
+        return (
+            f"error: {item_id} already carries a terminal verdict "
+            f"({', '.join(prior_outcomes)}) — ONE-REVIEW-PER-ROW: a closed row is never "
+            "re-reviewed. Reopening is an operator act (dated note + set-status), never a "
+            "second verdict."
+        )
+    if outcome == "redo" and "redo" in prior_outcomes:
+        return (
+            f"error: {item_id} already has a redo verdict — ONE-REVIEW-PER-ROW: one "
+            "adversarial review round per item. Fix the named gap forward and close with "
+            "accepted|blocked; a second redo is a second review round."
+        )
+    return None
+
+
 def cmd_verdict(
     path,
     item_id,
@@ -3773,34 +3814,13 @@ def cmd_verdict(
     if contradiction is not None and not locus:
         sys.exit("error: --contradiction requires a non-empty locus")
 
-    # ONE-REVIEW-PER-ROW (operator law 2026-08-15, claude-head campaign; enforced globally
-    # because the ledger record agrees: 84 historical verdicts, the single double-accept was
-    # P2-GOLD — reopened as FALSE-VERIFIED). An item gets ONE adversarial review round.
-    # Allowed sequences: accepted | blocked | redo→accepted | redo→blocked. A second redo is a
-    # second review round (fix the named gap forward and CLOSE instead); a verdict after a
-    # terminal outcome silently reopens a closed row.
+    # ONE-REVIEW-PER-ROW fast path: refuse without taking the flock in the common case. The
+    # AUTHORITATIVE copy of this same check runs inside mutate() below, under the lock.
     with open(path, encoding="utf-8") as handle:
         prior_lines = handle.readlines()
-    ps, pe = _find(prior_lines, item_id)
-    prior_outcomes = [
-        m.group(1)
-        for line in prior_lines[ps:pe]
-        for m in [re.search(r"VERDICT: outcome=(\w+)", line)]
-        if m
-    ]
-    if any(o in ("accepted", "blocked") for o in prior_outcomes):
-        sys.exit(
-            f"error: {item_id} already carries a terminal verdict "
-            f"({', '.join(prior_outcomes)}) — ONE-REVIEW-PER-ROW: a closed row is never "
-            "re-reviewed. Reopening is an operator act (dated note + set-status), never a "
-            "second verdict."
-        )
-    if outcome == "redo" and "redo" in prior_outcomes:
-        sys.exit(
-            f"error: {item_id} already has a redo verdict — ONE-REVIEW-PER-ROW: one "
-            "adversarial review round per item. Fix the named gap forward and close with "
-            "accepted|blocked; a second redo is a second review round."
-        )
+    fast_refusal = _one_review_per_row_error(prior_lines, item_id, outcome)
+    if fast_refusal is not None:
+        sys.exit(fast_refusal)
 
     parts = [f"VERDICT: outcome={outcome}"]
     if gap_named:
@@ -3812,11 +3832,20 @@ def cmd_verdict(
     note_text = " ".join(parts)
 
     def mutate(lines):
+        # The guard that makes this append conditional has to read the SAME lines the append
+        # writes, under the SAME flock — otherwise the lock serialises the write but not the
+        # check, and two racing verdicts both land (PR 99 finding 7).
+        refusal = _one_review_per_row_error(lines, item_id, outcome)
+        if refusal is not None:
+            raise _OneReviewPerRowRefusal(refusal)
         s, e = _find(lines, item_id)
         stamp = date.today().isoformat()
         return _append_block_lines(lines, s, e, [f"# [{stamp}] {note_text}\n"])
 
-    _locked_rewrite(path, mutate)
+    try:
+        _locked_rewrite(path, mutate)
+    except _OneReviewPerRowRefusal as exc:
+        sys.exit(str(exc))
     print(f"verdict recorded on {item_id}: {note_text}")
     _append_orchestrator_verdict_journal_line(
         path,

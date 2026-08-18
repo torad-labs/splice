@@ -199,7 +199,7 @@ public class KimiAuthProvider(
                     writeSecure(authPath, merged.toString())
                 }
                     .getOrElse { return RefreshOutcome.PersistFailed("credentials write failed: $it") }
-                invalidateCache()
+                cache = null
                 RefreshOutcome.Refreshed(apiKey(attempt.tokens.accessToken))
             }
             is RefreshAttempt.InvalidGrant -> rejectedOrRetry(refreshToken, allowRereadRetry, INVALID_GRANT_REASON)
@@ -261,10 +261,6 @@ public class KimiAuthProvider(
                     ),
             expiresInS = JsonScalars.long(obj, "expires_in") ?: 0L,
         )
-    }
-
-    public fun invalidateCache() {
-        cache = null
     }
 
     override suspend fun describe(): AuthDescription {

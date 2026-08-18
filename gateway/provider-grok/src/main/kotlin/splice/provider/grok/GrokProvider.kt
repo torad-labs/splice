@@ -5,7 +5,6 @@
 // the per-turn conv-id header and the grok quirk profile.
 package splice.provider.grok
 
-import splice.core.auth.Credentials
 import splice.core.turn.ReasoningDisplay
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
@@ -32,8 +31,6 @@ public class GrokProvider(
     // field raced concurrent sessions into each other's affinity header (audit 2026-07-18).
     override fun perTurnHeaders(sessionId: String?): Map<String, String> =
         sessionId?.takeIf { it.isNotEmpty() }?.let { mapOf("x-grok-conv-id" to it) } ?: emptyMap()
-
-    override fun extraHeaders(creds: Credentials): Map<String, String> = mapOf("Accept" to "text/event-stream")
 }
 
 /** Holder for the grok quirk profile. A class rather than a static namespace so the profile is

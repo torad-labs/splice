@@ -48,12 +48,9 @@ public class SseEmitter internal constructor(
     // The shared stop_reason derivation (L3) — one definition, held rather than copied.
     private val envelope = TerminalEnvelope()
 
-    public val hasStarted: Boolean get() = start.hasStarted
     override val hasEnded: Boolean get() = seal.get() == SealState.ENDED
 
     override suspend fun ensureStarted(): Unit = start.ensureStart()
-
-    public suspend fun ensureStart(): Unit = start.ensureStart()
 
     /** The ONLY clean ending — derives stop_reason internally (L3). */
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) {

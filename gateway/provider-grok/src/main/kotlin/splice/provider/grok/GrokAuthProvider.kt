@@ -210,10 +210,6 @@ public class GrokAuthProvider(
     private fun tokensOf(): JsonObject? =
         json.parseToJsonElement(Files.readString(authPath)).jsonObject[FIELD_TOKENS] as? JsonObject
 
-    public fun invalidateCache() {
-        cache = null
-    }
-
     override suspend fun refresh(): Credentials? =
         singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) }
 
@@ -332,7 +328,7 @@ public class GrokAuthProvider(
         Cancellables.runCatchingCancellable {
             writeSecure(authPath, mergedAuthJson(access, fresh.refreshToken ?: refreshToken, expiresAtMs).toString())
         }.getOrElse { return RefreshOutcome.PersistFailed("auth.json write failed: $it") }
-        invalidateCache()
+        cache = null
         return RefreshOutcome.Refreshed(Credentials.Bearer(access, null))
     }
 

@@ -19,8 +19,8 @@ import splice.spi.FoldRound
 
 /** Operator-tunable reasoning-continuation policy (threaded from config like mirror_reasoning). */
 public data class FoldConfig(
-    /** Upstream models that exhibit the 518n-2 truncation. See [defaultFoldModels] —
-     *  luna/terra/5.5, NOT sol. */
+    /** Upstream models that exhibit the 518n-2 truncation — luna/terra/5.5, NOT sol. The
+     *  operator-tunable default lives in Knob.FOLD_REASONING_MODELS. */
     val models: Set<String>,
     val maxContinue: Int = DEFAULT_MAX_CONTINUE,
     val markerText: String = DEFAULT_MARKER_TEXT,
@@ -32,17 +32,6 @@ public data class FoldConfig(
 public const val DEFAULT_MAX_CONTINUE: Int = 3
 public const val DEFAULT_MAX_TIER_N: Int = 6
 public const val DEFAULT_MARKER_TEXT: String = "Continue thinking..."
-
-// FILE SCOPE ON PURPOSE: one shared immutable model table.
-//
-// THE ONE RELOCATED SYMBOL WHOSE NAME COULD NOT BE PRESERVED. As `FoldConfig.DEFAULT_MODELS` it was
-// a companion property, where detekt's constantPattern ('[A-Z][A-Za-z0-9_]*') applied. At file
-// scope it is a public non-const `val`, which detekt's TopLevelPropertyNaming holds to
-// propertyPattern ('[a-z][A-Za-z0-9]*') instead — the repo's own gate, so the remedy is the rename,
-// not a suppression. Its three `const val` siblings above keep their names (const still matches
-// constantPattern). Safe: grep over the whole repo finds no consumer of this symbol at all — it is
-// the documented default set, referenced only by FoldConfig's own KDoc.
-public val defaultFoldModels: Set<String> = setOf("gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.5")
 
 /**
  * The codex 518n-2 detector + continuation-request builder. One per fold-eligible turn; the gateway

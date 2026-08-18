@@ -4,7 +4,6 @@
 // duplicated drive logic; this class adds ONLY its quirk profile.
 package splice.provider.openai
 
-import splice.core.auth.Credentials
 import splice.core.turn.ReasoningDisplay
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
@@ -24,11 +23,7 @@ public class OpenAiResponsesProvider(
     /** Daemon log sink — forwarded to ResponsesProvider so its diagnostics reach
      *  /mgmt/logs and not stderr alone (wall kt-no-println, 2026-07-27). */
     log: LogSink = LogSink(DaemonLog::write),
-) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks, log = log) {
-
-    // api key rides as the standard bearer (UpstreamClient maps Credentials.ApiKey); no account header.
-    override fun extraHeaders(creds: Credentials): Map<String, String> = mapOf("Accept" to "text/event-stream")
-}
+) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks, log = log)
 
 /** Holder for the openai-platform quirk profile. A class rather than a static namespace so the
  *  profile is constructed by whoever needs it (the daemon overlays TOML on top of it), and so the

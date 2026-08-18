@@ -82,7 +82,10 @@ public interface Provider : ProviderIdentity {
 
     public fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator
 
-    public fun extraHeaders(creds: Credentials): Map<String, String>
+    /** Default: the bare SSE accept header every Responses/Chat upstream needs. Providers with a
+     *  credential-derived header (codex's ChatGPT-Account-ID, passthrough's identity headers)
+     *  override with more; this covers the three that don't. */
+    public fun extraHeaders(creds: Credentials): Map<String, String> = mapOf("Accept" to "text/event-stream")
 
     /** Reasoning-continuation folding for this turn, or null when the feature is off for this
      *  model/head (the default — every non-codex provider stays pure passthrough). */

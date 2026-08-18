@@ -178,10 +178,6 @@ public class CodexAuthProvider(
         log("[codex-auth] failed to read $authPath: $it — treating as not logged in")
     }.getOrNull()
 
-    public fun invalidateCache() {
-        cache = null
-    }
-
     override suspend fun refresh(): Credentials? =
         singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) }
 
@@ -300,7 +296,7 @@ public class CodexAuthProvider(
         Cancellables
             .runCatchingCancellable { writeSecure(authPath, mergedAuthJson(raw, tokens, fresh, access).toString()) }
             .getOrElse { return RefreshOutcome.PersistFailed("auth.json write failed: $it") }
-        invalidateCache()
+        cache = null
         return readSnapshot()?.let { RefreshOutcome.Refreshed(Credentials.Bearer(it.access, it.accountId)) }
             ?: RefreshOutcome.PersistFailed("auth.json unreadable after rotated-token write")
     }

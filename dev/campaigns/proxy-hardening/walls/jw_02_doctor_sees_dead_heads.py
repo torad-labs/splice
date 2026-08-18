@@ -18,6 +18,7 @@ EXIT 0 = doctor sees. EXIT 1 = gap open. --selftest = the POSITIVE CONTROL (C6).
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
@@ -44,8 +45,28 @@ def detect(client: str | None, doctor: str | None) -> list[str]:
     return problems
 
 
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+_LINE_COMMENT = re.compile(r"//.*?$", re.M)
+_IMPORT_LINE = re.compile(r"^import .*$", re.M)
+
+
+def code_only(text: str | None) -> str | None:
+    """A mention is not a wiring: a token left behind in a `// TODO: restore ...` must not satisfy
+    a REQUIRED token after the real call site is deleted. Same stripper cx_02/cx_09/cx_18 carry.
+
+    Both readers strip because all three checks here are REQUIRED tokens; this wall asserts no
+    BANNED string, which is the one direction that must stay on raw text (the jw_08 split) so a
+    violation cannot hide inside a comment. DoctorCommand.kt already narrates `failedHeads` twice
+    in KDoc, so without this the doctor half of the wall was satisfiable with zero code."""
+    if text is None:
+        return None
+    stripped = _BLOCK_COMMENT.sub("", text)
+    stripped = _LINE_COMMENT.sub("", stripped)
+    return _IMPORT_LINE.sub("", stripped)
+
+
 def _read(p: pathlib.Path) -> str | None:
-    return p.read_text(encoding="utf-8") if p.exists() else None
+    return code_only(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
 CLIENT_OPEN = 'fun healthVersion(port: Int): String? = obj.str("version")'

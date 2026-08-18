@@ -18,6 +18,7 @@ EXIT 0 = runtime visible. EXIT 1 = gap open. --selftest = the POSITIVE CONTROL (
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
@@ -47,8 +48,29 @@ def detect(doctor: str | None) -> list[str]:
     return problems
 
 
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+_LINE_COMMENT = re.compile(r"//.*?$", re.M)
+_IMPORT_LINE = re.compile(r"^import .*$", re.M)
+
+
+def code_only(text: str | None) -> str | None:
+    """A mention is not a wiring: a token left behind in a `// TODO: restore ...` must not satisfy
+    a REQUIRED token after the real call site is deleted. Same stripper cx_02/cx_09/cx_18 carry.
+
+    Both readers strip because every check here is a REQUIRED token; this wall asserts no BANNED
+    string, which is the one direction that must stay raw (the jw_08 split) so a violation cannot
+    hide inside a comment. This surface is unusually comment-dense — DoctorRuntime.kt's own header
+    narrates the `perf` JSONL `outcome` tail in prose — so before this, the perf/outcome check was
+    already satisfied by the file's description of a section that could have been deleted."""
+    if text is None:
+        return None
+    stripped = _BLOCK_COMMENT.sub("", text)
+    stripped = _LINE_COMMENT.sub("", stripped)
+    return _IMPORT_LINE.sub("", stripped)
+
+
 def _read(p: pathlib.Path) -> str | None:
-    return p.read_text(encoding="utf-8") if p.exists() else None
+    return code_only(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
 OPEN_FIX = "daemonChecks static only"

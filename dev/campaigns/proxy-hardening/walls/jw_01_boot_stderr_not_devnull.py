@@ -18,6 +18,7 @@ EXIT 0 = boot failures visible. EXIT 1 = gap open. --selftest = the POSITIVE CON
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
@@ -53,8 +54,43 @@ def detect(main: str | None, shim: str | None, admin: str | None) -> list[str]:
     return problems
 
 
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+_LINE_COMMENT = re.compile(r"//.*?$", re.M)
+_IMPORT_LINE = re.compile(r"^import .*$", re.M)
+# bin/splice-launch is SHELL, not Kotlin: its comment marker is `#`. Running the Kotlin stripper
+# over it would miss every `# TODO:` (leaving the hole open on the very reader that carries two of
+# this wall's four required tokens) AND eat the `//` in `http://127.0.0.1`. Same law, own marker.
+_SHELL_COMMENT = re.compile(r"(?:(?<=\s)|^)#.*?$", re.M)
+
+
+def code_only(text: str | None) -> str | None:
+    """A mention is not a wiring: a token left behind in a `// TODO: restore ...` must not satisfy
+    a REQUIRED token after the real call site is deleted. Same stripper cx_02/cx_09/cx_18 carry.
+
+    Applied to EVERY reader here because every check in this wall is a REQUIRED token — the
+    `daemon >/dev/null 2>&1` test only picks which message to print (both of its branches demand
+    daemon-boot.log), so nothing in this wall is a BAN, where stripping would instead let a
+    violation hide inside a comment (the jw_08 split)."""
+    if text is None:
+        return None
+    stripped = _BLOCK_COMMENT.sub("", text)
+    stripped = _LINE_COMMENT.sub("", stripped)
+    return _IMPORT_LINE.sub("", stripped)
+
+
+def shell_code_only(text: str | None) -> str | None:
+    """code_only for the shim — the same law spoken in the shell's comment marker."""
+    if text is None:
+        return None
+    return _SHELL_COMMENT.sub("", text)
+
+
 def _read(p: pathlib.Path) -> str | None:
-    return p.read_text(encoding="utf-8") if p.exists() else None
+    return code_only(p.read_text(encoding="utf-8")) if p.exists() else None
+
+
+def _read_shell(p: pathlib.Path) -> str | None:
+    return shell_code_only(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
 MAIN_OPEN = "val topology = TopologyLoader.loadOrMaterialize(topologyPath)\nval log = persistentLogger"
@@ -96,7 +132,7 @@ def selftest() -> int:
 def main() -> int:
     if "--selftest" in sys.argv:
         return selftest()
-    problems = detect(_read(MAIN), _read(SHIM), _read(ADMIN))
+    problems = detect(_read(MAIN), _read_shell(SHIM), _read(ADMIN))
     if problems:
         print("JW-01 WALL RED — a boot-dead daemon leaves no trace:")
         for p in problems:

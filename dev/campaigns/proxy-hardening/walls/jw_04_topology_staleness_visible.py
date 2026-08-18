@@ -18,6 +18,7 @@ EXIT 0 = staleness visible. EXIT 1 = gap open. --selftest = the POSITIVE CONTROL
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
@@ -48,8 +49,42 @@ def detect(control: str | None, shim: str | None, doctor: str | None) -> list[st
     return problems
 
 
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+_LINE_COMMENT = re.compile(r"//.*?$", re.M)
+_IMPORT_LINE = re.compile(r"^import .*$", re.M)
+# bin/splice-launch is SHELL, not Kotlin: its comment marker is `#`. Running the Kotlin stripper
+# over it would miss every `# TODO:` (and the shim's `topologyStale` token sits one line under a
+# comment that already spells it) AND eat the `//` in `http://127.0.0.1`. Same law, own marker.
+_SHELL_COMMENT = re.compile(r"(?:(?<=\s)|^)#.*?$", re.M)
+
+
+def code_only(text: str | None) -> str | None:
+    """A mention is not a wiring: a token left behind in a `// TODO: restore ...` must not satisfy
+    a REQUIRED token after the real call site is deleted. Same stripper cx_02/cx_09/cx_18 carry.
+
+    Every reader strips because every check in this wall is a REQUIRED token; it asserts no BANNED
+    string, which is the one direction that must stay raw (the jw_08 split) so a violation cannot
+    hide inside a comment."""
+    if text is None:
+        return None
+    stripped = _BLOCK_COMMENT.sub("", text)
+    stripped = _LINE_COMMENT.sub("", stripped)
+    return _IMPORT_LINE.sub("", stripped)
+
+
+def shell_code_only(text: str | None) -> str | None:
+    """code_only for the shim — the same law spoken in the shell's comment marker."""
+    if text is None:
+        return None
+    return _SHELL_COMMENT.sub("", text)
+
+
 def _read(p: pathlib.Path) -> str | None:
-    return p.read_text(encoding="utf-8") if p.exists() else None
+    return code_only(p.read_text(encoding="utf-8")) if p.exists() else None
+
+
+def _read_shell(p: pathlib.Path) -> str | None:
+    return shell_code_only(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
 CONTROL_OK = 'put("topologyDigest", d)\nput("topologyStale", stale)'
@@ -84,7 +119,7 @@ def selftest() -> int:
 def main() -> int:
     if "--selftest" in sys.argv:
         return selftest()
-    problems = detect(_read(CONTROL), _read(SHIM), _read(DOCTOR))
+    problems = detect(_read(CONTROL), _read_shell(SHIM), _read(DOCTOR))
     if problems:
         print("JW-04 WALL RED — an edited splice.toml is silently inert:")
         for p in problems:

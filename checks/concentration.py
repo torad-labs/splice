@@ -9,13 +9,37 @@ A per-class function count cannot see that. This can.
 
 THE METRIC. For each production .kt file:
 
-    C = 0.5*logic_lines + 3*exported_declarations + 8*concerns
+    C = 0.5*logic_lines + 3*non_type_exports + 8*concerns
 
   logic_lines  — non-blank, non-comment, non-import, non-package
-  exports      — top-level class/interface/object/fun/val/var declarations
+  non_type_exports
+               — top-level fun/val/var declarations. A top-level class/interface/object is NOT
+                 counted here, because `concerns` below already counts it. See ONE DECLARATION,
+                 ONE BILL.
   concerns     — declared types in the file PLUS distinct splice.* subsystems it imports.
                  This is the term that catches the failure above: splitting one god class into
                  six collaborators in the same file RAISES concerns rather than lowering it.
+
+                 ONE DECLARATION, ONE BILL (2026-08-18). The original `3*exports + 8*concerns`
+                 charged every declared type TWICE — once as an export, once as a concern — so a
+                 type cost 11 points, the equivalent of 22 logic lines, and a one-line
+                 `data class TextBlock(val text: String)` scored as 22 lines of orchestration. On
+                 core/wire/AnthropicRequest.kt (19 types in 133 lines) that double bill was 57 of
+                 275.5 points. Measured blast radius of the correction across this tree: 8 band
+                 flips, 2 files crossing 1.8 (dialect/passthrough/PassthroughProvider.kt
+                 1.63 -> 1.83, gateway/round/ReanchorRunner.kt 1.70 -> 1.89), tree census
+                 HIGH 8 -> 12, moderate 27 -> 27, over-1.8 35 -> 37, and all twelve HD-24 targets
+                 stay band low with the worst at 1.77. It is a CORRECTNESS fix, not a
+                 calibration: it says nothing about what a declaration should cost, only that it
+                 is charged once. Whether a declaration should cost 8 at all remains open.
+
+                 SUBTRACTED PER LINE, never as `exports - types`. TYPE_DECL admits `private ` and
+                 EXPORT_DECL does not, so the 14 files here that carry a top-level private class
+                 hold a concern that was never an export — `3*(exports - types)` hands each of
+                 them a -3 CREDIT, paying a file for hiding a collaborator behind `private`,
+                 which is precisely how a god file's collaborators get born. Measured: 14 files
+                 differ, min(exports - types) = -1. Per-line subtraction cannot go negative and
+                 has the smaller blast radius of the two (8 band flips against 9).
 
 Then, per file, the gradient against its neighbours:
 
@@ -65,11 +89,26 @@ Then, per file, the gradient against its neighbours:
 
   BANDS:  ratio < 1.8 low  |  1.8-3.0 moderate  |  >= 3.0 HIGH (god object)
 
-The band that matters is HIGH. Note what the metric does NOT excuse: core/wire/AnthropicRequest.kt
-carries 19 domain types in 133 lines and reads HIGH against its consumers — identically before and
-after 647ed02, and 6.19 today, of which the 3.34 -> 6.19 step is neighbourhood drift from 06002e6
-and not one line of the file. Whether a pure DTO hub should be scored by C at all is a calibration
-question about C, not a regression, and is not decided here.
+CEILING EXCEPTIONS. Two files in this tree provably cannot reach 1.8 by refactoring, and a gate
+that pretends otherwise buys its green by lying about what is reachable. They are named in
+CEILING_EXCEPTIONS below with a ceiling and a justification a reader can evaluate, in the idiom
+this repo already uses twice — `nonLibrary` in splice.module-law.gradle.kts and UNROUTED_ALLOWLIST
+in checks/rule-routing.sh. Four properties, each of which is what stops the list becoming a
+laundry:
+
+  - A CEILING, NOT A BLANKET. An excepted file is graded against its own recorded ceiling instead
+    of --max-ratio. If its ratio RISES above that ceiling the gate still fails. An exception
+    freezes a known state; it does not stop watching.
+  - A BLANK OR MISSING JUSTIFICATION IS A HARD ERROR, not a pass. The justification is dated and
+    mechanically shape-checked, exactly as UNROUTED_ALLOWLIST does it — an undated exemption is
+    how the next one hides.
+  - A STALE ENTRY IS A HARD ERROR. An exception naming a file that no longer exists fails the run
+    rather than going quiet, because a silently-dead entry is an un-graded file one rename later.
+  - ALWAYS LISTED. Every run prints the active exceptions separately from the passing files, so
+    they are read rather than silently applied.
+
+Nothing else belongs here. Every other file above 1.8 is work HD-25 is about to do, and putting
+one on this list is the exact laundering the mechanism exists to prevent.
 
 USAGE
     python3 checks/concentration.py                      # full table, exit 0
@@ -90,6 +129,7 @@ import statistics
 import subprocess
 import sys
 import tarfile
+import textwrap
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC_GLOB = "gateway/*/src/main"
@@ -104,6 +144,108 @@ EXPORT_DECL = re.compile(
 )
 SPLICE_IMPORT = re.compile(r"^import (splice\.[A-Za-z0-9_.]+)\.[A-Za-z0-9_]+")
 
+# --------------------------------------------------------------------------------------------
+# The files this tree provably cannot bring under the gate by refactoring. Format:
+# (path, ceiling ratio, "YYYY-MM-DD: why"), the same shape as UNROUTED_ALLOWLIST in
+# checks/rule-routing.sh. Read CEILING EXCEPTIONS in the module docstring before adding one; the
+# short version is that an entry here is a CEILING that still fails when breached, its
+# justification is mechanically required, a stale entry is a hard error, and every run prints the
+# list. Two entries, and every other file above the gate is HD-25's work — a third entry added to
+# make a red gate green is the laundering this list exists to prevent.
+CEILING_EXCEPTIONS: list[tuple[str, float, str]] = [
+    (
+        "gateway/core/src/main/kotlin/splice/core/wire/AnthropicRequest.kt",
+        5.83,
+        "2026-08-18: 19 Anthropic wire-format DTOs in 133 lines, with ZERO splice.* imports and "
+        "ZERO non-type exports — the entire score is the declarations, and the declarations are "
+        "one cohesive wire surface. Every destination a split could use is closed by the module "
+        "direction law: :core's allowed-dependency set is empty "
+        "(gateway/build-logic/src/main/kotlin/splice.module-law.gradle.kts:15), and five of this "
+        "file's six neighbour packages sit outside :core (splice.dialect.chat, "
+        "splice.dialect.passthrough, splice.dialect.responses, splice.gateway.compact, "
+        "splice.gateway.reasoning), so moving any type there inverts the graph; the three dialect "
+        "modules additionally may not depend on each other, so the shared request shape cannot be "
+        "parked in one of them and read by the other two. The sixth neighbour, splice.core.parse, "
+        "is a consumer. A 26-configuration weighting sweep (HD-25 note, 2026-08-17) found no "
+        "variant that leaves this file below HIGH without flipping a third of the tree. The "
+        "ceiling is its measured ratio under one-declaration-one-bill, not a target.",
+    ),
+    (
+        "gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamClient.kt",
+        6.14,
+        "2026-08-18: unlike AnthropicRequest this file is mass, not declarations — 491 logic "
+        "lines against 4 types, 6 non-type exports and 3 subsystems, so 245.5 of its 319.5 C is "
+        "the logic term. That mass is one retry loop whose FOUR budgets share a single RetryState "
+        "(UpstreamClient.kt:251-277): `attempt` (connect-phase backoff), `refreshedOnce` (the 401 "
+        "single-flight refresh, which must NOT consume an attempt), `streamReissues` (G5 — spans "
+        "the whole turn, never reset per handoff, deliberately independent of maxRetries) and "
+        "`amendedOnce` (RC-4 — budgeted alone, never by the attempt counter). Their MUTUAL "
+        "INDEPENDENCE is the invariant, and it is load-bearing: the review recorded in-code at "
+        "UpstreamClient.kt:264-269 (2026-07-24) found that coupling just two of them, via a single "
+        "`attempt += 1` in the amend step, made the loop guard eat a valid amended resend at the "
+        "budget boundary — it computed a good body and then failed the turn on the stale "
+        "pre-amendment error. Splitting the loop across files puts that shared state on a seam. "
+        "The ceiling is its measured ratio, and it is NOT a licence to grow: any reduction that "
+        "keeps the four budgets in one object is welcome and should lower this number.",
+    ),
+]
+
+# Every exemption starts with a date, exactly as checks/rule-routing.sh requires of
+# UNROUTED_ALLOWLIST — an undated one is how the next exemption hides.
+EXCEPTION_JUSTIFICATION = re.compile(r"^\d{4}-\d{2}-\d{2}: \S")
+
+
+def ceilings() -> dict[str, float]:
+    return {path: ceiling for path, ceiling, _ in CEILING_EXCEPTIONS}
+
+
+def exception_errors(rows: list[dict]) -> list[str]:
+    """Structural faults in CEILING_EXCEPTIONS, which fail EVERY mode rather than just the gate.
+
+    A malformed exception list is a defect whatever question the caller asked, and a list that is
+    only validated on the gate path is a list that goes quiet the moment somebody runs --file.
+    """
+    known = {row["file"] for row in rows}
+    seen: set[str] = set()
+    errors = []
+    for entry in CEILING_EXCEPTIONS:
+        if len(entry) != 3:
+            errors.append(f"{entry!r} is not (path, ceiling, justification) — three fields, always")
+            continue
+        path, _, why = entry
+        if path in seen:
+            errors.append(f"'{path}' is listed twice — one ceiling per file, or the stricter entry is dead text")
+        seen.add(path)
+        if not EXCEPTION_JUSTIFICATION.match(str(why).strip()):
+            errors.append(
+                f"'{path}' has no dated justification — every exception starts 'YYYY-MM-DD: <why>'. "
+                "A blank or missing justification is a hard error, never a pass: an exemption "
+                "nobody can evaluate is indistinguishable from one nobody should have granted."
+            )
+        if path not in known:
+            errors.append(
+                f"'{path}' is not a production .kt file any more — delete the entry. A stale exemption "
+                "is an ungraded file one rename later, which is the failure it was written to prevent."
+            )
+    return errors
+
+
+def report_exceptions(rows: list[dict]) -> None:
+    """Print the active exceptions, separately from the passing files, on every run.
+
+    An exception that is never read is never evaluated, and an allowlist nobody reads is a laundry.
+    """
+    if not CEILING_EXCEPTIONS:
+        return
+    by_file = {row["file"]: row for row in rows}
+    print(f"\nCEILING EXCEPTIONS ({len(CEILING_EXCEPTIONS)}) — graded against their own ceiling, not --max-ratio:")
+    for path, ceiling, why in CEILING_EXCEPTIONS:
+        row = by_file[path]
+        state = "OVER CEILING — the gate fails" if row["ratio"] > ceiling else "within ceiling"
+        print(f"  {path}")
+        print(f"    ratio {row['ratio']}  ceiling {ceiling}  C {row['C']}  [{state}]")
+        print(textwrap.fill(why, width=96, initial_indent="    ", subsequent_indent="    "))
+
 
 def measure(rel: str, text: str) -> dict:
     lines = text.splitlines()
@@ -116,6 +258,11 @@ def measure(rel: str, text: str) -> dict:
     ]
     exports = [line for line in lines if EXPORT_DECL.match(line)]
     types = [line for line in lines if TYPE_DECL.match(line)]
+    # ONE DECLARATION, ONE BILL — a top-level type is charged by `concerns`, so it must not also be
+    # charged as an export. Tested PER LINE rather than as len(exports) - len(types): TYPE_DECL
+    # admits `private ` and EXPORT_DECL does not, so a file with a top-level private class would
+    # otherwise be CREDITED 3 points for hiding a collaborator. See the module docstring.
+    non_type_exports = [line for line in exports if not TYPE_DECL.match(line)]
     subsystems = {m.group(1) for line in lines if (m := SPLICE_IMPORT.match(line))}
     concerns = len(types) + len(subsystems)
     return {
@@ -123,10 +270,11 @@ def measure(rel: str, text: str) -> dict:
         "package": ".".join(rel.split("/kotlin/")[-1].split("/")[:-1]).replace("/", "."),
         "logic": len(logic),
         "exports": len(exports),
+        "exports_non_type": len(non_type_exports),
         "types": len(types),
         "subsystems": sorted(subsystems),
         "concerns": concerns,
-        "C": round(0.5 * len(logic) + 3 * len(exports) + 8 * concerns, 1),
+        "C": round(0.5 * len(logic) + 3 * len(non_type_exports) + 8 * concerns, 1),
     }
 
 
@@ -252,6 +400,17 @@ def main() -> int:
 
     rows = scan(collect())
 
+    # Validated before any question is answered, and in EVERY mode: an exemption with no
+    # justification, or one naming a file that no longer exists, is a defect regardless of what the
+    # caller asked for. Exit 2, distinct from the gate's exit 1 — this is a broken instrument, not a
+    # failing measurement.
+    errors = exception_errors(rows)
+    if errors:
+        print(f"FAIL: CEILING_EXCEPTIONS is invalid ({len(errors)} problem(s)):", file=sys.stderr)
+        for err in errors:
+            print(f"  ✗ {err}", file=sys.stderr)
+        return 2
+
     if args.since:
         moved = movement(args.since, rows)
         if args.json:
@@ -266,16 +425,27 @@ def main() -> int:
             print(f"no such production file: {args.file}", file=sys.stderr)
             return 2
         print(json.dumps(target, indent=2))
+        # An excepted file is graded against its own ceiling here too, and says so out loud. A
+        # per-target check that passed silently under an exemption would be the quietest possible
+        # place for one to hide.
+        cap = ceilings().get(target["file"])
+        if cap is not None:
+            why = next(w for path, _, w in CEILING_EXCEPTIONS if path == target["file"])
+            print(f"\nCEILING EXCEPTION — graded against ceiling {cap}, not --max-ratio:")
+            print(textwrap.fill(why, width=96, initial_indent="  ", subsequent_indent="  "))
         # --max-ratio GATES a single file too. It used to be silently ignored here, so
         # `--file <a HIGH file> --max-ratio 1.8` printed the offending ratio and still exited 0 —
         # a per-target gate that could not fail is the same fake green this scan exists to find.
         # Per-target acceptance (HD-24) is exactly this call, so it has to be able to go red.
-        if args.max_ratio is not None and target["ratio"] > args.max_ratio:
-            print(
-                f"FAIL: {target['file']} ratio {target['ratio']} is above {args.max_ratio}",
-                file=sys.stderr,
-            )
-            return 1
+        if args.max_ratio is not None:
+            limit = cap if cap is not None else args.max_ratio
+            if target["ratio"] > limit:
+                named = "its ceiling " if cap is not None else ""
+                print(
+                    f"FAIL: {target['file']} ratio {target['ratio']} is above {named}{limit}",
+                    file=sys.stderr,
+                )
+                return 1
         return 0
 
     if args.json:
@@ -296,15 +466,24 @@ def main() -> int:
         high = [r for r in rows if r["band"] == "HIGH"]
         med = [r for r in rows if r["band"] == "moderate"]
         print(f"\n{len(rows)} files | HIGH {len(high)} | moderate {len(med)} | low {len(rows) - len(high) - len(med)}")
+        report_exceptions(rows)
 
     if args.max_ratio is not None:
-        over = [r for r in rows if r["ratio"] > args.max_ratio]
+        # An excepted file is graded against its recorded ceiling; everything else against the gate.
+        # A ceiling is not a blanket — a file that RISES above its own recorded number still fails.
+        caps = ceilings()
+        over = [r for r in rows if r["ratio"] > caps.get(r["file"], args.max_ratio)]
         if over:
-            print(f"\nFAIL: {len(over)} file(s) above ratio {args.max_ratio}:", file=sys.stderr)
+            print(f"\nFAIL: {len(over)} file(s) above their limit (gate {args.max_ratio}):", file=sys.stderr)
             for r in over:
-                print(f"  {r['file']}  ratio={r['ratio']}  C={r['C']}", file=sys.stderr)
+                cap = caps.get(r["file"])
+                limit = f"ceiling {cap}" if cap is not None else f"max {args.max_ratio}"
+                print(f"  {r['file']}  ratio={r['ratio']}  C={r['C']}  (over {limit})", file=sys.stderr)
             return 1
-        print(f"\nOK: every file is at or below ratio {args.max_ratio}")
+        print(
+            f"\nOK: every file is at or below ratio {args.max_ratio}, "
+            f"and all {len(CEILING_EXCEPTIONS)} exception(s) are within their own ceiling"
+        )
     return 0
 
 

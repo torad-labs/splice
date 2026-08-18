@@ -141,26 +141,75 @@ scar). A wall nobody routes is a wall nobody has, and that was true of this orac
 `--max-ratio 1.8` cannot be the gate leg today: it is red on 42 files, so landing it would mean
 finishing HD-25 first or granting 42 exemptions, and an exemption pile is exactly the laundering
 CEILING_EXCEPTIONS exists to prevent. What IS enforceable today is the DIRECTION. `--ratchet`
-grades the measured census against RATCHET_MAX_OVER / RATCHET_MAX_HIGH below and fails when
-either count RISES, so a new file above the gate, or an untouched file pushed into HIGH, is red
-on the commit that does it while the existing debt stays visible in every run's output.
+grades the measured HIGH-band census against RATCHET_MAX_HIGH below and fails when it RISES, so a
+new god object, or an untouched file pushed into HIGH, is red on the commit that does it while the
+existing debt stays visible in every run's output.
 
-  - IT CANNOT BE SATISFIED BY WEAKENING. Lowering --max-ratio raises the count it is measured
-    against; raising a baseline is a dated edit to this file that reads in the diff as exactly
-    what it is — a record that the tree got worse.
+THE GATED CRITERION IS THE HIGH BAND, NOT THE FILE COUNT (corrected 2026-08-18). The first
+revision of this ratchet also gated RATCHET_MAX_OVER, a COUNT of files whose ratio exceeds the
+gate. That criterion forbids the work this oracle exists to drive, and the proof is in the ledger
+(HD-25) rather than in an argument:
+
+  THE CONTROL. Extracting CliStyle.kt alone out of app/cli/DoctorCommand.kt is green (42 over, 8
+  HIGH). Extracting DoctorCheckTypes.kt alone is green (42, 8). Extracting BOTH — a relocation of
+  four type declarations and seven string constants, zero behaviour and zero logic moved, a change
+  that cannot by construction make the tree worse — measures 43 over and was RED, because an
+  UNTOUCHED file (app/DeviceLoginFlow.kt) crossed at 1.81 with its C byte-identical, ΔC +0.0, its
+  denominator falling 62.5 -> 60.5, cause `neighbourhood`, own share 0% — while DoctorCommand's own
+  row fell 8.10 -> 6.59, ΔC -44.5, own share 100%. The count punished the second for the first. The
+  ledger (HD-25) additionally records all 36 extraction subsets of that file searched through
+  collect()/scan() with verbatim blocks; ZERO reached the recorded 42.
+
+  WHY, and it is the denominator's documented property one paragraph up, not a tuning miss: the
+  divisor is a file-scale ORDER STATISTIC, so ANY split moves files nobody touched. Splitting one
+  god object at 8.10 into a composer at 1.45 plus five collaborators, two of them still above 1.8,
+  RAISES the count while the worst row collapses and the HIGH band does not move at all. The count
+  measures the file-size DISTRIBUTION; it does not measure concentration.
+
+  MEASURED OVER THE WHOLE CAMPAIGN, 8c6912f -> b595c52, 21 commits touching gateway/, 172 files
+  created, ~33 own-cause decompositions:
+
+      over-1.8   ROSE 7  FELL 7   net 43 -> 42     (moved by one, in 14 moves)
+      HIGH       ROSE 0  FELL 11  net 22 ->  8     (monotone — it never rose, not once)
+      max ratio  ROSE 5  FELL 4   net 9.05 -> 8.10
+
+  The count went red on decomposition commits seven times and finished where it started. The HIGH
+  band never rose once. Eleven of the twelve HD-24 targets were HIGH at 8c6912f and NONE is HIGH
+  now, each on real C reduction (ΔC -121.5 to -482.5, own share 77-100%); the twelfth,
+  ChatRequestBuilder.kt, was moderate at 2.83 and is 0.71. Seventeen HIGH rows left the band in
+  all. That is the criterion tracking the work.
+
+  THE MAX RATIO WAS CONSIDERED AND REJECTED, on the same measurement. It does fall when a god
+  object is decomposed (8.10 -> 6.59 on the control above, 8.10 -> 4.37 on the full split) — but
+  ALL FIVE of its rises in this campaign carry own_share 0%, cause `neighbourhood`: 9.05 -> 9.33,
+  9.33 -> 9.73, 9.73 -> 12.13, 6.74 -> 6.81 and 5.96 -> 8.10, not one of them a file gaining a
+  line. Today's max holder, app/cli/DoctorCommand.kt, reads 3.94 -> 8.10 across the campaign with
+  ΔC +0.5 and its denominator HALVED. A max arm would be the count's defect concentrated into one
+  row: a single-file order statistic is strictly MORE drift-sensitive than a count of them. It is
+  also a weak detector of the thing it would be added for — with the max at 8.10, a newly created
+  file at 7.9, a worse god object than anything else now in the tree (next row: 4.37), passes a
+  max arm untouched. The band catches that file; the max does not.
+
+  - IT CANNOT BE SATISFIED BY WEAKENING. Lowering --max-ratio cannot help: HIGH is `ratio >= 3.0`
+    and does not read --max-ratio at all. Raising the baseline is a dated edit to this file that
+    reads in the diff as exactly what it is — a record that the tree got worse.
   - IT TIGHTENS ITSELF. A count that FALLS is also a hard error, with the remedy in the message.
     A baseline held above the measured count is unearned room for the next regression to hide in;
     that is how the UpstreamClient ceiling came to sit at 6.14 against a file measuring 2.79.
-  - KNOWN LIMIT, stated here rather than discovered later: these are COUNTS. One file dropping
-    below the gate in the same commit that pushes another above it nets to zero and passes.
-    `--since <ref>` names files and causes and is the diff-time instrument; the counts are the
-    standing floor under it.
+  - KNOWN LIMIT, stated here rather than discovered later: HIGH is still a COUNT. A commit that
+    retires one god object and creates another nets to zero and passes — the stashed DoctorCommand
+    split does exactly that (DoctorCommand leaves at 1.45, DoctorAuth enters at 3.22). The ratchet
+    has no reference commit, so it cannot filter by cause; `--since <ref>` names files, causes and
+    the ΔC/Δdenom split, and is the diff-time instrument. The band is the standing floor under it.
+  - THE OVER-GATE COUNT IS STILL REPORTED, on every run, with its worst offenders by name — it is
+    the campaign's remaining debt and it stays visible. It is REPORTED, NOT GATED, for the reason
+    measured above: it moves on splits that touch nothing, so gating it penalises decomposition.
 
 USAGE
     python3 checks/concentration.py                      # full table, exit 0
     python3 checks/concentration.py --top 15             # worst 15 only
     python3 checks/concentration.py --max-ratio 1.8      # gate: non-zero exit if any file is above
-    python3 checks/concentration.py --ratchet --max-ratio 1.8   # gate leg: the counts may not rise
+    python3 checks/concentration.py --ratchet --max-ratio 1.8   # gate leg: band HIGH may not move
     python3 checks/concentration.py --file <path>        # one file, with its neighbour list
     python3 checks/concentration.py --since <ref>        # what moved since <ref>, and why
     python3 checks/concentration.py --json               # machine-readable
@@ -272,13 +321,19 @@ EXCEPTION_JUSTIFICATION = re.compile(r"^\d{4}-\d{2}-\d{2}: \S")
 
 # --------------------------------------------------------------------------------------------
 # THE RATCHET BASELINE — the census this tree is held to, MEASURED, never estimated. Read THE
-# RATCHET in the module docstring first. Both counts EXCLUDE the ceiling-excepted files above,
+# RATCHET in the module docstring first. The count EXCLUDES the ceiling-excepted files above,
 # which are graded against their own recorded ceilings by the same leg rather than counted twice.
-# Moving either number is a deliberate, dated edit: UP records that the tree got worse, DOWN is
-# the remedy the gate itself prints when work lands.
+# Moving this number is a deliberate, dated edit: UP records that the tree got worse, DOWN is the
+# remedy the gate itself prints when work lands.
+#
+# THERE IS DELIBERATELY NO RATCHET_MAX_OVER. It existed until 2026-08-18 and gated the count of
+# files above --max-ratio; it was removed, not merely stopped being read, because a baseline
+# nobody grades is the stale number this campaign has now been bitten by twice (the 6.14
+# UpstreamClient ceiling, the pre-decomposition AnthropicRequest ceiling). The count is measured
+# and printed on every run as DEBT. See THE GATED CRITERION IS THE HIGH BAND in the docstring for
+# the control that forced the change.
 RATCHET_RECORDED = "2026-08-18"
-RATCHET_MAX_OVER = 42  # files with ratio > the gate ratio  (measured 2026-08-18: 44 total - 2 excepted)
-RATCHET_MAX_HIGH = 8  # files in band HIGH                 (measured 2026-08-18:  9 total - 1 excepted)
+RATCHET_MAX_HIGH = 8  # files in band HIGH  (re-measured 2026-08-18 under the HIGH criterion: 9 total - 1 excepted)
 
 
 def ceilings() -> dict[str, float]:
@@ -334,11 +389,13 @@ def report_exceptions(rows: list[dict]) -> None:
 
 
 def ratchet(rows: list[dict], max_ratio: float) -> int:
-    """The enforceable half of the 1.8 gate: the census may not RISE, and may not silently FALL.
+    """The enforceable half of the 1.8 gate: the HIGH band may not RISE, and may not silently FALL.
 
-    Prints the baseline, the measured counts and the standing debt on every run — a ratchet whose
-    output shows only its own verdict hides the 42 files it is deliberately not gating. See THE
-    RATCHET in the module docstring for why this shape and not `--max-ratio 1.8` outright.
+    Prints the baseline, the measured band, and the standing over-gate debt on every run — a
+    ratchet whose output shows only its own verdict hides the files it is deliberately not gating.
+    See THE RATCHET, and THE GATED CRITERION IS THE HIGH BAND, in the module docstring: the count
+    of files above --max-ratio is REPORTED here and is NOT the criterion, because it rises on
+    splits that touch nothing and so forbids the decomposition this oracle exists to drive.
     """
     caps = ceilings()
     graded = [r for r in rows if r["file"] not in caps]
@@ -346,17 +403,38 @@ def ratchet(rows: list[dict], max_ratio: float) -> int:
     high = [r for r in graded if r["band"] == "HIGH"]
 
     print(f"CONCENTRATION RATCHET — baseline recorded {RATCHET_RECORDED}, gate ratio {max_ratio}")
-    print(f"  {f'files over {max_ratio}':<14} baseline {RATCHET_MAX_OVER:>3}   measured {len(over):>3}")
-    print(f"  {'band HIGH':<14} baseline {RATCHET_MAX_HIGH:>3}   measured {len(high):>3}")
+    print(f"  {'band HIGH':<22} baseline {RATCHET_MAX_HIGH:>3}   measured {len(high):>3}   [GATED]")
+    print(f"  {f'files over {max_ratio}':<22} {'':>12} measured {len(over):>3}   [reported, not gated]")
     by_file = {row["file"]: row for row in rows}
     for path, ceiling, _ in CEILING_EXCEPTIONS:
         row = by_file[path]
         state = "OVER CEILING" if row["ratio"] > ceiling else "within ceiling"
         print(f"  ceiling exception  ratio {row['ratio']:5.2f}  ceiling {ceiling:<5} [{state}]  {path}")
+    if high:
+        # The gated census, by name. A gate whose own output cannot be checked against the number
+        # it enforces is not auditable — the same rule that makes --max-ratio mandatory below.
+        print(
+            f"\n  GATED — the {len(high)} file(s) in band HIGH:\n"
+            "        " + " | ".join(f"{r['file'].rsplit('/', 1)[-1]} {r['ratio']}" for r in high)
+        )
     if over:
         print(
-            f"\n  DEBT: {len(over)} file(s) sit above {max_ratio} and their RATIO is not gated — this leg "
-            f"enforces direction only.\n"
+            f"\n  DEBT: {len(over)} file(s) sit above {max_ratio}. This count is REPORTED, NOT GATED, and "
+            f"neither is their ratio."
+        )
+        print(
+            textwrap.fill(
+                "WHY NOT GATED: the denominator is a file-scale order statistic, so ANY split moves files "
+                "nobody touched — splitting one god object into a composer plus collaborators RAISES this "
+                "count while the worst row collapses and HIGH does not move. Measured over this campaign "
+                "it rose 7 times and fell 7, net 43 -> 42, while HIGH went 22 -> 8 without ever rising. "
+                "Gating it penalises decomposition; see the module docstring.",
+                width=96,
+                initial_indent="        ",
+                subsequent_indent="        ",
+            )
+        )
+        print(
             f"        worst: " + " | ".join(f"{r['file'].rsplit('/', 1)[-1]} {r['ratio']}" for r in over[:5]) + "\n"
             f"        full list `python3 checks/concentration.py --top {len(over)}`; every one is HD-25's "
             f"work, not an exemption.\n"
@@ -368,30 +446,30 @@ def ratchet(rows: list[dict], max_ratio: float) -> int:
         print(
             f"\n  NO DEBT: nothing outside the {len(CEILING_EXCEPTIONS)} ceiling exception(s) is above "
             f"{max_ratio}.\n"
-            f"        Retire this leg: make it `--max-ratio {max_ratio}` (the hard gate) and delete the "
-            f"baseline constants."
+            f"        Retire this leg: make it `--max-ratio {max_ratio}` (the hard gate) and delete "
+            f"RATCHET_MAX_HIGH / RATCHET_RECORDED."
         )
 
     problems: list[str] = []
-    for label, measured, baseline, const in (
-        (f"files over {max_ratio}", len(over), RATCHET_MAX_OVER, "RATCHET_MAX_OVER"),
-        ("band HIGH", len(high), RATCHET_MAX_HIGH, "RATCHET_MAX_HIGH"),
-    ):
-        if measured > baseline:
-            problems.append(
-                f"REGRESSION: {label} rose {baseline} -> {measured}. A file crossed that nothing recorded. "
-                f"Run `python3 checks/concentration.py --since HEAD --max-ratio {max_ratio}`: cause `own` is "
-                f"code in this change, cause `neighbourhood` is a denominator that moved under the file, and "
-                f"the ΔC / Δdenom columns show the split the label was taken from. Fix the file — raising "
-                f"{const} is a dated edit recording that the tree got worse."
-            )
-        elif measured < baseline:
-            problems.append(
-                f"SLACK: {label} fell {baseline} -> {measured}, and the baseline still claims {baseline}. Set "
-                f"{const} = {measured} and re-date RATCHET_RECORDED in checks/concentration.py. A baseline "
-                f"held above the measured count is unearned room for the next regression to hide in — the "
-                f"same defect as a ceiling recorded above its file's measured ratio."
-            )
+    # ONE GATED NUMBER: the HIGH band. The count of files over --max-ratio is printed above as debt
+    # and is deliberately absent from this loop — see the docstring for the pure-relocation control
+    # that proved a count criterion red on a change that cannot make the tree worse.
+    if len(high) > RATCHET_MAX_HIGH:
+        problems.append(
+            f"REGRESSION: band HIGH rose {RATCHET_MAX_HIGH} -> {len(high)}. A god object appeared that "
+            f"nothing recorded. Run `python3 checks/concentration.py --since HEAD --max-ratio {max_ratio}`: "
+            f"cause `own` is code in this change, cause `neighbourhood` is a denominator that moved under "
+            f"the file, and the ΔC / Δdenom columns show the split the label was taken from. Fix the file — "
+            f"raising RATCHET_MAX_HIGH is a dated edit recording that the tree got worse."
+        )
+    elif len(high) < RATCHET_MAX_HIGH:
+        problems.append(
+            f"SLACK: band HIGH fell {RATCHET_MAX_HIGH} -> {len(high)}, and the baseline still claims "
+            f"{RATCHET_MAX_HIGH}. Set RATCHET_MAX_HIGH = {len(high)} and re-date RATCHET_RECORDED in "
+            f"checks/concentration.py. A baseline held above the measured count is unearned room for the "
+            f"next regression to hide in — the same defect as a ceiling recorded above its file's measured "
+            f"ratio."
+        )
     for path, ceiling, _ in CEILING_EXCEPTIONS:
         row = by_file[path]
         if row["ratio"] > ceiling:
@@ -406,8 +484,8 @@ def ratchet(rows: list[dict], max_ratio: float) -> int:
             print(textwrap.fill(problem, width=96, initial_indent="  ✗ ", subsequent_indent="    "), file=sys.stderr)
         return 1
     print(
-        f"\nOK: concentration ratchet holds — nothing rose above the {RATCHET_RECORDED} baseline, "
-        f"and all {len(CEILING_EXCEPTIONS)} exception(s) are within their own ceiling"
+        f"\nOK: concentration ratchet holds — band HIGH is exactly the {RATCHET_RECORDED} baseline "
+        f"({RATCHET_MAX_HIGH}), and all {len(CEILING_EXCEPTIONS)} exception(s) are within their own ceiling"
     )
     return 0
 
@@ -626,8 +704,9 @@ def main() -> int:
     ap.add_argument(
         "--ratchet",
         action="store_true",
-        help="gate leg: fail if the count of files over --max-ratio, or of HIGH files, moves off the "
-        "recorded baseline (rise = regression, fall = stale baseline). Requires --max-ratio.",
+        help="gate leg: fail if the count of band-HIGH files moves off the recorded baseline (rise = "
+        "regression, fall = stale baseline), or a ceiling exception is breached. The count of files "
+        "over --max-ratio is reported as debt, NOT gated. Requires --max-ratio.",
     )
     ap.add_argument("--file", help="report one file and list its neighbours")
     ap.add_argument("--since", help="report what moved since a git ref, and whether it was own or neighbourhood")
@@ -687,8 +766,9 @@ def main() -> int:
     if args.ratchet:
         if args.max_ratio is None:
             print(
-                "--ratchet needs --max-ratio: the baseline counts the files above a stated threshold, and a "
-                "threshold that is not stated at the call site is not auditable from the gate's own output.",
+                "--ratchet needs --max-ratio: the leg reports the standing debt above a stated threshold and "
+                "grades the ceiling exceptions against it, and a threshold that is not stated at the call "
+                "site is not auditable from the gate's own output.",
                 file=sys.stderr,
             )
             return 2

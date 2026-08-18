@@ -11,6 +11,10 @@ import splice.core.config.StatePaths
  *  carry no top-level functions). Every member keeps the old function's name. */
 internal class RestartCommand {
 
+    // The escalation ladder is a process lifecycle, not a control-plane request — it lives on
+    // DaemonStop (the symmetric counterpart of DaemonLaunch), which this verb drives.
+    private val daemonStop = DaemonStop()
+
     internal fun restart(): Boolean {
         // Load topology once: controlPort AND the FALLBACK head ports come from it. The head ports feed
         // the stop check so a restart never declares success while a head port is still bound (F3).
@@ -47,7 +51,7 @@ internal class RestartCommand {
             )
         }
         println("splice: stopping daemon $running on :$port…")
-        return ControlPlaneClient.stopDaemon(port, key, scope.ports).also { stopped ->
+        return daemonStop.stopDaemon(port, key, scope.ports).also { stopped ->
             if (!stopped) println("splice: the daemon did not stop — terminate it manually and retry")
         }
     }

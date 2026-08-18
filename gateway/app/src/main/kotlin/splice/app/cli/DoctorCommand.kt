@@ -2,7 +2,8 @@
 // installation, configuration, daemon, auth); every failed check carries the exact fix command.
 // Checks are isolated (one crashing check reports itself, never kills the run) and secrets are
 // reported by presence only, never by value. Exit 1 only on real failures — a stopped daemon or
-// an unused-but-unauthed head is not a failure. Probes live in DoctorProbes.kt. :app: println ok.
+// an unused-but-unauthed head is not a failure. Probes live in DoctorProbes.kt (prerequisites) and
+// DoctorInstallProbes.kt (install integrity). :app: println ok.
 package splice.app.cli
 
 import splice.app.TopologyLoader
@@ -60,6 +61,10 @@ internal sealed class DoctorTopology {
 internal class DoctorCommand {
 
     private val probes = DoctorProbes()
+
+    // Install integrity is a separate section with separate inputs; it reads back into [probes] for
+    // the one thing the two share, the malformed-PATH-entry parser.
+    private val installProbes = DoctorInstallProbes(probes)
     private val doctorRuntime = DoctorRuntime()
     private val probeWrite = DoctorProbeWrite()
 
@@ -77,7 +82,7 @@ internal class DoctorCommand {
         val snapshot = DaemonSnapshot(port, ControlPlaneClient.healthView(port))
         val sections = listOf(
             "prerequisites" to guarded { probes.prerequisiteChecks(envReader) },
-            "installation" to guarded { probes.installationChecks(topo, envReader) },
+            "installation" to guarded { installProbes.installationChecks(topo, envReader) },
             "configuration" to guarded { configurationChecks(topo, configPath) },
             CHECK_DAEMON to guarded { daemonChecks(snapshot, envReader, topology, configPath) },
             "auth" to guarded { authChecks(topo, envReader, snapshot) },

@@ -112,7 +112,7 @@ internal object AdminSupport {
 
     /** True while something still holds [port] — a TCP connect succeeds (or is ambiguous: timeout/IO).
      *  False ONLY on an explicit refusal (ConnectException), i.e. the listener is actually gone. Both
-     *  the restart cold-start gate ([startableJar]) and the stop confirmation (ControlPlaneClient
+     *  the restart cold-start gate ([startableJar]) and the stop confirmation (DaemonStop
      *  .stopDaemon) read this, because "/health stopped answering" is NOT proof the old JVM freed its
      *  ports — the process can linger on non-daemon Netty threads with ports still bound (BS-4). */
     fun controlPortBound(port: Int): Boolean =

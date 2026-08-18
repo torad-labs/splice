@@ -9,6 +9,14 @@
 // 2026-08-17 (HD-20): the last MEMBER extension here — `DaemonConfig.putFoldOverrides`, declared
 // inside Topology — moved down onto DaemonConfig itself, the type it always read. Same body, same
 // name, byte-identical call site.
+// 2026-08-18 (HD-25): three passengers left this file, no schema type was shredded. QuirksConfig +
+// ToolSurfaceConfig -> QuirksConfig.kt (nothing here ever read a quirk); TopologyMessages + the port
+// range -> TopologyMessages.kt (no call site holds a Topology); configOverrides +
+// putLegacyProviderOverrides + putFoldOverrides -> TopologyKnobLayer.kt (the one place this package
+// hardcoded splice.core.config's key vocabulary). What STAYS is the schema graph and its invariants:
+// Topology with the four pure folds over `heads` (three of them asserting uniqueness across it), and
+// ProviderConfig/HeadConfig/AuthConfig/Dialect, which carry the referential-integrity invariant that
+// HeadConfig.provider is a key into Topology.providers.
 package splice.core.topology
 
 import kotlinx.serialization.SerialName
@@ -49,78 +57,7 @@ public data class Topology(
      *  parse fine as an Int and otherwise surface only at bind time, as an opaque error that
      *  never names the offending [heads.X] entry. Same idiom as [portCollisions]. */
     public fun invalidPortHeads(): Map<String, Int> =
-        heads.filterValues { it.port !in VALID_PORT_RANGE }.mapValues { it.value.port }
-
-    /**
-     * Flat knob map from topology TOML for ConfigService's headOverrides layer.
-     * Order: free-form [defaults] first, then explicit [daemon] fields (win on conflict).
-     * Values are strings because ConfigService coerces by KnobKind.
-     */
-    public fun configOverrides(): Map<String, String> {
-        val out = LinkedHashMap(defaults)
-        daemon.controlPort?.let { out["controlPort"] = it.toString() }
-        daemon.showReasoning?.let { out["showReasoning"] = it }
-        daemon.summary?.let { out["summary"] = it }
-        daemon.effort?.let { out["effort"] = it }
-        daemon.replayReasoning?.let { out["replayReasoning"] = it.toString() }
-        daemon.mirrorReasoning?.let { out["mirrorReasoning"] = it.toString() }
-        daemon.putFoldOverrides(out)
-        putLegacyProviderOverrides(out)
-        return out
-    }
-
-    /**
-     * The management API retains the original codex/grok knob names. Seed those knobs from TOML so
-     * their effective values describe the topology, then let state/env/runtime override them through
-     * ConfigService's normal precedence.
-     */
-    private fun putLegacyProviderOverrides(out: MutableMap<String, String>) {
-        val codex = heads.entries.firstOrNull { (_, head) ->
-            providers[head.provider]?.auth?.kind == "chatgpt-oauth"
-        }
-        codex?.let { (_, head) ->
-            val provider = providers.getValue(head.provider)
-            out["port"] = head.port.toString()
-            out["pinnedModel"] = head.pinnedModel
-            out["chatgptApiBase"] = provider.baseUrl
-            provider.auth.file?.let { out["codexAuthPath"] = it }
-        }
-
-        val grok = heads.entries.firstOrNull { (key, head) ->
-            providers[head.provider]?.auth?.kind == "grok-oauth" || key.contains("grok", ignoreCase = true)
-        }
-        grok?.let { (_, head) ->
-            val provider = providers.getValue(head.provider)
-            out["grokPort"] = head.port.toString()
-            out["grokModel"] = head.pinnedModel
-            out["xaiApiBase"] = provider.baseUrl
-            provider.auth.file?.let { out["grokAuthPath"] = it }
-        }
-    }
-}
-
-private const val MIN_TCP_PORT = 1
-private const val MAX_TCP_PORT = 65535
-private val VALID_PORT_RANGE = MIN_TCP_PORT..MAX_TCP_PORT
-
-/** The operator-facing topology diagnostics — pure text over values the caller already holds, which
- *  is why they are a named object rather than members of [Topology]: every call site has the port,
- *  the key and the head list in hand but not always the topology (HD-M8, migration pattern 5). */
-public object TopologyMessages {
-
-    /** Names both heads and the port so the operator sees the collision, not a phantom bind error. */
-    public fun portCollisionMessage(port: Int, keys: List<String>): String =
-        "port $port is claimed by ${keys.joinToString(" and ")} — give each head its own port"
-
-    /** Names the head and its out-of-range port so the operator sees the config problem, not a
-     *  phantom bind error (CTL-005). */
-    public fun invalidPortMessage(key: String, port: Int): String =
-        "head '$key' has an invalid port $port (must be $VALID_PORT_RANGE) — fix [heads.$key] port in splice.toml"
-
-    /** Distinct-from-"unknown-head" message for the ambiguous case: [keys] heads all map to [command].
-     *  Naming both heads points the operator at the topology collision instead of a phantom head. */
-    public fun ambiguousHeadMessage(command: String, keys: List<String>): String =
-        "ambiguous head '$command' — heads ${keys.joinToString(" and ")} both use that command; fix the topology"
+        heads.filterValues { it.port !in validPortRange }.mapValues { it.value.port }
 }
 
 @Serializable
@@ -143,20 +80,7 @@ public data class DaemonConfig(
     @SerialName("fold_max_continue") val foldMaxContinue: Int? = null,
     @SerialName("fold_marker_text") val foldMarkerText: String? = null,
     @SerialName("fold_max_tier") val foldMaxTier: Int? = null,
-) {
-    /** Reasoning-continuation fold knobs, split out so [Topology.configOverrides] stays under the
-     *  complexity cap. The comma-joined model list is what the STRING knob coerces (SpliceConfig
-     *  splits it back). Was `private fun DaemonConfig.putFoldOverrides` inside [Topology] until HD-20
-     *  banned extension declarations; it is now a MEMBER of the type it always read, so
-     *  [Topology.configOverrides]'s `daemon.putFoldOverrides(out)` call site is byte-identical. It is
-     *  `internal` rather than `private` only because [Topology] — a different class — is the caller. */
-    internal fun putFoldOverrides(out: MutableMap<String, String>) {
-        foldReasoningModels?.let { out["foldReasoningModels"] = it.joinToString(",") }
-        foldMaxContinue?.let { out["foldMaxContinue"] = it.toString() }
-        foldMarkerText?.let { out["foldMarkerText"] = it }
-        foldMaxTier?.let { out["foldMaxTier"] = it.toString() }
-    }
-}
+)
 
 @Serializable
 public data class ProviderConfig(
@@ -185,21 +109,20 @@ public data class ProviderConfig(
     public val staticHeaders: Map<String, String>
         get() = extraHeaders.mapKeys { (key, _) -> key.trim('"') }
 
+    /** A catalog is the JOIN of this provider's models with the head's [HeadConfig.discoveryPrefix]
+     *  — which is why it lives on the provider and takes the head, and why the two types stay in one
+     *  file. [contextWindowOverride], when positive, replaces the window on EVERY entry; the null
+     *  test is per-call, not per-element (HD-25 collapsed three identical per-element branches — the
+     *  test is loop-invariant, so hoisting it changes no result). */
     public fun catalogFor(head: HeadConfig, contextWindowOverride: Long? = null): ModelCatalog {
-        val override = contextWindowOverride?.takeIf { it > 0 }
+        val window = contextWindowOverride?.takeIf { it > 0 }
         return ModelCatalog(
             discoveryPrefix = head.discoveryPrefix,
-            models = models.map { model ->
-                if (override == null) model else model.copy(contextWindow = override)
-            },
-            extraWindows = extraWindows.map { extra ->
-                if (override == null) extra else extra.copy(contextWindow = override)
-            },
-            windowRules = windowRules.map { rule ->
-                if (override == null) rule else rule.copy(contextWindow = override)
-            },
-            defaultContextWindow = if (override != null) {
-                override
+            models = if (window == null) models else models.map { it.copy(contextWindow = window) },
+            extraWindows = if (window == null) extraWindows else extraWindows.map { it.copy(contextWindow = window) },
+            windowRules = if (window == null) windowRules else windowRules.map { it.copy(contextWindow = window) },
+            defaultContextWindow = if (window != null) {
+                window
             } else if (defaultContextWindow > 0) {
                 defaultContextWindow
             } else {
@@ -232,83 +155,6 @@ public data class AuthConfig(
      *  head on the derived default never reads as "not signed in" while the daemon serves it fine. */
     public fun effectiveApiKeyEnv(key: String): String = env ?: "${key.uppercase()}_API_KEY"
 }
-
-/** The finite quirk surface of the openai dialects — everything a vendor varies without code. */
-@Serializable
-public data class QuirksConfig(
-    val store: Boolean = false,
-    @SerialName("account_id_header") val accountIdHeader: Boolean = false,
-    @SerialName("cache_key") val cacheKey: String = "first-message-hash",
-    @SerialName("effort_ceiling") val effortCeiling: String = "max",
-    @SerialName("summary_field") val summaryField: Boolean = true,
-    @SerialName("compact_effort") val compactEffort: String? = null,
-    @SerialName("tool_choice") val toolChoice: Boolean = false,
-    /** openai-responses only: the gateway-held reasoning cache for tool round-trips (RC-5,
-     *  2026-07-24). NULLABLE like every overlay knob — absent keeps the provider's own default
-     *  (codex: on; grok: off — xai returns no envelopes), so the overlay can't stomp it. False
-     *  restores the pre-cache behavior (per-tool-result amnesia). */
-    @SerialName("reasoning_cache") val reasoningCache: Boolean? = null,
-    /** openai-responses only: the VALUE sent for parallel_tool_calls on responses-lite turns (the
-     *  field always rides; a lite request without it 400s). NULLABLE overlay like reasoning_cache —
-     *  absent keeps the provider's own default (false), so it can't stomp a provider default the
-     *  way the non-nullable summary_field above does. true lets the model batch tool calls into one
-     *  turn instead of one per turn; UNTESTED against the live backend, see ResponsesQuirks. */
-    @SerialName("parallel_tool_calls") val parallelToolCalls: Boolean? = null,
-    /** openai-responses only: serve rounds over the Responses WebSocket with previous_response_id
-     *  chaining (ws-transport). NULLABLE overlay — absent keeps the provider default (false), so
-     *  the feature is invisible until an operator opts in. Any failure degrades to the SSE path. */
-    @SerialName("websocket") val webSocket: Boolean? = null,
-    /** zstd-compress upstream request bodies (CX-03). NULLABLE overlay — absent keeps the
-     *  provider default (false: plaintext). Proven ONLY for ChatGPT, by codex-cli 0.145.0 itself
-     *  (content-encoding: zstd, 2.7x measured); xAI 400d on a compressed body 2026-07-18, so this
-     *  is opt-in per provider and never a global default. */
-    @SerialName("zstd_request_body") val zstdRequestBody: Boolean? = null,
-    /** openai-chat only: emit reasoning_effort/reasoning fields (DeepSeek/xAI/OpenRouter-style
-     *  backends read them). null keeps the provider's own default (true); set false for strict
-     *  OpenAI-compatible vendors (Fireworks — issue #21) that 400 on unrecognized fields. */
-    @SerialName("reasoning_effort") val reasoningEffort: Boolean? = null,
-    /** openai-responses only: the deferred tool surface (tool_search) for responses-lite turns.
-     *  ABSENT TABLE = feature off — the reasoning_cache nullable-overlay idiom (Topology.kt:109-113). */
-    @SerialName("tool_surface") val toolSurface: ToolSurfaceConfig? = null,
-    // ── anthropic-passthrough only ────────────────────────────────────────────────────────────
-    // The dialect forwards the client's bytes faithfully by DEFAULT; each knob below opts into one
-    // vendor deformation (campaign claude-head). NULLABLE like every overlay knob here — absent
-    // keeps the head's BASE profile (neutral for a plain api-key/client head, Kimi's deformation
-    // set for a kimi-oauth head), so a splice.toml written before these existed keeps working.
-    // Kimi's example entry declares them explicitly anyway, as documentation.
-    /** Rewrite tool `input_schema` into Moonshot-Flavored JSON Schema (and drop `strict` / invent an
-     *  empty `description`). Leave OFF for an upstream that accepts full JSON Schema: the sanitizer
-     *  discards `format`, `prefixItems`, `$ref` siblings and tuple `items`, changing tool semantics. */
-    @SerialName("mfjs") val mfjs: Boolean? = null,
-    /** Content-block types the upstream accepts; every other block is DROPPED. ABSENT = every block
-     *  rides. Kimi's list comes from its own 400 and excludes `redacted_thinking`, which a client
-     *  round-trips — dropping it corrupts the thinking chain. */
-    @SerialName("block_allowlist") val blockAllowlist: List<String>? = null,
-    /** Deep-strip every `cache_control` marker. Against an upstream WITH prompt caching this is a
-     *  silent cold read on every turn (no error, just cost), so it stays opt-in. */
-    @SerialName("strip_cache_control") val stripCacheControl: Boolean? = null,
-    /** Synthesize ONE thinking-block signature when the upstream sent none. Required for Kimi (never
-     *  signs; Claude Code discards unsigned thinking blocks), WRONG for an upstream that verifies. */
-    @SerialName("synthesize_signatures") val synthesizeSignatures: Boolean? = null,
-    /** Remap Anthropic thinking config into Kimi's adaptive-thinking + output_config.effort ladder.
-     *  OFF forwards the client's `thinking` verbatim and leaves `output_config` to the client. */
-    @SerialName("map_thinking_adaptive") val mapThinkingAdaptive: Boolean? = null,
-    /** Drop temperature/top_p/top_k when a live probe shows the endpoint rejects them. */
-    @SerialName("strip_sampling_params") val stripSamplingParams: Boolean? = null,
-)
-
-/** openai-responses only: the deferred tool surface (tool_search) for responses-lite turns.
- *  ABSENT TABLE = feature off — the reasoning_cache nullable-overlay idiom (Topology.kt:109-113). */
-@Serializable
-public data class ToolSurfaceConfig(
-    val enabled: Boolean = true,
-    @SerialName("defer_prefixes") val deferPrefixes: List<String> = listOf("mcp__"),
-    val defer: List<String> = emptyList(),
-    val eager: List<String> = emptyList(),
-    @SerialName("min_deferred") val minDeferred: Int = 8,
-    @SerialName("search_limit") val searchLimit: Int = 8,
-    @SerialName("search_rounds") val searchRounds: Int = 3,
-)
 
 @Serializable
 public data class HeadConfig(

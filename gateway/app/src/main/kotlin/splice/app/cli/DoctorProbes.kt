@@ -1,15 +1,13 @@
-// NEW: doctor's environment probes — prerequisite binaries and install-integrity checks.
-// Split from DoctorCommand.kt (which owns sections, rendering, and the verdict) so each file
-// stays under the function-count ceiling. :app is wall-exempt for println.
+// NEW: doctor's prerequisite-binary pipeline — the probe table, PATH resolution, the concurrent
+// probe run, and a verdict per binary. Split from DoctorCommand.kt (which owns sections, rendering,
+// and the verdict) so each file stays under the function-count ceiling; the install-integrity
+// section that shared this file for the same reason now lives in DoctorInstallProbes.kt, which
+// reaches back only for [safePath]. :app is wall-exempt for println.
 package splice.app.cli
 
-import splice.core.GATEWAY_VERSION
-import splice.core.SHIM_VERSION
-import splice.core.config.InstallPaths
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import java.nio.file.Files
-import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.Callable
@@ -18,8 +16,6 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
-internal const val FIX_RELINK = "splice install --all"
-private const val CHECK_WRAPPER = "wrapper"
 private const val FLAG_VERSION = "--version"
 
 private data class BinarySpec(val name: String, val versionArgs: List<String>, val missing: DoctorCheck)
@@ -79,14 +75,10 @@ private val BINARIES = listOf(
     ),
 )
 
-/** Doctor's environment probes as a constructed collaborator (Kotlin style law, 2026-08-15: main
- *  sources carry no top-level functions). DoctorCommand builds one and asks it for two sections;
- *  every member keeps the old function's name. */
+/** Doctor's prerequisite probes as a constructed collaborator (Kotlin style law, 2026-08-15: main
+ *  sources carry no top-level functions). DoctorCommand builds one and asks it for the
+ *  prerequisites section; every member keeps the old function's name. */
 internal class DoctorProbes {
-
-    // The installed-shim marker is InstallCommand's fact (it writes the shim), so shimCheck asks
-    // that verb rather than re-reading the file itself.
-    private val installCommand = InstallCommand()
 
     internal fun prerequisiteChecks(envReader: EnvReader): List<DoctorCheck> {
         val java = DoctorCheck("java", CheckStatus.OK, System.getProperty("java.version") ?: "unknown")
@@ -165,8 +157,9 @@ internal class DoctorProbes {
 
     // PATH can carry a malformed entry (garbage bytes under a non-UTF-8 jnu.encoding); Paths.get()
     // throws InvalidPathException (an IllegalArgumentException) on those — skip the entry, don't
-    // let it collapse the whole PATH scan.
-    private fun safePath(raw: String): Path? = Cancellables.runCatchingCancellable { Paths.get(raw) }.getOrNull()
+    // let it collapse the whole PATH scan. `internal` because DoctorInstallProbes' pathCheck splits
+    // PATH the same way and must skip the same entries — one parser, two readers.
+    internal fun safePath(raw: String): Path? = Cancellables.runCatchingCancellable { Paths.get(raw) }.getOrNull()
 
     // waitFor() runs BEFORE any read: a probed binary that blocks on its inherited stdin (or just
     // hangs) must not deadlock doctor waiting on output that will never come. Only after a clean or
@@ -184,78 +177,6 @@ internal class DoctorProbes {
                 .ifEmpty { "present" }
         }
     }.getOrDefault("present (version probe failed)")
-
-    internal fun installationChecks(topo: DoctorTopology, envReader: EnvReader): List<DoctorCheck> {
-        val paths = InstallPaths(envReader = envReader)
-        val topology = (topo as? DoctorTopology.Parsed)?.topology
-        val commands = topology?.heads?.map { (k, h) -> h.claude.command ?: k }.orEmpty() + "splice"
-        return listOf(jarCheck(), shimCheck(paths.shareDir.resolve("splice-launch"), envReader)) +
-            commands.map { wrapperCheck(paths.binDir.resolve(it), it) } +
-            pathCheck(paths.binDir, envReader)
-    }
-
-    private fun jarCheck(): DoctorCheck {
-        val jar = AdminSupport.selfJar()
-        return if (jar == null) {
-            DoctorCheck("jar", CheckStatus.INFO, "running from classes (dev build), $GATEWAY_VERSION")
-        } else {
-            DoctorCheck("jar", CheckStatus.OK, "$GATEWAY_VERSION ($jar)")
-        }
-    }
-
-    private fun shimCheck(shim: Path, envReader: EnvReader): DoctorCheck {
-        if (!Files.exists(shim)) {
-            return DoctorCheck(
-                "shim",
-                CheckStatus.FAIL,
-                "launch shim missing at $shim — every wrapper needs it",
-                "./install.sh from a checkout, or re-run the release installer",
-            )
-        }
-        val installed = installCommand.installedShimVersion(envReader)
-        return if (installed == SHIM_VERSION) {
-            DoctorCheck("shim", CheckStatus.OK, "current ($SHIM_VERSION)")
-        } else {
-            DoctorCheck(
-                "shim",
-                CheckStatus.WARN,
-                "stale (installed=${installed ?: "<unmarked>"}, expected=$SHIM_VERSION)",
-                "$FIX_RELINK   (or ./install.sh)",
-            )
-        }
-    }
-
-    private fun wrapperCheck(link: Path, command: String): DoctorCheck = when {
-        !Files.exists(link, NOFOLLOW_LINKS) ->
-            DoctorCheck(CHECK_WRAPPER, CheckStatus.FAIL, "'$command' is not linked", FIX_RELINK)
-        !Files.isSymbolicLink(link) ->
-            DoctorCheck(
-                CHECK_WRAPPER,
-                CheckStatus.WARN,
-                "'$command' exists at $link but is not a splice-managed symlink",
-                "move the foreign file aside, then: $FIX_RELINK",
-            )
-        !Files.exists(link) ->
-            DoctorCheck(CHECK_WRAPPER, CheckStatus.FAIL, "'$command' is a dangling symlink (target gone)", FIX_RELINK)
-        else -> DoctorCheck(CHECK_WRAPPER, CheckStatus.OK, "'$command' → ${Files.readSymbolicLink(link)}")
-    }
-
-    private fun pathCheck(binDir: Path, envReader: EnvReader): DoctorCheck {
-        val onPath = envReader("PATH").orEmpty().split(':')
-            .filter { it.isNotEmpty() }
-            .mapNotNull { safePath(it) }
-            .any { it == binDir }
-        return if (onPath) {
-            DoctorCheck("PATH", CheckStatus.OK, "$binDir is on PATH")
-        } else {
-            DoctorCheck(
-                "PATH",
-                CheckStatus.FAIL,
-                "$binDir is not on PATH — installed commands won't resolve",
-                "add to your shell rc: export PATH=\"$binDir:\$PATH\"",
-            )
-        }
-    }
 }
 
 internal const val PROBE_SECONDS = 4L

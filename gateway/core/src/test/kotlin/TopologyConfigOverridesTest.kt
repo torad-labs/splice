@@ -12,6 +12,7 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.QuirksConfig
 import splice.core.topology.ToolSurfaceConfig
 import splice.core.topology.Topology
+import splice.core.topology.TopologyKnobLayer
 import java.nio.file.Files
 
 class TopologyConfigOverridesTest {
@@ -40,7 +41,7 @@ class TopologyConfigOverridesTest {
 
     @Test
     fun `topology seeds every legacy management knob it owns`() {
-        val layer = topology.configOverrides()
+        val layer = TopologyKnobLayer(topology).configOverrides()
         assertEquals("4123", layer["controlPort"])
         assertEquals("4101", layer["port"])
         assertEquals("toml-codex", layer["pinnedModel"])
@@ -57,7 +58,7 @@ class TopologyConfigOverridesTest {
         val paths = StatePaths(baseOverride = Files.createTempDirectory("topology-config"))
         val service = ConfigService(
             paths,
-            headOverrides = topology.configOverrides(),
+            headOverrides = TopologyKnobLayer(topology).configOverrides(),
             envReader = { name ->
                 when (name) {
                     "SPLICE_CONTROL_PORT" -> "5123"

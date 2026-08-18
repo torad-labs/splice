@@ -32,6 +32,7 @@ import splice.core.config.ConfigService
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.topology.Topology
+import splice.core.topology.TopologyKnobLayer
 import splice.core.util.LogSink
 import splice.spi.LifecycleScope
 import splice.spi.ProcessDispatchers
@@ -56,7 +57,7 @@ public class Daemon(
     // hit all of them — e.g. kimi's 40-min upstreamTimeoutMs also gave codex a 40-min ceiling.
     private val config = ConfigService(
         statePaths,
-        headOverrides = topology.configOverrides(),
+        headOverrides = TopologyKnobLayer(topology).configOverrides(),
         perHeadOverrides = topology.heads.mapValues { (_, head) -> head.overrides },
     )
     private val mgmtKey = MgmtKey(statePaths)

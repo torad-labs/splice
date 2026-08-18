@@ -234,7 +234,7 @@ internal class DaemonProcess {
 }
 
 // The cooperative cap. Its floor — this + TEARDOWN_TAIL_GRACE_MS = 10s — must stay BELOW the CLI's
-// graceful stop rung (ControlPlaneClient.GRACEFUL_POLLS, 11s), so a bounded stop is never mistaken
+// graceful stop rung (GRACEFUL_POLLS in cli/DaemonStop.kt, 11s), so a bounded stop is never mistaken
 // for a hung one and SIGTERM cannot land mid-tail. The two constants are a pair: change one, check
 // the other. (The comment here previously cited a 15s CLI budget that the escalation ladder
 // replaced, while the real rung had shrunk to exactly 8s — equal to this cap, zero margin.)

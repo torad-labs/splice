@@ -17,6 +17,7 @@ EXIT 0 = reachable + signposted. EXIT 1 = gap open. --selftest = the POSITIVE CO
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
@@ -49,13 +50,34 @@ def detect(command: str | None, doctor: str | None, control: str | None) -> list
     return problems
 
 
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+_LINE_COMMENT = re.compile(r"//.*?$", re.M)
+_IMPORT_LINE = re.compile(r"^import .*$", re.M)
+
+
+def code_only(text: str | None) -> str | None:
+    """A mention is not a wiring: a token left behind in a `// TODO: restore ...` must not satisfy
+    a REQUIRED token after the real call site is deleted. Same stripper cx_02/cx_09/cx_18 carry.
+
+    Applied to _read (which feeds the required tokens) and deliberately NOT to _read_tree, which
+    feeds the BAN. The two directions want opposite treatment: stripping makes a required token
+    harder to satisfy, but would make a banned string easier to hide. Both stay strict this way."""
+    if text is None:
+        return None
+    stripped = _BLOCK_COMMENT.sub("", text)
+    stripped = _LINE_COMMENT.sub("", stripped)
+    return _IMPORT_LINE.sub("", stripped)
+
+
 def _read(p: pathlib.Path) -> str | None:
-    return p.read_text(encoding="utf-8") if p.exists() else None
+    return code_only(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
 def _read_tree(d: pathlib.Path) -> str | None:
     """Concatenate every .kt under `d`, recursively. A missing or .kt-less tree reads as None
-    (vacuity RED) rather than as an empty sweep that trivially satisfies a negative assertion."""
+    (vacuity RED) rather than as an empty sweep that trivially satisfies a negative assertion.
+
+    Raw text on purpose — see code_only: this feeds the ban, where a comment must still count."""
     if not d.is_dir():
         return None
     texts = [p.read_text(encoding="utf-8") for p in sorted(d.rglob("*.kt"))]

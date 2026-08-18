@@ -65,6 +65,7 @@ tree it was guarding had no verdict at all.
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
@@ -202,8 +203,26 @@ def detect(sources: dict[str, str | None]) -> list[str]:
     return problems
 
 
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+_LINE_COMMENT = re.compile(r"//.*?$", re.M)
+_IMPORT_LINE = re.compile(r"^import .*$", re.M)
+
+
+def code_only(text: str | None) -> str | None:
+    """A mention is not a wiring. Without this the wall is satisfiable by a COMMENT: delete the
+    verdict call site, leave `// TODO(next): restore \\`...\\`` behind, and the wall still reads
+    GREEN while a backend refusal reaches the client as a clean success. Proven against this
+    file's own sources before the stripper landed. Same stripper cx_02/cx_09/cx_18 already
+    carry."""
+    if text is None:
+        return None
+    stripped = _BLOCK_COMMENT.sub("", text)
+    stripped = _LINE_COMMENT.sub("", stripped)
+    return _IMPORT_LINE.sub("", stripped)
+
+
 def _read(p: pathlib.Path) -> str | None:
-    return p.read_text(encoding="utf-8") if p.exists() else None
+    return code_only(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
 def _read_source(source: pathlib.Path | list[pathlib.Path]) -> str | None:

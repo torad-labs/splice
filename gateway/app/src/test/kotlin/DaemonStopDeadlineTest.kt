@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.app.DaemonProcess
-import splice.app.HeadLifecycle
+import splice.app.head.HeadShutdown
 import splice.core.head.Head
 import splice.core.head.HeadHealth
 import java.util.concurrent.atomic.AtomicBoolean
@@ -18,7 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger
 
 class DaemonStopDeadlineTest {
 
-    private val headLifecycle = HeadLifecycle()
+    private val headLifecycle = HeadShutdown()
     private val process = DaemonProcess()
 
     // A fake head whose stop() runs [onStop] — Thread.sleep models a BLOCKING engine stop (the

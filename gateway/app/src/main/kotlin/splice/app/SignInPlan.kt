@@ -2,9 +2,13 @@
 // heads the bare-token capture spec (factored out of Daemon.kt, detekt LargeClass).
 // OAuth heads get the browser flow; api-key heads get the masked-prompt wording plus — only for
 // providers with a known, prose-safe token shape — the capture hook. The OAuth kind constants
-// live in Daemon.kt (same package); API_KEY is only needed here.
+// live in splice.app.provider.AuthKinds (2026-08-17 decomposition); API_KEY is only needed here.
 package splice.app
 
+import splice.app.provider.CHATGPT_OAUTH
+import splice.app.provider.CLIENT
+import splice.app.provider.GROK_OAUTH
+import splice.app.provider.KIMI_OAUTH
 import splice.core.launch.TokenCaptureSpec
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig

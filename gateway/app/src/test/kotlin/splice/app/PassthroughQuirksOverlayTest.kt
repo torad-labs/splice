@@ -7,6 +7,7 @@ package splice.app
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
+import splice.app.provider.QuirksOverlay
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
 import splice.core.topology.ProviderConfig
@@ -23,7 +24,7 @@ private fun provider(quirks: QuirksConfig) = ProviderConfig(
 
 class PassthroughQuirksOverlayTest {
 
-    private val assembly = PassthroughAssembly()
+    private val assembly = QuirksOverlay()
 
     private val kimiBase = PassthroughQuirksDefaults().kimi("kimi")
 

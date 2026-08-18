@@ -22,7 +22,11 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 TOPO = ROOT / "gateway/core/src/main/kotlin/splice/core/topology/Topology.kt"
 DOCTOR = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/DoctorCommand.kt"
-DAEMON = ROOT / "gateway/app/src/main/kotlin/splice/app/Daemon.kt"
+# assembleDaemonHeads (and its portCollisionMessage pre-flight) moved out of Daemon.kt into its own
+# collaborator in the 2026-08-17 decomposition (campaign claude-head, CH target Daemon) — repointed
+# the same way the kt-state-paths-single-source ignore was, following the code rather than the
+# god-file it used to live in.
+DAEMON = ROOT / "gateway/app/src/main/kotlin/splice/app/head/HeadBoot.kt"
 
 
 def detect(topo: str | None, doctor: str | None, daemon: str | None) -> list[str]:

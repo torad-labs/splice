@@ -23,7 +23,12 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 CLIENT = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/ControlPlaneClient.kt"
-DOCTOR = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/DoctorCommand.kt"
+# HD-25: headChecks + headSummary — BOTH declarations this wall reads — moved out of DoctorCommand.kt
+# into their own collaborator when that file was decomposed (it was the tree's worst concentration
+# row at 8.10). Re-anchored onto the ONE file that now holds them, at the same single-file
+# resolution, following the code rather than the god-file it used to live in — the same repoint
+# jw_13 already carries for HeadBoot.kt.
+DOCTOR = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/DoctorHeadChecks.kt"
 
 
 def detect(client: str | None, doctor: str | None) -> list[str]:
@@ -31,13 +36,13 @@ def detect(client: str | None, doctor: str | None) -> list[str]:
     if client is None:
         return ["ControlPlaneClient.kt missing — refusing to pass vacuously"]
     if doctor is None:
-        return ["DoctorCommand.kt missing — refusing to pass vacuously"]
+        return ["DoctorHeadChecks.kt missing — refusing to pass vacuously"]
     problems: list[str] = []
     if "HealthView" not in client:
         problems.append("ControlPlaneClient still extracts only `version` from /health — the "
                         "head counters the shim already waits on never reach doctor")
     if "failedHeads" not in doctor:
-        problems.append("daemonChecks never reads failedHeads — doctor blesses a daemon whose "
+        problems.append("headSummary never reads failedHeads — doctor blesses a daemon whose "
                         "every head failed to start")
     if "not listening" not in doctor:
         problems.append("no per-head TCP probe — a bound-but-unassembled head is "
@@ -56,8 +61,8 @@ def code_only(text: str | None) -> str | None:
 
     Both readers strip because all three checks here are REQUIRED tokens; this wall asserts no
     BANNED string, which is the one direction that must stay on raw text (the jw_08 split) so a
-    violation cannot hide inside a comment. DoctorCommand.kt already narrates `failedHeads` twice
-    in KDoc, so without this the doctor half of the wall was satisfiable with zero code."""
+    violation cannot hide inside a comment. DoctorHeadChecks.kt already narrates `failedHeads`
+    twice in KDoc, so without this the doctor half of the wall was satisfiable with zero code."""
     if text is None:
         return None
     stripped = _BLOCK_COMMENT.sub("", text)
@@ -82,7 +87,7 @@ def selftest() -> int:
     if detect(CLIENT_OK, DOCTOR_OK):
         fails.append(f"HealthView + failedHeads + probe must be GREEN, got {detect(CLIENT_OK, DOCTOR_OK)}")
     if not detect(CLIENT_OK, DOCTOR_OPEN):
-        fails.append("a doctor that never reads failedHeads must be RED")
+        fails.append("head checks that never read failedHeads must be RED")
     if not detect(CLIENT_OPEN, DOCTOR_OK):
         fails.append("a client without HealthView must be RED")
     if not detect(CLIENT_OK, 'reads failedHeads but has no probe'):

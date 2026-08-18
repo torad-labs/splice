@@ -22,7 +22,11 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 TOPO = ROOT / "gateway/core/src/main/kotlin/splice/core/topology/Topology.kt"
-DOCTOR = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/DoctorCommand.kt"
+# HD-25: configurationChecks — the declaration this wall reads — moved out of DoctorCommand.kt into
+# its own collaborator when that file was decomposed (it was the tree's worst concentration row at
+# 8.10). Re-anchored onto the ONE file that now holds it, at the same single-file resolution, the
+# same way DAEMON below was repointed at HeadBoot.kt.
+DOCTOR = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/DoctorConfigChecks.kt"
 # assembleDaemonHeads (and its portCollisionMessage pre-flight) moved out of Daemon.kt into its own
 # collaborator in the 2026-08-17 decomposition (campaign claude-head, CH target Daemon) — repointed
 # the same way the kt-state-paths-single-source ignore was, following the code rather than the
@@ -32,7 +36,7 @@ DAEMON = ROOT / "gateway/app/src/main/kotlin/splice/app/head/HeadBoot.kt"
 
 def detect(topo: str | None, doctor: str | None, daemon: str | None) -> list[str]:
     """Pure detection. No I/O — the selftest feeds it directly."""
-    for name, text in (("Topology.kt", topo), ("DoctorCommand.kt", doctor), ("Daemon.kt", daemon)):
+    for name, text in (("Topology.kt", topo), ("DoctorConfigChecks.kt", doctor), ("Daemon.kt", daemon)):
         if text is None:
             return [f"{name} missing — refusing to pass vacuously"]
     problems: list[str] = []

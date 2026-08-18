@@ -24,12 +24,17 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 CONTROL = ROOT / "gateway/control/src/main/kotlin/splice/control/ControlServer.kt"
 SHIM = ROOT / "bin/splice-launch"
-DOCTOR = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/DoctorCommand.kt"
+# HD-25: topologyFreshness — the declaration this wall reads — moved out of DoctorCommand.kt into
+# the daemon-section collaborator when that file was decomposed (it was the tree's worst
+# concentration row at 8.10). Re-anchored onto the ONE file that now holds it, at the same
+# single-file resolution, following the code rather than the god-file it used to live in.
+DOCTOR = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/DoctorDaemonChecks.kt"
 
 
 def detect(control: str | None, shim: str | None, doctor: str | None) -> list[str]:
     """Pure detection. No I/O — the selftest feeds it directly."""
-    for name, text in (("ControlServer.kt", control), ("bin/splice-launch", shim), ("DoctorCommand.kt", doctor)):
+    for name, text in (("ControlServer.kt", control), ("bin/splice-launch", shim),
+                       ("DoctorDaemonChecks.kt", doctor)):
         if text is None:
             return [f"{name} missing — refusing to pass vacuously"]
     problems: list[str] = []

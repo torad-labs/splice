@@ -22,7 +22,12 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 COMMAND = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/Command.kt"
-DOCTOR = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/DoctorCommand.kt"
+# HD-25: the logsDir row this wall reads is inside daemonChecks, which moved out of DoctorCommand.kt
+# into the daemon-section collaborator when that file was decomposed (it was the tree's worst
+# concentration row at 8.10). Re-anchored onto the ONE file that now holds it, at the same
+# single-file resolution. NOT widened to the cli package: unlike the CONTROL_DIR sweep below, this
+# is a REQUIRED token, so a directory read would let any sibling satisfy it.
+DOCTOR = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/DoctorDaemonChecks.kt"
 # HD-24: the remediation strings this key polices left ControlServer.kt when the control plane
 # split into splice.control + splice.control.api ("refresh failed — run: splice logs" now lives in
 # api/AuthRoutes.kt), which left the single-file read policing a file that carries no remediation
@@ -35,7 +40,8 @@ CONTROL_DIR = ROOT / "gateway/control/src/main/kotlin/splice/control"
 
 def detect(command: str | None, doctor: str | None, control: str | None) -> list[str]:
     """Pure detection. No I/O — the selftest feeds it directly."""
-    for name, text in (("Command.kt", command), ("DoctorCommand.kt", doctor), ("control plane sources", control)):
+    for name, text in (("Command.kt", command), ("DoctorDaemonChecks.kt", doctor),
+                       ("control plane sources", control)):
         if text is None:
             return [f"{name} missing — refusing to pass vacuously"]
     problems: list[str] = []

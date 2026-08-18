@@ -9,12 +9,6 @@ import splice.app.TopologyLoader
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.Topology
 
-private const val BOLD = "\u001B[1m"
-private const val DIM = "\u001B[2m"
-private const val GREEN = "\u001B[32m"
-private const val CYAN = "\u001B[36m"
-private const val RESET = "\u001B[0m"
-
 /** The `setup` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources
  *  carry no top-level functions). It drives two sibling verbs, so it receives them as constructed
  *  collaborators; every member keeps the old function's name. */

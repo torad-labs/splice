@@ -9,7 +9,8 @@ GREEN requires BOTH:
   1. a shared merge primitive exists (mergedCredentialJson in splice.core) — "merge, never
      rewrite" as a property of the primitive, not a habit three files independently remember
      and one already forgot;
-  2. the kimi refresh write routes through it (no bare writeSecure(authPath, kimiAuthJson(...))).
+  2. the kimi refresh persists the MERGED object through the atomic 0600 credential write
+     (SecureFile.writeAtomic0600), not a from-scratch kimiAuthJson(...) rebuild.
 
 EXIT 0 = merged. EXIT 1 = gap open. --selftest = the POSITIVE CONTROL (C6).
 """
@@ -30,18 +31,40 @@ ROOT = pathlib.Path(__file__).resolve().parents[4]
 CORE = ROOT / "gateway/core/src/main/kotlin/splice/core/auth/CredentialJson.kt"
 KIMI = ROOT / "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiAuthProvider.kt"
 
+# 2026-08-18 — HD-28, the re-anchor. Every arm below used to key on `writeSecure(`, the name of a
+# one-line PRIVATE forward (`private fun writeSecure(p, c) { SecureFile.writeAtomic0600(p, c) }`)
+# that each provider happened to carry. That is an incidental spelling, not the invariant, and it
+# failed in BOTH directions: renaming or deleting the forward reddened a wall whose behaviour was
+# intact, while routing the persist through a differently-named helper that skipped the atomic 0600
+# write stayed GREEN — the exact world-readable-window regression #924 extracted SecureFile to make
+# inexpressible. The anchor is now the call that CARRIES the invariant, SecureFile.writeAtomic0600,
+# so the wall is blind to what any wrapper is called and red the instant the atomic write is not
+# what persists the credential. Selftest arms 7 and 8 hold both directions down permanently.
+ATOMIC_WRITE = "SecureFile.writeAtomic0600("
+
+# The regression shape, spelled at the same call site: the atomic write handed the freshly-built
+# six-key object instead of the merge. Both receivers are listed because kimiAuthJson moved onto the
+# KimiOAuth collaborator (HD-M5) and may move again; a from-scratch rewrite that evades both
+# spellings still falls to the `mergedCredentialJson(` arm below.
+FROM_SCRATCH = (
+    ATOMIC_WRITE + "authPath, kimiAuthJson(",
+    ATOMIC_WRITE + "authPath, oauth.kimiAuthJson(",
+)
+
 
 def detect(core: str | None, kimi: str | None) -> list[str]:
     """Pure detection. No I/O — the selftest feeds it directly."""
     if kimi is None:
         return ["KimiAuthProvider.kt missing — refusing to pass vacuously"]
-    if "writeSecure(" not in kimi:
-        return ["the kimi persist site disappeared (shape changed?) — refusing to pass vacuously"]
+    if ATOMIC_WRITE not in kimi:
+        return ["the kimi credential write no longer reaches SecureFile.writeAtomic0600 — the "
+                "atomic 0600 primitive is what closes the world-readable window; refusing to pass "
+                "vacuously"]
     problems: list[str] = []
     if core is None or "fun mergedCredentialJson(" not in core:
         problems.append("no shared mergedCredentialJson primitive — merge-never-rewrite is still "
                         "a per-provider habit")
-    if "writeSecure(authPath, kimiAuthJson(" in kimi:
+    if any(shape in kimi for shape in FROM_SCRATCH):
         problems.append("kimi still rewrites the credential file from scratch — every foreign "
                         "field (device_id, vendor keys) is dropped on each refresh (the 2026-07-18 "
                         "audit shape grok/codex already fixed)")
@@ -55,8 +78,26 @@ def _read(p: pathlib.Path) -> str | None:
 
 
 CORE_OK = "public fun mergedCredentialJson(onDisk: JsonObject?, replacements: JsonObject): JsonObject"
-KIMI_OPEN = "writeSecure(authPath, kimiAuthJson(attempt.tokens, clock()).toString())"
-KIMI_OK = "writeSecure(authPath, mergedCredentialJson(onDisk, kimiAuthJson(attempt.tokens, clock())).toString())"
+_MERGE = "val merged = CredentialJson.mergedCredentialJson(onDisk, oauth.kimiAuthJson(attempt.tokens, clock()))"
+KIMI_OPEN = ATOMIC_WRITE + "authPath, oauth.kimiAuthJson(attempt.tokens, clock()).toString())"
+KIMI_OK = _MERGE + "\n" + ATOMIC_WRITE + "authPath, merged.toString())"
+# Direction (b): the persist may go through a private forward under ANY name. The wall must be blind
+# to that name — it was `writeSecure` for a year and reddening on the rename is the defect this
+# re-anchor removes.
+KIMI_WRAPPED = (
+    _MERGE + "\n"
+    "persistCredentialFile(authPath, merged.toString())\n"
+    "private fun persistCredentialFile(path: Path, content: String) { "
+    + ATOMIC_WRITE + "path, content) }"
+)
+# Direction (a): the hole the old `writeSecure(` anchor left wide open — a correctly MERGED write
+# handed to a helper that never reaches the atomic 0600 primitive. Merge intact, world-readable
+# window back. The old anchor passed this; this one must not.
+KIMI_UNSAFE = (
+    _MERGE + "\n"
+    "writeSecure(authPath, merged.toString())\n"
+    "private fun writeSecure(path: Path, content: String) { Files.writeString(path, content) }"
+)
 
 
 def selftest() -> int:
@@ -73,13 +114,20 @@ def selftest() -> int:
         fails.append("missing KimiAuthProvider.kt must be RED, never a vacuous pass")
     if not detect(CORE_OK, "class KimiAuthProvider"):
         fails.append("an unrecognized persist shape must be RED, never a vacuous pass")
+    if detect(CORE_OK, KIMI_WRAPPED):
+        fails.append("a merged write through a RENAMED private forward that still reaches the "
+                     f"atomic write must stay GREEN, got {detect(CORE_OK, KIMI_WRAPPED)}")
+    if not detect(CORE_OK, KIMI_UNSAFE):
+        fails.append("a merged write through a helper that SKIPS SecureFile.writeAtomic0600 must "
+                     "be RED — the merge is not the only invariant")
     if fails:
         print("SH-10 SELFTEST FAIL:")
         for f in fails:
             print("  " + f)
         return 1
     print("SH-10 SELFTEST OK — red on from-scratch rewrite, missing primitive, private fork, "
-          "missing file, and shape change; green only on the shared merge")
+          "missing file, shape change, and a write that skips SecureFile.writeAtomic0600; green on "
+          "the shared merge under any wrapper name")
     return 0
 
 
@@ -88,11 +136,12 @@ def main() -> int:
         return selftest()
     problems = detect(_read(CORE), _read(KIMI))
     if problems:
-        print("SH-10 WALL RED — the kimi credential file is rewritten from scratch on refresh:")
+        print("SH-10 WALL RED — the kimi credential refresh does not merge-and-atomically-persist:")
         for p in problems:
             print(f"  · {p}")
         return 1
-    print("SH-10 WALL GREEN: kimi merges rotations onto the on-disk object via the shared primitive.")
+    print("SH-10 WALL GREEN: kimi merges rotations onto the on-disk object via the shared primitive "
+          "and persists them through SecureFile.writeAtomic0600.")
     return 0
 
 

@@ -21,7 +21,12 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
-SVC = ROOT / "gateway/core/src/main/kotlin/splice/core/config/ConfigService.kt"
+# HD-25 (2026-08-18): ConfigLayers moved out of ConfigService.kt into ConfigResults.kt when the
+# config god object decomposed — same package, same `perHead` field, new file. RE-ANCHORED to the
+# exact file that now holds the declaration, NOT widened to the package: a directory-wide search
+# would pass on the field living anywhere, which is precisely the resolution loss this campaign
+# exists to prevent. If ConfigLayers moves again, move this path with it.
+LAYERS = ROOT / "gateway/core/src/main/kotlin/splice/core/config/ConfigResults.kt"
 # HD-24: configJson (the "perHead" emitter) and the /api/config route (the head query-param read)
 # split across two files when ControlServer decomposed — the head param stayed in ControlServer's
 # route table, "perHead" moved with configJson into ConfigRoutes. Concatenated like the campaign's
@@ -33,13 +38,13 @@ CTRL_FILES = [
 WEBUI = ROOT / "webui/src/entities/config/api/index.ts"
 
 
-def detect(svc: str | None, ctrl: str | None, webui: str | None) -> list[str]:
+def detect(layers: str | None, ctrl: str | None, webui: str | None) -> list[str]:
     """Pure detection. No I/O — the selftest feeds it directly."""
-    for name, text in (("ConfigService.kt", svc), ("ControlServer.kt", ctrl), ("config entity api", webui)):
+    for name, text in (("ConfigResults.kt", layers), ("ControlServer.kt", ctrl), ("config entity api", webui)):
         if text is None:
             return [f"{name} missing — refusing to pass vacuously"]
     problems: list[str] = []
-    if "val perHead:" not in (svc or ""):
+    if "val perHead:" not in (layers or ""):
         problems.append("ConfigLayers has no perHead field — the layer exists in mergedRaw but "
                         "the transparency surface cannot show it")
     if 'queryParameters["head"]' not in (ctrl or "") and "parameters[\"head\"]" not in (ctrl or ""):
@@ -82,7 +87,7 @@ def _read_all(paths: list[pathlib.Path]) -> str | None:
     return "\n".join(texts)
 
 
-SVC_OK = "data class ConfigLayers(val perHead: Map<String, Map<String, Any?>>)"
+LAYERS_OK = "data class ConfigLayers(val perHead: Map<String, Map<String, Any?>>)"
 CTRL_OK = 'call.request.queryParameters["head"]\nputJsonObject("perHead") {}'
 WEBUI_OK = "config(head?: string)"
 
@@ -91,13 +96,13 @@ def selftest() -> int:
     fails = []
     if not detect("layers no field", "configJson global only", "fetch fixed"):
         fails.append("today's head-blind shape must be RED")
-    if detect(SVC_OK, CTRL_OK, WEBUI_OK):
-        fails.append(f"visible-layer shape must be GREEN, got {detect(SVC_OK, CTRL_OK, WEBUI_OK)}")
+    if detect(LAYERS_OK, CTRL_OK, WEBUI_OK):
+        fails.append(f"visible-layer shape must be GREEN, got {detect(LAYERS_OK, CTRL_OK, WEBUI_OK)}")
     if not detect("layers no field", CTRL_OK, WEBUI_OK):
         fails.append("a ConfigLayers without perHead must be RED")
-    if not detect(SVC_OK, "configJson global only", WEBUI_OK):
+    if not detect(LAYERS_OK, "configJson global only", WEBUI_OK):
         fails.append("a head-less /api/config must be RED")
-    if not detect(SVC_OK, CTRL_OK, "fetch fixed"):
+    if not detect(LAYERS_OK, CTRL_OK, "fetch fixed"):
         fails.append("a webui that cannot select a head must be RED")
     if not detect(None, CTRL_OK, WEBUI_OK):
         fails.append("missing files must be RED, never a vacuous pass")
@@ -114,7 +119,7 @@ def selftest() -> int:
 def main() -> int:
     if "--selftest" in sys.argv:
         return selftest()
-    problems = detect(_read(SVC), _read_all(CTRL_FILES), _read(WEBUI))
+    problems = detect(_read(LAYERS), _read_all(CTRL_FILES), _read(WEBUI))
     if problems:
         print("JW-06 WALL RED — the per-head override layer is invisible:")
         for p in problems:

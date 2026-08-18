@@ -568,6 +568,46 @@ title = "Tree-wide concentration gate: bring checks/concentration.py --max-ratio
 files = ["gateway/*/src/main", "checks/concentration.py"]
 status = "todo"
 verify = "python3 checks/concentration.py --max-ratio 1.8"
+# [2026-08-17] [2026-08-17] CALIBRATION INPUT from a full code-scan of the tree. Three findings about the METRIC,
+# [2026-08-17] which is what HD-25 says must be settled before any decomposition.
+# [2026-08-17] 1. C DOUBLE-BILLS EVERY DECLARATION. C = 0.5*logic + 3*exports + 8*concerns charges a declared type
+# [2026-08-17] twice — once as an export, once as a concern — so a type costs 11 points, the equivalent of 22
+# [2026-08-17] logic lines. A 5-field data class occupying 7 lines is scored as 29 lines of orchestration. For
+# [2026-08-17] AnthropicRequest.kt that is 76% of its C; its logic term alone reads 1.59, band low. The concern
+# [2026-08-17] term also contradicts its stated purpose: it exists to catch collaborators born inside a god file,
+# [2026-08-17] but a collaborator is defined by BEHAVIOUR, and `data class TextBlock(val text: String)` has none.
+# [2026-08-17] Charging it 8 confuses data with responsibility — the exact confusion the metric was built to
+# [2026-08-17] detect. NOTE this was already half-seen in the 3de3fb8 note ("11 points per declared type (3
+# [2026-08-17] export + 8 concern)") and recorded as an observation rather than a defect; it is a defect.
+# [2026-08-17] 2. A METRIC FIX CANNOT SETTLE THE AnthropicRequest ROW. 26 weighting configurations were swept
+# [2026-08-17] against the live tree (declaration weight 8->0, double-count on/off, fields-as-logic on/off):
+# [2026-08-17] baseline 6.60, no double-count 5.83, behaviour-only concerns 4.29, both 3.12, maximal 2.26. It
+# [2026-08-17] never reaches band low in ANY variant, because every reweighting also lowers the neighbour medians
+# [2026-08-17] — the ratio is near scale-free in these terms. The only variant escaping HIGH flips a third of the
+# [2026-08-17] tree and still fails the 1.8 gate. RECOMMENDED DISPOSITION: a named, dated, auditable EXCEPTION
+# [2026-08-17] carrying its three justifications (the module law forbids every alternative destination, its
+# [2026-08-17] neighbour set is 100% downstream consumers, and 3.34 -> 6.60 of the reading is neighbourhood
+# [2026-08-17] drift), not a coefficient. The repo already does exactly this twice — `nonLibrary` in
+# [2026-08-17] splice.module-law.gradle.kts and the dormant-dir allowlist in checks/rule-routing.sh. An exception
+# [2026-08-17] a reader can evaluate beats a weight nobody can. Explicitly REJECTED: a "pure DTO file" exemption
+# [2026-08-17] keyed on data class / @Serializable — trivially gamed by declaring a god object's collaborators as
+# [2026-08-17] data holders.
+# [2026-08-17] PROPOSED RULE A, adopt independently of the DTO question because it is correctness rather than
+# [2026-08-17] calibration: bill each declaration once, C = 0.5*logic + 3*(exports - types) + 8*concerns. Smallest
+# [2026-08-17] blast radius measured of any variant — 9 band flips, 2 files crossing 1.8.
+# [2026-08-17] PROPOSED RULE B, needs a band re-fit in the same commit: concerns counts only
+# [2026-08-17] responsibility-bearing declarations (a top-level class/interface/object whose body declares a fun,
+# [2026-08-17] a custom get()/set(), or an init block). A data/value/enum/sealed marker is a field group, charged
+# [2026-08-17] its lines and its export and nothing more. 17-27 band flips, so the 1.8/3.0 thresholds must move
+# [2026-08-17] with it.
+# [2026-08-17] 3. THE FLOOR WAS INVISIBLE, now fixed in 81a3dcd. The tool printed neighbour_median_C as though it
+# [2026-08-17] were the divisor while dividing by max(median, floor). Ten of 306 files are floored; two of the
+# [2026-08-17] eight HIGH rows are HIGH BECAUSE OF THE FLOOR, not their neighbours — DoctorProbes 146.0/27.5 and
+# [2026-08-17] ControlPlaneClient 99.5/27.5, both reporting a median of 18.0 that belongs to splice.core.util, the
+# [2026-08-17] package they import FROM. Consequence for this item: for any file whose imports are all thin the
+# [2026-08-17] band collapses to absolute size — HIGH means C >= 82.5 and the 1.8 gate means C < 49.5, roughly 60
+# [2026-08-17] logic lines, a stricter standard than any file with real neighbours faces. Seven of splice.app.cli's
+# [2026-08-17] files are scored that way. That is a THIRD calibration question, alongside the DTO one.
 
 [[items]]
 id = "HD-26"

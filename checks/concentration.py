@@ -83,9 +83,30 @@ Then, per file, the gradient against its neighbours:
                  on its own.
 
                  So the drift is not eliminated here, it is made non-silent: `--since <ref>` reports
-                 every file whose ratio moved between a commit and the working tree and labels the
-                 cause `own` (its own C changed) or `neighbourhood` (its C is identical and only the
-                 denominator moved). A landing note may not claim a ratio without it.
+                 every file whose ratio moved between a commit and the working tree, with its C
+                 delta, its denominator delta, and the share of the move each of the two accounts
+                 for. A landing note may not claim a ratio without it.
+
+                 THE CAUSE COLUMN IS A SPLIT, NOT A BINARY (2026-08-18). Until this date the column
+                 read `own` whenever C changed by ANY amount, and `neighbourhood` only when C was
+                 byte-identical. ratio = C / denominator and BOTH factors move, so that test handed
+                 every file carrying a one-line edit to `own` regardless of what its denominator
+                 did — which is the one thing the column exists to tell apart. MEASURED on this
+                 tree, 8c6912f -> working tree: app/cli/DoctorCommand.kt went 3.94 -> 8.10 while its
+                 C moved 238.5 -> 239.0 (+0.5, one line) and its denominator HALVED, 60.5 -> 29.5.
+                 The column called that `own`, crediting a 2x regression to half a point of code and
+                 hiding the package split that caused it. KimiAuthProvider.kt was mislabelled the
+                 same way (3.44 -> 2.64, C -1.5, denominator 37.8 -> 48.6, cause `own`). Every
+                 landing note in this campaign cited the column in that state.
+
+                 The replacement is a split, and it is EXACT rather than heuristic:
+
+                     ratio_after/ratio_before = (C_after/C_before) * (denom_before/denom_after)
+
+                 so in log space the two factors ADD and their shares of the move sum to 1. `own`
+                 and `neighbourhood` name the factor holding at least CAUSE_DOMINANCE of it; `mixed`
+                 means neither does, and the reader has to look at both numbers rather than be told
+                 an answer the arithmetic does not support.
 
   BANDS:  ratio < 1.8 low  |  1.8-3.0 moderate  |  >= 3.0 HIGH (god object)
 
@@ -149,6 +170,7 @@ from __future__ import annotations
 import argparse
 import io
 import json
+import math
 import pathlib
 import re
 import statistics
@@ -169,6 +191,13 @@ EXPORT_DECL = re.compile(
     r"(class|interface|object|fun|val|var) "
 )
 SPLICE_IMPORT = re.compile(r"^import (splice\.[A-Za-z0-9_.]+)\.[A-Za-z0-9_]+")
+
+# The share of a ratio move one factor must carry before `--since` will name it the cause. ratio =
+# C / denominator, so in log space the two factors add and their shares sum to 1; a factor holding
+# two thirds or more IS the explanation, and anything between the thirds is `mixed` — a row the
+# reader has to open rather than a label that decides for them. Stated as a visible constant because
+# a dominance rule nobody can read is the same defect as the binary it replaced.
+CAUSE_DOMINANCE = 2 / 3
 
 # --------------------------------------------------------------------------------------------
 # The files this tree provably cannot bring under the gate by refactoring. Format:
@@ -352,8 +381,9 @@ def ratchet(rows: list[dict], max_ratio: float) -> int:
             problems.append(
                 f"REGRESSION: {label} rose {baseline} -> {measured}. A file crossed that nothing recorded. "
                 f"Run `python3 checks/concentration.py --since HEAD --max-ratio {max_ratio}`: cause `own` is "
-                f"code in this change, cause `neighbourhood` is a denominator that moved under a file nobody "
-                f"touched. Fix the file — raising {const} is a dated edit recording that the tree got worse."
+                f"code in this change, cause `neighbourhood` is a denominator that moved under the file, and "
+                f"the ΔC / Δdenom columns show the split the label was taken from. Fix the file — raising "
+                f"{const} is a dated edit recording that the tree got worse."
             )
         elif measured < baseline:
             problems.append(
@@ -475,12 +505,50 @@ def scan(rows: list[dict]) -> list[dict]:
     return sorted(rows, key=lambda r: -r["ratio"])
 
 
-def movement(ref: str, rows: list[dict]) -> list[dict]:
-    """Every file whose ratio moved since `ref`, with the cause of the move.
+def cause_of(was: dict, now: dict) -> tuple[str, float | None]:
+    """Split a ratio move into its two factors and name the one that DOMINATES.
 
-    `own` means the file's own C changed, i.e. somebody edited it. `neighbourhood` means its C is
-    byte-for-byte the same score and only the denominator moved — a number that belongs to whoever
-    split a neighbouring package, never to this file's density. See the docstring.
+    ratio = C / denominator, so the move is exactly multiplicative:
+
+        ratio_after / ratio_before = (C_after / C_before) * (denominator_before / denominator_after)
+
+    Taking logs turns that product into a sum, so "how much of this move is the file's own density
+    and how much is its neighbourhood" is a division, not a judgement call. Returns the cause and
+    the share of the move attributable to the file's own C (the neighbourhood share is 1 - it).
+
+    WHY NOT `own if C changed`, which this replaces: that test fires on ANY non-zero C delta, so a
+    half-point edit outranks a denominator that has halved. See THE CAUSE COLUMN IS A SPLIT in the
+    module docstring for the two measured misattributions that forced the change.
+    """
+    factors = (was["C"], now["C"], was["denominator"], now["denominator"])
+    if min(factors) <= 0:
+        # No log to take. Name whichever factor moved and return no share rather than invent one —
+        # a fabricated split is worse than the binary this replaces.
+        own_moved = was["C"] != now["C"]
+        neighbourhood_moved = was["denominator"] != now["denominator"]
+        if own_moved and not neighbourhood_moved:
+            return "own", None
+        if neighbourhood_moved and not own_moved:
+            return "neighbourhood", None
+        return "mixed", None
+    own = abs(math.log(now["C"] / was["C"]))
+    neighbourhood = abs(math.log(was["denominator"] / now["denominator"]))
+    if own + neighbourhood == 0:
+        return "mixed", None
+    share = own / (own + neighbourhood)
+    if share >= CAUSE_DOMINANCE:
+        return "own", share
+    if share <= 1 - CAUSE_DOMINANCE:
+        return "neighbourhood", share
+    return "mixed", share
+
+
+def movement(ref: str, rows: list[dict]) -> list[dict]:
+    """Every file whose ratio moved since `ref`, with the SPLIT that caused it.
+
+    Each row carries the C delta, the denominator delta, and `own_share` — the fraction of the (log)
+    ratio move the file's own density accounts for. `cause` names the factor holding at least
+    CAUSE_DOMINANCE of the move, or `mixed` when neither does. See cause_of.
     """
     before = {r["file"]: r for r in scan(collect_ref(ref))}
     after = {r["file"]: r for r in rows}
@@ -489,12 +557,19 @@ def movement(ref: str, rows: list[dict]) -> list[dict]:
         was, now = before[name], after[name]
         if was["ratio"] == now["ratio"]:
             continue
+        cause, share = cause_of(was, now)
         moved.append(
             {
                 "file": name,
-                "cause": "own" if was["C"] != now["C"] else "neighbourhood",
+                "cause": cause,
+                "own_share": None if share is None else round(share, 3),
+                "neighbourhood_share": None if share is None else round(1 - share, 3),
                 "C_before": was["C"],
                 "C_after": now["C"],
+                "C_delta": round(now["C"] - was["C"], 1),
+                "denominator_before": was["denominator"],
+                "denominator_after": now["denominator"],
+                "denominator_delta": round(now["denominator"] - was["denominator"], 1),
                 "ratio_before": was["ratio"],
                 "ratio_after": now["ratio"],
                 "band_before": was["band"],
@@ -505,23 +580,43 @@ def movement(ref: str, rows: list[dict]) -> list[dict]:
 
 
 def report_movement(ref: str, moved: list[dict], max_ratio: float | None) -> None:
-    print(f"{'file':58} {'ratio':>14}  {'band':>18}  cause")
+    # Both deltas are printed because the cause is a SPLIT of them; a label with the numbers it was
+    # derived from withheld is the binary this replaced, wearing a longer word. `cause` stays the
+    # last field on the line so `awk '{print $NF}'` and `grep 'neighbourhood$'` still work, and
+    # "neighbourhood" contains no "own" substring, so the two grep cleanly.
+    print(f"{'file':52} {'ratio':>14}  {'ΔC':>8} {'Δdenom':>8}  {'band':>18}  {'own%':>5}  cause")
     for m in moved:
+        share = "  n/a" if m["own_share"] is None else f"{m['own_share']:>5.0%}"
         print(
-            f"{m['file'].replace('gateway/', '').replace('/src/main/kotlin/splice', '~')[:58]:58} "
+            f"{m['file'].replace('gateway/', '').replace('/src/main/kotlin/splice', '~')[:52]:52} "
             f"{m['ratio_before']:6.2f} ->{m['ratio_after']:6.2f}  "
-            f"{m['band_before']:>8} ->{m['band_after']:>8}  {m['cause']}"
+            f"{m['C_delta']:+8.1f} {m['denominator_delta']:+8.1f}  "
+            f"{m['band_before']:>8} ->{m['band_after']:>8}  {share}  {m['cause']}"
         )
-    drift = [m for m in moved if m["cause"] == "neighbourhood"]
-    print(f"\n{len(moved)} file(s) moved since {ref} | own {len(moved) - len(drift)} | neighbourhood {len(drift)}")
+    counts = {c: sum(1 for m in moved if m["cause"] == c) for c in ("own", "neighbourhood", "mixed")}
+    print(
+        f"\n{len(moved)} file(s) moved since {ref} | own {counts['own']} "
+        f"| neighbourhood {counts['neighbourhood']} | mixed {counts['mixed']} "
+        f"(dominance threshold {CAUSE_DOMINANCE:.0%} of the log move)"
+    )
     if max_ratio is not None:
+        drift = [m for m in moved if m["cause"] == "neighbourhood"]
         crossed = [m for m in drift if (m["ratio_before"] > max_ratio) != (m["ratio_after"] > max_ratio)]
         if crossed:
-            print(f"\nWARNING: {len(crossed)} untouched file(s) crossed ratio {max_ratio} on neighbourhood drift:",
-                  file=sys.stderr)
+            print(
+                f"\nWARNING: {len(crossed)} file(s) crossed ratio {max_ratio} on a move their "
+                f"DENOMINATOR dominates — that number belongs to whoever split a neighbouring "
+                f"package, not to this file's density:",
+                file=sys.stderr,
+            )
             for m in crossed:
-                print(f"  {m['file']}  {m['ratio_before']} -> {m['ratio_after']}  C unchanged at {m['C_after']}",
-                      file=sys.stderr)
+                print(
+                    f"  {m['file']}  ratio {m['ratio_before']} -> {m['ratio_after']}  "
+                    f"C {m['C_before']} -> {m['C_after']} ({m['C_delta']:+})  "
+                    f"denominator {m['denominator_before']} -> {m['denominator_after']} "
+                    f"({m['denominator_delta']:+})",
+                    file=sys.stderr,
+                )
 
 
 def main() -> int:

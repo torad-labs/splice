@@ -22,12 +22,19 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 COMMAND = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/Command.kt"
 DOCTOR = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/DoctorCommand.kt"
-CONTROL = ROOT / "gateway/control/src/main/kotlin/splice/control/ControlServer.kt"
+# HD-24: the remediation strings this key polices left ControlServer.kt when the control plane
+# split into splice.control + splice.control.api ("refresh failed — run: splice logs" now lives in
+# api/AuthRoutes.kt), which left the single-file read policing a file that carries no remediation
+# text at all. A file LIST cannot fix this key the way it fixed JW-06's: this is a NEGATIVE
+# assertion, so the file that would carry the violation need not exist yet. Scoped to the
+# NEIGHBOURHOOD instead — every .kt under the control plane, recursively — the same remedy CX-18
+# uses for its ban, so a new route file is covered the moment it is written, with no wall edit.
+CONTROL_DIR = ROOT / "gateway/control/src/main/kotlin/splice/control"
 
 
 def detect(command: str | None, doctor: str | None, control: str | None) -> list[str]:
     """Pure detection. No I/O — the selftest feeds it directly."""
-    for name, text in (("Command.kt", command), ("DoctorCommand.kt", doctor), ("ControlServer.kt", control)):
+    for name, text in (("Command.kt", command), ("DoctorCommand.kt", doctor), ("control plane sources", control)):
         if text is None:
             return [f"{name} missing — refusing to pass vacuously"]
     problems: list[str] = []
@@ -44,6 +51,15 @@ def detect(command: str | None, doctor: str | None, control: str | None) -> list
 
 def _read(p: pathlib.Path) -> str | None:
     return p.read_text(encoding="utf-8") if p.exists() else None
+
+
+def _read_tree(d: pathlib.Path) -> str | None:
+    """Concatenate every .kt under `d`, recursively. A missing or .kt-less tree reads as None
+    (vacuity RED) rather than as an empty sweep that trivially satisfies a negative assertion."""
+    if not d.is_dir():
+        return None
+    texts = [p.read_text(encoding="utf-8") for p in sorted(d.rglob("*.kt"))]
+    return "\n".join(texts) if texts else None
 
 
 CMD_OK = '"logs" to { a -> Logs(a) }'
@@ -65,6 +81,16 @@ def selftest() -> int:
         fails.append("a lingering 'check daemon.log' string must be RED")
     if not detect(None, DOC_OK, CTRL_OK):
         fails.append("missing files must be RED, never a vacuous pass")
+    # HD-24 staleness control. Every case above stayed correct through the ControlServer split
+    # while the READER went blind, so the reader is a positive control too: the swept tree must
+    # actually reach the remediation strings this wall's negative assertion is written against.
+    live = _read_tree(CONTROL_DIR)
+    if live is None:
+        fails.append(f"the control-plane sweep found no sources under {CONTROL_DIR} — the reader "
+                     "is pointed at nothing and the negative assertion is vacuous")
+    elif "splice logs" not in live:
+        fails.append("the control-plane sweep no longer reaches any `splice logs` remediation "
+                     "string — the negative assertion has nothing left to police")
     if fails:
         print("JW-08 SELFTEST FAIL:")
         for f in fails:
@@ -78,7 +104,7 @@ def selftest() -> int:
 def main() -> int:
     if "--selftest" in sys.argv:
         return selftest()
-    problems = detect(_read(COMMAND), _read(DOCTOR), _read(CONTROL))
+    problems = detect(_read(COMMAND), _read(DOCTOR), _read_tree(CONTROL_DIR))
     if problems:
         print("JW-08 WALL RED — no `splice logs`, and the log path is unsignposted:")
         for p in problems:

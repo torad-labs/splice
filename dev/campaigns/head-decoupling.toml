@@ -560,6 +560,27 @@ verify = "for f in gateway/gateway/src/main/kotlin/splice/gateway/head/HeadServe
 # [2026-08-17] exit summary.
 # [2026-08-17] Attribution unavailable: missing in_flight tree snapshot
 # [2026-08-17] VERDICT: outcome=accepted
+# [2026-08-17] [2026-08-17] A DEFECT THE CAMPAIGN INTRODUCED, found by a post-hoc code scan and verified here.
+# [2026-08-17] The Daemon decomposition (1d955b6) SPREAD a duplication rather than removing it.
+# [2026-08-17] `ProviderTuning(...)` is constructed at five sites, each a ~10-line block whose eight arguments are
+# [2026-08-17] mechanical projections of `ctx: ProviderBuild` + label + auth, with ZERO variation between them:
+# [2026-08-17] app/provider/{ResponsesArm,GrokResponsesArm,ApiKeyResponsesArm,ChatArm,PassthroughAssembly}.kt.
+# [2026-08-17] `git show 1d955b6^:gateway/app/src/main/kotlin/splice/app/Daemon.kt | grep -c "ProviderTuning("`
+# [2026-08-17] returns 5 — all five already existed, inline, in the pre-split Daemon.kt. The split preserved them
+# [2026-08-17] verbatim and distributed them across five files.
+# [2026-08-17] WHY THIS MATTERS MORE THAN THE 43 LINES. Daemon.kt's ratio fell 7.17 -> 1.51 and the oracle
+# [2026-08-17] recorded cause `own`, correctly: its own C really did fall. But the duplication did not shrink, it
+# [2026-08-17] became five files' worth of identical code instead of one file's — HARDER to see and harder to fix,
+# [2026-08-17] while the measurement improved. That is "concentration moved sideways" in the one dimension C
+# [2026-08-17] cannot measure: C counts declarations, imports and logic lines per file, and is blind to whether
+# [2026-08-17] the same block appears five times across five files. The metric cannot catch this class and should
+# [2026-08-17] not be expected to; a duplication check is a different instrument.
+# [2026-08-17] FIX (not applied — this is a scan finding, no code was changed): a `tuning(label, auth)` member on
+# [2026-08-17] ProviderBuild. Legal under every law — ProviderBuild declares zero member functions today so the
+# [2026-08-17] 14-function ceiling is not near, no top-level function or companion is involved, and :app ->
+# [2026-08-17] :provider-spi already exists. ~43 net lines, and it collapses three single-use head/catalog/watchdog
+# [2026-08-17] aliases that only exist to feed those blocks. No wall or rule names the five arms; no test
+# [2026-08-17] constructs them.
 
 [[items]]
 id = "HD-25"
@@ -629,6 +650,29 @@ verify = "npm run gate:campaign && npm run gate:campaign:selftest"
 # [2026-08-17] tokens and is stripped; its _read_tree feeds a BAN and is left raw. The two directions want
 # [2026-08-17] opposite treatment: stripping makes a required token harder to satisfy, but would make a banned
 # [2026-08-17] string easier to hide in a comment. Both stay strict only by treating them differently.
+# [2026-08-17] [2026-08-17] A SECOND WALL-ANCHORING DEFECT, same class as the comment-satisfiability one, found by
+# [2026-08-17] the code scan and verified directly.
+# [2026-08-17] sh_10_kimi_merge_never_rewrite.py guards the kimi credential merge. Its vacuity guard is
+# [2026-08-17] `if "writeSecure(" not in kimi:` (line 38) and both its fixtures are built on that spelling
+# [2026-08-17] (KIMI_OPEN/KIMI_OK, lines 58-59). It NEVER names `SecureFile.writeAtomic0600` — grep for it in the
+# [2026-08-17] wall returns nothing. So the wall is anchored on the name of an incidental PRIVATE WRAPPER, not on
+# [2026-08-17] the invariant it protects.
+# [2026-08-17] Two consequences, both real:
+# [2026-08-17]   1. `private fun writeSecure(p, c) { SecureFile.writeAtomic0600(p, c) }` is a pure no-transform
+# [2026-08-17]      forward duplicated in CodexAuthProvider.kt:348, GrokAuthProvider.kt:387 and
+# [2026-08-17]      KimiDeviceIdentity.kt:52, each with exactly one in-file caller. Deleting them and calling
+# [2026-08-17]      SecureFile directly is MORE compliant with kt-secure-file-single-source, not less — but the
+# [2026-08-17]      kimi copy (KimiAuthProvider.kt:289) must stay, purely because deleting it erases the substring
+# [2026-08-17]      sh_10 greps for and turns the wall red. A wall is dictating that a redundant wrapper survive.
+# [2026-08-17]   2. Worse in the other direction: a change that routed the kimi write through a differently-named
+# [2026-08-17]      helper would keep `SecureFile.writeAtomic0600` intact and still turn sh_10 red, while a change
+# [2026-08-17]      that kept the name and dropped the atomic-0600 write would pass. The wall does not guard what
+# [2026-08-17]      it claims to guard.
+# [2026-08-17] REMEDY when HD-26 is worked: re-anchor sh_10 on `SecureFile.writeAtomic0600(` — the call that
+# [2026-08-17] carries the invariant — with the merge-shape fixtures expressed against that call site. Red-proof
+# [2026-08-17] required both ways: delete the atomic write and confirm RED, rename the wrapper and confirm it
+# [2026-08-17] stays GREEN. Do not fix this by deleting the three redundant wrappers first; that ordering turns
+# [2026-08-17] the wall red for a reason unrelated to the behaviour it protects.
 
 [[items]]
 id = "HD-27"
@@ -652,3 +696,11 @@ verify = "npm run gate:rules && npm run test:hooks && bash checks/rule-routing.s
 # [2026-08-17] from one rule source), and a fixture that would be blocked on write is a fixture that had drifted
 # [2026-08-17] out of compliance with the house style it is supposed to model.
 # [2026-08-17] Attribution unavailable: missing in_flight tree snapshot
+
+[[items]]
+id = "HD-28"
+phase = "harden"
+title = "Deletable code found by the tree-wide entropy sweep. ~91 lines are removable with no new abstraction, out of 28,827 production lines across 306 files — the tree is ~99.6 percent load-bearing by the entropy test, and the honest 'low entropy but NECESSARY' list is far larger than the deletable one. CONFIRMED WALLS: five identical 10-line ProviderTuning blocks in app/provider (43 net, see the HD-24 note — the Daemon split spread them); three byte-identical private writeSecure forwards in CodexAuthProvider:348 / GrokAuthProvider:387 / KimiDeviceIdentity:52 (17 lines, but see the HD-26 note before touching the kimi copy); three public invalidateCache() methods with zero external callers (12); SseEmitter.kt:51,56 hasStarted + ensureStart, pure forwards with zero callers repo-wide, debris from 5922d36 (4); three identical extraHeaders overrides that Provider could default (2). DEAD: ResponsesFold.defaultFoldModels lines 36-45, zero refs repo-wide and its own comment admits it, actively hazardous because it is a SECOND copy of the fold-model default whose live value comes from Knob.FOLD_REASONING_MODELS via QuirksOverlay — identical today with nothing keeping them so (10 lines + a KDoc fix); core/index/Indexes.kt UpstreamItemIndex, zero refs, and its file header's claim that mixing index spaces is a compile error is FALSE today since the upstream key space is still raw Int in ResponsesTurnState (3 lines — adopt it or delete it and correct the header). NOT DEAD despite appearances: MustConsumeCompilerPluginRegistrar is loaded via META-INF/services, COMPACT_MARKER is pinned by CompactTest as a canary. UNRESOLVED, stated rather than guessed: GrokAuthProvider.credentials()'s expiresAt == null branch is self-described as defensive-only dead code but could not be proven unreachable — peerRotation writes a Cache from raw parseSnapshot(), skipping the synthesis readSnapshot() applies, so a later cache hit could read an unsynthesized null. Auth-critical; resolve before touching."
+files = ["gateway/app/src/main/kotlin/splice/app/provider", "gateway/gateway/src/main/kotlin/splice/gateway/wire/SseEmitter.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesFold.kt", "gateway/core/src/main/kotlin/splice/core/index/Indexes.kt"]
+status = "todo"
+verify = "(cd gateway && ./gradlew check --rerun-tasks --console=plain) && npm run gate"

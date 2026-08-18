@@ -21,7 +21,9 @@ import org.junit.jupiter.api.assertThrows
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.spi.ReissueRules
 import splice.spi.StreamTornBeforeClient
+import splice.spi.TransportFailures
 import splice.spi.UpstreamClient
 import java.net.ConnectException
 import java.net.SocketException
@@ -340,20 +342,20 @@ class UpstreamClientTransportTest {
     @Test
     fun `canReissueStream predicate requires handoff, no client frame, retryable transport class, and remaining budget`() {
         assertTrue(
-            UpstreamClient.Transport().canReissueStream(true, ConnectException("torn"), { false }, 0),
+            ReissueRules().canReissueStream(true, ConnectException("torn"), { false }, 0),
         )
         assertFalse(
-            UpstreamClient.Transport().canReissueStream(false, ConnectException("torn"), { false }, 0),
+            ReissueRules().canReissueStream(false, ConnectException("torn"), { false }, 0),
         )
         assertFalse(
-            UpstreamClient.Transport().canReissueStream(true, ConnectException("torn"), { true }, 0),
+            ReissueRules().canReissueStream(true, ConnectException("torn"), { true }, 0),
         )
         assertFalse(
-            UpstreamClient.Transport().canReissueStream(true, IllegalStateException("bug"), { false }, 0),
+            ReissueRules().canReissueStream(true, IllegalStateException("bug"), { false }, 0),
         )
         // budget spent — the literal 2 mirrors MAX_STREAM_REISSUES (kept private, like maxRetries).
         assertFalse(
-            UpstreamClient.Transport().canReissueStream(true, ConnectException("torn"), { false }, 2),
+            ReissueRules().canReissueStream(true, ConnectException("torn"), { false }, 2),
         )
     }
 
@@ -455,18 +457,18 @@ class UpstreamClientTransportTest {
 
     @Test
     fun `retryable predicate walks the cause chain and excludes cancellation`() {
-        assertTrue(UpstreamClient.Transport().isRetryableTransport(UnresolvedAddressException()))
-        assertTrue(UpstreamClient.Transport().isRetryableTransport(RuntimeException(ConnectException("wrapped"))))
-        assertFalse(UpstreamClient.Transport().isRetryableTransport(IllegalStateException("plain")))
-        assertFalse(UpstreamClient.Transport().isRetryableTransport(RuntimeException(RuntimeException("no io below"))))
+        assertTrue(TransportFailures().isRetryableTransport(UnresolvedAddressException()))
+        assertTrue(TransportFailures().isRetryableTransport(RuntimeException(ConnectException("wrapped"))))
+        assertFalse(TransportFailures().isRetryableTransport(IllegalStateException("plain")))
+        assertFalse(TransportFailures().isRetryableTransport(RuntimeException(RuntimeException("no io below"))))
     }
 
     @Test
     fun `dns predicate matches only name-resolution failures`() {
-        assertTrue(UpstreamClient.Transport().isDnsFailureTransport(UnresolvedAddressException()))
-        assertTrue(UpstreamClient.Transport().isDnsFailureTransport(UnknownHostException()))
-        assertFalse(UpstreamClient.Transport().isDnsFailureTransport(ConnectException("refused")))
-        assertFalse(UpstreamClient.Transport().isDnsFailureTransport(SocketException("reset")))
-        assertTrue(UpstreamClient.Transport().isDnsFailureTransport(RuntimeException(UnknownHostException())))
+        assertTrue(TransportFailures().isDnsFailureTransport(UnresolvedAddressException()))
+        assertTrue(TransportFailures().isDnsFailureTransport(UnknownHostException()))
+        assertFalse(TransportFailures().isDnsFailureTransport(ConnectException("refused")))
+        assertFalse(TransportFailures().isDnsFailureTransport(SocketException("reset")))
+        assertTrue(TransportFailures().isDnsFailureTransport(RuntimeException(UnknownHostException())))
     }
 }

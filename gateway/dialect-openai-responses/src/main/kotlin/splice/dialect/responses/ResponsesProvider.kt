@@ -15,6 +15,7 @@ import splice.core.turn.TurnMeta
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
 import splice.spi.BuiltTurn
+import splice.spi.FailureRules
 import splice.spi.FoldController
 import splice.spi.Provider
 import splice.spi.ProviderIdentity
@@ -22,7 +23,6 @@ import splice.spi.ProviderTuning
 import splice.spi.ReanchorController
 import splice.spi.StreamTranslator
 import splice.spi.TurnSignals
-import splice.spi.UpstreamClient
 import splice.spi.WsRoundRunner
 
 public abstract class ResponsesProvider(
@@ -203,7 +203,7 @@ public abstract class ResponsesProvider(
                 // Same path as upstreamUrl, on the WebSocket scheme (live spike receipt).
                 wssUrl = upstreamUrl.replaceFirst("https://", "wss://").replaceFirst("http://", "ws://"),
                 // Authorization is added HERE because the SSE path gets it from
-                // UpstreamClient.applyAuth, which the WS path never goes through — without it every
+                // UpstreamRequest.applyAuth, which the WS path never goes through — without it every
                 // handshake 401s and the overlay falls back to SSE forever, i.e. the feature simply
                 // cannot work (found while adjudicating the review of #72).
                 handshakeHeaders = { creds ->
@@ -245,7 +245,7 @@ public abstract class ResponsesProvider(
      *  the latch restores every later turn. [logToolSurfaceLatchClosed] makes that one-time degrade
      *  observable instead of silent. */
     final override fun amendBodyOnFailure(status: Int, responseText: String, bodyJson: String): String? = when {
-        UpstreamClient.FailureRules().isEncryptedContentError(status, responseText) ->
+        FailureRules().isEncryptedContentError(status, responseText) ->
             cachePolicy.stripStaleReasoning(bodyJson, reasoningCache)
         surfaceRecovery.isToolSurfaceRejection(status, responseText) ->
             surfaceRecovery.dropToolSearchTool(bodyJson)?.also {

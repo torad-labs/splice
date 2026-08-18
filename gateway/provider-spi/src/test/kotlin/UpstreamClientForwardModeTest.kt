@@ -6,28 +6,28 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.auth.Credentials
-import splice.spi.UpstreamClient
+import splice.spi.HeaderRules
 
 class UpstreamClientForwardModeTest {
 
     @Test
     fun `forward mode writes no auth header of its own`() {
-        assertEquals(emptyMap<String, String>(), UpstreamClient.HeaderRules().authHeaders(Credentials.ClientForwarded))
+        assertEquals(emptyMap<String, String>(), HeaderRules().authHeaders(Credentials.ClientForwarded))
     }
 
     @Test
     fun `credential-holding heads are unchanged`() {
         assertEquals(
             mapOf("Authorization" to "Bearer tok"),
-            UpstreamClient.HeaderRules().authHeaders(Credentials.Bearer("tok")),
+            HeaderRules().authHeaders(Credentials.Bearer("tok")),
         )
         assertEquals(
             mapOf("x-api-key" to "secret"),
-            UpstreamClient.HeaderRules().authHeaders(Credentials.ApiKey("secret", header = "x-api-key", prefix = "")),
+            HeaderRules().authHeaders(Credentials.ApiKey("secret", header = "x-api-key", prefix = "")),
         )
         assertEquals(
             mapOf("Authorization" to "Bearer plain"),
-            UpstreamClient.HeaderRules().authHeaders(Credentials.ApiKey("plain")),
+            HeaderRules().authHeaders(Credentials.ApiKey("plain")),
         )
     }
 
@@ -35,7 +35,7 @@ class UpstreamClientForwardModeTest {
     // spelled differently. Unmerged, both reach the wire.
     @Test
     fun `a forwarded header replaces a configured default that differs only in casing`() {
-        val merged = UpstreamClient.HeaderRules().dedupeCaseInsensitive(
+        val merged = HeaderRules().dedupeCaseInsensitive(
             linkedMapOf(
                 "anthropic-version" to "2023-06-01", // provider config default
                 "Anthropic-Version" to "2024-10-22", // forwarded from the caller
@@ -47,7 +47,7 @@ class UpstreamClientForwardModeTest {
 
     @Test
     fun `distinct headers all survive and keep their casing`() {
-        val merged = UpstreamClient.HeaderRules().dedupeCaseInsensitive(
+        val merged = HeaderRules().dedupeCaseInsensitive(
             linkedMapOf(
                 "Accept" to "text/event-stream",
                 "anthropic-version" to "2023-06-01",
@@ -61,6 +61,6 @@ class UpstreamClientForwardModeTest {
 
     @Test
     fun `an empty header set stays empty`() {
-        assertEquals(emptyMap<String, String>(), UpstreamClient.HeaderRules().dedupeCaseInsensitive(emptyMap()))
+        assertEquals(emptyMap<String, String>(), HeaderRules().dedupeCaseInsensitive(emptyMap()))
     }
 }

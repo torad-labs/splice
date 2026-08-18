@@ -5,13 +5,23 @@
 // backoff; a 401 triggers a SINGLE single-flight refresh that does not consume a normal attempt;
 // abort() is the only lock-safe kill (Ktor: cancel the calling coroutine → channel closes).
 //
-// Transport lessons from Grok Build / Codex CLI:
-//   - shorter keepAlive than upstream idle so we don't reuse LB-killed sockets
-//   - pipelineMaxSize=1 so a cancelled SSE cannot poison siblings
-//   - request bodies are NEVER gzipped: xAI 400s on a gzipped body ("Failed to parse the
-//     request body as JSON: expected value at line 1 column 1" — verified live 2026-07-18,
-//     first >=2KiB turn after the gzip experiment deployed); ChatGPT is unproven. The body
-//     still rides as pre-encoded UTF-8 bytes so retries never re-encode the string.
+// WHAT IS LEFT HERE, after HD-25: the retry LOOP and nothing else. The loop's four budgets share
+// one [RetryState] and every rule about them is a rule about which counter must NOT move, so they
+// stay in one object mutated from one file — `attempt` (connect-phase backoff), `refreshedOnce`
+// (the 401 single-flight refresh, which must not consume an attempt), `streamReissues` (G5, spans
+// the whole turn) and `amendedOnce` (RC-4, budgeted alone; review 2026-07-24 found an `attempt +=
+// 1` here ate a valid amended resend at the budget boundary). The t0 deadline and its four checks
+// are here for the same reason: ONE clock authority, same base as TurnWatchdog/InflightGate
+// (review 2026-07-22).
+//
+// WHERE THE REST WENT: client construction → UpstreamTransport.kt; throwable classification →
+// TransportFailures.kt; the retry DECISION and the G5 re-issue interlock → RetryPolicy.kt; the
+// failure predicates → FailureRules.kt; the
+// Retry-After parse → RetryAfter.kt; the shared 429 horizon → RateLimitCooldown.kt; request
+// assembly → UpstreamRequest.kt; one attempt's inputs and outcome → UpstreamAttempt.kt; the role
+// declarations → UpstreamPorts.kt; the thrown vocabulary → UpstreamErrors.kt.
+//
+// Transport lessons from Grok Build / Codex CLI that still bind this file:
 //   - encrypted_content decrypt 400s are NOT retried (Grok Build)
 //   - DNS-class transport failures (UnresolvedAddressException/UnknownHostException) back off on
 //     their own 1s/2s/4s schedule (dnsBackoff), not the generic 200/400/800ms curve (G14)
@@ -21,14 +31,6 @@
 package splice.spi
 
 import io.ktor.client.HttpClient
-import io.ktor.client.engine.java.Java
-import io.ktor.client.plugins.HttpTimeout
-import io.ktor.client.request.headers
-import io.ktor.client.request.preparePost
-import io.ktor.client.request.setBody
-import io.ktor.http.ContentType
-import io.ktor.http.content.ByteArrayContent
-import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
@@ -37,82 +39,8 @@ import splice.core.perf.TurnPerf
 import splice.core.perf.TurnPerfTiming
 import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
-import splice.core.util.LogSink
 import splice.core.util.MonoClock
-import splice.core.util.WallClock
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
 import kotlin.random.Random
-
-/**
- * The pause between two connect-phase attempts, given the attempt index and a FLOOR in ms.
- *
- * The floor is the whole reason this is not [DnsBackoff]: a server `Retry-After` rides in as
- * `minDelayMs` (G3), so the curve may stretch to obey upstream pushback but may never undercut it.
- * The default is the exponential ±10% jitter curve; the jitter is not decoration, synchronized
- * retry herds re-collide without it.
- */
-public fun interface RetryBackoff {
-    public suspend operator fun invoke(attempt: Int, minDelayMs: Long): Unit
-}
-
-/**
- * The pause after a DNS-class transport failure, given the attempt index.
- *
- * A separate role from [RetryBackoff] on measured evidence, not symmetry: a real resolver blip (the
- * kimi 07:00 burst, 37 `UnresolvedAddressException` turns) outlasts the generic 200/400/800ms curve,
- * so this one runs 1s/2s/4s. It takes NO floor, and that absence is the type telling the truth — no
- * response was received, so there is no `Retry-After` to honour.
- */
-public fun interface DnsBackoff {
-    public suspend operator fun invoke(attempt: Int): Unit
-}
-
-/**
- * A caller's ONE-SHOT rewrite of the request body after a deterministic upstream rejection of its
- * CONTENT — RC-4's case is a 400 for stale encrypted-reasoning items.
- *
- * Returns the amended body, or null to leave the failure alone. Non-null swaps the body and retries
- * IMMEDIATELY, and fires at most once per post: this is a repair, not a retry policy, and a body
- * that is rejected twice is not one the caller can fix.
- */
-public fun interface BodyAmendment {
-    public operator fun invoke(status: Int, responseText: String, currentBodyJson: String): String?
-}
-
-/**
- * What the caller does with the upstream response once headers have arrived and the body is still
- * streaming.
- *
- * It runs INSIDE Ktor's `execute` block, which is the contract the shape hides: the response body
- * channel is alive only for the duration of this call, so anything that outlives it must be read
- * here, and cancelling the calling coroutine aborts the in-flight body (the lock-safe kill).
- */
-public fun interface UpstreamHandler<T> {
-    public suspend operator fun invoke(response: UpstreamResponse): T
-}
-
-/**
- * Fired once the upstream stream is handed off — a 2xx arrived and the body is flowing.
- *
- * The moment matters more than the notification: it is the boundary after which a retry becomes a
- * RE-ISSUE, governed by the small dedicated budget and by [ClientFrameEmitted], rather than an
- * ordinary connect-phase attempt.
- */
-public fun interface StreamStart {
-    public operator fun invoke()
-}
-
-/**
- * A test applied to each link of a Throwable's cause chain — Ktor wraps engine exceptions, so the
- * class that decides "retryable transport" or "DNS" is never the one thrown.
- *
- * Shared so the retryable-transport and DNS-only rules do not each re-walk the chain, and so the
- * MAX_CAUSE_DEPTH bound is written once rather than trusted twice.
- */
-public fun interface CausePredicate {
-    public operator fun invoke(cause: Throwable): Boolean
-}
 
 public class UpstreamClient(
     private val firstByteTimeoutMs: Long,
@@ -121,8 +49,8 @@ public class UpstreamClient(
     /** zstd-compress the request body (CX-03). DEFAULT OFF and set PER PROVIDER: measured on
      *  codex-cli 0.145.0 against ChatGPT (2.7x), unproven anywhere else, and the sibling gzip ban
      *  exists because xAI 400d on a compressed body and broke grok live on 2026-07-18. */
-    private val zstdRequestBody: Boolean = false,
-    private val client: HttpClient = Transport().defaultClient(firstByteTimeoutMs, totalTimeoutMs),
+    zstdRequestBody: Boolean = false,
+    client: HttpClient = UpstreamTransport().defaultClient(firstByteTimeoutMs, totalTimeoutMs),
     // HD-19: the seam both backoff curves below sleep through. Declared BEFORE them so their default
     // values can close over it (a Kotlin default may reference an earlier parameter), which is what
     // lets a test replace the WAIT without also having to re-author the CURVE it is measuring —
@@ -152,46 +80,34 @@ public class UpstreamClient(
     // enforce cfg.upstreamTimeoutMs and MUST NOT split-brain across clock bases (review 2026-07-22).
     private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
 ) {
-    // The four stateless collaborators the ex-companion members moved to. Constructed once per
-    // client (not per call) so the transport/header/failure/retry rules cost nothing per attempt.
-    private val transport = Transport()
-    private val headerRules = HeaderRules()
-    private val failureRules = FailureRules()
-    private val retryRules = RetryRules()
-
-    // Shared rate-limit cooldown (one UpstreamClient per head = per upstream account). Armed by any
-    // attempt that observes a 429; while armed, every post() fails fast with a synthesized 429 and
-    // ZERO upstream calls. Benign write race: concurrent arms only differ by ms; latest-max wins.
-    private val rateLimitedUntilMs = AtomicLong(0L)
+    // The stateless collaborators the loop delegates to. Constructed once per client (not per call)
+    // so the transport/request/failure/retry rules cost nothing per attempt. [cooldown] is the one
+    // that is NOT stateless — it holds the shared 429 horizon — and it takes THIS client's [clock],
+    // never a second one.
+    private val transportFailures = TransportFailures()
+    private val request = UpstreamRequest(client, zstdRequestBody)
+    private val retryAfter = RetryAfter()
+    private val cooldown = RateLimitCooldown(clock)
+    private val retryRules = RetryRules(maxRetries, cooldown)
+    private val reissueRules = ReissueRules()
 
     /** NF-01: head restart is a real escape hatch — HeadServer.startLocked() clears the armed
      *  horizon alongside driver.resetHealth(), instead of the cooldown outliving the restart. */
     public fun clearRateLimitCooldown() {
-        rateLimitedUntilMs.set(0L)
+        cooldown.clear()
     }
 
     /** NF-01: remaining armed cooldown (0 when idle) — surfaced so doctor/status views can name
      *  WHY a head is failing fast (NF-10/JW-11 read this). */
-    public val rateLimitedForMs: Long get() = maxOf(0L, rateLimitedUntilMs.get() - clock())
-
-    /** The per-post collaborators threaded through every attempt (grouped: one cohesive argument). */
-    private data class PostContext(
-        val url: String,
-        val auth: RefreshableAuthProvider,
-        val extraHeaders: CredentialHeaders,
-        val onRetry: RetryNotice,
-        val perf: TurnPerf?,
-        val clientFrameEmitted: ClientFrameEmitted,
-        val amendBodyOnFailure: BodyAmendment,
-    )
+    public val rateLimitedForMs: Long get() = cooldown.remainingMs()
 
     /**
      * Prepare an upstream POST and run [block] with the streaming response. Handles retries
-     * and one single-flight 401 refresh. [applyAuth] writes the current credentials onto the
-     * request builder; [auth] supplies + refreshes them. Cancelling the calling coroutine
-     * aborts the in-flight body (the lock-safe kill). When [perf] is wired it records the
-     * auth/refresh/backoff durations, the attempt counters, and the headers-arrival mark
-     * (TTFB — re-marked per attempt so the successful attempt's value wins).
+     * and one single-flight 401 refresh. The credentials [auth] supplies are written onto the
+     * request by [UpstreamRequest]. Cancelling the calling coroutine aborts the in-flight body
+     * (the lock-safe kill). When [perf] is wired it records the auth/refresh/backoff durations,
+     * the attempt counters, and the headers-arrival mark (TTFB — re-marked per attempt so the
+     * successful attempt's value wins).
      */
     public suspend fun <T> post(
         url: String,
@@ -214,36 +130,17 @@ public class UpstreamClient(
     ): T {
         val ctx = PostContext(url, auth, extraHeaders, onRetry, perf, clientFrameEmitted, amendBodyOnFailure)
         // Encode ONCE; retries resend the same bytes (no per-attempt string re-encode). Never gzip.
-        var body = RequestBody(bodyJson, zstdRequestBody)
+        var body = request.body(bodyJson)
         val state = RetryState()
         val t0 = clock()
         while (state.attempt < maxRetries) {
             when (val step = runAttempt(ctx, body, state, t0, block)) {
                 is LoopStep.Done -> return step.value
-                is LoopStep.Amend -> body = RequestBody(step.bodyJson, zstdRequestBody)
+                is LoopStep.Amend -> body = request.body(step.bodyJson)
                 LoopStep.Continue -> Unit
             }
         }
         return retryRules.giveUp(state.lastErr)
-    }
-
-    /** The current request payload: json for the RC-4 amender, bytes for the wire — encoded once. */
-    /** [json] for the RC-4 amender; [bytes] for the wire, encoded once.
-     *
-     *  ZSTD (CX-03, 2026-08-11): measured from codex-cli 0.145.0, which sends
-     *  `content-encoding: zstd` to this exact endpoint — 73,473 bytes compressed to 27,590 (2.7x).
-     *  The 2.7x is PER SSE-PATH TURN only: on a head with `websocket = true` (codex, live) the
-     *  chained majority of rounds ride raw WsUpstream text frames that never reach this method, so
-     *  compression covers the SSE-fallback minority. Codex-head bandwidth is dominated by WS, not
-     *  this path — see the CX-03 follow-up on compressing WS frames if the wire cost is the goal.
-     *
-     *  PER-PROVIDER AND DEFAULT OFF, deliberately: the no-compression rule exists because xAI 400d
-     *  on a GZIPPED body and broke grok live on 2026-07-18. This is zstd, not gzip, and it is
-     *  proven only for ChatGPT by its own first-party client — so it is opt-in per provider and
-     *  the gzip ban stands untouched. */
-    private data class RequestBody(val json: String, val zstd: Boolean = false) {
-        val bytes: ByteArray =
-            json.toByteArray(Charsets.UTF_8).let { if (zstd) com.github.luben.zstd.Zstd.compress(it) else it }
     }
 
     /** Mutable loop state threaded through [runAttempt] — extracted (with it) so `post()` stays
@@ -301,7 +198,7 @@ public class UpstreamClient(
             )
             retryRules.giveUp(state.lastErr)
         }
-        failFastIfRateLimited(ctx)
+        cooldown.failFastIfArmed(ctx.onRetry)
         val creds = TurnPerfTiming.timedOr(ctx.perf, PerfKeys.AUTH_MS) { ctx.auth.credentials() }
             ?: throw UpstreamAuthMissing()
         ctx.perf?.add(PerfKeys.ATTEMPTS, 1)
@@ -345,7 +242,7 @@ public class UpstreamClient(
         state: RetryState,
         t0: Long,
     ): LoopStep<Nothing> {
-        if (transport.canReissueStream(streamHandedOff, e, ctx.clientFrameEmitted, state.streamReissues)) {
+        if (reissueRules.canReissueStream(streamHandedOff, e, ctx.clientFrameEmitted, state.streamReissues)) {
             // G4d: same re-check the sibling BACKOFF path (applyBackoff) does before its sleep — a
             // budget that expired mid-turn must not pay for one more real delay it can't use.
             if (deadlineExceeded(t0)) {
@@ -375,7 +272,7 @@ public class UpstreamClient(
      *  run the dedicated 1s/2s/4s dnsBackoff schedule instead of the generic curve — a resolver
      *  blip is slower than a TCP refusal or reset. */
     private suspend fun backoffTransportError(perf: TurnPerf?, error: Throwable, attempt: Int) {
-        if (transport.isDnsFailureTransport(error)) {
+        if (transportFailures.isDnsFailureTransport(error)) {
             TurnPerfTiming.timedOr(perf, PerfKeys.BACKOFF_MS) { dnsBackoff(attempt) }
         } else {
             TurnPerfTiming.timedOr(perf, PerfKeys.BACKOFF_MS) { backoff(attempt, 0L) }
@@ -403,20 +300,6 @@ public class UpstreamClient(
         return LoopStep.Continue
     }
 
-    /** The cooldown's fail-fast exit: a synthesized 429 (classifier parity with the real one)
-     *  thrown BEFORE credentials/attempt work — an armed cooldown costs microseconds, not an
-     *  upstream request. The remaining wait rides in the message for the operator's grep. */
-    private fun failFastIfRateLimited(ctx: PostContext) {
-        val remainingMs = rateLimitedUntilMs.get() - clock()
-        if (remainingMs <= 0) return
-        ctx.onRetry("rate-limit cooldown active (${remainingMs}ms remaining) — failing fast, no upstream attempt")
-        val waitS = (remainingMs + MS_PER_S - 1) / MS_PER_S
-        throw UpstreamFailed(
-            """{"detail":"Rate limit exceeded — gateway cooldown, retry in ${waitS}s"}""",
-            RATE_LIMITED,
-        )
-    }
-
     // A transport error thrown BEFORE stream handoff (DNS/connect/timeout, per isRetryableTransport)
     // retries on the backoff budget; once the stream is handed off, the error is non-transport, or
     // it is the last attempt, rethrow — a retry would duplicate output or mask a real failure —
@@ -428,7 +311,7 @@ public class UpstreamClient(
         attempt: Int,
         t0: Long,
     ) {
-        val phase = transport.classifyTransport(e)
+        val phase = transportFailures.classifyTransport(e)
         val mustRethrow = streamHandedOff || phase == null || deadlineExceeded(t0)
         if (mustRethrow || attempt == maxRetries - 1) throw e
         // G16: SocketException/SocketTimeoutException can fire AFTER the request body has begun
@@ -445,6 +328,9 @@ public class UpstreamClient(
         )
     }
 
+    /** The READ-BEFORE-CLOSE half of one attempt. Status, error body and Retry-After are all
+     *  extracted INSIDE the execute block because the response body channel dies at its close —
+     *  which is why only the ASSEMBLY above the `execute` call could move to UpstreamRequest.kt. */
     private suspend fun <T> attemptRequest(
         ctx: PostContext,
         bodyBytes: ByteArray,
@@ -452,15 +338,7 @@ public class UpstreamClient(
         onStreamStart: StreamStart,
         block: UpstreamHandler<T>,
     ): RetryOutcome<T> {
-        val allHeaders = applyAuth(creds, ctx.extraHeaders(creds))
-        val statement = client.preparePost(ctx.url) {
-            contentType(ContentType.Application.Json)
-            headers {
-                headerRules.dedupeCaseInsensitive(allHeaders).forEach { (k, v) -> append(k, v) }
-                if (zstdRequestBody) append("Content-Encoding", "zstd")
-            }
-            setBody(ByteArrayContent(bodyBytes, ContentType.Application.Json))
-        }
+        val statement = request.prepare(ctx.url, creds, ctx.extraHeaders, bodyBytes)
         return statement.execute { resp ->
             ctx.perf?.mark(PerfKeys.HEADERS)
             if (resp.status.isSuccess()) {
@@ -470,7 +348,7 @@ public class UpstreamClient(
                 RetryOutcome.Failed(
                     resp.status.value,
                     UpstreamResponse(resp).bodyTextLimited(MAX_ERROR_BODY_BYTES),
-                    retryRules.retryAfterMs(resp.headers["Retry-After"]),
+                    retryAfter.retryAfterMs(resp.headers["Retry-After"]),
                 )
             }
         }
@@ -479,89 +357,6 @@ public class UpstreamClient(
     /** Cross-attempt wall-clock budget (route-timeout analog to the per-try [firstByteTimeoutMs]). */
     private fun deadlineExceeded(t0: Long): Boolean = clock() - t0 >= totalTimeoutMs
 
-    private suspend fun planRetry(
-        ctx: PostContext,
-        failed: RetryOutcome.Failed,
-        attempt: Int,
-        refreshedOnce: Boolean,
-    ): RetryPlan {
-        // Grok Build: encrypted_content decrypt failures must not spin retries.
-        if (failureRules.isEncryptedContentError(failed.status, failed.text)) {
-            ctx.onRetry(
-                "upstream ${failed.status} encrypted_content error (no retry): " +
-                    failed.text.take(ERR_SNIPPET),
-            )
-            return RetryPlan(RetryDecision.GIVE_UP, refreshedOnce)
-        }
-        val refreshable =
-            failureRules.isAuthRefreshableFailure(failed.status, failed.text) &&
-                ctx.auth.allowRefreshAfterFailure(failed.status, failed.text) &&
-                !refreshedOnce
-        if (refreshable) ctx.perf?.add(PerfKeys.REFRESHES, 1)
-        if (refreshable && TurnPerfTiming.timedOr(ctx.perf, PerfKeys.REFRESH_MS) { ctx.auth.refresh() } != null) {
-            return RetryPlan(RetryDecision.RETRY, refreshedOnce = true)
-        }
-        ctx.onRetry(
-            "upstream ${failed.status} attempt ${attempt + 1}/$maxRetries: " +
-                failed.text.take(ERR_SNIPPET),
-        )
-        return statusPlan(ctx, failed, attempt, refreshedOnce || refreshable)
-    }
-
-    /** Status/pushback half of the retry decision (split from planRetry: complexity wall). */
-    private fun statusPlan(
-        ctx: PostContext,
-        failed: RetryOutcome.Failed,
-        attempt: Int,
-        nextRefreshed: Boolean,
-    ): RetryPlan {
-        if (failed.status == RATE_LIMITED) {
-            return retryRules.rateLimitedPlan(failed, rateLimitedUntilMs, clock(), ctx.onRetry, nextRefreshed)
-        }
-        // gRPC-A6-style negative pushback: a server explicitly asking us to wait longer than the
-        // interactive budget means "go away", not "hammer me on a curve" — give up honestly. The
-        // client owns any wait past 15s (it re-sends on its own backoff; the daemon holding the
-        // slot for a minute is what stacked the 2026-07-19 zombie herd).
-        val pushback = failed.retryAfterMs
-        val retryable = retryRules.isRetryableStatus(failed.status)
-        if (pushback != null && pushback > RETRY_AFTER_GIVE_UP_MS) {
-            ctx.onRetry("upstream ${failed.status} Retry-After ${pushback}ms exceeds interactive budget (no retry)")
-            // UP-001: a retryable status (408/5xx — RATE_LIMITED already returned above) carrying
-            // the same long pushback means the same thing a 429 does — arm the SAME shared cooldown
-            // (clamped the same way) so the next turn doesn't immediately hammer an upstream that
-            // just asked for a long backoff. A NON-retryable status (400/401/403/404/...) is that
-            // turn's own problem — arming the head-wide cooldown on it would synthesize 429s for
-            // every OTHER turn over an error that says nothing about rate limits.
-            if (retryable) {
-                val until = clock() + minOf(pushback, MAX_RATE_LIMIT_COOLDOWN_MS)
-                rateLimitedUntilMs.accumulateAndGet(until) { current, candidate -> maxOf(current, candidate) }
-            }
-            return RetryPlan(RetryDecision.GIVE_UP, nextRefreshed)
-        }
-        val decision = if (!retryable || attempt == maxRetries - 1) RetryDecision.GIVE_UP else RetryDecision.BACKOFF
-        return RetryPlan(decision, refreshedOnce = nextRefreshed, minDelayMs = pushback ?: 0L)
-    }
-
-    private data class RetryPlan(
-        val decision: RetryDecision,
-        val refreshedOnce: Boolean,
-        val minDelayMs: Long = 0L,
-    )
-
-    private fun applyAuth(creds: Credentials, extra: Map<String, String>): Map<String, String> =
-        headerRules.authHeaders(creds) + extra
-
-    private enum class RetryDecision { RETRY, BACKOFF, GIVE_UP }
-
-    private sealed class RetryOutcome<out T> {
-        data class Done<T>(val value: T) : RetryOutcome<T>()
-        data class Failed(
-            val status: Int,
-            val text: String,
-            val retryAfterMs: Long? = null,
-        ) : RetryOutcome<Nothing>()
-    }
-
     /** RC-4 companion move (function-budget): the retry-plan tail of a failed attempt. */
     private suspend fun <T> planStep(
         ctx: PostContext,
@@ -569,7 +364,7 @@ public class UpstreamClient(
         state: RetryState,
         t0: Long,
     ): LoopStep<T> {
-        val plan = planRetry(ctx, outcome, state.attempt, state.refreshedOnce)
+        val plan = retryRules.planRetry(ctx, outcome, state.attempt, state.refreshedOnce)
         state.refreshedOnce = plan.refreshedOnce
         return when (plan.decision) {
             RetryDecision.RETRY -> LoopStep.Continue // refresh succeeded — no attempt spent
@@ -577,314 +372,21 @@ public class UpstreamClient(
             RetryDecision.GIVE_UP -> retryRules.giveUp(state.lastErr)
         }
     }
-
-    /** The header half of a request: what the credential writes, and the case-insensitive merge
-     *  that keeps a configured and a forwarded header from both reaching the wire. Was the
-     *  companion's `authHeaders` / `dedupeCaseInsensitive`; only the receiver moved. */
-    internal class HeaderRules {
-        /** The auth header this credential writes, if any. FORWARD MODE writes NOTHING: the head
-         *  holds no credential and the caller's own auth rides in the per-turn extra headers, so
-         *  emitting anything here would either overwrite it or sit beside it as a second, empty
-         *  Authorization (campaign claude-head, CH-5). */
-        internal fun authHeaders(creds: Credentials): Map<String, String> = when (creds) {
-            is Credentials.Bearer -> mapOf("Authorization" to "Bearer ${creds.token}")
-            is Credentials.ApiKey -> mapOf(creds.header to "${creds.prefix}${creds.key}")
-            Credentials.ClientForwarded -> emptyMap()
-        }
-
-        /** Ktor's header builder APPENDS and HTTP header names are case-INSENSITIVE, while a Kotlin
-         *  map merge is case-SENSITIVE — so a configured `anthropic-version` plus a forwarded
-         *  `Anthropic-Version` would survive the merge as two entries and reach the wire twice.
-         *  Last-wins on the case-folded name, which makes a forwarded header REPLACE a configured
-         *  default (the intent) instead of duplicating it. Casing of the surviving entry is kept. */
-        internal fun dedupeCaseInsensitive(headers: Map<String, String>): Map<String, String> =
-            headers.entries
-                .associateBy({ it.key.lowercase() }, { it.key to it.value })
-                .values
-                .toMap()
-    }
-
-    /** The two predicates that read an upstream FAILURE (status + body) and answer a policy
-     *  question about it. Was the companion's `isAuthRefreshableFailure` / `isEncryptedContentError`. */
-    public class FailureRules {
-        /** Does this upstream failure warrant the single-flight token refresh? */
-        internal fun isAuthRefreshableFailure(status: Int, body: String): Boolean =
-            status == UNAUTHORIZED || (status == FORBIDDEN && authBodyRe.containsMatchIn(body))
-
-        /** Grok Build: 4xx + "encrypted_content" in the message → do not retry. PUBLIC because the
-         *  RC-4 amend gate must key off the SAME predicate as this GIVE_UP classification (review
-         *  2026-07-24: a narrower literal match on the amend side let any wording drift skip the
-         *  recovery and land straight in give-up). */
-        public fun isEncryptedContentError(status: Int, body: String): Boolean =
-            status in CLIENT_ERROR_MIN..CLIENT_ERROR_MAX && body.contains("encrypted_content", ignoreCase = true)
-    }
-
-    /** G16: which side of the request write the transport failure happened on — CONNECT never
-     *  got a byte onto the wire (DNS/refused/connect-timeout); POST_SEND may have already
-     *  handed the upstream a full request (SocketException reset, socket-level timeout) —
-     *  retrying that one risks a double token burn, so it needs a distinct log class. */
-    internal enum class TransportFailurePhase { CONNECT, POST_SEND }
-
-    /** The HTTP transport: how it is built, and how its failures are classified. Was the
-     *  companion's `defaultClient` + the cause-chain walkers; only the receiver moved. */
-    public class Transport {
-        public fun defaultClient(
-            firstByteTimeoutMs: Long,
-            totalTimeoutMs: Long,
-            log: LogSink = LogSink {},
-            noDelayGuard: AtomicBoolean = nodelayLogged,
-        ): HttpClient {
-            if (noDelayGuard.compareAndSet(false, true)) {
-                log(
-                    "[upstream] tcp_nodelay(client)=unverifiable: java.net.http.HttpClient exposes " +
-                        "no public API to read or set TCP_NODELAY per connection (JDK-8338681, open)\n",
-                )
-            }
-            return HttpClient(Java) {
-                install(HttpTimeout) {
-                    connectTimeoutMillis = CONNECT_TIMEOUT_MS
-                    requestTimeoutMillis = totalTimeoutMs
-                    socketTimeoutMillis = firstByteTimeoutMs
-                }
-                engine {
-                    // JDK HttpClient (async NIO), replacing ktor CIO. CIO's socket writer busy-spun
-                    // on a non-writable upstream socket (macOS/kqueue) and melted CPU under
-                    // concurrent large-body streams — 9 writer coroutines pegged cores and starved
-                    // the coroutine dispatcher to 103 workers (busy-loop jstack, 2026-07-18). The
-                    // JDK engine parks on write backpressure and drives the 1000-stream target on a
-                    // shared selector, not a thread-per-write. HTTP/1.1 only — parity with the CIO
-                    // lineage (undici allowH2:false): one stream per connection, cancel-safe; the
-                    // app-level retry loop already owns connect retries.
-                    protocolVersion = java.net.http.HttpClient.Version.HTTP_1_1
-                }
-            }
-        }
-
-        /** The cause chain as a bounded sequence — [e] itself, then its causes, at most
-         *  MAX_CAUSE_DEPTH links (Ktor wraps engine exceptions, so the class that decides
-         *  "retryable transport" or "DNS" is never the one thrown). THE walk: every rule below
-         *  reads the chain through this one, lazily, so the bound is written once rather than
-         *  trusted twice and the phase and DNS rules cannot drift apart. */
-        private fun causeChain(e: Throwable): Sequence<Throwable> =
-            generateSequence(e) { it.cause }.take(MAX_CAUSE_DEPTH)
-
-        /** Does any link of the chain satisfy [predicate]? The boolean special case of the same
-         *  walk [classifyTransport] maps over — the loop used to be written out twice, and the
-         *  copy drifted no further than luck. */
-        private fun causeChainMatches(e: Throwable, predicate: CausePredicate): Boolean =
-            causeChain(e).any { predicate(it) }
-
-        /** Per-node classification, split out of [classifyTransport] so the loop shape and the
-         *  allowlist `when` each stay under detekt's CyclomaticComplexMethod ceiling. */
-        private fun transportPhaseOf(t: Throwable): TransportFailurePhase? = when {
-            t is java.nio.channels.UnresolvedAddressException ||
-                t is java.net.UnknownHostException ||
-                t is java.net.ConnectException ||
-                t is io.ktor.client.network.sockets.ConnectTimeoutException -> TransportFailurePhase.CONNECT
-            t is java.net.SocketException ||
-                t is java.net.SocketTimeoutException ||
-                t is io.ktor.client.network.sockets.SocketTimeoutException -> TransportFailurePhase.POST_SEND
-            else -> null
-        }
-
-        /** The first link of [causeChain] that classifies as a transport failure — the retryable
-         *  set by phase instead of a bare Boolean. Deliberately conservative — everything else
-         *  (TLS trust failures, protocol errors, the HttpTimeout plugin's overall budget) still
-         *  fails the turn. Not an added/removed exception type — a pure reclassification of the
-         *  existing retryable set (G16). */
-        internal fun classifyTransport(e: Throwable): TransportFailurePhase? =
-            causeChain(e).firstNotNullOfOrNull { transportPhaseOf(it) }
-
-        /**
-         * Connection-phase failures worth a silent retry: name resolution, TCP connect/reset,
-         * socket timeouts. Deliberately conservative — everything else (TLS trust failures,
-         * protocol errors, the HttpTimeout plugin's overall budget) still fails the turn.
-         * Walks the cause chain because Ktor wraps engine exceptions.
-         */
-        internal fun isRetryableTransport(e: Throwable): Boolean = classifyTransport(e) != null
-
-        /** DNS-class only (name resolution never got an address) — a real resolver blip runs
-         *  closer to 1-4s than a TCP refusal, so it gets its own schedule instead of racing the
-         *  generic curve (G14; Envoy dns_failure_refresh_rate shape). */
-        internal fun isDnsFailureTransport(e: Throwable): Boolean = causeChainMatches(e) { t ->
-            t is java.nio.channels.UnresolvedAddressException || t is java.net.UnknownHostException
-        }
-
-        /** G5: a torn stream re-issues the request iff it was already handed off (2xx received),
-         *  the client has NOT yet seen a byte (FIRST_FRAME unmarked — duplicate-output risk starts
-         *  the instant it has), the failure is a retryable transport class, and the small dedicated
-         *  budget isn't spent. Separate from the connect-phase `attempt`/`maxRetries` budget on
-         *  purpose: re-issuing after a 2xx is a costlier, riskier act than a pre-handoff retry. */
-        internal fun canReissueStream(
-            streamHandedOff: Boolean,
-            e: Throwable,
-            clientFrameEmitted: ClientFrameEmitted,
-            streamReissues: Int,
-        ): Boolean = streamHandedOff &&
-            !clientFrameEmitted() &&
-            isRetryableTransport(e) &&
-            streamReissues < MAX_STREAM_REISSUES
-    }
-
-    /** The retry-loop decisions that read or produce the loop's own private types. Nested (not a
-     *  sibling) precisely so [RetryOutcome] and [RetryPlan] stay private to [UpstreamClient]. */
-    private class RetryRules {
-        /** The sole failure exit of the retry loop — carries the HTTP status so the classifier's
-         *  429/401/5xx floors actually fire (body-text-only classification left them dead code). */
-        fun giveUp(last: RetryOutcome.Failed?): Nothing =
-            throw UpstreamFailed(last?.text.orEmpty(), last?.status)
-
-        /** A real 429 teaches the whole head: arm the shared cooldown so concurrent turns fail fast
-         *  instead of each burning their own attempts into the same limited account. Split out of
-         *  statusPlan for the same complexity wall that split statusPlan off planRetry; it lives
-         *  here (not the class body) because UpstreamClient sits at its function ceiling. */
-        fun rateLimitedPlan(
-            failed: RetryOutcome.Failed,
-            armed: AtomicLong,
-            nowMs: Long,
-            onRetry: RetryNotice,
-            nextRefreshed: Boolean,
-        ): RetryPlan {
-            // NF-01: arm at most MAX_RATE_LIMIT_COOLDOWN_MS — the full pushback is not lost, it
-            // rides in the upstream body this GIVE_UP surfaces; only the fail-fast horizon clamps.
-            val pushbackMs = failed.retryAfterMs ?: DEFAULT_RATE_LIMIT_COOLDOWN_MS
-            if (pushbackMs > MAX_RATE_LIMIT_COOLDOWN_MS) {
-                onRetry(
-                    "429 Retry-After ${pushbackMs}ms exceeds the cooldown ceiling — " +
-                        "arming ${MAX_RATE_LIMIT_COOLDOWN_MS}ms",
-                )
-            }
-            // Latest-max wins, so the benign concurrent-arm race only shifts the horizon by ms.
-            val until = nowMs + minOf(pushbackMs, MAX_RATE_LIMIT_COOLDOWN_MS)
-            armed.accumulateAndGet(until) { current, candidate -> maxOf(current, candidate) }
-            // A concurrent wave can receive 429 before any member sees the shared cooldown.
-            // Retrying each member would amplify one upstream limit into N×maxRetries requests;
-            // terminate every observed 429 and let the client retry after the shared horizon.
-            return RetryPlan(RetryDecision.GIVE_UP, nextRefreshed)
-        }
-
-        // Every surveyed harness (codex, gemini-cli, Claude Code) retries ALL 5xx; 501 stays
-        // terminal (Not Implemented never heals) and 4xx stays terminal except 408/429 (G4a).
-        fun isRetryableStatus(status: Int): Boolean =
-            status == RATE_LIMITED || status == REQUEST_TIMEOUT ||
-                (status in SERVER_ERRORS && status != NOT_IMPLEMENTED)
-
-        /** Retry-After → ms, both RFC 7231 forms; garbage → null (backoff curve decides). Strict
-         *  seconds FIRST so nothing on the pre-NF-04 path changes; the HTTP-date fallback (NF-04:
-         *  Cloudflare and gateway fronts emit it) converts against the WALL clock deliberately — an
-         *  HTTP-date is wall time, MonoClock has no epoch — clamping past dates to 0. A skewed clock
-         *  can only inflate the delta into NF-01's 120s cooldown ceiling / the 15s give-up on a
-         *  RETRYABLE status (429/408/5xx — UP-001: statusPlan only arms the shared cooldown for
-         *  those); a non-retryable status's inflated delta never touches the cooldown at all, so it
-         *  can never wedge the head for OTHER turns. Here (not an UpstreamClient method): the class
-         *  sits at its detekt function budget. */
-        fun retryAfterMs(header: String?, nowEpochMs: WallClock = WallClock(System::currentTimeMillis)): Long? {
-            val value = header?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-            value.toLongOrNull()?.let { seconds -> return seconds.takeIf { it >= 0 }?.times(MS_PER_S) }
-            return try {
-                val at = java.time.ZonedDateTime.parse(value, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME)
-                (at.toInstant().toEpochMilli() - nowEpochMs()).coerceAtLeast(0L)
-            } catch (ignored: java.time.format.DateTimeParseException) {
-                null // not seconds, not an HTTP-date: garbage stays null BY CONTRACT — the curve decides
-            }
-        }
-    }
 }
 
-public class UpstreamAuthMissing : RuntimeException("no upstream credentials")
-
-/** G5 reachability (review 2026-07-19): a transport tear BEFORE any client frame, rethrown by the
- *  turn driver THROUGH the translators (whose catch lists deliberately swallow IOException into
- *  the honest terminal — correct post-frame, but it made the reissue unreachable). Plain
- *  RuntimeException so no translator catch matches; the original tear rides as [cause] so
- *  isRetryableTransport's cause-chain walk classifies it. */
-public class StreamTornBeforeClient(cause: Throwable) :
-    RuntimeException("stream torn before first client frame", cause)
-
-public class UpstreamFailed(
-    public val body: String,
-    public val status: Int? = null,
-) : RuntimeException("upstream failed after retries (status=$status)")
-
 private const val BACKOFF_BASE_MS = 200L
-private const val UNAUTHORIZED = 401
-private const val FORBIDDEN = 403
-private const val ERR_SNIPPET = 160
+
+// The width of an upstream error quoted into a retry notice. Read here and by RetryPolicy.kt's
+// give-up / attempt notices, which quote the same failure text.
+internal const val ERR_SNIPPET = 160
+
 private const val MAX_ERROR_BODY_BYTES = 64 * 1024
-
-// xAI reports an expired/revoked OAuth token as 403 `unauthenticated:bad-credentials`,
-// NOT 401 (grok-dead-head incident, 2026-07-18: refresh never fired, the head 403'd every
-// turn until manual re-login). 401 is always refreshable; 403 only when the body says
-// auth — a plan/permission 403 must not spend the single refresh.
-// FILE SCOPE ON PURPOSE: one compiled Regex for the process. As a FailureRules field it would
-// recompile on every construction, and planRetry constructs nothing but reads it per failure.
-private val authBodyRe = Regex(
-    "unauthenticated|bad-credentials|token (is )?(invalid|expired)|" +
-        "(access|oauth2?) token could not be validated",
-    RegexOption.IGNORE_CASE,
-)
-
-private const val MAX_CAUSE_DEPTH = 8
-
-private const val MAX_STREAM_REISSUES = 2
-
-private const val RATE_LIMITED = 429
-private const val REQUEST_TIMEOUT = 408
-private const val NOT_IMPLEMENTED = 501
-
-private const val SERVER_ERROR_MIN = 500
-private const val SERVER_ERROR_MAX = 599
-
-// FILE SCOPE ON PURPOSE: one IntRange for the process, same reasoning as authBodyRe.
-private val SERVER_ERRORS = SERVER_ERROR_MIN..SERVER_ERROR_MAX
 
 private const val MAX_BACKOFF_MS = 10_000L
 
-// 60s→15s (2026-07-19 storm): a wait the CLIENT would outlive is the client's to make.
-// Claude Code abandons + re-sends around 30-60s; a daemon babysitting a >15s pushback
-// holds a gate slot for a request nobody is waiting on anymore.
-private const val RETRY_AFTER_GIVE_UP_MS = 15_000L
-
-// Cooldown length when a 429 carries no Retry-After (the ChatGPT backend's bare
-// {"detail":"Rate limit exceeded"}). Long enough to starve a herd, short enough that a
-// recovered account resumes within one client-retry cycle.
-private const val DEFAULT_RATE_LIMIT_COOLDOWN_MS = 20_000L
-
-// NF-01: ceiling on the ARMED horizon, whatever the pushback says. ChatGPT quota errors
-// legitimately carry multi-day resets (142h observed 2026-07-26) and accumulateAndGet(max)
-// makes the longest value ever seen win permanently — one malformed pushback would poison
-// the head for every future turn with no operator escape short of killing the daemon.
-// 120s starves a herd but lets a recovering account resume inside one client-retry cycle;
-// the true pushback still reaches the operator in the surfaced upstream body.
-private const val MAX_RATE_LIMIT_COOLDOWN_MS = 120_000L
 private const val JITTER_LO = 0.9
 private const val JITTER_HI = 1.1
 
 // DNS-class transport failures (G14) get their own schedule — 1s/2s/4s.
 private const val DNS_BACKOFF_BASE_MS = 1_000L
 private const val DNS_MAX_BACKOFF_MS = 4_000L
-
-// G11: a blackholed/dead address must fail fast into the existing transport-retry loop
-// (isRetryableTransport) instead of stalling to the OS SYN timeout x maxRetries. Decoupled
-// from firstByteTimeoutMs (5min default), which governs headers-wait/body phase via
-// socketTimeoutMillis, not TCP connect.
-private const val CONNECT_TIMEOUT_MS = 10_000L
-
-// G26: java.net.http.HttpClient/Builder expose no public API to read or set TCP_NODELAY per
-// connection (confirmed via javap on ktor-client-java-jvm; JDK-8338681 is an open
-// enhancement request for exactly this, still unresolved). Reflecting into
-// jdk.internal.net.http internals is fragile/module-encapsulated and disproportionate for a
-// LOW one-time diagnostic — the honest move is to log that verification is impossible via
-// public API, once per JVM (a JVM-wide guard so N heads sharing one daemon log it once, not
-// N times each time a head is assembled). Injectable (same pattern as backoff/dnsBackoff/
-// clock above) so a test can pin its own guard instead of sharing process-wide state with
-// every other direct defaultClient() caller (UpstreamClientConnectTimeoutTest calls it too,
-// for its own unrelated real-socket connect-timeout probe).
-// FILE SCOPE ON PURPOSE: the guard is JVM-wide BY CONTRACT — as a Transport field, every
-// `Transport()` would carry a fresh guard and the once-per-JVM log would fire per client.
-private val nodelayLogged = AtomicBoolean(false)
-
-private const val CLIENT_ERROR_MIN = 400
-private const val CLIENT_ERROR_MAX = 499
-
-private const val MS_PER_S = 1000L

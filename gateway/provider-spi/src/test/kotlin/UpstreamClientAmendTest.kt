@@ -19,6 +19,7 @@ import org.junit.jupiter.api.assertThrows
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.spi.FailureRules
 import splice.spi.UpstreamClient
 import splice.spi.UpstreamFailed
 
@@ -71,7 +72,7 @@ class UpstreamClientAmendTest {
         }
         val result = post(clientOver(engine, maxRetries = 3)) { status, text, _ ->
             // gate like the real provider hook: the 503s also flow through the amender
-            if (UpstreamClient.FailureRules().isEncryptedContentError(status, text)) """{"input":"amended"}""" else null
+            if (FailureRules().isEncryptedContentError(status, text)) """{"input":"amended"}""" else null
         }
         assertEquals("ok", result)
         assertEquals(4, bodies.size, "the amended resend must go out even at the budget boundary")

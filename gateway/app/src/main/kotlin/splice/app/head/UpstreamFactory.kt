@@ -7,7 +7,7 @@ import splice.app.provider.ProviderBuild
 import splice.core.config.SpliceConfig
 import splice.core.util.LogSink
 import splice.spi.UpstreamClient
-import splice.spi.UpstreamClient.Transport
+import splice.spi.UpstreamTransport
 
 internal class UpstreamFactory {
     internal fun upstreamFor(ctx: ProviderBuild, cfg: SpliceConfig, log: LogSink): UpstreamClient = UpstreamClient(
@@ -22,6 +22,6 @@ internal class UpstreamFactory {
         // hardcoded check compressed the oracle's bodies and crashed its vendored
         // mock's JSON.parse, which was the source of every leaked harness daemon.
         zstdRequestBody = ctx.providerCfg.quirks.zstdRequestBody == true,
-        client = Transport().defaultClient(cfg.firstByteTimeoutMs, cfg.upstreamTimeoutMs, log),
+        client = UpstreamTransport().defaultClient(cfg.firstByteTimeoutMs, cfg.upstreamTimeoutMs, log),
     )
 }

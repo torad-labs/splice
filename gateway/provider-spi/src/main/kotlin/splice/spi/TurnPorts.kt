@@ -89,6 +89,30 @@ public fun interface RetryNotice {
 }
 
 /**
+ * A caller's ONE-SHOT rewrite of the request body after a deterministic upstream rejection of its
+ * CONTENT — RC-4's case is a 400 for stale encrypted-reasoning items.
+ *
+ * Returns the amended body, or null to leave the failure alone. Non-null swaps the body and retries
+ * IMMEDIATELY, and fires at most once per post: this is a repair, not a retry policy, and a body
+ * that is rejected twice is not one the caller can fix.
+ */
+public fun interface BodyAmendment {
+    public operator fun invoke(status: Int, responseText: String, currentBodyJson: String): String?
+}
+
+/**
+ * What the caller does with the upstream response once headers have arrived and the body is still
+ * streaming.
+ *
+ * It runs INSIDE Ktor's `execute` block, which is the contract the shape hides: the response body
+ * channel is alive only for the duration of this call, so anything that outlives it must be read
+ * here, and cancelling the calling coroutine aborts the in-flight body (the lock-safe kill).
+ */
+public fun interface UpstreamHandler<T> {
+    public suspend operator fun invoke(response: UpstreamResponse): T
+}
+
+/**
  * The per-turn upstream headers derived from the CURRENT credentials — grok's `x-grok-conv-id`,
  * codex's session headers, a dialect's beta flags.
  *

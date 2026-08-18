@@ -6,20 +6,20 @@
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.spi.UpstreamClient
+import splice.spi.FailureRules
 
 class UpstreamClientAuthTest {
 
     @Test
     fun `401 is refreshable regardless of body`() {
-        assertTrue(UpstreamClient.FailureRules().isAuthRefreshableFailure(401, ""))
-        assertTrue(UpstreamClient.FailureRules().isAuthRefreshableFailure(401, "anything"))
+        assertTrue(FailureRules().isAuthRefreshableFailure(401, ""))
+        assertTrue(FailureRules().isAuthRefreshableFailure(401, "anything"))
     }
 
     @Test
     fun `403 with xai bad-credentials body is refreshable`() {
         assertTrue(
-            UpstreamClient.FailureRules().isAuthRefreshableFailure(
+            FailureRules().isAuthRefreshableFailure(
                 403,
                 """{"code":"unauthenticated:bad-credentials",""" +
                     """"error":"The OAuth2 access token could not be validated."}""",
@@ -29,23 +29,23 @@ class UpstreamClientAuthTest {
 
     @Test
     fun `403 with token expired body is refreshable`() {
-        assertTrue(UpstreamClient.FailureRules().isAuthRefreshableFailure(403, """{"error":"token expired"}"""))
+        assertTrue(FailureRules().isAuthRefreshableFailure(403, """{"error":"token expired"}"""))
     }
 
     @Test
     fun `permission or plan 403 is not refreshable`() {
         assertFalse(
-            UpstreamClient.FailureRules().isAuthRefreshableFailure(
+            FailureRules().isAuthRefreshableFailure(
                 403,
                 """{"error":"model not available on your plan"}""",
             ),
         )
-        assertFalse(UpstreamClient.FailureRules().isAuthRefreshableFailure(403, ""))
+        assertFalse(FailureRules().isAuthRefreshableFailure(403, ""))
     }
 
     @Test
     fun `other statuses never trigger refresh`() {
-        assertFalse(UpstreamClient.FailureRules().isAuthRefreshableFailure(429, "unauthenticated"))
-        assertFalse(UpstreamClient.FailureRules().isAuthRefreshableFailure(500, "token expired"))
+        assertFalse(FailureRules().isAuthRefreshableFailure(429, "unauthenticated"))
+        assertFalse(FailureRules().isAuthRefreshableFailure(500, "token expired"))
     }
 }

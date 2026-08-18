@@ -13,7 +13,7 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.turn.Usage
 import splice.core.usage.RateLimitState
 import splice.core.usage.UsageWarnPolicy
-import splice.gateway.head.RoundUsage
+import splice.gateway.round.RoundUsage
 import splice.gateway.usage.OutputClampPolicy
 import splice.gateway.usage.UsageHud
 import splice.gateway.usage.UsageJson

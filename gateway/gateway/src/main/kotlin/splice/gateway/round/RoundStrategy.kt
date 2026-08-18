@@ -1,0 +1,53 @@
+// PORT-OF: splice/gateway/head/TurnDriver.kt (the fold/reanchor/single-round dispatch inlined in
+// driveOneTurn) @ 86f1411 — invariants unchanged: which runner drives this turn — FoldRunner when
+// fold-eligible, the single-round direct path when neither fold nor re-anchor nor search apply, and
+// ReanchorRunner otherwise. Its own file (HD-24) is why TurnDriver can stop importing
+// FoldRunner/ReanchorRunner directly. Constructed per turn; the two postRound shapes and finish are
+// pre-bound closures over the caller's drive/self/turnJob, so this class stays decoupled from them.
+package splice.gateway.round
+
+import kotlinx.serialization.json.JsonObject
+import splice.core.util.LogSink
+import splice.spi.FoldController
+import splice.spi.ReanchorController
+import splice.spi.ToolSearchController
+import splice.spi.WireSink
+
+internal class RoundStrategy(
+    private val key: String,
+    private val log: LogSink,
+    private val emitter: WireSink,
+    private val signals: RunnerSignals,
+    private val postRoundToSink: PostRoundToSink,
+    private val postRound: PostRound,
+    private val finish: FinishTurn,
+    // Defaulted (not just nullable): the 8th required param tripped the constructor-length wall
+    // (max 7 required) — always passed explicitly at the one call site (driveOneTurn).
+    private val toolSearch: ToolSearchController? = null,
+) {
+    suspend fun run(requestBody: JsonObject, fold: FoldController?, reanchor: ReanchorController?) {
+        if (fold != null) {
+            FoldRunner(
+                emitter = emitter,
+                key = key,
+                log = log,
+                postRound = postRoundToSink,
+                finish = finish,
+                reanchor = reanchor,
+                signals = signals,
+                toolSearch = toolSearch,
+            ).run(requestBody, fold)
+        } else if (reanchor == null && toolSearch == null) {
+            finish(postRound(requestBody.toString()))
+        } else {
+            ReanchorRunner(
+                key = key,
+                log = log,
+                postRound = postRound,
+                finish = finish,
+                signals = signals,
+                toolSearch = toolSearch,
+            ).run(requestBody, reanchor)
+        }
+    }
+}

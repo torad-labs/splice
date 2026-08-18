@@ -155,10 +155,15 @@ SPLICE_IMPORT = re.compile(r"^import (splice\.[A-Za-z0-9_.]+)\.[A-Za-z0-9_]+")
 CEILING_EXCEPTIONS: list[tuple[str, float, str]] = [
     (
         "gateway/core/src/main/kotlin/splice/core/wire/AnthropicRequest.kt",
-        5.83,
-        "2026-08-18: 19 Anthropic wire-format DTOs in 133 lines, with ZERO splice.* imports and "
+        4.19,
+        "2026-08-18: 15 Anthropic wire-format DTOs in 74 lines, with ZERO splice.* imports and "
         "ZERO non-type exports — the entire score is the declarations, and the declarations are "
-        "one cohesive wire surface. Every destination a split could use is closed by the module "
+        "one cohesive wire surface. TIGHTENED from 5.83 the same day: the four serializer objects "
+        "moved verbatim to the same package's AnthropicWireCodecs.kt (HD-25), which was the one "
+        "honest seam here — they were the only declarations in the file carrying algorithm, and "
+        "being same-package the move cost no consumer an import. What is left is the shape "
+        "catalogue, and a ceiling recorded above it would exempt room the file no longer needs. "
+        "Every destination a split could use is closed by the module "
         "direction law: :core's allowed-dependency set is empty "
         "(gateway/build-logic/src/main/kotlin/splice.module-law.gradle.kts:15), and five of this "
         "file's six neighbour packages sit outside :core (splice.dialect.chat, "
@@ -168,7 +173,11 @@ CEILING_EXCEPTIONS: list[tuple[str, float, str]] = [
         "parked in one of them and read by the other two. The sixth neighbour, splice.core.parse, "
         "is a consumer. A 26-configuration weighting sweep (HD-25 note, 2026-08-17) found no "
         "variant that leaves this file below HIGH without flipping a third of the tree. The "
-        "ceiling is its measured ratio under one-declaration-one-bill, not a target.",
+        "ceiling is its measured ratio under one-declaration-one-bill, not a target — and with "
+        "no margin, so a future breach may be NEIGHBOURHOOD drift rather than this file growing: "
+        "its C is 157.0 over a denominator of 37.5, and any split inside a neighbour package "
+        "lowers that denominator with nothing here changing. Run --since before reading a red as "
+        "regression; cause `own` is this file, cause `neighbourhood` is the denominator moving.",
     ),
     (
         "gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamClient.kt",

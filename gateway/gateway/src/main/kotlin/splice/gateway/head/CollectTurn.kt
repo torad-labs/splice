@@ -48,6 +48,17 @@ internal class CollectTurn(
         // collect never commits a 200 before its terminal respondText — a cancelled collect is a
         // native connection abort client-side, and sealing there only wrote an error body nobody
         // reads while polluting localOriginErrors (review 2026-07-22 round 3).
+        //
+        // pingClient = false is a MEASURED LIMITATION, not a claim that nothing needs to notice a
+        // departed client (PR 99 settled this; HeadServerCollectDisconnectTest is the experiment).
+        // A raw client socket closed mid-hold, with a 600s watchdog so it could not be the one
+        // freeing anything: the stream:true control got its gate slot back in ~2s (keepalive write
+        // fails -> clientGone -> turn cancelled), the identical stream:false request still held its
+        // slot 20s later. Ktor does NOT cancel the call coroutine here even though the response is
+        // wholly uncommitted, so an abandoned collect turn pins its slot and burns vendor quota
+        // until TurnWatchdog's total cap, and the `clientGone` above stays false forever, which is
+        // also why ClientAbandoned is unreachable for collect turns. Both are the SAME gap — a
+        // collect-path liveness source — and closing it is its own change with its own review.
         driver.driveSealingCancellation(drive, pingClient = false, seal = false)
         call.respondText(
             terminal.responseBody().toString(),

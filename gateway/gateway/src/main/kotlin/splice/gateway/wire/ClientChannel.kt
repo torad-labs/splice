@@ -78,6 +78,14 @@ internal data class ClientChannel(
     // HD-20: the CoroutineScope receiver became [scope], the first parameter. The scope passed at
     // the call site is still driveOneTurn's withContext(turnJob) scope — the pinger's whole-turn
     // lifetime and cancellation parentage are unchanged.
+    /** Collect-path liveness sink (HD-29): flip [clientGone] and cancel the turn. No bytes
+     *  written — the stream path's failed write/ping is the sibling; this is what a
+     *  connection-closed signal (Netty closeFuture) calls. */
+    fun connectionClosed(turnJob: Job) {
+        clientGone.set(true)
+        turnJob.cancel()
+    }
+
     fun launchClientPinger(scope: CoroutineScope, turnJob: Job, ticker: Ticker, headKey: String, log: LogSink): Job =
         scope.launch {
             while (isActive) {

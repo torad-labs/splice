@@ -16,7 +16,6 @@ import mock.awaitListening
 import mock.freshPort
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
-import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -173,22 +172,15 @@ class HeadServerCollectDisconnectTest {
         )
     }
 
-    /** MEASURED DEFECT, characterized not endorsed (PR 99). The collect path passes
-     *  pingClient = false and a hardcoded clientGone = false, so NOTHING on it can observe a
-     *  departed client: no SSE write to fail, no keepalive to fail, and — measured here — no Ktor
-     *  cancellation of the call coroutine either, even though the response is entirely uncommitted
-     *  when the client leaves. The turn keeps its InflightGate slot and keeps burning vendor quota
-     *  until TurnWatchdog's total cap.
-     *
-     *  This test pins TODAY'S behaviour as evidence; it is NOT a specification. Fixing the leak is
-     *  its own change with its own review (it needs a real liveness source for the collect path,
-     *  which is the same thing that would make ClientAbandoned reachable there). When that lands,
-     *  this assertion INVERTS to match the control arm above — do not delete it, flip it. */
+    /** INVERTED (HD-29). Same socket, same close(), same parked upstream as the control arm:
+     *  collect now observes hang-up via Netty closeFuture → ClientChannel.connectionClosed, so
+     *  the slot comes back without a pinger and without waiting for the 600s watchdog. Kept
+     *  (not deleted) so the characterisation cannot land silently as a removed test. */
     @Test
-    fun `a stream-false turn abandoned mid-collect keeps its gate slot - no liveness source exists`() = runBlocking {
-        assertFalse(
+    fun `a stream-false turn abandoned mid-collect gets its gate slot back via connection-closed`() = runBlocking {
+        assertTrue(
             abandonMidTurnAndPoll(stream = false, observeMs = 20_000),
-            "the collect slot leak is fixed — INVERT this test to the control arm's assertion",
+            "the collect path must free its slot on a client hang-up: ${gate.snapshot()}",
         )
     }
 }

@@ -10,7 +10,15 @@ package splice.gateway.head
 import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.netty.NettyApplicationCall
 import io.ktor.server.response.respondText
+import io.ktor.server.routing.RoutingCall
+import io.ktor.server.routing.RoutingPipelineCall
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import splice.core.perf.TurnPerf
 import splice.gateway.wire.ClientChannel
@@ -21,6 +29,7 @@ import splice.spi.BuiltTurn
 import splice.spi.InflightGate
 import splice.spi.Provider
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.coroutines.resume
 
 internal class CollectTurn(
     private val provider: Provider,
@@ -37,8 +46,8 @@ internal class CollectTurn(
             built.meta.originalModel,
             wiring.usagePayloadBuilder(provider.catalog, built.meta),
         )
-        // Inert channel: the collect path never writes SSE frames, but postRound reads clientGone
-        // (stays false — a buffered client can't be observed gone mid-turn) and the drive needs one.
+        // Inert writer: collect never writes SSE frames. clientGone is flipped by Netty
+        // closeFuture (HD-29), not by a failed write.
         val channel = ClientChannel(
             coalesced = ImmediateSseWriter(writeRaw = {}, flushRaw = {}),
             writeMutex = Mutex(),
@@ -49,21 +58,55 @@ internal class CollectTurn(
         // native connection abort client-side, and sealing there only wrote an error body nobody
         // reads while polluting localOriginErrors (review 2026-07-22 round 3).
         //
-        // pingClient = false is a MEASURED LIMITATION, not a claim that nothing needs to notice a
-        // departed client (PR 99 settled this; HeadServerCollectDisconnectTest is the experiment).
-        // A raw client socket closed mid-hold, with a 600s watchdog so it could not be the one
-        // freeing anything: the stream:true control got its gate slot back in ~2s (keepalive write
-        // fails -> clientGone -> turn cancelled), the identical stream:false request still held its
-        // slot 20s later. Ktor does NOT cancel the call coroutine here even though the response is
-        // wholly uncommitted, so an abandoned collect turn pins its slot and burns vendor quota
-        // until TurnWatchdog's total cap, and the `clientGone` above stays false forever, which is
-        // also why ClientAbandoned is unreachable for collect turns. Both are the SAME gap — a
-        // collect-path liveness source — and closing it is its own change with its own review.
-        driver.driveSealingCancellation(drive, pingClient = false, seal = false)
-        call.respondText(
-            terminal.responseBody().toString(),
-            ContentType.Application.Json,
-            HttpStatusCode.fromValue(terminal.httpStatus()),
-        )
+        // pingClient = false stays: there is no committed SSE channel to write a keepalive to
+        // (THE FIX IS NOT A PINGER, HD-29). Ktor still does not cancel the call coroutine on this
+        // path. Liveness is Netty closeFuture → [ClientChannel.connectionClosed] → parent cancel.
+        // HeadEngine remains the bootstrap; this file is the second head file that names Netty,
+        // and only to READ closeFuture off the call's ChannelHandlerContext.
+        coroutineScope {
+            val parent = coroutineContext[Job]
+            val watch = if (parent == null) {
+                null
+            } else {
+                launch {
+                    awaitClientConnectionClosed(call)
+                    channel.connectionClosed(parent)
+                }
+            }
+            try {
+                driver.driveSealingCancellation(drive, pingClient = false, seal = false)
+                call.respondText(
+                    terminal.responseBody().toString(),
+                    ContentType.Application.Json,
+                    HttpStatusCode.fromValue(terminal.httpStatus()),
+                )
+            } finally {
+                watch?.cancel()
+            }
+        }
+    }
+
+    private suspend fun awaitClientConnectionClosed(call: ApplicationCall) {
+        val netty = nettyCall(call)
+        if (netty == null) {
+            awaitCancellation()
+            return
+        }
+        suspendCancellableCoroutine { cont ->
+            netty.context.channel().closeFuture().addListener {
+                if (cont.isActive) cont.resume(Unit)
+            }
+        }
+    }
+
+    // Ktor 3 routing hands [RoutingCall], which wraps [RoutingPipelineCall], which wraps the
+    // engine call. `call as? NettyApplicationCall` is therefore always null on this path
+    // (HD-29 measured: the watch never attached and the slot stayed pinned). Walk the public
+    // getters; if the engine call is not Netty, fall back to awaitCancellation so we never
+    // false-positive-cancel.
+    private fun nettyCall(call: ApplicationCall): NettyApplicationCall? {
+        val pipeline = (call as? RoutingCall)?.pipelineCall ?: call
+        val engine = (pipeline as? RoutingPipelineCall)?.engineCall ?: pipeline
+        return engine as? NettyApplicationCall
     }
 }

@@ -41,21 +41,3 @@ public class CodexProvider(
         }
     }
 }
-
-/** Holder for the codex quirk profile. A class rather than a static namespace so the profile is
- *  constructed by whoever needs it (the daemon overlays TOML on top of it), and so the default is
- *  still re-evaluated per CodexProvider construction exactly as the companion's function was. */
-public class CodexQuirks {
-    /** The codex quirk profile — injectable so the TOML [providers.*.quirks] table is REAL. */
-    public fun defaultQuirks(): ResponsesQuirks = ResponsesQuirks(
-        providerTag = "claudex",
-        // richer titled reasoning sections from the ChatGPT backend (probed 2026-07-19)
-        summaryDelivery = "sequential_cutoff",
-        // codex-rs parity: hard-sets strict:false on every function tool (responses_api.rs:29-32);
-        // OpenCode does the same, marked "Codex parity". Omitting it lets the backend attempt
-        // strict auto-normalisation of ~87 MCP schemas and silently report whatever it settled on.
-        // forceStrictFalse, NOT emitStrict (review 2026-07-24): emitStrict is grok's pre-existing,
-        // never-consequential pass-through flag — reusing it here silently changed grok's bytes too.
-        forceStrictFalse = true,
-    )
-}

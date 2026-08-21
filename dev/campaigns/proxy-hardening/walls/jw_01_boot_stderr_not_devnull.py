@@ -10,8 +10,9 @@ GREEN requires ALL of:
   1. Main.kt installs a boot-failure net (bootFailureHandler) BEFORE TopologyLoader.loadOrMaterialize;
   2. bin/splice-launch redirects the spawned JVM to daemon-boot.log (with a /dev/null fallback
      for an unwritable logs dir) and prints the boot-log tail on handshake failure;
-  3. AdminSupport.spawnDaemon does the same redirect, and ensureDaemon prints the tail when the
-     daemon never comes up.
+  3. DaemonLaunch.spawnDaemon does the same redirect, and ensureDaemon prints the tail when the
+     daemon never comes up. The cold-start cluster left AdminSupport.kt (concentration HIGH,
+     2026-08-19); this wall follows the body, not the facade.
 
 EXIT 0 = boot failures visible. EXIT 1 = gap open. --selftest = the POSITIVE CONTROL (C6).
 """
@@ -24,12 +25,12 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 MAIN = ROOT / "gateway/app/src/main/kotlin/splice/app/Main.kt"
 SHIM = ROOT / "bin/splice-launch"
-ADMIN = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/AdminSupport.kt"
+ADMIN = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/DaemonLaunch.kt"
 
 
 def detect(main: str | None, shim: str | None, admin: str | None) -> list[str]:
     """Pure detection. No I/O — the selftest feeds it directly."""
-    for name, text in (("Main.kt", main), ("bin/splice-launch", shim), ("AdminSupport.kt", admin)):
+    for name, text in (("Main.kt", main), ("bin/splice-launch", shim), ("DaemonLaunch.kt", admin)):
         if text is None:
             return [f"{name} missing — refusing to pass vacuously"]
     problems: list[str] = []
@@ -50,7 +51,7 @@ def detect(main: str | None, shim: str | None, admin: str | None) -> list[str]:
         problems.append("splice-launch does not print the boot-log tail on handshake failure — "
                         "the operator still has to know to hand-run the jar")
     if "daemon-boot.log" not in (admin or ""):
-        problems.append("AdminSupport.spawnDaemon still discards the spawned JVM's output")
+        problems.append("DaemonLaunch.spawnDaemon still discards the spawned JVM's output")
     return problems
 
 
@@ -116,7 +117,7 @@ def selftest() -> int:
     if not detect(MAIN_OK, SHIM_OPEN, ADMIN_OK):
         fails.append("a still-discarding shim must be RED")
     if not detect(MAIN_OK, SHIM_OK, ADMIN_OPEN):
-        fails.append("a still-discarding AdminSupport must be RED")
+        fails.append("a still-discarding DaemonLaunch must be RED")
     if not detect(None, SHIM_OK, ADMIN_OK):
         fails.append("missing files must be RED, never a vacuous pass")
     if fails:
@@ -124,7 +125,7 @@ def selftest() -> int:
         for f in fails:
             print("  " + f)
         return 1
-    print("JW-01 SELFTEST OK — red on discard-everything, late net, discarding shim/AdminSupport, "
+    print("JW-01 SELFTEST OK — red on discard-everything, late net, discarding shim/DaemonLaunch, "
           "and missing files; green only when every boot lane is tailable")
     return 0
 

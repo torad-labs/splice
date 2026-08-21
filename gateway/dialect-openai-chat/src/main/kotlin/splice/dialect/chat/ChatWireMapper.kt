@@ -17,7 +17,6 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import splice.core.wire.AnthropicRequest
-import splice.core.wire.DocumentBlock
 import splice.core.wire.ImageBlock
 import splice.core.wire.MediaSource
 import splice.core.wire.TextBlock
@@ -50,7 +49,7 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
         val toolUses = content.filterIsInstance<ToolUseBlock>()
         // Dropped media leaves an HONEST MARKER (the v25 doctrine: screenshots silently
         // vanishing is the regression class; the model must know something was omitted).
-        val markers = omissionMarkers(content)
+        val markers = quirks.omissionMarkers(content)
         val textsRaw = content.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
         val texts = (listOf(textsRaw) + markers).filter { it.isNotEmpty() }.joinToString("\n")
         val images = content.filterIsInstance<ImageBlock>().mapNotNull { imagePart(it.source) }
@@ -67,21 +66,6 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
         if (toolUses.isEmpty() && hasUserPayload) {
             appendUserContent(sink, role, texts, images)
         }
-    }
-
-    /** Honest markers for content this dialect cannot carry: documents always; images when the
-     *  vendor has no vision. An image-only message still yields a marker — silently dropping the
-     *  whole message breaks role alternation AND hides the omission from the model. */
-    fun omissionMarkers(content: List<splice.core.wire.ContentBlock>): List<String> {
-        val out = mutableListOf<String>()
-        content.filterIsInstance<DocumentBlock>().forEach { _ ->
-            out.add("[document omitted by ${quirks.providerTag} proxy: unsupported on this backend]")
-        }
-        if (!quirks.supportsVision) {
-            val n = content.count { it is ImageBlock }
-            if (n > 0) out.add("[$n image(s) omitted by ${quirks.providerTag} proxy: backend has no vision]")
-        }
-        return out
     }
 
     fun appendAssistantToolCalls(

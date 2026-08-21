@@ -20,6 +20,7 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.spi.FailureRules
+import splice.spi.PostContext
 import splice.spi.UpstreamClient
 import splice.spi.UpstreamFailed
 
@@ -46,11 +47,13 @@ class UpstreamClientAmendTest {
         client: UpstreamClient,
         amend: (Int, String, String) -> String?,
     ): String = client.post(
-        url = "https://api.example.test/v1",
-        bodyJson = """{"input":"original"}""",
-        auth = fakeAuth,
-        extraHeaders = { emptyMap() },
-        amendBodyOnFailure = amend,
+        PostContext(
+            url = "https://api.example.test/v1",
+            auth = fakeAuth,
+            extraHeaders = { emptyMap() },
+            amendBodyOnFailure = amend,
+        ),
+        """{"input":"original"}""",
     ) { "ok" }
 
     @Test

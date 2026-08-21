@@ -28,6 +28,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.spi.PostContext
 import splice.spi.UpstreamClient
 import splice.spi.UpstreamFailed
 import java.util.concurrent.CopyOnWriteArrayList
@@ -84,11 +85,13 @@ class UpstreamClientRefreshChainTest {
 
     private suspend fun postOnce(client: UpstreamClient, auth: RefreshableAuthProvider, perf: TurnPerf): String =
         client.post(
-            url = "https://api.example.test/v1",
-            bodyJson = "{}",
-            auth = auth,
-            extraHeaders = { emptyMap() },
-            perf = perf,
+            PostContext(
+                url = "https://api.example.test/v1",
+                auth = auth,
+                extraHeaders = { emptyMap() },
+                perf = perf,
+            ),
+            "{}",
         ) { "ok" }
 
     @Test

@@ -16,25 +16,14 @@
 // splice.gateway.round; ClientChannel.kt, TurnWiring.kt in splice.gateway.wire.
 package splice.gateway.head
 
-import io.ktor.http.ContentType
 import io.ktor.server.application.ApplicationCall
-import io.ktor.server.response.respondTextWriter
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
+import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
-import splice.gateway.round.RoundStrategy
-import splice.gateway.wire.ClientChannel
-import splice.gateway.wire.ImmediateSseWriter
-import splice.gateway.wire.SseEmitterFactory
-import splice.gateway.wire.TurnWiring
 import splice.spi.BuiltTurn
 import splice.spi.InflightGate
 import splice.spi.Provider
-import java.util.concurrent.atomic.AtomicBoolean
+import splice.spi.RetryNotice
 
 /** Drives one streamed turn end-to-end. Owned by HeadServer; one instance per head. */
 internal class TurnDriver(
@@ -42,30 +31,59 @@ internal class TurnDriver(
     private val deps: HeadDeps,
 ) {
     private val log get() = deps.log
-    private val clock get() = deps.clock
 
     private val telemetry = TurnTelemetry(provider.key, deps.perfStats, deps.log, deps.clock)
     private val health = HeadHealthCounters()
-    private val wiring = TurnWiring()
-    private val failures = TurnFailures(provider, log)
-    private val emitters = SseEmitterFactory()
+    private val failures = TurnFailures(provider)
+    private val zeroEvent = ZeroEventFailure(provider, log)
     private val driveFactory = TurnDriveFactory(provider, deps, health)
     private val sseRoundDriver = SseRoundDriver(
-        provider,
-        deps.log,
-        deps.upstream,
-        deps.usageStore,
-        failures,
-        telemetry,
-        TearAwareEvents(provider, deps.log),
+        WsRoundDriver(
+            provider,
+            log,
+            ZeroEventClassifier { drive, outcome, bodyText, eventsBase ->
+                zeroEvent.classify(
+                    drive,
+                    outcome,
+                    bodyText,
+                    drive.perfCounter(PerfKeys.EVENTS_IN) - eventsBase,
+                    telemetry,
+                )
+            },
+        ),
+        SseRoundPost(
+            provider,
+            deps.upstream,
+            deps.usageStore,
+            SseRoundConsume(provider, zeroEvent, telemetry, TearAwareEvents(provider, deps.log)),
+            RetryNotice { log("[${provider.key}] $it\n") },
+        ),
     )
-    private val ending = TurnEnding(provider, log, telemetry, failures, health)
+    private val ending = TurnEnding(
+        log,
+        telemetry,
+        health,
+        TurnConnEnd(provider, log, telemetry, failures, health),
+        TurnKnownEnd(provider, log, telemetry, failures, health),
+    )
     private val cancellationSeal = CancellationSeal(provider, log, telemetry, health)
-    private val turnFinish = TurnFinish(clock, log, deps.usageStore, health, telemetry)
+    private val turnFinish = TurnFinish(
+        deps.clock,
+        log,
+        TurnUsageStamp(deps.usageStore, log, telemetry),
+        health,
+        telemetry,
+    )
+    private val oneDrive = TurnOneDrive(
+        provider,
+        deps,
+        TurnRoundRun(provider, log, sseRoundDriver, turnFinish),
+    )
+    private val streamer = TurnStreamer(provider, deps, driveFactory, this)
 
     // Pre-priced HD-24 contingency: collect() moved to its own file (CollectTurn.kt) because the
     // un-split TurnDriver.kt measured ratio 1.83, just over the 1.8 gate.
-    private val collectTurn = CollectTurn(provider, driveFactory, wiring, this)
+    private val collectTurn = CollectTurn(provider, driveFactory, this)
 
     /** G20: passive health snapshot for HeadServer.healthSnapshot() — the control-plane's
      *  /api/heads aggregation, never the per-head /health liveness route (external contract). */
@@ -73,33 +91,7 @@ internal class TurnDriver(
 
     /** Open the SSE writer, wire the per-turn collaborators, run the single turn. */
     suspend fun stream(call: ApplicationCall, built: BuiltTurn, slot: InflightGate.Slot, t0: Long, perf: TurnPerf) {
-        val inputs = TurnInputs(built, slot, t0, perf)
-        call.respondTextWriter(ContentType.Text.EventStream) {
-            // Flush-per-frame: a frame buffered across an upstream lull is invisible to the
-            // user exactly when responsiveness matters (see ImmediateSseWriter header).
-            val channel = ClientChannel(
-                coalesced = ImmediateSseWriter(writeRaw = { frame -> write(frame) }, flushRaw = { flush() }),
-                writeMutex = Mutex(),
-                clientGone = AtomicBoolean(false),
-            )
-            val emitter = emitters.create(
-                write = { frame ->
-                    channel.writeMutex.withLock { channel.timedClientWrite(frame, perf, clock) }
-                },
-                model = built.meta.originalModel,
-                usagePayload = wiring.usagePayloadBuilder(provider.catalog, built.meta),
-            )
-            val drive = driveFactory.assembleDrive(inputs, emitter, channel)
-            try {
-                // The 200 + SSE headers are committed once respondTextWriter opens, so any failure
-                // must become an honest `event: error` frame — NOT escape and leave the client an
-                // empty/truncated 200 (the "empty or malformed response (HTTP 200)" class).
-                driveSealingCancellation(drive)
-            } finally {
-                // Terminal frames force-flush already; this covers abandon / exception paths.
-                channel.coalesced.flush()
-            }
-        }
+        streamer.stream(call, TurnInputs(built, slot, t0, perf))
     }
 
     /** Drive one turn, emit classified failures, and — if a cancellation lands (head stop,
@@ -125,7 +117,7 @@ internal class TurnDriver(
         seal: Boolean = true,
     ) {
         try {
-            failures.catchingTurnFailure { driveOneTurn(drive, pingClient) }
+            failures.catchingTurnFailure { oneDrive.driveOneTurn(drive, pingClient) }
                 .onFailure { e -> ending.emitFailure(drive, e) }
         } catch (e: CancellationException) {
             cancellationSeal.seal(drive, seal)
@@ -137,66 +129,6 @@ internal class TurnDriver(
      *  Node predecessor served them by collecting the terminal object). See [CollectTurn]. */
     suspend fun collect(call: ApplicationCall, built: BuiltTurn, slot: InflightGate.Slot, t0: Long, perf: TurnPerf) =
         collectTurn.collect(call, built, slot, t0, perf)
-
-    // The turn coroutine is a CHILD job: the watchdog cancels just the turn subtree (then the
-    // blocking Writer still lets the honest error frame out), while a client disconnect cancels
-    // the PARENT call and propagates DOWN into the turn — a parentless Job() severed that, so
-    // Esc'd turns kept streaming upstream and pinning gate slots until the watchdog cap
-    // (the audit's top concurrency finding, 2026-07-18).
-    private suspend fun driveOneTurn(drive: TurnDrive, pingClient: Boolean = true) {
-        val parent = currentCoroutineContext()[Job]
-        // CompletableJob completed in finally: a plain child Job never completes on its own and
-        // would park the PARENT call forever after the turn returns.
-        val turnJob = Job(parent)
-        try {
-            withContext(turnJob) {
-                val self = this
-                // Whole-turn client-liveness pinger (2026-07-19 storm): launched BEFORE the first
-                // upstream attempt so the headers-wait (minutes on a long prefill) and the retry
-                // backoffs are covered too — the per-attempt scope only started it after upstream
-                // headers, so a client that hung up mid-retry left a zombie turn pinning its gate
-                // slot and re-hammering the rate-limited account for a listener that was gone.
-                // OFF for the non-stream collect path: there is no open SSE channel to ping (the
-                // whole body is buffered and sent once), so liveness can't be probed mid-turn.
-                val pinger = if (pingClient) {
-                    drive.channel.launchClientPinger(self, turnJob, deps.ticker, provider.key, log)
-                } else {
-                    null
-                }
-                // NF-03: whole-turn totalCap poller, unconditional (non-stream turns burn wall
-                // clock too). launchIn keeps the idle tiers stream-scoped; this one only samples
-                // elapsed, so connect/backoff/refresh/between-rounds time finally counts.
-                val capPoller = drive.watchdog.launchTotalCap(self, turnJob)
-                try {
-                    // Folding is null for sol / every non-codex head → the single-round path is
-                    // byte-for-byte the pre-fold behaviour (drive straight to the real emitter,
-                    // finish once). A fold-eligible turn hands the loop to FoldRunner. Which runner
-                    // drives this turn is [RoundStrategy]'s decision (HD-24).
-                    val fold = provider.foldController(drive.meta)
-                    val reanchor = provider.reanchorController(drive.meta)
-                    RoundStrategy(
-                        key = provider.key,
-                        log = log,
-                        emitter = drive.emitter,
-                        signals = drive.signals,
-                        postRoundToSink = { bodyJson, sink ->
-                            sseRoundDriver.postRound(drive, bodyJson, sink, self, turnJob)
-                        },
-                        postRound = { bodyJson ->
-                            sseRoundDriver.postRound(drive, bodyJson, drive.emitter, self, turnJob)
-                        },
-                        finish = { outcome -> turnFinish.finishTurn(drive, outcome) },
-                        toolSearch = drive.toolSearch,
-                    ).run(drive.requestBody, fold, reanchor)
-                } finally {
-                    pinger?.cancel()
-                    capPoller.cancel()
-                }
-            }
-        } finally {
-            turnJob.complete()
-        }
-    }
 
     /** Head restart = fresh diagnostic baseline (the HeadHealth doc's promised behavior; the
      *  counters lived through control-plane restarts before — review 2026-07-19). */

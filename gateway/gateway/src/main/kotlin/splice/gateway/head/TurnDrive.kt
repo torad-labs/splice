@@ -1,7 +1,7 @@
-// PORT-OF: splice/gateway/head/TurnDriver.kt (TurnDrive, TurnInputs) @ 86f1411 — invariants
-// unchanged: the per-turn collaborators + data the drive needs, and the admission-time inputs
-// threaded into a drive. Split out (HD-24) because TurnDrive is already a package-wide type
-// (WsRoundDriver + DrivePorts read it) — a package-wide type should not live inside one consumer.
+// PORT-OF: splice/gateway/head/TurnDriver.kt (TurnDrive) @ 86f1411 — invariants
+// unchanged: the per-turn collaborators + data the drive needs. Split out (HD-24) because
+// TurnDrive is already a package-wide type (WsRoundDriver + DrivePorts read it) — a package-wide
+// type should not live inside one consumer. TurnInputs lives in TurnInputs.kt.
 package splice.gateway.head
 
 import kotlinx.serialization.json.JsonObject
@@ -11,7 +11,6 @@ import splice.gateway.pipeline.TurnPipeline
 import splice.gateway.round.RunnerSignals
 import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.TurnTerminal
-import splice.spi.BuiltTurn
 import splice.spi.InflightGate
 import splice.spi.ToolSearchController
 import splice.spi.TurnWatchdog
@@ -46,12 +45,3 @@ internal data class TurnDrive(
     // reads this — a private member would be unreachable. Reads only this drive's own `perf`.
     internal fun perfCounter(key: String): Long = perf.snapshot().counters[key] ?: 0L
 }
-
-/** Admission-time inputs threaded into a drive — grouped so the drive assembler stays one
- *  cohesive argument across the stream and collect entries. */
-internal data class TurnInputs(
-    val built: BuiltTurn,
-    val slot: InflightGate.Slot,
-    val t0: Long,
-    val perf: TurnPerf,
-)

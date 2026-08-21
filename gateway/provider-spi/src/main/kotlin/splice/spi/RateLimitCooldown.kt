@@ -18,7 +18,6 @@
 // is in :gateway, and :provider-spi depends only on :core — that edge would invert.
 package splice.spi
 
-import splice.core.util.ElapsedClock
 import java.util.concurrent.atomic.AtomicLong
 
 /**
@@ -28,7 +27,7 @@ import java.util.concurrent.atomic.AtomicLong
  * original did — an arming site that reads the clock before a token refresh instead of after it
  * shortens the armed horizon by the refresh's duration.
  */
-internal class RateLimitCooldown(private val clock: ElapsedClock) {
+internal class RateLimitCooldown(private val clock: ElapsedNow) {
     // Armed by any attempt that observes a 429; while armed, every post() fails fast with a
     // synthesized 429 and ZERO upstream calls. Benign write race: concurrent arms only differ by
     // ms; latest-max wins.

@@ -21,16 +21,12 @@
 // conversation that alone exceeds the bound FREEZES ADMISSION — the offered round (never yet
 // injected) is rejected and every admitted round keeps serving, which costs the tail its
 // injection instead of busting the whole prefix the way wipe+disable did.
+//
+// Policy + RC-4 walk live in ReasoningCachePolicy.kt so this file is the store only
+// (concentration, 2026-08-19).
 package splice.dialect.responses
 
-import kotlinx.serialization.json.JsonArrayBuilder
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.add
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.jsonObject
 import splice.core.util.ElapsedClock
-import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.util.MonoClock
 
@@ -47,28 +43,15 @@ internal class ReasoningCache(
     private val log: LogSink = LogSink {},
 ) {
 
-    private data class Round(val toolIds: List<String>, val envelopes: List<String>, val bytes: Long, val at: Long)
-
-    /** One conversation: rounds in arrival order, ONE idle timestamp, ONE admission flag. Every
-     *  id of a round maps to that round; a lookup by ANY of them yields the round's ordered
-     *  envelopes (inject-once stays the BUILDER's duty — this is a plain keyed store). */
-    private class Convo {
-        val rounds = LinkedHashMap<String, Round>()
-        val byToolId = HashMap<String, String>()
-        var bytes = 0L
-        var at = 0L
-        var frozen = false
-    }
-
     // Iteration order = least-recently-TOUCHED first (touch re-inserts; MonoClock keeps `at`
     // monotone with re-insertion order, which sweepLocked's takeWhile depends on).
-    private val convos = LinkedHashMap<String, Convo>()
+    private val convos = LinkedHashMap<String, ReasoningCacheConvo>()
 
     // The null-key class (first user message with no text to hash — image-first or tool_result-
     // first openers) has no grouping identity, so it keeps the ORIGINAL flat per-round insertion
     // TTL and shares one id namespace, exactly the pre-rework behavior. Documented limitation:
     // that class retains the old mid-conversation-expiry pathology (spike doc, "not fixed").
-    private val nullRounds = LinkedHashMap<String, Round>()
+    private val nullRounds = LinkedHashMap<String, ReasoningCacheRound>()
     private val nullByToolId = HashMap<String, String>()
 
     private var roundCount = 0
@@ -136,14 +119,14 @@ internal class ReasoningCache(
 
     /** Re-insert [key] at the most-recently-touched end with a fresh timestamp, or null if the
      *  conversation is not held. O(1): the whole point of conversation-primary records. */
-    private fun touchLocked(key: String): Convo? =
+    private fun touchLocked(key: String): ReasoningCacheConvo? =
         convos.remove(key)?.also {
             it.at = clock()
             convos[key] = it
         }
 
     private fun putConvoLocked(key: String, toolIds: List<String>, envelopes: List<String>, bytes: Long) {
-        val convo = touchLocked(key) ?: Convo().also {
+        val convo = touchLocked(key) ?: ReasoningCacheConvo().also {
             it.at = clock()
             convos[key] = it
         }
@@ -153,7 +136,7 @@ internal class ReasoningCache(
         // finding 2's accelerator) — refresh (the touch above) and return instead.
         if (toolIds.any { it in convo.byToolId }) return
         val rk = "r${seq++}"
-        convo.rounds[rk] = Round(toolIds, envelopes, bytes, convo.at)
+        convo.rounds[rk] = ReasoningCacheRound(toolIds, envelopes, bytes, convo.at)
         toolIds.forEach { convo.byToolId[it] = rk }
         convo.bytes += bytes
         totalBytes += bytes
@@ -163,7 +146,7 @@ internal class ReasoningCache(
 
     private fun putNullLocked(toolIds: List<String>, envelopes: List<String>, bytes: Long) {
         val rk = "n${seq++}"
-        nullRounds[rk] = Round(toolIds, envelopes, bytes, clock())
+        nullRounds[rk] = ReasoningCacheRound(toolIds, envelopes, bytes, clock())
         toolIds.forEach { nullByToolId[it] = rk }
         totalBytes += bytes
         roundCount++
@@ -178,7 +161,7 @@ internal class ReasoningCache(
      *  rounds were each admitted under the bound, so rejecting the offered round always restores
      *  the invariant — the loop cannot spin (the false-return guard is unreachable from put()
      *  and exists only to make non-progress impossible by construction). */
-    private fun evictToBoundLocked(writing: String?, writer: Convo?, offered: String?) {
+    private fun evictToBoundLocked(writing: String?, writer: ReasoningCacheConvo?, offered: String?) {
         while (roundCount > maxEntries || totalBytes > maxTotalBytes) {
             val oldestNull = nullRounds.keys.firstOrNull()
             val neighbor = if (oldestNull == null) convos.keys.firstOrNull { it != writing } else null
@@ -200,7 +183,7 @@ internal class ReasoningCache(
 
     /** Reject the round just offered and freeze admission for the writer. True when the offered
      *  round was removed (progress guaranteed); false only on the defensive no-writer path. */
-    private fun freezeWriterLocked(writing: String?, writer: Convo?, offered: String?): Boolean {
+    private fun freezeWriterLocked(writing: String?, writer: ReasoningCacheConvo?, offered: String?): Boolean {
         if (writer == null || offered == null) return false
         val round = writer.rounds.remove(offered) ?: return false
         round.toolIds.forEach { writer.byToolId.remove(it) }
@@ -261,65 +244,3 @@ private const val MAX_TOTAL_BYTES: Long = 64L * 1024 * 1024
 
 // "splice-" + 7 hash chars: identifiable in logs, not noisy.
 private const val KEY_LOG_CHARS: Int = 14
-
-/**
- * The reasoning cache's two policy seams, as a type rather than the file-level functions they used
- * to be (Kotlin main sources carry no top-level functions). Stateless; both members keep their old
- * name and argument list, so a call site only gained a receiver.
- */
-internal class ReasoningCachePolicy {
-
-    /** The ONE gate for every reasoning-cache touch point (capture, collect, lookup,
-     *  include-widening): quirks-enabled AND not a compaction turn. Named so the `!compact`
-     *  conjunct is a tested seam instead of four copy-pasted lambda conditions (review 2026-07-24:
-     *  nothing pinned the conjunct; a regression dropping it would have let compaction turns read
-     *  and write the cache unseen). */
-    fun reasoningCacheActive(quirks: ResponsesQuirks, compact: Boolean): Boolean =
-        quirks.reasoningCache && !compact
-
-    /** RC-4: the invalid_encrypted_content recovery — strip every reasoning input item from the
-     *  request (degrade to per-item amnesia, never fail the turn on cache contents) and evict the
-     *  cache for the rounds those items belonged to, i.e. the function_calls that immediately follow
-     *  each dropped reasoning item up to the next one. Eviction is conversation-wholesale
-     *  (2026-07-31, review of #71 round 2): the old per-round eviction left the surviving rounds
-     *  injecting around a permanent hole, shifting the prefix on every later build.
-     *  Returns null when the body carries no reasoning items (the amendment is not ours to make).
-     *  Decode/encode rides the closed ResponsesRequest DTO (#924) — no field invented or lost. */
-    fun stripStaleReasoning(bodyJson: String, cache: ReasoningCache): String? {
-        val previous = kotlinx.serialization.json.Json.parseToJsonElement(bodyJson).jsonObject
-        val base = responsesRequestJson.decodeFromJsonElement(ResponsesRequest.serializer(), previous)
-        val walk = StaleReasoningWalk(cache)
-        val kept = buildJsonArray { base.input.forEach { walk.visit(this, it) } }
-        if (walk.dropped == 0) return null
-        val next = base.copy(input = kept)
-        return responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), next).toString()
-    }
-}
-
-/** The strip's item walk: drop reasoning items, and evict the rounds they belonged to — a round
- *  is [reasoning, function_call+, …], so the scope is the unbroken run of calls right after a
- *  dropped item. (The cache widens each eviction to the whole conversation; see evictByToolId.) */
-private class StaleReasoningWalk(private val cache: ReasoningCache) {
-    var dropped = 0
-    private var inDroppedRound = false
-
-    fun visit(sink: JsonArrayBuilder, el: JsonElement) {
-        val item = el as? JsonObject
-        when (JsonScalars.str(item?.get(WALK_FIELD_TYPE))) {
-            "reasoning" -> {
-                dropped++
-                inDroppedRound = true
-            }
-            "function_call" -> {
-                sink.add(el)
-                if (inDroppedRound) JsonScalars.str(item?.get("call_id"))?.let { cache.evictByToolId(it) }
-            }
-            else -> {
-                sink.add(el)
-                inDroppedRound = false
-            }
-        }
-    }
-}
-
-private const val WALK_FIELD_TYPE = "type"

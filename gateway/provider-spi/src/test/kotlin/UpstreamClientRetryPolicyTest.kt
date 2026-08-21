@@ -14,6 +14,7 @@ import org.junit.jupiter.api.assertThrows
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.spi.PostContext
 import splice.spi.UpstreamClient
 import splice.spi.UpstreamFailed
 import splice.spi.Waiter
@@ -66,10 +67,8 @@ class UpstreamClientRetryPolicyTest {
     )
 
     private suspend fun postOnce(client: UpstreamClient): String = client.post(
-        url = "https://api.example.test/v1",
-        bodyJson = "{}",
-        auth = fakeAuth,
-        extraHeaders = { emptyMap() },
+        PostContext(url = "https://api.example.test/v1", auth = fakeAuth, extraHeaders = { emptyMap() }),
+        "{}",
     ) { "ok" }
 
     @Test

@@ -4,8 +4,10 @@
 // (doctor and the launch warning both point here). :app is wall-exempt for println.
 package splice.app.cli
 
+import splice.app.DaemonProbe
 import splice.app.TopologyLoader
 import splice.core.config.StatePaths
+import splice.core.util.EnvReader
 
 /** The `restart` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources
  *  carry no top-level functions). Every member keeps the old function's name. */
@@ -36,13 +38,13 @@ internal class RestartCommand {
     }
 
     private fun stopIfRunning(port: Int, tomlPorts: List<Int>): Boolean {
-        val running = ControlPlaneClient.healthVersion(port) ?: return true
+        val running = DaemonProbe.healthVersion(port) ?: return true
         val key = AdminSupport.mgmtKey()
         if (key == null) {
             println("splice: mgmt-key not found at ${StatePaths().mgmtKeyFile} — can't stop the daemon")
             return false
         }
-        val scope = stopScope(ControlPlaneClient.headPorts(port, key), tomlPorts)
+        val scope = stopScope(DaemonProbe.headPorts(port, key), tomlPorts)
         if (scope.degraded) {
             println(
                 "splice: WARNING — could not enumerate this daemon's head ports (config unreadable and " +
@@ -59,6 +61,34 @@ internal class RestartCommand {
     internal fun stopScope(livePorts: List<Int>?, tomlPorts: List<Int>): StopScope {
         val ports = (livePorts.orEmpty() + tomlPorts).distinct()
         return StopScope(ports, degraded = ports.isEmpty())
+    }
+
+    // The daemon reads api-key env vars from ITS OWN environment. A key exported after the daemon
+    // booted is present in this shell but invisible upstream — the single most confusing first-run
+    // trap, so doctor names it explicitly. Lives here because this verb IS the fix (FIX_RESTART).
+    // When the daemon is UP but the daemon-side comparison can't run (no mgmt-key, or /api/auth
+    // unreachable), the flagship check would silently vanish exactly when the daemon is busiest —
+    // so emit an explicit WARN instead of empty. A STOPPED daemon is a plain skip (no noise).
+    internal fun splitBrainChecks(
+        heads: List<HeadAuth>,
+        snapshot: DaemonSnapshot,
+        envReader: EnvReader,
+    ): List<DoctorCheck> {
+        if (!snapshot.running) return emptyList()
+        val key = AdminSupport.mgmtKey(envReader)
+        val daemonSees = key?.let { DaemonProbe.authPresence(snapshot.port, it) }
+        if (daemonSees == null) {
+            val reason = if (key == null) "no mgmt-key" else "daemon /api/auth unreachable"
+            return listOf(DoctorCheck("daemon-auth", CheckStatus.WARN, "daemon-side auth check skipped: $reason"))
+        }
+        return heads.filter { it.present && it.envVar != null && daemonSees[it.key] == false }.map { auth ->
+            DoctorCheck(
+                auth.key,
+                CheckStatus.FAIL,
+                "${auth.envVar} is set in this shell but the daemon started without it",
+                FIX_RESTART,
+            )
+        }
     }
 }
 

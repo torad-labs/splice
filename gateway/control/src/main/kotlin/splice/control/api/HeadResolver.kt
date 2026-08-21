@@ -8,8 +8,18 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondText
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
+import kotlinx.serialization.json.putJsonObject
 import splice.control.ManagedHead
 import splice.core.topology.TopologyMessages
+
+private const val KEY = "key"
+private const val LABEL = "label"
+private const val HEADS = "heads"
 
 internal class HeadResolver(
     private val heads: Map<String, ManagedHead>,
@@ -60,5 +70,48 @@ internal class HeadResolver(
     fun launchTargets(name: String): List<ManagedHead> {
         heads[name]?.takeIf { it.launchSpec != null }?.let { return listOf(it) }
         return headByName(name).filter { it.launchSpec != null }
+    }
+
+    fun headsJson(): String = buildJsonObject {
+        putJsonArray(HEADS) { heads.values.forEach { add(headStatus(it)) } }
+    }.toString()
+
+    // PORT-OF server/launcher/heads.mjs status shape @ pre-public-port-baseline. In the single daemon the head is
+    // in-process, so healthy/version are authoritative and versionMatch is always true when up.
+    fun headStatus(m: ManagedHead) = buildJsonObject {
+        val h = m.head.healthSnapshot()
+        put(KEY, m.head.key)
+        put(LABEL, m.head.label)
+        put("name", m.head.key)
+        put("port", m.head.port)
+        put("authKind", m.authKind)
+        put("wantVersion", payloads.gatewayVersion())
+        put("running", h.running)
+        put("healthy", h.ok)
+        put("version", if (h.running) payloads.gatewayVersion() else null as String?)
+        put("versionMatch", if (h.running) true else null as Boolean?)
+        put("mode", null as String?)
+        // Live InflightGate snapshot for the dashboard (was permanently null after the Kotlin port).
+        putJsonObject("gate") {
+            put("inflight", h.gateInflight)
+            put("queued", h.gateQueued)
+            if (h.gateLimit <= 0) put("max", "unlimited") else put("max", h.gateLimit)
+            // Counters the Node gate tracked; Kotlin gate has no acquired/released totals —
+            // zero-fill so the GateSnapshot shape stays stable for the webui.
+            put("acquired", 0)
+            put("released", 0)
+            put("waited", 0)
+            put("avg_wait_ms", 0)
+            putJsonArray("live") {}
+            put("stream_idle_ms", 0)
+        }
+        put("maxInflight", if (h.gateLimit <= 0) null else h.gateLimit)
+        // G20: passive per-head health counters, local-origin vs provider-error split — diagnosis
+        // only, surfaced through this aggregation (never the per-head /health liveness route).
+        putJsonObject("health") {
+            put("localOriginErrors", h.localOriginErrors)
+            put("providerErrors", h.providerErrors)
+        }
+        putJsonArray("pids") {}
     }
 }

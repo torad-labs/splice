@@ -8,36 +8,18 @@
 package splice.app
 
 import io.ktor.client.HttpClient
-import io.ktor.client.request.HttpRequestBuilder
-import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonNull
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 import splice.core.util.Cancellables
 import splice.provider.kimi.KimiDeviceAuthorization
 import splice.provider.kimi.KimiOAuth
 import splice.spi.ProcessWaiter
 import splice.spi.Waiter
-import java.nio.file.Path
 
-/** Everything the device flow needs for one provider's login (built by LoginCommand per head). */
-public data class DeviceLoginSpec(
-    val head: String,
-    val clientId: String,
-    val deviceAuthUrl: String,
-    val tokenUrl: String,
-    val authPath: Path,
-    /** X-Msh-* device identity headers sent on both OAuth calls. */
-    val identityHeaders: Map<String, String>,
-    /** token-endpoint success body → the auth.json content to persist. */
-    val toAuthJson: AuthJsonFromResponse,
-)
+// DeviceLoginSpec lives in DeviceLoginSpec.kt (concentration, 2026-08-19).
 
 public object DeviceLoginFlow {
 
@@ -48,7 +30,6 @@ public object DeviceLoginFlow {
     private const val MAX_EXPIRED_RESTARTS = 2
     private const val SLOW_DOWN_INCREMENT_S = 5L
     private const val MS_PER_S = 1000L
-    private const val ERR_BODY_CAP = 300
     private const val HTTP_SERVER_ERROR_FLOOR = 500
 
     private enum class Outcome { SUCCESS, ABORT, EXPIRED }
@@ -99,12 +80,12 @@ public object DeviceLoginFlow {
 
     private suspend fun requestDeviceAuth(client: HttpClient, spec: DeviceLoginSpec): KimiDeviceAuthorization? {
         val resp = client.post(spec.deviceAuthUrl) {
-            formHeaders(this, spec.identityHeaders)
+            loginIo.formHeaders(this, spec.identityHeaders)
             setBody(kimiOAuth.kimiDeviceAuthorizationForm(spec.clientId))
         }
         val body = resp.bodyAsText()
         if (!resp.status.isSuccess()) {
-            println("splice: could not start device login (HTTP ${resp.status.value}): ${sanitize(body)}")
+            println("splice: could not start device login (HTTP ${resp.status.value}): ${loginIo.sanitize(body)}")
             return null
         }
         return kimiOAuth.parseKimiDeviceAuthorization(body)
@@ -151,10 +132,10 @@ public object DeviceLoginFlow {
             return PollStep.Stop(Outcome.SUCCESS)
         }
         if (resp.status.value >= HTTP_SERVER_ERROR_FLOOR) {
-            println("splice: login failed (HTTP ${resp.status.value}): ${sanitize(body)}")
+            println("splice: login failed (HTTP ${resp.status.value}): ${loginIo.sanitize(body)}")
             return PollStep.Stop(Outcome.ABORT)
         }
-        return when (errorCode(body)) {
+        return when (loginIo.errorCode(body)) {
             "authorization_pending" -> PollStep.Wait(intervalS)
             "slow_down" -> PollStep.Wait(intervalS + SLOW_DOWN_INCREMENT_S)
             "expired_token" -> PollStep.Stop(Outcome.EXPIRED)
@@ -163,7 +144,7 @@ public object DeviceLoginFlow {
                 PollStep.Stop(Outcome.ABORT)
             }
             else -> {
-                println("splice: login failed: ${sanitize(body)}")
+                println("splice: login failed: ${loginIo.sanitize(body)}")
                 PollStep.Stop(Outcome.ABORT)
             }
         }
@@ -171,23 +152,7 @@ public object DeviceLoginFlow {
 
     private suspend fun postToken(client: HttpClient, spec: DeviceLoginSpec, deviceCode: String): HttpResponse =
         client.post(spec.tokenUrl) {
-            formHeaders(this, spec.identityHeaders)
+            loginIo.formHeaders(this, spec.identityHeaders)
             setBody(kimiOAuth.kimiTokenPollForm(deviceCode, spec.clientId))
         }
-
-    private fun formHeaders(request: HttpRequestBuilder, identityHeaders: Map<String, String>) {
-        request.header("Content-Type", "application/x-www-form-urlencoded")
-        request.header("Accept", "application/json")
-        identityHeaders.forEach { (k, v) -> request.header(k, v) }
-    }
-
-    private fun errorCode(body: String): String = Cancellables.runCatchingCancellable {
-        (deviceJson.parseToJsonElement(body) as? JsonObject)?.let { obj ->
-            (obj["error"] as? JsonPrimitive)?.takeUnless { it is JsonNull }?.content
-        }
-    }.getOrNull().orEmpty()
-
-    private fun sanitize(s: String): String = s.filter { !it.isISOControl() }.take(ERR_BODY_CAP)
-
-    private val deviceJson = Json { ignoreUnknownKeys = true }
 }

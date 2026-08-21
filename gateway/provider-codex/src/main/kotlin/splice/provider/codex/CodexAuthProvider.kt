@@ -14,23 +14,17 @@ package splice.provider.codex
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
 import splice.core.auth.AuthDescription
 import splice.core.auth.CredentialExpiry
 import splice.core.auth.Credentials
 import splice.core.auth.INVALID_GRANT_REASON
 import splice.core.auth.InvalidGrantLatch
-import splice.core.auth.RefreshAttempt
 import splice.core.auth.RefreshCall
 import splice.core.auth.RefreshOutcome
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
-import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
@@ -43,11 +37,7 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.time.Instant
 
-private const val REFRESH_ERROR_SNIPPET = 160
 private const val LOG_TAG = "codex-auth"
-private const val KIND = "chatgpt-oauth"
-private const val MASK_KEEP = 4
-private const val MS_PER_S = 1000L
 
 // Refresh this long before the JWT `exp` claim — codex reference
 // (CHATGPT_ACCESS_TOKEN_REFRESH_WINDOW_MINUTES) uses 5 minutes; mirrors grok's PROACTIVE_WINDOW_MS.
@@ -55,20 +45,6 @@ private const val PROACTIVE_WINDOW_MS = 300_000L
 
 // G17 stale floor: below this the refresh blocks the request (mirrors grok's STALE_FLOOR_MS).
 private const val STALE_FLOOR_MS = 30_000L
-private const val FIELD_TOKENS = "tokens"
-private const val FIELD_ACCESS_TOKEN = "access_token"
-private const val FIELD_REFRESH_TOKEN = "refresh_token"
-private const val FIELD_ID_TOKEN = "id_token"
-private const val FIELD_ACCOUNT_ID = "account_id"
-private const val FIELD_LAST_REFRESH = "last_refresh"
-private const val FIELD_EXP = "exp"
-
-/** Result of the token endpoint's refresh POST (only the fields we persist). */
-public data class RefreshedTokens(
-    val accessToken: String?,
-    val refreshToken: String?,
-    val idToken: String?,
-)
 
 public class CodexAuthProvider(
     private val authPath: Path,
@@ -92,13 +68,14 @@ public class CodexAuthProvider(
     private val log: LogSink = LogSink(DaemonLog::write),
 ) : RefreshableAuthProvider {
 
-    private val json = Json { ignoreUnknownKeys = true }
     private val singleFlight = SingleFlight<Credentials?>()
     private val invalidGrantLatch = InvalidGrantLatch()
 
     // The JWT claim reader moved to CodexOAuth with the rest of the codex OAuth wire helpers
-    // (HD-M5); this class reads `exp` and the account id through it.
-    private val oauth = CodexOAuth()
+    // (HD-M5); this class reads `exp` and the account id through CodexAuthJson.
+    private val authFile = CodexAuthFile()
+    private val authJson = CodexAuthJson(nowIso, authPath, clock, SynthesizeExpiry { synthesizeExpiry(it) }, log)
+    private val describeAuth = CodexAuthDescribe(authPath, authJson, authFile, invalidGrantLatch, log, refreshCall)
 
     init {
         // Lifecycle ownership: when prefetchScope ends (Daemon.stop cancels probeScope), cancel the
@@ -106,9 +83,6 @@ public class CodexAuthProvider(
         // unaffected — it only cancels that caller's await, never the SingleFlight scope.
         prefetchScope.coroutineContext[Job]?.invokeOnCompletion { singleFlight.close() }
     }
-
-    @Volatile
-    private var cache: Cache? = null
 
     // SH-01: one shape-drift log per distinct auth.json mtime, not one per cached read.
     @Volatile
@@ -119,23 +93,16 @@ public class CodexAuthProvider(
     private fun synthesizeExpiry(mtimeMs: Long): Long {
         if (synthLoggedMtime != mtimeMs) {
             synthLoggedMtime = mtimeMs
-            log(
-                "[codex-auth] access token carries no decodable exp — synthesized expiry " +
-                    "mtime+4h (auth.json shape drifted?)",
-            )
+            log("[codex-auth] access token carries no decodable exp — synthesized expiry " + "mtime+4h (auth.json shape drifted?)")
         }
         return CredentialExpiry.synthesizedExpiryMs(mtimeMs, clock())
     }
-
-    private data class Cache(val snapshot: Snapshot, val mtimeMs: Long, val loadedAt: Long, val sizeBytes: Long)
-
-    private data class Snapshot(val access: String, val accountId: String?, val expiresAtMs: Long?)
 
     // Three tiers by remaining time-to-expiry, same shape as GrokAuthProvider (G17): outside the
     // proactive window serve as-is; above the stale floor prefetch in the background and serve the
     // current token; below the floor block for a confirmed-fresh token exactly as before G17.
     override suspend fun credentials(): Credentials? {
-        val snap = readSnapshot() ?: return null
+        val snap = authJson.readSnapshot(authCacheMs) ?: return null
         val current = Credentials.Bearer(snap.access, snap.accountId)
         val expiresAt = snap.expiresAtMs
         return if (expiresAt == null || expiresAt - clock() >= PROACTIVE_WINDOW_MS) {
@@ -152,32 +119,6 @@ public class CodexAuthProvider(
         }
     }
 
-    private fun readSnapshot(): Snapshot? = Cancellables.runCatchingCancellable {
-        if (!Files.exists(authPath)) return@runCatchingCancellable null
-        val mtime = Files.getLastModifiedTime(authPath).toMillis()
-        val size = Files.size(authPath)
-        val now = clock()
-        cache?.let { c ->
-            val sameFile = c.mtimeMs == mtime && c.sizeBytes == size
-            if (sameFile && (now - c.loadedAt) < authCacheMs) {
-                return@runCatchingCancellable c.snapshot
-            }
-        }
-        val tokens = json.parseToJsonElement(Files.readString(authPath)).jsonObject[FIELD_TOKENS] as? JsonObject
-        JsonScalars.str(tokens, FIELD_ACCESS_TOKEN)?.let { access ->
-            val accountId = JsonScalars.str(tokens, FIELD_ACCOUNT_ID)
-            // SH-01 (G18's codex twin): a token with no decodable exp was cached FOREVER — no
-            // proactive refresh, first signal a mid-turn 401. Shared policy: synthesize mtime+TTL.
-            val expiresAtMs = JsonScalars.long(oauth.decodeJwtClaims(access), FIELD_EXP)?.let { it * MS_PER_S }
-                ?: synthesizeExpiry(mtime)
-            val snapshot = Snapshot(access, accountId, expiresAtMs)
-            cache = Cache(snapshot, mtime, now, size)
-            snapshot
-        }
-    }.onFailure {
-        log("[codex-auth] failed to read $authPath: $it — treating as not logged in")
-    }.getOrNull()
-
     override suspend fun refresh(): Credentials? =
         singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) }
 
@@ -191,97 +132,21 @@ public class CodexAuthProvider(
     // mtime changes (re-login), so a genuinely stale latch never outlives the credentials it named.
     private suspend fun doRefresh(): RefreshOutcome {
         if (!Files.exists(authPath)) return RefreshOutcome.NoCredentialsFile
-        val mtime = codexAuthMtimeOrNull(authPath, log)
+        val mtime = authFile.codexAuthMtimeOrNull(authPath, log)
         if (invalidGrantLatch.isLatched(mtime)) return RefreshOutcome.Rejected(INVALID_GRANT_REASON)
-        val priorAccess = cache?.snapshot?.access
+        val priorAccess = authJson.cachedAccess()
         // AUTH-002: wire the daemon log sink so the lock's proceed-unlocked fallback is observable
         // (CredentialLock.withLock's `log` default is a silent no-op) instead of only greppable
         // in a source comment.
-        val outcome = CredentialLock.withLock(authPath, log = log) { refreshLocked(priorAccess) }
+        val outcome = CredentialLock.withLock(authPath, log = log) {
+            describeAuth.refreshLocked(priorAccess, PersistRotation { raw, tokens, fresh, access ->
+                persistRotation(raw, tokens, fresh, access)
+            })
+        }
         if (outcome is RefreshOutcome.Rejected && outcome.reason == INVALID_GRANT_REASON) {
             invalidGrantLatch.latch(mtime)
         }
         return outcome
-    }
-
-    // Runs holding the cross-process lock: re-read fresh, short-circuit if a peer already rotated,
-    // else exchange. Split out of doRefresh so withLock's lambda stays a single call.
-    private suspend fun refreshLocked(priorAccess: String?): RefreshOutcome {
-        val raw = Cancellables.runCatchingCancellable {
-            json.parseToJsonElement(Files.readString(authPath)).jsonObject
-        }.getOrElse { return RefreshOutcome.ReadFailed(it) }
-        val tokens = raw[FIELD_TOKENS] as? JsonObject
-        peerRotation(priorAccess, tokens)?.let { return it }
-        return if (tokens == null) RefreshOutcome.NoRefreshToken else exchangeRefreshToken(raw, tokens)
-    }
-
-    // A peer (another process, or the official codex CLI) may have rotated the token while we waited
-    // on the lock: if the freshly-read access token differs from what THIS process last served, adopt
-    // it and skip the POST. Token identity — not the `exp` claim — is the unambiguous signal.
-    private fun peerRotation(priorAccess: String?, tokens: JsonObject?): RefreshOutcome? {
-        val freshAccess = JsonScalars.str(tokens, FIELD_ACCESS_TOKEN)
-        if (priorAccess == null || freshAccess == null) return null
-        if (freshAccess == priorAccess) return null
-        val accountId = JsonScalars.str(tokens, FIELD_ACCOUNT_ID)
-        val expiresAtMs = JsonScalars.long(oauth.decodeJwtClaims(freshAccess), FIELD_EXP)?.let { it * MS_PER_S }
-        val snapshot = Snapshot(freshAccess, accountId, expiresAtMs)
-        cache = Cache(snapshot, Files.getLastModifiedTime(authPath).toMillis(), clock(), Files.size(authPath))
-        return RefreshOutcome.Refreshed(Credentials.Bearer(freshAccess, accountId))
-    }
-
-    // G15: InvalidGrant flows through the SAME rejectedOrRetry() G1 reread-once dance as any other
-    // rejection — a "confirmed" invalid_grant (the one doRefresh() latches on) is one that survived
-    // that race check, exactly matching the gap's "post-G1 re-read" requirement.
-    private suspend fun exchangeRefreshToken(
-        raw: JsonObject,
-        tokens: JsonObject,
-        allowRereadRetry: Boolean = true,
-    ): RefreshOutcome {
-        val refreshToken = JsonScalars.str(tokens, FIELD_REFRESH_TOKEN) ?: return RefreshOutcome.NoRefreshToken
-        // Guard the network hop too (Node wrapped the whole read+fetch): a thrown hop must degrade
-        // to a typed outcome (→ UpstreamFailed → re-prompt), not blow through SingleFlight uncaught.
-        val attempt = Cancellables.runCatchingCancellable { refreshCall(refreshToken) }
-            .getOrElse { return RefreshOutcome.TransportFailed(it) }
-        return when (attempt) {
-            is RefreshAttempt.Granted -> {
-                val access = attempt.tokens.accessToken
-                if (access == null) {
-                    rejectedOrRetry(refreshToken, allowRereadRetry, "refresh response missing access_token")
-                } else {
-                    persistRotation(raw, tokens, attempt.tokens, access)
-                }
-            }
-            is RefreshAttempt.InvalidGrant -> rejectedOrRetry(refreshToken, allowRereadRetry, INVALID_GRANT_REASON)
-            is RefreshAttempt.Denied -> rejectedOrRetry(refreshToken, allowRereadRetry, attempt.detail)
-        }
-    }
-
-    // Bounded one-shot retry: an endpoint rejection MIGHT be a stale-token race — if disk now shows a
-    // DIFFERENT refresh token (a peer rotated between our read and the POST landing), retry once
-    // against it. Capped at exactly one extra POST (the retry passes allowRereadRetry=false); never
-    // loops, and never re-POSTs the identical dead token (the disk-differs gate).
-    private suspend fun rejectedOrRetry(
-        usedRefreshToken: String,
-        allowRereadRetry: Boolean,
-        reason: String,
-    ): RefreshOutcome {
-        if (!allowRereadRetry) return RefreshOutcome.Rejected(reason)
-        val reread = Cancellables.runCatchingCancellable {
-            json.parseToJsonElement(Files.readString(authPath)).jsonObject
-        }
-        val rereadFailure = reread.exceptionOrNull()
-        if (rereadFailure != null) {
-            val detail = rereadFailure.message.orEmpty().take(REFRESH_ERROR_SNIPPET)
-            return RefreshOutcome.Rejected("$reason; credential reread failed: $detail")
-        }
-        val fresh = reread.getOrThrow()
-        val newTokens = fresh[FIELD_TOKENS] as? JsonObject
-        val rotatedToken = JsonScalars.str(newTokens, FIELD_REFRESH_TOKEN)?.takeUnless { it == usedRefreshToken }
-        return if (newTokens != null && rotatedToken != null) {
-            exchangeRefreshToken(fresh, newTokens, allowRereadRetry = false)
-        } else {
-            RefreshOutcome.Rejected(reason)
-        }
     }
 
     private fun persistRotation(
@@ -294,65 +159,17 @@ public class CodexAuthProvider(
         // throwing write must degrade to a typed PersistFailed, never a raw throw through SingleFlight
         // out of credentials()/refresh(), so the not-yet-expired current token still gets served.
         Cancellables
-            .runCatchingCancellable { writeSecure(authPath, mergedAuthJson(raw, tokens, fresh, access).toString()) }
+            .runCatchingCancellable { writeSecure(authPath, authJson.mergedAuthJson(raw, tokens, fresh, access).toString()) }
             .getOrElse { return RefreshOutcome.PersistFailed("auth.json write failed: $it") }
-        cache = null
-        return readSnapshot()?.let { RefreshOutcome.Refreshed(Credentials.Bearer(it.access, it.accountId)) }
+        authJson.clearCache()
+        return authJson.readSnapshot(authCacheMs)?.let { RefreshOutcome.Refreshed(Credentials.Bearer(it.access, it.accountId)) }
             ?: RefreshOutcome.PersistFailed("auth.json unreadable after rotated-token write")
     }
 
-    /** Merge the freshly refreshed tokens onto the existing auth.json, preserving every field the
-     *  refresh response didn't replace (id_token/refresh_token only overwritten when present). */
-    private fun mergedAuthJson(
-        raw: JsonObject,
-        tokens: JsonObject,
-        fresh: RefreshedTokens,
-        access: String,
-    ): JsonObject {
-        val nextTokens = buildJsonObject {
-            tokens.forEach { (k, v) -> put(k, v) }
-            put(FIELD_ACCESS_TOKEN, JsonPrimitive(access))
-            fresh.refreshToken?.let { put(FIELD_REFRESH_TOKEN, JsonPrimitive(it)) }
-            fresh.idToken?.let { put(FIELD_ID_TOKEN, JsonPrimitive(it)) }
-        }
-        return buildJsonObject {
-            raw.forEach { (k, v) -> if (k != FIELD_TOKENS && k != FIELD_LAST_REFRESH) put(k, v) }
-            put(FIELD_TOKENS, nextTokens)
-            put(FIELD_LAST_REFRESH, JsonPrimitive(nowIso()))
-        }
-    }
-
-    override suspend fun describe(): AuthDescription {
-        val out = mutableMapOf("auth_path" to authPath.toString())
-        // ast-grep-ignore: kt-no-silent-result-collapse -- introspection display only: a read failure renders as present=false, which is the displayed truth
-        val present = Cancellables.runCatchingCancellable {
-            if (!Files.exists(authPath)) return@runCatchingCancellable false
-            val raw = json.parseToJsonElement(Files.readString(authPath)).jsonObject
-            val tokens = raw[FIELD_TOKENS] as? JsonObject
-            val hasAccess = JsonScalars.str(tokens, FIELD_ACCESS_TOKEN)?.isNotEmpty() == true
-            val acct = JsonScalars.str(tokens, FIELD_ACCOUNT_ID).orEmpty()
-            out["account_id_masked"] =
-                if (acct.isNotEmpty()) "${acct.take(MASK_KEEP)}…${acct.takeLast(MASK_KEEP)}" else ""
-            JsonScalars.str(raw, FIELD_LAST_REFRESH)?.let { out[FIELD_LAST_REFRESH] = it }
-            hasAccess
-        }.getOrDefault(false)
-        val mtime = codexAuthMtimeOrNull(authPath, log)
-        if (invalidGrantLatch.isLatched(mtime)) out["refresh_latched"] = INVALID_GRANT_REASON
-        return AuthDescription(present = present, kind = KIND, fields = out)
-    }
+    override suspend fun describe(): AuthDescription = describeAuth.describe()
 
     // Atomic 0600 credential write — routes to the shared primitive (was an inline temp→chmod→move).
     private fun writeSecure(path: Path, content: String) {
         SecureFile.writeAtomic0600(path, content)
     }
-
-    // G15: best-effort mtime probe for the invalid_grant latch gate; shared by doRefresh() and
-    // describe(). The failure is logged, not swallowed, before collapsing to null — a stat failure is
-    // "unknown", which InvalidGrantLatch treats as fail-open (never suppresses), NOT "file unchanged".
-    private fun codexAuthMtimeOrNull(authPath: Path, log: LogSink): Long? =
-        Cancellables.runCatchingCancellable {
-            Files.getLastModifiedTime(authPath).toMillis()
-        }.onFailure {
-            log("[codex-auth] failed to stat $authPath mtime: $it — invalid_grant latch check skipped")
-        }.getOrNull()
 }

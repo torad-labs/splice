@@ -8,6 +8,8 @@ import java.nio.file.Path
 
 private const val CHECK_TOPOLOGY = "topology"
 
+internal enum class CheckStatus { OK, INFO, WARN, FAIL }
+
 /** The doctor configuration section as a constructed collaborator (Kotlin style law, 2026-08-15:
  *  main sources carry no top-level functions). Stateless — DoctorCommand builds one and asks it,
  *  inside the same `guarded { }` lambda the section always ran in; the member keeps the old

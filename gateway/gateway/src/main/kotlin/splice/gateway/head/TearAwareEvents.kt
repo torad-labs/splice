@@ -1,7 +1,7 @@
-// PORT-OF: splice/gateway/head/TurnDriver.kt (tearAwareEvents, ZeroEventCapture) @ 86f1411 —
+// PORT-OF: splice/gateway/head/TurnDriver.kt (tearAwareEvents) @ 86f1411 —
 // invariants unchanged: the upstream SSE event flow with instrumentation + the G5 pre-frame tear
-// rethrow, and its raw-body capture for the G2 zero-event classifier. Split out (HD-24) beside
-// SseRoundDriver, its sole caller.
+// rethrow. Split out (HD-24) beside SseRoundDriver, its sole caller. ZeroEventCapture lives in
+// ZeroEventCapture.kt.
 package splice.gateway.head
 
 import kotlinx.coroutines.flow.catch
@@ -14,15 +14,6 @@ import splice.spi.SseReader
 import splice.spi.StreamTornBeforeClient
 import splice.spi.UpstreamResponse
 import java.io.IOException
-
-private const val ZERO_EVENT_SNIPPET_CHARS = 1024
-
-/** Raw-body capture for the G2 zero-event classifier, threaded through [TearAwareEvents.run]. */
-internal class ZeroEventCapture {
-    var sawEvent = false
-    var malformedLogged = false
-    val snippet = StringBuilder(ZERO_EVENT_SNIPPET_CHARS)
-}
 
 internal class TearAwareEvents(
     private val provider: Provider,
@@ -57,13 +48,7 @@ internal class TearAwareEvents(
                 }
                 capture.malformedLogged = true
             },
-            onRawText = { text ->
-                val room = ZERO_EVENT_SNIPPET_CHARS - capture.snippet.length
-                if (!capture.sawEvent && room > 0) {
-                    capture.snippet.append(text, 0, minOf(text.length, room))
-                }
-                !capture.sawEvent && capture.snippet.length < ZERO_EVENT_SNIPPET_CHARS
-            },
+            onRawText = { text -> capture.appendRaw(text) },
         ).onEach {
             capture.sawEvent = true
             drive.perf.add(PerfKeys.EVENTS_IN, 1)

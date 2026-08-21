@@ -4,10 +4,10 @@
 // Was UpstreamClient.RequestBody / HeaderRules / applyAuth and the first half of attemptRequest;
 // only the receiver moved.
 //
-// THE SEAM IS `statement.execute`, and it is where this file stops. Everything after it —
-// status, error body, Retry-After — must be extracted INSIDE that block because the response body
-// channel dies at its close, so the classification half stays in UpstreamClient.attemptRequest and
-// cannot follow the assembly here.
+// THE SEAM IS `statement.execute`. Status, error body and Retry-After are extracted INSIDE that
+// block because the response body channel dies at its close — which is why the whole execute
+// moved here rather than being split (HD-25 follow-up, 2026-08-20). The loop still owns the
+// four budgets; this file owns one attempt's HTTP round-trip.
 //
 // Request bodies are NEVER gzipped: xAI 400s on a gzipped body ("Failed to parse the request body
 // as JSON: expected value at line 1 column 1" — verified live 2026-07-18, first >=2KiB turn after
@@ -23,6 +23,7 @@ import io.ktor.client.statement.HttpStatement
 import io.ktor.http.ContentType
 import io.ktor.http.content.ByteArrayContent
 import io.ktor.http.contentType
+import io.ktor.http.isSuccess
 import splice.core.auth.Credentials
 
 /** [json] for the RC-4 amender; [bytes] for the wire, encoded once.
@@ -74,12 +75,13 @@ internal class UpstreamRequest(
     private val zstdRequestBody: Boolean,
 ) {
     private val headerRules = HeaderRules()
+    private val retryAfter = RetryAfter()
 
     /** Encode ONCE; retries resend the same bytes (no per-attempt string re-encode). Never gzip. */
     fun body(bodyJson: String): RequestBody = RequestBody(bodyJson, zstdRequestBody)
 
-    /** The prepared POST, up to but NOT including `execute` — the caller owns the execute block
-     *  because the response body channel only lives inside it. */
+    /** The prepared POST, up to but NOT including `execute` — [execute] owns the block because
+     *  the response body channel only lives inside it. */
     suspend fun prepare(
         url: String,
         creds: Credentials,
@@ -99,4 +101,31 @@ internal class UpstreamRequest(
 
     private fun applyAuth(creds: Credentials, extra: Map<String, String>): Map<String, String> =
         headerRules.authHeaders(creds) + extra
+
+    /** The READ-BEFORE-CLOSE half of one attempt. Status, error body and Retry-After are all
+     *  extracted INSIDE the execute block because the response body channel dies at its close. */
+    suspend fun <T> execute(
+        ctx: PostContext,
+        bodyBytes: ByteArray,
+        creds: Credentials,
+        onStreamStart: StreamStart,
+        block: UpstreamHandler<T>,
+    ): RetryOutcome<T> {
+        val statement = prepare(ctx.url, creds, ctx.extraHeaders, bodyBytes)
+        return statement.execute { resp ->
+            ctx.markHeaders()
+            if (resp.status.isSuccess()) {
+                onStreamStart()
+                RetryOutcome.Done(block(UpstreamResponse(resp)))
+            } else {
+                RetryOutcome.Failed(
+                    resp.status.value,
+                    UpstreamResponse(resp).bodyTextLimited(MAX_ERROR_BODY_BYTES),
+                    retryAfter.retryAfterMs(resp.headers["Retry-After"]),
+                )
+            }
+        }
+    }
 }
+
+private const val MAX_ERROR_BODY_BYTES = 64 * 1024

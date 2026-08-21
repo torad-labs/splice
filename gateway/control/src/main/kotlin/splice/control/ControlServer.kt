@@ -110,7 +110,7 @@ public class ControlServer(
                 get("/") { call.respondText(dashboardHtml(), ContentType.Text.Html) }
                 get("/dashboard") { call.respondText(dashboardHtml(), ContentType.Text.Html) }
                 get("/api/status") { guarded(call) { respond(call, payloads.statusJson()) } }
-                get("/api/heads") { guarded(call) { respond(call, payloads.headsJson()) } }
+                get("/api/heads") { guarded(call) { respond(call, resolver.headsJson()) } }
                 post("/api/heads/{head}/{action}") { guarded(call) { headRoutes.headAction(call) } }
                 post("/api/daemon/shutdown") {
                     guarded(call) {

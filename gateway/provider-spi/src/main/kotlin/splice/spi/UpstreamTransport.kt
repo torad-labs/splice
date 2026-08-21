@@ -17,6 +17,7 @@ import io.ktor.client.engine.java.Java
 import io.ktor.client.plugins.HttpTimeout
 import splice.core.util.LogSink
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.random.Random
 
 public class UpstreamTransport {
     public fun defaultClient(
@@ -50,6 +51,25 @@ public class UpstreamTransport {
             }
         }
     }
+
+    /** Exponential backoff, ±10% jitter (codex shape — synchronized retry herds re-collide without
+     *  it), capped at MAX_BACKOFF_MS; a server Retry-After rides in as a FLOOR via minDelayMs (G3).
+     *  Sleeps through [waiter] so a test can replace the WAIT without re-authoring the CURVE. */
+    public fun defaultBackoff(waiter: Waiter): RetryBackoff = RetryBackoff { attempt, minDelayMs ->
+        val base = minOf(BACKOFF_BASE_MS shl attempt, MAX_BACKOFF_MS)
+        val jittered = (base * Random.nextDouble(JITTER_LO, JITTER_HI)).toLong()
+        waiter.wait(maxOf(jittered, minDelayMs))
+    }
+
+    /** DNS-class transport failures (G14) get their own 1s/2s/4s schedule — a real resolver
+     *  blip (kimi 07:00 burst: 37 UnresolvedAddressException turns) runs longer than the
+     *  generic 200/400/800ms curve undershoots. No minDelayMs — transport errors never carry
+     *  a Retry-After header (no response was received). */
+    public fun defaultDnsBackoff(waiter: Waiter): DnsBackoff = DnsBackoff { attempt ->
+        val base = minOf(DNS_BACKOFF_BASE_MS shl attempt, DNS_MAX_BACKOFF_MS)
+        val jittered = (base * Random.nextDouble(JITTER_LO, JITTER_HI)).toLong()
+        waiter.wait(jittered)
+    }
 }
 
 // G11: a blackholed/dead address must fail fast into the existing transport-retry loop
@@ -57,6 +77,13 @@ public class UpstreamTransport {
 // from firstByteTimeoutMs (5min default), which governs headers-wait/body phase via
 // socketTimeoutMillis, not TCP connect.
 private const val CONNECT_TIMEOUT_MS = 10_000L
+
+private const val BACKOFF_BASE_MS = 200L
+private const val MAX_BACKOFF_MS = 10_000L
+private const val JITTER_LO = 0.9
+private const val JITTER_HI = 1.1
+private const val DNS_BACKOFF_BASE_MS = 1_000L
+private const val DNS_MAX_BACKOFF_MS = 4_000L
 
 // G26: java.net.http.HttpClient/Builder expose no public API to read or set TCP_NODELAY per
 // connection (confirmed via javap on ktor-client-java-jvm; JDK-8338681 is an open

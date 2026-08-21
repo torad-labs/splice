@@ -31,11 +31,6 @@ public interface HeadLogSource {
     public fun path(): String
 }
 
-/** Reads the head's per-turn perf rows (file truth, numeric fields only, newest last). */
-public fun interface HeadPerfSource {
-    public fun tailNumeric(n: Int): List<Map<String, Long>>
-}
-
 public data class ManagedHead(
     val head: Head,
     val auth: AuthProvider,

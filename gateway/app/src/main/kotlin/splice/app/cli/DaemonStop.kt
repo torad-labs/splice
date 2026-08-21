@@ -7,13 +7,15 @@
 // :app is wall-exempt for println (a terminal tool writes to stdout).
 package splice.app.cli
 
-import splice.core.util.Cancellables
-import kotlin.streams.toList
+import splice.app.DaemonBoundary
+import splice.app.DaemonProbe
 
 /** Stopping the daemon: ask over the control plane, then escalate through OS signals until every
  *  port it owned is free. Constructed by the `restart` verb (Kotlin style law, 2026-08-15: main
  *  sources carry no top-level functions); every member keeps the old function's name. */
 internal class DaemonStop {
+
+    private val boundary = DaemonBoundary()
 
     /** Ask the daemon to shut down (bearer-guarded) and wait until the LISTENER is actually gone.
      *  The POST is fire-and-observe: a graceful teardown can drop the connection mid-response
@@ -59,7 +61,7 @@ internal class DaemonStop {
      *  delivered, and both returns were discarded while the preceding println already claimed it
      *  had been sent. */
     private fun escalate(port: Int, signal: String, why: String, send: SignalSend) {
-        val handle = daemonOnPort(port)
+        val handle = boundary.daemonOnPort(port)
         if (handle == null) {
             println(
                 "splice: could not identify the process holding :$port — cannot send $signal " +
@@ -81,30 +83,12 @@ internal class DaemonStop {
         return stopped(port, headPorts)
     }
 
-    /** The splice daemon PROCESS bound to [port], or null — identified by the port's own listener
-     *  (`ss`) intersected with a splice-jar cmdline, never a bare cmdline substring. This is what
-     *  keeps a restart of one daemon from signalling a concurrent oracle daemon or a second head
-     *  (F2), and it mirrors the oracle harness's own port+cmdline scoping. */
-    private fun daemonOnPort(port: Int): ProcessHandle? = pidsOnPort(port)
-        .firstNotNullOfOrNull { pid ->
-            ProcessHandle.of(pid).orElse(null)?.takeIf { ph ->
-                val cmd = ph.info().commandLine().orElse("")
-                cmd.contains("daemon") && (cmd.contains("splice.jar") || cmd.contains("app-all.jar"))
-            }
-        }
-
-    private fun pidsOnPort(port: Int): List<Long> = Cancellables.runCatchingCancellable {
-        ProcessBuilder("ss", "-ltnpH", "( sport = :$port )").redirectErrorStream(true).start()
-            .inputStream.bufferedReader().use { it.readText() }
-            .let { Regex("pid=(\\d+)").findAll(it).map { m -> m.groupValues[1].toLong() }.toList() }
-    }.getOrDefault(emptyList())
-
     /** "Stopped" means EVERY port this daemon owned is free — the control port AND the head ports.
      *  Checking only the control port (F3) let the ladder report success while :3099 lingered on
      *  non-daemon Netty threads; the next restart then boots a head into EADDRINUSE and it lands
      *  permanently failed. A daemon whose control server quit answering can still hold its ports. */
     private fun stopped(port: Int, headPorts: List<Int>): Boolean =
-        ControlPlaneClient.healthVersion(port) == null &&
+        DaemonProbe.healthVersion(port) == null &&
             !AdminSupport.controlPortBound(port) &&
             headPorts.none { AdminSupport.controlPortBound(it) }
 }

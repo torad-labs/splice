@@ -1,8 +1,6 @@
 // NEW: the two ROLES the CLI's process and HTTP edges inject, named (HD-22, wave 4b).
 package splice.app.cli
 
-import java.net.HttpURLConnection
-
 /**
  * Delivers one signal to the daemon process — `destroy()` (TERM) or `destroyForcibly()` (KILL).
  *
@@ -13,17 +11,6 @@ import java.net.HttpURLConnection
  */
 internal fun interface SignalSend {
     operator fun invoke(handle: ProcessHandle): Boolean
-}
-
-/**
- * Reads the control-plane response off an already-connected [HttpURLConnection].
- *
- * Runs INSIDE the request helper's try/finally, which is the contract the shape hides: the
- * connection is disconnected the moment this returns, so anything the caller needs must be
- * materialized here rather than handed back as a live stream.
- */
-internal fun interface ResponseRead<T> {
-    operator fun invoke(connection: HttpURLConnection): T
 }
 
 /**

@@ -15,9 +15,7 @@ import splice.core.turn.ErrorType
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 
-public data class ClassifiedFailure(val type: ErrorType, val message: String)
-
-public enum class FailureSource { HTTP, SSE }
+// ClassifiedFailure + FailureSource live in FailureKinds.kt (concentration, 2026-08-19).
 
 public object UpstreamFailureClassifier {
     private val overflowRe = Regex(

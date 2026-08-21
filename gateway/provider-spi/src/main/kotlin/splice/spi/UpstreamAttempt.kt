@@ -12,20 +12,49 @@
 // file.
 package splice.spi
 
+import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.perf.PerfKeys
+import splice.core.perf.TimedWork
 import splice.core.perf.TurnPerf
+import splice.core.perf.TurnPerfTiming
 
 /** The per-post collaborators threaded through every attempt (grouped: one cohesive argument).
- *  Built by `UpstreamClient.post` and by nothing else. */
-internal data class PostContext(
+ *  Callers construct this and pass it to [UpstreamClient.post]. */
+public data class PostContext(
     val url: String,
     val auth: RefreshableAuthProvider,
     val extraHeaders: CredentialHeaders,
-    val onRetry: RetryNotice,
-    val perf: TurnPerf?,
-    val clientFrameEmitted: ClientFrameEmitted,
-    val amendBodyOnFailure: BodyAmendment,
-)
+    val onRetry: RetryNotice = RetryNotice {},
+    val perf: TurnPerf? = null,
+    val clientFrameEmitted: ClientFrameEmitted = ClientFrameEmitted { true },
+    val amendBodyOnFailure: BodyAmendment = BodyAmendment { _, _, _ -> null },
+) {
+    internal fun markRetry() {
+        perf?.add(PerfKeys.RETRIES, 1)
+    }
+
+    internal fun markAttempt() {
+        perf?.add(PerfKeys.ATTEMPTS, 1)
+    }
+
+    internal fun markPostSendRetry() {
+        perf?.add(PerfKeys.POST_SEND_RETRIES, 1)
+    }
+
+    internal fun markHeaders() {
+        perf?.mark(PerfKeys.HEADERS)
+    }
+
+    internal suspend fun <T> timedAuth(block: TimedWork<T>): T =
+        TurnPerfTiming.timedOr(perf, PerfKeys.AUTH_MS, block)
+
+    internal suspend fun <T> timedBackoff(block: TimedWork<T>): T =
+        TurnPerfTiming.timedOr(perf, PerfKeys.BACKOFF_MS, block)
+
+    internal suspend fun requireAuth(): Credentials =
+        timedAuth { auth.credentials() } ?: throw UpstreamAuthMissing()
+}
 
 /** One attempt's result. [Failed] is produced INSIDE `attemptRequest`'s execute block — the
  *  response body channel dies at that block's close, so status, body text and Retry-After are all

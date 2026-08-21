@@ -81,13 +81,13 @@ public object SystemTextSerializer : KSerializer<String?> {
 public object ContentBlockSerializer : JsonContentPolymorphicSerializer<ContentBlock>(ContentBlock::class) {
     override fun selectDeserializer(element: JsonElement): DeserializationStrategy<ContentBlock> =
         when (element.jsonObject["type"]?.jsonPrimitive?.content) {
-            "text" -> TextBlock.serializer()
-            "image" -> ImageBlock.serializer()
-            "document" -> DocumentBlock.serializer()
-            "thinking" -> ThinkingBlock.serializer()
-            "redacted_thinking" -> RedactedThinkingBlock.serializer()
-            "tool_use" -> ToolUseBlock.serializer()
-            "tool_result" -> ToolResultBlock.serializer()
+            "text" -> ContentBlock.TextBlock.serializer()
+            "image" -> ContentBlock.ImageBlock.serializer()
+            "document" -> ContentBlock.DocumentBlock.serializer()
+            "thinking" -> ContentBlock.ThinkingBlock.serializer()
+            "redacted_thinking" -> ContentBlock.RedactedThinkingBlock.serializer()
+            "tool_use" -> ContentBlock.ToolUseBlock.serializer()
+            "tool_result" -> ContentBlock.ToolResultBlock.serializer()
             else -> UnknownBlockSerializer
         }
 }

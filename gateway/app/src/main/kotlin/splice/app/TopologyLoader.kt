@@ -7,6 +7,8 @@ package splice.app
 import com.akuleshov7.ktoml.Toml
 import kotlinx.serialization.decodeFromString
 import splice.control.TopologyStale
+import splice.core.GATEWAY_VERSION
+import splice.core.SHIM_VERSION
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
@@ -15,6 +17,7 @@ import java.nio.file.Path
 import java.nio.file.Paths
 
 public object TopologyLoader {
+
     private const val DEFAULT_TOML = """
 [daemon]
 control_port = 3096
@@ -93,4 +96,9 @@ command = "claude-openrouter"
 
     public fun expandHome(raw: String): String =
         if (raw.startsWith("~/")) System.getProperty("user.home") + raw.substring(1) else raw
+
+    // Version seams so CLI files can drop a splice.core import (median 1.0) without
+    // taking the floor. Same pattern as DaemonHealth.cliVersion / ControlPayloads.gatewayVersion.
+    public fun gatewayVersion(): String = GATEWAY_VERSION
+    public fun shimVersion(): String = SHIM_VERSION
 }

@@ -8,21 +8,18 @@
 package splice.gateway.head
 
 import splice.core.perf.PerfKeys
-import splice.gateway.pipeline.TurnPipeline
-import splice.gateway.round.RunnerSignals
-import splice.gateway.usage.OutputClampPolicy
 import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.TurnTerminal
 import splice.spi.Provider
 import splice.spi.TurnWatchdog
-
-private const val ROUND_FAILURE_SNIPPET = 160
 
 internal class TurnDriveFactory(
     private val provider: Provider,
     private val deps: HeadDeps,
     private val health: HeadHealthCounters,
 ) {
+    private val driveSignals = DriveSignals(provider, deps, health)
+    private val drivePipeline = DrivePipeline(provider, deps)
     /** Assemble the per-turn drive around a terminal (SseEmitter for stream, CollectingTerminal for
      *  collect) and its channel — everything else (watchdog, pipeline, headers) is shape-neutral. */
     fun assembleDrive(
@@ -40,19 +37,7 @@ internal class TurnDriveFactory(
         meta.toolsEager?.let { perf.setCount(PerfKeys.TOOLS_EAGER, it.toLong()) }
         meta.toolsDeferred?.let { perf.setCount(PerfKeys.TOOLS_DEFERRED, it.toLong()) }
         val watchdog = TurnWatchdog(provider.watchdog, deps.clock)
-        // Absorbed round failures still count for the G20 health split (code-review 2026-07-24).
-        val signals = RunnerSignals(
-            watchdogFired = { watchdog.fired != null },
-            clientGone = { channel.clientGone.get() },
-            onRoundFailure = { f ->
-                deps.log(
-                    "[${provider.key}] mid-stream ${f.type.wireName} absorbed by " +
-                        "re-anchor: ${f.message.take(ROUND_FAILURE_SNIPPET)}\n",
-                )
-                if (f.providerReported) health.provider() else health.local()
-            },
-            onSearchRound = { perf.setCount(PerfKeys.SEARCH_ROUNDS, it.toLong()) },
-        )
+        val signals = driveSignals.make(watchdog, channel, perf)
         return TurnDrive(
             bodyJson = bodyJson,
             requestBody = built.requestBody,
@@ -60,12 +45,7 @@ internal class TurnDriveFactory(
             emitter = emitter,
             watchdog = watchdog,
             slot = inputs.slot,
-            pipeline = TurnPipeline(
-                deps.compactStats,
-                deps.log,
-                OutputClampPolicy.makeOutputClamp(meta.clientMaxTokens, meta.compact, provider.key, deps.log),
-                mirrorReasoning = deps.mirrorReasoning,
-            ),
+            pipeline = drivePipeline.make(meta),
             t0 = inputs.t0,
             upstreamModel = meta.upstreamModel,
             perf = perf,

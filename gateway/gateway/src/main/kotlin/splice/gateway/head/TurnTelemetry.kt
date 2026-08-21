@@ -5,8 +5,6 @@
 // is telemetry.
 package splice.gateway.head
 
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
@@ -15,7 +13,6 @@ import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.gateway.perf.PerfRowMeta
 import splice.gateway.perf.PerfStats
-import splice.gateway.usage.UsageHud
 
 // MERGED: TurnDriver's and TurnTelemetry's private companions each carried an identical
 // `ERR_SNIPPET = 200`. Two file-scope consts cannot share a name, and the two values were never
@@ -32,7 +29,8 @@ internal class TurnTelemetry(
     private val log: LogSink,
     private val clock: ElapsedClock,
 ) {
-    private val hud = UsageHud()
+    private val cache = TurnCacheLine(headKey)
+    private val line = TurnLine(headKey)
 
     /** The sole perf-row emitter: total mark, one JSONL row, one log line. Never throws. */
     fun recordPerf(drive: TurnDrive, outcomeTag: String) {
@@ -45,28 +43,11 @@ internal class TurnTelemetry(
     fun errTurn(kind: String, drive: TurnDrive, detail: String): String =
         "[$headKey] turn ERROR $kind compact=${drive.meta.compact} latency=${clock() - drive.t0}ms $detail\n"
 
-    // Per-turn telemetry: outcome + latency (+ tokens/type). The compaction-stall and API-error
-    // signals live here — a compact turn that FAILUREs or runs many seconds is now visible.
-    fun turnLine(meta: TurnMeta, model: String, outcome: TurnOutcome, latencyMs: Long): String {
-        val base = "[$headKey] turn compact=${meta.compact} model=$model latency=${latencyMs}ms"
-        return base + when (outcome) {
-            is TurnOutcome.Success ->
-                " ok out=${outcome.usage.outputTokens} tool=${outcome.hasToolUse} incomplete=${outcome.incomplete}\n"
-            is TurnOutcome.Failure ->
-                " FAILURE type=${outcome.type.wireName} msg=${outcome.message.take(ERR_SNIPPET)}\n"
-            TurnOutcome.ClientAbandoned -> " client-abandoned\n"
-        }
-    }
+    fun turnLine(meta: TurnMeta, model: String, outcome: TurnOutcome, latencyMs: Long): String =
+        line.render(meta, model, outcome, latencyMs)
 
     /** MOVED out of finishTurn (HD-24): a log line is telemetry, and moving it here is what lets
      *  TurnFinish drop its dependency on UsageHud. [model] is the drive's upstream model; [headKey]
      *  is the same tag every other line in this class uses. */
-    fun cacheLine(model: String, usage: Usage, compact: Boolean): String {
-        val usageObj = buildJsonObject {
-            put("input_tokens", usage.inputTokens)
-            put("output_tokens", usage.outputTokens)
-            put("input_tokens_details", buildJsonObject { put("cached_tokens", usage.cachedTokens) })
-        }
-        return hud.cacheLogLine(headKey, model, usageObj, compact)
-    }
+    fun cacheLine(model: String, usage: Usage, compact: Boolean): String = cache.line(model, usage, compact)
 }

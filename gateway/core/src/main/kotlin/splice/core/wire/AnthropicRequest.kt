@@ -5,12 +5,13 @@
 // degrade gracefully; thinking.type disabled/disabled_thinking disables reasoning.
 // The serializers named in the @Serializable(with = ...) annotations below are declared in
 // AnthropicWireCodecs.kt — same package, so nothing here imports them.
+// Content-block subtypes live nested in ContentBlock.kt; the typealiases below keep
+// `import splice.core.wire.TextBlock` working. ToolDefinition/ToolChoice/MediaSource live
+// in AnthropicTools.kt.
 package splice.core.wire
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
 
 @Serializable
 public data class AnthropicRequest(
@@ -32,70 +33,6 @@ public data class AnthropicMessage(
     val content: List<ContentBlock> = emptyList(),
 )
 
-@Serializable(with = ContentBlockSerializer::class)
-public sealed class ContentBlock
-
-@Serializable
-public data class TextBlock(val text: String = "") : ContentBlock()
-
-@Serializable
-public data class ImageBlock(val source: MediaSource? = null) : ContentBlock()
-
-@Serializable
-public data class DocumentBlock(val source: MediaSource? = null) : ContentBlock()
-
-@Serializable
-public data class ThinkingBlock(val thinking: String = "") : ContentBlock()
-
-@Serializable
-public data class RedactedThinkingBlock(val data: String = "") : ContentBlock()
-
-@Serializable
-public data class ToolUseBlock(
-    val id: String = "",
-    val name: String = "",
-    val input: JsonObject = JsonObject(emptyMap()),
-) : ContentBlock()
-
-@Serializable
-public data class ToolResultBlock(
-    @SerialName("tool_use_id") val toolUseId: String = "",
-    @Serializable(with = ContentSerializer::class)
-    val content: List<ContentBlock> = emptyList(),
-    /** Anthropic's structured failure verdict. `null` means the client said nothing — NOT `false`;
-     *  consumers fall back to text heuristics only in that case. */
-    @SerialName("is_error") val isError: Boolean? = null,
-) : ContentBlock()
-
-/** Unknown block kinds decode losslessly instead of throwing (forward compatibility). */
-@Serializable(with = UnknownBlockSerializer::class)
-public data class UnknownBlock(val raw: JsonObject) : ContentBlock() {
-    public val type: String get() = raw["type"]?.let { (it as? JsonPrimitive)?.content } ?: ""
-}
-
-@Serializable
-public data class MediaSource(
-    val type: String = "",
-    @SerialName("media_type") val mediaType: String? = null,
-    val data: String? = null,
-    val url: String? = null,
-)
-
-@Serializable
-public data class ToolDefinition(
-    val name: String,
-    val description: String? = null,
-    @SerialName("input_schema") val inputSchema: JsonObject? = null,
-    val strict: Boolean? = null,
-)
-
-@Serializable
-public data class ToolChoice(
-    val type: String = "auto",
-    val name: String? = null,
-    @SerialName("disable_parallel_tool_use") val disableParallelToolUse: Boolean? = null,
-)
-
 @Serializable
 public data class ThinkingConfig(
     val type: String = "",
@@ -103,3 +40,12 @@ public data class ThinkingConfig(
 ) {
     public val disabled: Boolean get() = type == "disabled" || type == "disabled_thinking"
 }
+
+public typealias TextBlock = ContentBlock.TextBlock
+public typealias ImageBlock = ContentBlock.ImageBlock
+public typealias DocumentBlock = ContentBlock.DocumentBlock
+public typealias ThinkingBlock = ContentBlock.ThinkingBlock
+public typealias RedactedThinkingBlock = ContentBlock.RedactedThinkingBlock
+public typealias ToolUseBlock = ContentBlock.ToolUseBlock
+public typealias ToolResultBlock = ContentBlock.ToolResultBlock
+public typealias UnknownBlock = ContentBlock.UnknownBlock

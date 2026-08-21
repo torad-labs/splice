@@ -5,14 +5,11 @@
 // checks out."
 package splice.app.cli
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.jsonObject
+import splice.app.DaemonProbe
 import splice.core.config.StatePaths
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
-import splice.core.util.JsonScalars
 import java.nio.file.Files
-import java.nio.file.Path
 
 /** The doctor runtime section as a constructed collaborator (Kotlin style law, 2026-08-15: main
  *  sources carry no top-level functions). Stateless — DoctorCommand builds one and asks it; every
@@ -36,7 +33,7 @@ internal class DoctorRuntime {
             else -> null
         }
         if (skip != null) return listOf(DoctorCheck("runtime", CheckStatus.INFO, skip))
-        val heads = ControlPlaneClient.headsRuntime(snapshot.port, checkNotNull(key))
+        val heads = DaemonProbe.headsRuntime(snapshot.port, checkNotNull(key))
             ?: return listOf(DoctorCheck("runtime", CheckStatus.INFO, "skipped (/api/heads unreachable)"))
         return heads.flatMap { h -> headRuntimeRows(h, statePaths) }
     }
@@ -46,7 +43,7 @@ internal class DoctorRuntime {
             .getOrNull()?.takeIf { it.isNotEmpty() }
 
     internal fun headRuntimeRows(
-        h: ControlPlaneClient.HeadRuntime,
+        h: DaemonProbe.HeadRuntime,
         statePaths: StatePaths,
     ): List<DoctorCheck> {
         val counters = if (h.providerErrors > 0 || h.localOriginErrors > 0) {
@@ -59,36 +56,8 @@ internal class DoctorRuntime {
         } else {
             DoctorCheck("head ${h.key} errors", CheckStatus.OK, "none since last restart")
         }
-        return listOf(counters, perfTailRow(h.key, statePaths.perfStatsFile(h.key)))
+        return listOf(counters, DoctorProbeWrite().perfTailRow(h.key, statePaths.perfStatsFile(h.key)))
     }
-
-    /** Last-N turn outcomes from the per-head perf JSONL — "last failure: 4m ago (upstream_failed)"
-     *  is the sentence doctor exists to say. Missing/empty file = INFO (a fresh head has no turns). */
-    internal fun perfTailRow(headKey: String, perfFile: Path): DoctorCheck {
-        val rows = Cancellables.runCatchingCancellable {
-            Files.readAllLines(perfFile).takeLast(PERF_TAIL_TURNS).mapNotNull { line -> perfRow(line) }
-        }.getOrNull().orEmpty()
-        if (rows.isEmpty()) return DoctorCheck("head $headKey turns", CheckStatus.INFO, "no turns recorded yet")
-        val failures = rows.filter { (outcome, _) -> outcome != "ok" }
-        if (failures.isEmpty()) {
-            return DoctorCheck("head $headKey turns", CheckStatus.OK, "last ${rows.size} turn(s) clean")
-        }
-        val (outcome, ts) = failures.last()
-        val ageMin = ((System.currentTimeMillis() - ts) / MS_PER_MINUTE).coerceAtLeast(0)
-        return DoctorCheck(
-            "head $headKey turns",
-            CheckStatus.WARN,
-            "${failures.size} of last ${rows.size} turn(s) failed — last failure: ${ageMin}m ago ($outcome)",
-            "splice logs --head $headKey --tail 50",
-        )
-    }
-
-    /** One perf JSONL row -> (outcome, ts); null on a malformed line (tail readers stay tolerant). */
-    internal fun perfRow(line: String): Pair<String, Long>? = Cancellables.runCatchingCancellable {
-        val obj = kotlinx.serialization.json.Json.parseToJsonElement(line).jsonObject
-        val outcome = JsonScalars.str(obj, "outcome")
-        if (outcome == null) null else outcome to (JsonScalars.long(obj, "ts") ?: 0L)
-    }.getOrNull()
 
     /** The TURN-PATH verdict — ranked ABOVE the head counters by its caller, because it outranks them:
      *  during the 91h wedge every counter was perfect (4 ready, 0 failed) while not one turn could
@@ -101,7 +70,7 @@ internal class DoctorRuntime {
      *  counters, a wedged turn path is not a diagnosis of degraded quality, it is the outage.
      *  Lives here rather than in DoctorCommand.kt only because that file sits at detekt's function
      *  budget — same reason JW-05 split this file off in the first place. */
-    internal fun turnPathCheck(h: ControlPlaneClient.HealthView): DoctorCheck? = when {
+    internal fun turnPathCheck(h: HealthView): DoctorCheck? = when {
         h.ok == null -> null
         h.turnPathStalled.isNotEmpty() -> DoctorCheck(
             "turn path",
@@ -116,6 +85,3 @@ internal class DoctorRuntime {
         else -> DoctorCheck("turn path", CheckStatus.OK, "loopback probes are completing")
     }
 }
-
-private const val PERF_TAIL_TURNS = 20
-private const val MS_PER_MINUTE = 60_000L

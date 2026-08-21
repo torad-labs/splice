@@ -262,66 +262,10 @@ CAUSE_DOMINANCE = 2 / 3
 # checks/rule-routing.sh. Read CEILING EXCEPTIONS in the module docstring before adding one; the
 # short version is that an entry here is a CEILING that still fails when breached, its
 # justification is mechanically required, a stale entry is a hard error, and every run prints the
-# list. Two entries, and every other file above the gate is HD-25's work — a third entry added to
-# make a red gate green is the laundering this list exists to prevent.
-CEILING_EXCEPTIONS: list[tuple[str, float, str]] = [
-    (
-        "gateway/core/src/main/kotlin/splice/core/wire/AnthropicRequest.kt",
-        4.19,
-        "2026-08-18: 15 Anthropic wire-format DTOs in 74 lines, with ZERO splice.* imports and "
-        "ZERO non-type exports — the entire score is the declarations, and the declarations are "
-        "one cohesive wire surface. TIGHTENED from 5.83 the same day: the four serializer objects "
-        "moved verbatim to the same package's AnthropicWireCodecs.kt (HD-25), which was the one "
-        "honest seam here — they were the only declarations in the file carrying algorithm, and "
-        "being same-package the move cost no consumer an import. What is left is the shape "
-        "catalogue, and a ceiling recorded above it would exempt room the file no longer needs. "
-        "Every destination a split could use is closed by the module "
-        "direction law: :core's allowed-dependency set is empty "
-        "(gateway/build-logic/src/main/kotlin/splice.module-law.gradle.kts:15), and five of this "
-        "file's six neighbour packages sit outside :core (splice.dialect.chat, "
-        "splice.dialect.passthrough, splice.dialect.responses, splice.gateway.compact, "
-        "splice.gateway.reasoning), so moving any type there inverts the graph; the three dialect "
-        "modules additionally may not depend on each other, so the shared request shape cannot be "
-        "parked in one of them and read by the other two. The sixth neighbour, splice.core.parse, "
-        "is a consumer. A 26-configuration weighting sweep (HD-25 note, 2026-08-17) found no "
-        "variant that leaves this file below HIGH without flipping a third of the tree. The "
-        "ceiling is its measured ratio under one-declaration-one-bill, not a target — and with "
-        "no margin, so a future breach may be NEIGHBOURHOOD drift rather than this file growing: "
-        "its C is 157.0 over a denominator of 37.5, and any split inside a neighbour package "
-        "lowers that denominator with nothing here changing. Run --since before reading a red as "
-        "regression; cause `own` is this file, cause `neighbourhood` is the denominator moving.",
-    ),
-    (
-        "gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamClient.kt",
-        2.79,
-        "2026-08-18: unlike AnthropicRequest this file is mass, not declarations — 226 logic "
-        "lines against 1 top-level type, 0 non-type exports and 3 subsystems, so 113.0 of its "
-        "145.0 C is the logic term. TIGHTENED from 6.14 to the measured ratio the same day: the "
-        "6.14 described a 491-logic-line file that no longer exists. HD-25 moved everything that "
-        "was not the loop out to same-module siblings, each named in this file's own header — "
-        "client construction to UpstreamTransport.kt, throwable classification to "
-        "TransportFailures.kt, the retry DECISION and the G5 re-issue interlock to RetryPolicy.kt, "
-        "the failure predicates to FailureRules.kt, request assembly to UpstreamRequest.kt, plus "
-        "RetryAfter/RateLimitCooldown/UpstreamAttempt/UpstreamPorts/UpstreamErrors. A ceiling "
-        "carried over from the pre-decomposition file is 3.35 points of room this one never "
-        "earned, which is the padding this mechanism was built to prevent. WHAT IS LEFT is one "
-        "retry loop whose FOUR budgets share a single RetryState (UpstreamClient.kt:148-174): "
-        "`attempt` (connect-phase backoff), `refreshedOnce` (the 401 single-flight refresh, which "
-        "must NOT consume an attempt), `streamReissues` (G5 — spans the whole turn, never reset "
-        "per handoff, deliberately independent of maxRetries) and `amendedOnce` (RC-4 — budgeted "
-        "alone, never by the attempt counter). Their MUTUAL INDEPENDENCE is the invariant, and it "
-        "is load-bearing: the review recorded in-code at UpstreamClient.kt:161-166 (2026-07-24) "
-        "found that coupling just two of them, via a single `attempt += 1` in the amend step, made "
-        "the loop guard eat a valid amended resend at the budget boundary — it computed a good "
-        "body and then failed the turn on the stale pre-amendment error. Splitting the loop across "
-        "files puts that shared state on a seam. The ceiling is its measured ratio with NO margin, "
-        "so a future breach may be neighbourhood drift rather than this file growing — its C is "
-        "145.0 over a denominator of 52.0, and any split inside a neighbour package lowers that "
-        "denominator with nothing here changing; run --since before reading a red as regression. "
-        "It is NOT a licence to grow: any reduction that keeps the four budgets in one object is "
-        "welcome and should lower this number again.",
-    ),
-]
+# list. Empty after HD-25: UpstreamClient measured 1.78 (C=91.0 / d=51.0) which is under
+# --max-ratio 1.8, so the leftover 3.1 ceiling was padded. A second entry added to make a
+# red gate green is the laundering this list exists to prevent.
+CEILING_EXCEPTIONS: list[tuple[str, float, str]] = []
 
 # Every exemption starts with a date, exactly as checks/rule-routing.sh requires of
 # UNROUTED_ALLOWLIST — an undated one is how the next exemption hides.
@@ -340,8 +284,8 @@ EXCEPTION_JUSTIFICATION = re.compile(r"^\d{4}-\d{2}-\d{2}: \S")
 # UpstreamClient ceiling, the pre-decomposition AnthropicRequest ceiling). The count is measured
 # and printed on every run as DEBT. See THE GATED CRITERION IS THE HIGH BAND in the docstring for
 # the control that forced the change.
-RATCHET_RECORDED = "2026-08-18"
-RATCHET_MAX_HIGH = 8  # files in band HIGH  (re-measured 2026-08-18 under the HIGH criterion: 9 total - 1 excepted)
+RATCHET_RECORDED = "2026-08-19"
+RATCHET_MAX_HIGH = 0  # files in band HIGH  (re-measured 2026-08-19 after SseReader same-package split: 1 -> 0; HIGH band empty)
 
 
 def ceilings() -> dict[str, float]:

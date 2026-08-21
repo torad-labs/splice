@@ -19,26 +19,6 @@ import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
 
-public object GrokOAuthEndpoints {
-    public const val DEFAULT_CLIENT_ID: String = "b1a00492-073a-47ea-816f-4c329264a828"
-    public const val REDIRECT_PORT: Int = 56121
-    public const val REDIRECT_URI: String = "http://127.0.0.1:56121/callback"
-    public const val SCOPE: String = "openid profile email offline_access grok-cli:access api:access"
-
-    public fun issuer(env: EnvReader): String =
-        (env("GROK_OAUTH_ISSUER") ?: "https://auth.x.ai").trimEnd('/')
-
-    public fun authorizeUrl(env: EnvReader): String =
-        env("GROK_OAUTH_AUTHORIZE_URL") ?: "${issuer(env)}/oauth2/authorize"
-
-    // discovery would resolve this, but the CLI's endpoint is stable; env-overridable for safety.
-    public fun tokenUrl(env: EnvReader): String =
-        env("GROK_OAUTH_TOKEN_URL") ?: "${issuer(env)}/oauth2/token"
-
-    public fun clientId(env: EnvReader): String =
-        env("GROK_OAUTH_CLIENT_ID") ?: DEFAULT_CLIENT_ID
-}
-
 // 48 = PKCE verifier byte length used by the grok CLI (base64url ~64 chars).
 private const val PKCE_VERIFIER_BYTES = 48
 

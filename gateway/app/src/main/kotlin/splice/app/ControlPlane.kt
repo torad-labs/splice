@@ -5,6 +5,9 @@
 // caller's responsibility is to stop what it already started and exit cleanly in that case.
 package splice.app
 
+import kotlinx.coroutines.cancel
+import splice.app.provider.HeadBuildInputs
+import splice.app.provider.ProviderAssembly
 import splice.control.ControlServer
 import splice.control.DashboardPage
 import splice.control.FailedHeads
@@ -17,6 +20,8 @@ import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
 import splice.core.launch.ClaudeConfigMaterializer
 import splice.core.util.LogSink
+import splice.spi.LifecycleScope
+import splice.spi.ProcessDispatchers
 import java.nio.file.Path
 
 internal class ControlPlane(
@@ -29,8 +34,21 @@ internal class ControlPlane(
     // JW-04: the booted config identity (sha-256 of the parsed bytes + the resolved path).
     private val topologyDigest: String = "",
     private val topologyPath: Path? = null,
+    refreshCall: TokenUrlRefreshCall = TokenUrlRefreshCall(CodexRefresh()::refresh),
 ) {
     private val boundary = DaemonBoundary()
+
+    // Held here so Daemon can drop the app.provider + spi imports (concentration, 2026-08-19).
+    // probeScope is the daemon's OWN scope — ProviderAssembly must receive the SAME instance
+    // stop() cancels; constructing a second one would leak prefetch coroutines.
+    internal val signInPlanner = SignInPlanner()
+    internal val buildInputs = HeadBuildInputs(config, signInPlanner)
+    internal val probeScope = LifecycleScope(ProcessDispatchers().background())
+    internal val providerAssembly = ProviderAssembly(statePaths, probeScope, log, refreshCall)
+
+    internal fun cancelProbes() {
+        probeScope.cancel()
+    }
 
     /** Constructs and binds the control plane. Returns null (having already called
      *  [shutdownDaemon] and logged) when the bind fails — defense in depth for the

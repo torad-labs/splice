@@ -4,17 +4,15 @@
 // clients only" errors). This TurnTerminal accumulates the SAME content ops the SseEmitter would
 // have framed and exposes them as ONE Anthropic Messages JSON body (translateResponse parity),
 // so the whole fold/translator/honesty pipeline drives it unchanged — no parallel non-stream path.
+// Content accumulation lives in CollectingBlocks.kt (concentration HIGH, 2026-08-19).
 package splice.gateway.wire
 
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
-import splice.core.util.Cancellables
 import java.util.concurrent.atomic.AtomicBoolean
 
 private const val OK_STATUS = 200
@@ -27,13 +25,7 @@ private const val STATUS_RATE_LIMIT = 429
 private const val STATUS_OVERLOADED = 529
 
 private const val FIELD_TYPE = "type"
-private const val FIELD_TEXT = "text"
-private const val FIELD_THINKING = "thinking"
 private const val FIELD_ERROR = "error"
-
-// FILE SCOPE ON PURPOSE: one shared immutable empty JsonObject. As a member it would allocate per
-// CollectingTerminal, i.e. per non-stream turn, for a value that can never differ.
-private val EMPTY_INPUT = JsonObject(emptyMap())
 
 public class CollectingTerminal(
     private val model: String,
@@ -41,15 +33,7 @@ public class CollectingTerminal(
     private val messageId: String = MessageIds().generateMessageId(),
 ) : TurnTerminal {
 
-    private sealed class Blk {
-        class Text(val sb: StringBuilder = StringBuilder()) : Blk()
-        class Thinking(val sb: StringBuilder = StringBuilder(), val sig: StringBuilder = StringBuilder()) : Blk()
-        class Tool(val id: String, val name: String, val args: StringBuilder = StringBuilder()) : Blk()
-        class Redacted(val data: String) : Blk()
-    }
-
-    // Blocks in OPEN order — the Anthropic content array order. Index handles are list positions.
-    private val blocks = mutableListOf<Blk>()
+    private val content = CollectingBlocks()
     private val ended = AtomicBoolean(false)
 
     // The L3 terminal envelope (stop_reason derivation lives in SseEmitter.kt), held not copied.
@@ -59,15 +43,6 @@ public class CollectingTerminal(
 
     private var body: JsonObject? = null
     private var status = DEFAULT_ERROR_STATUS
-
-    // HEAD-003: latched when a tool_use's accumulated input never parsed as JSON, OR (REG-001)
-    // when a tool_use has no usable name and is dropped from content — either way the client must
-    // never receive a turn whose stop_reason claims tool_use while content disagrees (dropped
-    // silently) or carries the wrong (silently emptied) arguments.
-    private var malformedToolInput = false
-
-    // HEAD-004: id fallback counter for a tool_use whose upstream id was blank.
-    private var toolSynthCounter = 0
 
     /** The single JSON body to write back (a terminal message or an error envelope). Never null
      *  after a driven turn — a turn always ends in emitTerminal or emitError; the fallback covers
@@ -80,31 +55,26 @@ public class CollectingTerminal(
     public fun httpStatus(): Int = status
 
     // ── content accumulation (WireSink) ──────────────────────────────────────
-    override suspend fun openText(): WireBlockIndex = add(Blk.Text())
+    override suspend fun openText(): WireBlockIndex = content.openText()
 
-    override suspend fun openThinking(): WireBlockIndex = add(Blk.Thinking())
+    override suspend fun openThinking(): WireBlockIndex = content.openThinking()
 
-    override suspend fun openTool(id: String, name: String): WireBlockIndex = add(Blk.Tool(id, name))
-
-    private fun add(blk: Blk): WireBlockIndex {
-        blocks.add(blk)
-        return WireBlockIndex(blocks.lastIndex)
-    }
+    override suspend fun openTool(id: String, name: String): WireBlockIndex = content.openTool(id, name)
 
     override suspend fun textDelta(index: WireBlockIndex, text: String) {
-        (blocks.getOrNull(index.value) as? Blk.Text)?.sb?.append(text)
+        content.textDelta(index, text)
     }
 
     override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) {
-        (blocks.getOrNull(index.value) as? Blk.Thinking)?.sb?.append(thinking)
+        content.thinkingDelta(index, thinking)
     }
 
     override suspend fun signatureDelta(index: WireBlockIndex, signature: String) {
-        (blocks.getOrNull(index.value) as? Blk.Thinking)?.sig?.append(signature)
+        content.signatureDelta(index, signature)
     }
 
     override suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String) {
-        (blocks.getOrNull(index.value) as? Blk.Tool)?.args?.append(partialJson)
+        content.inputJsonDelta(index, partialJson)
     }
 
     override suspend fun closeBlock(index: WireBlockIndex) {
@@ -116,18 +86,18 @@ public class CollectingTerminal(
     }
 
     override suspend fun addTextBlock(text: String) {
-        if (text.isNotEmpty()) blocks.add(Blk.Text(StringBuilder(text)))
+        content.addTextBlock(text)
     }
 
     override suspend fun addRedactedThinking(data: String) {
-        if (data.isNotEmpty()) blocks.add(Blk.Redacted(data))
+        content.addRedactedThinking(data)
     }
 
     // ── terminal (TurnTerminal) ──────────────────────────────────────────────
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) {
         if (!ended.compareAndSet(false, true)) return
-        val content = contentBlocks()
-        if (malformedToolInput) {
+        val blocks = content.contentBlocks()
+        if (content.malformedToolInput) {
             // HEAD-003: a tool_use whose input never parsed as JSON must not reach the client as
             // {} — a tool executing with the wrong (silently emptied) arguments is a wrong action
             // taken on the user's machine. Fail the turn honestly instead. `ended` is already
@@ -148,7 +118,7 @@ public class CollectingTerminal(
             TerminalMessage(
                 id = messageId,
                 model = model,
-                content = content,
+                content = blocks,
                 hasToolUse = hasToolUse,
                 incomplete = incomplete,
                 usagePayload = usagePayload(usage),
@@ -165,58 +135,6 @@ public class CollectingTerminal(
 
     override fun abandon() {
         ended.set(true) // no body: responseBody() falls back to the honest api_error envelope
-    }
-
-    /** Finalize the accumulated blocks into Anthropic content items. Empty text/thinking blocks are
-     *  dropped (the wire rejects an empty text block; matches the stream path's honesty gate). */
-    private fun contentBlocks(): List<JsonObject> = blocks.mapNotNull { blk ->
-        when (blk) {
-            is Blk.Text -> blk.sb.takeIf { it.isNotEmpty() }?.let { textBlock(FIELD_TEXT, it.toString()) }
-            is Blk.Thinking -> blk.sb.takeIf { it.isNotEmpty() }?.let { thinkingBlock(it.toString(), blk.sig) }
-            is Blk.Tool -> toolBlock(blk)
-            is Blk.Redacted -> buildJsonObject {
-                put(FIELD_TYPE, "redacted_thinking")
-                put("data", blk.data)
-            }
-        }
-    }
-
-    private fun textBlock(type: String, value: String): JsonObject = buildJsonObject {
-        put(FIELD_TYPE, type)
-        put(type, value)
-    }
-
-    private fun thinkingBlock(thinking: String, sig: StringBuilder): JsonObject = buildJsonObject {
-        put(FIELD_TYPE, FIELD_THINKING)
-        put(FIELD_THINKING, thinking)
-        if (sig.isNotEmpty()) put("signature", sig.toString())
-    }
-
-    // HEAD-004: a blank id is synthesized (opaque token, same idiom as
-    // ResponsesStreamTranslator's toolu_synth_ fallback) — a blank name has no safe stand-in, so
-    // the block is dropped from content. REG-001: dropping it silently left stop_reason="tool_use"
-    // (computed upstream from the raw event, before this filtering) disagreeing with an empty
-    // content array — protocol-invalid. Reuse the malformedToolInput honest-failure path (HEAD-003)
-    // instead of shipping the contradiction.
-    private fun toolBlock(tool: Blk.Tool): JsonObject? {
-        if (tool.name.isBlank()) {
-            malformedToolInput = true
-            return null
-        }
-        val id = tool.id.ifBlank { "toolu_synth_${toolSynthCounter++}" }
-        return buildJsonObject {
-            put(FIELD_TYPE, "tool_use")
-            put("id", id)
-            put("name", tool.name)
-            put("input", parseToolInput(tool.args.toString()))
-        }
-    }
-
-    private fun parseToolInput(raw: String): JsonObject {
-        if (raw.isBlank()) return EMPTY_INPUT // a tool with genuinely no args — not a parse failure
-        val parsed = Cancellables.runCatchingCancellable { Json.parseToJsonElement(raw).jsonObject }.getOrNull()
-        if (parsed == null) malformedToolInput = true // HEAD-003: non-blank input that never parsed
-        return parsed ?: EMPTY_INPUT
     }
 
     // RG2-001: [usage] is null for every OTHER caller of this envelope (the responseBody()

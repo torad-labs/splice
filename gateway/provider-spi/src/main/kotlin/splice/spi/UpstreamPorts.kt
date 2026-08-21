@@ -1,4 +1,4 @@
-// PORT-OF: splice/spi/UpstreamClient.kt (RetryBackoff, DnsBackoff, StreamStart) @ 3879c4c — invariants unchanged: declarations only; the curves themselves are still UpstreamClient's constructor defaults.
+// PORT-OF: splice/spi/UpstreamClient.kt (RetryBackoff, DnsBackoff, StreamStart) @ 3879c4c — invariants unchanged: declarations only; the curves themselves live on UpstreamTransport as defaultBackoff/defaultDnsBackoff.
 //
 // The roles UpstreamClient itself takes (HD-25) — two backoff curves and the handoff notification.
 //

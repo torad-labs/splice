@@ -8,12 +8,12 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.app.cli.CheckStatus
-import splice.app.cli.ControlPlaneClient
 import splice.app.cli.DoctorRuntime
+import splice.app.cli.HealthView
 
 class DoctorTurnPathCheckTest {
 
-    private fun health(ok: Boolean?, stalled: List<String> = emptyList()) = ControlPlaneClient.HealthView(
+    private fun health(ok: Boolean?, stalled: List<String> = emptyList()) = HealthView(
         version = "kt-1",
         heads = 4,
         readyHeads = 4, // the wedge's own numbers: everything "ready" while nothing works

@@ -3,6 +3,10 @@
 // builder reads it), not builder state. The dialect package owns the profile.
 package splice.dialect.chat
 
+import splice.core.wire.ContentBlock
+import splice.core.wire.DocumentBlock
+import splice.core.wire.ImageBlock
+
 public data class ChatQuirks(
     val providerTag: String,
     val supportsTools: Boolean = true,
@@ -26,4 +30,19 @@ public data class ChatQuirks(
      *  receiver was already a ChatQuirks, so every call site is unchanged. */
     public fun withReasoningEffortToml(reasoningEffort: Boolean?): ChatQuirks =
         copy(emitReasoningEffort = reasoningEffort ?: this.emitReasoningEffort)
+
+    /** Honest markers for content this dialect cannot carry: documents always; images when the
+     *  vendor has no vision. An image-only message still yields a marker — silently dropping the
+     *  whole message breaks role alternation AND hides the omission from the model. */
+    public fun omissionMarkers(content: List<ContentBlock>): List<String> {
+        val out = mutableListOf<String>()
+        content.filterIsInstance<DocumentBlock>().forEach { _ ->
+            out.add("[document omitted by $providerTag proxy: unsupported on this backend]")
+        }
+        if (!supportsVision) {
+            val n = content.count { it is ImageBlock }
+            if (n > 0) out.add("[$n image(s) omitted by $providerTag proxy: backend has no vision]")
+        }
+        return out
+    }
 }

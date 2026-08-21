@@ -9,6 +9,8 @@
 // decisions. The client CONSTRUCTION half is UpstreamTransport.kt.
 package splice.spi
 
+import splice.core.util.Cancellables
+
 /**
  * A test applied to each link of a Throwable's cause chain — Ktor wraps engine exceptions, so the
  * class that decides "retryable transport" or "DNS" is never the one thrown.
@@ -76,6 +78,42 @@ internal class TransportFailures {
     internal fun isDnsFailureTransport(e: Throwable): Boolean = causeChainMatches(e) { t ->
         t is java.nio.channels.UnresolvedAddressException || t is java.net.UnknownHostException
     }
+
+    /** Transport-error backoff (G14): DNS-class failures run the dedicated 1s/2s/4s schedule
+     *  instead of the generic curve. The caller times this (PostContext.timedBackoff) so this
+     *  file never names TurnPerf. */
+    internal suspend fun backoffTransportError(
+        error: Throwable,
+        attempt: Int,
+        dnsBackoff: DnsBackoff,
+        backoff: RetryBackoff,
+    ) {
+        if (isDnsFailureTransport(error)) {
+            dnsBackoff(attempt)
+        } else {
+            backoff(attempt, 0L)
+        }
+    }
+
+    /** A transport error thrown BEFORE stream handoff retries; once handed off, non-transport,
+     *  past the deadline, or on the last attempt, rethrow. [deadlineHit] folds stream-handoff
+     *  and the loop's own deadlineExceeded — this file does not own the clock. Returns the
+     *  surviving phase so the caller can label POST_SEND (G16 possible-duplicate). */
+    internal fun rethrowUnlessRetryableTransport(
+        e: Throwable,
+        deadlineHit: Boolean,
+        lastAttempt: Boolean,
+    ): TransportFailurePhase {
+        val phase = classifyTransport(e) ?: throw e
+        val giveUp = deadlineHit || lastAttempt
+        if (giveUp) throw e
+        return phase
+    }
+
+    /** Inline so a suspend execute inside [block] inlines into the caller's coroutine
+     *  (Cancellables.runCatchingCancellable takes a non-suspend lambda). */
+    internal inline fun <R> catchCancellable(block: () -> R): Result<R> =
+        Cancellables.runCatchingCancellable(block)
 }
 
 private const val MAX_CAUSE_DEPTH = 8

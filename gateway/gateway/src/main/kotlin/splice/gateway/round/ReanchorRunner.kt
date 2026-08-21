@@ -11,13 +11,13 @@ package splice.gateway.round
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
-import splice.core.util.LogSink
 import splice.spi.ReanchorController
+import splice.spi.RetryNotice
 import splice.spi.ToolSearchController
 
 internal class ReanchorRunner(
     private val key: String,
-    private val log: LogSink,
+    private val log: RetryNotice,
     private val postRound: PostRound,
     private val finish: FinishTurn,
     private val signals: RunnerSignals,

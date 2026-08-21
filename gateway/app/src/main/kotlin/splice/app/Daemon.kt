@@ -12,7 +12,6 @@
 // everything else to the collaborators it wires together.
 package splice.app
 
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import splice.app.head.HEAD_STOP_BUDGET_MS
@@ -22,8 +21,6 @@ import splice.app.head.HeadServerFactory
 import splice.app.head.HeadShutdown
 import splice.app.head.LaunchSpecFactory
 import splice.app.head.ManagedHeadFactory
-import splice.app.provider.HeadBuildInputs
-import splice.app.provider.ProviderAssembly
 import splice.control.ControlServer
 import splice.control.DashboardPage
 import splice.control.ManagedHead
@@ -34,8 +31,6 @@ import splice.core.config.StatePaths
 import splice.core.topology.Topology
 import splice.core.topology.TopologyKnobLayer
 import splice.core.util.LogSink
-import splice.spi.LifecycleScope
-import splice.spi.ProcessDispatchers
 import java.nio.file.Path
 
 public class Daemon(
@@ -61,7 +56,10 @@ public class Daemon(
         perHeadOverrides = topology.heads.mapValues { (_, head) -> head.overrides },
     )
     private val mgmtKey = MgmtKey(statePaths)
-    private val signInPlanner = SignInPlanner()
+    private val controlPlane = ControlPlane(
+        statePaths, config, mgmtKey, dashboardHtml, log, shutdownDaemon,
+        topologyDigest, topologyPath, refreshCall,
+    )
 
     // The collaborators the file-level/same-file helpers became (Kotlin style law, 2026-08-15;
     // diffused into splice.app.head / splice.app.provider, 2026-08-17). All are stateless or hold
@@ -72,35 +70,17 @@ public class Daemon(
 
     // internal, not private: DaemonPerHeadConfigTest calls buildInputs.providerContext(...)
     // directly to pin that each head resolves against getConfig(key) — see HeadBuildInputs' KDoc.
-    internal val buildInputs = HeadBuildInputs(config, signInPlanner)
+    // Inferred so this file does not name HeadBuildInputs (concentration, 2026-08-19).
+    internal val buildInputs get() = controlPlane.buildInputs
     private val headServerFactory = HeadServerFactory(config, mgmtKey, log)
-    private val launchSpecFactory = LaunchSpecFactory(topology, signInPlanner, mgmtKey, buildInputs)
+    private val launchSpecFactory = LaunchSpecFactory(topology, controlPlane.signInPlanner, mgmtKey, controlPlane.buildInputs)
+    private val managedHeadFactory = ManagedHeadFactory(statePaths, controlPlane.providerAssembly, headServerFactory, launchSpecFactory)
 
     // set once in start(); the daemon is not usable before it
     private var control: ControlServer? = null
     private val heads = LinkedHashMap<String, ManagedHead>()
     private val stopLock = Mutex()
     private var stopped = false
-
-    // G8: per-head auth/health probe scope. SupervisorJob so one head's probe failure can't cancel
-    // another's — same isolation shape as SingleFlight.kt:33-36.
-    // HD-19: LifecycleScope is the NAMED owner the bare CoroutineScope(...) factory lacked. Same
-    // background dispatcher, same SupervisorJob applied on the right of it, so the context is
-    // identical — and the Daemon is unambiguously the lifecycle owner that stop() cancels.
-    private val probeScope = LifecycleScope(ProcessDispatchers().background())
-
-    // DECLARED AFTER probeScope ON PURPOSE: property initializers run in declaration order, and
-    // ProviderAssembly must receive the SAME scope instance stop() cancels (see its KDoc).
-    private val providerAssembly = ProviderAssembly(statePaths, probeScope, log, refreshCall)
-    private val managedHeadFactory = ManagedHeadFactory(
-        statePaths,
-        providerAssembly,
-        headServerFactory,
-        launchSpecFactory,
-    )
-
-    private val controlPlane =
-        ControlPlane(statePaths, config, mgmtKey, dashboardHtml, log, shutdownDaemon, topologyDigest, topologyPath)
 
     public suspend fun start() {
         val cfg = config.getConfig()
@@ -117,7 +97,7 @@ public class Daemon(
         // immediately POSTs /launch/<head> does not race a still-binding head (503 head is not
         // running) — headProbes.startDaemonHeads binds every head's port; controlPlane.start below
         // binds the control port, so it must run after.
-        headProbes.startDaemonHeads(heads, failed, probeScope, log)
+        headProbes.startDaemonHeads(heads, failed, controlPlane.probeScope, log)
         val srv = controlPlane.start(
             controlPort = controlPort,
             heads = heads,
@@ -134,7 +114,7 @@ public class Daemon(
         if (!stopped) {
             stopped = true
             headProbes.stop()
-            probeScope.cancel()
+            controlPlane.cancelProbes()
 
             // Heads stop in PARALLEL under a phase DEADLINE, then control stops — see
             // [HeadShutdown.stopHeads]. The supervisor scope + stopFailureHandler live there so an

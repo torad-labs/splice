@@ -8,7 +8,6 @@ package splice.app.provider
 import splice.core.config.SpliceConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.ToolSurfaceConfig
-import splice.dialect.chat.ChatQuirks
 import splice.dialect.passthrough.PassthroughQuirks
 import splice.dialect.responses.DEFAULT_MARKER_TEXT
 import splice.dialect.responses.FoldConfig
@@ -25,10 +24,6 @@ private const val MAX_TOOL_SEARCH_ROUNDS = 5
  * ProviderAssembly and PassthroughAssembly before the decomposition gave them one owner.
  */
 internal class QuirksOverlay {
-
-    /** Overlay the head's TOML [providers.*.quirks] onto a chat-dialect provider's base quirk profile. */
-    internal fun chatQuirks(providerCfg: ProviderConfig, base: ChatQuirks): ChatQuirks =
-        base.withReasoningEffortToml(providerCfg.quirks.reasoningEffort)
 
     /** Overlay the head's TOML [providers.*.quirks] onto a provider's base quirk profile. */
     // quirks.effortCeiling is intentionally not passed: the effort ladder clamps per provider.
@@ -50,7 +45,7 @@ internal class QuirksOverlay {
     /** Overlay the head's TOML [providers.*.quirks] onto a passthrough head's BASE quirk profile.
      *  Absent (null) keeps the base, which is what makes a splice.toml written before these knobs
      *  existed keep serving a kimi head unchanged; an explicitly-set knob wins. Same shape as
-     *  [chatQuirks]/[responsesQuirks], and the mapping lives HERE, at the assembly point, so the
+     *  [responsesQuirks], and the mapping lives HERE, at the assembly point, so the
      *  dialect never imports a topology config type. */
     internal fun passthroughQuirks(providerCfg: ProviderConfig, base: PassthroughQuirks): PassthroughQuirks =
         base.copy(

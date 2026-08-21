@@ -8,6 +8,7 @@
 // owns composition, isolation and the verdict. :app: println ok.
 package splice.app.cli
 
+import splice.app.DaemonProbe
 import splice.app.TopologyLoader
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
@@ -41,7 +42,7 @@ internal class DoctorCommand {
         // so a busy daemon is contacted a single time and the split-brain check can't silently self-skip.
         val topology = (topo as? DoctorTopology.Parsed)?.topology
         val port = AdminSupport.controlPort(topology, envReader)
-        val snapshot = DaemonSnapshot(port, ControlPlaneClient.healthView(port))
+        val snapshot = DaemonSnapshot(port, DaemonProbe.healthView(port))
         val sections = listOf(
             "prerequisites" to guarded { probes.prerequisiteChecks(envReader) },
             "installation" to guarded { installProbes.installationChecks(topo, envReader) },

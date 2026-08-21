@@ -24,23 +24,6 @@ import splice.spi.ProviderTuning
 import splice.spi.StreamTranslator
 import splice.spi.TurnSignals
 
-/**
- * The COMPUTED per-install device identity a vendor requires on every upstream call — today only
- * Kimi's persisted `X-Msh-*` set.
- *
- * A function and not config, which is the distinction this type exists to hold: `staticHeaders`
- * beside it is operator-DECLARED TOML (`anthropic-version`, a gated UA) and is why a new
- * anthropic-compatible vendor is TOML-only, while these cannot be declared — they are derived from
- * per-install state the daemon persists and re-reads. Absent (`{ emptyMap() }`) for every head but
- * kimi, and that empty default is the reason a head that needs no identity wires nothing.
- *
- * Re-read per call rather than captured, so a device identity rotated on disk is picked up without
- * rebuilding the provider.
- */
-public fun interface IdentityHeaders {
-    public operator fun invoke(): Map<String, String>
-}
-
 public class PassthroughProvider(
     private val tuning: ProviderTuning,
     private val quirks: PassthroughQuirks,

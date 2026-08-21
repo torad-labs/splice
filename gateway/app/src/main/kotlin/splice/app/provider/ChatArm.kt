@@ -23,8 +23,6 @@ internal class ChatArm(
     private val log: LogSink,
     private val grokRefresh: GrokRefresh,
 ) {
-    private val quirksOverlay = QuirksOverlay()
-
     // openai-chat dispatch: grok-oauth (SuperGrok Bearer + refresh, same auth as the Responses
     // path) vs any api-key vendor. grok rides this dialect because xAI's /v1/chat/completions
     // streams the full readable CoT (`reasoning_content`) where the Responses summary channel
@@ -64,14 +62,13 @@ internal class ChatArm(
                 // grok-oauth rides session-pinned prompt caching + opt-in usage frames (probed
                 // 2026-07-19: 135k tokens, 1.7-2.8s TTFB, 99.97% cached — the two gaps that sank
                 // the 07-18 chat-dialect attempt). Unknown api-key vendors keep the bare quirks.
-                quirks = quirksOverlay.chatQuirks(
-                    providerCfg,
+                quirks = (
                     if (providerCfg.auth.kind == GROK_OAUTH) {
                         ChatQuirks(providerTag = key, sessionCacheKeyPrefix = label, emitUsageInStream = true)
                     } else {
                         ChatQuirks(providerTag = key)
-                    },
-                ),
+                    }
+                ).withReasoningEffortToml(providerCfg.quirks.reasoningEffort),
                 showReasoning = ctx.cfg.showReasoning,
             ),
             auth,

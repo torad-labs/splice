@@ -14,9 +14,13 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.FormEncoding
 import splice.core.util.JsonScalars
+import splice.core.util.LogSink
+import java.nio.file.Files
+import java.nio.file.Path
 
 public object KimiOAuthEndpoints {
     // public, shared with Moonshot's own CLIs — reused verbatim (no secret exists).
@@ -134,8 +138,30 @@ public class KimiOAuth {
     }
 
     // JsonNull IS a JsonPrimitive with content "null"; every string extraction must filter it.
-    private fun jsonObjectOrEmpty(el: JsonElement): JsonObject =
+    internal fun jsonObjectOrEmpty(el: JsonElement): JsonObject =
         el as? JsonObject ?: JsonObject(emptyMap())
+
+    internal fun parseSnapshot(authPath: Path, synthesizeExpiry: KimiAuthStore.SynthesizeExpiry): KimiAuthStore.Snapshot? {
+        if (!Files.exists(authPath)) return null
+        val obj = jsonObjectOrEmpty(kimiJson.parseToJsonElement(Files.readString(authPath)))
+        val access = JsonScalars.str(obj, "access_token") ?: return null
+        return KimiAuthStore.Snapshot(
+            access = access,
+            refresh = JsonScalars.str(obj, "refresh_token"),
+            expiresAtS = JsonScalars.long(obj, "expires_at") ?: synthesizeExpiry(Files.getLastModifiedTime(authPath).toMillis()),
+            expiresInS = JsonScalars.long(obj, "expires_in") ?: 0L,
+        )
+    }
+
+    // G15: best-effort mtime probe for the invalid_grant latch gate; shared by doRefresh() and
+    // describe(). The failure is logged, not swallowed, before collapsing to null — a stat failure is
+    // "unknown", which InvalidGrantLatch treats as fail-open (never suppresses), NOT "file unchanged".
+    internal fun kimiAuthMtimeOrNull(authPath: Path, log: LogSink): Long? =
+        Cancellables.runCatchingCancellable {
+            Files.getLastModifiedTime(authPath).toMillis()
+        }.onFailure {
+            log("[kimi-auth] failed to stat $authPath mtime: $it — invalid_grant latch check skipped")
+        }.getOrNull()
 }
 
 internal const val MS_PER_S: Long = 1000

@@ -10,10 +10,10 @@ package splice.gateway.round
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
-import splice.core.util.LogSink
 import splice.gateway.wire.BufferingWireSink
 import splice.spi.FoldController
 import splice.spi.ReanchorController
+import splice.spi.RetryNotice
 import splice.spi.ToolSearchController
 import splice.spi.WireSink
 
@@ -21,7 +21,7 @@ internal class FoldRunner(
     // Only the buffer's `real` sink — never a terminal here (L3: FoldRunner finishes via [finish]).
     private val emitter: WireSink,
     private val key: String,
-    private val log: LogSink,
+    private val log: RetryNotice,
     private val postRound: PostRoundToSink,
     private val finish: FinishTurn,
     private val reanchor: ReanchorController? = null,

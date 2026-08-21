@@ -32,6 +32,16 @@ public fun interface Waiter {
 }
 
 /**
+ * A monotonic now-reading in milliseconds. The seam behind retry deadlines and the shared 429
+ * cooldown — same base as [Waiter], a named port so a test can step time without sleeping.
+ *
+ * Production wires [ProcessElapsedNow]. A test wires a lambda (SAM) it advances by hand.
+ */
+public fun interface ElapsedNow {
+    public operator fun invoke(): Long
+}
+
+/**
  * The pacing seam for an unbounded loop — the `while (isActive) { work(); delay(interval) }` shape.
  *
  * Distinct from [Waiter] by its RETURN: false means no further tick will come, so the loop exits

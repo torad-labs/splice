@@ -14,12 +14,14 @@
 // are here for the same reason: ONE clock authority, same base as TurnWatchdog/InflightGate
 // (review 2026-07-22).
 //
-// WHERE THE REST WENT: client construction → UpstreamTransport.kt; throwable classification →
-// TransportFailures.kt; the retry DECISION and the G5 re-issue interlock → RetryPolicy.kt; the
-// failure predicates → FailureRules.kt; the
-// Retry-After parse → RetryAfter.kt; the shared 429 horizon → RateLimitCooldown.kt; request
-// assembly → UpstreamRequest.kt; one attempt's inputs and outcome → UpstreamAttempt.kt; the role
-// declarations → UpstreamPorts.kt; the thrown vocabulary → UpstreamErrors.kt.
+// WHERE THE REST WENT: client construction and the backoff curves → UpstreamTransport.kt;
+// throwable classification, transport backoff, catchCancellable → TransportFailures.kt; the retry
+// DECISION and the G5 re-issue interlock → RetryPolicy.kt; the failure predicates →
+// FailureRules.kt; the Retry-After parse → RetryAfter.kt; the shared 429 horizon →
+// RateLimitCooldown.kt; request assembly and the execute round-trip → UpstreamRequest.kt; one
+// attempt's inputs, outcome, and the perf/auth marks → UpstreamAttempt.kt; the role declarations
+// → UpstreamPorts.kt; the thrown vocabulary → UpstreamErrors.kt; the clock adapter →
+// ProcessRuntime.kt.
 //
 // Transport lessons from Grok Build / Codex CLI that still bind this file:
 //   - encrypted_content decrypt 400s are NOT retried (Grok Build)
@@ -31,16 +33,6 @@
 package splice.spi
 
 import io.ktor.client.HttpClient
-import io.ktor.http.isSuccess
-import splice.core.auth.Credentials
-import splice.core.auth.RefreshableAuthProvider
-import splice.core.perf.PerfKeys
-import splice.core.perf.TurnPerf
-import splice.core.perf.TurnPerfTiming
-import splice.core.util.Cancellables
-import splice.core.util.ElapsedClock
-import splice.core.util.MonoClock
-import kotlin.random.Random
 
 public class UpstreamClient(
     private val firstByteTimeoutMs: Long,
@@ -57,28 +49,12 @@ public class UpstreamClient(
     // wire a recording waiter and the 200/400/800ms schedule becomes an assertion on a list instead
     // of 1.4 seconds of real sleeping.
     waiter: Waiter = ProcessWaiter(),
-    // Exponential backoff, ±10% jitter (codex shape — synchronized retry herds re-collide without
-    // it), capped at MAX_BACKOFF_MS; a server Retry-After rides in as a FLOOR via minDelayMs (G3).
-    // DNS-class transport failures use dnsBackoff below instead (G14) — a resolver blip runs
-    // longer than a TCP refusal.
-    private val backoff: RetryBackoff = RetryBackoff { attempt, minDelayMs ->
-        val base = minOf(BACKOFF_BASE_MS shl attempt, MAX_BACKOFF_MS)
-        val jittered = (base * Random.nextDouble(JITTER_LO, JITTER_HI)).toLong()
-        waiter.wait(maxOf(jittered, minDelayMs))
-    },
-    // DNS-class transport failures (G14) get their own 1s/2s/4s schedule — a real resolver
-    // blip (kimi 07:00 burst: 37 UnresolvedAddressException turns) runs longer than the
-    // generic 200/400/800ms curve above undershoots. No minDelayMs parameter — transport
-    // errors never carry a Retry-After header (no response was received).
-    private val dnsBackoff: DnsBackoff = DnsBackoff { attempt ->
-        val base = minOf(DNS_BACKOFF_BASE_MS shl attempt, DNS_MAX_BACKOFF_MS)
-        val jittered = (base * Random.nextDouble(JITTER_LO, JITTER_HI)).toLong()
-        waiter.wait(jittered)
-    },
+    private val backoff: RetryBackoff = UpstreamTransport().defaultBackoff(waiter),
+    private val dnsBackoff: DnsBackoff = UpstreamTransport().defaultDnsBackoff(waiter),
     // Default is monotonic — a wall-clock jump must not abort a healthy retry loop (forward) or
     // extend its deadline (backward). Same base as TurnWatchdog/InflightGate: two authorities
     // enforce cfg.upstreamTimeoutMs and MUST NOT split-brain across clock bases (review 2026-07-22).
-    private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
+    private val clock: ElapsedNow = ProcessElapsedNow(),
 ) {
     // The stateless collaborators the loop delegates to. Constructed once per client (not per call)
     // so the transport/request/failure/retry rules cost nothing per attempt. [cooldown] is the one
@@ -86,7 +62,6 @@ public class UpstreamClient(
     // never a second one.
     private val transportFailures = TransportFailures()
     private val request = UpstreamRequest(client, zstdRequestBody)
-    private val retryAfter = RetryAfter()
     private val cooldown = RateLimitCooldown(clock)
     private val retryRules = RetryRules(maxRetries, cooldown)
     private val reissueRules = ReissueRules()
@@ -103,32 +78,17 @@ public class UpstreamClient(
 
     /**
      * Prepare an upstream POST and run [block] with the streaming response. Handles retries
-     * and one single-flight 401 refresh. The credentials [auth] supplies are written onto the
+     * and one single-flight 401 refresh. The credentials [ctx] supplies are written onto the
      * request by [UpstreamRequest]. Cancelling the calling coroutine aborts the in-flight body
-     * (the lock-safe kill). When [perf] is wired it records the auth/refresh/backoff durations,
-     * the attempt counters, and the headers-arrival mark (TTFB — re-marked per attempt so the
-     * successful attempt's value wins).
+     * (the lock-safe kill). When [PostContext.perf] is wired it records the auth/refresh/backoff
+     * durations, the attempt counters, and the headers-arrival mark (TTFB — re-marked per attempt
+     * so the successful attempt's value wins).
      */
     public suspend fun <T> post(
-        url: String,
+        ctx: PostContext,
         bodyJson: String,
-        auth: RefreshableAuthProvider,
-        extraHeaders: CredentialHeaders,
-        onRetry: RetryNotice = RetryNotice {},
-        perf: TurnPerf? = null,
-        // Defaults to { true } — "assume the client already saw output" — so any caller that does
-        // NOT wire this (there are none today besides TurnDriver, but keep the safe default) keeps
-        // the pre-G5 commitment rule: never retry once handed off. Only TurnDriver, which can prove
-        // FIRST_FRAME hasn't fired, passes a real probe.
-        clientFrameEmitted: ClientFrameEmitted = ClientFrameEmitted { true },
-        // RC-4 (reasoning-cache 2026-07-24): a caller-supplied ONE-SHOT body amendment for
-        // deterministic upstream rejections of request CONTENT (e.g. a 400 for stale
-        // encrypted-reasoning items): (status, responseText, currentBodyJson) -> amended body
-        // or null. Non-null swaps the body and retries immediately; fires at most once per post.
-        amendBodyOnFailure: BodyAmendment = BodyAmendment { _, _, _ -> null },
         block: UpstreamHandler<T>,
     ): T {
-        val ctx = PostContext(url, auth, extraHeaders, onRetry, perf, clientFrameEmitted, amendBodyOnFailure)
         // Encode ONCE; retries resend the same bytes (no per-attempt string re-encode). Never gzip.
         var body = request.body(bodyJson)
         val state = RetryState()
@@ -199,21 +159,20 @@ public class UpstreamClient(
             retryRules.giveUp(state.lastErr)
         }
         cooldown.failFastIfArmed(ctx.onRetry)
-        val creds = TurnPerfTiming.timedOr(ctx.perf, PerfKeys.AUTH_MS) { ctx.auth.credentials() }
-            ?: throw UpstreamAuthMissing()
-        ctx.perf?.add(PerfKeys.ATTEMPTS, 1)
+        val creds = ctx.requireAuth()
+        ctx.markAttempt()
         var streamHandedOff = false
-        // runCatchingCancellable rethrows CancellationException (a cancelled turn aborts cleanly);
+        // catchCancellable rethrows CancellationException (a cancelled turn aborts cleanly);
         // a failure here is a TRANSPORT error thrown BEFORE stream handoff — retryable on the
         // backoff budget (a 2s DNS blip costs one silent retry, not a turn failure: the kimi
         // 07:00 burst, 37 UnresolvedAddressException turns, attempts=1 on every one).
         val attempted = try {
-            Cancellables.runCatchingCancellable {
-                attemptRequest(ctx, body.bytes, creds, onStreamStart = { streamHandedOff = true }, block)
+            transportFailures.catchCancellable {
+                request.execute(ctx, body.bytes, creds, onStreamStart = { streamHandedOff = true }, block)
             }
         } catch (e: StreamTornBeforeClient) {
             // thrown by the turn driver through the translator (G5 reachability); a transport
-            // failure like any other for the decision below — runCatchingCancellable's I/O-only
+            // failure like any other for the decision below — catchCancellable's I/O-only
             // catch list can't see a RuntimeException, so it is folded in here.
             Result.failure(e)
         }
@@ -257,26 +216,25 @@ public class UpstreamClient(
                 "stream torn before first client frame, reissue ${state.streamReissues}/$MAX_STREAM_REISSUES: " +
                     "${e::class.simpleName} ${e.message.orEmpty().take(ERR_SNIPPET)}",
             )
-            ctx.perf?.add(PerfKeys.RETRIES, 1)
-            backoffTransportError(ctx.perf, e, state.attempt)
+            ctx.markRetry()
+            ctx.timedBackoff { transportFailures.backoffTransportError(e, state.attempt, dnsBackoff, backoff) }
             return LoopStep.Continue // does NOT increment `attempt` — this budget is separate
         }
-        rethrowUnlessRetryableTransport(e, ctx, streamHandedOff, state.attempt, t0)
-        ctx.perf?.add(PerfKeys.RETRIES, 1)
-        backoffTransportError(ctx.perf, e, state.attempt)
+        val phase = transportFailures.rethrowUnlessRetryableTransport(
+            e,
+            deadlineHit = streamHandedOff || deadlineExceeded(t0),
+            lastAttempt = state.attempt == maxRetries - 1,
+        )
+        val label = if (phase == TransportFailurePhase.POST_SEND) "transport-possible-duplicate" else "transport"
+        ctx.onRetry(
+            "$label ${e::class.simpleName} attempt ${state.attempt + 1}/$maxRetries: " +
+                e.message.orEmpty().take(ERR_SNIPPET),
+        )
+        if (phase == TransportFailurePhase.POST_SEND) ctx.markPostSendRetry()
+        ctx.markRetry()
+        ctx.timedBackoff { transportFailures.backoffTransportError(e, state.attempt, dnsBackoff, backoff) }
         state.attempt += 1
         return LoopStep.Continue
-    }
-
-    /** Transport-error backoff (G14): DNS-class failures (name resolution never got an address)
-     *  run the dedicated 1s/2s/4s dnsBackoff schedule instead of the generic curve — a resolver
-     *  blip is slower than a TCP refusal or reset. */
-    private suspend fun backoffTransportError(perf: TurnPerf?, error: Throwable, attempt: Int) {
-        if (transportFailures.isDnsFailureTransport(error)) {
-            TurnPerfTiming.timedOr(perf, PerfKeys.BACKOFF_MS) { dnsBackoff(attempt) }
-        } else {
-            TurnPerfTiming.timedOr(perf, PerfKeys.BACKOFF_MS) { backoff(attempt, 0L) }
-        }
     }
 
     /** The BACKOFF half of the retry decision: re-checks the deadline (G4d) before the sleep so a
@@ -287,7 +245,7 @@ public class UpstreamClient(
         state: RetryState,
         t0: Long,
     ): LoopStep<Nothing> {
-        ctx.perf?.add(PerfKeys.RETRIES, 1)
+        ctx.markRetry()
         if (deadlineExceeded(t0)) {
             ctx.onRetry(
                 "upstream retry deadline exceeded (${totalTimeoutMs}ms budget) before backoff, " +
@@ -295,63 +253,9 @@ public class UpstreamClient(
             )
             retryRules.giveUp(state.lastErr)
         }
-        TurnPerfTiming.timedOr(ctx.perf, PerfKeys.BACKOFF_MS) { backoff(state.attempt, plan.minDelayMs) }
+        ctx.timedBackoff { backoff(state.attempt, plan.minDelayMs) }
         state.attempt += 1
         return LoopStep.Continue
-    }
-
-    // A transport error thrown BEFORE stream handoff (DNS/connect/timeout, per isRetryableTransport)
-    // retries on the backoff budget; once the stream is handed off, the error is non-transport, or
-    // it is the last attempt, rethrow — a retry would duplicate output or mask a real failure —
-    // unless the stream was torn before the client saw any output — see canReissueStream (G5).
-    private fun rethrowUnlessRetryableTransport(
-        e: Throwable,
-        ctx: PostContext,
-        streamHandedOff: Boolean,
-        attempt: Int,
-        t0: Long,
-    ) {
-        val phase = transportFailures.classifyTransport(e)
-        val mustRethrow = streamHandedOff || phase == null || deadlineExceeded(t0)
-        if (mustRethrow || attempt == maxRetries - 1) throw e
-        // G16: SocketException/SocketTimeoutException can fire AFTER the request body has begun
-        // or finished writing — the upstream may already have the POST and be processing/billing
-        // it — unlike DNS/connect failures, which fire strictly before any byte leaves the client.
-        // Same retry budget/backoff either way; the label makes a double-token-burn incident
-        // greppable in the turn log, and UP-004's POST_SEND_RETRIES counter makes its rate
-        // countable in the perf row instead of only greppable.
-        val label = if (phase == TransportFailurePhase.POST_SEND) "transport-possible-duplicate" else "transport"
-        if (phase == TransportFailurePhase.POST_SEND) ctx.perf?.add(PerfKeys.POST_SEND_RETRIES, 1)
-        ctx.onRetry(
-            "$label ${e::class.simpleName} attempt ${attempt + 1}/$maxRetries: " +
-                e.message.orEmpty().take(ERR_SNIPPET),
-        )
-    }
-
-    /** The READ-BEFORE-CLOSE half of one attempt. Status, error body and Retry-After are all
-     *  extracted INSIDE the execute block because the response body channel dies at its close —
-     *  which is why only the ASSEMBLY above the `execute` call could move to UpstreamRequest.kt. */
-    private suspend fun <T> attemptRequest(
-        ctx: PostContext,
-        bodyBytes: ByteArray,
-        creds: Credentials,
-        onStreamStart: StreamStart,
-        block: UpstreamHandler<T>,
-    ): RetryOutcome<T> {
-        val statement = request.prepare(ctx.url, creds, ctx.extraHeaders, bodyBytes)
-        return statement.execute { resp ->
-            ctx.perf?.mark(PerfKeys.HEADERS)
-            if (resp.status.isSuccess()) {
-                onStreamStart() // block owns the stream from here — transport errors stop retrying
-                RetryOutcome.Done(block(UpstreamResponse(resp)))
-            } else {
-                RetryOutcome.Failed(
-                    resp.status.value,
-                    UpstreamResponse(resp).bodyTextLimited(MAX_ERROR_BODY_BYTES),
-                    retryAfter.retryAfterMs(resp.headers["Retry-After"]),
-                )
-            }
-        }
     }
 
     /** Cross-attempt wall-clock budget (route-timeout analog to the per-try [firstByteTimeoutMs]). */
@@ -374,19 +278,6 @@ public class UpstreamClient(
     }
 }
 
-private const val BACKOFF_BASE_MS = 200L
-
 // The width of an upstream error quoted into a retry notice. Read here and by RetryPolicy.kt's
 // give-up / attempt notices, which quote the same failure text.
 internal const val ERR_SNIPPET = 160
-
-private const val MAX_ERROR_BODY_BYTES = 64 * 1024
-
-private const val MAX_BACKOFF_MS = 10_000L
-
-private const val JITTER_LO = 0.9
-private const val JITTER_HI = 1.1
-
-// DNS-class transport failures (G14) get their own schedule — 1s/2s/4s.
-private const val DNS_BACKOFF_BASE_MS = 1_000L
-private const val DNS_MAX_BACKOFF_MS = 4_000L

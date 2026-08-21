@@ -37,7 +37,7 @@ internal class HeadRoutes(
             }
         }
         audit.headAction(key, action)
-        call.respondText(payloads.headStatus(managed).toString(), ContentType.Application.Json)
+        call.respondText(resolver.headStatus(managed).toString(), ContentType.Application.Json)
     }
 
     suspend fun logsJson(call: ApplicationCall, tail: Int) {

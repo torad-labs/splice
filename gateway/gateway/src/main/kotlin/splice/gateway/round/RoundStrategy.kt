@@ -10,6 +10,7 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.util.LogSink
 import splice.spi.FoldController
 import splice.spi.ReanchorController
+import splice.spi.RetryNotice
 import splice.spi.ToolSearchController
 import splice.spi.WireSink
 
@@ -26,11 +27,12 @@ internal class RoundStrategy(
     private val toolSearch: ToolSearchController? = null,
 ) {
     suspend fun run(requestBody: JsonObject, fold: FoldController?, reanchor: ReanchorController?) {
+        val notice = RetryNotice { log(it) }
         if (fold != null) {
             FoldRunner(
                 emitter = emitter,
                 key = key,
-                log = log,
+                log = notice,
                 postRound = postRoundToSink,
                 finish = finish,
                 reanchor = reanchor,
@@ -42,7 +44,7 @@ internal class RoundStrategy(
         } else {
             ReanchorRunner(
                 key = key,
-                log = log,
+                log = notice,
                 postRound = postRound,
                 finish = finish,
                 signals = signals,

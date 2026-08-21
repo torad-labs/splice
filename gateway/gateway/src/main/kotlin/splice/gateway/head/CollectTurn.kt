@@ -25,9 +25,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal class CollectTurn(
     private val provider: Provider,
     private val driveFactory: TurnDriveFactory,
-    private val wiring: TurnWiring,
     private val driver: TurnDriver,
 ) {
+    private val wiring = TurnWiring()
     /** Non-stream sibling of TurnDriver.stream: Claude Code sends stream:false on some internal
      *  calls (the Node predecessor served them by collecting the terminal object). Drives the SAME
      *  fold/translator/honesty machinery into a [CollectingTerminal], then writes ONE Anthropic

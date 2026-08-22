@@ -13,8 +13,8 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.parse.parseAnthropicBody
-import splice.core.turn.ReasoningDisplay
+import splice.core.parse.AnthropicParse
+import splice.core.turn.ReasoningDisplayParser
 import splice.dialect.responses.BuildOptions
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.EffortLadder
@@ -22,10 +22,10 @@ import splice.dialect.responses.InjectPriorReasoning
 import splice.dialect.responses.RequestEncryptedReasoning
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesRequestBuilder
+import splice.dialect.responses.ResponsesStableIds
 import splice.dialect.responses.ToolDeferralPolicy
-import splice.dialect.responses.stablePromptCacheKey
-import splice.dialect.responses.withParallelToolCallsToml
-import splice.dialect.responses.withReasoningCacheToml
+
+private val stableIds = ResponsesStableIds()
 
 private val CODEX = ResponsesQuirks(providerTag = "claudex")
 private val GROK = ResponsesQuirks(
@@ -54,7 +54,7 @@ private fun opts(
     upstreamModel = model,
     configEffort = effort,
     configSummary = summary,
-    showReasoning = ReasoningDisplay.from(show),
+    showReasoning = ReasoningDisplayParser.from(show),
     replayReasoning = InjectPriorReasoning(replay),
     // Default: include when reasoning is shown (independent of input-replay).
     includeEncryptedReasoning = RequestEncryptedReasoning(includeEncrypted ?: (show != "off" && !compact)),
@@ -68,7 +68,7 @@ private fun opts(
 )
 
 private fun build(json: String, quirks: ResponsesQuirks = CODEX, options: BuildOptions = opts()): JsonObject {
-    val parsed = parseAnthropicBody(json)
+    val parsed = AnthropicParse.parseAnthropicBody(json)
     return ResponsesRequestBuilder(quirks).build(parsed.typed, parsed.raw, options).req
 }
 
@@ -347,8 +347,8 @@ class ResponsesRequestBuilderTest {
         val b = build(body)["prompt_cache_key"]?.jsonPrimitive?.content
         assertEquals(a, b)
         assertTrue(a!!.startsWith("splice-") && a.length == "splice-".length + 32)
-        val parsed = parseAnthropicBody("""{"model":"m","messages":[]}""")
-        assertNull(stablePromptCacheKey(parsed.typed))
+        val parsed = AnthropicParse.parseAnthropicBody("""{"model":"m","messages":[]}""")
+        assertNull(stableIds.stablePromptCacheKey(parsed.typed))
         val grokReq = build(body, quirks = GROK, options = opts(sessionId = "sess-1"))
         assertEquals("claude-grok:sess-1", grokReq["prompt_cache_key"]?.jsonPrimitive?.content)
     }
@@ -439,7 +439,7 @@ private fun cacheOpts(
     upstreamModel = "gpt-5.6-sol",
     configEffort = null,
     configSummary = null,
-    showReasoning = ReasoningDisplay.from("text"),
+    showReasoning = ReasoningDisplayParser.from("text"),
     replayReasoning = InjectPriorReasoning(replay),
     includeEncryptedReasoning = RequestEncryptedReasoning(true),
     sessionId = null,
@@ -480,7 +480,7 @@ private fun preCacheOpts() = BuildOptions(
     upstreamModel = "gpt-5.6-sol",
     configEffort = null,
     configSummary = null,
-    showReasoning = ReasoningDisplay.from("text"),
+    showReasoning = ReasoningDisplayParser.from("text"),
     replayReasoning = InjectPriorReasoning(false),
     includeEncryptedReasoning = RequestEncryptedReasoning(true),
     sessionId = null,
@@ -600,23 +600,23 @@ class ToolSurfaceRequestTest {
 
     @Test
     fun `BuiltRequest toolSearch is non-null exactly when the partition deferred something`() {
-        val parsedOn = parseAnthropicBody(toolSurfaceBody())
+        val parsedOn = AnthropicParse.parseAnthropicBody(toolSurfaceBody())
         val builtOn = ResponsesRequestBuilder(quirksOn).build(parsedOn.typed, parsedOn.raw, opts(model = "gpt-5.6-sol"))
         assertTrue(builtOn.toolSearch != null)
 
-        val parsedOff = parseAnthropicBody(toolSurfaceBody())
+        val parsedOff = AnthropicParse.parseAnthropicBody(toolSurfaceBody())
         val builtOff = ResponsesRequestBuilder(CODEX).build(parsedOff.typed, parsedOff.raw, opts(model = "gpt-5.6-sol"))
         assertNull(builtOff.toolSearch)
     }
 
     @Test
     fun `TurnMeta stamps tools eager and deferred, null when deferral is off`() {
-        val parsedOn = parseAnthropicBody(toolSurfaceBody())
+        val parsedOn = AnthropicParse.parseAnthropicBody(toolSurfaceBody())
         val builtOn = ResponsesRequestBuilder(quirksOn).build(parsedOn.typed, parsedOn.raw, opts(model = "gpt-5.6-sol"))
         assertEquals(1, builtOn.meta.toolsEager)
         assertEquals(12, builtOn.meta.toolsDeferred)
 
-        val parsedOff = parseAnthropicBody(toolSurfaceBody())
+        val parsedOff = AnthropicParse.parseAnthropicBody(toolSurfaceBody())
         val builtOff = ResponsesRequestBuilder(CODEX).build(parsedOff.typed, parsedOff.raw, opts(model = "gpt-5.6-sol"))
         assertNull(builtOff.meta.toolsEager)
         assertNull(builtOff.meta.toolsDeferred)

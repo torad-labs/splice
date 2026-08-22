@@ -10,14 +10,31 @@
 // Writes route through SecureFile.writeAtomic0600 — the single credential-write primitive (#924).
 package splice.core.config
 
+import splice.core.util.Cancellables
+import splice.core.util.EnvReader
 import splice.core.util.SecureFile
-import splice.core.util.runCatchingCancellable
 import java.nio.channels.FileChannel
 import java.nio.channels.OverlappingFileLockException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.StandardOpenOption
+
+/**
+ * One read-modify-write of `keys.toml`, performed while the sibling `.lock` is held.
+ *
+ * Named rather than left a bare `() -> T` (HD-22) because the seam is the SH-11 invariant itself:
+ * whatever runs here may re-read the file and rewrite it knowing no other process can interleave,
+ * and — the part the shape cannot say — everything that reads-then-writes MUST be inside one of
+ * these. A `set` that read outside the section and wrote inside it would still lose an update, so
+ * this type is the boundary of the lost-update fix, not a formatting of `{ … }`.
+ *
+ * Deliberately private: the lock is KeyStore's own, and nothing outside this file may claim to be
+ * running under it.
+ */
+private fun interface StoreEdit<T> {
+    operator fun invoke(): T
+}
 
 public class KeyStore(
     public val path: Path,
@@ -34,6 +51,11 @@ public class KeyStore(
     public fun write(envVar: String, value: String) {
         require(envVar.matches(ENV_NAME)) { "invalid env name '$envVar' (want $ENV_NAME)" }
         require(value.isNotBlank()) { "empty key for '$envVar'" }
+        // LNC-004: persist() writes `name = "$value"` with no escaping; an embedded newline (survives
+        // the trim() below, which only strips leading/trailing whitespace) would split into multiple
+        // lines and the line-oriented parser would read back only the truncated prefix — a value must
+        // never silently persist as something different from what was given.
+        require('\n' !in value && '\r' !in value) { "key for '$envVar' contains a newline — cannot store" }
         withStoreLock {
             val next = entriesStrict().toMutableMap()
             next[envVar] = value.trim()
@@ -51,7 +73,7 @@ public class KeyStore(
 
     private fun entries(): Map<String, String> {
         if (!Files.exists(path)) return emptyMap()
-        return runCatchingCancellable { parseLines(Files.readAllLines(path)) }.getOrDefault(emptyMap())
+        return Cancellables.runCatchingCancellable { parseLines(Files.readAllLines(path)) }.getOrDefault(emptyMap())
     }
 
     /** SH-11: the MUTATION-path read. Absent = legitimately empty (safe to write); UNREADABLE =
@@ -59,7 +81,7 @@ public class KeyStore(
      *  key. The tolerant [entries] stays for the display paths (read/names). */
     private fun entriesStrict(): Map<String, String> {
         if (!Files.exists(path)) return emptyMap()
-        return runCatchingCancellable { parseLines(Files.readAllLines(path)) }
+        return Cancellables.runCatchingCancellable { parseLines(Files.readAllLines(path)) }
             .getOrElse { error("keys.toml unreadable ($it) — refusing to write, existing keys preserved") }
     }
 
@@ -80,7 +102,7 @@ public class KeyStore(
      *  Bounded, then FAILS LOUDLY — an unlocked concurrent RMW is the exact lost-update this
      *  exists to prevent, so unlike the read-mostly credential refresh there is no unlocked
      *  degrade for a WRITE. Holds are microseconds; 5s of contention means something is wedged. */
-    private fun <T> withStoreLock(block: () -> T): T {
+    private fun <T> withStoreLock(block: StoreEdit<T>): T {
         val lockPath = path.resolveSibling("${path.fileName}.lock")
         lockPath.parent?.let { Files.createDirectories(it) }
         FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE).use { channel ->
@@ -118,31 +140,39 @@ public class KeyStore(
         }
         SecureFile.writeAtomic0600(path, text)
     }
+}
 
-    public companion object {
-        private val ENV_NAME = Regex("[A-Z][A-Z0-9_]*")
+// Companion dissolved (Kotlin style law, 2026-08-16 — HD-M8). The constants keep their names at
+// file scope, where `private` means file-private; the factory could not follow them there (a
+// top-level function is banned) and could not become a KeyStore member either — it computes the
+// path the constructor is GIVEN — so it takes the migration's pattern 5: a named object.
+// FILE SCOPE ON PURPOSE: one compiled Regex for the whole file, not one per KeyStore instance.
+private val ENV_NAME = Regex("[A-Z][A-Z0-9_]*")
 
-        // SH-11 mutation lock: holds are microseconds (parse + atomic write); 5s of contention
-        // means a wedged peer, and the loud failure preserves the store.
-        private const val LOCK_WAIT_MS = 5_000L
-        private const val LOCK_POLL_MS = 25L
+// SH-11 mutation lock: holds are microseconds (parse + atomic write); 5s of contention
+// means a wedged peer, and the loud failure preserves the store.
+private const val LOCK_WAIT_MS = 5_000L
+private const val LOCK_POLL_MS = 25L
 
-        /** keys.toml beside splice.toml: SPLICE_CONFIG's sibling when set, else XDG
-         *  (~/.config/splice). Mirrors TopologyLoader.configPath so test rigs stay hermetic. */
-        public fun defaultPath(envReader: (String) -> String? = System::getenv): Path {
-            val override = envReader("SPLICE_CONFIG")
-            if (override != null) {
-                val expanded =
-                    if (override.startsWith("~/")) {
-                        System.getProperty("user.home") + override.substring(1)
-                    } else {
-                        override
-                    }
-                return Paths.get(expanded).resolveSibling("keys.toml")
-            }
-            val xdg = envReader("XDG_CONFIG_HOME")
-            val base = if (xdg != null) Paths.get(xdg) else Paths.get(System.getProperty("user.home"), ".config")
-            return base.resolve("splice").resolve("keys.toml")
+/** Where [KeyStore] lives when nothing overrides it — the `KeyStore(KeyStorePath.defaultPath())`
+ *  pairing every call site already spelled out, with the companion's namespace made explicit. */
+public object KeyStorePath {
+
+    /** keys.toml beside splice.toml: SPLICE_CONFIG's sibling when set, else XDG
+     *  (~/.config/splice). Mirrors TopologyLoader.configPath so test rigs stay hermetic. */
+    public fun defaultPath(envReader: EnvReader = EnvReader(System::getenv)): Path {
+        val override = envReader("SPLICE_CONFIG")
+        if (override != null) {
+            val expanded =
+                if (override.startsWith("~/")) {
+                    System.getProperty("user.home") + override.substring(1)
+                } else {
+                    override
+                }
+            return Paths.get(expanded).resolveSibling("keys.toml")
         }
+        val xdg = envReader("XDG_CONFIG_HOME")
+        val base = if (xdg != null) Paths.get(xdg) else Paths.get(System.getProperty("user.home"), ".config")
+        return base.resolve("splice").resolve("keys.toml")
     }
 }

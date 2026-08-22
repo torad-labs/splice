@@ -20,6 +20,7 @@ import mock.MockChatGptUpstream
 import mock.awaitListening
 import mock.freshPort
 import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -29,7 +30,7 @@ import splice.app.TopologyLoader
 import splice.core.auth.RefreshAttempt
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
-import splice.core.util.discard
+import splice.core.util.Cancellables
 import java.net.InetSocketAddress
 import java.nio.file.Files
 import java.nio.file.Path
@@ -65,8 +66,45 @@ private class ChatUpstream {
                 .toByteArray(),
         )
         ex.responseBody.write("\n\n".toByteArray())
-        runCatching { ex.responseBody.close() }.discard("test-server teardown")
-        runCatching { ex.close() }.discard("test-server teardown")
+        Cancellables.discard(runCatching { ex.responseBody.close() }, "test-server teardown")
+        Cancellables.discard(runCatching { ex.close() }, "test-server teardown")
+    }
+}
+
+/** An Anthropic Messages upstream that records what the daemon forwarded (campaign claude-head). */
+private class AnthropicUpstream {
+    private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+    private val pool = Executors.newCachedThreadPool()
+    val baseUrl get() = "http://127.0.0.1:${server.address.port}"
+    val seen = mutableListOf<Map<String, List<String>>>()
+
+    init {
+        server.executor = pool
+        server.createContext("/") { ex -> handle(ex) }
+        server.start()
+    }
+
+    fun stop() {
+        server.stop(0)
+        pool.shutdownNow()
+    }
+
+    private fun handle(ex: HttpExchange) {
+        seen.add(ex.requestHeaders.entries.associate { it.key.lowercase() to it.value.toList() })
+        val _ = ex.requestBody.readBytes()
+        ex.responseHeaders.add("Content-Type", "text/event-stream")
+        ex.sendResponseHeaders(200, 0)
+        val frames = listOf(
+            """{"type":"message_start","message":{"usage":{"input_tokens":2}}}""",
+            """{"type":"content_block_start","index":0,"content_block":{"type":"text"}}""",
+            """{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}""",
+            """{"type":"content_block_stop","index":0}""",
+            """{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}""",
+            """{"type":"message_stop"}""",
+        )
+        frames.forEach { ex.responseBody.write("data: $it\n\n".toByteArray()) }
+        Cancellables.discard(runCatching { ex.responseBody.close() }, "test-server teardown")
+        Cancellables.discard(runCatching { ex.close() }, "test-server teardown")
     }
 }
 
@@ -76,6 +114,7 @@ class MultiProviderDaemonTest {
     private val codexMock = MockChatGptUpstream()
     private val grokMock = MockChatGptUpstream() // grok is the responses dialect too
     private val chatMock = ChatUpstream()
+    private val anthropicMock = AnthropicUpstream()
     private val client = HttpClient(CIO)
     private lateinit var daemon: Daemon
     private lateinit var key: String
@@ -83,6 +122,7 @@ class MultiProviderDaemonTest {
     private val codexPort = freshPort()
     private val grokPort = freshPort()
     private val chatPort = freshPort()
+    private val claudePort = freshPort()
 
     @BeforeAll
     fun setUp() {
@@ -104,11 +144,14 @@ class MultiProviderDaemonTest {
             refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
         )
         runBlocking { daemon.start() }
-        awaitListening(controlPort, codexPort, grokPort, chatPort)
+        awaitListening(controlPort, codexPort, grokPort, chatPort, claudePort)
     }
 
     // THE POINT: grok + openrouter are NEW vendors added as pure TOML — no new Kotlin per vendor.
-    private fun topologyToml(codexAuth: Path, grokKey: Path, orKey: Path): String = """
+    private fun topologyToml(codexAuth: Path, grokKey: Path, orKey: Path): String =
+        providersToml(codexAuth, grokKey, orKey) + "\n" + headsToml()
+
+    private fun providersToml(codexAuth: Path, grokKey: Path, orKey: Path): String = """
         [daemon]
         control_port = $controlPort
 
@@ -138,6 +181,18 @@ class MultiProviderDaemonTest {
         id = "meta/llama-4"
         context_window = 128000
 
+        [providers.anthropic]
+        dialect = "anthropic-passthrough"
+        base_url = "${anthropicMock.baseUrl}"
+        auth = { kind = "client" }
+        extra_headers = { anthropic-version = "2023-06-01" }
+        [[providers.anthropic.models]]
+        id = "claude-fable-5"
+        context_window = 200000
+
+    """.trimIndent()
+
+    private fun headsToml(): String = """
         [heads.claudex]
         provider = "codex"
         port = $codexPort
@@ -155,6 +210,12 @@ class MultiProviderDaemonTest {
         port = $chatPort
         discovery_prefix = "claude-openrouter--"
         pinned_model = "meta/llama-4"
+
+        [heads.claude-splice]
+        provider = "anthropic"
+        port = $claudePort
+        discovery_prefix = "claude-splice--"
+        pinned_model = "claude-fable-5"
     """.trimIndent()
 
     @AfterAll
@@ -164,6 +225,7 @@ class MultiProviderDaemonTest {
         codexMock.stop()
         grokMock.stop()
         chatMock.stop()
+        anthropicMock.stop()
     }
 
     @Test
@@ -208,6 +270,46 @@ class MultiProviderDaemonTest {
         assertTrue(sse.contains("ok after auth"))
         assertTrue(grokMock.upstreamAuths.any { it.second == "Bearer xai-daemon-key" }) // grok api key
         assertTrue(grokMock.upstreamBodies.last().second.contains("claude-grok:sess-daemon")) // session cache key
+    }
+    // ── the claude head, end to end through a REAL daemon (campaign claude-head, CH-10) ────────
+    //
+    // The sharpest form of this file's own claim: a head whose upstream is Anthropic itself,
+    // added with no Kotlin at all — no provider class, no auth wiring, no quirks — and serving on
+    // the CALLER's credential rather than one splice holds.
+
+    @Test
+    fun `the claude head serves a turn on the caller's own credential`() = runBlocking {
+        val before = anthropicMock.seen.size
+        val body = client.post("http://127.0.0.1:$claudePort/v1/messages") {
+            // deliberately NOT the mgmt key: this head has no splice-held credential to present
+            header("Authorization", "Bearer callers-own-credential")
+            header("anthropic-beta", "oauth-2025-04-20")
+            header("Content-Type", "application/json")
+            setBody(
+                """{"model":"claude-splice--claude-fable-5","max_tokens":16,""" +
+                    """"messages":[{"role":"user","content":"hi"}],"stream":true}""",
+            )
+        }.bodyAsText()
+        assertTrue(body.contains("hi"), body)
+
+        assertEquals(before + 1, anthropicMock.seen.size, "one turn must produce one upstream request")
+        val sent = anthropicMock.seen[before]
+        // the caller's credential rode through, exactly once
+        assertTrue(sent["authorization"] == listOf("Bearer callers-own-credential"), sent.toString())
+        assertTrue(sent["anthropic-beta"] == listOf("oauth-2025-04-20"), sent.toString())
+        assertTrue(sent["anthropic-version"] == listOf("2023-06-01"), sent.toString())
+        // and none of kimi's vendor identity leaked onto a head that never declared it
+        assertTrue(sent.keys.none { it.startsWith("x-msh-") }, sent.keys.toString())
+        assertTrue(sent["user-agent"].orEmpty().none { it.contains("KimiCLI") }, sent.toString())
+    }
+
+    @Test
+    fun `the claude head is assembled by a real daemon from TOML alone`() = runBlocking {
+        val heads = client.get("http://127.0.0.1:$controlPort/api/heads") {
+            header("Authorization", "Bearer $key")
+        }.bodyAsText()
+        assertTrue(heads.contains("claude-splice"), heads)
+        assertTrue(client.get("http://127.0.0.1:$claudePort/health").bodyAsText().contains("\"ok\":true"))
     }
 }
 

@@ -19,7 +19,10 @@ import java.net.InetSocketAddress
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
-import splice.core.util.discard
+import splice.core.util.Cancellables
+
+/** Bound for the test mock's zstd decode — far above any fixture request. */
+private const val MAX_DECOMPRESSED_BYTES = 8 * 1024 * 1024
 
 // The two summary sections the "foldsummary" scenario streams (both over the 20-char dedup floor):
 // section A is re-titled verbatim by the continuation round, B only ever arrives in round 2.
@@ -85,11 +88,6 @@ class MockChatGptUpstream {
         pool.shutdownNow()
     }
 
-    private companion object {
-        /** Bound for the test mock's zstd decode — far above any fixture request. */
-        const val MAX_DECOMPRESSED_BYTES = 8 * 1024 * 1024
-    }
-
     private fun sse(ex: HttpExchange, json: String) {
         ex.responseBody.write("data: $json\n\n".toByteArray())
         ex.responseBody.flush()
@@ -149,10 +147,11 @@ class MockChatGptUpstream {
             // EOF (IOException) BEFORE any complete client frame — the StreamTornBeforeClient path.
             ex.responseHeaders.add("Content-Type", "text/event-stream")
             ex.sendResponseHeaders(200, 4096)
-            runCatching {
+            val torn = runCatching {
                 ex.responseBody.write("data: {\"type\":\"resp".toByteArray())
                 ex.responseBody.flush()
-            }.discard("tear: drop mid-frame")
+            }
+            Cancellables.discard(torn, "tear: drop mid-frame")
             ex.close()
             return
         }
@@ -190,8 +189,8 @@ class MockChatGptUpstream {
                 "unexpected mid-stream I/O failure in scenario '$scenario': ${abort.message}"
             }
         } finally {
-            runCatching { ex.responseBody.close() }.discard("test-server teardown")
-            runCatching { ex.close() }.discard("test-server teardown")
+            Cancellables.discard(runCatching { ex.responseBody.close() }, "test-server teardown")
+            Cancellables.discard(runCatching { ex.close() }, "test-server teardown")
         }
     }
 

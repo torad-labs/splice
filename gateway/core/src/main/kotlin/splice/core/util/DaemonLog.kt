@@ -9,7 +9,8 @@
 // a navigation_expression.
 //
 // WHY A PROCESS DEFAULT AND NOT PURE INJECTION. Injection is still the contract — every consumer
-// takes `log: (String) -> Unit` and tests pass their own capturing sink (CodexProviderTest does
+// takes `log: LogSink` (HD-21; was a raw `(String) -> Unit`) and tests pass their own capturing
+// sink (CodexProviderTest does
 // exactly that). This supplies only the DEFAULT. Threading the sink explicitly from Daemon through
 // all twelve provider construction sites pushed Daemon past detekt's LargeClass ceiling, and
 // "which class is too big" is a separate question from "where do diagnostics go". Defaulting here
@@ -22,14 +23,14 @@ package splice.core.util
 
 public object DaemonLog {
     @Volatile
-    private var sink: (String) -> Unit = {}
+    private var sink: LogSink = LogSink {}
 
     /** Called once from Main with the persistent logger (writes both stderr and daemon.log). */
-    public fun install(logger: (String) -> Unit) {
+    public fun install(logger: LogSink) {
         sink = logger
     }
 
-    /** Reference as `DaemonLog::write` to use the installed sink as a default parameter. */
+    /** Reference as `LogSink(DaemonLog::write)` to use the installed sink as a default parameter. */
     public fun write(message: String) {
         sink(message)
     }

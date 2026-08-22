@@ -1,0 +1,79 @@
+// PORT-OF: WsUpstream.kt @ 81ff23c — invariants: every overridden callback re-arms request(1)
+// itself (a missed re-arm deadlocks the stream silently), and a frame arriving after the round's
+// terminal is poisoned rather than served to a later round.
+package splice.dialect.responses
+
+import kotlinx.coroutines.channels.Channel
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
+import splice.core.util.Cancellables
+import splice.core.util.LogSink
+import java.io.IOException
+import java.net.http.WebSocket
+import java.util.concurrent.CompletionStage
+
+/** Assembles (possibly fragmented) text frames into JSON events and feeds the inbox. Every
+ *  overridden callback must re-arm request(1) itself — overriding a Listener method REPLACES the
+ *  default that did it (a missed request() deadlocks the stream silently). Binary frames, JSON
+ *  that fails to parse, and an overflowing inbox are all protocol anomalies: [onAnomaly] kills the
+ *  owning connection (the caller falls back to SSE; NEVER-BELOW-STATUS-QUO). */
+internal class InboxListener(
+    private val inbox: Channel<JsonObject>,
+    private val log: LogSink,
+    private val terminalSeen: TerminalSeen,
+    private val onAnomaly: ProtocolAnomaly,
+) : WebSocket.Listener {
+    private val assembly = StringBuilder()
+
+    override fun onOpen(webSocket: WebSocket) {
+        webSocket.request(1)
+    }
+
+    override fun onText(webSocket: WebSocket, data: CharSequence, last: Boolean): CompletionStage<*>? {
+        if (terminalSeen()) {
+            // A frame after the round's terminal: the round it belongs to is over, so this can only
+            // ever be served as some LATER round's first event. Poison instead.
+            log("[ws] frame arrived after the round terminal — poisoning rather than serving it later\n")
+            onAnomaly()
+            webSocket.request(1)
+            return null
+        }
+        assembly.append(data)
+        if (last) {
+            val payload = assembly.toString()
+            assembly.setLength(0)
+            val event = Cancellables.runCatchingCancellable { wsJson.parseToJsonElement(payload).jsonObject }
+                .onFailure { log("[ws] unparseable frame (${payload.length} chars) — anomaly\n") }
+                .getOrNull()
+            if (event == null) {
+                onAnomaly()
+            } else if (!inbox.trySend(event).isSuccess) {
+                log("[ws] inbox overflow/closed — anomaly\n")
+                onAnomaly()
+            }
+        }
+        webSocket.request(1)
+        return null
+    }
+
+    override fun onBinary(webSocket: WebSocket, data: java.nio.ByteBuffer, last: Boolean): CompletionStage<*>? {
+        log("[ws] unexpected binary frame — anomaly\n")
+        onAnomaly() // the protocol is text-JSON; a binary frame means we misunderstand the stream
+        return null
+    }
+
+    override fun onClose(webSocket: WebSocket, statusCode: Int, reason: String): CompletionStage<*>? {
+        inbox.close()
+        return null
+    }
+
+    override fun onError(webSocket: WebSocket, error: Throwable) {
+        inbox.close(IOException("websocket error", error))
+    }
+}
+
+private val wsJson = Json {
+    ignoreUnknownKeys = true
+    isLenient = true
+}

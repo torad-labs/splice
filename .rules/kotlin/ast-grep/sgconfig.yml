@@ -1,6 +1,19 @@
 # ast-grep configuration for Torad Kotlin rules
 # Install: copy to project root or .rules/kotlin/ast-grep/
 # Run: ast-grep scan --config .rules/kotlin/ast-grep/sgconfig.yml
-
+#
+# These rules are DORMANT — the root sgconfig.yml deliberately does NOT list this directory in its
+# ruleDirs, so `npm run gate:rules` never SCANS them. A rule graduates by moving to
+# .rules/kotlin-splice/ (HD-17/19/20 precedent).
+#
+# testConfigs added 2026-08-17 (HD-21) so a dormant rule's matcher can still be red/green PINNED
+# before it graduates. This is not cosmetic: a rule-test dropped into the root .rules/rule-tests
+# for a rule that is not in a root ruleDir is SILENTLY SKIPPED — `ast-grep test` reports the same
+# pass count and never mentions it. That is the dead-matcher failure one level up (a test that
+# cannot fail), so the dormant pack tests through its OWN config, and `npm run gate:rules` invokes
+# it explicitly.
 ruleDirs:
   - rules
+
+testConfigs:
+  - testDir: rule-tests

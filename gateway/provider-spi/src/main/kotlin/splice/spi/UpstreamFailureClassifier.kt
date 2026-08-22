@@ -12,12 +12,10 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 import splice.core.turn.ErrorType
-import splice.core.util.runCatchingCancellable
-import splice.core.util.str
+import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
 
-public data class ClassifiedFailure(val type: ErrorType, val message: String)
-
-public enum class FailureSource { HTTP, SSE }
+// ClassifiedFailure + FailureSource live in FailureKinds.kt (concentration, 2026-08-19).
 
 public object UpstreamFailureClassifier {
     private val overflowRe = Regex(
@@ -54,14 +52,14 @@ public object UpstreamFailureClassifier {
     private fun extractHttpError(raw: String, status: Int?): ExtractResult {
         var message = raw
         var code = ""
-        val parsed = runCatchingCancellable {
+        val parsed = Cancellables.runCatchingCancellable {
             val j = lenient.parseToJsonElement(raw).jsonObject
             val err = j["error"]?.jsonObject
-            message = err?.str("message")
-                ?: j.str("message")
+            message = JsonScalars.str(err, "message")
+                ?: JsonScalars.str(j, "message")
                 ?: raw
-            code = err?.str("type")
-                ?: err?.str("code")
+            code = JsonScalars.str(err, "type")
+                ?: JsonScalars.str(err, "code")
                 ?: ""
             // Keep the fields that tell the operator WHAT TO DO. The bare `message` alone reads
             // "The usage limit has been reached" with no hint the ChatGPT Pro quota is six days
@@ -100,7 +98,7 @@ public object UpstreamFailureClassifier {
     private fun quotaSuffix(err: JsonObject?): String {
         if (err == null) return ""
         val parts = mutableListOf<String>()
-        err.str("plan_type")?.takeIf { it.isNotBlank() }?.let { parts += "plan=$it" }
+        JsonScalars.str(err, "plan_type")?.takeIf { it.isNotBlank() }?.let { parts += "plan=$it" }
         val resetsInS = err["resets_in_seconds"]?.jsonPrimitive?.longOrNull
             ?: err["resets_at"]?.jsonPrimitive?.longOrNull?.let { it - System.currentTimeMillis() / MS_PER_S }
         resetsInS?.takeIf { it > 0 }?.let { parts += "resets in ${humanizeDuration(it)}" }

@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import splice.core.turn.Usage
 import splice.gateway.wire.SseEmitter
+import splice.gateway.wire.SseEmitterFactory
 
 class SseEscapingParityTest {
 
@@ -36,7 +37,7 @@ class SseEscapingParityTest {
         val frames = mutableListOf<String>()
         var out = ""
         runTest {
-            val emitter = SseEmitter.create(
+            val emitter = SseEmitterFactory().create(
                 write = { frames.add(it) },
                 model = "m",
                 usagePayload = { buildJsonObject { put("output_tokens", 0) } },

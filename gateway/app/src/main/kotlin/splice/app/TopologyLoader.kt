@@ -6,13 +6,18 @@ package splice.app
 
 import com.akuleshov7.ktoml.Toml
 import kotlinx.serialization.decodeFromString
+import splice.control.TopologyStale
+import splice.core.GATEWAY_VERSION
+import splice.core.SHIM_VERSION
 import splice.core.topology.Topology
-import splice.core.util.runCatchingCancellable
+import splice.core.util.Cancellables
+import splice.core.util.EnvReader
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
 
 public object TopologyLoader {
+
     private const val DEFAULT_TOML = """
 [daemon]
 control_port = 3096
@@ -46,7 +51,7 @@ pinned_model = "anthropic/claude-haiku-4.5"
 command = "claude-openrouter"
 """
 
-    public fun configPath(env: (String) -> String? = System::getenv): Path {
+    public fun configPath(env: EnvReader = EnvReader(System::getenv)): Path {
         val override = env("SPLICE_CONFIG")
         if (override != null) return Paths.get(expandHome(override))
         val xdg = env("XDG_CONFIG_HOME")
@@ -73,7 +78,16 @@ command = "claude-openrouter"
     /** Digest of the file as it is on disk RIGHT NOW; null when unreadable (fail open — an
      *  unreadable file must degrade the staleness signal, never break /health or a launch). */
     public fun currentDigest(path: Path): String? =
-        runCatchingCancellable { sha256Hex(Files.readAllBytes(path)) }.getOrNull()
+        Cancellables.runCatchingCancellable { sha256Hex(Files.readAllBytes(path)) }.getOrNull()
+
+    /** JW-04: per-request staleness recompute, failing OPEN — an unreadable file degrades the
+     *  signal, never /health. Lives here rather than beside its Daemon caller because the fact it
+     *  computes is this loader's (Kotlin style law, 2026-08-15: it can no longer be a file-level
+     *  helper, and [currentDigest] is the thing it wraps). */
+    internal fun staleProbe(path: Path?, bootDigest: String): TopologyStale = TopologyStale {
+        val now = path?.let { currentDigest(it) }
+        now != null && bootDigest.isNotEmpty() && now != bootDigest
+    }
 
     private fun sha256Hex(bytes: ByteArray): String =
         java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
@@ -82,4 +96,9 @@ command = "claude-openrouter"
 
     public fun expandHome(raw: String): String =
         if (raw.startsWith("~/")) System.getProperty("user.home") + raw.substring(1) else raw
+
+    // Version seams so CLI files can drop a splice.core import (median 1.0) without
+    // taking the floor. Same pattern as DaemonHealth.cliVersion / ControlPayloads.gatewayVersion.
+    public fun gatewayVersion(): String = GATEWAY_VERSION
+    public fun shimVersion(): String = SHIM_VERSION
 }

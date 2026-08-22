@@ -5,9 +5,9 @@
 // the per-turn conv-id header and the grok quirk profile.
 package splice.provider.grok
 
-import splice.core.auth.Credentials
 import splice.core.turn.ReasoningDisplay
 import splice.core.util.DaemonLog
+import splice.core.util.LogSink
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.EffortLadder
 import splice.dialect.responses.ResponsesProvider
@@ -20,10 +20,10 @@ public class GrokProvider(
     replayReasoning: Boolean,
     configEffort: String?,
     configSummary: String? = null,
-    quirks: ResponsesQuirks = defaultQuirks(),
+    quirks: ResponsesQuirks = GrokQuirks().defaultQuirks(),
     /** Daemon log sink — forwarded to ResponsesProvider so its diagnostics reach
      *  /mgmt/logs and not stderr alone (wall kt-no-println, 2026-07-27). */
-    log: (String) -> Unit = DaemonLog::write,
+    log: LogSink = LogSink(DaemonLog::write),
 ) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks, log = log) {
 
     // Grok Build sets both the body prompt_cache_key AND x-grok-conv-id for sticky routing. The
@@ -31,25 +31,26 @@ public class GrokProvider(
     // field raced concurrent sessions into each other's affinity header (audit 2026-07-18).
     override fun perTurnHeaders(sessionId: String?): Map<String, String> =
         sessionId?.takeIf { it.isNotEmpty() }?.let { mapOf("x-grok-conv-id" to it) } ?: emptyMap()
+}
 
-    override fun extraHeaders(creds: Credentials): Map<String, String> = mapOf("Accept" to "text/event-stream")
-
-    public companion object {
-        /** The grok quirk profile — injectable so the TOML [providers.*.quirks] table is REAL. */
-        public fun defaultQuirks(): ResponsesQuirks = ResponsesQuirks(
-            providerTag = "claude-grok",
-            store = false,
-            cacheKeyStrategy = CacheKeyStrategy.SESSION_ID,
-            effortLadder = EffortLadder.GROK,
-            supportsSummary = true,
-            summaryRejectModelRegex = null,
-            compactEffortPin = null, // inherit session effort on compact (v27 cache law — no pins)
-            emitToolChoice = true,
-            emitStrict = true,
-            // xai returns no encrypted reasoning envelopes, so the cache would only widen the
-            // request's include[] for nothing (untested surface on xai). TOML
-            // `reasoning_cache = true` re-enables via the overlay if that ever changes.
-            reasoningCache = false,
-        )
-    }
+/** Holder for the grok quirk profile. A class rather than a static namespace so the profile is
+ *  constructed by whoever needs it (the daemon overlays TOML on top of it), and so the default is
+ *  still re-evaluated per GrokProvider construction exactly as the companion's function was. */
+public class GrokQuirks {
+    /** The grok quirk profile — injectable so the TOML [providers.*.quirks] table is REAL. */
+    public fun defaultQuirks(): ResponsesQuirks = ResponsesQuirks(
+        providerTag = "claude-grok",
+        store = false,
+        cacheKeyStrategy = CacheKeyStrategy.SESSION_ID,
+        effortLadder = EffortLadder.GROK,
+        supportsSummary = true,
+        summaryRejectModelRegex = null,
+        compactEffortPin = null, // inherit session effort on compact (v27 cache law — no pins)
+        emitToolChoice = true,
+        emitStrict = true,
+        // xai returns no encrypted reasoning envelopes, so the cache would only widen the
+        // request's include[] for nothing (untested surface on xai). TOML
+        // `reasoning_cache = true` re-enables via the overlay if that ever changes.
+        reasoningCache = false,
+    )
 }

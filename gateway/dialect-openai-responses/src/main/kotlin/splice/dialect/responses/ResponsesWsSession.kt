@@ -18,19 +18,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import splice.core.util.str
+import splice.core.util.JsonScalars
 
-/** What to send on the wire for one WS round. [chained] is diagnostics + the WS-5 instrument: the
- *  count that must move when chaining engages, and must NOT when it bails. */
-internal data class WsFrame(val json: String, val chained: Boolean)
-
-/** The frame AND the epoch it was built under, captured under ONE lock acquisition (F7). Two
- *  acquisitions — frameFor then epochOf — left a window where a concurrent [ResponsesWsSession.cleared]
- *  bumped the epoch AFTER the frame was built on now-invalidated context: the frame chained onto
- *  dropped state while its captured (post-bump) epoch still matched at commit, resurrecting exactly
- *  what cleared existed to bar (a bypassed SSE turn's messages then classify as server-held and
- *  silently vanish). Capturing both atomically closes it. */
-internal data class WsFrameAndEpoch(val frame: WsFrame, val epoch: Long)
+// WsFrame + WsFrameAndEpoch live in WsFrames.kt (concentration, 2026-08-19).
 
 /**
  * Per-conversation chaining state for ONE provider. THREAD-SAFE: every method takes [lock].
@@ -149,14 +139,17 @@ internal class ResponsesWsSession {
     ): Unit = synchronized(lock) {
         val input = request[FIELD_INPUT] as? JsonArray
         // A stale epoch means something invalidated this conversation while the round was in flight.
-        val committable = responseId != null && input != null && epoch == (epochs[key] ?: seq)
-        if (!committable) {
-            // Committing now would anchor the next turn onto context the server lacks.
-            chains.remove(key)
-            return
-        }
+        val fresh = epoch == (epochs[key] ?: seq)
+        // Unconditional in the old shape too — the bail removed, and the commit removed before
+        // re-inserting, which is what moves the record to the LRU tail [trimLocked] evicts from.
         chains.remove(key)
-        chains[key] = Chain(input!!.map { it.toString() }, responseId!!, propsOf(request), generation)
+        // Two guards rather than one `committable` boolean: the null checks now sit in branches that
+        // RETURN, so past them the compiler itself knows `responseId` and `input` are non-null. The
+        // boolean form hid that and the commit line had to assert with `!!`. Same conditions, same
+        // order — committing without either would anchor the next turn onto context the server lacks.
+        if (responseId == null || input == null) return
+        if (!fresh) return
+        chains[key] = Chain(input.map { it.toString() }, responseId, propsOf(request), generation)
         trimLocked()
     }
 
@@ -201,60 +194,64 @@ internal class ResponsesWsSession {
     private fun propsOf(request: JsonObject): String =
         JsonObject(request.filterKeys { it != FIELD_INPUT }).toString()
 
-    internal companion object {
-        /** Same order as the reasoning cache's bound: far more than any real concurrent-session
-         *  count on one head, and an evicted record costs only a full send. */
-        const val MAX_CONVERSATIONS = 256
+    private enum class Disposition { SERVER_HAS_IT, SEND, BAIL }
 
-        /** Item kinds the server ALREADY holds after the previous response: it produced them, so
-         *  the builder's rebuild of them is a duplicate that must be dropped from the delta. */
-        private val SERVER_HELD = setOf("reasoning", "function_call", "tool_search_call", "tool_search_output")
-
-        /** Item kinds that are genuinely NEW client-side input and must be sent. */
-        private val CLIENT_NEW = setOf("function_call_output", "message")
-
-        /**
-         * The suffix beyond [previous] that must be sent, or null to bail.
-         *
-         * Bails when the new input does not EXTEND the previous one elementwise (a rewritten
-         * prefix means the builder changed history — cache-key drift, a compaction, an amended
-         * body), or when the suffix holds any item that is neither a known server-held rebuild nor
-         * a known client-new item. An assistant `message` in the suffix is server-held (it produced
-         * that text) — distinguished from a user message by role.
-         */
-        fun deltaOf(previous: List<String>, current: List<JsonObject>): List<JsonObject>? {
-            if (!extendsPrefix(previous, current)) return null
-            val send = mutableListOf<JsonObject>()
-            for (item in current.drop(previous.size)) {
-                when (dispositionOf(item)) {
-                    Disposition.SERVER_HAS_IT -> Unit // it produced this; re-sending would duplicate
-                    Disposition.SEND -> send += item
-                    Disposition.BAIL -> return null
-                }
-            }
-            return send
-        }
-
-        private fun extendsPrefix(previous: List<String>, current: List<JsonObject>): Boolean =
-            current.size >= previous.size &&
-                previous.indices.all { previous[it] == current[it].toString() }
-
-        private enum class Disposition { SERVER_HAS_IT, SEND, BAIL }
-
-        private fun dispositionOf(item: JsonObject): Disposition {
-            // The builder emits plain role/content messages with no explicit `type`.
-            val type = item[FIELD_TYPE].str() ?: item[FIELD_ROLE]?.let { MESSAGE } ?: return Disposition.BAIL
-            val assistantMessage = type == MESSAGE && item[FIELD_ROLE].str() == "assistant"
-            return when {
-                type in SERVER_HELD || assistantMessage -> Disposition.SERVER_HAS_IT
-                type in CLIENT_NEW -> Disposition.SEND
-                else -> Disposition.BAIL // unknown shape
+    /**
+     * The suffix beyond [previous] that must be sent, or null to bail.
+     *
+     * Bails when the new input does not EXTEND the previous one elementwise (a rewritten
+     * prefix means the builder changed history — cache-key drift, a compaction, an amended
+     * body), or when the suffix holds any item that is neither a known server-held rebuild nor
+     * a known client-new item. An assistant `message` in the suffix is server-held (it produced
+     * that text) — distinguished from a user message by role.
+     *
+     * A member rather than the companion function it used to be (Kotlin main sources carry no
+     * `companion` blocks); it reads only its arguments, and its one caller is [chainableDelta]
+     * inside this class, so the call site is unchanged.
+     */
+    private fun deltaOf(previous: List<String>, current: List<JsonObject>): List<JsonObject>? {
+        if (!extendsPrefix(previous, current)) return null
+        val send = mutableListOf<JsonObject>()
+        for (item in current.drop(previous.size)) {
+            when (dispositionOf(item)) {
+                Disposition.SERVER_HAS_IT -> Unit // it produced this; re-sending would duplicate
+                Disposition.SEND -> send += item
+                Disposition.BAIL -> return null
             }
         }
+        return send
+    }
 
-        private const val FIELD_INPUT = "input"
-        private const val FIELD_TYPE = "type"
-        private const val FIELD_ROLE = "role"
-        private const val MESSAGE = "message"
+    private fun extendsPrefix(previous: List<String>, current: List<JsonObject>): Boolean =
+        current.size >= previous.size &&
+            previous.indices.all { previous[it] == current[it].toString() }
+
+    private fun dispositionOf(item: JsonObject): Disposition {
+        // The builder emits plain role/content messages with no explicit `type`.
+        val type = JsonScalars.str(item[FIELD_TYPE]) ?: item[FIELD_ROLE]?.let { MESSAGE } ?: return Disposition.BAIL
+        val assistantMessage = type == MESSAGE && JsonScalars.str(item[FIELD_ROLE]) == "assistant"
+        return when {
+            type in SERVER_HELD || assistantMessage -> Disposition.SERVER_HAS_IT
+            type in CLIENT_NEW -> Disposition.SEND
+            else -> Disposition.BAIL // unknown shape
+        }
     }
 }
+
+/** Same order as the reasoning cache's bound: far more than any real concurrent-session
+ *  count on one head, and an evicted record costs only a full send. Narrowed from the
+ *  companion's module-visible `const` to file scope — grep shows no consumer outside this file. */
+private const val MAX_CONVERSATIONS = 256
+
+/** Item kinds the server ALREADY holds after the previous response: it produced them, so
+ *  the builder's rebuild of them is a duplicate that must be dropped from the delta.
+ *  FILE SCOPE ON PURPOSE: one shared immutable set, read per delta item. */
+private val SERVER_HELD = setOf("reasoning", "function_call", "tool_search_call", "tool_search_output")
+
+/** Item kinds that are genuinely NEW client-side input and must be sent. */
+private val CLIENT_NEW = setOf("function_call_output", "message")
+
+private const val FIELD_INPUT = "input"
+private const val FIELD_TYPE = "type"
+private const val FIELD_ROLE = "role"
+private const val MESSAGE = "message"

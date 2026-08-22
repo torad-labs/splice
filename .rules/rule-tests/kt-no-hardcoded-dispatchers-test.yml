@@ -1,0 +1,13 @@
+id: kt-no-hardcoded-dispatchers
+valid:
+  # The injected seam, defaulted at the composition root from the runtime edge.
+  - 'private val dispatcher: CoroutineDispatcher = ProcessDispatchers().io()'
+  - 'withContext(stopDispatcher) { stopEveryHead() }'
+  - 'scope.launch(dispatcher) { probe() }'
+  # naming the TYPE is not choosing a lane
+  - 'fun io(): CoroutineDispatcher = pick()'
+invalid:
+  - 'withContext(Dispatchers.IO) { channel.tryLock() }'
+  - 'private val scope = LifecycleScope(Dispatchers.Default)'
+  # zero live hits in this repo; the branch is what keeps it that way
+  - 'launch(Dispatchers.Main) { render() }'

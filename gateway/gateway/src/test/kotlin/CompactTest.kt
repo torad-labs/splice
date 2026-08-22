@@ -7,16 +7,17 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.core.parse.parseAnthropicBody
+import splice.core.parse.AnthropicParse
 import splice.gateway.compact.COMPACT_MARKER
+import splice.gateway.compact.CompactClassifier
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
-import splice.gateway.compact.classifyCompact
 import splice.gateway.compact.compactMarkers
-import splice.gateway.compact.markerPresent
 import java.nio.file.Path
 
-private fun body(json: String) = parseAnthropicBody(json).typed
+private fun body(json: String) = AnthropicParse.parseAnthropicBody(json).typed
+
+private val classifier = CompactClassifier()
 
 class CompactTest {
 
@@ -33,11 +34,13 @@ class CompactTest {
     fun `every marker detects in the system prompt and in the last user message`() {
         for (marker in compactMarkers) {
             assertTrue(
-                classifyCompact(body("""{"model":"m","system":"You are $marker now.","messages":[]}""")).compact,
+                classifier.classifyCompact(
+                    body("""{"model":"m","system":"You are $marker now.","messages":[]}"""),
+                ).compact,
                 "system: $marker",
             )
             assertTrue(
-                classifyCompact(
+                classifier.classifyCompact(
                     body(
                         """{"model":"m","messages":[{"role":"user","content":"Please: ${marker.uppercase()}"}]}""",
                     ),
@@ -50,7 +53,7 @@ class CompactTest {
     @Test
     fun `detection is tools-agnostic - real compactions carry tools`() {
         assertTrue(
-            classifyCompact(
+            classifier.classifyCompact(
                 body(
                     """{"model":"m","system":"$COMPACT_MARKER",
                         "tools":[{"name":"Read","input_schema":{"type":"object"}}],"messages":[]}""",
@@ -66,7 +69,7 @@ class CompactTest {
             append("x".repeat(50_000))
             append(""""}]}""")
         }
-        assertFalse(classifyCompact(body(bigResume)).compact)
+        assertFalse(classifier.classifyCompact(body(bigResume)).compact)
     }
 
     @Test
@@ -78,14 +81,14 @@ class CompactTest {
                 {"role":"user","content":"now do normal work"}
             ]}""",
         )
-        assertFalse(classifyCompact(quoted).compact)
-        assertFalse(markerPresent(quoted))
+        assertFalse(classifier.classifyCompact(quoted).compact)
+        assertFalse(classifier.markerPresent(quoted))
     }
 
     @Test
     fun `explicit compaction affordances match`() {
         assertTrue(
-            classifyCompact(
+            classifier.classifyCompact(
                 body(
                     """{"model":"m","messages":[
                         {"role":"user","content":"The compaction agent should only produce TEXT."}]}""",
@@ -93,7 +96,7 @@ class CompactTest {
             ).compact,
         )
         assertTrue(
-            classifyCompact(
+            classifier.classifyCompact(
                 body(
                     """{"model":"m","messages":[
                         {"role":"user","content":"Tool use is not allowed during compaction."}]}""",
@@ -121,6 +124,35 @@ class CompactTest {
         repeat(600) { shadow.record(body("""{"model":"m","messages":[]}"""), compact = false) }
         assertEquals(100, shadow.tail(100).size)
         assertTrue(shadow.tail(1000).size <= 500)
+    }
+
+    // CMP-001: the drift canary itself was untested — `compact-drift` appeared exactly once in the
+    // repo, in Compact.kt. It fires on the PARTIAL drift: the pinned verbatim compactMarkers all
+    // miss while a looser affordance regex still catches the turn as compact, which is what a
+    // Claude Code summarizer-wording change looks like from here. Untested, the instrument built to
+    // catch marker rot would have rotted silently with it.
+    @Test
+    fun `CMP-001 - a fallback-only match fires the compact-drift canary, a verbatim marker never does`() {
+        val lines = mutableListOf<String>()
+        val shadow = ShadowClassifier(log = { lines.add(it) }, clock = { 9L })
+
+        val verbatim = body("""{"model":"m","system":"You are $COMPACT_MARKER.","messages":[]}""")
+        val onMarker = shadow.record(verbatim, classifier.classifyCompact(verbatim))
+        assertTrue(onMarker.compact)
+        assertTrue(onMarker.hasMarker)
+        assertEquals(0, lines.count { it.startsWith("[compact-drift]") }, "a pinned marker is not drift: $lines")
+
+        // Matches compactionTextOnlyRe, carries none of the five verbatim marker sentences.
+        val fallbackOnly = body(
+            """{"model":"m","messages":[
+                {"role":"user","content":"The compaction agent should only produce TEXT."}]}""",
+        )
+        val onDrift = shadow.record(fallbackOnly, classifier.classifyCompact(fallbackOnly))
+        assertTrue(onDrift.compact, "the fallback regex must still classify this as compact")
+        assertFalse(onDrift.hasMarker, "the pinned markers must all miss — that IS the drift signal")
+        val drift = lines.filter { it.startsWith("[compact-drift]") }
+        assertEquals(1, drift.size, "the canary must fire exactly once: $lines")
+        assertTrue(drift.single().contains("has_marker=false, compact=true"), drift.single())
     }
 
     @Test

@@ -16,10 +16,9 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.AsyncFileIo
+import splice.core.util.Cancellables
 import splice.core.util.JsonlSink
-import splice.core.util.runCatchingCancellable
-import splice.core.wire.AnthropicRequest
-import splice.core.wire.TextBlock
+import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -37,102 +36,15 @@ public val compactMarkers: List<String> = listOf(
     "summarize this portion of a claude code session transcript",
 )
 
-private val compactionTextOnlyRe = Regex("compaction agent should only produce text", RegexOption.IGNORE_CASE)
-private val compactionNoToolsRe = Regex("tool use is not allowed during compaction", RegexOption.IGNORE_CASE)
+// CompactProbe + CompactClassifier + ShadowClassifier live in CompactClassifier.kt
+// (concentration, 2026-08-19 / 2026-08-20).
 
-/** One-shot probe of a request for the compact classifier + shadow instrument. */
-public data class CompactProbe(
-    val compact: Boolean,
-    val hasMarker: Boolean,
-    val sysLen: Int,
-)
+// Was CompactStats' companion `DEFAULT_TAIL`. RENAMED because ShadowClassifier's companion carried
+// a DIFFERENT value under the same name, and one file scope cannot hold two `DEFAULT_TAIL`s.
+private const val STATS_DEFAULT_TAIL = 50
 
-public fun systemText(body: AnthropicRequest): String = body.system.orEmpty()
-
-public fun lastUserTextOf(body: AnthropicRequest): String {
-    for (msg in body.messages.asReversed()) {
-        if (msg.role != "user") continue
-        val t = msg.content.filterIsInstance<TextBlock>()
-            .map { it.text }
-            .filter { it.isNotEmpty() }
-            .joinToString("\n")
-        if (t.isNotEmpty()) return t
-    }
-    return ""
-}
-
-/** Marker in the system prompt OR the LAST user message — never the whole transcript. */
-public fun markerPresent(body: AnthropicRequest): Boolean = classifyCompact(body).hasMarker
-
-/**
- * Detect Claude Code's /compact summarization call (auto + manual). Positive marker only.
- * Returns the full probe so the shadow classifier can reuse sysLen/hasMarker without a second
- * scan of the system prompt + last user message.
- */
-public fun classifyCompact(body: AnthropicRequest): CompactProbe {
-    val system = systemText(body)
-    val lastUser = lastUserTextOf(body)
-    // Lowercase once; markers are already lowercase contract strings.
-    val hay = buildString(system.length + lastUser.length + 1) {
-        append(system)
-        append('\n')
-        append(lastUser)
-    }.lowercase()
-    val hasMarker = compactMarkers.any { hay.contains(it) }
-    val compact = hasMarker ||
-        compactionTextOnlyRe.containsMatchIn(lastUser) ||
-        compactionNoToolsRe.containsMatchIn(lastUser)
-    return CompactProbe(compact = compact, hasMarker = hasMarker, sysLen = system.length)
-}
-
-public data class ShadowRow(
-    val ts: Long,
-    val compact: Boolean,
-    val hasMarker: Boolean,
-    val toolCount: Int,
-    val sysLen: Int,
-    val model: String,
-)
-
-/** In-memory shadow ring + one log line per request — the marker-drift instrument. */
-public class ShadowClassifier(
-    private val log: (String) -> Unit,
-    private val clock: () -> Long = System::currentTimeMillis,
-) {
-    private val ring = ArrayDeque<ShadowRow>()
-    private val lock = Any()
-
-    /** Convenience for callers that only have the boolean; one classifyCompact scan, then override. */
-    public fun record(body: AnthropicRequest, compact: Boolean): ShadowRow =
-        record(body, classifyCompact(body).copy(compact = compact))
-
-    public fun record(body: AnthropicRequest, probe: CompactProbe): ShadowRow {
-        val row = ShadowRow(
-            ts = clock(),
-            compact = probe.compact,
-            hasMarker = probe.hasMarker,
-            toolCount = body.tools.size,
-            sysLen = probe.sysLen,
-            model = body.model,
-        )
-        synchronized(lock) {
-            ring.addLast(row)
-            if (ring.size > RING_MAX) ring.removeFirst()
-        }
-        log(
-            "[shadow-compact] compact=${row.compact} has_marker=${row.hasMarker} " +
-                "tool_count=${row.toolCount} sys_len=${row.sysLen}\n",
-        )
-        return row
-    }
-
-    public fun tail(n: Int = DEFAULT_TAIL): List<ShadowRow> = synchronized(lock) { ring.takeLast(n) }
-
-    private companion object {
-        const val RING_MAX = 500
-        const val DEFAULT_TAIL = 100
-    }
-}
+// ~256 KiB of trailing JSONL is plenty for the HUD window and bounds parse cost.
+private const val READ_TAIL_BYTES = 256 * 1024
 
 public data class CompactStatsSummary(
     val total: Int,
@@ -141,7 +53,7 @@ public data class CompactStatsSummary(
 )
 
 /** Compact outcome stats — the JSONL contract file the HUD and dashboard read. */
-public class CompactStats(private val file: Path, private val clock: () -> Long = System::currentTimeMillis) {
+public class CompactStats(private val file: Path, private val clock: WallClock = WallClock(System::currentTimeMillis)) {
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -161,7 +73,7 @@ public class CompactStats(private val file: Path, private val clock: () -> Long 
             }
         }.toString()
         AsyncFileIo.submit {
-            runCatchingCancellable {
+            Cancellables.runCatchingCancellable {
                 Files.createDirectories(file.parent)
                 JsonlSink.appendLine(file, row)
             }
@@ -173,24 +85,17 @@ public class CompactStats(private val file: Path, private val clock: () -> Long 
     // Large files are tail-read (last READ_TAIL_BYTES) so a multi-MB JSONL never becomes a full
     // heap load just to render the HUD; total/byOutcome then reflect the tailed window, not the
     // full history (acceptable for a drift instrument — the file itself is still append-only).
-    public fun read(tailN: Int = DEFAULT_TAIL): CompactStatsSummary {
+    public fun read(tailN: Int = STATS_DEFAULT_TAIL): CompactStatsSummary {
         AsyncFileIo.drain()
         if (!Files.exists(file)) return CompactStatsSummary(0, emptyMap(), emptyList())
-        val rows = runCatchingCancellable {
+        val rows = Cancellables.runCatchingCancellable {
             JsonlSink.readTail(file, READ_TAIL_BYTES).mapNotNull { line ->
-                runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
+                Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
             }
         }.getOrDefault(emptyList())
         val byOutcome = rows.groupingBy {
             (it["outcome"] as? JsonPrimitive)?.content ?: "unknown"
         }.eachCount()
         return CompactStatsSummary(rows.size, byOutcome, rows.takeLast(tailN))
-    }
-
-    private companion object {
-        const val DEFAULT_TAIL = 50
-
-        // ~256 KiB of trailing JSONL is plenty for the HUD window and bounds parse cost.
-        const val READ_TAIL_BYTES = 256 * 1024
     }
 }

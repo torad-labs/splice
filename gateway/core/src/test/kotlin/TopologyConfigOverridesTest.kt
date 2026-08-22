@@ -12,8 +12,7 @@ import splice.core.topology.ProviderConfig
 import splice.core.topology.QuirksConfig
 import splice.core.topology.ToolSurfaceConfig
 import splice.core.topology.Topology
-import splice.core.topology.catalogFor
-import splice.core.topology.configOverrides
+import splice.core.topology.TopologyKnobLayer
 import java.nio.file.Files
 
 class TopologyConfigOverridesTest {
@@ -42,7 +41,7 @@ class TopologyConfigOverridesTest {
 
     @Test
     fun `topology seeds every legacy management knob it owns`() {
-        val layer = topology.configOverrides()
+        val layer = TopologyKnobLayer(topology).configOverrides()
         assertEquals("4123", layer["controlPort"])
         assertEquals("4101", layer["port"])
         assertEquals("toml-codex", layer["pinnedModel"])
@@ -59,7 +58,7 @@ class TopologyConfigOverridesTest {
         val paths = StatePaths(baseOverride = Files.createTempDirectory("topology-config"))
         val service = ConfigService(
             paths,
-            headOverrides = topology.configOverrides(),
+            headOverrides = TopologyKnobLayer(topology).configOverrides(),
             envReader = { name ->
                 when (name) {
                     "SPLICE_CONTROL_PORT" -> "5123"
@@ -112,5 +111,35 @@ class TopologyConfigOverridesTest {
         assertEquals(6, table.minDeferred)
         assertEquals(5, table.searchLimit)
         assertEquals(2, table.searchRounds)
+    }
+
+    // ktoml hands back a QUOTED TOML key with its quote characters intact, and
+    // `extra_headers = { "anthropic-version" = "..." }` is both valid TOML and the natural thing
+    // to write for a dashed header name. Unnormalized, that ships a header literally named
+    // "anthropic-version" — quotes included — to the upstream. Both spellings must agree.
+    @Test
+    fun `staticHeaders strips TOML key quoting so both spellings agree`() {
+        val quoted = ProviderConfig(
+            dialect = Dialect.ANTHROPIC_PASSTHROUGH,
+            baseUrl = "https://api.anthropic.com",
+            auth = AuthConfig("client"),
+            extraHeaders = mapOf("\"anthropic-version\"" to "2023-06-01"),
+        )
+        val bare = quoted.copy(extraHeaders = mapOf("anthropic-version" to "2023-06-01"))
+        assertEquals(mapOf("anthropic-version" to "2023-06-01"), quoted.staticHeaders)
+        assertEquals(quoted.staticHeaders, bare.staticHeaders)
+    }
+
+    // ABSENT means "keep the head's base profile", never "false" — the nullable-overlay idiom.
+    // Non-nullable knobs would make a pre-campaign splice.toml silently neuter a kimi head.
+    @Test
+    fun `passthrough quirks are absent by default so a base profile survives`() {
+        val q = QuirksConfig()
+        assertNull(q.mfjs)
+        assertNull(q.stripCacheControl)
+        assertNull(q.synthesizeSignatures)
+        assertNull(q.mapThinkingAdaptive)
+        assertNull(q.stripSamplingParams)
+        assertNull(q.blockAllowlist)
     }
 }

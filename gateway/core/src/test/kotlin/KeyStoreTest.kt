@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.KeyStore
+import splice.core.config.KeyStorePath
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
@@ -83,11 +84,11 @@ class KeyStoreTest {
 
     @Test
     fun `defaultPath follows SPLICE_CONFIG sibling then XDG then home`() {
-        val withOverride = KeyStore.defaultPath { k -> if (k == "SPLICE_CONFIG") "/tmp/rig/splice.toml" else null }
+        val withOverride = KeyStorePath.defaultPath { k -> if (k == "SPLICE_CONFIG") "/tmp/rig/splice.toml" else null }
         assertEquals(Path.of("/tmp/rig/keys.toml"), withOverride)
-        val withXdg = KeyStore.defaultPath { k -> if (k == "XDG_CONFIG_HOME") "/tmp/xdg" else null }
+        val withXdg = KeyStorePath.defaultPath { k -> if (k == "XDG_CONFIG_HOME") "/tmp/xdg" else null }
         assertEquals(Path.of("/tmp/xdg/splice/keys.toml"), withXdg)
-        val withNothing = KeyStore.defaultPath { null }
+        val withNothing = KeyStorePath.defaultPath { null }
         assertEquals(Path.of(System.getProperty("user.home"), ".config", "splice", "keys.toml"), withNothing)
     }
 

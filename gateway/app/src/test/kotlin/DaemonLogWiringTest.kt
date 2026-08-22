@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.persistentLogger
+import splice.app.DaemonProcess
 import splice.core.util.AsyncFileIo
 import splice.core.util.DaemonLog
 import java.nio.file.Files
@@ -22,13 +22,15 @@ import kotlin.io.path.readText
 
 class DaemonLogWiringTest {
 
+    private val process = DaemonProcess()
+
     private fun drainToDisk() = assertTrue(AsyncFileIo.drain(), "async file lane did not drain")
 
     @Test
     fun `each message becomes exactly one daemon-log line, with or without a trailing newline`(
         @TempDir logs: Path,
     ) {
-        val log = persistentLogger(logs)
+        val log = process.persistentLogger(logs)
         // The two conventions that now coexist: pre-existing callers terminate their own message,
         // the 14 converted kt-no-println sites do not (System.err.println used to do it for them).
         log("[a] caller that terminates its own line\n")
@@ -45,7 +47,7 @@ class DaemonLogWiringTest {
 
     @Test
     fun `a message is never double-terminated`(@TempDir logs: Path) {
-        persistentLogger(logs)("[x] already terminated\n")
+        process.persistentLogger(logs)("[x] already terminated\n")
         drainToDisk()
         val raw = logs.resolve("daemon.log").readText()
         assertTrue(raw.endsWith("\n"), "must end with a terminator")

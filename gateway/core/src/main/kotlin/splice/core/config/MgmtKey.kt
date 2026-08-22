@@ -8,9 +8,11 @@
 // dashboard re-auth and one line tells the operator exactly what happened and where the key is.
 package splice.core.config
 
-import splice.core.auth.bearerToken
+import splice.core.auth.BearerScheme
 import splice.core.util.DaemonLog
+import splice.core.util.LogSink
 import splice.core.util.SecureFile
+import splice.core.util.WallClock
 import java.io.IOException
 import java.nio.file.Files
 import java.security.MessageDigest
@@ -18,8 +20,8 @@ import java.security.SecureRandom
 
 public class MgmtKey(
     private val statePaths: StatePaths,
-    private val log: (String) -> Unit = DaemonLog::write,
-    private val clock: () -> Long = System::currentTimeMillis,
+    private val log: LogSink = LogSink(DaemonLog::write),
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
 ) {
     private val value: String by lazy { ensure() }
 
@@ -43,8 +45,17 @@ public class MgmtKey(
                 val existing = Files.readString(path).trim()
                 if (existing.isNotEmpty()) return existing
                 readFailure = "present but blank"
-            } catch (e: IOException) {
-                readFailure = "unreadable (${e.javaClass.simpleName})"
+            } catch (_: java.nio.file.AccessDeniedException) {
+                // Named by BRANCH, not by reflecting on the caught throwable's runtime class. These
+                // are the two IOException shapes a state-dir read actually produces — a permissions
+                // change and a file that vanished between exists() and readString() — and each
+                // clause spells the label it already knows it is standing in. Most specific first:
+                // both extend FileSystemException, which extends IOException.
+                readFailure = "unreadable (AccessDeniedException)"
+            } catch (_: java.nio.file.NoSuchFileException) {
+                readFailure = "unreadable (NoSuchFileException)"
+            } catch (_: IOException) {
+                readFailure = "unreadable (IOException)"
             }
         }
         if (readFailure != null) {
@@ -63,15 +74,14 @@ public class MgmtKey(
     }
 
     /** Constant-time bearer check (`Authorization: Bearer <key>`) — scheme parsing shared with
-     *  HeadServer.authorize via [bearerToken] so the same token bytes work on both planes. */
+     *  HeadServer.authorize via [BearerScheme.bearerToken] so the same token bytes work on both planes. */
     public fun matchesBearer(header: String?): Boolean {
-        val presented = bearerToken(header) ?: return false
+        val presented = BearerScheme.bearerToken(header) ?: return false
         val a = presented.toByteArray()
         val b = value.toByteArray()
         return a.size == b.size && MessageDigest.isEqual(a, b)
     }
-
-    private companion object {
-        const val KEY_BYTES = 32
-    }
 }
+
+// Companion dissolved to file scope (Kotlin style law, 2026-08-16 — HD-M8), same name, same value.
+private const val KEY_BYTES = 32

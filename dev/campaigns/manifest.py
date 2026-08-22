@@ -19,8 +19,14 @@ WHO CALLS: the orchestrator's review loop and every subagent brief
 ("update the manifest AS you work" => `manifest.py note <id> "..."`).
 
 TESTS/ORACLE: self-test via `manifest.py selftest` (runs get/list/note/
-set-status/edit-fence/edit-verify/packet against a temp copy and
+set-status/edit-fence/edit-verify/edit-title/packet against a temp copy and
 diff-checks the results).
+
+LOCAL DIVERGENCE [2026-08-15, promote upstream via the toolkit pipeline]:
+ONE-REVIEW-PER-ROW guard in `verdict` (operator law, claude-head campaign;
+the ledger record agrees — the only historical double-accept was P2-GOLD,
+reopened as FALSE-VERIFIED). Allowed: accepted | blocked | redo->accepted
+| redo->blocked. Selftest covers the full lifecycle red-green.
 
 USAGE:
   manifest.py list [--status S] [--phase P]     compact id|phase|status|title table
@@ -55,6 +61,7 @@ USAGE:
   manifest.py add --id X --phase P --title T --files F --verify V [--status todo]
   manifest.py edit-fence <ID> "f1, f2, ..."      replace the files fence + append FENCE-EDITED note
   manifest.py edit-verify <ID> "cmd"             replace the verify string + append VERIFY-EDITED note
+  manifest.py edit-title <ID> "text"             replace the title + append TITLE-EDITED note
   manifest.py add-law "text"                    append a dated # LAW line to the header banner
   manifest.py amend-header "old" "new"          substring-replace in exactly ONE banner comment
                                                 line — the sanctioned channel for a rotted pointer
@@ -181,6 +188,10 @@ try {
 
 class _CampaignProofRefusal(Exception):
     """A strict-mode verified transition refused while holding the manifest flock."""
+
+
+class _OneReviewPerRowRefusal(Exception):
+    """A ONE-REVIEW-PER-ROW verdict refused while holding the manifest flock."""
 
 
 def _campaign_proof_required() -> bool:
@@ -3128,7 +3139,7 @@ def _attested_scoped_files(path: str, item_id: str) -> list[str] | None:
 
 
 def _toml_basic_string(value: str) -> str:
-    return json.dumps(value)
+    return json.dumps(value, ensure_ascii=False)
 
 
 def _toml_string_list(values: list[str]) -> str:
@@ -3738,6 +3749,43 @@ def cmd_note(path, item_id, text, _notify=None, _this_file=None, _journal_root=N
         notify(path, f"{item_id} BLOCKED — see ledger ({Path(path).stem})")
 
 
+def _one_review_per_row_error(lines: list[str], item_id: str, outcome: str) -> str | None:
+    """ONE-REVIEW-PER-ROW (operator law 2026-08-15, claude-head campaign; enforced globally
+    because the ledger record agrees: 84 historical verdicts, the single double-accept was
+    P2-GOLD — reopened as FALSE-VERIFIED). An item gets ONE adversarial review round.
+    Allowed sequences: accepted | blocked | redo→accepted | redo→blocked. A second redo is a
+    second review round (fix the named gap forward and CLOSE instead); a verdict after a
+    terminal outcome silently reopens a closed row.
+
+    Returns the refusal message, or None when `outcome` is this row's allowed next verdict.
+    Called TWICE per verdict: once on an unlocked read as a fast path (same refusal without
+    paying for the flock in the common case), and once inside cmd_verdict's mutate() on the
+    lines _locked_rewrite freshly read under the flock. Only the second one is authoritative —
+    a check outside the lock cannot make the append it guards conditional, so two overlapping
+    `verdict <ID>` runs would both read the pre-verdict state, both pass, and both append."""
+    s, e = _find(lines, item_id)
+    prior_outcomes = [
+        m.group(1)
+        for line in lines[s:e]
+        for m in [re.search(r"VERDICT: outcome=(\w+)", line)]
+        if m
+    ]
+    if any(o in ("accepted", "blocked") for o in prior_outcomes):
+        return (
+            f"error: {item_id} already carries a terminal verdict "
+            f"({', '.join(prior_outcomes)}) — ONE-REVIEW-PER-ROW: a closed row is never "
+            "re-reviewed. Reopening is an operator act (dated note + set-status), never a "
+            "second verdict."
+        )
+    if outcome == "redo" and "redo" in prior_outcomes:
+        return (
+            f"error: {item_id} already has a redo verdict — ONE-REVIEW-PER-ROW: one "
+            "adversarial review round per item. Fix the named gap forward and close with "
+            "accepted|blocked; a second redo is a second review round."
+        )
+    return None
+
+
 def cmd_verdict(
     path,
     item_id,
@@ -3767,6 +3815,14 @@ def cmd_verdict(
     if contradiction is not None and not locus:
         sys.exit("error: --contradiction requires a non-empty locus")
 
+    # ONE-REVIEW-PER-ROW fast path: refuse without taking the flock in the common case. The
+    # AUTHORITATIVE copy of this same check runs inside mutate() below, under the lock.
+    with open(path, encoding="utf-8") as handle:
+        prior_lines = handle.readlines()
+    fast_refusal = _one_review_per_row_error(prior_lines, item_id, outcome)
+    if fast_refusal is not None:
+        sys.exit(fast_refusal)
+
     parts = [f"VERDICT: outcome={outcome}"]
     if gap_named:
         parts.append(f"gap={gap_named}")
@@ -3777,11 +3833,20 @@ def cmd_verdict(
     note_text = " ".join(parts)
 
     def mutate(lines):
+        # The guard that makes this append conditional has to read the SAME lines the append
+        # writes, under the SAME flock — otherwise the lock serialises the write but not the
+        # check, and two racing verdicts both land (PR 99 finding 7).
+        refusal = _one_review_per_row_error(lines, item_id, outcome)
+        if refusal is not None:
+            raise _OneReviewPerRowRefusal(refusal)
         s, e = _find(lines, item_id)
         stamp = date.today().isoformat()
         return _append_block_lines(lines, s, e, [f"# [{stamp}] {note_text}\n"])
 
-    _locked_rewrite(path, mutate)
+    try:
+        _locked_rewrite(path, mutate)
+    except _OneReviewPerRowRefusal as exc:
+        sys.exit(str(exc))
     print(f"verdict recorded on {item_id}: {note_text}")
     _append_orchestrator_verdict_journal_line(
         path,
@@ -3875,6 +3940,20 @@ def cmd_edit_verify(path, item_id, verify_text):
 
     _locked_rewrite(path, mutate)
     print(f"{item_id} -> verify")
+
+
+def cmd_edit_title(path, item_id, title_text):
+    if not title_text.strip():
+        sys.exit("error: edit-title requires a non-empty value")
+
+    def mutate(lines):
+        s, e = _find(lines, item_id)
+        return _replace_item_field(
+            lines, s, e, "title", _toml_basic_string(title_text), "TITLE-EDITED"
+        )
+
+    _locked_rewrite(path, mutate)
+    print(f"{item_id} -> title")
 
 
 def cmd_claim(
@@ -5161,6 +5240,54 @@ def _cmd_selftest_body(path):
             "a refused verdict must journal NOTHING"
         )
 
+        # ONE-REVIEW-PER-ROW (operator law 2026-08-15): one adversarial review round per item.
+        # Green path: redo -> accepted closes a row. Red paths: a SECOND redo on an open review,
+        # any verdict after a terminal accepted|blocked. Refusals journal NOTHING.
+        cmd_add(
+            journal_fixture.as_posix(), "ONEREV", "Z", "one-review lifecycle item", "z/onerev.txt", "n/a",
+        )
+        cmd_verdict(
+            journal_fixture.as_posix(), "ONEREV", "redo", gap="first and only review round",
+            _this_file=journal_fixture_script.as_posix(), _journal_root=journal_root_dir,
+        )
+        one_review_len_before = len(s34_journal_path.read_text(encoding="utf-8").splitlines())
+        try:
+            cmd_verdict(
+                journal_fixture.as_posix(), "ONEREV", "redo", gap="second round",
+                _this_file=journal_fixture_script.as_posix(), _journal_root=journal_root_dir,
+            )
+            raise AssertionError("a second redo must be refused (second review round)")
+        except SystemExit as exc:
+            assert exc.code != 0
+        cmd_verdict(
+            journal_fixture.as_posix(), "ONEREV", "accepted",
+            _this_file=journal_fixture_script.as_posix(), _journal_root=journal_root_dir,
+        )
+        for terminal_case in (
+            ("ONEREV", {"outcome": "accepted"}),
+            ("ONEREV", {"outcome": "redo", "gap": "reopen attempt"}),
+            ("S34HANDOVER", {"outcome": "accepted"}),
+        ):
+            try:
+                cmd_verdict(
+                    journal_fixture.as_posix(), terminal_case[0],
+                    _this_file=journal_fixture_script.as_posix(), _journal_root=journal_root_dir,
+                    **terminal_case[1],
+                )
+                raise AssertionError(f"verdict after terminal must be refused: {terminal_case}")
+            except SystemExit as exc:
+                assert exc.code != 0, terminal_case
+        one_review_tail = [
+            json.loads(l) for l in s34_journal_path.read_text(encoding="utf-8").splitlines() if l.strip()
+        ][-1]
+        assert one_review_tail["outcome"] == "accepted" and one_review_tail["itemId"] == "ONEREV", (
+            "the redo->accepted closure must be the last journal record; refusals journal NOTHING: "
+            f"{one_review_tail}"
+        )
+        assert len(s34_journal_path.read_text(encoding="utf-8").splitlines()) == one_review_len_before + 1, (
+            "exactly ONE record (the closure) may land after the refusals"
+        )
+
         # GYM-VERDICT-NUDGE: `verified` with NO typed verdict record prints the one-line
         # reminder naming the verdict command; `verified` on an item whose verdict exists
         # (S34ITEM got one above) stays silent. Advisory only — both transitions succeed.
@@ -5215,7 +5342,8 @@ def _cmd_selftest_body(path):
         assert "verdict-coverage:      1/2" in kpi_text, kpi_text
         assert "; 0 via backfill" in kpi_text, kpi_text
         assert "overall 2/2 claims lineage-attributed (100.0%)" in kpi_text, kpi_text
-        assert "trajectories-7d:       3 distinct episodes active" in kpi_text, kpi_text
+        # 4 = the 3 original fixture episodes + ONEREV from the one-review lifecycle sweep above.
+        assert "trajectories-7d:       4 distinct episodes active" in kpi_text, kpi_text
         assert "honesty-yield:         1 typed contradiction record(s)" in kpi_text, kpi_text
         assert s34_journal_path.read_bytes() == kpi_bytes_before, "gym-kpi must be READ-ONLY"
 
@@ -5510,6 +5638,19 @@ def _cmd_selftest_body(path):
     assert 'verify = "new verify command"' in blk, blk
     assert "VERIFY-EDITED" in blk, blk
     with open(tmp_verify.name, "rb") as f:
+        tomllib.load(f)
+
+    tmp_title = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
+    tmp_title.close()
+    shutil.copy(path, tmp_title.name)
+    cmd_add(tmp_title.name, "TITLETEST", "T", "old title", "a/**", "n/a")
+    cmd_edit_title(tmp_title.name, "TITLETEST", "new title with three inversions")
+    lines = _read(tmp_title.name)
+    s, e = _find(lines, "TITLETEST")
+    blk = "".join(lines[s:e])
+    assert 'title = "new title with three inversions"' in blk, blk
+    assert "TITLE-EDITED" in blk, blk
+    with open(tmp_title.name, "rb") as f:
         tomllib.load(f)
 
     tmp_packet = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
@@ -6357,7 +6498,7 @@ def _cmd_selftest_body(path):
         if duplicates else "; no cross-ledger id reuse"
     )
     print(
-        "selftest OK (add/set-status/note/verdict/add-law/edit-fence/edit-verify/packet/claim/release-stale/events "
+        "selftest OK (add/set-status/note/verdict/add-law/edit-fence/edit-verify/edit-title/packet/claim/release-stale/events "
         f"round-trip + valid TOML{dup_note})"
     )
 
@@ -6461,6 +6602,10 @@ def main(argv):
         if len(rest) != 2:
             sys.exit('error: edit-verify requires <ID> "cmd"')
         cmd_edit_verify(path, rest[0], rest[1])
+    elif cmd == "edit-title":
+        if len(rest) != 2:
+            sys.exit('error: edit-title requires <ID> "text"')
+        cmd_edit_title(path, rest[0], rest[1])
     elif cmd == "claim":
         if not rest:
             sys.exit("error: claim requires <ID> --session <sid> [--lease CLAUSE]")

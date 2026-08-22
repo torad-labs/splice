@@ -1,0 +1,28 @@
+id: kt-no-raw-thread
+valid:
+  # The platform factory — the seam AsyncFileIo, the teardown watchdog and the login stdin reader
+  # all take their threads from. Constructing is banned; asking a factory for one is the fix.
+  - 'val t = Executors.defaultThreadFactory().newThread(task)'
+  # A named executor built from that factory: the compliant shape for a lane outliving one call.
+  - 'val pool = Executors.newSingleThreadExecutor(factory)'
+  # Naming the type is not constructing it. Main.kt's boot-failure net does all three of these.
+  - 'Thread.sleep(deadlineMs)'
+  - 'val name = Thread.currentThread().name'
+  - 'Thread.setDefaultUncaughtExceptionHandler(handler)'
+  # A nested type with a trailing lambda — callee is `Thread.UncaughtExceptionHandler`, not `Thread`.
+  - 'val h = Thread.UncaughtExceptionHandler { t, e -> report(t, e) }'
+invalid:
+  # Argument form, every arity.
+  - 'val t = Thread(task, "splice-file-io")'
+  - 'val t = Thread(runnable)'
+  # Trailing-lambda form — a different call shape in this grammar, which is why the rule needs
+  # its own branch for it.
+  - 'Runtime.getRuntime().addShutdownHook(Thread { shutdown(daemon, lock) })'
+  - |
+    val watchdog = Thread {
+        Thread.sleep(deadlineMs)
+        halt()
+    }
+  # kotlin.concurrent.thread — same unowned thread, and it starts itself by default.
+  - 'thread(isDaemon = true) { drain() }'
+  - 'thread { drain() }'

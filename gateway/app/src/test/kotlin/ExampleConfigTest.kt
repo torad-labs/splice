@@ -2,10 +2,11 @@
 // must parse and yield the three documented heads with the right dialects/auth. If someone edits
 // the example into an invalid shape, this fails.
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.app.TopologyLoader
-import splice.core.config.Knob
+import splice.core.config.knobsByKey
 import splice.core.topology.Dialect
 import java.nio.file.Files
 import java.nio.file.Paths
@@ -26,7 +27,10 @@ class ExampleConfigTest {
     @Test
     fun `example topology parses into the documented heads`() {
         val topology = TopologyLoader.parse(exampleToml())
-        assertEquals(setOf("claudex", "claude-grok", "openrouter", "fireworks", "claude-kimi"), topology.heads.keys)
+        assertEquals(
+            setOf("claudex", "claude-grok", "openrouter", "fireworks", "claude-kimi", "claude-splice"),
+            topology.heads.keys,
+        )
         assertEquals(3096, topology.daemon.controlPort)
 
         val codex = topology.providers[topology.heads["claudex"]!!.provider]!!
@@ -57,10 +61,55 @@ class ExampleConfigTest {
         assertEquals(Dialect.ANTHROPIC_PASSTHROUGH, kimi.dialect)
         assertEquals("kimi-oauth", kimi.auth.kind)
         assertEquals("k3[1m]", topology.heads["claude-kimi"]!!.pinnedModel)
+        // The passthrough dialect is faithful by DEFAULT (campaign claude-head): every deformation
+        // Kimi needs is now DECLARED, and the same round-trip law as reasoning_cache above applies —
+        // a knob that never reaches the parsed field is decorative, which is how five of them
+        // shipped once already. Values, not just presence.
+        assertEquals(true, kimi.quirks.mfjs)
+        assertEquals(true, kimi.quirks.stripCacheControl)
+        assertEquals(true, kimi.quirks.synthesizeSignatures)
+        assertEquals(true, kimi.quirks.mapThinkingAdaptive)
+        assertEquals(
+            listOf("text", "image", "thinking", "tool_use", "tool_result", "server_tool_use", "web_search_tool_result"),
+            kimi.quirks.blockAllowlist,
+        )
+        // Static vendor headers as pure TOML — the seam that lets an anthropic-compatible vendor
+        // need no provider code at all.
+        assertEquals("2023-06-01", kimi.staticHeaders["anthropic-version"])
+        assertEquals("KimiCLI/1.5", kimi.staticHeaders["User-Agent"])
+        // A head that declares nothing must stay faithful: the openai-dialect providers above carry
+        // no passthrough knobs, and their defaults are the neutral (false/absent) ones.
+        assertNull(codex.quirks.mfjs)
+        assertNull(codex.quirks.stripCacheControl)
+        assertNull(codex.quirks.blockAllowlist)
 
         // the isolate override survives the round-trip
         assertTrue(topology.heads["claude-grok"]!!.claude.isolate.contains("commands"))
         assertEquals("claudex", topology.heads["claudex"]!!.claude.command)
+    }
+
+    // The campaign's whole claim, asserted on the shipped example: a head whose upstream is
+    // Anthropic itself, declared with no provider code and NO quirks — a declared quirk here would
+    // be a bug, since this is the one upstream that accepts everything as sent.
+    @Test
+    fun `the claude head is declared as pure TOML with no quirks`() {
+        val topology = TopologyLoader.parse(exampleToml())
+        // The claude head: pure TOML, no provider code, and FAITHFUL — it must declare no quirks
+        // at all, or it would deform the one upstream that accepts everything as sent.
+        val anthropic = topology.providers[topology.heads["claude-splice"]!!.provider]!!
+        assertEquals(Dialect.ANTHROPIC_PASSTHROUGH, anthropic.dialect)
+        assertEquals("client", anthropic.auth.kind)
+        assertEquals("https://api.anthropic.com", anthropic.baseUrl)
+        assertNull(anthropic.quirks.mfjs)
+        assertNull(anthropic.quirks.stripCacheControl)
+        assertNull(anthropic.quirks.synthesizeSignatures)
+        assertNull(anthropic.quirks.mapThinkingAdaptive)
+        assertNull(anthropic.quirks.blockAllowlist)
+        assertEquals("2023-06-01", anthropic.staticHeaders["anthropic-version"])
+        assertEquals("claude-fable-5", topology.heads["claude-splice"]!!.pinnedModel)
+        assertEquals(3104, topology.heads["claude-splice"]!!.port)
+        // shadowing the real binary would make the wrapper invoke itself
+        assertEquals("claude-splice", topology.heads["claude-splice"]!!.claude.command)
     }
 
     // 2026-07-26 review: the per-head block documented knob names in prose, and the prose had
@@ -75,7 +124,7 @@ class ExampleConfigTest {
         // 1. Live [heads.<key>.overrides] tables — a typo here ships a silently-ignored knob.
         val used = topology.heads.values.flatMap { it.overrides.keys }.toSet()
         assertTrue(used.isNotEmpty(), "the example must keep demonstrating per-head overrides")
-        used.forEach { assertTrue(Knob.byKey.containsKey(it), "example sets unknown knob '$it'") }
+        used.forEach { assertTrue(knobsByKey.containsKey(it), "example sets unknown knob '$it'") }
 
         // 2. Knob names the COMMENTS teach. Anything camelCase-and-backticked-or-listed in the
         //    per-head doc block must resolve; that is what went stale and got hand-fixed once.
@@ -99,14 +148,14 @@ class ExampleConfigTest {
         val prose = setOf("xAI")
         prose.forEach {
             assertTrue(
-                !Knob.byKey.containsKey(it),
+                !knobsByKey.containsKey(it),
                 "'$it' is a real knob — remove it from the prose allowlist",
             )
         }
 
         (docNames - prose).forEach {
             assertTrue(
-                Knob.byKey.containsKey(it),
+                knobsByKey.containsKey(it),
                 "example comment names unknown knob '$it' " +
                     "(add it to the prose allowlist only if it is not a knob)",
             )

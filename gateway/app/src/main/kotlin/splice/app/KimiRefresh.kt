@@ -21,75 +21,85 @@ import io.ktor.http.isSuccess
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import splice.core.auth.RefreshAttempt
-import splice.core.util.runCatchingCancellable
-import splice.core.util.str
+import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
+import splice.provider.kimi.KimiOAuth
 import splice.provider.kimi.KimiRefreshedTokens
-import splice.provider.kimi.kimiRefreshForm
 
-/**
- * Refresh the kimi access token. Returns Granted rotated tokens, InvalidGrant when auth is
- * confirmed dead (401/403/invalid_grant), or Denied when a missing rotation field / exhausted
- * retries make re-prompt the honest outcome (NOT evidence the refresh token itself is dead).
- */
-public suspend fun kimiRefresh(
-    tokenUrl: String,
-    refreshToken: String,
-    identityHeaders: Map<String, String>,
-    client: HttpClient = kimiRefreshClient,
-): RefreshAttempt<KimiRefreshedTokens> = refreshWithRetry(
-    call = { postRefresh(client, tokenUrl, refreshToken, identityHeaders) },
-    classify = ::classify,
-) ?: RefreshAttempt.Denied("refresh retries exhausted")
+public class KimiRefresh {
 
-private suspend fun classify(resp: HttpResponse): RefreshStep<RefreshAttempt<KimiRefreshedTokens>> {
-    val status = resp.status.value
-    val body = resp.bodyAsText()
-    return when {
-        resp.status.isSuccess() -> {
-            val tokens = parseKimiRefresh(body)
-            RefreshStep.Terminal(
-                if (tokens == null) {
-                    RefreshAttempt.Denied("refresh response missing rotation fields")
-                } else {
-                    RefreshAttempt.Granted(tokens)
-                },
-            )
+    private val retry = RefreshRetry()
+    private val kimiOAuth = KimiOAuth()
+
+    /**
+     * Refresh the kimi access token. Returns Granted rotated tokens, InvalidGrant when auth is
+     * confirmed dead (401/403/invalid_grant), or Denied when a missing rotation field / exhausted
+     * retries make re-prompt the honest outcome (NOT evidence the refresh token itself is dead).
+     */
+    public suspend fun refresh(
+        tokenUrl: String,
+        refreshToken: String,
+        identityHeaders: Map<String, String>,
+        client: HttpClient = kimiRefreshClient,
+    ): RefreshAttempt<KimiRefreshedTokens> = retry.refreshWithRetry(
+        call = { postRefresh(client, tokenUrl, refreshToken, identityHeaders) },
+        classify = ::classify,
+    ) ?: RefreshAttempt.Denied("refresh retries exhausted")
+
+    private suspend fun classify(resp: HttpResponse): RefreshStep<RefreshAttempt<KimiRefreshedTokens>> {
+        val status = resp.status.value
+        val body = resp.bodyAsText()
+        return when {
+            resp.status.isSuccess() -> {
+                val tokens = parseKimiRefresh(body)
+                RefreshStep.Terminal(
+                    if (tokens == null) {
+                        RefreshAttempt.Denied("refresh response missing rotation fields")
+                    } else {
+                        RefreshAttempt.Granted(tokens)
+                    },
+                )
+            }
+            retry.isTerminalRefreshFailure(status, body, kimiRefreshJson) ->
+                RefreshStep.Terminal(RefreshAttempt.InvalidGrant("HTTP $status"))
+            status in refreshRetryableStatus -> RefreshStep.Retry
+            else -> RefreshStep.Terminal(RefreshAttempt.Denied("HTTP $status"))
         }
-        isTerminalRefreshFailure(status, body, kimiRefreshJson) ->
-            RefreshStep.Terminal(RefreshAttempt.InvalidGrant("HTTP $status"))
-        status in refreshRetryableStatus -> RefreshStep.Retry
-        else -> RefreshStep.Terminal(RefreshAttempt.Denied("HTTP $status"))
     }
-}
 
-private suspend fun postRefresh(
-    client: HttpClient,
-    tokenUrl: String,
-    refreshToken: String,
-    identityHeaders: Map<String, String>,
-): HttpResponse = client.post(tokenUrl) {
-    header("Content-Type", "application/x-www-form-urlencoded")
-    header("Accept", "application/json")
-    identityHeaders.forEach { (k, v) -> header(k, v) }
-    setBody(kimiRefreshForm(refreshToken))
-}
+    private suspend fun postRefresh(
+        client: HttpClient,
+        tokenUrl: String,
+        refreshToken: String,
+        identityHeaders: Map<String, String>,
+    ): HttpResponse = client.post(tokenUrl) {
+        header("Content-Type", "application/x-www-form-urlencoded")
+        header("Accept", "application/json")
+        identityHeaders.forEach { (k, v) -> header(k, v) }
+        setBody(kimiOAuth.kimiRefreshForm(refreshToken))
+    }
 
-/** Rotation is mandatory: a response missing access_token OR refresh_token → null (re-prompt). */
-private fun parseKimiRefresh(body: String): KimiRefreshedTokens? = runCatchingCancellable {
-    val obj = kimiRefreshJson.parseToJsonElement(body) as? JsonObject ?: return@runCatchingCancellable null
-    val access = obj.str("access_token") ?: return@runCatchingCancellable null
-    val refresh = obj.str("refresh_token") ?: return@runCatchingCancellable null
-    val expiresIn = obj.str("expires_in")?.toLongOrNull() ?: return@runCatchingCancellable null
-    KimiRefreshedTokens(
-        accessToken = access,
-        refreshToken = refresh,
-        expiresIn = expiresIn,
-        scope = obj.str("scope").orEmpty(),
-        tokenType = obj.str("token_type") ?: "Bearer",
-    )
-}.getOrNull()
+    /** Rotation is mandatory: a response missing access_token OR refresh_token → null (re-prompt). */
+    private fun parseKimiRefresh(body: String): KimiRefreshedTokens? = Cancellables.runCatchingCancellable {
+        val obj = kimiRefreshJson.parseToJsonElement(body) as? JsonObject ?: return@runCatchingCancellable null
+        val access = JsonScalars.str(obj, "access_token") ?: return@runCatchingCancellable null
+        val refresh = JsonScalars.str(obj, "refresh_token") ?: return@runCatchingCancellable null
+        val expiresIn = JsonScalars.str(obj, "expires_in")?.toLongOrNull() ?: return@runCatchingCancellable null
+        KimiRefreshedTokens(
+            accessToken = access,
+            refreshToken = refresh,
+            expiresIn = expiresIn,
+            scope = JsonScalars.str(obj, "scope").orEmpty(),
+            tokenType = JsonScalars.str(obj, "token_type") ?: "Bearer",
+        )
+    }.getOrNull()
+}
 
 // JsonNull IS a JsonPrimitive whose content is "null"; treat an explicit null as absent.
 
-private val kimiRefreshClient by lazy { authHttpClient() }
+// FILE SCOPE ON PURPOSE (Kotlin style law relocation, 2026-08-15): the lazy client is the default
+// argument of [KimiRefresh.refresh], so it must stay a per-JVM singleton. Held as a member it would
+// become per-instance, and a caller that constructs KimiRefresh per refresh would open a new JDK
+// HttpClient every time.
+private val kimiRefreshClient by lazy { AuthHttpClientFactory().create() }
 private val kimiRefreshJson = Json { ignoreUnknownKeys = true }

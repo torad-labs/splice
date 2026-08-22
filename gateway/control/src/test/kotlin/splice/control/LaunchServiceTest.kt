@@ -105,4 +105,50 @@ class LaunchServiceTest {
         assertEquals("grok-4.3", env["ANTHROPIC_DEFAULT_HAIKU_MODEL"]) // no mini → at(1)
         assertEquals("grok-4.5", env["ANTHROPIC_DEFAULT_FABLE_MODEL"]) // shares frontier
     }
+
+    // ── native-auth heads (campaign claude-head, CH-8) ────────────────────────────────────────
+    //
+    // Every OTHER head serves a foreign vendor, so the recipe replaces the client's Anthropic
+    // session with the gateway bearer and nails /login shut. A claude head's upstream IS Anthropic
+    // and it forwards the client's own credential, so all three of those moves are exactly wrong:
+    // stripping removes what gets forwarded, planting the bearer overrides it, and disabling /login
+    // shuts the only door that can heal a rejected credential.
+
+    private fun nativeSpec() = spec("claude-splice").copy(nativeClientAuth = true)
+
+    @Test
+    fun `a native-auth head keeps the client's own credentials`() {
+        val recipe = service.launch(nativeSpec(), extraArgs = emptyList(), dangerouslySkipPermissions = false)
+        assertTrue(recipe.unset.isEmpty(), "nothing may be stripped: ${recipe.unset}")
+        assertNull(recipe.env["ANTHROPIC_AUTH_TOKEN"], "the gateway bearer would override the client's own")
+    }
+
+    @Test
+    fun `a native-auth head keeps login and logout available`() {
+        val env = service.launch(nativeSpec(), extraArgs = emptyList(), dangerouslySkipPermissions = false).env
+        assertNull(env["DISABLE_LOGIN_COMMAND"])
+        assertNull(env["DISABLE_LOGOUT_COMMAND"])
+    }
+
+    @Test
+    fun `a native-auth head still gets the proxy and model surface`() {
+        val env = service.launch(nativeSpec(), extraArgs = emptyList(), dangerouslySkipPermissions = false).env
+        assertEquals("http://127.0.0.1:3099", env["ANTHROPIC_BASE_URL"])
+        assertEquals("gpt-5.6-sol", env["ANTHROPIC_MODEL"])
+        assertEquals("1", env["SPLICE"])
+    }
+
+    // The regression that matters most: foreign heads must be BYTE-IDENTICAL to before this
+    // feature existed. A default-valued flag is easy to leak into the wrong branch.
+    @Test
+    fun `a foreign-vendor head is unchanged - bearer planted, session stripped, login disabled`() {
+        val recipe = service.launch(spec("codex"), extraArgs = emptyList(), dangerouslySkipPermissions = false)
+        assertEquals("test-inference-token", recipe.env["ANTHROPIC_AUTH_TOKEN"])
+        assertEquals("1", recipe.env["DISABLE_LOGIN_COMMAND"])
+        assertEquals("1", recipe.env["DISABLE_LOGOUT_COMMAND"])
+        assertEquals(
+            listOf("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_REFRESH_TOKEN"),
+            recipe.unset,
+        )
+    }
 }

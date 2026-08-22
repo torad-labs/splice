@@ -16,17 +16,34 @@ import java.util.concurrent.ConcurrentHashMap
 public object JsonlSink {
     private val locks = ConcurrentHashMap<Path, Any>()
 
-    /** Append [line], rotating one generation before [maxBytes] can grow without bound. */
+    /**
+     * Append [line], rotating one generation before [maxBytes] can grow without bound.
+     *
+     * IO-001: the [locks] map only serializes writers within THIS JVM; two head PROCESSES writing
+     * the same file coordinate not at all otherwise, so both can read a stale size and overshoot
+     * the cap. A cross-process [FileLock] on a sibling `.lock` file (the CredentialLock shape,
+     * provider-spi/CredentialLock.kt) closes that gap. Every appendLine caller already runs on
+     * AsyncFileIo's dedicated background thread, never a shared coroutine dispatcher, so a plain
+     * blocking lock (not CredentialLock's bounded poll, which exists to avoid parking a scarce
+     * dispatcher thread under a slow HTTP refresh) is enough — the critical section here is a stat
+     * + maybe-rename + append, held for microseconds, and a dead peer's advisory lock releases
+     * automatically with the process.
+     */
     public fun appendLine(file: Path, line: String, maxBytes: Long = DEFAULT_MAX_BYTES) {
         val normalized = file.toAbsolutePath().normalize()
         synchronized(locks.computeIfAbsent(normalized) { Any() }) {
-            val encoded = (line + "\n").toByteArray(StandardCharsets.UTF_8)
-            val currentSize = if (Files.exists(file)) Files.size(file) else 0L
-            if (currentSize > 0 && currentSize + encoded.size > maxBytes) {
-                val rolled = file.resolveSibling("${file.fileName}.1")
-                Files.move(file, rolled, StandardCopyOption.REPLACE_EXISTING)
+            val lockPath = normalized.resolveSibling("${normalized.fileName}.lock")
+            FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE).use { channel ->
+                channel.lock().use {
+                    val encoded = (line + "\n").toByteArray(StandardCharsets.UTF_8)
+                    val currentSize = if (Files.exists(file)) Files.size(file) else 0L
+                    if (currentSize > 0 && currentSize + encoded.size > maxBytes) {
+                        val rolled = file.resolveSibling("${file.fileName}.1")
+                        Files.move(file, rolled, StandardCopyOption.REPLACE_EXISTING)
+                    }
+                    Files.write(file, encoded, StandardOpenOption.CREATE, StandardOpenOption.APPEND)
+                }
             }
-            Files.write(file, encoded, StandardOpenOption.CREATE, StandardOpenOption.APPEND)
         }
     }
 

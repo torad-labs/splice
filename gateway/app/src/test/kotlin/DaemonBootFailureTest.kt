@@ -5,17 +5,19 @@
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.bootFailureHandler
+import splice.app.DaemonProcess
 import splice.core.config.StatePaths
 import java.nio.file.Files
 import java.nio.file.Path
 
 class DaemonBootFailureTest {
 
+    private val process = DaemonProcess()
+
     @Test
     fun `a boot throwable lands in daemon log synchronously - JW-01`(@TempDir tmp: Path) {
         val statePaths = StatePaths(baseOverride = tmp.resolve("state"))
-        val handler = bootFailureHandler(statePaths)
+        val handler = process.bootFailureHandler(statePaths)
         val boom = IllegalStateException("ktoml: Invalid TOML at line 7: unexpected ']'")
 
         handler.uncaughtException(Thread.currentThread(), boom)
@@ -38,7 +40,7 @@ class DaemonBootFailureTest {
             Files.setPosixFilePermissions(statePaths.logsDir, it)
         }
         try {
-            bootFailureHandler(statePaths).uncaughtException(Thread.currentThread(), RuntimeException("x"))
+            process.bootFailureHandler(statePaths).uncaughtException(Thread.currentThread(), RuntimeException("x"))
         } finally {
             Files.setPosixFilePermissions(
                 statePaths.logsDir,

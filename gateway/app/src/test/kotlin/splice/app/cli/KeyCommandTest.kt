@@ -18,35 +18,35 @@ class KeyCommandTest {
     @Test
     fun `set --value stores and list shows the name`(@TempDir tmp: Path) {
         val s = store(tmp)
-        assertTrue(key(listOf("set", "OPENROUTER_API_KEY", "--value", "sk-or-abc"), s))
+        assertTrue(KeyCommand().key(listOf("set", "OPENROUTER_API_KEY", "--value", "sk-or-abc"), s))
         assertEquals("sk-or-abc", s.read("OPENROUTER_API_KEY"))
-        assertTrue(key(listOf("list"), s))
+        assertTrue(KeyCommand().key(listOf("list"), s))
     }
 
     @Test
     fun `set without value and without console fails with guidance`(@TempDir tmp: Path) {
         val s = store(tmp)
-        assertFalse(key(listOf("set", "OPENROUTER_API_KEY"), s))
+        assertFalse(KeyCommand().key(listOf("set", "OPENROUTER_API_KEY"), s))
         assertEquals(null, s.read("OPENROUTER_API_KEY"))
     }
 
     @Test
     fun `set rejects invalid env names`(@TempDir tmp: Path) {
         val s = store(tmp)
-        assertFalse(key(listOf("set", "not-a-name", "--value", "x"), s))
+        assertFalse(KeyCommand().key(listOf("set", "not-a-name", "--value", "x"), s))
         assertTrue(s.names().isEmpty())
     }
 
     @Test
     fun `unset removes and reports`(@TempDir tmp: Path) {
         val s = store(tmp)
-        key(listOf("set", "OPENROUTER_API_KEY", "--value", "sk-or-abc"), s)
-        assertTrue(key(listOf("unset", "OPENROUTER_API_KEY"), s))
+        KeyCommand().key(listOf("set", "OPENROUTER_API_KEY", "--value", "sk-or-abc"), s)
+        assertTrue(KeyCommand().key(listOf("unset", "OPENROUTER_API_KEY"), s))
         assertEquals(null, s.read("OPENROUTER_API_KEY"))
     }
 
     @Test
     fun `unknown subcommand is a usage error`(@TempDir tmp: Path) {
-        assertFalse(key(listOf("frobnicate"), store(tmp)))
+        assertFalse(KeyCommand().key(listOf("frobnicate"), store(tmp)))
     }
 }

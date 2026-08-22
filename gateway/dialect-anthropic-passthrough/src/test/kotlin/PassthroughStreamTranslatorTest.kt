@@ -13,6 +13,8 @@ import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
+import splice.dialect.passthrough.PassthroughQuirks
+import splice.dialect.passthrough.PassthroughQuirksDefaults
 import splice.dialect.passthrough.PassthroughStreamTranslator
 import splice.dialect.passthrough.PassthroughTurnContext
 import splice.spi.WireSink
@@ -37,11 +39,13 @@ private class Rec : WireSink {
     override suspend fun addRedactedThinking(data: String) = Unit
 }
 
+private val KIMI = PassthroughQuirksDefaults().kimi("kimi")
+
 private fun ev(json: String): JsonObject = Json.parseToJsonElement(json).jsonObject
 private fun ctx() = PassthroughTurnContext({ false }, { null }, 180_000, 900_000)
 
 private suspend fun drive(sink: Rec, vararg evs: JsonObject): TurnOutcome =
-    PassthroughStreamTranslator(ctx()).driveTurn(evs.toList().asFlow(), sink)
+    PassthroughStreamTranslator(ctx(), KIMI).driveTurn(evs.toList().asFlow(), sink)
 
 // thinking (no upstream signature) -> text -> tool_use -> stop_reason tool_use -> stop.
 private fun fullTurnEvents(): List<JsonObject> = listOf(
@@ -70,7 +74,7 @@ class PassthroughStreamTranslatorTest {
     @Test
     fun `full turn re-indexes blocks, synthesizes one signature, and normalizes usage`() = runTest {
         val sink = Rec()
-        val outcome = PassthroughStreamTranslator(ctx()).driveTurn(fullTurnEvents().asFlow(), sink)
+        val outcome = PassthroughStreamTranslator(ctx(), KIMI).driveTurn(fullTurnEvents().asFlow(), sink)
         val s = outcome as TurnOutcome.Success
         assertEquals(
             listOf(
@@ -278,6 +282,28 @@ class PassthroughStreamTranslatorTest {
         assertEquals(10, s.usage.inputTokens)
     }
 
+    // PT-001 (review 2026-08-15): logging every dropped post-stop delta is unbounded — a chatty
+    // misbehaving upstream sending many stray deltas for an already-closed index used to write one
+    // daemon.log line PER delta. Latched like TurnDriver's malformedLogged (G9): still visible,
+    // exactly once per turn.
+    @Test
+    fun `many post-stop deltas for the same dead index log exactly once`() = runTest {
+        val logs = mutableListOf<String>()
+        val ctx = PassthroughTurnContext({ false }, { null }, 180_000, 900_000, log = { logs.add(it) })
+        val strayDeltas = List(20) {
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"stray"}}""")
+        }
+        val events = listOf(
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""),
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}"""),
+            ev("""{"type":"content_block_stop","index":0}"""),
+        ) + strayDeltas + listOf(ev("""{"type":"message_stop"}"""))
+        val outcome = PassthroughStreamTranslator(ctx, KIMI).driveTurn(events.asFlow(), Rec())
+        assertTrue(outcome is TurnOutcome.Success, "got $outcome")
+        assertEquals(1, logs.size, "20 post-stop deltas on one dead index must log once, not 20: $logs")
+        assertTrue(logs.single().contains("unmapped index=0"), logs.single())
+    }
+
     @Test
     fun `finished turn beats a late watchdog fire - success not overloaded`() = runTest {
         // Chat/Responses parity: message_stop already delivered, then poller fires on EOF wait.
@@ -289,7 +315,7 @@ class PassthroughStreamTranslatorTest {
             900_000,
         )
         val sink = Rec()
-        val outcome = PassthroughStreamTranslator(late).driveTurn(
+        val outcome = PassthroughStreamTranslator(late, KIMI).driveTurn(
             listOf(
                 ev("""{"type":"message_start","message":{"usage":{"input_tokens":1}}}"""),
                 ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""),
@@ -327,7 +353,7 @@ class PassthroughStreamTranslatorTest {
                 )
             }
         }
-        val outcome = PassthroughStreamTranslator(ctx()).driveTurn(events, sink)
+        val outcome = PassthroughStreamTranslator(ctx(), KIMI).driveTurn(events, sink)
         val failure = outcome as TurnOutcome.Failure
         assertEquals(ErrorType.API_ERROR, failure.type)
         assertFalse(failure.providerReported, "the runaway verdict is LOCAL — never provider-attributed")
@@ -424,5 +450,56 @@ class PassthroughStopReasonHonestyTest {
         assertEquals(ErrorType.OVERLOADED, f.type)
         assertTrue(f.message.contains("try later"), f.message)
         assertTrue(f.providerReported)
+    }
+
+    // NEUTRAL: an upstream that SIGNS and VERIFIES must never receive a synthesized signature back.
+    // A thinking block truncated before its signature would otherwise persist "splice-synth-v1" into
+    // the client transcript and hand that forgery upstream on the next turn.
+    @Test
+    fun `neutral never synthesizes a thinking signature`() = runTest {
+        val sink = Rec()
+        PassthroughStreamTranslator(ctx(), PassthroughQuirks(providerTag = "claude-splice")).driveTurn(
+            listOf(
+                ev("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}"""),
+                ev("""{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"t"}}"""),
+                ev("""{"type":"content_block_stop","index":0}"""),
+                ev("""{"type":"message_stop"}"""),
+            ).asFlow(),
+            sink,
+        )
+        assertFalse(sink.calls.any { it.startsWith("sig:") }, sink.calls.toString())
+    }
+
+    @Test
+    fun `failure text carries the head's own provider tag`() = runTest {
+        val outcome = PassthroughStreamTranslator(ctx(), PassthroughQuirks(providerTag = "claude-splice")).driveTurn(
+            listOf(ev("""{"type":"error","error":{"type":"api_error","message":"boom"}}""")).asFlow(),
+            Rec(),
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertTrue(f.message.startsWith("claude-splice: "), f.message)
+    }
+}
+
+// NF-06's second half: skipping events past the breach is not enough — a guard that merely skips
+// keeps CONSUMING a runaway upstream, holding the turn slot and quota until the upstream chooses
+// to close. The breach must CANCEL collection so Flow unwinds the producer. A separate class: the
+// main class above is at detekt's LargeClass budget.
+class PassthroughRunawayCancellationTest {
+
+    @Test
+    fun `the capacity breach cancels the upstream instead of draining it`() = runTest {
+        val chunk = "x".repeat(1_000_000)
+        var emitted = 0
+        val events = kotlinx.coroutines.flow.flow {
+            emit(ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""))
+            repeat(25) {
+                emitted += 1
+                emit(ev("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"$chunk"}}"""))
+            }
+        }
+        val outcome = PassthroughStreamTranslator(ctx(), KIMI).driveTurn(events, Rec())
+        assertTrue(outcome is TurnOutcome.Failure, "got $outcome")
+        assertTrue(emitted < 25, "the guard must unwind the upstream at the breach, not drain it; emitted=$emitted")
     }
 }

@@ -11,10 +11,10 @@ package splice.spi
 
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import splice.core.turn.WatchdogBudget
+import splice.core.util.ElapsedClock
 import splice.core.util.MonoClock
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
@@ -30,7 +30,11 @@ public sealed class WatchdogFired {
 public class TurnWatchdog(
     private val budget: WatchdogBudget,
     // Default is monotonic — sleep/wake/NTP must not invent stalls or freeze totalCap.
-    private val clock: () -> Long = MonoClock::nowMs,
+    private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
+    // HD-19: the poll cadence of both loops below. ProcessTicker is `delay(intervalMs); true`, so
+    // production paces exactly as it did; a test wires a ticker that returns instantly and can stop
+    // the loop after N samples instead of racing a cancellation against a real 250ms..15s sleep.
+    private val ticker: Ticker = ProcessTicker(),
 ) {
     private val sawFirstByte = AtomicBoolean(false)
     private val firedRef = AtomicReference<WatchdogFired?>(null)
@@ -64,7 +68,9 @@ public class TurnWatchdog(
     public fun launchIn(scope: CoroutineScope, slot: InflightGate.Slot, target: Job): Job =
         scope.launch {
             while (isActive) {
-                delay(pollInterval())
+                // pollInterval() is coerced to 250ms..15s, so inWholeMilliseconds is the exact value
+                // delay(Duration) would have used (its <1ms coerceAtLeast(1) rounding is unreachable here).
+                if (!ticker.awaitTick(pollInterval().inWholeMilliseconds)) return@launch
                 val idle = slot.idleForMs()
                 val first = sawFirstByte.get()
                 val idleLimit = if (first) {
@@ -102,7 +108,8 @@ public class TurnWatchdog(
                 capThird.coerceIn(MIN_POLL_MS, MAX_POLL_MS),
             ).milliseconds
             while (isActive) {
-                delay(interval)
+                // Same coercion floor (250ms) as launchIn, so this is delay(interval)'s exact value.
+                if (!ticker.awaitTick(interval.inWholeMilliseconds)) return@launch
                 val elapsed = clock() - startedAt
                 if (elapsed >= budget.totalCap.inWholeMilliseconds) {
                     firedRef.compareAndSet(null, WatchdogFired.TotalCap(elapsed))
@@ -111,10 +118,8 @@ public class TurnWatchdog(
                 }
             }
         }
-
-    private companion object {
-        const val IDLE_DIVISOR = 3
-        const val MIN_POLL_MS = 250L
-        const val MAX_POLL_MS = 15_000L
-    }
 }
+
+private const val IDLE_DIVISOR = 3
+private const val MIN_POLL_MS = 250L
+private const val MAX_POLL_MS = 15_000L

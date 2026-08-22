@@ -17,11 +17,10 @@
 // receipts self-expire so a login from an hour ago cannot confirm today's prompt.
 package splice.core.launch
 
-import splice.core.util.discard
-import splice.core.util.runCatchingCancellable
+import splice.core.util.Cancellables
+import splice.core.util.SecureFile
 import java.nio.file.Files
 import java.nio.file.Path
-import java.nio.file.StandardOpenOption
 
 public object LoginOutcomeFile {
 
@@ -35,23 +34,20 @@ public object LoginOutcomeFile {
     /** Record the outcome. Best-effort by construction: a login that SUCCEEDED must never be
      *  reported as failed because its receipt could not be written. */
     public fun write(stateDir: Path, head: String, message: String) {
-        runCatchingCancellable {
-            Files.createDirectories(stateDir)
+        val receipt = Cancellables.runCatchingCancellable {
             val path = pathFor(stateDir, head)
-            Files.write(
-                path,
-                (message.replace('\n', ' ').trim() + "\n").toByteArray(),
-                StandardOpenOption.CREATE,
-                StandardOpenOption.WRITE,
-                StandardOpenOption.TRUNCATE_EXISTING,
-            )
-        }.discard("the login itself already succeeded or failed; the receipt is a courtesy")
+            // IO-007: temp-file + ATOMIC_MOVE (SecureFile, the codebase's one atomic-write
+            // primitive) instead of TRUNCATE_EXISTING — two simultaneous receipts for one head no
+            // longer race to truncate each other mid-write; the last write to land wins cleanly.
+            SecureFile.writeAtomic0600(path, message.replace('\n', ' ').trim() + "\n")
+        }
+        Cancellables.discard(receipt, "the login itself already succeeded or failed; the receipt is a courtesy")
     }
 
     /** Read and CONSUME a fresh receipt, or null. Consuming is the point: a confirmation is shown
      *  once, not on every prompt for the rest of the session. */
     public fun consume(stateDir: Path, head: String, nowMs: Long = System.currentTimeMillis()): String? =
-        runCatchingCancellable {
+        Cancellables.runCatchingCancellable {
             val path = pathFor(stateDir, head)
             if (!Files.isRegularFile(path)) return@runCatchingCancellable null
             val age = nowMs - Files.getLastModifiedTime(path).toMillis()

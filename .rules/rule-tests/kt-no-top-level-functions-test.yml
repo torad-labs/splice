@@ -1,0 +1,42 @@
+id: kt-no-top-level-functions
+valid:
+  # behaviour on the type that owns it — the compliant shape 336 migrated functions landed in.
+  - |
+    class UsageJson {
+        fun firstNum(obj: JsonObject, vararg keys: String): Long? =
+            JsonScalars.firstLong(obj, *keys)
+    }
+  # the single-purpose unit, invoked as a value.
+  - |
+    class ClampOutput(private val cap: Int) {
+        operator fun invoke(text: String): String = text.take(cap)
+    }
+  # the entry point is exempt — every CLI needs exactly one.
+  - 'fun main(args: Array<String>) { Cli().run(args) }'
+  # `fun interface` is a SAM type, not behaviour; tree-sitter reports it as function_declaration.
+  - 'fun interface LogSink { fun log(line: String) }'
+  # top-level constants and values are NOT this rule's subject — it bans behaviour, not data.
+  - 'private const val ROUND_FAILURE_SNIPPET = 160'
+  - 'internal val FORWARDED_CLIENT_HEADERS: List<String> = listOf("Authorization")'
+  # a nested function inside a member is not top-level.
+  - |
+    class Folder {
+        fun fold(rows: List<Int>): Int {
+            fun step(acc: Int, row: Int) = acc + row
+            return rows.fold(0, ::step)
+        }
+    }
+invalid:
+  # the plain top-level helper — the exact shape that accumulated 336 times while both delivery
+  # paths for this rule were dead.
+  - 'fun compactAwareSystem(raw: JsonElement?, compact: Boolean): JsonElement? = raw'
+  # visibility does not launder it.
+  - 'private fun errorBodyJson(kind: String, msg: String): String = ""'
+  - 'internal fun parseAnthropicBody(text: String): JsonObject? = null'
+  # suspend and generics are still loose behaviour.
+  - 'suspend fun drainUpstream(client: UpstreamClient): Int = 0'
+  - 'inline fun <T> runCatchingCancellable(block: () -> T): Result<T> = runCatching(block)'
+  # an expression body is not an exemption.
+  - 'fun tail(lines: List<String>) = lines.takeLast(2)'
+  # `main` is exempt by NAME only — a function that merely mentions it is not.
+  - 'fun mainLoop(): Unit = Unit'

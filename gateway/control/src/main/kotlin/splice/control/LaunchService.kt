@@ -12,48 +12,20 @@ import splice.core.launch.ClaudeConfigMaterializer
 import splice.core.launch.ClaudePolicy
 import splice.core.launch.MaterializeSpec
 import splice.core.launch.TokenCaptureSpec
+import splice.core.util.EnvReader
 import java.nio.file.Path
 import kotlin.math.max
 
-/** What a head needs to produce a launch recipe (supplied by :app at wiring time). */
-public data class LaunchSpec(
-    val configDir: Path,
-    val pinnedModel: String,
-    val availableModelIds: List<String>,
-    val modelLabels: Map<String, String>, // id -> display label (for the alias slot names)
-    val contextWindow: Int,
-    val modelOptionsCache: JsonElement, // the /model picker option list
-    val statuslineCommand: String, // per-head statusline command (…/statusline/<head>)
-    val loginCommand: String, // shell command that runs THIS head's provider sign-in (e.g. `claudex login`)
-    val signInLabel: String, // provider label for the /login UX ("Codex (ChatGPT)", "Grok (xAI)")
-    /** False for api-key heads: the /login block reason points at a masked terminal prompt. */
-    val signInViaBrowser: Boolean = true,
-    /** api-key heads: capture a bare pasted token into the KeyStore (blocked from model context). */
-    val tokenCapture: TokenCaptureSpec? = null,
-    /** Install the SessionStart key-missing advertiser (daemon sets it only while unconfigured). */
-    val advertiseKeySetup: Boolean = false,
-    /** Absolute path of this head's login receipt (LoginOutcomeFile) — the channel a DETACHED
-     *  sign-in uses to tell the session what happened. Empty = no in-session confirmation. */
-    val loginOutcomeFile: String = "",
-    val policy: ClaudePolicy,
-    val port: Int,
-    /** Per-install local gateway credential; shared with the head's inbound verifier. */
-    val inferenceToken: String,
-)
+// Floor for CLAUDE_CODE_AUTO_COMPACT_WINDOW (buildEnv): a small context window must not shrink the
+// auto-compact window below this.
+private const val AUTO_COMPACT_FLOOR = 60_000
 
-public data class LaunchRecipe(
-    val env: Map<String, String>,
-    val unset: List<String>,
-    val argv: List<String>,
-    // Non-null only when dangerouslySkipPermissions was engaged — surfaced to the operator via the
-    // control log and the /launch response so the danger is never silent.
-    val warning: String? = null,
-)
+// LaunchSpec + LaunchRecipe live in LaunchTypes.kt (concentration, 2026-08-19).
 
 public class LaunchService(
     private val materializer: ClaudeConfigMaterializer,
     private val claudeBinary: String = "claude",
-    private val envReader: (String) -> String? = System::getenv,
+    private val envReader: EnvReader = EnvReader(System::getenv),
 ) {
     /** Materialize the head's config + build the exec recipe. Safe by default: the flag is added
      *  ONLY when [dangerouslySkipPermissions] is true, and doing so returns a non-null warning. */
@@ -79,12 +51,17 @@ public class LaunchService(
             ),
         )
         val env = buildEnv(spec)
-        // Clear anything ambient that would override the proxy or a stale Anthropic session.
-        val unset = listOf(
-            "ANTHROPIC_API_KEY",
-            "CLAUDE_CODE_OAUTH_TOKEN",
-            "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
-        )
+        // Clear anything ambient that would override the proxy or a stale Anthropic session —
+        // EXCEPT on a native-auth head, where those variables ARE the credential being forwarded.
+        val unset = if (spec.nativeClientAuth) {
+            emptyList()
+        } else {
+            listOf(
+                "ANTHROPIC_API_KEY",
+                "CLAUDE_CODE_OAUTH_TOKEN",
+                "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
+            )
+        }
         val argv = buildList {
             add(claudeBinary)
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
@@ -107,8 +84,9 @@ public class LaunchService(
             put("ANTHROPIC_BASE_URL", "http://127.0.0.1:${spec.port}")
             // AUTH_TOKEN (bearer), NOT API_KEY — a bearer avoids Claude Code's custom-api-key
             // approval flow. The head validates this per-install credential before any quota-
-            // consuming work.
-            put("ANTHROPIC_AUTH_TOKEN", spec.inferenceToken)
+            // consuming work. A native-auth head plants NOTHING: the client's own credential must
+            // reach the head untouched, and this would override it.
+            if (!spec.nativeClientAuth) put("ANTHROPIC_AUTH_TOKEN", spec.inferenceToken)
             put("CLAUDE_CONFIG_DIR", spec.configDir.toString())
             // THE fix for "only one model shows": lets the /model picker list every /v1/models id.
             put("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY", "1")
@@ -128,8 +106,14 @@ public class LaunchService(
             // proxy bearer above, so /login (a local-jsx command hardwired to platform.claude.com —
             // no hook or base-url override can reach it) and /logout are dead doors. These are the
             // CLI's own boolean env flags (Pe.bool over process.env), so the commands never register.
-            put("DISABLE_LOGIN_COMMAND", "1")
-            put("DISABLE_LOGOUT_COMMAND", "1")
+            //
+            // A native-auth head keeps BOTH: its upstream really is Anthropic, so /login is a live
+            // door and the only one that can heal a rejected credential — splice runs no sign-in
+            // flow of its own for this head precisely because the client's still works.
+            if (!spec.nativeClientAuth) {
+                put("DISABLE_LOGIN_COMMAND", "1")
+                put("DISABLE_LOGOUT_COMMAND", "1")
+            }
             put("SPLICE", "1")
         }
     }
@@ -166,9 +150,5 @@ public class LaunchService(
             "HAIKU" to fast,
             "FABLE" to frontier,
         )
-    }
-
-    private companion object {
-        const val AUTO_COMPACT_FLOOR = 60_000
     }
 }

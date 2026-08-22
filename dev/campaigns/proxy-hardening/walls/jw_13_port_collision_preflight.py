@@ -17,17 +17,26 @@ EXIT 0 = named pre-flight. EXIT 1 = gap open. --selftest = the POSITIVE CONTROL 
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 TOPO = ROOT / "gateway/core/src/main/kotlin/splice/core/topology/Topology.kt"
-DOCTOR = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/DoctorCommand.kt"
-DAEMON = ROOT / "gateway/app/src/main/kotlin/splice/app/Daemon.kt"
+# HD-25: configurationChecks — the declaration this wall reads — moved out of DoctorCommand.kt into
+# its own collaborator when that file was decomposed (it was the tree's worst concentration row at
+# 8.10). Re-anchored onto the ONE file that now holds it, at the same single-file resolution, the
+# same way DAEMON below was repointed at HeadBoot.kt.
+DOCTOR = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/DoctorConfigChecks.kt"
+# assembleDaemonHeads (and its portCollisionMessage pre-flight) moved out of Daemon.kt into its own
+# collaborator in the 2026-08-17 decomposition (campaign claude-head, CH target Daemon) — repointed
+# the same way the kt-state-paths-single-source ignore was, following the code rather than the
+# god-file it used to live in.
+DAEMON = ROOT / "gateway/app/src/main/kotlin/splice/app/head/HeadBoot.kt"
 
 
 def detect(topo: str | None, doctor: str | None, daemon: str | None) -> list[str]:
     """Pure detection. No I/O — the selftest feeds it directly."""
-    for name, text in (("Topology.kt", topo), ("DoctorCommand.kt", doctor), ("Daemon.kt", daemon)):
+    for name, text in (("Topology.kt", topo), ("DoctorConfigChecks.kt", doctor), ("HeadBoot.kt", daemon)):
         if text is None:
             return [f"{name} missing — refusing to pass vacuously"]
     problems: list[str] = []
@@ -43,8 +52,23 @@ def detect(topo: str | None, doctor: str | None, daemon: str | None) -> list[str
     return problems
 
 
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+_LINE_COMMENT = re.compile(r"//.*?$", re.M)
+_IMPORT_LINE = re.compile(r"^import .*$", re.M)
+
+
+def code_only(text: str | None) -> str | None:
+    """A mention is not a wiring: a token left behind in a `// TODO: restore ...` must not satisfy
+    this wall after the real call site is deleted. Same stripper cx_02/cx_09/cx_18 already carry."""
+    if text is None:
+        return None
+    stripped = _BLOCK_COMMENT.sub("", text)
+    stripped = _LINE_COMMENT.sub("", stripped)
+    return _IMPORT_LINE.sub("", stripped)
+
+
 def _read(p: pathlib.Path) -> str | None:
-    return p.read_text(encoding="utf-8") if p.exists() else None
+    return code_only(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
 TOPO_OK = "fun portCollisions(): Map<Int, List<String>>\nfun portCollisionMessage("

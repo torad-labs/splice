@@ -22,6 +22,7 @@ dependencies {
     implementation(project(":provider-spi"))
     implementation(project(":dialect-openai-responses"))
     implementation(project(":dialect-openai-chat"))
+    implementation(project(":dialect-anthropic-passthrough"))
     implementation(project(":provider-codex"))
     implementation(project(":provider-grok"))
     implementation(project(":provider-kimi"))

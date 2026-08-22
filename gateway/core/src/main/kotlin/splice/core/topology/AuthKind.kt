@@ -22,16 +22,26 @@ public sealed class AuthKind(
     public data object GrokOAuth : OAuth("grok-oauth", "~/.grok/auth.json")
     public data object KimiOAuth : OAuth("kimi-oauth", null) // device-flow token at a provider-computed path
 
-    public companion object {
-        private val KNOWN: List<AuthKind> = listOf(ChatgptOAuth, GrokOAuth, KimiOAuth)
+    /** The head holds NO credential: the caller's own auth headers are forwarded upstream, and its
+     *  native login stays enabled (campaign claude-head). No auth file, no refresh, no sign-in flow
+     *  splice can run — which is why it is not an OAuth kind and has no default auth file. */
+    public data object Client : AuthKind("client", null, isOAuth = false)
+}
 
-        /** The typed scheme for a wire kind, or null for an operator's custom/unknown kind. */
-        public fun from(wire: String): AuthKind? = KNOWN.firstOrNull { it.wire == wire }
+/** The lookup half of [AuthKind] — the "registry" this file's header names. A named object since
+ *  the 2026-08-16 style migration (HD-M8) made the companion illegal; same three function names,
+ *  same bodies, same tolerance for an operator's custom kind (null, never a throw). */
+public object AuthKindRegistry {
 
-        /** Default auth-file path for a known kind, or null (unknown kind / env-only auth). */
-        public fun defaultAuthFileFor(wire: String): String? = from(wire)?.defaultAuthFile
+    private val KNOWN: List<AuthKind> =
+        listOf(AuthKind.ChatgptOAuth, AuthKind.GrokOAuth, AuthKind.KimiOAuth, AuthKind.Client)
 
-        /** OAuth-ness by convention: any `*-oauth` wire kind (covers a future kind too). */
-        public fun isOAuth(wire: String): Boolean = from(wire)?.isOAuth ?: wire.endsWith("oauth")
-    }
+    /** The typed scheme for a wire kind, or null for an operator's custom/unknown kind. */
+    public fun from(wire: String): AuthKind? = KNOWN.firstOrNull { it.wire == wire }
+
+    /** Default auth-file path for a known kind, or null (unknown kind / env-only auth). */
+    public fun defaultAuthFileFor(wire: String): String? = from(wire)?.defaultAuthFile
+
+    /** OAuth-ness by convention: any `*-oauth` wire kind (covers a future kind too). */
+    public fun isOAuth(wire: String): Boolean = from(wire)?.isOAuth ?: wire.endsWith("oauth")
 }

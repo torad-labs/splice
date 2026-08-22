@@ -5,6 +5,9 @@
 // empty — byte-identity with JSON.stringify); decode rejects foreign/garbled payloads with
 // null (the block is silently dropped, exactly as under pure amnesia) and requires a
 // non-empty id + encrypted_content; decoded items ALWAYS carry a summary array.
+// The pair were top-level functions until the 2026-08-16 style migration (HD-M8); they now live on
+// the ReasoningReplay object, which makes "encode and decode stay PAIRED" structural rather than a
+// comment. Same names, same bodies, same bytes.
 package splice.core.reasoning
 
 import kotlinx.serialization.json.Json
@@ -14,7 +17,9 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
-import splice.core.util.runCatchingCancellable
+import splice.core.util.Cancellables
+import splice.core.util.DaemonLog
+import splice.core.util.LogSink
 import java.util.Base64
 
 public const val REASONING_ENVELOPE_TAG: String = "splice-reasoning"
@@ -31,45 +36,59 @@ private const val FIELD_SUMMARY = "summary"
 
 private val lenient = Json { ignoreUnknownKeys = true }
 
-/** Responses `reasoning` output item -> base64 envelope for a redacted_thinking block. */
-public fun encodeReasoningEnvelope(item: JsonObject): String? {
-    val id = (item[FIELD_ID] as? JsonPrimitive)?.content ?: return null
-    val encrypted = (item[FIELD_ENCRYPTED] as? JsonPrimitive)?.content ?: return null
-    val summary = item[FIELD_SUMMARY] as? JsonArray
-    val envelope = buildJsonObject {
-        put(FIELD_TAG, REASONING_ENVELOPE_TAG)
-        put(FIELD_VERSION, REASONING_ENVELOPE_VERSION)
-        put(
-            FIELD_ITEM,
-            buildJsonObject {
-                put(FIELD_ID, id)
-                put(FIELD_ENCRYPTED, encrypted)
-                if (summary != null && summary.isNotEmpty()) put(FIELD_SUMMARY, summary)
-            },
-        )
-    }
-    return Base64.getEncoder().encodeToString(envelope.toString().toByteArray(Charsets.UTF_8))
-}
+public object ReasoningReplay {
 
-/** redacted_thinking `data` -> Responses `reasoning` input item, or null for foreign data. */
-// foreign/garbled payloads pass through as null
-public fun decodeReasoningEnvelope(data: String?): JsonObject? {
-    val parsed = data?.takeIf { it.isNotEmpty() }?.let { encoded ->
-        runCatchingCancellable {
-            val text = Base64.getDecoder().decode(encoded).toString(Charsets.UTF_8)
-            lenient.parseToJsonElement(text).jsonObject
-        }.getOrNull()
+    /** Responses `reasoning` output item -> base64 envelope for a redacted_thinking block. */
+    public fun encodeReasoningEnvelope(item: JsonObject): String? {
+        val id = (item[FIELD_ID] as? JsonPrimitive)?.content ?: return null
+        val encrypted = (item[FIELD_ENCRYPTED] as? JsonPrimitive)?.content ?: return null
+        val summary = item[FIELD_SUMMARY] as? JsonArray
+        val envelope = buildJsonObject {
+            put(FIELD_TAG, REASONING_ENVELOPE_TAG)
+            put(FIELD_VERSION, REASONING_ENVELOPE_VERSION)
+            put(
+                FIELD_ITEM,
+                buildJsonObject {
+                    put(FIELD_ID, id)
+                    put(FIELD_ENCRYPTED, encrypted)
+                    if (summary != null && summary.isNotEmpty()) put(FIELD_SUMMARY, summary)
+                },
+            )
+        }
+        return Base64.getEncoder().encodeToString(envelope.toString().toByteArray(Charsets.UTF_8))
     }
-    val tagOk = (parsed?.get(FIELD_TAG) as? JsonPrimitive)?.content == REASONING_ENVELOPE_TAG
-    val versionOk = (parsed?.get(FIELD_VERSION) as? JsonPrimitive)?.content == REASONING_ENVELOPE_VERSION.toString()
-    val item = if (tagOk && versionOk) parsed?.get(FIELD_ITEM) as? JsonObject else null
-    val id = (item?.get(FIELD_ID) as? JsonPrimitive)?.content
-    val encrypted = (item?.get(FIELD_ENCRYPTED) as? JsonPrimitive)?.content
-    if (id.isNullOrEmpty() || encrypted.isNullOrEmpty()) return null
-    return buildJsonObject {
-        put("type", "reasoning")
-        put(FIELD_ID, id)
-        put(FIELD_ENCRYPTED, encrypted)
-        put(FIELD_SUMMARY, (item[FIELD_SUMMARY] as? JsonArray) ?: JsonArray(emptyList()))
+
+    /** redacted_thinking `data` -> Responses `reasoning` input item, or null for foreign data. */
+    // foreign/garbled payloads pass through as null
+    public fun decodeReasoningEnvelope(data: String?, log: LogSink = LogSink(DaemonLog::write)): JsonObject? {
+        val parsed = data?.takeIf { it.isNotEmpty() }?.let { encoded ->
+            Cancellables.runCatchingCancellable {
+                val text = Base64.getDecoder().decode(encoded).toString(Charsets.UTF_8)
+                lenient.parseToJsonElement(text).jsonObject
+            }.getOrNull()
+        }
+        val tagOk = (parsed?.get(FIELD_TAG) as? JsonPrimitive)?.content == REASONING_ENVELOPE_TAG
+        val versionOk = (parsed?.get(FIELD_VERSION) as? JsonPrimitive)?.content == REASONING_ENVELOPE_VERSION.toString()
+        val item = if (tagOk && versionOk) parsed?.get(FIELD_ITEM) as? JsonObject else null
+        val id = (item?.get(FIELD_ID) as? JsonPrimitive)?.content
+        val encrypted = (item?.get(FIELD_ENCRYPTED) as? JsonPrimitive)?.content
+        if (id.isNullOrEmpty() || encrypted.isNullOrEmpty()) {
+            // CMP-002: keep the drop (a foreign/garbled payload must still pass through as null, not
+            // throw) but stop it being silent — a dropped block is prior reasoning vanishing from the
+            // replayed transcript with zero indication.
+            if (!data.isNullOrEmpty()) {
+                log(
+                    "[reasoning-replay] dropped an unusable reasoning envelope " +
+                        "(len=${data.length}) — omitted from replay\n",
+                )
+            }
+            return null
+        }
+        return buildJsonObject {
+            put("type", "reasoning")
+            put(FIELD_ID, id)
+            put(FIELD_ENCRYPTED, encrypted)
+            put(FIELD_SUMMARY, (item[FIELD_SUMMARY] as? JsonArray) ?: JsonArray(emptyList()))
+        }
     }
 }

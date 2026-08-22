@@ -8,8 +8,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
-import splice.core.perf.perfLine
-import splice.core.perf.timedOr
+import splice.core.perf.TurnPerfTiming
 
 class TurnPerfTest {
 
@@ -75,7 +74,7 @@ class TurnPerfTest {
         }
         assertEquals("creds", result)
         assertEquals(42L, perf.snapshot().counters[PerfKeys.AUTH_MS])
-        val plain = (null as TurnPerf?).timedOr(PerfKeys.AUTH_MS) { "plain" }
+        val plain = TurnPerfTiming.timedOr(null as TurnPerf?, PerfKeys.AUTH_MS) { "plain" }
         assertEquals("plain", plain)
     }
 
@@ -90,7 +89,7 @@ class TurnPerfTest {
         clock.tick(1)
         perf.mark(PerfKeys.TOTAL)
         perf.add(PerfKeys.OUT_TOKENS, 850)
-        val line = perfLine("codex", "ok", compact = false, model = "gpt-5.6-sol", snap = perf.snapshot())
+        val line = perf.snapshot().perfLine("codex", "ok", compact = false, model = "gpt-5.6-sol")
         assertEquals(
             "[codex] perf outcome=ok compact=false model=gpt-5.6-sol recv=3 headers=903 total=904 | out_tokens=850\n",
             line,

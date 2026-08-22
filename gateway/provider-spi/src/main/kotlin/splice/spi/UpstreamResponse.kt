@@ -14,41 +14,44 @@ public class UpstreamResponse(private val resp: HttpResponse) {
     public fun header(name: String): String? = resp.headers[name]
 
     public suspend fun bodyChannel(): ByteReadChannel = resp.bodyAsChannel()
-}
 
-internal suspend fun HttpResponse.bodyTextLimited(maxBytes: Int): String {
-    val channel = bodyAsChannel()
-    val output = ByteArrayOutputStream(minOf(maxBytes, ERROR_READ_BUFFER_BYTES))
-    val buffer = ByteArray(ERROR_READ_BUFFER_BYTES)
-    var total = 0
-    while (true) {
-        val read = readAvailableOrEof(channel, buffer)
-        if (read == -1) return limitedText(output, truncated = false)
-        val remaining = maxBytes - total
-        if (read > remaining) {
-            if (remaining > 0) output.write(buffer, 0, remaining)
-            channel.cancel(UpstreamBodyLimitException(maxBytes))
-            return limitedText(output, truncated = true)
+    /** The bounded error-body read. Was an `HttpResponse` extension; the receiver is now the
+     *  wrapper that already holds that same response, so the walk below is byte-for-byte the
+     *  original with `this` replaced by [resp]. */
+    internal suspend fun bodyTextLimited(maxBytes: Int): String {
+        val channel = resp.bodyAsChannel()
+        val output = ByteArrayOutputStream(minOf(maxBytes, ERROR_READ_BUFFER_BYTES))
+        val buffer = ByteArray(ERROR_READ_BUFFER_BYTES)
+        var total = 0
+        while (true) {
+            val read = readAvailableOrEof(channel, buffer)
+            if (read == -1) return limitedText(output, truncated = false)
+            val remaining = maxBytes - total
+            if (read > remaining) {
+                if (remaining > 0) output.write(buffer, 0, remaining)
+                channel.cancel(UpstreamBodyLimitException(maxBytes))
+                return limitedText(output, truncated = true)
+            }
+            output.write(buffer, 0, read)
+            total += read
         }
-        output.write(buffer, 0, read)
-        total += read
     }
-}
 
-private suspend fun readAvailableOrEof(channel: ByteReadChannel, buffer: ByteArray): Int {
-    var read = channel.readAvailable(buffer, 0, buffer.size)
-    while (read == 0) {
-        if (!channel.awaitContent(1)) return -1
-        read = channel.readAvailable(buffer, 0, buffer.size)
+    private suspend fun readAvailableOrEof(channel: ByteReadChannel, buffer: ByteArray): Int {
+        var read = channel.readAvailable(buffer, 0, buffer.size)
+        while (read == 0) {
+            if (!channel.awaitContent(1)) return -1
+            read = channel.readAvailable(buffer, 0, buffer.size)
+        }
+        return read
     }
-    return read
-}
 
-private fun limitedText(output: ByteArrayOutputStream, truncated: Boolean): String =
-    buildString {
-        append(output.toString(Charsets.UTF_8))
-        if (truncated) append("\n[… omitted …]")
-    }
+    private fun limitedText(output: ByteArrayOutputStream, truncated: Boolean): String =
+        buildString {
+            append(output.toString(Charsets.UTF_8))
+            if (truncated) append("\n[… omitted …]")
+        }
+}
 
 private class UpstreamBodyLimitException(limit: Int) :
     RuntimeException("upstream error body exceeds $limit bytes")

@@ -15,10 +15,10 @@ import splice.core.turn.ToolSearchCall
 import splice.core.turn.ToolSearchCallId
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.gateway.head.FoldRunner
-import splice.gateway.head.ReanchorRunner
-import splice.gateway.head.RunnerSignals
-import splice.gateway.wire.SseEmitter
+import splice.gateway.round.FoldRunner
+import splice.gateway.round.ReanchorRunner
+import splice.gateway.round.RunnerSignals
+import splice.gateway.wire.SseEmitterFactory
 import splice.spi.FoldController
 import splice.spi.ReanchorController
 import splice.spi.ToolSearchController
@@ -46,7 +46,7 @@ private fun searchSuccess(
 
 private class Harness {
     val frames = mutableListOf<String>()
-    val emitter = SseEmitter.create(
+    val emitter = SseEmitterFactory().create(
         write = { frames.add(it) },
         model = "m",
         usagePayload = { buildJsonObject { } },

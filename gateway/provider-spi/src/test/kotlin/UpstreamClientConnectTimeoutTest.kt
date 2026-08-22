@@ -21,8 +21,9 @@ import io.ktor.client.request.preparePost
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.util.discard
-import splice.spi.UpstreamClient
+import splice.core.util.Cancellables
+import splice.spi.TransportFailures
+import splice.spi.UpstreamTransport
 
 private const val BLACKHOLE_URL = "http://192.0.2.1:9999/v1"
 
@@ -30,7 +31,7 @@ class UpstreamClientConnectTimeoutTest {
 
     @Test
     fun `connect timeout fires around 10s, decoupled from a much larger firstByteTimeoutMs`() {
-        val client = UpstreamClient.defaultClient(firstByteTimeoutMs = 300_000L, totalTimeoutMs = 900_000L)
+        val client = UpstreamTransport().defaultClient(firstByteTimeoutMs = 300_000L, totalTimeoutMs = 900_000L)
         val start = System.nanoTime()
         val thrown = runCatching {
             runBlocking {
@@ -44,7 +45,7 @@ class UpstreamClientConnectTimeoutTest {
             "connect must fail fast (~10s), not ride the 300_000ms firstByteTimeoutMs; took ${elapsedMs}ms",
         )
         assertTrue(
-            UpstreamClient.isRetryableTransport(thrown!!),
+            TransportFailures().isRetryableTransport(thrown!!),
             "the thrown exception must compose with the existing transport-retry loop: ${thrown::class}",
         )
     }
@@ -53,13 +54,17 @@ class UpstreamClientConnectTimeoutTest {
     fun `connect timeout does not inherit a shorter firstByteTimeoutMs`() {
         // firstByteTimeoutMs is deliberately SHORTER than the fixed 10s connect timeout — if
         // connect still derived from firstByteTimeoutMs, this would fail around 3s instead of 10s.
-        val client = UpstreamClient.defaultClient(firstByteTimeoutMs = 3_000L, totalTimeoutMs = 900_000L)
+        val client = UpstreamTransport().defaultClient(firstByteTimeoutMs = 3_000L, totalTimeoutMs = 900_000L)
         val start = System.nanoTime()
-        runCatching {
+        val attempted = runCatching {
             runBlocking {
                 client.preparePost(BLACKHOLE_URL) {}.execute { it.status }
             }
-        }.discard("only the elapsed time is asserted; the failure itself is pinned by the other test")
+        }
+        Cancellables.discard(
+            attempted,
+            "only the elapsed time is asserted; the failure itself is pinned by the other test",
+        )
         val elapsedMs = (System.nanoTime() - start) / 1_000_000
         assertTrue(
             elapsedMs > 5_000,

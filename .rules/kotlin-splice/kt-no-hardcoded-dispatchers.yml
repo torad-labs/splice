@@ -1,0 +1,51 @@
+# Dispatcher discipline — a hardcoded `Dispatchers.IO` / `Dispatchers.Default` / `Dispatchers.Main`
+# inside production logic is a threading decision welded to the code that happens to need it. The
+# call site cannot be moved onto a test dispatcher, so anything that crosses it must be driven with
+# real threads and real scheduling; and because the choice is invisible from outside, two components
+# that must agree on a lane have no way to say so.
+#
+# The four shapes this gateway had, and what each became:
+#   - `withContext(Dispatchers.IO)` around N blocking Netty engine stops (Daemon.HeadLifecycle) →
+#     an injected `stopDispatcher` on HeadLifecycle;
+#   - `scope.launch(Dispatchers.IO)` for a blocking HttpURLConnection probe (TurnPathProbeLoop) →
+#     an injected `dispatcher` constructor parameter;
+#   - `withContext(Dispatchers.IO)` around a FileChannel tryLock poll (CredentialLock) → the
+#     `PollRuntime` pair (dispatcher + Waiter), which is one cohesive argument because a caller that
+#     replaces one always replaces both;
+#   - `Dispatchers.Default` as the context a background scope is built on (SingleFlight, and the
+#     auth providers' prefetch scopes) → `ProcessDispatchers().background()`, defaulted at the
+#     composition root.
+# Every one of them defaults to the value it hardcoded, so no production behaviour changed.
+#
+# THE ONE IGNORE, stated rather than hidden: a dependency-injected process must name its concrete
+# dispatchers somewhere, or there is no composition root. ProcessRuntime.kt is that one file, it
+# does nothing else, and its two methods return exactly the values their call sites used to inline.
+# The dormant source rule anticipated this with `ignores: **/*DispatcherProvider*.kt` — a glob any
+# file can opt into by RENAMING itself, which is the dodge this repo forbids. A single literal path
+# cannot be opted into.
+#
+# `Dispatchers.Unconfined` and `Dispatchers.IO.limitedParallelism(n)` are worth knowing about: the
+# first is not matched (it occurs nowhere here and is a test idiom), the second IS matched through
+# its `Dispatchers.IO` receiver, which is correct — the parallelism knob is a threading decision too.
+#
+# PROMOTED 2026-08-16 (HD-19) from the dormant .rules/kotlin/ast-grep pack, which sgconfig.yml
+# references from nowhere and so had never run. Renamed from `main-no-hardcoded-dispatchers`: the
+# "main-" prefix meant "main sources", which `files:` already says. Red-proven against a synthetic
+# violation before the census was believed, INCLUDING the Dispatchers.Main branch that has zero real
+# hits here — an alternative with no live match is exactly where a dead matcher hides. 7 hits in
+# gateway/*/src/main, all 7 converted in the same commit.
+id: kt-no-hardcoded-dispatchers
+language: kotlin
+severity: error
+message: "Inject a CoroutineDispatcher seam — don't hardcode Dispatchers.IO/Default/Main outside the runtime edge."
+files:
+  - gateway/*/src/main/**/*.kt
+ignores:
+  # The process runtime edge — the single main-source file allowed to name the global dispatchers.
+  - gateway/provider-spi/src/main/kotlin/splice/spi/ProcessRuntime.kt
+rule:
+  any:
+    - pattern: Dispatchers.IO
+    - pattern: Dispatchers.Default
+    # Zero occurrences here today; the branch is what keeps it so, and it was red-proven anyway.
+    - pattern: Dispatchers.Main

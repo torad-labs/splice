@@ -6,9 +6,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.config.ConfigCoercion
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
-import splice.core.config.normalizeShowReasoning
 import splice.core.turn.ReasoningDisplay
 import java.nio.file.Files
 import java.nio.file.Path
@@ -181,13 +181,14 @@ class ConfigServiceTest {
 
     @Test
     fun `showReasoning folding matches the node table`() {
-        assertEquals("off", normalizeShowReasoning("0"))
-        assertEquals("off", normalizeShowReasoning("none"))
-        assertEquals("off", normalizeShowReasoning(null))
-        assertEquals("text", normalizeShowReasoning("mirror"))
-        assertEquals("text", normalizeShowReasoning("FULL"))
-        assertEquals("thinking", normalizeShowReasoning("anything-else"))
-        assertEquals("thinking", normalizeShowReasoning("1"))
+        val coercion = ConfigCoercion { null }
+        assertEquals("off", coercion.normalizeShowReasoning("0"))
+        assertEquals("off", coercion.normalizeShowReasoning("none"))
+        assertEquals("off", coercion.normalizeShowReasoning(null))
+        assertEquals("text", coercion.normalizeShowReasoning("mirror"))
+        assertEquals("text", coercion.normalizeShowReasoning("FULL"))
+        assertEquals("thinking", coercion.normalizeShowReasoning("anything-else"))
+        assertEquals("thinking", coercion.normalizeShowReasoning("1"))
     }
 
     @Test

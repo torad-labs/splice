@@ -14,8 +14,11 @@ import org.junit.jupiter.api.assertThrows
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.spi.PostContext
 import splice.spi.UpstreamClient
 import splice.spi.UpstreamFailed
+import splice.spi.Waiter
+import java.nio.channels.UnresolvedAddressException
 import java.util.concurrent.atomic.AtomicInteger
 
 class UpstreamClientRetryPolicyTest {
@@ -29,6 +32,26 @@ class UpstreamClientRetryPolicyTest {
     private class Capture {
         val minDelays = mutableListOf<Long>()
     }
+
+    /** HD-19: the Waiter seam as a recorder. It captures what the PRODUCTION backoff lambda asked
+     *  to wait and returns instantly, which is what lets the tests below run the real curve instead
+     *  of replacing it with `{ _, _ -> }` and re-deriving its arithmetic in the assertion. */
+    private class RecordingWaiter : Waiter {
+        val waits = mutableListOf<Long>()
+
+        override suspend fun wait(ms: Long) {
+            waits.add(ms)
+        }
+    }
+
+    /** A client whose backoff lambdas are the SHIPPED defaults — only the wait is faked. */
+    private fun realCurveClientOver(engine: MockEngine, waiter: RecordingWaiter) = UpstreamClient(
+        firstByteTimeoutMs = 5_000,
+        totalTimeoutMs = 60_000,
+        maxRetries = 3,
+        client = HttpClient(engine),
+        waiter = waiter,
+    )
 
     private fun clientOver(
         engine: MockEngine,
@@ -44,10 +67,8 @@ class UpstreamClientRetryPolicyTest {
     )
 
     private suspend fun postOnce(client: UpstreamClient): String = client.post(
-        url = "https://api.example.test/v1",
-        bodyJson = "{}",
-        auth = fakeAuth,
-        extraHeaders = { emptyMap() },
+        PostContext(url = "https://api.example.test/v1", auth = fakeAuth, extraHeaders = { emptyMap() }),
+        "{}",
     ) { "ok" }
 
     @Test
@@ -256,6 +277,39 @@ class UpstreamClientRetryPolicyTest {
         assertEquals(2, calls.get())
     }
 
+    // UP-001 (review 2026-08-15): the pushback-arms-cooldown branch used to fire for ANY status
+    // carrying a long Retry-After, not just the rate-limit-adjacent ones — a 403 with Retry-After
+    // could arm the head-wide cooldown and synthesize 429s for every OTHER turn over an error that
+    // says nothing about rate limits. Paired with the 429/503 case below (isRetryableStatus's set).
+    @Test
+    fun `UP-001 - a non-retryable 403 with a long retry-after does not arm the shared cooldown`() = runTest {
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            respond("forbidden", HttpStatusCode.Forbidden, headersOf("Retry-After", "30"))
+        }
+        val client = clientOver(engine, clock = { 0L })
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(1, calls.get())
+        assertEquals(0L, client.rateLimitedForMs, "a 403 must never arm the shared rate-limit cooldown")
+        // proven not-wedged: the very next call reaches upstream immediately, no fail-fast
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(2, calls.get())
+    }
+
+    @Test
+    fun `UP-001 - a retryable 503 with a long retry-after DOES arm the shared cooldown`() = runTest {
+        val calls = AtomicInteger()
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            respond("busy", HttpStatusCode.ServiceUnavailable, headersOf("Retry-After", "30"))
+        }
+        val client = clientOver(engine, clock = { 0L })
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(1, calls.get())
+        assertTrue(client.rateLimitedForMs > 0L, "a retryable status must arm the shared cooldown, same as 429")
+    }
+
     @Test
     fun `clearRateLimitCooldown drops an armed horizon immediately`() = runTest {
         // NF-01: the restart escape hatch — HeadServer.startLocked() calls this.
@@ -275,19 +329,57 @@ class UpstreamClientRetryPolicyTest {
         assertEquals(2, calls.get())
     }
 
+    // HD-19 REWRITE. These three replaced two tests that asserted `minOf(200L shl it, 10_000L)`
+    // equals `minOf(200L shl it, 10_000L)` — the arithmetic was re-derived in the assertion because
+    // the only way to observe the shipped lambda was to sleep through it, so every other test in
+    // this file overrode `backoff` with a no-op and the production curve was covered NOWHERE. With
+    // the Waiter seam the shipped lambda runs and the wait it requested is the assertion; the tests
+    // are exact instead of tautological, and still cost no wall-clock time.
     @Test
-    fun `default backoff jitters within the capped exponential envelope`() {
-        // The default lambda is exercised via construction with real delays elsewhere; here we pin
-        // the envelope math the comment promises: base doubles from 200ms and caps at 10s.
-        val bases = (0..8).map { minOf(200L shl it, 10_000L) }
-        assertTrue(bases.first() == 200L && bases.max() == 10_000L)
+    fun `the shipped backoff curve doubles from 200ms inside its jitter band`() = runTest {
+        val waiter = RecordingWaiter()
+        val engine = MockEngine { respond("busy", HttpStatusCode.ServiceUnavailable, headersOf()) }
+        assertThrows<UpstreamFailed> { postOnce(realCurveClientOver(engine, waiter)) }
+        assertTrue(waiter.waits.size >= 2, "expected the retry loop to back off at least twice: ${waiter.waits}")
+        waiter.waits.forEachIndexed { attempt, waited ->
+            val base = minOf(200L shl attempt, 10_000L)
+            assertTrue(
+                waited >= (base * 0.9).toLong() && waited <= (base * 1.1).toLong(),
+                "attempt $attempt waited ${waited}ms, outside the +/-10% band around ${base}ms: ${waiter.waits}",
+            )
+        }
     }
 
     @Test
-    fun `dns backoff envelope pins 1s-2s-4s schedule`() {
-        // G14: DNS-class transport failures back off on their own curve — pin the literal math
-        // the dnsBackoff comment promises, same idiom as the generic-curve pin above.
-        val bases = (0..4).map { minOf(1_000L shl it, 4_000L) }
-        assertEquals(listOf(1_000L, 2_000L, 4_000L, 4_000L, 4_000L), bases)
+    fun `a parseable Retry-After is a FLOOR the curve cannot undercut`() = runTest {
+        // G3: minDelayMs rides in as a floor. 3s dwarfs attempt 0's ~200ms, so the floor must win
+        // exactly — the shipped lambda's `maxOf(jittered, minDelayMs)`, observed rather than restated.
+        val calls = AtomicInteger()
+        val waiter = RecordingWaiter()
+        val engine = MockEngine {
+            if (calls.incrementAndGet() == 1) {
+                respond("busy", HttpStatusCode.ServiceUnavailable, headersOf("Retry-After", "3"))
+            } else {
+                respond("fine", HttpStatusCode.OK, headersOf())
+            }
+        }
+        assertEquals("ok", postOnce(realCurveClientOver(engine, waiter)))
+        assertEquals(listOf(3_000L), waiter.waits)
+    }
+
+    @Test
+    fun `the shipped dns curve walks 1s-2s-4s inside its jitter band`() = runTest {
+        // G14: DNS-class transport failures run dnsBackoff, not the generic curve.
+        val waiter = RecordingWaiter()
+        val engine = MockEngine { throw UnresolvedAddressException() }
+        assertThrows<UnresolvedAddressException> { postOnce(realCurveClientOver(engine, waiter)) }
+        assertTrue(waiter.waits.size >= 2, "expected DNS retries to back off: ${waiter.waits}")
+        waiter.waits.forEachIndexed { attempt, waited ->
+            val base = minOf(1_000L shl attempt, 4_000L)
+            assertTrue(
+                waited >= (base * 0.9).toLong() && waited <= (base * 1.1).toLong(),
+                "dns attempt $attempt waited ${waited}ms, outside the +/-10% band around ${base}ms: ${waiter.waits}",
+            )
+        }
     }
 }

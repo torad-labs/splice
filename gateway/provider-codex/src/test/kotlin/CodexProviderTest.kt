@@ -16,11 +16,12 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
-import splice.core.parse.parseAnthropicBody
+import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.dialect.responses.ToolDeferralPolicy
 import splice.provider.codex.CodexProvider
+import splice.provider.codex.CodexQuirks
 import splice.spi.ProviderTuning
 import kotlin.time.Duration.Companion.seconds
 
@@ -54,7 +55,7 @@ class CodexProviderTest {
         replayReasoning = false,
         configEffort = "high",
         configSummary = "detailed",
-        quirks = CodexProvider.defaultQuirks().copy(toolSurface = toolSurface),
+        quirks = CodexQuirks().defaultQuirks().copy(toolSurface = toolSurface),
         accountIdHeader = accountIdHeader,
         log = log,
     )
@@ -76,7 +77,7 @@ class CodexProviderTest {
     }
 
     // A turn body with 1 builtin (eager) + 10 mcp-prefixed tools (deferrable at minDeferred=4).
-    private fun deferrableTurnBody() = parseAnthropicBody(
+    private fun deferrableTurnBody() = AnthropicParse.parseAnthropicBody(
         """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":1024,"system":"s",""" +
             """"tools":[{"name":"Read","input_schema":{"type":"object"}},$TEN_MCP_TOOLS],""" +
             """"messages":[{"role":"user","content":"hi"}]}""",

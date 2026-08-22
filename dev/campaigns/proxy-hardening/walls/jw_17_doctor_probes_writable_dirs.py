@@ -17,11 +17,16 @@ EXIT 0 = probed. EXIT 1 = gap open. --selftest = the POSITIVE CONTROL (C6).
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
-DOCTOR = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/DoctorCommand.kt"
-# The probe helper lives in its own file (DoctorCommand.kt is at the file function budget); the
+# HD-25: stateInfo and BOTH writableProbe call sites are inside daemonChecks, which moved out of
+# DoctorCommand.kt into the daemon-section collaborator when that file was decomposed (it was the
+# tree's worst concentration row at 8.10). Re-anchored onto the ONE file that now holds the call
+# sites, at the same single-file resolution; the PROBE half below is unmoved.
+DOCTOR = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/DoctorDaemonChecks.kt"
+# The probe helper lives in its own file (DoctorCommand.kt was at the file function budget); the
 # wall reads both so a legitimate split cannot read as a gap.
 PROBE = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/DoctorProbeWrite.kt"
 
@@ -29,7 +34,7 @@ PROBE = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/DoctorProbeWrite.kt"
 def detect(doctor: str | None) -> list[str]:
     """Pure detection. No I/O — the selftest feeds it directly."""
     if doctor is None:
-        return ["DoctorCommand.kt missing — refusing to pass vacuously"]
+        return ["DoctorDaemonChecks.kt missing — refusing to pass vacuously"]
     if "stateInfo" not in doctor:
         return ["doctor state section not found (shape changed?) — refusing to pass vacuously"]
     problems: list[str] = []
@@ -43,8 +48,27 @@ def detect(doctor: str | None) -> list[str]:
     return problems
 
 
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+_LINE_COMMENT = re.compile(r"//.*?$", re.M)
+_IMPORT_LINE = re.compile(r"^import .*$", re.M)
+
+
+def code_only(text: str | None) -> str | None:
+    """A mention is not a wiring: a token left behind in a `// TODO: restore ...` must not satisfy
+    this wall after the real call site is deleted. Same stripper cx_02/cx_09/cx_18 already carry.
+
+    Every assertion here is a REQUIRED token (a probe, a delete, an actionable fix) — this wall
+    carries no banned string — so BOTH readers are stripped. Stripping only ever makes a required
+    token harder to satisfy; the direction that must stay raw is a ban, and there is none."""
+    if text is None:
+        return None
+    stripped = _BLOCK_COMMENT.sub("", text)
+    stripped = _LINE_COMMENT.sub("", stripped)
+    return _IMPORT_LINE.sub("", stripped)
+
+
 def _read(p: pathlib.Path) -> str | None:
-    return p.read_text(encoding="utf-8") if p.exists() else None
+    return code_only(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
 OPEN_FIX = "stateInfo = listOf(state dir path only)"
@@ -63,7 +87,7 @@ def selftest() -> int:
     if not detect(CLOSED_FIX.replace('fix = "chmod u+rwx <dir>"', "")):
         fails.append("a fixless writability failure must be RED")
     if not detect(None):
-        fails.append("a missing DoctorCommand.kt must be RED, never a vacuous pass")
+        fails.append("a missing DoctorDaemonChecks.kt must be RED, never a vacuous pass")
     if fails:
         print("JW-17 SELFTEST FAIL:")
         for f in fails:

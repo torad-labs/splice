@@ -1,0 +1,47 @@
+id: kt-no-extension-functions
+valid:
+  # the foreign-receiver compliant form — receiver moved to the FIRST parameter, name unchanged.
+  - |
+    class Builder {
+        private fun putFunction(sink: JsonObjectBuilder, name: String, args: String) {
+            sink.put(name, args)
+        }
+    }
+  # the owned-receiver compliant form — a plain member of the type it always read.
+  - |
+    data class DaemonConfig(val foldMaxTier: Int? = null) {
+        internal fun putFoldOverrides(out: MutableMap<String, String>) {
+            foldMaxTier?.let { out["foldMaxTier"] = it.toString() }
+        }
+    }
+  # CALLING a third-party extension is untouched — only declarations carry a receiver_type field.
+  - 'fun tail(f: Flow<Int>, scope: CoroutineScope) = f.stateIn(scope)'
+  # the carve-out: an override of a foreign abstract extension member has no compliant spelling.
+  - |
+    internal class Registrar : CompilerPluginRegistrar() {
+        override fun ExtensionStorage.registerExtensions(configuration: CompilerConfiguration) {
+            FirExtensionRegistrarAdapter.registerExtension(Reg())
+        }
+    }
+invalid:
+  # the plain member extension — 26 of these were converted by HD-20.
+  - |
+    class Reader {
+        private fun StringBuilder.matchesAt(start: Int, end: Int, literal: String): Boolean =
+            this.length >= end
+    }
+  # a top-level extension, the shape the dormant rule was originally written for.
+  - 'private fun String.padBase64(): String = this'
+  # suspend + generic receiver — the regex the promoted matcher replaced needed a modifier
+  # enumeration and a dotted-name pattern to see this; the receiver FIELD sees it structurally.
+  - |
+    class Reader {
+        private suspend fun FlowCollector<JsonObject>.emitCompleteLines(buf: StringBuilder) {
+            emit(JsonObject(emptyMap()))
+        }
+    }
+  # a nullable receiver on an object member — still an extension declaration.
+  - |
+    object Scalars {
+        fun JsonElement?.strOrEmpty(): String = ""
+    }

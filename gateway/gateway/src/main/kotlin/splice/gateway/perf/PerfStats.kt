@@ -15,8 +15,9 @@ import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import splice.core.perf.PerfSnapshot
 import splice.core.util.AsyncFileIo
+import splice.core.util.Cancellables
 import splice.core.util.JsonlSink
-import splice.core.util.runCatchingCancellable
+import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -27,7 +28,12 @@ public data class PerfRowMeta(
     val compact: Boolean,
 )
 
-public class PerfStats(private val file: Path, private val clock: () -> Long = System::currentTimeMillis) {
+private const val DEFAULT_TAIL = 200
+
+// ~256 KiB of trailing JSONL bounds parse cost regardless of file age.
+private const val READ_TAIL_BYTES = 256 * 1024
+
+public class PerfStats(private val file: Path, private val clock: WallClock = WallClock(System::currentTimeMillis)) {
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -43,7 +49,7 @@ public class PerfStats(private val file: Path, private val clock: () -> Long = S
             snap.counters.forEach { (k, v) -> put(k, v) }
         }.toString()
         AsyncFileIo.submit {
-            runCatchingCancellable {
+            Cancellables.runCatchingCancellable {
                 Files.createDirectories(file.parent)
                 JsonlSink.appendLine(file, row)
             }
@@ -55,24 +61,17 @@ public class PerfStats(private val file: Path, private val clock: () -> Long = S
     public fun tailNumeric(tailN: Int = DEFAULT_TAIL): List<Map<String, Long>> {
         AsyncFileIo.drain()
         if (!Files.exists(file)) return emptyList()
-        val rows = runCatchingCancellable {
+        val rows = Cancellables.runCatchingCancellable {
             JsonlSink.readTail(file, READ_TAIL_BYTES).mapNotNull { line ->
-                runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
+                Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
             }
         }.getOrDefault(emptyList())
-        return rows.takeLast(tailN).map { it.numericFields() }
+        return rows.takeLast(tailN).map { numericFields(it) }
     }
 
-    private companion object {
-        const val DEFAULT_TAIL = 200
-
-        // ~256 KiB of trailing JSONL bounds parse cost regardless of file age.
-        const val READ_TAIL_BYTES = 256 * 1024
-
-        fun JsonObject.numericFields(): Map<String, Long> = buildMap {
-            this@numericFields.forEach { (k, v) ->
-                (v as? JsonPrimitive)?.longOrNull?.let { put(k, it) }
-            }
+    private fun numericFields(row: JsonObject): Map<String, Long> = buildMap {
+        row.forEach { (k, v) ->
+            (v as? JsonPrimitive)?.longOrNull?.let { put(k, it) }
         }
     }
 }

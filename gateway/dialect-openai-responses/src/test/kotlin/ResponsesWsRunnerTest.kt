@@ -18,7 +18,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.ValueSource
 import splice.core.auth.Credentials
-import splice.core.turn.ReasoningDisplay
+import splice.core.turn.ReasoningDisplayParser
 import splice.core.turn.TurnMeta
 import splice.dialect.responses.ResponsesRoundEnd
 import splice.dialect.responses.ResponsesWsRunner
@@ -33,7 +33,7 @@ private const val BODY = """{"model":"gpt-5.6-sol","input":[{"role":"user","cont
 
 private fun meta(session: String? = "sess-1", conversation: String? = "splice-abc") = TurnMeta(
     compact = false,
-    showReasoning = ReasoningDisplay.from("text"),
+    showReasoning = ReasoningDisplayParser.from("text"),
     stream = true,
     originalModel = "claude-codex--gpt-5.6-sol",
     upstreamModel = "gpt-5.6-sol",

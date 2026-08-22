@@ -21,7 +21,12 @@ import org.junit.jupiter.api.assertThrows
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.spi.ClientFrameEmitted
+import splice.spi.PostContext
+import splice.spi.ReissueRules
+import splice.spi.RetryNotice
 import splice.spi.StreamTornBeforeClient
+import splice.spi.TransportFailures
 import splice.spi.UpstreamClient
 import java.net.ConnectException
 import java.net.SocketException
@@ -37,6 +42,17 @@ class UpstreamClientTransportTest {
         override suspend fun refresh(): Credentials? = null
         override suspend fun describe(): AuthDescription = AuthDescription(true, "fake", emptyMap())
     }
+
+    private fun ctx(
+        onRetry: RetryNotice = RetryNotice {},
+        clientFrameEmitted: ClientFrameEmitted = ClientFrameEmitted { true },
+    ) = PostContext(
+        url = "https://api.example.test/v1",
+        auth = fakeAuth,
+        extraHeaders = { emptyMap() },
+        onRetry = onRetry,
+        clientFrameEmitted = clientFrameEmitted,
+    )
 
     private fun clientOver(
         engine: MockEngine,
@@ -61,11 +77,8 @@ class UpstreamClientTransportTest {
         }
         val retries = mutableListOf<String>()
         val out = clientOver(engine).post(
-            url = "https://api.example.test/v1",
-            bodyJson = "{}",
-            auth = fakeAuth,
-            extraHeaders = { emptyMap() },
-            onRetry = { retries.add(it) },
+            ctx(onRetry = { retries.add(it) }),
+            "{}",
         ) { "reached-block" }
         assertEquals("reached-block", out)
         assertEquals(3, calls.get())
@@ -87,10 +100,8 @@ class UpstreamClientTransportTest {
             backoff = { a, _ -> genericAttempts.add(a) },
             dnsBackoff = { a -> dnsAttempts.add(a) },
         ).post(
-            url = "https://api.example.test/v1",
-            bodyJson = "{}",
-            auth = fakeAuth,
-            extraHeaders = { emptyMap() },
+            ctx(),
+            "{}",
         ) { "reached-block" }
         assertEquals("reached-block", out)
         assertEquals(listOf(0, 1), dnsAttempts)
@@ -111,10 +122,8 @@ class UpstreamClientTransportTest {
             backoff = { a, _ -> genericAttempts.add(a) },
             dnsBackoff = { a -> dnsAttempts.add(a) },
         ).post(
-            url = "https://api.example.test/v1",
-            bodyJson = "{}",
-            auth = fakeAuth,
-            extraHeaders = { emptyMap() },
+            ctx(),
+            "{}",
         ) { "reached-block" }
         assertEquals("reached-block", out)
         assertEquals(listOf(0), dnsAttempts)
@@ -135,10 +144,8 @@ class UpstreamClientTransportTest {
             backoff = { a, _ -> genericAttempts.add(a) },
             dnsBackoff = { a -> dnsAttempts.add(a) },
         ).post(
-            url = "https://api.example.test/v1",
-            bodyJson = "{}",
-            auth = fakeAuth,
-            extraHeaders = { emptyMap() },
+            ctx(),
+            "{}",
         ) { "reached-block" }
         assertEquals("reached-block", out)
         assertEquals(listOf(0, 1), genericAttempts)
@@ -154,10 +161,8 @@ class UpstreamClientTransportTest {
         }
         assertThrows<ConnectException> {
             clientOver(engine).post(
-                url = "https://api.example.test/v1",
-                bodyJson = "{}",
-                auth = fakeAuth,
-                extraHeaders = { emptyMap() },
+                ctx(),
+                "{}",
             ) { "unreachable" }
         }
         assertEquals(3, calls.get()) // maxRetries attempts, then the real exception surfaces
@@ -172,10 +177,8 @@ class UpstreamClientTransportTest {
         }
         assertThrows<IllegalStateException> {
             clientOver(engine).post(
-                url = "https://api.example.test/v1",
-                bodyJson = "{}",
-                auth = fakeAuth,
-                extraHeaders = { emptyMap() },
+                ctx(),
+                "{}",
             ) { "unreachable" }
         }
         assertEquals(1, calls.get())
@@ -190,10 +193,8 @@ class UpstreamClientTransportTest {
         }
         assertThrows<ConnectException> {
             clientOver(engine).post(
-                url = "https://api.example.test/v1",
-                bodyJson = "{}",
-                auth = fakeAuth,
-                extraHeaders = { emptyMap() },
+                ctx(),
+                "{}",
             ) { throw ConnectException("mid-stream reset") } // retryable TYPE, but block owns it
         }
         assertEquals(1, calls.get())
@@ -212,12 +213,8 @@ class UpstreamClientTransportTest {
         }
         val retries = mutableListOf<String>()
         val out = clientOver(engine).post(
-            url = "https://api.example.test/v1",
-            bodyJson = "{}",
-            auth = fakeAuth,
-            extraHeaders = { emptyMap() },
-            onRetry = { retries.add(it) },
-            clientFrameEmitted = { false },
+            ctx(onRetry = { retries.add(it) }, clientFrameEmitted = { false }),
+            "{}",
         ) {
             if (blockCalls.incrementAndGet() <= 2) throw ConnectException("torn before first frame")
             "sentinel"
@@ -242,12 +239,8 @@ class UpstreamClientTransportTest {
         }
         val retries = mutableListOf<String>()
         val out = clientOver(engine).post(
-            url = "https://api.example.test/v1",
-            bodyJson = "{}",
-            auth = fakeAuth,
-            extraHeaders = { emptyMap() },
-            onRetry = { retries.add(it) },
-            clientFrameEmitted = { false },
+            ctx(onRetry = { retries.add(it) }, clientFrameEmitted = { false }),
+            "{}",
         ) {
             if (blockCalls.incrementAndGet() <= 2) {
                 throw StreamTornBeforeClient(ConnectException("torn before first frame"))
@@ -266,11 +259,8 @@ class UpstreamClientTransportTest {
         val engine = MockEngine { respond("ok-body", HttpStatusCode.OK, headersOf()) }
         assertThrows<ConnectException> {
             clientOver(engine).post(
-                url = "https://api.example.test/v1",
-                bodyJson = "{}",
-                auth = fakeAuth,
-                extraHeaders = { emptyMap() },
-                clientFrameEmitted = { false },
+                ctx(clientFrameEmitted = { false }),
+                "{}",
             ) {
                 blockCalls.incrementAndGet()
                 throw ConnectException("torn before first frame")
@@ -302,12 +292,8 @@ class UpstreamClientTransportTest {
         )
         assertThrows<ConnectException> {
             client.post(
-                url = "https://api.example.test/v1",
-                bodyJson = "{}",
-                auth = fakeAuth,
-                extraHeaders = { emptyMap() },
-                onRetry = { retries.add(it) },
-                clientFrameEmitted = { false },
+                ctx(onRetry = { retries.add(it) }, clientFrameEmitted = { false }),
+                "{}",
             ) {
                 now = 5_000 // the deadline has already passed by the time the tear is observed
                 throw ConnectException("torn before first frame")
@@ -324,11 +310,8 @@ class UpstreamClientTransportTest {
         val engine = MockEngine { respond("ok-body", HttpStatusCode.OK, headersOf()) }
         assertThrows<ConnectException> {
             clientOver(engine).post(
-                url = "https://api.example.test/v1",
-                bodyJson = "{}",
-                auth = fakeAuth,
-                extraHeaders = { emptyMap() },
-                clientFrameEmitted = { true }, // explicit: the hard no-retry-after-output case
+                ctx(clientFrameEmitted = { true }), // explicit: the hard no-retry-after-output case
+                "{}",
             ) {
                 blockCalls.incrementAndGet()
                 throw ConnectException("torn after a frame")
@@ -340,20 +323,20 @@ class UpstreamClientTransportTest {
     @Test
     fun `canReissueStream predicate requires handoff, no client frame, retryable transport class, and remaining budget`() {
         assertTrue(
-            UpstreamClient.canReissueStream(true, ConnectException("torn"), { false }, 0),
+            ReissueRules().canReissueStream(true, ConnectException("torn"), { false }, 0),
         )
         assertFalse(
-            UpstreamClient.canReissueStream(false, ConnectException("torn"), { false }, 0),
+            ReissueRules().canReissueStream(false, ConnectException("torn"), { false }, 0),
         )
         assertFalse(
-            UpstreamClient.canReissueStream(true, ConnectException("torn"), { true }, 0),
+            ReissueRules().canReissueStream(true, ConnectException("torn"), { true }, 0),
         )
         assertFalse(
-            UpstreamClient.canReissueStream(true, IllegalStateException("bug"), { false }, 0),
+            ReissueRules().canReissueStream(true, IllegalStateException("bug"), { false }, 0),
         )
         // budget spent — the literal 2 mirrors MAX_STREAM_REISSUES (kept private, like maxRetries).
         assertFalse(
-            UpstreamClient.canReissueStream(true, ConnectException("torn"), { false }, 2),
+            ReissueRules().canReissueStream(true, ConnectException("torn"), { false }, 2),
         )
     }
 
@@ -373,10 +356,8 @@ class UpstreamClientTransportTest {
             respond("ok", HttpStatusCode.OK, headersOf())
         }
         clientOver(engine).post(
-            url = "https://api.example.test/v1",
-            bodyJson = bodyJson,
-            auth = fakeAuth,
-            extraHeaders = { emptyMap() },
+            ctx(),
+            bodyJson,
         ) { "done" }
         assertNull(contentEncoding, "request body must not be content-encoded (no gzip)")
         assertArrayEquals(
@@ -397,11 +378,8 @@ class UpstreamClientTransportTest {
         }
         val retries = mutableListOf<String>()
         val out = clientOver(engine).post(
-            url = "https://api.example.test/v1",
-            bodyJson = "{}",
-            auth = fakeAuth,
-            extraHeaders = { emptyMap() },
-            onRetry = { retries.add(it) },
+            ctx(onRetry = { retries.add(it) }),
+            "{}",
         ) { "reached-block" }
         assertEquals("reached-block", out)
         assertEquals(2, retries.size)
@@ -418,11 +396,8 @@ class UpstreamClientTransportTest {
         }
         val retries = mutableListOf<String>()
         val out = clientOver(engine).post(
-            url = "https://api.example.test/v1",
-            bodyJson = "{}",
-            auth = fakeAuth,
-            extraHeaders = { emptyMap() },
-            onRetry = { retries.add(it) },
+            ctx(onRetry = { retries.add(it) }),
+            "{}",
         ) { "reached-block" }
         assertEquals("reached-block", out)
         assertEquals(1, retries.size)
@@ -442,11 +417,8 @@ class UpstreamClientTransportTest {
         }
         val retries = mutableListOf<String>()
         val out = clientOver(engine).post(
-            url = "https://api.example.test/v1",
-            bodyJson = "{}",
-            auth = fakeAuth,
-            extraHeaders = { emptyMap() },
-            onRetry = { retries.add(it) },
+            ctx(onRetry = { retries.add(it) }),
+            "{}",
         ) { "reached-block" }
         assertEquals("reached-block", out)
         assertEquals(1, retries.size)
@@ -455,18 +427,18 @@ class UpstreamClientTransportTest {
 
     @Test
     fun `retryable predicate walks the cause chain and excludes cancellation`() {
-        assertTrue(UpstreamClient.isRetryableTransport(UnresolvedAddressException()))
-        assertTrue(UpstreamClient.isRetryableTransport(RuntimeException(ConnectException("wrapped"))))
-        assertFalse(UpstreamClient.isRetryableTransport(IllegalStateException("plain")))
-        assertFalse(UpstreamClient.isRetryableTransport(RuntimeException(RuntimeException("no io below"))))
+        assertTrue(TransportFailures().isRetryableTransport(UnresolvedAddressException()))
+        assertTrue(TransportFailures().isRetryableTransport(RuntimeException(ConnectException("wrapped"))))
+        assertFalse(TransportFailures().isRetryableTransport(IllegalStateException("plain")))
+        assertFalse(TransportFailures().isRetryableTransport(RuntimeException(RuntimeException("no io below"))))
     }
 
     @Test
     fun `dns predicate matches only name-resolution failures`() {
-        assertTrue(UpstreamClient.isDnsFailureTransport(UnresolvedAddressException()))
-        assertTrue(UpstreamClient.isDnsFailureTransport(UnknownHostException()))
-        assertFalse(UpstreamClient.isDnsFailureTransport(ConnectException("refused")))
-        assertFalse(UpstreamClient.isDnsFailureTransport(SocketException("reset")))
-        assertTrue(UpstreamClient.isDnsFailureTransport(RuntimeException(UnknownHostException())))
+        assertTrue(TransportFailures().isDnsFailureTransport(UnresolvedAddressException()))
+        assertTrue(TransportFailures().isDnsFailureTransport(UnknownHostException()))
+        assertFalse(TransportFailures().isDnsFailureTransport(ConnectException("refused")))
+        assertFalse(TransportFailures().isDnsFailureTransport(SocketException("reset")))
+        assertTrue(TransportFailures().isDnsFailureTransport(RuntimeException(UnknownHostException())))
     }
 }

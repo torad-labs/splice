@@ -22,11 +22,8 @@ import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
 import splice.provider.codex.CodexAuthProvider
+import splice.provider.codex.CodexOAuth
 import splice.provider.codex.RefreshedTokens
-import splice.provider.codex.accountIdFromIdToken
-import splice.provider.codex.authJsonFromTokens
-import splice.provider.codex.buildAuthorizeUrl
-import splice.provider.codex.makePkce
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Base64
@@ -43,11 +40,12 @@ private fun jwt(payloadJson: String): String {
 
 class CodexAuthTest {
 
+    private val oauth = CodexOAuth()
     private val noEnv: (String) -> String? = { null }
 
     @Test
     fun `pkce - verifier and challenge are url-safe base64 without padding`() {
-        val p = makePkce()
+        val p = oauth.makePkce()
         assertTrue(p.verifier.matches(Regex("[A-Za-z0-9_-]+")))
         assertTrue(p.challenge.matches(Regex("[A-Za-z0-9_-]+")))
         assertFalse(p.verifier.contains("=") || p.challenge.contains("="))
@@ -55,7 +53,7 @@ class CodexAuthTest {
 
     @Test
     fun `authorize url - exact param order and percent-not-plus encoding`() {
-        val url = buildAuthorizeUrl(challenge = "CH", state = "ST", clientId = "cid", env = noEnv)
+        val url = oauth.buildAuthorizeUrl(challenge = "CH", state = "ST", clientId = "cid", env = noEnv)
         val query = url.substringAfter("?")
         val keys = query.split("&").map { it.substringBefore("=") }
         assertEquals(
@@ -75,14 +73,15 @@ class CodexAuthTest {
     @Test
     fun `jwt claim extraction pulls the chatgpt account id`() {
         val token = jwt("""{"email":"x@y.z","https://api.openai.com/auth":{"chatgpt_account_id":"acct-1234-5678"}}""")
-        assertEquals("acct-1234-5678", accountIdFromIdToken(token))
-        assertNull(accountIdFromIdToken("garbage"))
+        assertEquals("acct-1234-5678", oauth.accountIdFromIdToken(token))
+        assertNull(oauth.accountIdFromIdToken("garbage"))
     }
 
     @Test
     fun `auth json shape is codex-cli-compatible`() {
         val idToken = jwt("""{"https://api.openai.com/auth":{"chatgpt_account_id":"acct-9"}}""")
-        val obj = authJsonFromTokens(idToken, "access-1", "refresh-1", apiKey = "sk-x", nowIso = "2026-07-16T00:00:00Z")
+        val obj =
+            oauth.authJsonFromTokens(idToken, "access-1", "refresh-1", apiKey = "sk-x", nowIso = "2026-07-16T00:00:00Z")
         assertEquals("sk-x", obj["OPENAI_API_KEY"]?.jsonPrimitive?.content)
         val tokens = obj["tokens"]!!.jsonObject
         assertEquals("access-1", tokens["access_token"]?.jsonPrimitive?.content)

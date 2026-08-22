@@ -1,0 +1,89 @@
+// PORT-OF: splice/app/Daemon.kt (HeadBuildInputs.resolveHeadConfig/resolveProviderConfig/
+// modelOptionsCache, Daemon.providerContext) @ ed5c868 — invariants unchanged: declared data ->
+// the typed inputs a provider or launch spec needs, plus the per-head resolver that turns declared
+// topology into an effective one. providerContext moved out of Daemon alongside the two resolvers
+// it is the sole caller of, making this class the complete "declared data + effective per-head
+// config -> typed ProviderBuild" resolver its own KDoc already claimed to be.
+package splice.app.provider
+
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.put
+import splice.app.SignInPlanner
+import splice.core.config.ConfigService
+import splice.core.config.SpliceConfig
+import splice.core.topology.HeadConfig
+import splice.core.topology.ProviderConfig
+import splice.core.turn.WatchdogBudget
+import kotlin.time.Duration.Companion.milliseconds
+
+/**
+ * Declared data -> the typed inputs a provider or launch spec needs. Every member is a pure
+ * function of its arguments except [providerContext], which reads [config] against a head KEY —
+ * heads share one ConfigService (one JVM), so every value here must come from `getConfig(key)`.
+ */
+internal class HeadBuildInputs(
+    private val config: ConfigService,
+    private val signInPlanner: SignInPlanner,
+) {
+
+    internal fun resolveHeadConfig(
+        key: String,
+        head: HeadConfig,
+        provider: ProviderConfig,
+        cfg: SpliceConfig,
+    ): HeadConfig = when {
+        provider.auth.kind == CHATGPT_OAUTH -> head.copy(port = cfg.port, pinnedModel = cfg.pinnedModel)
+        provider.auth.kind == GROK_OAUTH || key.contains("grok", ignoreCase = true) ->
+            head.copy(port = cfg.grokPort, pinnedModel = cfg.grokModel)
+        else -> head
+    }
+
+    internal fun resolveProviderConfig(key: String, provider: ProviderConfig, cfg: SpliceConfig): ProviderConfig =
+        when {
+            provider.auth.kind == CHATGPT_OAUTH -> provider.copy(baseUrl = cfg.chatgptApiBase)
+            provider.auth.kind == GROK_OAUTH || key.contains("grok", ignoreCase = true) ->
+                provider.copy(baseUrl = cfg.xaiApiBase)
+            else -> provider
+        }
+
+    /** Pure roster -> dropdown-cache projection (the /model picker option list Claude Code caches
+     *  in .claude.json — every model with its label, description, and window, so all of them appear
+     *  in the picker, not just the pinned one). */
+    internal fun modelOptionsCache(providerCfg: ProviderConfig): JsonElement = buildJsonArray {
+        providerCfg.models.forEach { model ->
+            addJsonObject {
+                put("value", model.id)
+                put("label", model.label.ifEmpty { model.id })
+                put("description", model.description.ifEmpty { model.label.ifEmpty { model.id } })
+                put("context_window", model.contextWindow)
+            }
+        }
+    }
+
+    /** Resolve one head's build inputs against ITS OWN effective config. Heads share a single
+     *  ConfigService (one JVM), so every value here must come from `getConfig(key)` — reading the
+     *  global view is what made a knob tuned for one upstream govern all of them. */
+    // `internal`, not private: DaemonPerHeadConfigTest calls this directly (via Daemon.buildInputs)
+    // to pin that each head resolves against getConfig(key). No production caller outside
+    // Daemon.start() (2026-07-26 review; moved out of Daemon in the 2026-08-17 decomposition).
+    internal fun providerContext(key: String, head: HeadConfig, providerCfg: ProviderConfig): ProviderBuild {
+        val headCfg = config.getConfig(key)
+        val resolvedHead = resolveHeadConfig(key, head, providerCfg, headCfg)
+        val resolvedProvider = resolveProviderConfig(key, providerCfg, headCfg)
+        return ProviderBuild(
+            key = key,
+            head = resolvedHead,
+            providerCfg = resolvedProvider,
+            catalog = resolvedProvider.catalogFor(resolvedHead, headCfg.contextWindowOverride),
+            watchdog = WatchdogBudget(
+                firstByteTimeout = headCfg.firstByteTimeoutMs.milliseconds,
+                streamIdle = headCfg.streamIdleMs.milliseconds,
+                totalCap = headCfg.upstreamTimeoutMs.milliseconds,
+            ),
+            cfg = headCfg,
+            loginCommand = signInPlanner.signInPlan(resolvedProvider, resolvedHead, key).command,
+        )
+    }
+}

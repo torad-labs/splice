@@ -5,7 +5,8 @@
 // anthropicUpstream + claudeCredentialsPath keys (nothing read them; claudithos leftovers).
 package splice.core.config
 
-public enum class KnobKind { STRING, NUMBER, BOOL }
+// KnobKind + knobsByKey + restartRequiredKnobKeys live in KnobKind.kt
+// (concentration, 2026-08-19).
 
 // HONESTY (audit 2026-07-18): nearly every knob is SNAPSHOTTED at Daemon.start into constructed
 // objects (providers, watchdog budgets, auth caches, warn thresholds) — so nearly every knob is
@@ -221,20 +222,8 @@ public enum class Knob(
         3096L,
         restartRequired = true,
     ),
-    USAGE_WARN_PCT(
-        "usageWarnPct",
-        KnobKind.NUMBER,
-        listOf("SPLICE_USAGE_WARN_PCT"),
-        80L,
-        restartRequired = true,
-    ),
-    USAGE_WARN_TOKENS_5H(
-        "usageWarnTokens5h",
-        KnobKind.NUMBER,
-        listOf("SPLICE_USAGE_WARN_TOKENS_5H"),
-        0L,
-        restartRequired = true,
-    ),
+    USAGE_WARN_PCT("usageWarnPct", KnobKind.NUMBER, listOf("SPLICE_USAGE_WARN_PCT"), 80L, restartRequired = true),
+    USAGE_WARN_TOKENS_5H("usageWarnTokens5h", KnobKind.NUMBER, listOf("SPLICE_USAGE_WARN_TOKENS_5H"), 0L, restartRequired = true),
 
     // Extra trusted roots (colon-separated absolute paths) for the statusline git-branch lookup.
     // Default empty: only $HOME and /tmp are trusted, so repos elsewhere (devcontainer /workspace,
@@ -246,10 +235,4 @@ public enum class Knob(
         listOf("CLAUDEX_STATUSLINE_GIT_ROOTS"),
         "",
     ),
-    ;
-
-    public companion object {
-        public val byKey: Map<String, Knob> = entries.associateBy { it.key }
-        public val restartRequiredKeys: List<String> = entries.filter { it.restartRequired }.map { it.key }
-    }
 }

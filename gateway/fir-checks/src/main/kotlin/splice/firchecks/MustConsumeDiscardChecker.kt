@@ -64,29 +64,33 @@ private object MustConsumeErrorMessages : BaseDiagnosticRendererFactory() {
     }
 }
 
+// FILE SCOPE ON PURPOSE: a singleton via the companion before the migration; a member val here
+// would recompute it on every MustConsumeDiscardChecker instantiation instead of once.
+private val MUST_CONSUME_ID: ClassId = ClassId.topLevel(FqName("splice.core.annotation.MustConsume"))
+
 internal class MustConsumeDiscardChecker : FirFunctionCallChecker(MppCheckerKind.Common) {
     context(context: CheckerContext, reporter: DiagnosticReporter)
     override fun check(expression: FirFunctionCall) {
-        if (!expression.hasMustConsumeResult(context.session)) return
-        if (!expression.isDiscarded(context)) return
+        if (!hasMustConsumeResult(expression, context.session)) return
+        if (!isDiscarded(expression, context)) return
         reporter.reportOn(expression.source, MustConsumeErrors.DISCARDED_MUST_CONSUME_VALUE, context)
     }
 
-    private fun FirFunctionCall.hasMustConsumeResult(session: FirSession): Boolean {
-        val callee = calleeReference.toResolvedNamedFunctionSymbol()
+    private fun hasMustConsumeResult(call: FirFunctionCall, session: FirSession): Boolean {
+        val callee = call.calleeReference.toResolvedNamedFunctionSymbol()
         if (callee != null && callee.hasAnnotation(MUST_CONSUME_ID, session)) return true
-        val returnClass = resolvedType.toRegularClassSymbol(session)
+        val returnClass = call.resolvedType.toRegularClassSymbol(session)
         return returnClass != null && returnClass.hasAnnotation(MUST_CONSUME_ID, session)
     }
 
-    /** Walks outward from the call, [child] carrying the node whose value is the call's value so far.
+    /** Walks outward from [call], [child] carrying the node whose value is the call's value so far.
      *  Each step either settles the verdict ([stepVerdict] non-null) or dissolves one transparent
      *  wrapper and climbs on. Runs on `containingElements`, ordered outermost-first; the walk starts
      *  just above the call itself (which the visitor pushes as the innermost element). */
-    private fun FirFunctionCall.isDiscarded(context: CheckerContext): Boolean {
+    private fun isDiscarded(call: FirFunctionCall, context: CheckerContext): Boolean {
         val path = context.containingElements
-        val start = path.indexOfLast { it === this }.let { if (it < 0) path.size else it } - 1
-        var child: FirElement = this
+        val start = path.indexOfLast { it === call }.let { if (it < 0) path.size else it } - 1
+        var child: FirElement = call
         for (index in start downTo 0) {
             stepVerdict(path[index], child)?.let { return it }
             child = path[index]
@@ -138,9 +142,5 @@ internal class MustConsumeDiscardChecker : FirFunctionCallChecker(MppCheckerKind
         is FirSafeCallExpression -> parent.selector === child
         is FirElvisExpression -> parent.lhs === child || parent.rhs === child
         else -> false
-    }
-
-    private companion object {
-        val MUST_CONSUME_ID: ClassId = ClassId.topLevel(FqName("splice.core.annotation.MustConsume"))
     }
 }

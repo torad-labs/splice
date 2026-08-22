@@ -24,42 +24,48 @@ private const val CRITICAL_PCT = 98.0
 private const val DEFAULT_WARN_PCT = 80
 private const val FULL_PCT = 100.0
 
-// the tier cascade is the ported contract: ratelimit headers first, then the 5h-token fallback,
-// then the inert "ok". Each tier returns null to defer to the next.
-public fun computeUsageWarn(
-    outputTokens5h: Long = 0,
-    ratelimit: RateLimitState? = null,
-    warnPct: Int = DEFAULT_WARN_PCT,
-    warnTokens5h: Long = 0,
-): UsageWarn {
-    val pctThreshold = if (warnPct > 0) warnPct else DEFAULT_WARN_PCT
-    return ratelimitTierWarn(ratelimit, pctThreshold)
-        ?: tokens5hTierWarn(outputTokens5h, warnTokens5h, pctThreshold)
-        ?: UsageWarn("ok", 0, "none", null)
-}
+/** The tier cascade, as a named object since the 2026-08-16 style migration (HD-M8) — PURE and
+ *  stateless, exactly as the ported contract requires; the statusline endpoint and the control-server
+ *  usage API still share THIS logic and never fork it. */
+public object UsageWarnPolicy {
 
-// ratelimit headers are the real signal. Null when the header pair is absent/unusable so the
-// caller falls through to the next tier.
-private fun ratelimitTierWarn(ratelimit: RateLimitState?, pctThreshold: Int): UsageWarn? {
-    val limit = ratelimit?.limitTokens?.takeIf { it > 0 } ?: return null
-    val remaining = ratelimit.remainingTokens ?: return null
-    val usedPct = ((1.0 - remaining.toDouble() / limit) * FULL_PCT).coerceIn(0.0, FULL_PCT)
-    val level = when {
-        remaining <= 0 || usedPct >= CRITICAL_PCT -> "critical"
-        usedPct >= pctThreshold -> "warn"
-        else -> "ok"
+    // the tier cascade is the ported contract: ratelimit headers first, then the 5h-token fallback,
+    // then the inert "ok". Each tier returns null to defer to the next.
+    public fun computeUsageWarn(
+        outputTokens5h: Long = 0,
+        ratelimit: RateLimitState? = null,
+        warnPct: Int = DEFAULT_WARN_PCT,
+        warnTokens5h: Long = 0,
+    ): UsageWarn {
+        val pctThreshold = if (warnPct > 0) warnPct else DEFAULT_WARN_PCT
+        return ratelimitTierWarn(ratelimit, pctThreshold)
+            ?: tokens5hTierWarn(outputTokens5h, warnTokens5h, pctThreshold)
+            ?: UsageWarn("ok", 0, "none", null)
     }
-    return UsageWarn(level, usedPct.roundToInt(), "ratelimit", ratelimit.resetTokens)
-}
 
-// the 5h output-token count is the fallback (warnTokens5h = 0 disables it). Null defers to "ok".
-private fun tokens5hTierWarn(outputTokens5h: Long, warnTokens5h: Long, pctThreshold: Int): UsageWarn? {
-    if (warnTokens5h <= 0) return null
-    val usedPct = ((outputTokens5h.toDouble() / warnTokens5h) * FULL_PCT).coerceAtMost(FULL_PCT).roundToInt()
-    val level = when {
-        outputTokens5h >= warnTokens5h -> "critical"
-        usedPct >= pctThreshold -> "warn"
-        else -> "ok"
+    // ratelimit headers are the real signal. Null when the header pair is absent/unusable so the
+    // caller falls through to the next tier.
+    private fun ratelimitTierWarn(ratelimit: RateLimitState?, pctThreshold: Int): UsageWarn? {
+        val limit = ratelimit?.limitTokens?.takeIf { it > 0 } ?: return null
+        val remaining = ratelimit.remainingTokens ?: return null
+        val usedPct = ((1.0 - remaining.toDouble() / limit) * FULL_PCT).coerceIn(0.0, FULL_PCT)
+        val level = when {
+            remaining <= 0 || usedPct >= CRITICAL_PCT -> "critical"
+            usedPct >= pctThreshold -> "warn"
+            else -> "ok"
+        }
+        return UsageWarn(level, usedPct.roundToInt(), "ratelimit", ratelimit.resetTokens)
     }
-    return UsageWarn(level, usedPct, "tokens5h", null)
+
+    // the 5h output-token count is the fallback (warnTokens5h = 0 disables it). Null defers to "ok".
+    private fun tokens5hTierWarn(outputTokens5h: Long, warnTokens5h: Long, pctThreshold: Int): UsageWarn? {
+        if (warnTokens5h <= 0) return null
+        val usedPct = ((outputTokens5h.toDouble() / warnTokens5h) * FULL_PCT).coerceAtMost(FULL_PCT).roundToInt()
+        val level = when {
+            outputTokens5h >= warnTokens5h -> "critical"
+            usedPct >= pctThreshold -> "warn"
+            else -> "ok"
+        }
+        return UsageWarn(level, usedPct, "tokens5h", null)
+    }
 }

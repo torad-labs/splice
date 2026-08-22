@@ -13,7 +13,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import splice.core.usage.RateLimitState
-import splice.core.usage.computeUsageWarn
+import splice.core.usage.UsageWarnPolicy
 import java.util.concurrent.TimeUnit
 
 public class StatuslineRenderer(
@@ -37,6 +37,8 @@ public class StatuslineRenderer(
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    private val blob = StatuslineJson()
+
     public fun render(stdinJson: String, usage: HeadUsageSource?, warnPct: Int, warnTokens5h: Long): String {
         val root = runCatching { json.parseToJsonElement(stdinJson).jsonObject }.getOrNull() ?: return dim(label)
         val segments = listOfNotNull(
@@ -50,16 +52,16 @@ public class StatuslineRenderer(
     }
 
     private fun modelSegment(root: JsonObject): String? {
-        val model = obj(root, "model") ?: return null
-        val name = str(model["display_name"]) ?: str(model["id"]) ?: return null
+        val model = blob.obj(root, "model") ?: return null
+        val name = blob.str(model["display_name"]) ?: blob.str(model["id"]) ?: return null
         return "$BOLD$CYAN●$RESET $BOLD$name$RESET"
     }
 
     private fun contextSegment(root: JsonObject): String? {
-        val cw = obj(root, "context_window") ?: return null
-        val size = num(cw["context_window_size"]) ?: 0
+        val cw = blob.obj(root, "context_window") ?: return null
+        val size = blob.num(cw["context_window_size"]) ?: 0
         val used = usedTokens(cw)
-        val pct = num(cw["used_percentage"])?.toInt() ?: if (size > 0) (used * PERCENT / size).toInt() else 0
+        val pct = blob.num(cw["used_percentage"])?.toInt() ?: if (size > 0) (used * PERCENT / size).toInt() else 0
         val color = when {
             pct >= CTX_CRITICAL_PCT -> RED
             pct >= CTX_WARN_PCT -> YELLOW
@@ -70,14 +72,14 @@ public class StatuslineRenderer(
     }
 
     private fun cacheSegment(root: JsonObject): String? {
-        val cu = obj(obj(root, "context_window"), "current_usage") ?: return null
+        val cu = blob.obj(blob.obj(root, "context_window"), "current_usage") ?: return null
         val hit = cacheHitPct(cu) ?: return null
         return "${cacheColor(hit)}⚡ $hit%$RESET"
     }
 
     private fun cacheHitPct(cu: JsonObject): Int? {
-        val read = num(cu["cache_read_input_tokens"]) ?: 0
-        val total = (num(cu["input_tokens"]) ?: 0) + read + (num(cu["cache_creation_input_tokens"]) ?: 0)
+        val read = blob.num(cu["cache_read_input_tokens"]) ?: 0
+        val total = (blob.num(cu["input_tokens"]) ?: 0) + read + (blob.num(cu["cache_creation_input_tokens"]) ?: 0)
         return if (total <= 0) null else (read * PERCENT / total).toInt()
     }
 
@@ -93,7 +95,7 @@ public class StatuslineRenderer(
         val ratelimit = snapshot.ratelimit?.let {
             RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens)
         }
-        val warn = computeUsageWarn(snapshot.outputTokens5h, ratelimit, warnPct, warnTokens5h)
+        val warn = UsageWarnPolicy.computeUsageWarn(snapshot.outputTokens5h, ratelimit, warnPct, warnTokens5h)
         return when (warn.level) {
             "critical" -> "$RED⚠ ${warn.pct}%$RESET"
             "warn" -> "$YELLOW⚠ ${warn.pct}%$RESET"
@@ -102,7 +104,9 @@ public class StatuslineRenderer(
     }
 
     private fun locationSegment(root: JsonObject): String? {
-        val cwd = str(obj(root, "workspace")?.get("current_dir")) ?: str(root["cwd"]) ?: return null
+        val cwd = blob.str(blob.obj(root, "workspace")?.get("current_dir"))
+            ?: blob.str(root["cwd"])
+            ?: return null
         val base = cwd.trim('/').substringAfterLast('/').ifEmpty { return null }
         // Only git when cwd RESOLVES to a real directory under the user home (or /tmp) — never
         // exec git -C against an attacker-chosen path from unauthenticated /statusline. Run git in
@@ -116,10 +120,10 @@ public class StatuslineRenderer(
     /** current_usage.* is the correct per-turn count on every version; total_input_tokens is the
      * pre-2.1.132 fallback. */
     private fun usedTokens(cw: JsonObject): Long {
-        val cu = obj(cw, "current_usage") ?: return num(cw["total_input_tokens"]) ?: 0
-        return (num(cu["input_tokens"]) ?: 0) +
-            (num(cu["cache_read_input_tokens"]) ?: 0) +
-            (num(cu["cache_creation_input_tokens"]) ?: 0)
+        val cu = blob.obj(cw, "current_usage") ?: return blob.num(cw["total_input_tokens"]) ?: 0
+        return (blob.num(cu["input_tokens"]) ?: 0) +
+            (blob.num(cu["cache_read_input_tokens"]) ?: 0) +
+            (blob.num(cu["cache_creation_input_tokens"]) ?: 0)
     }
 
     /** The symlink-RESOLVED absolute directory if it lies under $HOME, /tmp, or an operator-trusted
@@ -145,27 +149,34 @@ public class StatuslineRenderer(
         process.inputStream.readBytes().decodeToString().trim()
     }.getOrDefault("")
 
-    private companion object {
-        fun obj(parent: JsonObject?, key: String): JsonObject? = parent?.get(key) as? JsonObject
-        fun str(element: JsonElement?): String? = (element as? JsonPrimitive)?.content?.takeIf { it.isNotEmpty() }
-        fun num(element: JsonElement?): Long? = (element as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong()
-        fun fmtK(n: Long): String = if (n >= K) "${n / K}k" else n.toString()
-        fun dim(s: String) = "$DIM$s$RESET"
+    private fun fmtK(n: Long): String = if (n >= K) "${n / K}k" else n.toString()
 
-        const val RESET = "[0m"
-        const val DIM = "[2m"
-        const val BOLD = "[1m"
-        const val CYAN = "[36m"
-        const val GREEN = "[32m"
-        const val YELLOW = "[33m"
-        const val RED = "[31m"
-        const val SEPARATOR = "[2m   [0m"
-        const val PERCENT = 100
-        const val CTX_CRITICAL_PCT = 85
-        const val CTX_WARN_PCT = 60
-        const val CACHE_GOOD_PCT = 70
-        const val CACHE_OK_PCT = 40
-        const val K = 1000
-        const val GIT_TIMEOUT_MS = 200L
-    }
+    private fun dim(s: String) = "$DIM$s$RESET"
 }
+
+// The stdin-blob JSON adapter, split out so StatuslineRenderer stays inside detekt's per-class
+// function budget: the renderer holds 11 + fmtK + dim = 13 of 15, and folding obj/str/num back in
+// makes 16.
+private class StatuslineJson {
+    fun obj(parent: JsonObject?, key: String): JsonObject? = parent?.get(key) as? JsonObject
+    fun str(element: JsonElement?): String? = (element as? JsonPrimitive)?.content?.takeIf { it.isNotEmpty() }
+    fun num(element: JsonElement?): Long? = (element as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong()
+}
+
+// StatuslineRenderer's companion constants at their sanctioned file-scope home. The ANSI values
+// carry raw ESC bytes and were moved verbatim — only the modifier and the indentation changed.
+private const val RESET = "[0m"
+private const val DIM = "[2m"
+private const val BOLD = "[1m"
+private const val CYAN = "[36m"
+private const val GREEN = "[32m"
+private const val YELLOW = "[33m"
+private const val RED = "[31m"
+private const val SEPARATOR = "[2m   [0m"
+private const val PERCENT = 100
+private const val CTX_CRITICAL_PCT = 85
+private const val CTX_WARN_PCT = 60
+private const val CACHE_GOOD_PCT = 70
+private const val CACHE_OK_PCT = 40
+private const val K = 1000
+private const val GIT_TIMEOUT_MS = 200L

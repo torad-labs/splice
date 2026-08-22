@@ -6,7 +6,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.persistentLogger
+import splice.app.DaemonProcess
 import splice.core.util.AsyncFileIo
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
@@ -17,6 +17,8 @@ import java.util.concurrent.TimeUnit
 
 class MainTest {
 
+    private val process = DaemonProcess()
+
     /** The file lane is one FIFO thread: a latch task submitted after N lines runs after them. */
     private fun drain() {
         val latch = CountDownLatch(1)
@@ -26,7 +28,7 @@ class MainTest {
 
     @Test
     fun `rotates at the cap - one rolled generation`(@TempDir tmp: Path) {
-        val log = persistentLogger(tmp, maxBytes = 200)
+        val log = process.persistentLogger(tmp, maxBytes = 200)
         repeat(10) { log("x".repeat(60)) }
         drain()
         assertTrue(Files.exists(tmp.resolve("daemon.log.1")), "rotation past the cap must roll")
@@ -35,7 +37,7 @@ class MainTest {
 
     @Test
     fun `a failed rotate reconciles and the NEXT line is written - SH-14`(@TempDir tmp: Path) {
-        val log = persistentLogger(tmp, maxBytes = 100)
+        val log = process.persistentLogger(tmp, maxBytes = 100)
         log("A".repeat(120))
         drain() // written is now past the cap
         // External logrotate: the file vanishes, so the pending rotate's Files.move throws.

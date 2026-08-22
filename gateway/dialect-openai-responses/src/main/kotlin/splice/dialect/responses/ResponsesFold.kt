@@ -19,19 +19,19 @@ import splice.spi.FoldRound
 
 /** Operator-tunable reasoning-continuation policy (threaded from config like mirror_reasoning). */
 public data class FoldConfig(
-    /** Upstream models that exhibit the 518n-2 truncation. Default luna/terra/5.5 — NOT sol. */
+    /** Upstream models that exhibit the 518n-2 truncation — luna/terra/5.5, NOT sol. The
+     *  operator-tunable default lives in Knob.FOLD_REASONING_MODELS. */
     val models: Set<String>,
     val maxContinue: Int = DEFAULT_MAX_CONTINUE,
     val markerText: String = DEFAULT_MARKER_TEXT,
     val maxTierN: Int = DEFAULT_MAX_TIER_N,
-) {
-    public companion object {
-        public const val DEFAULT_MAX_CONTINUE: Int = 3
-        public const val DEFAULT_MAX_TIER_N: Int = 6
-        public const val DEFAULT_MARKER_TEXT: String = "Continue thinking..."
-        public val DEFAULT_MODELS: Set<String> = setOf("gpt-5.6-luna", "gpt-5.6-terra", "gpt-5.5")
-    }
-}
+)
+
+// The FoldConfig defaults, at file scope because Kotlin main sources carry no `companion` blocks.
+// Same names, same values, same public visibility — a consumer only drops the `FoldConfig.` prefix.
+public const val DEFAULT_MAX_CONTINUE: Int = 3
+public const val DEFAULT_MAX_TIER_N: Int = 6
+public const val DEFAULT_MARKER_TEXT: String = "Continue thinking..."
 
 /**
  * The codex 518n-2 detector + continuation-request builder. One per fold-eligible turn; the gateway
@@ -42,8 +42,10 @@ public data class FoldConfig(
  */
 public class ResponsesFoldController(
     private val config: FoldConfig,
-    private val decodeReasoningEnvelope: (String) -> JsonObject?,
+    private val decodeReasoningEnvelope: ReasoningEnvelopeDecoder,
 ) : FoldController {
+
+    private val continuation = ResponsesContinuation()
 
     override fun continuation(round: FoldRound): JsonObject? {
         if (!shouldContinue(round)) return null
@@ -59,8 +61,17 @@ public class ResponsesFoldController(
             round.roundIndex < config.maxContinue
     }
 
+    /** The exact 518n-2 truncation fingerprint (516/1034/1552/...). An instance member rather than
+     *  the companion function it used to be (Kotlin main sources carry no `companion` blocks);
+     *  reads only its argument. */
+    public fun isTruncationFingerprint(reasoningTokens: Long): Boolean =
+        reasoningTokens > 0 && (reasoningTokens + FINGERPRINT_OFFSET) % FOLD_PERIOD == 0L
+
+    /** Tier n for a fingerprint-matching count (516→1, 1034→2, ...). */
+    public fun tierOf(reasoningTokens: Long): Long = (reasoningTokens + FINGERPRINT_OFFSET) / FOLD_PERIOD
+
     private fun continuationBody(previous: JsonObject, replayItems: List<JsonObject>): JsonObject =
-        continuationRequest(previous, replayItems + listOf(continuationMarker()))
+        continuation.continuationRequest(previous, replayItems + listOf(continuationMarker()))
 
     // A hidden phase:commentary assistant message — the codex-rs / CodexCont / codexcomp nudge.
     // It ALSO satisfies the Responses "reasoning item needs a following item" constraint.
@@ -69,34 +80,36 @@ public class ResponsesFoldController(
         put("phase", "commentary")
         put("content", config.markerText)
     }
-
-    public companion object {
-        // reasoning_tokens == 518*n - 2  ⇔  (reasoning_tokens + 2) % 518 == 0, reasoning_tokens > 0.
-        private const val FOLD_PERIOD = 518L
-        private const val FINGERPRINT_OFFSET = 2L
-
-        /** The exact 518n-2 truncation fingerprint (516/1034/1552/...). */
-        public fun isTruncationFingerprint(reasoningTokens: Long): Boolean =
-            reasoningTokens > 0 && (reasoningTokens + FINGERPRINT_OFFSET) % FOLD_PERIOD == 0L
-
-        /** Tier n for a fingerprint-matching count (516→1, 1034→2, ...). */
-        public fun tierOf(reasoningTokens: Long): Long = (reasoningTokens + FINGERPRINT_OFFSET) / FOLD_PERIOD
-    }
 }
 
-/** DTO-faithful continuation shared by fold and re-anchor: decode the prior request, extend ONLY
- *  its `input` with [extraItems], re-encode through the same closed serializer. No request FIELD
- *  is added — the #924 closed DTO is untouched, so byte-identity off both paths is trivial.
- *  The summary request RIDES ALONG on continuations by design (operator call 2026-07-26: "I want
- *  to always see the reasoning, detailed"): the duplicated sections that the re-request provokes
- *  are suppressed turn-scoped in the stream translator (SharedSummaryParts) — exact repeats of a
- *  section already emitted this turn never reach the client; every genuinely-new section does. */
-internal fun continuationRequest(previous: JsonObject, extraItems: List<JsonObject>): JsonObject {
-    val base = responsesRequestJson.decodeFromJsonElement(ResponsesRequest.serializer(), previous)
-    val nextInput = buildJsonArray {
-        base.input.forEach { add(it) }
-        extraItems.forEach { add(it) }
+// reasoning_tokens == 518*n - 2  ⇔  (reasoning_tokens + 2) % 518 == 0, reasoning_tokens > 0.
+private const val FOLD_PERIOD = 518L
+private const val FINGERPRINT_OFFSET = 2L
+
+/**
+ * DTO-faithful continuation shared by fold, re-anchor and tool-search: decode the prior request,
+ * extend ONLY its `input` with [continuationRequest]'s extra items, re-encode through the same
+ * closed serializer. No request FIELD is added — the #924 closed DTO is untouched, so byte-identity
+ * off every path is trivial.
+ *
+ * A type rather than the file-level function it used to be (Kotlin main sources carry no top-level
+ * functions); the member keeps its old name and argument list, so each of the three call sites only
+ * gained a receiver.
+ */
+internal class ResponsesContinuation {
+
+    /** The summary request RIDES ALONG on continuations by design (operator call 2026-07-26: "I
+     *  want to always see the reasoning, detailed"): the duplicated sections that the re-request
+     *  provokes are suppressed turn-scoped in the stream translator (SharedSummaryParts) — exact
+     *  repeats of a section already emitted this turn never reach the client; every genuinely-new
+     *  section does. */
+    fun continuationRequest(previous: JsonObject, extraItems: List<JsonObject>): JsonObject {
+        val base = responsesRequestJson.decodeFromJsonElement(ResponsesRequest.serializer(), previous)
+        val nextInput = buildJsonArray {
+            base.input.forEach { add(it) }
+            extraItems.forEach { add(it) }
+        }
+        val next = base.copy(input = nextInput)
+        return responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), next) as JsonObject
     }
-    val next = base.copy(input = nextInput)
-    return responsesRequestJson.encodeToJsonElement(ResponsesRequest.serializer(), next) as JsonObject
 }

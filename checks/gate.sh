@@ -68,6 +68,21 @@ run "catalog metadata sync" python3 checks/catalog-metadata-sync.py
 run "catalog metadata selftest" bash checks/catalog-metadata-selftest.sh
 run "gradle clean check" bash -c 'cd gateway && ./gradlew clean check'
 run "ast-grep walls" npm run --silent gate:rules
+# The walls leg above proves the routed rules pass; it cannot prove they are ALL routed. .rules/kotlin
+# sat in the tree unreferenced for a month reporting zero findings, because ast-grep never errors on a
+# rule directory nobody named. This leg is that missing half — completeness, not conformance.
+run "rule routing"   bash checks/rule-routing.sh
+# checks/concentration.py — the decomposition campaign's own oracle — was itself the thing the leg
+# above exists to catch: referenced by nothing but its ledger, so this gate printed PASS while
+# saying nothing about concentration and every ratio in the campaign was advisory. Wired 2026-08-18
+# as a RATCHET, not as `--max-ratio 1.8`: the tree-wide gate is red on 42 files, and a leg that
+# lands red is a leg that gets weakened within a day. The counts may not rise; the debt prints.
+run "concentration"  npm run --silent gate:concentration
+# Same defence-in-depth idiom as the catalog and secret-scan selftests above and below: the leg
+# guards the tree, this canary guards the LEG. It shipped without one, and that is precisely why a
+# routing guard defeated by a single `#` survived into the branch — its red-proofs were hand-run
+# transcripts in a ledger note, so nothing re-ran them. Both of those bypasses are fixtures now.
+run "concentration selftest" bash checks/concentration-selftest.sh
 run "hook tests"     npm run --silent test:hooks
 # Campaign enforcement, BLOCKING half only (C1/C2/C3/C5/C6/C7/C9): a wall that lies, a status that
 # lies, a fence collision, or a broken law are never acceptable. The ADVISORY half (C4 unwalled /

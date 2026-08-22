@@ -12,6 +12,7 @@ package splice.spi
 
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.suspendCancellableCoroutine
+import splice.core.util.ElapsedClock
 import splice.core.util.MonoClock
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
@@ -19,11 +20,26 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
+/**
+ * A concurrency limit READ FRESH at every admission decision, never captured at construction.
+ *
+ * That freshness is the port's entire reason to exist and the reason kotlinx `Semaphore` is banned
+ * in [InflightGate]: a live `PATCH` of `maxInflight` must change the next admission without a head
+ * restart, and a semaphore cannot hot-resize. `0` means unlimited, the same convention for both
+ * limits.
+ *
+ * Distinct from a GAUGE (`ControlServer.failedHeads`), which is also `() -> Int` but reports what
+ * IS rather than bounding what may happen next.
+ */
+public fun interface LiveLimit {
+    public operator fun invoke(): Int
+}
+
 public class InflightGate(
-    private val maxInflight: () -> Int,
-    private val maxQueued: () -> Int = { 0 },
+    private val maxInflight: LiveLimit,
+    private val maxQueued: LiveLimit = LiveLimit { 0 },
     // Default is monotonic — wall-clock jumps must not invent idle timeouts or freeze slots.
-    private val clock: () -> Long = MonoClock::nowMs,
+    private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
 ) {
     private val lock = Any()
     private var inflight = 0
@@ -141,7 +157,7 @@ public class InflightGate(
 
     public class Slot internal constructor(
         private val gate: InflightGate,
-        private val clock: () -> Long,
+        private val clock: ElapsedClock,
     ) {
         private val released = AtomicBoolean(false)
         private val lastTouch = AtomicLong(clock())

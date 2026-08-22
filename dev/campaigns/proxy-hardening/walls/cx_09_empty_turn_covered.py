@@ -44,13 +44,36 @@ from collections.abc import Mapping
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 
+# Each key's source is a LIST of files, read and concatenated in order (the file-list mechanism,
+# HD-24): a decomposition can move a token to a sibling file without the wall going red for a
+# reason that is not a regression. ANY missing file in a key's list makes the whole key None (the
+# vacuity guard, unchanged and strengthened — a deleted file cannot go quiet).
 PATHS = {
-    "mirror": "gateway/gateway/src/main/kotlin/splice/gateway/reasoning/Mirror.kt",
-    "pipeline": "gateway/gateway/src/main/kotlin/splice/gateway/pipeline/TurnPipeline.kt",
-    "passthrough": "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughStreamTranslator.kt",
-    "chat": "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt",
-    "responses": "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt",
-    "test": "gateway/gateway/src/test/kotlin/TurnPipelineTest.kt",
+    "mirror": ["gateway/gateway/src/main/kotlin/splice/gateway/reasoning/Mirror.kt"],
+    "pipeline": ["gateway/gateway/src/main/kotlin/splice/gateway/pipeline/TurnPipeline.kt"],
+    # HD-25 (2026-08-18): PassthroughStreamTranslator decomposed; emittedThinking's set-site moved
+    # to PassthroughProseChannels.kt and its read-into-the-outcome site stays in
+    # PassthroughStreamTranslator.kt — the same two-file shape the chat key took in HD-24.
+    "passthrough": [
+        "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/"
+        "PassthroughProseChannels.kt",
+        "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/"
+        "PassthroughStreamTranslator.kt",
+    ],
+    # HD-24 (2026-08-17): ChatStreamTranslator decomposed; emittedThinking's set-site moved to
+    # ChatProseChannels.kt and its read-into-the-outcome site stays in ChatStreamTranslator.kt.
+    "chat": [
+        "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatProseChannels.kt",
+        "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt",
+    ],
+    # HD-24 (2026-08-17): ResponsesStreamTranslator decomposed; emittedThinking's set-site and its
+    # read-into-the-outcome site moved to these two siblings.
+    "responses": [
+        "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt",
+        "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesReasoningFold.kt",
+        "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesOutcomePayload.kt",
+    ],
+    "test": ["gateway/gateway/src/test/kotlin/TurnPipelineTest.kt"],
 }
 
 REQUIRED = {
@@ -63,7 +86,16 @@ REQUIRED = {
          "the two can drift apart, silently re-opening the uncovered band"),
     ],
     "pipeline": [
-        ("mirrorReasoning && willMirror(thinkingText, meta.showReasoning, meta.compact)",
+        # 2026-08-16 — the head-decoupling style migration (HD-M4) moved `willMirror` from a
+        # top-level function in Mirror.kt onto `class Mirror`, so the pipeline holds the collaborator
+        # (`private val mirror = Mirror()`) and the call gains a receiver. Same predicate, same
+        # arguments, same conjunction with the operator knob — behaviour did not change. The
+        # invariant either spelling satisfies is that the pipeline's mirror question is
+        # `mirrorReasoning && <the one willMirror predicate>`; dropping the knob, or dropping the
+        # call, still satisfies neither. This is the same remedy the W4-A wall records for its
+        # isNotEmpty/isNotBlank entry: an entry may be a TUPLE of equivalent spellings.
+        (("mirrorReasoning && mirror.willMirror(thinkingText, meta.showReasoning, meta.compact)",
+          "mirrorReasoning && willMirror(thinkingText, meta.showReasoning, meta.compact)"),
          "the pipeline's mirror question ignores the operator knob, so a turn with the mirror "
          "switched off is still graded as covered and ends clean and empty"),
         ("!outcome.emittedThinking && !willMirrorHere(outcome.thinkingText, meta)",
@@ -79,16 +111,26 @@ REQUIRED = {
          "the 2026-08-11 review finding: kimi can open a thinking block and close it having sent "
          "nothing, and counting that as delivered content short-circuits the empty-turn gate, so a "
          "turn carrying zero characters ends as a clean terminal — the L3 hole CX-09 exists to close"),
-        ("emittedThinking = emittedThinking,",
+        # HD-25 (2026-08-18): successOutcome stayed on PassthroughStreamTranslator.kt, reading the
+        # shared PassthroughProseChannels collaborator instead of its own field — same field, same
+        # invariant, new receiver. Exactly the chat entry's remedy below, applied here.
+        (("emittedThinking = emittedThinking,", "emittedThinking = channels.emittedThinking,"),
          "the recorded flag never reaches the outcome the pipeline reads"),
     ],
     "chat": [
         ("emittedThinking = true", "the chat translator opens a thinking block without recording it"),
-        ("emittedThinking = emittedThinking,", "the recorded flag never reaches the outcome"),
+        # HD-24 (2026-08-17): successOutcome stayed on ChatStreamTranslator.kt, reading the shared
+        # ChatProseChannels collaborator instead of its own field — same field, same invariant, new
+        # receiver.
+        (("emittedThinking = emittedThinking,", "emittedThinking = channels.emittedThinking,"),
+         "the recorded flag never reaches the outcome"),
     ],
     "responses": [
         ("emittedThinking = true", "the responses translator opens a thinking block without recording it"),
-        ("emittedThinking = reducer.emittedThinking,", "the recorded flag never reaches the outcome"),
+        # HD-24 (2026-08-17): successOutcome moved onto ResponsesOutcomePayload, reading the shared
+        # ResponsesTurnState instead of the old reducer — same field, same invariant, new receiver.
+        (("emittedThinking = reducer.emittedThinking,", "emittedThinking = state.emittedThinking,"),
+         "the recorded flag never reaches the outcome"),
     ],
     # The BEHAVIOURAL proof. A substring wall cannot execute the pipeline, so it guards the
     # existence of the cells that do: adversarial review showed four mutants that re-open this
@@ -124,6 +166,16 @@ def code_only(text: str | None) -> str | None:
     return _IMPORT_LINE.sub("", stripped)
 
 
+def _alts(token: str | tuple[str, ...]) -> tuple[str, ...]:
+    """Equivalent spellings of ONE call site. A bare string is its own only spelling.
+
+    Not a relaxation: every entry must still be matched by SOMETHING in the file, each spelling
+    still names a whole call site rather than a bare identifier, and deleting the wiring removes
+    every spelling at once. See the dated note on the pipeline entry above.
+    """
+    return (token,) if isinstance(token, str) else token
+
+
 def detect(sources: Mapping[str, str | None]) -> list[str]:
     """Pure detection. No I/O — the selftest feeds it derived sources directly."""
     problems: list[str] = []
@@ -133,16 +185,20 @@ def detect(sources: Mapping[str, str | None]) -> list[str]:
             problems.append(f"{key} source missing — refusing to pass vacuously")
             continue
         for token, why in REQUIRED[key]:
-            if token not in text:
-                problems.append(f"{key}: {why} (missing `{token}`)")
+            alts = _alts(token)
+            if not any(alt in text for alt in alts):
+                problems.append(f"{key}: {why} (missing `{alts[0]}`)")
     return problems
 
 
 def _load() -> dict[str, str | None]:
     out: dict[str, str | None] = {}
-    for key, rel in PATHS.items():
-        p = ROOT / rel
-        out[key] = code_only(p.read_text(encoding="utf-8")) if p.exists() else None
+    for key, rels in PATHS.items():
+        texts = [ROOT / rel for rel in rels]
+        if any(not p.exists() for p in texts):
+            out[key] = None
+            continue
+        out[key] = code_only("\n".join(p.read_text(encoding="utf-8") for p in texts))
     return out
 
 
@@ -166,11 +222,22 @@ def selftest() -> int:
     else:
         for key, checks in REQUIRED.items():
             for token, _why in checks:
+                alts = _alts(token)
+                text = live[key] or ""
+                # ANY-OF entries hold equivalent spellings, so only the spelling actually PRESENT can
+                # be deleted to derive the half-fix; requiring every spelling to exist would make the
+                # control fail the moment a legitimate refactor changed one.
+                present = [alt for alt in alts if alt in text]
+                if not present:
+                    fails.append(f"cannot derive a {key} half-fix: none of {alts!r} is in the real source")
+                    continue
+                for alt in present:
+                    text = text.replace(alt, "")
                 mutant = dict(live)
-                mutant[key] = (live[key] or "").replace(token, "")
+                mutant[key] = text
                 problems = detect(mutant)
-                if not any(p.startswith(f"{key}:") and token in p for p in problems):
-                    fails.append(f"deleting `{token}` from {key} must be RED for its own reason, got {problems}")
+                if not any(p.startswith(f"{key}:") and alts[0] in p for p in problems):
+                    fails.append(f"deleting `{alts[0]}` from {key} must be RED for its own reason, got {problems}")
 
     if not detect(dict(PREFIX_SHAPE)):
         fails.append("the pre-fix shape must be RED")

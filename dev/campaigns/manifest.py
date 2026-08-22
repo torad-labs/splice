@@ -19,7 +19,7 @@ WHO CALLS: the orchestrator's review loop and every subagent brief
 ("update the manifest AS you work" => `manifest.py note <id> "..."`).
 
 TESTS/ORACLE: self-test via `manifest.py selftest` (runs get/list/note/
-set-status/edit-fence/edit-verify/packet against a temp copy and
+set-status/edit-fence/edit-verify/edit-title/packet against a temp copy and
 diff-checks the results).
 
 LOCAL DIVERGENCE [2026-08-15, promote upstream via the toolkit pipeline]:
@@ -61,6 +61,7 @@ USAGE:
   manifest.py add --id X --phase P --title T --files F --verify V [--status todo]
   manifest.py edit-fence <ID> "f1, f2, ..."      replace the files fence + append FENCE-EDITED note
   manifest.py edit-verify <ID> "cmd"             replace the verify string + append VERIFY-EDITED note
+  manifest.py edit-title <ID> "text"             replace the title + append TITLE-EDITED note
   manifest.py add-law "text"                    append a dated # LAW line to the header banner
   manifest.py amend-header "old" "new"          substring-replace in exactly ONE banner comment
                                                 line — the sanctioned channel for a rotted pointer
@@ -3138,7 +3139,7 @@ def _attested_scoped_files(path: str, item_id: str) -> list[str] | None:
 
 
 def _toml_basic_string(value: str) -> str:
-    return json.dumps(value)
+    return json.dumps(value, ensure_ascii=False)
 
 
 def _toml_string_list(values: list[str]) -> str:
@@ -3939,6 +3940,20 @@ def cmd_edit_verify(path, item_id, verify_text):
 
     _locked_rewrite(path, mutate)
     print(f"{item_id} -> verify")
+
+
+def cmd_edit_title(path, item_id, title_text):
+    if not title_text.strip():
+        sys.exit("error: edit-title requires a non-empty value")
+
+    def mutate(lines):
+        s, e = _find(lines, item_id)
+        return _replace_item_field(
+            lines, s, e, "title", _toml_basic_string(title_text), "TITLE-EDITED"
+        )
+
+    _locked_rewrite(path, mutate)
+    print(f"{item_id} -> title")
 
 
 def cmd_claim(
@@ -5625,6 +5640,19 @@ def _cmd_selftest_body(path):
     with open(tmp_verify.name, "rb") as f:
         tomllib.load(f)
 
+    tmp_title = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
+    tmp_title.close()
+    shutil.copy(path, tmp_title.name)
+    cmd_add(tmp_title.name, "TITLETEST", "T", "old title", "a/**", "n/a")
+    cmd_edit_title(tmp_title.name, "TITLETEST", "new title with three inversions")
+    lines = _read(tmp_title.name)
+    s, e = _find(lines, "TITLETEST")
+    blk = "".join(lines[s:e])
+    assert 'title = "new title with three inversions"' in blk, blk
+    assert "TITLE-EDITED" in blk, blk
+    with open(tmp_title.name, "rb") as f:
+        tomllib.load(f)
+
     tmp_packet = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_packet.close()
     shutil.copy(path, tmp_packet.name)
@@ -6470,7 +6498,7 @@ def _cmd_selftest_body(path):
         if duplicates else "; no cross-ledger id reuse"
     )
     print(
-        "selftest OK (add/set-status/note/verdict/add-law/edit-fence/edit-verify/packet/claim/release-stale/events "
+        "selftest OK (add/set-status/note/verdict/add-law/edit-fence/edit-verify/edit-title/packet/claim/release-stale/events "
         f"round-trip + valid TOML{dup_note})"
     )
 
@@ -6574,6 +6602,10 @@ def main(argv):
         if len(rest) != 2:
             sys.exit('error: edit-verify requires <ID> "cmd"')
         cmd_edit_verify(path, rest[0], rest[1])
+    elif cmd == "edit-title":
+        if len(rest) != 2:
+            sys.exit('error: edit-title requires <ID> "text"')
+        cmd_edit_title(path, rest[0], rest[1])
     elif cmd == "claim":
         if not rest:
             sys.exit("error: claim requires <ID> --session <sid> [--lease CLAUSE]")

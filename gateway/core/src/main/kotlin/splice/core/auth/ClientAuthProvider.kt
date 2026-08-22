@@ -10,11 +10,14 @@
 // was rejected, and the caller — which kept its native /login — is the only party that can fix it.
 package splice.core.auth
 
+import splice.core.topology.AuthKind
+
 /** The `auth.kind` wire word for this provider. Was `ClientAuthProvider.KIND`; the companion it
  *  lived in is illegal since the 2026-08-16 style migration (HD-M8) and the law's sanctioned home
  *  for a constant is file scope. RENAMED on the way out — at package scope a bare `KIND` says
- *  nothing, and `import splice.core.auth.KIND` would be unreadable at the one call site. */
-public const val CLIENT_AUTH_KIND: String = "client"
+ *  nothing, and `import splice.core.auth.KIND` would be unreadable at the one call site.
+ *  One literal: [AuthKind.Client.wire]. Not `const` — `wire` is a constructor val. */
+public val CLIENT_AUTH_KIND: String = AuthKind.Client.wire
 
 public class ClientAuthProvider(private val headKey: String) : RefreshableAuthProvider {
 

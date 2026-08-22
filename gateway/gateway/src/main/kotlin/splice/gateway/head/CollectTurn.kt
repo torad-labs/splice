@@ -14,6 +14,8 @@ import io.ktor.server.netty.NettyApplicationCall
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.RoutingCall
 import io.ktor.server.routing.RoutingPipelineCall
+import io.netty.channel.ChannelFuture
+import io.netty.util.concurrent.GenericFutureListener
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.coroutineScope
@@ -93,9 +95,12 @@ internal class CollectTurn(
             return
         }
         suspendCancellableCoroutine { cont ->
-            netty.context.channel().closeFuture().addListener {
+            val future = netty.context.channel().closeFuture()
+            val listener = GenericFutureListener<ChannelFuture> {
                 if (cont.isActive) cont.resume(Unit)
             }
+            future.addListener(listener)
+            cont.invokeOnCancellation { future.removeListener(listener) }
         }
     }
 

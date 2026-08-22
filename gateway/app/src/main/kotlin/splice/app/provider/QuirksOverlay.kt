@@ -53,12 +53,14 @@ internal class QuirksOverlay {
             compactEffort = providerCfg.quirks.compactEffort ?: base.compactEffort,
             stripSamplingParams = providerCfg.quirks.stripSamplingParams ?: base.stripSamplingParams,
             mfjsSanitize = providerCfg.quirks.mfjs ?: base.mfjsSanitize,
-            // takeIf isNotEmpty: `block_allowlist = []` is the ONLY thing an operator can write to mean
-            // "no allowlist" on a head whose base profile has one, and read literally it is an allowlist
-            // that permits nothing — every content block of every message dropped, silently, leaving the
-            // upstream an empty conversation. Empty means OFF.
-            blockAllowlist = providerCfg.quirks.blockAllowlist?.takeIf { it.isNotEmpty() }?.toSet()
-                ?: base.blockAllowlist,
+            // Absent (null) keeps the base. Empty (`block_allowlist = []`) is the ONLY spelling that
+            // turns a base allowlist OFF. takeIf-then-?: collapsed those two, so empty restored the
+            // base and there was no operator spelling that cleared it. Never materialize an empty
+            // set: that would drop every content block of every message, silently.
+            blockAllowlist = when (val list = providerCfg.quirks.blockAllowlist) {
+                null -> base.blockAllowlist
+                else -> list.takeIf { it.isNotEmpty() }?.toSet()
+            },
             stripCacheControl = providerCfg.quirks.stripCacheControl ?: base.stripCacheControl,
             synthesizeSignatures = providerCfg.quirks.synthesizeSignatures ?: base.synthesizeSignatures,
         )

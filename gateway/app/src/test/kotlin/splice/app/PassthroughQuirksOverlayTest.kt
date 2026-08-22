@@ -34,7 +34,7 @@ class PassthroughQuirksOverlayTest {
     @Test
     fun `an empty block_allowlist means OFF, never an allowlist that permits nothing`() {
         val quirks = assembly.passthroughQuirks(provider(QuirksConfig(blockAllowlist = emptyList())), kimiBase)
-        assertEquals(kimiBase.blockAllowlist, quirks.blockAllowlist, "empty must fall back to the base")
+        assertNull(quirks.blockAllowlist, "empty must turn the allowlist OFF")
     }
 
     @Test

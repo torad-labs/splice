@@ -33,7 +33,7 @@ jobs:
           cache: gradle
       - name: Generate aggregated kover report
         run: cd gateway && ./gradlew :koverXmlReport --console=plain
-      - uses: mi-kas/kover-report@ea8425161dd880a7dea9e76b3c89cf168b1d1162 # v2.5
+      - uses: mi-kas/kover-report@fe40bd3712cf57dd19bfb0c16ccb0472a0478dae # v2.6
         if: github.event.pull_request.head.repo.full_name == github.repository
         with:
           path: ${{ github.workspace }}/gateway/build/reports/kover/report.xml

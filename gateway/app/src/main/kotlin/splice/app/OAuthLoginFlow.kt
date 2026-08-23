@@ -175,7 +175,14 @@ public object OAuthLoginFlow {
                 else -> codeRef.set(params["code"])
             }
             Cancellables.discard(
-                runCatching { callbackPage.respond(ex, ok = codeRef.get() != null, head = spec.head, error = errRef.get()) },
+                runCatching {
+                    callbackPage.respond(
+                        ex,
+                        ok = codeRef.get() != null,
+                        head = spec.head,
+                        error = errRef.get(),
+                    )
+                },
                 "browser page is cosmetic; code/error refs are already recorded for the flow",
             )
         } finally {

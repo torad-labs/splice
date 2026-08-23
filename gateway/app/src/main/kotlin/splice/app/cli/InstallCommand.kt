@@ -36,7 +36,7 @@ internal class InstallCommand {
         uninstaller.uninstall(headArg, env)
 
     internal fun installShim(repoShim: Path, env: EnvReader = EnvReader(System::getenv)) {
-        shim.installShim(repoShim, env)
+        shim.copyLaunchShim(repoShim, env)
     }
 
     internal fun installedShimVersion(env: EnvReader = EnvReader(System::getenv)): String? =

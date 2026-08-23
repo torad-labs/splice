@@ -50,7 +50,12 @@ ROOT = pathlib.Path(__file__).resolve().parents[4]
 # vacuity guard, unchanged and strengthened — a deleted file cannot go quiet).
 PATHS = {
     "mirror": ["gateway/gateway/src/main/kotlin/splice/gateway/reasoning/Mirror.kt"],
-    "pipeline": ["gateway/gateway/src/main/kotlin/splice/gateway/pipeline/TurnPipeline.kt"],
+    # 2026-08-23: honesty tokens live in StreamHonesty.kt after the pipeline split.
+    # TurnPipeline stays on the list so a deleted composer still fails vacuity.
+    "pipeline": [
+        "gateway/gateway/src/main/kotlin/splice/gateway/pipeline/TurnPipeline.kt",
+        "gateway/gateway/src/main/kotlin/splice/gateway/pipeline/StreamHonesty.kt",
+    ],
     # HD-25 (2026-08-18): PassthroughStreamTranslator decomposed; emittedThinking's set-site moved
     # to PassthroughProseChannels.kt and its read-into-the-outcome site stays in
     # PassthroughStreamTranslator.kt — the same two-file shape the chat key took in HD-24.

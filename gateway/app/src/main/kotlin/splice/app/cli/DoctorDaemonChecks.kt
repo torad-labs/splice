@@ -54,7 +54,10 @@ internal class DoctorDaemonChecks(private val heads: DoctorHeadChecks) {
             DoctorCheck("daemon.lock", CheckStatus.INFO, statePaths.daemonLockFile.toString()),
         )
         return listOf(daemon) + heads.headChecks(snapshot, topology) +
-            listOfNotNull(heads.topologyFreshness(snapshot, configPath), heads.mgmtKeyCheck(statePaths, snapshot.running)) +
+            listOfNotNull(
+                heads.topologyFreshness(snapshot, configPath),
+                heads.mgmtKeyCheck(statePaths, snapshot.running),
+            ) +
             stateInfo
     }
 }

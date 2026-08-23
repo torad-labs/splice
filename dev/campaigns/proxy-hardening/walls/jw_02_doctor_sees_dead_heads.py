@@ -22,7 +22,9 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
-CLIENT = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/ControlPlaneClient.kt"
+# 2026-08-23: HealthView left ControlPlaneClient.kt when the fetch cluster moved to
+# DaemonLock.kt (concentration split). The wall follows the declaration, not the old file.
+CLIENT = ROOT / "gateway/app/src/main/kotlin/splice/app/DaemonLock.kt"
 # HD-25: headChecks + headSummary — BOTH declarations this wall reads — moved out of DoctorCommand.kt
 # into their own collaborator when that file was decomposed (it was the tree's worst concentration
 # row at 8.10). Re-anchored onto the ONE file that now holds them, at the same single-file
@@ -34,7 +36,7 @@ DOCTOR = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/DoctorHeadChecks.kt"
 def detect(client: str | None, doctor: str | None) -> list[str]:
     """Pure detection. No I/O — the selftest feeds it directly."""
     if client is None:
-        return ["ControlPlaneClient.kt missing — refusing to pass vacuously"]
+        return ["DaemonLock.kt missing — refusing to pass vacuously"]
     if doctor is None:
         return ["DoctorHeadChecks.kt missing — refusing to pass vacuously"]
     problems: list[str] = []

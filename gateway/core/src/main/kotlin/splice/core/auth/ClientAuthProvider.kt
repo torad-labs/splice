@@ -16,8 +16,9 @@ import splice.core.topology.AuthKind
  *  lived in is illegal since the 2026-08-16 style migration (HD-M8) and the law's sanctioned home
  *  for a constant is file scope. RENAMED on the way out — at package scope a bare `KIND` says
  *  nothing, and `import splice.core.auth.KIND` would be unreadable at the one call site.
- *  One literal: [AuthKind.Client.wire]. Not `const` — `wire` is a constructor val. */
-public val CLIENT_AUTH_KIND: String = AuthKind.Client.wire
+ *  The literal MUST stay equal to [AuthKind.Client.wire]; LaunchSpecClientAuthTest pins that.
+ *  `const` so AuthKinds.CLIENT can be `const` too (detekt TopLevelPropertyNaming). */
+public const val CLIENT_AUTH_KIND: String = "client"
 
 public class ClientAuthProvider(private val headKey: String) : RefreshableAuthProvider {
 

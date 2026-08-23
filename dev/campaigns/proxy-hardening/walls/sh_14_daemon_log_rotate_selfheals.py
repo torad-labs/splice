@@ -21,16 +21,17 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
-MAIN = ROOT / "gateway/app/src/main/kotlin/splice/app/Main.kt"
+# 2026-08-23: persistentLogger moved to DaemonBoundary.kt. Main.kt is a one-line delegate.
+MAIN = ROOT / "gateway/app/src/main/kotlin/splice/app/DaemonBoundary.kt"
 
 
 def detect(text: str | None) -> list[str]:
     """Pure detection. No I/O — the selftest feeds it directly."""
     if text is None:
-        return ["Main.kt missing — refusing to pass vacuously"]
+        return ["DaemonBoundary.kt missing — refusing to pass vacuously"]
     if "persistentLogger" not in text:
         return ["persistentLogger not found (shape changed?) — refusing to pass vacuously"]
-    m = re.search(r"\.onFailure \{.*?\n            \}", text, re.S)
+    m = re.search(r"\.onFailure \{.*?\n\s+\}", text, re.S)
     if m is None:
         return ["persistentLogger's onFailure branch not found (shape changed?) — refusing to "
                 "pass vacuously"]
@@ -100,7 +101,7 @@ def selftest() -> int:
     if not detect(CLOSED_FIX.replace('                System.err.print("rotate failed")\n', "")):
         fails.append("reconcile without announce must be RED")
     if not detect(None):
-        fails.append("missing Main.kt must be RED, never a vacuous pass")
+        fails.append("missing DaemonBoundary.kt must be RED, never a vacuous pass")
     if not detect("fun main() {}"):
         fails.append("an unrecognized shape must be RED, never a vacuous pass")
     if fails:

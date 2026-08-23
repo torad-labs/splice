@@ -28,13 +28,15 @@ SHIM = ROOT / "bin/splice-launch"
 # the daemon-section collaborator when that file was decomposed (it was the tree's worst
 # concentration row at 8.10). Re-anchored onto the ONE file that now holds it, at the same
 # single-file resolution, following the code rather than the god-file it used to live in.
-DOCTOR = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/DoctorDaemonChecks.kt"
+# 2026-08-23: topologyFreshness (digest + topologyStale comparison) lives in
+# DoctorHeadChecks.kt. DoctorDaemonChecks only composes the call.
+DOCTOR = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/DoctorHeadChecks.kt"
 
 
 def detect(control: str | None, shim: str | None, doctor: str | None) -> list[str]:
     """Pure detection. No I/O — the selftest feeds it directly."""
     for name, text in (("ControlServer.kt", control), ("bin/splice-launch", shim),
-                       ("DoctorDaemonChecks.kt", doctor)):
+                       ("DoctorHeadChecks.kt", doctor)):
         if text is None:
             return [f"{name} missing — refusing to pass vacuously"]
     problems: list[str] = []

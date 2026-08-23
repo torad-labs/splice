@@ -27,7 +27,9 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 WATCHDOG = ROOT / "gateway/provider-spi/src/main/kotlin/splice/spi/Watchdog.kt"
-DRIVER = ROOT / "gateway/gateway/src/main/kotlin/splice/gateway/head/TurnDriver.kt"
+# 2026-08-23: the launchTotalCap call site lives in TurnOneDrive.kt after the
+# drive split. Watchdog.kt still owns the declaration.
+DRIVER = ROOT / "gateway/gateway/src/main/kotlin/splice/gateway/head/TurnOneDrive.kt"
 
 
 def detect(watchdog_text: str | None, driver_text: str | None) -> list[str]:
@@ -35,7 +37,7 @@ def detect(watchdog_text: str | None, driver_text: str | None) -> list[str]:
     if watchdog_text is None:
         return ["Watchdog.kt missing — refusing to pass vacuously"]
     if driver_text is None:
-        return ["TurnDriver.kt missing — refusing to pass vacuously"]
+        return ["TurnOneDrive.kt missing — refusing to pass vacuously"]
     problems: list[str] = []
     if "fun launchIn(" not in watchdog_text:
         return ["launchIn poller not found in Watchdog.kt (shape changed?) — the idle tiers lost "
@@ -45,7 +47,7 @@ def detect(watchdog_text: str | None, driver_text: str | None) -> list[str]:
                         "upstream stream is open (launchIn), never during connect/backoff/refresh/"
                         "between-rounds")
     elif "launchTotalCap(" not in driver_text.replace("fun launchTotalCap(", ""):
-        problems.append("launchTotalCap exists but TurnDriver never launches it — the whole-turn "
+        problems.append("launchTotalCap exists but the turn drive never launches it — the whole-turn "
                         "cap is still stream-scoped")
     return problems
 

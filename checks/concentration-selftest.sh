@@ -171,23 +171,42 @@ reset_oracle
 # The defect this arm exists for was live: UpstreamClient's ceiling sat at 6.14 against a file
 # measuring 2.79. Asserted in EVERY mode, because the check lives in exception_errors() precisely so
 # that it cannot go quiet the moment somebody runs something other than the gate.
-python3 - "$ORACLE" <<'PY'
+#
+# HD-25 emptied CEILING_EXCEPTIONS. The arm must still prove PADDED CEILING, so it injects a
+# synthetic padded entry into the COPIED oracle against a real measured file. It must not depend
+# on a leftover production ceiling (that is the laundry this list exists to prevent), and a
+# failed injection must not fall through to a green unmutated run: this script has no `set -e`
+# because `oracle` is expected to fail, so a python assert used to exit 1 and then the unmutated
+# tree ran green.
+if ! python3 - "$ORACLE" <<'PY'
 import pathlib, re, sys
 
 path = pathlib.Path(sys.argv[1])
-pad = lambda m: m.group(1) + str(round(float(m.group(2)) * 2, 2)) + ","
-text, n = re.subn(r'(\.kt",\n\s+)(\d+\.\d+),', pad, path.read_text(), count=1)
-assert n == 1, "no CEILING_EXCEPTIONS ceiling found to pad"
+text = path.read_text()
+empty = "CEILING_EXCEPTIONS: list[tuple[str, float, str]] = []"
+injected = """CEILING_EXCEPTIONS: list[tuple[str, float, str]] = [
+    ("gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamClient.kt", 9.99, "2099-01-01: selftest padded fixture"),
+]"""
+if empty in text:
+    text = text.replace(empty, injected, 1)
+else:
+    pad = lambda m: m.group(1) + str(round(float(m.group(2)) * 2, 2)) + ","
+    text, n = re.subn(r'(\.kt",\n\s+)(\d+\.\d+),', pad, text, count=1)
+    assert n == 1, "no CEILING_EXCEPTIONS ceiling found to pad"
 path.write_text(text)
 PY
-oracle --ratchet --max-ratio 1.8
-must_fail "3. PADDED CEILING arm — gate path" "PADDED CEILING"
-oracle --json
-must_fail "3. PADDED CEILING arm — --json" "PADDED CEILING"
-oracle --top 5
-must_fail "3. PADDED CEILING arm — plain table" "PADDED CEILING"
-oracle --file UpstreamClient.kt
-must_fail "3. PADDED CEILING arm — --file" "PADDED CEILING"
+then
+  err "3. PADDED CEILING arm — fixture could not be built"
+else
+  oracle --ratchet --max-ratio 1.8
+  must_fail "3. PADDED CEILING arm — gate path" "PADDED CEILING"
+  oracle --json
+  must_fail "3. PADDED CEILING arm — --json" "PADDED CEILING"
+  oracle --top 5
+  must_fail "3. PADDED CEILING arm — plain table" "PADDED CEILING"
+  oracle --file UpstreamClient.kt
+  must_fail "3. PADDED CEILING arm — --file" "PADDED CEILING"
+fi
 reset_oracle
 
 # ── 4/5. routing guard, inverse half: the leg definition stops invoking the oracle ─────────────

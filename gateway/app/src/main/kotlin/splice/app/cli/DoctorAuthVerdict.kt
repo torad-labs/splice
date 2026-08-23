@@ -6,7 +6,7 @@ package splice.app.cli
 
 internal class DoctorAuthVerdict {
 
-    internal fun credentialVerdict(heads: List<HeadAuth>, missingStatus: CheckStatus): List<DoctorCheck> {
+    internal fun credentialVerdict(heads: List<DoctorHeadAuth>, missingStatus: CheckStatus): List<DoctorCheck> {
         return heads.map { auth ->
             when {
                 auth.present -> DoctorCheck(auth.key, CheckStatus.OK, credentialLabel(auth))
@@ -29,7 +29,7 @@ internal class DoctorAuthVerdict {
     // declaration and wiring agree (anthropic-passthrough, the one arm that builds a
     // ClientAuthProvider), false on a dialect whose dispatch has no client arm and therefore keeps
     // an api-key provider plus the mgmt-key door. Naming the declaration is the honest form.
-    private fun credentialLabel(auth: HeadAuth): String = when {
+    private fun credentialLabel(auth: DoctorHeadAuth): String = when {
         auth.selfManaged -> "client-native — declared auth.kind = client, so there is no key to set"
         auth.envVar != null -> "${auth.envVar} is set"
         else -> "signed in"

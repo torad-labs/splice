@@ -24,6 +24,7 @@ internal class LoginKimi {
     private val oauth = KimiOAuth()
     private val env: EnvReader = EnvReader(System::getenv)
     private val loginIo = LoginIo()
+
     // Class member is fine here: doctor no longer builds this type to reach
     // isClientAuth, so the Regex is compiled once per status()/kimi-login, not
     // per doctor predicate. File-scope private val is illegal for new code.
@@ -55,13 +56,7 @@ internal class LoginKimi {
         val command = head.claude.command ?: key
         val selfManaged = AuthKindRegistry.from(provider.auth.kind) == AuthKind.Client
         val authed = selfManaged || loginIo.credentialConfigured(key, provider, envReader)
-        val auth = when {
-            selfManaged -> "$GREEN✓ client-native$RESET"
-            AuthKindRegistry.isOAuth(provider.auth.kind) && authed -> "$GREEN✓ signed in$RESET"
-            AuthKindRegistry.isOAuth(provider.auth.kind) -> "$YELLOW— $command login$RESET"
-            authed -> "$GREEN✓ key set$RESET"
-            else -> "$YELLOW— set key$RESET"
-        }
+        val auth = authLabel(selfManaged, authed, provider.auth.kind, command)
         val wrapper = if (loginIo.wrapperInstalled(command, envReader)) {
             "$GREEN✓$RESET"
         } else {
@@ -69,6 +64,14 @@ internal class LoginKimi {
         }
         return pad(key, HEAD_W) + pad(command, CMD_W) + pad(backendLabel(provider), BACKEND_W) +
             pad(auth, AUTH_W) + wrapper
+    }
+
+    private fun authLabel(selfManaged: Boolean, authed: Boolean, kind: String, command: String): String = when {
+        selfManaged -> "$GREEN✓ client-native$RESET"
+        AuthKindRegistry.isOAuth(kind) && authed -> "$GREEN✓ signed in$RESET"
+        AuthKindRegistry.isOAuth(kind) -> "$YELLOW— $command login$RESET"
+        authed -> "$GREEN✓ key set$RESET"
+        else -> "$YELLOW— set key$RESET"
     }
 
     internal fun backendLabel(provider: ProviderConfig): String = when (provider.auth.kind) {

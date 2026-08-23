@@ -55,7 +55,6 @@ internal class DaemonHealth {
             // uncertain signal never green-lights a racing cold start.
             true
         }
-
 }
 
 private const val PROBE_TIMEOUT_MS = 400

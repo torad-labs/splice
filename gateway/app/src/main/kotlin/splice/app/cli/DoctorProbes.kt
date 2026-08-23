@@ -29,7 +29,7 @@ internal class DoctorProbes {
         val java = DoctorCheck("java", CheckStatus.OK, System.getProperty("java.version") ?: "unknown")
         // claude (~1s) and gh (up to PROBE_SECONDS of network) dominate sequential wall time — run
         // every probe concurrently; runProbes preserves this list's order regardless of finish order.
-        val tasks = BINARIES.map { spec -> Callable { binaryCheck(spec, envReader) } } +
+        val tasks = binaries.map { spec -> Callable { binaryCheck(spec, envReader) } } +
             Callable { install.ghCheck(envReader) }
         return listOf(java) + runProbes(tasks)
     }
@@ -41,7 +41,11 @@ internal class DoctorProbes {
             spec.missingDetail,
             spec.fix,
         )
-        return DoctorCheck(spec.name, CheckStatus.OK, install.capturedVersion(listOf(found.toString()) + spec.versionArgs))
+        return DoctorCheck(
+            spec.name,
+            CheckStatus.OK,
+            install.capturedVersion(listOf(found.toString()) + spec.versionArgs),
+        )
     }
 
     // A small fixed pool bounds concurrency; invokeAll's own timeout is a last-resort safety net on

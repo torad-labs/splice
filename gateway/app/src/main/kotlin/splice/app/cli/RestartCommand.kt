@@ -70,7 +70,7 @@ internal class RestartCommand {
     // unreachable), the flagship check would silently vanish exactly when the daemon is busiest —
     // so emit an explicit WARN instead of empty. A STOPPED daemon is a plain skip (no noise).
     internal fun splitBrainChecks(
-        heads: List<HeadAuth>,
+        heads: List<DoctorHeadAuth>,
         snapshot: DaemonSnapshot,
         envReader: EnvReader,
     ): List<DoctorCheck> {

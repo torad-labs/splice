@@ -2,7 +2,7 @@
 // collaborator is not billed for a field group (concentration HIGH, 2026-08-19).
 package splice.app.cli
 
-internal data class HeadAuth(
+internal data class DoctorHeadAuth(
     val key: String,
     val command: String,
     val envVar: String?,

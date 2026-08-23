@@ -14,7 +14,7 @@ internal data class BinarySpec(
 )
 
 // FILE SCOPE ON PURPOSE: the probe table is a constant shared by every doctor run.
-internal val BINARIES = listOf(
+internal val binaries = listOf(
     BinarySpec(
         "claude",
         listOf(FLAG_VERSION),

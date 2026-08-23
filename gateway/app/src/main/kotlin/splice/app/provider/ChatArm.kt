@@ -68,7 +68,7 @@ internal class ChatArm(
                     } else {
                         ChatQuirks(providerTag = key)
                     }
-                ).withReasoningEffortToml(providerCfg.quirks.reasoningEffort),
+                    ).withReasoningEffortToml(providerCfg.quirks.reasoningEffort),
                 showReasoning = ctx.cfg.showReasoning,
             ),
             auth,

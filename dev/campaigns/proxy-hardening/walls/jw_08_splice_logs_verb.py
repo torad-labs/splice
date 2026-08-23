@@ -21,7 +21,9 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
-COMMAND = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/Command.kt"
+# 2026-08-23: the `"logs"` verb table entry lives in InstallCommand.kt.
+# Command.kt still owns LogsCommand but not the quoted verb this wall pins.
+COMMAND = ROOT / "gateway/app/src/main/kotlin/splice/app/cli/InstallCommand.kt"
 # HD-25: the logsDir row this wall reads is inside daemonChecks, which moved out of DoctorCommand.kt
 # into the daemon-section collaborator when that file was decomposed (it was the tree's worst
 # concentration row at 8.10). Re-anchored onto the ONE file that now holds it, at the same
@@ -40,7 +42,7 @@ CONTROL_DIR = ROOT / "gateway/control/src/main/kotlin/splice/control"
 
 def detect(command: str | None, doctor: str | None, control: str | None) -> list[str]:
     """Pure detection. No I/O — the selftest feeds it directly."""
-    for name, text in (("Command.kt", command), ("DoctorDaemonChecks.kt", doctor),
+    for name, text in (("InstallCommand.kt", command), ("DoctorDaemonChecks.kt", doctor),
                        ("control plane sources", control)):
         if text is None:
             return [f"{name} missing — refusing to pass vacuously"]

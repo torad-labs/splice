@@ -42,7 +42,7 @@ internal class DoctorAuth {
     /** PHASE 1, all I/O: every configured head's credential state, read through StatusCommand.
      *  Heads whose provider does not resolve are dropped here exactly as they always were — the
      *  configuration section is what reports a dangling provider reference, not this one. */
-    private fun probeHeads(topology: Topology, envReader: EnvReader): List<HeadAuth> =
+    private fun probeHeads(topology: Topology, envReader: EnvReader): List<DoctorHeadAuth> =
         topology.heads.mapNotNull { (key, head) ->
             val provider = topology.providers[head.provider] ?: return@mapNotNull null
             headAuthOf(key, head.claude.command ?: key, provider, envReader)
@@ -56,7 +56,7 @@ internal class DoctorAuth {
         command: String,
         provider: ProviderConfig,
         envReader: EnvReader,
-    ): HeadAuth {
+    ): DoctorHeadAuth {
         val isOAuth = AuthKindRegistry.isOAuth(provider.auth.kind)
         // A client-auth head keeps a NULL env var like an OAuth head: it has no api key, and the
         // derived default would be nonsense — `effectiveApiKeyEnv("claude-splice", …)` is
@@ -67,7 +67,7 @@ internal class DoctorAuth {
             isOAuth || selfManaged -> provider.auth.env
             else -> provider.auth.effectiveApiKeyEnv(key)
         }
-        return HeadAuth(
+        return DoctorHeadAuth(
             key,
             command,
             envVar,

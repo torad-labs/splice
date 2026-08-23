@@ -19,7 +19,7 @@ internal class InstallShim(
 ) {
 
     /** Copy the repo's launch shim into the share dir (used by install.sh / dev). */
-    internal fun installShim(repoShim: Path, env: EnvReader) {
+    internal fun copyLaunchShim(repoShim: Path, env: EnvReader) {
         Files.createDirectories(layout.shareDir(env))
         val dst = layout.launchShimPath(env)
         Files.copy(repoShim, dst, StandardCopyOption.REPLACE_EXISTING)

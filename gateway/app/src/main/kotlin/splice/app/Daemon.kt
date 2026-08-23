@@ -73,8 +73,18 @@ public class Daemon(
     // Inferred so this file does not name HeadBuildInputs (concentration, 2026-08-19).
     internal val buildInputs get() = controlPlane.buildInputs
     private val headServerFactory = HeadServerFactory(config, mgmtKey, log)
-    private val launchSpecFactory = LaunchSpecFactory(topology, controlPlane.signInPlanner, mgmtKey, controlPlane.buildInputs)
-    private val managedHeadFactory = ManagedHeadFactory(statePaths, controlPlane.providerAssembly, headServerFactory, launchSpecFactory)
+    private val launchSpecFactory = LaunchSpecFactory(
+        topology,
+        controlPlane.signInPlanner,
+        mgmtKey,
+        controlPlane.buildInputs,
+    )
+    private val managedHeadFactory = ManagedHeadFactory(
+        statePaths,
+        controlPlane.providerAssembly,
+        headServerFactory,
+        launchSpecFactory,
+    )
 
     // set once in start(); the daemon is not usable before it
     private var control: ControlServer? = null

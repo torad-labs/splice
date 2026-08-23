@@ -17,6 +17,7 @@
 // them pinned the DERIVATION that produces the flag.
 package splice.app.head
 
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -31,6 +32,7 @@ import splice.core.config.StatePaths
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.topology.AuthConfig
+import splice.core.topology.AuthKind
 import splice.core.topology.ClaudeWrapperConfig
 import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
@@ -41,6 +43,11 @@ import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
 
 class LaunchSpecClientAuthTest {
+
+    @Test
+    fun `CLIENT_AUTH_KIND stays equal to AuthKind Client wire`() {
+        assertEquals(AuthKind.Client.wire, CLIENT_AUTH_KIND)
+    }
 
     private fun factory(tmp: Path): LaunchSpecFactory {
         val statePaths = StatePaths(baseOverride = tmp)

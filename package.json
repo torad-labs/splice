@@ -20,6 +20,7 @@
     "oss:verify": "bash checks/oss/run.sh",
     "e2e:heads": "bash checks/e2e/heads-e2e.sh",
     "e2e:heads:wire": "bash checks/e2e/heads-e2e.sh --tier 1",
+    "e2e:heads:selftest": "bash checks/e2e/heads-e2e-selftest.sh",
     "oracle:capture": "node dev/campaigns/proxy-hardening/oracle/capture.mjs",
     "oracle:check": "node dev/campaigns/proxy-hardening/oracle/capture.mjs --check",
     "oracle:replay": "node dev/campaigns/proxy-hardening/oracle/replay.mjs",

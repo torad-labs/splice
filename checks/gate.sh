@@ -91,6 +91,9 @@ run "hook tests"     npm run --silent test:hooks
 # of this ladder, which meant nothing ran it at all.
 run "campaign walls"  npm run --silent gate:campaign
 run "campaign selftest" npm run --silent gate:campaign:selftest
+# Local, no quota: skip / fake-token / FATAL-mgmt-key against a loopback control+head.
+# The live `e2e:heads` lane is billed and stays out of this ladder.
+run "heads-e2e selftest" bash checks/e2e/heads-e2e-selftest.sh
 run "config guard"   bash checks/config-guard.sh
 run "pr title"       bash checks/pr-title.sh
 # Two layers, deliberately. The generator makes the hazards inexpressible (#924); the canary

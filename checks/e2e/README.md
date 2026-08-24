@@ -10,9 +10,14 @@ dedicated CI lane, not on every commit. **Both tiers spend real provider quota o
 see [Client-auth heads](#client-auth-heads) for what that means on a head that forwards your own
 Anthropic credential.
 
+The merge gate runs a different path: `npm run e2e:heads:selftest` drives the same script against
+a loopback control+head (no daemon, no vendor, no quota) so the skip / fake-token / FATAL-mgmt-key
+arms cannot rot. That is the only heads-e2e path that belongs in `npm run gate`.
+
 ## Run
 
 ```bash
+npm run e2e:heads:selftest # loopback canary (in the merge gate; no quota)
 npm run e2e:heads          # both tiers, every discovered head
 npm run e2e:heads:wire     # tier 1 only (fast, no TUI)
 bash checks/e2e/heads-e2e.sh --head claude-grok        # one head

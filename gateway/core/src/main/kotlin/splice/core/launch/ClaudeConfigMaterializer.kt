@@ -3,7 +3,9 @@
 // Invariants preserved EXACTLY:
 //   - isolated CLAUDE_CONFIG_DIR (default ~/.claude-<head>); refuse to write outside it;
 //   - SHARED items symlink into ~/.claude/<item>; a real file where a symlink belongs is replaced,
-//     but a real DIRECTORY the operator made is NEVER deleted;
+//     but a real DIRECTORY the operator made is NEVER deleted (one exception: sessions/ is
+//     machine-generated, so SessionRegistryLink migrates its entries into the global registry and
+//     replaces the dir with the link — cross-head session visibility);
 //   - settings.json is ALWAYS a real merged file (never a symlink through which we'd clobber the
 //     operator's global): global settings + availableModels allowlist + enforceAvailableModels +
 //     preserved model choice (when still allowed) + the statusline command; the symlink is broken
@@ -40,6 +42,7 @@ public class ClaudeConfigMaterializer(
         ignoreUnknownKeys = true
         prettyPrint = true
     }
+    private val sessionRegistry = SessionRegistryLink()
 
     /** Materialize a head's isolated CLAUDE_CONFIG_DIR from [spec]. */
     public fun materialize(spec: MaterializeSpec): MaterializeResult {
@@ -106,7 +109,15 @@ public class ClaudeConfigMaterializer(
         // settings is merged (not linked) and mcps arrive via .claude.json, so both are skipped here.
         for (item in sharedLinkItems) {
             val linkable = item != Keys.SETTINGS && item != Keys.MCPS && shares(policy, item)
-            if (linkable) linkOneShared(configDir, item)
+            if (!linkable) continue
+            if (item == Keys.SESSIONS) {
+                // The peer registry migrates rather than links: see SessionRegistryLink's header.
+                Cancellables.runCatchingCancellable {
+                    sessionRegistry.link(globalDir().resolve(item), configDir.resolve(item))
+                }
+            } else {
+                linkOneShared(configDir, item)
+            }
         }
     }
 

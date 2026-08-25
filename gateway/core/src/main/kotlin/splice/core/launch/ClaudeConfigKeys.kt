@@ -3,9 +3,11 @@
 // the writer is not billed for the contract table (concentration, 2026-08-19).
 package splice.core.launch
 
-/** On-disk items a head may share by symlinking into the operator's global ~/.claude/<item>. */
+/** On-disk items a head may share by symlinking into the operator's global ~/.claude/<item>.
+ *  `sessions` is the cross-session-messaging peer registry: sharing it is what lets every head's
+ *  ListAgents see every other head's sessions (the message sockets are already machine-global). */
 public val sharedLinkItems: List<String> =
-    listOf(Keys.SETTINGS, "agents", "commands", "skills", "hooks", "plugins", Keys.CLAUDE_MD, Keys.MCPS)
+    listOf(Keys.SETTINGS, "agents", "commands", "skills", "hooks", "plugins", Keys.CLAUDE_MD, Keys.MCPS, Keys.SESSIONS)
 
 /** ~/.claude.json keys carried into a head's isolated state (only when absent locally). */
 public val portKeys: List<String> = listOf(
@@ -32,4 +34,5 @@ internal object Keys {
     const val ONBOARDING = "hasCompletedOnboarding"
     const val COMMANDS = "commands"
     const val HOOKS = "hooks"
+    const val SESSIONS = "sessions"
 }

@@ -145,6 +145,75 @@ class ClaudeConfigMaterializerTest {
     }
 
     @Test
+    fun `sessions registry migrates a real head dir into the global and links it`(@TempDir tmp: Path) {
+        seedGlobal(tmp)
+        val globalSessions = tmp.resolve(".claude/sessions")
+        Files.createDirectories(globalSessions)
+        val dir = tmp.resolve(".claude-codex")
+        val headSessions = dir.resolve("sessions")
+        Files.createDirectories(headSessions) // Claude Code made this before the link existed
+        headSessions.resolve("12345.json").writeText("""{"pid":12345}""")
+        headSessions.resolve("12345.abc.key").writeText("k")
+        val policy = ClaudePolicy(share = allPolicy.share + "sessions", isolate = emptySet())
+        materializer(tmp).materialize(dir, policy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
+        assertTrue(headSessions.isSymbolicLink())
+        assertEquals(globalSessions, Files.readSymbolicLink(headSessions))
+        // registrations moved with the dir swap: a live session keeps writing through the link
+        assertTrue(Files.isRegularFile(globalSessions.resolve("12345.json")))
+        assertTrue(Files.isRegularFile(globalSessions.resolve("12345.abc.key")))
+    }
+
+    @Test
+    fun `sessions link is idempotent across rematerializations`(@TempDir tmp: Path) {
+        seedGlobal(tmp)
+        val globalSessions = tmp.resolve(".claude/sessions")
+        Files.createDirectories(globalSessions)
+        val dir = tmp.resolve(".claude-codex")
+        val policy = ClaudePolicy(share = allPolicy.share + "sessions", isolate = emptySet())
+        repeat(2) { materializer(tmp).materialize(dir, policy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache) }
+        assertTrue(dir.resolve("sessions").isSymbolicLink())
+        assertEquals(globalSessions, Files.readSymbolicLink(dir.resolve("sessions")))
+    }
+
+    @Test
+    fun `sessions stays a real dir when the global registry does not exist`(@TempDir tmp: Path) {
+        seedGlobal(tmp) // seeds ~/.claude WITHOUT a sessions dir
+        val dir = tmp.resolve(".claude-codex")
+        val headSessions = dir.resolve("sessions")
+        Files.createDirectories(headSessions)
+        val policy = ClaudePolicy(share = allPolicy.share + "sessions", isolate = emptySet())
+        materializer(tmp).materialize(dir, policy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
+        assertFalse(headSessions.isSymbolicLink())
+        assertTrue(Files.isDirectory(headSessions, NOFOLLOW_LINKS))
+    }
+
+    @Test
+    fun `isolate sessions keeps the head registry private`(@TempDir tmp: Path) {
+        seedGlobal(tmp)
+        Files.createDirectories(tmp.resolve(".claude/sessions"))
+        val dir = tmp.resolve(".claude-codex")
+        val headSessions = dir.resolve("sessions")
+        Files.createDirectories(headSessions)
+        val policy = ClaudePolicy(share = allPolicy.share + "sessions", isolate = setOf("sessions"))
+        materializer(tmp).materialize(dir, policy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
+        assertFalse(headSessions.isSymbolicLink())
+        assertTrue(Files.isDirectory(headSessions, NOFOLLOW_LINKS))
+    }
+
+    @Test
+    fun `sessions migration aborts on unexpected content and leaves the real dir`(@TempDir tmp: Path) {
+        seedGlobal(tmp)
+        Files.createDirectories(tmp.resolve(".claude/sessions"))
+        val dir = tmp.resolve(".claude-codex")
+        val headSessions = dir.resolve("sessions")
+        Files.createDirectories(headSessions.resolve("weird-subdir"))
+        val policy = ClaudePolicy(share = allPolicy.share + "sessions", isolate = emptySet())
+        materializer(tmp).materialize(dir, policy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
+        assertFalse(headSessions.isSymbolicLink())
+        assertTrue(Files.isDirectory(headSessions.resolve("weird-subdir")))
+    }
+
+    @Test
     fun `the topology default vocabulary (claude_md, settings, mcps) shares everything`(@TempDir tmp: Path) {
         seedGlobal(tmp)
         val dir = tmp.resolve(".claude-codex")

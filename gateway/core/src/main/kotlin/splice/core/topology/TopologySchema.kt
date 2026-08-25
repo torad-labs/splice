@@ -49,5 +49,6 @@ public data class ClaudeSharingDefaults(
         "commands",
         "plugins",
         "claude_md",
+        "sessions",
     ),
 )

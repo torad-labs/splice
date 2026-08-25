@@ -20,6 +20,7 @@ internal class TurnDriveFactory(
 ) {
     private val driveSignals = DriveSignals(provider, deps, health)
     private val drivePipeline = DrivePipeline(provider, deps)
+
     /** Assemble the per-turn drive around a terminal (SseEmitter for stream, CollectingTerminal for
      *  collect) and its channel — everything else (watchdog, pipeline, headers) is shape-neutral. */
     fun assembleDrive(

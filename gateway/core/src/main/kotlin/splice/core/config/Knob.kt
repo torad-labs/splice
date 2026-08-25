@@ -223,7 +223,13 @@ public enum class Knob(
         restartRequired = true,
     ),
     USAGE_WARN_PCT("usageWarnPct", KnobKind.NUMBER, listOf("SPLICE_USAGE_WARN_PCT"), 80L, restartRequired = true),
-    USAGE_WARN_TOKENS_5H("usageWarnTokens5h", KnobKind.NUMBER, listOf("SPLICE_USAGE_WARN_TOKENS_5H"), 0L, restartRequired = true),
+    USAGE_WARN_TOKENS_5H(
+        "usageWarnTokens5h",
+        KnobKind.NUMBER,
+        listOf("SPLICE_USAGE_WARN_TOKENS_5H"),
+        0L,
+        restartRequired = true,
+    ),
 
     // Extra trusted roots (colon-separated absolute paths) for the statusline git-branch lookup.
     // Default empty: only $HOME and /tmp are trusted, so repos elsewhere (devcontainer /workspace,

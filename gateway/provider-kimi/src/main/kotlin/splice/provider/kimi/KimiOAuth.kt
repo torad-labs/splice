@@ -141,14 +141,18 @@ public class KimiOAuth {
     internal fun jsonObjectOrEmpty(el: JsonElement): JsonObject =
         el as? JsonObject ?: JsonObject(emptyMap())
 
-    internal fun parseSnapshot(authPath: Path, synthesizeExpiry: KimiAuthStore.SynthesizeExpiry): KimiAuthStore.Snapshot? {
+    internal fun parseSnapshot(
+        authPath: Path,
+        synthesizeExpiry: KimiAuthStore.SynthesizeExpiry,
+    ): KimiAuthStore.Snapshot? {
         if (!Files.exists(authPath)) return null
         val obj = jsonObjectOrEmpty(kimiJson.parseToJsonElement(Files.readString(authPath)))
         val access = JsonScalars.str(obj, "access_token") ?: return null
         return KimiAuthStore.Snapshot(
             access = access,
             refresh = JsonScalars.str(obj, "refresh_token"),
-            expiresAtS = JsonScalars.long(obj, "expires_at") ?: synthesizeExpiry(Files.getLastModifiedTime(authPath).toMillis()),
+            expiresAtS = JsonScalars.long(obj, "expires_at")
+                ?: synthesizeExpiry(Files.getLastModifiedTime(authPath).toMillis()),
             expiresInS = JsonScalars.long(obj, "expires_in") ?: 0L,
         )
     }

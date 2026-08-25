@@ -34,15 +34,7 @@ internal class SseRoundPost(
             // Persist upstream rate-limit headers for /api/usage + statusline soft-warn (Node
             // codex-proxy wired this; the Kotlin split dropped the call site).
             usageStore.persistRateLimit { name -> resp.header(name) }
-            consume.consume(
-                drive,
-                inputs.sink,
-                inputs.scope,
-                inputs.turnJob,
-                inputs.eventsBase,
-                resp,
-                inputs.frameEmittedThisRound,
-            )
+            consume.consume(inputs, resp)
         }
     }
 }

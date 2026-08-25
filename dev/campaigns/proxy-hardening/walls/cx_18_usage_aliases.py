@@ -46,7 +46,10 @@ ROOT = pathlib.Path(__file__).resolve().parents[4]
 # positive tokens only; the FORBIDDEN_READER ban is NOT scoped to this map (see BAN_DIRS).
 PATHS = {
     "core": "gateway/core/src/main/kotlin/splice/core/util/JsonScalars.kt",
-    "harvest": "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/Harvested.kt",
+    # 2026-08-25: detekt Filename fix renamed the file after its single class — ResponsesHarvest
+    # now lives in ResponsesHarvest.kt, and Harvested.kt holds the (alias-free) Harvested payload
+    # type that used to sit in HarvestedText.kt. Repointed at the code, same single-file resolution.
+    "harvest": "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesHarvest.kt",
     # HD-24 (2026-08-17): UsageHud decomposed; firstNum (the delegating alias-chain call) moved to
     # UsageJson.kt (the usage-accounting owner).
     "hud": "gateway/gateway/src/main/kotlin/splice/gateway/usage/UsageJson.kt",

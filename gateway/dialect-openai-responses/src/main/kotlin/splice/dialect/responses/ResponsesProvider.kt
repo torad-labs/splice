@@ -41,6 +41,7 @@ public abstract class ResponsesProvider(
 ) : Provider, ProviderIdentity by tuning {
 
     final override val upstreamUrl: String = "${tuning.baseUrl}/responses"
+
     // Collaborator wiring lives in ResponsesParts.kt (concentration, 2026-08-19).
     private val parts = ResponsesParts(
         ResponsesPartsInput(

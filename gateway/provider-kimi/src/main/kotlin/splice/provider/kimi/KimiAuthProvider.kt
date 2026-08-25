@@ -95,7 +95,11 @@ public class KimiAuthProvider(
     // rotate in the background (SingleFlight dedupes concurrent kicks; measured p90 802ms of
     // request-path stall when this blocked, 2026-07-18). At/below the floor block as before:
     // a nearly-dead token risks a mid-stream 401, which costs more than the wait.
-    private suspend fun proactiveWindowCredentials(snap: KimiAuthStore.Snapshot, nowS: Long, remainingS: Long): Credentials? {
+    private suspend fun proactiveWindowCredentials(
+        snap: KimiAuthStore.Snapshot,
+        nowS: Long,
+        remainingS: Long,
+    ): Credentials? {
         if (prefetchScope != null && remainingS > HARD_FLOOR_S) {
             prefetchScope.launch { singleFlight.run { doRefresh().credentialsOrNull(LOG_TAG, log) } }
             return apiKey(snap.access)

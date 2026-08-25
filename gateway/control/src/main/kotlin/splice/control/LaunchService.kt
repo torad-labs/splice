@@ -7,13 +7,9 @@
 // /v1/models. Both are set here now, plus the alias slots, context sizing, and the loopback NO_PROXY.
 package splice.control
 
-import kotlinx.serialization.json.JsonElement
 import splice.core.launch.ClaudeConfigMaterializer
-import splice.core.launch.ClaudePolicy
 import splice.core.launch.MaterializeSpec
-import splice.core.launch.TokenCaptureSpec
 import splice.core.util.EnvReader
-import java.nio.file.Path
 import kotlin.math.max
 
 // Floor for CLAUDE_CODE_AUTO_COMPACT_WINDOW (buildEnv): a small context window must not shrink the

@@ -95,7 +95,8 @@ internal class GrokAuthFile(
                     persist(refreshToken, attempt.tokens, access)
                 }
             }
-            is RefreshAttempt.InvalidGrant -> rejectedOrRetry(refreshToken, persist, allowRereadRetry, INVALID_GRANT_REASON)
+            is RefreshAttempt.InvalidGrant ->
+                rejectedOrRetry(refreshToken, persist, allowRereadRetry, INVALID_GRANT_REASON)
             is RefreshAttempt.Denied -> rejectedOrRetry(refreshToken, persist, allowRereadRetry, attempt.detail)
         }
     }
@@ -107,7 +108,8 @@ internal class GrokAuthFile(
         reason: String,
     ): RefreshOutcome {
         if (!allowRereadRetry) return RefreshOutcome.Rejected(reason)
-        val newToken = Cancellables.runCatchingCancellable { JsonScalars.str(authJson.tokensOf()?.get("refresh_token")) }
+        val newToken = Cancellables
+            .runCatchingCancellable { JsonScalars.str(authJson.tokensOf()?.get("refresh_token")) }
             .getOrElse { return RefreshOutcome.Rejected(reason) }
         return if (newToken != null && newToken != usedRefreshToken) {
             exchangeRefreshToken(newToken, persist, allowRereadRetry = false)

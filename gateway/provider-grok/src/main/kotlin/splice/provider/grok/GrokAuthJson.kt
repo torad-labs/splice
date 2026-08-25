@@ -36,6 +36,7 @@ internal class GrokAuthJson(
     internal fun interface SynthesizeExpiry {
         operator fun invoke(mtimeMs: Long, nowMs: Long): Long
     }
+
     @Volatile
     private var cache: Cache? = null
 
@@ -48,6 +49,7 @@ internal class GrokAuthJson(
     internal fun clearCache() {
         cache = null
     }
+
     /** MERGE into the on-disk object — a from-scratch rewrite dropped `expires` and every field the
      *  official grok CLI stores beside ours, corrupting the shared file for it (audit 2026-07-18;
      *  the codex twin already merged correctly). `expires` is OVERWRITTEN when the refresh response

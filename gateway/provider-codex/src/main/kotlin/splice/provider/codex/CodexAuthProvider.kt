@@ -93,7 +93,10 @@ public class CodexAuthProvider(
     private fun synthesizeExpiry(mtimeMs: Long): Long {
         if (synthLoggedMtime != mtimeMs) {
             synthLoggedMtime = mtimeMs
-            log("[codex-auth] access token carries no decodable exp — synthesized expiry " + "mtime+4h (auth.json shape drifted?)")
+            log(
+                "[codex-auth] access token carries no decodable exp — synthesized expiry " +
+                    "mtime+4h (auth.json shape drifted?)",
+            )
         }
         return CredentialExpiry.synthesizedExpiryMs(mtimeMs, clock())
     }
@@ -139,9 +142,12 @@ public class CodexAuthProvider(
         // (CredentialLock.withLock's `log` default is a silent no-op) instead of only greppable
         // in a source comment.
         val outcome = CredentialLock.withLock(authPath, log = log) {
-            describeAuth.refreshLocked(priorAccess, PersistRotation { raw, tokens, fresh, access ->
-                persistRotation(raw, tokens, fresh, access)
-            })
+            describeAuth.refreshLocked(
+                priorAccess,
+                PersistRotation { raw, tokens, fresh, access ->
+                    persistRotation(raw, tokens, fresh, access)
+                },
+            )
         }
         if (outcome is RefreshOutcome.Rejected && outcome.reason == INVALID_GRANT_REASON) {
             invalidGrantLatch.latch(mtime)
@@ -159,10 +165,13 @@ public class CodexAuthProvider(
         // throwing write must degrade to a typed PersistFailed, never a raw throw through SingleFlight
         // out of credentials()/refresh(), so the not-yet-expired current token still gets served.
         Cancellables
-            .runCatchingCancellable { writeSecure(authPath, authJson.mergedAuthJson(raw, tokens, fresh, access).toString()) }
+            .runCatchingCancellable {
+                writeSecure(authPath, authJson.mergedAuthJson(raw, tokens, fresh, access).toString())
+            }
             .getOrElse { return RefreshOutcome.PersistFailed("auth.json write failed: $it") }
         authJson.clearCache()
-        return authJson.readSnapshot(authCacheMs)?.let { RefreshOutcome.Refreshed(Credentials.Bearer(it.access, it.accountId)) }
+        return authJson.readSnapshot(authCacheMs)
+            ?.let { RefreshOutcome.Refreshed(Credentials.Bearer(it.access, it.accountId)) }
             ?: RefreshOutcome.PersistFailed("auth.json unreadable after rotated-token write")
     }
 

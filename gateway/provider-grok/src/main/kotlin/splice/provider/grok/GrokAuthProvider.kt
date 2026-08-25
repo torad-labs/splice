@@ -95,8 +95,17 @@ public class GrokAuthProvider(
     // GrokAuthProvider holds 14 non-override functions and TooManyFunctions flags at 15 (overrides
     // are ignored), so folding grokAuthMtimeOrNull in here fails the build. HD-M5 red-proved this
     // with a synthetic 15th member; codex/kimi sit at 13 and DO host their own probe.
-    private val authJson = GrokAuthJson(authPath, json, log, nowIso, clock, GrokAuthJson.SynthesizeExpiry { mtimeMs, nowMs -> synthesizeExpiry(mtimeMs, nowMs) })
-    private fun synthesizeExpiry(mtimeMs: Long, nowMs: Long): Long = CredentialExpiry.synthesizedExpiryMs(mtimeMs, nowMs)
+    private val authJson = GrokAuthJson(
+        authPath,
+        json,
+        log,
+        nowIso,
+        clock,
+        GrokAuthJson.SynthesizeExpiry { mtimeMs, nowMs -> synthesizeExpiry(mtimeMs, nowMs) },
+    )
+
+    private fun synthesizeExpiry(mtimeMs: Long, nowMs: Long): Long =
+        CredentialExpiry.synthesizedExpiryMs(mtimeMs, nowMs)
     private val authFile = GrokAuthFile(authPath, authJson, invalidGrantLatch, log, refreshCall)
 
     init {
@@ -171,9 +180,12 @@ public class GrokAuthProvider(
         // (CredentialLock.withLock's `log` default is a silent no-op) instead of only greppable
         // in a source comment.
         val outcome = CredentialLock.withLock(authPath, log = log) {
-            authFile.refreshLocked(priorAccess, GrokAuthFile.PersistRotation { rt, tokens, access ->
-                persistRotation(rt, tokens, access)
-            })
+            authFile.refreshLocked(
+                priorAccess,
+                GrokAuthFile.PersistRotation { rt, tokens, access ->
+                    persistRotation(rt, tokens, access)
+                },
+            )
         }
         if (outcome is RefreshOutcome.Rejected && outcome.reason == INVALID_GRANT_REASON) {
             invalidGrantLatch.latch(mtime)
@@ -198,13 +210,19 @@ public class GrokAuthProvider(
         if (expiresAtMs - clock() < STALE_FLOOR_MS) {
             lastIneffectiveRefreshAtMs = clock()
             ineffectiveRefreshes.incrementAndGet()
-            log("[$LOG_TAG] refresh succeeded but expiry did not advance past the stale floor — " + "backing off ${REFRESH_INEFFECTIVE_BACKOFF_MS / MS_PER_S}s")
+            log(
+                "[$LOG_TAG] refresh succeeded but expiry did not advance past the stale floor — " +
+                    "backing off ${REFRESH_INEFFECTIVE_BACKOFF_MS / MS_PER_S}s",
+            )
         }
         // The endpoint already consumed the old refresh_token (Granted) by the time we get here — a
         // throwing write must degrade to a typed PersistFailed, never a raw throw through SingleFlight
         // out of credentials()/refresh(), so the not-yet-expired current token still gets served.
         Cancellables.runCatchingCancellable {
-            writeSecure(authPath, authJson.mergedAuthJson(access, fresh.refreshToken ?: refreshToken, expiresAtMs).toString())
+            writeSecure(
+                authPath,
+                authJson.mergedAuthJson(access, fresh.refreshToken ?: refreshToken, expiresAtMs).toString(),
+            )
         }.getOrElse { return RefreshOutcome.PersistFailed("auth.json write failed: $it") }
         authJson.clearCache()
         return RefreshOutcome.Refreshed(Credentials.Bearer(access, null))

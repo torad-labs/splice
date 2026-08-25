@@ -4,7 +4,7 @@
 // `event:` sequence, cache_control on the upstream BODY, thinking, a tool_use → tool_result
 // round-trip that keeps the same caller Authorization, count_tokens as a local estimate
 // (zero upstream), and the mgmt key never riding to the vendor.
-package e2e
+package splice.app.e2e
 
 import com.sun.net.httpserver.HttpExchange
 import com.sun.net.httpserver.HttpServer

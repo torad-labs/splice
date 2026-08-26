@@ -19,6 +19,10 @@ internal class ResponsesItemFold(
     suspend fun onItemAdded(evt: JsonObject, sink: WireSink) {
         val item = evt["item"] as? JsonObject ?: return
         val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: frames.intOr(item["index"]) ?: state.blocks.size
+        // codex parity: EVERY added item (reasoning, message, function_call, search) becomes the
+        // active item; summary done-events are rendered only while their item is active.
+        state.activeItemId = JsonScalars.strOrEmpty(item["id"]).ifEmpty { null }
+        state.activeItemOi = oi
         if (JsonScalars.strOrEmpty(item["type"]) == "function_call") {
             // A JsonNull call_id/name must not leak onto the wire as the literal string "null" —
             // strOrEmpty keeps both filtered so the empty-fallback chain below still triggers
@@ -40,6 +44,10 @@ internal class ResponsesItemFold(
     // member — see closeOpenBlocks / ResponsesReasoningReplay.emitReplayedReasoning).
     suspend fun onItemDone(evt: JsonObject, sink: WireSink) {
         val item = evt["item"] as? JsonObject
+        // codex parity: OutputItemDone takes the active item — a summary done-event arriving
+        // between items (or after a later item started) is stale and must not render.
+        state.activeItemId = null
+        state.activeItemOi = null
         // tool_search_call has no open wire block and must not touch hasToolUse/turnToolIds — a
         // synthetic/foreign id there would mis-key the reasoning cache (a known prior bug class).
         if (item != null && JsonScalars.strOrEmpty(item["type"]) == TOOL_SEARCH_CALL) {

@@ -23,6 +23,13 @@ internal class ResponsesTurnState {
     var hasToolUse = false
     var emittedText = false
 
+    /** codex-parity active-item tracking (sequential_cutoff, 2026-08-26; codex-rs
+     *  session/turn.rs: `active_item` is set by every OutputItemAdded and taken by
+     *  OutputItemDone). A reasoning summary_text.done belonging to any OTHER item is a stale
+     *  cutoff restatement and is dropped — the id filter that replaces text-matching dedup. */
+    var activeItemId: String? = null
+    var activeItemOi: Int? = null
+
     /** CX-09: a thinking block actually reached the sink. NOT the same as thinkingBuf being
      *  non-empty — [ResponsesTerminalBackfill.harvestFallback] refills that buffer from the
      *  completed response object without emitting anything, and that is precisely the turn the

@@ -202,9 +202,18 @@ class MockChatGptUpstream {
             (it as? JsonObject)?.get("type")?.jsonPrimitive?.content == "reasoning"
         } ?: false
 
+    // sequential_cutoff realism (2026-08-26 codex-parity port): the live backend streams summary
+    // DELTAS and then a reasoning_summary_text.done carrying the COMPLETE part text under the
+    // item's id. Cutoff-mode heads render ONLY the done events, so every reasoning scenario here
+    // sends both — which also pins that dropping the deltas loses no text.
     private fun foldTruncatedRound(ex: HttpExchange) {
-        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""")
+        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_trunc"}}""")
         sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Thinking round one."}""")
+        sse(
+            ex,
+            """{"type":"response.reasoning_summary_text.done","item_id":"rs_trunc","output_index":0,""" +
+                """"summary_index":0,"text":"Thinking round one."}""",
+        )
         sse(
             ex,
             """{"type":"response.output_item.done","output_index":0,""" +
@@ -221,8 +230,13 @@ class MockChatGptUpstream {
     }
 
     private fun foldCleanRound(ex: HttpExchange) {
-        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""")
+        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_clean"}}""")
         sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Thinking round two."}""")
+        sse(
+            ex,
+            """{"type":"response.reasoning_summary_text.done","item_id":"rs_clean","output_index":0,""" +
+                """"summary_index":0,"text":"Thinking round two."}""",
+        )
         sse(ex, """{"type":"response.output_item.done","output_index":0}""")
         sse(ex, """{"type":"response.output_item.added","output_index":1,"item":{"type":"message"}}""")
         sse(ex, """{"type":"response.output_text.delta","output_index":1,"delta":"FINAL ANSWER"}""")
@@ -238,8 +252,13 @@ class MockChatGptUpstream {
     // round-1 summary section verbatim before adding a new one — exactly what sequential_cutoff does
     // when a continuation re-requests the detailed summary over already-summarized reasoning.
     private fun foldSummaryTruncatedRound(ex: HttpExchange) {
-        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""")
+        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_trunc"}}""")
         sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$SUMMARY_SECTION_A"}""")
+        sse(
+            ex,
+            """{"type":"response.reasoning_summary_text.done","item_id":"rs_trunc","output_index":0,""" +
+                """"summary_index":0,"text":"$SUMMARY_SECTION_A"}""",
+        )
         sse(
             ex,
             """{"type":"response.output_item.done","output_index":0,""" +
@@ -257,9 +276,19 @@ class MockChatGptUpstream {
 
     private fun foldSummaryCleanRound(ex: HttpExchange) {
         // output_index restarts at 0 for the continuation round, as the real backend does.
-        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""")
+        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_clean2"}}""")
         sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$SUMMARY_SECTION_A"}""")
+        sse(
+            ex,
+            """{"type":"response.reasoning_summary_text.done","item_id":"rs_clean2","output_index":0,""" +
+                """"summary_index":0,"text":"$SUMMARY_SECTION_A"}""",
+        )
         sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$SUMMARY_SECTION_B"}""")
+        sse(
+            ex,
+            """{"type":"response.reasoning_summary_text.done","item_id":"rs_clean2","output_index":0,""" +
+                """"summary_index":1,"text":"$SUMMARY_SECTION_B"}""",
+        )
         sse(ex, """{"type":"response.output_item.done","output_index":0}""")
         sse(ex, """{"type":"response.output_item.added","output_index":1,"item":{"type":"message"}}""")
         sse(ex, """{"type":"response.output_text.delta","output_index":1,"delta":"FINAL ANSWER"}""")
@@ -278,14 +307,22 @@ class MockChatGptUpstream {
                 if (isContinuationRound(body)) foldSummaryCleanRound(ex) else foldSummaryTruncatedRound(ex)
             "foldcap" -> foldTruncatedRound(ex)
             "multipart" -> {
-                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""")
+                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_mp"}}""")
                 sse(ex, """{"type":"response.reasoning_summary_part.added","output_index":0}""")
                 sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Part one."}""")
-                sse(ex, """{"type":"response.reasoning_summary_text.done","output_index":0}""")
+                sse(
+                    ex,
+                    """{"type":"response.reasoning_summary_text.done","item_id":"rs_mp","output_index":0,""" +
+                        """"summary_index":0,"text":"Part one."}""",
+                )
                 sse(ex, """{"type":"response.reasoning_summary_part.done","output_index":0}""")
                 sse(ex, """{"type":"response.reasoning_summary_part.added","output_index":0}""")
                 sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Part two."}""")
-                sse(ex, """{"type":"response.reasoning_summary_text.done","output_index":0}""")
+                sse(
+                    ex,
+                    """{"type":"response.reasoning_summary_text.done","item_id":"rs_mp","output_index":0,""" +
+                        """"summary_index":1,"text":"Part two."}""",
+                )
                 sse(ex, """{"type":"response.reasoning_summary_part.done","output_index":0}""")
                 sse(ex, """{"type":"response.output_item.done","output_index":0}""")
                 sse(ex, """{"type":"response.output_item.added","output_index":1,"item":{"type":"message"}}""")
@@ -419,11 +456,16 @@ class MockChatGptUpstream {
                 ex.responseBody.write(buf.copyOfRange(at, buf.size))
             }
             "compactish" -> {
-                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""")
+                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_cp"}}""")
                 sse(
                     ex,
                     """{"type":"response.reasoning_summary_text.delta","output_index":0,""" +
                         """"delta":"Goal: port the proxy. Decisions: split modules. Next: tests."}""",
+                )
+                sse(
+                    ex,
+                    """{"type":"response.reasoning_summary_text.done","item_id":"rs_cp","output_index":0,""" +
+                        """"summary_index":0,"text":"Goal: port the proxy. Decisions: split modules. Next: tests."}""",
                 )
                 sse(ex, """{"type":"response.output_item.done","output_index":0}""")
                 sse(

@@ -131,87 +131,10 @@ class ResponsesStreamTranslatorTest {
         assertTrue(sink.calls.contains("think#0:\n\n"))
     }
 
-    // sequential_cutoff (A): each NEW reasoning item restates the running summary as a leading
-    // prefix, then appends one new part. The recap MUST be suppressed — emitting it re-sends every
-    // prior line per item, the duplication staircase (2026-07-23). Parts are >= the dedup min so
-    // the quirk engages; the quirk is on for codex via summaryDelivery="sequential_cutoff".
-    @Test
-    fun `cross-item summary recap is suppressed - each part reaches the wire exactly once`() = runTest {
-        val p0 = "Planning the prioritized review findings"
-        val p1 = "Identifying stale plan conflicts and missing files"
-        val p2 = "Highlighting certification gaps across the runtime"
-        val sink = RecordingSink()
-        val outcome = ResponsesStreamTranslator(ctx(dedupe = true)).driveTurn(
-            listOf(
-                ev("""{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$p0"}"""),
-                // item 1 recaps p0, then adds p1
-                ev("""{"type":"response.output_item.added","output_index":1,"item":{"type":"reasoning"}}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":1,"delta":"$p0"}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":1,"delta":"$p1"}"""),
-                // item 2 recaps p0 + p1, then adds p2
-                ev("""{"type":"response.output_item.added","output_index":2,"item":{"type":"reasoning"}}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":2,"delta":"$p0"}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":2,"delta":"$p1"}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":2,"delta":"$p2"}"""),
-                completed,
-            ).asFlow(),
-            sink,
-        )
-        assertTrue(outcome is TurnOutcome.Success)
-        // Every summary part reaches the wire exactly once — no restatement staircase.
-        assertEquals(1, sink.calls.count { it.contains(p0) }, "p0 duplicated: ${sink.calls}")
-        assertEquals(1, sink.calls.count { it.contains(p1) }, "p1 duplicated")
-        assertEquals(1, sink.calls.count { it.contains(p2) }, "p2 duplicated")
-    }
-
-    // Regression guard (2026-07-20): a paragraph two DISTINCT items genuinely share byte-for-byte is
-    // NOT a leading recap of item 2 (item 2's own new part comes first), so it must be KEPT — a
-    // turn-global seen-set wrongly cross-dropped it, causing summary starvation.
-    @Test
-    fun `a paragraph two distinct items coincidentally share is kept, not cross-dropped`() = runTest {
-        val p0 = "Weighing the two candidate migration designs"
-        val shared = "The token write must precede the navigation step"
-        val fresh = "Now reconciling the session store mismatch cleanly"
-        val sink = RecordingSink()
-        val outcome = ResponsesStreamTranslator(ctx(dedupe = true)).driveTurn(
-            listOf(
-                ev("""{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$p0"}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$shared"}"""),
-                // item 1: a genuinely-new leading part (NOT a recap of p0), then the same shared paragraph
-                ev("""{"type":"response.output_item.added","output_index":1,"item":{"type":"reasoning"}}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":1,"delta":"$fresh"}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":1,"delta":"$shared"}"""),
-                completed,
-            ).asFlow(),
-            sink,
-        )
-        assertTrue(outcome is TurnOutcome.Success)
-        assertEquals(1, sink.calls.count { it.contains(p0) })
-        assertEquals(1, sink.calls.count { it.contains(fresh) })
-        // Kept in BOTH items — the coincidence is not a leading cross-item recap.
-        assertEquals(2, sink.calls.count { it.contains(shared) }, "shared paragraph wrongly dropped: ${sink.calls}")
-    }
-
-    // Regression guard (openai/codex#16801, live 2026-07-19): a part restated WITHIN one item (an
-    // exact re-arrival at the same output_index) is suppressed, without affecting other items.
-    @Test
-    fun `an exact within-item part repeat is suppressed`() = runTest {
-        val q0 = "Deferring the atomic publication ordering decision"
-        val sink = RecordingSink()
-        val outcome = ResponsesStreamTranslator(ctx(dedupe = true)).driveTurn(
-            listOf(
-                ev("""{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$q0"}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$q0"}"""),
-                completed,
-            ).asFlow(),
-            sink,
-        )
-        assertTrue(outcome is TurnOutcome.Success)
-        assertEquals(1, sink.calls.count { it.contains(q0) }, "within-item repeat leaked: ${sink.calls}")
-    }
+    // sequential_cutoff rendering (codex-parity port 2026-08-26) lives in
+    // SequentialCutoffRenderTest — in that mode summary DELTAS are dropped entirely and the
+    // reasoning_summary_text.done events of the ACTIVE item are the render surface. The three
+    // delta-path dedup pins that lived here died with the delta path.
 
     // Cross-TURN recap suppression (2026-08-26) lives in SummaryDedupCrossTurnTest — this class
     // sits at detekt's LargeClass ceiling.

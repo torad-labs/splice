@@ -35,9 +35,14 @@ internal class ResponsesEventReducer(
         when (JsonScalars.strOrEmpty(evt["type"])) {
             "response.output_item.added" -> itemFold.onItemAdded(evt, sink)
             "response.output_item.done" -> itemFold.onItemDone(evt, sink)
-            "response.reasoning_summary_part.added" -> reasoningFold.onSummaryPartAdded(evt, sink)
-            "response.reasoning_summary_text.delta", "response.reasoning_text.delta" ->
-                reasoningFold.onThinkingDelta(evt, sink)
+            // The reasoning family dispatches inside the fold (one arm here keeps this method
+            // under the complexity ceiling). Includes reasoning_summary_text.done — the
+            // sequential_cutoff render surface (codex parity 2026-08-26).
+            "response.reasoning_summary_part.added",
+            "response.reasoning_summary_text.delta",
+            "response.reasoning_text.delta",
+            "response.reasoning_summary_text.done",
+            -> reasoningFold.onReasoningEvent(evt, sink)
             "response.output_text.delta" -> itemFold.onTextDelta(evt, sink)
             "response.function_call_arguments.delta", "response.function_call_arguments.done" ->
                 itemFold.onArgs(evt, sink)

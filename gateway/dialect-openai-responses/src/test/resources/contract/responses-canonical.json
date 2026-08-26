@@ -16,6 +16,7 @@
         "reasoning.encrypted_content"
     ],
     "prompt_cache_key": "splice-7d6e0aa0474b35db01b1f13cba38ea78",
+    "instructions": "",
     "parallel_tool_calls": false,
     "reasoning": {
         "effort": "high",

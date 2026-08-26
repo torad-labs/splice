@@ -32,6 +32,7 @@ internal class ResponsesToolSearchController(
     private val policy: ToolDeferralPolicy,
     private val emitStrict: Boolean,
     private val forceStrictFalse: Boolean,
+    private val normalizeSchemas: Boolean,
     private val decodeReasoningEnvelope: ReasoningEnvelopeDecoder,
 ) : ToolSearchController {
 
@@ -61,6 +62,7 @@ internal class ResponsesToolSearchController(
                         answerFor(call, exhaustive),
                         emitStrict,
                         forceStrictFalse,
+                        normalizeSchemas,
                     ),
                 )
             }

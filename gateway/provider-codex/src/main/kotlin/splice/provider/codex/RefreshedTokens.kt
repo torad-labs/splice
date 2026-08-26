@@ -26,5 +26,10 @@ public class CodexQuirks {
         // forceStrictFalse, NOT emitStrict (review 2026-07-24): emitStrict is grok's pre-existing,
         // never-consequential pass-through flag — reusing it here silently changed grok's bytes too.
         forceStrictFalse = true,
+        // codex parity (tools byte-parity 2026-08-26): the codex CLI never sends a client schema
+        // verbatim — every tool's input_schema is sanitized/pruned/compacted/keyword-subset before
+        // riding the wire (json_schema.rs parse_tool_input_schema), so gpt-5.6 only ever trains
+        // its expectations against normalized shapes. Splice mirrors that on this head only.
+        normalizeToolSchemas = true,
     )
 }

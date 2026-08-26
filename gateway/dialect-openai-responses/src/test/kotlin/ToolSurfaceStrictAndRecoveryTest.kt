@@ -30,8 +30,10 @@ class ToolSurfaceStrictAndRecoveryTest {
     fun `deferredToolObject forces strict false under forceStrictFalse regardless of the tool's own value`() {
         val bash = ToolDefinition(name = "Bash", strict = true)
         val read = ToolDefinition(name = "Read") // strict = null
-        val strictTrue = toolWire.deferredToolObject(bash, emitStrict = false, forceStrictFalse = true)
-        val strictNull = toolWire.deferredToolObject(read, emitStrict = false, forceStrictFalse = true)
+        val strictTrue =
+            toolWire.deferredToolObject(bash, emitStrict = false, forceStrictFalse = true, normalizeSchemas = false)
+        val strictNull =
+            toolWire.deferredToolObject(read, emitStrict = false, forceStrictFalse = true, normalizeSchemas = false)
         assertEquals("false", strictTrue["strict"]?.jsonPrimitive?.content)
         assertEquals("false", strictNull["strict"]?.jsonPrimitive?.content)
     }
@@ -39,14 +41,16 @@ class ToolSurfaceStrictAndRecoveryTest {
     @Test
     fun `deferredToolObject passes through emitStrict true - unaffected by removing forceStrictFalse`() {
         val tool = ToolDefinition(name = "Bash", strict = true)
-        val passthrough = toolWire.deferredToolObject(tool, emitStrict = true, forceStrictFalse = false)
+        val passthrough =
+            toolWire.deferredToolObject(tool, emitStrict = true, forceStrictFalse = false, normalizeSchemas = false)
         assertEquals("true", passthrough["strict"]?.jsonPrimitive?.content)
     }
 
     @Test
     fun `deferredToolObject omits strict entirely when neither quirk is set`() {
         val tool = ToolDefinition(name = "Bash", strict = true)
-        val omitted = toolWire.deferredToolObject(tool, emitStrict = false, forceStrictFalse = false)
+        val omitted =
+            toolWire.deferredToolObject(tool, emitStrict = false, forceStrictFalse = false, normalizeSchemas = false)
         assertNull(omitted["strict"])
     }
 

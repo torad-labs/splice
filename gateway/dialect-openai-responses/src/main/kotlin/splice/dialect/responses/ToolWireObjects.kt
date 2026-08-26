@@ -18,6 +18,8 @@ import splice.core.wire.ToolDefinition
  */
 internal class ToolWireObjects {
 
+    private val normalizer = ToolSchemaNormalizer()
+
     /** [forceStrictFalse] (codex-rs parity: hard-sets `strict:false` on every function tool,
      *  responses_api.rs:29-32) and [emitStrict] (pass through a tool's own strict==true) are
      *  DISTINCT quirks, not one flag with two meanings (review 2026-07-24 round 2/3): GrokProvider's
@@ -25,44 +27,62 @@ internal class ToolWireObjects {
      *  Code's ToolDefinition.strict is always null), so folding the codex-only forced-false behavior
      *  into `emitStrict` silently changed grok's live wire bytes too — a head this feature must not
      *  touch. forceStrictFalse defaults false and only CodexProvider sets it. */
-    fun functionToolObject(t: ToolDefinition, emitStrict: Boolean, forceStrictFalse: Boolean): JsonObject =
-        buildJsonObject {
+    fun functionToolObject(
+        t: ToolDefinition,
+        emitStrict: Boolean,
+        forceStrictFalse: Boolean,
+        normalizeSchemas: Boolean,
+    ): JsonObject {
+        val strictPassthrough = emitStrict && t.strict == true
+        return buildJsonObject {
             put(FIELD_TYPE, TYPE_FUNCTION)
             put(FIELD_NAME, t.name)
             put(FIELD_DESCRIPTION, t.description ?: "")
-            put(FIELD_PARAMETERS, t.inputSchema ?: emptyObjectSchema())
-            when {
-                // forceStrictFalse is a HARD SET (codex-rs parity, responses_api.rs:29-32): every
-                // function tool gets strict:false regardless of the tool's OWN value — passing
-                // t.strict through here (review 2026-07-25) would send strict:true for a tool that
-                // arrives with strict==true, breaking the exact parity this quirk exists for.
-                forceStrictFalse -> put(FIELD_STRICT, false)
-                emitStrict && t.strict == true -> put(FIELD_STRICT, true)
-                else -> Unit
-            }
+            // forceStrictFalse is a HARD SET (codex-rs parity, responses_api.rs:29-32): every
+            // function tool gets strict:false regardless of the tool's OWN value — passing
+            // t.strict through here (review 2026-07-25) would send strict:true for a tool that
+            // arrives with strict==true, breaking the exact parity this quirk exists for. It rides
+            // BEFORE parameters on this path — ResponsesApiTool's serde order (tools byte-parity
+            // 2026-08-26); the non-codex path keeps splice's historical order so grok's wire
+            // bytes never move.
+            if (forceStrictFalse) put(FIELD_STRICT, false)
+            put(FIELD_PARAMETERS, parametersFor(t, normalizeSchemas))
+            if (!forceStrictFalse && strictPassthrough) put(FIELD_STRICT, true)
         }
+    }
 
     /** A deferred tool as it rides inside a tool_search_output.tools[] answer — carries the same
      *  fields as [functionToolObject] plus `defer_loading:true` (tool_search.rs:36-40). Authored
-     *  standalone rather than composed from [functionToolObject]: JSON key order is semantically
-     *  irrelevant to the API, but composing would put defer_loading last instead of adjacent to the
-     *  other declared-shape fields, and this way the two builders stay independently readable. */
-    fun deferredToolObject(t: ToolDefinition, emitStrict: Boolean, forceStrictFalse: Boolean): JsonObject =
-        buildJsonObject {
+     *  standalone rather than composed from [functionToolObject]: the two builders stay
+     *  independently readable, and the codex path mirrors serde's defer_loading position
+     *  (responses_api.rs:26-38 — after strict, before parameters). */
+    fun deferredToolObject(
+        t: ToolDefinition,
+        emitStrict: Boolean,
+        forceStrictFalse: Boolean,
+        normalizeSchemas: Boolean,
+    ): JsonObject {
+        val strictPassthrough = emitStrict && t.strict == true
+        return buildJsonObject {
             put(FIELD_TYPE, TYPE_FUNCTION)
             put(FIELD_NAME, t.name)
             put(FIELD_DESCRIPTION, t.description ?: "")
+            // Same hard-set law as functionToolObject's identical branch (review 2026-07-25) — a
+            // deferred tool answered through tool_search gets forced strict:false too, never a
+            // pass-through of its own strict==true.
+            if (forceStrictFalse) put(FIELD_STRICT, false)
             put(FIELD_DEFER_LOADING, true)
-            put(FIELD_PARAMETERS, t.inputSchema ?: emptyObjectSchema())
-            when {
-                // Same hard-set law as functionToolObject's identical branch just above (review
-                // 2026-07-25) — a deferred tool answered through tool_search gets forced strict:false
-                // too, never a pass-through of its own strict==true.
-                forceStrictFalse -> put(FIELD_STRICT, false)
-                emitStrict && t.strict == true -> put(FIELD_STRICT, true)
-                else -> Unit
-            }
+            put(FIELD_PARAMETERS, parametersFor(t, normalizeSchemas))
+            if (!forceStrictFalse && strictPassthrough) put(FIELD_STRICT, true)
         }
+    }
+
+    /** codex parity: gpt-5.6 only ever sees codex-NORMALIZED schemas from its own CLI (the
+     *  ToolSchemaNormalize.kt pipeline); off = today's verbatim passthrough. */
+    private fun parametersFor(t: ToolDefinition, normalizeSchemas: Boolean): JsonObject {
+        val schema = t.inputSchema ?: emptyObjectSchema()
+        return if (normalizeSchemas) normalizer.normalize(schema) else schema
+    }
 
     private fun emptyObjectSchema(): JsonObject = buildJsonObject {
         put("type", "object")
@@ -117,8 +137,9 @@ internal class ToolWireObjects {
         emitStrict: Boolean,
         forceStrictFalse: Boolean,
         searchLimit: Int,
+        normalizeSchemas: Boolean,
     ): JsonArray = buildJsonArray {
-        partition.eager.forEach { add(functionToolObject(it, emitStrict, forceStrictFalse)) }
+        partition.eager.forEach { add(functionToolObject(it, emitStrict, forceStrictFalse, normalizeSchemas)) }
         if (partition.deferring) add(toolSearchToolObject(searchLimit))
     }
 }

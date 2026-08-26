@@ -84,6 +84,7 @@ internal class ResponsesInputTools(
                 listOf(tool),
                 quirks.emitStrict,
                 quirks.forceStrictFalse,
+                quirks.normalizeToolSchemas,
             ),
         )
     }

@@ -181,7 +181,9 @@ class ResponsesRequestBuilderTest {
             "tools":[{"name":"Task","input_schema":{"type":"object"}}],
             "messages":[{"role":"user","content":"x"}]}"""
         val req = build(tooled, options = opts(model = "gpt-5.6-sol"))
-        assertNull(req["instructions"])
+        // "" and not omitted: codex's ResponsesApiRequest.instructions is a non-optional String,
+        // so its lite requests carry the empty string (client.rs:874; tools byte-parity 2026-08-26).
+        assertEquals("", req["instructions"]?.jsonPrimitive?.content)
         assertNull(req["tools"])
         // codex-rs parity (client.rs:896): tools ride as additional_tools, so the backend needs an
         // explicit tool_choice:"auto" to enable function-calling — omitting it left the model
@@ -204,7 +206,7 @@ class ResponsesRequestBuilderTest {
             """{"model":"m","system":"harness prompt","messages":[{"role":"user","content":"x"}]}""",
             options = opts(model = "gpt-5.6-luna"),
         )
-        assertNull(req["instructions"])
+        assertEquals("", req["instructions"]?.jsonPrimitive?.content) // lite parity: "", not omitted
         // the backend REQUIRES an explicit false whenever the lite header rides, tools or not
         assertEquals("false", req["parallel_tool_calls"]?.jsonPrimitive?.content)
         val input = req["input"]!!.jsonArray.map { it.jsonObject }

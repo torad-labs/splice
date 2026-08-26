@@ -51,6 +51,13 @@ public data class ResponsesQuirks(
      *  false (the default) leaves [emitStrict]'s pass-through behavior as the only effect, exactly
      *  today's behavior. Only CodexProvider sets this true. */
     val forceStrictFalse: Boolean = false,
+    /** codex-rs parity (tools byte-parity 2026-08-26): run every function tool's input_schema
+     *  through the ToolSchemaNormalize.kt pipeline — sanitize, prune unreachable $defs, compact
+     *  >5KB schemas, drop unknown keywords, alphabetize properties — exactly what codex does before
+     *  ANY tool rides its wire (tools/src/json_schema.rs parse_tool_input_schema). gpt-5.6 never
+     *  sees a verbatim client schema from its own CLI. false (the default) = today's verbatim
+     *  passthrough; only CodexProvider sets this true. */
+    val normalizeToolSchemas: Boolean = false,
     /** RC-5 (reasoning-cache 2026-07-24): gateway-held reasoning continuity for tool
      *  round-trips (codex parity — repeated tool calls / duplicated reasoning without it).
      *  Off restores the pre-cache amnesia behavior exactly. */

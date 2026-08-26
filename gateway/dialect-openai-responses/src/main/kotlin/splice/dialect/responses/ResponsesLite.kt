@@ -29,7 +29,10 @@ internal class ResponsesLiteShape(private val quirks: ResponsesQuirks) {
 
     fun wireShape(lite: Boolean, input: JsonArray, instructions: String, tools: JsonArray?): WireShape =
         if (lite) {
-            WireShape(liteInput(input, tools, instructions), instructions = null, tools = null)
+            // instructions:"" — NOT omitted: codex's ResponsesApiRequest.instructions is a
+            // non-optional String, so its lite requests carry the empty string (core/src/client.rs
+            // :874 `(String::new(), None)`; tools byte-parity 2026-08-26).
+            WireShape(liteInput(input, tools, instructions), instructions = "", tools = null)
         } else {
             WireShape(input, instructions, tools)
         }

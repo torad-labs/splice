@@ -35,6 +35,7 @@ private val CONTROLLER = ResponsesToolSearchController(
     policy = POLICY,
     emitStrict = false,
     forceStrictFalse = false,
+    normalizeSchemas = false,
     decodeReasoningEnvelope = { coreDecode(it) },
 )
 

@@ -29,6 +29,7 @@ internal class ToolSearchOutput {
         tools: List<ToolDefinition>,
         emitStrict: Boolean,
         forceStrictFalse: Boolean,
+        normalizeSchemas: Boolean,
     ): JsonObject = buildJsonObject {
         put(FIELD_TYPE, TYPE_TOOL_SEARCH_OUTPUT)
         put(FIELD_CALL_ID, callId)
@@ -37,7 +38,7 @@ internal class ToolSearchOutput {
         put(
             FIELD_TOOLS,
             buildJsonArray {
-                tools.forEach { add(toolWire.deferredToolObject(it, emitStrict, forceStrictFalse)) }
+                tools.forEach { add(toolWire.deferredToolObject(it, emitStrict, forceStrictFalse, normalizeSchemas)) }
             },
         )
     }

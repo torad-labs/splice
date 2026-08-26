@@ -52,7 +52,13 @@ internal class ResponsesRequestAssembler(private val quirks: ResponsesQuirks) {
         // (ResponsesRequestBuilderTest pins it): fields in declaration order, null optionals omitted.
         val searchLimit = quirks.toolSurface?.searchLimit ?: DEFAULT_SEARCH_LIMIT
         val tools = parts.partition?.let {
-            toolWire.toolsSection(it, quirks.emitStrict, quirks.forceStrictFalse, searchLimit)
+            toolWire.toolsSection(
+                it,
+                quirks.emitStrict,
+                quirks.forceStrictFalse,
+                searchLimit,
+                quirks.normalizeToolSchemas,
+            )
         }
         val lite = liteShape.isLite(opts)
         // Lite turns carry tools as an additional_tools input item, not top-level `tools`; without

@@ -26,6 +26,7 @@ private fun codexProfileQuirks(toolSurface: ToolDeferralPolicy? = null) = Respon
     providerTag = "claudex",
     summaryDelivery = "sequential_cutoff",
     forceStrictFalse = true,
+    normalizeToolSchemas = true,
     toolSurface = toolSurface,
 )
 

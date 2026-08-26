@@ -40,43 +40,68 @@ public data class TurnMeta(
      *  passes each round's per-instance dedup and lands as a duplicate — the 2026-07-26 mirror
      *  duplication).
      *
-     *  NON-NULL WITH A FRESH DEFAULT ON PURPOSE (2026-07-26): this is the ONLY sanctioned
-     *  construction site. No caller passes this argument, so there is no per-round construction to
-     *  get wrong, and `copy()` — which every continuation path uses — preserves the reference.
-     *  Dialects that render no reasoning summary simply never read it (two empty collections). */
+     *  NON-NULL WITH A FRESH DEFAULT ON PURPOSE (2026-07-26): no caller passes this argument, so
+     *  there is no per-round construction to get wrong, and `copy()` — which every continuation
+     *  path uses — preserves the reference. Dialects that render no reasoning summary simply never
+     *  read it (two empty collections). The responses dialect substitutes a CONVERSATION-lifetime
+     *  instance at translator construction when the turn has a conversation key (the cross-turn
+     *  recap staircase, 2026-08-26); this default remains the state for unkeyed turns. */
     val summaryParts: SharedSummaryParts = SharedSummaryParts(),
 )
 
 /** The shared state behind TurnMeta.summaryParts: the ordered parts already emitted to the
- *  client this turn, plus the per-item exact set the dedup's within-item arm matches against.
- *  Mutable per-turn coordination, never compared by value.
+ *  client, plus the per-item exact set the dedup's within-item arm matches against.
+ *  Mutable coordination state, never compared by value.
  *
- *  ACCESS DISCIPLINE (2026-07-26 review): mutated by ONE round's translator at a time. The
- *  fold/re-anchor/tool_search loops drive rounds strictly sequentially (`FoldRunner.run` is a
- *  plain `while (true) { postRound(...) }` — no launch/async around a round), so the absence of
- *  synchronization here is deliberate, not an oversight. A future round loop that overlaps rounds
- *  must add synchronization before sharing this. Public, not internal: the dialect module reads
- *  these across a module boundary.
+ *  ACCESS DISCIPLINE (revised 2026-08-26): originally turn-scoped and mutated by ONE round's
+ *  translator at a time (round loops are strictly sequential), so it carried no synchronization.
+ *  The responses dialect now keeps ONE instance per CONVERSATION across client turns (the
+ *  cross-turn recap staircase), and successive turns run on arbitrary dispatcher threads — the
+ *  per-method synchronization below is the memory-visibility bridge the 2026-07-26 note said a
+ *  cross-round share would need. Public, not internal: the dialect module reads these across a
+ *  module boundary.
  *
  *  APPEND-ONLY BY TYPE, not by comment (2026-07-27 review): the collections used to be public
  *  `MutableList`/`MutableMap`, so the discipline above was documentary — any in-repo caller could
  *  `clear()`, reorder or truncate the list with no compile error and no test to catch it, and the
- *  translator's recap cursor trusts this list's ORDER and LENGTH. The surface is now exactly the
- *  two operations the dedup dialect performs; the collections cannot be reached to be reordered. */
+ *  translator's recap cursor trusts this list's ORDER and LENGTH. The surface is exactly the
+ *  operations the dedup dialect performs; [trimToLast] is the one bounded exception and runs only
+ *  BETWEEN rounds (no recap cursor survives a round, so index shifts are unobservable). */
 public class SharedSummaryParts {
     private val emittedParts = mutableListOf<String>()
     private val itemEmitted = mutableMapOf<Int, MutableSet<String>>()
 
     /** The part at [cursor] in emission order, or null past either end (the recap arm passes
      *  RECAP_DONE = -1 once an item's leading recap is finished, which must not match). */
+    @Synchronized
     public fun partAt(cursor: Int): String? = emittedParts.getOrNull(cursor)
 
     /** Records [part] as emitted for item [outputIndex]. Returns false when it was ALREADY
      *  emitted for that item — a dedup hit — in which case nothing is appended. */
+    @Synchronized
     public fun markEmitted(outputIndex: Int, part: String): Boolean {
         val fresh = itemEmitted.getOrPut(outputIndex) { mutableSetOf() }.add(part)
         if (fresh) emittedParts.add(part)
         return fresh
+    }
+
+    /** Index of [part]'s first occurrence in emission order, or -1 when never emitted. A NEW
+     *  round's leading recap restates the TAIL of the prior round's emission, not the whole list
+     *  (live claudex scan 2026-08-26: 244/803 thinking messages opened with an already-emitted
+     *  ordered run; zero repeats arrived non-leading), so the recap arm anchors wherever the
+     *  round's first part matches instead of only at position 0. */
+    @Synchronized
+    public fun anchorOf(part: String): Int = emittedParts.indexOf(part)
+
+    /** Drops all but the newest [n] parts (and their per-item dedup records) — the between-rounds
+     *  bound that keeps a conversation-lifetime instance finite. Recaps only restate the recent
+     *  tail, so aged-out parts carry no dedup value. */
+    @Synchronized
+    public fun trimToLast(n: Int) {
+        while (emittedParts.size > n) {
+            val dropped = emittedParts.removeAt(0)
+            itemEmitted.values.forEach { it.remove(dropped) }
+        }
     }
 }
 

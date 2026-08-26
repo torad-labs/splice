@@ -213,6 +213,9 @@ class ResponsesStreamTranslatorTest {
         assertEquals(1, sink.calls.count { it.contains(q0) }, "within-item repeat leaked: ${sink.calls}")
     }
 
+    // Cross-TURN recap suppression (2026-08-26) lives in SummaryDedupCrossTurnTest — this class
+    // sits at detekt's LargeClass ceiling.
+
     @Test
     fun `tool flow - eager open on item added, args stream to same index, done closes`() = runTest {
         val sink = RecordingSink()

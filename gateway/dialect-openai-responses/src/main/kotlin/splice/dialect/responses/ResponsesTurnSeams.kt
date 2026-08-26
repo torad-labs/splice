@@ -37,7 +37,11 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
                 streamIdleMsForMessage = deps.streamIdleMs,
                 upstreamTimeoutMsForMessage = deps.upstreamTimeoutMs,
                 dedupeRepeatedSummaryParts = deps.quirks.summaryDelivery != null,
-                summaryPartsShared = meta.summaryParts,
+                // Conversation-lifetime dedup state when the turn has a conversation key (the
+                // cross-turn recap staircase, 2026-08-26); unkeyed turns keep the turn's own
+                // instance — exactly the prior behavior.
+                summaryPartsShared = deps.summaryParts.forConversation(meta.conversationKey)
+                    ?: meta.summaryParts,
                 // Collect this round's encrypted reasoning envelopes whenever a continuation
                 // could consume them: fold replay (Success side) OR mid-stream re-anchor salvage
                 // (Failure side) — i.e. every non-compact responses turn since re-anchor landed

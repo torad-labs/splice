@@ -8,6 +8,7 @@ internal class ResponsesParts(input: ResponsesPartsInput) {
     private val surfaceRecovery = ToolSurfaceRecovery()
     private val ids = ResponsesStableIds()
     private val reasoningCache = ReasoningCache(log = input.log)
+    private val summaryParts = ConversationSummaryParts()
     private val toolSurfaceLatch = ToolSurfaceLatch()
     val turnOptions = ResponsesTurnOptions(
         TurnOptionsDeps(
@@ -30,6 +31,7 @@ internal class ResponsesParts(input: ResponsesPartsInput) {
             cachePolicy = cachePolicy,
             ids = ids,
             reasoningCache = reasoningCache,
+            summaryParts = summaryParts,
             turnOptions = turnOptions,
             foldConfig = input.foldConfig,
             replayReasoning = input.replayReasoning,

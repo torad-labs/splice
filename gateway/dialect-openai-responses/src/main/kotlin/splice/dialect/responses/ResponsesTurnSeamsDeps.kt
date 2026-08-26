@@ -8,6 +8,7 @@ internal data class ResponsesTurnSeamsDeps(
     val cachePolicy: ReasoningCachePolicy,
     val ids: ResponsesStableIds,
     val reasoningCache: ReasoningCache,
+    val summaryParts: ConversationSummaryParts,
     val turnOptions: ResponsesTurnOptions,
     val foldConfig: FoldConfig?,
     val replayReasoning: Boolean,

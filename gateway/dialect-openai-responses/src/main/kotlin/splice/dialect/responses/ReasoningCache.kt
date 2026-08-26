@@ -238,8 +238,16 @@ internal class ReasoningCache(
 // tool-loop gap (eli risk 4).
 private const val TTL_MS: Long = 30 * 60 * 1000L
 
-// Total ROUNDS across all conversations on the head (one entry per tool round).
-private const val MAX_ENTRIES: Int = 256
+// Total ROUNDS across all conversations on the head (one entry per tool round). 8192, not the
+// original 256: live soak 2026-08-26 logged 1192 reasoning-cache events in one daemon.log — the
+// round bound (not bytes; a round is a few KB, so 256 rounds ≈ 1-2MB against a 64MB byte cap)
+// evicted whole active conversations every few minutes (one at 130 rounds), and every evicted
+// conversation rebuilds with ZERO reasoning injection — the tool-amnesia respiral (repeated
+// identical tool calls) RC exists to prevent. codex-rs never bounds this at all (its in-process
+// history keeps every reasoning item, bounded only by the context window + auto-compaction), so
+// the byte cap below is the intended memory guard and the round bound is bookkeeping headroom
+// above it, not the binding constraint.
+private const val MAX_ENTRIES: Int = 8192
 private const val MAX_TOTAL_BYTES: Long = 64L * 1024 * 1024
 
 // "splice-" + 7 hash chars: identifiable in logs, not noisy.

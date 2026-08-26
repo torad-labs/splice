@@ -126,20 +126,37 @@ class ResponsesReanchorControllerTest {
     }
 
     @Test
-    fun `a thinking-only partial refuses continuation - thinking cannot seed the resume`() {
+    fun `a thinking-only partial restarts from scratch - nothing replayable, no marker`() {
         val partial = TurnOutcome.PartialRound(thinkingText = "deep partial reasoning already streamed")
-        assertNull(
-            controller.continuationForFailure(
-                ReanchorRound(previousBody(), failureWith(partial = partial), 0),
-            ),
+        val next = controller.continuationForFailure(
+            ReanchorRound(previousBody(), failureWith(partial = partial), 0),
         )
+        // Verbatim whole-request retry (codex-rs responses_retry.rs parity) — NOT a marker
+        // continuation: thinking cannot seed a resume, so the round re-runs clean.
+        assertEquals(previousBody(), next)
     }
 
     @Test
-    fun `an empty partial refuses continuation - nothing to salvage`() {
+    fun `an empty partial restarts from scratch - the whole-request retry`() {
+        val next = controller.continuationForFailure(
+            ReanchorRound(previousBody(), failureWith(partial = TurnOutcome.PartialRound()), 0),
+        )
+        assertEquals(previousBody(), next)
+    }
+
+    @Test
+    fun `clean-slate restart respects the continuation budget`() {
+        val empty = failureWith(partial = TurnOutcome.PartialRound())
+        assertNotNull(controller.continuationForFailure(ReanchorRound(previousBody(), empty, 1)))
+        assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), empty, 2)))
+    }
+
+    @Test
+    fun `clean-slate restart refuses a tool round - double-dispatch risk unchanged`() {
+        val partial = TurnOutcome.PartialRound(hasToolUse = true)
         assertNull(
             controller.continuationForFailure(
-                ReanchorRound(previousBody(), failureWith(partial = TurnOutcome.PartialRound()), 0),
+                ReanchorRound(previousBody(), failureWith(partial = partial), 0),
             ),
         )
     }

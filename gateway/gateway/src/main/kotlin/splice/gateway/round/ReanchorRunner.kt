@@ -68,10 +68,10 @@ internal class ReanchorRunner(
                 salvaged.add(p)
                 acc = acc.plusRound(p.usage)
             }
-            log(
-                "[$key] re-anchor ${attempt + 1}: ${failure.type.wireName} mid-stream — " +
-                    "continuing from partial output\n",
-            )
+            // A clean-slate restart returns the request verbatim; log it as what it is rather
+            // than claiming a partial that does not exist.
+            val restarted = if (next == body) "restarting the round from scratch" else "continuing from partial output"
+            log("[$key] re-anchor ${attempt + 1}: ${failure.type.wireName} mid-stream — $restarted\n")
             body = next
             attempt++
         }

@@ -1,0 +1,91 @@
+# LAW: concept #945 — this manifest IS the memory; access ONLY via dev/campaigns/manifest.py
+# LAW [2026-08-26]: PROVENANCE — Eli drift audit of 285987d..71c0849 (the nine commits landed
+#   after the PR-99 gate-clear), commissioned by the operator to prove no architectural/hook/style
+#   drift. Architecture, hooks, Kotlin style laws, mirror_reasoning and kimi byte-identity all came
+#   back CLEAN; the seven items below are the DEFECTS the audit surfaced instead. Four were
+#   independently re-verified against the code by the orchestrator before this ledger existed
+#   (deleted guard test absent repo-wide; `else -> true` at ResponsesReanchorController.kt:50;
+#   responsesLiteModelRegex defaulting to gpt-5.6 for every arm; the ReasoningCache comment
+#   contradicting its own arithmetic). A second Eli pass hunts the same six CLASSES repo-wide.
+# LAW [2026-08-26]: EVIDENCE-FIRST — every item lands a test that FAILS on unmodified HEAD before
+#   its fix. A fix without a red-green proof is unvalidated and cannot be set done. This is the
+#   ws-close precedent (71c0849): three tests red for the right reason, then the two-line fix.
+# LAW [2026-08-26]: NEVER-BELOW-STATUS-QUO — every fix degrades to today's behavior on its error
+#   path. A fix that surfaces a client-visible error where the old code fell back (to SSE, to a
+#   full send, to verbatim, to a silent decline) is a blocker regression, not a fix.
+# LAW [2026-08-26]: OPERATOR LOCKS — mirror_reasoning stays FALSE on every head (never re-enable
+#   for parity/continuity/any agent theory: ASK and wait). Kimi's built requests and goldens stay
+#   BYTE-IDENTICAL. Neither may be touched by any item here.
+# LAW [2026-08-26]: NO GATE BYPASS — no --no-verify, no skip envs, no renaming to dodge a matcher.
+#   A wrongly-blocking hook gets the hook fixed and the gate re-run. Each item's `verify` is its
+#   own targeted command; `npm run gate` (38 legs) is the ORCHESTRATOR's act, never a builder's.
+# LAW [2026-08-26]: COMMENTS ARE DESIGN LAW — this codebase's comments carry ported invariants and
+#   dated rulings, so a comment asserting what the code does NOT do is a defect of the same rank as
+#   the code being wrong. Comment corrections ride the commit that touches their file; DR-6 exists
+#   only for the ones whose files no other item opens.
+# LAW [2026-08-26]: PORT FIDELITY IS UNVERIFIABLE HERE — there is no codex-rs checkout on this
+#   machine, so every `json_schema.rs` / `client.rs` line citation in the ports is unchecked.
+#   No item may claim port parity as proven; internal consistency is the most that can be asserted
+#   until a codex checkout exists.
+
+[campaign]
+name = "drift-repair"
+goal = "Repair the seven defects the 2026-08-26 Eli drift audit surfaced in the post-PR-99 commits, plus every same-class instance a repo-wide hunt finds — silent swallowed failures, non-atomic operator-state mutations, widened retry predicates that amplify deterministic failures, comment-vs-code lies, deleted regression guards, and unbounded accumulators"
+next = ["DR-2", "DR-1", "DR-3", "DR-4", "DR-5", "DR-7", "DR-6"]
+
+[[items]]
+id = "DR-1"
+phase = "launch"
+title = "SessionRegistryLink.migrate is not collision-safe and is silent on every failure path. Files.move without REPLACE_EXISTING throws FileAlreadyExistsException on a PID-filename collision; that extends IOException so runCatchingCancellable swallows it, the loop continues, Files.delete then fails on the non-empty dir (DirectoryNotEmptyException, also swallowed), migrate returns false and link() returns WITHOUT creating the symlink. End state: a partially-emptied head sessions/ dir, a foreign stale entry now sitting in the operator global registry with no cleanup owner, no symlink, and NOTHING logged — and it is unrecoverable by retry because every relaunch re-hits the same collision, so that head stays permanently invisible to cross-head ListAgents (the entire point of 843bc00). If the moved file belonged to a LIVE session, its exit-time unlink targets the local path the file no longer occupies, so peers list a dead session forever. Fix: two-phase migration (probe every target for existence before moving anything, or stage+rollback), a log line on every decline (the call site at ClaudeConfigMaterializer.kt:115-117 wraps the whole thing in runCatchingCancellable with no log), Files.createDirectories(globalSessions) so the feature is not silently inert when the operator has never run plain claude, and a temp-symlink + ATOMIC_MOVE swap to close the window where the head has no sessions/ dir at all. Header comment must stop claiming the refusal path is complete."
+files = ["gateway/core/src/main/kotlin/splice/core/launch/SessionRegistryLink.kt", "gateway/core/src/main/kotlin/splice/core/launch/ClaudeConfigMaterializer.kt", "gateway/core/src/test/kotlin/ClaudeConfigMaterializerTest.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :core:test --console=plain"
+# [2026-08-26] LIVE EXPOSURE (orchestrator, 2026-08-26): the bug cannot bite on this machine TODAY. The four active head dirs (.claude-claudex, .claude-claude-grok, .claude-claude-kimi, .claude-openrouter) are already symlinks to ~/.claude/sessions, so link() short-circuits at the readSymbolicLink==globalSessions check and migrate is never reached. The remaining real sessions/ dirs (.claude-codex, .claude-grok, .claude-mythos, .claude-torad) are all EMPTY (0 entries) and are not splice heads, so even if one were materialized the migration loop has nothing to move. Zero filename collisions exist between any real head dir and the global registry right now. The defect is therefore latent, not active: it bites on a FRESH machine, or after any head dir is recreated, or once PID recycling puts the same <pid>.json in both places. That makes DR-1 a correctness fix with no live incident to race, which is why the queue puts DR-2 (active token burn on every content-filtered turn) ahead of it.
+
+[[items]]
+id = "DR-2"
+phase = "responses"
+title = "Reanchor eligibility was widened to 'else -> true' (ResponsesReanchorController.kt:50) without auditing the failure constructors that now satisfy it, so DETERMINISTIC failures get re-POSTed at full context. partialOrNull returns a non-null PartialRound for every non-compact turn including empty buffers, so any OVERLOADED/API_ERROR non-compact tool-free turn is now eligible. contentFilterFailure (ResponsesTerminalDecision.kt:74-81) is API_ERROR and DOES carry a partial; it was safe before only because hasSalvage was false for a filtered turn. A content-filtered turn now costs 3x the full input-token bill, 3x latency, and renders reasoning three times before returning the identical error. The sibling refusalFailure carries a comment documenting exactly this hazard and deliberately omits its partial — that defence was never extended to its neighbour. Fix: exclude deterministic terminals from eligibility (a content filter is as deterministic as a refusal), and pin it with a test asserting a filtered turn is re-POSTed ZERO times. Also determine whether postRound carries its own backoff for the mid-stream-error case, since ReanchorRunner.run has no delay between iterations and the budgets would multiply rather than add."
+files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesReanchorController.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTerminalDecision.kt", "gateway/dialect-openai-responses/src/test/kotlin/ResponsesReanchorTest.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :dialect-openai-responses:test --console=plain"
+
+[[items]]
+id = "DR-3"
+phase = "responses"
+title = "The 2026-07-20 summary-starvation regression guard was deleted with no replacement while the window it guarded got WIDER. The test 'a paragraph two distinct items coincidentally share is kept, not cross-dropped' no longer exists anywhere in the repo (orchestrator-verified: nothing matches 'coincident' in any test source), and its own comment recorded that a turn-global seen-set 'wrongly cross-dropped it, causing summary starvation'. Meanwhile SummaryDedup.kt:56-68 replaced 'does this part match position 0' with 'does this part match ANYWHERE in the emitted list' and the list became conversation-lifetime, up to 512 entries. Failure: turn 1 emits titles p_A/p_B; turn 6 legitimately re-runs the same two-step procedure on a different file and emits byte-identical leading titles; anchorOf(p_A)=0 suppresses, cursor advances, partAt(1)==p_B suppresses — both genuinely-new parts are silently swallowed and the user sees a thinking block starting mid-thought. Fix: restore an equivalent guard test FIRST (red on unmodified HEAD), then narrow the anchor window so a coincidence cannot swallow a new item. Also correct SummaryDedup.kt:37-40, which still claims the parts are TURN-scoped and the cursor per-round — both false, and contradicted by the file's own header ten lines above."
+files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/SummaryDedup.kt", "gateway/dialect-openai-responses/src/test/kotlin/ResponsesStreamTranslatorTest.kt", "gateway/dialect-openai-responses/src/test/kotlin/SummaryDedupCrossTurnTest.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :dialect-openai-responses:test --console=plain"
+
+[[items]]
+id = "DR-5"
+phase = "responses"
+title = "ConversationSummaryParts is count-bounded only, with no byte cap and no TTL, and its stated worst-case memory is off by an order of magnitude. The header claims '64 * 512 parts * ~100 chars = 3 MB per head'; the arithmetic is right but the input is wrong — a gpt-5 reasoning summary part is a bolded title plus a paragraph, routinely 300-1000 chars, bounded above only by BufferCapacity.MAX_BUFFERED_CHARS = 20_000_000. At 500 chars the real figure is ~16 MB, at 1000 chars ~33 MB. The structural defect is the asymmetry with the sibling it was modelled on: ReasoningCache — hardened in this very batch — carries a byte cap AND a 30-minute idle TTL sweep; this has neither, and an entry lives until 64 other conversations push it out (a head serving three sessions holds all three for the process lifetime). Fix: give it the sibling's shape (byte cap + TTL sweep) or correct the header to the real numbers and state why the weaker bound is sufficient. Related and UNVERIFIED, to be settled inside this item: SharedSummaryParts gained @Synchronized per method while becoming conversation-lifetime, and forConversation calls trimToLast on EVERY fetch; per-method synchronization gives visibility but not atomicity across partAt -> markEmitted, and nothing establishes that two POSTs sharing a conversation key never overlap. If they can, a trim during a live round shifts indices under that round's absolute cursor (degrades to duplicates, never an error)."
+files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ConversationSummaryParts.kt", "gateway/core/src/main/kotlin/splice/core/turn/Turn.kt", "gateway/dialect-openai-responses/src/test/kotlin/ConversationSummaryPartsTest.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :dialect-openai-responses:test :core:test --console=plain"
+
+[[items]]
+id = "DR-6"
+phase = "hygiene"
+title = "Comment-honesty cluster: comments introduced by this batch that assert what the code does not do. In this codebase comments carry ported invariants and dated rulings, so these rank as defects, not tidiness. (a) ReasoningCache.kt:247-249 claims the byte cap is the intended guard and the round bound is 'bookkeeping headroom above it, not the binding constraint' — but by its own arithmetic two lines earlier (a round is a few KB), 8192 rounds reaches 32-64MB and therefore binds AT OR BEFORE the 64MB cap; orchestrator-verified. (b) ToolSchemaNormalize.kt:14 points at 'ToolSchemaSubset.kt', a filename that has never existed — the file is SchemaSubset.kt, renamed for the detekt Filename rule; orchestrator-verified. (c) ResponsesHarvest.kt:16 says 'Harvested lives in HarvestedText.kt', a file DELETED in the same diff; orchestrator-verified. (d) Harvested.kt:1-2 says 'Split from Harvested.kt' inside the file named Harvested.kt. Only comments whose files no other item opens belong here — (a) and the SummaryDedup ones ride DR-3/DR-5 if those land first. Fix is text-only; the value is that the next reader is not misled. Note the counter-example worth preserving: the corresponding wall cx_18_usage_aliases.py WAS repointed correctly with a dated note, so the mechanical dependency was maintained while the human-readable ones rotted."
+files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ReasoningCache.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ToolSchemaNormalize.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesHarvest.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/Harvested.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :dialect-openai-responses:test --console=plain && npm run gate"
+
+[[items]]
+id = "DR-7"
+phase = "responses"
+title = "sequential_cutoff mode drops streaming deltas, so a round torn mid-part now renders NOTHING for that part where the old path had already shown partial text — a user-visible content loss that no test pins. In cutoff mode onSummaryPartAdded returns immediately, reasoning_summary_text.delta is dropped, maybeEmitLateReasoning returns, and reasoning_summary_text.done is the only render surface; thinking therefore lands in atomic per-part bursts instead of streaming token-by-token. This IS codex parity and it is not a client-visible ERROR, so it does not breach NEVER-BELOW-STATUS-QUO — but it is a deliberate behaviour change that 22a0744 landed uncosted and unpinned. Decide explicitly: either accept it as parity and land a test that PINS the tear-path behaviour (so a future change cannot alter it silently), or restore delta rendering for the torn case only. Operator input may be wanted on which — this is the one item in the campaign that is a judgement call rather than a defect with an obvious correct end state."
+files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt", "gateway/dialect-openai-responses/src/test/kotlin/SequentialCutoffRenderTest.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :dialect-openai-responses:test --console=plain"
+
+[[items]]
+id = "DR-4"
+phase = "responses"
+title = "The empty-string instructions field is an ungated wire-byte change sitting in the SHARED dialect, justified by a codex-only serde detail. Every other codex-parity change in f9523cc rides a quirk (normalizeToolSchemas is declared in ResponsesQuirks and threaded through ToolPlan/InputTools/ToolWireObjects, set only by the codex profile) — textbook layering. This one is unconditional inside ResponsesLiteShape.wireShape, and its stated justification is a fact about codex RUST STRUCT internals (ResponsesApiRequest.instructions is a non-optional String). The gate above it is quirks.responsesLiteModelRegex, which DEFAULTS to gpt-5.6 IGNORE_CASE at ResponsesQuirks.kt:24 (orchestrator-verified) — i.e. ON for every responses arm that does not override it, including the generic OpenAI api-key arm. The provider-neutral golden responses-canonical.json gained the field, which is the visible proof. Grok is safe only INCIDENTALLY: it inherits the same default regex and its model names simply never match gpt-5.6 — a coincidence, not a seam. Fix: put the field behind its own quirk defaulted off, set it in the codex profile only, and re-record the neutral golden back to not carrying it. Secondary, needs one line of operator confirmation: three request-byte goldens changed in this batch and ResponsesContractTest header describes a live-receipt binding where a CHANGED golden must match a receipt hash so a blind regenerate cannot go green — confirm that binding is genuinely dormant rather than silently satisfiable."
+files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesLite.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesQuirks.kt", "gateway/provider-codex/src/main/kotlin/splice/provider/codex/RefreshedTokens.kt", "gateway/dialect-openai-responses/src/test/resources/contract/responses-canonical.json", "gateway/dialect-openai-responses/src/test/kotlin/ResponsesContractTest.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :dialect-openai-responses:test :provider-codex:test --console=plain"

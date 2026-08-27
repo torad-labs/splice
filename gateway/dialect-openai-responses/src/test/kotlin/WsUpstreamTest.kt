@@ -246,6 +246,38 @@ class WsUpstreamTest {
     }
 
     @Test
+    fun `a server close BETWEEN rounds poisons the pooled connection`() = runTest {
+        // PRODUCTION (daemon.log 2026-08-26, 67 stale sends in 17h): the server sheds an idle pooled
+        // socket between rounds. onClose closed the inbox but never poisoned, so `dead` stayed false,
+        // acquire()'s liveness filter passed the corpse to the next round, and that round discovered
+        // it on send — "send failed async (IOException: Output closed) — killing connection, round
+        // rides SSE". Every occurrence cost a wasted frame plus a reconnect. The close is OBSERVED
+        // here, so the pool can learn of it before handing the socket out again.
+        val fx = Fixture().apply { reply = replyWith(DONE) }.start()
+        assertEquals(listOf("response.completed"), fx.types())
+        val pooled = fx.handed.single()
+        fx.opened.single().closeClean() // no round in flight: the round-tear path cannot poison this
+        assertTrue(pooled.dead.get(), "an observed close must poison the pooled connection")
+
+        assertEquals(listOf("response.completed"), fx.types(), "the next round still serves, on a NEW socket")
+        assertEquals(2, fx.connects, "a closed socket must never be handed to another round")
+        assertTrue(fx.handed[1].generation > pooled.generation, "the reconnect bumps the generation")
+        assertTrue(fx.logged("closed by the server"), "and the close is diagnosable from daemon.log")
+    }
+
+    @Test
+    fun `a transport error BETWEEN rounds poisons the pooled connection`() = runTest {
+        val fx = Fixture().apply { reply = replyWith(DONE) }.start()
+        assertEquals(listOf("response.completed"), fx.types())
+        val pooled = fx.handed.single()
+        fx.opened.single().failWith(IOException("connection reset"))
+        assertTrue(pooled.dead.get(), "an observed transport error must poison the pooled connection")
+
+        assertEquals(listOf("response.completed"), fx.types())
+        assertEquals(2, fx.connects, "the errored socket must never be handed to another round")
+    }
+
+    @Test
     fun `a poisoned connection is never reused and the reconnect gets a NEW generation`() = runTest {
         val fx = Fixture().start(firstEventTimeoutMs = BUDGET)
         assertNull(fx.go(), "no first event -> SSE")
@@ -671,20 +703,23 @@ class WsUpstreamInboxListenerTest {
     }
 
     @Test
-    fun `onClose closes the inbox with NO cause and onError closes it with an IOException`() = runTest {
+    fun `onClose and onError close the inbox with the right cause AND poison the connection`() = runTest {
+        var anomalies = 0
         val clean = Channel<JsonObject>(1)
-        InboxListener(clean, { }, terminalSeen = { false }, onAnomaly = { })
+        InboxListener(clean, { }, terminalSeen = { false }, onAnomaly = { anomalies += 1 })
             .onClose(FakeSocket(Fixture()), WebSocket.NORMAL_CLOSURE, "bye")
         val closed = clean.receiveCatching()
         assertTrue(closed.isClosed)
         assertNull(closed.exceptionOrNull(), "a clean close carries NO cause — this is the shape that used to escape")
+        assertEquals(1, anomalies, "an unpoisoned close leaves the pool holding a socket the server has dropped")
 
         val errored = Channel<JsonObject>(1)
-        InboxListener(errored, { }, terminalSeen = { false }, onAnomaly = { })
+        InboxListener(errored, { }, terminalSeen = { false }, onAnomaly = { anomalies += 1 })
             .onError(FakeSocket(Fixture()), IOException("reset"))
         val cause = errored.receiveCatching().exceptionOrNull()
         assertTrue(cause is IOException, "an errored close carries an IOException, got $cause")
         assertEquals("websocket error", cause?.message)
+        assertEquals(2, anomalies, "an errored close poisons too — same reuse hazard as a clean one")
     }
 }
 

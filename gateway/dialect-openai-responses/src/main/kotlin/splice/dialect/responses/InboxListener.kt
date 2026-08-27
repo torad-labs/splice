@@ -63,13 +63,23 @@ internal class InboxListener(
         return null
     }
 
+    // A server-initiated end is a poisoning event, not merely an inbox closure: WsConnection.dead is
+    // the pool's ONLY liveness signal, so a close that does not set it leaves the socket registered
+    // and acquire() hands it to the NEXT round, which discovers the corpse on send (daemon.log
+    // 2026-08-26: 67 "send failed async (IOException: Output closed)" in 17h, each costing a wasted
+    // frame plus a reconnect). The inbox is closed FIRST in both paths so the cause shape a waiting
+    // round observes is unchanged — kill()'s own close() is then a no-op.
     override fun onClose(webSocket: WebSocket, statusCode: Int, reason: String): CompletionStage<*>? {
         inbox.close()
+        log("[ws] socket closed by the server (status=$statusCode) — poisoning the pooled connection\n")
+        onAnomaly()
         return null
     }
 
     override fun onError(webSocket: WebSocket, error: Throwable) {
         inbox.close(IOException("websocket error", error))
+        log("[ws] socket failed (${error::class.simpleName}) — poisoning the pooled connection\n")
+        onAnomaly()
     }
 }
 

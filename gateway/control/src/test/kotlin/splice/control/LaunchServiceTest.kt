@@ -24,12 +24,14 @@ class LaunchServiceTest {
         pinned: String = "gpt-5.6-sol",
         available: List<String> = listOf("gpt-5.6-sol", "gpt-5.4-mini"),
         labels: Map<String, String> = available.associateWith { it },
+        windows: Map<String, Int> = emptyMap(),
     ) = LaunchSpec(
         configDir = tmp.resolve(".claude-$head"),
         pinnedModel = pinned,
         availableModelIds = available,
         modelLabels = labels,
         contextWindow = 272000,
+        modelWindows = windows,
         modelOptionsCache = kotlinx.serialization.json.buildJsonObject { },
         statuslineCommand = "\"/bin/curl\" -s :3096/statusline",
         loginCommand = "claudex login",
@@ -104,6 +106,88 @@ class LaunchServiceTest {
         assertEquals("grok-4.3", env["ANTHROPIC_DEFAULT_SONNET_MODEL"])
         assertEquals("grok-4.3", env["ANTHROPIC_DEFAULT_HAIKU_MODEL"]) // no mini → at(1)
         assertEquals("grok-4.5", env["ANTHROPIC_DEFAULT_FABLE_MODEL"]) // shares frontier
+    }
+
+    // ── launch-time tier selection ────────────────────────────────────────────────────────────
+    //
+    // Claude Code resolves a non-`claude-` model's context window from CLAUDE_CODE_MAX_CONTEXT_TOKENS
+    // ALONE (cli 2.1.233 `G4u`) — the per-model `context_window` in additionalModelOptionsCache is
+    // never read. So the window is a property of the PROCESS: /model switches routing and nothing
+    // else, and a head offering one upstream model at two windows can only honor the pick at exec.
+
+    private fun grok() = spec(
+        head = "grok",
+        pinned = "grok-4.6",
+        available = listOf("grok-4.6", "grok-build-latest", "grok-4.6[500k]"),
+        windows = mapOf("grok-4.6" to 256_000, "grok-build-latest" to 256_000, "grok-4.6[500k]" to 500_000),
+    )
+
+    @Test
+    fun `no --model keeps the head's deliberate pinned window`() {
+        val recipe = service.launch(grok(), extraArgs = emptyList(), dangerouslySkipPermissions = false)
+        assertEquals("grok-4.6", recipe.env["ANTHROPIC_MODEL"])
+        assertEquals("256000", recipe.env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"])
+        assertEquals("256000", recipe.env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"])
+    }
+
+    @Test
+    fun `--model on a tier row moves the window and is consumed, not forwarded`() {
+        val recipe = service.launch(
+            grok(),
+            extraArgs = listOf("--model", "grok-4.6[500k]", "-c"),
+            dangerouslySkipPermissions = false,
+        )
+        assertEquals("grok-4.6[500k]", recipe.env["ANTHROPIC_MODEL"])
+        assertEquals("500000", recipe.env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"])
+        assertEquals("500000", recipe.env["CLAUDE_CODE_AUTO_COMPACT_WINDOW"])
+        // Forwarding --model pins Claude Code's picker shut and would not move the window anyway.
+        assertFalse(recipe.argv.contains("--model"), "argv: ${recipe.argv}")
+        assertFalse(recipe.argv.contains("grok-4.6[500k]"), "the flag's VALUE must go too: ${recipe.argv}")
+        assertTrue(recipe.argv.contains("-c"), "unrelated args survive: ${recipe.argv}")
+    }
+
+    @Test
+    fun `the inline --model=row form is honored the same way`() {
+        val recipe = service.launch(
+            grok(),
+            extraArgs = listOf("--model=grok-4.6[500k]"),
+            dangerouslySkipPermissions = false,
+        )
+        assertEquals("grok-4.6[500k]", recipe.env["ANTHROPIC_MODEL"])
+        assertEquals("500000", recipe.env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"])
+        assertFalse(recipe.argv.any { it.startsWith("--model") }, "argv: ${recipe.argv}")
+    }
+
+    @Test
+    fun `a model this head does not own is left in argv for Claude Code`() {
+        val recipe = service.launch(
+            grok(),
+            extraArgs = listOf("--model", "opusplan"),
+            dangerouslySkipPermissions = false,
+        )
+        assertEquals("grok-4.6", recipe.env["ANTHROPIC_MODEL"], "an unknown row must not become the session model")
+        assertEquals("256000", recipe.env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"])
+        assertEquals(listOf("--model", "opusplan"), recipe.argv.takeLast(2), "argv: ${recipe.argv}")
+    }
+
+    @Test
+    fun `selecting a tier row does NOT re-tier the subagent slots`() {
+        // The cost guard: alias slots stay pinned-model-positional, so asking for a long window on
+        // the MAIN session never silently moves every SONNET/HAIKU subagent onto the billed row.
+        val env = service.launch(
+            grok(),
+            extraArgs = listOf("--model", "grok-4.6[500k]"),
+            dangerouslySkipPermissions = false,
+        ).env
+        assertEquals("grok-4.6", env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
+        assertEquals("grok-build-latest", env["ANTHROPIC_DEFAULT_SONNET_MODEL"])
+        assertEquals("grok-build-latest", env["ANTHROPIC_DEFAULT_HAIKU_MODEL"])
+    }
+
+    @Test
+    fun `a head that declares no row windows still gets its pinned window`() {
+        val env = service.launch(spec("codex"), extraArgs = emptyList(), dangerouslySkipPermissions = false).env
+        assertEquals("272000", env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"])
     }
 
     // ── native-auth heads (campaign claude-head, CH-8) ────────────────────────────────────────

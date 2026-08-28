@@ -16,6 +16,13 @@ import kotlin.math.max
 // auto-compact window below this.
 private const val AUTO_COMPACT_FLOOR = 60_000
 
+// The launch-time context-window switch (see LaunchService.selectModel). Spelled `--model` because
+// that is what an operator reaches for; splice consumes it rather than letting it reach Claude Code.
+private const val FLAG = "--model"
+
+/** A resolved session model plus the argv that survives after the flag that chose it is consumed. */
+private data class ModelSelection(val model: String, val args: List<String>)
+
 // LaunchSpec + LaunchRecipe live in LaunchTypes.kt (concentration, 2026-08-19).
 
 public class LaunchService(
@@ -30,6 +37,7 @@ public class LaunchService(
         extraArgs: List<String>,
         dangerouslySkipPermissions: Boolean,
     ): LaunchRecipe {
+        val selection = selectModel(spec, extraArgs)
         materializer.materialize(
             MaterializeSpec(
                 configDir = spec.configDir,
@@ -46,7 +54,9 @@ public class LaunchService(
                 loginOutcomeFile = spec.loginOutcomeFile,
             ),
         )
-        val env = buildEnv(spec)
+        // NB: materialize keeps defaultModel = pinnedModel above. .claude.json is SHARED by every
+        // session of this head, so a per-session --model must not rewrite the head's own default.
+        val env = buildEnv(spec, selection.model)
         // Clear anything ambient that would override the proxy or a stale Anthropic session —
         // EXCEPT on a native-auth head, where those variables ARE the credential being forwarded.
         val unset = if (spec.nativeClientAuth) {
@@ -63,7 +73,7 @@ public class LaunchService(
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
             // picker (populated by gateway discovery) can freely switch. Forcing --model locked it.
-            addAll(extraArgs)
+            addAll(selection.args)
         }
         val warning = if (dangerouslySkipPermissions) {
             "dangerouslySkipPermissions engaged for ${spec.configDir} — Claude Code runs with " +
@@ -74,8 +84,31 @@ public class LaunchService(
         return LaunchRecipe(env, unset, argv, warning)
     }
 
-    private fun buildEnv(spec: LaunchSpec): Map<String, String> {
+    /**
+     * `--model <row>` is SPLICE's flag, not Claude Code's, and it is a CONTEXT-WINDOW switch.
+     * Claude Code reads a non-`claude-` model's window from CLAUDE_CODE_MAX_CONTEXT_TOKENS alone,
+     * so a head that offers the same upstream model at two windows (grok-4.6 capped at the
+     * deliberate 256k vs grok-4.6[500k]) can only honor the operator's pick at exec time — by then
+     * the process env is frozen and /model moves routing only. The flag is CONSUMED, never
+     * forwarded: passing --model to Claude Code pins the picker shut (see argv above) and would
+     * not move the window anyway. A value this head does not own is left in argv untouched, so
+     * anything Claude Code understands and we do not still reaches it.
+     */
+    private fun selectModel(spec: LaunchSpec, extraArgs: List<String>): ModelSelection {
+        val at = extraArgs.indexOfFirst { it == FLAG || it.startsWith("$FLAG=") }
+        if (at < 0) return ModelSelection(spec.pinnedModel, extraArgs)
+        val inline = extraArgs[at].substringAfter("$FLAG=", missingDelimiterValue = "")
+        val value = inline.ifEmpty { extraArgs.getOrElse(at + 1) { "" } }
+        if (value !in spec.modelWindows) return ModelSelection(spec.pinnedModel, extraArgs)
+        val end = at + if (inline.isEmpty()) 2 else 1
+        return ModelSelection(value, extraArgs.filterIndexed { i, _ -> i < at || i >= end })
+    }
+
+    private fun buildEnv(spec: LaunchSpec, model: String): Map<String, String> {
         val slots = aliasSlots(spec)
+        // The SELECTED row's window; pinnedModel's (spec.contextWindow) whenever the head declares
+        // no row-level window, which is every head that never needed a tier split.
+        val window = spec.modelWindows[model] ?: spec.contextWindow
         return buildMap {
             put("ANTHROPIC_BASE_URL", "http://127.0.0.1:${spec.port}")
             // AUTH_TOKEN (bearer), NOT API_KEY — a bearer avoids Claude Code's custom-api-key
@@ -86,15 +119,15 @@ public class LaunchService(
             put("CLAUDE_CONFIG_DIR", spec.configDir.toString())
             // THE fix for "only one model shows": lets the /model picker list every /v1/models id.
             put("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY", "1")
-            put("ANTHROPIC_MODEL", spec.pinnedModel)
+            put("ANTHROPIC_MODEL", model)
             slots.forEach { (slot, model) ->
                 put("ANTHROPIC_DEFAULT_${slot}_MODEL", model)
                 val label = spec.modelLabels[model] ?: model
                 put("ANTHROPIC_DEFAULT_${slot}_MODEL_NAME", label)
                 put("ANTHROPIC_DEFAULT_${slot}_MODEL_DESCRIPTION", label)
             }
-            put("CLAUDE_CODE_MAX_CONTEXT_TOKENS", spec.contextWindow.toString())
-            put("CLAUDE_CODE_AUTO_COMPACT_WINDOW", max(AUTO_COMPACT_FLOOR, spec.contextWindow).toString())
+            put("CLAUDE_CODE_MAX_CONTEXT_TOKENS", window.toString())
+            put("CLAUDE_CODE_AUTO_COMPACT_WINDOW", max(AUTO_COMPACT_FLOOR, window).toString())
             put("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "85")
             put("MAX_THINKING_TOKENS", "128000")
             put("NO_PROXY", mergedNoProxy())

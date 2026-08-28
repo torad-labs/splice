@@ -54,6 +54,9 @@ internal class LaunchSpecFactory(
             availableModelIds = ctx.catalog.availableModelIds(),
             modelLabels = providerCfg.models.associate { it.id to it.label.ifEmpty { it.id } },
             contextWindow = ctx.catalog.contextWindowFor(head.pinnedModel).toInt(),
+            // RAW picker ids: two tier rows can share one upstream id (grok-4.6 vs grok-4.6[500k]),
+            // and it is the row — not the stripped id — that carries the window the operator picked.
+            modelWindows = providerCfg.models.associate { it.id to ctx.catalog.contextWindowFor(it.id).toInt() },
             modelOptionsCache = buildInputs.modelOptionsCache(providerCfg),
             statuslineCommand = "curl -sS --data-binary @- http://127.0.0.1:$controlPort/statusline/$key",
             // The installed wrapper (`<command> login`) runs this head's provider sign-in; the

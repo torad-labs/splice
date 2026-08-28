@@ -15,6 +15,13 @@ public data class LaunchSpec(
     val availableModelIds: List<String>,
     val modelLabels: Map<String, String>, // id -> display label (for the alias slot names)
     val contextWindow: Int,
+    /** Raw picker id -> that row's window. Claude Code resolves a non-`claude-` model's context
+     *  window from CLAUDE_CODE_MAX_CONTEXT_TOKENS ALONE (cli 2.1.233 `G4u`); the per-model
+     *  `context_window` we ship in [modelOptionsCache] is validated on `value`/`label`/
+     *  `description` and never read. The window is therefore a property of the PROCESS, not of the
+     *  active model — an in-session /model switch cannot move it — so picking a long-context row
+     *  has to happen at launch, and this map is what turns that choice into the right env. */
+    val modelWindows: Map<String, Int> = emptyMap(),
     val modelOptionsCache: JsonElement, // the /model picker option list
     val statuslineCommand: String, // per-head statusline command (…/statusline/<head>)
     val loginCommand: String, // shell command that runs THIS head's provider sign-in (e.g. `claudex login`)

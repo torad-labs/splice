@@ -126,12 +126,16 @@ public data class ModelCatalog(
      *  already agrees with the client, which is every row on a head that declares one window. */
     public fun usageScale(id: String): Double {
         val declared = contextWindowFor(id)
-        // A "[1m]" row is ALREADY expressed in the client's own vocabulary — the id is the
-        // mechanism — so it is never scaled, and whatever window it declares here is documentation.
-        // Without this exemption kimi's k3[1m] (declared 1048576, client 1e6) would pick up a
-        // spurious 0.954 for a 4.6% gap that is just 1024*1024 vs the flat 1e6 Claude Code returns.
-        if (declared <= 0 || oneMillionHint.containsMatchIn(unwrap(id))) return 1.0
-        return contextWindowFor(pinnedModel).toDouble() / declared
+        // NO "[1m]" exemption, deliberately. `contains()` strips the suffix before its membership
+        // test, so an UNDECLARED tier id — `grok-4.6[1m]`, which exists in no catalog — passes the
+        // "proxies its own models only" gate, and Claude Code applies its own /\[1m\]/i rule to
+        // whatever string it holds. Exempting those from scaling let a 500k model run toward 1e6
+        // and hard-fail upstream. Scaling them instead makes the client's 1e6 land on the stripped
+        // id's real window. A DECLARED 1e6 row needs no special case: client and declared are both
+        // 1e6, so this arithmetic already returns exactly 1.0.
+        val client = clientContextWindowFor(id)
+        if (declared <= 0 || client <= 0) return 1.0
+        return client.toDouble() / declared
     }
 
     public fun labelFor(id: String): String = models.firstOrNull { it.id == id }?.label ?: id

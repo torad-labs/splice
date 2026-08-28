@@ -161,20 +161,39 @@ class ModelCatalogTest {
     }
 
     @Test
-    fun `a 1m row is never scaled - the id already speaks the client's language`() {
-        // kimi ships k3[1m] at 1048576 while Claude Code returns a flat 1e6 for any "[1m]" id.
-        // That 4.6% gap is notation, not intent, and must not become a scale factor.
+    fun `a DECLARED 1m row needs no exemption - the arithmetic already yields exactly 1`() {
         val kimi = ModelCatalog(
             discoveryPrefix = "claude-kimi--",
             models = listOf(
                 ModelEntry(id = "k3-256k", contextWindow = 262_144),
-                ModelEntry(id = "k3[1m]", contextWindow = 1_048_576),
+                ModelEntry(id = "k3[1m]", contextWindow = 1_000_000),
             ),
             defaultContextWindow = 262_144,
             pinnedModel = "k3-256k",
         )
-        assertEquals(1.0, kimi.usageScale("k3[1m]"))
+        assertEquals(1.0, kimi.usageScale("k3[1m]"), "client 1e6 over declared 1e6")
         assertEquals(1.0, kimi.usageScale("k3-256k"), "the pinned row is the env: exact")
+    }
+
+    @Test
+    fun `an UNDECLARED 1m id is scaled to the real ceiling, not trusted`() {
+        // contains() strips the suffix before its membership test, so "grok-4.6[1m]" — a row in no
+        // catalog — passes the head's own-models gate, and Claude Code applies its /\[1m\]/i rule to
+        // the raw string and uses 1e6 regardless of anything splice does. Left unscaled the session
+        // runs toward 850k on a model xAI cuts off at 500k: one hard upstream failure, no warning.
+        // Scaling maps the client's 1e6 onto the stripped id's declared window instead.
+        val xai = ModelCatalog(
+            discoveryPrefix = "claude-grok--",
+            models = listOf(
+                ModelEntry(id = "grok-4.6", contextWindow = 256_000),
+                ModelEntry(id = "grok-4.6[500k]", contextWindow = 500_000),
+            ),
+            defaultContextWindow = 256_000,
+            pinnedModel = "grok-4.6",
+        )
+        assertTrue(xai.contains("grok-4.6[1m]"), "the gate lets it through — that is the hazard")
+        assertEquals(2.0, xai.usageScale("grok-4.6[1m]"), "1e6 client / 500k real => compact at 500k")
+        assertEquals(1_000_000L, xai.clientContextWindowFor("grok-4.6[1m]"), "what the client uses regardless")
     }
 
     @Test

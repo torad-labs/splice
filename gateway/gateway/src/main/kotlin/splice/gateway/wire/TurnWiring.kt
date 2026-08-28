@@ -31,8 +31,15 @@ internal class TurnWiring {
         // Scale by clientWindow/declared and the row compacts at ITS window, switchable live from
         // /model. Keyed on originalModel (the RAW picker id), because two rows can share one
         // upstream id and it is the row that owns the window. Output tokens are NOT scaled: they
-        // are not part of the context total. splice's own accounting (TurnPerf, TurnCacheLine)
-        // reads the raw usage and never this payload, so the log and the HUD stay truthful.
+        // are not part of the context total. splice's own accounting (TurnPerf, TurnCacheLine,
+        // UsageStore) reads the raw usage and never this payload, so the logs stay truthful.
+        //
+        // The STATUSLINE does not: StatuslineRenderer renders context_window_size/current_usage
+        // out of the blob Claude Code pipes back, which is Claude Code's record of THIS payload, so
+        // on a scaled row both of its context numbers are in client units. Its cache-hit segment is
+        // unaffected — read/(input+read+cache_creation) is scale-invariant when every term carries
+        // the same factor. Nothing logs the factor itself, so a WRONG factor is self-consistent
+        // everywhere it is displayed; that is the residual risk, tracked, not a claim of safety.
         val scale = catalog.usageScale(meta.originalModel)
         hud.buildUsagePayload(
             TurnUsage(scale(nonCachedInput, scale), usage?.outputTokens ?: 0, 0, scale(cached, scale)),

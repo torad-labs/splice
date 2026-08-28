@@ -170,12 +170,17 @@ extra_headers = { anthropic-version = "2023-06-01", User-Agent = "KimiCLI/1.5" }
 # hint — this exact-match row keeps K3's 1M window independent of model-list order.
 [[providers.kimi.extra_windows]]
 id = "k3"
-context_window = 1048576
+# EXACTLY 1e6, matching the k3[1m] row below — see the note there.
+context_window = 1000000
 [[providers.kimi.models]]
 id = "k3[1m]"                  # sent upstream as bare `k3`; [1m] is a display/context-tier hint
 label = "Kimi K3 (1M)"
 description = "1M context needs the Allegretto plan or higher — Moderato serves 256K."
-context_window = 1048576
+# EXACTLY 1e6, NOT 1024*1024. Claude Code hardcodes 1e6 for any id matching /\[1m\]/i and never
+# reads this number, so declaring 1048576 asks ModelCatalog.usageScale to correct a 4.6% gap that
+# is pure notation. This row is ALSO this head's pinned_model, so that scale would ride every
+# default turn, compacting ~4.6% late with nothing logging the factor. A "[1m]" row declares 1000000.
+context_window = 1000000
 [[providers.kimi.models]]
 id = "kimi-for-coding"
 label = "Kimi K2.7 Code"

@@ -176,6 +176,25 @@ class ModelCatalogTest {
     }
 
     @Test
+    fun `a 1m row declaring 1024x1024 instead of 1e6 DOES scale - the config must say 1000000`() {
+        // Review finding: config/splice.example.toml shipped k3[1m] at 1048576 AND pinned the kimi
+        // head to that row, so every default turn scaled 0.9537 and compacted ~4.6% late with
+        // nothing logging the factor. The first version of the test above hid this by declaring
+        // 1_000_000 in the fixture while the shipped TOML said 1_048_576 — the fixture was fitted to
+        // the assertion. This pins the real behaviour instead: Claude Code hardcodes 1e6 for a "[1m]"
+        // id and never reads our number, so any other declared value IS a scale factor, by design.
+        // The fix belongs in the config, and this test is what makes choosing wrong visible.
+        val declaring1024 = ModelCatalog(
+            discoveryPrefix = "claude-kimi--",
+            models = listOf(ModelEntry(id = "k3[1m]", contextWindow = 1_048_576)),
+            defaultContextWindow = 262_144,
+            pinnedModel = "k3[1m]",
+        )
+        assertEquals(1_000_000L, declaring1024.clientContextWindowFor("k3[1m]"), "client ignores our number")
+        assertEquals(1_000_000.0 / 1_048_576.0, declaring1024.usageScale("k3[1m]"), "not 1.0 — this is the bug")
+    }
+
+    @Test
     fun `an UNDECLARED 1m id is scaled to the real ceiling, not trusted`() {
         // contains() strips the suffix before its membership test, so "grok-4.6[1m]" — a row in no
         // catalog — passes the head's own-models gate, and Claude Code applies its /\[1m\]/i rule to

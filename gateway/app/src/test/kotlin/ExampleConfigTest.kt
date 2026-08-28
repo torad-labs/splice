@@ -145,7 +145,10 @@ class ExampleConfigTest {
 
         // Prose, not knobs. An entry here that IS a knob would silence a real drift, so the
         // allowlist is asserted disjoint from the enum rather than trusted.
-        val prose = setOf("xAI")
+        // usageScale is a ModelCatalog METHOD, not a knob: the example's k3[1m] note has to name it
+        // to explain why that row must declare exactly 1000000 (Claude Code hardcodes 1e6 for a
+        // "[1m]" id, so any other declared value becomes a scale factor on a pinned row).
+        val prose = setOf("xAI", "usageScale")
         prose.forEach {
             assertTrue(
                 !knobsByKey.containsKey(it),

@@ -10,6 +10,10 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.model.ModelCatalog
+import splice.core.model.ModelEntry
+import splice.core.turn.ReasoningDisplay
+import splice.core.turn.TurnMeta
 import splice.core.turn.Usage
 import splice.core.usage.RateLimitState
 import splice.core.usage.UsageWarnPolicy
@@ -18,6 +22,7 @@ import splice.gateway.usage.OutputClampPolicy
 import splice.gateway.usage.UsageHud
 import splice.gateway.usage.UsageJson
 import splice.gateway.usage.UsageStore
+import splice.gateway.wire.TurnWiring
 import java.nio.file.Path
 import java.util.concurrent.Executors
 
@@ -226,5 +231,74 @@ class UsageTest {
         val restarted = UsageStore(usageFile, rateFile, clock = { now })
         assertEquals(600, restarted.readState().outputTokens5h)
         assertEquals(1, restarted.readState().entries)
+    }
+}
+
+/** The proxy seam that gives a picker row a window the CLIENT has no way to represent.
+ *
+ * Claude Code resolves a context window two ways only — `/\[1m\]/i` on the id -> 1e6, else the one
+ * process-wide CLAUDE_CODE_MAX_CONTEXT_TOKENS — so at most two windows exist per session. It
+ * compacts on `(input + cache_creation + cache_read) / window`, and splice writes that numerator,
+ * which is the third window's only possible source. These pin that the scale actually reaches the
+ * payload, keyed on the RAW picker id (two rows can share one upstream id).
+ */
+class UsageScalingTest {
+
+    private val wiring = TurnWiring()
+
+    private val xai = ModelCatalog(
+        discoveryPrefix = "claude-grok--",
+        models = listOf(
+            ModelEntry(id = "grok-4.6", contextWindow = 256_000),
+            ModelEntry(id = "grok-4.6[500k]", contextWindow = 500_000),
+            ModelEntry(id = "grok-4.3[1m]", contextWindow = 1_000_000),
+        ),
+        defaultContextWindow = 256_000,
+        pinnedModel = "grok-4.6",
+    )
+
+    private fun meta(model: String) = TurnMeta(
+        compact = false,
+        showReasoning = ReasoningDisplay.TEXT,
+        stream = true,
+        originalModel = model,
+        upstreamModel = xai.stripSuffixes(model),
+        clientMaxTokens = null,
+        effort = "high",
+        summary = null,
+        budgetTokens = null,
+    )
+
+    private fun payload(model: String, input: Long, cached: Long) =
+        wiring.usagePayloadBuilder(xai, meta(model))(Usage(input, 7, cached))
+
+    @Test
+    fun `the pinned row is reported EXACTLY - no head that wants one window may drift`() {
+        val p = payload("grok-4.6", input = 100_000, cached = 40_000)
+        assertEquals(60_000, p["input_tokens"]?.jsonPrimitive?.content?.toLong(), "input minus cached")
+        assertEquals(40_000, p["cache_read_input_tokens"]?.jsonPrimitive?.content?.toLong())
+        assertEquals(256_000, p["context_window"]?.jsonPrimitive?.content?.toLong())
+    }
+
+    @Test
+    fun `a 500k row halves the reported counts so it compacts at a REAL 500k`() {
+        // The client believes 256k. Real 250k of context must read as ~128k (50.0%), so the bar
+        // fills at real 500k instead of real 256k. Selectable live from /model.
+        val p = payload("grok-4.6[500k]", input = 250_000, cached = 0)
+        assertEquals(128_000, p["input_tokens"]?.jsonPrimitive?.content?.toLong())
+        assertEquals(256_000, p["context_window"]?.jsonPrimitive?.content?.toLong(), "what the client uses")
+        assertEquals("50", p["used_percentage"]?.jsonPrimitive?.content, "half of the row's own 500k")
+    }
+
+    @Test
+    fun `output tokens are never scaled - they are not part of the context total`() {
+        assertEquals(7, payload("grok-4.6[500k]", 250_000, 0)["output_tokens"]?.jsonPrimitive?.content?.toLong())
+    }
+
+    @Test
+    fun `a 1m row rides Claude Code's own hook and is reported exactly`() {
+        val p = payload("grok-4.3[1m]", input = 400_000, cached = 0)
+        assertEquals(400_000, p["input_tokens"]?.jsonPrimitive?.content?.toLong())
+        assertEquals(1_000_000, p["context_window"]?.jsonPrimitive?.content?.toLong())
     }
 }

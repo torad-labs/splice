@@ -25,9 +25,22 @@ internal class TurnWiring {
         // "compaction ate my quota" class).
         val cached = usage?.cachedTokens ?: 0
         val nonCachedInput = ((usage?.inputTokens ?: 0) - cached).coerceAtLeast(0)
+        // Per-model context windows are a PROXY concern. Claude Code fixes its window per PROCESS
+        // (the launch env) for every id except a "[1m]" one, so a row wanting any other window can
+        // only be served from this side — by moving the numerator of the ratio it compacts on.
+        // Scale by clientWindow/declared and the row compacts at ITS window, switchable live from
+        // /model. Keyed on originalModel (the RAW picker id), because two rows can share one
+        // upstream id and it is the row that owns the window. Output tokens are NOT scaled: they
+        // are not part of the context total. splice's own accounting (TurnPerf, TurnCacheLine)
+        // reads the raw usage and never this payload, so the log and the HUD stay truthful.
+        val scale = catalog.usageScale(meta.originalModel)
         hud.buildUsagePayload(
-            TurnUsage(nonCachedInput, usage?.outputTokens ?: 0, 0, cached),
-            catalog.contextWindowFor(meta.upstreamModel),
+            TurnUsage(scale(nonCachedInput, scale), usage?.outputTokens ?: 0, 0, scale(cached, scale)),
+            catalog.clientContextWindowFor(meta.originalModel),
         )
     }
+
+    /** Exact when the row agrees with the client, which keeps every normal head byte-identical. */
+    private fun scale(tokens: Long, factor: Double): Long =
+        if (factor == 1.0) tokens else (tokens * factor).toLong()
 }

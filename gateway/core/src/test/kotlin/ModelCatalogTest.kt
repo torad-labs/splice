@@ -132,6 +132,69 @@ class ModelCatalogTest {
     }
 
     @Test
+    fun `usage scaling gives a row a window the client cannot be told about`() {
+        // Claude Code resolves a window two ways only: /\[1m\]/i on the id -> 1e6, else the ONE
+        // process-wide CLAUDE_CODE_MAX_CONTEXT_TOKENS (= the pinned row's window). A third window
+        // therefore cannot come from the client — it comes from us scaling the token counts we
+        // report, since it compacts on (input+cache)/window and splice owns the numerator.
+        val xai = ModelCatalog(
+            discoveryPrefix = "claude-grok--",
+            models = listOf(
+                ModelEntry(id = "grok-4.6", contextWindow = 256_000),
+                ModelEntry(id = "grok-4.6[500k]", contextWindow = 500_000),
+                ModelEntry(id = "grok-4.3[1m]", contextWindow = 1_000_000),
+            ),
+            defaultContextWindow = 256_000,
+            pinnedModel = "grok-4.6",
+        )
+        // the pinned row IS the env: exact counts, nothing to correct
+        assertEquals(256_000L, xai.clientContextWindowFor("grok-4.6"))
+        assertEquals(1.0, xai.usageScale("grok-4.6"))
+        // a "[1m]" row bypasses the env entirely, so it is honest too
+        assertEquals(1_000_000L, xai.clientContextWindowFor("grok-4.3[1m]"))
+        assertEquals(1.0, xai.usageScale("grok-4.3[1m]"))
+        // the middle row is the one the client has no way to represent: it believes 256k, so
+        // halving the reported counts makes it compact when REAL usage reaches 500k
+        assertEquals(256_000L, xai.clientContextWindowFor("grok-4.6[500k]"))
+        assertEquals(0.512, xai.usageScale("grok-4.6[500k]"))
+        assertEquals(0.512, xai.usageScale("claude-grok--grok-4.6[500k]"), "wrapped form too")
+    }
+
+    @Test
+    fun `a 1m row is never scaled - the id already speaks the client's language`() {
+        // kimi ships k3[1m] at 1048576 while Claude Code returns a flat 1e6 for any "[1m]" id.
+        // That 4.6% gap is notation, not intent, and must not become a scale factor.
+        val kimi = ModelCatalog(
+            discoveryPrefix = "claude-kimi--",
+            models = listOf(
+                ModelEntry(id = "k3-256k", contextWindow = 262_144),
+                ModelEntry(id = "k3[1m]", contextWindow = 1_048_576),
+            ),
+            defaultContextWindow = 262_144,
+            pinnedModel = "k3-256k",
+        )
+        assertEquals(1.0, kimi.usageScale("k3[1m]"))
+        assertEquals(1.0, kimi.usageScale("k3-256k"), "the pinned row is the env: exact")
+    }
+
+    @Test
+    fun `a row declaring LESS than the session window compacts at its own window`() {
+        // codex pins a 400k model but ships a 128k spark row; the client gives every non-[1m] id the
+        // one env window, so spark would run to 400k and overrun upstream. Scaling up fixes that.
+        val codex = ModelCatalog(
+            discoveryPrefix = "claude-codex--",
+            models = listOf(
+                ModelEntry(id = "gpt-5.6-sol", contextWindow = 400_000),
+                ModelEntry(id = "gpt-5.3-codex-spark", contextWindow = 128_000),
+            ),
+            defaultContextWindow = 400_000,
+            pinnedModel = "gpt-5.6-sol",
+        )
+        assertEquals(1.0, codex.usageScale("gpt-5.6-sol"))
+        assertEquals(3.125, codex.usageScale("gpt-5.3-codex-spark"))
+    }
+
+    @Test
     fun `contextWindowFor strips 1m suffix so picker id windows resolve without extraWindows`() {
         // Residual of the membership fix: modelIds stripped but exactWindows keyed raw picker ids,
         // so contains("k3[1m]") passed while contextWindowFor fell to default 256k.

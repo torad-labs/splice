@@ -117,6 +117,9 @@ public data class ProviderConfig(
     public fun catalogFor(head: HeadConfig, contextWindowOverride: Long? = null): ModelCatalog {
         val window = contextWindowOverride?.takeIf { it > 0 }
         return ModelCatalog(
+            // The pinned row's window IS the launch env, so the catalog needs it to know what the
+            // client believes about every OTHER row (ModelCatalog.clientContextWindowFor).
+            pinnedModel = head.pinnedModel,
             discoveryPrefix = head.discoveryPrefix,
             models = if (window == null) models else models.map { it.copy(contextWindow = window) },
             extraWindows = if (window == null) extraWindows else extraWindows.map { it.copy(contextWindow = window) },

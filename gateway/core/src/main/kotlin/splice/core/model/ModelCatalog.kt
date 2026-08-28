@@ -10,6 +10,12 @@ package splice.core.model
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/** What Claude Code returns for a "[1m]" id — the literal it hardcodes, NOT 1024*1024. */
+private const val CLAUDE_CODE_ONE_MILLION = 1_000_000L
+
+/** Claude Code's own id-keyed window hook, matched exactly as it spells it (`/\[1m\]/i`). */
+private val oneMillionHint = Regex("\\[1m]", RegexOption.IGNORE_CASE)
+
 @Serializable
 public data class ModelEntry(
     val id: String,
@@ -37,6 +43,9 @@ public data class ModelCatalog(
     val extraWindows: List<ExtraWindow> = emptyList(),
     val windowRules: List<WindowRule> = emptyList(),
     val defaultContextWindow: Long,
+    /** The head's pinned model — the row whose window became CLAUDE_CODE_MAX_CONTEXT_TOKENS at
+     *  launch, and therefore the window the CLIENT believes every non-"[1m]" row has. */
+    val pinnedModel: String = "",
 ) {
     init {
         require(models.isNotEmpty()) { "a catalog needs at least one picker model" }
@@ -91,6 +100,38 @@ public data class ModelCatalog(
             ?: exactWindows[id]
             ?: windowRules.firstOrNull { id.startsWith(it.prefix) }?.contextWindow
             ?: fallback
+    }
+
+    /** The window the CLIENT will actually use for [id], which is not always what we declare.
+     *  Claude Code resolves it as: `KE(id) = /\[1m\]/i` -> exactly 1e6, else
+     *  CLAUDE_CODE_MAX_CONTEXT_TOKENS (cli 2.1.233 `G4u`). That "[1m]" test on the id is the ONLY
+     *  id-keyed branch there is — no other spelling moves it — and the env is one number for the
+     *  whole process, so every other row is stuck with the PINNED row's window however it is
+     *  declared here. [usageScale] is what bridges the two. */
+    public fun clientContextWindowFor(id: String): Long =
+        if (oneMillionHint.containsMatchIn(unwrap(id))) {
+            CLAUDE_CODE_ONE_MILLION
+        } else {
+            contextWindowFor(pinnedModel)
+        }
+
+    /** Multiplier for the input-token counts reported to the client, so a row compacts at ITS OWN
+     *  declared window rather than the session's.
+     *
+     *  We are a proxy: Claude Code compacts on `(input + cache_creation + cache_read) / window`, and
+     *  splice authors the NUMERATOR of that ratio even though the denominator is fixed in the
+     *  client's process. Scaling the numerator by `client/declared` makes the ratio reach 1 exactly
+     *  when real usage reaches the declared window — so a 500k row on a 256k session compacts at
+     *  500k, live, switchable from the /model menu. Returns 1.0 (untouched counts) whenever the row
+     *  already agrees with the client, which is every row on a head that declares one window. */
+    public fun usageScale(id: String): Double {
+        val declared = contextWindowFor(id)
+        // A "[1m]" row is ALREADY expressed in the client's own vocabulary — the id is the
+        // mechanism — so it is never scaled, and whatever window it declares here is documentation.
+        // Without this exemption kimi's k3[1m] (declared 1048576, client 1e6) would pick up a
+        // spurious 0.954 for a 4.6% gap that is just 1024*1024 vs the flat 1e6 Claude Code returns.
+        if (declared <= 0 || oneMillionHint.containsMatchIn(unwrap(id))) return 1.0
+        return contextWindowFor(pinnedModel).toDouble() / declared
     }
 
     public fun labelFor(id: String): String = models.firstOrNull { it.id == id }?.label ?: id

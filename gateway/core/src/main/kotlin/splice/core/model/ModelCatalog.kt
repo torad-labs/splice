@@ -45,7 +45,10 @@ public data class ModelCatalog(
 
     public val defaultModel: String get() = models.first().id
 
-    private val suffixHint = Regex("\\[1m]$", RegexOption.IGNORE_CASE)
+    // ANY bracketed tier hint, not just "[1m]": a provider that ships ONE id per model (xAI —
+    // grok-4.6 IS 500k, with no `-256k` sibling the way Moonshot has k3-256k) can only offer
+    // "capped by default, long context on request" as two picker rows over one upstream id.
+    private val suffixHint = Regex("\\[[^\\[\\]]+]$", RegexOption.IGNORE_CASE)
 
     // Canonical (suffix-stripped) ids — `contains` and `contextWindowFor` both strip the query the
     // same way. Storing the RAW picker id (e.g. "k3[1m]") let membership pass after the contains
@@ -54,6 +57,14 @@ public data class ModelCatalog(
     private val exactWindows: Map<String, Long> =
         models.associate { stripSuffixes(it.id) to it.contextWindow } +
             extraWindows.associate { stripSuffixes(it.id) to it.contextWindow }
+
+    // RAW picker ids, consulted BEFORE the stripped map. Two rows over one upstream id collapse to
+    // one stripped key, so the stripped map alone cannot tell "grok-4.6" (capped) from
+    // "grok-4.6[500k]" — whichever row was declared last would win both. Raw-first keeps each row's
+    // own window while the stripped map still answers the bare upstream id every wire path uses.
+    private val rawWindows: Map<String, Long> =
+        models.associate { unwrap(it.id) to it.contextWindow } +
+            extraWindows.associate { unwrap(it.id) to it.contextWindow }
 
     // Canonical (suffix-stripped) ids — `contains` strips its query the same way, so both sides
     // compare on the upstream id. Storing the RAW id here let a "[1m]" picker model (kimi k3[1m])
@@ -76,7 +87,8 @@ public data class ModelCatalog(
         val fallback = defaultOverride?.takeIf { it > 0 } ?: defaultContextWindow
         if (model.isNullOrEmpty()) return fallback
         val id = stripSuffixes(model)
-        return exactWindows[id]
+        return rawWindows[unwrap(model)]
+            ?: exactWindows[id]
             ?: windowRules.firstOrNull { id.startsWith(it.prefix) }?.contextWindow
             ?: fallback
     }

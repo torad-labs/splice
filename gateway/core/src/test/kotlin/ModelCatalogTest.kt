@@ -109,6 +109,29 @@ class ModelCatalogTest {
     }
 
     @Test
+    fun `two tier rows on ONE upstream model keep their own windows`() {
+        // xAI ships ONE id per model (grok-4.6 = 500k); unlike Moonshot it has no `-256k` sibling to
+        // pin a smaller window against. So offering "capped by default, long context on request"
+        // means TWO picker rows that strip to the SAME upstream id — which the old shape could not
+        // express: the suffix regex matched only the literal "[1m]", and exactWindows keyed the
+        // STRIPPED id, so the second row either collided on the window or shipped an invalid id.
+        val xai = ModelCatalog(
+            discoveryPrefix = "claude-grok--",
+            models = listOf(
+                ModelEntry(id = "grok-4.6", label = "Grok 4.6", contextWindow = 256_000),
+                ModelEntry(id = "grok-4.6[500k]", label = "Grok 4.6 (500k)", contextWindow = 500_000),
+            ),
+            defaultContextWindow = 256_000,
+        )
+        assertEquals("grok-4.6", xai.stripSuffixes("grok-4.6[500k]"), "any bracket tier strips, not just [1m]")
+        assertEquals(256_000L, xai.contextWindowFor("grok-4.6"), "the capped row keeps the deliberate 256k")
+        assertEquals(500_000L, xai.contextWindowFor("grok-4.6[500k]"), "the long-context row gets its own window")
+        assertEquals(500_000L, xai.contextWindowFor("claude-grok--grok-4.6[500k]"), "wrapped form too")
+        assertTrue(xai.contains("grok-4.6[500k]"), "the tier row is still owned by this head")
+        assertTrue(xai.contains("grok-4.6"), "and so is the bare upstream id")
+    }
+
+    @Test
     fun `contextWindowFor strips 1m suffix so picker id windows resolve without extraWindows`() {
         // Residual of the membership fix: modelIds stripped but exactWindows keyed raw picker ids,
         // so contains("k3[1m]") passed while contextWindowFor fell to default 256k.

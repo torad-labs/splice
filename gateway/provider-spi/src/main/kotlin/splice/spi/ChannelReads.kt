@@ -15,8 +15,11 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 
 // A healthy channel never reports content it cannot deliver; a run of consecutive torn wakeups
-// means the upstream is broken — end the stream honestly rather than pin a core.
-internal const val MAX_SPURIOUS_WAKEUPS = 1024
+// means the upstream is broken — end the stream honestly rather than pin a core. Public because
+// the cap is part of [ChannelReads]'s cross-module contract (DR-26d): callers in :gateway reason
+// about when a torn peer turns into SseSpuriousWakeupException, and an invisible constant made
+// that contract unreviewable from the consuming side.
+public const val MAX_SPURIOUS_WAKEUPS: Int = 1024
 
 public object ChannelReads {
 

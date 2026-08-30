@@ -40,12 +40,14 @@ internal class RequestBodyReader(
             val output = ByteArrayOutputStream(capacity)
             val buffer = ByteArray(READ_BUFFER_BYTES)
             var total = 0
-            var read = read(channel, buffer)
-            while (read >= 0) {
-                total += read
+            // `count`, not `read`: a local Int named `read` shadows the [read] delegate it is
+            // assigned FROM, and `read = read(...)` then reads as self-assignment (DR-26c).
+            var count = read(channel, buffer)
+            while (count >= 0) {
+                total += count
                 if (total > limit) throw RequestBodyTooLarge(limit)
-                output.write(buffer, 0, read)
-                read = read(channel, buffer)
+                output.write(buffer, 0, count)
+                count = read(channel, buffer)
             }
             ReceivedBody(output.toString(Charsets.UTF_8), total)
         }

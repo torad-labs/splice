@@ -232,6 +232,7 @@ files = ["gateway/gateway/src/main/kotlin/splice/gateway/usage/TurnWiring.kt", "
 status = "todo"
 verify = "cd gateway && ./gradlew :core:test :gateway:test --console=plain"
 # [2026-08-30] 2026-08-30 split execution across seats to respect the ModelCatalogTest fence: codex-splice lands the claude-row equal-window pin test (message sent); claude-splice lands the TurnWiring factor logging + KDoc. Item closes when both halves land.
+# [2026-08-30] 2026-08-30 TurnWiring half landed by claude-splice: once-per-turn factor log (row, factor, client window), comment truth-updated, non-launched-client caveat documented. Mutation-proven (disabled log line reds the UsageScalingTest arm — first mutation attempt was vacuous: the --tests filter excluded the arm's CLASS, a small §24 lesson; re-proven against UsageScalingTest). Awaiting codex-splice claude-row pin test to close.
 
 [[items]]
 id = "DR-19"
@@ -248,32 +249,40 @@ id = "DR-20"
 phase = "spi"
 title = "AdmissionGate answers a torn CLIENT body with 400 invalid_request_error (AdmissionGate.kt:77-79) — a non-retryable class telling Claude Code its request was malformed — while respondReadTimeout(408), the honest retryable shape for a torn connection, already exists two lines up. Fix: torn-body path responds 408; test pins it."
 files = ["gateway/gateway/src/main/kotlin/splice/gateway/head/AdmissionGate.kt"]
-status = "todo"
+status = "done"
 verify = "cd gateway && ./gradlew :gateway:test --console=plain"
+# [2026-08-30] Attribution unavailable: missing in_flight tree snapshot
+# [2026-08-30] 2026-08-30 claude-splice landed: 408 via respondReadTimeout(message) with distinct stream-interrupted text; test flipped first (red on 400), green after; test renamed to match the new contract.
 
 [[items]]
 id = "DR-21"
 phase = "spi"
 title = "The upstream-error-body leg of the spurious-wakeup consolidation is the one of three with NO test, and its new failure shape is worse than it needs to be: bodyTextLimited (UpstreamResponse.kt:26) can now throw SseSpuriousWakeupException, classifyTransport does not recognize it (not a SocketException), so rethrowUnlessRetryableTransport rethrows and the turn dies as an unclassified IOException where the upstream STATUS (429/503) used to be preserved. Still better than the pre-image hot-spin, but: classify it (or wrap preserving status) and add the missing test for this leg — ChannelReadsTest covers the primitive, AdmissionGateTest covers the request-body leg, nobody covers this one."
 files = ["gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamResponse.kt", "gateway/provider-spi/src/main/kotlin/splice/spi/TransportFailures.kt"]
-status = "todo"
+status = "done"
 verify = "cd gateway && ./gradlew :provider-spi:test --console=plain"
+# [2026-08-30] Attribution unavailable: missing in_flight tree snapshot
+# [2026-08-30] 2026-08-30 claude-splice landed the wrap-preserving-status option: walk extracted to LimitedBodyReader, SseSpuriousWakeupException degrades to truncated diagnostic, upstream status stays the signal. TornChannel-double test red on the throwing body, green after.
 
 [[items]]
 id = "DR-22"
 phase = "control"
 title = "Statusline regressions from the shared-renderer change: (a) the renderer cache (StatuslineRoute.kt:53-60) invalidates on roots only while the head label is captured at construction (StatuslineRenderer.kt:21) — a head renamed at runtime renders the stale label for the daemon lifetime; pre-image rebuilt from the live label per request. (b) gitBranch (ProcessBuilder + 200ms waitFor) now runs INSIDE synchronized(branchCacheLock) on a process-shared renderer — concurrent ticks for one head serialize behind a blocking subprocess on a Ktor dispatcher thread, a new serialization point on an unauthenticated hot endpoint; pre-image ran gits in parallel. (c) the new StatuslineGitRootTest cache-window test races a 2s wall-clock TTL across two real git round-trips (flake on loaded runners) and leaks a temp git repo per run (createTempDirectory + git init, no cleanup). Fix: cache key includes the label or label read live; subprocess moved outside the monitor (double-checked TTL); test gets injected clock or generous TTL + tempdir cleanup."
 files = ["gateway/control/src/main/kotlin/splice/control/StatuslineRoute.kt", "gateway/control/src/main/kotlin/splice/control/StatuslineRenderer.kt"]
-status = "todo"
+status = "done"
 verify = "cd gateway && ./gradlew :control:test --console=plain"
+# [2026-08-30] Attribution unavailable: missing in_flight tree snapshot
+# [2026-08-30] 2026-08-30 claude-splice landed all three arms: (a) RendererCache matches label (red-proven via extraction-then-fix), (b) git subprocess outside the monitor with double-checked store (NOT test-pinned — timing; flagged for codex diff-read), (c) injected clock + @TempDir + deterministic reuse-and-expiry arms replacing the wall-clock race. :control:test 55+/green.
 
 [[items]]
 id = "DR-23"
 phase = "responses"
 title = "ConversationSummaryParts composite key (line 46) NUL-joins session and conversation while ResponsesWsIdentity.chainKey — cited as the justification in the same package — uses lengthPrefixed: two encodings of one composite identity, the exact copies-drift shape this repo legislates against. Also the session re-scoping means a conversation resumed under a NEW x-claude-code-session-id starts with empty dedup state so the first recap re-lands (narrow, undocumented regression of the bbd165f cross-turn fix), and key cardinality multiplies against the fixed 64-entry LRU whose 3MB worst-case note (lines 15-16) was computed for the old key space. Fix: share ONE encoding; KDoc the resume semantics as chosen behavior; recompute the bound note."
 files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ConversationSummaryParts.kt"]
-status = "todo"
+status = "in_flight"
 verify = "cd gateway && ./gradlew :dialect-openai-responses:test --console=plain"
+# [2026-08-30] CLAIM: owner=codex-splice at=2026-08-30T22:47:30Z
+# [2026-08-30] ATTEST-START: tree=f27bab3c9335c356c31c966d8ca6d00fc596f160 at=2026-08-30T22:47:30Z
 
 [[items]]
 id = "DR-24"

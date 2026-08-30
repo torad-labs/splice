@@ -70,14 +70,15 @@ internal class ResponsesTerminalDecision(
 
     // response.incomplete with a non-max_output_tokens reason is a CENSORED turn — a clean
     // Success(incomplete=true) would let a blocked generation masquerade as complete (the same
-    // L3 honesty invariant ChatStreamTranslator's contentFiltered branch closes).
+    // L3 honesty invariant ChatStreamTranslator's contentFiltered branch closes). Carries NO
+    // partial for the same reason as a refusal above: this terminal is deterministic, so handing
+    // it to ResponsesReanchorController would re-POST the full context for the identical verdict.
     private fun contentFilterFailure(state: ResponsesTurnState): TurnOutcome.Failure? =
         if (state.contentFiltered) {
             TurnOutcome.Failure(
                 ErrorType.API_ERROR,
                 "ChatGPT backend: generation stopped by content filter",
                 providerReported = true,
-                partial = payload.partialOrNull(state),
             )
         } else {
             null

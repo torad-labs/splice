@@ -253,6 +253,24 @@ class ResponsesReanchorPartialTest {
     }
 
     @Test
+    fun `a content-filtered turn is deterministic and is never re-POSTed`() = runTest {
+        val outcome = ResponsesStreamTranslator(reanchorCtx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"blocked"}"""),
+                ev(
+                    """{"type":"response.incomplete","response":{"status":"incomplete",""" +
+                        """"incomplete_details":{"reason":"content_filter"}}}""",
+                ),
+            ).asFlow(),
+            NullSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, failure.type)
+        assertNull(failure.partial)
+        assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)))
+    }
+
+    @Test
     fun `a tool block torn mid-args marks the poison tear`() = runTest {
         val outcome = ResponsesStreamTranslator(reanchorCtx()).driveTurn(
             listOf(

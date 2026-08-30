@@ -75,7 +75,9 @@ internal class AdmissionGate(
         responses.respondReadTimeout(call)
         null
     } catch (_: SseSpuriousWakeupException) {
-        responses.respondInvalidRequest(call, "request body stream interrupted")
+        // 408, not 400 (DR-20): a torn client body is a connection event the client may retry;
+        // BadRequest told Claude Code the request itself was malformed — a non-retryable class.
+        responses.respondReadTimeout(call, "request body stream interrupted")
         null
     }
 }

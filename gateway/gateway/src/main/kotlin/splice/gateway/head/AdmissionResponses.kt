@@ -63,9 +63,9 @@ internal class AdmissionResponses {
         )
     }
 
-    suspend fun respondReadTimeout(call: ApplicationCall) {
+    suspend fun respondReadTimeout(call: ApplicationCall, message: String = "request body read timed out") {
         call.respondText(
-            errorBodyJson(INVALID_REQUEST_ERROR, "request body read timed out"),
+            errorBodyJson(INVALID_REQUEST_ERROR, message),
             ContentType.Application.Json,
             HttpStatusCode.RequestTimeout,
         )

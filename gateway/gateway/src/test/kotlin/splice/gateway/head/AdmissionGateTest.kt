@@ -57,7 +57,7 @@ class AdmissionGateTest {
     }
 
     @Test
-    fun `a lying request channel is an invalid request rather than a server error`(
+    fun `a lying request channel is a retryable timeout rather than a malformed request`(
         @TempDir tmp: Path,
     ) = testApplication {
         val catalog = ModelCatalog(
@@ -96,7 +96,9 @@ class AdmissionGateTest {
         }
 
         val response = client.post("/probe")
-        assertEquals(HttpStatusCode.BadRequest, response.status)
+        // 408, not 400 (DR-20): a torn CLIENT body is a retryable connection event, and 400 told
+        // Claude Code its request itself was malformed — a non-retryable class for it.
+        assertEquals(HttpStatusCode.RequestTimeout, response.status)
         val body = response.bodyAsText()
         assertTrue(body.contains("invalid_request_error"), body)
         assertTrue(body.contains("request body stream interrupted"), body)

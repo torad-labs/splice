@@ -17,6 +17,7 @@ import splice.core.turn.TurnMeta
 import splice.core.turn.Usage
 import splice.core.usage.RateLimitState
 import splice.core.usage.UsageWarnPolicy
+import splice.core.util.LogSink
 import splice.gateway.round.RoundUsage
 import splice.gateway.usage.OutputClampPolicy
 import splice.gateway.usage.UsageHud
@@ -271,6 +272,20 @@ class UsageScalingTest {
 
     private fun payload(model: String, input: Long, cached: Long) =
         wiring.usagePayloadBuilder(xai, meta(model))(Usage(input, 7, cached))
+
+    @Test
+    fun `a scaled row logs its factor once per turn and an exact row logs nothing`() {
+        val logged = mutableListOf<String>()
+        val builder = TurnWiring(LogSink { logged += it }).usagePayloadBuilder(xai, meta("grok-4.6[500k]"))
+        builder(Usage(1_000, 7, 200))
+        builder(Usage(2_000, 7, 200))
+        assertEquals(1, logged.count { it.contains("client-scaled") }, "one factor line per turn, got $logged")
+        assertTrue(logged.single().contains("grok-4.6[500k]"), "the line names the row: $logged")
+
+        val exact = mutableListOf<String>()
+        TurnWiring(LogSink { exact += it }).usagePayloadBuilder(xai, meta("grok-4.6"))(Usage(1_000, 7, 200))
+        assertTrue(exact.isEmpty(), "an exact row must not log, got $exact")
+    }
 
     @Test
     fun `the pinned row is reported EXACTLY - no head that wants one window may drift`() {

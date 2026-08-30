@@ -22,6 +22,9 @@ public data class ResponsesQuirks(
      *  and the x-openai-internal-codex-responses-lite header rides. Shape accepted by the live
      *  backend (direct probe 2026-07-19: 200, correct tool call). */
     val responsesLiteModelRegex: Regex? = Regex("gpt-5\\.6", RegexOption.IGNORE_CASE),
+    /** codex-rs serde parity: its non-optional instructions String rides as "" on lite turns.
+     *  Provider-specific wire byte; false keeps the shared responses dialect's historical omission. */
+    val emitEmptyLiteInstructions: Boolean = false,
     val compactEffortPin: String? = null, // null = inherit session effort (the cache law)
     /** The VALUE sent for parallel_tool_calls on responses-lite turns (the field itself always
      *  rides — a lite request without it 400s). codex-rs reads this per model from

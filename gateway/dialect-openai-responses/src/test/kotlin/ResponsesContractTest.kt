@@ -1,14 +1,15 @@
 // NEW: request-byte CONTRACT fixture (#924 Phase 1). The golden is the EXACT upstream request the
 // ResponsesRequestBuilder emits for a canonical turn — this is the builder BOTH production incidents
 // (stream_options 400, request-body gzip 400) came through, so a whole-request golden that catches
-// drift in ANY field is the marquee offline defense. OFFLINE half of the live-receipt binding:
-// checks/e2e/heads-e2e.sh --tier emits a signed receipt
-// {provider, model, http_status, sha256(exact request bytes that got 200)}; the receipt-BINDING
-// half (a CHANGED golden must match a receipt hash, so a blind regenerate can't go green) activates
-// on live traffic. See gateway/CONTRACT.md.
+// drift in ANY field is the marquee offline defense. The planned live-receipt binding is DORMANT:
+// heads-e2e receipts are contract_bound:false because no head-side upstream-byte tap exists yet.
+// gateway/CONTRACT.md names that missing tap and the hash check still required before a changed
+// golden can be bound to a live 200.
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
@@ -24,6 +25,7 @@ import java.io.File
 // this module, never the reverse — the dialect can never import a concrete provider).
 private fun codexProfileQuirks(toolSurface: ToolDeferralPolicy? = null) = ResponsesQuirks(
     providerTag = "claudex",
+    emitEmptyLiteInstructions = true,
     summaryDelivery = "sequential_cutoff",
     forceStrictFalse = true,
     normalizeToolSchemas = true,
@@ -51,12 +53,13 @@ class ResponsesContractTest {
 
     @Test
     fun `responses canonical request matches the golden bytes`() {
-        // This golden's green IS the default-off proof: neither emitStrict nor toolSurface moves
-        // it — the fixture builds with the bare ResponsesQuirks(providerTag = "claudex").
+        // This golden's green IS the default-off proof: neither emitStrict, toolSurface, nor the
+        // codex-only empty instructions field moves the provider-neutral request.
         val parsed = AnthropicParse.parseAnthropicBody(canonicalAnthropic)
         val req = ResponsesRequestBuilder(ResponsesQuirks(providerTag = "claudex"))
             .build(parsed.typed, parsed.raw, canonicalOpts())
             .req
+        assertFalse("instructions" in req, "empty top-level instructions is a codex-only wire quirk")
         assertGoldenContract("responses-canonical", req) { ResponsesContractTest::class.java }
     }
 
@@ -75,6 +78,7 @@ class ResponsesContractTest {
         val req = ResponsesRequestBuilder(codexProfileQuirks())
             .build(parsed.typed, parsed.raw, canonicalOpts())
             .req
+        assertEquals("", req["instructions"]?.jsonPrimitive?.content, "codex lite keeps its serde-parity field")
         assertGoldenContract("responses-codex-profile", req) { ResponsesContractTest::class.java }
     }
 

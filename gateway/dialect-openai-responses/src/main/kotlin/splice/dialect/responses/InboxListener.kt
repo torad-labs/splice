@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
+import splice.spi.BufferCapacity
 import java.io.IOException
 import java.net.http.WebSocket
 import java.util.concurrent.CompletionStage
@@ -24,7 +25,7 @@ internal class InboxListener(
     private val terminalSeen: TerminalSeen,
     private val onAnomaly: ProtocolAnomaly,
 ) : WebSocket.Listener {
-    private val assembly = StringBuilder()
+    private var assembly = StringBuilder()
 
     override fun onOpen(webSocket: WebSocket) {
         webSocket.request(1)
@@ -40,6 +41,13 @@ internal class InboxListener(
             return null
         }
         assembly.append(data)
+        if (BufferCapacity.over(0, 0, pendingArgsLen = assembly.length)) {
+            log("[ws] fragmented frame exceeded max buffered size — anomaly\n")
+            assembly = StringBuilder()
+            onAnomaly()
+            webSocket.request(1)
+            return null
+        }
         if (last) {
             val payload = assembly.toString()
             assembly.setLength(0)

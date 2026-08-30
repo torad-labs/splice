@@ -36,6 +36,7 @@ import org.junit.jupiter.api.Test
 import splice.dialect.responses.InboxListener
 import splice.dialect.responses.WsConnection
 import splice.dialect.responses.WsUpstream
+import splice.spi.BufferCapacity
 import java.io.IOException
 import java.net.URI
 import java.net.http.WebSocket
@@ -666,6 +667,24 @@ class WsUpstreamInboxListenerTest {
         assertEquals(0, anomalies, "both events parse — the assembly buffer must reset between them")
         assertEquals("a", inbox.tryReceive().getOrNull()?.type())
         assertEquals("b", inbox.tryReceive().getOrNull()?.type(), "event 2 must not carry event 1's text")
+    }
+
+    @Test
+    fun `an oversized unfinished fragment poisons before the translator can see an event`() {
+        val inbox = Channel<JsonObject>(Channel.UNLIMITED)
+        var anomalies = 0
+        val socket = FakeSocket(Fixture())
+        val listener = InboxListener(
+            inbox,
+            { },
+            terminalSeen = { false },
+            onAnomaly = { anomalies += 1 },
+        )
+
+        listener.onText(socket, "x".repeat(BufferCapacity.MAX_BUFFERED_CHARS), false)
+
+        assertEquals(1, anomalies, "fragment assembly reached the shared heap cap without poisoning")
+        assertNull(inbox.tryReceive().getOrNull(), "an unfinished fragment must never become an event")
     }
 
     @Test

@@ -66,7 +66,13 @@ internal object LoginInterception {
      * [viaBrowser] false switches the block reason to the masked-terminal-prompt wording (api-key
      * heads). [tokenCapture] adds the bare-token capture hook. [globalCommands] is the operator's
      * ~/.claude/commands to re-link into the head's real commands dir when the policy shares them,
-     * or null to skip. Best-effort: I/O failure skips it (empty map).
+     * or null to skip.
+     *
+     * Failure contract (DR-8): the /login-interceptor leg is best-effort — an I/O failure skips
+     * just that leg and LOGS the cause (one wrap around everything used to collapse three
+     * different obstructions into one unlogged empty map). The token-capture leg is fail-closed —
+     * it THROWS out of materialize(), because a head that cannot install the hook that stops a
+     * pasted credential from reaching the model must fail its launch, not come up uninterceptable.
      */
     fun wire(
         configDir: Path,
@@ -76,37 +82,44 @@ internal object LoginInterception {
         viaBrowser: Boolean = true,
         tokenCapture: TokenCaptureSpec? = null,
         loginOutcomeFile: String = "",
+        log: LogSink = LogSink(DaemonLog::write),
     ): Map<String, List<JsonObject>> {
         if (loginCommand.isBlank() && tokenCapture == null) return emptyMap()
-        return Cancellables.runCatchingCancellable {
-            buildMap {
-                val upsHooks = mutableListOf<JsonObject>()
-                if (loginCommand.isNotBlank()) {
-                    writeCommandsDir(configDir, signInLabel, globalCommands)
-                    val script = writeHookScript(
-                        configDir,
-                        LOGIN_HOOK_SH,
-                        LoginHookScripts.loginHookScript(
-                            LoginHookSpec(
-                                loginCommand = loginCommand,
-                                signInLabel = signInLabel,
-                                viaBrowser = viaBrowser,
-                                sentinel = LOGIN_SENTINEL,
-                                outcomeFile = loginOutcomeFile,
-                                canCapturePaste = tokenCapture != null,
-                            ),
+        val upsHooks = mutableListOf<JsonObject>()
+        if (loginCommand.isNotBlank()) {
+            val leg = Cancellables.runCatchingCancellable {
+                writeCommandsDir(configDir, signInLabel, globalCommands)
+                val script = writeHookScript(
+                    configDir,
+                    LOGIN_HOOK_SH,
+                    LoginHookScripts.loginHookScript(
+                        LoginHookSpec(
+                            loginCommand = loginCommand,
+                            signInLabel = signInLabel,
+                            viaBrowser = viaBrowser,
+                            sentinel = LOGIN_SENTINEL,
+                            outcomeFile = loginOutcomeFile,
+                            canCapturePaste = tokenCapture != null,
                         ),
-                    )
-                    upsHooks += hookEntry(script, HOOK_TIMEOUT_SECONDS)
-                }
-                if (tokenCapture != null) {
-                    val script =
-                        writeHookScript(configDir, CAPTURE_HOOK_SH, LoginHookScripts.captureHookScript(tokenCapture))
-                    upsHooks += hookEntry(script, HOOK_TIMEOUT_SECONDS)
-                }
-                if (upsHooks.isNotEmpty()) put(USER_PROMPT_SUBMIT, upsHooks)
+                    ),
+                    log = log,
+                )
+                upsHooks += hookEntry(script, HOOK_TIMEOUT_SECONDS)
             }
-        }.getOrElse { emptyMap() }
+            if (leg.isFailure) {
+                log(
+                    "[login] /login interception NOT installed in $configDir " +
+                        "(${leg.exceptionOrNull()?.message}) — commands/login.md or its hook failed; " +
+                        "the head runs without an interceptor\n",
+                )
+            }
+        }
+        if (tokenCapture != null) {
+            val script =
+                writeHookScript(configDir, CAPTURE_HOOK_SH, LoginHookScripts.captureHookScript(tokenCapture), log = log)
+            upsHooks += hookEntry(script, HOOK_TIMEOUT_SECONDS)
+        }
+        return if (upsHooks.isEmpty()) emptyMap() else mapOf(USER_PROMPT_SUBMIT to upsHooks)
     }
 
     /** The SessionStart advertiser — installed by the materializer ONLY while the key is missing
@@ -115,12 +128,21 @@ internal object LoginInterception {
         configDir: Path,
         spec: TokenCaptureSpec,
         loginCommand: String,
-    ): Map<String, List<JsonObject>> =
-        Cancellables.runCatchingCancellable {
+        log: LogSink = LogSink(DaemonLog::write),
+    ): Map<String, List<JsonObject>> {
+        val leg = Cancellables.runCatchingCancellable {
             val script =
-                writeHookScript(configDir, KEYSETUP_HOOK_SH, LoginHookScripts.keySetupScript(spec, loginCommand))
+                writeHookScript(configDir, KEYSETUP_HOOK_SH, LoginHookScripts.keySetupScript(spec, loginCommand), log)
             mapOf(SESSION_START to listOf(hookEntry(script, HOOK_TIMEOUT_SECONDS)))
-        }.getOrElse { emptyMap() }
+        }
+        if (leg.isFailure) {
+            log(
+                "[login] key-setup advertiser NOT installed in $configDir " +
+                    "(${leg.exceptionOrNull()?.message}) — the paste flow stays undiscoverable this launch\n",
+            )
+        }
+        return leg.getOrElse { emptyMap() }
+    }
 
     /** Concatenate two hook-addition maps per event — a plain map `+` would silently overwrite
      *  a duplicate event key (e.g. capture hook + login hook both landing on UserPromptSubmit). */

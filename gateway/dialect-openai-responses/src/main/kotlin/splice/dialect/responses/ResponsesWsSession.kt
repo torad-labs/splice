@@ -18,7 +18,9 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.util.ElapsedClock
 import splice.core.util.JsonScalars
+import splice.core.util.MonoClock
 
 // WsFrame + WsFrameAndEpoch live in WsFrames.kt (concentration, 2026-08-19).
 
@@ -38,7 +40,12 @@ import splice.core.util.JsonScalars
  * next round full-sends. That asymmetry is deliberate: an uncommitted response id is worthless,
  * while a stale one would chain onto context the server never finished building.
  */
-internal class ResponsesWsSession {
+internal class ResponsesWsSession(
+    private val maxConversations: Int = MAX_CONVERSATIONS,
+    private val maxTotalBytes: Long = MAX_TOTAL_BYTES,
+    private val ttlMs: Long = TTL_MS,
+    private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
+) {
 
     private data class Chain(
         /** The input array we last sent LOGICALLY (full history, not the delta) — the prefix any
@@ -51,12 +58,14 @@ internal class ResponsesWsSession {
          *  reuse on the same set (responses_request_properties_match, client.rs:307). */
         val props: String,
         val generation: Long,
+        val bytes: Long,
+        var at: Long,
     )
 
-    // BOUNDED, insertion-ordered, oldest dropped at the cap (review of #72's flow map: these had
-    // no TTL or bound at all, so one daemon lifetime accumulated a record per conversation
-    // forever). Dropping a record costs that conversation one full send — today's behaviour —
-    // never a wrong chain: see epochOf for why eviction cannot resurrect stale state.
+    // LRU + idle bounded. Chains retain the full logical input and request properties, so count
+    // alone is not a memory bound; trimLocked enforces count, 64 MiB of retained UTF-8 input, and a
+    // 30-minute idle TTL. Dropping a chain costs one full send — today's behaviour — never a wrong
+    // delta: see epochOf for why eviction cannot resurrect stale state.
     private val chains = LinkedHashMap<String, Chain>()
     private val epochs = LinkedHashMap<String, Long>()
 
@@ -75,6 +84,7 @@ internal class ResponsesWsSession {
      *  than anything previously handed out, so a captured epoch can only still match when nothing
      *  invalidated the conversation in between. */
     private var seq = 0L
+    private var totalBytes = 0L
 
     /** The epoch for [key] — captured at send time, checked at commit time.
      *
@@ -103,7 +113,12 @@ internal class ResponsesWsSession {
      *  this, never frameFor + epochOf, or a concurrent clear between the two invalidates the chain
      *  after the frame is built while the captured epoch still matches at commit. */
     fun frameAndEpoch(key: String, request: JsonObject, generation: Long): WsFrameAndEpoch = synchronized(lock) {
-        val chain = chains[key]
+        val now = clock()
+        trimLocked(now)
+        val chain = chains.remove(key)?.also {
+            it.at = now
+            chains[key] = it
+        }
         val delta = if (chain == null) null else chainableDelta(chain, request, generation)
         val frame = if (chain == null || delta == null) {
             WsFrame(frame(request, previousResponseId = null, input = null), chained = false)
@@ -137,44 +152,61 @@ internal class ResponsesWsSession {
         generation: Long,
         epoch: Long,
     ): Unit = synchronized(lock) {
+        val now = clock()
+        trimLocked(now)
         val input = request[FIELD_INPUT] as? JsonArray
         // A stale epoch means something invalidated this conversation while the round was in flight.
         val fresh = epoch == (epochs[key] ?: seq)
-        // Unconditional in the old shape too — the bail removed, and the commit removed before
-        // re-inserting, which is what moves the record to the LRU tail [trimLocked] evicts from.
-        chains.remove(key)
+        // Unconditional in the old shape too — replacing the key moves it to the LRU tail.
+        chains.remove(key)?.let { totalBytes -= it.bytes }
         // Two guards rather than one `committable` boolean: the null checks now sit in branches that
-        // RETURN, so past them the compiler itself knows `responseId` and `input` are non-null. The
-        // boolean form hid that and the commit line had to assert with `!!`. Same conditions, same
-        // order — committing without either would anchor the next turn onto context the server lacks.
+        // RETURN, so past them the compiler itself knows `responseId` and `input` are non-null.
         if (responseId == null || input == null) return
         if (!fresh) return
-        chains[key] = Chain(input.map { it.toString() }, responseId, propsOf(request), generation)
-        trimLocked()
+        val logicalInput = input.map { it.toString() }
+        val props = propsOf(request)
+        val bytes = logicalInput.sumOf { it.encodeToByteArray().size.toLong() } +
+            props.encodeToByteArray().size.toLong()
+        chains[key] = Chain(logicalInput, responseId, props, generation, bytes, now)
+        totalBytes += bytes
+        trimLocked(now)
     }
 
     /** Any non-clean ending (tear, cancel, failure, SSE fallback): the next round full-sends, AND
      *  any round still in flight is barred from committing (the epoch bump). */
     fun cleared(key: String): Unit = synchronized(lock) {
-        chains.remove(key)
+        val now = clock()
+        trimLocked(now)
+        chains.remove(key)?.let { totalBytes -= it.bytes }
         epochs.remove(key)
         epochs[key] = ++seq
-        trimLocked()
+        trimLocked(now)
     }
 
-    /** Drop the oldest records past the cap. Order is by last WRITE, which for a live conversation
-     *  is every completed round, so an active one is never the eviction victim. */
-    private fun trimLocked() {
-        // Iterator removal, not `while (size > cap) remove(keys.first())`. The old shape re-entered
-        // the map on every pass, so a map already corrupted by unsynchronized writes spun in
-        // HashMap.remove forever instead of failing. The lock is what makes corruption impossible;
-        // this is the shape that cannot spin even if that ever stops being true.
-        evictOldest(chains.keys.iterator(), chains.size)
+    /** Expire idle chains wholesale, then restore both count and retained-input byte bounds. Order
+     *  is least-recently-used: [frameAndEpoch] touches on use and [completed] writes at the tail. */
+    private fun trimLocked(now: Long) {
+        val cutoff = now - ttlMs
+        val stale = chains.entries.iterator()
+        while (stale.hasNext()) {
+            val entry = stale.next()
+            if (entry.value.at >= cutoff) break
+            totalBytes -= entry.value.bytes
+            stale.remove()
+        }
+        val bounded = chains.entries.iterator()
+        var overBound = chains.size > maxConversations || totalBytes > maxTotalBytes
+        while (overBound && bounded.hasNext()) {
+            val entry = bounded.next()
+            totalBytes -= entry.value.bytes
+            bounded.remove()
+            overBound = chains.size > maxConversations || totalBytes > maxTotalBytes
+        }
         evictOldest(epochs.keys.iterator(), epochs.size)
     }
 
     private fun evictOldest(keys: MutableIterator<String>, size: Int) {
-        var over = size - MAX_CONVERSATIONS
+        var over = size - maxConversations
         while (over > 0 && keys.hasNext()) {
             keys.next().run { keys.remove() }
             over--
@@ -237,10 +269,14 @@ internal class ResponsesWsSession {
     }
 }
 
-/** Same order as the reasoning cache's bound: far more than any real concurrent-session
- *  count on one head, and an evicted record costs only a full send. Narrowed from the
- *  companion's module-visible `const` to file scope — grep shows no consumer outside this file. */
+/** Far more than any real concurrent-session count; an eviction costs only a full send. */
 private const val MAX_CONVERSATIONS = 256
+
+/** Retained logical-input + property UTF-8 bytes across all chains on one head. */
+private const val MAX_TOTAL_BYTES = 64L * 1024 * 1024
+
+/** Idle, not absolute: frame construction and clean completion both refresh the chain. */
+private const val TTL_MS = 30L * 60 * 1000
 
 /** Item kinds the server ALREADY holds after the previous response: it produced them, so
  *  the builder's rebuild of them is a duplicate that must be dropped from the delta.

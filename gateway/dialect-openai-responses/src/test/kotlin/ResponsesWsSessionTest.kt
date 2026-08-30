@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplayParser
+import splice.core.util.ElapsedClock
 import splice.dialect.responses.BuildOptions
 import splice.dialect.responses.InjectPriorReasoning
 import splice.dialect.responses.RequestEncryptedReasoning
@@ -243,6 +244,55 @@ class ResponsesWsSessionTest {
         val s = ResponsesWsSession()
         s.completed(KEY, build(convo(1)), "resp_1", GEN, s.epochOf(KEY))
         assertFalse(s.frameFor("other-conv", build(convo(2)), GEN).chained)
+    }
+
+    @Test
+    fun `a chain larger than the total byte cap is evicted to full-send status quo`() {
+        val s = ResponsesWsSession(maxTotalBytes = 1)
+        s.completed(KEY, build(convo(1)), "resp_1", GEN, s.epochOf(KEY))
+
+        assertFalse(
+            s.frameFor(KEY, build(convo(2)), GEN).chained,
+            "an over-cap chain must be forgotten rather than pinning its full history",
+        )
+    }
+
+    @Test
+    fun `count pressure evicts the least recently used chain`() {
+        val s = ResponsesWsSession(maxConversations = 1)
+        s.completed("old", build(convo(1)), "resp_old", GEN, s.epochOf("old"))
+        s.completed("new", build(convo(1)), "resp_new", GEN, s.epochOf("new"))
+
+        assertFalse(s.frameFor("old", build(convo(2)), GEN).chained)
+        assertTrue(s.frameFor("new", build(convo(2)), GEN).chained)
+    }
+
+    @Test
+    fun `an idle chain expires wholesale`() {
+        var now = 0L
+        val s = ResponsesWsSession(ttlMs = 10, clock = ElapsedClock { now })
+        s.completed(KEY, build(convo(1)), "resp_1", GEN, s.epochOf(KEY))
+        now = 11
+
+        assertFalse(
+            s.frameFor(KEY, build(convo(2)), GEN).chained,
+            "an idle chain must degrade to one full send after its TTL",
+        )
+    }
+
+    @Test
+    fun `building a chained frame refreshes the idle TTL`() {
+        var now = 0L
+        val s = ResponsesWsSession(ttlMs = 10, clock = ElapsedClock { now })
+        s.completed(KEY, build(convo(1)), "resp_1", GEN, s.epochOf(KEY))
+        now = 9
+        assertTrue(s.frameFor(KEY, build(convo(2)), GEN).chained)
+        now = 18
+
+        assertTrue(
+            s.frameFor(KEY, build(convo(2)), GEN).chained,
+            "frame construction at t=9 must keep the chain alive through t=18",
+        )
     }
 
     /** The full-send frame must be byte-identical to the request plus the WS envelope keys —

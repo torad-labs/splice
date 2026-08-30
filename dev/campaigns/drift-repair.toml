@@ -29,6 +29,7 @@
 #   until a codex checkout exists.
 
 # LAW [2026-08-26]: GROUND COVERED — the repo-wide class hunt (2026-08-26) probed and CLEARED these, so a future pass need not re-walk them: telemetry swallows (PerfStats, CompactStats, RateLimitStore, UsageRingFile, AnthropicBodyParse, CollectingBlocks) are deliberate and documented, and UsageRingFile/CollectingBlocks already added the logging and honest-failure escalation the concern names; SecureFile.writeAtomic0600 is correct (temp+ATOMIC_MOVE, perms before content, tmp cleanup, write rethrown); KeyStore is the reference implementation (cross-process FileLock, bounded loud-failing acquire, deliberate strict/tolerant read split); JsonlSink.appendLine locks across the rotate/append window; WsConnectionPool is sound (bounded, identity-guarded release/fail, idle-only eviction, connect-race re-check); the ResponsesWsSession EPOCH protocol survives adversarial probing of the absent-key fallback under eviction; ReasoningCache is the reference for bounded caches. 19 test names vanished from git history on this branch and each was checked against the current tree — the ReasoningCache bound suite and the retry/backoff cluster were renamed or replaced with STRICTLY STRONGER coverage, the xhigh ladder / capture-hook / passthrough-defaults tests all have current equivalents, the two refuses-continuation tests were deliberately inverted by e00ecdc, and the keeps-its-gate-slot pin was retired by 4c2346d fixing it. Only DR-3 and DR-13 are real holes.
+# LAW [2026-08-30]: 2026-08-30 TWO-SEAT REPAIR (operator-ordered): claude-splice session and codex-splice session fix ALL open items; claude-splice owns ledger writes (codex reports one-liners over SendMessage, claude records); lanes fenced by item; announce-before-push serializes feat/claude-head; done requires the item verify green; verified requires the OTHER seat's adversarial diff-read verdict; campaign closes only when BOTH seats run a fresh whole-branch sweep finding nothing and exchange explicit AGREE-CLEAN messages.
 [campaign]
 name = "drift-repair"
 goal = "Repair the seven defects the 2026-08-26 Eli drift audit surfaced in the post-PR-99 commits, plus every same-class instance a repo-wide hunt finds — silent swallowed failures, non-atomic operator-state mutations, widened retry predicates that amplify deterministic failures, comment-vs-code lies, deleted regression guards, and unbounded accumulators"
@@ -42,6 +43,7 @@ files = ["gateway/core/src/main/kotlin/splice/core/launch/SessionRegistryLink.kt
 status = "todo"
 verify = "cd gateway && ./gradlew :core:test --console=plain"
 # [2026-08-26] LIVE EXPOSURE (orchestrator, 2026-08-26): the bug cannot bite on this machine TODAY. The four active head dirs (.claude-claudex, .claude-claude-grok, .claude-claude-kimi, .claude-openrouter) are already symlinks to ~/.claude/sessions, so link() short-circuits at the readSymbolicLink==globalSessions check and migrate is never reached. The remaining real sessions/ dirs (.claude-codex, .claude-grok, .claude-mythos, .claude-torad) are all EMPTY (0 entries) and are not splice heads, so even if one were materialized the migration loop has nothing to move. Zero filename collisions exist between any real head dir and the global registry right now. The defect is therefore latent, not active: it bites on a FRESH machine, or after any head dir is recreated, or once PID recycling puts the same <pid>.json in both places. That makes DR-1 a correctness fix with no live incident to race, which is why the queue puts DR-2 (active token burn on every content-filtered turn) ahead of it.
+# [2026-08-30] 2026-08-30 claude-splice RECONCILE: the 9e13c41 rewrite lands the demanded shape (staged link + preflight + reverse rollback + FS seam + three injected-failure tests, verified by adversarial read this session) — but the item stays OPEN for the residual: a refused migration returns false which link() DISCARDS, so declines are silent (no log, violating the logging-on-decline demand); rollback label also lies (DR-26f). Remaining scope: log the decline through the LogSink plumbing, consume the boolean, then done.
 
 [[items]]
 id = "DR-2"
@@ -79,6 +81,7 @@ verify = "cd gateway && ./gradlew :dialect-openai-responses:test --console=plain
 # [2026-08-26] SCOPE WIDENED by the repo-wide class hunt (2026-08-26). Four more comment-vs-code defects join the original cluster, so this item now owns every comment lie whose file no other item opens. (e) StreamTurnContext.kt:31-38 KDoc for summaryPartsShared says Turn-scoped dedup state and Production passes meta.summaryParts — production passes the CONVERSATION-lifetime instance and meta.summaryParts is now only the unkeyed fallback; same falsehood as the SummaryDedup one but on the DTO field that carries the state across the module boundary. (f) ResponsesWsSession.kt:241-244 says Same order as the reasoning cache bound — false in both directions now: aee057b raised MAX_ENTRIES 256->8192, and the reasoning cache own comment says its count bound is NOT the memory guard. This comment is what makes DR-14 invisible on review, so fix it WITH DR-14 rather than here if DR-14 lands first. (g) ResponsesToolSearch.kt is a file that does not exist and is cited 11 times, including ToolSurface.kt:63 pointing at it as the stated HOME OF A LAW (the loop-cannot-wedge law) and ResponsesToolSearchTest.kt:205 citing ResponsesToolSearch.kt:136-140, a file:line into nothing; the real files are ResponsesToolSearchController.kt and ToolSearchOutput.kt. Split-provenance mentions (Split from ResponsesToolSearch.kt) are legitimate history and MUST keep the old name — only live pointers get renamed. An exhaustive scan of every .kt filename appearing in a main-source comment found exactly four dangling names total: the two original seeds, this one, and MergedCredentialJson.kt at CredentialJson.kt:8 which is a correct explicit rename note and is NOT in scope.
 # [2026-08-28] VERIFY-EDITED: verify = "cd gateway && ./gradlew :dialect-openai-responses:test --console=plain && npm run gate" -> verify = "cd gateway && ./gradlew :dialect-openai-responses:test --console=plain" (by=orchestrator implied; no flag)
 # [2026-08-28] 2026-08-28 (review of PR 99): verify narrowed to the scoped module target, matching the other fifteen rows in this file. It carried '&& npm run gate', which the NO GATE BYPASS law 56 lines above states is the ORCHESTRATOR's act and never a builder's; no note on this row authorized the exception and DR-6 is still todo, so it was an instruction not yet followed rather than a record of one taken. The hazard is documented at length in the sibling ledger head-decoupling.toml from this same PR: concurrent full-gate runs in a shared checkout produced corrupted test-result XMLs, misattributed failures, a landed commit undone by a sibling's git reset, and a shared git index sweeping unrelated files into the wrong commit. DR-6's own title says the fix is text-only, so the 38-leg ladder was disproportionate independently of the law.
+# [2026-08-30] 2026-08-30 claude-splice review round adds two instances to this cluster: SessionRegistryLink rollback discard label claims refused-migration but runs only on failed commit (also filed concretely as DR-26f), and fe30cc0 justifies kimi test fixtures as matching the shipped config in the same commit that changes the shipped config away from them (DR-26e). Fix the two concrete sites via DR-26; keep this item for the sweep.
 
 [[items]]
 id = "DR-7"
@@ -101,8 +104,10 @@ id = "DR-8"
 phase = "launch"
 title = "SECURITY: LoginInterception.wire() wraps its ENTIRE hook-materialization body in runCatchingCancellable{}.getOrElse{emptyMap()}, so one IOException anywhere silently drops ALL hook entries — including the token-capture UserPromptSubmit hook whose stated job is to stop a pasted API key from reaching the model. Orchestrator-VERIFIED by reading lines 68-96: the buildMap that writes the commands dir, the login interceptor AND the capture hook is one try block with a single empty-map fallback. Concrete: ~/.claude-openrouter/commands exists as a regular file (operator artifact or a prior half-run); writeCommandsDir calls Files.createDirectories which throws FileAlreadyExistsException (an IOException); the whole map is abandoned; materialize() returns a normal MaterializeResult; LaunchService.launch discards it; the shim execs claude. The user then pastes sk-or-v1-... at the prompt and with no capture hook it is an ordinary user message — it travels through the gateway to the upstream and is persisted in the session transcript. Nothing logs. The same swallow drops the /login interceptor, so /login submits the raw sentinel SPLICE_CODEX_LOGIN to the model as a billed turn. Three materially different causes (commands dir unwritable, capture hook unwritable, no login command configured) produce an identical empty map. Contrast writeHookScript twenty lines below, which DOES log a failed chmod through a LogSink already present in this file. Fix: return a typed result or take the LogSink, so a non-empty spec that produced zero hooks logs, and for tokenCapture != null FAIL the launch rather than launch a head that cannot intercept a pasted credential."
 files = ["gateway/core/src/main/kotlin/splice/core/launch/LoginInterception.kt", "gateway/core/src/main/kotlin/splice/core/launch/ClaudeConfigMaterializer.kt", "gateway/control/src/main/kotlin/splice/control/LaunchService.kt", "gateway/core/src/test/kotlin/LoginInterceptionTest.kt"]
-status = "todo"
+status = "in_flight"
 verify = "cd gateway && ./gradlew :core:test :control:test --console=plain"
+# [2026-08-30] CLAIM: owner=claude-splice at=2026-08-30T22:21:11Z
+# [2026-08-30] ATTEST-START: tree=977ac36d5065719bad9a1a052bf6329929e381e9 at=2026-08-30T22:21:11Z
 
 [[items]]
 id = "DR-9"
@@ -176,9 +181,91 @@ id = "DR-17"
 phase = "repair"
 title = "Enforce the operator-locked mirror_reasoning=false invariant after defaults, TOML, state, env, runtime PATCH, and direct constructors; preserve native reasoning display while preventing splice-authored reasoning-summary mirrors."
 files = ["README.md", "config/splice.example.toml", "dev/campaigns/drift-repair.toml", "gateway/core/src/main/kotlin/splice/core/config/Knob.kt", "gateway/core/src/main/kotlin/splice/core/config/ConfigCoercion.kt", "gateway/core/src/test/kotlin/ConfigServiceTest.kt", "gateway/gateway/src/main/kotlin/splice/gateway/head/HeadDeps.kt", "gateway/gateway/src/main/kotlin/splice/gateway/pipeline/TurnPipeline.kt", "gateway/gateway/src/test/kotlin/TurnPipelineTest.kt", "gateway/gateway/src/test/kotlin/head/HeadDepsTest.kt", "gateway/gateway/src/test/kotlin/head/HeadServerIntegrationTest.kt", "dev/campaigns/proxy-hardening/walls/cx_09_empty_turn_covered.py"]
-status = "done"
+status = "verified"
 verify = "gateway/gradlew -p gateway :core:test :gateway:test --rerun-tasks && python3 dev/campaigns/proxy-hardening/walls/cx_09_empty_turn_covered.py && python3 dev/campaigns/proxy-hardening/walls/cx_09_empty_turn_covered.py --selftest"
 # [2026-08-30] CLAIM: owner=91febc5c-ae12-4f6a-acb7-470db7f93075 at=2026-08-30T17:45:14Z
 # [2026-08-30] ATTEST-START: tree=4007349f69e041de7395893c87444f37763d8059 at=2026-08-30T17:45:14Z
 # [2026-08-30] 2026-08-30: mirror_reasoning is locked false at Knob default, every coerce ingress (global/per-head TOML, state, env, PATCH), final normalize, HeadDeps, and TurnPipeline. Direct true construction throws; provider-native thinking remains visible and no [reasoning summary] is emitted. Red: ConfigServiceTest mirror-layer case failed at default true. Green: gateway/gradlew -p gateway :core:test :gateway:test --rerun-tasks => BUILD SUCCESSFUL, 32 tasks; CX-09 wall + selftest both green.
 # [2026-08-30] ATTEST: scoped diffstat: README.md                                          | 10 ++--- | config/splice.example.toml                         |  1 + | .../walls/cx_09_empty_turn_covered.py              | 13 ++++--- | .../kotlin/splice/core/config/ConfigCoercion.kt    | 13 +++++-- | .../src/main/kotlin/splice/core/config/Knob.kt     |  9 ++--- | gateway/core/src/test/kotlin/ConfigServiceTest.kt  | 35 +++++++++++++++++ | .../main/kotlin/splice/gateway/head/HeadDeps.kt    |  5 ++- | .../kotlin/splice/gateway/pipeline/TurnPipeline.kt |  9 +++-- | .../gateway/src/test/kotlin/TurnPipelineTest.kt    | 45 +++++++++------------- | .../test/kotlin/head/HeadServerIntegrationTest.kt  |  4 +- | 10 files changed, 91 insertions(+), 53 deletions(-); sidecar: .claude/ledger-diffs/DR-17.diff; off-scope: gateway/gateway/src/main/kotlin/splice/gateway/pipeline/StreamHonesty.kt, gateway/gateway/src/test/kotlin/splice/gateway/head/AdmissionGateTest.kt
+# [2026-08-30] 2026-08-30 VERIFIED by claude-splice (independent re-read at 9e13c41): three-layer lock confirmed — ConfigCoercion.coerce returns false for MIRROR_REASONING regardless of raw (line 121-124), normalize force-writes false (line 85), require(!mirrorReasoning) backstops in TurnPipeline:26 and HeadDeps:61; operator TOML saying true COERCES (no boot crash); no re-enable path found by grep over main sources; full gate PASS 44/44 at 9e13c41 (gate-pr99-tip-PASS.log, claude-splice session scratchpad).
+# [2026-08-30] VERDICT: outcome=accepted
+
+[[items]]
+id = "DR-18"
+phase = "usage"
+title = "Usage-wire scaling ships with zero observability and an unguarded claude-head assumption. TurnWiring.kt:43-52 reports SCALED input/cache counts to the client (scaling itself is OPERATOR DOCTRINE — the proxy authors the numerator so picker rows get real windows; do NOT revert). Defects: (a) nothing logs the factor, so a wrong factor is self-consistent on every surface — statusline absolute numbers are already 2x off on grok-4.3 rows vs the example config; (b) ModelCatalog.clientContextWindowFor has no claude- branch while Claude Code ignores CLAUDE_CODE_MAX_CONTEXT_TOKENS for claude-* ids, so the claude-splice factor is 1.0 today ONLY because all four rows declare 200k — the first differing row produces silent bogus scaling with no test that notices. Fix: head-scoped log line when factor != 1.0 (once per turn, not per event); a test pinning every claude-splice catalog row window-equal whose failure message names the clientContextWindowFor claude- gap; TurnWiring KDoc stating non-launched clients (e2e probe, bare curl) receive scaled counts by design."
+files = ["gateway/gateway/src/main/kotlin/splice/gateway/usage/TurnWiring.kt", "gateway/core/src/main/kotlin/splice/core/config/ModelCatalog.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :core:test :gateway:test --console=plain"
+
+[[items]]
+id = "DR-19"
+phase = "release"
+title = "Release tag gate skips on the PRIMARY path: stage.sh line 17 gates on TAG being non-empty, TAG comes only from SPLICE_RELEASE_TAG or GITHUB_REF_TYPE=tag, and the release.yml promotion path (REF_TYPE=branch, lines 111-112) invokes stage.sh with neither — so the SemVer regex and the tag/version equality check never run where releases actually get cut; a malformed SPLICE_GATEWAY_VERSION lands as a garbage tag_name. Fix: the promotion path passes SPLICE_RELEASE_TAG=v-RESOLVED_VERSION into the stage step exactly as verify-OSS-D.sh line 44 already does; red proof asserts the workflow wiring. Companion (same denominator disease): verify-OSS-D line 30-44 tag-equality leg reads the version from package.json and feeds it back as the tag, so equality can never fail from that caller — add an arm feeding a MISMATCHED tag and asserting the failure reason."
+files = [".github/workflows/release.yml", "checks/release/stage.sh", "checks/oss/verify-OSS-D.sh"]
+status = "todo"
+verify = "bash checks/oss/verify-OSS-D.sh"
+
+[[items]]
+id = "DR-20"
+phase = "spi"
+title = "AdmissionGate answers a torn CLIENT body with 400 invalid_request_error (AdmissionGate.kt:77-79) — a non-retryable class telling Claude Code its request was malformed — while respondReadTimeout(408), the honest retryable shape for a torn connection, already exists two lines up. Fix: torn-body path responds 408; test pins it."
+files = ["gateway/gateway/src/main/kotlin/splice/gateway/head/AdmissionGate.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :gateway:test --console=plain"
+
+[[items]]
+id = "DR-21"
+phase = "spi"
+title = "The upstream-error-body leg of the spurious-wakeup consolidation is the one of three with NO test, and its new failure shape is worse than it needs to be: bodyTextLimited (UpstreamResponse.kt:26) can now throw SseSpuriousWakeupException, classifyTransport does not recognize it (not a SocketException), so rethrowUnlessRetryableTransport rethrows and the turn dies as an unclassified IOException where the upstream STATUS (429/503) used to be preserved. Still better than the pre-image hot-spin, but: classify it (or wrap preserving status) and add the missing test for this leg — ChannelReadsTest covers the primitive, AdmissionGateTest covers the request-body leg, nobody covers this one."
+files = ["gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamResponse.kt", "gateway/provider-spi/src/main/kotlin/splice/spi/TransportFailures.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :provider-spi:test --console=plain"
+
+[[items]]
+id = "DR-22"
+phase = "control"
+title = "Statusline regressions from the shared-renderer change: (a) the renderer cache (StatuslineRoute.kt:53-60) invalidates on roots only while the head label is captured at construction (StatuslineRenderer.kt:21) — a head renamed at runtime renders the stale label for the daemon lifetime; pre-image rebuilt from the live label per request. (b) gitBranch (ProcessBuilder + 200ms waitFor) now runs INSIDE synchronized(branchCacheLock) on a process-shared renderer — concurrent ticks for one head serialize behind a blocking subprocess on a Ktor dispatcher thread, a new serialization point on an unauthenticated hot endpoint; pre-image ran gits in parallel. (c) the new StatuslineGitRootTest cache-window test races a 2s wall-clock TTL across two real git round-trips (flake on loaded runners) and leaks a temp git repo per run (createTempDirectory + git init, no cleanup). Fix: cache key includes the label or label read live; subprocess moved outside the monitor (double-checked TTL); test gets injected clock or generous TTL + tempdir cleanup."
+files = ["gateway/control/src/main/kotlin/splice/control/StatuslineRoute.kt", "gateway/control/src/main/kotlin/splice/control/StatuslineRenderer.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :control:test --console=plain"
+
+[[items]]
+id = "DR-23"
+phase = "responses"
+title = "ConversationSummaryParts composite key (line 46) NUL-joins session and conversation while ResponsesWsIdentity.chainKey — cited as the justification in the same package — uses lengthPrefixed: two encodings of one composite identity, the exact copies-drift shape this repo legislates against. Also the session re-scoping means a conversation resumed under a NEW x-claude-code-session-id starts with empty dedup state so the first recap re-lands (narrow, undocumented regression of the bbd165f cross-turn fix), and key cardinality multiplies against the fixed 64-entry LRU whose 3MB worst-case note (lines 15-16) was computed for the old key space. Fix: share ONE encoding; KDoc the resume semantics as chosen behavior; recompute the bound note."
+files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ConversationSummaryParts.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :dialect-openai-responses:test --console=plain"
+
+[[items]]
+id = "DR-24"
+phase = "usage"
+title = "The a3ec6b4 regression test pins a number that fixture DECLARATION ORDER can move: its expected 2.0 depends on exactWindows last-wins between the grok-4.6 (256k) and grok-4.6-500k rows — reorder the two ModelEntry lines and the assertion silently becomes 3.90625, failing for the wrong reason or passing wrongly. Pin the invariant instead: distinct unambiguous ids, or assert the window lookup directly before asserting the scale."
+files = ["gateway/core/src/test/kotlin/ModelCatalogTest.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :core:test --console=plain"
+
+[[items]]
+id = "DR-25"
+phase = "release"
+title = "Three hand-authored release asset lists cross-check only two of themselves: stage.sh ASSETS (9, generates sha256sums), accept.sh ASSETS (9, counts against its own copy), release.yml files: (10) — nothing compares the workflow list to the other two, and fail_on_unmatched_files catches listed-but-missing, not staged-but-omitted. An asset dropped from release.yml ships absent with a green build; exposure is the compliance sidecars (LICENSE, SBOM, THIRD_PARTY_*). Fix: stage.sh ASSETS is the authority; a verify-OSS-D arm diffs accept.sh and release.yml against it (or generates them)."
+files = ["checks/release/stage.sh", "checks/release/accept.sh", ".github/workflows/release.yml", "checks/oss/verify-OSS-D.sh"]
+status = "todo"
+verify = "bash checks/oss/verify-OSS-D.sh"
+
+[[items]]
+id = "DR-26"
+phase = "hygiene"
+title = "Review-round hygiene batch, one item so none get lost: (a) accept.sh lines 168/203/240 bare grep -q under set -e fail the script with zero diagnostic — name the failure; (b) CHANGELOG line 37 attributes the masked-commands rejection to release gates, it is concentration-selftest arm 5c — reword; (c) RequestBodyReader.kt:43/48 declares var read Int shadowing the read property it then calls — rename the local; (d) ChannelReads.MAX_SPURIOUS_WAKEUPS is internal while the object is public cross-module and the cap is contract-bearing — make it visible or document; (e) ModelCatalogTest kimi fixtures still declare 1_048_576 with a matching-shipped-config rationale the same range made false (config now 1000000) — sync value or rationale; (f) SessionRegistryLink rollback discard label says refused migration but rollback runs on failed COMMIT, never on refusal — fix the label."
+files = ["checks/release/accept.sh", "CHANGELOG.md", "gateway/provider-spi/src/main/kotlin/splice/spi/RequestBodyReader.kt", "gateway/provider-spi/src/main/kotlin/splice/spi/ChannelReads.kt", "gateway/core/src/test/kotlin/ModelCatalogTest.kt", "gateway/core/src/main/kotlin/splice/core/launch/SessionRegistryLink.kt"]
+status = "todo"
+verify = "bash checks/gate.sh"
+
+[[items]]
+id = "DR-27"
+phase = "usage"
+title = "stripSuffixes widened from a [1m] literal to any-trailing-bracket (ModelCatalog.kt:60) and it computes the id SENT UPSTREAM — any provider id with a genuine trailing bracket is now silently mangled before the wire (latent: no shipped id has one, but the blast radius moved from one literal to a class and nothing pins it). Worse, oneMillionHint (line 112) is UNANCHORED while stripSuffixes is anchored, so the two predicates that must agree do not: k3[1m]-preview would get the 1e6 client window but ship unstripped. Fix: strip only suffixes that resolve to a catalog row (or anchor and unify the two regexes); add the mangling-class test."
+files = ["gateway/core/src/main/kotlin/splice/core/config/ModelCatalog.kt"]
+status = "todo"
+verify = "cd gateway && ./gradlew :core:test --console=plain"

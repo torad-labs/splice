@@ -131,7 +131,7 @@ public object UpstreamFailureClassifier {
         }
     }
 
-    private fun overflowFailure(msg: String): ClassifiedFailure {
+    public fun overflowFailure(msg: String): ClassifiedFailure {
         val message = if (promptTooLongRe.containsMatchIn(msg)) msg else "prompt is too long: $msg"
         return ClassifiedFailure(ErrorType.INVALID_REQUEST, message.take(MAX_MESSAGE))
     }

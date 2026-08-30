@@ -7,6 +7,7 @@ package splice.dialect.passthrough
 
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
+import splice.spi.UpstreamFailureClassifier
 
 private const val CONTEXT_EXCEEDED_MESSAGE =
     "generation stopped: the model context window was exceeded (stop_reason=model_context_window_exceeded)"
@@ -119,7 +120,9 @@ private class PassthroughFailureRules {
     fun stopReasonFailure(reason: String): Pair<ErrorType, String>? = when (reason) {
         "refusal" -> ErrorType.API_ERROR to "generation refused by the model (stop_reason=refusal)"
         "pause_turn" -> ErrorType.OVERLOADED to "backend paused the turn (stop_reason=pause_turn) — retry"
-        "model_context_window_exceeded" -> ErrorType.API_ERROR to CONTEXT_EXCEEDED_MESSAGE
+        "model_context_window_exceeded" -> UpstreamFailureClassifier.overflowFailure(CONTEXT_EXCEEDED_MESSAGE).let {
+            it.type to it.message
+        }
         else -> null
     }
 }

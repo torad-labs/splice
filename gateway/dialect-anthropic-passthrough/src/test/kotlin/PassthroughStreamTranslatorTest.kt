@@ -402,10 +402,11 @@ class PassthroughStopReasonHonestyTest {
     // the protocol added separately from max_tokens; folding it into `incomplete` would report the
     // ordinary "ran out of room" stop for a turn the backend could not run at all.
     @Test
-    fun `stop_reason model_context_window_exceeded fails and is NOT folded into incomplete`() = runTest {
+    fun `stop_reason model_context_window_exceeded triggers client compaction`() = runTest {
         val f = turnEndingWith("model_context_window_exceeded") as TurnOutcome.Failure
-        assertEquals(ErrorType.API_ERROR, f.type)
+        assertEquals(ErrorType.INVALID_REQUEST, f.type)
         assertTrue(f.providerReported)
+        assertTrue(f.message.contains("prompt is too long"), f.message)
         assertTrue(f.message.contains("context window"), f.message)
     }
 

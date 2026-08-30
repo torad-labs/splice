@@ -156,8 +156,11 @@ public class ClaudeConfigMaterializer(
     private fun writeSettings(spec: MaterializeSpec, hookAdditions: Map<String, List<JsonObject>>) {
         val allow = spec.availableModelIds
         val dst = spec.configDir.resolve(Keys.SETTINGS)
-        val global =
-            if (shares(spec.policy, Keys.SETTINGS)) jsonReads.tolerant(globalDir().resolve(Keys.SETTINGS)) else EMPTY_JSON
+        val global = if (shares(spec.policy, Keys.SETTINGS)) {
+            jsonReads.tolerant(globalDir().resolve(Keys.SETTINGS))
+        } else {
+            EMPTY_JSON
+        }
         val existing = breakSettingsSymlinkAndRead(dst)
         val savedModel = existing[Keys.MODEL]?.jsonPrimitive?.content
         val model = if (savedModel != null && savedModel in allow) savedModel else spec.defaultModel
@@ -235,7 +238,6 @@ public class ClaudeConfigMaterializer(
         put("approved", (local[Keys.CUSTOM_API_KEY_RESPONSES] as? JsonObject)?.get("approved") ?: buildJsonArray {})
         put("rejected", buildJsonArray {})
     }
-
 }
 
 // The two strictness modes for reading .claude* JSON state (DR-11c; a collaborator so the

@@ -29,6 +29,14 @@ public object UpstreamFailureClassifier {
         RegexOption.IGNORE_CASE,
     )
     private val gatewayHtmlRe = Regex("<html|bad gateway|cloudflare", RegexOption.IGNORE_CASE)
+    // Status-less SSE failures are re-POSTable only when the vendor text explicitly names a
+    // transient server condition. Default false: policy/parameter/unknown failures can be
+    // deterministic, and replaying the full context cannot change them.
+    private val transientRe = Regex(
+        "server[_ -]?error|internal[_ -]?error|temporar(?:y|ily)|overload(?:ed)?|" +
+            "unavailable|timed? ?out|try again",
+        RegexOption.IGNORE_CASE,
+    )
     private val promptTooLongRe = Regex("prompt is too long", RegexOption.IGNORE_CASE)
     private val lenient = Json { ignoreUnknownKeys = true }
 
@@ -69,7 +77,11 @@ public object UpstreamFailureClassifier {
         if (parsed.isFailure && gatewayHtmlRe.containsMatchIn(message)) {
             val type = if (status == BAD_GATEWAY) ErrorType.OVERLOADED else ErrorType.API_ERROR
             return ExtractResult.Gateway(
-                ClassifiedFailure(type, "ChatGPT backend $status (gateway)"),
+                ClassifiedFailure(
+                    type,
+                    "ChatGPT backend $status (gateway)",
+                    transient = status != null && status >= SERVER_ERROR_FLOOR,
+                ),
             )
         }
         return ExtractResult.Fields(message, code)
@@ -86,7 +98,7 @@ public object UpstreamFailureClassifier {
             status == AUTH_STATUS || authRe.containsMatchIn(blob) ->
                 ClassifiedFailure(ErrorType.AUTHENTICATION, msg.take(MAX_MESSAGE))
             status == BAD_GATEWAY ->
-                ClassifiedFailure(ErrorType.OVERLOADED, msg.take(MAX_MESSAGE))
+                ClassifiedFailure(ErrorType.OVERLOADED, msg.take(MAX_MESSAGE), transient = true)
             else -> statusFallback(status, msg)
         }
     }
@@ -125,10 +137,15 @@ public object UpstreamFailureClassifier {
     }
 
     private fun statusFallback(status: Int?, msg: String): ClassifiedFailure = when {
-        status != null && status >= SERVER_ERROR_FLOOR -> ClassifiedFailure(ErrorType.API_ERROR, msg.take(MAX_MESSAGE))
+        status != null && status >= SERVER_ERROR_FLOOR ->
+            ClassifiedFailure(ErrorType.API_ERROR, msg.take(MAX_MESSAGE), transient = true)
         status != null && status >= CLIENT_ERROR_FLOOR ->
             ClassifiedFailure(ErrorType.INVALID_REQUEST, msg.take(MAX_MESSAGE))
-        else -> ClassifiedFailure(ErrorType.API_ERROR, msg.take(MAX_MESSAGE))
+        else -> ClassifiedFailure(
+            ErrorType.API_ERROR,
+            msg.take(MAX_MESSAGE),
+            transient = transientRe.containsMatchIn(msg),
+        )
     }
 
     /** 502 from the ChatGPT gateway is transient — surface as 529 so Claude Code retries. */

@@ -35,7 +35,7 @@ public class ResponsesReanchorController(
         // the fresh round appends new blocks, which is wire-legal. Supersedes the 2026-07-24
         // surface-honestly ruling for this case (operator call, 2026-08-26): that ruling
         // rejected an incoherent MARKER continuation mid-reasoning, not a clean restart.
-        return if (!hasSalvage(partial)) round.requestBody else markerContinuation(round, partial)
+        return if (!hasClientVisibleSalvage(partial)) round.requestBody else markerContinuation(round, partial)
     }
 
     // Tool blocks end eligibility both ways: an OPEN tear committed partial args JSON to the
@@ -50,11 +50,12 @@ public class ResponsesReanchorController(
         else -> true
     }
 
-    /** Salvage = content the marker continuation can actually REPLAY: prose (rides as an
-     *  assistant item) or encrypted reasoning envelopes. thinkingText alone cannot seed a
-     *  resume (code-review 2026-07-24), so thinking-only and empty partials take the verbatim
-     *  whole-request restart instead of the marker continuation. */
-    private fun hasSalvage(partial: TurnOutcome.PartialRound): Boolean {
+    /** Client-visible salvage = content the marker continuation can safely REPLAY: prose (rides as
+     *  an assistant item) or encrypted reasoning envelopes. FoldRounds blanks buffered bodyText
+     *  because that prose never reached the client; treating it as salvage would resume after a
+     *  missing prefix. thinkingText alone likewise cannot seed a resume (code-review 2026-07-24),
+     *  so those partials take the verbatim whole-request restart instead. */
+    private fun hasClientVisibleSalvage(partial: TurnOutcome.PartialRound): Boolean {
         if (partial.bodyText.isNotEmpty()) return true
         return partial.reasoningEnvelopes.isNotEmpty()
     }

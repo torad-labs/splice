@@ -253,6 +253,43 @@ class ResponsesReanchorPartialTest {
     }
 
     @Test
+    fun `a deterministic upstream rejection is never re-POSTed`() = runTest {
+        val outcome = ResponsesStreamTranslator(reanchorCtx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.failed","response":{"error":{""" +
+                        """"code":"invalid_parameter","message":"request rejected by policy"}}}""",
+                ),
+            ).asFlow(),
+            NullSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, failure.type)
+        assertTrue(failure.providerReported)
+        assertNull(failure.partial)
+        assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)))
+    }
+
+    @Test
+    fun `a transient server failure remains eligible for a clean restart`() = runTest {
+        val outcome = ResponsesStreamTranslator(reanchorCtx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.failed","response":{"error":{""" +
+                        """"code":"server_error","message":"temporarily unavailable"}}}""",
+                ),
+            ).asFlow(),
+            NullSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertNotNull(failure.partial)
+        assertEquals(
+            previousBody(),
+            controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)),
+        )
+    }
+
+    @Test
     fun `a content-filtered turn is deterministic and is never re-POSTed`() = runTest {
         val outcome = ResponsesStreamTranslator(reanchorCtx()).driveTurn(
             listOf(

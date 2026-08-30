@@ -6,14 +6,16 @@ package splice.spi
 import splice.core.turn.ErrorType
 
 /**
- * [UpstreamFailureClassifier]'s verdict on one upstream failure: the [ErrorType] the client is told
- * about and the message that rides with it (already extracted from the vendor's envelope and capped).
- *
- * NOT a [RetryOutcome] — this says what the failure IS, never whether to try again. [UpstreamClient]
- * decides that separately from status and attempt count, and wraps the classification it keeps in
- * `RetryOutcome.Failed`.
+ * [UpstreamFailureClassifier]'s verdict on one upstream failure: the [ErrorType] the client is told,
+ * the capped vendor message, and whether the cause is explicitly transient. [transient] is a fact
+ * about the cause, not a retry decision: the HTTP retry loop still owns status/attempt budgets, while
+ * a dialect may use the same fact to decide whether a failed streaming round can be re-POSTed.
  */
-public data class ClassifiedFailure(val type: ErrorType, val message: String)
+public data class ClassifiedFailure(
+    val type: ErrorType,
+    val message: String,
+    val transient: Boolean = false,
+)
 
 /**
  * Which leg produced the failure, so a status-code rejection is tellable from one that arrived

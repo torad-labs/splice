@@ -2,6 +2,7 @@
 // ("too many tokens" must never classify as auth — the v29 bug), rate/auth/5xx/4xx/fallback,
 // HTTP json extraction + html gateway branch, SSE parity, 502->529 remap, 2000-char cap.
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.ErrorType
@@ -113,6 +114,26 @@ class UpstreamFailureClassifierTest {
         assertEquals(ErrorType.API_ERROR, http("oops", 503).type)
         assertEquals(ErrorType.INVALID_REQUEST, http("bad shape", 422).type)
         assertEquals(ErrorType.API_ERROR, sse("mystery failure").type)
+    }
+
+    @Test
+    fun `transience is explicit for 5xx gateway and the audited SSE signatures`() {
+        assertTrue(http("oops", 503).transient)
+        assertTrue(http("<html>bad gateway</html>", 502).transient)
+        assertFalse(http("bad shape", 422).transient)
+        listOf(
+            "server_error",
+            "internal-error",
+            "temporarily unavailable",
+            "backend overloaded",
+            "request timed out",
+            "please try again",
+        ).forEach { text -> assertTrue(sse(text).transient, text) }
+        listOf(
+            "request rejected by policy",
+            "invalid parameter",
+            "mystery failure",
+        ).forEach { text -> assertFalse(sse(text).transient, text) }
     }
 
     @Test

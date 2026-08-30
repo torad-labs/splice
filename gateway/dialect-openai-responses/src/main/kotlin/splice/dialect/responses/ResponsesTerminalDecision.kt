@@ -35,12 +35,14 @@ internal class ResponsesTerminalDecision(
                 providerReported = true,
             )
         } ?: state.upstreamFailure?.let {
-            // parsed from a response.failed/error event the backend actually sent (G20 provenance)
+            // Parsed from a response.failed/error event the backend actually sent (G20 provenance).
+            // Only an explicitly transient verdict carries re-anchor state: an unknown/policy error
+            // must not re-POST the identical full context merely because API_ERROR is a wide bucket.
             TurnOutcome.Failure(
                 it.type,
                 "ChatGPT backend: ${it.message}",
                 providerReported = true,
-                partial = payload.partialOrNull(state),
+                partial = if (it.transient) payload.partialOrNull(state) else null,
             )
         } ?: refusalFailure(state) ?: contentFilterFailure(state),
         finished = state.finalResponse != null,

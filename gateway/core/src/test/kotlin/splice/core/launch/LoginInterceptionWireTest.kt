@@ -106,6 +106,50 @@ class LoginInterceptionWireTest {
         assertTrue(log.isEmpty(), "a clean wire must not log, got $log")
     }
 
+    // DR-8 redo (codex-splice review, 2026-08-30): the fail-closed capture leg was only fail-closed
+    // against a WRITE failure. writeHookScript caught the chmod separately and merely logged it, so a
+    // capture hook could be written 0644, registered in settings.json, and never execute — the head
+    // comes up uninterceptable exactly as before, with a log line nobody reads standing in for a
+    // failed launch. The chmod is what makes the hook a hook, so for THIS leg it is fatal too.
+    @Test
+    fun `a capture hook that cannot be made executable fails the launch`(@TempDir tmp: Path) {
+        val failure = assertThrows<IOException> {
+            LoginInterception.wire(
+                configDir = tmp,
+                loginCommand = "",
+                signInLabel = "OpenRouter",
+                globalCommands = null,
+                viaBrowser = false,
+                tokenCapture = capture,
+                log = LogSink { },
+                chmod = { _, _ -> throw IOException("injected chmod failure") },
+            )
+        }
+        assertTrue(
+            failure.message.orEmpty().contains("executable"),
+            "the launch failure must name the un-executable hook, got ${failure.message}",
+        )
+    }
+
+    @Test
+    fun `the login leg stays best-effort when its own chmod fails`(@TempDir tmp: Path) {
+        val log = mutableListOf<String>()
+
+        val hooks = LoginInterception.wire(
+            configDir = tmp,
+            loginCommand = "openrouter login",
+            signInLabel = "OpenRouter",
+            globalCommands = null,
+            viaBrowser = false,
+            tokenCapture = null,
+            log = LogSink { log += it },
+            chmod = { _, _ -> throw IOException("injected chmod failure") },
+        )
+
+        assertTrue(hooks.isEmpty(), "the login hook must be dropped, not registered unexecutable: $hooks")
+        assertTrue(log.any { it.contains("NOT installed") }, "the dropped leg must log its cause, got $log")
+    }
+
     @Test
     fun `a blocked advertiser script degrades to no advertiser with a logged cause`(@TempDir tmp: Path) {
         Files.createDirectories(tmp.resolve("splice-keysetup-hook.sh"))

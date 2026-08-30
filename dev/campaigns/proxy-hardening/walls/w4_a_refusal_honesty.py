@@ -111,7 +111,15 @@ REQUIRED = {
     "passthrough": (
         ['"refusal" -> ErrorType.API_ERROR to',
          '"pause_turn" -> ErrorType.OVERLOADED to',
-         '"model_context_window_exceeded" -> ErrorType.API_ERROR to'],
+         # 2026-08-30 — commit dd313db routes this arm through the shared classifier
+         # (`UpstreamFailureClassifier.overflowFailure`) so the verdict carries Claude Code's
+         # compaction trigger "prompt is too long" instead of a bare API_ERROR. Same carrier, same
+         # arm, strictly more honest verdict — only the spelling of the conversion moved, which is
+         # why this becomes an ANY-OF rather than a relaxation. The invariant either spelling
+         # satisfies is that the stop_reason is READ and converted to a FAILURE verdict; deleting
+         # the arm, or folding it into `incomplete`, still satisfies neither.
+         ('"model_context_window_exceeded" -> ErrorType.API_ERROR to',
+          '"model_context_window_exceeded" -> UpstreamFailureClassifier.overflowFailure(')],
         # 2026-08-16 — commit 6868086 ("retire top-level functions and companions from the three
         # dialects", HD-M6 slice 6/8) moved `stopReasonFailure` onto PassthroughFailureRules, which
         # inserts a receiver at the call site: `else -> failureRules.stopReasonFailure(reason)`. Same

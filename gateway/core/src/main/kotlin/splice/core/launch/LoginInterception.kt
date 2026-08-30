@@ -23,9 +23,11 @@ import splice.core.config.envNameRegex
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermission
 import java.nio.file.attribute.PosixFilePermissions
 import kotlin.io.path.isDirectory
 import kotlin.io.path.isSymbolicLink
@@ -49,6 +51,13 @@ public data class TokenCaptureSpec(
         // interpolated text. Same regex, one step earlier (review 2026-08-28, PR 99).
         require(envVar.matches(envNameRegex)) { "api-key env name must match $envNameRegex: '$envVar'" }
     }
+}
+
+/** Applies the owner-only executable mode to a generated hook script. A seam because the one step a
+ *  test must be able to fail on demand is exactly this one — no temp filesystem refuses a chmod —
+ *  and the capture hook's entire security value is that the mode took. */
+internal fun interface HookChmod {
+    operator fun invoke(script: Path, perms: Set<PosixFilePermission>)
 }
 
 internal object LoginInterception {
@@ -83,6 +92,7 @@ internal object LoginInterception {
         tokenCapture: TokenCaptureSpec? = null,
         loginOutcomeFile: String = "",
         log: LogSink = LogSink(DaemonLog::write),
+        chmod: HookChmod = HookChmod(Files::setPosixFilePermissions),
     ): Map<String, List<JsonObject>> {
         if (loginCommand.isBlank() && tokenCapture == null) return emptyMap()
         val upsHooks = mutableListOf<JsonObject>()
@@ -102,7 +112,7 @@ internal object LoginInterception {
                             canCapturePaste = tokenCapture != null,
                         ),
                     ),
-                    log = log,
+                    chmod,
                 )
                 upsHooks += hookEntry(script, HOOK_TIMEOUT_SECONDS)
             }
@@ -116,7 +126,7 @@ internal object LoginInterception {
         }
         if (tokenCapture != null) {
             val script =
-                writeHookScript(configDir, CAPTURE_HOOK_SH, LoginHookScripts.captureHookScript(tokenCapture), log = log)
+                writeHookScript(configDir, CAPTURE_HOOK_SH, LoginHookScripts.captureHookScript(tokenCapture), chmod)
             upsHooks += hookEntry(script, HOOK_TIMEOUT_SECONDS)
         }
         return if (upsHooks.isEmpty()) emptyMap() else mapOf(USER_PROMPT_SUBMIT to upsHooks)
@@ -129,10 +139,11 @@ internal object LoginInterception {
         spec: TokenCaptureSpec,
         loginCommand: String,
         log: LogSink = LogSink(DaemonLog::write),
+        chmod: HookChmod = HookChmod(Files::setPosixFilePermissions),
     ): Map<String, List<JsonObject>> {
         val leg = Cancellables.runCatchingCancellable {
             val script =
-                writeHookScript(configDir, KEYSETUP_HOOK_SH, LoginHookScripts.keySetupScript(spec, loginCommand), log)
+                writeHookScript(configDir, KEYSETUP_HOOK_SH, LoginHookScripts.keySetupScript(spec, loginCommand), chmod)
             mapOf(SESSION_START to listOf(hookEntry(script, HOOK_TIMEOUT_SECONDS)))
         }
         if (leg.isFailure) {
@@ -195,23 +206,32 @@ internal object LoginInterception {
         Files.createSymbolicLink(dst, src)
     }
 
-    private fun writeHookScript(
-        configDir: Path,
-        name: String,
-        content: String,
-        log: LogSink = LogSink(DaemonLog::write),
-    ): Path {
+    /**
+     * The generated hook script, owner-only and EXECUTABLE — or an [IOException] (DR-8 redo).
+     *
+     * A chmod failure used to be logged and shallowed here, which quietly defeated the fail-closed
+     * capture leg above: the script was written 0644, [hookEntry] registered its path in
+     * settings.json, and Claude Code could not run it. A registered hook that cannot execute is
+     * indistinguishable from no hook at all, so for the capture leg it means a pasted credential
+     * reaches the model — the exact outcome that leg exists to prevent. Throwing instead lets each
+     * caller's EXISTING wrap decide the policy: the login and advertiser legs catch it and log a
+     * dropped leg, the unwrapped capture leg fails the launch.
+     *
+     * The condition is the OUTCOME, not the call: [Files.isExecutable] holds on a filesystem that
+     * ignores modes but mounts exec (the LNC-005 case this used to tolerate wholesale) and fails on
+     * one that leaves the script unrunnable, whatever the chmod itself reported.
+     */
+    private fun writeHookScript(configDir: Path, name: String, content: String, chmod: HookChmod): Path {
         val script = configDir.resolve(name)
         Files.writeString(script, content)
-        // LNC-005: non-fatal on a filesystem without POSIX perms (unchanged), but no longer silent —
-        // a failed chmod here means the generated hook script keeps broader-than-intended modes.
-        val chmod = Cancellables.runCatchingCancellable {
-            Files.setPosixFilePermissions(script, PosixFilePermissions.fromString("rwx------"))
-        }
-        if (chmod.isFailure) {
-            log(
-                "[login] chmod rwx------ failed for $script " +
-                    "(${chmod.exceptionOrNull()?.message}) — keeps broader perms\n",
+        val chmodFailure = Cancellables.runCatchingCancellable {
+            chmod(script, PosixFilePermissions.fromString("rwx------"))
+        }.exceptionOrNull()
+        if (!Files.isExecutable(script)) {
+            throw IOException(
+                "$script is not executable after chmod rwx------ " +
+                    "(${chmodFailure?.message ?: "the chmod reported success"}) — Claude Code cannot run " +
+                    "a hook it is told to run",
             )
         }
         return script

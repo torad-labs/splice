@@ -105,6 +105,38 @@ class SessionRegistryLinkTest {
         )
     }
 
+    // DR-1 second residual (codex-splice review, 2026-08-30): the item demanded
+    // `Files.createDirectories(globalSessions)` "so the feature is not silently inert when the
+    // operator has never run plain claude". link() instead returned on a missing registry, which is
+    // the FRESH-MACHINE case — the one where cross-head visibility is most likely to be wanted and
+    // least likely to be noticed missing, because nothing anywhere says it did not happen.
+    @Test
+    fun `a missing global registry is created rather than silently disabling sharing`(@TempDir tmp: Path) {
+        val local = Files.createDirectories(tmp.resolve("local-sessions"))
+        val global = tmp.resolve("global-sessions") // never created: a machine that never ran plain claude
+        Files.writeString(local.resolve("a.json"), "local-a")
+
+        SessionRegistryLink().link(global, local)
+
+        assertTrue(Files.isDirectory(global), "the global registry must be created, not skipped")
+        assertTrue(Files.isSymbolicLink(local), "the head's sessions dir must end up linked")
+        assertEquals(global, Files.readSymbolicLink(local))
+        assertEquals("local-a", Files.readString(global.resolve("a.json")), "entries migrate into it")
+    }
+
+    @Test
+    fun `an unusable global registry path declines out loud instead of silently`(@TempDir tmp: Path) {
+        val local = Files.createDirectories(tmp.resolve("local-sessions"))
+        val global = tmp.resolve("global-sessions")
+        Files.writeString(global, "not a directory")
+        val log = mutableListOf<String>()
+
+        SessionRegistryLink().link(global, local, log = { log += it })
+
+        assertTrue(Files.isDirectory(local), "the real local directory must survive")
+        assertTrue(log.any { it.contains("global-sessions") }, "the decline must name the path, got $log")
+    }
+
     @Test
     fun `failed replacement creation preserves the stale symlink for retry`(@TempDir tmp: Path) {
         val oldTarget = Files.createDirectories(tmp.resolve("old-sessions"))

@@ -60,6 +60,7 @@ private const val MGMT_KEY = "mgmt-key-for-this-test"
  *  a previous test's) happened to arrive last. */
 private class RecordingUpstream {
     val requests = CopyOnWriteArrayList<Map<String, List<String>>>()
+
     @Volatile var stopReason = "end_turn"
     private val server: HttpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
     val baseUrl: String get() = "http://127.0.0.1:${server.address.port}"

@@ -43,10 +43,12 @@ internal class SessionRegistryLink(
     private val fs: SessionRegistryFs = ProcessSessionRegistryFs,
 ) {
 
-    /** Point [dst] (a head's sessions dir) at [globalSessions]. No-op when the global registry
-     *  does not exist yet — same skip-if-missing semantics as every other shared item. */
+    /** Point [dst] (a head's sessions dir) at [globalSessions], CREATING the global registry when it
+     *  does not exist yet. Unlike every other shared item, missing is not a reason to skip: the
+     *  registry is generated state, and a machine that never ran plain `claude` is exactly the fresh
+     *  install where cross-head visibility is wanted and where its absence is least noticeable. */
     fun link(globalSessions: Path, dst: Path, log: LogSink = LogSink(DaemonLog::write)) {
-        if (!Files.isDirectory(globalSessions, NOFOLLOW_LINKS)) return
+        if (!ensureGlobalRegistry(globalSessions, log)) return
         if (dst.isSymbolicLink()) {
             val target = Cancellables.runCatchingCancellable { Files.readSymbolicLink(dst) }.getOrNull()
             if (target == globalSessions) return
@@ -67,6 +69,28 @@ internal class SessionRegistryLink(
         } finally {
             Files.deleteIfExists(staged)
         }
+    }
+
+    /** The registry directory, created if absent — false when this head must keep private sessions.
+     *
+     *  A path that exists but is not a directory is left exactly as found (never deleted to make room
+     *  for generated state, the same rule linkOneShared follows), and a creation failure is reported
+     *  rather than swallowed: both were silent `return`s, which is how "sessions not shared" reached
+     *  the operator with no breadcrumb at all. */
+    private fun ensureGlobalRegistry(globalSessions: Path, log: LogSink): Boolean {
+        if (Files.isDirectory(globalSessions, NOFOLLOW_LINKS)) return true
+        if (Files.exists(globalSessions, NOFOLLOW_LINKS)) {
+            log("[sessions] $globalSessions exists but is not a directory — this head keeps private sessions\n")
+            return false
+        }
+        val created = Cancellables.runCatchingCancellable { Files.createDirectories(globalSessions) }
+        created.exceptionOrNull()?.let { cause ->
+            log(
+                "[sessions] could not create the global registry $globalSessions " +
+                    "(${cause.message}) — this head keeps private sessions\n",
+            )
+        }
+        return created.isSuccess
     }
 
     /** Preflight every destination before moving anything, then roll confirmed moves back if a later

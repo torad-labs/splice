@@ -214,16 +214,25 @@ class ClaudeConfigMaterializerTest {
         assertEquals(globalSessions, Files.readSymbolicLink(dir.resolve("sessions")))
     }
 
+    // INVERTED (DR-1 redo, 2026-08-30). This used to pin "a missing global registry leaves the head's
+    // sessions dir alone", which is the skip-if-missing rule every OTHER shared item follows. The
+    // registry is not like the others: Claude Code GENERATES it, so "missing" means a machine that has
+    // never run plain `claude` — precisely the fresh install where cross-head visibility is wanted and
+    // where its absence is invisible, because nothing said sharing did not happen. DR-1 demanded
+    // Files.createDirectories(globalSessions) for exactly that case. The share-vs-isolate decision is
+    // untouched and still pinned by `isolate sessions keeps the head registry private` below — this
+    // arm only covers a policy that ASKED to share.
     @Test
-    fun `sessions stays a real dir when the global registry does not exist`(@TempDir tmp: Path) {
+    fun `a missing global registry is created so sessions sharing is never silently inert`(@TempDir tmp: Path) {
         seedGlobal(tmp) // seeds ~/.claude WITHOUT a sessions dir
         val dir = tmp.resolve(".claude-codex")
         val headSessions = dir.resolve("sessions")
         Files.createDirectories(headSessions)
         val policy = ClaudePolicy(share = allPolicy.share + "sessions", isolate = emptySet())
         materializer(tmp).materialize(dir, policy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
-        assertFalse(headSessions.isSymbolicLink())
-        assertTrue(Files.isDirectory(headSessions, NOFOLLOW_LINKS))
+        assertTrue(Files.isDirectory(tmp.resolve(".claude/sessions")), "the registry must be created")
+        assertTrue(headSessions.isSymbolicLink(), "a sharing head must end up linked, not left private")
+        assertEquals(tmp.resolve(".claude/sessions"), Files.readSymbolicLink(headSessions))
     }
 
     @Test

@@ -35,8 +35,14 @@ class RendererCacheTest {
     fun `changed git roots still rebuild`() {
         val cache = RendererCache()
         var built = 0
-        cache.get("h", "name", listOf("/a")) { built++; StatuslineRenderer("name", listOf("/a")) }
-        cache.get("h", "name", listOf("/b")) { built++; StatuslineRenderer("name", listOf("/b")) }
+        cache.get("h", "name", listOf("/a")) {
+            built++
+            StatuslineRenderer("name", listOf("/a"))
+        }
+        cache.get("h", "name", listOf("/b")) {
+            built++
+            StatuslineRenderer("name", listOf("/b"))
+        }
         assertEquals(2, built, "the pre-existing roots invalidation must survive the label fix")
     }
 }

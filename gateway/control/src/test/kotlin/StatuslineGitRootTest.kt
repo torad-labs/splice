@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.control.StatuslineRenderer
+import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -59,7 +60,7 @@ class StatuslineGitRootTest {
         val trusting = StatuslineRenderer(
             label = "codex",
             extraGitRoots = listOf(tmpDir.toString()),
-            now = { clock },
+            now = WallClock { clock },
         )
         val stdin = """{"cwd":"$repo"}"""
 

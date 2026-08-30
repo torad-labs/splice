@@ -15,6 +15,7 @@ import kotlinx.serialization.json.jsonObject
 import splice.core.usage.RateLimitState
 import splice.core.usage.UsageWarnPolicy
 import splice.core.util.JsonScalars
+import splice.core.util.WallClock
 import java.util.concurrent.TimeUnit
 
 public class StatuslineRenderer(
@@ -22,7 +23,7 @@ public class StatuslineRenderer(
     extraGitRoots: List<String> = emptyList(),
     /** Clock seam: the branch-cache TTL test was a wall-clock race (two real git round-trips inside
      *  a 2s window flake on a loaded runner) — injected time makes expiry deterministic (DR-22c). */
-    private val now: () -> Long = System::currentTimeMillis,
+    private val now: WallClock = WallClock(System::currentTimeMillis),
 ) {
     // Operator-trusted roots beyond $HOME//tmp for the git-branch lookup (statuslineGitRoots
     // knob / CLAUDEX_STATUSLINE_GIT_ROOTS) — devcontainer /workspace, /srv layouts. Normalized once.

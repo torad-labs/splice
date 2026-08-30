@@ -9,9 +9,14 @@ import splice.core.turn.SharedSummaryParts
 import splice.spi.ClientGone
 import splice.spi.WatchdogProbe
 
+/** Work executed under one summary round's lease and coroutine mutex. */
+public fun interface SummaryRoundTask<T> {
+    public suspend operator fun invoke(parts: SharedSummaryParts): T
+}
+
 /** Supplies one shared summary state while owning a complete translator round. */
 public interface SummaryRoundOwner {
-    public suspend fun <T> withRound(block: suspend (SharedSummaryParts) -> T): T
+    public suspend fun <T> withRound(task: SummaryRoundTask<T>): T
 }
 
 /** Turn-private whole-round ownership. Conversation entries implement the same contract through
@@ -19,10 +24,10 @@ public interface SummaryRoundOwner {
 public class SummaryRoundScope(public val parts: SharedSummaryParts) : SummaryRoundOwner {
     private val mutex = Mutex()
 
-    override suspend fun <T> withRound(block: suspend (SharedSummaryParts) -> T): T = mutex.withLock {
+    override suspend fun <T> withRound(task: SummaryRoundTask<T>): T = mutex.withLock {
         parts.beginRound()
         try {
-            block(parts)
+            task(parts)
         } finally {
             parts.endRound()
         }

@@ -51,10 +51,10 @@ internal class ConversationSummaryParts(
     }
 
     private inner class ConversationRoundOwner(private val key: String) : SummaryRoundOwner {
-        override suspend fun <T> withRound(block: suspend (SharedSummaryParts) -> T): T {
+        override suspend fun <T> withRound(task: SummaryRoundTask<T>): T {
             val entry = acquire(key)
             return try {
-                entry.scope.withRound(block)
+                entry.scope.withRound(task)
             } finally {
                 release(key, entry)
             }
@@ -86,7 +86,6 @@ internal class ConversationSummaryParts(
         val entry = convos.remove(key) ?: Entry(
             SummaryRoundScope(
                 // Deliberate second construction site: this instance is conversation-lifetime.
-                // ast-grep-ignore: kt-shared-summary-parts-single-source
                 SharedSummaryParts(maxPartsPerConversation, maxBytesPerConversation),
             ),
             now,

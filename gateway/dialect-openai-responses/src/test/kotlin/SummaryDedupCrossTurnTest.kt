@@ -18,6 +18,7 @@ import splice.core.turn.TurnOutcome
 import splice.dialect.responses.EmitEncryptedReasoning
 import splice.dialect.responses.ResponsesStreamTranslator
 import splice.dialect.responses.StreamTurnContext
+import splice.dialect.responses.SummaryRoundScope
 import splice.spi.WireSink
 
 private class ThinkingRecordingSink : WireSink {
@@ -38,7 +39,10 @@ private class ThinkingRecordingSink : WireSink {
     override suspend fun addRedactedThinking(data: String) = Unit
 }
 
-private fun dedupCtx(shared: SharedSummaryParts) = StreamTurnContext(
+private fun dedupCtx(
+    shared: SharedSummaryParts,
+    scope: SummaryRoundScope = SummaryRoundScope(shared),
+) = StreamTurnContext(
     compact = false,
     emitEncryptedReasoning = EmitEncryptedReasoning(false),
     encodeReasoningEnvelope = { "" },
@@ -48,6 +52,7 @@ private fun dedupCtx(shared: SharedSummaryParts) = StreamTurnContext(
     upstreamTimeoutMsForMessage = 900_000,
     dedupeRepeatedSummaryParts = true,
     summaryPartsShared = shared,
+    summaryRoundScope = scope,
 )
 
 private fun ev(json: String): JsonObject = Json.parseToJsonElement(json).jsonObject
@@ -57,18 +62,26 @@ private val completed = ev(
 )
 
 /** One reasoning item (fresh [id]) delivering [parts] as done-events — the cutoff wire shape. */
-private fun reasoningRound(id: String, vararg parts: String): List<JsonObject> = buildList {
-    add(ev("""{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"$id"}}"""))
+private fun reasoningRoundAt(outputIndex: Int, id: String, vararg parts: String): List<JsonObject> = buildList {
+    add(
+        ev(
+            """{"type":"response.output_item.added","output_index":$outputIndex,""" +
+                """"item":{"type":"reasoning","id":"$id"}}""",
+        ),
+    )
     parts.forEachIndexed { i, p ->
         add(
             ev(
-                """{"type":"response.reasoning_summary_text.done","item_id":"$id","output_index":0,""" +
-                    """"summary_index":$i,"text":"$p"}""",
+                """{"type":"response.reasoning_summary_text.done","item_id":"$id",""" +
+                    """"output_index":$outputIndex,"summary_index":$i,"text":"$p"}""",
             ),
         )
     }
     add(completed)
 }
+
+private fun reasoningRound(id: String, vararg parts: String): List<JsonObject> =
+    reasoningRoundAt(0, id, *parts)
 
 class SummaryDedupCrossTurnTest {
 
@@ -106,5 +119,52 @@ class SummaryDedupCrossTurnTest {
         assertTrue(outcome is TurnOutcome.Success)
         assertEquals(0, sink.calls.count { it.contains(p0) }, "anchored restatement leaked: ${sink.calls}")
         assertEquals(1, sink.calls.count { it.contains(fresh) }, "divergent part lost: ${sink.calls}")
+    }
+
+    @Test
+    fun `an older turn's matching procedure titles do not suppress a new procedure`() = runTest {
+        val p0 = "Reviewing the migration plan and affected files"
+        val p1 = "Applying the safe write before the navigation step"
+        val filler0 = "Investigating an unrelated websocket lifecycle failure"
+        val filler1 = "Verifying the replacement socket closes exactly once"
+        val shared = SharedSummaryParts()
+        ResponsesStreamTranslator(dedupCtx(shared))
+            .driveTurn(reasoningRoundAt(0, "rs_old", p0, p1).asFlow(), ThinkingRecordingSink())
+        ResponsesStreamTranslator(dedupCtx(shared))
+            .driveTurn(reasoningRoundAt(1, "rs_middle", filler0, filler1).asFlow(), ThinkingRecordingSink())
+
+        val sink = ThinkingRecordingSink()
+        val outcome = ResponsesStreamTranslator(dedupCtx(shared))
+            .driveTurn(reasoningRoundAt(2, "rs_new", p0, p1).asFlow(), sink)
+
+        assertTrue(outcome is TurnOutcome.Success)
+        assertEquals(1, sink.calls.count { it.contains(p0) }, "old title suppressed new work: ${sink.calls}")
+        assertEquals(1, sink.calls.count { it.contains(p1) }, "old title suppressed new work: ${sink.calls}")
+    }
+
+    // Regression guard (2026-07-20): a paragraph two DISTINCT items genuinely share byte-for-byte
+    // is not a recap when the second item's own new part came first. A turn-global seen set dropped
+    // it and starved the second item's summary.
+    @Test
+    fun `a paragraph two distinct items coincidentally share is kept, not cross-dropped`() = runTest {
+        val p0 = "Weighing the two candidate migration designs"
+        val sharedParagraph = "The token write must precede the navigation step"
+        val fresh = "Now reconciling the session store mismatch cleanly"
+        val events = buildList {
+            addAll(reasoningRoundAt(0, "rs_first", p0, sharedParagraph).dropLast(1))
+            addAll(reasoningRoundAt(1, "rs_second", fresh, sharedParagraph))
+        }
+        val sink = ThinkingRecordingSink()
+        val outcome = ResponsesStreamTranslator(dedupCtx(SharedSummaryParts()))
+            .driveTurn(events.asFlow(), sink)
+
+        assertTrue(outcome is TurnOutcome.Success)
+        assertEquals(1, sink.calls.count { it.contains(p0) })
+        assertEquals(1, sink.calls.count { it.contains(fresh) })
+        assertEquals(
+            2,
+            sink.calls.count { it.contains(sharedParagraph) },
+            "shared paragraph wrongly dropped: ${sink.calls}",
+        )
     }
 }

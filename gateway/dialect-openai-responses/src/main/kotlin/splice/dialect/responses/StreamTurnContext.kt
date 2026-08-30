@@ -1,11 +1,33 @@
-// PORT-OF: ResponsesStreamTranslator.kt @ f875801 — invariants unchanged: a pure per-turn input
-// DTO, assembled once per round and handed to the translator; every field's meaning and default is
-// byte-identical to the pre-split declaration.
+// PORT-OF: ResponsesStreamTranslator.kt @ f875801 — a pure per-turn input DTO, assembled once per
+// round and handed to the translator. SummaryRoundOwner was added for conversation-lifetime leasing;
+// the remaining fields keep the pre-split meanings.
 package splice.dialect.responses
 
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import splice.core.turn.SharedSummaryParts
 import splice.spi.ClientGone
 import splice.spi.WatchdogProbe
+
+/** Supplies one shared summary state while owning a complete translator round. */
+public interface SummaryRoundOwner {
+    public suspend fun <T> withRound(block: suspend (SharedSummaryParts) -> T): T
+}
+
+/** Turn-private whole-round ownership. Conversation entries implement the same contract through
+ *  their registry so an entry cannot expire while a round is waiting or running. */
+public class SummaryRoundScope(public val parts: SharedSummaryParts) : SummaryRoundOwner {
+    private val mutex = Mutex()
+
+    override suspend fun <T> withRound(block: suspend (SharedSummaryParts) -> T): T = mutex.withLock {
+        parts.beginRound()
+        try {
+            block(parts)
+        } finally {
+            parts.endRound()
+        }
+    }
+}
 
 /** Per-turn inputs the machine needs beyond the event flow. */
 public data class StreamTurnContext(
@@ -28,15 +50,13 @@ public data class StreamTurnContext(
      *  (probed 2026-07-19: part(1,0) byte-identical to part(0,0)); codex-rs dedups client-side.
      *  Gated to the delivery quirk so genuine token-granular streams are never touched. */
     val dedupeRepeatedSummaryParts: Boolean = false,
-    /** Turn-scoped dedup state shared across this turn's continuation rounds (fresh translator
-     *  per round; without it, a section re-titled by a continuation round passes each round's
-     *  per-instance dedup and lands as a duplicate — the 2026-07-26 mirror duplication).
-     *
-     *  REQUIRED, no default (2026-07-27 review): it used to be `SharedSummaryParts? = null` for
-     *  test convenience, and a null here silently restores exactly the per-round private state the
-     *  turn-scoping exists to remove. Production passes `meta.summaryParts`; a test that wants
-     *  round-private state now has to say so. */
+    /** Turn-scoped fallback state shared across continuation rounds. Production uses it when the
+     *  client has no complete session+conversation identity; tests also use it with the default
+     *  owner below. REQUIRED: null used to silently restore round-private dedup. */
     val summaryPartsShared: SharedSummaryParts,
+    /** Whole-round owner. A keyed production owner leases and supplies its conversation entry's
+     *  state; the default owns [summaryPartsShared] directly for unkeyed turns and tests. */
+    val summaryRoundScope: SummaryRoundOwner = SummaryRoundScope(summaryPartsShared),
     /** Encode this round's encrypted reasoning items into splice-reasoning envelopes, riding the
      *  Success outcome (fold replay) AND the Failure partial (re-anchor salvage, 2026-07-24).
      *  True for every fold- or re-anchor-eligible turn; off (compact) keeps the reducer

@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.takeWhile
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonObject
+import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
 import splice.spi.BufferCapacity
 import splice.spi.StreamTranslator
@@ -44,9 +45,22 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
     // NF-06: latched when BufferCapacity trips; never provider-reported (the verdict is local).
     private var runawayGuard: String? = null
 
-    override suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome {
+    override suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome =
+        if (ctx.dedupeRepeatedSummaryParts) {
+            // One lease + lock for the COMPLETE translator round, never the delta hot loop. A
+            // conversation entry cannot expire while this round waits or runs.
+            ctx.summaryRoundScope.withRound { summaryParts -> driveRound(upstream, sink, summaryParts) }
+        } else {
+            driveRound(upstream, sink, ctx.summaryPartsShared)
+        }
+
+    private suspend fun driveRound(
+        upstream: Flow<JsonObject>,
+        sink: WireSink,
+        summaryParts: SharedSummaryParts,
+    ): TurnOutcome {
         val state = ResponsesTurnState()
-        val reasoningFold = ResponsesReasoningFold(ctx, state)
+        val reasoningFold = ResponsesReasoningFold(ctx, state, summaryParts)
         val replay = ResponsesReasoningReplay(ctx, state)
         val itemFold = ResponsesItemFold(state, reasoningFold, replay)
         val reducer = ResponsesEventReducer(state, itemFold, reasoningFold)

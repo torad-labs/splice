@@ -44,64 +44,159 @@ public data class TurnMeta(
      *  there is no per-round construction to get wrong, and `copy()` — which every continuation
      *  path uses — preserves the reference. Dialects that render no reasoning summary simply never
      *  read it (two empty collections). The responses dialect substitutes a CONVERSATION-lifetime
-     *  instance at translator construction when the turn has a conversation key (the cross-turn
-     *  recap staircase, 2026-08-26); this default remains the state for unkeyed turns. */
+     *  instance only when the turn has both session and conversation identities (the cross-turn
+     *  recap staircase, 2026-08-26); this default remains the state otherwise. */
     val summaryParts: SharedSummaryParts = SharedSummaryParts(),
 )
 
-/** The shared state behind TurnMeta.summaryParts: the ordered parts already emitted to the
- *  client, plus the per-item exact set the dedup's within-item arm matches against.
- *  Mutable coordination state, never compared by value.
- *
- *  ACCESS DISCIPLINE (revised 2026-08-26): originally turn-scoped and mutated by ONE round's
- *  translator at a time (round loops are strictly sequential), so it carried no synchronization.
- *  The responses dialect now keeps ONE instance per CONVERSATION across client turns (the
- *  cross-turn recap staircase), and successive turns run on arbitrary dispatcher threads — the
- *  per-method synchronization below is the memory-visibility bridge the 2026-07-26 note said a
- *  cross-round share would need. Public, not internal: the dialect module reads these across a
- *  module boundary.
- *
- *  APPEND-ONLY BY TYPE, not by comment (2026-07-27 review): the collections used to be public
- *  `MutableList`/`MutableMap`, so the discipline above was documentary — any in-repo caller could
- *  `clear()`, reorder or truncate the list with no compile error and no test to catch it, and the
- *  translator's recap cursor trusts this list's ORDER and LENGTH. The surface is exactly the
- *  operations the dedup dialect performs; [trimToLast] is the one bounded exception and runs only
- *  BETWEEN rounds (no recap cursor survives a round, so index shifts are unobservable). */
-public class SharedSummaryParts {
-    private val emittedParts = mutableListOf<String>()
-    private val itemEmitted = mutableMapOf<Int, MutableSet<String>>()
+private const val DEFAULT_SUMMARY_PARTS = 512
+private const val DEFAULT_SUMMARY_BYTES = 1_048_576L
 
-    /** The part at [cursor] in emission order, or null past either end (the recap arm passes
-     *  RECAP_DONE = -1 once an item's leading recap is finished, which must not match). */
-    @Synchronized
-    public fun partAt(cursor: Int): String? = emittedParts.getOrNull(cursor)
-
-    /** Records [part] as emitted for item [outputIndex]. Returns false when it was ALREADY
-     *  emitted for that item — a dedup hit — in which case nothing is appended. */
-    @Synchronized
-    public fun markEmitted(outputIndex: Int, part: String): Boolean {
-        val fresh = itemEmitted.getOrPut(outputIndex) { mutableSetOf() }.add(part)
-        if (fresh) emittedParts.add(part)
-        return fresh
+/** Conversation-capable summary-dedup state. The responses dialect owns one COMPLETE translator
+ *  round around this state: overlapping POSTs for the same conversation wait on one coroutine mutex,
+ *  so no expiry or second translator can shift indices under a live recap cursor. Per-event
+ *  operations remain ordinary synchronized list reads/writes; the mutex is never acquired here.
+ *
+ *  The active window is the immediately preceding logical summary chain plus genuinely-new parts
+ *  accepted this round. Anchoring extends that chain; unrelated leading text replaces it. Parts are
+ *  occurrence records (text + output slot), so bounding one duplicate never erases an equal value
+ *  from another item. Losing records to either bound degrades to duplicate display, never data loss. */
+public class SharedSummaryParts(
+    private val maxParts: Int = DEFAULT_SUMMARY_PARTS,
+    private val maxBytes: Long = DEFAULT_SUMMARY_BYTES,
+) {
+    private data class RecordedPart(val outputIndex: Int, val text: String) {
+        val bytes: Long = text.encodeToByteArray().size.toLong()
     }
 
-    /** Index of [part]'s first occurrence in emission order, or -1 when never emitted. A NEW
-     *  round's leading recap restates the TAIL of the prior round's emission, not the whole list
-     *  (live claudex scan 2026-08-26: 244/803 thinking messages opened with an already-emitted
-     *  ordered run; zero repeats arrived non-leading), so the recap arm anchors wherever the
-     *  round's first part matches instead of only at position 0. */
-    @Synchronized
-    public fun anchorOf(part: String): Int = emittedParts.indexOf(part)
+    private var retainedParts = mutableListOf<RecordedPart>()
+    private val roundParts = mutableListOf<RecordedPart>()
+    private var previousRoundItems = emptyList<RecordedPart>()
+    private val currentRoundItems = mutableListOf<RecordedPart>()
+    private var currentRoundBytes = 0L
+    private var roundTrackingDisabled = false
+    private var retainPriorRound = false
 
-    /** Drops all but the newest [n] parts (and their per-item dedup records) — the between-rounds
-     *  bound that keeps a conversation-lifetime instance finite. Recaps only restate the recent
-     *  tail, so aged-out parts carry no dedup value. */
+    /** Rotates into a new translator round. SummaryRoundScope owns the whole-round mutex. */
+    @Synchronized
+    public fun beginRound() {
+        finishRoundLocked()
+    }
+
+    /** Commits and bounds this translator round. Called from SummaryRoundScope's finally block. */
+    @Synchronized
+    public fun endRound() {
+        finishRoundLocked()
+    }
+
+    /** The part at [cursor] in the active recap window, or null past either end. */
+    @Synchronized
+    public fun partAt(cursor: Int): String? = when {
+        cursor < 0 -> null
+        cursor < retainedParts.size -> retainedParts[cursor].text
+        else -> roundParts.getOrNull(cursor - retainedParts.size)?.text
+    }
+
+    /** Whether one more decision can be tracked without crossing the live round's count/byte cap.
+     *  False degrades this and all later parts to display-without-dedup; active cursors never shift. */
+    @Synchronized
+    public fun canTrack(outputIndex: Int, part: String): Boolean {
+        val recorded = RecordedPart(outputIndex, part)
+        if (currentRoundItems.contains(recorded)) return true
+        if (roundTrackingDisabled) return false
+        val within = currentRoundItems.size < maxParts && currentRoundBytes + recorded.bytes <= maxBytes
+        if (!within) roundTrackingDisabled = true
+        return within
+    }
+
+    /** Every possible anchor for [part]. Current-round occurrences outrank retained ones: matching a
+     *  part already accepted in this round never needs to keep an unrelated older chain alive. */
+    @Synchronized
+    public fun anchorsOf(part: String): IntArray {
+        val current = roundParts.indices.filter { roundParts[it].text == part }
+        if (current.isNotEmpty()) return current.map { retainedParts.size + it }.toIntArray()
+        val retained = retainedParts.indices.filter { retainedParts[it].text == part }.toIntArray()
+        if (retained.isNotEmpty()) retainPriorRound = true
+        return retained
+    }
+
+    /** Compatibility probe used by registry tests; production recap matching keeps every candidate. */
+    @Synchronized
+    public fun anchorOf(part: String): Int = anchorsOf(part).firstOrNull() ?: -1
+
+    /** Records a recap match without extending the logical chain. False means the live cap was hit. */
+    @Synchronized
+    public fun markRecap(outputIndex: Int, part: String): Boolean {
+        val recorded = RecordedPart(outputIndex, part)
+        if (currentRoundItems.contains(recorded)) return true
+        if (!canTrack(outputIndex, part)) return false
+        currentRoundItems.add(recorded)
+        currentRoundBytes += recorded.bytes
+        return true
+    }
+
+    /** Records a genuinely-new [part]. False means an exact repeat in this item or the same slot of
+     *  the immediately previous round. A cap miss returns true so the part displays without state. */
+    @Synchronized
+    public fun markEmitted(outputIndex: Int, part: String): Boolean {
+        val recorded = RecordedPart(outputIndex, part)
+        if (currentRoundItems.contains(recorded)) return false
+        if (!canTrack(outputIndex, part)) return true
+        currentRoundItems.add(recorded)
+        currentRoundBytes += recorded.bytes
+        roundParts.add(recorded)
+        return !previousRoundItems.contains(recorded)
+    }
+
+    /** Explicit occurrence-safe count trim for tests and non-registry callers. Production instances
+     *  apply both constructor bounds at every [endRound]. */
     @Synchronized
     public fun trimToLast(n: Int) {
-        while (emittedParts.size > n) {
-            val dropped = emittedParts.removeAt(0)
-            itemEmitted.values.forEach { it.remove(dropped) }
+        finishRoundLocked()
+        retainedParts = trimRecords(retainedParts, minOf(n, maxParts))
+        previousRoundItems = previousRoundItems.mapNotNull { previous ->
+            retainedParts.lastOrNull { it == previous }
+        }.distinct()
+    }
+
+    private fun finishRoundLocked() {
+        if (roundParts.isNotEmpty()) {
+            retainedParts = if (retainPriorRound) {
+                (retainedParts + roundParts).toMutableList()
+            } else {
+                roundParts.toMutableList()
+            }
         }
+        retainedParts = trimRecords(retainedParts, maxParts)
+        if (currentRoundItems.isNotEmpty()) {
+            // Exact-repeat state cannot outlive the logical-chain occurrence that justifies it.
+            // Rebind to the retained record so equal event text is not stored a second time.
+            previousRoundItems = currentRoundItems.mapNotNull { observed ->
+                retainedParts.lastOrNull { it == observed }
+            }.distinct()
+        } else {
+            previousRoundItems = previousRoundItems.mapNotNull { previous ->
+                retainedParts.lastOrNull { it == previous }
+            }.distinct()
+        }
+        roundParts.clear()
+        currentRoundItems.clear()
+        currentRoundBytes = 0
+        roundTrackingDisabled = false
+        retainPriorRound = false
+    }
+
+    private fun trimRecords(records: List<RecordedPart>, countLimit: Int): MutableList<RecordedPart> {
+        var bytes = 0L
+        val newestFirst = mutableListOf<RecordedPart>()
+        for (index in records.lastIndex downTo 0) {
+            val record = records[index]
+            if (newestFirst.size >= countLimit || bytes + record.bytes > maxBytes) break
+            newestFirst.add(record)
+            bytes += record.bytes
+        }
+        newestFirst.reverse()
+        return newestFirst
     }
 }
 

@@ -40,11 +40,7 @@ internal class ResponsesWsIdentity(
      *  the two-part key exists to close: with no session id, every conversation whose first message
      *  hashes the same shares one chain, and one conversation's server-side context answers another.
      *  A missing isolation value is not a weaker key, it is NO key. */
-    fun chainKey(meta: TurnMeta): String? {
-        val session = meta.sessionId?.takeIf { it.isNotEmpty() } ?: return null
-        val conversation = meta.conversationKey?.takeIf { it.isNotEmpty() } ?: return null
-        return lengthPrefixed(listOf(session, conversation))
-    }
+    fun chainKey(meta: TurnMeta): String? = ResponsesConversationIdentity.chainKey(meta.sessionId, meta.conversationKey)
 
     /** The chain key plus a DIGEST of the handshake header set. Headers must participate in
      *  identity (a turn needing a different set must not ride a socket opened without it), but they
@@ -52,17 +48,13 @@ internal class ResponsesWsIdentity(
      *  paths. Hashing keeps identity exact while making it structurally impossible for a credential
      *  to be logged — safer than remembering to redact at every call site (review of #72). */
     fun connectionKey(chain: String, meta: TurnMeta, headers: Map<String, String>): String =
-        lengthPrefixed(listOf(chain, meta.upstreamModel, headerDigest(headers)))
+        ResponsesConversationIdentity.encode(listOf(chain, meta.upstreamModel, headerDigest(headers)))
 
     private fun headerDigest(headers: Map<String, String>): String {
-        val canonical = lengthPrefixed(headers.toSortedMap().flatMap { (k, v) -> listOf(k, v) })
+        val canonical = ResponsesConversationIdentity.encode(headers.toSortedMap().flatMap { (k, v) -> listOf(k, v) })
         val bytes = MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray(Charsets.UTF_8))
         return bytes.take(DIGEST_BYTES).joinToString("") { "%02x".format(it) }
     }
-
-    /** Injective for every String, with no reserved character (finding 3). */
-    private fun lengthPrefixed(parts: List<String>): String =
-        parts.joinToString("") { "${it.length}:$it" }
 
     /** The operator-facing form: keys are long and carry raw client text, so daemon.log gets a
      *  short stable digest instead of the key itself. */
@@ -74,6 +66,18 @@ internal class ResponsesWsIdentity(
         Cancellables.runCatchingCancellable { responsesRequestJson.parseToJsonElement(bodyJson) as? JsonObject }
             .onFailure { log("[ws] unparseable request body — round rides SSE: ${it::class.simpleName}\n") }
             .getOrNull()
+}
+
+/** One injective composite identity for every responses conversation consumer. */
+internal object ResponsesConversationIdentity {
+    fun chainKey(sessionId: String?, conversationKey: String?): String? {
+        val session = sessionId?.takeIf { it.isNotEmpty() } ?: return null
+        val conversation = conversationKey?.takeIf { it.isNotEmpty() } ?: return null
+        return encode(listOf(session, conversation))
+    }
+
+    fun encode(parts: List<String>): String =
+        parts.joinToString("") { "${it.length}:$it" }
 }
 
 private const val FIELD_TYPE = "type"

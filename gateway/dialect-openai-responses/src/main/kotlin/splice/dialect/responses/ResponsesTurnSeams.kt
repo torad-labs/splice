@@ -18,43 +18,50 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
     }
 
     fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator =
-        ResponsesStreamTranslator(
-            StreamTurnContext(
-                compact = meta.compact,
-                // STREAM-side emission of redacted_thinking wire blocks (so Claude Code stores the
-                // handle for the NEXT turn's replay). COUPLED to replayReasoning (2026-07-20): a
-                // handle the gateway will never inject back is pure cost — each redacted_thinking
-                // block is a content_block_start with NO thinking_delta, which Claude Code renders as
-                // a permanent empty "✳ Thinking…" spinner; a deep turn emits dozens (the "walls of
-                // Thinking" report). With replay OFF (default) the whole transcript-replay loop is off
-                // end-to-end: no empty spinners, and reasoning is re-derived fresh (deeper) each turn.
-                // The live summary thinking blocks (reasoning_summary_text deltas) are a SEPARATE path
-                // and still display. Fold's own intra-turn reasoning replay is independent of this.
-                emitEncryptedReasoning = EmitEncryptedReasoning(deps.turnOptions.showOn() && deps.replayReasoning),
-                encodeReasoningEnvelope = { ReasoningReplay.encodeReasoningEnvelope(it) },
-                clientGone = signals.clientGone,
-                watchdogFired = signals.watchdogFired,
-                streamIdleMsForMessage = deps.streamIdleMs,
-                upstreamTimeoutMsForMessage = deps.upstreamTimeoutMs,
-                dedupeRepeatedSummaryParts = deps.quirks.summaryDelivery != null,
-                // Conversation-lifetime dedup state when the turn has a conversation key (the
-                // cross-turn recap staircase, 2026-08-26); unkeyed turns keep the turn's own
-                // instance — exactly the prior behavior.
-                summaryPartsShared = deps.summaryParts.forConversation(meta.sessionId, meta.conversationKey)
-                    ?: meta.summaryParts,
-                // Collect this round's encrypted reasoning envelopes whenever a continuation
-                // could consume them: fold replay (Success side) OR mid-stream re-anchor salvage
-                // (Failure side) — i.e. every non-compact responses turn since re-anchor landed
-                // (2026-07-24). Compact turns keep the collection off.
-                collectReasoningEnvelopes = foldController(meta) != null || reanchorController(meta) != null ||
-                    deps.cachePolicy.reasoningCacheActive(deps.quirks, meta.compact),
-                onTurnReasoning = { ids, envs ->
-                    if (deps.cachePolicy.reasoningCacheActive(deps.quirks, meta.compact)) {
-                        deps.reasoningCache.put(meta.conversationKey, ids, envs)
-                    }
-                },
-            ),
-        )
+        summaryOwner(meta).let { summaryOwner ->
+            ResponsesStreamTranslator(
+                StreamTurnContext(
+                    compact = meta.compact,
+                    // STREAM-side emission of redacted_thinking wire blocks (so Claude Code stores the
+                    // handle for the NEXT turn's replay). COUPLED to replayReasoning (2026-07-20): a
+                    // handle the gateway will never inject back is pure cost — each redacted_thinking
+                    // block is a content_block_start with NO thinking_delta, which Claude Code renders as
+                    // a permanent empty "✳ Thinking…" spinner; a deep turn emits dozens (the "walls of
+                    // Thinking" report). With replay OFF (default) the whole transcript-replay loop is off
+                    // end-to-end: no empty spinners, and reasoning is re-derived fresh (deeper) each turn.
+                    // The live summary thinking blocks (reasoning_summary_text deltas) are a SEPARATE path
+                    // and still display. Fold's own intra-turn reasoning replay is independent of this.
+                    emitEncryptedReasoning = EmitEncryptedReasoning(
+                        deps.turnOptions.showOn() && deps.replayReasoning,
+                    ),
+                    encodeReasoningEnvelope = { ReasoningReplay.encodeReasoningEnvelope(it) },
+                    clientGone = signals.clientGone,
+                    watchdogFired = signals.watchdogFired,
+                    streamIdleMsForMessage = deps.streamIdleMs,
+                    upstreamTimeoutMsForMessage = deps.upstreamTimeoutMs,
+                    dedupeRepeatedSummaryParts = deps.quirks.summaryDelivery != null,
+                    // Conversation-lifetime state requires both identities. Missing either uses the
+                    // turn's own state rather than risking cross-client suppression.
+                    summaryPartsShared = meta.summaryParts,
+                    summaryRoundScope = summaryOwner,
+                    // Collect this round's encrypted reasoning envelopes whenever a continuation
+                    // could consume them: fold replay (Success side) OR mid-stream re-anchor salvage
+                    // (Failure side) — i.e. every non-compact responses turn since re-anchor landed
+                    // (2026-07-24). Compact turns keep the collection off.
+                    collectReasoningEnvelopes = foldController(meta) != null || reanchorController(meta) != null ||
+                        deps.cachePolicy.reasoningCacheActive(deps.quirks, meta.compact),
+                    onTurnReasoning = { ids, envs ->
+                        if (deps.cachePolicy.reasoningCacheActive(deps.quirks, meta.compact)) {
+                            deps.reasoningCache.put(meta.conversationKey, ids, envs)
+                        }
+                    },
+                ),
+            )
+        }
+
+    private fun summaryOwner(meta: TurnMeta): SummaryRoundOwner =
+        deps.summaryParts.ownerForConversation(meta.sessionId, meta.conversationKey)
+            ?: SummaryRoundScope(meta.summaryParts)
 
     // Non-null ONLY when folding is configured AND the turn's model is fold-eligible AND it is not a
     // compaction (a text summarizer requests no encrypted_content). Sol and every non-codex head get

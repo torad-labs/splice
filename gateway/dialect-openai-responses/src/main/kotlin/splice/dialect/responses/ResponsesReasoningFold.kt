@@ -5,6 +5,7 @@
 package splice.dialect.responses
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.turn.SharedSummaryParts
 import splice.core.util.JsonScalars
 import splice.spi.WireSink
 
@@ -13,7 +14,11 @@ private const val PART_SEPARATOR = "\n\n"
 // WIRE-4 guard (hardening r1): far above any legitimate single reasoning item's text.
 private const val MAX_DEDUP_SPLIT_CHARS = 5_000_000
 
-internal class ResponsesReasoningFold(private val ctx: StreamTurnContext, private val state: ResponsesTurnState) {
+internal class ResponsesReasoningFold(
+    private val ctx: StreamTurnContext,
+    private val state: ResponsesTurnState,
+    summaryParts: SharedSummaryParts,
+) {
 
     private val frames = ResponsesFrameParse()
     private val harvest = ResponsesHarvest()
@@ -24,7 +29,7 @@ internal class ResponsesReasoningFold(private val ctx: StreamTurnContext, privat
     private val emittedReasoningKeys = HashSet<Int>()
 
     // sequential_cutoff restatement dedup — state + decision encapsulated in SummaryDedup.
-    private val summaryDedup = SummaryDedup(ctx.dedupeRepeatedSummaryParts, ctx.summaryPartsShared)
+    private val summaryDedup = SummaryDedup(ctx.dedupeRepeatedSummaryParts, summaryParts)
 
     // sequential_cutoff mode (codex-rs parity, ported verbatim from session/turn.rs 2026-08-26):
     // the backend streams MULTIPLE reasoning items CONCURRENTLY, and each item's summary stream

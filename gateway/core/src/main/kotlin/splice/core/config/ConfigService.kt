@@ -26,6 +26,7 @@ import splice.core.util.DaemonLog
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.core.util.SecureFile
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
@@ -142,9 +143,25 @@ public class ConfigService(
         }.toMap()
 
     // Best-effort by design (port fidelity): a broken/absent state file yields {} — the daemon
-    // must never crash on config reads. Complexity is the flat coercion walk.
-    private fun fileLayer(): Map<String, Any?> =
-        Cancellables.runCatchingCancellable { readFileLayer() }.getOrDefault(emptyMap())
+    // must never crash on config reads. But a PRESENT file being discarded is logged, latched per
+    // mtime so the merge-per-request path cannot spam (DR-9 second arm: every persisted knob
+    // silently reverting to defaults, while envLayer logged the single-value equivalent).
+    private fun fileLayer(): Map<String, Any?> {
+        val read = Cancellables.runCatchingCancellable { readFileLayer() }
+        if (read.isFailure) logFileLayerDiscard(read.exceptionOrNull())
+        return read.getOrDefault(emptyMap())
+    }
+
+    @Volatile
+    private var discardLoggedFor: FileTime? = null
+
+    private fun logFileLayerDiscard(cause: Throwable?) {
+        val mtime = Cancellables.runCatchingCancellable { Files.getLastModifiedTime(statePaths.configFile) }
+            .getOrNull()
+        if (mtime != null && mtime == discardLoggedFor) return
+        discardLoggedFor = mtime
+        log("[config] config.json present but unreadable ($cause) — persisted knobs ignored, defaults/env in effect")
+    }
 
     private fun readFileLayer(): Map<String, Any?> {
         val path = statePaths.configFile
@@ -199,8 +216,7 @@ public class ConfigService(
         Cancellables.runCatchingCancellable {
             synchronized(persistLock) {
                 val path = statePaths.configFile
-                val onDisk =
-                    Cancellables.runCatchingCancellable { readOnDisk(path) }.getOrDefault(JsonObject(emptyMap()))
+                val onDisk = readOnDiskStrict(path)
                 val next = mergePersisted(onDisk, applied)
                 SecureFile.writeAtomic0600(path, json.encodeToString(JsonObject.serializer(), next) + "\n")
                 fileCache = null
@@ -208,9 +224,18 @@ public class ConfigService(
         }.onFailure { e -> log("[config] failed to persist config to disk: $e") }
     }
 
-    private fun readOnDisk(path: Path): JsonObject =
+    /** MUTATION-path read (DR-9, the KeyStore.entriesStrict doctrine): ABSENT = legitimately empty
+     *  (safe to seed); UNREADABLE = unknown state — abort THIS persist rather than merge over an
+     *  empty base and atomically destroy every previously persisted knob. The runtime layer is
+     *  already applied either way; the file keeps its bytes for the operator to fix. */
+    private fun readOnDiskStrict(path: Path): JsonObject =
         if (Files.exists(path)) {
-            json.parseToJsonElement(Files.readString(path)).jsonObject
+            Cancellables.runCatchingCancellable { json.parseToJsonElement(Files.readString(path)).jsonObject }
+                .getOrElse {
+                    // IOException so the outer best-effort wrap catches it — an IllegalState would
+                    // escape runCatchingCancellable's caught set and fail patch() itself.
+                    throw IOException("config.json unreadable ($it) — refusing to rewrite, persisted knobs preserved")
+                }
         } else {
             JsonObject(emptyMap())
         }

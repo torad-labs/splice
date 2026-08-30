@@ -36,6 +36,42 @@ class ConfigServiceTest {
         )
     }
 
+    // DR-9: the mutation-path read must be STRICT (KeyStore.entriesStrict doctrine) — an
+    // unreadable config.json as the merge base for an atomic overwrite destroys every previously
+    // persisted knob, silently, while the CLI reports success.
+    @Test
+    fun `a corrupt config file aborts persistence and keeps its bytes`() {
+        val paths = StatePaths(baseOverride = tmp.resolve("state"))
+        val logged = mutableListOf<String>()
+        val svc = ConfigService(paths, envReader = { null }, log = { logged += it })
+        svc.patch(mapOf("effort" to "high"))
+        val corrupt = "{ \"effort\": \"high\", "
+        paths.configFile.writeText(corrupt)
+
+        svc.patch(mapOf("maxQueued" to 77))
+
+        assertEquals(corrupt, paths.configFile.readText(), "an unreadable merge base must abort the rewrite")
+        assertTrue(logged.any { it.contains("refusing to rewrite") }, "the aborted persist must log, got $logged")
+    }
+
+    @Test
+    fun `an unreadable file layer is discarded with one logged cause not silence`() {
+        val paths = StatePaths(baseOverride = tmp.resolve("state"))
+        val logged = mutableListOf<String>()
+        val svc = ConfigService(paths, envReader = { null }, log = { logged += it })
+        Files.createDirectories(paths.configFile.parent)
+        paths.configFile.writeText("not json at all")
+
+        svc.getConfig()
+        svc.getConfig()
+
+        assertEquals(
+            1,
+            logged.count { it.contains("unreadable") },
+            "a present-but-unparseable file logs its discard once per mtime, got $logged",
+        )
+    }
+
     @Test
     fun `defaults resolve and normalize`() {
         val cfg = service().getConfig()

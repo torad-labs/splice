@@ -60,6 +60,7 @@ private const val MGMT_KEY = "mgmt-key-for-this-test"
  *  a previous test's) happened to arrive last. */
 private class RecordingUpstream {
     val requests = CopyOnWriteArrayList<Map<String, List<String>>>()
+    @Volatile var stopReason = "end_turn"
     private val server: HttpServer = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
     val baseUrl: String get() = "http://127.0.0.1:${server.address.port}"
 
@@ -76,7 +77,7 @@ private class RecordingUpstream {
                 append("\"delta\":{\"type\":\"text_delta\",\"text\":\"ok\"}}\n\n")
                 append("event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n")
                 append("event: message_delta\ndata: {\"type\":\"message_delta\",")
-                append("\"delta\":{\"stop_reason\":\"end_turn\"},\"usage\":{\"output_tokens\":1}}\n\n")
+                append("\"delta\":{\"stop_reason\":\"$stopReason\"},\"usage\":{\"output_tokens\":1}}\n\n")
                 append("event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n")
             }.toByteArray()
             ex.responseHeaders.add("Content-Type", "text/event-stream")
@@ -219,6 +220,22 @@ class HeadServerClientAuthTest {
         assertEquals(HttpStatusCode.OK, status)
         assertEquals(before + 1, upstream.requests.size, "one turn must produce one upstream request")
         assertEquals(listOf("2023-06-01"), upstream.requests[before]["anthropic-version"].orEmpty())
+    }
+
+    @Test
+    fun `a passthrough context-window stop reaches Claude Code's compaction trigger`() {
+        val port = startHead(forwardClientAuth = true)
+        upstream.stopReason = "model_context_window_exceeded"
+        try {
+            val (status, body) = turn(port, mapOf("Authorization" to "Bearer caller-own-token"))
+            assertEquals(HttpStatusCode.OK, status)
+            assertTrue(body.contains("event: error"), body)
+            assertTrue(body.contains("invalid_request_error"), body)
+            assertTrue(body.contains("prompt is too long"), body)
+            assertFalse(body.contains("event: message_stop"), body)
+        } finally {
+            upstream.stopReason = "end_turn"
+        }
     }
 
     // ── the wall ──────────────────────────────────────────────────────────────────────────────

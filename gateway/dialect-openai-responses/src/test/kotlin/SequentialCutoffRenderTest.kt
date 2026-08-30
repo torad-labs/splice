@@ -10,6 +10,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
@@ -103,6 +104,44 @@ class SequentialCutoffRenderTest {
         assertEquals(1, sink.out.count { it.contains(p1) })
         assertEquals(1, sink.out.count { it == "\n\n" }, "one separator between two parts: ${sink.out}")
         assertEquals(0, sink.out.count { it.contains(late) }, "stale done leaked: ${sink.out}")
+    }
+
+    // Explicit parity choice (DR-7, 2026-08-30): cutoff summaries are atomic done-event parts.
+    // A transport tear before done therefore exposes no fragment; re-anchor gets an empty salvage
+    // payload and can restart the original request instead of committing a partial summary.
+    @Test
+    fun `a stream torn before summary done exposes no partial cutoff text`() = runTest {
+        val sink = CutoffSink()
+        val outcome = ResponsesStreamTranslator(cutoffCtx()).driveTurn(
+            listOf(
+                added("rs_torn", 0),
+                delta("rs_torn", 0, "an unfinished summary fragment"),
+            ).asFlow(),
+            sink,
+        )
+
+        val failure = outcome as TurnOutcome.Failure
+        assertTrue(sink.out.isEmpty(), "cutoff delta leaked before its done event: ${sink.out}")
+        assertEquals("", failure.partial?.thinkingText)
+        assertFalse(failure.partial?.emittedThinking == true)
+    }
+
+    @Test
+    fun `an exact within-item done part repeat is suppressed`() = runTest {
+        val repeated = "Checking the exact same migration precondition"
+        val sink = CutoffSink()
+        val outcome = ResponsesStreamTranslator(cutoffCtx()).driveTurn(
+            listOf(
+                added("rs_repeat", 0),
+                summaryDone("rs_repeat", 0, 0, repeated),
+                summaryDone("rs_repeat", 0, 0, repeated),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+
+        assertTrue(outcome is TurnOutcome.Success)
+        assertEquals(1, sink.out.count { it.contains(repeated) }, "within-item repeat leaked: ${sink.out}")
     }
 
     // The concurrent-restatement shape observed live (2026-08-26 capture): a later item restates

@@ -13,6 +13,7 @@ import kotlinx.coroutines.withContext
 import splice.spi.GatewayAtCapacityException
 import splice.spi.InflightGate
 import splice.spi.Provider
+import splice.spi.SseSpuriousWakeupException
 
 internal class AdmissionGate(
     private val provider: Provider,
@@ -72,6 +73,9 @@ internal class AdmissionGate(
         null
     } catch (_: TimeoutCancellationException) {
         responses.respondReadTimeout(call)
+        null
+    } catch (_: SseSpuriousWakeupException) {
+        responses.respondInvalidRequest(call, "request body stream interrupted")
         null
     }
 }

@@ -12,9 +12,9 @@ import java.util.concurrent.atomic.AtomicReference
 
 /** Ratelimit persistence: [HeaderLookup] in, a coalesced write to [file] and an in-memory-first
  *  read back out. [writeLock] is the SAME lock [UsageStore] hands to [UsageRingFile] — splitting
- *  it into two locks would be a logic change (review 2026-07-22). `internal constructor`: [file]
- *  is the internal [RateLimitFile] type. */
-public class RateLimitStore internal constructor(
+ *  it into two locks would be a logic change (review 2026-07-22). `internal`: [file] is the
+ *  internal [RateLimitFile] type, and the only construction site is [UsageStore] in this module. */
+internal class RateLimitStore(
     private val file: RateLimitFile,
     private val headers: RateLimitHeaders,
     private val writeLock: Any,

@@ -104,6 +104,16 @@ if [ -n "${SPLICE_E2E_CLIENT_TOKEN:-}" ] && [ "$SPLICE_E2E_CLIENT_TOKEN" = "$MGM
   exit 1
 fi
 
+# Credentials never ride on argv. Every argument of a running process is world-readable through
+# /proc/<pid>/cmdline, so `ps -ef` during a probe exposed the daemon management key, and on a
+# client-auth head the caller's own vendor token. curl reads the header from a config file on
+# STDIN instead, which no other process can see, and which never touches disk. No call site here
+# uses stdin for anything else. Review 2026-08-28 (PR 99, comment 31).
+curl_auth() { # bearer curl-args... -> curl stdout
+  local bearer="$1"; shift
+  printf 'header = "Authorization: Bearer %s"\n' "$bearer" | curl -K - "$@"
+}
+
 # ── discovery ────────────────────────────────────────────────────────────────
 # lines: key<TAB>label<TAB>port<TAB>healthy<TAB>authKind
 #
@@ -112,7 +122,7 @@ fi
 # old to report the field is a HARD failure rather than a default — guessing "probably not
 # client-auth" is exactly the assumption that leaks the mgmt key.
 discover() {
-  curl -sS -m 5 "$CONTROL/api/heads" -H "Authorization: Bearer $MGMT" | python3 -c '
+  curl_auth "$MGMT" -sS -m 5 "$CONTROL/api/heads" | python3 -c '
 import json, sys
 FIELDS = ("key", "label", "port", "healthy", "authKind")
 for h in json.load(sys.stdin)["heads"]:
@@ -139,7 +149,7 @@ pick_model() { # port bearer -> "<full discovery id><TAB><why it was chosen>"
   # /v1/models sits behind the head's authorize() like every other head route, so discovery must
   # present a credential — the SAME one the probe itself will send, never unconditionally $MGMT.
   # Without it the head correctly answers authentication_error and discovery died on a KeyError.
-  curl -sS -m 5 -H "Authorization: Bearer $bearer" "http://127.0.0.1:$port/v1/models" \
+  curl_auth "$bearer" -sS -m 5 "http://127.0.0.1:$port/v1/models" \
     | CHEAP_RE="$CHEAP_MODEL_RE" python3 -c '
 import json, os, re, sys
 cheap_re = os.environ["CHEAP_RE"]
@@ -165,10 +175,28 @@ print("%s\t%s" % ((cheap or rows)[0], why))'
 # ClientAuthProvider.allowRefreshAfterFailure is false (ClientAuthProvider.kt:38), so it surfaces as
 # a bare 401 that reads like a product bug. Such a head is probed ONLY with a real caller
 # credential, or not at all.
+# ALLOWLIST, not a blocklist. `[ "$1" != client ]` recognized exactly one dangerous value and
+# treated every other string as safe, including strings nobody has verified — a gate that fails
+# OPEN, eight lines below discovery's own law that guessing is what leaks the key. authKind is
+# ctx.providerCfg.auth.kind, the operator's raw TOML string (ManagedHeadFactory.kt:58), and
+# AuthKindRegistry.from() deliberately tolerates a custom kind by returning null, so an unrecognized
+# value here is reachable by config alone. Whether such a head forwards the caller's Authorization
+# upstream is exactly what we do not know, so it is refused rather than probed with $MGMT.
+# Review 2026-08-28 (PR 99, comment 3).
 probe_bearer() { # auth_kind -> bearer on stdout; rc=1 means "do not probe this head"
-  if [ "$1" != client ]; then printf '%s' "$MGMT"; return 0; fi
-  [ -n "${SPLICE_E2E_CLIENT_TOKEN:-}" ] || return 1
-  printf '%s' "$SPLICE_E2E_CLIENT_TOKEN"
+  case "$1" in
+    client)
+      [ -n "${SPLICE_E2E_CLIENT_TOKEN:-}" ] || return 1
+      printf '%s' "$SPLICE_E2E_CLIENT_TOKEN" ;;
+    chatgpt-oauth|grok-oauth|kimi-oauth|api-key)
+      printf '%s' "$MGMT" ;;
+    *)
+      echo "FATAL: unrecognized authKind '$1' — refusing to probe. A head whose auth kind this" >&2
+      echo "       harness does not know may forward the Authorization header upstream, so" >&2
+      echo "       presenting \$MGMT could leak the daemon management key to a vendor. Add the" >&2
+      echo "       kind to probe_bearer() once you have confirmed which side holds the credential." >&2
+      exit 1 ;;
+  esac
 }
 
 # ── tier 1: wire probe ───────────────────────────────────────────────────────
@@ -204,8 +232,8 @@ try: print("; ".join(json.load(sys.stdin)["violations"])[:300])
 except Exception: print("probe crashed")')"
   fi
   local ct
-  ct="$(curl -sS -m 10 "http://127.0.0.1:$port/v1/messages/count_tokens" \
-        -H 'Content-Type: application/json' -H "Authorization: Bearer $bearer" \
+  ct="$(curl_auth "$bearer" -sS -m 10 "http://127.0.0.1:$port/v1/messages/count_tokens" \
+        -H 'Content-Type: application/json' \
         -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}]}")"
   if printf '%s' "$ct" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert isinstance(d["input_tokens"], int)' 2>/dev/null; then
     pass "$key/count_tokens"
@@ -411,8 +439,10 @@ tier2_cleanup() {
 }
 
 # ── run ──────────────────────────────────────────────────────────────────────
+MATCHED=0
 while IFS=$'\t' read -r key label port healthy auth_kind; do
   [ -n "$ONLY_HEAD" ] && [ "$key" != "$ONLY_HEAD" ] && continue
+  MATCHED=1
   if [ "$healthy" != "True" ] && [ "$healthy" != "true" ]; then
     fail "$key" "head reported unhealthy by /api/heads"
     continue
@@ -425,6 +455,10 @@ while IFS=$'\t' read -r key label port healthy auth_kind; do
     *)   echo "bad --tier $TIER" >&2; exit 2 ;;
   esac
 done <<< "$HEADS"
+
+if [ -n "$ONLY_HEAD" ] && [ "$MATCHED" -eq 0 ]; then
+  fail "$ONLY_HEAD" "requested head '$ONLY_HEAD' was not returned by /api/heads"
+fi
 
 # leave no stray tmux server when every session was cleaned
 tmux -L "$TMUX_SOCK" list-sessions >/dev/null 2>&1 || tmux -L "$TMUX_SOCK" kill-server 2>/dev/null || true

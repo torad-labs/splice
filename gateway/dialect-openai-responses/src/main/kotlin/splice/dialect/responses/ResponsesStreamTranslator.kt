@@ -26,6 +26,7 @@
 package splice.dialect.responses
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.takeWhile
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
@@ -52,21 +53,20 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
         // Stream read errors surface via the terminal decision, never a crash; only a genuine
         // cancellation (no watchdog fire) is allowed to propagate.
         try {
-            upstream.collect { evt ->
-                // NF-06: the shared runaway valve Chat already had — reasoningEnvelopes accumulate
-                // before any block opens, so they ride the pendingArgs surface of the cap.
-                val envelopeChars = state.reasoningEnvelopes.sumOf { it.length }
-                val over = BufferCapacity.over(
-                    state.textBuf.length,
-                    state.thinkingBuf.length,
-                    pendingArgsLen = envelopeChars,
-                )
-                if (over) {
-                    runawayGuard = RUNAWAY_GUARD_MESSAGE
-                    return@collect
+            upstream
+                .takeWhile {
+                    // NF-06: reasoningEnvelopes accumulate before any block opens, so they ride the
+                    // pendingArgs surface of the cap. Stop collection so the producer unwinds too.
+                    val envelopeChars = state.reasoningEnvelopes.sumOf { it.length }
+                    val withinCapacity = !BufferCapacity.over(
+                        state.textBuf.length,
+                        state.thinkingBuf.length,
+                        pendingArgsLen = envelopeChars,
+                    )
+                    if (!withinCapacity) runawayGuard = RUNAWAY_GUARD_MESSAGE
+                    withinCapacity
                 }
-                reducer.onEvent(evt, sink)
-            }
+                .collect { evt -> reducer.onEvent(evt, sink) }
         } catch (e: CancellationException) {
             if (ctx.watchdogFired() == null) throw e
         } catch (ignored: IOException) {

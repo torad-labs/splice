@@ -23,12 +23,11 @@ internal class TurnUsageStamp(
     suspend fun stampSalvaged(drive: TurnDrive, outcome: TurnOutcome.Failure) {
         // Salvaged usage from absorbed rounds of an ultimately-FAILED turn: real billed tokens
         // that would otherwise vanish from the usage store and perf row (review-pr 2026-07-24).
-        outcome.salvagedUsage?.let { s ->
-            if (s.inputTokens > 0) drive.perf.setCount(PerfKeys.IN_TOKENS, s.inputTokens)
-            if (s.outputTokens > 0) {
-                drive.perf.setCount(PerfKeys.OUT_TOKENS, s.outputTokens)
-                drive.perf.timed(PerfKeys.USAGE_MS) { usageStore.appendOutputTokens(s.outputTokens) }
-            }
+        val salvaged = outcome.salvagedUsage
+        if (salvaged.inputTokens > 0) drive.perf.setCount(PerfKeys.IN_TOKENS, salvaged.inputTokens)
+        if (salvaged.outputTokens > 0) {
+            drive.perf.setCount(PerfKeys.OUT_TOKENS, salvaged.outputTokens)
+            drive.perf.timed(PerfKeys.USAGE_MS) { usageStore.appendOutputTokens(salvaged.outputTokens) }
         }
     }
 }

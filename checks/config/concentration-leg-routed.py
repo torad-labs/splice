@@ -44,9 +44,10 @@ A guard that reads the text a shell throws away is grading a string, not a comma
 now strip comments and TOKENIZE — shlex in POSIX mode, which drops everything from an unquoted `#`
 to end of line exactly as the shell does, while a `#` inside quotes stays data — and then assert on
 the resulting argv. The question changed from "does this text contain the right words" to "does the
-command that actually runs invoke the oracle". The four inverse assertions are argv[0] is a real
-interpreter, the oracle is in argv, --ratchet is in argv, and --max-ratio carries a number; the
-forward assertion is that a `run` line's COMMAND tokenizes to the npm invocation, not that the line
+command that actually runs invoke the oracle". The inverse assertion now pins the complete argv:
+a real interpreter, the oracle as argv[1], exactly one --ratchet, exactly one numeric --max-ratio,
+and no trailing/control tokens that could mask the exit. The forward assertion is that a `run`
+line's COMMAND tokenizes to the npm invocation, not that the line
 happens to begin with a prefix.
 
 An untokenizable line (unbalanced quotes) is skipped rather than trusted, so every half of this
@@ -112,10 +113,56 @@ def max_ratio_of(argv: list[str]) -> float | None:
             value = token.split("=", 1)[1]
         else:
             continue
+        if value is None:
+            return None
         try:
             return float(value)
-        except (TypeError, ValueError):
+        except ValueError:
             return None
+    return None
+
+
+def exact_oracle_argv_problem(argv: list[str]) -> str | None:
+    """Why argv is not exactly `python ORACLE --ratchet --max-ratio N`, or None."""
+    if len(argv) < 2 or argv[1] != ORACLE:
+        return f"the oracle must be argv[1], got {argv[1:2]!r}"
+
+    ratchets = 0
+    ratios = 0
+    unexpected: list[str] = []
+    index = 2
+    while index < len(argv):
+        token = argv[index]
+        if token == "--ratchet":
+            ratchets += 1
+            index += 1
+        elif token == "--max-ratio":
+            ratios += 1
+            if index + 1 >= len(argv):
+                unexpected.append(token)
+                index += 1
+            else:
+                try:
+                    float(argv[index + 1])
+                except ValueError:
+                    unexpected.extend(argv[index : index + 2])
+                index += 2
+        elif token.startswith("--max-ratio="):
+            ratios += 1
+            try:
+                float(token.split("=", 1)[1])
+            except ValueError:
+                unexpected.append(token)
+            index += 1
+        else:
+            unexpected.append(token)
+            index += 1
+
+    if ratchets != 1 or ratios != 1 or unexpected:
+        return (
+            f"expected one --ratchet and one numeric --max-ratio with no other argv; "
+            f"saw ratchet={ratchets}, max-ratio={ratios}, unsupported or trailing token(s)={unexpected!r}"
+        )
     return None
 
 
@@ -168,6 +215,13 @@ def inverse_problems() -> list[str]:
             f"'{SCRIPT}' does not pass a numeric --max-ratio — it executes {argv!r} (defined as: "
             f"{body!r}). --ratchet without one exits 2 with 'a threshold that is not stated at the "
             f"call site is not auditable from the gate's own output'."
+        )
+    exact_problem = exact_oracle_argv_problem(argv)
+    if exact_problem is not None:
+        found.append(
+            f"'{SCRIPT}' is not the exact ratchet command: {exact_problem}. It executes {argv!r} "
+            f"(defined as: {body!r}); shell control operators or trailing commands can mask the "
+            f"oracle's exit status."
         )
     return found
 

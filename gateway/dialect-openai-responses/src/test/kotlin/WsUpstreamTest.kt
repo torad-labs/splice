@@ -546,6 +546,21 @@ class WsUpstreamTest {
     }
 
     @Test
+    fun `a new key survives the soft cap while every older connection is busy`() = runTest {
+        val fx = Fixture().apply { reply = replyWith(CREATED) }.start(maxConnections = CAP)
+        assertNotNull(fx.go("a"), "a remains in flight")
+        assertNotNull(fx.go("b"), "b remains in flight")
+
+        fx.reply = replyWith(DONE)
+        val flow = fx.go("c")
+
+        assertNotNull(flow, "the fresh connection must not evict itself and force SSE fallback")
+        assertEquals(listOf("response.completed"), flow?.toList()?.map { it.type() })
+        assertEquals(3, fx.connects)
+        assertEquals(0, fx.opened[2].aborts, "the fresh socket must survive insertion")
+    }
+
+    @Test
     fun `a completed round moves its connection to MRU so eviction takes the truly-oldest`() = runTest {
         val fx = Fixture().apply { reply = replyWith(DONE) }.start(maxConnections = CAP)
         assertEquals(1, fx.types("a").size)

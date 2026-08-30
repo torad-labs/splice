@@ -49,7 +49,7 @@ public class LaunchService(
         val env = buildEnv(spec)
         // Clear anything ambient that would override the proxy or a stale Anthropic session —
         // EXCEPT on a native-auth head, where those variables ARE the credential being forwarded.
-        val unset = if (spec.nativeClientAuth) {
+        val unset = if (spec.forwardClientAuth) {
             emptyList()
         } else {
             listOf(
@@ -82,7 +82,7 @@ public class LaunchService(
             // approval flow. The head validates this per-install credential before any quota-
             // consuming work. A native-auth head plants NOTHING: the client's own credential must
             // reach the head untouched, and this would override it.
-            if (!spec.nativeClientAuth) put("ANTHROPIC_AUTH_TOKEN", spec.inferenceToken)
+            if (!spec.forwardClientAuth) put("ANTHROPIC_AUTH_TOKEN", spec.inferenceToken)
             put("CLAUDE_CONFIG_DIR", spec.configDir.toString())
             // THE fix for "only one model shows": lets the /model picker list every /v1/models id.
             put("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY", "1")
@@ -106,7 +106,7 @@ public class LaunchService(
             // A native-auth head keeps BOTH: its upstream really is Anthropic, so /login is a live
             // door and the only one that can heal a rejected credential — splice runs no sign-in
             // flow of its own for this head precisely because the client's still works.
-            if (!spec.nativeClientAuth) {
+            if (!spec.forwardClientAuth) {
                 put("DISABLE_LOGIN_COMMAND", "1")
                 put("DISABLE_LOGOUT_COMMAND", "1")
             }

@@ -290,6 +290,21 @@ class UsageScalingTest {
         assertEquals("50", p["used_percentage"]?.jsonPrimitive?.content, "half of the row's own 500k")
     }
 
+    // The scaled case above pins cached = 0 and the cache-bearing case is on the UNSCALED row, so
+    // nothing pinned how cache_read behaves under scaling — and with prompt caching on, essentially
+    // every real turn carries non-zero cached tokens, making the untested combination the production
+    // shape rather than an edge case (review 2026-08-28, PR 99). BOTH terms scale, deliberately: the
+    // ratio Claude Code compacts on is (input + cache_read)/window, so scaling only one half would
+    // report 250k of real context as 69% of the client's 256k instead of the true 50%, and the row's
+    // whole reason for existing is that that percentage is honest against ITS window.
+    @Test
+    fun `cache_read scales with input, so the compaction ratio is unchanged by the cached split`() {
+        val p = payload("grok-4.6[500k]", input = 250_000, cached = 100_000)
+        assertEquals(76_800, p["input_tokens"]?.jsonPrimitive?.content?.toLong(), "(250k - 100k) x 0.512")
+        assertEquals(51_200, p["cache_read_input_tokens"]?.jsonPrimitive?.content?.toLong(), "100k x 0.512")
+        assertEquals("50", p["used_percentage"]?.jsonPrimitive?.content, "same 50% as the cached=0 case")
+    }
+
     @Test
     fun `output tokens are never scaled - they are not part of the context total`() {
         assertEquals(7, payload("grok-4.6[500k]", 250_000, 0)["output_tokens"]?.jsonPrimitive?.content?.toLong())

@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.app.TurnPathProbeLoop
+import splice.core.util.Cancellables
 import java.net.ServerSocket
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.concurrent.thread
@@ -23,27 +24,35 @@ class TurnPathProbeLoopTest {
     private val logs = mutableListOf<String>()
 
     @AfterEach
-    fun tearDown() = sockets.forEach { runCatching { it.close() } }
+    fun tearDown() = sockets.forEach {
+        Cancellables.discard(runCatching { it.close() }, "turn-probe test server teardown")
+    }
 
     /** A server that answers every request with an HTTP error — alive, just unhappy. */
     private fun answeringServer(): Int {
         val ss = ServerSocket(0, 8, java.net.InetAddress.getLoopbackAddress()).also(sockets::add)
         thread(isDaemon = true) {
             while (!ss.isClosed) {
-                runCatching {
-                    val c = ss.accept()
-                    thread(isDaemon = true) {
-                        runCatching {
-                            c.getInputStream().read(ByteArray(1024)) // drain a little
-                            c.getOutputStream().write(
-                                "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray(),
+                Cancellables.discard(
+                    runCatching {
+                        val c = ss.accept()
+                        thread(isDaemon = true) {
+                            Cancellables.discard(
+                                runCatching {
+                                    c.getInputStream().read(ByteArray(1024)) // drain a little
+                                    c.getOutputStream().write(
+                                        "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray(),
+                                    )
+                                    c.close()
+                                },
+                                "turn-probe test connection teardown",
                             )
-                            c.close()
-                        }
-                    }
-                }
+                        }.name = "turn-probe-answer"
+                    },
+                    "turn-probe test accept loop",
+                )
             }
-        }
+        }.name = "turn-probe-answer-accept"
         return ss.localPort
     }
 
@@ -52,9 +61,12 @@ class TurnPathProbeLoopTest {
         val ss = ServerSocket(0, 8, java.net.InetAddress.getLoopbackAddress()).also(sockets::add)
         thread(isDaemon = true) {
             while (!ss.isClosed) {
-                runCatching { ss.accept() } // hold it open, say nothing
+                Cancellables.discard(
+                    runCatching { ss.accept() }, // hold it open, say nothing
+                    "turn-probe hanging test accept loop",
+                )
             }
-        }
+        }.name = "turn-probe-hang-accept"
         return ss.localPort
     }
 

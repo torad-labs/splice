@@ -82,6 +82,7 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         out[Knob.STREAM_IDLE_MS.key] = clampLong(out, Knob.STREAM_IDLE_MS, floor = idleFloor)
         out[Knob.AUTH_CACHE_MS.key] = clampLong(out, Knob.AUTH_CACHE_MS, floor = MIN_AUTH_CACHE_MS)
         out[Knob.SHOW_REASONING.key] = normalizeShowReasoning(str(out, Knob.SHOW_REASONING))
+        out[Knob.MIRROR_REASONING.key] = false
         // Summary is operator-controlled (TOML [daemon].summary / env / state). Empty/absent
         // falls through to Knob.SUMMARY default ("detailed"). Do not rewrite concise/auto —
         // the operator may want a thinner public form.
@@ -117,10 +118,14 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
 
     // One dispatch line per KnobKind. The three arms share nothing — not a value, not a helper, not
     // a failure mode — so they are three functions rather than three inlined blocks (HD-25).
-    fun coerce(knob: Knob, raw: Any?): Any? = when (knob.kind) {
-        KnobKind.BOOL -> coerceBool(raw)
-        KnobKind.NUMBER -> coerceNumber(knob, raw)
-        KnobKind.STRING -> coerceString(raw)
+    fun coerce(knob: Knob, raw: Any?): Any? = if (knob == Knob.MIRROR_REASONING) {
+        false
+    } else {
+        when (knob.kind) {
+            KnobKind.BOOL -> coerceBool(raw)
+            KnobKind.NUMBER -> coerceNumber(knob, raw)
+            KnobKind.STRING -> coerceString(raw)
+        }
     }
 
     private fun coerceBool(raw: Any?): Boolean = when (raw) {

@@ -23,17 +23,20 @@ internal class LaunchSpecFactory(
     private val buildInputs: HeadBuildInputs,
 ) {
     /**
-     * [clientAuth] is [ManagedHeadFactory]'s `forwardClientAuth` — the STRUCTURAL read of the wired
-     * credential (`wired.auth is ClientAuthProvider`), passed in rather than re-derived here. One
-     * fact, one derivation: this spec decides whether ANTHROPIC_AUTH_TOKEN is planted into the
-     * launched Claude Code process, whether the operator's ambient credentials are stripped from it,
-     * and whether /login stays enabled, so it must agree with the door the gateway actually opened.
+     * [forwardClientAuth] is [ManagedHeadFactory]'s own `forwardClientAuth` — the STRUCTURAL read of
+     * the wired credential (`wired.auth is ClientAuthProvider`), passed in rather than re-derived
+     * here. One fact, one derivation: this spec decides whether ANTHROPIC_AUTH_TOKEN is planted into
+     * the launched Claude Code process, whether the operator's ambient credentials are stripped from
+     * it, and whether /login stays enabled, so it must agree with the door the gateway actually
+     * opened. ONE NAME on all four hops (review 2026-08-28, PR 99): it was `forwardClientAuth` here,
+     * `clientAuth` on this signature and `nativeClientAuth` on the LaunchSpec, so the `grep -rn
+     * forwardClientAuth` audit ClientAuth.kt's header is written around stopped before this leg.
      */
     internal fun launchSpecFor(
         ctx: ProviderBuild,
         controlPort: Int,
         keyPresent: Boolean,
-        clientAuth: Boolean,
+        forwardClientAuth: Boolean,
     ): LaunchSpec {
         val key = ctx.key
         val head = ctx.head
@@ -49,12 +52,12 @@ internal class LaunchSpecFactory(
             // anthropic-passthrough arm ALONE, so `kind = "client"` on any other dialect yields a
             // head whose door stays shut while this recipe would have planted the token and left
             // /login enabled anyway. See ManagedHeadFactory.forwardClientAuth for the same read.
-            nativeClientAuth = clientAuth,
+            forwardClientAuth = forwardClientAuth,
             pinnedModel = head.pinnedModel,
             availableModelIds = ctx.catalog.availableModelIds(),
             modelLabels = providerCfg.models.associate { it.id to it.label.ifEmpty { it.id } },
             contextWindow = ctx.catalog.contextWindowFor(head.pinnedModel).toInt(),
-            modelOptionsCache = buildInputs.modelOptionsCache(providerCfg),
+            modelOptionsCache = buildInputs.modelOptionsCache(ctx.catalog),
             statuslineCommand = "curl -sS --data-binary @- http://127.0.0.1:$controlPort/statusline/$key",
             // The installed wrapper (`<command> login`) runs this head's provider sign-in; the
             // materialized /login command + UserPromptSubmit hook route the user here. api-key

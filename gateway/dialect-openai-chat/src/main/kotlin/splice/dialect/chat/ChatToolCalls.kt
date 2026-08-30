@@ -107,8 +107,7 @@ internal class ChatToolCalls(private val frame: ChatToolFrame) {
     private fun invalidArgsReason(text: String): String? {
         if (text.isBlank()) return "empty arguments for an opened tool call"
         return try {
-            kotlinx.serialization.json.Json.parseToJsonElement(text)
-            null
+            kotlinx.serialization.json.Json.parseToJsonElement(text).run { null }
         } catch (ignored: kotlinx.serialization.SerializationException) {
             "malformed JSON"
         } catch (ignored: IllegalArgumentException) {

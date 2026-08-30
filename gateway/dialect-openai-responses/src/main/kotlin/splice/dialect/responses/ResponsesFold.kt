@@ -22,14 +22,17 @@ public data class FoldConfig(
     /** Upstream models that exhibit the 518n-2 truncation — luna/terra/5.5, NOT sol. The
      *  operator-tunable default lives in Knob.FOLD_REASONING_MODELS. */
     val models: Set<String>,
-    val maxContinue: Int = DEFAULT_MAX_CONTINUE,
+    val maxContinue: Int = FOLD_DEFAULT_MAX_CONTINUE,
     val markerText: String = DEFAULT_MARKER_TEXT,
     val maxTierN: Int = DEFAULT_MAX_TIER_N,
 )
 
 // The FoldConfig defaults, at file scope because Kotlin main sources carry no `companion` blocks.
-// Same names, same values, same public visibility — a consumer only drops the `FoldConfig.` prefix.
-public const val DEFAULT_MAX_CONTINUE: Int = 3
+// Same values and visibility as the companion members; a consumer only drops the `FoldConfig.`
+// prefix. FOLD_ prefix on the first (review 2026-08-28, PR 99): losing the companion put it one
+// autocomplete away from ResponsesReanchorController's private DEFAULT_MAX_CONTINUATIONS in the
+// same package, governing an unrelated policy (re-anchor retries, not fold continuations).
+public const val FOLD_DEFAULT_MAX_CONTINUE: Int = 3
 public const val DEFAULT_MAX_TIER_N: Int = 6
 public const val DEFAULT_MARKER_TEXT: String = "Continue thinking..."
 

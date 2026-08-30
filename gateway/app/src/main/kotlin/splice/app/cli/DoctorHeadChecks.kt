@@ -67,7 +67,7 @@ internal class DoctorHeadChecks(private val doctorRuntime: DoctorRuntime) {
         val h = snapshot.health
         val booted = h?.topologyDigest?.takeIf { it.isNotEmpty() }
         val local = booted?.let { configPath?.let(TopologyLoader::currentDigest) } ?: return null
-        return if (local == booted && h?.topologyStale != true) {
+        return if (local == booted && h.topologyStale != true) {
             DoctorCheck("topology", CheckStatus.OK, "running config matches the file on disk")
         } else {
             DoctorCheck(

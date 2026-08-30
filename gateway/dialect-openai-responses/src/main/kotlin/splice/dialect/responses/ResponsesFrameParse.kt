@@ -32,8 +32,7 @@ internal class ResponsesFrameParse {
     fun invalidToolArgsReason(text: String): String? {
         if (text.isBlank()) return "empty arguments for an opened tool call"
         return try {
-            Json.parseToJsonElement(text)
-            null
+            Json.parseToJsonElement(text).run { null }
         } catch (ignored: SerializationException) {
             "malformed JSON"
         } catch (ignored: IllegalArgumentException) {

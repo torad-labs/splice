@@ -115,7 +115,16 @@ internal class GrokAuthJson(
     internal fun peerRotation(priorAccess: String?, snap: Snapshot?): RefreshOutcome? {
         if (priorAccess == null || snap == null) return null
         if (snap.access == priorAccess) return null
-        cache = Cache(snap, Files.getLastModifiedTime(authPath).toMillis(), clock())
-        return RefreshOutcome.Refreshed(Credentials.Bearer(snap.access, null))
+        // The file is held under a cross-process CredentialLock precisely because peers (another
+        // splice, the official grok CLI) write it concurrently, so the window between the read that
+        // produced [snap] and this stat is the contended one. Every other failure in this ladder
+        // degrades to an outcome; an unguarded IOException here escaped refreshLocked() as a crash.
+        return Cancellables.runCatchingCancellable { Files.getLastModifiedTime(authPath).toMillis() }
+            .onFailure { log("[grok-auth] stat of $authPath failed: $it — skipping peer rotation, refreshing instead") }
+            .getOrNull()
+            ?.let { mtime ->
+                cache = Cache(snap, mtime, clock())
+                RefreshOutcome.Refreshed(Credentials.Bearer(snap.access, null))
+            }
     }
 }

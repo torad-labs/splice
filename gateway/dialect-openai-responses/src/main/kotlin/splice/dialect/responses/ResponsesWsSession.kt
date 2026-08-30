@@ -176,8 +176,7 @@ internal class ResponsesWsSession {
     private fun evictOldest(keys: MutableIterator<String>, size: Int) {
         var over = size - MAX_CONVERSATIONS
         while (over > 0 && keys.hasNext()) {
-            keys.next()
-            keys.remove()
+            keys.next().run { keys.remove() }
             over--
         }
     }

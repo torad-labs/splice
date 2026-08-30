@@ -71,6 +71,15 @@ sg_test_dirs() { # every testConfigs entry's testDir: value
     sed -e 's/.*testDir:[[:space:]]*//' -e 's/[[:space:]]*#.*$//' -e 's/[[:space:]]*$//'
 }
 
+# sg_rule_dirs reads the BLOCK-list form only. A flow-style declaration (`ruleDirs: [a, b]`) never
+# sets blk, so RULE_DIRS comes back empty — fail-closed via the emptiness check below, but under a
+# diagnostic that names the wrong cause ("declares no ruleDirs") and sends the reader hunting for a
+# key that is sitting right there, while every real rule directory is simultaneously reported as
+# unreferenced. Refusing the shape the parser cannot read keeps the fail-closed property and names
+# the actual cause; this stays deliberately short of implementing YAML (review 2026-08-28, PR 99).
+grep -qE '^ruleDirs:[[:space:]]*[^[:space:]#]' "$SGCONFIG" &&
+  err "$SGCONFIG declares ruleDirs in flow style; this gate parses only the block form (\`ruleDirs:\` then \`  - dir\`)."
+
 RULE_DIRS=()
 while IFS= read -r d; do [ -n "$d" ] && RULE_DIRS+=("$(normalize_path "$d")"); done < <(sg_rule_dirs)
 REFERENCED=("${RULE_DIRS[@]}")

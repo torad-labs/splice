@@ -13,6 +13,7 @@ import kotlinx.serialization.json.put
 import splice.app.SignInPlanner
 import splice.core.config.ConfigService
 import splice.core.config.SpliceConfig
+import splice.core.model.ModelCatalog
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.turn.WatchdogBudget
@@ -29,30 +30,27 @@ internal class HeadBuildInputs(
 ) {
 
     internal fun resolveHeadConfig(
-        key: String,
         head: HeadConfig,
         provider: ProviderConfig,
         cfg: SpliceConfig,
-    ): HeadConfig = when {
-        provider.auth.kind == CHATGPT_OAUTH -> head.copy(port = cfg.port, pinnedModel = cfg.pinnedModel)
-        provider.auth.kind == GROK_OAUTH || key.contains("grok", ignoreCase = true) ->
-            head.copy(port = cfg.grokPort, pinnedModel = cfg.grokModel)
+    ): HeadConfig = when (provider.auth.kind) {
+        CHATGPT_OAUTH -> head.copy(port = cfg.port, pinnedModel = cfg.pinnedModel)
+        GROK_OAUTH -> head.copy(port = cfg.grokPort, pinnedModel = cfg.grokModel)
         else -> head
     }
 
-    internal fun resolveProviderConfig(key: String, provider: ProviderConfig, cfg: SpliceConfig): ProviderConfig =
-        when {
-            provider.auth.kind == CHATGPT_OAUTH -> provider.copy(baseUrl = cfg.chatgptApiBase)
-            provider.auth.kind == GROK_OAUTH || key.contains("grok", ignoreCase = true) ->
-                provider.copy(baseUrl = cfg.xaiApiBase)
+    internal fun resolveProviderConfig(provider: ProviderConfig, cfg: SpliceConfig): ProviderConfig =
+        when (provider.auth.kind) {
+            CHATGPT_OAUTH -> provider.copy(baseUrl = cfg.chatgptApiBase)
+            GROK_OAUTH -> provider.copy(baseUrl = cfg.xaiApiBase)
             else -> provider
         }
 
     /** Pure roster -> dropdown-cache projection (the /model picker option list Claude Code caches
      *  in .claude.json — every model with its label, description, and window, so all of them appear
      *  in the picker, not just the pinned one). */
-    internal fun modelOptionsCache(providerCfg: ProviderConfig): JsonElement = buildJsonArray {
-        providerCfg.models.forEach { model ->
+    internal fun modelOptionsCache(catalog: ModelCatalog): JsonElement = buildJsonArray {
+        catalog.models.forEach { model ->
             addJsonObject {
                 put("value", model.id)
                 put("label", model.label.ifEmpty { model.id })
@@ -70,8 +68,8 @@ internal class HeadBuildInputs(
     // Daemon.start() (2026-07-26 review; moved out of Daemon in the 2026-08-17 decomposition).
     internal fun providerContext(key: String, head: HeadConfig, providerCfg: ProviderConfig): ProviderBuild {
         val headCfg = config.getConfig(key)
-        val resolvedHead = resolveHeadConfig(key, head, providerCfg, headCfg)
-        val resolvedProvider = resolveProviderConfig(key, providerCfg, headCfg)
+        val resolvedHead = resolveHeadConfig(head, providerCfg, headCfg)
+        val resolvedProvider = resolveProviderConfig(providerCfg, headCfg)
         return ProviderBuild(
             key = key,
             head = resolvedHead,

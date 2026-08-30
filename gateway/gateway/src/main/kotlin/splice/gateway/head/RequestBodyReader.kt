@@ -10,18 +10,27 @@ import io.ktor.http.HttpHeaders
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.request.receiveChannel
 import io.ktor.utils.io.ByteReadChannel
-import io.ktor.utils.io.readAvailable
 import kotlinx.coroutines.withTimeout
+import splice.spi.ChannelReads
 import java.io.ByteArrayOutputStream
 
 private const val READ_BUFFER_BYTES = 16 * 1024
+
+internal fun interface RequestBodyRead {
+    suspend operator fun invoke(channel: ByteReadChannel, buffer: ByteArray): Int
+}
+
+private val processRequestBodyRead = RequestBodyRead(ChannelReads::readAvailableOrEof)
 
 internal data class ReceivedBody(val text: String, val bytes: Int)
 
 internal class RequestBodyTooLarge(val limit: Int) : RuntimeException()
 
 /** Reads a request body into memory with a hard byte cap and the head's read timeout. */
-internal class RequestBodyReader(private val deps: HeadDeps) {
+internal class RequestBodyReader(
+    private val deps: HeadDeps,
+    private val read: RequestBodyRead = processRequestBodyRead,
+) {
     suspend fun receiveBodyBounded(call: ApplicationCall, limit: Int): ReceivedBody {
         return withTimeout(deps.requestReadTimeoutMs) {
             val declared = call.request.headers[HttpHeaders.ContentLength]?.toLongOrNull()
@@ -31,26 +40,14 @@ internal class RequestBodyReader(private val deps: HeadDeps) {
             val output = ByteArrayOutputStream(capacity)
             val buffer = ByteArray(READ_BUFFER_BYTES)
             var total = 0
-            var read = readAvailableOrEof(channel, buffer)
+            var read = read(channel, buffer)
             while (read >= 0) {
                 total += read
                 if (total > limit) throw RequestBodyTooLarge(limit)
                 output.write(buffer, 0, read)
-                read = readAvailableOrEof(channel, buffer)
+                read = read(channel, buffer)
             }
             ReceivedBody(output.toString(Charsets.UTF_8), total)
         }
-    }
-
-    private suspend fun readAvailableOrEof(
-        channel: ByteReadChannel,
-        buffer: ByteArray,
-    ): Int {
-        var read = channel.readAvailable(buffer, 0, buffer.size)
-        while (read == 0) {
-            if (!channel.awaitContent(1)) return -1
-            read = channel.readAvailable(buffer, 0, buffer.size)
-        }
-        return read
     }
 }

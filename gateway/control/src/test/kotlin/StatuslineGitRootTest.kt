@@ -15,6 +15,14 @@ class StatuslineGitRootTest {
 
     private val renderer = StatuslineRenderer(label = "codex")
 
+    private fun git(repo: java.nio.file.Path, vararg args: String) {
+        val process = ProcessBuilder(listOf("git", "-C", repo.toString()) + args)
+            .redirectErrorStream(true)
+            .start()
+        val output = process.inputStream.readBytes().decodeToString()
+        check(process.waitFor() == 0) { "git ${args.joinToString(" ")} failed: $output" }
+    }
+
     @Test
     fun `a symlink under a trusted root pointing outside the roots is rejected`() {
         // /usr exists on every Linux host and is NOT under $HOME or /tmp — the review's concrete
@@ -39,6 +47,21 @@ class StatuslineGitRootTest {
         // path (proving toRealPath ran), which is what git -C is handed.
         val trusting = StatuslineRenderer(label = "codex", extraGitRoots = listOf(tmpDir.toString()))
         assertEquals(realRepo.toRealPath(), trusting.safeGitCwd(link.toString()))
+    }
+
+    @Test
+    fun `repeated ticks reuse the resolved cwd branch within the cache window`() {
+        val repo = Files.createTempDirectory("statusline-branch-cache")
+        git(repo, "init", "-b", "first")
+        val trusting = StatuslineRenderer(label = "codex", extraGitRoots = listOf(repo.parent.toString()))
+        val stdin = """{"cwd":"$repo"}"""
+
+        val first = trusting.render(stdin, usage = null, warnPct = 0, warnTokens5h = 0)
+        git(repo, "symbolic-ref", "HEAD", "refs/heads/second")
+        val second = trusting.render(stdin, usage = null, warnPct = 0, warnTokens5h = 0)
+
+        assertEquals(true, first.contains("⎇ first"), first)
+        assertEquals(true, second.contains("⎇ first"), "the second tick must reuse the cached branch: $second")
     }
 
     @Test

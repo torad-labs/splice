@@ -13,7 +13,7 @@ import splice.core.turn.ReasoningDisplay
  * members against detekt's TooManyFunctions ceiling of 15. Every member reads only its arguments
  * and keeps its old name and argument list.
  */
-public class ResponsesEffort {
+internal class ResponsesEffort {
 
     // the alias table IS the contract
     public fun normalizeEffort(raw: String?, ladder: EffortLadder): String? {

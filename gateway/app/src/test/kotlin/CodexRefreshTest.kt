@@ -11,6 +11,8 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.app.CodexRefresh
 import splice.core.auth.RefreshAttempt
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
 import java.util.concurrent.atomic.AtomicInteger
 
 class CodexRefreshTest {
@@ -80,5 +82,28 @@ class CodexRefreshTest {
         val engine = MockEngine { respond("not json", HttpStatusCode.OK, headersOf()) }
         val result = CodexRefresh().refresh("https://auth.openai.com/token", "refresh", clientOver(engine))
         assertTrue(result is RefreshAttempt.Denied)
+    }
+
+    @Test
+    fun `failed refresh logs status without exposing response body`() = runTest {
+        val secret = "vendor-secret-response-value"
+        val engine = MockEngine {
+            respond(
+                """{"error":"invalid_grant","detail":"$secret"}""",
+                HttpStatusCode.BadRequest,
+                headersOf(),
+            )
+        }
+        val stderr = ByteArrayOutputStream()
+        val realErr = System.err
+        System.setErr(PrintStream(stderr, true))
+        try {
+            CodexRefresh().refresh("https://auth.openai.com/token", "dead-refresh", clientOver(engine))
+        } finally {
+            System.setErr(realErr)
+        }
+        val logged = stderr.toString()
+        assertTrue(logged.contains("HTTP 400"), "status must remain diagnosable: $logged")
+        assertTrue(!logged.contains(secret), "response body must not reach stderr: $logged")
     }
 }

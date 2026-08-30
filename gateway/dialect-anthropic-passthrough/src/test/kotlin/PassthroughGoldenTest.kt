@@ -202,22 +202,8 @@ class PassthroughGoldenTest {
     @Test
     fun `signature synthesis on an unsigned thinking block is byte-stable`() = runTest {
         val sink = Recorder()
-        val outcome = PassthroughStreamTranslator(ctx(), KIMI_QUIRKS).driveTurn(
-            listOf(
-                ev("""{"type":"message_start","message":{"usage":{"input_tokens":10}}}"""),
-                ev("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}"""),
-                ev("""{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"plan"}}"""),
-                // NO signature_delta — the truncation shape. Kimi never signs; Anthropic always does,
-                // which is why the claude head must not inherit this synthesis (spec Eli finding 11).
-                ev("""{"type":"content_block_stop","index":0}"""),
-                ev("""{"type":"content_block_start","index":1,"content_block":{"type":"text"}}"""),
-                ev("""{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"done"}}"""),
-                ev("""{"type":"content_block_stop","index":1}"""),
-                ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}"""),
-                ev("""{"type":"message_stop"}"""),
-            ).asFlow(),
-            sink,
-        )
+        val outcome = PassthroughStreamTranslator(ctx(), KIMI_QUIRKS)
+            .driveTurn(UNSIGNED_THINKING_EVENTS.asFlow(), sink)
         assertTrue(outcome is TurnOutcome.Success) { "fixture must be a clean turn, got $outcome" }
         assertGolden("translator-unsigned-thinking.txt", sink.calls.joinToString("\n"))
     }
@@ -302,7 +288,63 @@ class PassthroughGoldenTest {
             "the cache_control golden must show cache_control fully stripped — it pins the deformation"
         }
     }
+
+    /**
+     * The canary above covered ONE of kimi's five deformations by flip-and-diverge; the other four
+     * had either a one-sided static assertion (cache_control, which would pass trivially against a
+     * fixture that never carried the marker) or nothing at all, while its second block exercised
+     * `stripSamplingParams` — a knob kimi's set does not even enable. So the three goldens named
+     * here carried no proof they were sensitive to their own quirk, which is precisely the CH-2
+     * hazard: make any of them a silent no-op for kimi's defaults and the assertions keep passing
+     * (review 2026-08-28, PR 99). Each side comes from the SAME fixture as its golden.
+     */
+    @Test
+    fun `canary — the mfjs, allowlist and cache-control goldens each detect their own quirk`() {
+        val neutralMfjs = buildKimi(MFJS_FIXTURE, quirks = KIMI_QUIRKS.copy(mfjsSanitize = false)) + "\n"
+        assertNotEquals(Files.readString(GOLDEN_DIR.resolve("request-mfjs-schema.json")), neutralMfjs) {
+            "the mfjs golden no longer detects the schema rewrite — the wall has gone vacuous"
+        }
+
+        val neutralBlocks = buildKimi(BLOCK_ALLOWLIST_FIXTURE, quirks = KIMI_QUIRKS.copy(blockAllowlist = null)) + "\n"
+        assertNotEquals(Files.readString(GOLDEN_DIR.resolve("request-block-allowlist.json")), neutralBlocks) {
+            "the block-allowlist golden no longer detects the dropped blocks — the wall has gone vacuous"
+        }
+
+        val neutralCache = buildKimi(CACHE_CONTROL_FIXTURE, quirks = KIMI_QUIRKS.copy(stripCacheControl = false)) + "\n"
+        assertNotEquals(Files.readString(GOLDEN_DIR.resolve("request-cache-control.json")), neutralCache) {
+            "the cache_control golden no longer detects the strip — the wall has gone vacuous"
+        }
+    }
+
+    /** The fifth deformation, on the translator leg: the unsigned-thinking transcript's golden
+     *  literally IS the synthesized `sig:splice-synth-v1` line, so turning the quirk off must move
+     *  it. Same events as the golden test, so only the knob differs. */
+    @Test
+    fun `canary — the unsigned-thinking golden detects signature synthesis`() = runTest {
+        val sink = Recorder()
+        PassthroughStreamTranslator(ctx(), KIMI_QUIRKS.copy(synthesizeSignatures = false))
+            .driveTurn(UNSIGNED_THINKING_EVENTS.asFlow(), sink)
+        val neutral = sink.calls.joinToString("\n") + "\n"
+        assertNotEquals(Files.readString(GOLDEN_DIR.resolve("translator-unsigned-thinking.txt")), neutral) {
+            "the unsigned-thinking golden no longer detects signature synthesis — the wall has gone vacuous"
+        }
+    }
 }
+
+/** The truncation shape: a thinking block with NO signature_delta. Kimi never signs; Anthropic
+ *  always does, which is why the claude head must not inherit this synthesis (spec Eli finding 11).
+ *  Shared by the golden and its canary so the two cannot drift apart. */
+private val UNSIGNED_THINKING_EVENTS = listOf(
+    ev("""{"type":"message_start","message":{"usage":{"input_tokens":10}}}"""),
+    ev("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}"""),
+    ev("""{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"plan"}}"""),
+    ev("""{"type":"content_block_stop","index":0}"""),
+    ev("""{"type":"content_block_start","index":1,"content_block":{"type":"text"}}"""),
+    ev("""{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"done"}}"""),
+    ev("""{"type":"content_block_stop","index":1}"""),
+    ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":5}}"""),
+    ev("""{"type":"message_stop"}"""),
+)
 
 // --- harness ------------------------------------------------------------------------------------
 

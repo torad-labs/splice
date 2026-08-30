@@ -20,7 +20,7 @@ import splice.core.util.JsonScalars
  * function (Kotlin main sources carry no top-level functions), so a call site only gained a
  * receiver.
  */
-public class ResponsesHarvest {
+internal class ResponsesHarvest {
 
     // The ONE tool_search_call parser (ResponsesToolSearchParse.kt) — never a second hand-rolled
     // reader of the same shape (the v29 copies-drift law).

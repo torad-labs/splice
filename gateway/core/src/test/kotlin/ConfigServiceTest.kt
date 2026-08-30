@@ -53,6 +53,41 @@ class ConfigServiceTest {
     }
 
     @Test
+    fun `reasoning mirror stays locked off across every configuration layer`() {
+        assertEquals(false, service().getConfig().mirrorReasoning)
+        assertEquals(
+            false,
+            service(overrides = mapOf("mirrorReasoning" to "true")).getConfig().mirrorReasoning,
+        )
+        assertEquals(
+            false,
+            service(perHead = mapOf("codex" to mapOf("mirrorReasoning" to "true")))
+                .getConfig("codex").mirrorReasoning,
+        )
+        assertEquals(
+            false,
+            service(env = mapOf("CLAUDEX_MIRROR_REASONING" to "true")).getConfig().mirrorReasoning,
+        )
+
+        val stateRoot = tmp.resolve("mirror-state")
+        Files.createDirectories(stateRoot)
+        stateRoot.resolve("config.json").writeText("""{"mirrorReasoning":true}""")
+        val state = ConfigService(StatePaths(baseOverride = stateRoot), envReader = { null })
+        assertEquals(false, state.getConfig().mirrorReasoning)
+
+        val runtimeRoot = tmp.resolve("mirror-runtime")
+        val runtime = ConfigService(StatePaths(baseOverride = runtimeRoot), envReader = { null })
+        val patch = runtime.patch(mapOf("mirrorReasoning" to true))
+        assertEquals(false, patch.applied["mirrorReasoning"])
+        assertEquals(false, patch.effective.mirrorReasoning)
+        assertEquals(false, runtime.layers().runtime["mirrorReasoning"])
+        assertTrue(runtimeRoot.resolve("config.json").readText().contains("\"mirrorReasoning\":false"))
+
+        val normalized = ConfigCoercion { null }.normalize(mapOf("mirrorReasoning" to true))
+        assertEquals(false, normalized["mirrorReasoning"])
+    }
+
+    @Test
     fun `layer precedence - overrides then file then env then runtime`() {
         val svc = service(
             env = mapOf("CLAUDEX_REASONING_EFFORT" to "xhigh"),

@@ -60,7 +60,7 @@ internal class ManagedHeadFactory(
                 ctx,
                 controlPort,
                 keyPresent = apiKeyPresent,
-                clientAuth = forwardClientAuth,
+                forwardClientAuth = forwardClientAuth,
             ),
             perf = PerfStatsSource(stores.perfStats),
         )

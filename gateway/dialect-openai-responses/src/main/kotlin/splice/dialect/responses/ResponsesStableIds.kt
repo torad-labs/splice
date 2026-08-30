@@ -13,7 +13,7 @@ import java.security.MessageDigest
  * be (Kotlin main sources carry no top-level functions); both members keep their old name and
  * argument list, so a call site only gained a receiver.
  */
-public class ResponsesStableIds {
+internal class ResponsesStableIds {
 
     /** Codex-parity cache key: sha256 of the FIRST user message's text, stable per conversation. */
     public fun stablePromptCacheKey(body: AnthropicRequest): String? {

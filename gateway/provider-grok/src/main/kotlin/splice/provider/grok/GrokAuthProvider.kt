@@ -106,7 +106,7 @@ public class GrokAuthProvider(
 
     private fun synthesizeExpiry(mtimeMs: Long, nowMs: Long): Long =
         CredentialExpiry.synthesizedExpiryMs(mtimeMs, nowMs)
-    private val authFile = GrokAuthFile(authPath, authJson, invalidGrantLatch, log, refreshCall)
+    private val authFile = GrokAuthDescribe(authPath, authJson, invalidGrantLatch, log, refreshCall)
 
     init {
         // Lifecycle ownership: when prefetchScope ends (Daemon.stop cancels probeScope), cancel the
@@ -182,7 +182,7 @@ public class GrokAuthProvider(
         val outcome = CredentialLock.withLock(authPath, log = log) {
             authFile.refreshLocked(
                 priorAccess,
-                GrokAuthFile.PersistRotation { rt, tokens, access ->
+                PersistRotation { rt, tokens, access ->
                     persistRotation(rt, tokens, access)
                 },
             )

@@ -106,6 +106,18 @@ public data class ProviderConfig(
      * both forms must behave identically, so the quotes are stripped here rather than in each
      * consumer. Header names never legitimately contain a double quote.
      */
+    init {
+        if (auth.kind == AuthKind.Client.wire) {
+            require(
+                extraHeaders.keys.none { raw ->
+                    val header = raw.trim('"')
+                    header.equals("Authorization", ignoreCase = true) ||
+                        header.equals("x-api-key", ignoreCase = true)
+                },
+            ) { "client auth cannot configure Authorization or x-api-key in extra_headers" }
+        }
+    }
+
     public val staticHeaders: Map<String, String>
         get() = extraHeaders.mapKeys { (key, _) -> key.trim('"') }
 

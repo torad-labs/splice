@@ -3139,7 +3139,26 @@ def _attested_scoped_files(path: str, item_id: str) -> list[str] | None:
 
 
 def _toml_basic_string(value: str) -> str:
-    return json.dumps(value, ensure_ascii=False)
+    # json.dumps escapes 0x00-0x1F plus the quote/backslash pair and leaves U+007F (DEL) RAW; TOML
+    # basic strings require every control character other than tab escaped, DEL included. A DEL byte
+    # in pasted input (plausible from a terminal capture still carrying erase bytes) was therefore
+    # accepted, written, and then rejected by _locked_rewrite's own tomllib re-parse — the whole edit
+    # rolled back under an opaque invalid-TOML error naming no cause (review 2026-08-28, PR 99).
+    # Fails closed either way; this is what stops it failing at all.
+    return json.dumps(value, ensure_ascii=False).replace("\x7f", "\\u007f")
+
+
+def _toml_basic_string_decoded(text: str) -> str | None:
+    """The decoded value of a TOML basic string this file wrote, or None for any other shape.
+
+    Basic strings are a subset of JSON strings, which is exactly why [_toml_basic_string] can be
+    json.dumps — so the inverse is json.loads, narrowed to str so a `files = [...]` list falls
+    through as None rather than comparing as a value."""
+    try:
+        value = json.loads(text.strip())
+    except ValueError:
+        return None
+    return value if isinstance(value, str) else None
 
 
 def _toml_string_list(values: list[str]) -> str:
@@ -3154,6 +3173,16 @@ def _replace_item_field(lines: list[str], s: int, e: int, field: str, new_value:
         old_line = lines[j].rstrip("\n")
         if field == "files" and ("[" not in old_line or "]" not in old_line):
             sys.exit("error: unsupported multiline files field")
+        # A re-save whose value is SEMANTICALLY identical (differing only in escaping: one em dash
+        # written as the six-character sequence \\u2014 on one save path and as the raw character on
+        # the other) used to log a full <TAG>-EDITED transition across ~900 characters of unchanged
+        # text; claude-head.toml carries exactly that pair, dated 2026-08-22. To the next auditor it
+        # reads as two independent corrections on one day where one substantive edit happened, in a
+        # file whose line 1 declares it the campaign's memory of record (review 2026-08-28, PR 99).
+        # Compared decoded, not byte-wise, because the escaping difference IS the whole artifact.
+        old_decoded = _toml_basic_string_decoded(_rhs)
+        if old_decoded is not None and old_decoded == _toml_basic_string_decoded(new_value):
+            return lines
         new_line = f"{lhs.rstrip()} = {new_value}\n"
         lines[j] = new_line
         note = (
@@ -3729,8 +3758,22 @@ def cmd_set_status(
         )
 
 
+VERDICT_SIGIL_RE = re.compile(r"^VERDICT: outcome=\w+")
+
+
 def cmd_note(path, item_id, text, _notify=None, _this_file=None, _journal_root=None):
     notify = _notify_orchestrator if _notify is None else _notify
+
+    # The other half of the ONE-REVIEW-PER-ROW anchoring (_one_review_per_row_error): a note is free
+    # to DISCUSS a verdict, but only cmd_verdict may AUTHOR the line the guard reads. Refusing here
+    # means the reader can trust that every anchored match came from the verdict verb.
+    for line in text.splitlines():
+        if VERDICT_SIGIL_RE.match(_strip_leading_date_groups(line).lstrip()):
+            sys.exit(
+                f"error: a note may not open with the verdict sigil ({line.strip()!r}) — that line "
+                "is ONE-REVIEW-PER-ROW's record and only `verdict` may write it. Reword the note, or "
+                "record the real verdict with `manifest.py <ledger> verdict <ID> <outcome>`."
+            )
 
     def mutate(lines):
         s, e = _find(lines, item_id)
@@ -3764,10 +3807,16 @@ def _one_review_per_row_error(lines: list[str], item_id: str, outcome: str) -> s
     a check outside the lock cannot make the append it guards conditional, so two overlapping
     `verdict <ID>` runs would both read the pre-verdict state, both pass, and both append."""
     s, e = _find(lines, item_id)
+    # ANCHORED to the start of the note BODY, not searched anywhere in the line: cmd_note appends
+    # arbitrary caller text in the identical `# [DATE] <text>` shape a real verdict uses, so an
+    # unanchored search let a note that merely CONTAINS the sigil ("planning to record VERDICT:
+    # outcome=accepted once tests pass", or one quoting another row's verdict for context) lock the
+    # `verdict` verb for that item without cmd_verdict ever having run (review 2026-08-28, PR 99).
+    # cmd_note now refuses to author the sigil at all, so only cmd_verdict can produce a match.
     prior_outcomes = [
         m.group(1)
         for line in lines[s:e]
-        for m in [re.search(r"VERDICT: outcome=(\w+)", line)]
+        for m in [re.match(r"VERDICT: outcome=(\w+)", _note_body(line) or "")]
         if m
     ]
     if any(o in ("accepted", "blocked") for o in prior_outcomes):

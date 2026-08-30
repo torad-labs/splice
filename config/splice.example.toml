@@ -17,6 +17,7 @@ show_reasoning = "text"      # "text" | "thinking" | "off"  — stream thinking 
 summary        = "detailed"  # "detailed" | "concise" | "auto" | "none"
 # effort       = "high"      # optional; omit → high (Grok floors invalid values to low)
 replay_reasoning = false     # NEVER turn on lightly: replaying prior opaque encrypted reasoning items thins fresh reasoning
+mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtime PATCH cannot enable transcript mirrors
 
 # ── EXPERIMENTAL OPT-IN: ChatGPT Codex subscription via OAuth ─────────────────
 [providers.codex]

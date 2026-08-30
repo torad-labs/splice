@@ -40,7 +40,7 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
                 // Conversation-lifetime dedup state when the turn has a conversation key (the
                 // cross-turn recap staircase, 2026-08-26); unkeyed turns keep the turn's own
                 // instance — exactly the prior behavior.
-                summaryPartsShared = deps.summaryParts.forConversation(meta.conversationKey)
+                summaryPartsShared = deps.summaryParts.forConversation(meta.sessionId, meta.conversationKey)
                     ?: meta.summaryParts,
                 // Collect this round's encrypted reasoning envelopes whenever a continuation
                 // could consume them: fold replay (Success side) OR mid-stream re-anchor salvage

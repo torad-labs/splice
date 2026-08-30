@@ -17,7 +17,7 @@ import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 
-def _sse() -> bytes:
+def _sse(duplicate_stop: bool = False) -> bytes:
     # Two deltas: stream_probe's buffering check only fires at >= 4 in one chunk.
     frames = [
         ("message_start", '{"type":"message_start","message":{"usage":{"input_tokens":2}}}'),
@@ -32,14 +32,23 @@ def _sse() -> bytes:
          '{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":2}}'),
         ("message_stop", '{"type":"message_stop"}'),
     ]
+    if duplicate_stop:
+        frames.append(("message_stop", '{"type":"message_stop"}'))
     return "".join(f"event: {n}\ndata: {d}\n\n" for n, d in frames).encode()
 
 
 class Loopback:
-    def __init__(self, record: pathlib.Path, head_key: str, head_port: int) -> None:
+    def __init__(
+        self,
+        record: pathlib.Path,
+        head_key: str,
+        head_port: int,
+        duplicate_stop_file: pathlib.Path | None = None,
+    ) -> None:
         self.record = record
         self.head_key = head_key
         self.head_port = head_port
+        self.duplicate_stop_file = duplicate_stop_file
         self.lock = threading.Lock()
         self.record.write_text("")
 
@@ -85,7 +94,8 @@ def _handler(loop: Loopback, plane: str) -> type[BaseHTTPRequestHandler]:
                 self.rfile.read(length)
             loop.append(plane, path, self.headers.get("Authorization"))
             if plane == "head" and path == "/v1/messages":
-                body = _sse()
+                duplicate_stop = loop.duplicate_stop_file is not None and loop.duplicate_stop_file.exists()
+                body = _sse(duplicate_stop)
                 self.send_response(200)
                 self.send_header("Content-Type", "text/event-stream")
                 self.send_header("Content-Length", str(len(body)))
@@ -113,15 +123,17 @@ def main() -> int:
     p.add_argument("--record", required=True)
     p.add_argument("--ready-file", required=True)
     p.add_argument("--head-key", default="claude-splice")
+    p.add_argument("--duplicate-stop-file")
     args = p.parse_args()
 
     # Bind the head first so /api/heads can advertise the real port. Handlers
     # are swapped in after both sockets exist so READY is only written once
     # serve_forever is running — otherwise the selftest races a refused /health
     # and heads-e2e.sh cold-starts the installed splice.jar.
-    placeholder = Loopback(pathlib.Path(args.record), args.head_key, 0)
+    duplicate_stop_file = pathlib.Path(args.duplicate_stop_file) if args.duplicate_stop_file else None
+    placeholder = Loopback(pathlib.Path(args.record), args.head_key, 0, duplicate_stop_file)
     head_srv = ThreadingHTTPServer(("127.0.0.1", 0), _handler(placeholder, "head"))
-    loop = Loopback(pathlib.Path(args.record), args.head_key, head_srv.server_address[1])
+    loop = Loopback(pathlib.Path(args.record), args.head_key, head_srv.server_address[1], duplicate_stop_file)
     head_srv.RequestHandlerClass = _handler(loop, "head")
     control_srv = ThreadingHTTPServer(("127.0.0.1", 0), _handler(loop, "control"))
 

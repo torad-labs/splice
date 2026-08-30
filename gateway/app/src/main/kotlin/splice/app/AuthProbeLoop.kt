@@ -35,6 +35,8 @@ public class AuthProbeLoop(
     // throwing, which would be indistinguishable from the loop death this class supervises.
     private val ticker: Ticker = ProcessTicker(),
 ) {
+    private val lifecycle = Any()
+
     @Volatile private var job: Job? = null
 
     @Volatile private var healthy: Boolean? = null // null = not yet probed
@@ -47,9 +49,11 @@ public class AuthProbeLoop(
     /** First tick runs immediately (pre-traffic: catches a dead-on-boot auth state before any
      *  real user turn); subsequent ticks wait [intervalMs]. */
     public fun start(scope: CoroutineScope) {
-        if (job != null) return
-        stopped = false
-        launchSupervised(scope)
+        synchronized(lifecycle) {
+            if (job != null) return
+            stopped = false
+            launchSupervised(scope)
+        }
     }
 
     private fun launchSupervised(scope: CoroutineScope) {
@@ -68,21 +72,26 @@ public class AuthProbeLoop(
         // own walls forbid a broad tick catch (ForbiddenSuppress on TooGenericExceptionCaught),
         // so supervision is the layer that owns the unknown-throwable class: restart under a
         // bounded budget, announce exhaustion for SH-08 to surface.
-        launched.invokeOnCompletion { cause ->
-            val benign = cause == null || cause is kotlinx.coroutines.CancellationException
-            if (benign || stopped) {
-                return@invokeOnCompletion
+        launched.invokeOnCompletion { cause -> superviseCompletion(scope, launched, cause) }
+    }
+
+    private fun superviseCompletion(scope: CoroutineScope, launched: Job, cause: Throwable?) {
+        val benign = cause == null || cause is kotlinx.coroutines.CancellationException
+        if (benign) return
+        val n = synchronized(lifecycle) {
+            if (stopped || job !== launched) return
+            recordRestart()
+        }
+        if (n <= MAX_RESTARTS) {
+            log("[$key][auth-probe] loop died: $cause — restarting ($n/$MAX_RESTARTS)\n")
+            synchronized(lifecycle) {
+                if (!stopped && job === launched) launchSupervised(scope)
             }
-            val n = recordRestart()
-            if (n <= MAX_RESTARTS) {
-                log("[$key][auth-probe] loop died: $cause — restarting ($n/$MAX_RESTARTS)\n")
-                launchSupervised(scope)
-            } else {
-                log(
-                    "[$key][auth-probe] loop died: $cause — restart budget exhausted " +
-                        "($MAX_RESTARTS in ${RESTART_WINDOW_MS / MS_PER_MIN}m); probe permanently down\n",
-                )
-            }
+        } else {
+            log(
+                "[$key][auth-probe] loop died: $cause — restart budget exhausted " +
+                    "($MAX_RESTARTS in ${RESTART_WINDOW_MS / MS_PER_MIN}m); probe permanently down\n",
+            )
         }
     }
 
@@ -98,9 +107,11 @@ public class AuthProbeLoop(
     }
 
     public fun stop() {
-        stopped = true
-        job?.cancel()
-        job = null
+        synchronized(lifecycle) {
+            stopped = true
+            job?.cancel()
+            job = null
+        }
     }
 
     internal suspend fun probeOnce() {

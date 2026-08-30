@@ -1,5 +1,49 @@
 # Changelog
 
+## splice v0.3.0-beta.1 — native Claude auth and a hardened multi-head gateway - 2026-08-30
+
+### Added
+
+- **`claude-splice`, the native-auth Claude head.** Claude Code keeps its own Anthropic login and
+  sends the caller credential through the local passthrough head; splice never stores, reads,
+  refreshes, or logs that credential. The management key is not reused on this route.
+- **Per-model context windows in the live model picker.** Each configured row reports its effective
+  window without spelling a model above its real backend ceiling, so `/model` can switch windows
+  without restarting Claude Code.
+- Provider OAuth sign-in plans for ChatGPT, Grok, and Kimi now resolve from the configured auth kind,
+  with deterministic matrix coverage for every supported head.
+
+### Changed
+
+- Provider-native readable reasoning remains visible as thinking blocks, while
+  `mirror_reasoning` is locked off after every configuration layer. TOML, state, environment, runtime
+  PATCH, and direct construction cannot enable synthetic transcript reinjection.
+- The release pipeline now accepts SemVer prerelease tags and marks versions containing `-` as GitHub
+  prereleases. Beta installs use a version-pinned URL; the stable `latest` installer remains stable-only.
+
+### Fixed
+
+- Refresh failures for Codex, Grok, and Kimi no longer risk logging vendor response bodies, and
+  KeyStore values containing `#`, quotes, or backslashes round-trip without corruption.
+- Request-body torn wakeups become an Anthropic-shaped HTTP 400 without swallowing genuine coroutine
+  cancellation; chat and Responses stream translators also stop draining runaway producers.
+- A newly created Responses WebSocket can no longer evict itself while older pooled sockets are busy.
+- Session-registry migration now preflights destination collisions, rolls back earlier transfers after
+  a later failure, preserves stale links when replacement fails, and retains cross-filesystem support.
+- OAuth callback paste handling no longer double-encodes URLs, and stopped auth-probe loops cannot
+  restart themselves after shutdown.
+- Repeated statusline ticks reuse a bounded branch cache instead of spawning an uncached Git process
+  every time.
+- Release, concentration, and head-E2E gates now reject masked commands, contradictory ratchet modes,
+  unmatched head selectors, and duplicate stream terminals instead of reporting false green.
+
+### Security
+
+- Client-auth providers reject configured `Authorization` and `x-api-key` headers case-insensitively,
+  preventing a splice-held upstream credential from sharing the local management-gate bypass.
+- OAuth wrapper overrides are restricted to portable command names; paths, shell syntax, whitespace,
+  blank names, and option-like names are rejected before launch.
+
 ## splice v0.2.0 — reasoning continuity, the cache-drain fix, and every-head login - 2026-08-02
 
 ### Changed — BREAKING

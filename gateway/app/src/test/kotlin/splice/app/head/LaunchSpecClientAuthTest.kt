@@ -2,11 +2,11 @@
 //
 // A head has ONE client-auth fact with TWO consumers. ManagedHeadFactory derives forwardClientAuth
 // STRUCTURALLY (`wired.auth is ClientAuthProvider`) and it decides whether the gateway door opens
-// without a mgmt key. LaunchSpecFactory's nativeClientAuth decides whether ANTHROPIC_AUTH_TOKEN is
+// without a mgmt key. LaunchSpecFactory's forwardClientAuth decides whether ANTHROPIC_AUTH_TOKEN is
 // planted into the launched Claude Code process, whether the operator's ambient Anthropic
 // credentials are stripped from it, and whether /login stays enabled.
 //
-// Those two were derived independently: nativeClientAuth read the DECLARED TOML string
+// Those two were derived independently: the LaunchSpec leg read the DECLARED TOML string
 // (`auth.kind == "client"`) while its sibling read the RESOLVED credential. kind and dialect are
 // independent TOML fields and ClientAuthProvider has exactly one construction site — the
 // anthropic-passthrough arm (PassthroughArm.kt) — so `kind = "client"` on any other dialect makes
@@ -17,6 +17,10 @@
 // them pinned the DERIVATION that produces the flag.
 package splice.app.head
 
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -99,10 +103,10 @@ class LaunchSpecClientAuthTest {
             build(tmp, Dialect.OPENAI_RESPONSES),
             controlPort = 3099,
             keyPresent = true,
-            clientAuth = false, // what ProviderAssembly actually resolves for this dialect
+            forwardClientAuth = false, // what ProviderAssembly actually resolves for this dialect
         )
         assertFalse(
-            spec.nativeClientAuth,
+            spec.forwardClientAuth,
             "the recipe must follow the RESOLVED credential, not the declared auth.kind string — " +
                 "this head's door stays shut, so its launch must stay a foreign-vendor launch",
         )
@@ -116,12 +120,33 @@ class LaunchSpecClientAuthTest {
             build(tmp, Dialect.ANTHROPIC_PASSTHROUGH),
             controlPort = 3099,
             keyPresent = true,
-            clientAuth = true,
+            forwardClientAuth = true,
         )
         assertTrue(
-            spec.nativeClientAuth,
+            spec.forwardClientAuth,
             "the anthropic-passthrough client arm forwards the caller's own credential — " +
                 "its launch must keep that credential and keep /login open",
         )
+    }
+
+    @Test
+    fun `model picker cache uses the effective per-head window`(@TempDir tmp: Path) {
+        val declared = ModelEntry(id = "m", label = "Model", contextWindow = 256_000)
+        val effective = declared.copy(contextWindow = 333_000)
+        val base = build(tmp, Dialect.ANTHROPIC_PASSTHROUGH)
+        val ctx = base.copy(
+            providerCfg = base.providerCfg.copy(models = listOf(declared)),
+            catalog = ModelCatalog(
+                discoveryPrefix = "claude-splice--",
+                models = listOf(effective),
+                defaultContextWindow = effective.contextWindow,
+            ),
+        )
+
+        val spec = factory(tmp).launchSpecFor(ctx, 3099, keyPresent = true, forwardClientAuth = true)
+        val cachedWindow = spec.modelOptionsCache.jsonArray.single().jsonObject
+            .getValue("context_window").jsonPrimitive.long
+
+        assertEquals(333_000, cachedWindow)
     }
 }

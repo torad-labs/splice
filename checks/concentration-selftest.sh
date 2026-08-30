@@ -75,7 +75,7 @@ routing() { python3 "$ROUTING" >"$tmp/out" 2>&1; rc=$?; }
 must_fail() { # must_fail <label> <substring the failure must name>
   if [ "$rc" -eq 0 ]; then
     err "$1 — MUST exit non-zero, exited 0. The arm it is supposed to prove is not enforcing."
-  elif ! grep -qF "$2" "$tmp/out"; then
+  elif ! grep -qF -- "$2" "$tmp/out"; then
     err "$1 — exited $rc, but not for the stated reason (expected '$2'): $(head -3 "$tmp/out" | tr '\n' ' ')"
   else
     note "✓ $1 (exit $rc)"
@@ -239,7 +239,17 @@ must_fail "5. gate:concentration defanged by a shell comment" "does not run a py
 set_script 'python3 checks/concentration.py --top 5'
 routing
 must_fail "5b. gate:concentration downgraded to --top 5" "does not pass --ratchet"
+
+# The oracle argv is present and valid, but a shell control operator masks any ratchet failure.
+set_script 'python3 checks/concentration.py --ratchet --max-ratio 1.8 || true'
+routing
+must_fail "5c. gate:concentration masks the oracle exit with shell control" "unsupported or trailing token"
 reset_config
+
+# --since returns before the ratchet branch; combining them must be refused, not silently downgraded
+# to a read-only movement report.
+oracle --ratchet --since HEAD --max-ratio 1.8
+must_fail "5d. --since cannot silently override --ratchet" "--ratchet and --since are mutually exclusive"
 
 # ── 6. routing guard, forward half: gate.sh stops running the leg ─────────────────────────────
 python3 - "$tmp/checks/gate.sh" <<'PY'

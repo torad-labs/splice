@@ -7,9 +7,10 @@ tile. For a non-compact Success with no text and no tool use:
   · the empty-model honesty error fired only when thinking < HONESTY_MIN_CHARS (20);
   · so thinking in [20, 40) satisfied NEITHER, and the only thing left that could emit anything
     was the reasoning mirror at TurnPipeline.kt:90.
-The mirror is gated twice over — on the operator knob `mirror_reasoning` AND on
-showReasoning == TEXT — and neither gate was consulted by the honesty check. With either shut, the
-turn reached the client as a clean, EMPTY success: the L3 violation ("a turn that did not complete
+The mirror was gated twice over — on `mirror_reasoning` AND on showReasoning == TEXT — and neither
+gate was consulted by the honesty check. `mirror_reasoning` is now operator-locked off, but this
+wall keeps the structural defense: with either gate shut, the turn must not reach the client as a
+clean, EMPTY success. That was the L3 violation ("a turn that did not complete
 normally must never reach the client as clean success") in its purest form, on a turn that
 completed normally and carried nothing.
 
@@ -264,7 +265,7 @@ def selftest() -> int:
         return 1
     print("CX-09 SELFTEST OK — red on the pre-fix shape, on either file left open, on a missing "
           "file, and — derived from the REAL sources, one token at a time — on a tree that keeps "
-          "the predicate but stops asking it, or asks it without the operator knob.")
+          "the predicate but stops asking it, or asks it without the locked mirror flag.")
     return 0
 
 
@@ -277,8 +278,8 @@ def main() -> int:
         for p in problems:
             print(f"  · {p}")
         return 1
-    print("CX-09 WALL GREEN: the honesty gate consults the one mirror predicate, operator knob "
-          "included, so no band of thinking length ends clean and empty.")
+    print("CX-09 WALL GREEN: the honesty gate consults the one mirror predicate, including the "
+          "locked-off mirror flag, so no band of thinking length ends clean and empty.")
     return 0
 
 

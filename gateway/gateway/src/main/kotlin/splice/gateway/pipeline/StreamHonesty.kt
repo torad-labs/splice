@@ -29,7 +29,7 @@ internal class StreamHonesty(private val mirrorReasoning: Boolean) {
     fun nothingReachesTheClient(outcome: TurnOutcome.Success, meta: TurnMeta): Boolean =
         !outcome.emittedThinking && !willMirrorHere(outcome.thinkingText, meta)
 
-    /** CX-09: the same predicate [mirrorGated] obeys, including the operator knob.
+    /** CX-09: the same predicate [mirrorGated] obeys, including the locked flag.
      *
      *  This answers only "will the TEXT MIRROR emit?" — it is NOT the whole question. Translators
      *  emit native thinking blocks independently of both the knob and showReasoning, and on

@@ -14,6 +14,7 @@
 package splice.dialect.chat
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.takeWhile
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.ErrorType
@@ -39,23 +40,22 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
 
     override suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome {
         try {
-            upstream.collect { evt ->
-                // pendingTools' per-entry `args` accumulate BEFORE the tool opens (deferred-open:
-                // a backend may stream index+id and large argument deltas but never function.name),
-                // so an entry count alone leaves those chars unbounded — review #49. Normally a
-                // handful of entries; the count cap bounds the sum's worst case.
-                if (BufferCapacity.over(
+            upstream
+                .takeWhile {
+                    // pendingTools' per-entry `args` accumulate BEFORE the tool opens (deferred-open:
+                    // a backend may stream index+id and large argument deltas but never function.name),
+                    // so an entry count alone leaves those chars unbounded — review #49. Stop
+                    // collection at the cap so the producer and its upstream response unwind too.
+                    val withinCapacity = !BufferCapacity.over(
                         channels.textBuf.length,
                         channels.thinkingBuf.length,
                         toolCalls.toolCount,
                         toolCalls.pendingArgsChars,
                     )
-                ) {
-                    terminal.runawayGuard = RUNAWAY_GUARD_MESSAGE
-                    return@collect
+                    if (!withinCapacity) terminal.runawayGuard = RUNAWAY_GUARD_MESSAGE
+                    withinCapacity
                 }
-                router.onEvent(evt, sink)
-            }
+                .collect { evt -> router.onEvent(evt, sink) }
         } catch (e: CancellationException) {
             // Only a watchdog fire may swallow cancellation; a real cancel propagates.
             if (ctx.watchdogFired() == null) throw e

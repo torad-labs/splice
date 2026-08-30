@@ -33,8 +33,17 @@ internal class ConversationSummaryParts(
     private val convos = LinkedHashMap<String, SharedSummaryParts>()
     private val lock = Any()
 
-    fun forConversation(key: String?): SharedSummaryParts? {
-        if (key == null) return null
+    /** Scoped by BOTH identities when the client sends a session id, per TurnMeta.sessionId's own
+     *  law ("consumers must mix BOTH, never either alone"): [conversationKey] alone is a hash of
+     *  the first user message's TEXT, so two conversations opening with identical words shared one
+     *  dedup instance, and a false dedup hit SUPPRESSES a reasoning part rather than merely missing
+     *  a cache. ResponsesWsIdentity already mixes both; this was the one consumer that did not
+     *  (review 2026-08-28, PR 99 comment 1). A client that sends no session id keeps the
+     *  conversation-only scope, because refusing to scope at all would silently drop this dialect
+     *  back to per-turn dedup and undo the cross-turn recap fix. */
+    fun forConversation(sessionId: String?, conversationKey: String?): SharedSummaryParts? {
+        val convo = conversationKey?.takeIf { it.isNotEmpty() } ?: return null
+        val key = sessionId?.takeIf { it.isNotEmpty() }?.let { "$it\u0000$convo" } ?: convo
         return synchronized(lock) {
             // Deliberate second construction site: this instance is CONVERSATION-lifetime —
             // strictly longer-lived than the turn — and every round of every turn of the

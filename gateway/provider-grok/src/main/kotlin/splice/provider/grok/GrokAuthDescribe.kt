@@ -1,7 +1,12 @@
-// NEW: best-effort mtime probe for the invalid_grant latch gate. Was a file-private
-// collaborator in GrokAuthProvider.kt so that class stayed under TooManyFunctions;
-// lifted to its own file so the provider is not billed for a second type
-// (concentration HIGH, 2026-08-19). Shared by doRefresh() and describe().
+// NEW: masked auth.json introspection for `splice status` plus the refresh-exchange ladder — the
+// same pair of responsibilities CodexAuthDescribe.kt owns, under the same name (renamed from
+// GrokAuthFile, review 2026-08-28 PR 99: codex's *AuthFile is a single-method mtime probe, so one
+// name meant two different-sized responsibilities and a reader who had learned one provider's
+// collaborator shape could not predict the next). The mtime probe rides along here rather than in a
+// second type because :provider-grok sits at detekt's 14-function ceiling — the SHAPE difference is
+// the ceiling's consequence, only the NAME was drift. Was a file-private collaborator in
+// GrokAuthProvider.kt so that class stayed under TooManyFunctions; lifted to its own file so the
+// provider is not billed for a second type (concentration HIGH, 2026-08-19).
 package splice.provider.grok
 
 import splice.core.auth.AuthDescription
@@ -37,17 +42,20 @@ public object GrokOAuthEndpoints {
         env("GROK_OAUTH_CLIENT_ID") ?: DEFAULT_CLIENT_ID
 }
 
-internal class GrokAuthFile(
+// At file scope, unqualified at its call site, exactly like the codex twin in CodexAuthDescribe.kt —
+// nested it forced every caller to spell `GrokAuthFile.PersistRotation` where codex writes
+// `PersistRotation` (review 2026-08-28, PR 99).
+internal fun interface PersistRotation {
+    operator fun invoke(refreshToken: String, fresh: GrokRefreshedTokens, access: String): RefreshOutcome
+}
+
+internal class GrokAuthDescribe(
     private val authPath: Path,
     private val authJson: GrokAuthJson,
     private val invalidGrantLatch: InvalidGrantLatch,
     private val log: LogSink,
     private val refreshCall: RefreshCall<GrokRefreshedTokens>,
 ) {
-    internal fun interface PersistRotation {
-        operator fun invoke(refreshToken: String, fresh: GrokRefreshedTokens, access: String): RefreshOutcome
-    }
-
     fun grokAuthMtimeOrNull(authPath: Path, log: LogSink): Long? = Cancellables.runCatchingCancellable {
         Files.getLastModifiedTime(authPath).toMillis()
     }.onFailure {

@@ -144,7 +144,7 @@ public object OAuthLoginFlow {
     internal fun extractCode(raw: String): String? {
         val line = raw.trim()
         if (line.isEmpty()) return null
-        CODE_PARAM.find(line)?.let { return it.groupValues[1] }
+        CODE_PARAM.find(line)?.let { return decode(it.groupValues[1]) }
         // A bare code: no scheme, no spaces, and long enough not to be a stray keystroke.
         return line.takeIf { !it.contains("://") && !it.contains(' ') && it.length >= MIN_BARE_CODE }
     }

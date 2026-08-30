@@ -93,9 +93,12 @@ def validate(events, comments, chunks_with_events, args, timings):
         v.append(f"first substantive event is {non_ping[0] if non_ping else 'absent'}, not message_start")
     if names.count("message_start") != 1:
         v.append(f"message_start count = {names.count('message_start')} (want exactly 1)")
-    if "message_stop" not in names:
+    stop_count = names.count("message_stop")
+    if stop_count == 0:
         v.append("no message_stop — stream did not end cleanly")
-    elif names[-1] != "message_stop":
+    elif stop_count != 1:
+        v.append(f"message_stop count = {stop_count} (want exactly 1)")
+    if stop_count and names[-1] != "message_stop":
         v.append(f"events AFTER message_stop: {names[names.index('message_stop') + 1:]}")
 
     open_blocks, pairing_ok = set(), True
@@ -173,8 +176,6 @@ def main():
         before = len(col.events)
         col.feed(t_ms, chunk.decode("utf-8", errors="replace"))
         event_times.extend(t for t, _, _ in col.events[before:])
-        if col.events and col.events[-1][1] == "message_stop":
-            break
     conn.close()
 
     total_ms = event_times[-1] if event_times else int((time.monotonic() - t0) * 1000)

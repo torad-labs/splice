@@ -48,8 +48,8 @@ public data class HeadDeps(
     val requestMaterializationGate: RequestMaterializationGate = RequestMaterializationGate(),
     val maxRequestBytes: Int = DEFAULT_MAX_REQUEST_BYTES,
     val requestReadTimeoutMs: Long = DEFAULT_REQUEST_READ_TIMEOUT_MS,
-    // mirror_reasoning knob, threaded to TurnPipeline (restart-required like the other reasoning knobs)
-    val mirrorReasoning: Boolean = true,
+    // Operator-locked off: provider-native reasoning may display, but splice never mirrors it.
+    val mirrorReasoning: Boolean = false,
     /** TRUE only for a head whose auth kind is `client` (campaign claude-head): splice holds no
      *  credential for it, so the caller's own auth headers are forwarded upstream and the
      *  mgmt-key front door is bypassed. FALSE for every other head, which keeps enforcing it. */
@@ -58,5 +58,6 @@ public data class HeadDeps(
     init {
         require(inferenceToken.isNotBlank()) { "inferenceToken must not be blank" }
         require(requestReadTimeoutMs > 0) { "requestReadTimeoutMs must be positive" }
+        require(!mirrorReasoning) { "mirrorReasoning is operator-locked off" }
     }
 }

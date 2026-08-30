@@ -29,7 +29,7 @@ class GrokOAuthTest {
     }
 
     @Test
-    fun `authorize url has the pkce challenge, state, nonce and %20-encoded scope`() {
+    fun `authorize url has the pkce challenge, state, nonce and percent-20-encoded scope`() {
         val pkce = oauth.makeGrokPkce()
         val url = oauth.buildGrokAuthorizeUrl(
             pkce.challenge,

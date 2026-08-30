@@ -39,7 +39,7 @@ public data class LaunchSpec(
      * replace exactly the credential the head forwards upstream, and disabling /login would nail
      * shut the only door that can heal a 401.
      */
-    val nativeClientAuth: Boolean = false,
+    val forwardClientAuth: Boolean = false,
 )
 
 public data class LaunchRecipe(

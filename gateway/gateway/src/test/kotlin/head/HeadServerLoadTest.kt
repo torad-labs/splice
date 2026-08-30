@@ -16,7 +16,7 @@ import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
-import io.ktor.utils.io.readUTF8Line
+import io.ktor.utils.io.readLine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -343,7 +343,7 @@ class HeadServerLoadTest {
             }.execute { resp ->
                 val ch = resp.bodyAsChannel()
                 while (true) {
-                    val line = ch.readUTF8Line() ?: break
+                    val line = ch.readLine() ?: break
                     sb.append(line).append('\n')
                     if (!held && line.contains("\"held\"")) {
                         held = true

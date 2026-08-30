@@ -43,7 +43,16 @@ internal class WsRoundDrive(
         )
         val raw = provider.streamTranslator(drive.meta, signals).driveTurn(instrumented, inputs.sink)
         drive.perf.mark(PerfKeys.STREAM_END)
+        // The report is the LAST statement, so it and the return are atomic from WsRoundDriver's
+        // point of view: that caller sets `reported` only once drive() returns, and its finally
+        // reports ok=false when the flag is unset. Anything thrown between a report and the return
+        // would therefore report the round twice — ok=true, then ok=false clearing the chaining
+        // state for a round that completed (review 2026-08-28, PR 99). Unreachable today, since
+        // classifyZeroEvent returns early on the blank snippet this path always passes; the next
+        // edit to it is what would make the gap real. The WsRoundNeedsSse path is unaffected: that
+        // throw fires inside driveTurn's onEach, upstream of both statements either way.
+        val outcome = classifyZeroEvent(drive, raw, "", inputs.eventsBase)
         runner.roundEnded(drive.meta, ok = true)
-        return classifyZeroEvent(drive, raw, "", inputs.eventsBase)
+        return outcome
     }
 }

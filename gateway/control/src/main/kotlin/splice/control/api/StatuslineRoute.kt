@@ -34,11 +34,13 @@ internal class StatuslineRoute(
     private val resolver: HeadResolver,
     private val config: ConfigService,
 ) {
+    private val renderers = HashMap<String, Pair<List<String>, StatuslineRenderer>>()
+
     suspend fun statusline(call: ApplicationCall) {
         val key = call.parameters["head"].orEmpty()
         val managed = resolver.headByName(key).singleOrNull()
         if (managed == null) {
-            call.respondText(managed?.head?.label ?: key, ContentType.Text.Plain)
+            call.respondText(key, ContentType.Text.Plain)
             return
         }
         val stdin = readBodyOrRespond(call) ?: return
@@ -47,8 +49,18 @@ internal class StatuslineRoute(
         // silently ignored [heads.<key>.overrides].statuslineGitRoots. Found by
         // kt-head-scoped-config-must-be-keyed on its first tree scan (2026-07-26). `key` is
         // non-empty here — the managed == null early return above guarantees it resolved.
-        val line = StatuslineRenderer(managed.head.label, config.getConfig(key).statuslineGitRoots)
-            .render(stdin, managed.usage, managed.warnPct, managed.warnTokens5h)
+        val roots = config.getConfig(key).statuslineGitRoots
+        val renderer = synchronized(renderers) {
+            val cached = renderers[managed.head.key]
+            if (cached?.first == roots) {
+                cached.second
+            } else {
+                StatuslineRenderer(managed.head.label, roots).also {
+                    renderers[managed.head.key] = roots.toList() to it
+                }
+            }
+        }
+        val line = renderer.render(stdin, managed.usage, managed.warnPct, managed.warnTokens5h)
         call.respondText(line, ContentType.Text.Plain)
     }
 

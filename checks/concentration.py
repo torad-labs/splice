@@ -695,6 +695,14 @@ def main() -> int:
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
 
+    if args.ratchet and args.since:
+        print(
+            "--ratchet and --since are mutually exclusive: --ratchet enforces the standing gate, "
+            "--since reports movement",
+            file=sys.stderr,
+        )
+        return 2
+
     rows = scan(collect())
 
     # Validated before any question is answered, and in EVERY mode: an exemption with no
@@ -706,6 +714,17 @@ def main() -> int:
         print(f"FAIL: CEILING_EXCEPTIONS is invalid ({len(errors)} problem(s)):", file=sys.stderr)
         for err in errors:
             print(f"  ✗ {err}", file=sys.stderr)
+        return 2
+
+    # --since returns before --file is ever read, so the pair silently answered the question the
+    # caller did not ask. Refused loudly instead, the same way --ratchet-without--max-ratio and an
+    # invalid CEILING_EXCEPTIONS are (review 2026-08-28, PR 99) — exit 2 is this file's "you asked
+    # the instrument something it cannot answer", distinct from the gate's failing-measurement 1.
+    if args.since and args.file:
+        print(
+            "--since and --file are mutually exclusive: --since reports movement, --file reports one file",
+            file=sys.stderr,
+        )
         return 2
 
     if args.since:

@@ -40,7 +40,18 @@ WEBUI = ROOT / "webui/src/entities/config/api/index.ts"
 
 def detect(layers: str | None, ctrl: str | None, webui: str | None) -> list[str]:
     """Pure detection. No I/O — the selftest feeds it directly."""
-    for name, text in (("ConfigResults.kt", layers), ("ControlServer.kt", ctrl), ("config entity api", webui)):
+    # The middle group is CTRL_FILES (two files, concatenated), so it is labelled with BOTH names:
+    # under the single-member label, deleting or renaming ConfigRoutes.kt alone — exactly the
+    # decomposition this campaign's file-list mechanism exists to survive without a wall edit — went
+    # correctly RED while printing that ControlServer.kt was missing, sending the debugger to a file
+    # that is still there. cx_01/cx_09/cx_18 label their multi-file groups logically for the same
+    # reason; this was the one place it slipped (review 2026-08-28, PR 99).
+    groups = (
+        ("ConfigResults.kt", layers),
+        ("ControlServer.kt + ConfigRoutes.kt", ctrl),
+        ("config entity api", webui),
+    )
+    for name, text in groups:
         if text is None:
             return [f"{name} missing — refusing to pass vacuously"]
     problems: list[str] = []

@@ -775,8 +775,10 @@ class ResponsesRunawayGuardTest {
         // non-provider-reported API_ERROR (never a crash, never a provider attribution).
         val chunk = "x".repeat(1_000_000)
         val sink = RecordingSink()
+        var emitted = 0
         val events = kotlinx.coroutines.flow.flow {
             repeat(25) {
+                emitted += 1
                 emit(
                     kotlinx.serialization.json.buildJsonObject {
                         put("type", kotlinx.serialization.json.JsonPrimitive("response.output_text.delta"))
@@ -794,6 +796,7 @@ class ResponsesRunawayGuardTest {
         // consumption stopped at the latch: 20 x 1M reaches the cap, later deltas never emit
         val deltas = sink.calls.count { it.startsWith("text#") }
         assertTrue(deltas in 20..21, "expected the guard to stop the stream at the cap, saw $deltas deltas")
+        assertTrue(emitted < 25, "the guard must unwind the upstream, not drain it; emitted=$emitted")
     }
 }
 

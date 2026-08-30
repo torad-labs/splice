@@ -3,6 +3,7 @@
 // on `e is IOException`), and a connection is pooled only when clean AND drained.
 package splice.dialect.responses
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.onCompletion
@@ -47,6 +48,7 @@ internal class WsRoundStream(
 
     /** Pool the connection only when the round ended CLEANLY and left nothing behind; otherwise
      *  poison it. Split out of [roundFlow] to stay under the complexity ceiling. */
+    @OptIn(ExperimentalCoroutinesApi::class)
     private fun finishRound(conn: WsConnection, key: String, cause: Throwable?, completed: Boolean) {
         // The inbox MUST be empty to pool the connection (adversarial review of WS-3): a frame
         // the server emits AFTER the round-ending one would otherwise sit in the inbox and be

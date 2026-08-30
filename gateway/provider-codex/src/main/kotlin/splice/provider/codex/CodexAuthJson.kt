@@ -112,7 +112,19 @@ internal class CodexAuthJson(
         val accountId = JsonScalars.str(tokens, FIELD_ACCOUNT_ID)
         val expiresAtMs = JsonScalars.long(oauth.decodeJwtClaims(freshAccess), FIELD_EXP)?.let { it * MS_PER_S }
         val snapshot = Snapshot(freshAccess, accountId, expiresAtMs)
-        cache = Cache(snapshot, Files.getLastModifiedTime(authPath).toMillis(), clock(), Files.size(authPath))
-        return RefreshOutcome.Refreshed(Credentials.Bearer(freshAccess, accountId))
+        // Two unguarded stats in the contended window: a peer (another splice, the official codex
+        // CLI) can replace the file between the read that produced [tokens] and these calls. Both
+        // now degrade to "no peer rotation, do the real refresh" rather than escaping as a crash.
+        return Cancellables.runCatchingCancellable {
+            Cache(snapshot, Files.getLastModifiedTime(authPath).toMillis(), clock(), Files.size(authPath))
+        }
+            .onFailure {
+                log("[codex-auth] stat of $authPath failed: $it — skipping peer rotation, refreshing instead")
+            }
+            .getOrNull()
+            ?.let { fresh ->
+                cache = fresh
+                RefreshOutcome.Refreshed(Credentials.Bearer(freshAccess, accountId))
+            }
     }
 }

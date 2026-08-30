@@ -14,6 +14,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import splice.core.usage.RateLimitState
 import splice.core.usage.UsageWarnPolicy
+import splice.core.util.JsonScalars
 import java.util.concurrent.TimeUnit
 
 public class StatuslineRenderer(
@@ -38,6 +39,12 @@ public class StatuslineRenderer(
     private val json = Json { ignoreUnknownKeys = true }
 
     private val blob = StatuslineJson()
+    private val branchCacheLock = Any()
+    private val branchCache = LinkedHashMap<String, CachedBranch>(
+        GIT_CACHE_INITIAL_CAPACITY,
+        GIT_CACHE_LOAD_FACTOR,
+        true,
+    )
 
     public fun render(stdinJson: String, usage: HeadUsageSource?, warnPct: Int, warnTokens5h: Long): String {
         val root = runCatching { json.parseToJsonElement(stdinJson).jsonObject }.getOrNull() ?: return dim(label)
@@ -112,7 +119,7 @@ public class StatuslineRenderer(
         // exec git -C against an attacker-chosen path from unauthenticated /statusline. Run git in
         // the symlink-resolved path, not the raw cwd.
         val safe = safeGitCwd(cwd)
-        val branch = if (safe != null) gitBranch(safe.toString()) else ""
+        val branch = if (safe != null) cachedGitBranch(safe.toString()) else ""
         val loc = if (branch.isEmpty()) base else "$base  ⎇ $branch"
         return dim(loc)
     }
@@ -138,6 +145,20 @@ public class StatuslineRenderer(
         return real.takeIf { p -> java.nio.file.Files.isDirectory(p) && trustedRoots.any { p.startsWith(it) } }
     }
 
+    private fun cachedGitBranch(cwd: String): String = synchronized(branchCacheLock) {
+        val now = System.currentTimeMillis()
+        val cached = branchCache[cwd]
+        if (cached != null && now < cached.expiresAtMs) return@synchronized cached.branch
+
+        val branch = gitBranch(cwd)
+        branchCache[cwd] = CachedBranch(branch, now + GIT_CACHE_TTL_MS)
+        while (branchCache.size > GIT_CACHE_MAX_ENTRIES) {
+            val iterator = branchCache.keys.iterator()
+            iterator.next().run { iterator.remove() }
+        }
+        branch
+    }
+
     private fun gitBranch(cwd: String): String = runCatching {
         val process = ProcessBuilder("git", "-C", cwd, "branch", "--show-current")
             .redirectErrorStream(false)
@@ -154,12 +175,20 @@ public class StatuslineRenderer(
     private fun dim(s: String) = "$DIM$s$RESET"
 }
 
+private data class CachedBranch(val branch: String, val expiresAtMs: Long)
+
 // The stdin-blob JSON adapter, split out so StatuslineRenderer stays inside detekt's per-class
 // function budget: the renderer holds 11 + fmtK + dim = 13 of 15, and folding obj/str/num back in
 // makes 16.
 private class StatuslineJson {
     fun obj(parent: JsonObject?, key: String): JsonObject? = parent?.get(key) as? JsonObject
-    fun str(element: JsonElement?): String? = (element as? JsonPrimitive)?.content?.takeIf { it.isNotEmpty() }
+
+    // Through JsonScalars, not a second `as? JsonPrimitive` read: JsonNull IS a JsonPrimitive whose
+    // content is the literal "null", which is non-empty, so the unfiltered read survived takeIf and
+    // rendered the word "null" instead of falling through to model.id / root.cwd (review 2026-08-28,
+    // PR 99). The same class this PR fixes in SystemTextSerializer and ContentSerializer.
+    fun str(element: JsonElement?): String? = JsonScalars.str(element)?.takeIf { it.isNotEmpty() }
+
     fun num(element: JsonElement?): Long? = (element as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong()
 }
 
@@ -180,3 +209,7 @@ private const val CACHE_GOOD_PCT = 70
 private const val CACHE_OK_PCT = 40
 private const val K = 1000
 private const val GIT_TIMEOUT_MS = 200L
+private const val GIT_CACHE_TTL_MS = 2_000L
+private const val GIT_CACHE_INITIAL_CAPACITY = 16
+private const val GIT_CACHE_LOAD_FACTOR = 0.75f
+private const val GIT_CACHE_MAX_ENTRIES = 64

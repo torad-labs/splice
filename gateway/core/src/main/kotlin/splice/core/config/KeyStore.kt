@@ -36,6 +36,31 @@ private fun interface StoreEdit<T> {
     operator fun invoke(): T
 }
 
+private class TomlCommentScanner {
+    private var quote: Char? = null
+    private var escaped = false
+
+    fun startsComment(char: Char): Boolean {
+        when {
+            escaped -> escaped = false
+            startsEscape(char) -> escaped = true
+            startsQuote(char) -> quote = char
+            quote == char -> quote = null
+            startsUnquotedComment(char) -> return true
+        }
+        return false
+    }
+
+    private fun startsEscape(char: Char): Boolean = quote == '"' && char == '\\'
+
+    private fun startsQuote(char: Char): Boolean {
+        if (quote != null) return false
+        return char == '"' || char == '\''
+    }
+
+    private fun startsUnquotedComment(char: Char): Boolean = quote == null && char == '#'
+}
+
 public class KeyStore(
     public val path: Path,
 ) {
@@ -49,12 +74,11 @@ public class KeyStore(
     /** Insert or replace [envVar] = [value] (0600 atomic write). Preserves sibling entries;
      *  comments are NOT (we are the only writer — hand edits survive only as entries). */
     public fun write(envVar: String, value: String) {
-        require(envVar.matches(ENV_NAME)) { "invalid env name '$envVar' (want $ENV_NAME)" }
+        require(envVar.matches(envNameRegex)) { "invalid env name '$envVar' (want $envNameRegex)" }
         require(value.isNotBlank()) { "empty key for '$envVar'" }
-        // LNC-004: persist() writes `name = "$value"` with no escaping; an embedded newline (survives
-        // the trim() below, which only strips leading/trailing whitespace) would split into multiple
-        // lines and the line-oriented parser would read back only the truncated prefix — a value must
-        // never silently persist as something different from what was given.
+        // An embedded newline (survives the trim() below, which only strips leading/trailing
+        // whitespace) would split into multiple assignments. The line-oriented store cannot encode
+        // that shape, so reject it rather than silently persist a different credential.
         require('\n' !in value && '\r' !in value) { "key for '$envVar' contains a newline — cannot store" }
         withStoreLock {
             val next = entriesStrict().toMutableMap()
@@ -88,13 +112,51 @@ public class KeyStore(
     private fun parseLines(lines: List<String>): Map<String, String> =
         lines
             .mapNotNull { line ->
-                val cut = line.substringBefore('#').trim()
+                val cut = stripComment(line).trim()
                 if (cut.isEmpty() || '=' !in cut) return@mapNotNull null
                 val name = cut.substringBefore('=').trim()
-                val value = cut.substringAfter('=').trim().trim('"', '\'')
-                if (name.matches(ENV_NAME) && value.isNotEmpty()) name to value else null
+                val value = decodeValue(cut.substringAfter('=').trim())
+                if (name.matches(envNameRegex) && value.isNotEmpty()) name to value else null
             }
             .toMap()
+
+    /** `#` begins a comment only outside the single/double-quoted value. */
+    private fun stripComment(line: String): String {
+        val scanner = TomlCommentScanner()
+        line.forEachIndexed { index, char ->
+            if (scanner.startsComment(char)) return line.substring(0, index)
+        }
+        return line
+    }
+
+    /** Remove one matching quote pair; decode only the escapes [persist] emits. */
+    private fun decodeValue(raw: String): String {
+        if (raw.length < 2 || raw.first() != raw.last()) return raw
+        val inner = raw.substring(1, raw.lastIndex)
+        return when (raw.first()) {
+            '\'' -> inner
+            '"' -> decodeDoubleQuoted(inner)
+            else -> raw
+        }
+    }
+
+    private fun decodeDoubleQuoted(raw: String): String = buildString {
+        var index = 0
+        while (index < raw.length) {
+            val char = raw[index]
+            val next = raw.getOrNull(index + 1)
+            val escape = if (char == '\\') storedEscape(next) else null
+            if (escape != null) {
+                append(escape)
+                index += 2
+            } else {
+                append(char)
+                index += 1
+            }
+        }
+    }
+
+    private fun storedEscape(next: Char?): Char? = next?.takeIf { it == '\\' || it == '"' }
 
     /** SH-11: cross-process mutation lock on a sibling `.lock` (the G1 lesson applied to
      *  keys.toml — a human `splice key set` racing a token-capture hook is a real interleaving).
@@ -136,7 +198,10 @@ public class KeyStore(
         val text = buildString {
             appendLine("# splice api keys — password-equivalent, keep 0600, never commit.")
             appendLine("# Written by `splice key set` / `<head> login` / a head's token-capture hook.")
-            entries.toSortedMap().forEach { (name, value) -> appendLine("$name = \"$value\"") }
+            entries.toSortedMap().forEach { (name, value) ->
+                val encoded = value.replace("\\", "\\\\").replace("\"", "\\\"")
+                appendLine("$name = \"$encoded\"")
+            }
         }
         SecureFile.writeAtomic0600(path, text)
     }
@@ -147,7 +212,11 @@ public class KeyStore(
 // top-level function is banned) and could not become a KeyStore member either — it computes the
 // path the constructor is GIVEN — so it takes the migration's pattern 5: a named object.
 // FILE SCOPE ON PURPOSE: one compiled Regex for the whole file, not one per KeyStore instance.
-private val ENV_NAME = Regex("[A-Z][A-Z0-9_]*")
+// `internal`, not file-private (review 2026-08-28, PR 99): TokenCaptureSpec validates its
+// own envVar against THIS regex rather than a second copy, because that value reaches a bare
+// unquoted command word in a generated bash hook — the check has to fire where the spec is
+// BUILT, not only when the generated script finally calls `splice key set`.
+internal val envNameRegex = Regex("[A-Z][A-Z0-9_]*")
 
 // SH-11 mutation lock: holds are microseconds (parse + atomic write); 5s of contention
 // means a wedged peer, and the loud failure preserves the store.

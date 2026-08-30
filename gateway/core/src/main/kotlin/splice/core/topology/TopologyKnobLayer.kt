@@ -67,8 +67,8 @@ public class TopologyKnobLayer(private val topology: Topology) {
             provider.auth.file?.let { out["codexAuthPath"] = it }
         }
 
-        val grok = topology.heads.entries.firstOrNull { (key, head) ->
-            topology.providers[head.provider]?.auth?.kind == "grok-oauth" || key.contains("grok", ignoreCase = true)
+        val grok = topology.heads.entries.firstOrNull { (_, head) ->
+            topology.providers[head.provider]?.auth?.kind == "grok-oauth"
         }
         grok?.let { (_, head) ->
             val provider = topology.providers.getValue(head.provider)

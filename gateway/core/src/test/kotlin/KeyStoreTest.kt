@@ -27,6 +27,21 @@ class KeyStoreTest {
     }
 
     @Test
+    fun `structural characters round-trip byte for byte`(@TempDir tmp: Path) {
+        val s = store(tmp)
+        val expected = mapOf(
+            "HASH_KEY" to "abc#def",
+            "QUOTE_KEY" to "\"quoted\"",
+            "SLASH_KEY" to "path\\segment",
+            "COMBINED_KEY" to "a#\"b\\c",
+        )
+        expected.forEach(s::write)
+
+        val reopened = KeyStore(s.path)
+        expected.forEach { (name, value) -> assertEquals(value, reopened.read(name), name) }
+    }
+
+    @Test
     fun `file is owner-only 0600 from creation`(@TempDir tmp: Path) {
         val s = store(tmp)
         s.write("OPENROUTER_API_KEY", "sk-or-v1-abc123")

@@ -1,5 +1,6 @@
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
@@ -51,6 +52,27 @@ class TopologyConfigOverridesTest {
         assertEquals("toml-grok", layer["grokModel"])
         assertEquals("https://toml.example/grok", layer["xaiApiBase"])
         assertEquals("~/custom/grok.json", layer["grokAuthPath"])
+    }
+
+    @Test
+    fun `head key text cannot seed Grok management knobs`() {
+        val unrelated = Topology(
+            providers = mapOf(
+                "openrouter" to ProviderConfig(
+                    dialect = Dialect.OPENAI_RESPONSES,
+                    baseUrl = "https://openrouter.example",
+                    auth = AuthConfig("api-key"),
+                ),
+            ),
+            heads = mapOf(
+                "not-grok" to HeadConfig("openrouter", 4107, "claude-router--", "router-model"),
+            ),
+        )
+        val layer = TopologyKnobLayer(unrelated).configOverrides()
+
+        assertNull(layer["grokPort"])
+        assertNull(layer["grokModel"])
+        assertNull(layer["xaiApiBase"])
     }
 
     @Test
@@ -128,6 +150,35 @@ class TopologyConfigOverridesTest {
         val bare = quoted.copy(extraHeaders = mapOf("anthropic-version" to "2023-06-01"))
         assertEquals(mapOf("anthropic-version" to "2023-06-01"), quoted.staticHeaders)
         assertEquals(quoted.staticHeaders, bare.staticHeaders)
+    }
+
+    @Test
+    fun `client auth rejects configured upstream credentials case-insensitively`() {
+        listOf("\"aUtHoRiZaTiOn\"", "\"X-Api-Key\"").forEach { header ->
+            assertThrows(IllegalArgumentException::class.java) {
+                ProviderConfig(
+                    dialect = Dialect.ANTHROPIC_PASSTHROUGH,
+                    baseUrl = "https://api.anthropic.com",
+                    auth = AuthConfig("client"),
+                    extraHeaders = mapOf(header to "splice-held-secret"),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `non-client auth may configure its own upstream credential headers`() {
+        val provider = ProviderConfig(
+            dialect = Dialect.ANTHROPIC_PASSTHROUGH,
+            baseUrl = "https://api.anthropic.com",
+            auth = AuthConfig("api-key"),
+            extraHeaders = mapOf("\"Authorization\"" to "Bearer configured", "X-API-KEY" to "configured"),
+        )
+
+        assertEquals(
+            mapOf("Authorization" to "Bearer configured", "X-API-KEY" to "configured"),
+            provider.staticHeaders,
+        )
     }
 
     // ABSENT means "keep the head's base profile", never "false" — the nullable-overlay idiom.

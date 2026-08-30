@@ -69,7 +69,7 @@ public object ReasoningReplay {
         }
         val tagOk = (parsed?.get(FIELD_TAG) as? JsonPrimitive)?.content == REASONING_ENVELOPE_TAG
         val versionOk = (parsed?.get(FIELD_VERSION) as? JsonPrimitive)?.content == REASONING_ENVELOPE_VERSION.toString()
-        val item = if (tagOk && versionOk) parsed?.get(FIELD_ITEM) as? JsonObject else null
+        val item = if (tagOk && versionOk) parsed[FIELD_ITEM] as? JsonObject else null
         val id = (item?.get(FIELD_ID) as? JsonPrimitive)?.content
         val encrypted = (item?.get(FIELD_ENCRYPTED) as? JsonPrimitive)?.content
         if (id.isNullOrEmpty() || encrypted.isNullOrEmpty()) {

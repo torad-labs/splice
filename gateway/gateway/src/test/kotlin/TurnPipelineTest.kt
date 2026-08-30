@@ -1,12 +1,10 @@
-// CX-09: the honesty floor and the promote floor left a band uncovered. A non-compact turn with
-// no text, no tools and thinking in [MIRROR_MIN_CHARS, PROMOTE_MIN_CHARS) is too short to promote
-// and too long to trip the empty-model error, so the ONLY thing that could still put content on
-// the wire was the mirror — and the mirror is gated on an operator knob (mirror_reasoning) and on
-// showReasoning==TEXT. With either gate shut, the turn reached the client as a clean, EMPTY
-// success: the L3 violation this campaign exists to remove. Pinned here: the error fires exactly
-// when the mirror will NOT cover the turn, and never when it will.
+// CX-09: the honesty floor and the promote floor left a band uncovered. With transcript mirroring
+// now operator-locked off, a non-compact turn in that band must be an honest error unless native
+// thinking already reached the client. These tests pin both halves: empty harvest fallback errors,
+// while an emitted native thinking block remains a clean success without any synthetic mirror.
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -69,7 +67,7 @@ class TurnPipelineTest {
     @TempDir
     lateinit var tmp: Path
 
-    private fun pipeline(mirrorReasoning: Boolean) = TurnPipeline(
+    private fun pipeline(mirrorReasoning: Boolean = false) = TurnPipeline(
         compactStats = CompactStats(tmp.resolve("compact.jsonl")),
         log = {},
         clampOutput = { it },
@@ -120,7 +118,7 @@ class TurnPipelineTest {
     /** [run]'s compact sibling, returning the pipeline's own OUTCOME TAG alongside the terminal:
      *  `empty_compact` and `empty_model` both reach the wire as the same API_ERROR shape, so the
      *  terminal alone cannot tell the compact gate from the non-compact one. */
-    private suspend fun runCompact(thinking: String, mirrorReasoning: Boolean = true): Pair<RecTerminal, String> {
+    private suspend fun runCompact(thinking: String, mirrorReasoning: Boolean = false): Pair<RecTerminal, String> {
         val rec = RecTerminal()
         val tag = pipeline(mirrorReasoning)
             .finishStream(rec, outcome(thinking), meta("text", compact = true), elapsedMs = 1)
@@ -131,8 +129,9 @@ class TurnPipelineTest {
     private fun recordedCompact() = CompactStats(tmp.resolve("compact.jsonl")).read()
 
     @Test
-    fun `the band is an honest error when the operator disabled the mirror`() = runTest {
-        val rec = run(mirrorReasoning = false, showReasoning = "text", thinking = bandThinking)
+    fun `the default pipeline keeps the reasoning mirror locked off`() = runTest {
+        val rec = RecTerminal()
+        pipeline().finishStream(rec, outcome(bandThinking), meta("text"), elapsedMs = 1)
         assertEquals("error", rec.ending)
         assertEquals(ErrorType.API_ERROR, rec.errorType)
         assertTrue(rec.texts.isEmpty(), "nothing may reach the wire when the turn errors")
@@ -140,19 +139,14 @@ class TurnPipelineTest {
 
     @Test
     fun `the band is an honest error when reasoning is not displayed as text`() = runTest {
-        val rec = run(mirrorReasoning = true, showReasoning = "hide", thinking = bandThinking)
+        val rec = run(mirrorReasoning = false, showReasoning = "hide", thinking = bandThinking)
         assertEquals("error", rec.ending)
         assertEquals(ErrorType.API_ERROR, rec.errorType)
     }
 
     @Test
-    fun `the band stays a mirrored success when the mirror will actually cover it`() = runTest {
-        val rec = run(mirrorReasoning = true, showReasoning = "text", thinking = bandThinking)
-        assertEquals("terminal", rec.ending)
-        assertTrue(
-            rec.texts.any { it.contains("[reasoning summary]") && it.contains(bandThinking) },
-            "the mirror must be what covers this turn: ${rec.texts}",
-        )
+    fun `an explicit direct attempt to enable the mirror is rejected`() {
+        assertThrows(IllegalArgumentException::class.java) { pipeline(mirrorReasoning = true) }
     }
 
     // THE REGRESSION CELL. anthropic-passthrough pins showReasoning=THINKING for EVERY turn,
@@ -163,7 +157,7 @@ class TurnPipelineTest {
     @Test
     fun `a native thinking block covers the turn even though the text mirror will not fire`() = runTest {
         val rec = run(
-            mirrorReasoning = true,
+            mirrorReasoning = false,
             showReasoning = "thinking",
             thinking = bandThinking,
             emittedThinking = true,
@@ -187,9 +181,8 @@ class TurnPipelineTest {
     }
 
     @Test
-    fun `below the mirror floor is an error regardless of the mirror`() = runTest {
+    fun `below the mirror floor is an honest error with the lock enforced`() = runTest {
         val short = "x".repeat(MIRROR_MIN_CHARS - 1)
-        assertEquals("error", run(true, "text", short).ending)
         assertEquals("error", run(false, "text", short).ending)
     }
 
@@ -223,10 +216,10 @@ class TurnPipelineTest {
     }
 
     @Test
-    fun `the mirror band never rescues a compact turn - it is still empty_compact`() = runTest {
-        // The band is exactly where a non-compact turn stays a mirrored success (see above). On a
-        // compact turn the mirror is shut, so the same reasoning covers nothing and the gate fires.
-        val (rec, tag) = runCompact(thinking = bandThinking, mirrorReasoning = true)
+    fun `the former mirror band stays an empty_compact error`() = runTest {
+        // This is the band the transcript mirror used to rescue. With the lock enforced, the same
+        // reasoning covers nothing on a compact turn and the honesty gate fires.
+        val (rec, tag) = runCompact(thinking = bandThinking)
         assertEquals("empty_compact", tag)
         assertEquals(ErrorType.API_ERROR, rec.errorType)
         assertTrue(rec.texts.isEmpty(), "compact must not emit a mirror block: ${rec.texts}")

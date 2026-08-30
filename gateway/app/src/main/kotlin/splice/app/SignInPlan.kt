@@ -29,6 +29,8 @@ private val API_KEY_TOKEN_PATTERNS = mapOf(
     "openrouter" to "sk-or-[A-Za-z0-9_-]{20,}",
 )
 
+private val PORTABLE_WRAPPER_NAME = Regex("[A-Za-z0-9][A-Za-z0-9._-]*")
+
 internal data class SignInPlan(
     val command: String,
     val label: String,
@@ -41,11 +43,12 @@ internal data class SignInPlan(
 internal class SignInPlanner {
 
     internal fun signInPlan(providerCfg: ProviderConfig, head: HeadConfig, key: String): SignInPlan {
-        val command = "${head.claude.command ?: key} login"
+        val wrapper = head.claude.command ?: key
+        val command = "$wrapper login"
         return when (providerCfg.auth.kind) {
-            CHATGPT_OAUTH -> SignInPlan(command, "Codex (ChatGPT)", viaBrowser = true, tokenCapture = null)
-            GROK_OAUTH -> SignInPlan(command, "Grok (xAI)", viaBrowser = true, tokenCapture = null)
-            KIMI_OAUTH -> SignInPlan(command, "Kimi (Moonshot)", viaBrowser = true, tokenCapture = null)
+            CHATGPT_OAUTH -> oauthSignIn(wrapper, "Codex (ChatGPT)")
+            GROK_OAUTH -> oauthSignIn(wrapper, "Grok (xAI)")
+            KIMI_OAUTH -> oauthSignIn(wrapper, "Kimi (Moonshot)")
             API_KEY -> apiKeySignIn(providerCfg, head, command)
             // A client-auth head has NO splice-run sign-in, and the command must be EMPTY — not a
             // plausible-looking one. A non-blank command makes LoginInterception.wire plant splice's
@@ -58,6 +61,13 @@ internal class SignInPlanner {
             CLIENT -> SignInPlan("", "Claude (client's own login)", viaBrowser = false, tokenCapture = null)
             else -> SignInPlan("", "", viaBrowser = true, tokenCapture = null)
         }
+    }
+
+    private fun oauthSignIn(wrapper: String, label: String): SignInPlan {
+        require(wrapper.matches(PORTABLE_WRAPPER_NAME)) {
+            "OAuth wrapper must be a bare portable command name: '$wrapper'"
+        }
+        return SignInPlan("$wrapper login", label, viaBrowser = true, tokenCapture = null)
     }
 
     /** The api-key branch, split out so [signInPlan] stays under detekt's complexity ceiling. */

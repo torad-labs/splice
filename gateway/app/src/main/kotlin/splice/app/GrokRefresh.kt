@@ -27,6 +27,11 @@ public class GrokRefresh {
 
     private val retry = RefreshRetry()
 
+    /**
+     * Refresh the grok access token. Returns Granted tokens, InvalidGrant when auth is confirmed
+     * dead (401/403/invalid_grant), or Denied when a missing access_token / exhausted retries make
+     * re-prompt the honest outcome (NOT evidence the refresh token itself is dead).
+     */
     public suspend fun refresh(
         tokenUrl: String,
         refreshToken: String,
@@ -48,9 +53,7 @@ public class GrokRefresh {
             },
         )
 
-    // refresh failure -> Denied/InvalidGrant (re-prompt), with the CAUSE on stderr — a silent null left
-    // the operator staring at persistent 401s with zero evidence (audit 2026-07-18). Logged per attempt
-    // now that a transient failure retries instead of terminating immediately.
+    // Keep failed refreshes diagnosable without copying an untrusted vendor response into logs.
     private suspend fun classifyGrok(resp: HttpResponse): RefreshStep<RefreshAttempt<GrokRefreshedTokens>> {
         if (resp.status.isSuccess()) {
             val tokens = parseGrokRefresh(resp.bodyAsText())
@@ -64,7 +67,7 @@ public class GrokRefresh {
         }
         val status = resp.status.value
         val body = resp.bodyAsText()
-        System.err.println("[grok] token refresh failed: HTTP $status ${body.take(ERR_BODY_SNIPPET)}")
+        System.err.println("[grok] token refresh failed: HTTP $status")
         return when {
             retry.isTerminalRefreshFailure(status, body, grokRefreshJson) ->
                 RefreshStep.Terminal(RefreshAttempt.InvalidGrant("HTTP $status"))
@@ -91,5 +94,3 @@ public class GrokRefresh {
 // HttpClient every time.
 private val grokRefreshClient by lazy { AuthHttpClientFactory().create() }
 private val grokRefreshJson = Json { ignoreUnknownKeys = true }
-
-private const val ERR_BODY_SNIPPET = 200

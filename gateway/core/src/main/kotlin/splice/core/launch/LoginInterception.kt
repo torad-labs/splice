@@ -19,6 +19,7 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
+import splice.core.config.envNameRegex
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
@@ -36,7 +37,19 @@ public data class TokenCaptureSpec(
     val envVar: String, // e.g. OPENROUTER_API_KEY
     val tokenPattern: String, // e.g. sk-or-[A-Za-z0-9_-]{20,}
     val providerLabel: String, // e.g. "OpenRouter"
-)
+) {
+    init {
+        // [envVar] is operator-authored (`auth = { kind = "api-key", env = "..." }`, shipped as a
+        // documented knob in splice.example.toml) and lands as a BARE UNQUOTED command word in the
+        // generated capture hook: `splice key set $envVar --stdin`. `env = "A;B"` emits two commands;
+        // an unbalanced quote or paren makes the enclosing `if` a syntax error and the hook — which
+        // bash parses on every prompt for that head, and which nobody ever opens — stays broken from
+        // then on. KeyStore already OWNS this check and enforces it at KeyStore.write, but that runs
+        // when the GENERATED script invokes `splice key set`, after bash has already parsed the
+        // interpolated text. Same regex, one step earlier (review 2026-08-28, PR 99).
+        require(envVar.matches(envNameRegex)) { "api-key env name must match $envNameRegex: '$envVar'" }
+    }
+}
 
 internal object LoginInterception {
     private const val LOGIN_MD = "login.md"

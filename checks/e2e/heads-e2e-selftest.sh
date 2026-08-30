@@ -23,7 +23,7 @@ MGMT="mgmt-key-for-selftest-32bytes!!"
 printf '%s' "$MGMT" > "$STATE/mgmt-key"
 
 python3 "$LOOPBACK" --record "$tmp/rec.jsonl" --ready-file "$tmp/ready" --head-key claude-splice \
-  >"$tmp/loop.out" 2>"$tmp/loop.err" &
+  --duplicate-stop-file "$tmp/duplicate-stop" >"$tmp/loop.out" 2>"$tmp/loop.err" &
 LOOP_PID=$!
 for _ in $(seq 1 50); do
   [ -f "$tmp/ready" ] && break
@@ -118,6 +118,19 @@ else
   cat "$tmp/rec.jsonl"
 fi
 
+# ── duplicate terminal: a second message_stop is a protocol failure, never a clean stream. ──
+touch "$tmp/duplicate-stop"
+if run_arm duplicate SPLICE_E2E_CLIENT_TOKEN=caller-e2e-token; then
+  err "duplicate message_stop arm must fail the wire probe"
+  cat "$tmp/duplicate.err"
+elif grep -q "message_stop count = 2" "$tmp/duplicate.err"; then
+  ok "duplicate message_stop is rejected by the wire probe"
+else
+  err "duplicate message_stop arm failed without naming the duplicate terminal"
+  cat "$tmp/duplicate.err"
+fi
+rm -f "$tmp/duplicate-stop"
+
 # ── FATAL: token == mgmt key. Must refuse before discover, never touch the head. ──
 if run_arm fatal SPLICE_E2E_CLIENT_TOKEN="$MGMT"; then
   err "FATAL arm must exit 1 when the token is the mgmt key"
@@ -135,6 +148,24 @@ if [ "$(head_hits)" != 0 ]; then
   cat "$tmp/rec.jsonl"
 else
   ok "FATAL arm never touched the head"
+fi
+
+# ── selector: a requested key absent from discovery must fail, not report 0/0/0 success. ──
+: > "$tmp/rec.jsonl"
+if env -u SPLICE_E2E_CLIENT_TOKEN \
+  CLAUDEX_STATE_DIR="$STATE" SPLICE_CONTROL_PORT="$CONTROL" \
+  bash "$HARNESS" --tier 1 --head absent-head >"$tmp/absent.out" 2>"$tmp/absent.err"; then
+  err "absent --head selector must exit nonzero"
+elif grep -q "requested head 'absent-head' was not returned" "$tmp/absent.err"; then
+  ok "absent --head selector fails by name"
+else
+  err "absent --head selector failed without naming the missing key"
+  cat "$tmp/absent.err"
+fi
+if [ "$(head_hits)" != 0 ]; then
+  err "absent --head selector touched the discovered head ($(head_hits) hits)"
+else
+  ok "absent --head selector never touched a head"
 fi
 
 if [ "$fail" -eq 0 ]; then

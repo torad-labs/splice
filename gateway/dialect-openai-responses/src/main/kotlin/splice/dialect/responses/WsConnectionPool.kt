@@ -62,7 +62,9 @@ internal class WsConnectionPool(
                 // of its round, so evicting by pure age could abort an in-flight response
                 // (review of #72). With every connection busy nothing is evicted — the cap is a
                 // soft bound under burst, and each round poisons its own connection on completion.
-                val idle = connections.entries.firstOrNull { !it.value.busy.get() }?.key
+                val idle = connections.entries.firstOrNull {
+                    it.key != key && !it.value.busy.get()
+                }?.key
                 idle?.let { connections.remove(it) }
             } else {
                 null

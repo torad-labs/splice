@@ -46,9 +46,13 @@ public class KimiRefresh {
         classify = ::classify,
     ) ?: RefreshAttempt.Denied("refresh retries exhausted")
 
+    // Keep failed refreshes diagnosable without copying an untrusted vendor response into logs.
     private suspend fun classify(resp: HttpResponse): RefreshStep<RefreshAttempt<KimiRefreshedTokens>> {
         val status = resp.status.value
         val body = resp.bodyAsText()
+        if (!resp.status.isSuccess()) {
+            System.err.println("[kimi] token refresh failed: HTTP $status")
+        }
         return when {
             resp.status.isSuccess() -> {
                 val tokens = parseKimiRefresh(body)

@@ -28,7 +28,7 @@ import splice.core.parse.AnthropicTurnBody
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
 
-public class PassthroughRequestBuilder(
+internal class PassthroughRequestBuilder(
     private val quirks: PassthroughQuirks,
     private val configEffort: String? = null,
     private val log: LogSink = LogSink(DaemonLog::write),

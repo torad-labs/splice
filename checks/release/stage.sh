@@ -15,8 +15,8 @@ LOCK_ROOT_VERSION="$(node -p "require('$ROOT/package-lock.json').packages[''].ve
   exit 1
 }
 if [ -n "$TAG" ]; then
-  [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
-    echo "release stage: tag must be vMAJOR.MINOR.PATCH, got $TAG" >&2
+  [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-((0|[1-9][0-9]*)|([0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))(\.((0|[1-9][0-9]*)|([0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)))*)?$ ]] || {
+    echo "release stage: tag must be valid SemVer without build metadata, got $TAG" >&2
     exit 1
   }
   [ "$TAG" = "v$VERSION" ] || {

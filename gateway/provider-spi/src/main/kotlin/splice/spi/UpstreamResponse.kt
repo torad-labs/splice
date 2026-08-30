@@ -5,7 +5,6 @@ package splice.spi
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.utils.io.ByteReadChannel
-import io.ktor.utils.io.readAvailable
 import java.io.ByteArrayOutputStream
 
 public class UpstreamResponse(private val resp: HttpResponse) {
@@ -24,7 +23,7 @@ public class UpstreamResponse(private val resp: HttpResponse) {
         val buffer = ByteArray(ERROR_READ_BUFFER_BYTES)
         var total = 0
         while (true) {
-            val read = readAvailableOrEof(channel, buffer)
+            val read = ChannelReads.readAvailableOrEof(channel, buffer)
             if (read == -1) return limitedText(output, truncated = false)
             val remaining = maxBytes - total
             if (read > remaining) {
@@ -35,15 +34,6 @@ public class UpstreamResponse(private val resp: HttpResponse) {
             output.write(buffer, 0, read)
             total += read
         }
-    }
-
-    private suspend fun readAvailableOrEof(channel: ByteReadChannel, buffer: ByteArray): Int {
-        var read = channel.readAvailable(buffer, 0, buffer.size)
-        while (read == 0) {
-            if (!channel.awaitContent(1)) return -1
-            read = channel.readAvailable(buffer, 0, buffer.size)
-        }
-        return read
     }
 
     private fun limitedText(output: ByteArrayOutputStream, truncated: Boolean): String =

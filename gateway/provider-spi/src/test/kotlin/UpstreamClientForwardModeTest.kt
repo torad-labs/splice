@@ -33,6 +33,17 @@ class UpstreamClientForwardModeTest {
 
     // The duplicate-header trap: a configured default and a forwarded value for the SAME header,
     // spelled differently. Unmerged, both reach the wire.
+    //
+    // SCOPE, because this proves the merge FUNCTION and not the call site (review 2026-08-28,
+    // PR 99): the map below is hand-ordered config-then-forwarded, so it pins last-wins and says
+    // nothing about whether the real request builder inserts the configured default first. Two
+    // places outside this module own that half, and both are pinned rather than assumed —
+    // TurnPreparation.kt:54 does the merge as `prepared.extraHeaders + forwardedClientHeaders`
+    // (operand order named as an invariant in that file's own header), and
+    // :gateway's HeadServerClientAuthTest, `a client-auth head forwards the caller's credential and
+    // wire knobs upstream, once`, drives a real head against a real upstream and asserts the
+    // caller's anthropic-version beats the provider's configured default at the wire, exactly once.
+    // A second end-to-end test here would need a cross-module dependency to say the same thing.
     @Test
     fun `a forwarded header replaces a configured default that differs only in casing`() {
         val merged = HeaderRules().dedupeCaseInsensitive(

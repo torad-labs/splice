@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.topology.AuthConfig
@@ -23,7 +24,7 @@ import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 
-private fun head(provider: String, command: String) = HeadConfig(
+private fun head(provider: String, command: String?) = HeadConfig(
     provider = provider,
     port = 3100,
     discoveryPrefix = "claude-$provider--",
@@ -103,6 +104,39 @@ class SignInPlanMatrixTest {
                 "$kind signs in through the browser — there is no token to paste",
             )
         }
+    }
+
+    @Test
+    fun `oauth wrappers must be bare portable command names`() {
+        val kinds = listOf(
+            "chatgpt-oauth" to "codex",
+            "grok-oauth" to "xai",
+            "kimi-oauth" to "kimi",
+        )
+        val invalid = listOf("/usr/bin/claudex", "./claudex", "claude grok", "claude;evil", "", "-claudex")
+
+        kinds.forEach { (kind, provider) ->
+            invalid.forEach { command ->
+                assertThrows(
+                    IllegalArgumentException::class.java,
+                    { planner.signInPlan(providerCfg(kind), head(provider, command), provider) },
+                    "$kind accepted '$command'",
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `oauth wrapper falls back to the topology key when command is absent`() {
+        val plan = planner.signInPlan(providerCfg("chatgpt-oauth"), head("codex", null), "codex")
+        assertEquals("codex login", plan.command)
+    }
+
+    @Test
+    fun `api-key commands remain prose-only and are not subject to browser wrapper validation`() {
+        val plan = planner.signInPlan(providerCfg(API_KEY), head("fireworks", "custom wrapper"), "fireworks")
+        assertEquals("custom wrapper login", plan.command)
+        assertFalse(plan.viaBrowser)
     }
 
     /** An UNKNOWN auth kind is the one case with no sign-in path, and it must stay blank so

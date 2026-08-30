@@ -24,6 +24,7 @@ import io.ktor.utils.io.ByteWriteChannel
 import io.ktor.utils.io.writeStringUtf8
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import mock.MockChatGptUpstream
 import mock.awaitListening
 import mock.freshPort
@@ -56,6 +57,13 @@ import splice.spi.UpstreamClient
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.time.Duration.Companion.seconds
+
+/** The slow-loris case's own bound. MEASURED, not guessed (2026-08-28): that post returns after
+ *  15.1s, not the 300ms readTimeoutMs it asserts on — the server answers 408 quickly, but CIO does
+ *  not surface the response while the outbound writeTo coroutine is still suspended, so what
+ *  actually unblocks the call is the CIO endpoint's own ~15s requestTimeout default giving up on
+ *  the write. 30s is 2x that, wide enough never to race the behaviour under test and still finite. */
+private const val TIMEOUT_TEST_BOUND_MS = 30_000L
 
 /** Holds a credential and can refresh it — the ordinary case, here only so the throwing-provider
  *  test fails for its own reason and not for a missing credential. */
@@ -261,17 +269,28 @@ class HeadServerFailureBranchTest {
         awaitListening(headPort)
         val stalled = CompletableDeferred<Unit>()
         try {
-            val response = client.post("http://127.0.0.1:$headPort/v1/messages") {
-                header("Content-Type", "application/json")
-                setBody(
-                    object : OutgoingContent.WriteChannelContent() {
-                        override suspend fun writeTo(channel: ByteWriteChannel) {
-                            channel.writeStringUtf8("""{"model":"claude-codex--gpt-5.6-sol",""")
-                            channel.flush()
-                            stalled.await() // the slow-loris shape: a body that never completes
-                        }
-                    },
-                )
+            // The bound is on the TEST, independent of the head's own 300ms readTimeoutMs, and it is
+            // not belt-and-braces: the only thing that ever completes `stalled` is the finally below,
+            // which runs AFTER client.post returns, so the call has to come back on its own. It does
+            // — but via the CIO endpoint's ~15s requestTimeout abandoning the write, NOT because the
+            // 408 is surfaced while writeTo is suspended (see TIMEOUT_TEST_BOUND_MS: measured 15.1s).
+            // That is an engine DEFAULT, so a Ktor bump that raises or removes it leaves post never
+            // returning and this test HANGING, wedging a CI runner instead of going red. A passing
+            // test whose failure mode is a hang is the same gate-that-cannot-fail-honestly this repo
+            // refuses elsewhere; the bound makes it a readable failure (review 2026-08-28, PR 99).
+            val response = withTimeout(TIMEOUT_TEST_BOUND_MS) {
+                client.post("http://127.0.0.1:$headPort/v1/messages") {
+                    header("Content-Type", "application/json")
+                    setBody(
+                        object : OutgoingContent.WriteChannelContent() {
+                            override suspend fun writeTo(channel: ByteWriteChannel) {
+                                channel.writeStringUtf8("""{"model":"claude-codex--gpt-5.6-sol",""")
+                                channel.flush()
+                                stalled.await() // the slow-loris shape: a body that never completes
+                            }
+                        },
+                    )
+                }
             }
             assertEquals(408, response.status.value)
             val body = response.bodyAsText()

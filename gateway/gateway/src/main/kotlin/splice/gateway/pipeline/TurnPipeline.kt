@@ -19,10 +19,13 @@ public class TurnPipeline(
     compactStats: CompactStats,
     log: LogSink,
     clampOutput: OutputClamp,
-    // Operator knob (mirror_reasoning): false stops the transcript mirror while text-mode
-    // display is unaffected. Default true = the measured codex distillation-loop doctrine.
-    mirrorReasoning: Boolean = true,
+    // Operator-locked off: provider-native reasoning display remains, transcript mirroring does not.
+    mirrorReasoning: Boolean = false,
 ) {
+    init {
+        require(!mirrorReasoning) { "mirrorReasoning is operator-locked off" }
+    }
+
     // Success-path honesty / promote / mirror live in StreamFinish.kt (concentration, 2026-08-19).
     private val compact = StreamCompact(compactStats)
     private val streamFinish = StreamFinish(

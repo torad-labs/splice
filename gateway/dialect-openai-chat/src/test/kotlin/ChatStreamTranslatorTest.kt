@@ -679,3 +679,24 @@ class ChatRefusalHonestyTest {
         assertTrue(sink.calls.contains("text:Sure, here goes. "), sink.calls.toString())
     }
 }
+
+class ChatRunawayGuardTest {
+    @Test
+    fun `runaway guard unwinds the upstream instead of draining it`() = runTest {
+        val chunk = "x".repeat(1_000_000)
+        val frame = ev("""{"choices":[{"delta":{"content":"$chunk"}}]}""")
+        var emitted = 0
+        val events = kotlinx.coroutines.flow.flow {
+            repeat(25) {
+                emitted += 1
+                emit(frame)
+            }
+        }
+
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(events, Rec())
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, failure.type)
+        assertFalse(failure.providerReported)
+        assertTrue(emitted < 25, "the guard must unwind the upstream, not drain it; emitted=$emitted")
+    }
+}

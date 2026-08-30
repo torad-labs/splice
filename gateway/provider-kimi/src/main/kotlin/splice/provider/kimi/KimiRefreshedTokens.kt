@@ -71,8 +71,16 @@ internal class KimiAuthStore(
     internal fun peerRotation(priorAccess: String?, snap: Snapshot?): RefreshOutcome? {
         if (priorAccess == null || snap == null) return null
         if (snap.access == priorAccess) return null
-        cache = Cache(snap, Files.getLastModifiedTime(authPath).toMillis(), clock())
-        return RefreshOutcome.Refreshed(Credentials.ApiKey(key = snap.access, header = "x-api-key", prefix = ""))
+        // Contended-window stat, same as the grok/codex twins: a peer can replace the file between
+        // the read that produced [snap] and this one. Unguarded, an IOException escaped
+        // refreshLocked() as a crash while every other failure there degrades to an outcome.
+        return Cancellables.runCatchingCancellable { Files.getLastModifiedTime(authPath).toMillis() }
+            .onFailure { log("[kimi-auth] stat of $authPath failed: $it — skipping peer rotation, refreshing instead") }
+            .getOrNull()
+            ?.let { mtime ->
+                cache = Cache(snap, mtime, clock())
+                RefreshOutcome.Refreshed(Credentials.ApiKey(key = snap.access, header = "x-api-key", prefix = ""))
+            }
     }
 
     internal suspend fun refreshLocked(priorAccess: String?): RefreshOutcome {

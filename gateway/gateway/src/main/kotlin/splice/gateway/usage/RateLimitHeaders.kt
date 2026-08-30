@@ -46,9 +46,11 @@ public class RateLimitHeaders(private val clock: WallClock) {
     }
 
     /** RateLimitState field mapping, single-sourced so the pending-payload and on-disk paths
-     *  cannot drift (review 2026-07-22 round 3). Widened from private to public (HD-24):
-     *  RateLimitStore's on-disk read path calls it from a different file. */
-    public fun rateLimitStateFrom(obj: JsonObject): RateLimitState = RateLimitState(
+     *  cannot drift (review 2026-07-22 round 3). Widened from private to internal (HD-24):
+     *  RateLimitStore's on-disk read path calls it from a different file, and internal is already
+     *  module-wide — `public` grew :gateway's API for a function nothing outside it reads (review
+     *  2026-08-28, PR 99). */
+    internal fun rateLimitStateFrom(obj: JsonObject): RateLimitState = RateLimitState(
         limitTokens = usageJson.num(obj["limit_tokens"]),
         remainingTokens = usageJson.num(obj["remaining_tokens"]),
         resetTokens = (obj["reset_tokens"] as? JsonPrimitive)?.takeIf { it.isString }?.content,

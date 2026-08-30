@@ -235,10 +235,10 @@ class HeadServerIntegrationTest {
     }
 
     @Test
-    fun `multipart reasoning mirrors into a visible text block`() = runTest {
+    fun `multipart reasoning stays native and is never mirrored into transcript text`() = runTest {
         val sse = messages("multipart")
         assertTrue(sse.contains("thinking_delta"))
-        assertTrue(sse.contains("[reasoning summary]")) // the L2 mirror
+        assertFalse(sse.contains("[reasoning summary]"), sse)
         assertTrue(sse.contains("Answer text."))
     }
 

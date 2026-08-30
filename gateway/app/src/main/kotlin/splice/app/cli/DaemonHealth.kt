@@ -40,10 +40,10 @@ internal class DaemonHealth {
         }
     }.getOrDefault(false)
 
-    /** True while something still holds [port] — a TCP connect succeeds (or is ambiguous: timeout/IO).
-     *  False ONLY on an explicit refusal (ConnectException), i.e. the listener is actually gone. */
     internal fun cliVersion(): String = GATEWAY_VERSION
 
+    /** True while something still holds [port] — a TCP connect succeeds (or is ambiguous: timeout/IO).
+     *  False ONLY on an explicit refusal (ConnectException), i.e. the listener is actually gone. */
     internal fun controlPortBound(port: Int): Boolean =
         try {
             Socket().use { it.connect(InetSocketAddress("127.0.0.1", port), PROBE_TIMEOUT_MS) }

@@ -11,9 +11,12 @@ package splice.gateway.round
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
+import splice.spi.ProcessWaiter
 import splice.spi.ReanchorController
+import splice.spi.RetryBackoff
 import splice.spi.RetryNotice
 import splice.spi.ToolSearchController
+import splice.spi.UpstreamTransport
 
 internal class ReanchorRunner(
     private val key: String,
@@ -22,6 +25,7 @@ internal class ReanchorRunner(
     private val finish: FinishTurn,
     private val signals: RunnerSignals,
     private val toolSearch: ToolSearchController? = null,
+    private val backoff: RetryBackoff = UpstreamTransport().defaultBackoff(ProcessWaiter()),
 ) {
     private val rounds = RoundSplice()
     private val continuation = ReanchorContinuation(toolSearch, signals, rounds)
@@ -72,6 +76,7 @@ internal class ReanchorRunner(
             // than claiming a partial that does not exist.
             val restarted = if (next == body) "restarting the round from scratch" else "continuing from partial output"
             log("[$key] re-anchor ${attempt + 1}: ${failure.type.wireName} mid-stream — $restarted\n")
+            backoff(attempt, 0)
             body = next
             attempt++
         }

@@ -21,6 +21,7 @@ import splice.gateway.round.RunnerSignals
 import splice.gateway.wire.SseEmitterFactory
 import splice.spi.FoldController
 import splice.spi.ReanchorController
+import splice.spi.RetryBackoff
 import splice.spi.ToolSearchController
 import splice.spi.WireSink
 
@@ -315,6 +316,7 @@ class FoldRunnerReanchorTest {
     fun `salvaged usage rides the failure when the turn ultimately fails`() = runTest {
         val h = Harness()
         var posts = 0
+        val waits = mutableListOf<Int>()
         ReanchorRunner(
             key = "t",
             log = { },
@@ -324,11 +326,16 @@ class FoldRunnerReanchorTest {
             },
             finish = { h.finish(it) },
             signals = h.signals(),
+            backoff = RetryBackoff { attempt, minDelayMs ->
+                assertEquals(0, minDelayMs)
+                waits += attempt
+            },
         ).run(
             continuationBody(),
             ReanchorController { round -> if (round.attempt < 2) continuationBody() else null },
         )
         assertEquals(3, posts)
+        assertEquals(listOf(0, 1), waits, "every absorbed failure must pause before the re-POST")
         val failure = h.finished as TurnOutcome.Failure
         assertEquals(
             8,

@@ -270,6 +270,37 @@ class HeadServerClientAuthTest {
         assertEquals(listOf("2023-06-01"), sent["anthropic-version"].orEmpty())
     }
 
+    // ── the second cell that was never built (DR-30) ──────────────────────────────────────────
+    //
+    // Bypass ON and the caller presents splice's OWN mgmt key. Every case above assumes the caller
+    // holds either a real vendor credential or nothing; none asks what happens when the credential
+    // it forwards is the local one. The launcher makes that reachable: LaunchService plants
+    // ANTHROPIC_AUTH_TOKEN=<mgmt key> for every NON-native head, bin/splice-launch execs `env`
+    // WITHOUT -i so the parent environment survives, and a native head's unset list is empty by
+    // design — so a native head launched from inside another head's session inherits that bearer
+    // and hands it straight to this seam. Forwarding it means splice's local key reaches the vendor
+    // (the SAFETY shape commit 2ba8780 fixed in the E2E harness and not here) and the user's real
+    // credential is never used at all.
+
+    @Test
+    fun `a client-auth head refuses the caller's own splice management key instead of forwarding it`() {
+        val port = startHead(forwardClientAuth = true)
+        val before = upstream.requests.size
+        val (status, body) = turn(port, mapOf("Authorization" to "Bearer $MGMT_KEY"))
+        assertEquals(HttpStatusCode.Unauthorized, status)
+        assertTrue(body.contains("management key"), body)
+        assertEquals(before, upstream.requests.size, "splice's own key must never reach the vendor")
+    }
+
+    @Test
+    fun `the refusal covers the x-api-key spelling of the same key`() {
+        val port = startHead(forwardClientAuth = true)
+        val before = upstream.requests.size
+        val (status, _) = turn(port, mapOf("x-api-key" to MGMT_KEY))
+        assertEquals(HttpStatusCode.Unauthorized, status)
+        assertEquals(before, upstream.requests.size, "splice's own key must never reach the vendor")
+    }
+
     // ── the cell that was never built ─────────────────────────────────────────────────────────
     //
     // Bypass ON while splice STILL HOLDS a credential. Every case above ties the flag to the auth

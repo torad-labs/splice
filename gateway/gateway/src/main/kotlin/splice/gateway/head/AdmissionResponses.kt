@@ -72,9 +72,9 @@ internal class AdmissionResponses {
     }
 
     /** The mgmt-key front door's refusal (see [ClientAuth.authorize]). */
-    suspend fun respondUnauthorized(call: ApplicationCall) {
+    suspend fun respondUnauthorized(call: ApplicationCall, message: String = "invalid local gateway credentials") {
         call.respondText(
-            errorBodyJson("authentication_error", "invalid local gateway credentials"),
+            errorBodyJson("authentication_error", message),
             ContentType.Application.Json,
             HttpStatusCode.Unauthorized,
         )

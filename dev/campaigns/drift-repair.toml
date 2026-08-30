@@ -332,3 +332,23 @@ status = "in_flight"
 verify = "cd gateway && ./gradlew :gateway:test --console=plain"
 # [2026-08-30] CLAIM: owner=codex-splice at=2026-08-30T22:26:40Z
 # [2026-08-30] ATTEST-START: tree=4113ee07ebf15f9657b5a639c68a7f36efe08fca at=2026-08-30T22:26:40Z
+
+[[items]]
+id = "DR-30"
+phase = "sweep-1"
+title = "SECURITY: a client-auth head forwards splice's OWN mgmt key upstream when the launching shell carries an ambient ANTHROPIC_AUTH_TOKEN — the head must never send its local bearer to a vendor"
+files = ["gateway/gateway/src/main/kotlin/splice/gateway/head/ClientAuth.kt", "gateway/gateway/src/test/kotlin/head/HeadServerClientAuthTest.kt"]
+status = "in_flight"
+verify = "cd gateway && ./gradlew :gateway:test --tests 'head.HeadServerClientAuthTest'"
+# [2026-08-30] CLAIM: owner=claude-splice at=2026-08-30T23:26:24Z
+# [2026-08-30] ATTEST-START: tree=9c7559c2dac12ebccc30fffd3186f3185a7b980a at=2026-08-30T23:26:23Z
+# [2026-08-30] 2026-08-30 (claude-splice sweep-1): VERIFIED CHAIN, every link read.
+# [2026-08-30] (1) LaunchService.kt:85 plants ANTHROPIC_AUTH_TOKEN=<mgmt key> in the env of every NON-native head's Claude Code process (LaunchServiceTest:48 pins it).
+# [2026-08-30] (2) bin/splice-launch:219 execs 'env <unsets> <sets> <argv>' — no -i, so the parent environment is INHERITED; LaunchService.kt:52-60 gives a native head an EMPTY unset list, and LaunchServiceTest:122 pins that deliberately ('nothing may be stripped').
+# [2026-08-30] (3) So a native head launched from a shell that already carries a bearer — the realistic case is a nested launch from inside a Claude-Code session splice itself started — inherits ANOTHER head's mgmt key as ANTHROPIC_AUTH_TOKEN.
+# [2026-08-30] (4) ClientAuth.kt:37 returns true unconditionally for a client-auth head, so nothing rejects it.
+# [2026-08-30] (5) ClientAuth.kt:58-61 copies Authorization verbatim; TurnPreparation.kt:53-54 merges it when forwardClientAuth.
+# [2026-08-30] (6) UpstreamRequest.kt:102 applyAuth = authHeaders(creds) + extra, extra LAST, so the forwarded value WINS; forward mode writes no auth of its own.
+# [2026-08-30] => splice's local mgmt key is transmitted to api.anthropic.com, and the user's real credential is never used (upstream 401 with a confusing message).
+# [2026-08-30] Same shape commit 2ba8780 classified as SAFETY for the E2E harness ('the mgmt key would ride to api.anthropic.com'); the harness was fixed, the gateway seam was not.
+# [2026-08-30] FIX SPLIT: (a) unambiguous and mine — the head must never forward a credential equal to its own inference token, guarded at the forwarding seam so it holds regardless of how the env got that value; (b) DESIGN FORK, not decided unilaterally — should a native head also unset ANTHROPIC_AUTH_TOKEN in the launch recipe? That contradicts a test-pinned decision, so it is raised, not taken.

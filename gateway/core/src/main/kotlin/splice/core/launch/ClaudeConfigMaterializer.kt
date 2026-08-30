@@ -26,9 +26,14 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.core.util.Cancellables
+import splice.core.util.SecureFile
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption.ATOMIC_MOVE
+import java.nio.file.StandardCopyOption.REPLACE_EXISTING
+import java.util.UUID
 import kotlin.io.path.isDirectory
 import kotlin.io.path.isSymbolicLink
 
@@ -43,6 +48,7 @@ public class ClaudeConfigMaterializer(
         prettyPrint = true
     }
     private val sessionRegistry = SessionRegistryLink()
+    private val jsonReads = JsonStateReads(json)
 
     /** Materialize a head's isolated CLAUDE_CONFIG_DIR from [spec]. */
     public fun materialize(spec: MaterializeSpec): MaterializeResult {
@@ -124,26 +130,34 @@ public class ClaudeConfigMaterializer(
     private fun linkOneShared(configDir: Path, item: String) {
         val src = globalDir().resolve(item)
         if (!Files.exists(src, NOFOLLOW_LINKS)) return
-        // Best-effort: an I/O race here just leaves whatever is already on disk.
+        // Best-effort, and now truly so: the swap below is atomic, so an I/O failure at any point
+        // leaves whatever is already on disk (DR-11a — the old delete-then-create pair made this
+        // comment a lie: a create failing after the delete had destroyed the operator's file).
         Cancellables.runCatchingCancellable { replaceWithSymlink(src, configDir.resolve(item)) }
     }
 
     private fun replaceWithSymlink(src: Path, dst: Path) {
-        if (Files.exists(dst, NOFOLLOW_LINKS)) {
-            when {
-                dst.isSymbolicLink() -> Files.delete(dst)
-                dst.isDirectory() -> return // never delete a real dir the operator made
-                else -> Files.delete(dst)
-            }
+        if (Files.isDirectory(dst, NOFOLLOW_LINKS) && !dst.isSymbolicLink()) {
+            return // never delete a real dir the operator made
         }
-        Files.createSymbolicLink(dst, src)
+        // Build the replacement beside dst, then swap in ONE rename (DR-11a). ENOSPC still spends
+        // an inode and an LSM can deny symlink creation — with delete-then-create either lost the
+        // original forever; here a staging failure leaves dst untouched and the move is atomic
+        // over a pre-existing file or symlink alike.
+        val staged = dst.resolveSibling(".${dst.fileName}.splice-link-${UUID.randomUUID()}")
+        Files.createSymbolicLink(staged, src)
+        try {
+            Files.move(staged, dst, REPLACE_EXISTING, ATOMIC_MOVE)
+        } finally {
+            Files.deleteIfExists(staged)
+        }
     }
 
     private fun writeSettings(spec: MaterializeSpec, hookAdditions: Map<String, List<JsonObject>>) {
         val allow = spec.availableModelIds
         val dst = spec.configDir.resolve(Keys.SETTINGS)
         val global =
-            if (shares(spec.policy, Keys.SETTINGS)) readJson(globalDir().resolve(Keys.SETTINGS)) else EMPTY_JSON
+            if (shares(spec.policy, Keys.SETTINGS)) jsonReads.tolerant(globalDir().resolve(Keys.SETTINGS)) else EMPTY_JSON
         val existing = breakSettingsSymlinkAndRead(dst)
         val savedModel = existing[Keys.MODEL]?.jsonPrimitive?.content
         val model = if (savedModel != null && savedModel in allow) savedModel else spec.defaultModel
@@ -156,7 +170,9 @@ public class ClaudeConfigMaterializer(
             put(Keys.STATUS_LINE, statusLineBlock(spec.statuslineCommand))
             if (hooks != null) put(Keys.HOOKS, hooks)
         }
-        Files.writeString(dst, json.encodeToString(JsonObject.serializer(), merged) + "\n")
+        // The one atomic-write primitive (DR-11b): a LIVE Claude Code re-reads this file, and the
+        // old truncate-then-write let it observe a torn settings.json mid-launch.
+        SecureFile.writeAtomic0600(dst, json.encodeToString(JsonObject.serializer(), merged) + "\n")
     }
 
     // A pre-existing settings.json that is a symlink would let our write clobber the operator's
@@ -167,7 +183,7 @@ public class ClaudeConfigMaterializer(
             Cancellables.runCatchingCancellable { Files.delete(dst) }
             return EMPTY_JSON
         }
-        return readJson(dst)
+        return jsonReads.tolerant(dst)
     }
 
     private fun isCarriedGlobalKey(key: String): Boolean =
@@ -185,8 +201,9 @@ public class ClaudeConfigMaterializer(
         shareMcp: Boolean,
     ): Int {
         val statePath = configDir.resolve(Keys.CLAUDE_JSON)
-        val global = readJson(home.resolve(Keys.CLAUDE_JSON))
-        val local = readJson(statePath)
+        val global = jsonReads.tolerant(home.resolve(Keys.CLAUDE_JSON))
+        // Strict for the file THIS rewrite replaces; tolerant for the sources above (DR-11c).
+        val local = jsonReads.strict(statePath)
         var mcpCount = 0
         val next = buildJsonObject {
             local.forEach { (k, v) -> put(k, v) }
@@ -206,7 +223,9 @@ public class ClaudeConfigMaterializer(
             put(Keys.CUSTOM_API_KEY_RESPONSES, customApiKeyResponses(local))
             put(Keys.ONBOARDING, true)
         }
-        Files.writeString(statePath, json.encodeToString(JsonObject.serializer(), next) + "\n")
+        // Atomic for the same reason as writeSettings (DR-11b): terminal B materializing while a
+        // session in terminal A reads .claude.json must never expose a truncated file.
+        SecureFile.writeAtomic0600(statePath, json.encodeToString(JsonObject.serializer(), next) + "\n")
         return mcpCount
     }
 
@@ -217,10 +236,27 @@ public class ClaudeConfigMaterializer(
         put("rejected", buildJsonArray {})
     }
 
-    private fun readJson(path: Path): JsonObject {
+}
+
+// The two strictness modes for reading .claude* JSON state (DR-11c; a collaborator so the
+// materializer stays under the type-size wall). TOLERANT is for merge SOURCES that are never
+// rewritten (global settings, global .claude.json) — degrading those to empty loses an inherit,
+// not operator state. STRICT is for the file a rewrite is about to REPLACE (the
+// KeyStore.entriesStrict doctrine): ABSENT = a fresh head, safe to seed; UNPARSEABLE = unknown
+// state — abort the materialize (and with it the launch) rather than rebuild a five-key file over
+// every local key Claude Code owns, the approved customApiKeyResponses included.
+private class JsonStateReads(private val json: Json) {
+
+    fun tolerant(path: Path): JsonObject {
         if (path.isSymbolicLink() || !Files.exists(path)) return EMPTY_JSON
         return Cancellables.runCatchingCancellable { json.parseToJsonElement(Files.readString(path)).jsonObject }
             .getOrDefault(EMPTY_JSON)
+    }
+
+    fun strict(path: Path): JsonObject {
+        if (path.isSymbolicLink() || !Files.exists(path)) return EMPTY_JSON
+        return Cancellables.runCatchingCancellable { json.parseToJsonElement(Files.readString(path)).jsonObject }
+            .getOrElse { throw IOException("$path unreadable ($it) — refusing to rewrite it; fix or remove the file") }
     }
 }
 

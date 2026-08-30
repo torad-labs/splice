@@ -20,14 +20,53 @@ import splice.core.launch.ClaudeConfigMaterializer
 import splice.core.launch.ClaudePolicy
 import splice.core.launch.MaterializeSpec
 import splice.core.launch.TokenCaptureSpec
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 import kotlin.io.path.isSymbolicLink
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
 class ClaudeConfigMaterializerTest {
+
+    // DR-11c: the local .claude.json is Claude Code's own state; an unparseable one must abort
+    // the rewrite (the KeyStore strict doctrine), not become an empty merge base that a five-key
+    // file then atomically replaces — destroying, among everything else, the approved
+    // customApiKeyResponses the rewrite exists to preserve.
+    @Test
+    fun `a corrupt local claude json aborts materialize and keeps its bytes`(@TempDir home: Path) {
+        seedGlobal(home)
+        val configDir = home.resolve(".claude-head")
+        Files.createDirectories(configDir)
+        val corrupt = """{"customApiKeyResponses": {"approved": ["k1"]}, TRUNCATED"""
+        configDir.resolve(".claude.json").writeText(corrupt)
+
+        assertThrows(IOException::class.java) {
+            materializer(home).materialize(configDir, allPolicy, listOf("m1"), "m1", optionsCache)
+        }
+        assertEquals(
+            corrupt,
+            configDir.resolve(".claude.json").readText(),
+            "the unreadable file must keep its bytes for the operator to fix",
+        )
+    }
+
+    // DR-11b: both generated files are rewritten while a LIVE Claude Code can be mid-read; the
+    // truncate-then-write pair is replaced by the repo's one atomic-write primitive. The
+    // observable pin is the primitive's 0600 stamp — a plain writeString leaves umask perms.
+    @Test
+    fun `settings and claude json are written through the atomic 0600 primitive`(@TempDir home: Path) {
+        seedGlobal(home)
+        val configDir = home.resolve(".claude-head")
+
+        materializer(home).materialize(configDir, allPolicy, listOf("m1"), "m1", optionsCache)
+
+        val perms = { p: Path -> PosixFilePermissions.toString(Files.getPosixFilePermissions(p)) }
+        assertEquals("rw-------", perms(configDir.resolve("settings.json")))
+        assertEquals("rw-------", perms(configDir.resolve(".claude.json")))
+    }
 
     private val allPolicy = ClaudePolicy(
         share = setOf("settings", "mcps", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE.md"),

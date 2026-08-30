@@ -34,7 +34,7 @@ internal class StatuslineRoute(
     private val resolver: HeadResolver,
     private val config: ConfigService,
 ) {
-    private val renderers = HashMap<String, Pair<List<String>, StatuslineRenderer>>()
+    private val renderers = RendererCache()
 
     suspend fun statusline(call: ApplicationCall) {
         val key = call.parameters["head"].orEmpty()
@@ -50,15 +50,8 @@ internal class StatuslineRoute(
         // kt-head-scoped-config-must-be-keyed on its first tree scan (2026-07-26). `key` is
         // non-empty here — the managed == null early return above guarantees it resolved.
         val roots = config.getConfig(key).statuslineGitRoots
-        val renderer = synchronized(renderers) {
-            val cached = renderers[managed.head.key]
-            if (cached?.first == roots) {
-                cached.second
-            } else {
-                StatuslineRenderer(managed.head.label, roots).also {
-                    renderers[managed.head.key] = roots.toList() to it
-                }
-            }
+        val renderer = renderers.get(managed.head.key, managed.head.label, roots) {
+            StatuslineRenderer(managed.head.label, roots)
         }
         val line = renderer.render(stdin, managed.usage, managed.warnPct, managed.warnTokens5h)
         call.respondText(line, ContentType.Text.Plain)
@@ -146,3 +139,26 @@ private class StatuslineBodyTooLarge : RuntimeException()
  *  would mean a new module edge for one exception. Deliberately NOT reported as a clean read: a torn
  *  body must never render a statusline as though the client had sent one. */
 private class StatuslineReadTorn : RuntimeException()
+
+/** Per-head renderer cache for the statusline route. A cached renderer is reused while the inputs
+ *  captured at its construction still hold; a change rebuilds it. Thread-safe: ticks for many
+ *  heads land concurrently on Ktor dispatcher threads. */
+internal class RendererCache {
+    // Label is part of the match (DR-22a): the renderer captures it at construction, so a
+    // roots-only check rendered a runtime-renamed head's stale label for the daemon's life.
+    private class Entry(val roots: List<String>, val label: String, val renderer: StatuslineRenderer) {
+        fun matches(roots: List<String>, label: String): Boolean = this.roots == roots && this.label == label
+    }
+
+    private val entries = HashMap<String, Entry>()
+
+    fun get(key: String, label: String, roots: List<String>, create: () -> StatuslineRenderer): StatuslineRenderer =
+        synchronized(entries) {
+            val cached = entries[key]
+            if (cached != null && cached.matches(roots, label)) {
+                cached.renderer
+            } else {
+                create().also { entries[key] = Entry(roots.toList(), label, it) }
+            }
+        }
+}

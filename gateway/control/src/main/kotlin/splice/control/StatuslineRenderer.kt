@@ -20,6 +20,9 @@ import java.util.concurrent.TimeUnit
 public class StatuslineRenderer(
     private val label: String,
     extraGitRoots: List<String> = emptyList(),
+    /** Clock seam: the branch-cache TTL test was a wall-clock race (two real git round-trips inside
+     *  a 2s window flake on a loaded runner) — injected time makes expiry deterministic (DR-22c). */
+    private val now: () -> Long = System::currentTimeMillis,
 ) {
     // Operator-trusted roots beyond $HOME//tmp for the git-branch lookup (statuslineGitRoots
     // knob / CLAUDEX_STATUSLINE_GIT_ROOTS) — devcontainer /workspace, /srv layouts. Normalized once.
@@ -145,18 +148,24 @@ public class StatuslineRenderer(
         return real.takeIf { p -> java.nio.file.Files.isDirectory(p) && trustedRoots.any { p.startsWith(it) } }
     }
 
-    private fun cachedGitBranch(cwd: String): String = synchronized(branchCacheLock) {
-        val now = System.currentTimeMillis()
-        val cached = branchCache[cwd]
-        if (cached != null && now < cached.expiresAtMs) return@synchronized cached.branch
-
-        val branch = gitBranch(cwd)
-        branchCache[cwd] = CachedBranch(branch, now + GIT_CACHE_TTL_MS)
-        while (branchCache.size > GIT_CACHE_MAX_ENTRIES) {
-            val iterator = branchCache.keys.iterator()
-            iterator.next().run { iterator.remove() }
+    private fun cachedGitBranch(cwd: String): String {
+        synchronized(branchCacheLock) {
+            val cached = branchCache[cwd]
+            if (cached != null && now() < cached.expiresAtMs) return cached.branch
         }
-        branch
+        // The subprocess runs OUTSIDE the monitor (DR-22b): the renderer is process-shared per head
+        // now, and holding the lock across a 200ms waitFor serialized every concurrent tick behind
+        // one blocking git on a Ktor dispatcher thread. Concurrent misses may each run one
+        // duplicate git — last write wins with the same value, which is cheaper than the convoy.
+        val branch = gitBranch(cwd)
+        synchronized(branchCacheLock) {
+            branchCache[cwd] = CachedBranch(branch, now() + GIT_CACHE_TTL_MS)
+            while (branchCache.size > GIT_CACHE_MAX_ENTRIES) {
+                val iterator = branchCache.keys.iterator()
+                iterator.next().run { iterator.remove() }
+            }
+        }
+        return branch
     }
 
     private fun gitBranch(cwd: String): String = runCatching {

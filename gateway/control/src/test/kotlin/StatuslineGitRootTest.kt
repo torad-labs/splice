@@ -7,8 +7,10 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.control.StatuslineRenderer
 import java.nio.file.Files
+import java.nio.file.Path
 import java.nio.file.Paths
 
 class StatuslineGitRootTest {
@@ -24,21 +26,19 @@ class StatuslineGitRootTest {
     }
 
     @Test
-    fun `a symlink under a trusted root pointing outside the roots is rejected`() {
+    fun `a symlink under a trusted root pointing outside the roots is rejected`(@TempDir tmpDir: Path) {
         // /usr exists on every Linux host and is NOT under $HOME or /tmp — the review's concrete
         // "/tmp/link -> /outside/roots" escape. The link itself lexically sits under /tmp (trusted),
         // so only realpath resolution reveals the escape: the old startsWith check passed this.
         val outside = Paths.get("/usr")
         assumeTrue(Files.isDirectory(outside), "/usr must exist to serve as an outside-roots target")
-        val tmpDir = Files.createTempDirectory("statusline-escape")
         val link = tmpDir.resolve("repo-link")
         Files.createSymbolicLink(link, outside)
         assertNull(renderer.safeGitCwd(link.toString()), "a symlink escaping the trusted roots must not run git")
     }
 
     @Test
-    fun `a symlink whose real path stays under a trusted root resolves to that real path`() {
-        val tmpDir = Files.createTempDirectory("statusline-contained")
+    fun `a symlink whose real path stays under a trusted root resolves to that real path`(@TempDir tmpDir: Path) {
         val realRepo = Files.createDirectory(tmpDir.resolve("real-repo"))
         val link = tmpDir.resolve("repo-link")
         Files.createSymbolicLink(link, realRepo)
@@ -50,18 +50,28 @@ class StatuslineGitRootTest {
     }
 
     @Test
-    fun `repeated ticks reuse the resolved cwd branch within the cache window`() {
-        val repo = Files.createTempDirectory("statusline-branch-cache")
+    fun `the branch cache reuses within the window and re-reads after expiry`(@TempDir tmpDir: Path) {
+        val repo = Files.createDirectory(tmpDir.resolve("repo"))
         git(repo, "init", "-b", "first")
-        val trusting = StatuslineRenderer(label = "codex", extraGitRoots = listOf(repo.parent.toString()))
+        // Injected clock (DR-22c): the old form raced two real git round-trips against the real 2s
+        // TTL, flaking on loaded runners — and could not test expiry at all without sleeping.
+        var clock = 1_000_000L
+        val trusting = StatuslineRenderer(
+            label = "codex",
+            extraGitRoots = listOf(tmpDir.toString()),
+            now = { clock },
+        )
         val stdin = """{"cwd":"$repo"}"""
 
         val first = trusting.render(stdin, usage = null, warnPct = 0, warnTokens5h = 0)
         git(repo, "symbolic-ref", "HEAD", "refs/heads/second")
         val second = trusting.render(stdin, usage = null, warnPct = 0, warnTokens5h = 0)
+        clock += 60_000L
+        val third = trusting.render(stdin, usage = null, warnPct = 0, warnTokens5h = 0)
 
         assertEquals(true, first.contains("⎇ first"), first)
         assertEquals(true, second.contains("⎇ first"), "the second tick must reuse the cached branch: $second")
+        assertEquals(true, third.contains("⎇ second"), "an expired entry must re-read the real branch: $third")
     }
 
     @Test

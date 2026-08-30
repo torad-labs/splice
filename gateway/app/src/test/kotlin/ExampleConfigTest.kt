@@ -107,6 +107,11 @@ class ExampleConfigTest {
         assertNull(anthropic.quirks.blockAllowlist)
         assertEquals("2023-06-01", anthropic.staticHeaders["anthropic-version"])
         assertEquals("claude-fable-5", topology.heads["claude-splice"]!!.pinnedModel)
+        assertEquals(
+            setOf(200_000L),
+            anthropic.models.map { it.contextWindow }.toSet(),
+            "all claude-splice rows must match: clientContextWindowFor has no claude-* client branch",
+        )
         assertEquals(3104, topology.heads["claude-splice"]!!.port)
         // shadowing the real binary would make the wrapper invoke itself
         assertEquals("claude-splice", topology.heads["claude-splice"]!!.claude.command)

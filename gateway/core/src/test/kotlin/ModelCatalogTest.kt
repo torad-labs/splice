@@ -62,6 +62,16 @@ class ModelCatalogTest {
         assertEquals("gpt-5.6-sol", catalog.unwrap("claude-codex--gpt-5.6-sol"))
         assertEquals("gpt-5.6-sol", catalog.stripSuffixes("claude-codex--gpt-5.6-sol[1M]"))
         assertEquals("gpt-5.6-sol", catalog.stripSuffixes("gpt-5.6-sol[1m]"))
+        assertEquals(
+            "provider-model[preview]",
+            catalog.stripSuffixes("provider-model[preview]"),
+            "a genuine bracketed provider id is not a numeric tier hint",
+        )
+        assertEquals(
+            272_000L,
+            catalog.clientContextWindowFor("gpt-5.6-sol[1m]-preview"),
+            "the client recognizes [1m] only as a trailing suffix",
+        )
         assertEquals("plain-id", catalog.unwrap("plain-id"))
     }
 
@@ -94,10 +104,10 @@ class ModelCatalogTest {
         val kimi = ModelCatalog(
             discoveryPrefix = "claude-kimi--",
             models = listOf(
-                ModelEntry(id = "k3[1m]", label = "Kimi K3 (1M)", contextWindow = 1_048_576),
+                ModelEntry(id = "k3[1m]", label = "Kimi K3 (1M)", contextWindow = 1_000_000),
                 ModelEntry(id = "kimi-for-coding", contextWindow = 262_144),
             ),
-            extraWindows = listOf(ExtraWindow(id = "k3", contextWindow = 1_048_576)),
+            extraWindows = listOf(ExtraWindow(id = "k3", contextWindow = 1_000_000)),
             defaultContextWindow = 262_144,
         )
         assertTrue(kimi.contains("k3"), "bare upstream id")
@@ -211,6 +221,11 @@ class ModelCatalogTest {
             pinnedModel = "grok-4.6",
         )
         assertTrue(xai.contains("grok-4.6[1m]"), "the gate lets it through — that is the hazard")
+        assertEquals(
+            500_000L,
+            xai.contextWindowFor("grok-4.6[1m]"),
+            "pin the undeclared tier's real denominator before asserting its scale",
+        )
         assertEquals(2.0, xai.usageScale("grok-4.6[1m]"), "1e6 client / 500k real => compact at 500k")
         assertEquals(1_000_000L, xai.clientContextWindowFor("grok-4.6[1m]"), "what the client uses regardless")
     }
@@ -239,13 +254,13 @@ class ModelCatalogTest {
         val kimi = ModelCatalog(
             discoveryPrefix = "claude-kimi--",
             models = listOf(
-                ModelEntry(id = "k3[1m]", label = "Kimi K3 (1M)", contextWindow = 1_048_576),
+                ModelEntry(id = "k3[1m]", label = "Kimi K3 (1M)", contextWindow = 1_000_000),
             ),
             defaultContextWindow = 262_144,
         )
-        assertEquals(1_048_576, kimi.contextWindowFor("k3[1m]"), "picker id")
-        assertEquals(1_048_576, kimi.contextWindowFor("k3"), "bare upstream after strip")
-        assertEquals(1_048_576, kimi.contextWindowFor("claude-kimi--k3[1m]"), "wrapped picker id")
-        assertEquals(1_048_576, kimi.contextWindowFor("claude-kimi--k3"), "wrapped bare id")
+        assertEquals(1_000_000, kimi.contextWindowFor("k3[1m]"), "picker id")
+        assertEquals(1_000_000, kimi.contextWindowFor("k3"), "bare upstream after strip")
+        assertEquals(1_000_000, kimi.contextWindowFor("claude-kimi--k3[1m]"), "wrapped picker id")
+        assertEquals(1_000_000, kimi.contextWindowFor("claude-kimi--k3"), "wrapped bare id")
     }
 }

@@ -13,8 +13,8 @@ import kotlinx.serialization.Serializable
 /** What Claude Code returns for a "[1m]" id — the literal it hardcodes, NOT 1024*1024. */
 private const val CLAUDE_CODE_ONE_MILLION = 1_000_000L
 
-/** Claude Code's own id-keyed window hook, matched exactly as it spells it (`/\[1m\]/i`). */
-private val oneMillionHint = Regex("\\[1m]", RegexOption.IGNORE_CASE)
+/** Claude Code's own id-keyed window hook, matched only as a trailing tier suffix. */
+private val oneMillionHint = Regex("\\[1m]$", RegexOption.IGNORE_CASE)
 
 @Serializable
 public data class ModelEntry(
@@ -54,10 +54,10 @@ public data class ModelCatalog(
 
     public val defaultModel: String get() = models.first().id
 
-    // ANY bracketed tier hint, not just "[1m]": a provider that ships ONE id per model (xAI —
-    // grok-4.6 IS 500k, with no `-256k` sibling the way Moonshot has k3-256k) can only offer
-    // "capped by default, long context on request" as two picker rows over one upstream id.
-    private val suffixHint = Regex("\\[[^\\[\\]]+]$", RegexOption.IGNORE_CASE)
+    // Numeric bracketed tier hints, not arbitrary trailing brackets: a provider that ships ONE id
+    // per model (xAI — grok-4.6 IS 500k) can offer two picker rows over one upstream id, while a
+    // genuine vendor id such as model[preview] still reaches that provider byte-for-byte.
+    private val suffixHint = Regex("\\[\\d+[km]]$", RegexOption.IGNORE_CASE)
 
     // Canonical (suffix-stripped) ids — `contains` and `contextWindowFor` both strip the query the
     // same way. Storing the RAW picker id (e.g. "k3[1m]") let membership pass after the contains

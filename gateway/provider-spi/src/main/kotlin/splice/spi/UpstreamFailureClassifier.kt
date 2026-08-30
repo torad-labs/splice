@@ -29,6 +29,7 @@ public object UpstreamFailureClassifier {
         RegexOption.IGNORE_CASE,
     )
     private val gatewayHtmlRe = Regex("<html|bad gateway|cloudflare", RegexOption.IGNORE_CASE)
+
     // Status-less SSE failures are re-POSTable only when the vendor text explicitly names a
     // transient server condition. Default false: policy/parameter/unknown failures can be
     // deterministic, and replaying the full context cannot change them.

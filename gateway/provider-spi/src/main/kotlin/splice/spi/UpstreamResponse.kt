@@ -14,16 +14,28 @@ public class UpstreamResponse(private val resp: HttpResponse) {
 
     public suspend fun bodyChannel(): ByteReadChannel = resp.bodyAsChannel()
 
-    /** The bounded error-body read. Was an `HttpResponse` extension; the receiver is now the
-     *  wrapper that already holds that same response, so the walk below is byte-for-byte the
-     *  original with `this` replaced by [resp]. */
-    internal suspend fun bodyTextLimited(maxBytes: Int): String {
-        val channel = resp.bodyAsChannel()
+    /** The bounded error-body read. Was an `HttpResponse` extension; the walk lives in
+     *  [LimitedBodyReader] so the torn-peer contract is testable without a real response. */
+    internal suspend fun bodyTextLimited(maxBytes: Int): String =
+        LimitedBodyReader().read(resp.bodyAsChannel(), maxBytes)
+}
+
+/** The bounded error-body walk, split from [UpstreamResponse] for the torn-peer test (DR-21):
+ *  this is the one spurious-wakeup consolidation leg whose behavior nothing pinned. */
+internal class LimitedBodyReader {
+    suspend fun read(channel: ByteReadChannel, maxBytes: Int): String {
         val output = ByteArrayOutputStream(minOf(maxBytes, ERROR_READ_BUFFER_BYTES))
         val buffer = ByteArray(ERROR_READ_BUFFER_BYTES)
         var total = 0
         while (true) {
-            val read = ChannelReads.readAvailableOrEof(channel, buffer)
+            // A spurious-wakeup storm mid-error-body degrades to the truncated diagnostic (DR-21):
+            // the upstream STATUS the caller already holds is the turn's signal; letting the
+            // wakeup exception fly replaced that classified failure with an unclassified one.
+            val read = try {
+                ChannelReads.readAvailableOrEof(channel, buffer)
+            } catch (_: SseSpuriousWakeupException) {
+                return limitedText(output, truncated = true)
+            }
             if (read == -1) return limitedText(output, truncated = false)
             val remaining = maxBytes - total
             if (read > remaining) {

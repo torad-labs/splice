@@ -43,14 +43,14 @@ internal class InboxListener(
             // A frame after the round's terminal: the round it belongs to is over, so this can only
             // ever be served as some LATER round's first event. Poison instead.
             log("[ws] frame arrived after the round terminal — poisoning rather than serving it later\n")
-            poison()
+            onAnomaly()
             return
         }
         assembly.append(data)
         if (assembly.length >= BufferCapacity.MAX_BUFFERED_CHARS) {
             log("[ws] fragmented frame exceeded max buffered size — anomaly\n")
             assembly = StringBuilder()
-            poison()
+            poisonFragmentAssembly()
             return
         }
         if (last) deliverAssembly()
@@ -63,14 +63,14 @@ internal class InboxListener(
             .onFailure { log("[ws] unparseable frame (${payload.length} chars) — anomaly\n") }
             .getOrNull()
         if (event == null) {
-            poison()
+            onAnomaly()
         } else if (!inbox.trySend(event).isSuccess) {
             log("[ws] inbox overflow/closed — anomaly\n")
-            poison()
+            onAnomaly()
         }
     }
 
-    private fun poison() {
+    private fun poisonFragmentAssembly() {
         if (poisoned) return
         poisoned = true
         onAnomaly()
@@ -78,7 +78,7 @@ internal class InboxListener(
 
     override fun onBinary(webSocket: WebSocket, data: java.nio.ByteBuffer, last: Boolean): CompletionStage<*>? {
         log("[ws] unexpected binary frame — anomaly\n")
-        poison() // the protocol is text-JSON; a binary frame means we misunderstand the stream
+        onAnomaly() // the protocol is text-JSON; a binary frame means we misunderstand the stream
         return null
     }
 
@@ -91,14 +91,14 @@ internal class InboxListener(
     override fun onClose(webSocket: WebSocket, statusCode: Int, reason: String): CompletionStage<*>? {
         inbox.close()
         log("[ws] socket closed by the server (status=$statusCode) — poisoning the pooled connection\n")
-        poison()
+        onAnomaly()
         return null
     }
 
     override fun onError(webSocket: WebSocket, error: Throwable) {
         inbox.close(IOException("websocket error", error))
         log("[ws] socket failed (${error::class.simpleName}) — poisoning the pooled connection\n")
-        poison()
+        onAnomaly()
     }
 }
 

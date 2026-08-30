@@ -26,48 +26,59 @@ internal class InboxListener(
     private val onAnomaly: ProtocolAnomaly,
 ) : WebSocket.Listener {
     private var assembly = StringBuilder()
+    private var poisoned = false
 
     override fun onOpen(webSocket: WebSocket) {
         webSocket.request(1)
     }
 
     override fun onText(webSocket: WebSocket, data: CharSequence, last: Boolean): CompletionStage<*>? {
+        if (!poisoned) acceptText(data, last)
+        if (!poisoned) webSocket.request(1)
+        return null
+    }
+
+    private fun acceptText(data: CharSequence, last: Boolean) {
         if (terminalSeen()) {
             // A frame after the round's terminal: the round it belongs to is over, so this can only
             // ever be served as some LATER round's first event. Poison instead.
             log("[ws] frame arrived after the round terminal — poisoning rather than serving it later\n")
-            onAnomaly()
-            webSocket.request(1)
-            return null
+            poison()
+            return
         }
         assembly.append(data)
-        if (BufferCapacity.over(0, 0, pendingArgsLen = assembly.length)) {
+        if (assembly.length >= BufferCapacity.MAX_BUFFERED_CHARS) {
             log("[ws] fragmented frame exceeded max buffered size — anomaly\n")
             assembly = StringBuilder()
-            onAnomaly()
-            webSocket.request(1)
-            return null
+            poison()
+            return
         }
-        if (last) {
-            val payload = assembly.toString()
-            assembly.setLength(0)
-            val event = Cancellables.runCatchingCancellable { wsJson.parseToJsonElement(payload).jsonObject }
-                .onFailure { log("[ws] unparseable frame (${payload.length} chars) — anomaly\n") }
-                .getOrNull()
-            if (event == null) {
-                onAnomaly()
-            } else if (!inbox.trySend(event).isSuccess) {
-                log("[ws] inbox overflow/closed — anomaly\n")
-                onAnomaly()
-            }
+        if (last) deliverAssembly()
+    }
+
+    private fun deliverAssembly() {
+        val payload = assembly.toString()
+        assembly.setLength(0)
+        val event = Cancellables.runCatchingCancellable { wsJson.parseToJsonElement(payload).jsonObject }
+            .onFailure { log("[ws] unparseable frame (${payload.length} chars) — anomaly\n") }
+            .getOrNull()
+        if (event == null) {
+            poison()
+        } else if (!inbox.trySend(event).isSuccess) {
+            log("[ws] inbox overflow/closed — anomaly\n")
+            poison()
         }
-        webSocket.request(1)
-        return null
+    }
+
+    private fun poison() {
+        if (poisoned) return
+        poisoned = true
+        onAnomaly()
     }
 
     override fun onBinary(webSocket: WebSocket, data: java.nio.ByteBuffer, last: Boolean): CompletionStage<*>? {
         log("[ws] unexpected binary frame — anomaly\n")
-        onAnomaly() // the protocol is text-JSON; a binary frame means we misunderstand the stream
+        poison() // the protocol is text-JSON; a binary frame means we misunderstand the stream
         return null
     }
 
@@ -80,14 +91,14 @@ internal class InboxListener(
     override fun onClose(webSocket: WebSocket, statusCode: Int, reason: String): CompletionStage<*>? {
         inbox.close()
         log("[ws] socket closed by the server (status=$statusCode) — poisoning the pooled connection\n")
-        onAnomaly()
+        poison()
         return null
     }
 
     override fun onError(webSocket: WebSocket, error: Throwable) {
         inbox.close(IOException("websocket error", error))
         log("[ws] socket failed (${error::class.simpleName}) — poisoning the pooled connection\n")
-        onAnomaly()
+        poison()
     }
 }
 

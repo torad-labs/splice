@@ -682,9 +682,10 @@ class WsUpstreamInboxListenerTest {
         )
 
         listener.onText(socket, "x".repeat(BufferCapacity.MAX_BUFFERED_CHARS), false)
+        listener.onText(socket, """{"type":"valid-looking-tail"}""", true)
 
         assertEquals(1, anomalies, "fragment assembly reached the shared heap cap without poisoning")
-        assertNull(inbox.tryReceive().getOrNull(), "an unfinished fragment must never become an event")
+        assertNull(inbox.tryReceive().getOrNull(), "an oversized message's tail must never become a fresh event")
     }
 
     @Test

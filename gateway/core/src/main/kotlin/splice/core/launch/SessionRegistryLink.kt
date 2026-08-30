@@ -15,6 +15,8 @@
 package splice.core.launch
 
 import splice.core.util.Cancellables
+import splice.core.util.DaemonLog
+import splice.core.util.LogSink
 import java.nio.file.CopyOption
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
@@ -43,7 +45,7 @@ internal class SessionRegistryLink(
 
     /** Point [dst] (a head's sessions dir) at [globalSessions]. No-op when the global registry
      *  does not exist yet — same skip-if-missing semantics as every other shared item. */
-    fun link(globalSessions: Path, dst: Path) {
+    fun link(globalSessions: Path, dst: Path, log: LogSink = LogSink(DaemonLog::write)) {
         if (!Files.isDirectory(globalSessions, NOFOLLOW_LINKS)) return
         if (dst.isSymbolicLink()) {
             val target = Cancellables.runCatchingCancellable { Files.readSymbolicLink(dst) }.getOrNull()
@@ -58,7 +60,7 @@ internal class SessionRegistryLink(
         fs.createSymbolicLink(staged, globalSessions)
         try {
             if (Files.isDirectory(dst, NOFOLLOW_LINKS)) {
-                migrateAndReplace(dst, globalSessions, staged)
+                migrateAndReplace(dst, globalSessions, staged, log)
             } else {
                 fs.move(staged, dst, REPLACE_EXISTING, ATOMIC_MOVE)
             }
@@ -68,27 +70,40 @@ internal class SessionRegistryLink(
     }
 
     /** Preflight every destination before moving anything, then roll confirmed moves back if a later
-     *  transfer, directory delete, or staged-link promotion fails. */
-    private fun migrateAndReplace(dst: Path, globalSessions: Path, staged: Path): Boolean {
+     *  transfer, directory delete, or staged-link promotion fails. Declining is never silent (DR-1):
+     *  the refusal or rollback lands in the daemon log with its cause, because "sessions not shared"
+     *  with zero breadcrumb was the audit's complaint. */
+    private fun migrateAndReplace(dst: Path, globalSessions: Path, staged: Path, log: LogSink): Boolean {
         val entries = Files.newDirectoryStream(dst).use { stream ->
             stream.toList().sortedBy { it.fileName.toString() }
         }
         val transfers = entries.map { source -> source to globalSessions.resolve(source.fileName) }
-        val refused = entries.any { !Files.isRegularFile(it, NOFOLLOW_LINKS) } ||
-            transfers.any { (_, target) -> Files.exists(target, NOFOLLOW_LINKS) }
-        if (refused) return false
+        val nonRegular = entries.firstOrNull { !Files.isRegularFile(it, NOFOLLOW_LINKS) }
+        val collision = transfers.firstOrNull { (_, target) -> Files.exists(target, NOFOLLOW_LINKS) }
+        if (nonRegular != null || collision != null) {
+            val cause = nonRegular?.let { "unexpected non-file entry '${it.fileName}'" }
+                ?: "'${collision?.second?.fileName}' already exists in the global registry"
+            log("[sessions] REFUSED to migrate $dst into $globalSessions ($cause) — this head keeps private sessions\n")
+            return false
+        }
 
         val moved = mutableListOf<Pair<Path, Path>>()
-        val committed = Cancellables.runCatchingCancellable {
+        val commit = Cancellables.runCatchingCancellable {
             transfers.forEach { transfer ->
                 fs.move(transfer.first, transfer.second)
                 moved += transfer
             }
             Files.delete(dst)
             fs.move(staged, dst, ATOMIC_MOVE)
-        }.isSuccess
-        if (!committed) rollback(dst, moved)
-        return committed
+        }
+        if (commit.isFailure) {
+            log(
+                "[sessions] migration of $dst failed (${commit.exceptionOrNull()?.message}) — " +
+                    "rolled ${moved.size} confirmed moves back; this head keeps private sessions\n",
+            )
+            rollback(dst, moved)
+        }
+        return commit.isSuccess
     }
 
     private fun rollback(dst: Path, moved: List<Pair<Path, Path>>) {
@@ -101,7 +116,7 @@ internal class SessionRegistryLink(
                     }
                 }
             },
-            "best-effort rollback after a refused session-registry migration",
+            "best-effort rollback after a failed session-registry migration",
         )
     }
 }

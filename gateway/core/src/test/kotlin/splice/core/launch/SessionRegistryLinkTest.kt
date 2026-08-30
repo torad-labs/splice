@@ -58,6 +58,53 @@ class SessionRegistryLinkTest {
         assertFalse(Files.exists(global.resolve("z.key")))
     }
 
+    // DR-1 residual: a migration that declines (refusal or rollback) used to return false into a
+    // caller that discarded it — the operator saw "sessions not shared" with zero breadcrumb.
+    @Test
+    fun `a refused migration logs the refusal and names the collision`(@TempDir tmp: Path) {
+        val local = tmp.resolve("local-sessions")
+        val global = tmp.resolve("global-sessions")
+        Files.createDirectories(local)
+        Files.createDirectories(global)
+        Files.writeString(local.resolve("z.key"), "local-z")
+        Files.writeString(global.resolve("z.key"), "global-z")
+        val log = mutableListOf<String>()
+
+        SessionRegistryLink().link(global, local, log = { log += it })
+
+        assertTrue(
+            log.any { it.contains("REFUSED") && it.contains("z.key") },
+            "the refusal must be logged with the colliding entry, got $log",
+        )
+    }
+
+    @Test
+    fun `a rolled-back migration logs the underlying failure`(@TempDir tmp: Path) {
+        val local = tmp.resolve("local-sessions")
+        val global = tmp.resolve("global-sessions")
+        Files.createDirectories(local)
+        Files.createDirectories(global)
+        Files.writeString(local.resolve("a.json"), "local-a")
+        Files.writeString(local.resolve("z.key"), "local-z")
+        val failingFs = object : SessionRegistryFs {
+            override fun move(source: Path, target: Path, vararg options: CopyOption): Path {
+                if (source.fileName.toString() == "z.key") throw IOException("injected transfer failure")
+                return Files.move(source, target, *options)
+            }
+
+            override fun createSymbolicLink(link: Path, target: Path): Path =
+                Files.createSymbolicLink(link, target)
+        }
+        val log = mutableListOf<String>()
+
+        SessionRegistryLink(failingFs).link(global, local, log = { log += it })
+
+        assertTrue(
+            log.any { it.contains("rolled") && it.contains("injected transfer failure") },
+            "the rollback must log its cause, got $log",
+        )
+    }
+
     @Test
     fun `failed replacement creation preserves the stale symlink for retry`(@TempDir tmp: Path) {
         val oldTarget = Files.createDirectories(tmp.resolve("old-sessions"))

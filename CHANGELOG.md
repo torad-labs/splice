@@ -34,8 +34,9 @@
   restart themselves after shutdown.
 - Repeated statusline ticks reuse a bounded branch cache instead of spawning an uncached Git process
   every time.
-- Release, concentration, and head-E2E gates now reject masked commands, contradictory ratchet modes,
-  unmatched head selectors, and duplicate stream terminals instead of reporting false green.
+- The release gate now rejects invalid SemVer tags and a mutated prerelease flag; the concentration
+  gate rejects masked commands and contradictory ratchet modes; the head-E2E gate rejects unmatched
+  head selectors and duplicate stream terminals. All previously reported false green.
 
 ### Security
 

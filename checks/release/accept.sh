@@ -165,8 +165,8 @@ mkdir -p "$sandbox/home" "$sandbox/share" "$sandbox/bin" "$sandbox/work"
   cat "$remote_log" >&2
   exit 1
 }
-grep -q "splice.jar attestation: OK" "$output"
-grep -q "splice-launch attestation: OK" "$output"
+grep -q "splice.jar attestation: OK" "$output" || { echo "release accept: remote install missing splice.jar attestation OK" >&2; exit 1; }
+grep -q "splice-launch attestation: OK" "$output" || { echo "release accept: remote install missing splice-launch attestation OK" >&2; exit 1; }
 
 # With no channel override, every download must stay on GitHub's stable-only `latest` release.
 : > "$remote_log"
@@ -200,8 +200,8 @@ cmp -s "$remote_tools/expected-stable-urls.log" "$remote_curl_log" || {
   cat "$remote_log" >&2
   exit 1
 }
-grep -q "splice.jar attestation: OK" "$stable_output"
-grep -q "splice-launch attestation: OK" "$stable_output"
+grep -q "splice.jar attestation: OK" "$stable_output" || { echo "release accept: stable install missing splice.jar attestation OK" >&2; exit 1; }
+grep -q "splice-launch attestation: OK" "$stable_output" || { echo "release accept: stable install missing splice-launch attestation OK" >&2; exit 1; }
 rm -rf "$stable_sandbox"
 
 # A prerelease install must pin every download to that exact tag.
@@ -237,8 +237,8 @@ cmp -s "$remote_tools/expected-versioned-urls.log" "$remote_curl_log" || {
   cat "$remote_log" >&2
   exit 1
 }
-grep -q "splice.jar attestation: OK" "$versioned_output"
-grep -q "splice-launch attestation: OK" "$versioned_output"
+grep -q "splice.jar attestation: OK" "$versioned_output" || { echo "release accept: prerelease install missing splice.jar attestation OK" >&2; exit 1; }
+grep -q "splice-launch attestation: OK" "$versioned_output" || { echo "release accept: prerelease install missing splice-launch attestation OK" >&2; exit 1; }
 rm -rf "$versioned_sandbox"
 
 # A failed provenance check must abort before the candidate artifacts become live.

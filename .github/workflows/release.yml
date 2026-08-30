@@ -109,7 +109,12 @@ jobs:
         run: ./gradlew :app:shadowJar --no-daemon --no-parallel --stacktrace
 
       - name: stage exact release bundle
-        run: bash checks/release/stage.sh
+        # DR-19: thread the resolved version in as the tag so the SemVer + tag/version equality
+        # block runs on the PROMOTION path too (a real pushed tag still wins inside stage.sh via
+        # GITHUB_REF_TYPE). Without this, the gate was skipped exactly where releases are cut.
+        env:
+          RESOLVED_VERSION: ${{ steps.version.outputs.version }}
+        run: SPLICE_RELEASE_TAG="v$RESOLVED_VERSION" bash checks/release/stage.sh
 
       - name: accept exact release bundle
         env:

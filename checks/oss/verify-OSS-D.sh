@@ -125,7 +125,8 @@ SPLICE_EXPECTED_VERSION="$VERSION" bash checks/release/accept.sh
 # the new legs can fail, every run: an undispositioned extra file, and a zero-byte artifact (whose
 # red must be accept.sh's EMPTY leg, not a checksum coincidence).
 dist_enumeration_check() {
-  python3 - "$1" checks/release/stage.sh <<'PY'
+  python3 - "$1" checks/release/stage.sh "${2:-}" <<'PY'
+import json
 import pathlib
 import re
 import sys
@@ -134,6 +135,18 @@ text = open(sys.argv[2], encoding="utf-8").read()
 assets = re.search(r"^ASSETS=\((.*?)\)$", text, re.S | re.M).group(1).split()
 published = set(assets) | {"sha256sums.txt"}
 excluded: dict[str, str] = {}  # name -> written reason; empty today, additions REQUIRE a reason
+# argv[3] is a SELFTEST-ONLY exclusion injection (a JSON object) — the production call at the bottom
+# passes no third arg, so `excluded` stays the hardcoded (empty) set. It exists only to mutation-prove
+# the blank-reason leg below against a synthetic entry, never to disposition a real dist/ file.
+inject = sys.argv[3] if len(sys.argv) > 3 else ""
+if inject:
+    excluded.update(json.loads(inject))
+# §24: a blank/placeholder exclusion reason is an absence wearing a label, not a disposition. Every
+# excluded entry MUST carry a nonblank written reason or the check reds here — fail-closed, BEFORE the
+# key is allowed to account for a dist/ entry below.
+blank = sorted(name for name, reason in excluded.items() if not reason.strip())
+if blank:
+    raise SystemExit(f"VERIFY OSS-D: excluded entries with a blank/placeholder reason (§24, an absence wearing a label): {blank}")
 actual = {p.name for p in dist.iterdir()}  # dirs too: EVERY entry needs a disposition
 unaccounted = sorted(actual - published - set(excluded))
 missing = sorted(published - actual)
@@ -160,6 +173,26 @@ grep -q "NO disposition" "$extra_log" || {
   exit 1
 }
 rm -f "$extra_log"
+# Blank-reason disposition mutant (§24: a blank/placeholder exclusion reason is absence, not a
+# disposition). EXTRA-README.md is still present; excluding it with an EMPTY reason must RED on the
+# blank-reason leg — never silently disposition the file. The positive control that follows uses a
+# NONBLANK reason, which dispositions the same file and passes, proving the leg is not vacuously red.
+blank_log="$(mktemp)"
+if dist_enumeration_check "$dist_mutant" '{"EXTRA-README.md": ""}' >"$blank_log" 2>&1; then
+  rm -f "$blank_log"
+  echo "VERIFY OSS-D: blank-reason mutant unexpectedly passed — a blank exclusion reason dispositioned a file" >&2
+  exit 1
+fi
+grep -q "blank/placeholder reason" "$blank_log" || {
+  rm -f "$blank_log"
+  echo "VERIFY OSS-D: blank-reason mutant failed for the wrong reason (not the blank-reason leg)" >&2
+  exit 1
+}
+rm -f "$blank_log"
+if ! dist_enumeration_check "$dist_mutant" '{"EXTRA-README.md": "synthetic selftest decoy, never shipped"}' >/dev/null 2>&1; then
+  echo "VERIFY OSS-D: a NONBLANK exclusion reason must disposition the file and pass (positive control)" >&2
+  exit 1
+fi
 rm -f "$dist_mutant/EXTRA-README.md"
 : > "$dist_mutant/PROVENANCE.md"
 empty_log="$(mktemp)"

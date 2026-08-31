@@ -131,4 +131,47 @@ class ClaudeMaterializeCleanupTest {
             "the logged cause must be the MOVE failure (two-path form), not the staged cleanup's; got $decline",
         )
     }
+
+    // DR-105: readSettingsModelBase throws on a present-but-unreadable head settings.json, but ran
+    // from writeSettings AFTER linkShared and the hook writes — contradicting the header's
+    // "validate every aborting source BEFORE any mutation" and leaving the half-built config dir
+    // the comment says cannot happen. The abort must land with nothing yet touched.
+    @Test
+    fun `an unreadable settings json aborts BEFORE any mutation - DR-105`(@TempDir home: Path) {
+        val global = home.resolve(".claude")
+        Files.createDirectories(global.resolve("agents"))
+        val configDir = Files.createDirectories(home.resolve(".claude-head"))
+        val settings = configDir.resolve("settings.json")
+        Files.writeString(settings, """{"model":"m1"}""")
+        Files.setPosixFilePermissions(settings, PosixFilePermissions.fromString("---------"))
+        val log = mutableListOf<String>()
+        try {
+            val outcome = runCatching {
+                ClaudeConfigMaterializer(home, log = LogSink { log += it })
+                    .materialize(
+                        MaterializeSpec(
+                            configDir = configDir,
+                            policy = ClaudePolicy(share = setOf("agents"), isolate = emptySet()),
+                            availableModelIds = listOf("m1"),
+                            defaultModel = "m1",
+                            modelOptionsCache = optionsCache,
+                            statuslineCommand = "curl",
+                            loginCommand = "claudex login",
+                            signInLabel = "Codex",
+                        ),
+                    )
+            }
+            assertTrue(outcome.isFailure, "an unreadable real settings.json must abort the materialize")
+            assertTrue(
+                !Files.exists(configDir.resolve("agents"), java.nio.file.LinkOption.NOFOLLOW_LINKS),
+                "the abort must land BEFORE linkShared mutates — no half-built config dir",
+            )
+            assertTrue(
+                Files.list(configDir).use { entries -> entries.allMatch { it == settings } },
+                "nothing but the pre-existing settings.json may exist after the abort",
+            )
+        } finally {
+            Files.setPosixFilePermissions(settings, PosixFilePermissions.fromString("rw-------"))
+        }
+    }
 }

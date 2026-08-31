@@ -79,6 +79,13 @@ public class ClaudeConfigMaterializer(
         // abort. Reading it first means a corrupt local aborts with nothing yet touched. (`strict`
         // treats an absent file as a fresh head; only unparseable throws.)
         val localClaudeJson = jsonReads.strict(spec.configDir.resolve(Keys.CLAUDE_JSON))
+        // DR-105: the OTHER aborting source. readSettingsModelBase throws on a present-but-
+        // unreadable real settings.json, and it used to run inside writeSettings — after
+        // linkShared, the one-way sessions migration and the hook writes — leaving exactly the
+        // half-built config dir the paragraph above promises cannot happen. Safe to hoist:
+        // linkShared explicitly skips settings.json (merged, never linked), so nothing between
+        // here and writeSettings can change what this read observes.
+        val existingSettings = readSettingsModelBase(spec.configDir.resolve(Keys.SETTINGS))
         Files.createDirectories(spec.configDir)
         linkShared(spec.configDir, spec.policy)
         val hookAdditions = LoginInterception.concat(
@@ -97,7 +104,7 @@ public class ClaudeConfigMaterializer(
                 emptyMap()
             },
         )
-        writeSettings(spec, hookAdditions)
+        writeSettings(spec, hookAdditions, existingSettings)
         val mcpCount = writeClaudeJson(
             spec.configDir,
             spec.modelOptionsCache,
@@ -248,7 +255,13 @@ public class ClaudeConfigMaterializer(
         }
     }
 
-    private fun writeSettings(spec: MaterializeSpec, hookAdditions: Map<String, List<JsonObject>>) {
+    // [existing] is the DR-105 preflight read from materialize() — the one aborting read this
+    // function used to perform itself, after the mutations it must now precede.
+    private fun writeSettings(
+        spec: MaterializeSpec,
+        hookAdditions: Map<String, List<JsonObject>>,
+        existing: JsonObject,
+    ) {
         val allow = spec.availableModelIds
         val dst = spec.configDir.resolve(Keys.SETTINGS)
         val global = if (shares(spec.policy, Keys.SETTINGS)) {
@@ -256,7 +269,6 @@ public class ClaudeConfigMaterializer(
         } else {
             EMPTY_JSON
         }
-        val existing = readSettingsModelBase(dst)
         val savedModel = existing[Keys.MODEL]?.jsonPrimitive?.content
         val model = if (savedModel != null && savedModel in allow) savedModel else spec.defaultModel
         val hooks = LoginInterception.mergeInto(global[Keys.HOOKS], hookAdditions)

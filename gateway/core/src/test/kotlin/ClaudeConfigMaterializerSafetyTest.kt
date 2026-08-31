@@ -221,6 +221,32 @@ class ClaudeConfigMaterializerSafetyTest {
             "present layers still link on the same pass",
         )
     }
+
+    // DR-102 (sweep-2): requireIsolatedDir compared toAbsolutePath().normalize() — purely
+    // textual, never resolving symlinks — so a config_dir SYMLINK ~/.claude-x -> ~/.claude passed
+    // the guard whose own comment forbids resolving to the global dir, and everything materialize
+    // does next (shared-link swaps, writeSettings, hook injection) landed in the operator's REAL
+    // ~/.claude — including turning the global CLAUDE.md into a self-loop symlink.
+    @Test
+    fun `a config_dir symlinked to the global claude dir is refused - DR-102`(@TempDir home: Path) {
+        seedGlobal(home)
+        val configDir = home.resolve(".claude-x")
+        Files.createSymbolicLink(configDir, home.resolve(".claude"))
+
+        assertThrows(IllegalArgumentException::class.java) {
+            ClaudeConfigMaterializer(home).materialize(spec(configDir))
+        }
+
+        assertEquals(
+            "global rules",
+            home.resolve(".claude/CLAUDE.md").readText(),
+            "the operator's real global config must be untouched",
+        )
+        assertFalse(
+            Files.isSymbolicLink(home.resolve(".claude/CLAUDE.md")),
+            "the global CLAUDE.md must not have been swapped into a self-loop symlink",
+        )
+    }
 }
 
 // DR-64 (sweep 2026-08-31, both seats independently): JsonStateReads carried an exists/symlink

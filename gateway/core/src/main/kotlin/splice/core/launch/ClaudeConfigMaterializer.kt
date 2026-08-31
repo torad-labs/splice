@@ -112,10 +112,26 @@ public class ClaudeConfigMaterializer(
     // ~/Documents/claude-notes, /tmp/claude) through — this closes both.
     private fun requireIsolatedDir(configDir: Path) {
         val target = configDir.toAbsolutePath().normalize()
+        // DR-102: normalize() is textual and never resolves symlinks — a config_dir SYMLINK
+        // (~/.claude-x -> ~/.claude) passed this guard and every mutation materialize performs
+        // next landed in the operator's REAL global dir. Identity is judged on real paths; the
+        // .claude* NAME is still judged on the spelling the operator chose.
         val isolated = target.fileName.toString().startsWith(Keys.CLAUDE_DIR) &&
-            target != globalDir().toAbsolutePath().normalize()
+            realOf(target) != realOf(globalDir().toAbsolutePath().normalize())
         require(isolated) {
             "refuse to materialize into '$configDir' — must be an isolated .claude* dir, not the global ~/.claude"
+        }
+    }
+
+    /** Filesystem identity for a path that may not exist yet: the real path when it does, else the
+     *  nearest existing ancestor's real path re-joined with the missing tail. NoSuchFileException
+     *  is the only absence signal (class law); any other IO failure fails the guard closed. */
+    private fun realOf(path: Path): Path {
+        val parent = path.parent ?: return path
+        return try {
+            path.toRealPath()
+        } catch (absent: java.nio.file.NoSuchFileException) {
+            realOf(parent).resolve(path.fileName)
         }
     }
 

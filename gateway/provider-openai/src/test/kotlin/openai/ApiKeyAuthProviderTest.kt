@@ -78,10 +78,10 @@ class ApiKeyAuthProviderTest {
     }
 
     // DR-57: the same access-indeterminate absence as MgmtKey (DR-56). The operator's key file sits
-    // behind a symlink whose target parent loses read (a permissions blip); Files.exists FOLLOWS the
-    // link and reads false, so readKeyFile used to return null WITHOUT logging — the failure you most
-    // want to read (why did auth silently stop?) never reached the log. The NOFOLLOW gate sees the
-    // present link, enters the read, hits AccessDenied, and the onFailure logs it loudly.
+    // behind a symlink whose target parent loses read (a permissions blip); the old exists() pre-gate
+    // read false there, so readKeyFile returned null WITHOUT logging — the failure you most want to
+    // read (why did auth silently stop?) never reached the log. The direct read reaches the
+    // AccessDenied and getOrElse logs it; NOFOLLOW is only the post-NoSuch dangling disambiguator.
     @Test
     fun `an inaccessible-target key-file symlink logs the read failure, not silent absence - DR-57`(
         @TempDir tmp: Path,

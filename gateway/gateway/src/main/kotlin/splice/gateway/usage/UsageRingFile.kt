@@ -37,13 +37,13 @@ internal class UsageRingFile(
     // by the 5h window filter + MAX_RING_ENTRIES; oversize files are treated as empty. USG-005: the
     // drop still degrades to empty (never throws), but is logged via the same sink every other
     // component defaults to (DaemonLog::write) — the user's real 5h spend disappearing from the HUD
-    // must leave a trace. DR-58: only a PROVEN absence (NoSuchFileException — no file, or a dangling
-    // symlink) is that quiet empty; there is no Files.exists pre-gate, because it FOLLOWED a usage
+    // must leave a trace. DR-58: only PROVEN absence — NoSuchFileException with no path entry under
+    // NOFOLLOW — is that quiet empty; there is no Files.exists pre-gate, because it FOLLOWED a usage
     // symlink to an unreadable target, read false, and returned empty SILENTLY — skipping the very
     // log this contract promises. A present-but-inaccessible file now flows to the read, throws
-    // AccessDenied, and is logged like any other unreadable file. (This read is cold-start only —
-    // guarded by UsageRing.ringLoaded — so an unconditional line here cannot firehose; the per-event
-    // WRITE side keeps its streak latch below.)
+    // AccessDenied, and is logged like any other unreadable file; a DANGLING symlink (NoSuch, but
+    // the entry exists) logs too. (This read is cold-start only — guarded by UsageRing.ringLoaded —
+    // so the line cannot firehose; the per-event WRITE side keeps its streak latch below.)
     internal fun readEntriesFromDisk(): List<JsonObject> {
         val size = Cancellables.runCatchingCancellable { Files.size(usageFile) }.getOrDefault(0L)
         if (size > MAX_USAGE_FILE_BYTES) {

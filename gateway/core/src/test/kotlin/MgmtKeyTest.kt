@@ -59,9 +59,10 @@ class MgmtKeyTest {
     }
 
     // DR-56: an access-INDETERMINATE key is not a first run. The operator's key sits behind a symlink
-    // whose target parent loses read (a permissions blip); Files.exists FOLLOWS the link and reads
-    // false, so ensure() used to skip the read block and mint QUIETLY — SH-12 demands a LOUD rotation.
-    // The NOFOLLOW gate sees the present link, enters the read, hits AccessDenied, and rotates loudly.
+    // whose target parent loses read (a permissions blip); any exists() pre-gate reads false there, so
+    // ensure() used to skip the read block and mint QUIETLY — SH-12 demands a LOUD rotation. The
+    // direct read reaches the AccessDenied and classifies it; NOFOLLOW exists only as the post-NoSuch
+    // dangling disambiguator, never a gate.
     @Test
     fun `an inaccessible-target key symlink rotates LOUDLY, not a silent first run - SH-12 DR-56`(@TempDir tmp: Path) {
         val sp = paths(tmp)
@@ -96,7 +97,10 @@ class MgmtKeyTest {
         Files.setPosixFilePermissions(sp.mgmtKeyFile.parent, PosixFilePermissions.fromString("---------"))
         val logs = mutableListOf<String>()
         try {
-            runCatching { MgmtKey(sp, log = logs::add, clock = { 11L }).get() }
+            val outcome = runCatching { MgmtKey(sp, log = logs::add, clock = { 11L }).get() }
+            // The mint into the same untraversable dir CANNOT succeed — a mutant that warns and then
+            // reports a key as if minted must not survive (codex).
+            assertTrue(outcome.isFailure, "the mint into an untraversable dir must fail: $outcome")
             assertEquals(1, logs.size, "an inaccessible state dir must warn before the mint fails: $logs")
             assertTrue(logs[0].contains("every existing bearer"), "names the consequence: ${logs[0]}")
         } finally {

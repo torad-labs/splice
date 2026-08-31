@@ -369,8 +369,8 @@ class UsageScalingTest {
     // DR-58: the read-gate twin of DR-41c. A usage file behind a symlink whose target parent loses
     // read (a permissions blip) is PRESENT but inaccessible; the old Files.exists gate FOLLOWED the
     // link, read false, and returned empty with no log — the user's real 5h spend vanished from the
-    // HUD silently. Direct-read reaches the AccessDenied and logs it; only a NoSuchFile (genuine
-    // absence / dangling link) stays the quiet empty.
+    // HUD silently. Direct-read reaches the AccessDenied and logs it; quiet empty is ONLY proven
+    // absence (NoSuchFile with no NOFOLLOW entry — a dangling link logs, see its own arm below).
     @Test
     fun `an inaccessible usage file logs the read failure, not a silent empty - DR-58`(@TempDir dir: Path) {
         val externalDir = Files.createDirectories(dir.resolve("external"))

@@ -547,7 +547,7 @@ class WsUpstreamTest {
     }
 
     @Test
-    fun `a new key survives the soft cap while every older connection is busy`() = runTest {
+    fun `an all-busy overshoot trims back to the cap when a connection is released`() = runTest {
         val fx = Fixture().apply { reply = replyWith(CREATED) }.start(maxConnections = CAP)
         assertNotNull(fx.go("a"), "a remains in flight")
         assertNotNull(fx.go("b"), "b remains in flight")
@@ -555,10 +555,15 @@ class WsUpstreamTest {
         fx.reply = replyWith(DONE)
         val flow = fx.go("c")
 
-        assertNotNull(flow, "the fresh connection must not evict itself and force SSE fallback")
+        assertNotNull(flow, "the fresh connection must survive insertion while every predecessor is busy")
+        assertEquals(0, fx.opened[2].aborts, "the in-flight fresh socket cannot be the insertion-time victim")
         assertEquals(listOf("response.completed"), flow?.toList()?.map { it.type() })
         assertEquals(3, fx.connects)
-        assertEquals(0, fx.opened[2].aborts, "the fresh socket must survive insertion")
+        assertEquals(1, fx.opened[2].aborts, "release makes c idle, so the soft overshoot must be trimmed")
+        assertTrue(
+            fx.handed.last().busy.get(),
+            "eviction must reserve c before removal so a concurrent acquire cannot win it before kill()",
+        )
     }
 
     @Test
@@ -629,17 +634,29 @@ class WsUpstreamTest {
     }
 
     @Test
-    fun `KNOWN GAP - an anomaly during the handshake window cannot poison anything yet`() = runTest {
+    fun `an anomaly during the handshake is latched until the connection is published`() = runTest {
         val fx = Fixture().apply {
             onHandshake = { socket -> socket.pushBinary() }
             reply = replyWith(DONE)
-        }.start()
-        assertEquals(listOf("response.completed"), fx.types(), "the round proceeds regardless")
-        assertFalse(
-            fx.handed.single().dead.get(),
-            "pins the gap: onAnomaly fires into a null holder until connect() publishes the connection",
+        }.start(firstEventTimeoutMs = BUDGET)
+        val before = testScheduler.currentTime
+
+        assertNull(fx.go(), "the anomalous connection must fall back before sending a frame")
+        assertTrue(
+            testScheduler.currentTime - before < BUDGET,
+            "a latched anomaly must not burn the first-event budget",
         )
-        assertTrue(fx.logged("unexpected binary frame"), "it is logged, just not acted on")
+        assertTrue(
+            fx.opened.single().sent.isEmpty(),
+            "the poisoned handshake must never carry a request frame",
+        )
+        assertEquals(
+            1,
+            fx.opened.single().aborts,
+            "publication must apply the anomaly to its owning connection",
+        )
+        assertFalse(fx.logged("connected"), "an anomalous handshake must not register or announce a dead socket")
+        assertTrue(fx.logged("unexpected binary frame"))
     }
 }
 
@@ -704,6 +721,25 @@ class WsUpstreamInboxListenerTest {
         assertEquals(2, socket.requests, "a NON-final fragment must re-arm too, or assembly stalls forever")
         listener.onText(socket, """"}""", true)
         assertEquals(3, socket.requests)
+    }
+
+    @Test
+    fun `a binary anomaly re-arms demand while connection ownership is still unpublished`() {
+        val inbox = Channel<JsonObject>(Channel.UNLIMITED)
+        var anomalies = 0
+        val socket = FakeSocket(Fixture())
+        val listener = InboxListener(
+            inbox,
+            { },
+            terminalSeen = { false },
+            onAnomaly = { anomalies += 1 },
+        )
+
+        listener.onOpen(socket)
+        listener.onBinary(socket, ByteBuffer.allocate(1), true)
+
+        assertEquals(1, anomalies)
+        assertEquals(2, socket.requests, "onBinary must replace the listener default's request(1)")
     }
 
     @Test

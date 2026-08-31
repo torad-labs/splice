@@ -11,6 +11,7 @@
 // reimplemented here.
 package splice.gateway.head
 
+import kotlinx.coroutines.flow.onEach
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
 import splice.spi.Provider
@@ -38,7 +39,10 @@ internal class WsRoundDriver(
             return null
         }
         drive.slot.touch()
-        drive.emitter.ensureStarted()
+        // Start the client while the acquired cold flow is being collected, not before: if the
+        // start write throws or is cancelled, the exception unwinds through the transport flow's
+        // onCompletion and poisons its busy lease instead of stranding the connection forever.
+        val startingEvents = events.onEach { drive.emitter.ensureStarted() }
         drive.watchdog.resetFirstByte()
         val poller = drive.watchdog.launchIn(inputs.scope, drive.slot, inputs.turnJob)
         // CON-003: every exit below reports the round exactly once. [drive] reports ok=true on a
@@ -49,7 +53,7 @@ internal class WsRoundDriver(
         // continues untouched.
         var reported = false
         return try {
-            roundDrive.drive(inputs, runner, events).also { reported = true }
+            roundDrive.drive(inputs, runner, startingEvents).also { reported = true }
         } catch (ignored: WsRoundNeedsSse) {
             // The round failed while the client had seen nothing, so it can still be re-served with
             // the full recovery machinery. Serving the failure raw over the WebSocket instead would

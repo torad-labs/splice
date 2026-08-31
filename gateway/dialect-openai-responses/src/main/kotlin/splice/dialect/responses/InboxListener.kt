@@ -79,6 +79,7 @@ internal class InboxListener(
     override fun onBinary(webSocket: WebSocket, data: java.nio.ByteBuffer, last: Boolean): CompletionStage<*>? {
         log("[ws] unexpected binary frame — anomaly\n")
         onAnomaly() // the protocol is text-JSON; a binary frame means we misunderstand the stream
+        webSocket.request(1)
         return null
     }
 

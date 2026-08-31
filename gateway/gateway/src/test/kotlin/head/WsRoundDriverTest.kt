@@ -16,15 +16,24 @@ import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.onCompletion
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
 import mock.MockChatGptUpstream
+import mock.RecordingSink2
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertSame
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -34,25 +43,43 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
+import splice.core.perf.TurnPerf
+import splice.core.turn.ErrorType
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.HeadDeps
 import splice.gateway.head.HeadServer
 import splice.gateway.head.RequestMaterializationGate
+import splice.gateway.head.TurnDrive
+import splice.gateway.head.WsRoundDriver
+import splice.gateway.head.WsRoundInputs
+import splice.gateway.head.ZeroEventClassifier
 import splice.gateway.perf.PerfStats
+import splice.gateway.pipeline.TurnPipeline
+import splice.gateway.round.RunnerSignals
+import splice.gateway.usage.OutputClamp
 import splice.gateway.usage.UsageStore
+import splice.gateway.wire.ClientChannel
+import splice.gateway.wire.ImmediateSseWriter
+import splice.gateway.wire.TurnTerminal
 import splice.provider.codex.CodexProvider
+import splice.spi.ClientFrameEmitted
 import splice.spi.InflightGate
+import splice.spi.LiveLimit
 import splice.spi.Provider
 import splice.spi.ProviderTuning
+import splice.spi.TurnWatchdog
 import splice.spi.UpstreamClient
+import splice.spi.WireSink
 import splice.spi.WsRoundRunner
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.seconds
 
 private class WsFakeAuth : RefreshableAuthProvider {
@@ -72,6 +99,7 @@ private class ScriptedRunner(private val events: List<String>, private val throw
     var bypassed = 0
     var endedOk = 0
     var endedNotOk = 0
+    var flowCompletions = 0
 
     override suspend fun attempt(
         bodyJson: String,
@@ -80,11 +108,15 @@ private class ScriptedRunner(private val events: List<String>, private val throw
         creds: Credentials,
     ): Flow<JsonObject>? {
         attempts += 1
-        if (throwAfter == null) return flowOf(*events.map(::ev).toTypedArray())
-        return flow {
-            events.take(throwAfter).forEach { emit(ev(it)) }
-            error("scripted translator blow-up")
+        val scripted = if (throwAfter == null) {
+            flowOf(*events.map(::ev).toTypedArray())
+        } else {
+            flow {
+                events.take(throwAfter).forEach { emit(ev(it)) }
+                error("scripted translator blow-up")
+            }
         }
+        return scripted.onCompletion { flowCompletions += 1 }
     }
 
     override fun isFailureTerminal(event: JsonObject): Boolean =
@@ -97,6 +129,17 @@ private class ScriptedRunner(private val events: List<String>, private val throw
     override fun roundBypassed(meta: TurnMeta) {
         bypassed += 1
     }
+}
+
+private class ThrowingStartTerminal(
+    private val failure: CancellationException,
+) : TurnTerminal, WireSink by RecordingSink2() {
+    override val hasEnded: Boolean = false
+
+    override suspend fun ensureStarted(): Unit = throw failure
+    override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
+    override suspend fun emitError(type: ErrorType, message: String) = Unit
+    override fun abandon() = Unit
 }
 
 /** A real codex provider with ONE member swapped. Interface delegation, not subclassing:
@@ -129,44 +172,90 @@ class WsRoundDriverTest {
 
     private fun freshPort(): Int = ServerSocket(0).use { it.localPort }
 
-    private fun head(port: Int, runner: ScriptedRunner): HeadServer {
-        val provider = ScriptedWsProvider(
-            CodexProvider(
-                tuning = ProviderTuning(
-                    key = "codex",
-                    label = "claudex",
-                    catalog = ModelCatalog(
-                        discoveryPrefix = "claude-codex--",
-                        models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
-                        defaultContextWindow = 272_000,
-                    ),
-                    pinnedModel = "gpt-5.6-sol",
-                    auth = WsFakeAuth(),
-                    baseUrl = mock.baseUrl,
-                    watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
-                    loginCommand = "claudex login",
+    private fun provider(runner: ScriptedRunner): Provider = ScriptedWsProvider(
+        CodexProvider(
+            tuning = ProviderTuning(
+                key = "codex",
+                label = "claudex",
+                catalog = ModelCatalog(
+                    discoveryPrefix = "claude-codex--",
+                    models = listOf(ModelEntry("gpt-5.6-sol", "Sol", contextWindow = 272_000)),
+                    defaultContextWindow = 272_000,
                 ),
+                pinnedModel = "gpt-5.6-sol",
+                auth = WsFakeAuth(),
+                baseUrl = mock.baseUrl,
+                watchdog = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
+                loginCommand = "claudex login",
+            ),
+            showReasoning = ReasoningDisplay.TEXT,
+            replayReasoning = false,
+            configEffort = "high",
+            configSummary = "detailed",
+        ),
+        runner,
+    )
+
+    private fun head(port: Int, runner: ScriptedRunner): HeadServer = HeadServer(
+        provider = provider(runner),
+        listenPort = port,
+        deps = HeadDeps(
+            upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 2),
+            inferenceToken = "test-inference-token",
+            gate = InflightGate({ 0 }),
+            shadow = ShadowClassifier(log = {}),
+            compactStats = CompactStats(tmp.resolve("compact-$port.jsonl")),
+            usageStore = UsageStore(tmp.resolve("usage-$port.json"), tmp.resolve("rl-$port.json")),
+            perfStats = PerfStats(tmp.resolve("perf-$port.jsonl")),
+            log = {},
+            requestMaterializationGate = RequestMaterializationGate(2),
+        ),
+    )
+
+    private suspend fun coldFlowInputs(emitter: TurnTerminal, scope: CoroutineScope): WsRoundInputs {
+        val slot = InflightGate(LiveLimit { 1 }).acquire()
+        val drive = TurnDrive(
+            bodyJson = "{}",
+            requestBody = buildJsonObject { },
+            meta = TurnMeta(
+                compact = false,
                 showReasoning = ReasoningDisplay.TEXT,
-                replayReasoning = false,
-                configEffort = "high",
-                configSummary = "detailed",
+                stream = true,
+                originalModel = "claude-codex--gpt-5.6-sol",
+                upstreamModel = "gpt-5.6-sol",
+                clientMaxTokens = 100,
+                effort = "high",
+                summary = "detailed",
+                budgetTokens = null,
             ),
-            runner,
-        )
-        return HeadServer(
-            provider = provider,
-            listenPort = port,
-            deps = HeadDeps(
-                upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 2),
-                inferenceToken = "test-inference-token",
-                gate = InflightGate({ 0 }),
-                shadow = ShadowClassifier(log = {}),
-                compactStats = CompactStats(tmp.resolve("compact-$port.jsonl")),
-                usageStore = UsageStore(tmp.resolve("usage-$port.json"), tmp.resolve("rl-$port.json")),
-                perfStats = PerfStats(tmp.resolve("perf-$port.jsonl")),
+            emitter = emitter,
+            watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
+            slot = slot,
+            pipeline = TurnPipeline(
+                CompactStats(tmp.resolve("cold-flow-compact.jsonl")),
                 log = {},
-                requestMaterializationGate = RequestMaterializationGate(2),
+                clampOutput = OutputClamp { it },
             ),
+            t0 = 0,
+            upstreamModel = "gpt-5.6-sol",
+            perf = TurnPerf(),
+            turnHeaders = emptyMap(),
+            signals = RunnerSignals(),
+            channel = ClientChannel(
+                ImmediateSseWriter(writeRaw = { _ -> }, flushRaw = {}),
+                Mutex(),
+                AtomicBoolean(false),
+            ),
+            toolSearch = null,
+        )
+        return WsRoundInputs(
+            drive = drive,
+            bodyJson = "{}",
+            sink = RecordingSink2(),
+            scope = scope,
+            turnJob = Job(),
+            frameEmittedThisRound = ClientFrameEmitted { false },
+            eventsBase = 0,
         )
     }
 
@@ -177,6 +266,34 @@ class WsRoundDriverTest {
                     "messages":[{"role":"user","content":"hi"}]}""",
             )
         }.bodyAsText()
+    }
+
+    @Test
+    fun `cancellation while opening the client stream cleans the acquired cold flow`() = runTest {
+        val runner = ScriptedRunner(listOf("""{"type":"response.created","response":{"id":"r1"}}"""))
+        val cancellation = CancellationException("cancel while starting the client stream")
+        val inputs = coldFlowInputs(ThrowingStartTerminal(cancellation), this)
+        val driver = WsRoundDriver(
+            provider(runner),
+            log = {},
+            classifyZeroEvent = ZeroEventClassifier { _, outcome, _, _ -> outcome },
+        )
+        var thrown: CancellationException? = null
+
+        try {
+            driver.run(inputs)
+        } catch (failure: CancellationException) {
+            thrown = failure
+        } finally {
+            inputs.turnJob.cancel()
+            inputs.drive.slot.release()
+        }
+
+        assertSame(cancellation, thrown, "the genuine cancellation must propagate unchanged")
+        assertEquals(1, runner.flowCompletions, "the acquired flow must unwind through its cleanup")
+        assertEquals(1, runner.endedNotOk, "the abandoned round must clear its chaining state")
+        assertEquals(0, runner.endedOk)
+        assertEquals(0, runner.bypassed)
     }
 
     /** AN UNEXPECTED THROW still reports the round. [WsRoundRunner.roundEnded]'s contract is that

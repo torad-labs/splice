@@ -57,18 +57,11 @@ internal class WsConnectionPool(
             }
             connections.remove(key)?.also { it.kill() } // only ever a DEAD predecessor
             connections[key] = conn
-            if (connections.size > maxConnections) {
-                // Only an IDLE connection may be evicted: an entry stays registered for the whole
-                // of its round, so evicting by pure age could abort an in-flight response
-                // (review of #72). With every connection busy nothing is evicted — the cap is a
-                // soft bound under burst, and each round poisons its own connection on completion.
-                val idle = connections.entries.firstOrNull {
-                    it.key != key && !it.value.busy.get()
-                }?.key
-                idle?.let { connections.remove(it) }
-            } else {
-                null
-            }
+            // Only an IDLE connection may be evicted: an entry stays registered for the whole
+            // of its round, so evicting by pure age could abort an in-flight response
+            // (review of #72). With every connection busy the cap is soft until release() makes
+            // one idle and trims the overshoot.
+            removeOldestIdle(exceptKey = key)
         }
         if (winner !== conn) {
             // Lost the connect race: close our redundant socket and use the live one.
@@ -84,13 +77,27 @@ internal class WsConnectionPool(
      *  code (WsRoundStream) uses instead of reaching into [connections] / [lock] directly. */
     internal fun release(key: String, conn: WsConnection) {
         conn.busy.set(false)
-        synchronized(lock) { // touch: completed rounds move their connection to MRU
+        val evicted = synchronized(lock) { // touch: completed rounds move their connection to MRU
             // Identity-guarded like failRound below: by the time a round ends, the key may hold a
             // DIFFERENT connection (this one was killed and a successor registered), and an
             // unconditional remove+reinsert would promote that stranger to MRU on our round's
             // completion — skewing which entry the cap evicts next.
             if (connections[key] === conn) connections.remove(key)?.let { connections[key] = it }
+            removeOldestIdle()
         }
+        evicted?.kill()
+    }
+
+    /** Caller holds [lock]. A burst may exceed the soft cap only while every entry is busy; each
+     *  later release removes one oldest idle entry until the registry is bounded again. The busy CAS
+     *  reserves the victim before removal: acquire() may already hold its reference outside [lock],
+     *  and must lose its own CAS rather than return a socket this trim is about to kill. */
+    private fun removeOldestIdle(exceptKey: String? = null): WsConnection? {
+        if (connections.size <= maxConnections) return null
+        val idleKey = connections.entries.firstOrNull {
+            it.key != exceptKey && it.value.busy.compareAndSet(false, true)
+        }?.key
+        return idleKey?.let { connections.remove(it) }
     }
 
     internal fun failRound(conn: WsConnection, key: String) {

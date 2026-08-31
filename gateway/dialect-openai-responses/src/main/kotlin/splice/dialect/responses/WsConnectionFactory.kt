@@ -8,7 +8,9 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import java.net.URI
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 // Bounded so a stalled consumer cannot buffer unboundedly; the turn watchdog fires long
 // before a healthy translator falls 1024 events behind. Overflow = kill (InboxListener).
@@ -27,12 +29,18 @@ internal class WsConnectionFactory(
     internal suspend fun connect(key: String, headers: Map<String, String>, wssUrl: String): WsConnection? {
         val generation = generations.incrementAndGet()
         val inbox = Channel<JsonObject>(INBOX_CAPACITY)
-        val holder = arrayOfNulls<WsConnection>(1)
+        val holder = AtomicReference<WsConnection?>(null)
+        val anomalyObserved = AtomicBoolean(false)
         val listener = InboxListener(
             inbox,
             log,
-            terminalSeen = { holder[0]?.terminalSeen?.get() == true },
-        ) { holder[0]?.kill() }
+            terminalSeen = { holder.get()?.terminalSeen?.get() == true },
+        ) {
+            // A connector may synchronously deliver callbacks before it returns the socket. Set the
+            // latch FIRST, then try the owner: whichever side wins publication observes the anomaly.
+            anomalyObserved.set(true)
+            holder.get()?.kill()
+        }
         val socket = Cancellables.runCatchingCancellable {
             connector(URI.create(wssUrl), headers, listener)
         }.getOrElse { e ->
@@ -43,7 +51,12 @@ internal class WsConnectionFactory(
             return null
         }
         val conn = WsConnection(socket, inbox, generation, log)
-        holder[0] = conn
+        holder.set(conn)
+        if (anomalyObserved.get()) {
+            conn.kill()
+            log("[ws] ${logKeys.logKey(key)} handshake protocol anomaly — SSE\n")
+            return null
+        }
         return conn
     }
 }

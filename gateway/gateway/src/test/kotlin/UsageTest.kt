@@ -365,4 +365,70 @@ class UsageScalingTest {
 
         assertEquals(2, log.count { it.contains("persist FAILED") }, "success must re-arm the warning: $log")
     }
+
+    // DR-58: the read-gate twin of DR-41c. A usage file behind a symlink whose target parent loses
+    // read (a permissions blip) is PRESENT but inaccessible; the old Files.exists gate FOLLOWED the
+    // link, read false, and returned empty with no log — the user's real 5h spend vanished from the
+    // HUD silently. Direct-read reaches the AccessDenied and logs it; only a NoSuchFile (genuine
+    // absence / dangling link) stays the quiet empty.
+    @Test
+    fun `an inaccessible usage file logs the read failure, not a silent empty - DR-58`(@TempDir dir: Path) {
+        val externalDir = Files.createDirectories(dir.resolve("external"))
+        val target = Files.writeString(externalDir.resolve("usage.json"), "[]")
+        val link = dir.resolve("usage.json").also { Files.createSymbolicLink(it, target) }
+        Files.setPosixFilePermissions(externalDir, PosixFilePermissions.fromString("---------"))
+        val log = mutableListOf<String>()
+        val ring = splice.gateway.usage.UsageRingFile(link, Any(), LogSink { log += it })
+        try {
+            assertTrue(ring.readEntriesFromDisk().isEmpty(), "an unreadable ring degrades to empty")
+            assertEquals(
+                1,
+                log.count { it.contains("unreadable") && it.contains("5h window reset") },
+                "an inaccessible usage file must log the drop, not read as silent absence: $log",
+            )
+        } finally {
+            Files.setPosixFilePermissions(externalDir, PosixFilePermissions.fromString("rwx------"))
+        }
+    }
+
+    // DR-58 companion (NEVER-BELOW-STATUS-QUO): a genuinely-absent usage file is the quiet first-run
+    // empty — NoSuchFile AND no path entry is the one shape that must not warn. Guards the
+    // direct-read from over-correcting into a log-everything firehose on the common cold-start path.
+    @Test
+    fun `a genuinely absent usage file reads empty and quiet - DR-58`(@TempDir dir: Path) {
+        val log = mutableListOf<String>()
+        val ring = splice.gateway.usage.UsageRingFile(dir.resolve("nope.json"), Any(), LogSink { log += it })
+        assertTrue(ring.readEntriesFromDisk().isEmpty())
+        assertTrue(log.isEmpty(), "genuine first-run absence must not warn: $log")
+    }
+
+    // DR-58 (codex class law): the usage file sits DIRECTLY under a dir whose search bit is gone —
+    // no symlink. Any exists() pre-gate reads false through the untraversable parent; only the
+    // direct read reaches the AccessDenied and logs the window reset.
+    @Test
+    fun `an untraversable usage-file parent logs the read failure - DR-58`(@TempDir dir: Path) {
+        val externalDir = Files.createDirectories(dir.resolve("external"))
+        val file = Files.writeString(externalDir.resolve("usage.json"), "[]")
+        Files.setPosixFilePermissions(externalDir, PosixFilePermissions.fromString("---------"))
+        val log = mutableListOf<String>()
+        val ring = splice.gateway.usage.UsageRingFile(file, Any(), LogSink { log += it })
+        try {
+            assertTrue(ring.readEntriesFromDisk().isEmpty())
+            assertEquals(1, log.count { it.contains("unreadable") }, "parent denial must log: $log")
+        } finally {
+            Files.setPosixFilePermissions(externalDir, PosixFilePermissions.fromString("rwx------"))
+        }
+    }
+
+    // DR-58 (codex class law): a DANGLING usage symlink throws NoSuch on read, but the entry exists
+    // — the ring's disk lane broke, which is not a quiet first run. exists(NOFOLLOW) disambiguates
+    // the caught NoSuch only; unconditional NoSuch->quiet would silently reset the 5h window.
+    @Test
+    fun `a dangling usage symlink logs the read failure, not a quiet first run - DR-58`(@TempDir dir: Path) {
+        val link = dir.resolve("usage.json").also { Files.createSymbolicLink(it, dir.resolve("never-created")) }
+        val log = mutableListOf<String>()
+        val ring = splice.gateway.usage.UsageRingFile(link, Any(), LogSink { log += it })
+        assertTrue(ring.readEntriesFromDisk().isEmpty())
+        assertEquals(1, log.count { it.contains("unreadable") }, "a dangling ring link must log: $log")
+    }
 }

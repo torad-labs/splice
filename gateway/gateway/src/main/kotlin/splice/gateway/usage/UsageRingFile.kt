@@ -11,6 +11,7 @@ import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import splice.core.util.SecureFile
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 
 // MUST comfortably exceed MAX_RING_ENTRIES x ~50 bytes/row — at 2MB the reader treated a
@@ -31,14 +32,19 @@ internal class UsageRingFile(
     internal var persistedVersion: Long = -1L
         private set
 
-    // best-effort by design: a missing/corrupt usage file reads as empty; cancellation propagates.
-    // The file is a JSON array rewritten on every append (not JSONL). Growth is bounded by the
-    // 5h window filter + MAX_RING_ENTRIES; oversize files are treated as empty. USG-005: the drop
-    // still degrades to empty (never throws), but is now logged via the same sink every other
-    // component in this codebase defaults to (DaemonLog::write) — the user's real 5h spend
-    // disappearing from the HUD must leave a trace.
+    // best-effort by design: a genuinely-absent or corrupt usage file reads as empty; cancellation
+    // propagates. The file is a JSON array rewritten on every append (not JSONL). Growth is bounded
+    // by the 5h window filter + MAX_RING_ENTRIES; oversize files are treated as empty. USG-005: the
+    // drop still degrades to empty (never throws), but is logged via the same sink every other
+    // component defaults to (DaemonLog::write) — the user's real 5h spend disappearing from the HUD
+    // must leave a trace. DR-58: only a PROVEN absence (NoSuchFileException — no file, or a dangling
+    // symlink) is that quiet empty; there is no Files.exists pre-gate, because it FOLLOWED a usage
+    // symlink to an unreadable target, read false, and returned empty SILENTLY — skipping the very
+    // log this contract promises. A present-but-inaccessible file now flows to the read, throws
+    // AccessDenied, and is logged like any other unreadable file. (This read is cold-start only —
+    // guarded by UsageRing.ringLoaded — so an unconditional line here cannot firehose; the per-event
+    // WRITE side keeps its streak latch below.)
     internal fun readEntriesFromDisk(): List<JsonObject> {
-        if (!Files.exists(usageFile)) return emptyList()
         val size = Cancellables.runCatchingCancellable { Files.size(usageFile) }.getOrDefault(0L)
         if (size > MAX_USAGE_FILE_BYTES) {
             log("[usage] $usageFile is ${size}B > ${MAX_USAGE_FILE_BYTES}B cap — treating as empty, 5h window reset\n")
@@ -47,7 +53,17 @@ internal class UsageRingFile(
         return Cancellables.runCatchingCancellable {
             json.parseToJsonElement(Files.readString(usageFile)).jsonArray.mapNotNull { it as? JsonObject }
         }.getOrElse {
-            log("[usage] $usageFile unreadable/corrupt (${it.message}) — treating as empty, 5h window reset\n")
+            // Only PROVEN absence is the quiet first-run empty: NoSuchFileException AND no path entry
+            // under NOFOLLOW. A present-but-inaccessible file throws AccessDenied (not NoSuch) and a
+            // DANGLING symlink throws NoSuch while its entry still exists — both MUST log: the
+            // read-gate twin of USG-005's silent-write scar (DR-58). exists(NOFOLLOW) only
+            // disambiguates the caught NoSuch; it is never a pre-gate (it reads false through an
+            // untraversable parent, which is exactly how the old gate lied "absent").
+            val genuinelyAbsent = it is java.nio.file.NoSuchFileException &&
+                !Files.exists(usageFile, LinkOption.NOFOLLOW_LINKS)
+            if (!genuinelyAbsent) {
+                log("[usage] $usageFile unreadable/corrupt (${it.message}) — treating as empty, 5h window reset\n")
+            }
             emptyList()
         }
     }

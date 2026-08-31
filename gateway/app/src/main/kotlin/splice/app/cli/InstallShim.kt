@@ -49,8 +49,17 @@ internal class InstallShim(
             .getOrElse { failure ->
                 // DR-69: an unreadable shim previously read as "absent" and the warning went
                 // missing exactly when the install was wedged. Never quotes file bytes.
-                return "splice: WARNING — launch shim at $shim is UNREADABLE " +
-                    "(${SafeFailureText.render(failure)}); its version cannot be verified. Fix access to $shim."
+                // DR-85: a dangling link is the third state — its remedy is the reinstall the
+                // access wording forbids.
+                val dangling = failure is java.nio.file.NoSuchFileException &&
+                    Files.exists(shim, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                return if (dangling) {
+                    "splice: WARNING — launch shim at $shim is a dangling symlink; " +
+                        "its target is gone. Re-run install.sh."
+                } else {
+                    "splice: WARNING — launch shim at $shim is UNREADABLE " +
+                        "(${SafeFailureText.render(failure)}); its version cannot be verified. Fix access to $shim."
+                }
             }
         if (installed == null && !Files.exists(shim, java.nio.file.LinkOption.NOFOLLOW_LINKS)) return null
         return if (installed == SHIM_VERSION) {

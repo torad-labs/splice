@@ -265,6 +265,29 @@ class InstallLinkerClaimTest {
         assertTrue(splice.app.cli.InstallLinker().installSelf(noEnv))
         assertTrue(bin.resolve("splice").readSymbolicLink().toString().endsWith("splice-launch"))
     }
+
+    // DR-84 (batches 6+7 review): the confirmed-symlink delete ran OUTSIDE the try, so a failed
+    // claim (concurrent install, ENOSPC, read-only remount) destroyed a live wrapper and left
+    // NOTHING at the command name — the old staged code's worst case was an un-updated wrapper.
+    // A failed claim must put the previous target back; a foreign creator that won the window
+    // keeps its file (DR-67's law outranks the restore).
+    @Test
+    fun `a failed claim restores the previous wrapper - DR-84`(@TempDir home: Path) = withHome(home) {
+        val share = home.resolve(".local").resolve("share").resolve("splice")
+        Files.createDirectories(share)
+        share.resolve("splice-launch").writeString("#!/usr/bin/env bash\n")
+        val bin = home.resolve(".local").resolve("bin")
+        Files.createDirectories(bin)
+        val previous = home.resolve("working-target")
+        previous.writeString("working")
+        Files.createSymbolicLink(bin.resolve("splice"), previous)
+        val failing = splice.app.cli.WrapperClaim { _, _ -> throw java.io.IOException("disk full") }
+        org.junit.jupiter.api.assertThrows<IllegalStateException> {
+            splice.app.cli.InstallLinker(claim = failing).installSelf(noEnv)
+        }
+        assertTrue(bin.resolve("splice").isSymbolicLink(), "the command name must not be left empty")
+        assertEquals(previous, bin.resolve("splice").readSymbolicLink(), "the working wrapper is restored")
+    }
 }
 
 // DR-74 (invariant audit): the shim pre-flight used bare Files.exists(), which reads a dangling
@@ -302,5 +325,19 @@ class InstallShimPresenceTest {
             splice.app.cli.InstallLinker().installSelf(layoutEnv(tmp))
         }
         assertTrue(failure.message!!.contains("run install.sh"), failure.message)
+    }
+
+    // DR-85 (batches 6+7 review): a DANGLING splice-launch stats as NoSuch while its NOFOLLOW
+    // entry exists — the two-way classification called that "unreadable — fix access, not
+    // reinstall", forbidding exactly the reinstall a dangling link needs. Third state.
+    @Test
+    fun `a dangling shim names the dangling state and the reinstall remedy - DR-85`(@TempDir tmp: java.nio.file.Path) {
+        val share = Files.createDirectories(tmp.resolve("share"))
+        Files.createSymbolicLink(share.resolve("splice-launch"), share.resolve("gone-target"))
+        val failure = org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException::class.java) {
+            splice.app.cli.InstallLinker().installSelf(layoutEnv(tmp))
+        }
+        assertTrue(failure.message!!.contains("dangling"), failure.message)
+        assertTrue(failure.message!!.contains("install.sh"), failure.message)
     }
 }

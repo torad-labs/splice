@@ -99,6 +99,12 @@ internal object AdminSupport {
             }
     }
 
+    /** DR-86: reporter-side access probe for [selfJar]'s answer. The spawn consumer rightly gets
+     *  the path and fails with the real error at use time — but doctor/status render a TABLE and
+     *  must name the third state instead of printing OK for a jar they cannot stat. Null = readable. */
+    fun jarAccessFailure(jar: Path): Throwable? =
+        Cancellables.runCatchingCancellable { Files.getLastModifiedTime(jar) }.exceptionOrNull()
+
     /** Cold-start the daemon detached (survives this CLI exiting) and wait until it answers. */
     fun ensureDaemon(port: Int = controlPort()): Boolean = launch.ensureDaemon(port)
 

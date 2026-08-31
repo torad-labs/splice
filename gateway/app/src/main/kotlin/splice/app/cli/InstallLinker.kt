@@ -85,31 +85,54 @@ internal class InstallLinker(
     private fun linkOne(bin: Path, headKey: String, command: String, launchShim: Path) {
         val link = bin.resolve(command)
         requireReplaceableLink(link)
-        // DR-67: delete only a CONFIRMED symlink, then claim exclusively — a foreign file that
-        // appears between the check and the claim wins, and the install fails loud.
-        if (link.isSymbolicLink()) Files.deleteIfExists(link)
         try {
-            claim(link, launchShim)
+            // DR-67: delete only a CONFIRMED symlink, then claim exclusively — a foreign file that
+            // appears between the check and the claim wins, and the install fails loud.
+            // DR-84: remember the old target first — the delete used to run OUTSIDE this try, so a
+            // failed claim (concurrent install, ENOSPC) left NOTHING at a command name that held a
+            // working wrapper. A failed claim now puts the previous target back.
+            val previous = if (link.isSymbolicLink()) Files.readSymbolicLink(link) else null
+            if (previous != null) Files.deleteIfExists(link)
+            claimOrRestore(link, launchShim, previous)
             println("splice: installed '$command' -> $launchShim (head=$headKey)")
         } catch (e: java.io.IOException) {
             throw IllegalStateException("failed to link $command — $link was not claimable: ${e.message}", e)
         }
     }
 
+    /** DR-84: the claim, undoing the [linkOne] delete on failure. Restore is exclusive too — a
+     *  foreign creator that won the window keeps its file (DR-67's law outranks the restore) —
+     *  and best-effort, saying so when it also fails (ENOSPC hits both). */
+    private fun claimOrRestore(link: Path, launchShim: Path, previous: Path?) {
+        try {
+            claim(link, launchShim)
+        } catch (e: java.io.IOException) {
+            val restored = previous == null ||
+                Cancellables.runCatchingCancellable { ExclusiveSymlinkClaim(link, previous) }.isSuccess
+            if (!restored) println("splice: warning — the previous wrapper at $link could not be restored")
+            throw e
+        }
+    }
+
     /** DR-74: the shim pre-flight follows the absence law — bare exists() read a dangling link,
      *  an untraversable parent, and an inaccessible shim all as "not installed", telling the
      *  operator to reinstall through what is actually a permissions problem. Only proven absence
-     *  keeps the install.sh remedy; indeterminate access aborts naming the real one. */
+     *  keeps the install.sh remedy; indeterminate access aborts naming the real one. DR-85: a
+     *  DANGLING link (NoSuch through the link, entry present NOFOLLOW) is a third state — it
+     *  needs exactly the reinstall the unreadable wording forbids (the MgmtKey idiom). */
     private fun requireShimPresent(launchShim: Path) {
         val failure = Cancellables.runCatchingCancellable { Files.getLastModifiedTime(launchShim) }
             .exceptionOrNull() ?: return
-        val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
-            !Files.exists(launchShim, NOFOLLOW_LINKS)
-        check(!genuinelyAbsent) { "launch shim not found at $launchShim (run install.sh)" }
-        throw IllegalStateException(
-            "launch shim at $launchShim is unreadable (${SafeFailureText.render(failure)}) — " +
-                "fix access to it and its parents, not reinstall",
-        )
+        val noSuch = failure is java.nio.file.NoSuchFileException
+        val entryPresent = Files.exists(launchShim, NOFOLLOW_LINKS)
+        val message = when {
+            noSuch && !entryPresent -> "launch shim not found at $launchShim (run install.sh)"
+            noSuch -> "launch shim at $launchShim is a dangling symlink — its target is gone; run install.sh"
+            else ->
+                "launch shim at $launchShim is unreadable (${SafeFailureText.render(failure)}) — " +
+                    "fix access to it and its parents, not reinstall"
+        }
+        throw IllegalStateException(message)
     }
 
     private fun requireReplaceableLink(link: Path) {

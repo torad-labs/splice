@@ -82,4 +82,50 @@ class DoctorShimAbsenceTest {
         assertTrue(shim.toString().contains("unreadable"), shim.toString())
         assertTrue(shim.toString().contains("not missing"), shim.toString())
     }
+
+    // DR-85 (batches 6+7 review): a DANGLING shim is neither missing nor an access problem — it
+    // needs exactly the reinstall the unreadable branch forbids. MgmtKey/DoctorPathCheck already
+    // carry the three-way idiom; these pin it onto the shim surfaces.
+    @Test
+    fun `doctor's shim check names a dangling shim and the reinstall remedy - DR-85`(@TempDir tmp: Path) {
+        val share = Files.createDirectories(tmp.resolve("share"))
+        Files.createSymbolicLink(share.resolve("splice-launch"), share.resolve("gone-target"))
+        Files.createDirectories(tmp.resolve("bin"))
+        val checks = DoctorInstallProbes(DoctorProbes()).installationChecks(DoctorTopology.Absent, shareEnv(tmp))
+        val shim = checks.single { it.toString().contains("launch shim") }
+        assertTrue(shim.toString().contains("dangling"), shim.toString())
+        assertTrue(shim.toString().contains("install.sh"), shim.toString())
+    }
+
+    @Test
+    fun `a dangling shim staleness warning names dangling, not access - DR-85`(@TempDir tmp: Path) {
+        val share = Files.createDirectories(tmp.resolve("share"))
+        Files.createSymbolicLink(share.resolve("splice-launch"), share.resolve("gone-target"))
+        val warning = InstallShim().shimStalenessWarning(shareEnv(tmp))
+        assertTrue(warning != null && warning.contains("dangling"), warning ?: "<null>")
+    }
+
+    // DR-86 (batches 6+7 review): jarCheck is a REPORTER — DR-70's "return the path and let the
+    // consumer fail" is right for the spawn consumer, but doctor rendering OK for a jar it cannot
+    // stat inverts DR-69's own contract. The row must name the third state.
+    @Test
+    fun `doctor's jar check names an unreadable jar instead of OK - DR-86`(@TempDir tmp: Path) {
+        val savedHome = System.getProperty("user.home")
+        val spliceShare = Files.createDirectories(
+            tmp.resolve("home").resolve(".local").resolve("share").resolve("splice"),
+        )
+        Files.writeString(spliceShare.resolve("splice.jar"), "jar-bytes")
+        Files.createDirectories(tmp.resolve("share"))
+        Files.createDirectories(tmp.resolve("bin"))
+        System.setProperty("user.home", tmp.resolve("home").toString())
+        val checks = try {
+            withDenied(spliceShare) {
+                DoctorInstallProbes(DoctorProbes()).installationChecks(DoctorTopology.Absent, shareEnv(tmp))
+            }
+        } finally {
+            System.setProperty("user.home", savedHome)
+        }
+        val jar = checks.single { it.toString().contains("name=jar") }
+        assertTrue(jar.toString().contains("unreadable"), jar.toString())
+    }
 }

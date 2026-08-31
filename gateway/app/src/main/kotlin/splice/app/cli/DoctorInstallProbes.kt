@@ -40,10 +40,20 @@ internal class DoctorInstallProbes(private val probes: DoctorProbes) {
     private fun jarCheck(): DoctorCheck {
         val version = TopologyLoader.gatewayVersion()
         val jar = AdminSupport.selfJar()
-        return if (jar == null) {
-            DoctorCheck("jar", CheckStatus.INFO, "running from classes (dev build), $version")
-        } else {
+            ?: return DoctorCheck("jar", CheckStatus.INFO, "running from classes (dev build), $version")
+        // DR-86: this row is a REPORTER. DR-70's "return the path and let the consumer fail with
+        // the real error" is right for the spawn consumer — but rendering OK for a jar this
+        // command cannot even stat inverts doctor's own present-behind-denied-access contract.
+        val failure = AdminSupport.jarAccessFailure(jar)
+        return if (failure == null) {
             DoctorCheck("jar", CheckStatus.OK, "$version ($jar)")
+        } else {
+            DoctorCheck(
+                "jar",
+                CheckStatus.FAIL,
+                "jar at $jar is unreadable (${SafeFailureText.render(failure)}) — not missing",
+                "fix access to $jar and its parents, then re-run doctor",
+            )
         }
     }
 
@@ -52,25 +62,39 @@ internal class DoctorInstallProbes(private val probes: DoctorProbes) {
         // different (and fixable-without-reinstall) diagnosis. installedShimVersion now throws
         // on indeterminate access, classified here instead of surfacing as check-crashed.
         val statFailure = Cancellables.runCatchingCancellable { Files.getLastModifiedTime(shim) }.exceptionOrNull()
-        if (statFailure != null) {
-            val genuinelyAbsent = statFailure is java.nio.file.NoSuchFileException &&
-                !Files.exists(shim, java.nio.file.LinkOption.NOFOLLOW_LINKS)
-            return if (genuinelyAbsent) {
-                DoctorCheck(
-                    "shim",
-                    CheckStatus.FAIL,
-                    "launch shim missing at $shim — every wrapper needs it",
-                    "./install.sh from a checkout, or re-run the release installer",
-                )
-            } else {
-                DoctorCheck(
-                    "shim",
-                    CheckStatus.FAIL,
-                    "launch shim at $shim is unreadable (${SafeFailureText.render(statFailure)}) — not missing",
-                    "fix access to $shim and its parents, then re-run doctor",
-                )
-            }
+        if (statFailure != null) return shimStatFailureCheck(shim, statFailure)
+        return shimVersionCheck(shim, envReader)
+    }
+
+    /** DR-69/DR-85: the three stat-failure states, each naming its own remedy — missing
+     *  (install.sh), DANGLING (install.sh again: its target is gone, and the access wording
+     *  would forbid exactly that), unreadable (fix access, not reinstall). */
+    private fun shimStatFailureCheck(shim: Path, failure: Throwable): DoctorCheck {
+        val noSuch = failure is java.nio.file.NoSuchFileException
+        val entryPresent = Files.exists(shim, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+        return when {
+            noSuch && !entryPresent -> DoctorCheck(
+                "shim",
+                CheckStatus.FAIL,
+                "launch shim missing at $shim — every wrapper needs it",
+                "./install.sh from a checkout, or re-run the release installer",
+            )
+            noSuch -> DoctorCheck(
+                "shim",
+                CheckStatus.FAIL,
+                "launch shim at $shim is a dangling symlink — its target is gone",
+                "re-run install.sh; fixing access cannot help a link with no target",
+            )
+            else -> DoctorCheck(
+                "shim",
+                CheckStatus.FAIL,
+                "launch shim at $shim is unreadable (${SafeFailureText.render(failure)}) — not missing",
+                "fix access to $shim and its parents, then re-run doctor",
+            )
         }
+    }
+
+    private fun shimVersionCheck(shim: Path, envReader: EnvReader): DoctorCheck {
         val expected = TopologyLoader.shimVersion()
         val installed = Cancellables.runCatchingCancellable { installCommand.installedShimVersion(envReader) }
             .getOrElse { failure ->

@@ -9,6 +9,7 @@ import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.util.EnvReader
+import splice.core.util.SafeFailureText
 
 /** The `status` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources
  *  carry no top-level functions). Also the home of the two credential-presence predicates doctor
@@ -34,7 +35,7 @@ internal class StatusCommand {
         }
         println("  daemon    $daemonLine")
         println("  config    $DIM${TopologyLoader.configPath()}$RESET")
-        println("  jar       $DIM${AdminSupport.selfJar() ?: "not installed — run: splice install"}$RESET")
+        println("  jar       $DIM${jarLine()}$RESET")
         println()
         println("  ${BOLD}HEAD          COMMAND        BACKEND                AUTH          WRAPPER$RESET")
         for ((key, head) in topology.heads) {
@@ -43,6 +44,15 @@ internal class StatusCommand {
         }
         println()
         table.printNextSteps(topology, envReader)
+    }
+
+    /** DR-86: the status table is a reporter — a jar it cannot stat must say so, not render as
+     *  installed (the doctor jarCheck twin). */
+    private fun jarLine(): String {
+        val jar = AdminSupport.selfJar() ?: return "not installed — run: splice install"
+        val failure = AdminSupport.jarAccessFailure(jar)
+            ?: return jar.toString()
+        return "$jar is unreadable (${SafeFailureText.render(failure)}) — fix access to it"
     }
 
     /** A head that DECLARES the caller's own credential rather than one splice holds.

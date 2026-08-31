@@ -76,6 +76,17 @@ class CodexProviderTest {
         assertTrue(headers.containsKey("Accept"))
     }
 
+    @Test
+    fun `codex production profile emits empty instructions on lite turns`() {
+        val built = provider(accountIdHeader = false).buildTurn(
+            deferrableTurnBody(),
+            compact = false,
+            sessionId = "s1",
+        )
+
+        assertEquals("", built.requestBody.getValue("instructions").jsonPrimitive.content)
+    }
+
     // A turn body with 1 builtin (eager) + 10 mcp-prefixed tools (deferrable at minDeferred=4).
     private fun deferrableTurnBody() = AnthropicParse.parseAnthropicBody(
         """{"model":"claude-codex--gpt-5.6-sol","stream":true,"max_tokens":1024,"system":"s",""" +

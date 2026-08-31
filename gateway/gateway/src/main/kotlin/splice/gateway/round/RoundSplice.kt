@@ -68,13 +68,18 @@ internal class RoundSplice {
 
     /** A turn that absorbed re-anchor rounds and STILL failed burned real billed tokens on those
      *  rounds; carry them on the Failure so finishTurn can account them (review-pr 2026-07-24 —
-     *  before re-anchoring a Failure was always single-round, so there was nothing to lose). */
-    fun withFailureSalvage(outcome: TurnOutcome, acc: RoundUsage): TurnOutcome =
-        if (outcome is TurnOutcome.Failure && acc.outSum + acc.reasoningSum > 0) {
-            outcome.copy(salvagedUsage = acc.toUsage())
-        } else {
-            outcome
-        }
+     *  before re-anchoring a Failure was always single-round, so there was nothing to lose).
+     *  DR-124: the TERMINAL round's own burn (Failure.partial.usage — the harvest
+     *  ResponsesEventReducer takes from response.failed precisely so this accounting is real)
+     *  folds in too; dropping it under-counted multi-round turns by exactly their heaviest round
+     *  and stamped nothing on a single-round failure with reported usage. */
+    fun withFailureSalvage(outcome: TurnOutcome, acc: RoundUsage): TurnOutcome {
+        if (outcome !is TurnOutcome.Failure) return outcome
+        val total = outcome.partial?.usage?.let { acc.plusTerminal(it) } ?: acc
+        val nothingBurned = total.outSum + total.reasoningSum <= 0 && total.lastInput <= 0
+        if (nothingBurned) return outcome
+        return outcome.copy(salvagedUsage = total.toUsage())
+    }
 
     /** Cross-round merge (code-review 2026-07-24): the post-stream pipeline — empty-model honesty
      *  gate, promote-to-text, reasoning mirror — is round-blind; it sees ONE outcome. A spliced

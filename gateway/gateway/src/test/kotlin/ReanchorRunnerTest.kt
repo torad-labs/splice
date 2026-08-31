@@ -344,9 +344,9 @@ class FoldRunnerReanchorTest {
         assertEquals(listOf(0, 1), waits, "every absorbed failure must pause before the re-POST")
         val failure = h.finished as TurnOutcome.Failure
         assertEquals(
-            8,
+            12,
             failure.salvagedUsage.outputTokens,
-            "two absorbed rounds' tokens carried, final round's not salvaged",
+            "two absorbed rounds' tokens carried AND the terminal round's own burn (DR-124)",
         )
     }
 

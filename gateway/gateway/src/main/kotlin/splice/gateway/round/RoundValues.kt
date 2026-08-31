@@ -31,6 +31,17 @@ internal data class RoundUsage(
         reasoningSum = reasoningSum + u.reasoningTokens,
     )
 
+    /** DR-124: fold the TERMINAL failed round's harvested usage (Failure.partial.usage) under the
+     *  same cumulative law — with one difference from [plusRound]: a dying round may report only
+     *  the output side (response.failed payloads vary), and clobbering last-known input/cached
+     *  with 0 would un-account the prior round's prompt, so zero keeps the last known value. */
+    fun plusTerminal(u: Usage) = RoundUsage(
+        lastInput = if (u.inputTokens > 0) u.inputTokens else lastInput,
+        lastCached = if (u.cachedTokens > 0) u.cachedTokens else lastCached,
+        outSum = outSum + u.outputTokens,
+        reasoningSum = reasoningSum + u.reasoningTokens,
+    )
+
     fun toUsage() = Usage(
         inputTokens = lastInput,
         outputTokens = outSum,

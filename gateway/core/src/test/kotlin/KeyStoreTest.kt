@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.KeyStore
 import splice.core.config.KeyStorePath
+import splice.core.util.LogSink
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
@@ -132,6 +133,28 @@ class KeyStoreTest {
         }
         assertTrue(before.contentEquals(Files.readAllBytes(path)), "the store must be byte-identical")
         assertEquals(setOf("OPENROUTER_API_KEY", "FIREWORKS_API_KEY"), store.names())
+    }
+
+    // DR-40: the display-path read stayed tolerant (right) and SILENT (wrong) — an unreadable
+    // keys.toml read as empty, so readKey said auth-missing and `splice key list` corroborated the
+    // misdiagnosis while the keys sat intact one parse error away. Corrupt-vs-empty now differ by
+    // ONE daemon-log line per file version (mtime-gated, or auth paths would firehose the log).
+    @Test
+    fun `an unreadable store logs corrupt-vs-empty once per file version`() {
+        val dir = Files.createTempDirectory("keys-corrupt-log")
+        val path = dir.resolve("keys.toml")
+        val log = mutableListOf<String>()
+        val store = KeyStore(path, log = LogSink { log += it })
+        store.write("OPENROUTER_API_KEY", "sk-a")
+        Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("-wx------"))
+        try {
+            assertNull(store.read("OPENROUTER_API_KEY"), "unreadable still degrades to empty for display")
+            assertNull(store.read("OPENROUTER_API_KEY"))
+        } finally {
+            Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------"))
+        }
+        assertEquals(1, log.count { it.contains("UNREADABLE") }, "one warning per file version, got $log")
+        assertEquals("sk-a", store.read("OPENROUTER_API_KEY"), "the keys were never lost")
     }
 
     @Test

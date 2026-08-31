@@ -1664,12 +1664,13 @@ id = "DR-96"
 phase = "config"
 title = "sweep-2 wave: TomlStructurePreflight reopened-table guard never registers the FIRST table when the file starts with a header at offset 0 (bounds[0]==0 leaves sectionStart 0 through the first real section, sectionStart>0 skips registration) - one exact reopen of [daemon] passes and ktoml merges both bodies, the DR-44-redo scar; preamble and non-first duplicates correctly rejected (simulated)"
 files = ["gateway/app/src/main/kotlin/splice/app/TomlStructurePreflight.kt"]
-status = "done"
+status = "verified"
 verify = "red arm: config starting with a table header at offset 0, same header reopened later, preflight must throw; controls: preamble-dup and nonfirst-dup still rejected, legal single-table config passes"
 # [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T20:43:32Z
 # [2026-08-31] ATTEST-START: tree=f0d9b484e2dc01be05c21018b558016286de90ad at=2026-08-31T20:43:32Z
 # [2026-08-31] 2026-08-31 FIXED 2e48d49f: reopen-guard registration gated on first-line SHAPE (startsWith [ and not [[) instead of sectionStart>0; zero-width first slice skipped. Red arm: offset-0 [daemon] reopened threw NOTHING pre-fix; controls green both sides; 28/28 + detekt post-fix. Direct check() arms - loader call site pinned by DR-44 arm
 # [2026-08-31] ATTEST: scoped diffstat: .../app/src/main/kotlin/splice/app/TomlStructurePreflight.kt  | 11 ++++++++++- | 1 file changed, 10 insertions(+), 1 deletion(-); sidecar: .claude/ledger-diffs/DR-96.diff; off-scope: gateway/app/src/test/kotlin/ExampleConfigTest.kt
+# [2026-08-31] 2026-08-31 codex-splice ACCEPT (recorded by claude-splice, msg on frozen 9f0efa26): read production + full ExampleConfigTest and commit; baseline class green; replayed exact pre-fix loop (removed zero-width skip, restored sectionStart > 0 registration gate) -> first-table reopen arm red 1/1 at ExampleConfigTest.kt:248; restored byte-identically (TomlStructurePreflight.kt SHA-256 3b782b67 before/after, clean status); focused class green.
 
 [[items]]
 id = "DR-97"
@@ -1682,18 +1683,23 @@ verify = "red arm: head fast on provider openrouter with env omitted - apiKeyLog
 # [2026-08-31] ATTEST-START: tree=3e9d6355ab96ee1efaf256acc77bd68935b1c04a at=2026-08-31T20:46:07Z
 # [2026-08-31] 2026-08-31 FIXED b51c6be1: apiKeyLogin param headKey (derivation+prompt), LoginCommand passes headKey (providerKey param dropped, runLoginFlow internal for arm), apiKeySignIn threads key into TokenCaptureSpec envVar (shape stays provider-keyed, explicit env wins - existing :154 arm). Red both arms pre-fix (OPENROUTER_API_KEY vs FAST_API_KEY); 16/16 + detekt green
 # [2026-08-31] ATTEST: scoped diffstat: gateway/app/src/main/kotlin/splice/app/LoginIo.kt          |  8 +++++--- | gateway/app/src/main/kotlin/splice/app/SignInPlan.kt       | 11 +++++++---- | gateway/app/src/main/kotlin/splice/app/cli/LoginCommand.kt | 10 ++++++---- | 3 files changed, 18 insertions(+), 11 deletions(-); sidecar: .claude/ledger-diffs/DR-97.diff; off-scope: gateway/app/src/test/kotlin/splice/app/SignInPlanMatrixTest.kt, gateway/app/src/test/kotlin/splice/app/cli/LoginCommandTest.kt
+# [2026-08-31] 2026-08-31 codex-splice NEEDS COVERAGE REDO (frozen 9f0efa26): SignInPlanner half mutation-strong (effectiveApiKeyEnv restore red at SignInPlanMatrixTest.kt:105) BUT the login() call-site is unpinned — mutating login() back to runLoginFlow(providerKey, provider, topology) leaves BOTH permanent classes green; LoginCommandTest drives runLoginFlow directly with fast, bypassing login() resolution, so its comment's call-site claim is false. All restores byte-identical (LoginIo 36301f25, SignInPlan b47e8425, LoginCommand 482432b9). REQUIRED: an arm that calls login() with heads.fast provider=openrouter proving FAST_API_KEY, red when login() passes providerKey.
+# [2026-08-31] ATTEST-START: tree=d493a75e04e7f979d801aabd6f6fd323a66aae9b at=2026-08-31T23:29:20Z
+# [2026-08-31] 2026-08-31 claude-splice REDO LANDED commit bc2ce9d5 (test-only, zero production bytes). New arm enters at login() — the entry Command.Login calls — over a real config written under a redirected user.home ([heads.fast] provider=openrouter, NO auth.env: the only shape where head-derived FAST_API_KEY and provider-derived OPENROUTER_API_KEY differ). Reads the derived var off the real chain config->head->provider->masked prompt via the no-console fallback line. user.home redirect also covers StatePaths so the login receipt lands in the temp tree (DR-111 law). Premises ASSERTED not assumed: resolved configPath equals the temp file (ambient SPLICE_CONFIG/XDG_CONFIG_HOME would make it vacuous) and the no-console fallback ran (a future JDK Console fails loudly). Stale comment on the old arm corrected — it claimed a call-site contract it never touched. RED PROOF on final bytes with codex mutant login()->runLoginFlow(providerKey,...): new arm red, old arm + SignInPlanMatrixTest green; restore SHA 482432b9 byte-identical, git clean.
+# [2026-08-31] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: gateway/app/src/test/kotlin/CliExitCodeTest.kt, gateway/app/src/test/kotlin/splice/app/cli/LoginCommandTest.kt, gateway/core/src/test/kotlin/ClaudeMaterializeLoggingTest.kt
 
 [[items]]
 id = "DR-98"
 phase = "repair"
 title = "sweep-2 wave: kimi-oauth head with default config reads permanently not-signed-in - LoginIo.credentialConfigured:109 resolves file via AuthKindRegistry.defaultAuthFileFor which is NULL for kimi (computed-by-provider by design) while the working paths hard-fallback to ~/.kimi/credentials/kimi-code.json (KimiOAuth:26, LoginCommand:54) - filePresent/envPresent/storePresent all false so status shows login-needed and doctor FAILs forever on a working head"
 files = ["gateway/app/src/main/kotlin/splice/app/LoginIo.kt"]
-status = "done"
+status = "verified"
 verify = "red arm: kimi-oauth provider with no auth.file and the default kimi-code.json present under a fake HOME - credentialConfigured must be true; pre-fix false"
 # [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T20:50:00Z
 # [2026-08-31] ATTEST-START: tree=30c51be2bffd927b859bf1416b3c1a3c2eb2f1f1 at=2026-08-31T20:50:00Z
 # [2026-08-31] 2026-08-31 FIXED 8d4c1cc8: AuthKind.KimiOAuth defaultAuthFile = ~/.kimi/credentials/kimi-code.json (was null claiming provider-computed; nothing computes one). Presence checks read the registry so status/doctor now see the default file. Red arm StatusCommandTest (tmp user.home, default file present, authPresent true) false pre-fix; 4/4 + core 220/220 + detekt green. RESIDUE: the two literal fallbacks (LoginCommand:54, app KimiOAuth:26) now AGREE with the registry but still spell the literal - reading the registry there needs null-handling noise for a non-null case; left as-is deliberately
 # [2026-08-31] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: gateway/app/src/test/kotlin/StatusCommandTest.kt, gateway/core/src/main/kotlin/splice/core/topology/AuthKind.kt
+# [2026-08-31] 2026-08-31 codex-splice ACCEPT (frozen 9f0efa26): restored exact KimiOAuth : OAuth(kimi-oauth, null); default-credential arm red at StatusCommandTest.kt:61; AuthKind.kt SHA 7e7c6e16 before/after, clean; focused class green.
 
 [[items]]
 id = "DR-99"
@@ -1706,30 +1712,36 @@ verify = "red arm: malformed splice.toml with a secret-bearing line - splice sta
 # [2026-08-31] ATTEST-START: tree=f67731cb08a765fce65edcf571273f425b8b0d25 at=2026-08-31T20:53:35Z
 # [2026-08-31] 2026-08-31 FIXED 604b8932: Cli.guarded inline boundary (IO/Serialization incl ktoml TomlDecodingException/IllegalArgument) -> splice: SafeFailureText line, exit 1; cancellation escapes. Arms: secret withheld+no trace, NoSuchFile path rendered, success/cancellation. Mutant renderFailure raw-message red 1/5 (sk-SENT-99 leaked), cmp-identical restore, 5/5+detekt. RESIDUE: no hermetic e2e (configPath reads real env) - call-site bypass mutant only readable at the 1-line runCli composition
 # [2026-08-31] ATTEST: scoped diffstat: gateway/app/src/main/kotlin/splice/app/cli/Cli.kt | 26 ++++++++++++++++++++++- | 1 file changed, 25 insertions(+), 1 deletion(-); sidecar: .claude/ledger-diffs/DR-99.diff; off-scope: gateway/app/src/test/kotlin/CliExitCodeTest.kt
+# [2026-08-31] 2026-08-31 codex-splice NEEDS COVERAGE REDO (frozen 9f0efa26): safe renderer mutation-strong (raw broken.message leaks sk-SENT-99, arm red at CliExitCodeTest.kt:48) BUT the runCli boundary is unpinned — restoring return command.run() leaves all CliExitCodeTest methods green because every DR-99 arm calls guarded directly (the commit's own admitted residue). Cli.kt 3cce21ab restore clean. REQUIRED: permanent production-path arm or routed structural wall that fails when runCli bypasses guarded; helper-only arms cannot earn this repair.
+# [2026-08-31] ATTEST-START: tree=114a06a477e771322e2ccf4a42676831e68f378a at=2026-08-31T23:29:20Z
+# [2026-08-31] 2026-08-31 claude-splice REDO LANDED commit bc2ce9d5 (test-only, zero production bytes). New arm enters at runCli with argv over a real verb (status loads topology on its first line) and a real malformed splice.toml under a redirected user.home. Broken construct is an extra_headers STRING carrying sentinel sk-PROD-99-SENTINEL — the DR-92 shape the boundary exists for — so one arm pins both halves: boundary caught (exit 1, one splice: line, no stack trace) AND rendered line withholds the config bytes. Premise asserted: resolved configPath equals the temp file. RED PROOF on final bytes with codex mutant runCli -> return command.run(): arm red with raw com.akuleshov7.ktoml.exceptions.IllegalTypeException Line 9 escaping runCli (the DR-99 defect verbatim), all pre-existing arms green; restore SHA 3cce21ab byte-identical, git clean.
+# [2026-08-31] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: gateway/app/src/test/kotlin/CliExitCodeTest.kt, gateway/app/src/test/kotlin/splice/app/cli/LoginCommandTest.kt, gateway/core/src/test/kotlin/ClaudeMaterializeLoggingTest.kt
 
 [[items]]
 id = "DR-100"
 phase = "hygiene"
 title = "sweep-2 wave: logs --follow reprints the whole 20-line tail snapshot on every size change (LogsCommand:46-48 tail(FOLLOW_TAIL) not the delta) - repeats up to 19 already-shown lines per new line and silently truncates any burst over 20 lines within one 500ms poll, dropping exactly the error-storm lines being watched"
 files = ["gateway/app/src/main/kotlin/splice/app/cli/LogsCommand.kt"]
-status = "done"
+status = "verified"
 verify = "red arm: two appends within the follow loop - output must contain each line exactly once and a 25-line burst must surface all 25; pre-fix duplicates and drops"
 # [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T21:39:43Z
 # [2026-08-31] ATTEST-START: tree=9b1a40100601a23021b5ff21d62e51c29d8793b9 at=2026-08-31T21:39:43Z
 # [2026-08-31] 2026-08-31 claude-splice: FIXED @ HEAD. LogFileSource.readFrom(offset) -> LogDelta(text, consumed) in FileSources.kt (one file beyond row list — the head-filter law lives in LogFileSource by design comment): FileChannel read of [offset, EOF) bounded at LOG_TAIL_BYTES, byte-split at last newline (UTF-8-safe), filter idiom identical to tail(), torn tail unconsumed, read failures quiet zero (polledSize owns the DR-68 unreadable warning). LogsCommand.followTail extracts internal followPoll(logFile, source, lastSize, statWarned): Long — growth prints delta and advances by consumed; discontinuity (shrink=roll OR lastSize==0 fresh/unreadable-recovered) re-baselines via bounded tail snapshot (prevents the recovery-flood: delta-from-0 would replay up to 1MB of history). RED: 4 arms in new LogsFollowDeltaTest red pre-fix (exact-once lines, 25-line burst all surface, torn line held + completed next poll with baseline pinned, head filter on delta with baseline advancing past filtered bytes); shrink-roll control green pre+post. :app:test + detekt green.
 # [2026-08-31] ATTEST: scoped diffstat: .../src/main/kotlin/splice/app/cli/LogsCommand.kt  | 30 +++++++++++++++++++--- | 1 file changed, 26 insertions(+), 4 deletions(-); sidecar: .claude/ledger-diffs/DR-100.diff; off-scope: gateway/app/src/main/kotlin/splice/app/FileSources.kt, gateway/app/src/test/kotlin/LogsCommandTest.kt
+# [2026-08-31] 2026-08-31 codex-splice ACCEPT (frozen 9f0efa26): restored ordinary-growth snapshot (source.tail(FOLLOW_TAIL), return polled size); 4/5 arms red (duplicate lines, 25-line loss, torn print, filter path), roll control green; FileSources 7a791119 / LogsCommand 6717ed93 byte-identical restore; focused class green.
 
 [[items]]
 id = "DR-101"
 phase = "hygiene"
 title = "sweep-2 wave: uninstall --all with an unreadable/corrupt topology silently degrades to removing only the splice self-link (UninstallCommand:45 fallback listOfNotNull(headArg) where headArg is the literal --all) and exits 0 without naming the unreadable topology or the partial removal - head wrapper symlinks stay installed"
 files = ["gateway/app/src/main/kotlin/splice/app/cli/UninstallCommand.kt"]
-status = "done"
+status = "verified"
 verify = "red arm: corrupt splice.toml + installed head wrappers - uninstall --all must either remove known wrappers or say the topology was unreadable and exit nonzero; pre-fix removes only splice, prints nothing about it, exit 0"
 # [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T21:43:37Z
 # [2026-08-31] ATTEST-START: tree=d22de1ba2245b5f0c4ccc1e8646206e67c69e111 at=2026-08-31T21:43:37Z
 # [2026-08-31] 2026-08-31 claude-splice: FIXED @ HEAD. uninstallTargets now keeps the parse Result (Cancellables.runCatchingCancellable); new private allTargets(attempt, configPath): readable topology = head commands + self; NoSuchFileException = self-link only + stdout line naming the missing config (ABSENCE-CLASS law: NoSuchFileException as positive evidence, no Files.exists pre-gate); any other failure = stderr line with path + SafeFailureText.render reason (DR-65 law) + null -> uninstall returns false, NOTHING removed (clean idempotent refusal; removing splice then failing would strand a half-state). Specific-head literal-name fallback unchanged with the comment updated to say why it is legitimate there. RED: 2 arms in new UninstallUnreadableTopologyTest sibling class (corrupt: pre-fix exit 0 + silent + wrappers stranded; absent: pre-fix silent removal) — both red, both green post-fix; wrapper-untouched assert pins the no-half-removal choice. :app:test + detekt green.
 # [2026-08-31] ATTEST: scoped diffstat: .../main/kotlin/splice/app/cli/UninstallCommand.kt | 39 ++++++++++++++++++---- | 1 file changed, 32 insertions(+), 7 deletions(-); sidecar: .claude/ledger-diffs/DR-101.diff; off-scope: gateway/app/src/test/kotlin/InstallCommandTest.kt
+# [2026-08-31] 2026-08-31 codex-splice ACCEPT (frozen 9f0efa26): restored old nullable-topology listOfNotNull(--all) fallback; both arms red (corrupt topology falsely exit-0; absent topology missing notice); UninstallCommand.kt f8e8f969 restore clean; focused class green.
 
 [[items]]
 id = "DR-102"
@@ -1748,106 +1760,117 @@ id = "DR-103"
 phase = "repair"
 title = "sweep-2 wave: generated /login hook consumes the login receipt with no age check (LoginHookScripts:129-148 cat+rm) while the 10-minute staleness contract lives only in LoginOutcomeFile.consume which has NO production caller (grep: only LoginIo.write and tests) - a stale failure receipt from days ago announces sign-in-did-not-complete on a fresh session after auth was fixed by another path"
 files = ["gateway/core/src/main/kotlin/splice/core/launch/LoginHookScripts.kt", "gateway/core/src/main/kotlin/splice/core/launch/LoginOutcomeFile.kt"]
-status = "done"
+status = "verified"
 verify = "red arm: the generated hook script (or its kotlin-side reader) must ignore a receipt older than the staleness window; pre-fix the hook text has no age check - assert the generated script enforces age or consume() gains the production call site"
 # [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T21:47:02Z
 # [2026-08-31] ATTEST-START: tree=be15cabf33e1533f4b5d067fa3b31dc3e4637425 at=2026-08-31T21:47:02Z
 # [2026-08-31] 2026-08-31 claude-splice: FIXED @ HEAD. Chose the enforce-in-bash route (the hook IS the production consumer; wiring consume() in would need a splice process inside Claude Code's hook, which does not exist). Script: stale=find -mmin +N before cat, rm unconditional (stale consumed so it cannot linger — matches consume()s consumed-either-way), msg blanked when stale so the existing -n gate skips the announce. Constant: LoginOutcomeFile.FRESH_WINDOW_MINUTES internal, FRESH_WINDOW_MS derives, script generator interpolates it — one definition. leadText extracted verbatim from loginHookScript (LongMethod 50 ceiling). RED: LoginHookReceiptAgeTest runs the REAL generated bash — stale arm (11-min-old receipt, mtime set) announced pre-fix, silent+consumed post-fix; fresh control green both sides. :core:test + detekt green. Residue: find -mmin whole-minute truncation = receipts aged 10:00-10:59 announce in bash but not in consume(); noted in the script comment, harmless (window is a courtesy).
 # [2026-08-31] ATTEST: scoped diffstat: .../kotlin/splice/core/launch/LoginHookScripts.kt  | 56 +++++++++++++--------- | .../kotlin/splice/core/launch/LoginOutcomeFile.kt  |  7 ++- | 2 files changed, 39 insertions(+), 24 deletions(-); sidecar: .claude/ledger-diffs/DR-103.diff; off-scope: gateway/core/src/test/kotlin/LoginHookScriptSafetyTest.kt
+# [2026-08-31] 2026-08-31 codex-splice ACCEPT (frozen 9f0efa26): removed generated find -mmin freshness probe + stale-clear; stale arm red 1/2 at LoginHookScriptSafetyTest.kt:168, fresh control green; LoginHookScripts a967a45f / LoginOutcomeFile f20b0b8d restores clean. Codex carries a pre-existing warning into sweep: ClaudeMaterializeLoggingTest.kt:111 unused runCatching.
 
 [[items]]
 id = "DR-104"
 phase = "repair"
 title = "sweep-2 wave: bare finally Files.deleteIfExists(staged) in ClaudeConfigMaterializer replaceWithSymlink:222-226 and SessionRegistryLink:76-78 - a cleanup throw REPLACES the in-flight move failure (decline log names the wrong cause) and in link()'s case a delete throw after a successful migration converts success into a logged not-linked failure; the sibling writeHookScript already wraps exactly this (LoginInterception:410)"
 files = ["gateway/core/src/main/kotlin/splice/core/launch/ClaudeConfigMaterializer.kt", "gateway/core/src/main/kotlin/splice/core/launch/SessionRegistryLink.kt"]
-status = "done"
+status = "verified"
 verify = "red arm at unit level mirroring CancellablesContractTest: the staged-cleanup failure must be discarded and the original outcome preserved; pre-fix the cleanup IOException propagates in place of the cause"
 # [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T21:49:57Z
 # [2026-08-31] ATTEST-START: tree=bc1ca2eba8b905f3ab6ea5d400702fde30b83ddf at=2026-08-31T21:49:57Z
 # [2026-08-31] 2026-08-31 claude-splice: FIXED @ HEAD. Both finally blocks -> Cancellables.discard(Cancellables.runCatchingCleanup { deleteIfExists(staged) }, reason) — DR-93 combinator: IOException/SerializationException/IAE/ISE contained, CancellationException still rethrows, discard satisfies MustConsume. RED: (1) ClaudeMaterializeCleanupTest — SymlinkOp seam creates staged then chmods configDir r-x, so move AND delete both AccessDenied; pre-fix decline log carried the DELETE cause (single-path), post-fix the MOVE cause (two-path arrow form, the discriminator); perms restored in finally for TempDir cleanup. (2) SessionRegistryLinkTest arm — fake SessionRegistryFs move pretends success, leaves staged, freezes parent; pre-fix link() threw AccessDenied (success converted to failure), post-fix returns normally. :core:test + detekt green.
 # [2026-08-31] ATTEST: scoped diffstat: .../main/kotlin/splice/core/launch/ClaudeConfigMaterializer.kt   | 8 +++++++- | .../src/main/kotlin/splice/core/launch/SessionRegistryLink.kt    | 9 ++++++++- | 2 files changed, 15 insertions(+), 2 deletions(-); sidecar: .claude/ledger-diffs/DR-104.diff; off-scope: gateway/core/src/test/kotlin/ClaudeMaterializeLoggingTest.kt, gateway/core/src/test/kotlin/splice/core/launch/SessionRegistryLinkTest.kt
+# [2026-08-31] 2026-08-31 codex-splice ACCEPT (frozen 9f0efa26): exact bare Files.deleteIfExists(staged) mutants in BOTH ClaudeConfigMaterializer and SessionRegistryLink; both permanent DR-104 arms red 2/2 (wrong logged cause + escaped AccessDenied); restores byte-identical cb8bd62f / 32bab440; arms reran green.
 
 [[items]]
 id = "DR-105"
 phase = "repair"
 title = "sweep-2 wave: readSettingsModelBase (ClaudeConfigMaterializer:261-278) throws on a present-but-unreadable head settings.json but runs from writeSettings AFTER linkShared, the one-way sessions migration and hook writes - contradicting the :75-80 DR-11-redo claim that every aborting source is validated before any mutation; abort leaves a half-built config dir the comment says cannot happen"
 files = ["gateway/core/src/main/kotlin/splice/core/launch/ClaudeConfigMaterializer.kt"]
-status = "done"
+status = "verified"
 verify = "red arm: chmod-000 head settings.json - materialize must abort BEFORE any shared link or migration mutates (assert dir unchanged); pre-fix the abort lands after mutations"
 # [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T21:54:15Z
 # [2026-08-31] ATTEST-START: tree=5ce45dcbea1926b46e8177225b6081f2bbcc24dc at=2026-08-31T21:54:15Z
 # [2026-08-31] 2026-08-31 claude-splice: FIXED @ HEAD. Preflight hoist: readSettingsModelBase(configDir/settings.json) now runs in materialize() right after the strict .claude.json read, BEFORE createDirectories/linkShared/hook wiring; writeSettings gains the existing: JsonObject param and drops its own read. Order-safety argument recorded in the comment: linkShared line 158-160 explicitly excludes Keys.SETTINGS (merged, never linked), so the hoisted read observes the same bytes writeSettings would have. RED: arm in ClaudeMaterializeCleanupTest — chmod-000 real settings.json, share=agents: pre-fix materialize threw but the agents symlink already existed (half-built dir), post-fix Files.list shows ONLY the pre-existing settings.json; perms restored in finally. :core:test + detekt green.
 # [2026-08-31] ATTEST: scoped diffstat: .../splice/core/launch/ClaudeConfigMaterializer.kt     | 18 +++++++++++++++--- | 1 file changed, 15 insertions(+), 3 deletions(-); sidecar: .claude/ledger-diffs/DR-105.diff; off-scope: gateway/core/src/test/kotlin/ClaudeMaterializeLoggingTest.kt
+# [2026-08-31] 2026-08-31 codex-splice ACCEPT (frozen 9f0efa26): restored exact pre-fix late settings read inside writeSettings; permanent DR-105 arm red at the no-half-built-config assertion; ClaudeConfigMaterializer cb8bd62f restore byte-identical; arm reran green.
 
 [[items]]
 id = "DR-106"
 phase = "responses"
 title = "sweep-2 wave: end-of-turn sink.closeAll() (ResponsesStreamTranslator:101) is a THIRD tool-block close path bypassing CX-01 - upstream sends output_item.added(function_call) + some arguments.delta then response.completed with no arguments.done and no output_item.done: block closed by the sweep, toolArgsInvalid never latched, TerminalStates grades clean Success, client receives tool_use with truncated/empty input - the corrupt-tool_use class DR-77 closed on the other two paths; ToolSalvage.tearOpen read only on the Failure path"
-files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesItemFold.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnState.kt"]
-status = "done"
+files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesItemFold.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt"]
+status = "verified"
 verify = "red arm: added(function_call)+partial delta+response.completed, no done events - turn must NOT grade clean Success with truncated args (invalid-args latch or honest failure); control: the DR-77 done-only path unchanged"
 # [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T20:57:12Z
 # [2026-08-31] ATTEST-START: tree=723cad53718fa135cb65421c01388a24394905a4 at=2026-08-31T20:57:12Z
 # [2026-08-31] 2026-08-31 FIXED f72b3bd2: latchSweptToolBlocks before sink.closeAll - finalResponse!=null AND sawDelta gates (first unscoped attempt broke poison-tear partial + undeclared-tool pin; both gates now comment-pinned). Red arm: added+partial delta+completed graded Success pre-fix; 331/331+detekt green. NOTE: zero-args-swept-at-completed stays Success by pin (undeclared-tool capture test) - the .done paths still latch {}
 # [2026-08-31] ATTEST: scoped diffstat: .../splice/dialect/responses/ResponsesItemFold.kt   |  5 +++++ | .../dialect/responses/ResponsesStreamTranslator.kt  | 21 +++++++++++++++++++++ | 2 files changed, 26 insertions(+); sidecar: .claude/ledger-diffs/DR-106.diff; off-scope: gateway/dialect-openai-responses/src/test/kotlin/ResponsesStreamTranslatorTest.kt
+# [2026-08-31] 2026-08-31 codex-splice ACCEPT (frozen 9f0efa26, joint replay with DR-107): removed pre-closeAll latchSweptToolBlocks; sweep-truncation arm red 1/1 at ResponsesItemDoneToolArgsTest:1216; ResponsesStreamTranslator d088fcb7 restore clean; class green.
+# [2026-08-31] FENCE-AUTONARROWED: files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesItemFold.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnState.kt"] -> files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesItemFold.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt"] (by=orchestrator implied; no flag)
 
 [[items]]
 id = "DR-107"
 phase = "responses"
 title = "sweep-2 wave: a second output_item.added(function_call) at an already-open output_index evicts the live BlockState (ResponsesTurnState.putBlock removeBlock is map-removal only, ResponsesItemFold:30-33 opens unconditionally) - first block leaves state.blocks wire-unclosed and unvalidated (no CX-01 latch possible), client gets two content_block_start(tool_use) with partial args on the first; same mechanism orphans an open text block on index reuse"
 files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnState.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesItemFold.kt"]
-status = "done"
+status = "verified"
 verify = "red arm: duplicate added at one output_index - the evicted block must be closed and validated (or the re-add refused) before the new open; pre-fix the first block stays open until closeAll with no validation"
 # [2026-08-31] 2026-08-31 FIXED f72b3bd2: onItemAdded closes+validates the occupant via closeOpenBlocks before opening the replacement (evicted wire closed, CX-01 latched, salvage closedClean ordered before opened re-mark). Red arms: duplicate add no close#0 before openTool#1; text-index reuse same. 331/331+detekt green
 # [2026-08-31] Attribution unavailable: missing in_flight tree snapshot
+# [2026-08-31] 2026-08-31 codex-splice ACCEPT (frozen 9f0efa26, joint replay with DR-106): removed occupant closeOpenBlocks; duplicate-tool + text-to-tool index-reuse arms red 2/2 at :1238/:1273; ResponsesItemFold 59dfaa69 restore clean; class green.
 
 [[items]]
 id = "DR-108"
 phase = "responses"
 title = "sweep-2 wave: wire output_index trusted without a block-type check - onTextDelta emits sink.textDelta into a TOOL block index and onArgs emits inputJsonDelta into a TEXT block index (ResponsesItemFold:104-129; WireBlockWriter.hotDelta checks openness only) - protocol-corrupt frames (text_delta inside tool_use) on a hostile/misbehaving upstream plus polluted emittedText/textBuf honesty state"
 files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesItemFold.kt"]
-status = "done"
+status = "verified"
 verify = "red arm: output_text.delta carrying an open function_call block's index - no textDelta may reach the tool block (dropped via the PT-001-style anomaly channel or routed by type); pre-fix the frame emits into the tool block"
 # [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T21:56:52Z
 # [2026-08-31] ATTEST-START: tree=cb76ddab4292484d17a2d9103c282ed9767b30f1 at=2026-08-31T21:56:52Z
 # [2026-08-31] 2026-08-31 claude-splice: FIXED @ HEAD. onTextDelta: existing-block tool check before use — mistargeted text drops (no wire emit, no emittedText/textBuf pollution, no new text block opened at the tool's index); onArgs: if not b.tool return right after block resolution, guarding BOTH the delta branch and the .done branch (which would otherwise close the text block through the args path). Reasoning blocks live under reasoningKey (separate key space) so no interaction. RED: 2 arms in ResponsesItemDoneToolArgsTest — text-into-tool (asserts no text# call, Success, emittedText false, bodyText empty) and args-into-text (asserts no json# call, bodyText hello survives) — both red pre-fix, all 8 class arms green post. Module tests + detekt green.
 # [2026-08-31] ATTEST: scoped diffstat: .../kotlin/splice/dialect/responses/ResponsesItemFold.kt     | 12 +++++++++++- | 1 file changed, 11 insertions(+), 1 deletion(-); sidecar: .claude/ledger-diffs/DR-108.diff; off-scope: gateway/dialect-openai-responses/src/test/kotlin/ResponsesStreamTranslatorTest.kt
+# [2026-08-31] 2026-08-31 codex-splice ACCEPT (frozen 9f0efa26): exact pre-fix removal of the text-into-tool and args-into-text block-type guards; both permanent arms red 2/2; ResponsesItemFold 59dfaa69 restore byte-identical; arms reran green.
 
 [[items]]
 id = "DR-109"
 phase = "responses"
 title = "sweep-2 wave: string-typed error payload discards the vendor's text - ResponsesEventReducer:78-80 as? JsonObject falls through so code/message are read off the EVENT object yielding empty code + placeholder message; a backend shipping error as a plain string (proxy/gateway shape) loses its rate-limit/transient signal to the classifier and the operator-visible line hides the vendor reason"
 files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesEventReducer.kt"]
-status = "done"
+status = "verified"
 verify = "red arm: type=error with error as a plain string - the failure text must carry the string (classifier sees it); pre-fix placeholder ChatGPT-backend-reported-failure"
 # [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T21:59:24Z
 # [2026-08-31] ATTEST-START: tree=dd019c03c1725e8e198be96edf7ceb90213820fb at=2026-08-31T21:59:24Z
 # [2026-08-31] 2026-08-31 claude-splice: FIXED @ HEAD. stringError = strOrEmpty(response.error ?: error) inserted into the message fallback chain (vendor string -> placeholder last); code/realCode chain untouched so DR-10s structured-code separation holds (string errors carry no code -> classifier gets text-only, which IS the restored signal). RED: ResponsesStringErrorTest — flat string form (asserts vendor text in Failure.message + ErrorType.RATE_LIMIT from wording) and response-envelope string form both red pre-fix; object-payload control green both sides. KEY_RESPONSE/KEY_ERROR consts extracted (StringLiteralDuplication). Module tests + detekt green.
 # [2026-08-31] ATTEST: scoped diffstat: .../splice/dialect/responses/ResponsesEventReducer.kt | 19 ++++++++++++++----- | 1 file changed, 14 insertions(+), 5 deletions(-); sidecar: .claude/ledger-diffs/DR-109.diff; off-scope: gateway/dialect-openai-responses/src/test/kotlin/ResponsesStreamTranslatorTest.kt
+# [2026-08-31] 2026-08-31 codex-splice ACCEPT (frozen 9f0efa26): exact removal of the string-error fallback; both string-payload arms red while the object-error control stayed green (3 tests, 2 failed); ResponsesEventReducer dc59ff1d restore byte-identical; class reran green.
 
 [[items]]
 id = "DR-110"
 phase = "walls"
 title = "sweep-2 wave: heads-e2e.sh:425 wait_pane rc capture is DEAD under set -e - a bare call returning 1 (not ready) or 2 (auth needed) errexits the whole harness before rc is read, so tier-2's designed SKIP handling (README-promised) never runs: first not-logged-in head aborts the run mid-roster, no summary, tier2_cleanup skipped, tmux session + scratch leak; same rc-under-set-e family DR-49a fixed in probe_bearer (pre-existing line in a fence file the branch rewrote, unreachable by the tier-1-only selftest)"
 files = ["checks/e2e/heads-e2e.sh"]
-status = "done"
+status = "verified"
 verify = "red arm: harness dry-run with a wait_pane stub returning 2 - run must record SKIP and continue to the next head; pre-fix outer exit 2 with nothing after the call executing"
 # [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T21:03:26Z
 # [2026-08-31] ATTEST-START: tree=f48b5492995017631f84d15c3e71f4fd4322ee1c at=2026-08-31T21:03:26Z
 # [2026-08-31] 2026-08-31 FIXED de2dbb9c: rc=0; wait_pane ... || rc=$? (DR-49a idiom). Selftest tier-2 arm: stub label via PATH injection prints wait_pane auth pattern; unfixed harness aborted rc=2 no SKIP (red observed); fixed run records SKIP + completes; guarded on tmux presence. 12/12 selftest + shellcheck
 # [2026-08-31] ATTEST: scoped diffstat: checks/e2e/heads-e2e.sh | 12 ++++++++++-- | 1 file changed, 10 insertions(+), 2 deletions(-); sidecar: .claude/ledger-diffs/DR-110.diff; off-scope: checks/e2e/heads-e2e-selftest.sh, checks/e2e/loopback_control.py
+# [2026-08-31] 2026-08-31 codex-splice ACCEPT (frozen 9f0efa26): exact bare 'wait_pane ...; rc=$?' mutant made the not-logged-in arm abort rc=2 with no SKIP; heads-e2e.sh restored f1ad7d6e byte-identical; selftest green.
 
 [[items]]
 id = "DR-111"
 phase = "walls"
 title = "sweep-2 wave: every gate run FABRICATES the real head's e2e receipt - the selftest token arm drives the real harness whose tier-1 pass unconditionally emit_receipts into checks/e2e/receipts/, and loopback_control.py:138 defaults head key claude-splice = the real head in splice.example.toml; verified in-tree: receipts/claude-splice.json holds loopback data (model claude-splice--claude-haiku-4-5) written by a selftest that never touched a head - when receipt binding activates (924 tap) it grades against fabrications"
-files = ["checks/e2e/heads-e2e-selftest.sh", "checks/e2e/loopback_control.py"]
-status = "done"
+files = ["checks/e2e/heads-e2e-selftest.sh"]
+status = "verified"
 verify = "red arm: run the selftest and assert checks/e2e/receipts/ is untouched (distinct selftest key or receipt dir redirected to scratch); pre-fix claude-splice.json is overwritten with loopback bytes"
 # [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T21:09:24Z
 # [2026-08-31] ATTEST-START: tree=c237d86c435fe8b491665ecccb870d1c5f9bc25a at=2026-08-31T21:09:24Z
 # [2026-08-31] 2026-08-31 claude-splice: FIXED @ 84768fee. heads-e2e.sh RECEIPT_DIR now honors E2E_RECEIPT_DIR (default unchanged, in-repo); per-head note prints the actual dir. Selftest: ALL six harness invocations (run_arm, tier-2, absent-head, unknown-kind, both perf-oracle) export E2E_RECEIPT_DIR=tmp/receipts; two end-guards added — repo checks/e2e/receipts/claude-splice.json sha256 must be identical-or-both-absent across the whole selftest, and tmp/receipts/claude-splice.json must exist after (emission intact, just redirected). RED on unfixed harness: both guards fired (repo file rewritten with fresh observed_at, scratch empty). GREEN post-fix: 14/14 arms. Fabricated working-tree receipt DELETED (was gitignored+untracked, loopback bytes model claude-splice--claude-haiku-4-5); receipts dir stays empty until a real run emits. shellcheck clean both scripts. One file beyond row list: none — only heads-e2e.sh + selftest touched.
 # [2026-08-31] ATTEST: scoped diffstat: checks/e2e/heads-e2e-selftest.sh | 35 +++++++++++++++++++++++++++++------ | 1 file changed, 29 insertions(+), 6 deletions(-); sidecar: .claude/ledger-diffs/DR-111.diff; off-scope: checks/e2e/heads-e2e.sh
+# [2026-08-31] 2026-08-31 codex-splice ACCEPT (frozen 9f0efa26): exact pre-fix hardcoded receipt dir mutant made both permanent guards red (repo receipt overwritten, scratch receipt absent); production script restored f1ad7d6e and the pre-existing ignored receipt restored 339a2c22, both byte-identical; all 17 selftest arms green.
+# [2026-08-31] FENCE-AUTONARROWED: files = ["checks/e2e/heads-e2e-selftest.sh", "checks/e2e/loopback_control.py"] -> files = ["checks/e2e/heads-e2e-selftest.sh"] (by=orchestrator implied; no flag)
 
 [[items]]
 id = "DR-112"
@@ -1860,42 +1883,47 @@ verify = "red proof via mutant: add a testImplementation project(path = colon-ga
 # [2026-08-31] ATTEST-START: tree=ba577df7b6761e9a0a0905594ef69e919e69c213 at=2026-08-31T21:15:33Z
 # [2026-08-31] 2026-08-31 claude-splice: FIXED @ HEAD. Regex widened to project-openparen optional-whitespace optional path= quoted-colon-path, closing paren no longer required so configuration-arg calls match too. Mutant: testImplementation(project(path = colon-gateway)) in provider-kimi build file — PRE-FIX GREEN through the direction law (hole proven), POST-FIX RED with exact message provider-kimi may not depend on colon-gateway (from TEST XML, 3 failure markers). Build file restored, cmp byte-identical vs pre-mutation snapshot. Full :arch-tests:test suite green after restore — grep confirms zero live path-form edges in any build.gradle.kts today, so widening reveals no latent edges and the ratchet list needs no change.
 # [2026-08-31] ATTEST: scoped diffstat: gateway/arch-tests/src/test/kotlin/ArchitectureLawsTest.kt | 6 +++++- | 1 file changed, 5 insertions(+), 1 deletion(-); sidecar: .claude/ledger-diffs/DR-112.diff; off-scope: none
+# [2026-08-31] 2026-08-31 claude-splice REDO LANDED commit 16bc8416 (test-only; production regex unchanged since 6b22bedb). Codex was right: no live edge uses a non-positional spelling, so the widened matcher was unfalsifiable. Split projectEdgesIn(text) out of projectDependencies as the pure seam; synthetic fixture covers positional, named-arg path=, whitespace inside the parens, trailing configuration arg, and a commented-out edge that must NOT be seen. RED PROOF with codex exact pre-fix positional-only regex: arm fails seeing only [:core] of five declared edges; restore SHA 04a38340, arch-tests 6/6 green + detekt.
+# [2026-08-31] ATTEST: scoped diffstat: .../src/test/kotlin/ArchitectureLawsTest.kt        | 45 +++++++++++++++++++--- | 1 file changed, 40 insertions(+), 5 deletions(-); sidecar: .claude/ledger-diffs/DR-112.diff; off-scope: checks/concentration-selftest.sh, checks/concentration.py, checks/config-guard-selftest.sh, checks/config-guard.sh, checks/config/concentration-leg-routed.py, checks/gate.sh, gateway/app/src/main/kotlin/splice/app/FileSources.kt, gateway/app/src/main/kotlin/splice/app/cli/LogsCommand.kt, ... 55 more
 
 [[items]]
 id = "DR-113"
 phase = "walls"
 title = "sweep-2 wave: heads-e2e.sh:246 bare ct=curl assignment under set -e - a curl transport failure (refused/reset/timeout) aborts the whole harness with curls exit code instead of recording fail for that head; the parse-level path at 249-253 handles only payloads that arrived rc=0; same errexit family as DR-110"
 files = ["checks/e2e/heads-e2e.sh"]
-status = "done"
+status = "verified"
 verify = "red arm: count_tokens probe against a closed port in the harness dry-run - the head must record fail and the run continue; pre-fix the run dies with no summary"
 # [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T21:03:26Z
 # [2026-08-31] ATTEST-START: tree=1f0ce01922ceac071448cc0d4eda31a30dc31108 at=2026-08-31T21:03:26Z
 # [2026-08-31] 2026-08-31 FIXED de2dbb9c: ct=$(curl...) || ct=TRANSPORT FAILURE marker - bad-payload branch records per-head fail. Loopback --count-tokens-drop-file closes with no response; unfixed harness died mid-roster curl rc28 after wire pass (red observed); fixed run: wire pass + count_tokens FAIL + run continues. 12/12 selftest + shellcheck
 # [2026-08-31] ATTEST: scoped diffstat: checks/e2e/heads-e2e.sh | 12 ++++++++++-- | 1 file changed, 10 insertions(+), 2 deletions(-); sidecar: .claude/ledger-diffs/DR-113.diff; off-scope: checks/e2e/heads-e2e-selftest.sh, checks/e2e/loopback_control.py
+# [2026-08-31] 2026-08-31 codex-splice ACCEPT (frozen 9f0efa26): exact bare ct=$(curl_auth ...) mutant made the count_tokens drop arm die mid-run after curl rc=28 with no per-head cross; same restore hash; selftest green (17 arms); selftest file itself byte-identical f9b7194c.
 
 [[items]]
 id = "DR-114"
 phase = "walls"
 title = "sweep-2 wave: concentration-leg-routed.py:242-252 forward half accepts ANY gate.sh line tokenizing to the leg invocation without reachability - wrapping the leg in if false; then ... fi keeps concentration-leg-routed PASS while the leg never executes; selftest arms 6/6b/10 cover deletion/replacement/flag-hijack only, so the whole defense stack stays green on a dead line (inside the guards own declared threat model)"
 files = ["checks/config/concentration-leg-routed.py", "checks/concentration-selftest.sh"]
-status = "done"
+status = "verified"
 verify = "red arm: selftest fixture wrapping the gate line in if false - guard must FAIL; pre-fix PASS rc=0"
 # [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T22:01:53Z
 # [2026-08-31] ATTEST-START: tree=25260d4c11aa931f4d61c8aa371601fdb0ec3208 at=2026-08-31T22:01:53Z
 # [2026-08-31] 2026-08-31 claude-splice: FIXED @ HEAD. forward_problems: depth counter over ALL tokenized lines (_OPENERS if/while/until/for/case, _CLOSERS fi/done/esac, counted as tokens — shlex keeps quoted payloads single tokens so bash -c bodies never count; depth clamped at 0 so an unbalanced closer never retro-unlocks). Leg shape check unchanged; shaped+depth0 = routed, shaped+buried = its own failure message naming the control structure. Verified the real gate.sh: both early if blocks close before the first leg (line 67), all legs top-level, run() body braces irrelevant (openers/closers inside it balance). RED: selftest arm 6c (if false wrap, token-identical) — guard exited 0 pre-fix, fails with control structure named post-fix. Guard control PASS on real tree, selftest 12/12 fixtures + 6 DR-51 arms green (summary line count bumped 11->12), shellcheck clean.
 # [2026-08-31] ATTEST: scoped diffstat: checks/concentration-selftest.sh          | 25 +++++++++++++++++++++++- | checks/config/concentration-leg-routed.py | 32 +++++++++++++++++++++++++++---- | 2 files changed, 52 insertions(+), 5 deletions(-); sidecar: .claude/ledger-diffs/DR-114.diff; off-scope: none
+# [2026-08-31] 2026-08-31 codex-splice ACCEPT (frozen 9f0efa26): exact pre-fix forward_problems restored (token-shaped line accepted regardless of control depth); arm 6c alone failed because the dead if-false leg returned routing rc=0; concentration-leg-routed.py restored a77c82d6 byte-identical; all 13 mutation fixtures + 6 DR-51 arms green (confirms the DR-117 arm 12 addition rides clean).
 
 [[items]]
 id = "DR-115"
 phase = "walls"
 title = "sweep-2 wave: config-guard.sh:41 severity check reads only the FIRST severity line per rules file (grep head -1) while ast-grep loads multi-document YAML - appending a second doc with severity warning to an existing kotlin-splice rules file runs at warning (never fails scan), config-guard sees the first docs error and stays green, rule-routing counts the file as routed - the no-silent-downgrade wall dodged by document position"
 files = ["checks/config-guard.sh"]
-status = "done"
+status = "verified"
 verify = "red arm: fixture rules file with error first doc + warning second doc - config-guard must FAIL naming the second doc; pre-fix green"
 # [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T22:05:14Z
 # [2026-08-31] ATTEST-START: tree=6684e20e3fdbddc4e481896c3579ab5b71d0fd10 at=2026-08-31T22:05:14Z
 # [2026-08-31] 2026-08-31 claude-splice: FIXED @ HEAD. Wall: (a) every severity line must be error (grep -n non-error lines named in the failure), (b) count(severity: error) must equal count(id:) per file — the omitted-severity doc runs NON-BLOCKING (empirical: 2-doc fixture, severity-less matching doc, ast-grep scan 0.44.0 exit 0 — evidence commands in scratch dr115/), so absence fails as its own named reason. NEW checks/config-guard-selftest.sh (mirrored-tree harness: copies guard + both python legs + detekt.yml + dependabot.yml + package.json + gate.sh + .rules; control green then 2 fixtures) routed as gate leg after config guard. RED via patch-stash: both arms MUST-exit-nonzero pre-fix, named-reason green post-fix. shellcheck clean incl. 2 pre-existing SC2164 riders (config-guard.sh:8, gate.sh:12) fixed in transit. config-guard PASS, concentration-selftest rc=0, rule-routing rc=0 on the real tree. One file beyond row list: gate.sh (routing + SC2164) + the new selftest.
 # [2026-08-31] ATTEST: scoped diffstat: checks/config-guard.sh | 17 ++++++++++++++--- | 1 file changed, 14 insertions(+), 3 deletions(-); sidecar: .claude/ledger-diffs/DR-115.diff; off-scope: checks/config-guard-selftest.sh, checks/gate.sh
+# [2026-08-31] 2026-08-31 codex-splice ACCEPT (frozen 9f0efa26): exact first-document-only grep-head-1 severity mutant made both permanent arms red (warning in doc 2 and omitted severity in doc 2 both escaped with guard rc=0); config-guard.sh restored e53b0015 byte-identical; control + both mutation arms green.
 
 [[items]]
 id = "DR-116"
@@ -2060,3 +2088,15 @@ verify = "red arm: Success with usage + emitter whose emitTerminal throws IOExce
 # [2026-08-31] ATTEST-START: tree=36c04fef47a6d3ae50839b12b4b9665e8bedc3ab at=2026-08-31T22:49:47Z
 # [2026-08-31] 2026-08-31 claude-splice: FIXED commit b7164f09. Catch-stamp-rethrow in finishTurn: finishStream wrapped in Cancellables.runCatchingCancellable, all three stamps (Success, Failure salvage, DR-125 abandoned salvage) run before streamed.getOrThrow(). Wire-first invariant intact (no reorder); conn-reset surface keeps row tag + health on the throw path (recordPerf here still skipped — no double row/count; stamped counts ride the conn-reset row via shared TurnPerf); cancellation still skips stamps (documented no-bill seal, runCatchingCancellable rethrows immediately). RED PROOF: new TurnEndingAccountingTest arm — DeadClientSuccessTerminal (emitTerminal throws after seal), Success usage in=100 out=42 cached=7 — failed pre-fix out_tokens=null (XML verified); post-fix asserts perf counters 42/100 + usage store 42 + assertThrows IOException propagation; gateway suite + detekt green. Rig drive() gained an emitter param (defaulted, DR-128 arms unchanged). PORT FLAG origin/main TurnDriver.kt finishTurn.
 # [2026-08-31] ATTEST: scoped diffstat: .../src/main/kotlin/splice/gateway/head/TurnFinish.kt    | 16 +++++++++++++++- | 1 file changed, 15 insertions(+), 1 deletion(-); sidecar: .claude/ledger-diffs/DR-129.diff; off-scope: gateway/gateway/src/test/kotlin/head/TurnEndingAccountingTest.kt
+
+[[items]]
+id = "DR-130"
+phase = "repair"
+title = "fresh-sweep finding (claude-splice 2026-08-31): a FAILED COMPACT turn on a responses head records ZERO billed usage - compact makes foldController, reanchorController AND toolSearchControllerFor all null, so RoundStrategy takes the single-round finish(postRound(...)) branch that never applies withFailureSalvage; and ResponsesOutcomePayload.partialOrNull returned null for compact, discarding the usage ResponsesEventReducer harvests from response.failed expressly so the salvage is not permanently zero - so the vendor bills input+output+reasoning and the usage store, the HUD and the perf IN/OUT/CACHED counts all show nothing, on the most expensive turn class in the system (the compaction-ate-my-subscription doctrine); same family as DR-124/DR-125/DR-129, on the one path all three missed"
+files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesOutcomePayload.kt", "gateway/gateway/src/main/kotlin/splice/gateway/round/RoundStrategy.kt"]
+status = "done"
+verify = "red arms: (1) compact turn whose stream ends in response.failed carrying usage - the Failure must carry the burn, pre-fix partial null; (2) RoundStrategy single-round path with a failed round - finish must receive salvagedUsage, pre-fix 0"
+# [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T23:50:23Z
+# [2026-08-31] ATTEST-START: tree=f80bff1d1d09dc98ba95388bcb6cd7682ee27065 at=2026-08-31T23:50:23Z
+# [2026-08-31] 2026-08-31 claude-splice FIXED commit d7dd03e4. Two causes, both required and both fixed: (1) RoundStrategy single-round branch now applies rounds.withFailureSalvage(outcome, RoundUsage()) — empty accumulator by construction (no absorbed rounds), so Success and clean ClientAbandoned pass through untouched (NEVER-BELOW); (2) ResponsesOutcomePayload.partialOrNull returns a USAGE-ONLY PartialRound for compact instead of null — buffer copies still skipped (nothing re-anchors a compaction), and it cannot cause a re-POST since a compact turn has no reanchor controller at all; usageOf(state) extracted so the compact carve-out cannot drift from the full payload. RED PROOF: both arms red pre-fix, each for its own cause — dialect arm (compact + response.failed carrying usage 9000/120) got partial=null; RoundStrategy arm got salvagedUsage.outputTokens 0, expected 11. Post-fix responses + gateway suites and detekt green.
+# [2026-08-31] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: gateway/arch-tests/src/test/kotlin/ArchitectureLawsTest.kt

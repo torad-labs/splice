@@ -89,31 +89,33 @@ internal object LoginHookScripts {
         |$sentinel
         """.trimMargin() + "\n"
 
+    // WHY THREE WORDINGS (2026-08-01): the api-key branch used to promise "a masked terminal
+    // prompt is asking for your key" while spawning `<cmd> login` DETACHED with stdout to
+    // /dev/null. Detached means no TTY, so System.console() is null, so the CLI printed its
+    // pipe-instead hint into /dev/null and exited — the promised prompt could never appear and
+    // the user was left waiting on nothing. Verified by running it. An api-key head that CAN
+    // capture a paste is therefore told the path that actually works, and nothing is spawned.
+    private fun leadText(hook: LoginHookSpec): String =
+        when {
+            hook.viaBrowser ->
+                "Opening your browser to sign in to ${hook.signInLabel} — finish there, then continue. " +
+                    "If it did not open, run: ${hook.loginCommand}"
+            hook.canCapturePaste ->
+                "Paste your ${hook.signInLabel} API key as your next message. splice stores it to " +
+                    "~/.config/splice/keys.toml (0600) and BLOCKS it before it reaches the model, " +
+                    "so it is never sent upstream. Note: the session log on disk still records the " +
+                    "pasted line — for a fully masked entry, run `${hook.loginCommand}` in a terminal " +
+                    "instead. Then wait."
+            else ->
+                "This head signs in with an API key. Run `${hook.loginCommand}` in a terminal — it asks " +
+                    "for the key with a masked prompt. It cannot be asked for from inside this " +
+                    "session."
+        }
+
     fun loginHookScript(hook: LoginHookSpec): String =
         buildString {
             val d = "$" // keep the shell $ out of Kotlin interpolation
-            // WHY THREE WORDINGS (2026-08-01): the api-key branch used to promise "a masked terminal
-            // prompt is asking for your key" while spawning `<cmd> login` DETACHED with stdout to
-            // /dev/null. Detached means no TTY, so System.console() is null, so the CLI printed its
-            // pipe-instead hint into /dev/null and exited — the promised prompt could never appear and
-            // the user was left waiting on nothing. Verified by running it. An api-key head that CAN
-            // capture a paste is therefore told the path that actually works, and nothing is spawned.
-            val lead =
-                when {
-                    hook.viaBrowser ->
-                        "Opening your browser to sign in to ${hook.signInLabel} — finish there, then continue. " +
-                            "If it did not open, run: ${hook.loginCommand}"
-                    hook.canCapturePaste ->
-                        "Paste your ${hook.signInLabel} API key as your next message. splice stores it to " +
-                            "~/.config/splice/keys.toml (0600) and BLOCKS it before it reaches the model, " +
-                            "so it is never sent upstream. Note: the session log on disk still records the " +
-                            "pasted line — for a fully masked entry, run `${hook.loginCommand}` in a terminal " +
-                            "instead. Then wait."
-                    else ->
-                        "This head signs in with an API key. Run `${hook.loginCommand}` in a terminal — it asks " +
-                            "for the key with a masked prompt. It cannot be asked for from inside this " +
-                            "session."
-                }
+            val lead = leadText(hook)
             val label = oneLine(hook.signInLabel)
             appendLine("#!/usr/bin/env bash")
             appendLine("# NEW (splice): /login interception — route to this head's $label sign-in,")
@@ -127,8 +129,18 @@ internal object LoginHookScripts {
             // then types something ordinary.
             appendLine("receipt=${shellSingleQuote(hook.outcomeFile)}")
             appendLine("if [ -f \"${d}receipt\" ]; then")
+            // DR-103: this bash reader is the receipt's PRODUCTION consumer, so it must enforce
+            // LoginOutcomeFile's freshness window itself — a stale failure receipt from days ago
+            // must not announce "sign-in did not complete" on a fresh session after auth was fixed
+            // another way. find -mmin truncates to whole minutes (a ≤59s skew vs the ms check);
+            // the stale receipt is still consumed below so it cannot linger.
+            appendLine(
+                "  stale=\"$d(find \"${d}receipt\" -mmin +${LoginOutcomeFile.FRESH_WINDOW_MINUTES}" +
+                    " -print 2>/dev/null)\"",
+            )
             appendLine("  msg=\"$d(cat \"${d}receipt\" 2>/dev/null)\"")
             appendLine("  rm -f \"${d}receipt\"")
+            appendLine("  [ -n \"${d}stale\" ] && msg=\"\"")
             // The receipt is the ONE value here decided at RUNTIME, so it cannot be encoded by the
             // serializer with the rest of the payload — and it was landing raw inside a JSON string.
             // splice writes it (LoginOutcomeFile), but it relays provider text, and one `"` in that

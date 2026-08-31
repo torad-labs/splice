@@ -25,8 +25,11 @@ import java.nio.file.Path
 public object LoginOutcomeFile {
 
     /** Older than this and the receipt is ignored: a login the user has since forgotten about must
-     *  not surface as a confirmation for an unrelated prompt. */
-    private const val FRESH_WINDOW_MS: Long = 10 * 60 * 1000
+     *  not surface as a confirmation for an unrelated prompt. `internal` (DR-103): the generated
+     *  /login hook is the PRODUCTION consumer of the receipt and enforces the same window in bash
+     *  (find -mmin +N) — one definition, or the two readers drift. */
+    internal const val FRESH_WINDOW_MINUTES: Long = 10
+    private const val FRESH_WINDOW_MS: Long = FRESH_WINDOW_MINUTES * 60 * 1000
 
     public fun pathFor(stateDir: Path, head: String): Path =
         stateDir.resolve("login-outcome-${head.replace(Regex("[^A-Za-z0-9_-]"), "_")}.txt")

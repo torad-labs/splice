@@ -125,3 +125,50 @@ class LoginHookScriptSafetyTest {
         TokenCaptureSpec("OPENROUTER_API_KEY", "sk-x", "P") // the documented shape still constructs
     }
 }
+
+// DR-103: the generated hook is the PRODUCTION consumer of the login receipt, and it enforced no
+// age — the 10-minute freshness contract lived only in LoginOutcomeFile.consume, which nothing in
+// production calls. A stale failure receipt from days ago announced "sign-in did not complete" on
+// a fresh session long after auth was fixed by another path. These run the real script.
+class LoginHookReceiptAgeTest {
+
+    private val tmp: Path = Files.createTempDirectory("login-hook-age")
+
+    private fun freshSpec(outcomeFile: String) = LoginHookSpec(
+        loginCommand = "claude-splice login",
+        signInLabel = "OpenRouter",
+        viaBrowser = false,
+        sentinel = "SPLICE_CODEX_LOGIN",
+        outcomeFile = outcomeFile,
+        canCapturePaste = true,
+    )
+
+    @Test
+    fun `a fresh receipt announces once and is consumed - control`() {
+        assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
+        val receipt = tmp.resolve("receipt-fresh.txt")
+        Files.writeString(receipt, "sign-in complete\n")
+        val hook = write(tmp, "login-fresh.sh", LoginHookScripts.loginHookScript(freshSpec(receipt.toString())))
+        val ran = run("bash", hook.toString(), stdin = """{"prompt":"hello"}""", dir = tmp)
+        assertEquals(0, ran.exit, ran.err)
+        assertTrue(ran.out.contains("sign-in complete"), "a fresh receipt must announce; out=${ran.out}")
+        assertTrue(!Files.exists(receipt), "the receipt is consumed on announce")
+    }
+
+    @Test
+    fun `a stale receipt is consumed silently, never announced - DR-103`() {
+        assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
+        val receipt = tmp.resolve("receipt-stale.txt")
+        Files.writeString(receipt, "sign-in did not complete\n")
+        val elevenMinutesAgo = System.currentTimeMillis() - 11 * 60 * 1000
+        Files.setLastModifiedTime(receipt, java.nio.file.attribute.FileTime.fromMillis(elevenMinutesAgo))
+        val hook = write(tmp, "login-stale.sh", LoginHookScripts.loginHookScript(freshSpec(receipt.toString())))
+        val ran = run("bash", hook.toString(), stdin = """{"prompt":"hello"}""", dir = tmp)
+        assertEquals(0, ran.exit, ran.err)
+        assertTrue(
+            !ran.out.contains("sign-in did not complete"),
+            "a receipt older than the freshness window must not announce; out=${ran.out}",
+        )
+        assertTrue(!Files.exists(receipt), "a stale receipt is still consumed so it cannot linger")
+    }
+}

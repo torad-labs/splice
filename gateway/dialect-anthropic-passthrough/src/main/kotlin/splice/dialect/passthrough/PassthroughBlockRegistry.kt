@@ -56,6 +56,15 @@ internal class PassthroughBlockRegistry(
                     sink.openTool(JsonScalars.strOrEmpty(cb?.get("id")), JsonScalars.strOrEmpty(cb?.get("name"))),
                 )
             }
+            // DR-118: encrypted reasoning must SURVIVE the proxy — Claude Code replays assistant
+            // turns from what it received, and Anthropic requires redacted_thinking back verbatim,
+            // so a dropped block 400s the next signed-thinking request upstream. Data rides
+            // content_block_start (the WireSink contract) and no delta ever targets the block, so
+            // it emits complete here and the entry stays IGNORED for the delta/stop path.
+            "redacted_thinking" -> {
+                sink.addRedactedThinking(JsonScalars.strOrEmpty(cb?.get("data")))
+                Block(Kind.IGNORED, null)
+            }
             // server_tool_use / web_search_tool_result / unknown: record + swallow its deltas.
             else -> Block(Kind.IGNORED, null)
         }

@@ -37,7 +37,7 @@ private class Rec : WireSink {
     override suspend fun closeBlock(index: WireBlockIndex) { calls.add("close") }
     override suspend fun closeAll() { calls.add("closeAll") }
     override suspend fun addTextBlock(text: String) { calls.add("addText:$text") }
-    override suspend fun addRedactedThinking(data: String) = Unit
+    override suspend fun addRedactedThinking(data: String) { calls.add("redacted:$data") }
 }
 
 private val KIMI = PassthroughQuirksDefaults().kimi("kimi")
@@ -589,5 +589,39 @@ class PassthroughRunawayCancellationTest {
         val outcome = PassthroughStreamTranslator(ctx(), KIMI).driveTurn(events, Rec())
         assertTrue(outcome is TurnOutcome.Failure, "got $outcome")
         assertTrue(emitted < 25, "the guard must unwind the upstream at the breach, not drain it; emitted=$emitted")
+    }
+}
+
+// DR-118 (sweep-2): the registry's onBlockStart had no "redacted_thinking" arm, so the block fell
+// to the IGNORED else and the proxy DELETED it. Claude Code replays assistant turns from what it
+// received, and Anthropic requires redacted_thinking blocks back verbatim — a client that never
+// got one cannot replay it, so the next signed-thinking request 400s upstream. Data rides
+// content_block_start (the WireSink contract); a NEW class because the main class sits at
+// detekt's LargeClass budget.
+class PassthroughRedactedThinkingTest {
+    @Test
+    fun `a redacted_thinking block reaches the client sink, not the ignore bucket - DR-118`() = runTest {
+        val sink = Rec()
+        val outcome = drive(
+            sink,
+            ev("""{"type":"message_start","message":{"usage":{"input_tokens":1}}}"""),
+            ev(
+                """{"type":"content_block_start","index":0,""" +
+                    """"content_block":{"type":"redacted_thinking","data":"EncBlob=="}}""",
+            ),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"content_block_start","index":1,"content_block":{"type":"text"}}"""),
+            ev("""{"type":"content_block_delta","index":1,"delta":{"type":"text_delta","text":"hi"}}"""),
+            ev("""{"type":"content_block_stop","index":1}"""),
+            ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}"""),
+            ev("""{"type":"message_stop"}"""),
+        )
+        assertTrue(outcome is TurnOutcome.Success, "got $outcome")
+        assertTrue(
+            sink.calls.contains("redacted:EncBlob=="),
+            "the encrypted replay block must survive the proxy; calls=${sink.calls}",
+        )
+        // Control: the neighbouring text block still flows normally around the pass-through.
+        assertTrue(sink.calls.contains("text:hi"))
     }
 }

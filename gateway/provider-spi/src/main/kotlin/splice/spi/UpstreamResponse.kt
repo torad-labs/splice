@@ -7,17 +7,31 @@ import io.ktor.client.statement.bodyAsChannel
 import io.ktor.utils.io.ByteReadChannel
 import java.io.ByteArrayOutputStream
 
-public class UpstreamResponse(private val resp: HttpResponse) {
+public class UpstreamResponse(
+    private val resp: HttpResponse,
+    /** How [bodyTextLimited] opens the body channel — the real response in production, a torn-peer
+     *  double in the DR-21 production-path test. Default references the ctor's [resp]. */
+    private val bodyChannelSource: BodyChannelSource = BodyChannelSource { resp.bodyAsChannel() },
+) {
     public val status: Int get() = resp.status.value
 
     public fun header(name: String): String? = resp.headers[name]
 
     public suspend fun bodyChannel(): ByteReadChannel = resp.bodyAsChannel()
 
-    /** The bounded error-body read. Was an `HttpResponse` extension; the walk lives in
-     *  [LimitedBodyReader] so the torn-peer contract is testable without a real response. */
+    /** The bounded error-body read, through the injectable [bodyChannelSource] so THIS method — not
+     *  just [LimitedBodyReader] — is pinned against re-inlining an uncaught walk: a spurious-wakeup
+     *  storm mid-error-body must degrade to the truncated diagnostic, never replace the classified
+     *  upstream status the caller holds with an unclassified IOException (DR-21). */
     internal suspend fun bodyTextLimited(maxBytes: Int): String =
-        LimitedBodyReader().read(resp.bodyAsChannel(), maxBytes)
+        LimitedBodyReader().read(bodyChannelSource.open(), maxBytes)
+}
+
+/** How [UpstreamResponse.bodyTextLimited] acquires the body channel — the real streaming response in
+ *  production, a torn-peer double in the DR-21 production-path test. A fun interface (not a raw
+ *  suspend lambda) per kt-no-lambda-seam; named for the ROLE. */
+public fun interface BodyChannelSource {
+    public suspend fun open(): ByteReadChannel
 }
 
 /** The bounded error-body walk, split from [UpstreamResponse] for the torn-peer test (DR-21):

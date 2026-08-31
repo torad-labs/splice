@@ -88,12 +88,15 @@ internal class ResponsesWsSession(
 
     /** The epoch for [key] — captured at send time, checked at commit time.
      *
-     *  An ABSENT key falls back to the current [seq], not to zero, and that is what makes eviction
-     *  safe: after a record is dropped under the cap, every previously captured epoch is strictly
-     *  LESS than [seq] (a clear always stamps ++seq), so a late commit can never match and can
-     *  never resurrect a chain the server no longer honours. Falling back to 0 would have
+     *  DR-78: an absent key MATERIALIZES its own per-key epoch (a fresh ++seq) rather than
+     *  reading the live global [seq] — the live read meant any OTHER conversation's clear bumped
+     *  the value between capture and commit, voiding a never-cleared conversation's in-flight
+     *  commit and silently defeating chaining for every concurrent conversation on each tear.
+     *  Eviction safety is preserved: commit still falls back to the live [seq] for a key whose
+     *  entry was dropped under the cap, and a clear always stamps ++seq, so a captured epoch can
+     *  never match once anything invalidated the conversation. Falling back to 0 would have
      *  re-opened exactly the ordering hole the epoch exists to close. */
-    fun epochOf(key: String): Long = synchronized(lock) { epochs[key] ?: seq }
+    fun epochOf(key: String): Long = synchronized(lock) { epochs.getOrPut(key) { ++seq } }
 
     /**
      * Build the frame for this round — the incremental one when every chaining precondition holds,
@@ -125,7 +128,9 @@ internal class ResponsesWsSession(
         } else {
             WsFrame(frame(request, previousResponseId = chain.responseId, input = JsonArray(delta)), chained = true)
         }
-        WsFrameAndEpoch(frame, epochs[key] ?: seq)
+        // DR-78: materialize the per-key epoch (see epochOf) — the live-seq fallback let an
+        // unrelated conversation's clear void this key's commit.
+        WsFrameAndEpoch(frame, epochs.getOrPut(key) { ++seq })
     }
 
     /** The items to send incrementally, or null when ANY precondition fails (bail closed). */

@@ -216,6 +216,23 @@ class ResponsesWsSessionTest {
         )
     }
 
+    /** DR-78 (fresh-eyes sweep): the fence must be PER CONVERSATION. A never-cleared key's epoch
+     *  used to fall back to the GLOBAL seq at capture AND commit, so any other conversation's
+     *  clear bumped seq mid-flight and voided this key's commit — on a busy daemon every tear
+     *  anywhere silently defeated chaining for every concurrent conversation. */
+    @Test
+    fun `another conversation's clear does not void an in-flight commit - DR-78`() {
+        val s = ResponsesWsSession()
+        val r1 = build(convo(1))
+        val epochAtSend = s.epochOf(KEY) // conversation A's round captures its epoch...
+        s.cleared("conv-unrelated") // ...an UNRELATED conversation tears mid-flight...
+        s.completed(KEY, r1, "resp_1", GEN, epochAtSend) // ...and A's clean terminal lands
+        assertTrue(
+            s.frameFor(KEY, build(convo(2)), GEN).chained,
+            "A's commit survives B's clear — the fence is per conversation",
+        )
+    }
+
     /** The fence must not block the normal path: a commit under the CURRENT epoch still applies. */
     @Test
     fun `a commit under the current epoch still chains`() {

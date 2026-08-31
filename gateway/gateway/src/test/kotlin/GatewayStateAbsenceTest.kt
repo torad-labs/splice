@@ -88,4 +88,47 @@ class GatewayStateAbsenceTest {
         }
         assertEquals(1, log.count { it.contains("unreadable") }, "one line per episode: $log")
     }
+
+    // Sweep 2026-08-31: the re-arm was guarded on a NON-EMPTY parse, so a file that recovered
+    // EMPTY (zero-byte create after ENOSPC, an all-torn tail) left the latch armed and every
+    // LATER unreadable episode silent forever. Any healthy read closes the episode.
+    @Test
+    fun `a healthy-but-empty read re-arms the once-per-episode latch - DR-60`(@TempDir tmp: Path) {
+        val log = mutableListOf<String>()
+        val (file, locked) = lockedFile(tmp, "p.jsonl", """{"total":1}""")
+        val stats = PerfStats(file, log = LogSink { log += it })
+        try {
+            assertTrue(stats.tailNumeric().isEmpty())
+        } finally {
+            unlock(locked)
+        }
+        assertEquals(1, log.count { it.contains("unreadable") }, "perf episode one: $log")
+        Files.writeString(file, "") // recovered, but EMPTY — still a healthy read
+        assertTrue(stats.tailNumeric().isEmpty(), "healthy-empty read renders empty")
+        Files.setPosixFilePermissions(locked, PosixFilePermissions.fromString("---------"))
+        try {
+            assertTrue(stats.tailNumeric().isEmpty())
+        } finally {
+            unlock(locked)
+        }
+        assertEquals(2, log.count { it.contains("unreadable") }, "perf episode two must log: $log")
+
+        val clog = mutableListOf<String>()
+        val (cfile, clocked) = lockedFile(tmp, "c.jsonl", """{"outcome":"ok"}""")
+        val cstats = CompactStats(cfile, log = LogSink { clog += it })
+        try {
+            assertEquals(0, cstats.read().total)
+        } finally {
+            unlock(clocked)
+        }
+        Files.writeString(cfile, "")
+        assertEquals(0, cstats.read().total, "healthy-empty read renders empty")
+        Files.setPosixFilePermissions(clocked, PosixFilePermissions.fromString("---------"))
+        try {
+            assertEquals(0, cstats.read().total)
+        } finally {
+            unlock(clocked)
+        }
+        assertEquals(2, clog.count { it.contains("unreadable") }, "compact episode two must log: $clog")
+    }
 }

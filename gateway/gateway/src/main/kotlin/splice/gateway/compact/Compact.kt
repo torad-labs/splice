@@ -102,6 +102,11 @@ public class CompactStats(
             JsonlSink.readTail(file, READ_TAIL_BYTES).mapNotNull { line ->
                 Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
             }
+        }.onSuccess {
+            // ANY healthy read — an empty or all-skipped tail included — closes the unreadable
+            // episode so the next one logs again; guarded on isNotEmpty, a recovered-but-empty
+            // file kept the latch armed and the second episode silent (sweep 2026-08-31).
+            unreadableLogged.set(false)
         }.getOrElse { failure ->
             val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
                 !Files.exists(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)
@@ -110,7 +115,7 @@ public class CompactStats(
             }
             if (genuinelyAbsent) unreadableLogged.set(false)
             emptyList()
-        }.also { if (it.isNotEmpty()) unreadableLogged.set(false) }
+        }
         val byOutcome = rows.groupingBy {
             (it["outcome"] as? JsonPrimitive)?.content ?: "unknown"
         }.eachCount()

@@ -40,13 +40,35 @@ public class LogsCommand {
         val statWarned = java.util.concurrent.atomic.AtomicBoolean(false)
         while (true) {
             Thread.sleep(FOLLOW_POLL_MS)
-            val size = polledSize(logFile, statWarned)
-            if (size == lastSize) continue
-            // The bounded tail is the safe superset on both growth and a roll (shrink).
+            lastSize = followPoll(logFile, source, lastSize, statWarned)
+        }
+    }
+
+    /** One --follow poll: print what changed since [lastSize], return the new baseline.
+     *  `internal` so the poll step is testable without the infinite loop around it. */
+    internal fun followPoll(
+        logFile: java.nio.file.Path,
+        source: LogFileSource,
+        lastSize: Long,
+        statWarned: java.util.concurrent.atomic.AtomicBoolean,
+    ): Long {
+        val size = polledSize(logFile, statWarned)
+        if (size == lastSize) return lastSize
+        // A shrink is a roll (daemon.log -> .1: new generation, old offsets meaningless) and a
+        // zero baseline is a fresh or unreadable-recovered start — both re-baseline with the
+        // bounded tail, the only safe reset across a discontinuity.
+        val discontinuity = size < lastSize || lastSize == 0L
+        if (discontinuity) {
             val fresh = source.tail(FOLLOW_TAIL)
             if (fresh.isNotEmpty()) println(fresh)
-            lastSize = size
+            return size
         }
+        // DR-100: ordinary growth prints exactly the NEW bytes' complete lines. The old 20-line
+        // snapshot repeated up to 19 already-shown lines per new line and silently dropped any
+        // burst over 20 lines inside one poll — exactly the error-storm lines being watched.
+        val delta = source.readFrom(lastSize)
+        if (delta.text.isNotEmpty()) println(delta.text)
+        return lastSize + delta.consumed
     }
 
     /** One poll's size, with DR-68's once-per-episode unreadable warning (the DR-63 latch idiom:

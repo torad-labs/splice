@@ -67,3 +67,97 @@ class LogsCommandTest {
         assertTrue(!ok)
     }
 }
+
+// DR-100: --follow must print the DELTA, not the 20-line tail snapshot — the snapshot repeated
+// up to 19 already-shown lines per new line and silently dropped any burst over 20 lines inside
+// one poll (exactly the error-storm lines being watched). Drives the extracted followPoll step.
+class LogsFollowDeltaTest {
+
+    private fun pollCapture(block: () -> Long): Pair<Long, String> {
+        val buf = java.io.ByteArrayOutputStream()
+        val original = System.out
+        System.setOut(java.io.PrintStream(buf, true))
+        return try {
+            block() to buf.toString()
+        } finally {
+            System.setOut(original)
+        }
+    }
+
+    private fun warned() = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    @org.junit.jupiter.api.Test
+    fun `a follow poll prints each new line exactly once - DR-100`(@TempDir tmp: Path) {
+        val log = tmp.resolve("daemon.log")
+        Files.writeString(log, "old 1\nold 2\nold 3\n")
+        val baseline = Files.size(log)
+        Files.writeString(log, "new 1\nnew 2\n", java.nio.file.StandardOpenOption.APPEND)
+        val (next, out) = pollCapture {
+            LogsCommand().followPoll(log, splice.app.LogFileSource(log), baseline, warned())
+        }
+        assertEquals(listOf("new 1", "new 2"), out.trim().lines(), "already-shown lines must not repeat")
+        assertEquals(Files.size(log), next)
+    }
+
+    @org.junit.jupiter.api.Test
+    fun `a 25-line burst inside one poll surfaces all 25 lines - DR-100`(@TempDir tmp: Path) {
+        val log = tmp.resolve("daemon.log")
+        Files.writeString(log, "seed\n")
+        val baseline = Files.size(log)
+        val burst = (1..25).joinToString("") { "storm $it\n" }
+        Files.writeString(log, burst, java.nio.file.StandardOpenOption.APPEND)
+        val (_, out) = pollCapture {
+            LogsCommand().followPoll(log, splice.app.LogFileSource(log), baseline, warned())
+        }
+        assertEquals((1..25).map { "storm $it" }, out.trim().lines(), "no line of the burst may drop")
+    }
+
+    @org.junit.jupiter.api.Test
+    fun `a torn final line waits for its newline instead of printing half - DR-100`(@TempDir tmp: Path) {
+        val log = tmp.resolve("daemon.log")
+        Files.writeString(log, "seed\n")
+        val baseline = Files.size(log)
+        Files.writeString(log, "torn-half", java.nio.file.StandardOpenOption.APPEND)
+        val cmd = LogsCommand()
+        val (afterTorn, tornOut) = pollCapture {
+            cmd.followPoll(log, splice.app.LogFileSource(log), baseline, warned())
+        }
+        assertEquals("", tornOut.trim(), "an incomplete line must not print")
+        assertEquals(baseline, afterTorn, "the baseline must not advance past unprinted bytes")
+        Files.writeString(log, "-done\n", java.nio.file.StandardOpenOption.APPEND)
+        val (_, doneOut) = pollCapture {
+            cmd.followPoll(log, splice.app.LogFileSource(log), afterTorn, warned())
+        }
+        assertEquals(listOf("torn-half-done"), doneOut.trim().lines())
+    }
+
+    @org.junit.jupiter.api.Test
+    fun `the head filter rides the delta path - DR-100`(@TempDir tmp: Path) {
+        val log = tmp.resolve("daemon.log")
+        Files.writeString(log, "[claudex] seed\n")
+        val baseline = Files.size(log)
+        Files.writeString(
+            log,
+            "[claudex] mine\n[claude-grok] theirs\n[claudex] mine too\n",
+            java.nio.file.StandardOpenOption.APPEND,
+        )
+        val (next, out) = pollCapture {
+            LogsCommand().followPoll(log, splice.app.LogFileSource(log, "[claudex]"), baseline, warned())
+        }
+        assertEquals(listOf("[claudex] mine", "[claudex] mine too"), out.trim().lines())
+        assertEquals(Files.size(log), next, "filtered-out bytes still advance the baseline")
+    }
+
+    @org.junit.jupiter.api.Test
+    fun `a shrink re-baselines with the bounded snapshot - roll control`(@TempDir tmp: Path) {
+        val log = tmp.resolve("daemon.log")
+        Files.writeString(log, (1..30).joinToString("") { "gen1 $it\n" })
+        val bigBaseline = Files.size(log)
+        Files.writeString(log, "gen2 a\ngen2 b\n") // truncating rewrite = the rotation roll shape
+        val (next, out) = pollCapture {
+            LogsCommand().followPoll(log, splice.app.LogFileSource(log), bigBaseline, warned())
+        }
+        assertEquals(listOf("gen2 a", "gen2 b"), out.trim().lines(), "a roll resets to the bounded tail")
+        assertEquals(Files.size(log), next)
+    }
+}

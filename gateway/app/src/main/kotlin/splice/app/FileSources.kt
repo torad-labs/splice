@@ -65,9 +65,51 @@ public class LogFileSource(
     }
 
     override fun path(): String = logFile.toString()
+
+    /** DR-100: the --follow delta read — complete lines from [fromOffset] to EOF (bounded at
+     *  LOG_TAIL_BYTES per call), head-filtered like [tail]. [LogDelta.consumed] is the bytes up
+     *  to and including the last newline — a torn final line stays unconsumed so the caller's
+     *  baseline never advances past unprinted bytes. Read failures return the quiet zero delta:
+     *  the follow loop's own polledSize warning owns the unreadable-episode surface (DR-68). */
+    public fun readFrom(fromOffset: Long): LogDelta =
+        Cancellables.runCatchingCancellable { readDelta(fromOffset) }.getOrElse { LogDelta("", 0L) }
+
+    private fun readDelta(fromOffset: Long): LogDelta =
+        java.nio.channels.FileChannel.open(logFile, java.nio.file.StandardOpenOption.READ).use { ch ->
+            val end = minOf(ch.size(), fromOffset + LOG_TAIL_BYTES)
+            val want = (end - fromOffset).toInt()
+            if (want <= 0) LogDelta("", 0L) else completeLines(readBytes(ch, fromOffset, want))
+        }
+
+    private fun readBytes(ch: java.nio.channels.FileChannel, from: Long, want: Int): ByteArray {
+        val buf = java.nio.ByteBuffer.allocate(want)
+        ch.position(from)
+        var more = true
+        while (buf.hasRemaining() && more) {
+            more = ch.read(buf) >= 0
+        }
+        buf.flip()
+        return ByteArray(buf.remaining()).also { buf.get(it) }
+    }
+
+    private fun completeLines(bytes: ByteArray): LogDelta {
+        // '\n' is unambiguous in UTF-8, so the byte split is safe before decoding.
+        val lastNewline = bytes.indexOfLast { it == NEWLINE_BYTE }
+        if (lastNewline < 0) return LogDelta("", 0L)
+        val text = String(bytes, 0, lastNewline, Charsets.UTF_8)
+            .lineSequence()
+            .filter { headTag == null || headTag in it }
+            .joinToString("\n")
+        return LogDelta(text, (lastNewline + 1).toLong())
+    }
 }
+
+/** One --follow delta: the filtered complete lines to print (may be empty when every new line was
+ *  another head's) and the raw bytes consumed — the caller advances its baseline by [consumed]. */
+public data class LogDelta(val text: String, val consumed: Long)
 
 // LogFileSource's tail bounds. File-scope consts (Kotlin style law, 2026-08-15): a top-level
 // `private const val` is the sanctioned home for constants, never a static namespace on the type.
 private const val LOG_TAIL_BYTES = 1024 * 1024
 private const val MAX_LOG_LINES = 2_000
+private const val NEWLINE_BYTE = '\n'.code.toByte()

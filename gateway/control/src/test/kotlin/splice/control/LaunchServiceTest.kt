@@ -75,19 +75,28 @@ class LaunchServiceTest {
     // this feature exists to clean up. Undeclared tiers must not exist in the recipe at all.
     @Test
     fun `a two-model roster declaring opus and sonnet emits no haiku or fable slot`() {
-        val env = service.launch(
+        val recipe = service.launch(
             spec("grok", pinned = "grok-4.6", available = listOf("grok-4.6", "grok-4.5"))
                 .copy(modelSlots = mapOf("grok-4.6" to "opus", "grok-4.5" to "sonnet")),
             extraArgs = emptyList(),
             dangerouslySkipPermissions = false,
-        ).env
+        )
+        val env = recipe.env
 
         assertEquals("grok-4.6", env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
         assertEquals("grok-4.5", env["ANTHROPIC_DEFAULT_SONNET_MODEL"])
+        // Absent from env is not enough: splice-launch execs `env` WITHOUT -i, so a nested launch
+        // inherits the OUTER head's triplets — every un-emitted tier must be actively SCRUBBED or
+        // the tier points at a model this head cannot serve (codex redo verdict, 2026-08-30).
         for (tier in listOf("HAIKU", "FABLE")) {
             for (suffix in listOf("MODEL", "MODEL_NAME", "MODEL_DESCRIPTION")) {
-                assertNull(env["ANTHROPIC_DEFAULT_${tier}_$suffix"], "$tier must stay un-set, not duplicated")
+                val name = "ANTHROPIC_DEFAULT_${tier}_$suffix"
+                assertNull(env[name], "$tier must stay un-set, not duplicated")
+                assertTrue(name in recipe.unset, "$name must be scrubbed from the inherited env")
             }
+        }
+        for (tier in listOf("OPUS", "SONNET")) {
+            assertFalse("ANTHROPIC_DEFAULT_${tier}_MODEL" in recipe.unset, "emitted tiers are not scrubbed")
         }
     }
 
@@ -119,6 +128,12 @@ class LaunchServiceTest {
         assertNull(
             recipe.env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"],
             "discovery would re-add every model under a wrapped /v1/models id",
+        )
+        // Not setting it is not enough — an ambient =1 in the launching shell survives `env`
+        // without -i, so the recipe must scrub it (codex redo verdict, 2026-08-30).
+        assertTrue(
+            "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY" in recipe.unset,
+            "an inherited =1 would re-enable discovery: ${recipe.unset}",
         )
         // The roster still reaches the picker: the materializer wrote the full selected catalog.
         val cfg = tmp.resolve(".claude-codex")
@@ -207,7 +222,13 @@ class LaunchServiceTest {
     @Test
     fun `a native-auth head keeps the client's own credentials`() {
         val recipe = service.launch(nativeSpec(), extraArgs = emptyList(), dangerouslySkipPermissions = false)
-        assertTrue(recipe.unset.isEmpty(), "nothing may be stripped: ${recipe.unset}")
+        // No CREDENTIAL may be stripped — those variables are what this head forwards. Non-credential
+        // hygiene (the discovery scrub) is allowed and wanted: this head's picker reads the same
+        // materialized roster as every other.
+        for (credential in listOf("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_REFRESH_TOKEN")) {
+            assertFalse(credential in recipe.unset, "a native head must not strip $credential: ${recipe.unset}")
+        }
+        assertTrue("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY" in recipe.unset)
         assertNull(recipe.env["ANTHROPIC_AUTH_TOKEN"], "the gateway bearer would override the client's own")
     }
 
@@ -226,8 +247,10 @@ class LaunchServiceTest {
         assertEquals("1", env["SPLICE"])
     }
 
-    // The regression that matters most: foreign heads must be BYTE-IDENTICAL to before this
-    // feature existed. A default-valued flag is easy to leak into the wrong branch.
+    // The regression that matters most: foreign heads' ENV must be BYTE-IDENTICAL to before this
+    // feature existed. A default-valued flag is easy to leak into the wrong branch. The unset list
+    // is allowed exactly one addition since: the discovery scrub (all four tiers emit on a
+    // declare-nothing head, so no tier scrubs appear here).
     @Test
     fun `a foreign-vendor head is unchanged - bearer planted, session stripped, login disabled`() {
         val recipe = service.launch(spec("codex"), extraArgs = emptyList(), dangerouslySkipPermissions = false)
@@ -235,7 +258,12 @@ class LaunchServiceTest {
         assertEquals("1", recipe.env["DISABLE_LOGIN_COMMAND"])
         assertEquals("1", recipe.env["DISABLE_LOGOUT_COMMAND"])
         assertEquals(
-            listOf("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN", "CLAUDE_CODE_OAUTH_REFRESH_TOKEN"),
+            listOf(
+                "ANTHROPIC_API_KEY",
+                "CLAUDE_CODE_OAUTH_TOKEN",
+                "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
+                "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY",
+            ),
             recipe.unset,
         )
     }

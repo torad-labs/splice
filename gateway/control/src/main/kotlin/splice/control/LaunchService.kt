@@ -51,18 +51,9 @@ public class LaunchService(
                 loginOutcomeFile = spec.loginOutcomeFile,
             ),
         )
-        val env = buildEnv(spec)
-        // Clear anything ambient that would override the proxy or a stale Anthropic session —
-        // EXCEPT on a native-auth head, where those variables ARE the credential being forwarded.
-        val unset = if (spec.forwardClientAuth) {
-            emptyList()
-        } else {
-            listOf(
-                "ANTHROPIC_API_KEY",
-                "CLAUDE_CODE_OAUTH_TOKEN",
-                "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
-            )
-        }
+        val slots = aliasSlots(spec)
+        val env = buildEnv(spec, slots)
+        val unset = staleEnvUnsets(spec, slots)
         val argv = buildList {
             add(claudeBinary)
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
@@ -79,8 +70,39 @@ public class LaunchService(
         return LaunchRecipe(env, unset, argv, warning)
     }
 
-    private fun buildEnv(spec: LaunchSpec): Map<String, String> {
-        val slots = aliasSlots(spec)
+    /** Vars a launched head must SCRUB from the inherited environment: bin/splice-launch execs
+     *  `env` WITHOUT -i, so a head launched from inside another head's session inherits the OUTER
+     *  recipe (the same mechanism that let the mgmt key reach a native head — DR-30). Three
+     *  classes: (1) a foreign head strips the client's Anthropic session; a native head keeps it —
+     *  those variables ARE the credential being forwarded. (2) Gateway model discovery, retired:
+     *  an ambient =1 would re-add the wrapped /v1/models spelling this recipe keeps out of the
+     *  picker. (3) Every alias-tier triplet this head does NOT emit — an explicit-slots head that
+     *  omits a tier must not let the outer head's value leak through and point that tier at a
+     *  model this head cannot serve (codex redo verdict, 2026-08-30). */
+    private fun staleEnvUnsets(spec: LaunchSpec, slots: List<Pair<String, String>>): List<String> {
+        val auth = if (spec.forwardClientAuth) {
+            emptyList()
+        } else {
+            listOf(
+                "ANTHROPIC_API_KEY",
+                "CLAUDE_CODE_OAUTH_TOKEN",
+                "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
+            )
+        }
+        val emitted = slots.map { it.first }.toSet()
+        val absentTiers = listOf("OPUS", "SONNET", "HAIKU", "FABLE")
+            .filterNot { it in emitted }
+            .flatMap { tier ->
+                listOf(
+                    "ANTHROPIC_DEFAULT_${tier}_MODEL",
+                    "ANTHROPIC_DEFAULT_${tier}_MODEL_NAME",
+                    "ANTHROPIC_DEFAULT_${tier}_MODEL_DESCRIPTION",
+                )
+            }
+        return auth + "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY" + absentTiers
+    }
+
+    private fun buildEnv(spec: LaunchSpec, slots: List<Pair<String, String>>): Map<String, String> {
         return buildMap {
             put("ANTHROPIC_BASE_URL", "http://127.0.0.1:${spec.port}")
             // AUTH_TOKEN (bearer), NOT API_KEY — a bearer avoids Claude Code's custom-api-key

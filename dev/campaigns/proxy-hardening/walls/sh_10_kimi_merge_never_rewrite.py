@@ -75,47 +75,88 @@ _IMPORT_LINE = re.compile(r"^import .*$", re.M)
 # A private forward under ANY name, in either body form:
 #     private fun writeSecure(path: Path, content: String) { SecureFile.writeAtomic0600(path, content) }
 #     private fun writeSecure(path: Path, content: String): Unit = SecureFile.writeAtomic0600(path, content)
-_FORWARD = re.compile(r"private fun (\w+)\s*\([^)]*\)[^={]*(?:\{[^{}]*|=\s*)" + re.escape(ATOMIC_WRITE))
+_FORWARD = re.compile(
+    r"private fun (?P<name>\w+)\s*\(\s*(?P<path>\w+)\s*:[^,]+,\s*"
+    r"(?P<content>\w+)\s*:[^)]+\)[^={]*(?:\{[^{}]*|=\s*)"
+    + re.escape(ATOMIC_WRITE)
+    + r"\s*(?P=path)\s*,\s*(?P=content)\s*\)",
+    re.S,
+)
 
 # The value handed to the persist, when it is carried by a local rather than inlined.
 _LOCAL = re.compile(r"^(\w+)(?:\.toString\(\))?$")
+_MERGE_VALUE_RE = re.compile(r"^\s*" + re.escape(MERGE_CALL))
 
 
-def _brace_stack(text: str, stop: int) -> tuple[int, ...]:
-    """Open lexical braces at `stop`, ignoring braces carried only by Kotlin strings/chars."""
-    stack: list[int] = []
+def _mask_strings(text: str) -> str:
+    """Blank Kotlin strings/chars without moving offsets."""
+    chars = list(text)
     i = 0
-    while i < stop:
+    while i < len(chars):
         if text.startswith('"""', i):
             close = text.find('"""', i + 3)
-            i = stop if close < 0 else close + 3
-            continue
-        ch = text[i]
-        if ch in ('"', "'"):
-            quote = ch
-            i += 1
-            while i < stop:
-                if text[i] == "\\":
-                    i += 2
-                elif text[i] == quote:
-                    i += 1
+            end = len(chars) if close < 0 else close + 3
+        elif chars[i] in ('"', "'"):
+            quote = chars[i]
+            end = i + 1
+            while end < len(chars):
+                if chars[end] == "\\":
+                    end += 2
+                elif chars[end] == quote:
+                    end += 1
                     break
                 else:
-                    i += 1
+                    end += 1
+        else:
+            i += 1
             continue
+        for at in range(i, min(end, len(chars))):
+            if chars[at] not in "\r\n":
+                chars[at] = " "
+        i = end
+    return "".join(chars)
+
+
+def _scope_stacks(text: str, positions: list[int]) -> dict[int, tuple[int, ...]]:
+    """Resolve every requested brace ancestry in one lexical pass."""
+    targets = sorted(set(positions))
+    if not targets:
+        return {}
+    structure = _mask_strings(text)
+    result: dict[int, tuple[int, ...]] = {}
+    stack: list[int] = []
+    target = 0
+    for at, ch in enumerate(structure):
+        while target < len(targets) and targets[target] == at:
+            result[targets[target]] = tuple(stack)
+            target += 1
         if ch == "{":
-            stack.append(i)
+            stack.append(at)
         elif ch == "}" and stack:
             stack.pop()
-        i += 1
-    return tuple(stack)
+    while target < len(targets):
+        result[targets[target]] = tuple(stack)
+        target += 1
+    return result
 
 
-def _visible_from(assign_at: int, use_at: int, text: str) -> bool:
-    """An assignment is visible only from its own block or a descendant block."""
-    assigned = _brace_stack(text, assign_at)
-    used = _brace_stack(text, use_at)
-    return len(assigned) <= len(used) and used[:len(assigned)] == assigned
+def _shadowed_by_parameter(name: str, use_at: int, text: str, used: tuple[int, ...]) -> bool:
+    """Function, lambda, and loop parameters shadow outer merged properties/locals."""
+    structure = _mask_strings(text)
+    for function in re.finditer(r"\bfun\s+\w+\s*\((?P<params>[^)]*)\)[^{=]*\{", structure[:use_at]):
+        if function.end() - 1 in used and re.search(r"\b" + re.escape(name) + r"\s*:",
+                                                   function.group("params")):
+            return True
+    for brace in used:
+        before = structure[max(0, brace - 300):brace]
+        if re.search(r"\bfor\s*\(\s*" + re.escape(name) + r"\s+in\b[^{}]*$", before):
+            return True
+        lambda_head = structure[brace + 1:min(use_at, brace + 300)]
+        parameters = re.match(r"\s*(?P<params>[^(){};\n]*?)\s*->", lambda_head)
+        if parameters and re.search(r"\b" + re.escape(name) + r"\b",
+                                    parameters.group("params")):
+            return True
+    return False
 
 
 def code_only(text: str | None) -> str | None:
@@ -177,7 +218,7 @@ def _persist_contents(kimi: str) -> list[tuple[str, int]]:
     names = {ATOMIC_WRITE[:-1]}
     chars = list(kimi)
     for m in _FORWARD.finditer(kimi):
-        names.add(m.group(1))
+        names.add(m.group("name"))
         close = _close_paren(kimi, m.end() - 1)
         for i in range(m.start(), len(kimi) if close is None else close + 1):
             chars[i] = " "
@@ -233,22 +274,33 @@ def _reaches_merge(content: str, persist_at: int, kimi: str) -> bool:
     of `merged.toString()` — reddens this wall. That is the fail-closed direction, and the RED names
     the exact expression it saw, so it is a one-line read rather than a mystery.
     """
-    if MERGE_CALL in content:
+    if _MERGE_VALUE_RE.match(content):
         return True
     local = _LOCAL.match(content)
     if not local:
         return False
-    assignments = [
-        assign
-        for assign in re.finditer(
-            r"\bval\s+" + re.escape(local.group(1)) + r"\b[^=\n]*=", kimi[:persist_at]
-        )
-        if _visible_from(assign.start(), persist_at, kimi)
-    ]
-    if not assignments:
+    name = local.group(1)
+    structure = _mask_strings(kimi)
+    assignments = list(re.finditer(
+        r"\b(?:val|var)\s+" + re.escape(name) + r"\b[^=\n]*=", structure
+    ))
+    scopes = _scope_stacks(kimi, [persist_at] + [assign.start() for assign in assignments])
+    used = scopes[persist_at]
+    if _shadowed_by_parameter(name, persist_at, kimi, used):
         return False
-    nearest = assignments[-1]
-    return MERGE_CALL in _assigned_expression(kimi, nearest.end())
+
+    visible = []
+    for assign in assignments:
+        assigned = scopes[assign.start()]
+        ancestor = len(assigned) <= len(used) and used[:len(assigned)] == assigned
+        preceding_local = assign.start() < persist_at
+        later_member = assign.start() > persist_at and len(assigned) < len(used)
+        if ancestor and (preceding_local or later_member):
+            visible.append((len(assigned), assign.start() if preceding_local else -assign.start(), assign))
+    if not visible:
+        return False
+    nearest = max(visible, key=lambda candidate: (candidate[0], candidate[1]))[2]
+    return bool(_MERGE_VALUE_RE.match(_assigned_expression(kimi, nearest.end())))
 
 
 def detect(core: str | None, kimi: str | None) -> list[str]:
@@ -353,6 +405,43 @@ KIMI_CROSS_SCOPE_MERGE = (
     f"    {ATOMIC_WRITE}path, content)\n"
     "}"
 )
+KIMI_PARAMETER_SHADOW = (
+    f"val credentialFile = CredentialJson.mergedCredentialJson(onDisk, {FRESH})\n"
+    "fun refresh(credentialFile: JsonObject) { "
+    "persistCredentials(authPath, credentialFile.toString()) }\n"
+    "private fun persistCredentials(path: Path, content: String) {\n"
+    f"    {ATOMIC_WRITE}path, content)\n"
+    "}"
+)
+KIMI_LAMBDA_SHADOW = (
+    f"val credentialFile = CredentialJson.mergedCredentialJson(onDisk, {FRESH})\n"
+    f"fun refresh() {{ listOf({FRESH}).map {{ credentialFile -> "
+    "persistCredentials(authPath, credentialFile.toString()) } } }\n"
+    "private fun persistCredentials(path: Path, content: String) {\n"
+    f"    {ATOMIC_WRITE}path, content)\n"
+    "}"
+)
+KIMI_TYPED_LAMBDA_SHADOW = KIMI_LAMBDA_SHADOW.replace(
+    "credentialFile ->", "credentialFile: JsonObject ->"
+)
+KIMI_UNRELATED_LAMBDA = (
+    f"val credentialFile = CredentialJson.mergedCredentialJson(onDisk, {FRESH})\n"
+    "fun refresh() { listOf(credentialFile).map { x -> x }; "
+    "persistCredentials(authPath, credentialFile.toString()) }\n"
+    "private fun persistCredentials(path: Path, content: String) {\n"
+    f"    {ATOMIC_WRITE}path, content)\n"
+    "}"
+)
+KIMI_NESTED_RESULT = (
+    f"val credentialFile = run {{ CredentialJson.mergedCredentialJson(onDisk, {FRESH}); {FRESH} }}\n"
+    + _via_forward("credentialFile.toString()", persist="persistCredentials")
+)
+KIMI_DROPPED_FORWARD = (
+    _MERGE + "\nwriteSecure(authPath, merged.toString())\n"
+    "private fun writeSecure(path: Path, content: String) {\n"
+    f"    {ATOMIC_WRITE}path, {FRESH}.toString())\n"
+    "}"
+)
 # Comments lie in both directions to a wall that follows a value; both are fed through code_only,
 # exactly as the real file is. FAIL-OPEN: the merge exists only in a comment while the live local
 # holds the from-scratch object.
@@ -395,6 +484,12 @@ def selftest() -> int:
     green("the merge inlined at the write with no local at all", KIMI_INLINE)
     red("a same-name merge assignment that occurs only AFTER the persist", KIMI_POSTHOC_MERGE)
     red("a same-name merge assignment in a closed sibling scope", KIMI_CROSS_SCOPE_MERGE)
+    red("a fresh function parameter shadowing an outer merged value", KIMI_PARAMETER_SHADOW)
+    red("a fresh lambda parameter shadowing an outer merged value", KIMI_LAMBDA_SHADOW)
+    red("a typed lambda parameter shadowing an outer merged value", KIMI_TYPED_LAMBDA_SHADOW)
+    green("an unrelated lambda that merely reads the merged value", KIMI_UNRELATED_LAMBDA)
+    red("a nested expression that calls merge but returns the fresh object", KIMI_NESTED_RESULT)
+    red("a persist forward that discards its content parameter", KIMI_DROPPED_FORWARD)
     red("a merge that exists only in a COMMENT above a live from-scratch local",
         code_only(KIMI_COMMENT_LIE))
     green("a commented-out old from-scratch write beside the live merged one",
@@ -405,10 +500,9 @@ def selftest() -> int:
         for f in fails:
             print("  " + f)
         return 1
-    print("SH-10 SELFTEST OK — red on from-scratch rewrite (inlined, through a forward, via the "
-          "wrong local, posthoc assignment, or sibling scope), missing primitive, private fork, "
-          "missing file, shape change, unsafe write, and comment-only merge; green only when the "
-          "lexically visible merge value reaches the write")
+    print("SH-10 SELFTEST OK — red on fresh/nested/shadowed values, posthoc or sibling merges, "
+          "content-dropping forwards, missing primitive/file, unsafe writes, and comment-only "
+          "merges; green only when the resolved merge value reaches the atomic write")
     return 0
 
 

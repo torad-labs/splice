@@ -27,7 +27,34 @@ SPI = ROOT / "gateway/provider-spi/src/main/kotlin/splice/spi/BufferCapacity.kt"
 CHAT = ROOT / "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt"
 RESP = ROOT / "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt"
 PASS = ROOT / "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughStreamTranslator.kt"
-_BUFFER_GUARD_RE = re.compile(r"\bBufferCapacity\.over\s*\(")
+_EXPECTED_SURFACES = {
+    "chat": ("channels.textBuf.length", "channels.thinkingBuf.length",
+             "toolCalls.retainedIndexEntryCount", "toolCalls.bufferedArgsChars"),
+    "responses": ("state.textBuf.length", "state.thinkingBuf.length", "state.blocks.size",
+                  "pendingArgsChars"),
+    "passthrough": ("channels.textBuf.length", "channels.thinkingBuf.length",
+                    "blocks.openBlockCount", "blocks.bufferedToolArgsChars"),
+}
+_GUARDED_COLLECT_RE = re.compile(
+    r"\.takeWhile\s*\{(?P<body>.*?)\}\s*\.collect\s*\{", re.S
+)
+_OVER_ASSIGN_RE = re.compile(
+    r"\bval\s+(?P<name>\w+)\s*=\s*!\s*BufferCapacity\.over\s*\((?P<args>.*?)\)", re.S
+)
+
+
+def has_live_guard(text: str, required: tuple[str, ...]) -> bool:
+    """The one collect() must be gated by one four-surface takeWhile predicate."""
+    guards = list(_GUARDED_COLLECT_RE.finditer(text))
+    if len(guards) != 1 or len(re.findall(r"\.collect\s*\{", text)) != 1:
+        return False
+    predicate = guards[0].group("body")
+    assignment = _OVER_ASSIGN_RE.search(predicate)
+    return bool(
+        assignment
+        and all(token in assignment.group("args") for token in required)
+        and re.search(r"\b" + re.escape(assignment.group("name")) + r"\s*$", predicate)
+    )
 
 
 def detect(
@@ -53,9 +80,10 @@ def detect(
         problems.append("no shared splice.spi.BufferCapacity — the cap either does not exist or "
                         "is a per-dialect copy waiting to drift")
     for name, text in (("chat", chat), ("responses", resp), ("passthrough", pas)):
-        if not _BUFFER_GUARD_RE.search(text or ""):
-            problems.append(f"{name} translator does not call BufferCapacity.over() at its guard "
-                            "site — a type reference or unrelated constant does not bound buffers")
+        if not has_live_guard(text or "", _EXPECTED_SURFACES[name]):
+            problems.append(f"{name} driveTurn does not gate its collect() with a four-surface "
+                            "BufferCapacity.over() takeWhile predicate — dead helpers, ignored "
+                            "calls, or constant arguments do not bound retained buffers")
     if chat_raw is not None and "MAX_BUFFERED_CHARS =" in chat_raw:
         problems.append("chat still carries a private MAX_BUFFERED_CHARS — the lift must be code "
                         "MOTION, not a fourth copy that can drift")
@@ -95,47 +123,77 @@ def _read(p: pathlib.Path) -> str | None:
 
 
 SPI_OK = "public object BufferCapacity { const val X = 1 }"
-GUARDED = "if (BufferCapacity.over(a, b)) { latch() }"
-REFERENCED_ONLY = "val capacity = BufferCapacity\nupstream.collect { evt -> onEvent(evt, sink) }"
-UNGUARDED = "upstream.collect { evt -> onEvent(evt, sink) }"
-CHAT_PRIVATE = "private const val MAX_BUFFERED_CHARS = 20_000_000\nBufferCapacity"
 
 
-COMMENTED_GUARD = ("import splice.spi.BufferCapacity\n"
-                   "// TODO(NF-06): restore !BufferCapacity.over(textBuf.length, thinkingBuf.length)\n"
-                   ".collect { evt -> router.onEvent(evt, sink) }")
-HIDDEN_FORK = "BufferCapacity.over(a, b)\n// private const val MAX_BUFFERED_CHARS = 20_000_000"
+def guarded(*args: str) -> str:
+    joined = ", ".join(args)
+    return ("fun driveTurn() { upstream.takeWhile { "
+            f"val withinCapacity = !BufferCapacity.over({joined}); withinCapacity "
+            "}.collect { evt -> onEvent(evt, sink) } }")
+
+
+CHAT_GUARDED = guarded("channels.textBuf.length", "channels.thinkingBuf.length",
+                       "toolIndexCount = toolCalls.retainedIndexEntryCount",
+                       "pendingArgsLen = toolCalls.bufferedArgsChars")
+RESP_GUARDED = guarded(
+    "state.textBuf.length", "state.thinkingBuf.length", "toolIndexCount = state.blocks.size",
+    "pendingArgsLen = pendingArgsChars",
+).replace("driveTurn", "driveRound", 1)
+PASS_GUARDED = guarded("channels.textBuf.length", "channels.thinkingBuf.length",
+                       "toolIndexCount = blocks.openBlockCount",
+                       "pendingArgsLen = blocks.bufferedToolArgsChars")
+REFERENCED_ONLY = "fun driveTurn() { val capacity = BufferCapacity; upstream.collect { work() } }"
+UNGUARDED = "fun driveTurn() { upstream.collect { evt -> onEvent(evt, sink) } }"
+DEAD_GUARD = UNGUARDED + "\nfun telemetry() = BufferCapacity.over(0, 0)"
+CONSTANT_GUARD = guarded("0", "0", "toolIndexCount = 0", "pendingArgsLen = 0")
+CHAT_PRIVATE = "private const val MAX_BUFFERED_CHARS = 20_000_000\n" + CHAT_GUARDED
+
+
+COMMENTED_GUARD = (
+    "import splice.spi.BufferCapacity\n"
+    "fun driveRound() { upstream.takeWhile {\n"
+    "// val withinCapacity = !BufferCapacity.over(state.textBuf.length, "
+    "state.thinkingBuf.length, toolIndexCount = state.blocks.size, "
+    "pendingArgsLen = pendingArgsChars)\n"
+    "withinCapacity\n"
+    "}.collect { evt -> router.onEvent(evt, sink) } }"
+)
+HIDDEN_FORK = CHAT_GUARDED + "\n// private const val MAX_BUFFERED_CHARS = 20_000_000"
 
 
 def selftest() -> int:
     fails = []
     if not detect(None, "x", UNGUARDED, UNGUARDED, chat_raw="x"):
         fails.append("no shared BufferCapacity must be RED")
-    if detect(SPI_OK, GUARDED, GUARDED, GUARDED, chat_raw=GUARDED):
+    if detect(SPI_OK, CHAT_GUARDED, RESP_GUARDED, PASS_GUARDED, chat_raw=CHAT_GUARDED):
         fails.append(f"all-guarded must be GREEN, got "
-                     f"{detect(SPI_OK, GUARDED, GUARDED, GUARDED, chat_raw=GUARDED)}")
-    if not detect(SPI_OK, GUARDED, UNGUARDED, GUARDED, chat_raw=GUARDED):
+                     f"{detect(SPI_OK, CHAT_GUARDED, RESP_GUARDED, PASS_GUARDED, chat_raw=CHAT_GUARDED)}")
+    if not detect(SPI_OK, CHAT_GUARDED, UNGUARDED, PASS_GUARDED, chat_raw=CHAT_GUARDED):
         fails.append("one unguarded translator must be RED")
     for name, chat, resp, pas in (
-        ("chat", REFERENCED_ONLY, GUARDED, GUARDED),
-        ("responses", GUARDED, REFERENCED_ONLY, GUARDED),
-        ("passthrough", GUARDED, GUARDED, REFERENCED_ONLY),
+        ("chat", REFERENCED_ONLY, RESP_GUARDED, PASS_GUARDED),
+        ("responses", CHAT_GUARDED, REFERENCED_ONLY, PASS_GUARDED),
+        ("passthrough", CHAT_GUARDED, RESP_GUARDED, REFERENCED_ONLY),
     ):
         if not detect(SPI_OK, chat, resp, pas, chat_raw=chat):
-            fails.append(f"{name} mentioning BufferCapacity without calling over() must be RED")
-    if not detect(SPI_OK, CHAT_PRIVATE, GUARDED, GUARDED, chat_raw=CHAT_PRIVATE):
+            fails.append(f"{name} mentioning BufferCapacity without a live guard must be RED")
+    for label, broken in (("dead helper", DEAD_GUARD), ("constant arguments", CONSTANT_GUARD)):
+        if not detect(SPI_OK, broken, RESP_GUARDED, PASS_GUARDED, chat_raw=broken):
+            fails.append(f"a chat {label} must be RED")
+    if not detect(SPI_OK, CHAT_PRIVATE, RESP_GUARDED, PASS_GUARDED, chat_raw=CHAT_PRIVATE):
         fails.append("a chat-side private MAX_BUFFERED_CHARS copy must be RED (motion, not a fork)")
-    if not detect(SPI_OK, None, GUARDED, GUARDED, chat_raw=None):
+    if not detect(SPI_OK, None, RESP_GUARDED, PASS_GUARDED, chat_raw=None):
         fails.append("a missing translator file must be RED, never a vacuous pass")
     # HD-26 comment-satisfiability controls. Both directions, so a later blind sweep that strips the
     # ban too (or stops stripping the required tokens) breaks the selftest instead of the invariant.
-    if detect(SPI_OK, GUARDED, COMMENTED_GUARD, GUARDED, chat_raw=GUARDED):
+    if detect(SPI_OK, CHAT_GUARDED, COMMENTED_GUARD, PASS_GUARDED, chat_raw=CHAT_GUARDED):
         fails.append("the raw shape must read GREEN — otherwise this fixture is not the bug and "
                      "the control below proves nothing")
-    if not detect(SPI_OK, GUARDED, code_only(COMMENTED_GUARD), GUARDED, chat_raw=GUARDED):
+    if not detect(SPI_OK, CHAT_GUARDED, code_only(COMMENTED_GUARD), PASS_GUARDED,
+                  chat_raw=CHAT_GUARDED):
         fails.append("a translator whose guard survives only as an import + comment must be RED — "
                      "required tokens are matched against code, never raw file text")
-    if not detect(SPI_OK, code_only(HIDDEN_FORK), GUARDED, GUARDED, chat_raw=HIDDEN_FORK):
+    if not detect(SPI_OK, code_only(HIDDEN_FORK), RESP_GUARDED, PASS_GUARDED, chat_raw=HIDDEN_FORK):
         fails.append("a private MAX_BUFFERED_CHARS fork commented out of the code view must still "
                      "be RED — the ban reads RAW so a comment cannot hide it")
     if fails:
@@ -143,9 +201,9 @@ def selftest() -> int:
         for f in fails:
             print("  " + f)
         return 1
-    print("NF-06 SELFTEST OK — red on missing shared cap, any translator without a live over() "
-          "call, a private chat fork, and missing files; green only when all three guard from one "
-          "source")
+    print("NF-06 SELFTEST OK — red on missing cap, dead/reference-only/constant guards, missing "
+          "four-surface arguments, private chat fork, and missing files; green only when each live "
+          "translation path gates collect() through BufferCapacity.over()")
     return 0
 
 

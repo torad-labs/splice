@@ -24,35 +24,44 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 STORE = ROOT / "gateway/core/src/main/kotlin/splice/core/config/KeyStore.kt"
-_NEXT_FUNCTION_RE = re.compile(
-    r"\n\s*(?:(?:public|private|internal|protected|override|suspend|inline)\s+)*fun\s+\w+\s*\("
-)
-
-
-def function_source(text: str, name: str) -> str | None:
-    """One member function, through (but not including) the next function declaration."""
-    start = re.search(r"\bfun\s+" + re.escape(name) + r"\s*\(", text)
-    if not start:
+def mutation_transaction(text: str, name: str) -> str | None:
+    """The unique withStoreLock lambda reached directly by this public mutation."""
+    if len(re.findall(r"\bfun\s+" + re.escape(name) + r"\s*\(", text)) != 1:
         return None
-    following = _NEXT_FUNCTION_RE.search(text, start.end())
-    end = len(text) if following is None else following.start()
-    return text[start.start():end]
+    match = re.search(
+        r"\bfun\s+" + re.escape(name) +
+        r"\s*\([^)]*\)(?:(?!\bfun\s).)*?\bwithStoreLock\s*\{(?P<body>.*?)\}",
+        text,
+        re.S,
+    )
+    return None if match is None else match.group("body")
+
+
+def strict_persist(transaction: str | None) -> bool:
+    if transaction is None or "entries()" in transaction:
+        return False
+    strict = re.search(
+        r"\bval\s+(\w+)\s*=\s*entriesStrict\(\)\.toMutableMap\(\)", transaction
+    )
+    return bool(
+        strict
+        and len(re.findall(r"\bpersist\s*\(", transaction)) == 1
+        and re.search(r"\bpersist\s*\(\s*" + re.escape(strict.group(1)) + r"\s*\)", transaction)
+    )
 
 
 def detect(text: str | None) -> list[str]:
     """Pure detection. No I/O — the selftest feeds it directly."""
     if text is None:
         return ["KeyStore.kt missing — refusing to pass vacuously"]
-    mutations = {name: function_source(text, name) for name in ("write", "unset")}
-    if any(source is None for source in mutations.values()):
-        return ["KeyStore mutation surface not found (shape changed?) — refusing to pass vacuously"]
+    mutations = {name: mutation_transaction(text, name) for name in ("write", "unset")}
 
     problems: list[str] = []
-    for name, source in mutations.items():
-        if "entriesStrict(" not in (source or ""):
-            problems.append(f"{name}() does not perform its own strict read-modify-write — a strict "
-                            "helper elsewhere cannot stop this mutation from rebuilding from a "
-                            "tolerant empty-map fallback")
+    for name, transaction in mutations.items():
+        if not strict_persist(transaction):
+            problems.append(f"{name}() does not derive its persisted map directly from "
+                            "entriesStrict().toMutableMap() inside withStoreLock — discarded strict "
+                            "reads, tolerant maps, or disconnected locks earn nothing")
     if "refusing to write" not in text:
         problems.append("an unreadable store does not abort loudly — the operator learns about "
                         "key loss from the next 401, not from the failed command")
@@ -89,17 +98,32 @@ def _read(p: pathlib.Path) -> str | None:
     return code_only(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
-OPEN_FIX = ("fun write() { entries().toMutableMap() }\n"
-            "fun unset() { entries().toMutableMap() }\n"
+OPEN_FIX = ("fun write() { val next = entries().toMutableMap(); persist(next) }\n"
+            "fun unset() { val next = entries().toMutableMap(); persist(next) }\n"
             ".getOrDefault(emptyMap())")
 _STRICT_SUPPORT = ('fun entriesStrict() = error("keys.toml unreadable — refusing to write")\n'
                    "fun acquireBounded() { channel.tryLock() }\n")
-CLOSED_FIX = ("fun write() { entriesStrict().toMutableMap() }\n"
-              "fun unset() { entriesStrict().toMutableMap() }\n" + _STRICT_SUPPORT)
-WRITE_ONLY_STRICT = ("fun write() { entriesStrict().toMutableMap() }\n"
-                     "fun unset() { entries().toMutableMap() }\n" + _STRICT_SUPPORT)
-UNSET_ONLY_STRICT = ("fun write() { entries().toMutableMap() }\n"
-                     "fun unset() { entriesStrict().toMutableMap() }\n" + _STRICT_SUPPORT)
+_STRICT_WRITE = "fun write() { withStoreLock { val next = entriesStrict().toMutableMap(); persist(next) } }\n"
+_STRICT_UNSET = "fun unset() { withStoreLock { val next = entriesStrict().toMutableMap(); persist(next) } }\n"
+_TOLERANT_WRITE = "fun write() { withStoreLock { val next = entries().toMutableMap(); persist(next) } }\n"
+_TOLERANT_UNSET = "fun unset() { withStoreLock { val next = entries().toMutableMap(); persist(next) } }\n"
+CLOSED_FIX = _STRICT_WRITE + _STRICT_UNSET + _STRICT_SUPPORT
+WRITE_ONLY_STRICT = _STRICT_WRITE + _TOLERANT_UNSET + _STRICT_SUPPORT
+UNSET_ONLY_STRICT = _TOLERANT_WRITE + _STRICT_UNSET + _STRICT_SUPPORT
+DISCARDED_STRICT = (
+    "fun write() { withStoreLock { entriesStrict(); val next = entries().toMutableMap(); persist(next) } }\n"
+    "fun unset() { withStoreLock { entriesStrict(); val next = entries().toMutableMap(); persist(next) } }\n"
+    + _STRICT_SUPPORT
+)
+UNLOCKED_STRICT = (
+    "fun write() { val next = entriesStrict().toMutableMap(); persist(next) }\n"
+    "fun unset() { val next = entriesStrict().toMutableMap(); persist(next) }\n"
+    + _STRICT_SUPPORT
+)
+DECOY_MUTATIONS = (
+    "class Decoy { " + _STRICT_WRITE + _STRICT_UNSET + "}\n"
+    + _TOLERANT_WRITE + _TOLERANT_UNSET + _STRICT_SUPPORT
+)
 
 
 def selftest() -> int:
@@ -116,6 +140,12 @@ def selftest() -> int:
         fails.append("write() strict while unset() still reads tolerantly must be RED")
     if not detect(UNSET_ONLY_STRICT):
         fails.append("unset() strict while write() still reads tolerantly must be RED")
+    if not detect(DISCARDED_STRICT):
+        fails.append("discarded strict reads followed by tolerant persisted maps must be RED")
+    if not detect(UNLOCKED_STRICT):
+        fails.append("strict read-modify-write outside withStoreLock must be RED")
+    if not detect(DECOY_MUTATIONS):
+        fails.append("same-name decoy mutations must not mask unsafe write()/unset()")
     if not detect(None):
         fails.append("missing KeyStore.kt must be RED, never a vacuous pass")
     if not detect("class KeyStore"):
@@ -125,9 +155,9 @@ def selftest() -> int:
         for f in fails:
             print("  " + f)
         return 1
-    print("SH-11 SELFTEST OK — red on blind RMW, either mutation site lacking its strict read, "
-          "missing lock, missing file, and shape change; green only on strict + loud + locked "
-          "mutations")
+    print("SH-11 SELFTEST OK — red on blind/discarded strict reads, either unsafe mutation, "
+          "disconnected locks, same-name decoys, missing file, and shape change; green only when "
+          "both persisted maps derive from strict reads inside withStoreLock")
     return 0
 
 

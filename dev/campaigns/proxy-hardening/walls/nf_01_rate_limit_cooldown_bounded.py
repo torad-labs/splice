@@ -40,7 +40,10 @@ UPSTREAM = ROOT / "gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamClien
 HEADSERVER = ROOT / "gateway/gateway/src/main/kotlin/splice/gateway/head/HeadServer.kt"
 
 ARM_RE = re.compile(r"rateLimitedUntilMs\.accumulateAndGet\(.*?\n", re.S)
-CLEAR_BODY_RE = re.compile(r"fun\s+clear\s*\(\s*\)[^{]*\{(?P<body>[^{}]*)\}", re.S)
+CLEAR_BODY_RE = re.compile(
+    r"fun\s+clear\s*\(\s*\)\s*(?::\s*Unit\s*)?\{(?P<body>[^{}]*)\}", re.S
+)
+CLEAR_RESET_RE = re.compile(r"^\s*rateLimitedUntilMs\.set\(0L\)\s*;?\s*$")
 DELEGATE_RE = re.compile(r"fun\s+clearRateLimitCooldown\s*\([^)]*\)[^{=]*[{=]\s*\n?\s*cooldown\.clear\(\)")
 CLAMP = "MAX_RATE_LIMIT_COOLDOWN_MS"
 
@@ -75,10 +78,11 @@ def detect(cooldown: str | None, upstream: str | None, headserver: str | None) -
                         "(`val until = … + …` / accumulateAndGet) — a declared-but-unused clamp "
                         "bounds nothing")
 
-    clear = CLEAR_BODY_RE.search(cooldown)
-    if not clear or "rateLimitedUntilMs.set(0L)" not in clear.group("body"):
-        problems.append("RateLimitCooldown has no clear() whose own body zeroes rateLimitedUntilMs — "
-                        "a reset elsewhere does not make restart clear an armed horizon")
+    clears = list(CLEAR_BODY_RE.finditer(cooldown))
+    if len(clears) != 1 or not CLEAR_RESET_RE.fullmatch(clears[0].group("body")):
+        problems.append("RateLimitCooldown must have exactly one clear() whose complete body is the "
+                        "unconditional rateLimitedUntilMs.set(0L) reset — decoys, conditional "
+                        "mentions, or a later re-arm do not make restart clear the horizon")
     elif not DELEGATE_RE.search(upstream):
         problems.append("UpstreamClient.clearRateLimitCooldown() does not delegate to "
                         "cooldown.clear() — the head-facing escape hatch no longer reaches the "
@@ -121,6 +125,10 @@ _ARM_CLAMPED = ("val until = nowMs + minOf(pushbackMs ?: DEFAULT_RATE_LIMIT_COOL
                 "rateLimitedUntilMs.accumulateAndGet(until) { c, cand -> maxOf(c, cand) }\n")
 _CLEAR_DEF = "fun clear() { rateLimitedUntilMs.set(0L) }\n"
 _CLEAR_OUTSIDE = "fun clear() { }\nfun resetForTests() { rateLimitedUntilMs.set(0L) }\n"
+_CLEAR_DECOY = ("class Decoy { fun clear() { rateLimitedUntilMs.set(0L) } }\n"
+                "fun clear() { }\n")
+_CLEAR_REARMED = ("fun clear() { rateLimitedUntilMs.set(0L); "
+                  "rateLimitedUntilMs.set(Long.MAX_VALUE) }\n")
 _UC_DELEGATES = "public fun clearRateLimitCooldown() {\n    cooldown.clear()\n}\n"
 _UC_DELEGATES_NOWHERE = "public fun clearRateLimitCooldown() {\n    log(\"cleared\")\n}\n"
 _HS_CALLS = "driver.resetHealth(); upstream.clearRateLimitCooldown()\n"
@@ -149,6 +157,10 @@ def selftest() -> int:
          _ARM_CLAMPED + "fun clear() { }\n", _UC_DELEGATES, _HS_CALLS, True)
     case("half-fix: AtomicLong reset moved outside clear()",
          _ARM_CLAMPED + _CLEAR_OUTSIDE, _UC_DELEGATES, _HS_CALLS, True)
+    case("half-fix: decoy clear() masks the real empty clear()",
+         _ARM_CLAMPED + _CLEAR_DECOY, _UC_DELEGATES, _HS_CALLS, True)
+    case("half-fix: clear() resets and then re-arms the horizon",
+         _ARM_CLAMPED + _CLEAR_REARMED, _UC_DELEGATES, _HS_CALLS, True)
     case("closed (clamp applied + clear zeroes + delegate + called)",
          _ARM_CLAMPED + _CLEAR_DEF, _UC_DELEGATES, _HS_CALLS, False)
     case("missing sources", None, None, None, True)
@@ -159,9 +171,9 @@ def selftest() -> int:
         for f in fails:
             print("  " + f)
         return 1
-    print("NF-01 SELFTEST OK — red on open, red on FIVE half-fixes (declared-not-applied, "
-          "defined-not-called, delegate-reaches-nothing, clear-that-clears-nothing, reset outside "
-          "clear), green only when clamp, clear, delegate and call are all live")
+    print("NF-01 SELFTEST OK — red on open and seven half-fixes, including reset outside clear, "
+          "a decoy clear, and reset-then-rearm; green only when clamp, exact reset, delegate, and "
+          "restart call are all live")
     return 0
 
 

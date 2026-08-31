@@ -47,8 +47,8 @@ internal class StatusCommand {
     }
 
     /** DR-86: the status table is a reporter — a jar it cannot stat must say so, not render as
-     *  installed (the doctor jarCheck twin). */
-    private fun jarLine(): String {
+     *  installed (the doctor jarCheck twin). Internal for the permanent arm (codex redo). */
+    internal fun jarLine(): String {
         val jar = AdminSupport.selfJar() ?: return "not installed — run: splice install"
         val failure = AdminSupport.jarAccessFailure(jar)
             ?: return jar.toString()

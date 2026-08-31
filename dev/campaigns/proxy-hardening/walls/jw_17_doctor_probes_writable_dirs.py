@@ -38,9 +38,18 @@ def detect(doctor: str | None) -> list[str]:
     if "stateInfo" not in doctor:
         return ["doctor state section not found (shape changed?) — refusing to pass vacuously"]
     problems: list[str] = []
-    if "writableProbe" not in doctor and "probeWritable" not in doctor:
-        problems.append("doctor never probes the state/log dirs for writability — an unwritable "
-                        "~/.claude-codex degrades three subsystems silently")
+    # DR-35c (codex catch, 2026-08-30): one presence token let the docstring's own AND rot —
+    # replacing only the state-dir probe with an INFO row left the logs probe satisfying the check.
+    # Each dir the docstring promises is now its own pinned leg, whitespace-tolerant because the
+    # live logs-dir call breaks the line after the paren. The old probeWritable alternate spelling
+    # is dropped: exact-pin, a helper rename reds fail-closed instead of passing unexamined.
+    if not re.search(r'writableProbe\(\s*"state dir"', doctor):
+        problems.append("doctor never probes the STATE dir for writability — an unwritable "
+                        "~/.claude-codex degrades daemon.log, config persistence, and "
+                        "usage/perf/compact appends silently")
+    if not re.search(r'writableProbe\(\s*"logs dir"', doctor):
+        problems.append("doctor never probes the LOGS dir for writability — daemon.log lives in "
+                        "the sibling logs dir (JW-08), and a state-dir-only probe misses it")
     if ".delete" not in doctor and "deleteIfExists" not in doctor:
         problems.append("the probe file is not removed — doctor must stay non-mutating in spirit")
     if "chmod" not in doctor and "df -h" not in doctor:
@@ -72,8 +81,16 @@ def _read(p: pathlib.Path) -> str | None:
 
 
 OPEN_FIX = "stateInfo = listOf(state dir path only)"
-CLOSED_FIX = ('stateInfo\nwritableProbe(dir)\ntry { write } finally { Files.deleteIfExists(probe) }\n'
+CLOSED_FIX = ('stateInfo\nwritableProbe("state dir", statePaths.stateDir)\n'
+              'writableProbe(\n    "logs dir",\n    statePaths.logsDir,\n)\n'
+              'try { write } finally { Files.deleteIfExists(probe) }\n'
               'fix = "chmod u+rwx <dir>"')
+# DR-35c: codex's exact reproduced false green — ONE probe swapped for an INFO row while the
+# other survives. Both directions, so neither dir's probe can rot behind the other's.
+STATE_SWAPPED = CLOSED_FIX.replace('writableProbe("state dir", statePaths.stateDir)',
+                                   'DoctorCheck("state dir", CheckStatus.INFO, path)')
+LOGS_SWAPPED = CLOSED_FIX.replace('writableProbe(\n    "logs dir",\n    statePaths.logsDir,\n)',
+                                  'DoctorCheck("logs dir", CheckStatus.INFO, path)')
 
 
 def derived_mutants() -> list[str]:
@@ -91,6 +108,18 @@ def derived_mutants() -> list[str]:
             mutated[where] = (mutated[where] or "").replace(t, "")
         if not detect(*mutated):
             fails.append(f"live tree with {'/'.join(tokens)} deleted must be RED — furniture token")
+    # DR-35c: all-at-once deletion hid per-site rot — knocking out ONE live probe (codex's INFO-row
+    # swap) left the other satisfying the old single-token check. Each live call site must be
+    # load-bearing on its own.
+    for label in ("state dir", "logs dir"):
+        knocked = re.sub(r'writableProbe\(\s*"' + label + '"', f'disabledProbe("{label}"',
+                         live[0], count=1)
+        if knocked == live[0]:
+            fails.append(f"live tree has no writableProbe(\"{label}\") site to knock out — "
+                         "the wall and the tree disagree about the probe inventory")
+        elif not detect(knocked):
+            fails.append(f"live tree with only the {label} probe knocked out must be RED — "
+                         "per-site rot is invisible behind the sibling probe")
     return fails
 
 
@@ -104,6 +133,12 @@ def selftest() -> int:
         fails.append("a probe that never deletes must be RED")
     if not detect(CLOSED_FIX.replace('fix = "chmod u+rwx <dir>"', "")):
         fails.append("a fixless writability failure must be RED")
+    if not detect(STATE_SWAPPED):
+        fails.append("the state-dir probe swapped for an INFO row must be RED even while the logs "
+                     "probe survives (DR-35c)")
+    if not detect(LOGS_SWAPPED):
+        fails.append("the logs-dir probe swapped for an INFO row must be RED even while the state "
+                     "probe survives (DR-35c)")
     if not detect(None):
         fails.append("a missing DoctorDaemonChecks.kt must be RED, never a vacuous pass")
     fails.extend(derived_mutants())
@@ -112,8 +147,8 @@ def selftest() -> int:
         for f in fails:
             print("  " + f)
         return 1
-    print("JW-17 SELFTEST OK — red on path-only, non-deleting, fixless shapes and missing file; "
-          "green only when doctor probes writability and cleans up")
+    print("JW-17 SELFTEST OK — red on path-only, single-probe-swapped, non-deleting, fixless "
+          "shapes and missing file; green only when doctor probes BOTH dirs and cleans up")
     return 0
 
 

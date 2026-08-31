@@ -62,6 +62,18 @@ def detect(watchdog_text: str | None, driver_text: str | None) -> list[str]:
             problems.append("launchTotalCap launches AFTER roundRun.run — the cap poller is "
                             "rounds-scoped again (the placement half-fix): connect/headers-wait/"
                             "backoff before the first round are uncovered")
+        # DR-35c (codex catch, 2026-08-30): order alone accepted CONDITIONAL arming — `val capPoller
+        # = if (pingClient) drive.watchdog.launchTotalCap(...) else Job()` keeps the call lexically
+        # before the rounds while arming the cap on only one path. The call site must be a direct,
+        # unconditionally-executed val assignment (the live TurnOneDrive shape), and there must be
+        # exactly ONE site, so a compliant decoy cannot vouch for a conditional real one. A reshaped
+        # future call site reds fail-closed rather than passing unexamined.
+        elif (len(re.findall(r"launchTotalCap\(", cap_sites)) != 1
+              or not re.search(r"^[ \t]*val\s+\w+\s*=\s*drive\.watchdog\.launchTotalCap\(",
+                               cap_sites, re.M)):
+            problems.append("the launchTotalCap call site is not exactly one unconditional "
+                            "`val x = drive.watchdog.launchTotalCap(` statement — a conditional "
+                            "or indirect launch arms the whole-turn cap on only some paths")
     return problems
 
 
@@ -100,6 +112,14 @@ DRV_CLOSED = DRV_OPEN + "\n val capPoller = drive.watchdog.launchTotalCap(self, 
 DRV_LATE = DRV_OPEN + "\n roundRun.run(drive, self, turnJob)" + \
     "\n val capPoller = drive.watchdog.launchTotalCap(self, turnJob)"
 DRV_NO_RUN = DRV_OPEN + "\n val capPoller = drive.watchdog.launchTotalCap(self, turnJob)"
+# DR-35c mutants: codex's exact reproduced false green (conditional arming holds lexical order),
+# and a compliant decoy beside a conditional real site (exactly-one must refuse the pair).
+DRV_CONDITIONAL = DRV_OPEN + \
+    "\n val capPoller = if (pingClient) drive.watchdog.launchTotalCap(self, turnJob) else Job()" + \
+    "\n roundRun.run(drive, self, turnJob)"
+DRV_DECOY = DRV_OPEN + "\n val decoy = drive.watchdog.launchTotalCap(self, turnJob)" + \
+    "\n val capPoller = if (pingClient) drive.watchdog.launchTotalCap(self, turnJob) else Job()" + \
+    "\n roundRun.run(drive, self, turnJob)"
 
 
 def selftest() -> int:
@@ -114,6 +134,12 @@ def selftest() -> int:
         fails.append("launchTotalCap AFTER roundRun.run (placement half-fix) must be RED")
     if not detect(WD_CLOSED, DRV_NO_RUN):
         fails.append("a drive without roundRun.run (shape drift) must be RED, refusing vacuous pass")
+    if not detect(WD_CLOSED, DRV_CONDITIONAL):
+        fails.append("CONDITIONAL cap arming (if (pingClient) launchTotalCap(...) else Job()) must "
+                     "be RED — lexical order alone is not unconditional arming (DR-35c)")
+    if not detect(WD_CLOSED, DRV_DECOY):
+        fails.append("a compliant decoy beside a conditional real site must be RED — exactly one "
+                     "unconditional call site (DR-35c)")
     if not detect(None, DRV_CLOSED) or not detect(WD_CLOSED, None):
         fails.append("missing source files must be RED, never a vacuous pass")
     if not detect("class TurnWatchdog {}", DRV_CLOSED):
@@ -124,8 +150,9 @@ def selftest() -> int:
             print("  " + f)
         return 1
     print("NF-03 SELFTEST OK — red on missing poller, missing launch site, launch-after-rounds "
-          "placement, missing roundRun shape, missing files, and launchIn shape change; green only "
-          "when the cap is armed turn-wide BEFORE the rounds AND idle keeps launchIn")
+          "placement, conditional or decoyed arming, missing roundRun shape, missing files, and "
+          "launchIn shape change; green only when exactly one unconditional cap launch precedes "
+          "the rounds AND idle keeps launchIn")
     return 0
 
 

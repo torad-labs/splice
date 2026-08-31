@@ -36,9 +36,12 @@ internal class TurnEnding(
                 // identity this L3-honesty line exists to report. No reflection is involved here;
                 // the JVM's own diagnostic rendering is not a runtime type lookup in this source.
                 log(telemetry.errTurn("unexpected", drive, ": $e"))
-                drive.emitter.emitError(ErrorType.API_ERROR, "claudex: internal gateway error — retry")
+                // DR-128: account BEFORE the emit — a dead-client write makes emitError rethrow
+                // after sealing, and the turn must not vanish from the perf JSONL and G20
+                // counters. Same law on every failure surface (TurnConnEnd, TurnKnownEnd).
                 telemetry.recordPerf(drive, "error:unexpected")
                 health.local() // internal gateway bug (e.g. bad base_url parse)
+                drive.emitter.emitError(ErrorType.API_ERROR, "claudex: internal gateway error — retry")
             }
             else -> throw e // Errors (OOM etc.) are not turn failures — never masked
         }

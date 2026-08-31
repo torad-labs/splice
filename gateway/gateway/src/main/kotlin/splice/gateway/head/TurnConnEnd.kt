@@ -27,9 +27,12 @@ internal class TurnConnEnd(
         }
         is SseFrameTooLargeException -> {
             log(telemetry.errTurn("upstream-frame-too-large", drive, ": ${e.message}"))
-            drive.emitter.emitError(ErrorType.API_ERROR, "upstream sent an oversized streaming event — retry")
+            // DR-128: account BEFORE the emit — a dead-client write makes emitError rethrow after
+            // sealing, and the turn must not vanish from the perf JSONL and G20 counters (the
+            // 2026-07-19 storm shape: dead clients + failing upstream). Same law on every surface.
             telemetry.recordPerf(drive, "error:upstream-frame-too-large")
             health.provider()
+            drive.emitter.emitError(ErrorType.API_ERROR, "upstream sent an oversized streaming event — retry")
             true
         }
         else -> false
@@ -39,11 +42,12 @@ internal class TurnConnEnd(
     suspend fun emitConnReset(drive: TurnDrive, detail: String?) {
         log(telemetry.errTurn("conn-reset", drive, ": $detail"))
         val boundedDetail = (detail ?: "no detail").take(ERR_SNIPPET)
+        // DR-128: account BEFORE the emit — see the frame-too-large arm above.
+        telemetry.recordPerf(drive, "error:conn-reset")
+        health.local()
         drive.emitter.emitError(
             ErrorType.OVERLOADED,
             "${provider.key}: upstream connection failed ($boundedDetail) — retry",
         )
-        telemetry.recordPerf(drive, "error:conn-reset")
-        health.local()
     }
 }

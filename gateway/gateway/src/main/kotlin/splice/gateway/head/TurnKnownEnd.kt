@@ -21,12 +21,15 @@ internal class TurnKnownEnd(
     suspend fun tryEmit(drive: TurnDrive, e: Throwable): Boolean = when (e) {
         is UpstreamAuthMissing -> {
             log(telemetry.errTurn("auth-missing", drive, ": ${e.message}"))
+            // DR-128: account BEFORE the emit — a dead-client write makes emitError rethrow after
+            // sealing, and the turn must not vanish from the perf JSONL and G20 counters (the
+            // 2026-07-19 storm shape: dead clients + failing upstream). Same law on every surface.
+            telemetry.recordPerf(drive, "error:auth-missing")
+            health.local() // no upstream call ever happened: missing local credentials
             drive.emitter.emitError(
                 ErrorType.AUTHENTICATION,
                 "${provider.key}: no upstream credentials${failures.loginHint()}",
             )
-            telemetry.recordPerf(drive, "error:auth-missing")
-            health.local() // no upstream call ever happened: missing local credentials
             true
         }
         is UpstreamFailed -> {
@@ -39,9 +42,10 @@ internal class TurnKnownEnd(
             } else {
                 boundedMessage
             }
-            drive.emitter.emitError(failure.type, message)
+            // DR-128: account BEFORE the emit — same law as the auth-missing arm above.
             telemetry.recordPerf(drive, "error:upstream-failed")
             health.provider() // e.status/e.body are the literal HTTP response the upstream host gave
+            drive.emitter.emitError(failure.type, message)
             true
         }
         else -> false

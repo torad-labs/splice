@@ -63,7 +63,11 @@ internal class RefreshRetry(
     /**
      * Run [call] up to [maxAttempts] times, handing each response to [classify]. A thrown exception
      * from [call] or [classify] (network blip, malformed response) is treated as [RefreshStep.Retry],
-     * not a permanent failure. Returns the terminal value, or null once retries are exhausted.
+     * not a permanent failure. Returns the terminal value, or null once retries are exhausted —
+     * unless the FINAL attempt itself threw, which rethrows (DR-82): the swallow made
+     * RefreshOutcome.TransportFailed unreachable, so a network outage reported as "refresh
+     * rejected by token endpoint". The provider boundary's getOrElse owns the throw; null stays
+     * the answer only when the endpoint really answered and classified every attempt Retry.
      */
     internal suspend fun <T> refreshWithRetry(
         maxAttempts: Int = REFRESH_MAX_ATTEMPTS,
@@ -71,8 +75,11 @@ internal class RefreshRetry(
         classify: RefreshClassify<T>,
     ): T? {
         var attempt = 0
+        var lastFailure: Throwable? = null
         while (attempt < maxAttempts) {
-            val step = Cancellables.runCatchingCancellable { classify(call()) }.getOrDefault(RefreshStep.Retry)
+            val result = Cancellables.runCatchingCancellable { classify(call()) }
+            lastFailure = result.exceptionOrNull()
+            val step = result.getOrDefault(RefreshStep.Retry)
             if (step is RefreshStep.Terminal) return step.value
             attempt++
             if (attempt < maxAttempts) {
@@ -81,6 +88,7 @@ internal class RefreshRetry(
                 waiter.wait(jittered.toLong())
             }
         }
+        lastFailure?.let { throw it }
         return null
     }
 }

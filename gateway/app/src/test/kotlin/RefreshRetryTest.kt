@@ -113,4 +113,31 @@ class RefreshRetryTest {
     fun `isTerminalRefreshFailure invalid_grant body wins even under a nominally-retryable status`() {
         assertTrue(retry.isTerminalRefreshFailure(500, """{"error":"invalid_grant"}""", json))
     }
+
+    // DR-82 (assembly sweep): the loop's runCatching discarded the throwable, making
+    // RefreshOutcome.TransportFailed unreachable from production — a network outage reported as
+    // "refresh rejected by token endpoint". Exhaustion whose FINAL attempt threw now propagates
+    // that throw to the provider boundary (whose existing getOrElse maps TransportFailed);
+    // status-classified exhaustion still returns null, because there the endpoint really answered.
+    @Test
+    fun `exhaustion by transport failure propagates the final throw - DR-82`() = runTest {
+        val boom = IOException("network unreachable")
+        val calls = AtomicInteger()
+        val quiet = RefreshRetry(waiter = splice.spi.Waiter { })
+        val outcome = runCatching {
+            quiet.refreshWithRetry(
+                call = { calls.incrementAndGet(); throw boom },
+                classify = { RefreshStep.Terminal("never") },
+            )
+        }
+        assertEquals(3, calls.get(), "all attempts spent before giving up")
+        assertTrue(outcome.exceptionOrNull() === boom, "the real transport failure reaches the boundary")
+    }
+
+    @Test
+    fun `exhaustion by status classification still returns null - DR-82 control`() = runTest {
+        val client = clientOf(MockEngine { respond("busy", HttpStatusCode.ServiceUnavailable, headersOf()) })
+        val quiet = RefreshRetry(waiter = splice.spi.Waiter { })
+        assertNull(quiet.refreshWithRetry(call = { call(client) }, classify = { RefreshStep.Retry }))
+    }
 }

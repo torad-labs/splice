@@ -8,8 +8,10 @@
 //     replaces the dir with the link — cross-head session visibility);
 //   - settings.json is ALWAYS a real merged file (never a symlink through which we'd clobber the
 //     operator's global): global settings + availableModels allowlist + enforceAvailableModels +
-//     preserved model choice (when still allowed) + the statusline command; the symlink is broken
-//     FIRST;
+//     preserved model choice (when still allowed) + the statusline command. A pre-existing symlink
+//     there is NOT pre-deleted (DR-11 redo): the saved model is read only from a REAL file, and the
+//     atomic temp + ATOMIC_MOVE write replaces the symlink NAME without following it — one step, no
+//     missing-file window, the operator's global untouched;
 //   - .claude.json: additionalModelOptionsCache = the catalog, MCP inherit from ~/.claude.json,
 //     portKeys inherit (only when absent locally), hasCompletedOnboarding = true.
 // isolate list overrides share per item (an isolated item gets a seeded copy, not a link).

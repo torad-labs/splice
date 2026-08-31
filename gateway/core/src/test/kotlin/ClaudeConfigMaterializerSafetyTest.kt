@@ -94,4 +94,50 @@ class ClaudeConfigMaterializerSafetyTest {
 
         assertEquals(precious, victim.readText(), "a failed symlink swap must leave the operator's file byte-identical")
     }
+
+    // DR-11 redo (codex successful-replacement mutation gap): the failure arms above pin that a FAILED
+    // swap preserves the operator's file, but nothing pinned the SUCCESS path — a pre-existing regular
+    // file at a shared path must be REPLACED with a symlink into the global. codex's
+    // `if (Files.exists(dst, NOFOLLOW_LINKS)) return` early-out in replaceWithSymlink survived every
+    // existing test because none asserted the replacement actually happens. RED on that mutant: the
+    // stale head copy is left in place, so dst is neither a symlink nor the global content.
+    @Test
+    fun `a pre-existing regular file at a shared path is replaced with the global symlink`(@TempDir home: Path) {
+        seedGlobal(home)
+        val configDir = home.resolve(".claude-head")
+        Files.createDirectories(configDir)
+        val dst = configDir.resolve("CLAUDE.md")
+        dst.writeText("STALE HEAD COPY — must be replaced by the global link\n")
+
+        ClaudeConfigMaterializer(home).materialize(spec(configDir))
+
+        assertTrue(Files.isSymbolicLink(dst), "a real file where the shared link belongs must become a symlink")
+        assertEquals(
+            "global rules",
+            dst.readText(),
+            "the shared link must resolve to the operator's global CLAUDE.md, not the stale head copy",
+        )
+    }
+
+    // DR-11 redo (codex "cover an existing symlink too"): a stale symlink pointing elsewhere must
+    // likewise be repointed at the global — the NOFOLLOW existence check the mutant adds fires for a
+    // symlink as well, so this arm independently reds it (the link keeps resolving to the decoy).
+    @Test
+    fun `a pre-existing symlink at a shared path is repointed at the global`(@TempDir home: Path) {
+        seedGlobal(home)
+        val configDir = home.resolve(".claude-head")
+        Files.createDirectories(configDir)
+        val decoy = home.resolve("decoy.md")
+        decoy.writeText("DECOY — the stale link target")
+        val dst = configDir.resolve("CLAUDE.md")
+        Files.createSymbolicLink(dst, decoy)
+
+        ClaudeConfigMaterializer(home).materialize(spec(configDir))
+
+        assertEquals(
+            "global rules",
+            dst.readText(),
+            "a stale shared symlink must be repointed at the operator's global, not left on the decoy",
+        )
+    }
 }

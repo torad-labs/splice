@@ -42,10 +42,22 @@ import kotlin.io.path.isSymbolicLink
 // DTOs live in ClaudeMaterializeTypes.kt; Keys + sharedLinkItems + portKeys live in
 // ClaudeConfigKeys.kt (concentration, 2026-08-19). Same-package FQCNs are unchanged.
 
+/** Creates one symbolic link. A seam because the swap's whole safety property — that a failure
+ *  NEVER destroys the operator's pre-existing file — is only testable on the production path if the
+ *  create can be made to fail on demand (no temp filesystem denies createSymbolicLink), and that
+ *  failure is exactly the ENOSPC/LSM-EPERM case DR-11 was opened for. Public because it is a
+ *  default param of a public constructor and the no-secondary-constructor law leaves one init
+ *  path: an internal type here would trip "public constructor exposes internal parameter type". */
+public fun interface SymlinkOp {
+    public operator fun invoke(link: Path, target: Path)
+}
+
 public class ClaudeConfigMaterializer(
     private val home: Path,
     private val log: LogSink = LogSink(DaemonLog::write),
+    private val symlink: SymlinkOp = SymlinkOp { link, target -> Files.createSymbolicLink(link, target) },
 ) {
+
     private val json = Json {
         ignoreUnknownKeys = true
         prettyPrint = true
@@ -56,6 +68,13 @@ public class ClaudeConfigMaterializer(
     /** Materialize a head's isolated CLAUDE_CONFIG_DIR from [spec]. */
     public fun materialize(spec: MaterializeSpec): MaterializeResult {
         requireIsolatedDir(spec.configDir)
+        // Validate every ABORTING source BEFORE any mutation (DR-11 redo, codex ordering catch).
+        // The local .claude.json is the one strict read — an unparseable one fails the launch — and
+        // it used to run at the END of writeClaudeJson, after linkShared, the hooks, and
+        // settings.json had already changed operator-visible state, leaving a half-built config on
+        // abort. Reading it first means a corrupt local aborts with nothing yet touched. (`strict`
+        // treats an absent file as a fresh head; only unparseable throws.)
+        val localClaudeJson = jsonReads.strict(spec.configDir.resolve(Keys.CLAUDE_JSON))
         Files.createDirectories(spec.configDir)
         linkShared(spec.configDir, spec.policy)
         val hookAdditions = LoginInterception.concat(
@@ -79,6 +98,7 @@ public class ClaudeConfigMaterializer(
             spec.configDir,
             spec.modelOptionsCache,
             shareMcp = shares(spec.policy, Keys.MCPS),
+            local = localClaudeJson,
         )
         return MaterializeResult(spec.configDir, spec.availableModelIds.size, mcpCount)
     }
@@ -174,7 +194,7 @@ public class ClaudeConfigMaterializer(
         // original forever; here a staging failure leaves dst untouched and the move is atomic
         // over a pre-existing file or symlink alike.
         val staged = dst.resolveSibling(".${dst.fileName}.splice-link-${UUID.randomUUID()}")
-        Files.createSymbolicLink(staged, src)
+        symlink(staged, src)
         try {
             Files.move(staged, dst, REPLACE_EXISTING, ATOMIC_MOVE)
         } finally {
@@ -190,7 +210,7 @@ public class ClaudeConfigMaterializer(
         } else {
             EMPTY_JSON
         }
-        val existing = breakSettingsSymlinkAndRead(dst)
+        val existing = readSettingsModelBase(dst)
         val savedModel = existing[Keys.MODEL]?.jsonPrimitive?.content
         val model = if (savedModel != null && savedModel in allow) savedModel else spec.defaultModel
         val hooks = LoginInterception.mergeInto(global[Keys.HOOKS], hookAdditions)
@@ -207,14 +227,15 @@ public class ClaudeConfigMaterializer(
         SecureFile.writeAtomic0600(dst, json.encodeToString(JsonObject.serializer(), merged) + "\n")
     }
 
-    // A pre-existing settings.json that is a symlink would let our write clobber the operator's
-    // global; break it first. A real file's model choice is read back so we can preserve it.
-    private fun breakSettingsSymlinkAndRead(dst: Path): JsonObject {
-        if (!Files.exists(dst, NOFOLLOW_LINKS)) return EMPTY_JSON
-        if (dst.isSymbolicLink()) {
-            Cancellables.runCatchingCancellable { Files.delete(dst) }
-            return EMPTY_JSON
-        }
+    // The saved model choice, read only from a REAL settings.json (a symlink points at the
+    // operator's global, whose model is not this head's to preserve). NO pre-delete of a symlink
+    // here (DR-11 redo, codex pre-delete-window catch): the old Files.delete opened a window where
+    // a concurrent reader saw a missing settings.json and, if a later step failed, the original
+    // link was gone. writeSettings finishes through SecureFile.writeAtomic0600, whose temp +
+    // ATOMIC_MOVE replaces the symlink NAME without following it — the operator's global is never
+    // clobbered and the swap is a single atomic step with no missing-file window.
+    private fun readSettingsModelBase(dst: Path): JsonObject {
+        if (!Files.exists(dst, NOFOLLOW_LINKS) || dst.isSymbolicLink()) return EMPTY_JSON
         return jsonReads.tolerant(dst)
     }
 
@@ -231,11 +252,12 @@ public class ClaudeConfigMaterializer(
         configDir: Path,
         modelOptionsCache: JsonElement,
         shareMcp: Boolean,
+        local: JsonObject,
     ): Int {
         val statePath = configDir.resolve(Keys.CLAUDE_JSON)
         val global = jsonReads.tolerant(home.resolve(Keys.CLAUDE_JSON))
-        // Strict for the file THIS rewrite replaces; tolerant for the sources above (DR-11c).
-        val local = jsonReads.strict(statePath)
+        // [local] is the strict read of statePath, hoisted to materialize() and validated BEFORE any
+        // mutation (DR-11 redo). global stays a tolerant SOURCE read here — it never aborts.
         var mcpCount = 0
         val next = buildJsonObject {
             local.forEach { (k, v) -> put(k, v) }

@@ -38,7 +38,6 @@ import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
-import java.nio.file.attribute.BasicFileAttributes
 import java.util.UUID
 import kotlin.io.path.isDirectory
 import kotlin.io.path.isSymbolicLink
@@ -161,13 +160,13 @@ public class ClaudeConfigMaterializer(
         val src = globalDir().resolve(item)
         // DR-39 redo 3 (codex): `exists(src, NOFOLLOW)` was an absence PRE-gate — it reads false
         // through an untraversable global .claude, so every shared layer skipped SILENTLY and the
-        // head launched without the operator's hooks/agents/skills, no line anywhere. The entry's
-        // own NOFOLLOW attributes are the honest probe: only NoSuchFileException proves the
+        // head launched without the operator's hooks/agents/skills, no line anywhere. A NOFOLLOW
+        // stat of the entry itself is the honest probe: only NoSuchFileException proves the
         // optional share absent (NOFOLLOW never follows, so no dangling ambiguity to split). A
         // denied parent is loud; a dangling entry is loud too and NOT mirrored — linking it would
         // ship a broken layer with no cause named.
         val probeFailure = Cancellables.runCatchingCancellable {
-            Files.readAttributes(src, BasicFileAttributes::class.java, NOFOLLOW_LINKS)
+            Files.getLastModifiedTime(src, NOFOLLOW_LINKS)
             if (!Files.exists(src)) {
                 throw IOException("global entry is a link whose target is missing or unreachable")
             }

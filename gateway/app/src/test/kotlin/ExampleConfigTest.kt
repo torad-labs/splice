@@ -129,17 +129,20 @@ class ExampleConfigTest {
     // DR-24 redo (codex honesty catch): this test used to CLAIM the documented xAI values "carry
     // through the real catalog" but only checked grok-4.6 after catalogFor — and 4.6's roster window
     // (500k) equals the head override (500k), so it could never reveal the flattening. The head's
-    // context_window=500k DELIBERATELY replaces every SELECTED row's window (Topology.catalogFor:141),
-    // so grok-build-latest's real 256k ceiling is served to the client as 500k. Pin two honest layers,
-    // each with its denominator enumerated from the SOURCE (not a hand-list):
+    // context_window=500k replaces every SELECTED row's window (Topology.catalogFor:141), so
+    // grok-build-latest's real 256k ceiling is served to the client as 500k. Pin two source-derived
+    // layers (denominators enumerated from the SOURCE, not a hand-list):
     //   (1) the raw provider roster carries the exact docs.x.ai numbers — all four declared rows;
-    //   (2) the head-effective catalog flattens every row the head SELECTS to the head window (500k).
+    //   (2) the head-effective catalog CURRENTLY flattens every row the head SELECTS to 500k.
     // A silent edit to any shipped window — provider row, head override, or the roster — reds by name.
-    // NOTE (operator decision, §22): serving grok-build-latest (the haiku slot) at 500k over-declares
-    // its 256k backend ceiling — a `--model haiku` turn past 256k would hard-fail instead of
-    // compacting. The flattening is a LOCKED shipped value; the per-row-window fix is an operator
-    // call, flagged in the DR-24 ledger, deliberately NOT changed here. This test pins the flattening
-    // so any change to it (including that fix) reds and forces the decision through review.
+    // §22 / DECISION-REQUIRED — layer (2) is NOT an endorsement. Serving grok-build-latest (haiku slot)
+    // at 500k over-declares its 256k backend ceiling: the forbidden "never spell a row past its real
+    // ceiling" shape (a `--model haiku` turn past 256k hard-fails instead of compacting). The compliant
+    // fix — remove the head override so each selected row reports its provider window (500k/500k/256k;
+    // pinned grok-4.6 still launches at 500k) — changes a value the operator LOCKED for DR-24 ("never
+    // shipped window values"), so it is an operator decision, recorded in the DR-24 ledger and NOT
+    // taken here. Layer (2) is a TRIPWIRE on the current unsafe behavior: the operator's fix reds it
+    // and forces the update through review.
     @Test
     fun `example grok windows are the documented roster, flattened to the head window in the catalog`() {
         val topology = TopologyLoader.parse(exampleToml())
@@ -171,7 +174,8 @@ class ExampleConfigTest {
         assertEquals(
             selectedIds.associateWith { 500_000L },
             selectedIds.associateWith { catalog.contextWindowFor(it) },
-            "the head window flattens every SELECTED row to 500k — grok-build-latest's real 256k included",
+            "TRIPWIRE (§22, DECISION-REQUIRED): the head window currently over-declares every SELECTED " +
+                "row to 500k — grok-build-latest's real 256k included; removing the override reds this",
         )
 
         // The undeclared [1m] tier lands on the real ceiling and scales usage (DR-24 ModelCatalog fix).

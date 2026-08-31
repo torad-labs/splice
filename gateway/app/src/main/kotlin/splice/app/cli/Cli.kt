@@ -18,6 +18,30 @@ public class Cli {
             )
             return 2
         }
-        return command.run()
+        return guarded { command.run() }
+    }
+
+    /** DR-99: the CLI failure boundary. status/login/install/init/setup/logs had none — a
+     *  malformed splice.toml escaped as a raw TomlDecodingException stack trace, and ktoml decode
+     *  text can quote the offending config line, which legally carries credential-like
+     *  extra_headers values (the DR-92 class). One line through SafeFailureText (DR-65:
+     *  diagnostics never quote credential/config bytes), nonzero exit, no trace. The catch set is
+     *  the topology-load failure surface: IO (file read), SerializationException (ktoml decode
+     *  extends it, kotlinx json too), IllegalArgumentException (preflight/validation requires).
+     *  Cancellation is untouched — not in the set. Inline with a `block` parameter, the
+     *  sanctioned higher-order shape. */
+    internal inline fun guarded(block: () -> Int): Int = try {
+        block()
+    } catch (broken: java.io.IOException) {
+        renderFailure(broken)
+    } catch (broken: kotlinx.serialization.SerializationException) {
+        renderFailure(broken)
+    } catch (broken: IllegalArgumentException) {
+        renderFailure(broken)
+    }
+
+    internal fun renderFailure(broken: Throwable): Int {
+        System.err.println("splice: ${splice.core.util.SafeFailureText.render(broken)}")
+        return 1
     }
 }

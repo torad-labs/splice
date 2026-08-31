@@ -285,6 +285,29 @@ routing
 must_fail "6b. the gate.sh leg replaced by 'true', script name left in a trailing comment" "does not run 'gate:concentration'"
 reset_config
 
+# DR-114: the reachability half. Wrapping the leg in dead control flow keeps every token of the
+# line intact — the guard's line-by-line tokenizer saw a perfect `run` leg while bash never
+# executes it. Deletion (6), replacement (6b) and flag-hijack (10) all leave this hole open.
+python3 - "$tmp/checks/gate.sh" <<'PY'
+import pathlib, sys
+
+path = pathlib.Path(sys.argv[1])
+out, n = [], 0
+for line in path.read_text().splitlines(keepends=True):
+    if "gate:concentration" in line and line.lstrip().startswith("run "):
+        out.append("if false; then\n")
+        out.append(line)
+        out.append("fi\n")
+        n += 1
+    else:
+        out.append(line)
+assert n == 1, "gate.sh has no `run` leg naming gate:concentration"
+path.write_text("".join(out))
+PY
+routing
+must_fail "6c. the gate.sh leg wrapped in 'if false; then ... fi' (dead but token-identical)" "control structure"
+reset_config
+
 # ── 7. census: every Kotlin type spelling is counted, nested types reported (DR-51) ──────────
 # Red on the pre-DR-51 oracle: `fun interface` failed TYPE_DECL (no `fun ` modifier), annotation
 # classes still fail both top-level and nested regexes, and no nested_types field existed at all.
@@ -469,6 +492,6 @@ fi
 rm -rf "$G"
 
 if [ "$fail" -eq 0 ]; then
-  note "concentration selftest: control green, 11 mutation fixtures red for their stated reasons, 6 DR-51 arms green"
+  note "concentration selftest: control green, 12 mutation fixtures red for their stated reasons, 6 DR-51 arms green"
 fi
 exit "$fail"

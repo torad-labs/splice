@@ -235,23 +235,47 @@ def inverse_problems() -> list[str]:
     return found
 
 
+# DR-114 reachability: shell control-structure keywords, counted as TOKENS over the whole file so
+# a leg wrapped in `if false; then ... fi` — token-identical on its own line — is not accepted as
+# a routing. Quoted payloads (`bash -c 'if ...'`) survive shlex as single tokens and never count.
+_OPENERS = frozenset({"if", "while", "until", "for", "case"})
+_CLOSERS = frozenset({"fi", "done", "esac"})
+
+
 def forward_problems() -> list[str]:
     """checks/gate.sh really runs that script, through `run`, so its exit code is captured."""
     gate = (ROOT / "checks/gate.sh").read_text(encoding="utf-8")
     routed = []
+    buried = []
+    depth = 0
     for line in gate.splitlines():
         argv = tokenize(line)
-        if not argv or argv[0] != "run":
+        if not argv:
             continue
         command = argv[2:]  # argv[1] is run()'s label; everything after it is the command
-        if (
-            tuple(command[:2]) == LEG_RUNNER
+        shaped = (
+            argv[0] == "run"
+            and tuple(command[:2]) == LEG_RUNNER
             and command[-1:] == [SCRIPT]
             and all(flag in LEG_FLAGS_ALLOWED for flag in command[2:-1])
-        ):
+        )
+        # DR-114: only a TOP-LEVEL leg counts. A leg nested in any control structure may never
+        # execute (if false), and this guard cannot evaluate an arbitrary condition's truth —
+        # unconditional is the only reachability it can prove, and the real gate is a flat script.
+        if shaped and depth == 0:
             routed.append(line.strip())
+        elif shaped:
+            buried.append(line.strip())
+        depth += sum(1 for t in argv if t in _OPENERS) - sum(1 for t in argv if t in _CLOSERS)
+        depth = max(depth, 0)  # an unbalanced closer never retro-unlocks earlier acceptance
     if routed:
         return []
+    if buried:
+        return [
+            f"checks/gate.sh runs '{SCRIPT}' only inside a shell control structure ({buried[0]!r}) "
+            f"— a wrapped leg (if false; then ... fi) tokenizes identically but may never execute. "
+            f"The routing must be an unconditional top-level `run` leg."
+        ]
 
     # Name the near-misses. The whole point of this rewrite is that a line CONTAINING the script
     # name proves nothing, so the failure has to show the reader the difference between the text

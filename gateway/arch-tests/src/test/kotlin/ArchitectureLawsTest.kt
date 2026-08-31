@@ -3,6 +3,7 @@
 // Grow this file as modules land; every new law gets a red/green proof in the ledger note.
 import com.lemonappdev.konsist.api.Konsist
 import com.lemonappdev.konsist.api.verify.assertTrue
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
 import java.io.File
 
@@ -196,6 +197,30 @@ class ArchitectureLawsTest {
 
     /** Module paths from settings.gradle.kts. Every quoted `:name` in that file is an include() entry —
      *  rootProject.name and includeBuild("build-logic") carry no leading colon. */
+
+    // DR-112 (coverage redo, review 2026-08-31): the direction law and the ratchet-staleness check
+    // both read edges through this matcher, so an edge written in any spelling it misses is simply
+    // invisible to them — a silent hole, not a failure. No live edge uses the other forms, so this
+    // fixture is the only thing that can fail when the matcher narrows.
+    @Test
+    fun `every gradle spelling of a project edge is seen - DR-112`() {
+        val script = """
+            dependencies {
+                implementation(project(":core"))
+                api(project(path = ":spi"))
+                testImplementation(project( ":gateway" ))
+                implementation(project(":app", configuration = "shadow"))
+                implementation(project(  path  =  ":control"  ))
+                // implementation(project(":commented-out"))
+            }
+        """.trimIndent()
+        assertEquals(
+            setOf(":core", ":spi", ":gateway", ":app", ":control"),
+            projectEdgesIn(script),
+            "every Gradle spelling of a project edge must be visible to the architecture laws",
+        )
+    }
+
     private fun includedModules(): Set<String> =
         MODULE_PATH.findAll(stripComments(File(root, "settings.gradle.kts").readText()))
             .map { it.groupValues[1] }
@@ -206,11 +231,16 @@ class ArchitectureLawsTest {
     private fun projectDependencies(module: String): Set<String> {
         val buildFile = File(root, "${module.removePrefix(":")}/build.gradle.kts")
         if (!buildFile.isFile) return emptySet()
-        return PROJECT_DEPENDENCY.findAll(stripComments(buildFile.readText()))
-            .map { it.groupValues[1] }
-            .filterNot { it == module }
-            .toSet()
+        return projectEdgesIn(buildFile.readText()).filterNot { it == module }.toSet()
     }
+
+    /** The pure half of [projectDependencies] — every edge a build script's TEXT declares, comments
+     *  stripped. Split out (DR-112 coverage redo) so the SPELLINGS can be pinned by a synthetic
+     *  fixture: the tree happens to write every live edge positionally, so the widened matcher was
+     *  otherwise unfalsifiable, and the law it feeds would go quiet the day someone wrote one of
+     *  the other forms. */
+    private fun projectEdgesIn(script: String): Set<String> =
+        PROJECT_DEPENDENCY.findAll(stripComments(script)).map { it.groupValues[1] }.toSet()
 
     /** Block and line comments out: a commented-out dependency is not an edge. */
     private fun stripComments(text: String): String =

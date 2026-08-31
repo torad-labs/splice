@@ -67,12 +67,30 @@ command = "claude-openrouter"
     public data class LoadedTopology(val topology: Topology, val digest: String)
 
     public fun loadOrMaterializeWithDigest(path: Path): LoadedTopology {
-        if (!Files.exists(path)) {
-            path.parent?.let(Files::createDirectories)
-            Files.writeString(path, DEFAULT_TOML.trimIndent() + "\n")
-        }
-        val bytes = Files.readAllBytes(path)
+        // DR-66: the read is the probe. Only proven absence (NoSuch + no NOFOLLOW entry) is a
+        // first run; an unreadable existing file — or a dangling dotfiles symlink — aborts loud
+        // instead of being clobbered with (or written through by) the starter.
+        val bytes = Cancellables.runCatchingCancellable { Files.readAllBytes(path) }
+            .getOrElse { failure ->
+                val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+                    !Files.exists(path, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                if (!genuinelyAbsent) throw failure
+                materializeStarter(path)
+            }
         return LoadedTopology(parse(bytes.toString(Charsets.UTF_8)), sha256Hex(bytes))
+    }
+
+    /** First-run creation NEVER truncates an unobserved path: CREATE_NEW loses to any concurrent
+     *  creator, whose file then wins and is read back instead. */
+    private fun materializeStarter(path: Path): ByteArray {
+        val starter = (DEFAULT_TOML.trimIndent() + "\n").toByteArray(Charsets.UTF_8)
+        path.parent?.let(Files::createDirectories)
+        return Cancellables.runCatchingCancellable {
+            Files.write(path, starter, java.nio.file.StandardOpenOption.CREATE_NEW)
+            starter
+        }.getOrElse { failure ->
+            if (failure is java.nio.file.FileAlreadyExistsException) Files.readAllBytes(path) else throw failure
+        }
     }
 
     /** Digest of the file as it is on disk RIGHT NOW; null when unreadable (fail open — an

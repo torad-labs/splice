@@ -20,6 +20,7 @@ import mock.awaitListening
 import mock.freshPort
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -126,6 +127,12 @@ class MultiProviderDaemonTest {
     private val neutralPort = freshPort()
     private val kimiPort = freshPort()
 
+    // DR-81: openrouter is the launchable api-key head (the ONE provider with a capture-pattern
+    // entry, so its spec carries TokenCaptureSpec) — key file + claude config dir are fields so
+    // the launch arm can flip the credential between /launch calls.
+    private lateinit var orKeyFile: Path
+    private lateinit var orCfgDir: Path
+
     @BeforeAll
     fun setUp() {
         val tmp = Files.createTempDirectory("multi")
@@ -135,6 +142,8 @@ class MultiProviderDaemonTest {
         Files.writeString(grokKey, """{"api_key":"xai-daemon-key"}""")
         val orKey = tmp.resolve("or.json")
         Files.writeString(orKey, """{"api_key":"or-daemon-key"}""")
+        orKeyFile = orKey
+        orCfgDir = tmp.resolve(".claude-openrouter")
         val neutralKey = tmp.resolve("neutral.json")
         Files.writeString(neutralKey, """{"api_key":"neutral-daemon-key"}""")
         val kimiKey = tmp.resolve("kimi.json")
@@ -243,6 +252,7 @@ class MultiProviderDaemonTest {
         port = $chatPort
         discovery_prefix = "claude-openrouter--"
         pinned_model = "meta/llama-4"
+        claude = { command = "claude-openrouter", config_dir = "${orCfgDir.esc()}" }
 
         [heads.claude-splice]
         provider = "anthropic"
@@ -271,6 +281,40 @@ class MultiProviderDaemonTest {
         grokMock.stop()
         chatMock.stop()
         anthropicMock.stop()
+    }
+
+    // DR-81 redo (codex gap): the WIRING must be pinned end-to-end, not just LaunchService's gate —
+    // ManagedHeadFactory's KeyPresenceProbe must read the wired credential LIVE (not compute once
+    // at boot) and LaunchRoutes must reread it per /launch. The observable is the materialized
+    // settings.json: armed launches install the paste-your-key advertiser hook, disarmed ones must
+    // not (writeSettings rebuilds hooks per materialize, so the entry cannot linger).
+    @Test
+    fun `launch rereads api-key presence from the live credential on every request - DR-81`() = runBlocking {
+        suspend fun launchThenSettings(): String {
+            val r = client.post("http://127.0.0.1:$controlPort/launch/openrouter") {
+                header("Authorization", "Bearer $key")
+            }
+            assertEquals(200, r.status.value, r.bodyAsText())
+            return Files.readString(orCfgDir.resolve("settings.json"))
+        }
+        // Boot wrote the key: the first launch must NOT arm the capture advertiser (a compliant
+        // paste would overwrite the working credential — the DR-81 defect).
+        assertFalse(
+            launchThenSettings().contains("splice-keysetup-hook"),
+            "key present must disarm the paste-your-key advertiser",
+        )
+        // `splice key unset` without reboot: the very next launch re-arms.
+        Files.delete(orKeyFile)
+        assertTrue(
+            launchThenSettings().contains("splice-keysetup-hook"),
+            "key removal must re-arm the advertiser on the next launch, no daemon reboot",
+        )
+        // `splice key set` promises live pickup: the next launch disarms again.
+        Files.writeString(orKeyFile, """{"api_key":"or-daemon-key"}""")
+        assertFalse(
+            launchThenSettings().contains("splice-keysetup-hook"),
+            "key set must disarm the very next launch — the probe is a live read, never boot-frozen",
+        )
     }
 
     @Test

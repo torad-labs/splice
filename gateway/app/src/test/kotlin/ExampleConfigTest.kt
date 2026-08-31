@@ -126,18 +126,27 @@ class ExampleConfigTest {
         }
     }
 
-    // DR-24 redo: the shipped grok windows were not source-wired — mutating the example's grok-4.6
-    // row 500000->400000 left every suite green, because the head-level context_window override
-    // replaces the provider rows inside catalogFor and nothing pinned either number. Expectations
-    // here are the DOCUMENTED xAI values (docs.x.ai, quoted beside the rows in the example file),
-    // asserted against the real parse -> catalogFor path, so a silent edit to any shipped window —
-    // provider row, head override, or the roster itself — fails by name. The [1m] legs pin the
-    // production undeclared-tier spelling from the DR-24 counterexample on the same real catalog.
+    // DR-24 redo (codex honesty catch): this test used to CLAIM the documented xAI values "carry
+    // through the real catalog" but only checked grok-4.6 after catalogFor — and 4.6's roster window
+    // (500k) equals the head override (500k), so it could never reveal the flattening. The head's
+    // context_window=500k DELIBERATELY replaces every SELECTED row's window (Topology.catalogFor:141),
+    // so grok-build-latest's real 256k ceiling is served to the client as 500k. Pin two honest layers,
+    // each with its denominator enumerated from the SOURCE (not a hand-list):
+    //   (1) the raw provider roster carries the exact docs.x.ai numbers — all four declared rows;
+    //   (2) the head-effective catalog flattens every row the head SELECTS to the head window (500k).
+    // A silent edit to any shipped window — provider row, head override, or the roster — reds by name.
+    // NOTE (operator decision, §22): serving grok-build-latest (the haiku slot) at 500k over-declares
+    // its 256k backend ceiling — a `--model haiku` turn past 256k would hard-fail instead of
+    // compacting. The flattening is a LOCKED shipped value; the per-row-window fix is an operator
+    // call, flagged in the DR-24 ledger, deliberately NOT changed here. This test pins the flattening
+    // so any change to it (including that fix) reds and forces the decision through review.
     @Test
-    fun `example grok windows carry the documented xAI values through the real catalog`() {
+    fun `example grok windows are the documented roster, flattened to the head window in the catalog`() {
         val topology = TopologyLoader.parse(exampleToml())
         val head = topology.heads.getValue("claude-grok")
         val xai = topology.providers.getValue(head.provider)
+
+        // (1) SOURCE OF TRUTH: the raw declared rows are exactly the docs.x.ai windows, none extra.
         assertEquals(
             mapOf(
                 "grok-4.6" to 500_000L,
@@ -148,9 +157,24 @@ class ExampleConfigTest {
             xai.models.associate { it.id to it.contextWindow },
             "every declared provider row, exactly the docs.x.ai numbers, none extra",
         )
-        assertEquals(500_000L, head.contextWindow, "the head override agrees with the grok-4.6 row it replaces")
+
+        // (2) PRODUCTION: the head window replaces every SELECTED row. Denominator from head.models
+        // (the source), so a newly-selected row cannot slip the flattening unpinned.
+        assertEquals(500_000L, head.contextWindow, "the head-level context_window override under test")
         val catalog = xai.catalogFor(head)
-        assertEquals(500_000L, catalog.contextWindowFor("grok-4.6"))
+        val selectedIds = head.models.orEmpty().map { it.id }
+        assertEquals(
+            listOf("grok-4.6", "grok-4.5", "grok-build-latest"),
+            selectedIds,
+            "the head selects exactly these three rows (grok-4.3 is declared but NOT served here)",
+        )
+        assertEquals(
+            selectedIds.associateWith { 500_000L },
+            selectedIds.associateWith { catalog.contextWindowFor(it) },
+            "the head window flattens every SELECTED row to 500k — grok-build-latest's real 256k included",
+        )
+
+        // The undeclared [1m] tier lands on the real ceiling and scales usage (DR-24 ModelCatalog fix).
         assertEquals(500_000L, catalog.contextWindowFor("grok-4.6[1m]"), "undeclared tier lands on the real ceiling")
         assertEquals(2.0, catalog.usageScale("grok-4.6[1m]"), "client 1e6 / real 500k")
         assertEquals(1_000_000L, catalog.clientContextWindowFor("grok-4.6[1m]"))

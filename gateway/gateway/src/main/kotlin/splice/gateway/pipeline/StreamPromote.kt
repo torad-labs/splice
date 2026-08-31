@@ -23,8 +23,11 @@ internal class StreamPromote(
         meta: TurnMeta,
         elapsedMs: Long,
     ): String? {
-        var emittedText = outcome.emittedText
-        var bodyText = outcome.bodyText
+        // DR-88 rider: these were vars mutated inside the promote branch (emittedText = true,
+        // bodyText += picked.text) — dead stores both, the promote arm never re-reads them and the
+        // model_text arm below is unreachable from it.
+        val emittedText = outcome.emittedText
+        val bodyText = outcome.bodyText
 
         // Promote model thinking → text when no text AND no tools (compact needs a text channel).
         if (!emittedText && !outcome.hasToolUse) {
@@ -35,8 +38,6 @@ internal class StreamPromote(
                         "source=${picked.source} chars=${picked.text.length}\n",
                 )
                 emitter.addTextBlock(picked.text)
-                emittedText = true
-                bodyText += picked.text
                 if (meta.compact) compact.record(picked.source, elapsedMs, chars = picked.text.length)
             } else if (meta.compact) {
                 // An empty compact is an ERROR, not an empty success (Claude Code would store a

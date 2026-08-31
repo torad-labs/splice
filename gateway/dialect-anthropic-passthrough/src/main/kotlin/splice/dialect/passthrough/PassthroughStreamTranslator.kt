@@ -53,9 +53,15 @@ public class PassthroughStreamTranslator(
                 // NF-06: the shared runaway valve Chat already had. takeWhile (not a skip inside
                 // collect) so the first breach CANCELS collection and Flow unwinds the upstream —
                 // otherwise a still-streaming upstream keeps the turn slot and quota live until it
-                // chooses to close, with every later event consumed and thrown away.
+                // chooses to close, with every later event consumed and thrown away. Count the block
+                // registry and tool arguments too — neither lives in the prose buffers.
                 .takeWhile {
-                    val withinCapacity = !BufferCapacity.over(channels.textBuf.length, channels.thinkingBuf.length)
+                    val withinCapacity = !BufferCapacity.over(
+                        channels.textBuf.length,
+                        channels.thinkingBuf.length,
+                        toolIndexCount = blocks.openBlockCount,
+                        pendingArgsLen = blocks.bufferedToolArgsChars,
+                    )
                     if (!withinCapacity) terminal.latchRunawayGuard()
                     withinCapacity
                 }

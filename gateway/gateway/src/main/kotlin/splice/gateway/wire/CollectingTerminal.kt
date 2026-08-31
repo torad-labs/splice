@@ -96,6 +96,15 @@ public class CollectingTerminal(
     // ── terminal (TurnTerminal) ──────────────────────────────────────────────
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) {
         if (!ended.compareAndSet(false, true)) return
+        if (content.toolInputCapacityExceeded) {
+            body = errorEnvelope(
+                ErrorType.API_ERROR.wireName,
+                "claudex: response exceeded max buffered size — aborting",
+                usagePayload(usage),
+            )
+            status = statusFor(ErrorType.API_ERROR)
+            return
+        }
         val blocks = content.contentBlocks()
         if (content.malformedToolInput) {
             // HEAD-003: a tool_use whose input never parsed as JSON must not reach the client as

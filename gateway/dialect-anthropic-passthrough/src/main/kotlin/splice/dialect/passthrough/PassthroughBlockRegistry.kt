@@ -27,6 +27,10 @@ internal class PassthroughBlockRegistry(
 ) {
 
     private val blocks = HashMap<Int, Block>()
+    // NF-06: tool JSON bypasses the prose buffers, so retain its aggregate size as a count only.
+    private var toolArgsCharCount = 0L
+    internal val openBlockCount: Int get() = blocks.size
+    internal val bufferedToolArgsChars: Int get() = minOf(Int.MAX_VALUE.toLong(), toolArgsCharCount).toInt()
     internal var hasToolUse = false
 
     // PT-001: latched after the first unmapped-index delta is logged (TurnDriver.malformedLogged's
@@ -79,7 +83,11 @@ internal class PassthroughBlockRegistry(
         when (JsonScalars.strOrEmpty(delta["type"])) {
             "text_delta" -> prose.textDelta(wire, JsonScalars.strOrEmpty(delta["text"]), sink)
             "thinking_delta" -> prose.thinkingDelta(wire, JsonScalars.strOrEmpty(delta["thinking"]), sink)
-            "input_json_delta" -> sink.inputJsonDelta(wire, JsonScalars.strOrEmpty(delta["partial_json"]))
+            "input_json_delta" -> {
+                val partialJson = JsonScalars.strOrEmpty(delta["partial_json"])
+                sink.inputJsonDelta(wire, partialJson)
+                toolArgsCharCount += partialJson.length.toLong()
+            }
             "signature_delta" -> {
                 sink.signatureDelta(wire, JsonScalars.strOrEmpty(delta["signature"]))
                 block.signatureSeen = true

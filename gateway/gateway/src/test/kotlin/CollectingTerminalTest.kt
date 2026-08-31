@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Test
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
 import splice.gateway.wire.CollectingTerminal
+import splice.spi.BufferCapacity
 
 private const val ERROR_STATUS = 502
 
@@ -79,5 +80,21 @@ class CollectingTerminalTest {
         val block = body["content"]!!.jsonArray.single().jsonObject
         assertEquals("tool_use", block["type"]?.jsonPrimitive?.content)
         assertEquals("run", block["name"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `aggregate tool input across non-stream blocks is capacity bounded`() = runTest {
+        val t = terminal()
+        val args = """{"payload":"${"x".repeat(1_000_000)}"}"""
+        repeat(BufferCapacity.MAX_BUFFERED_CHARS / args.length + 2) { index ->
+            val block = t.openTool(id = "toolu_$index", name = "run")
+            t.inputJsonDelta(block, args)
+        }
+
+        t.emitTerminal(hasToolUse = true, incomplete = false, usage = Usage())
+
+        assertEquals(ERROR_STATUS, t.httpStatus())
+        val message = t.responseBody()["error"]!!.jsonObject["message"]?.jsonPrimitive?.content.orEmpty()
+        assertTrue(message.contains("exceeded max buffered size"), message)
     }
 }

@@ -17,6 +17,7 @@ import splice.dialect.passthrough.PassthroughQuirks
 import splice.dialect.passthrough.PassthroughQuirksDefaults
 import splice.dialect.passthrough.PassthroughStreamTranslator
 import splice.dialect.passthrough.PassthroughTurnContext
+import splice.spi.BufferCapacity
 import splice.spi.WireSink
 
 private class Rec : WireSink {
@@ -487,6 +488,61 @@ class PassthroughStopReasonHonestyTest {
 // to close. The breach must CANCEL collection so Flow unwinds the producer. A separate class: the
 // main class above is at detekt's LargeClass budget.
 class PassthroughRunawayCancellationTest {
+
+    @Test
+    fun `open block registry count trips the shared capacity guard`() = runTest {
+        var emitted = 0
+        val events = kotlinx.coroutines.flow.flow {
+            repeat(BufferCapacity.MAX_TOOL_INDEX_ENTRIES + 10) { index ->
+                emitted += 1
+                emit(
+                    ev(
+                        """{"type":"content_block_start","index":$index,
+                           "content_block":{"type":"server_tool_use"}}""",
+                    ),
+                )
+            }
+        }
+
+        val outcome = PassthroughStreamTranslator(ctx(), KIMI).driveTurn(events, Rec())
+        val failure = outcome as TurnOutcome.Failure
+        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        assertEquals(BufferCapacity.MAX_TOOL_INDEX_ENTRIES + 1, emitted, "guard must stop collection")
+    }
+
+    @Test
+    fun `aggregate arguments across open tool blocks trip the shared capacity guard`() = runTest {
+        val chunk = "x".repeat(1_000_000)
+        val sink = Rec()
+        val events = kotlinx.coroutines.flow.flow {
+            repeat(25) { index ->
+                emit(
+                    ev(
+                        """{"type":"content_block_start","index":$index,
+                           "content_block":{"type":"tool_use","id":"tool_$index","name":"run"}}""",
+                    ),
+                )
+                emit(
+                    kotlinx.serialization.json.buildJsonObject {
+                        put("type", kotlinx.serialization.json.JsonPrimitive("content_block_delta"))
+                        put("index", kotlinx.serialization.json.JsonPrimitive(index))
+                        put(
+                            "delta",
+                            kotlinx.serialization.json.buildJsonObject {
+                                put("type", kotlinx.serialization.json.JsonPrimitive("input_json_delta"))
+                                put("partial_json", kotlinx.serialization.json.JsonPrimitive(chunk))
+                            },
+                        )
+                    },
+                )
+            }
+        }
+
+        val outcome = PassthroughStreamTranslator(ctx(), KIMI).driveTurn(events, sink)
+        val failure = outcome as TurnOutcome.Failure
+        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        assertEquals(20, sink.calls.count { it.startsWith("json:") })
+    }
 
     @Test
     fun `the capacity breach cancels the upstream instead of draining it`() = runTest {

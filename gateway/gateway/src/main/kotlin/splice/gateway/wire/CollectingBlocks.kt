@@ -11,6 +11,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.index.WireBlockIndex
 import splice.core.util.Cancellables
+import splice.spi.BufferCapacity
 
 private const val FIELD_TYPE = "type"
 private const val FIELD_TEXT = "text"
@@ -31,6 +32,11 @@ internal class CollectingBlocks {
 
     // Blocks in OPEN order — the Anthropic content array order. Index handles are list positions.
     private val blocks = mutableListOf<Blk>()
+    // stream:false retains every tool fragment until the terminal body is assembled; cap the
+    // aggregate across blocks, not merely each individual tool.
+    private var bufferedToolArgsChars = 0L
+    internal var toolInputCapacityExceeded: Boolean = false
+        private set
 
     // HEAD-003: latched when a tool_use's accumulated input never parsed as JSON, OR (REG-001)
     // when a tool_use has no usable name and is dropped from content — either way the client must
@@ -70,7 +76,15 @@ internal class CollectingBlocks {
     }
 
     internal fun inputJsonDelta(index: WireBlockIndex, partialJson: String) {
-        (blocks.getOrNull(index.value) as? Blk.Tool)?.args?.append(partialJson)
+        val tool = blocks.getOrNull(index.value) as? Blk.Tool ?: return
+        if (toolInputCapacityExceeded) return
+        val nextSize = bufferedToolArgsChars + partialJson.length
+        if (nextSize >= BufferCapacity.MAX_BUFFERED_CHARS) {
+            toolInputCapacityExceeded = true
+            return
+        }
+        tool.args.append(partialJson)
+        bufferedToolArgsChars = nextSize
     }
 
     internal fun addTextBlock(text: String) {

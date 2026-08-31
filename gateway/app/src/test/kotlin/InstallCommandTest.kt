@@ -215,3 +215,54 @@ class InstallCommandTest {
 private fun Path.writeString(s: String) {
     Files.writeString(this, s)
 }
+
+// DR-67 in its own class: the precheck cannot see a file that appears between it and the claim.
+// The WrapperClaim seam interleaves that creator deterministically on the production path
+// (SymlinkOp precedent): the exclusive claim must LOSE loud and never eat the foreign file —
+// the old staged ATOMIC_MOVE + REPLACE_EXISTING replaced whatever sat at the name by move time.
+class InstallLinkerClaimTest {
+
+    private val noEnv: (String) -> String? = { null }
+
+    private fun withHome(home: java.nio.file.Path, block: () -> Unit) {
+        val prev = System.getProperty("user.home")
+        System.setProperty("user.home", home.toString())
+        try {
+            block()
+        } finally {
+            System.setProperty("user.home", prev)
+        }
+    }
+
+    @Test
+    fun `a foreign file appearing between check and claim wins - DR-67`(@TempDir home: Path) = withHome(home) {
+        val share = home.resolve(".local").resolve("share").resolve("splice")
+        Files.createDirectories(share)
+        share.resolve("splice-launch").writeString("#!/usr/bin/env bash\n")
+        val link = home.resolve(".local").resolve("bin").resolve("splice")
+        val foreign = "#!/bin/sh # operator wrapper - must survive\n"
+        val interleaving = splice.app.cli.WrapperClaim { l, target ->
+            Files.createDirectories(l.parent)
+            l.writeString(foreign)
+            splice.app.cli.ExclusiveSymlinkClaim(l, target)
+        }
+        val linker = splice.app.cli.InstallLinker(claim = interleaving)
+        org.junit.jupiter.api.assertThrows<IllegalStateException> { linker.installSelf(noEnv) }
+        assertEquals(foreign, Files.readString(link), "the foreign wrapper must survive the lost claim")
+        assertFalse(link.isSymbolicLink(), "the name must not have been retargeted")
+    }
+
+    @Test
+    fun `an existing wrapper symlink is still repointed - DR-67 control`(@TempDir home: Path) = withHome(home) {
+        val share = home.resolve(".local").resolve("share").resolve("splice")
+        Files.createDirectories(share)
+        share.resolve("splice-launch").writeString("#!/usr/bin/env bash\n")
+        val bin = home.resolve(".local").resolve("bin")
+        Files.createDirectories(bin)
+        val stale = home.resolve("stale-target")
+        stale.writeString("stale")
+        Files.createSymbolicLink(bin.resolve("splice"), stale)
+        assertTrue(splice.app.cli.InstallLinker().installSelf(noEnv))
+        assertTrue(bin.resolve("splice").readSymbolicLink().toString().endsWith("splice-launch"))
+    }
+}

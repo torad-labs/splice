@@ -9,14 +9,30 @@ import splice.core.util.EnvReader
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
 import kotlin.io.path.isSymbolicLink
 
 internal const val SELF_COMMAND = "splice"
 
+/** The one wrapper name-claiming primitive. A seam (SymlinkOp precedent): the DR-67 safety
+ *  property — a foreign file that appears AFTER the precheck wins, never gets eaten — is only
+ *  testable on the production path if a test can interleave that creator before the claim. */
+internal fun interface WrapperClaim {
+    operator fun invoke(link: Path, target: Path)
+}
+
+/** The production claim: symlink(2) is exclusive, so it can NEVER replace an existing entry —
+ *  the old staged ATOMIC_MOVE + REPLACE_EXISTING replaced whatever sat at the name by move
+ *  time, eating a concurrently created foreign file the precheck never saw. */
+internal object ExclusiveSymlinkClaim : WrapperClaim {
+    override fun invoke(link: Path, target: Path) {
+        Files.createSymbolicLink(link, target)
+    }
+}
+
 internal class InstallLinker(
     private val layout: InstallLayout = InstallLayout(),
     private val heads: InstallHeads = InstallHeads(),
+    private val claim: WrapperClaim = ExclusiveSymlinkClaim,
 ) {
 
     internal fun install(headArg: String?, env: EnvReader): Boolean {
@@ -67,20 +83,14 @@ internal class InstallLinker(
     private fun linkOne(bin: Path, headKey: String, command: String, launchShim: Path) {
         val link = bin.resolve(command)
         requireReplaceableLink(link)
-        val candidate = Files.createTempFile(bin, ".$command.", ".link")
+        // DR-67: delete only a CONFIRMED symlink, then claim exclusively — a foreign file that
+        // appears between the check and the claim wins, and the install fails loud.
+        if (link.isSymbolicLink()) Files.deleteIfExists(link)
         try {
-            Files.delete(candidate)
-            Files.createSymbolicLink(candidate, launchShim)
-            Files.move(
-                candidate,
-                link,
-                StandardCopyOption.ATOMIC_MOVE,
-                StandardCopyOption.REPLACE_EXISTING,
-            )
+            claim(link, launchShim)
             println("splice: installed '$command' -> $launchShim (head=$headKey)")
         } catch (e: java.io.IOException) {
-            Files.deleteIfExists(candidate)
-            throw IllegalStateException("failed to link $command: ${e.message}", e)
+            throw IllegalStateException("failed to link $command — $link was not claimable: ${e.message}", e)
         }
     }
 

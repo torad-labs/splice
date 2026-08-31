@@ -99,8 +99,8 @@ private const val DNS_MAX_BACKOFF_MS = 4_000L
 // jdk.internal.net.http internals is fragile/module-encapsulated and disproportionate for a
 // LOW one-time diagnostic — the honest move is to log that verification is impossible via
 // public API, once per JVM (a JVM-wide guard so N heads sharing one daemon log it once, not
-// N times each time a head is assembled). Injectable (same pattern as backoff/dnsBackoff/
-// clock above) so a test can pin its own guard instead of sharing process-wide state with
+// N times each time a head is assembled). Injectable like the backoff seams above (and
+// UpstreamClient's clock seam), so a test can pin its own guard instead of sharing process-wide state with
 // every other direct defaultClient() caller (UpstreamClientConnectTimeoutTest calls it too,
 // for its own unrelated real-socket connect-timeout probe).
 // FILE SCOPE ON PURPOSE: the guard is JVM-wide BY CONTRACT — as an UpstreamTransport field, every

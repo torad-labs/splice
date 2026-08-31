@@ -440,10 +440,10 @@ command = "claudex"
       const observedUpstream = m.upstreamBodies.slice(before).map((x) => x.body);
       const problems = [];
 
-      // a sanctioned scenario is graded against ITS pin, not the frozen reference bytes: the
-      // gateway diverges on purpose (cited in expectations.toml) and the pinned sha is the
-      // regression net. The upstream shape is deterministically coupled to those client bytes
-      // (e.g. truncated's 3 re-anchor attempts), so the pin is the whole check.
+      // A sanctioned scenario always pins its current client bytes. Rows whose upstream request
+      // remains reference-compatible also set pin_upstream="fixture" and keep that direction under
+      // the ordinary deep diff; older sanctions such as truncated deliberately changed request
+      // count/shape and therefore pin the authorized client result alone.
       const sanction = sanctionedRows[name];
       if (sanction?.pinnedSha) {
         const gotSse = canonicalize(out.sse);

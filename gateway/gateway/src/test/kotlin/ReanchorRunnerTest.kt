@@ -393,7 +393,7 @@ class ReanchorRunnerSearchTest {
         val search = ToolSearchController { round ->
             // The runner consults the controller on EVERY Success round (searchContinuation only
             // type/liveness-guards); the "nothing to answer" decision lives inside the real
-            // controller (ResponsesToolSearch.kt). Count only genuine answers, matching this
+            // controller (ResponsesToolSearchController.kt). Count only genuine answers, matching this
             // test's intent ("a search round continues ONCE") — review 2026-07-24 round 1.
             if (round.outcome.toolSearches.isEmpty()) {
                 null

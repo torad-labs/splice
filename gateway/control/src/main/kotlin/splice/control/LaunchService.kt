@@ -58,7 +58,7 @@ public class LaunchService(
             add(claudeBinary)
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
-            // picker (populated by gateway discovery) can freely switch. Forcing --model locked it.
+            // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.
             addAll(extraArgs)
         }
         val warning = if (dangerouslySkipPermissions) {

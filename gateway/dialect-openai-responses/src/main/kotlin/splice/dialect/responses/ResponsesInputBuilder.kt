@@ -96,5 +96,5 @@ internal class ResponsesInputBuilder(
 }
 
 // FIELD_CONTENT is deliberately private-per-file, matching ResponsesInputParts.kt's own copy — see
-// that file's note on the pre-existing Harvested.kt / ResponsesToolSearchController.kt collision.
+// that file's note on the pre-existing ResponsesHarvest.kt / ResponsesToolSearchController.kt collision.
 private const val FIELD_CONTENT = "content"

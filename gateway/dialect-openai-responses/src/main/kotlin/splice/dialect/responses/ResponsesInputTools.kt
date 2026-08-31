@@ -63,7 +63,7 @@ internal class ResponsesInputTools(
     /** The synthetic pair CHANGE 2 injects for a deferred tool a ToolUseBlock already named: a
      *  tool_search_call, then the tool_search_output carrying its FULL schema — the exact shape
      *  [ResponsesToolSearchController] emits for a REAL within-turn search, reused via
-     *  [ToolSearchOutput.toolSearchOutputItem] (ResponsesToolSearch.kt) and never re-authored as a
+     *  [ToolSearchOutput.toolSearchOutputItem] (ToolSearchOutput.kt) and never re-authored as a
      *  second shape. The call_id is a pure function of the tool NAME alone
      *  ([ResponsesStableIds.stableToolSearchCallId]) — no transcript position, no counters, no
      *  randomness — so the whole pair is byte-identical on every turn that replays this tool's

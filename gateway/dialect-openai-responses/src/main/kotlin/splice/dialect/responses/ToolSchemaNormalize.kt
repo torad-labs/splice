@@ -11,7 +11,7 @@
 // subset cannot represent — array-form items, a singleton null root type), splice falls back to
 // the VERBATIM schema for that tool instead of dropping it — a gateway must not make a client's
 // tool vanish (never-below-status-quo). The pipeline's later stages live in sibling files
-// ToolSchemaDefPrune.kt / ToolSchemaCompact.kt / ToolSchemaSubset.kt (per-file function ceiling).
+// ToolSchemaDefPrune.kt / ToolSchemaCompact.kt / SchemaSubset.kt (per-file function ceiling).
 package splice.dialect.responses
 
 import kotlinx.serialization.json.JsonArray

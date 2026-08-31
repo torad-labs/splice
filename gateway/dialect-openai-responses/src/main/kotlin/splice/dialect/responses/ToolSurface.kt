@@ -3,7 +3,7 @@
 // while OpenAI's own client serves these models a collapsed surface (models.json gives gpt-5.6-sol
 // supports_search_tool:true, and core/src/client.rs:838-921 wraps ToolSpec::ToolSearch into the same
 // additional_tools developer item splice already emits). This file owns the PARTITION and the wire
-// tool objects; the answering side lives in ResponsesToolSearch.kt, and the shape-400 recovery lives
+// tool objects; the answering side lives in ResponsesToolSearchController.kt, and shape-400 recovery lives
 // in ToolSurfaceRecovery.kt (split 2026-07-24: this file hit the SAME TooManyFunctions ceiling
 // ResponsesLite.kt was originally split from ResponsesRequestBuilder to avoid).
 // Invariants:
@@ -60,7 +60,7 @@ public data class ToolDeferralPolicy(
      *  pushes more queries toward [searchRounds]'s exhaustive fallback. */
     val searchLimit: Int = DEFAULT_SEARCH_LIMIT,
     /** Permitted `tool_search` rounds before the FINAL round answers with the ENTIRE deferred set
-     *  regardless of query — the loop-can't-wedge law (ResponsesToolSearch.kt header): capability
+     *  regardless of query — the loop-can't-wedge law (ResponsesToolSearchController.kt header): capability
      *  at the cap is exactly today's full surface. Trades round budget against when narrowing
      *  gives up: MORE rounds lets ranked, limit-sized answers keep narrowing longer before the
      *  exhaustive fallback; FEWER rounds reaches the larger, unranked exhaustive answer sooner. */

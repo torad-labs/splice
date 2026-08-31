@@ -1,4 +1,4 @@
-// Walls for the gateway-side tool_search answer (ResponsesToolSearch.kt): the continuation is an
+// Walls for the gateway-side tool_search answer (ResponsesToolSearchController.kt): the continuation is an
 // APPEND-ONLY extension of the prior request (closed-DTO continuationRequest, every non-input field
 // untouched), the stop conditions (hasToolUse, empty toolSearches, round cap), the exhaustive-vs-
 // ranked answer split, limit clamping, call_id dedup, and the no-dangling-reasoning-item rule.
@@ -202,7 +202,7 @@ class ResponsesToolSearchTest {
         val outputs = tail.map { it.jsonObject }.filter { it["type"]?.jsonPrimitive?.content == "tool_search_output" }
         assertEquals(1, outputs.size)
         // review 2026-07-25 (comment 4): pin WHICH duplicate is answered, not just the count.
-        // answeredOnce (ResponsesToolSearch.kt:136-140) is documented first-wins; "tool_0" (the
+        // answeredOnce (ResponsesToolSearchController.kt:88-91) is documented first-wins; "tool_0" (the
         // first call's query) matches only mcp__exa__tool_0 (no "tool_10"/"tool_11" substring
         // collision the way "tool_1" would) — a first->last regression would answer with
         // mcp__exa__tool_1 (and its "tool_1x" siblings) instead, and only this assertion catches it.

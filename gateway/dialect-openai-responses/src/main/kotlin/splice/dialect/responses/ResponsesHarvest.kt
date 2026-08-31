@@ -13,7 +13,7 @@ import splice.core.turn.ToolSearchCall
 import splice.core.turn.Usage
 import splice.core.util.JsonScalars
 
-// Harvested lives in HarvestedText.kt (concentration, 2026-08-19).
+// Harvested lives in Harvested.kt (concentration, 2026-08-19).
 
 /**
  * The terminal-object readers. Every member keeps the name and argument list it had as a file-level

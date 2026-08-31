@@ -111,14 +111,30 @@ command = "claude-openrouter"
     /** DR-44b: TOML forbids a duplicated key, but ktoml accepts it silently (proven by the red
      *  arm: a second `models = [...]` line parsed with nothing thrown) — so a stale roster line
      *  kept retired models exposed in the picker with nothing red anywhere. Counted per table
-     *  section over the masked text, so strings and comments cannot fake or hide a line. */
+     *  section over the masked text, so strings and comments cannot fake or hide a line.
+     *
+     *  DR-44 redo (codex bypass): the per-section count alone let a REOPENED table smuggle the
+     *  same union — `[heads.claude-grok]` twice, one models line each, is one line per section
+     *  while ktoml merges both bodies (the spec forbids redefining a table). So a repeated
+     *  single-bracket header spelling is rejected too. Only the EXACT raw respelling needs this:
+     *  quoted (`[heads."claude-grok"]`) and whitespace (`[ heads . claude-grok ]`) variants
+     *  already fail loudly inside ktoml before any union (probed), and array-of-tables
+     *  (`[[providers.xai.models]]`) legitimately repeats and stays out of the check. */
     private fun rejectDuplicateModelKeys(structure: String) {
         val bounds = TABLE_HEADER.findAll(structure).map { it.range.first }.toList() + structure.length
+        val seenHeaders = HashSet<String>()
         var sectionStart = 0
         for (end in bounds) {
             val section = structure.substring(sectionStart, end)
+            val header = structure.substring(sectionStart).lineSequence().first().trim()
+            if (sectionStart > 0 && !header.startsWith("[[")) {
+                require(seenHeaders.add(header)) {
+                    "table $header is defined twice — TOML forbids redefining a table and ktoml " +
+                        "silently merges both bodies (a stale roster would ride the union); keep " +
+                        "one section per table"
+                }
+            }
             require(MODELS_LINE_ASSIGNMENT.findAll(section).count() <= 1) {
-                val header = structure.substring(sectionStart).lineSequence().first().trim()
                 "duplicate models key in ${header.ifEmpty { "the preamble" }} — TOML forbids it " +
                     "and ktoml silently merges; keep exactly one models = [...] line per head"
             }

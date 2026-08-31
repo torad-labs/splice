@@ -222,6 +222,19 @@ class ExampleConfigTest {
     // DR-44b: ktoml unions duplicate keys instead of rejecting them (TOML spec: duplicates are an
     // error), so a stale second `models = [...]` line kept retired models in the picker with
     // nothing red anywhere. The pre-decode guard makes it loud and names the section.
+    // DR-44 redo (codex bypass): the duplicate-models guard counts per SECTION, so REOPENING the
+    // same table spelling with a second models line was one line per section — while ktoml unions
+    // both bodies, so a stale grok-4.3 roster rode beside the real one with nothing red. Quoted
+    // and whitespace header variants already fail inside ktoml (probed); the exact respelling is
+    // the one confirmed bypass, and this is its permanent counterexample.
+    @Test
+    fun `a reopened head table fails loud instead of unioning rosters - DR-44`() {
+        val doctored = exampleToml() + "\n[heads.claude-grok]\nmodels = [{ id = \"grok-4.3\", slot = \"opus\" }]\n"
+        val thrown = assertThrows(IllegalArgumentException::class.java) { TopologyLoader.parse(doctored) }
+        assertTrue(thrown.message!!.contains("defined twice"), thrown.message)
+        assertTrue(thrown.message!!.contains("[heads.claude-grok]"), thrown.message)
+    }
+
     @Test
     fun `a duplicated models key in one head fails loud instead of silently unioning`() {
         val valid = exampleToml()

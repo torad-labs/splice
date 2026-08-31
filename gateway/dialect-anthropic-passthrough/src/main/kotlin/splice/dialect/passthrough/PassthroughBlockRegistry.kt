@@ -7,6 +7,7 @@
 package splice.dialect.passthrough
 
 import kotlinx.serialization.json.JsonObject
+import splice.core.index.WireBlockIndex
 import splice.core.util.JsonScalars
 import splice.spi.WireSink
 
@@ -111,10 +112,7 @@ internal class PassthroughBlockRegistry(
                 sink.inputJsonDelta(wire, partialJson)
                 toolArgsCharCount += partialJson.length.toLong()
             }
-            "signature_delta" -> {
-                sink.signatureDelta(wire, JsonScalars.strOrEmpty(delta["signature"]))
-                block.signatureSeen = true
-            }
+            "signature_delta" -> onSignatureDelta(block, wire, delta, sink)
             // DR-119: citations ride text blocks; the neutral head forwards the delta object
             // verbatim. Kimi keeps the historical swallow (same gate as the server-tool blocks).
             "citations_delta" -> {
@@ -122,6 +120,16 @@ internal class PassthroughBlockRegistry(
             }
             else -> Unit
         }
+    }
+
+    /** DR-122 (empty-delta-latch family; DR-75/CX-09 fixed text/thinking): an EMPTY signature
+     *  latches nothing — a thinking block closed with only an empty signature_delta must still
+     *  take synthesize-at-close on the synthesizing profile, or Claude Code silently discards
+     *  the unsigned block. The delta itself still forwards verbatim (neutral bytes unchanged). */
+    private suspend fun onSignatureDelta(block: Block, wire: WireBlockIndex, delta: JsonObject, sink: WireSink) {
+        val signature = JsonScalars.strOrEmpty(delta["signature"])
+        sink.signatureDelta(wire, signature)
+        if (signature.isNotEmpty()) block.signatureSeen = true
     }
 
     internal suspend fun onBlockStop(evt: JsonObject, sink: WireSink) {

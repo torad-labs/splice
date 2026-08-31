@@ -127,6 +127,26 @@ class PassthroughStreamTranslatorTest {
         assertTrue(sink.calls.indexOf("sig:real-sig") < sink.calls.indexOf("close"))
     }
 
+    // DR-122: last member of the empty-delta-latch family (DR-75/CX-09 fixed text/thinking). An
+    // EMPTY signature_delta must not latch signatureSeen: on the synthesizing profile a thinking
+    // block closed with only an empty signature would otherwise skip synthesize-at-close, and
+    // Claude Code silently discards the unsigned block — the exact regression synthesis prevents.
+    @Test
+    fun `an empty signature_delta does not suppress synthesis at close - DR-122`() = runTest {
+        val sink = Rec()
+        drive(
+            sink,
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}"""),
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"t"}}"""),
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"signature_delta","signature":""}}"""),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"message_stop"}"""),
+        )
+        // the empty delta still forwards verbatim; the synthetic one must ALSO arrive
+        assertTrue(sink.calls.contains("sig:splice-synth-v1"), sink.calls.joinToString())
+        assertTrue(sink.calls.indexOf("sig:splice-synth-v1") < sink.calls.indexOf("close"))
+    }
+
     @Test
     fun `error event maps to the matching ErrorType`() = runTest {
         val cases = mapOf(

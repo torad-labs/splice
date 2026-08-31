@@ -17,7 +17,9 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
+import splice.core.util.DaemonLog
 import splice.core.util.JsonlSink
+import splice.core.util.LogSink
 import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
@@ -53,7 +55,13 @@ public data class CompactStatsSummary(
 )
 
 /** Compact outcome stats — the JSONL contract file the HUD and dashboard read. */
-public class CompactStats(private val file: Path, private val clock: WallClock = WallClock(System::currentTimeMillis)) {
+public class CompactStats(
+    private val file: Path,
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
+    private val log: LogSink = LogSink(DaemonLog::write),
+) {
+
+    private val unreadableLogged = java.util.concurrent.atomic.AtomicBoolean(false)
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -87,12 +95,22 @@ public class CompactStats(private val file: Path, private val clock: WallClock =
     // full history (acceptable for a drift instrument — the file itself is still append-only).
     public fun read(tailN: Int = STATS_DEFAULT_TAIL): CompactStatsSummary {
         AsyncFileIo.drain()
-        if (!Files.exists(file)) return CompactStatsSummary(0, emptyMap(), emptyList())
+        // DR-60 (class law): only PROVEN absence — NoSuch with no NOFOLLOW entry — is the quiet
+        // zero-stats empty; an inaccessible file degrades the same but leaves a trace (the old
+        // exists() pre-gate blanked the drift instrument silently through a denied parent).
         val rows = Cancellables.runCatchingCancellable {
             JsonlSink.readTail(file, READ_TAIL_BYTES).mapNotNull { line ->
                 Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
             }
-        }.getOrDefault(emptyList())
+        }.getOrElse { failure ->
+            val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+                !Files.exists(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+            if (!genuinelyAbsent && unreadableLogged.compareAndSet(false, true)) {
+                log("[compact] $file unreadable ($failure) — stats rendered empty\n")
+            }
+            if (genuinelyAbsent) unreadableLogged.set(false)
+            emptyList()
+        }.also { if (it.isNotEmpty()) unreadableLogged.set(false) }
         val byOutcome = rows.groupingBy {
             (it["outcome"] as? JsonPrimitive)?.content ?: "unknown"
         }.eachCount()

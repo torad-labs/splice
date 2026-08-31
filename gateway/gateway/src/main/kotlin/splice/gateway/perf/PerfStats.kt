@@ -16,7 +16,9 @@ import kotlinx.serialization.json.put
 import splice.core.perf.PerfSnapshot
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
+import splice.core.util.DaemonLog
 import splice.core.util.JsonlSink
+import splice.core.util.LogSink
 import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
@@ -33,7 +35,13 @@ private const val DEFAULT_TAIL = 200
 // ~256 KiB of trailing JSONL bounds parse cost regardless of file age.
 private const val READ_TAIL_BYTES = 256 * 1024
 
-public class PerfStats(private val file: Path, private val clock: WallClock = WallClock(System::currentTimeMillis)) {
+public class PerfStats(
+    private val file: Path,
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
+    private val log: LogSink = LogSink(DaemonLog::write),
+) {
+
+    private val unreadableLogged = java.util.concurrent.atomic.AtomicBoolean(false)
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -60,12 +68,22 @@ public class PerfStats(private val file: Path, private val clock: WallClock = Wa
     // read is best-effort by design: a missing/corrupt file yields empty; a bad line is skipped.
     public fun tailNumeric(tailN: Int = DEFAULT_TAIL): List<Map<String, Long>> {
         AsyncFileIo.drain()
-        if (!Files.exists(file)) return emptyList()
+        // DR-60 (class law): only PROVEN absence — NoSuch with no NOFOLLOW entry — is the quiet
+        // empty; an inaccessible perf log degrades the same but leaves a trace instead of a
+        // silently-blank instrument.
         val rows = Cancellables.runCatchingCancellable {
             JsonlSink.readTail(file, READ_TAIL_BYTES).mapNotNull { line ->
                 Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
             }
-        }.getOrDefault(emptyList())
+        }.getOrElse { failure ->
+            val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+                !Files.exists(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+            if (!genuinelyAbsent && unreadableLogged.compareAndSet(false, true)) {
+                log("[perf] $file unreadable ($failure) — stats rendered empty\n")
+            }
+            if (genuinelyAbsent) unreadableLogged.set(false)
+            emptyList()
+        }.also { if (it.isNotEmpty()) unreadableLogged.set(false) }
         return rows.takeLast(tailN).map { numericFields(it) }
     }
 

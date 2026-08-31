@@ -22,6 +22,8 @@ import splice.core.util.LogSink
 import java.nio.file.Files
 import java.nio.file.Path
 
+private const val REFRESH_ERROR_SNIPPET = 160
+
 public object GrokOAuthEndpoints {
     public const val DEFAULT_CLIENT_ID: String = "b1a00492-073a-47ea-816f-4c329264a828"
     public const val REDIRECT_PORT: Int = 56121
@@ -123,9 +125,17 @@ internal class GrokAuthDescribe(
         reason: String,
     ): RefreshOutcome {
         if (!allowRereadRetry) return RefreshOutcome.Rejected(reason)
-        val newToken = Cancellables
+        // The confirming reread exists to prove the rejection wasn't a stale-token race. When it
+        // FAILS, the rejection is unconfirmed: surface the read failure in the reason (codex twin
+        // parity) — the composite string also keeps the invalid_grant latch from arming on it.
+        val reread = Cancellables
             .runCatchingCancellable { JsonScalars.str(authJson.tokensOf()?.get("refresh_token")) }
-            .getOrElse { return RefreshOutcome.Rejected(reason) }
+        val rereadFailure = reread.exceptionOrNull()
+        if (rereadFailure != null) {
+            val detail = rereadFailure.message.orEmpty().take(REFRESH_ERROR_SNIPPET)
+            return RefreshOutcome.Rejected("$reason; credential reread failed: $detail")
+        }
+        val newToken = reread.getOrThrow()
         return if (newToken != null && newToken != usedRefreshToken) {
             exchangeRefreshToken(newToken, persist, allowRereadRetry = false)
         } else {

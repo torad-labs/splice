@@ -415,6 +415,39 @@ class GrokAuthProviderTest {
         assertEquals("invalid_grant", auth.describe().fields["refresh_latched"])
     }
 
+    // Sweep 2026-08-31 (absence-class): the G1 confirming reread can itself FAIL. Unfixed, that
+    // failure was swallowed and the bare invalid_grant reason armed the latch UNCONFIRMED —
+    // breaking G15's own "one that survived that race check" contract. The composite reason
+    // names the read failure and never latches (codex twin parity).
+    @Test
+    fun `a failed confirming reread names the failure and never arms the latch`() = runTest {
+        val dir = Files.createTempDirectory("grok-reread")
+        val file = authFile(dir, refresh = "dead-refresh")
+        val log = mutableListOf<String>()
+        val auth = GrokAuthProvider(
+            authPath = file,
+            clock = { 1_000_000L },
+            refreshCall = {
+                Files.setPosixFilePermissions(
+                    dir,
+                    java.nio.file.attribute.PosixFilePermissions.fromString("---------"),
+                )
+                RefreshAttempt.InvalidGrant("dead")
+            },
+            log = splice.core.util.LogSink { log += it },
+        )
+        try {
+            assertNull(auth.refresh())
+        } finally {
+            Files.setPosixFilePermissions(
+                dir,
+                java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"),
+            )
+        }
+        assertTrue(log.any { it.contains("credential reread failed") }, "unconfirmed rejection must be named: $log")
+        assertNull(auth.describe().fields["refresh_latched"], "an unconfirmed invalid_grant must not latch")
+    }
+
     @Test
     fun `granted refresh with no expires_in advances the expiry - one refresh across N calls - SH-02a`() = runTest {
         // Pre-fix: null expiresIn persisted a null expiry, the merge kept the stale on-disk value,

@@ -464,6 +464,39 @@ class KimiAuthProviderTest {
     }
 }
 
+// Sweep 2026-08-31 (absence-class), own class: KimiAuthProviderTest sits at the LargeClass ceiling.
+// The G1 confirming reread can itself FAIL. Unfixed, that failure was swallowed and the bare
+// invalid_grant reason armed the latch UNCONFIRMED — breaking G15's own "one that survived that
+// race check" contract. The composite reason names the read failure and never latches.
+class KimiRereadFailureTest {
+
+    @Test
+    fun `a failed confirming reread names the failure and never arms the latch`() = runTest {
+        val dir = Files.createTempDirectory("kimi-reread")
+        val file = dir.resolve("auth.json")
+        Files.writeString(
+            file,
+            """{"access_token":"tok","refresh_token":"dead-refresh","expires_at":0}""",
+        )
+        val log = mutableListOf<String>()
+        val auth = KimiAuthProvider(
+            authPath = file,
+            refreshCall = {
+                Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("---------"))
+                RefreshAttempt.InvalidGrant("dead")
+            },
+            log = splice.core.util.LogSink { log += it },
+        )
+        try {
+            assertNull(auth.refresh())
+        } finally {
+            Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("rwx------"))
+        }
+        assertTrue(log.any { it.contains("credential reread failed") }, "unconfirmed rejection must be named: $log")
+        assertNull(auth.describe().fields["refresh_latched"], "an unconfirmed invalid_grant must not latch")
+    }
+}
+
 // SH-01 lives in its own class: KimiAuthProviderTest sits at detekt's LargeClass ceiling.
 class KimiSynthesizedExpiryTest {
 

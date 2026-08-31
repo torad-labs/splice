@@ -17,6 +17,8 @@ import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
 
+private const val REFRESH_ERROR_SNIPPET = 160
+
 /** Parsed result of the kimi token-endpoint refresh POST; refresh_token rotation is mandatory. */
 public data class KimiRefreshedTokens(
     val accessToken: String,
@@ -116,8 +118,17 @@ internal class KimiAuthStore(
         reason: String,
     ): RefreshOutcome {
         if (!allowRereadRetry) return RefreshOutcome.Rejected(reason)
-        val newToken = Cancellables.runCatchingCancellable { oauth.parseSnapshot(authPath, synthesizeExpiry)?.refresh }
-            .getOrElse { return RefreshOutcome.Rejected(reason) }
+        // The confirming reread exists to prove the rejection wasn't a stale-token race. When it
+        // FAILS, the rejection is unconfirmed: surface the read failure in the reason (codex twin
+        // parity) — the composite string also keeps the invalid_grant latch from arming on it.
+        val reread = Cancellables
+            .runCatchingCancellable { oauth.parseSnapshot(authPath, synthesizeExpiry)?.refresh }
+        val rereadFailure = reread.exceptionOrNull()
+        if (rereadFailure != null) {
+            val detail = rereadFailure.message.orEmpty().take(REFRESH_ERROR_SNIPPET)
+            return RefreshOutcome.Rejected("$reason; credential reread failed: $detail")
+        }
+        val newToken = reread.getOrThrow()
         return if (newToken != null && newToken != usedRefreshToken) {
             exchangeRefreshToken(newToken, allowRereadRetry = false)
         } else {

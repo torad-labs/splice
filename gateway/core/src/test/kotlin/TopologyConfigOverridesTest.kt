@@ -1,6 +1,7 @@
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.config.ConfigService
 import splice.core.config.StatePaths
@@ -138,6 +139,38 @@ class TopologyConfigOverridesTest {
         assertThrows(IllegalArgumentException::class.java) {
             provider.catalogFor(head.copy(models = listOf(HeadModel("wide-b", "turbo"))))
         }
+        // DR-44d: duplicate model IDS reject (the arm above pins duplicate SLOTS; this claim was
+        // enforced but unpinned — a stale roster line repeating an id must fail loud, not last-wins).
+        assertThrows(IllegalArgumentException::class.java) {
+            provider.catalogFor(
+                head.copy(models = listOf(HeadModel("wide-b", "opus"), HeadModel("wide-b", "sonnet"))),
+            )
+        }
+    }
+
+    // DR-44a: the pinned-membership failure names the id, the roster, and the knob provenance —
+    // resolveHeadConfig swaps pinned_model with the pinnedModel/grokModel knob for oauth heads, so
+    // the failing id can come from env/config.json/PATCH and appear NOWHERE in splice.toml. An
+    // operator grepping the TOML for a bare "pinned model must belong" message found nothing.
+    @Test
+    fun `pinned-membership failure names the id, the roster, and the knob provenance`() {
+        val provider = topology.providers.getValue("codex").copy(
+            models = listOf(
+                ModelEntry("narrow", contextWindow = 200_000),
+                ModelEntry("wide-a", contextWindow = 500_000),
+            ),
+        )
+        val head = topology.heads.getValue("codex").copy(
+            pinnedModel = "env-seeded-ghost",
+            models = listOf(HeadModel("wide-a", "opus"), HeadModel("narrow", "sonnet")),
+        )
+
+        val failure = assertThrows(IllegalArgumentException::class.java) { provider.catalogFor(head) }
+
+        val message = failure.message.orEmpty()
+        assertTrue(message.contains("'env-seeded-ghost'"), message)
+        assertTrue(message.contains("wide-a, narrow"), message)
+        assertTrue(message.contains("pinnedModel/grokModel knob"), message)
     }
 
     // [providers.*.quirks.tool_surface] — the nullable-overlay idiom (Topology.kt): an absent

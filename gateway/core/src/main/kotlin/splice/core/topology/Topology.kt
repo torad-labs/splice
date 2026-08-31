@@ -165,8 +165,14 @@ public data class ProviderConfig(
                 "head model '${model.id}' is not declared by provider '${head.provider}'"
             }
         }
+        // The failing id can come from OUTSIDE the TOML: resolveHeadConfig swaps pinned_model with
+        // the pinnedModel/grokModel knob for oauth heads, and env/config.json/PATCH override that
+        // knob — so a self-consistent splice.toml still fails here. Name the id, the roster, and
+        // the provenance, or the operator greps the TOML for a value that is not in it (DR-44a).
         require(selected.any { it.id == head.pinnedModel }) {
-            "pinned model must belong to the head model list"
+            "pinned model '${head.pinnedModel}' is not in the head model list " +
+                "[${selected.joinToString(", ") { it.id }}] — set by pinned_model in splice.toml " +
+                "unless the pinnedModel/grokModel knob (env, config.json, or PATCH) overrode it"
         }
         return selected
     }

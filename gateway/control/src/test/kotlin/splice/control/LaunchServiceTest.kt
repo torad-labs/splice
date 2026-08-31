@@ -100,6 +100,33 @@ class LaunchServiceTest {
         }
     }
 
+    // DR-44d: the two declaredSlots ignore-claims, previously prose-only (LaunchService.kt:206-208).
+    // A stale splice.toml row naming a model the head no longer serves must not plant a tier, and an
+    // unrecognized slot string must not crash or leak a bogus tier env — both degrade to
+    // "tier not emitted, tier scrubbed", never to a planted lie.
+    @Test
+    fun `stale-model and unknown-slot declarations are ignored, not planted`() {
+        val recipe = service.launch(
+            spec("grok", pinned = "grok-4.6", available = listOf("grok-4.6", "grok-4.5"))
+                .copy(
+                    modelSlots = mapOf(
+                        "grok-4.6" to "opus",
+                        "grok-retired" to "sonnet",
+                        "grok-4.5" to "turbo",
+                    ),
+                ),
+            extraArgs = emptyList(),
+            dangerouslySkipPermissions = false,
+        )
+        val env = recipe.env
+
+        assertEquals("grok-4.6", env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
+        assertNull(env["ANTHROPIC_DEFAULT_SONNET_MODEL"], "a stale model row must not plant its tier")
+        assertTrue("ANTHROPIC_DEFAULT_SONNET_MODEL" in recipe.unset, "the unplanted tier is still scrubbed")
+        assertTrue(env.keys.none { "TURBO" in it }, "an unknown slot string must not leak any env")
+        assertTrue(recipe.unset.none { "TURBO" in it }, "and cannot be scrubbed — it is not a tier")
+    }
+
     @Test
     fun `a partial declaration emits only its declared tier - positional order is retired`() {
         val available = listOf("grok-4.6", "grok-build-latest", "grok-4.3")

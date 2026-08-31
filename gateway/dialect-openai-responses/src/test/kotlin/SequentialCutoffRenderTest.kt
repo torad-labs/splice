@@ -17,8 +17,10 @@ import splice.core.index.WireBlockIndex
 import splice.core.turn.SharedSummaryParts
 import splice.core.turn.TurnOutcome
 import splice.dialect.responses.EmitEncryptedReasoning
+import splice.dialect.responses.ResponsesReanchorController
 import splice.dialect.responses.ResponsesStreamTranslator
 import splice.dialect.responses.StreamTurnContext
+import splice.spi.ReanchorRound
 import splice.spi.WireSink
 
 private class CutoffSink : WireSink {
@@ -124,6 +126,12 @@ class SequentialCutoffRenderTest {
         assertTrue(sink.out.isEmpty(), "cutoff delta leaked before its done event: ${sink.out}")
         assertEquals("", failure.partial?.thinkingText)
         assertFalse(failure.partial?.emittedThinking == true)
+
+        val original = ev("""{"model":"gpt-5.6-sol","input":[],"stream":true}""")
+        val retry = ResponsesReanchorController(
+            decodeReasoningEnvelope = { null },
+        ).continuationForFailure(ReanchorRound(original, failure, attempt = 0))
+        assertEquals(original, retry, "empty cutoff salvage must take the verbatim restart route")
     }
 
     @Test

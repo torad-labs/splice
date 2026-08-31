@@ -38,15 +38,83 @@ class LoginInterceptionWireTest {
         loginCommand: String,
         tokenCapture: TokenCaptureSpec?,
         log: MutableList<String>,
-    ) = LoginInterception.wire(
-        configDir = configDir,
-        loginCommand = loginCommand,
-        signInLabel = "OpenRouter",
-        globalCommands = null,
-        viaBrowser = false,
-        tokenCapture = tokenCapture,
-        log = LogSink { log += it },
-    )
+        execProbe: HookExecProbe? = null,
+    ) = if (execProbe == null) {
+        // Existing arms run the REAL default probe, so every green arm also proves the probe does
+        // not false-positive on an ordinary executable temp dir.
+        LoginInterception.wire(
+            configDir = configDir,
+            loginCommand = loginCommand,
+            signInLabel = "OpenRouter",
+            globalCommands = null,
+            viaBrowser = false,
+            tokenCapture = tokenCapture,
+            log = LogSink { log += it },
+        )
+    } else {
+        LoginInterception.wire(
+            configDir = configDir,
+            loginCommand = loginCommand,
+            signInLabel = "OpenRouter",
+            globalCommands = null,
+            viaBrowser = false,
+            tokenCapture = tokenCapture,
+            log = LogSink { log += it },
+            execProbe = execProbe,
+        )
+    }
+
+    // DR-8 redo-2 (codex noexec catch): chmod(0700) succeeds on a noexec mount while exec fails
+    // EACCES, so the landed chmod-outcome check accepted a capture hook that could never run. The
+    // probe seam makes the counterexample deterministic (a real noexec mount needs root); the
+    // injected failure is byte-for-byte the ProcessBuilder EACCES shape from codex's /run/lock repro.
+    @Test
+    fun `a noexec directory fails the launch when a capture hook is required`(@TempDir tmp: Path) {
+        val log = mutableListOf<String>()
+        val noexec = HookExecProbe { _, _ ->
+            IOException("Cannot run program: error=13, Permission denied")
+        }
+
+        val error = assertThrows<IOException> {
+            wire(tmp, loginCommand = "openrouter login", tokenCapture = capture, log = log, execProbe = noexec)
+        }
+
+        assertTrue(error.message.orEmpty().contains("cannot execute"), "got: ${error.message}")
+        assertFalse(
+            Files.exists(tmp.resolve("splice-key-capture-hook.sh")),
+            "nothing may be staged or published in a directory that cannot execute it",
+        )
+    }
+
+    @Test
+    fun `a noexec directory degrades loudly and registers nothing without a capture spec`(@TempDir tmp: Path) {
+        val log = mutableListOf<String>()
+        val noexec = HookExecProbe { _, _ ->
+            IOException("Cannot run program: error=13, Permission denied")
+        }
+
+        val hooks = wire(tmp, loginCommand = "openrouter login", tokenCapture = null, log = log, execProbe = noexec)
+
+        assertTrue(hooks.isEmpty(), "known-unrunnable hooks must not register, got $hooks")
+        assertTrue(
+            log.any { it.contains("cannot execute scripts") },
+            "the degraded head must name its cause in the log, got $log",
+        )
+        assertFalse(Files.exists(tmp.resolve("splice-login-hook.sh")), "nothing may be staged")
+    }
+
+    @Test
+    fun `the real exec probe leaves no residue beside the hooks`(@TempDir tmp: Path) {
+        val log = mutableListOf<String>()
+
+        val hooks = wire(tmp, loginCommand = "openrouter login", tokenCapture = capture, log = log)
+
+        assertTrue(hooks.isNotEmpty(), "an ordinary dir must wire hooks, got $hooks")
+        assertFalse(
+            Files.exists(tmp.resolve(".splice-exec-probe.tmp")),
+            "the probe file must be deleted after the exec attempt",
+        )
+    }
 
     @Test
     fun `an obstructed commands dir skips login interception with a logged cause but keeps the capture hook`(

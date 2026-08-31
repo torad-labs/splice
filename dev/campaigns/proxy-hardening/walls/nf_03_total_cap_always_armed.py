@@ -90,10 +90,15 @@ def detect(watchdog_text: str | None, driver_text: str | None) -> list[str]:
     if driver_text is None:
         return ["TurnOneDrive.kt missing — refusing to pass vacuously"]
     problems: list[str] = []
+    # DR-35e (codex catch #3, 2026-08-31): every token scan below runs on MASKED text — a
+    # compilable raw-string decoy carrying the anchored launch line satisfied the unmasked finds/
+    # counts/regexes while the live poller was an inert Job(). code_only strips comments but not
+    # strings; _scopes_at masked internally, which only hid the gap. Mask once, scan everywhere.
+    watchdog_text = _mask_strings(watchdog_text)
     if "fun launchIn(" not in watchdog_text:
         return ["launchIn poller not found in Watchdog.kt (shape changed?) — the idle tiers lost "
                 "their enforcer; refusing to pass vacuously"]
-    cap_sites = driver_text.replace("fun launchTotalCap(", "")
+    cap_sites = _mask_strings(driver_text).replace("fun launchTotalCap(", "")
     if "fun launchTotalCap(" not in watchdog_text:
         problems.append("no launchTotalCap on TurnWatchdog — totalCap is only sampled while an "
                         "upstream stream is open (launchIn), never during connect/backoff/refresh/"
@@ -200,6 +205,13 @@ DRV_TRY_RUN = DRV_OPEN + "\n val capPoller = drive.watchdog.launchTotalCap(self,
     "\n try {" + \
     "\n     roundRun.run(drive, self, turnJob)" + \
     "\n } finally { capPoller.cancel() }"
+# DR-35e: codex's third reproduced false green — a compilable raw string carries the anchored
+# launch line while the live poller is an inert Job(). Every scan must run masked.
+DRV_STRING_DECOY = DRV_OPEN + '\n val fake = """' + \
+    "\n val capPoller = drive.watchdog.launchTotalCap(self, turnJob)" + \
+    '\n """' + \
+    "\n val capPoller = Job()" + \
+    "\n roundRun.run(drive, self, turnJob)"
 
 
 def selftest() -> int:
@@ -223,6 +235,9 @@ def selftest() -> int:
     if not detect(WD_CLOSED, DRV_NESTED):
         fails.append("a multi-line nested conditional (line-anchored val inside the if branch) "
                      "must be RED — scope dominance, not line shape (DR-35d)")
+    if not detect(WD_CLOSED, DRV_STRING_DECOY):
+        fails.append("a raw-string decoy carrying the anchored launch line beside an inert Job() "
+                     "poller must be RED — scans run on masked text (DR-35e)")
     if detect(WD_CLOSED, DRV_TRY_RUN):
         fails.append(f"the live shape (launch at ancestor scope, run inside try) must be GREEN — "
                      f"dominance is prefix, not equality; got {detect(WD_CLOSED, DRV_TRY_RUN)}")

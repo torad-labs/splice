@@ -30,6 +30,7 @@ import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermission
 import java.nio.file.attribute.PosixFilePermissions
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.isDirectory
 import kotlin.io.path.isSymbolicLink
 
@@ -59,6 +60,15 @@ public data class TokenCaptureSpec(
  *  and the capture hook's entire security value is that the mode took. */
 internal fun interface HookChmod {
     operator fun invoke(script: Path, perms: Set<PosixFilePermission>)
+}
+
+/** Proves [dir] can EXECUTE a fresh owner-only script, or names why not (DR-8 redo-2, 2026-08-31).
+ *  Chmod success is not executability: on a noexec mount every mode bit sets while exec returns
+ *  EACCES, so a registered hook can never run — and for the capture hook that means a pasted
+ *  credential reaches the model. Only an actual exec settles it; injected so the counterexample
+ *  is a deterministic test rather than a root-only noexec mount. */
+internal fun interface HookExecProbe {
+    operator fun invoke(dir: Path, chmod: HookChmod): Throwable?
 }
 
 internal object LoginInterception {
@@ -94,8 +104,10 @@ internal object LoginInterception {
         loginOutcomeFile: String = "",
         log: LogSink = LogSink(DaemonLog::write),
         chmod: HookChmod = HookChmod(Files::setPosixFilePermissions),
+        execProbe: HookExecProbe = HookExecProbe(LoginInterception::probeExecutability),
     ): Map<String, List<JsonObject>> {
         if (loginCommand.isBlank() && tokenCapture == null) return emptyMap()
+        if (!dirCanExecuteHooks(configDir, tokenCapture, log, chmod, execProbe)) return emptyMap()
         val upsHooks = mutableListOf<JsonObject>()
         if (loginCommand.isNotBlank()) {
             val leg = Cancellables.runCatchingCancellable {
@@ -141,8 +153,12 @@ internal object LoginInterception {
         loginCommand: String,
         log: LogSink = LogSink(DaemonLog::write),
         chmod: HookChmod = HookChmod(Files::setPosixFilePermissions),
+        execProbe: HookExecProbe = HookExecProbe(LoginInterception::probeExecutability),
     ): Map<String, List<JsonObject>> {
         val leg = Cancellables.runCatchingCancellable {
+            execProbe(configDir, chmod)?.let { failure ->
+                throw IOException("$configDir cannot execute a staged hook (${failure.message})")
+            }
             val script =
                 writeHookScript(configDir, KEYSETUP_HOOK_SH, LoginHookScripts.keySetupScript(spec, loginCommand), chmod)
             mapOf(SESSION_START to listOf(hookEntry(script, HOOK_TIMEOUT_SECONDS)))
@@ -232,6 +248,61 @@ internal object LoginInterception {
      *  isExecutable while anyone may rewrite what the hook runs), and the catch net is wider than
      *  runCatchingCancellable's IO/serialization/IAE because setPosixFilePermissions also throws
      *  UnsupportedOperationException (non-POSIX fs) and SecurityException (second DR-8 redo). */
+    /** DR-8 redo-2 (codex noexec catch): prove the directory can execute an owner-only script
+     *  BEFORE anything is staged or registered — a hook that registers but cannot run is
+     *  indistinguishable from no hook. Per-leg policy holds: with a capture spec the launch fails
+     *  (fail-closed on the credential interceptor); without one the head degrades loudly and
+     *  registers nothing, because registering known-unrunnable hooks is the defect. */
+    private fun dirCanExecuteHooks(
+        configDir: Path,
+        tokenCapture: TokenCaptureSpec?,
+        log: LogSink,
+        chmod: HookChmod,
+        execProbe: HookExecProbe,
+    ): Boolean {
+        val execFailure = execProbe(configDir, chmod) ?: return true
+        if (tokenCapture != null) {
+            throw IOException(
+                "$configDir cannot execute a staged hook (${execFailure.message}) — the capture " +
+                    "hook would register but never run; refusing to launch uninterceptable",
+            )
+        }
+        log(
+            "[login] hooks NOT installed in $configDir (${execFailure.message}) — the directory " +
+                "cannot execute scripts (noexec mount?); the head runs without an interceptor\n",
+        )
+        return false
+    }
+
+    /** The real [HookExecProbe]: write a throwaway owner-only `exit 0` script beside the hooks and
+     *  RUN it. Executability is a property of the mount + mode + uid, not of content, so a sibling
+     *  probe file proves exactly what the hook needs without executing any hook logic. EACCES from
+     *  a noexec mount surfaces here as ProcessBuilder's IOException — the codex /run/lock repro. */
+    private fun probeExecutability(dir: Path, chmod: HookChmod): Throwable? {
+        val probe = dir.resolve(".splice-exec-probe.tmp")
+        return try {
+            Files.writeString(probe, "#!/bin/sh\nexit 0\n")
+            chmod(probe, PosixFilePermissions.fromString("rwx------"))
+            val process = ProcessBuilder(probe.toString()).redirectErrorStream(true).start()
+            if (!process.waitFor(HOOK_TIMEOUT_SECONDS.toLong(), TimeUnit.SECONDS)) {
+                process.destroyForcibly()
+                IOException("exec probe timed out after ${HOOK_TIMEOUT_SECONDS}s")
+            } else if (process.exitValue() != 0) {
+                IOException("exec probe exited ${process.exitValue()}")
+            } else {
+                null
+            }
+        } catch (e: IOException) {
+            e
+        } catch (e: UnsupportedOperationException) {
+            e
+        } catch (e: SecurityException) {
+            e
+        } finally {
+            Cancellables.runCatchingCancellable { Files.deleteIfExists(probe) }
+        }
+    }
+
     private fun writeHookScript(configDir: Path, name: String, content: String, chmod: HookChmod): Path {
         val script = configDir.resolve(name)
         val staged = configDir.resolve("$name.tmp")

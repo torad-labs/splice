@@ -30,6 +30,7 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
+import java.util.concurrent.atomic.AtomicReference
 
 public class ConfigService(
     private val statePaths: StatePaths,
@@ -152,14 +153,19 @@ public class ConfigService(
         return read.getOrDefault(emptyMap())
     }
 
-    @Volatile
-    private var discardLoggedFor: FileTime? = null
+    // CAS, not volatile check-then-set (DR-9 redo, 2026-08-31): the merge-per-request path calls
+    // this concurrently, and a racing check-then-set logged the same mtime up to 11 times under a
+    // 64-way probe. One CAS attempt per caller: the winner logs, same-mtime losers return, and a
+    // loser holding a NEWER mtime logs it on its next call.
+    private val discardLoggedFor = AtomicReference<FileTime?>(null)
 
     private fun logFileLayerDiscard(cause: Throwable?) {
         val mtime = Cancellables.runCatchingCancellable { Files.getLastModifiedTime(statePaths.configFile) }
             .getOrNull()
-        if (mtime != null && mtime == discardLoggedFor) return
-        discardLoggedFor = mtime
+        if (mtime != null) {
+            val seen = discardLoggedFor.get()
+            if (mtime == seen || !discardLoggedFor.compareAndSet(seen, mtime)) return
+        }
         log("[config] config.json present but unreadable ($cause) — persisted knobs ignored, defaults/env in effect")
     }
 

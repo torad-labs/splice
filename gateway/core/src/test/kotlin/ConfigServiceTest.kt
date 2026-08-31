@@ -15,8 +15,11 @@ import splice.core.config.StatePaths
 import splice.core.turn.ReasoningDisplay
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
@@ -72,6 +75,45 @@ class ConfigServiceTest {
             1,
             logged.count { it.contains("unreadable") },
             "a present-but-unparseable file logs its discard once per mtime, got $logged",
+        )
+    }
+
+    @Test
+    fun `concurrent readers of an unreadable file log its discard exactly once per mtime`() {
+        val paths = StatePaths(baseOverride = tmp.resolve("state"))
+        // DR-9 redo (2026-08-31): the latch was volatile check-then-set; a 64-way probe logged the
+        // same mtime up to 11 times. Four rounds of barrier-released readers, one distinct mtime
+        // each: the CAS latch must produce exactly one line per round.
+        val logged = ConcurrentLinkedQueue<String>()
+        val svc = ConfigService(paths, envReader = { null }, log = { logged += it })
+        Files.createDirectories(paths.configFile.parent)
+        paths.configFile.writeText("not json at all")
+
+        val readers = 64
+        val rounds = 4
+        val pool = Executors.newFixedThreadPool(readers)
+        try {
+            repeat(rounds) { round ->
+                Files.setLastModifiedTime(paths.configFile, FileTime.fromMillis(1_000_000L + round * 10_000L))
+                val start = CountDownLatch(1)
+                val done = CountDownLatch(readers)
+                repeat(readers) {
+                    pool.execute {
+                        start.await()
+                        svc.getConfig()
+                        done.countDown()
+                    }
+                }
+                start.countDown()
+                assertTrue(done.await(30, TimeUnit.SECONDS), "readers wedged")
+            }
+        } finally {
+            pool.shutdownNow()
+        }
+        assertEquals(
+            rounds,
+            logged.count { it.contains("unreadable") },
+            "the discard latch must fire exactly once per mtime under concurrent readers, got $logged",
         )
     }
 

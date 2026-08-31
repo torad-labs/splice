@@ -9,6 +9,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -20,7 +21,9 @@ import splice.core.launch.SymlinkOp
 import splice.core.util.LogSink
 import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
@@ -138,6 +141,84 @@ class ClaudeConfigMaterializerSafetyTest {
             "global rules",
             dst.readText(),
             "a stale shared symlink must be repointed at the operator's global, not left on the decoy",
+        )
+    }
+
+    private fun agentsOnlySpec(configDir: Path) = MaterializeSpec(
+        configDir,
+        ClaudePolicy(share = setOf("agents"), isolate = emptySet()),
+        listOf("m1"),
+        "m1",
+        optionsCache,
+        statusline,
+    )
+
+    // DR-39 redo 3 (codex repro): `exists(src, NOFOLLOW)` read an untraversable global .claude as
+    // ABSENT, so every shared layer skipped silently — materialize "succeeded" while the head
+    // launched without the operator's agents/hooks/skills and nothing named the cause.
+    @Test
+    fun `an untraversable global claude dir declines the shared layer out loud`(@TempDir home: Path) {
+        seedGlobal(home)
+        val configDir = home.resolve(".claude-head")
+        Files.createDirectories(configDir)
+        val global = home.resolve(".claude")
+        Files.setPosixFilePermissions(global, PosixFilePermissions.fromString("---------"))
+        val log = mutableListOf<String>()
+        try {
+            ClaudeConfigMaterializer(home, log = LogSink { log += it }).materialize(agentsOnlySpec(configDir))
+        } finally {
+            Files.setPosixFilePermissions(global, PosixFilePermissions.fromString("rwx------"))
+        }
+        assertTrue(
+            log.any { it.contains("'agents' NOT linked") },
+            "an unreadable global share must be loud per item: $log",
+        )
+        assertFalse(
+            Files.exists(configDir.resolve("agents"), LinkOption.NOFOLLOW_LINKS),
+            "nothing was shared, so nothing may pretend to be",
+        )
+    }
+
+    // The dangling face: the entry exists (NOFOLLOW attributes read fine) but its target is gone.
+    // Mirroring it would ship a broken layer, so it is loud and NOT linked.
+    @Test
+    fun `a dangling global share entry is loud and never mirrored`(@TempDir home: Path) {
+        seedGlobal(home)
+        val agents = home.resolve(".claude/agents")
+        Files.delete(agents)
+        Files.createSymbolicLink(agents, home.resolve(".claude/agents-gone"))
+        val configDir = home.resolve(".claude-head")
+        Files.createDirectories(configDir)
+        val log = mutableListOf<String>()
+
+        ClaudeConfigMaterializer(home, log = LogSink { log += it }).materialize(agentsOnlySpec(configDir))
+
+        assertTrue(
+            log.any { it.contains("'agents' NOT linked") },
+            "a dangling global entry must be loud: $log",
+        )
+        assertFalse(
+            Files.exists(configDir.resolve("agents"), LinkOption.NOFOLLOW_LINKS),
+            "a broken layer must not be mirrored into the head",
+        )
+    }
+
+    // The denominator's quiet member: seedGlobal creates no `skills`, and the policy shares it —
+    // genuine absence is the optional share, with no noise and the rest materialized normally.
+    @Test
+    fun `a genuinely absent global share entry stays a quiet optional skip`(@TempDir home: Path) {
+        seedGlobal(home)
+        val configDir = home.resolve(".claude-head")
+        Files.createDirectories(configDir)
+        val log = mutableListOf<String>()
+
+        ClaudeConfigMaterializer(home, log = LogSink { log += it }).materialize(spec(configDir))
+
+        assertTrue(log.none { it.contains("'skills'") }, "absence is optional, never a failure: $log")
+        assertFalse(Files.exists(configDir.resolve("skills"), LinkOption.NOFOLLOW_LINKS))
+        assertTrue(
+            Files.isSymbolicLink(configDir.resolve("agents")),
+            "present layers still link on the same pass",
         )
     }
 }

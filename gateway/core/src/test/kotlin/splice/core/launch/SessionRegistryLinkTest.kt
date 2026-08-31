@@ -158,4 +158,24 @@ class SessionRegistryLinkTest {
         assertTrue(Files.isSymbolicLink(local))
         assertEquals(global, Files.readSymbolicLink(local))
     }
+
+    // DR-39 (codex): a regular file squatting at the head's `sessions` path was preserved — right
+    // — but SILENTLY, contradicting the materializer's "link() logs its own declines" contract.
+    // The registry quietly stayed private and the cross-head visibility hunt started elsewhere.
+    @Test
+    fun `unexpected non-directory local sessions content declines out loud`(@TempDir tmp: Path) {
+        val global = Files.createDirectories(tmp.resolve("global-sessions"))
+        val local = tmp.resolve("sessions")
+        Files.writeString(local, "operator content")
+        val log = mutableListOf<String>()
+
+        SessionRegistryLink().link(global, local, log = { log += it })
+
+        assertEquals("operator content", Files.readString(local), "unexpected content is preserved")
+        assertFalse(Files.isSymbolicLink(local), "the squatter must not be replaced")
+        assertTrue(
+            log.any { it.contains("sessions registry NOT linked") },
+            "the preserved squatter must be loud: $log",
+        )
+    }
 }

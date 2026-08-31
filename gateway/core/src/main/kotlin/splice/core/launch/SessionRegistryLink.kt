@@ -53,7 +53,14 @@ internal class SessionRegistryLink(
             val target = Cancellables.runCatchingCancellable { Files.readSymbolicLink(dst) }.getOrNull()
             if (target == globalSessions) return
         } else if (Files.exists(dst, NOFOLLOW_LINKS) && !Files.isDirectory(dst, NOFOLLOW_LINKS)) {
-            return // unexpected content: never delete it to make room for the generated link
+            // Unexpected content is preserved, but no longer SILENTLY (DR-39, codex): a head
+            // quietly keeping a private non-directory `sessions` contradicted the caller's
+            // "link() logs its own declines" contract and sent the visibility hunt elsewhere.
+            log(
+                "[materialize] sessions registry NOT linked — $dst is unexpected non-directory " +
+                    "content, kept as-is; move it aside to share the registry\n",
+            )
+            return
         }
 
         // Build the replacement before touching dst. A creation failure therefore preserves an

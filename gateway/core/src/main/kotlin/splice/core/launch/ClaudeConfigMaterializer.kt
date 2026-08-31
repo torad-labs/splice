@@ -34,9 +34,11 @@ import splice.core.util.SecureFile
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption.ATOMIC_MOVE
 import java.nio.file.StandardCopyOption.REPLACE_EXISTING
+import java.nio.file.attribute.BasicFileAttributes
 import java.util.UUID
 import kotlin.io.path.isDirectory
 import kotlin.io.path.isSymbolicLink
@@ -157,7 +159,27 @@ public class ClaudeConfigMaterializer(
 
     private fun linkOneShared(configDir: Path, item: String) {
         val src = globalDir().resolve(item)
-        if (!Files.exists(src, NOFOLLOW_LINKS)) return
+        // DR-39 redo 3 (codex): `exists(src, NOFOLLOW)` was an absence PRE-gate — it reads false
+        // through an untraversable global .claude, so every shared layer skipped SILENTLY and the
+        // head launched without the operator's hooks/agents/skills, no line anywhere. The entry's
+        // own NOFOLLOW attributes are the honest probe: only NoSuchFileException proves the
+        // optional share absent (NOFOLLOW never follows, so no dangling ambiguity to split). A
+        // denied parent is loud; a dangling entry is loud too and NOT mirrored — linking it would
+        // ship a broken layer with no cause named.
+        val probeFailure = Cancellables.runCatchingCancellable {
+            Files.readAttributes(src, BasicFileAttributes::class.java, NOFOLLOW_LINKS)
+            if (!Files.exists(src)) {
+                throw IOException("global entry is a link whose target is missing or unreachable")
+            }
+        }.exceptionOrNull()
+        if (probeFailure is NoSuchFileException) return
+        if (probeFailure != null) {
+            log(
+                "[materialize] shared '$item' NOT linked into $configDir (${probeFailure.message}) — " +
+                    "this head launches without the operator's $item\n",
+            )
+            return
+        }
         // Best-effort, and now truly so: the swap below is atomic, so an I/O failure at any point
         // leaves whatever is already on disk (DR-11a — the old delete-then-create pair made this
         // comment a lie: a create failing after the delete had destroyed the operator's file).

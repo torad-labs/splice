@@ -27,6 +27,7 @@ internal class PassthroughBlockRegistry(
 ) {
 
     private val blocks = HashMap<Int, Block>()
+
     // NF-06: tool JSON bypasses the prose buffers, so retain its aggregate size as a count only.
     private var toolArgsCharCount = 0L
     internal val openBlockCount: Int get() = blocks.size

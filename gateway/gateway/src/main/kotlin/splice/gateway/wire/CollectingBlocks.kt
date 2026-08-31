@@ -32,6 +32,7 @@ internal class CollectingBlocks {
 
     // Blocks in OPEN order — the Anthropic content array order. Index handles are list positions.
     private val blocks = mutableListOf<Blk>()
+
     // stream:false retains every tool fragment until the terminal body is assembled; cap the
     // aggregate across blocks, not merely each individual tool.
     private var bufferedToolArgsChars = 0L

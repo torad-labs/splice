@@ -3,6 +3,7 @@
 // These tests drive the probe against both shapes — a server that ANSWERS (even with an error
 // status: a 400 is proof of life) and a server that ACCEPTS-THEN-HANGS (the wedge) — and pin
 // that only the second flips the stalled flag, after exactly the threshold, with recovery back.
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -16,6 +17,7 @@ import splice.app.TurnPathProbeLoop
 import splice.core.util.Cancellables
 import java.net.ServerSocket
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.concurrent.thread
 
 class TurnPathProbeLoopTest {
@@ -130,7 +132,8 @@ class TurnPathProbeLoopTest {
         val stalled = ConcurrentHashMap<String, Boolean>()
         stalled["t"] = false // healthy right up until the probe breaks — the dangerous case
         val boom = RuntimeException("probe internals exploded")
-        val scope = CoroutineScope(Job())
+        val uncaught = CopyOnWriteArrayList<Throwable>()
+        val scope = CoroutineScope(Job() + CoroutineExceptionHandler { _, error -> uncaught += error })
         // A loop whose body throws a non-cancellation error, supervised by the SAME completion
         // handler start() installs. Driven through the real class so the handler under test is
         // the shipped one.
@@ -144,6 +147,7 @@ class TurnPathProbeLoopTest {
         val dying = scope.launch { throw boom }
         loop.supervise(dying)
         dying.join()
+        assertEquals(listOf(boom), uncaught, "the test handler must observe the abnormal failure exactly once")
         assertTrue(stalled["t"] == true, "a dead probe must fail toward alarm, not freeze healthy")
         assertTrue(logs.any { "PROBE DIED" in it }, "the death must be loud in the log")
     }

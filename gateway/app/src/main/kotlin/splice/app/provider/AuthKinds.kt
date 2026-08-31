@@ -1,5 +1,6 @@
 // PORT-OF: splice/app/Daemon.kt (CHATGPT_OAUTH, GROK_OAUTH, KIMI_OAUTH, CLIENT) @ ed5c868 —
-// invariants unchanged: the auth.kind vocabulary the (dialect, auth.kind) dispatch is written in.
+// arm-local wire vocabulary. ProviderAssembly validates registered kind/dialect compatibility first;
+// unregistered api-key/custom strings intentionally retain each arm's fallback.
 package splice.app.provider
 
 import splice.core.auth.CLIENT_AUTH_KIND

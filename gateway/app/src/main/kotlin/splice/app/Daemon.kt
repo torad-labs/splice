@@ -6,10 +6,10 @@
 //
 // SHAPE (Kotlin style law, 2026-08-15, decomposed further 2026-08-17): what used to be file-level
 // helpers, then same-file collaborators, are now named collaborators in two owned sub-packages —
-// splice.app.head (boot, probes, shutdown, per-head assembly) and splice.app.provider (the whole
-// (dialect, auth.kind) dispatch) — plus three sibling root files (DaemonBoundary, DashboardHtml,
-// ControlPlane). Daemon itself keeps only its constructor/fields and start()/stop(), and delegates
-// everything else to the collaborators it wires together.
+// splice.app.head (boot, probes, shutdown, per-head assembly) and splice.app.provider (the
+// compatibility-checked auth-kind/dialect dispatch and provider-specific data selection) — plus
+// three sibling root files (DaemonBoundary, DashboardHtml, ControlPlane). Daemon keeps only its
+// constructor, fields, start(), and stop(); everything else delegates to those collaborators.
 package splice.app
 
 import kotlinx.coroutines.sync.Mutex
@@ -98,8 +98,9 @@ public class Daemon(
         // Resolved before the head loop so every launch recipe points at the actual listener.
         val controlPort = cfg.controlPort
         // PER-HEAD BOOT ISOLATION (audit 2026-07-18): one head that fails to assemble (a valid
-        // TOML the builder can't wire, e.g. a not-yet-supported dialect) must NOT abort the whole
-        // daemon with a stack trace to /dev/null. Log the degraded head and serve the rest.
+        // TOML the builder can't wire, e.g. a registered auth kind on an incompatible dialect) must
+        // NOT abort the whole daemon with a stack trace to /dev/null. Log the degraded head and
+        // serve the rest.
         val failed = headBoot.assembleDaemonHeads(topology, statePaths, heads, log) { key, head, providerCfg ->
             managedHeadFactory.assembleHead(buildInputs.providerContext(key, head, providerCfg), controlPort)
         }

@@ -1,11 +1,10 @@
 // NEW: AuthKind — the auth-scheme registry (#924 Phase 2, tier-1). auth.kind's default-auth-file
 // map was re-derived as byte-identical copies in StatusCommand AND SetupCommand; this is the single
-// source. A SEALED hierarchy (project convention: sealed class, kt-no-sealed-interface): auth
-// schemes diverge in behaviour — OAuth kinds have a refresh + device/browser login flow and a
-// credential file, an api-key kind has neither — so each variant can grow its own members. Kept as
-// a LOOKUP over a raw String, not a closed field type: auth.kind stays a String at the TOML boundary
-// so an operator's custom/unknown kind never fails config parse — from() returns null and callers
-// fall back. Context display labels stay in their call sites (status vs boot word them differently);
+// source. A SEALED hierarchy (project convention: sealed class, kt-no-sealed-interface) models only
+// registered schemes whose behavior diverges. Api-key and custom kinds deliberately remain
+// unregistered fallbacks. The TOML field therefore stays a raw String: an operator's unknown kind
+// never fails config parse, from() returns null, and provider arms retain generic API-key behavior.
+// Context display labels stay in their call sites (status vs boot word them differently);
 // only the shared facts live here.
 package splice.core.topology
 
@@ -36,12 +35,17 @@ public object AuthKindRegistry {
     private val KNOWN: List<AuthKind> =
         listOf(AuthKind.ChatgptOAuth, AuthKind.GrokOAuth, AuthKind.KimiOAuth, AuthKind.Client)
 
+    /** The registered schemes. Exposed so compatibility matrices derive their denominator from the
+     *  registry rather than maintaining a second list that can silently omit a new kind. */
+    public fun knownKinds(): List<AuthKind> = KNOWN
+
     /** The typed scheme for a wire kind, or null for an operator's custom/unknown kind. */
     public fun from(wire: String): AuthKind? = KNOWN.firstOrNull { it.wire == wire }
 
-    /** Default auth-file path for a known kind, or null (unknown kind / env-only auth). */
+    /** Default auth-file path for a registered kind, or null when unknown, env-only, or computed by
+     *  the provider (Kimi OAuth). */
     public fun defaultAuthFileFor(wire: String): String? = from(wire)?.defaultAuthFile
 
-    /** OAuth-ness by convention: any `*-oauth` wire kind (covers a future kind too). */
+    /** OAuth-ness by convention: any unregistered wire ending in `oauth` counts as future OAuth. */
     public fun isOAuth(wire: String): Boolean = from(wire)?.isOAuth ?: wire.endsWith("oauth")
 }

@@ -35,15 +35,12 @@ internal class ManagedHeadFactory(
             perfStats = PerfStats(statePaths.perfStatsFile(key)),
         )
         val logFile = statePaths.logsDir.resolve("daemon.log")
-        // Derived from the CREDENTIAL, never from the declared string. The bypass is only
-        // safe because splice holds nothing for this head, so it reads the one artifact that
-        // IS that fact: `wired.auth`. Deriving it from `auth.kind == "client"` instead made
-        // the two halves independent — [ProviderAssembly.buildProvider] dispatches on
-        // DIALECT first, so `kind = "client"` on openai-chat / openai-responses fell through
-        // to ApiKeyAuthProvider and produced a head that opened the mgmt-key door while
-        // still holding a real vendor key. Structurally impossible now: no
-        // ClientAuthProvider, no bypass. The caller's own auth headers are what ride
-        // upstream on the heads that do get it; every other head keeps enforcing the key.
+        // Derived from the CREDENTIAL, never from the declared string. The bypass is safe only
+        // because splice holds nothing for this head, so it reads the artifact that IS that fact:
+        // `wired.auth`. ProviderAssembly rejects registered client auth on non-passthrough dialects
+        // before this point; this structural check independently ensures no ClientAuthProvider means
+        // no bypass. Caller auth rides upstream only on heads that do get it; every other head keeps
+        // enforcing the management key.
         val forwardClientAuth = wired.auth is ClientAuthProvider
         val apiKeyPresent = (wired.auth as? ApiKeyAuthProvider)?.hasKeyNow() != false
         val server = headServerFactory.headServerFor(ctx, wired.provider, stores, forwardClientAuth)

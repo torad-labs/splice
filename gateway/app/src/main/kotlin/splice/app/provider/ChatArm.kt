@@ -1,7 +1,8 @@
-// PORT-OF: splice/app/Daemon.kt (ProviderAssembly.chatProvider) @ ed5c868 — invariants unchanged:
-// openai-chat dispatch: grok-oauth (SuperGrok Bearer + refresh, same auth as the Responses path)
-// vs any api-key vendor. grok rides this dialect because xAI's /v1/chat/completions streams the
-// full readable CoT (`reasoning_content`) where the Responses summary channel stops mid-reasoning
+// PORT-OF: splice/app/Daemon.kt (ProviderAssembly.chatProvider) @ ed5c868. ProviderAssembly rejects
+// registered incompatible kinds first; this arm selects Grok OAuth and sends unregistered
+// api-key/custom kinds to generic Bearer auth. Grok rides this dialect because
+// /v1/chat/completions streams the full readable CoT (`reasoning_content`) where the Responses
+// summary channel stops mid-reasoning
 // (measured 2026-07-18; grok CLI / OpenCode parity).
 package splice.app.provider
 
@@ -23,9 +24,9 @@ internal class ChatArm(
     private val log: LogSink,
     private val grokRefresh: GrokRefresh,
 ) {
-    // openai-chat dispatch: grok-oauth (SuperGrok Bearer + refresh, same auth as the Responses
-    // path) vs any api-key vendor. grok rides this dialect because xAI's /v1/chat/completions
-    // streams the full readable CoT (`reasoning_content`) where the Responses summary channel
+    // After compatibility validation: Grok OAuth uses refresh-capable auth; unregistered
+    // api-key/custom kinds use generic Bearer auth. Grok rides this dialect because
+    // /v1/chat/completions streams the full readable CoT (`reasoning_content`) where Responses
     // stops mid-reasoning (measured 2026-07-18; grok CLI / OpenCode parity).
     internal fun chatProvider(ctx: ProviderBuild, label: String): Wired {
         val key = ctx.key

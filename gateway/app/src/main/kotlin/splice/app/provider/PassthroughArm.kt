@@ -1,8 +1,8 @@
 // PORT-OF: splice/app/Daemon.kt (ProviderAssembly.passthroughProvider, KIMI_BASE_HEADERS) @
-// ed5c868 — anthropic-passthrough dispatch: client-auth holds no credential; Kimi can use OAuth or
-// API-key auth and keeps its Moonshot wire deformations; every other API-key vendor takes the
-// neutral profile. All arms build the SAME generic PassthroughProvider: auth kind selects the
-// credential, while provider ID selects Kimi's base quirks, static headers, and device identity.
+// ed5c868 — client-auth holds no credential; Kimi OAuth/API-key keeps its Moonshot deformations;
+// every other unregistered API-key/custom vendor takes the neutral profile. ProviderAssembly rejects
+// registered incompatible kinds first. Auth kind selects the credential; provider ID selects Kimi's
+// base quirks, static headers, and device identity.
 package splice.app.provider
 
 import splice.app.TopologyLoader
@@ -31,9 +31,9 @@ internal class PassthroughArm(
 ) {
     // The provider key, not the auth mechanism, owns vendor deformations. Kimi keeps its base
     // quirks, static headers, and computed X-Msh identity under both OAuth and API-key auth, so a
-    // pre-campaign kimi head remains byte-identical. Every other API-key provider starts neutral and
-    // declares vendor facts in TOML; otherwise merely choosing api-key would silently impersonate
-    // Moonshot on every anthropic-compatible upstream.
+    // pre-campaign kimi head remains byte-identical. On every non-Kimi provider ID, unregistered
+    // API-key/custom fallback starts neutral and declares vendor facts in TOML; otherwise it would
+    // silently impersonate Moonshot on an unrelated anthropic-compatible upstream.
     internal fun passthroughProvider(ctx: ProviderBuild, label: String): Wired {
         val key = ctx.key
         val providerCfg = ctx.providerCfg

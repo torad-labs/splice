@@ -1,6 +1,6 @@
-// PORT-OF: splice/app/Daemon.kt (ProviderAssembly.responsesProvider) @ ed5c868 — invariants
-// unchanged: the auth.kind dispatch for the openai-responses dialect, plus the chatgpt-oauth/codex
-// branch built inline (the other two kinds delegate to GrokResponsesArm / ApiKeyResponsesArm).
+// PORT-OF: splice/app/Daemon.kt (ProviderAssembly.responsesProvider) @ ed5c868. ProviderAssembly
+// rejects registered incompatible kinds first; this arm selects ChatGPT/Grok OAuth and sends
+// unregistered api-key/custom kinds to ApiKeyResponsesArm.
 package splice.app.provider
 
 import kotlinx.coroutines.CoroutineScope

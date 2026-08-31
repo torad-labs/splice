@@ -1,9 +1,9 @@
 // PORT-OF: splice/gateway/head/HeadServer.kt (authorize, forwardedClientHeaders,
 // FORWARDED_CLIENT_HEADERS) @ 1caedd6 — invariants unchanged: the mgmt-key front door and the
 // inbound-header allowlist, moved as ONE unit because they are one security decision — the same
-// deps.forwardClientAuth flag (the head's auth KIND, never a config string) decides both whether
-// the local check is bypassed and whether the caller's own credential rides upstream. Split out
-// (HD-24) so that pairing is greppable and the security audit has one file to read.
+// deps.forwardClientAuth flag (derived from the resolved ClientAuthProvider, never a config string)
+// decides both whether the local check is bypassed and whether caller credentials ride upstream.
+// Split out (HD-24) so that pairing is greppable and the security audit has one file to read.
 package splice.gateway.head
 
 import io.ktor.http.HttpHeaders

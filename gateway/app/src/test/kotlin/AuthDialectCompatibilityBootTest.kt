@@ -1,24 +1,19 @@
-// NEW: the DERIVATION wall under the client-auth bypass (campaign claude-head follow-up).
-//
-// `forwardClientAuth` opens the mgmt-key front door, and it is only safe because splice holds NO
-// credential for the head it opens. Those are ONE fact, so Daemon.assembleHead derives the flag
-// from the wired credential — `wired.auth is ClientAuthProvider` — and never from the declared
-// `auth.kind` string.
-//
-// This is the configuration that makes the difference observable: `auth.kind = "client"` on the
-// openai-chat dialect. ProviderAssembly.buildProvider dispatches on DIALECT first, and only the
-// anthropic-passthrough arm builds a ClientAuthProvider, so this head is wired with
-// ApiKeyAuthProvider — it HOLDS a credential. Deriving the flag from the string opened its door
-// anyway (a head that both bypasses the check AND carries a real vendor key); deriving it from the
-// credential cannot. Both heads ride ONE daemon, so the contrast is a single boot.
+// NEW: the daemon-level wall under the auth-kind/dialect compatibility matrix. A registered kind
+// on an incompatible dialect must fail that head during assembly, with a diagnostic naming the
+// head, kind, and dialect. Per-head boot isolation keeps the daemon and valid sibling serving: the
+// invalid head is down loudly rather than silently falling through to ApiKeyAuthProvider.
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.HttpStatusCode
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import mock.awaitListening
 import mock.freshPort
 import org.junit.jupiter.api.AfterAll
@@ -34,6 +29,7 @@ import splice.core.config.StatePaths
 import splice.core.util.Cancellables
 import java.net.InetSocketAddress
 import java.nio.file.Files
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
 
 /** An Anthropic Messages upstream, just enough for the passthrough head to complete one turn. */
@@ -69,17 +65,18 @@ private class TinyAnthropicUpstream {
 }
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-class ClientAuthDerivationTest {
+class AuthDialectCompatibilityBootTest {
 
     private val upstream = TinyAnthropicUpstream()
     private val client = HttpClient(CIO)
+    private val logs = CopyOnWriteArrayList<String>()
     private lateinit var daemon: Daemon
     private val controlPort = freshPort()
     private val passthroughPort = freshPort()
     private val strayPort = freshPort()
 
-    // `stray` declares the SAME auth kind as `anthropic` on a dialect whose dispatch has no client
-    // arm — the one hand-authored config where the declaration and the wiring disagree.
+    // `stray` declares a registered kind on an incompatible dialect; assembly must reject this head
+    // before the chat arm can silently reinterpret it as API-key auth.
     private fun topologyToml(): String = """
         [daemon]
         control_port = $controlPort
@@ -117,16 +114,16 @@ class ClientAuthDerivationTest {
     @BeforeAll
     fun setUp() {
         upstream.start()
-        val tmp = Files.createTempDirectory("client-auth-derivation")
+        val tmp = Files.createTempDirectory("auth-dialect-compatibility")
         daemon = Daemon(
             topology = TopologyLoader.parse(topologyToml()),
             statePaths = StatePaths(baseOverride = tmp.resolve("state")),
             dashboardHtml = { "<!doctype html>" },
-            log = {},
+            log = logs::add,
             refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
         )
         runBlocking { daemon.start() }
-        awaitListening(controlPort, passthroughPort, strayPort)
+        awaitListening(controlPort, passthroughPort)
     }
 
     @AfterAll
@@ -150,15 +147,22 @@ class ClientAuthDerivationTest {
     }
 
     @Test
-    fun `a head wired with an api-key provider keeps the mgmt-key door though it declares client auth`() {
-        val (status, body) = turn(strayPort, "claude-stray--some/model")
-        assertEquals(HttpStatusCode.Unauthorized, status, body)
-        // the mgmt-key door's own message: not a vendor 401, not a shape rejection
-        assertTrue(body.contains("invalid local gateway credentials"), body)
+    fun `an incompatible known kind fails only that head and names the rejected tuple`() = runBlocking {
+        val health = Json.parseToJsonElement(
+            client.get("http://127.0.0.1:$controlPort/health").bodyAsText(),
+        ).jsonObject
+        assertEquals(2, health.getValue("heads").jsonPrimitive.content.toInt())
+        assertEquals(1, health.getValue("readyHeads").jsonPrimitive.content.toInt())
+        assertEquals(1, health.getValue("failedHeads").jsonPrimitive.content.toInt())
+
+        val bootLog = logs.joinToString("")
+        assertTrue(bootLog.contains("stray"), bootLog)
+        assertTrue(bootLog.contains("client"), bootLog)
+        assertTrue(bootLog.contains("openai-chat"), bootLog)
     }
 
     @Test
-    fun `the head actually wired with ClientAuthProvider still bypasses it`() {
+    fun `a compatible client passthrough head still serves on caller auth`() {
         val (status, body) = turn(passthroughPort, "claude-splice--claude-fable-5")
         assertEquals(HttpStatusCode.OK, status, body)
     }

@@ -47,11 +47,10 @@ internal class LaunchSpecFactory(
             configDir = configDir,
             // A client-auth head serves ANTHROPIC on the client's own login, so the recipe must not
             // strip its credentials, plant the gateway bearer, or disable /login (campaign claude-head).
-            // Derived from the CREDENTIAL, never from the declared `auth.kind` string: kind and
-            // dialect are independent TOML fields and ClientAuthProvider is built on the
-            // anthropic-passthrough arm ALONE, so `kind = "client"` on any other dialect yields a
-            // head whose door stays shut while this recipe would have planted the token and left
-            // /login enabled anyway. See ManagedHeadFactory.forwardClientAuth for the same read.
+            // Derived from the CREDENTIAL, never from the declared `auth.kind` string.
+            // ProviderAssembly rejects registered client auth on non-passthrough dialects before
+            // launch-spec assembly; direct synthetic calls still consume this resolved flag without
+            // reinterpreting the declaration. See ManagedHeadFactory.forwardClientAuth.
             forwardClientAuth = forwardClientAuth,
             pinnedModel = head.pinnedModel,
             availableModelIds = ctx.catalog.availableModelIds(),

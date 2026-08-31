@@ -8,6 +8,7 @@ import io.ktor.server.application.ApplicationCall
 import io.ktor.server.response.respondTextWriter
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import splice.core.util.Cancellables
 import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.ImmediateSseWriter
 import splice.gateway.wire.SseEmitterFactory
@@ -51,7 +52,12 @@ internal class TurnStreamer(
                 driver.driveSealingCancellation(drive)
             } finally {
                 // Terminal frames force-flush already; this covers abandon / exception paths.
-                channel.coalesced.flush()
+                // DR-93: on a dead socket the flush ITSELF throws — inside a finally, that
+                // replaces the in-flight CancellationException (or the turn's real failure) with
+                // the flush failure, hiding the causal fault from the Ktor pipeline. The flush is
+                // redundant idempotent cleanup: its own failure is discarded, cancellation
+                // propagates (runCatchingCancellable rethrows it by contract).
+                Cancellables.runCatchingCancellable { channel.coalesced.flush() }
             }
         }
     }

@@ -45,8 +45,6 @@ internal class CodexAuthDescribe(
 ) {
     suspend fun describe(): AuthDescription {
         val out = mutableMapOf("auth_path" to authPath.toString())
-        // ast-grep-ignore: kt-no-silent-result-collapse -- introspection display: present=false plus
-        // a read_error field when the failure is not genuine absence (DR-59), never a silent collapse
         val presentOutcome = Cancellables.runCatchingCancellable {
             val raw = authJson.parseObject()
             val tokens = raw[FIELD_TOKENS] as? JsonObject

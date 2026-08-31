@@ -8,6 +8,8 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import org.junit.jupiter.params.ParameterizedTest
+import org.junit.jupiter.params.provider.ValueSource
 import splice.provider.codex.CodexAuthProvider
 import java.nio.file.Files
 import java.nio.file.Path
@@ -57,5 +59,34 @@ class CodexAuthAbsenceTest {
         log.clear()
         assertNull(auth.refresh())
         assertTrue(log.any { it.contains("no credential file — not logged in") }, "true absence stays honest: $log")
+    }
+
+    // Moved from CodexAuthTest (LargeClass ceiling), then DR-59-sharpened: auth.json is SHARED
+    // with the official codex CLI, so a valid-but-non-object root (a foreign writer, a
+    // half-finished manual edit) must degrade, not crash — kotlinx 1.11.0 throws
+    // IllegalArgumentException, which runCatchingCancellable catches by name. And it is a
+    // PRESENT-but-corrupt file, so the degrade line must say "NOT a logged-out state"; the arm
+    // reds if the catch list drops IllegalArgumentException OR the classification decays back
+    // to logged-out wording.
+    @ParameterizedTest(name = "root {0} degrades to null with the NOT-logged-out story")
+    @ValueSource(strings = ["[]", "null", "\"a string\"", "42"])
+    fun `a valid but non-object auth root degrades to null as a present-file problem, never a crash`(
+        root: String,
+        @TempDir tmp: Path,
+    ) = runTest {
+        val authPath = tmp.resolve(".codex/auth.json")
+        Files.createDirectories(authPath.parent)
+        Files.writeString(authPath, root)
+        val log = mutableListOf<String>()
+        val auth = CodexAuthProvider(
+            authPath = authPath,
+            authCacheMs = 60_000,
+            refreshCall = { error("refresh must not be reached on a display read") },
+            prefetchScope = prefetchScope,
+            log = splice.core.util.LogSink { log += it },
+        )
+        assertNull(auth.credentials())
+        assertTrue(log.any { it.contains("NOT a logged-out state") }, "present-corrupt must classify: $log")
+        assertTrue(log.none { it.contains("not logged in") }, "must never claim logged-out: $log")
     }
 }

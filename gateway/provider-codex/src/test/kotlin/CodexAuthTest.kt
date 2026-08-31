@@ -19,8 +19,6 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import org.junit.jupiter.params.ParameterizedTest
-import org.junit.jupiter.params.provider.ValueSource
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
 import splice.provider.codex.CodexAuthProvider
@@ -130,27 +128,6 @@ class CodexAuthTest {
             refreshCall = refresh,
             prefetchScope = prefetchScope,
         ) to authPath
-    }
-
-    // auth.json is SHARED with the official codex CLI, so a valid-but-non-object root (a foreign
-    // writer, a half-finished manual edit) is a case the degrade path has to survive, and nothing
-    // pinned it before. Review 2026-08-28 (PR 99, comment 4) claimed it CRASHED, on the premise
-    // that `.jsonObject` throws IllegalStateException; measured against kotlinx-serialization
-    // 1.11.0 it throws IllegalArgumentException ("Element class JsonArray is not a JsonObject"),
-    // which Cancellables.runCatchingCancellable catches by name, so readSnapshot's
-    // `.onFailure { treating as not logged in }` already absorbs it. That comment was wrong and is
-    // retracted on the PR. This test stays because the invariant is real and now guarded: it goes
-    // red if that catch list ever drops IllegalArgumentException.
-    @ParameterizedTest(name = "root {0} degrades to not-logged-in")
-    @ValueSource(strings = ["[]", "null", "\"a string\"", "42"])
-    fun `a valid but non-object auth root reads as not logged in, never a crash`(
-        root: String,
-        @TempDir tmp: Path,
-    ) = runTest {
-        val (auth, path) = provider(tmp, { 1_000L }) { RefreshAttempt.Denied("test-denied") }
-        Files.createDirectories(path.parent)
-        path.writeText(root)
-        assertNull(auth.credentials())
     }
 
     @Test

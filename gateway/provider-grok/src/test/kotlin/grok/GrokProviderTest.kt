@@ -238,5 +238,16 @@ class GrokProviderTest {
         }
         assertTrue(drLog.any { it.contains("NOT a logged-out state") }, "ReadFailed story required: $drLog")
         assertTrue(drLog.none { it.contains("not logged in") }, "must never claim logged-out: $drLog")
+
+        // True-absence control (codex/kimi sibling parity): a genuinely missing file IS the
+        // logged-out state, and must never borrow the read-failure wording.
+        Files.delete(lockedAuth)
+        drLog.clear()
+        assertNull(deniedAuth.refresh())
+        assertTrue(
+            drLog.any { it.contains("no credential file — not logged in") },
+            "true absence stays honest: $drLog",
+        )
+        assertTrue(drLog.none { it.contains("NOT a logged-out state") }, "absence is not a read failure: $drLog")
     }
 }

@@ -23,7 +23,19 @@ internal object AdminSupport {
 
     /** The effective control port using the daemon's exact TOML < state < env precedence. */
     fun controlPort(): Int =
-        controlPort(runCatching { TopologyLoader.loadOrMaterialize(TopologyLoader.configPath()) }.getOrNull())
+        controlPort(
+            // DR-41b, same F3 lesson RestartCommand already carries: a corrupt TOML silently
+            // degrading to default ports makes a RUNNING daemon look stopped. Say it (stderr —
+            // stdout belongs to the verb's own output).
+            runCatching { TopologyLoader.loadOrMaterialize(TopologyLoader.configPath()) }
+                .onFailure {
+                    System.err.println(
+                        "splice: could not read ${TopologyLoader.configPath()} (${it.message}) — " +
+                            "using default ports; a running daemon may appear stopped",
+                    )
+                }
+                .getOrNull(),
+        )
 
     /** Same, from an already-loaded (or absent) topology — doctor uses this so a diagnostic
      *  never MATERIALIZES the starter config as a side effect. [envReader] threads through the

@@ -331,4 +331,32 @@ class UsageScalingTest {
         assertEquals(400_000, p["input_tokens"]?.jsonPrimitive?.content?.toLong())
         assertEquals(1_000_000, p["context_window"]?.jsonPrimitive?.content?.toLong())
     }
+
+    // DR-41c: the ring's read side logged both its degradations while the persist side dropped a
+    // failing write with no trace — the 5h window silently became memory-only until restart forgot
+    // it. One line per failure STREAK (persist runs per usage event; a full disk must not
+    // firehose), reset by the next success.
+    @Test
+    fun `a failing usage persist logs once per streak`() {
+        // A read-only parent denies the staged temp file (writeAtomic0600 repairs a MISSING parent,
+        // so absence is not an injection — denial is).
+        val dir = java.nio.file.Files.createTempDirectory("usage-ring-persist")
+        val log = mutableListOf<String>()
+        val ring = splice.gateway.usage.UsageRingFile(dir.resolve("usage.json"), Any(), LogSink { log += it })
+        java.nio.file.Files.setPosixFilePermissions(
+            dir,
+            java.nio.file.attribute.PosixFilePermissions.fromString("r-x------"),
+        )
+        try {
+            ring.persistSnapshot(listOf(kotlinx.serialization.json.buildJsonObject { }), version = 1)
+            ring.persistSnapshot(listOf(kotlinx.serialization.json.buildJsonObject { }), version = 2)
+        } finally {
+            java.nio.file.Files.setPosixFilePermissions(
+                dir,
+                java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"),
+            )
+        }
+
+        assertEquals(1, log.count { it.contains("persist FAILED") }, "one warning per streak, got $log")
+    }
 }

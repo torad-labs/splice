@@ -17,6 +17,8 @@ import java.nio.file.Path
  *  keeps the old function's name so the diff at each call site is a receiver insertion. */
 internal class DoctorHeadChecks(private val doctorRuntime: DoctorRuntime) {
 
+    private val mgmtKeyCheckName = "mgmt-key"
+
     /** JW-02: the degraded-boot rows doctor was structurally blind to. /health has carried
      *  heads/readyHeads/failedHeads since the shim's converge-wait; a green "daemon running" over
      *  dead heads plus "Everything checks out." was the exact lie this command exists to prevent.
@@ -86,16 +88,25 @@ internal class DoctorHeadChecks(private val doctorRuntime: DoctorRuntime) {
     // is benign (minted on first launch).
     internal fun mgmtKeyCheck(statePaths: StatePaths, daemonRunning: Boolean): DoctorCheck {
         val keyFile = statePaths.mgmtKeyFile
-        val present = runCatching { Files.readString(keyFile).trim().isNotEmpty() }.getOrDefault(false)
+        val read = runCatching { Files.readString(keyFile).trim().isNotEmpty() }
+        val present = read.getOrDefault(false)
         return when {
-            present -> DoctorCheck("mgmt-key", CheckStatus.OK, keyFile.toString())
+            present -> DoctorCheck(mgmtKeyCheckName, CheckStatus.OK, keyFile.toString())
+            // DR-41a: an EXISTING-but-unreadable key file used to report as "missing" — the doctor
+            // sent the operator to re-mint a key that was sitting there behind a permission error.
+            read.isFailure && Files.exists(keyFile) -> DoctorCheck(
+                mgmtKeyCheckName,
+                CheckStatus.FAIL,
+                "unreadable at $keyFile (${read.exceptionOrNull()?.message}) — admin endpoints will 401",
+                "fix the file's permissions; it exists, so nothing needs re-minting",
+            )
             daemonRunning -> DoctorCheck(
-                "mgmt-key",
+                mgmtKeyCheckName,
                 CheckStatus.FAIL,
                 "missing at $keyFile — admin endpoints will 401",
                 "terminate the daemon process manually; the next launch re-mints the key",
             )
-            else -> DoctorCheck("mgmt-key", CheckStatus.INFO, "minted on first launch")
+            else -> DoctorCheck(mgmtKeyCheckName, CheckStatus.INFO, "minted on first launch")
         }
     }
 }

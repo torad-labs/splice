@@ -52,14 +52,29 @@ internal class UsageRingFile(
         }
     }
 
+    // The read side logs both its degradations above; the write side was the silent half (DR-41c):
+    // a failing persist dropped every snapshot with no trace, so the 5h window silently became
+    // memory-only until restart forgot it. One line per failure STREAK, not per attempt — persist
+    // runs per usage event and a full disk must not firehose the log.
+    private var persistFailureLogged = false
+
     internal fun persistSnapshot(snapshot: List<JsonObject>, version: Long) {
         synchronized(writeLock) {
             if (version <= persistedVersion) return
             val encoded = buildJsonArray { snapshot.forEach { add(it) } }.toString() + "\n"
-            val written = Cancellables
+            val failure = Cancellables
                 .runCatchingCancellable { SecureFile.writeAtomic0600(usageFile, encoded) }
-                .isSuccess
-            if (written) persistedVersion = version
+                .exceptionOrNull()
+            if (failure == null) {
+                persistedVersion = version
+                persistFailureLogged = false
+            } else if (!persistFailureLogged) {
+                persistFailureLogged = true
+                log(
+                    "[usage] $usageFile persist FAILED (${failure.message}) — the 5h window " +
+                        "survives in memory only until a later write succeeds\n",
+                )
+            }
         }
     }
 }

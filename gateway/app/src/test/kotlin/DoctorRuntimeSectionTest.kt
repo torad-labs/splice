@@ -12,6 +12,7 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 
 class DoctorRuntimeSectionTest {
 
@@ -37,6 +38,24 @@ class DoctorRuntimeSectionTest {
             "CLAUDEX_STATE_DIR" to state.toString(),
             "SPLICE_CONTROL_PORT" to port.toString(),
         )
+    }
+
+    // DR-41a: an EXISTING-but-unreadable mgmt key reported as "missing"/"minted on first launch",
+    // sending the operator to re-mint a key sitting there behind a permission error. No daemon is
+    // needed: with the daemon stopped the old code said INFO minted-on-first-launch; unreadable
+    // must out-rank that guess.
+    @Test
+    fun `an unreadable mgmt key is reported unreadable, not missing`(@TempDir tmp: Path) {
+        val env = baseEnv(tmp, port = 1) // nothing listens on port 1: daemon not running
+        val keyFile = tmp.resolve("state").resolve("mgmt-key")
+        Files.setPosixFilePermissions(keyFile, PosixFilePermissions.fromString("-wx------"))
+        try {
+            val (_, out) = runDoctor(env)
+            assertTrue(out.contains("unreadable at"), out)
+            assertTrue(!out.contains("minted on first launch"), out)
+        } finally {
+            Files.setPosixFilePermissions(keyFile, PosixFilePermissions.fromString("rw-------"))
+        }
     }
 
     @Test

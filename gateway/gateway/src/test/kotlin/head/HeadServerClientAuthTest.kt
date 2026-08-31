@@ -331,6 +331,19 @@ class HeadServerClientAuthTest {
         assertEquals(before, upstream.requests.size, "splice's own key must never reach the vendor")
     }
 
+    // Second DR-30 redo: raw string equality missed every OTHER scheme — `Basic <key>` is neither
+    // byte-equal to the key, nor a Bearer, nor x-api-key, yet the raw header (key included)
+    // forwards verbatim. The check is token-wise now: the key may not appear as any
+    // whitespace-separated token of the Authorization value.
+    @Test
+    fun `a Basic-scheme spelling of the key is refused, not forwarded verbatim`() {
+        val port = startHead(forwardClientAuth = true)
+        val before = upstream.requests.size
+        val (status, _) = turn(port, mapOf("Authorization" to "Basic $MGMT_KEY"))
+        assertEquals(HttpStatusCode.Unauthorized, status)
+        assertEquals(before, upstream.requests.size, "splice's own key must never reach the vendor")
+    }
+
     // ── the cell that was never built ─────────────────────────────────────────────────────────
     //
     // Bypass ON while splice STILL HOLDS a credential. Every case above ties the flag to the auth

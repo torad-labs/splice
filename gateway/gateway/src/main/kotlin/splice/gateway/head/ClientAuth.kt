@@ -27,6 +27,9 @@ internal class ClientAuth(
     private val deps: HeadDeps,
     private val responses: AdmissionResponses,
 ) {
+    // Splits an Authorization value into scheme/credential/parameter tokens for the own-key check.
+    private val whitespaceRe = Regex("\\s+")
+
     suspend fun authorize(call: ApplicationCall): Boolean {
         // A client-auth head has NO splice-held credential to protect: the mgmt key is what the
         // launcher plants in a client whose own credentials it replaced, and this head does the
@@ -62,16 +65,15 @@ internal class ClientAuth(
      * EVERY forwardable spelling is checked, not the one [presentedCredential] would pick (DR-30
      * redo): [forwardedClientHeaders] sends Authorization AND x-api-key when both are present, so
      * a caller whose Authorization bearer is its own token could still ride the mgmt key upstream
-     * in x-api-key — and a schemeless `Authorization: <key>` parses as no bearer at all yet the
-     * raw header value is forwarded verbatim. The key must not leave in ANY of the three.
+     * in x-api-key. And the Authorization value is compared TOKEN-WISE, not as one string or one
+     * parsed Bearer: `Bearer <key>`, a schemeless `<key>`, `Basic <key>`, or any other scheme all
+     * forward the raw header verbatim, so the key must not appear as ANY whitespace-separated
+     * token of it (second redo — the Basic spelling slipped the raw-equality check).
      */
     private suspend fun allowUnlessOwnKey(call: ApplicationCall): Boolean {
-        val rawAuthorization = call.request.headers[HttpHeaders.Authorization]
-        val forwardable = listOf(
-            rawAuthorization,
-            BearerScheme.bearerToken(rawAuthorization),
-            call.request.headers["x-api-key"],
-        )
+        val forwardable =
+            call.request.headers[HttpHeaders.Authorization].orEmpty().split(whitespaceRe) +
+                listOfNotNull(call.request.headers["x-api-key"])
         if (forwardable.none { matchesInferenceToken(it) }) return true
         deps.log(
             "[auth] refused a turn on a client-auth head that presented splice's own management key — " +

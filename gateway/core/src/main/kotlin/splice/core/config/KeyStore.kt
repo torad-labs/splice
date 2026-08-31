@@ -18,6 +18,7 @@ import splice.core.util.SecureFile
 import java.nio.channels.FileChannel
 import java.nio.channels.OverlappingFileLockException
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.StandardOpenOption
@@ -67,11 +68,15 @@ public class KeyStore(
     public val path: Path,
     private val log: LogSink = LogSink(DaemonLog::write),
 ) {
-    // mtime of the last corrupt keys.toml we warned about — one line per broken VERSION of the
-    // file, not one per read: read() runs on auth paths, and a corrupt store must not turn the
-    // daemon log into a firehose. Benign race: two threads may both log the same version once.
+    // mtime of the corrupt keys.toml version warned about in the CURRENT unreadable episode; null =
+    // no active episode. One line per broken version, not one per read: read() runs on auth paths,
+    // and a corrupt store must not turn the daemon log into a firehose. Long.MIN_VALUE stands for
+    // "mtime itself unreadable" (an access-indeterminate store) — the old init VALUE was that same
+    // sentinel, so exactly those stores had their FIRST warning swallowed (DR-40 redo). A healthy
+    // read (or proven absence) clears the latch, so a later episode — same mtime or no mtime —
+    // warns again. Benign race: two threads may both log the same version once.
     @Volatile
-    private var warnedCorruptMtime: Long = Long.MIN_VALUE
+    private var warnedCorruptMtime: Long? = null
 
     /** The key for [envVar], or null when absent/blank/unreadable. Last assignment wins,
      *  comments (#) and blanks are skipped, single or double quotes stripped. */
@@ -108,34 +113,48 @@ public class KeyStore(
      *  be indistinguishable from an empty one, so readKey reported auth-missing and `splice key
      *  list` corroborated the misdiagnosis while the operator's keys sat intact in a file one
      *  parse error away. Corrupt-vs-empty now differ by a daemon-log line, once per file version
-     *  (mtime-gated: read() runs on auth paths and must not firehose the log). */
+     *  (mtime-gated: read() runs on auth paths and must not firehose the log). Absence is proven by
+     *  the read, never a Files.exists pre-gate (DR-40 redo, class law): only NoSuchFile with no
+     *  NOFOLLOW path entry is the quiet empty — an untraversable parent, an inaccessible symlink
+     *  target, and a dangling link all warn. */
     private fun entries(): Map<String, String> {
-        if (!Files.exists(path)) return emptyMap()
-        return Cancellables.runCatchingCancellable { parseLines(Files.readAllLines(path)) }
-            .getOrElse { cause ->
-                val mtime = Cancellables.runCatchingCancellable {
-                    Files.getLastModifiedTime(path).toMillis()
-                }.getOrDefault(Long.MIN_VALUE)
-                if (mtime != warnedCorruptMtime) {
-                    warnedCorruptMtime = mtime
-                    log(
-                        "[keys] $path is UNREADABLE (${cause.message}) — treating as empty for " +
-                            "display, but your keys are still in the file: fix or remove it " +
-                            "(writes abort rather than clobber)\n",
-                    )
-                }
-                emptyMap()
+        val read = Cancellables.runCatchingCancellable { parseLines(Files.readAllLines(path)) }
+        val failure = read.exceptionOrNull()
+        val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+            !Files.exists(path, LinkOption.NOFOLLOW_LINKS)
+        if (failure == null || genuinelyAbsent) {
+            warnedCorruptMtime = null
+        } else {
+            val mtime = Cancellables.runCatchingCancellable {
+                Files.getLastModifiedTime(path).toMillis()
+            }.getOrDefault(Long.MIN_VALUE)
+            if (warnedCorruptMtime != mtime) {
+                warnedCorruptMtime = mtime
+                log(
+                    "[keys] $path is UNREADABLE (${failure.message}) — treating as empty for " +
+                        "display, but your keys are still in the file: fix or remove it " +
+                        "(writes abort rather than clobber)\n",
+                )
             }
+        }
+        return read.getOrDefault(emptyMap())
     }
 
-    /** SH-11: the MUTATION-path read. Absent = legitimately empty (safe to write); UNREADABLE =
-     *  unknown state — abort rather than let persist() rebuild a one-key file over every stored
-     *  key. The tolerant [entries] stays for the display paths (read/names). */
-    private fun entriesStrict(): Map<String, String> {
-        if (!Files.exists(path)) return emptyMap()
-        return Cancellables.runCatchingCancellable { parseLines(Files.readAllLines(path)) }
-            .getOrElse { error("keys.toml unreadable ($it) — refusing to write, existing keys preserved") }
-    }
+    /** SH-11: the MUTATION-path read. PROVEN-absent = legitimately empty (safe to write);
+     *  UNREADABLE = unknown state — abort rather than let persist() rebuild a one-key file over
+     *  every stored key. Proof of absence is the read throwing NoSuchFile with no NOFOLLOW path
+     *  entry (DR-40 redo): the old exists() pre-gate read an inaccessible store as absent, so a
+     *  write would rebuild a one-key file — and atomically REPLACE a store symlink — dropping every
+     *  sibling. A dangling link aborts too: its entry exists, so seeding would replace it. The
+     *  tolerant [entries] stays for the display paths (read/names). */
+    private fun entriesStrict(): Map<String, String> =
+        Cancellables.runCatchingCancellable { parseLines(Files.readAllLines(path)) }
+            .getOrElse {
+                val genuinelyAbsent = it is java.nio.file.NoSuchFileException &&
+                    !Files.exists(path, LinkOption.NOFOLLOW_LINKS)
+                check(genuinelyAbsent) { "keys.toml unreadable ($it) — refusing to write, existing keys preserved" }
+                emptyMap()
+            }
 
     private fun parseLines(lines: List<String>): Map<String, String> =
         lines

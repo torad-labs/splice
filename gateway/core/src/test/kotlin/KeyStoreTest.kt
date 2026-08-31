@@ -157,6 +157,85 @@ class KeyStoreTest {
         assertEquals("sk-a", store.read("OPENROUTER_API_KEY"), "the keys were never lost")
     }
 
+    // DR-40 redo (codex sentinel trap): an ACCESS-INDETERMINATE store has no readable mtime either,
+    // and the old latch initialized to the same Long.MIN_VALUE the unreadable-mtime path produced —
+    // so exactly these stores had their FIRST warning swallowed. Streak contract: first inaccessible
+    // read warns once, repeats stay one, a healthy read re-arms, the next episode warns again.
+    @Test
+    fun `an inaccessible store warns on its FIRST episode and re-arms after recovery - DR-40`(@TempDir tmp: Path) {
+        val externalDir = Files.createDirectories(tmp.resolve("external"))
+        val log = mutableListOf<String>()
+        val store = KeyStore(externalDir.resolve("keys.toml"), log = LogSink { log += it })
+        store.write("OPENROUTER_API_KEY", "sk-a")
+        val denied = PosixFilePermissions.fromString("---------")
+        val open = PosixFilePermissions.fromString("rwx------")
+        try {
+            Files.setPosixFilePermissions(externalDir, denied)
+            assertNull(store.read("OPENROUTER_API_KEY"))
+            assertNull(store.read("OPENROUTER_API_KEY"))
+            assertEquals(1, log.count { it.contains("UNREADABLE") }, "the FIRST episode must warn: $log")
+
+            Files.setPosixFilePermissions(externalDir, open)
+            assertEquals("sk-a", store.read("OPENROUTER_API_KEY"), "healthy read re-arms the latch")
+
+            Files.setPosixFilePermissions(externalDir, denied)
+            assertNull(store.read("OPENROUTER_API_KEY"))
+        } finally {
+            Files.setPosixFilePermissions(externalDir, open)
+        }
+        assertEquals(2, log.count { it.contains("UNREADABLE") }, "a new episode warns again: $log")
+    }
+
+    // DR-40 redo (class law): a DANGLING store symlink throws NoSuch on read, but the entry exists —
+    // present-but-broken, not empty. A truly absent store stays the quiet empty.
+    @Test
+    fun `a dangling store symlink warns while true absence stays quiet - DR-40`(@TempDir tmp: Path) {
+        val log = mutableListOf<String>()
+        val absent = KeyStore(tmp.resolve("keys.toml"), log = LogSink { log += it })
+        assertTrue(absent.names().isEmpty())
+        assertTrue(log.isEmpty(), "a genuinely absent store must not warn: $log")
+
+        val link = tmp.resolve("linked.toml").also { Files.createSymbolicLink(it, tmp.resolve("gone.toml")) }
+        val dangling = KeyStore(link, log = LogSink { log += it })
+        assertTrue(dangling.names().isEmpty())
+        assertEquals(1, log.count { it.contains("UNREADABLE") }, "a dangling store link must warn: $log")
+    }
+
+    // DR-40 redo (codex write repro): the operator's keys.toml is a symlink whose target parent lost
+    // read. The old exists() pre-gate read that as "no store", so a write rebuilt a ONE-key file and
+    // atomically REPLACED the symlink — every sibling key dropped. The write must abort; the link
+    // and the real store survive untouched.
+    @Test
+    fun `a write never replaces an inaccessible store symlink - DR-40`(@TempDir tmp: Path) {
+        val externalDir = Files.createDirectories(tmp.resolve("external"))
+        val target = externalDir.resolve("keys.toml")
+        KeyStore(target).write("OPENROUTER_API_KEY", "sk-a")
+        val before = Files.readAllBytes(target)
+        val link = tmp.resolve("keys.toml").also { Files.createSymbolicLink(it, target) }
+        val store = KeyStore(link)
+        Files.setPosixFilePermissions(externalDir, PosixFilePermissions.fromString("---------"))
+        try {
+            val thrown = runCatching { store.write("MOONSHOT_API_KEY", "sk-c") }.exceptionOrNull()
+            assertTrue(thrown is IllegalStateException, "an inaccessible store must abort the write: $thrown")
+            assertTrue(Files.isSymbolicLink(link), "the operator's store symlink must survive")
+        } finally {
+            Files.setPosixFilePermissions(externalDir, PosixFilePermissions.fromString("rwx------"))
+        }
+        assertTrue(before.contentEquals(Files.readAllBytes(target)), "the real store keeps every key")
+        assertEquals(setOf("OPENROUTER_API_KEY"), store.names())
+    }
+
+    // DR-40 redo: a dangling store symlink on the WRITE path — the entry exists, so seeding a fresh
+    // one-key file would replace the operator's (repairable) link. Refuse instead.
+    @Test
+    fun `a write refuses to seed over a dangling store symlink - DR-40`(@TempDir tmp: Path) {
+        val link = tmp.resolve("keys.toml").also { Files.createSymbolicLink(it, tmp.resolve("gone.toml")) }
+        val store = KeyStore(link)
+        val thrown = runCatching { store.write("MOONSHOT_API_KEY", "sk-c") }.exceptionOrNull()
+        assertTrue(thrown is IllegalStateException, "a dangling store link must abort the write: $thrown")
+        assertTrue(Files.isSymbolicLink(link), "the dangling link must not be replaced")
+    }
+
     @Test
     fun `two concurrent writers of different names both land - SH-11`() {
         val dir = Files.createTempDirectory("keys-concurrent")

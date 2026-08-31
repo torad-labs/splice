@@ -9,11 +9,41 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.KeyStore
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
+import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 
 class KeyCommandTest {
 
     private fun store(tmp: Path) = KeyStore(tmp.resolve("keys.toml"))
+
+    // DR-40 gap 2 (codex): in a CLI process nothing installs DaemonLog, so a store built with the
+    // old default sink swallowed the UNREADABLE warning and `splice key list` reported "no keys
+    // stored" against a corrupt store. The CLI default now warns through cliStoreSink() -> stderr;
+    // this drives `key list` with that same production sink and only the PATH swapped for hermeticity.
+    @Test
+    fun `key list surfaces an unreadable store on stderr, not a silent empty - DR-40`(@TempDir tmp: Path) {
+        val externalDir = Files.createDirectories(tmp.resolve("external"))
+        val path = externalDir.resolve("keys.toml")
+        KeyStore(path).write("OPENROUTER_API_KEY", "sk-a")
+        Files.setPosixFilePermissions(externalDir, PosixFilePermissions.fromString("---------"))
+        val stderr = ByteArrayOutputStream()
+        val realErr = System.err
+        System.setErr(PrintStream(stderr, true))
+        try {
+            val ok = KeyCommand().key(listOf("list"), KeyStore(path, log = KeyCommand().cliStoreSink()))
+            assertTrue(ok, "list still succeeds — degraded display, loud diagnosis")
+        } finally {
+            System.setErr(realErr)
+            Files.setPosixFilePermissions(externalDir, PosixFilePermissions.fromString("rwx------"))
+        }
+        assertTrue(
+            stderr.toString().contains("UNREADABLE"),
+            "the CLI must surface the corrupt-vs-empty warning on stderr, got '${stderr.toString().trim()}'",
+        )
+    }
 
     @Test
     fun `set --value stores and list shows the name`(@TempDir tmp: Path) {

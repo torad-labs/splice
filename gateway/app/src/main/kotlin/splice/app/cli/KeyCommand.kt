@@ -7,6 +7,7 @@ package splice.app.cli
 
 import splice.core.config.KeyStore
 import splice.core.config.KeyStorePath
+import splice.core.util.LogSink
 
 private const val MASK_PROMPT = "API key: "
 
@@ -14,9 +15,20 @@ private const val MASK_PROMPT = "API key: "
  *  no top-level functions). Every member keeps the old function's name. */
 internal class KeyCommand {
 
+    /** DR-40 gap 2 (codex): where the CLI's KeyStore diagnostics land. The store's default sink is
+     *  DaemonLog, which only the DAEMON process installs — in this CLI process it is a no-op, so an
+     *  unreadable keys.toml made `splice key list` print "no keys stored" and silently drop the
+     *  corrupt-vs-empty warning. The CLI's user interface for diagnostics is stderr; the store's
+     *  lines carry their own newline, hence print not println. */
+    internal fun cliStoreSink(): LogSink = LogSink { System.err.print(it) }
+
     /** argv after `key`: set <ENV> [--value V | --stdin] | list | unset <ENV>. Store injectable
-     *  for hermetic tests (the default is the operator's real ~/.config/splice/keys.toml). */
-    internal fun key(args: List<String>, store: KeyStore = KeyStore(KeyStorePath.defaultPath())): Boolean {
+     *  for hermetic tests (the default is the operator's real ~/.config/splice/keys.toml, warning
+     *  through [cliStoreSink]). */
+    internal fun key(
+        args: List<String>,
+        store: KeyStore = KeyStore(KeyStorePath.defaultPath(), log = cliStoreSink()),
+    ): Boolean {
         return when (args.firstOrNull()) {
             "set" -> keySet(store, args.getOrNull(1), args.drop(2))
             "list" -> keyList(store)

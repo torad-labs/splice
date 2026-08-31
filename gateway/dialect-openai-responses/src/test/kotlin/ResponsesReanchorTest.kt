@@ -291,6 +291,27 @@ class ResponsesReanchorPartialTest {
         assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)))
     }
 
+    // DR-10 sweep follow-up: the FLAT error event has no error envelope — the reducer's payload
+    // pick lands on the event itself, whose `type` is the SSE event discriminator ("error"), not
+    // vendor provenance. Riding it into classify() as a structured code made every code-less flat
+    // error deterministic, withholding the retry its own message wording grants.
+    @Test
+    fun `a flat error event's discriminator is not vendor provenance - DR-10`() = runTest {
+        val outcome = ResponsesStreamTranslator(reanchorCtx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"half an ans"}"""),
+                ev("""{"type":"error","code":null,"message":"The server had an error, please try again"}"""),
+            ).asFlow(),
+            NullSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertTrue(failure.providerReported)
+        assertEquals("half an ans", failure.partial?.bodyText, "transient flat error must keep its salvage")
+        val continuation = controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0))
+        assertNotNull(continuation, "a transient flat error must earn a re-POST")
+        assertTrue(continuation.toString().contains("half an ans"), "the marker continuation carries the salvage")
+    }
+
     @Test
     fun `a transient server failure remains eligible for a clean restart`() = runTest {
         val outcome = ResponsesStreamTranslator(reanchorCtx()).driveTurn(

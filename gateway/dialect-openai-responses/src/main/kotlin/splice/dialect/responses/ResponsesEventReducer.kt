@@ -83,8 +83,13 @@ internal class ResponsesEventReducer(
         // deterministic code and re-POST a whole context. The display string keeps the exact
         // old shape; only genuine provenance is passed (the "upstream_failed" placeholder is
         // display vocabulary, not a vendor code).
-        val realCode = JsonScalars.strOrEmpty(e["code"]).ifEmpty { JsonScalars.strOrEmpty(e["type"]) }
-        val code = realCode.ifEmpty { "upstream_failed" }
+        // On the FLAT error event the payload IS the event (e === evt), so `type` is the SSE
+        // event discriminator ("error"/"response.failed") — never vendor provenance. Only a real
+        // error object's `type` (server_error) may ride into classify() as a structured code; the
+        // display fallback chain below keeps the discriminator so the surfaced line is unchanged.
+        val typeField = JsonScalars.strOrEmpty(e["type"])
+        val realCode = JsonScalars.strOrEmpty(e["code"]).ifEmpty { if (e === evt) "" else typeField }
+        val code = JsonScalars.strOrEmpty(e["code"]).ifEmpty { typeField }.ifEmpty { "upstream_failed" }
         val message = JsonScalars.strOrEmpty(e["message"]).ifEmpty { "ChatGPT backend reported failure" }
         state.upstreamFailure = UpstreamFailureClassifier.classify(
             FailureSource.SSE,

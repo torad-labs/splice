@@ -8,7 +8,9 @@ package splice.app.cli
 import splice.app.TopologyLoader
 import splice.core.config.StatePaths
 import splice.core.topology.Topology
+import splice.core.util.Cancellables
 import java.nio.file.Files
+import java.nio.file.NoSuchFileException
 import java.nio.file.Path
 
 /** The doctor per-head checks as a constructed collaborator (Kotlin style law, 2026-08-15: main
@@ -88,17 +90,18 @@ internal class DoctorHeadChecks(private val doctorRuntime: DoctorRuntime) {
     // is benign (minted on first launch).
     internal fun mgmtKeyCheck(statePaths: StatePaths, daemonRunning: Boolean): DoctorCheck {
         val keyFile = statePaths.mgmtKeyFile
-        val read = runCatching { Files.readString(keyFile).trim().isNotEmpty() }
-        val present = read.getOrDefault(false)
+        val read = Cancellables.runCatchingCancellable { Files.readString(keyFile).trim().isNotEmpty() }
+        val failure = read.exceptionOrNull()
         return when {
-            present -> DoctorCheck(mgmtKeyCheckName, CheckStatus.OK, keyFile.toString())
-            // DR-41a: an EXISTING-but-unreadable key file used to report as "missing" — the doctor
-            // sent the operator to re-mint a key that was sitting there behind a permission error.
-            read.isFailure && Files.exists(keyFile) -> DoctorCheck(
+            read.getOrDefault(false) -> DoctorCheck(mgmtKeyCheckName, CheckStatus.OK, keyFile.toString())
+            // DR-41a: Files.exists() returns false when access is indeterminate. Among read failures,
+            // only a definitive NoSuchFileException means missing; any other expected failure means the
+            // key may exist but is unreadable, so never tell the operator to re-mint on that evidence.
+            failure != null && failure !is NoSuchFileException -> DoctorCheck(
                 mgmtKeyCheckName,
                 CheckStatus.FAIL,
-                "unreadable at $keyFile (${read.exceptionOrNull()?.message}) — admin endpoints will 401",
-                "fix the file's permissions; it exists, so nothing needs re-minting",
+                "unreadable at $keyFile (${failure.message}) — admin endpoints will 401",
+                "fix the file's permissions; it may exist, so nothing needs re-minting",
             )
             daemonRunning -> DoctorCheck(
                 mgmtKeyCheckName,

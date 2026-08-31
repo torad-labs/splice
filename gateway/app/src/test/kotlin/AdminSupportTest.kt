@@ -5,9 +5,13 @@ import com.sun.net.httpserver.HttpServer
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
 import splice.app.cli.AdminSupport
 import splice.app.cli.DaemonLaunch
 import splice.core.GATEWAY_VERSION
+import splice.core.util.EnvReader
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.nio.file.Files
@@ -25,6 +29,31 @@ class AdminSupportTest {
         assertTrue(AdminSupport.DEFAULT_JVM_OPTS.contains("-Xmx2048m"))
         assertTrue(AdminSupport.DEFAULT_JVM_OPTS.contains("-XX:+UseStringDeduplication"))
         assertTrue(AdminSupport.DEFAULT_JVM_OPTS.contains("-XX:G1PeriodicGCInterval=60000"))
+    }
+
+    @Test
+    fun `controlPort diagnoses corrupt production topology before using defaults`(@TempDir tmp: Path) {
+        val config = tmp.resolve("config/splice/splice.toml")
+        Files.createDirectories(config.parent)
+        Files.writeString(config, "[daemon\n")
+        val env = EnvReader { name ->
+            mapOf(
+                "XDG_CONFIG_HOME" to tmp.resolve("config").toString(),
+                "CLAUDEX_STATE_DIR" to tmp.resolve("state").toString(),
+            )[name]
+        }
+        val savedErr = System.err
+        val stderr = ByteArrayOutputStream()
+        try {
+            System.setErr(PrintStream(stderr, true))
+            AdminSupport.controlPort(env)
+        } finally {
+            System.setErr(savedErr)
+        }
+
+        val diagnostic = stderr.toString()
+        assertTrue(diagnostic.contains("could not read $config"), diagnostic)
+        assertTrue(diagnostic.contains("using default ports; a running daemon may appear stopped"), diagnostic)
     }
 
     @Test

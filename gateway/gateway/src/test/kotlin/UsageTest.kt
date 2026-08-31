@@ -24,7 +24,9 @@ import splice.gateway.usage.UsageHud
 import splice.gateway.usage.UsageJson
 import splice.gateway.usage.UsageStore
 import splice.gateway.wire.TurnWiring
+import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 import java.util.concurrent.Executors
 
 private fun obj(json: String) = Json.parseToJsonElement(json).jsonObject
@@ -337,26 +339,30 @@ class UsageScalingTest {
     // it. One line per failure STREAK (persist runs per usage event; a full disk must not
     // firehose), reset by the next success.
     @Test
-    fun `a failing usage persist logs once per streak`() {
+    fun `a failing usage persist logs once per streak and re-arms after success`(@TempDir dir: Path) {
         // A read-only parent denies the staged temp file (writeAtomic0600 repairs a MISSING parent,
         // so absence is not an injection — denial is).
-        val dir = java.nio.file.Files.createTempDirectory("usage-ring-persist")
+        val usageFile = dir.resolve("usage.json")
         val log = mutableListOf<String>()
-        val ring = splice.gateway.usage.UsageRingFile(dir.resolve("usage.json"), Any(), LogSink { log += it })
-        java.nio.file.Files.setPosixFilePermissions(
-            dir,
-            java.nio.file.attribute.PosixFilePermissions.fromString("r-x------"),
-        )
+        val ring = splice.gateway.usage.UsageRingFile(usageFile, Any(), LogSink { log += it })
+        val denied = PosixFilePermissions.fromString("r-x------")
+        val writable = PosixFilePermissions.fromString("rwx------")
+        Files.setPosixFilePermissions(dir, denied)
         try {
             ring.persistSnapshot(listOf(kotlinx.serialization.json.buildJsonObject { }), version = 1)
             ring.persistSnapshot(listOf(kotlinx.serialization.json.buildJsonObject { }), version = 2)
+            assertEquals(1, log.count { it.contains("persist FAILED") }, "one warning in first streak: $log")
+
+            Files.setPosixFilePermissions(dir, writable)
+            ring.persistSnapshot(listOf(kotlinx.serialization.json.buildJsonObject { }), version = 3)
+            assertTrue(Files.exists(usageFile), "the recovery write must succeed before the next streak")
+
+            Files.setPosixFilePermissions(dir, denied)
+            ring.persistSnapshot(listOf(kotlinx.serialization.json.buildJsonObject { }), version = 4)
         } finally {
-            java.nio.file.Files.setPosixFilePermissions(
-                dir,
-                java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"),
-            )
+            Files.setPosixFilePermissions(dir, writable)
         }
 
-        assertEquals(1, log.count { it.contains("persist FAILED") }, "one warning per streak, got $log")
+        assertEquals(2, log.count { it.contains("persist FAILED") }, "success must re-arm the warning: $log")
     }
 }

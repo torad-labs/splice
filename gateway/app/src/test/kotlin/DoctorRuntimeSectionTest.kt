@@ -59,6 +59,21 @@ class DoctorRuntimeSectionTest {
     }
 
     @Test
+    fun `an inaccessible mgmt key parent is unreadable, not missing`(@TempDir tmp: Path) {
+        val env = baseEnv(tmp, port = 1)
+        val stateDir = tmp.resolve("state")
+        val original = Files.getPosixFilePermissions(stateDir)
+        Files.setPosixFilePermissions(stateDir, PosixFilePermissions.fromString("---------"))
+        try {
+            val (_, out) = runDoctor(env)
+            assertTrue(out.contains("unreadable at"), out)
+            assertTrue(!out.contains("minted on first launch"), out)
+        } finally {
+            Files.setPosixFilePermissions(stateDir, original)
+        }
+    }
+
+    @Test
     fun `non-zero provider errors and a failing perf tail are WARN rows with fixes - JW-05`(@TempDir tmp: Path) {
         val server = com.sun.net.httpserver.HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         val version = splice.core.GATEWAY_VERSION

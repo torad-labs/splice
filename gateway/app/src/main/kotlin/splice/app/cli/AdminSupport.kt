@@ -22,20 +22,21 @@ internal object AdminSupport {
     private val launch = DaemonLaunch()
 
     /** The effective control port using the daemon's exact TOML < state < env precedence. */
-    fun controlPort(): Int =
-        controlPort(
-            // DR-41b, same F3 lesson RestartCommand already carries: a corrupt TOML silently
-            // degrading to default ports makes a RUNNING daemon look stopped. Say it (stderr —
-            // stdout belongs to the verb's own output).
-            runCatching { TopologyLoader.loadOrMaterialize(TopologyLoader.configPath()) }
-                .onFailure {
-                    System.err.println(
-                        "splice: could not read ${TopologyLoader.configPath()} (${it.message}) — " +
-                            "using default ports; a running daemon may appear stopped",
-                    )
-                }
-                .getOrNull(),
-        )
+    fun controlPort(envReader: EnvReader = EnvReader(System::getenv)): Int {
+        val configPath = TopologyLoader.configPath(envReader)
+        // DR-41b, same F3 lesson RestartCommand already carries: a corrupt TOML silently
+        // degrading to default ports makes a RUNNING daemon look stopped. Say it (stderr —
+        // stdout belongs to the verb's own output).
+        val topology = Cancellables.runCatchingCancellable {
+            TopologyLoader.loadOrMaterialize(configPath)
+        }.onFailure {
+            System.err.println(
+                "splice: could not read $configPath (${it.message}) — " +
+                    "using default ports; a running daemon may appear stopped",
+            )
+        }.getOrNull()
+        return controlPort(topology, envReader)
+    }
 
     /** Same, from an already-loaded (or absent) topology — doctor uses this so a diagnostic
      *  never MATERIALIZES the starter config as a side effect. [envReader] threads through the

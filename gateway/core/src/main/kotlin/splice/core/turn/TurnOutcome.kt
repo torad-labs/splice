@@ -118,6 +118,10 @@ public sealed class TurnOutcome {
         val usage: Usage = Usage(),
     )
 
-    /** Client vanished mid-stream: nothing to emit, seal quietly (never an error frame). */
-    public data object ClientAbandoned : TurnOutcome()
+    /** Client vanished mid-stream: nothing to emit, seal quietly (never an error frame).
+     *  [salvagedUsage] (DR-125): billed usage from rounds absorbed BEFORE the hang-up — real
+     *  spend the vendor charged whether or not the client stayed to read the answer. The
+     *  abandoning round itself reports nothing (its stream died unparsed), so this is the
+     *  accumulator alone, and finishTurn stamps it exactly like a Failure's salvage. */
+    public data class ClientAbandoned(val salvagedUsage: Usage = Usage()) : TurnOutcome()
 }

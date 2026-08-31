@@ -72,4 +72,19 @@ class RoundSpliceSalvageTest {
         val bare = failure(null)
         assertEquals(bare, rounds.withFailureSalvage(bare, RoundUsage()))
     }
+
+    // DR-125: a hang-up after absorbed rounds carries the accumulator (the abandoning round's own
+    // stream died unparsed — there is no partial to fold in), and a clean abandonment stays bare.
+    @Test
+    fun `client abandonment carries the absorbed burn - DR-125`() {
+        val acc = RoundUsage().plusRound(Usage(inputTokens = 50, outputTokens = 6))
+        val out = rounds.withFailureSalvage(TurnOutcome.ClientAbandoned(), acc) as TurnOutcome.ClientAbandoned
+        assertEquals(Usage(inputTokens = 50, outputTokens = 6), out.salvagedUsage)
+    }
+
+    @Test
+    fun `a clean abandonment stays bare - DR-125`() {
+        val bare = TurnOutcome.ClientAbandoned()
+        assertEquals(bare, rounds.withFailureSalvage(bare, RoundUsage()))
+    }
 }

@@ -88,7 +88,7 @@ internal class ResponsesTerminalDecision(
 
     private fun noCompletionOutcome(state: ResponsesTurnState): TurnOutcome =
         if (ctx.clientGone()) {
-            TurnOutcome.ClientAbandoned
+            TurnOutcome.ClientAbandoned()
         } else {
             TurnOutcome.Failure(
                 ErrorType.OVERLOADED,

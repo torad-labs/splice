@@ -322,7 +322,7 @@ class ResponsesStreamTranslatorTest {
             ).asFlow(),
             RecordingSink(),
         )
-        assertEquals(TurnOutcome.ClientAbandoned, outcome)
+        assertEquals(TurnOutcome.ClientAbandoned(), outcome)
     }
 
     @Test

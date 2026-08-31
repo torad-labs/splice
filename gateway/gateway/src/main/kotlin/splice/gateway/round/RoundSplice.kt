@@ -73,13 +73,21 @@ internal class RoundSplice {
      *  ResponsesEventReducer takes from response.failed precisely so this accounting is real)
      *  folds in too; dropping it under-counted multi-round turns by exactly their heaviest round
      *  and stamped nothing on a single-round failure with reported usage. */
-    fun withFailureSalvage(outcome: TurnOutcome, acc: RoundUsage): TurnOutcome {
-        if (outcome !is TurnOutcome.Failure) return outcome
-        val total = outcome.partial?.usage?.let { acc.plusTerminal(it) } ?: acc
-        val nothingBurned = total.outSum + total.reasoningSum <= 0 && total.lastInput <= 0
-        if (nothingBurned) return outcome
-        return outcome.copy(salvagedUsage = total.toUsage())
+    fun withFailureSalvage(outcome: TurnOutcome, acc: RoundUsage): TurnOutcome = when (outcome) {
+        is TurnOutcome.Failure -> {
+            val total = outcome.partial?.usage?.let { acc.plusTerminal(it) } ?: acc
+            if (burned(total)) outcome.copy(salvagedUsage = total.toUsage()) else outcome
+        }
+        // DR-125: a hang-up after absorbed rounds burned the same real tokens — but the
+        // abandoning round's own stream died unparsed, so there is no partial to fold in;
+        // the accumulator alone is the honest salvage.
+        is TurnOutcome.ClientAbandoned ->
+            if (burned(acc)) outcome.copy(salvagedUsage = acc.toUsage()) else outcome
+        else -> outcome
     }
+
+    private fun burned(total: RoundUsage): Boolean =
+        total.outSum + total.reasoningSum > 0 || total.lastInput > 0
 
     /** Cross-round merge (code-review 2026-07-24): the post-stream pipeline — empty-model honesty
      *  gate, promote-to-text, reasoning mirror — is round-blind; it sees ONE outcome. A spliced

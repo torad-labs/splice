@@ -70,8 +70,9 @@ internal class FoldRunner(
             // already on the wire stays (append-only).
             val retry = foldRounds.continuationForFailedRound(outcome, body, reanchorAttempt)
             if (retry == null) {
-                // health for absorbed rounds only on ultimate success — see ReanchorRunner.
-                if (outcome is TurnOutcome.Success) absorbedFailures.forEach(signals.onRoundFailure::invoke)
+                // health for absorbed rounds unless the final outcome is itself a Failure
+                // (attributed once by finishTurn) — see ReanchorRunner; DR-125 added abandoned.
+                if (outcome !is TurnOutcome.Failure) absorbedFailures.forEach(signals.onRoundFailure::invoke)
                 foldRounds.finalize(rounds.withFailureSalvage(outcome, acc), buffer, salvaged, acc.toUsage())
                 return
             }

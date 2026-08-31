@@ -84,7 +84,7 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         onWatchdog = { TurnOutcome.Failure(ErrorType.OVERLOADED, "chat: upstream stalled — aborted; retry") },
         onUnfinished = {
             if (ctx.clientGone()) {
-                TurnOutcome.ClientAbandoned
+                TurnOutcome.ClientAbandoned()
             } else {
                 TurnOutcome.Failure(
                     ErrorType.OVERLOADED,

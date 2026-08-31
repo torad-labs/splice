@@ -25,7 +25,9 @@ internal class TurnFinish(
         val outcomeTag = drive.pipeline.finishStream(drive.emitter, outcome, drive.meta, latencyMs)
         drive.perf.mark(PerfKeys.FINISH)
         (outcome as? TurnOutcome.Success)?.let { usageStamp.stampSuccess(drive, it) }
-        (outcome as? TurnOutcome.Failure)?.let { usageStamp.stampSalvaged(drive, it) }
+        (outcome as? TurnOutcome.Failure)?.let { usageStamp.stampSalvaged(drive, it.salvagedUsage) }
+        // DR-125: an abandoned turn's absorbed rounds burned the same real billed tokens.
+        (outcome as? TurnOutcome.ClientAbandoned)?.let { usageStamp.stampSalvaged(drive, it.salvagedUsage) }
         // G20 (corrected, review 2026-07-19): attribution rides the outcome's provenance flag, not
         // the ErrorType — the old OVERLOADED-implies-local heuristic misfiled a passthrough
         // provider's genuine overloaded_error as local-origin. providerReported is set ONLY where a

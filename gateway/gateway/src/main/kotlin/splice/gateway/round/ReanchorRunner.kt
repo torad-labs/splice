@@ -58,11 +58,13 @@ internal class ReanchorRunner(
                     log("[$key] tool search round $searchIndex: answering locally, continuing\n")
                     continue
                 }
-                // Absorbed failures hit the health split ONLY when the turn ultimately succeeds
-                // (a rescued turn must not report a degraded provider as healthy); a turn that
-                // ultimately FAILS is attributed exactly once by finishTurn — firing per absorbed
-                // round would triple-count one logical failure (HeadServerIntegrationTest).
-                if (outcome is TurnOutcome.Success) absorbedFailures.forEach(signals.onRoundFailure::invoke)
+                // Absorbed failures hit the health split unless the turn itself ultimately FAILS
+                // — that one is attributed exactly once by finishTurn, and firing per absorbed
+                // round would triple-count one logical failure (HeadServerIntegrationTest). A
+                // rescued turn must not report a degraded provider as healthy, and (DR-125) a
+                // ClientAbandoned ending is attributed nowhere else at all: pre-fix a degraded
+                // provider grinding retries while clients hung up kept head health clean.
+                if (outcome !is TurnOutcome.Failure) absorbedFailures.forEach(signals.onRoundFailure::invoke)
                 finish(rounds.withFailureSalvage(continuation.finalOutcome(outcome, salvaged, acc), acc))
                 return
             }

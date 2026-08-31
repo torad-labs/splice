@@ -53,7 +53,7 @@ public class TurnPipeline(
                 emitter.emitError(outcome.type, outcome.message)
                 return "failure:${outcome.type.wireName}"
             }
-            TurnOutcome.ClientAbandoned -> {
+            is TurnOutcome.ClientAbandoned -> {
                 emitter.abandon()
                 return "client_abort"
             }

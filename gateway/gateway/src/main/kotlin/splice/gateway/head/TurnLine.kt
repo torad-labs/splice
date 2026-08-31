@@ -17,7 +17,7 @@ internal class TurnLine(
                 " ok out=${outcome.usage.outputTokens} tool=${outcome.hasToolUse} incomplete=${outcome.incomplete}\n"
             is TurnOutcome.Failure ->
                 " FAILURE type=${outcome.type.wireName} msg=${outcome.message.take(ERR_SNIPPET)}\n"
-            TurnOutcome.ClientAbandoned -> " client-abandoned\n"
+            is TurnOutcome.ClientAbandoned -> " client-abandoned\n"
         }
     }
 }

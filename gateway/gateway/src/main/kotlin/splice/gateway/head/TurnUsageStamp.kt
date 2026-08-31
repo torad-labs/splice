@@ -4,6 +4,7 @@ package splice.gateway.head
 
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
+import splice.core.turn.Usage
 import splice.core.util.LogSink
 import splice.gateway.usage.UsageStore
 
@@ -20,10 +21,10 @@ internal class TurnUsageStamp(
         log(telemetry.cacheLine(drive.upstreamModel, success.usage, drive.meta.compact))
     }
 
-    suspend fun stampSalvaged(drive: TurnDrive, outcome: TurnOutcome.Failure) {
-        // Salvaged usage from absorbed rounds of an ultimately-FAILED turn: real billed tokens
-        // that would otherwise vanish from the usage store and perf row (review-pr 2026-07-24).
-        val salvaged = outcome.salvagedUsage
+    suspend fun stampSalvaged(drive: TurnDrive, salvaged: Usage) {
+        // Salvaged usage from absorbed rounds of an ultimately-FAILED turn — or (DR-125) an
+        // abandoned one: real billed tokens that would otherwise vanish from the usage store
+        // and perf row (review-pr 2026-07-24).
         if (salvaged.inputTokens > 0) drive.perf.setCount(PerfKeys.IN_TOKENS, salvaged.inputTokens)
         if (salvaged.outputTokens > 0) {
             drive.perf.setCount(PerfKeys.OUT_TOKENS, salvaged.outputTokens)

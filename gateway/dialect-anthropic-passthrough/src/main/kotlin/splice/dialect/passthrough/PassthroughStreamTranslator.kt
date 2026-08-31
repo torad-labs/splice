@@ -96,7 +96,7 @@ public class PassthroughStreamTranslator(
 
     private fun unfinishedOutcome(): TurnOutcome =
         if (ctx.clientGone()) {
-            TurnOutcome.ClientAbandoned
+            TurnOutcome.ClientAbandoned()
         } else {
             TurnOutcome.Failure(
                 ErrorType.OVERLOADED,

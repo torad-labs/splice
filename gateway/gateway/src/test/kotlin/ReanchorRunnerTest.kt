@@ -69,7 +69,7 @@ private class Harness {
         when (outcome) {
             is TurnOutcome.Success -> emitter.emitTerminal(outcome.hasToolUse, outcome.incomplete, outcome.usage)
             is TurnOutcome.Failure -> emitter.emitError(outcome.type, outcome.message)
-            TurnOutcome.ClientAbandoned -> emitter.abandon()
+            is TurnOutcome.ClientAbandoned -> emitter.abandon()
         }
     }
 
@@ -350,6 +350,29 @@ class FoldRunnerReanchorTest {
         )
     }
 
+    // DR-125: absorbed failures must reach health when the client abandons — pre-fix the hook
+    // fired only on ultimate Success, so a degraded provider grinding retries while clients hung
+    // up kept head health clean. Fired in the runner, not finishTurn: finishTurn attributes
+    // nothing for ClientAbandoned, so this cannot double-count (a Failure final stays
+    // finishTurn's, exactly once — HeadServerIntegrationTest).
+    @Test
+    fun `absorbed failures reach health when the client abandons - DR-125`() = runTest {
+        val h = Harness()
+        val rounds = ArrayDeque<suspend () -> TurnOutcome>()
+        rounds.add { retryableFailure(outputTokens = 8) }
+        rounds.add { TurnOutcome.ClientAbandoned() }
+        ReanchorRunner(
+            key = "t",
+            log = { },
+            postRound = { rounds.removeFirst().invoke() },
+            finish = { h.finish(it) },
+            signals = h.signals(),
+        ).run(continuationBody(), ReanchorController { continuationBody() })
+        assertEquals(1, h.absorbed.size, "the absorbed round failure must reach the health hook")
+        val abandoned = h.finished as TurnOutcome.ClientAbandoned
+        assertEquals(8, abandoned.salvagedUsage.outputTokens, "absorbed burn must ride the abandonment")
+    }
+
     @Test
     fun `fold trigger-B respects the gone-client gate`() = runTest {
         val h = Harness()
@@ -597,6 +620,31 @@ class ReanchorRunnerSearchTest {
 // Search-continuation walls on FoldRunner: buffered rounds strip bodyText/emittedText but keep
 // live thinking (the same rule fold's own re-anchor trigger-B applies), and fold-continuation
 // (a truncated round) takes precedence over a search on the same round.
+class FoldRunnerAbandonTest {
+
+    // DR-125: same wall for the fold loop — trigger-B absorbs the failure; the next round's
+    // client hang-up must not erase it from head health.
+    @Test
+    fun `fold-absorbed failures reach health when the client abandons - DR-125`() = runTest {
+        val h = Harness()
+        val rounds = ArrayDeque<suspend () -> TurnOutcome>()
+        rounds.add { retryableFailure(outputTokens = 8, bodyText = "") }
+        rounds.add { TurnOutcome.ClientAbandoned() }
+        FoldRunner(
+            emitter = h.emitter,
+            key = "t",
+            log = { },
+            postRound = { _, _ -> rounds.removeFirst().invoke() },
+            finish = { h.finish(it) },
+            reanchor = ReanchorController { continuationBody() },
+            signals = h.signals(),
+        ).run(continuationBody()) { null }
+        assertEquals(1, h.absorbed.size, "the fold-absorbed failure must reach the health hook")
+        val abandoned = h.finished as TurnOutcome.ClientAbandoned
+        assertEquals(8, abandoned.salvagedUsage.outputTokens, "fold-absorbed burn must ride the abandonment")
+    }
+}
+
 class FoldRunnerSearchTest {
 
     @Test

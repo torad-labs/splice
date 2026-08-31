@@ -101,8 +101,10 @@ fi
 # file imports — and imports no real package at all. That is not tidiness, it is the only way this
 # fixture measures one arm:
 #
-#   A file needs neighbours to have a ratio (with none it is graded against itself and can never
-#   reach HIGH), but `neighbours` is symmetric — "packages I import" AND "packages that import me" —
+#   A file needs a private neighbourhood so the tree stays untouched (with none it is graded
+#   against the global median since DR-117 — arm 12 owns that wall; this arm needs the god file's
+#   denominator under its own control), and `neighbours` is symmetric — "packages I import" AND
+#   "packages that import me" —
 #   so every real package a synthetic file imports gains a synthetic neighbour and MOVES. Both
 #   directions were measured here while writing this. Importing splice.spi made the synthetic file a
 #   neighbour of UpstreamClient and pushed its denominator 52.0 -> 53.5, ratio 2.79 -> 2.71, tripping
@@ -491,7 +493,44 @@ else
 fi
 rm -rf "$G"
 
+# ── 12. zero-neighbour god object must not grade low (DR-117) ─────────────────────────────────
+# Red on the pre-DR-117 oracle: a file importing no splice package and imported by nobody was
+# graded against its OWN C — ratio pinned to 1.0, band low forever regardless of size, so a
+# self-contained 800-line god file (vendored codec, standalone tool) passed ratchet, --max-ratio
+# and --file in every band. Post-fix the zero-neighbour fallback denominator is the GLOBAL median,
+# so this file bands HIGH and the ratchet REGRESSION arm names it. Pre-fix this arm cannot
+# false-green: either the ratchet exits 0 (must_fail fires) or a collateral regression trips it
+# without SelftestLoneGod.kt in the HIGH list (the grep fires).
+LONE="$tmp/gateway/zz-selftest-lone/src/main/kotlin/splice/selftest/lone"
+mkdir -p "$LONE"
+python3 - "$ORACLE" "$LONE" <<'PY'
+import importlib.util, math, pathlib, statistics, sys
+
+spec = importlib.util.spec_from_file_location("concentration_selftest_oracle_lone", sys.argv[1])
+oracle = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(oracle)
+out = pathlib.Path(sys.argv[2])
+
+# Same census arithmetic as fixture 1 (C = 8.5 * classes + 8), but sized against the global median
+# itself: that IS the post-fix denominator for a file with no neighbours. Twice the 3.0 HIGH
+# threshold for margin. No import line and no importers, on purpose — the emptiness is the arm.
+by_package: dict[str, list[float]] = {}
+for row in oracle.collect():
+    by_package.setdefault(row["package"], []).append(row["C"])
+global_median = statistics.median([statistics.median(cs) for cs in by_package.values()])
+classes = max(20, math.ceil((6 * global_median - 8) / 8.5))
+
+body = ["package splice.selftest.lone"]
+body += [f"class SelftestLone{n}(val v: String)" for n in range(1, classes + 1)]
+(out / "SelftestLoneGod.kt").write_text("\n".join(body) + "\n")
+PY
+oracle --ratchet --max-ratio 1.8
+must_fail "12. zero-neighbour god object must reach band HIGH (DR-117)" "REGRESSION: band HIGH rose"
+grep -q "SelftestLoneGod.kt" "$tmp/out" ||
+  err "12. zero-neighbour arm — the gated HIGH list does not name SelftestLoneGod.kt, so the arm went red for something other than the lone god object it planted"
+rm -rf "$tmp/gateway/zz-selftest-lone"
+
 if [ "$fail" -eq 0 ]; then
-  note "concentration selftest: control green, 12 mutation fixtures red for their stated reasons, 6 DR-51 arms green"
+  note "concentration selftest: control green, 13 mutation fixtures red for their stated reasons, 6 DR-51 arms green"
 fi
 exit "$fail"

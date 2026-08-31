@@ -568,6 +568,14 @@ def scan(rows: list[dict]) -> list[dict]:
     # neighbours happen to score 1 would read as 63x while being smaller than the median package in
     # the tree. Smooth the denominator with a floor at half the global median C, and require the
     # file itself to clear the global median before any band above "low" can apply.
+    #
+    # A file with NO neighbourhood at all (imports no splice package, imported by nobody) is graded
+    # against the global median outright (DR-117). The old fallback was the file's OWN C, which
+    # pinned its ratio to 1.0 — band low forever regardless of size, so a self-contained 800-line
+    # god file (vendored codec, standalone tool) passed every mode. The global median is the same
+    # neutral comparator the floor already derives from, at full strength: measured on the live
+    # tree 2026-08-31, all 12 zero-neighbour files stay low (worst 1.55), so the change is purely
+    # prospective. Selftest arm 12 pins the wall.
     global_median = statistics.median(list(package_median.values())) if package_median else 0.0
     floor = global_median * 0.5
 
@@ -575,7 +583,7 @@ def scan(rows: list[dict]) -> list[dict]:
         neighbours = {pkg for pkg in row["subsystems"] if pkg in package_median}
         neighbours |= {other["package"] for other in rows if row["package"] in other["subsystems"]}
         neighbours.discard(row["package"])
-        median = statistics.median([package_median[p] for p in neighbours]) if neighbours else row["C"]
+        median = statistics.median([package_median[p] for p in neighbours]) if neighbours else global_median
         denominator = max(median, floor)
         row["neighbour_packages"] = sorted(neighbours)
         row["neighbour_median_C"] = round(median, 1)

@@ -133,16 +133,19 @@ class LoginInterceptionWireTest {
         )
     }
 
-    // The redo's exact reproduction (codex adversarial verdict, 2026-08-30): the script PRE-EXISTS
-    // world-writable+executable — a leftover, or seeded by anything that can write the config dir.
-    // writeString preserves that mode, so the old `isExecutable` outcome probe stayed true and the
-    // 0777 hook registered; executability proves nothing about the mode the chmod was asked for.
-    // The only sound probe is the chmod outcome itself, and a failed chmod deletes the file.
+    // DR-8 redo + DR-31 stage-and-swap. The DR-8 shape: the target PRE-EXISTS 0777 (a leftover, or
+    // seeded by anything that can write the config dir), the chmod fails, and the old isExecutable
+    // probe called the 0777 file installed. The DR-31 correction of the correction: DELETING the
+    // target on failure was also wrong — writeString had already truncated a possibly-WORKING live
+    // hook before chmod ever ran. Stage-and-swap means a failed chmod touches only the staged
+    // copy: the pre-existing file survives byte-identical, nothing 0777 is ever published, and
+    // the launch still fails loudly.
     @Test
     fun `a pre-existing executable hook cannot pass for a chmod that failed`(@TempDir tmp: Path) {
-        val leftover = tmp.resolve("splice-key-capture-hook.sh")
-        Files.writeString(leftover, "#!/bin/sh\nplanted-by-anyone\n")
-        Files.setPosixFilePermissions(leftover, PosixFilePermissions.fromString("rwxrwxrwx"))
+        val existing = tmp.resolve("splice-key-capture-hook.sh")
+        val originalContent = "#!/bin/sh\npre-existing-working-hook\n"
+        Files.writeString(existing, originalContent)
+        Files.setPosixFilePermissions(existing, PosixFilePermissions.fromString("rwxrwxrwx"))
 
         assertThrows<IOException> {
             LoginInterception.wire(
@@ -156,22 +159,28 @@ class LoginInterceptionWireTest {
                 chmod = { _, _ -> throw IOException("injected chmod failure") },
             )
         }
+        assertEquals(
+            originalContent,
+            Files.readString(existing),
+            "a failed chmod must leave the pre-existing hook byte-identical, not truncated or deleted",
+        )
         assertFalse(
-            Files.exists(leftover),
-            "a hook whose chmod failed must be deleted, not left behind with inherited permissions",
+            Files.exists(tmp.resolve("splice-key-capture-hook.sh.tmp")),
+            "the staged copy must be cleaned up on failure",
         )
     }
 
-    // Second DR-8 redo: the delete-and-throw funnel caught only what runCatchingCancellable
-    // catches (IO/serialization/IAE). setPosixFilePermissions also throws
-    // UnsupportedOperationException (non-POSIX filesystem) and SecurityException — either used to
-    // fly PAST the funnel, skipping the delete and leaving the seeded executable behind.
+    // Second DR-8 redo: the failure funnel caught only what runCatchingCancellable catches
+    // (IO/serialization/IAE). setPosixFilePermissions also throws UnsupportedOperationException
+    // (non-POSIX filesystem) and SecurityException — either used to fly PAST the funnel entirely.
+    // Both must take the same staged-cleanup path.
     @Test
-    fun `chmod exceptions outside the IO net still delete the seeded hook`(@TempDir tmp: Path) {
+    fun `chmod exceptions outside the IO net still fail the launch and clean the staged copy`(@TempDir tmp: Path) {
         for (thrown in listOf(UnsupportedOperationException("posix not supported"), SecurityException("denied"))) {
-            val leftover = tmp.resolve("splice-key-capture-hook.sh")
-            Files.writeString(leftover, "#!/bin/sh\nplanted-by-anyone\n")
-            Files.setPosixFilePermissions(leftover, PosixFilePermissions.fromString("rwxrwxrwx"))
+            val existing = tmp.resolve("splice-key-capture-hook.sh")
+            val originalContent = "#!/bin/sh\npre-existing-working-hook\n"
+            Files.writeString(existing, originalContent)
+            Files.setPosixFilePermissions(existing, PosixFilePermissions.fromString("rwxrwxrwx"))
 
             assertThrows<IOException>("${thrown::class.simpleName} must still fail the launch") {
                 LoginInterception.wire(
@@ -185,11 +194,36 @@ class LoginInterceptionWireTest {
                     chmod = { _, _ -> throw thrown },
                 )
             }
+            assertEquals(
+                originalContent,
+                Files.readString(existing),
+                "${thrown::class.simpleName} must leave the pre-existing hook untouched",
+            )
             assertFalse(
-                Files.exists(leftover),
-                "${thrown::class.simpleName} must not leave the seeded executable behind",
+                Files.exists(tmp.resolve("splice-key-capture-hook.sh.tmp")),
+                "${thrown::class.simpleName} must not leave the staged copy behind",
             )
         }
+    }
+
+    // The swap itself: a successful wire REPLACES a stale pre-existing hook atomically and the
+    // published file carries the proven owner-only mode (rename keeps the staged inode).
+    @Test
+    fun `a successful wire atomically replaces a stale hook with owner-only permissions`(@TempDir tmp: Path) {
+        val target = tmp.resolve("splice-key-capture-hook.sh")
+        Files.writeString(target, "#!/bin/sh\nstale-old-content\n")
+        Files.setPosixFilePermissions(target, PosixFilePermissions.fromString("rwxrwxrwx"))
+
+        val hooks = wire(tmp, loginCommand = "", tokenCapture = capture, log = mutableListOf())
+
+        assertFalse(hooks.isEmpty(), "the capture hook must register")
+        assertFalse(Files.readString(target).contains("stale-old-content"), "the stale body must be replaced")
+        assertEquals(
+            "rwx------",
+            PosixFilePermissions.toString(Files.getPosixFilePermissions(target)),
+            "the published hook must carry the staged copy's proven mode",
+        )
+        assertFalse(Files.exists(tmp.resolve("splice-key-capture-hook.sh.tmp")))
     }
 
     @Test

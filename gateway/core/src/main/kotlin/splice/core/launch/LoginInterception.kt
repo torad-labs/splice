@@ -27,6 +27,7 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
 import java.nio.file.attribute.PosixFilePermission
 import java.nio.file.attribute.PosixFilePermissions
 import kotlin.io.path.isDirectory
@@ -221,17 +222,23 @@ internal object LoginInterception {
      * ignores modes but mounts exec (the LNC-005 case this used to tolerate wholesale) and fails on
      * one that leaves the script unrunnable, whatever the chmod itself reported.
      */
+    /** Stage-and-swap (DR-31): Claude Code parses these scripts on every prompt, so the LIVE hook
+     *  must never be observable truncated, torn, or mode-broken. Content and mode land on a staged
+     *  same-dir copy FIRST; the atomic move publishes it whole (rename keeps the inode, so the
+     *  proven mode travels with it). Any failure deletes only the staged copy — a pre-existing
+     *  working hook stays untouched and the launch fails loudly.
+     *
+     *  The chmod outcome is the ONLY mode probe (DR-8 redo: a seeded rwxrwxrwx file passes
+     *  isExecutable while anyone may rewrite what the hook runs), and the catch net is wider than
+     *  runCatchingCancellable's IO/serialization/IAE because setPosixFilePermissions also throws
+     *  UnsupportedOperationException (non-POSIX fs) and SecurityException (second DR-8 redo). */
     private fun writeHookScript(configDir: Path, name: String, content: String, chmod: HookChmod): Path {
         val script = configDir.resolve(name)
-        Files.writeString(script, content)
-        // runCatchingCancellable's narrow net (IO/serialization/IAE) is NOT enough here:
-        // setPosixFilePermissions throws UnsupportedOperationException on a non-POSIX filesystem
-        // and SecurityException under a manager, and either escaping this seam skips the delete —
-        // leaving a pre-existing executable behind (second DR-8 redo, 2026-08-30). Same funnel
-        // for all of them: the chmod did not take, so the script must not survive.
+        val staged = configDir.resolve("$name.tmp")
+        Files.writeString(staged, content)
         val chmodFailure = try {
             Cancellables.runCatchingCancellable {
-                chmod(script, PosixFilePermissions.fromString("rwx------"))
+                chmod(staged, PosixFilePermissions.fromString("rwx------"))
             }.exceptionOrNull()
         } catch (e: UnsupportedOperationException) {
             e
@@ -239,17 +246,13 @@ internal object LoginInterception {
             e
         }
         if (chmodFailure != null) {
-            // A pre-existing script keeps its old mode through writeString, so executability proves
-            // NOTHING about the mode we asked for: a world-writable leftover passes isExecutable
-            // while anyone may rewrite what the hook runs (DR-8 redo — codex reproduced it with a
-            // seeded rwxrwxrwx file). The only sound outcome probe is the chmod itself; delete the
-            // file rather than leave it behind with whatever permissions it inherited.
-            Files.deleteIfExists(script)
+            Files.deleteIfExists(staged)
             throw IOException(
-                "$script: chmod rwx------ failed (${chmodFailure.message}) — hook deleted rather " +
-                    "than installed with inherited permissions",
+                "$script: chmod rwx------ failed on the staged copy (${chmodFailure.message}) — " +
+                    "staged file deleted, any existing hook left untouched",
             )
         }
+        Files.move(staged, script, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
         return script
     }
 

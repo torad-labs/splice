@@ -14,6 +14,7 @@ import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import java.nio.channels.FileChannel
 import java.nio.channels.OverlappingFileLockException
@@ -138,7 +139,7 @@ public class KeyStore(
                 // file" is a claim this branch cannot make — for a dangling link the target is
                 // GONE, and through an untraversable parent the state is unknowable.
                 log(
-                    "[keys] $path is UNREADABLE (${failure.message}) — treating as empty for " +
+                    "[keys] $path is UNREADABLE (${SafeFailureText.render(failure)}) — treating as empty for " +
                         "display; the path may still reference operator key state, fix or " +
                         "remove it (writes abort rather than clobber)\n",
                 )

@@ -7,6 +7,7 @@ package splice.provider.kimi
 
 import splice.core.GATEWAY_VERSION
 import splice.core.util.Cancellables
+import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import java.net.InetAddress
 import java.nio.file.Files
@@ -36,8 +37,8 @@ public class KimiDeviceIdentity(
                 !Files.exists(deviceIdPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
             if (!genuinelyAbsent) {
                 throw java.io.IOException(
-                    "$deviceIdPath unreadable ($failure) — refusing to mint a NEW device id " +
-                        "over an existing identity; fix the file or remove it",
+                    "$deviceIdPath unreadable (${SafeFailureText.render(failure)}) — refusing to " +
+                        "mint a NEW device id over an existing identity; fix the file or remove it",
                     failure,
                 )
             }

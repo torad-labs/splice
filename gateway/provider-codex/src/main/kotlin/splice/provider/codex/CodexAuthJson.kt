@@ -13,6 +13,7 @@ import splice.core.auth.RefreshOutcome
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
 import splice.core.util.WallClockIso
 import java.nio.file.Files
@@ -100,7 +101,10 @@ internal class CodexAuthJson(
         val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
             !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
         if (!genuinelyAbsent) {
-            log("[codex-auth] failed to read $authPath: $failure — no credentials served (NOT a logged-out state)")
+            log(
+                "[codex-auth] failed to read $authPath: ${SafeFailureText.render(failure)} — " +
+                    "no credentials served (NOT a logged-out state)",
+            )
         }
     }
 

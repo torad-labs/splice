@@ -495,6 +495,27 @@ class KimiRereadFailureTest {
         assertTrue(log.any { it.contains("credential reread failed") }, "unconfirmed rejection must be named: $log")
         assertNull(auth.describe().fields["refresh_latched"], "an unconfirmed invalid_grant must not latch")
     }
+
+    // DR-65 (codex security probe): a malformed auth file still containing a live token must not
+    // leak it through parse-exception text ("JSON input:" excerpts) into logs or describe fields.
+    @Test
+    fun `diagnostics never quote credential bytes from a malformed auth file - DR-65`() = runTest {
+        val sentinel = "kimi-SENTINEL-LEAK-CANARY"
+        val dir = Files.createTempDirectory("kimi-leak")
+        val file = dir.resolve("kimi-code.json")
+        Files.writeString(file, """{"access_token":"$sentinel"""")
+        val log = mutableListOf<String>()
+        val auth = KimiAuthProvider(
+            authPath = file,
+            refreshCall = { RefreshAttempt.Denied("must-not-be-reached") },
+            log = splice.core.util.LogSink { log += it },
+        )
+        assertNull(auth.credentials())
+        assertNull(auth.refresh())
+        val surfaced = (log + auth.describe().fields.map { "${it.key}=${it.value}" }).joinToString("\n")
+        assertTrue(!surfaced.contains(sentinel), "credential bytes must never surface: $surfaced")
+        assertTrue(log.any { it.contains("NOT a logged-out state") }, "diagnostics still classify: $log")
+    }
 }
 
 // SH-01 lives in its own class: KimiAuthProviderTest sits at detekt's LargeClass ceiling.

@@ -448,6 +448,29 @@ class GrokAuthProviderTest {
         assertNull(auth.describe().fields["refresh_latched"], "an unconfirmed invalid_grant must not latch")
     }
 
+    // DR-65 (codex security probe): a malformed auth.json still containing a live token must not
+    // leak it through parse-exception text ("JSON input:" excerpts) into logs or describe fields.
+    @Test
+    fun `diagnostics never quote credential bytes from a malformed auth file - DR-65`() = runTest {
+        val sentinel = "xai-SENTINEL-LEAK-CANARY"
+        val dir = Files.createTempDirectory("grok-leak")
+        val file = dir.resolve(".grok").resolve("auth.json")
+        Files.createDirectories(file.parent)
+        Files.writeString(file, """{"tokens":{"access_token":"$sentinel"""")
+        val log = mutableListOf<String>()
+        val auth = GrokAuthProvider(
+            authPath = file,
+            clock = { 1_000_000L },
+            refreshCall = { RefreshAttempt.Denied("must-not-be-reached") },
+            log = splice.core.util.LogSink { log += it },
+        )
+        assertNull(auth.credentials())
+        assertNull(auth.refresh())
+        val surfaced = (log + auth.describe().fields.map { "${it.key}=${it.value}" }).joinToString("\n")
+        assertTrue(!surfaced.contains(sentinel), "credential bytes must never surface: $surfaced")
+        assertTrue(log.any { it.contains("NOT a logged-out state") }, "diagnostics still classify: $log")
+    }
+
     @Test
     fun `granted refresh with no expires_in advances the expiry - one refresh across N calls - SH-02a`() = runTest {
         // Pre-fix: null expiresIn persisted a null expiry, the merge kept the stale on-disk value,

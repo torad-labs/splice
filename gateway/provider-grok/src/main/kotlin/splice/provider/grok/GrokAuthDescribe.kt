@@ -19,6 +19,7 @@ import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -82,7 +83,7 @@ internal class GrokAuthDescribe(
                     // DR-59: indeterminate is not logged-out — name it in the description instead.
                     val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
                         !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
-                    if (!genuinelyAbsent) put("read_error", failure.toString())
+                    if (!genuinelyAbsent) put("read_error", SafeFailureText.render(failure))
                 }
             },
         )
@@ -132,7 +133,7 @@ internal class GrokAuthDescribe(
             .runCatchingCancellable { JsonScalars.str(authJson.tokensOf()?.get("refresh_token")) }
         val rereadFailure = reread.exceptionOrNull()
         if (rereadFailure != null) {
-            val detail = rereadFailure.message.orEmpty().take(REFRESH_ERROR_SNIPPET)
+            val detail = SafeFailureText.render(rereadFailure).take(REFRESH_ERROR_SNIPPET)
             return RefreshOutcome.Rejected("$reason; credential reread failed: $detail")
         }
         val newToken = reread.getOrThrow()

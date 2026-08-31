@@ -30,6 +30,7 @@ import kotlinx.serialization.json.putJsonArray
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import java.io.IOException
 import java.nio.file.Files
@@ -267,7 +268,10 @@ public class ClaudeConfigMaterializer(
             .getOrElse { failure ->
                 val genuinelyAbsent = failure is NoSuchFileException && !Files.exists(dst, NOFOLLOW_LINKS)
                 if (failure is IOException && !genuinelyAbsent) {
-                    throw IOException("$dst unreadable ($failure) — refusing to rebuild the head settings over it")
+                    throw IOException(
+                        "$dst unreadable (${SafeFailureText.render(failure)}) — " +
+                            "refusing to rebuild the head settings over it",
+                    )
                 }
                 EMPTY_JSON
             }
@@ -344,7 +348,10 @@ private class JsonStateReads(private val json: Json, private val log: LogSink) {
         .getOrElse { failure ->
             val genuinelyAbsent = failure is NoSuchFileException && !Files.exists(path, NOFOLLOW_LINKS)
             if (!genuinelyAbsent) {
-                log("[materialize] $path unreadable ($failure) — global state NOT inherited by this head\n")
+                log(
+                    "[materialize] $path unreadable (${SafeFailureText.render(failure)}) — " +
+                        "global state NOT inherited by this head\n",
+                )
             }
             EMPTY_JSON
         }
@@ -362,7 +369,10 @@ private class JsonStateReads(private val json: Json, private val log: LogSink) {
             .getOrElse { failure ->
                 val genuinelyAbsent = failure is NoSuchFileException && !Files.exists(path, NOFOLLOW_LINKS)
                 if (!genuinelyAbsent) {
-                    throw IOException("$path unreadable ($failure) — refusing to rewrite it; fix or remove the file")
+                    throw IOException(
+                        "$path unreadable (${SafeFailureText.render(failure)}) — " +
+                            "refusing to rewrite it; fix or remove the file",
+                    )
                 }
                 EMPTY_JSON
             }

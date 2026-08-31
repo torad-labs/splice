@@ -25,6 +25,7 @@ import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import java.io.IOException
 import java.nio.file.Files
@@ -190,7 +191,10 @@ public class ConfigService(
         } else if (!discardStreakLogged.compareAndSet(false, true)) {
             return
         }
-        log("[config] config.json present but unreadable ($cause) — persisted knobs ignored, defaults/env in effect")
+        log(
+            "[config] config.json present but unreadable (${cause?.let(SafeFailureText::render)}) — " +
+                "persisted knobs ignored, defaults/env in effect",
+        )
     }
 
     private fun readFileLayer(): Map<String, Any?> {

@@ -89,4 +89,30 @@ class CodexAuthAbsenceTest {
         assertTrue(log.any { it.contains("NOT a logged-out state") }, "present-corrupt must classify: $log")
         assertTrue(log.none { it.contains("not logged in") }, "must never claim logged-out: $log")
     }
+
+    // DR-65 (codex security probe): kotlinx parse exceptions embed a "JSON input:" excerpt of the
+    // parsed bytes, so a malformed auth.json that still contains a live token leaked that token
+    // into daemon.log and /mgmt/auth through every $failure / toString diagnostic. The sentinel
+    // rides in an UNTERMINATED file so the parser's excerpt window covers it.
+    @Test
+    fun `diagnostics never quote credential bytes from a malformed auth file - DR-65`(@TempDir tmp: Path) = runTest {
+        val sentinel = "sk-SENTINEL-LEAK-CANARY"
+        val authPath = tmp.resolve(".codex/auth.json")
+        Files.createDirectories(authPath.parent)
+        Files.writeString(authPath, """{"tokens":{"access_token":"$sentinel"""")
+        val log = mutableListOf<String>()
+        val auth = CodexAuthProvider(
+            authPath = authPath,
+            authCacheMs = 60_000,
+            refreshCall = { error("token endpoint must not be reached on a parse failure") },
+            prefetchScope = prefetchScope,
+            log = splice.core.util.LogSink { log += it },
+        )
+        assertNull(auth.credentials())
+        assertNull(auth.refresh())
+        val describe = auth.describe()
+        val surfaced = (log + describe.fields.map { "${it.key}=${it.value}" }).joinToString("\n")
+        assertTrue(!surfaced.contains(sentinel), "credential bytes must never surface: $surfaced")
+        assertTrue(log.any { it.contains("NOT a logged-out state") }, "diagnostics still classify: $log")
+    }
 }

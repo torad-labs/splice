@@ -13,6 +13,7 @@ import splice.core.auth.RefreshCall
 import splice.core.auth.RefreshOutcome
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
@@ -71,7 +72,10 @@ internal class KimiAuthStore(
         val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
             !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
         if (!genuinelyAbsent) {
-            log("[kimi-auth] failed to read $authPath: $failure — no credentials served (NOT a logged-out state)")
+            log(
+                "[kimi-auth] failed to read $authPath: ${SafeFailureText.render(failure)} — " +
+                    "no credentials served (NOT a logged-out state)",
+            )
         }
         null
     }
@@ -125,7 +129,7 @@ internal class KimiAuthStore(
             .runCatchingCancellable { oauth.parseSnapshot(authPath, synthesizeExpiry)?.refresh }
         val rereadFailure = reread.exceptionOrNull()
         if (rereadFailure != null) {
-            val detail = rereadFailure.message.orEmpty().take(REFRESH_ERROR_SNIPPET)
+            val detail = SafeFailureText.render(rereadFailure).take(REFRESH_ERROR_SNIPPET)
             return RefreshOutcome.Rejected("$reason; credential reread failed: $detail")
         }
         val newToken = reread.getOrThrow()
@@ -151,7 +155,7 @@ internal class KimiAuthStore(
                 if (latch.isLatched(mtime)) put("refresh_latched", INVALID_GRANT_REASON)
                 // DR-59: parseSnapshot already classified — genuine absence returned null quietly,
                 // so ANY failure reaching here is indeterminate access, named for the dashboard.
-                presentOutcome.exceptionOrNull()?.let { put("read_error", it.toString()) }
+                presentOutcome.exceptionOrNull()?.let { put("read_error", SafeFailureText.render(it)) }
             },
         )
     }

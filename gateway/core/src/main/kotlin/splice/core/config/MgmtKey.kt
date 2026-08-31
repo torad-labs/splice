@@ -12,6 +12,7 @@ import splice.core.auth.BearerScheme
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import java.nio.file.Files
@@ -52,7 +53,7 @@ public class MgmtKey(
         val readFailure = when {
             failure == null && read.getOrThrow().isNotEmpty() -> return read.getOrThrow()
             failure == null -> "present but blank"
-            failure !is java.nio.file.NoSuchFileException -> "unreadable ($failure)"
+            failure !is java.nio.file.NoSuchFileException -> "unreadable (${SafeFailureText.render(failure)})"
             // A read that vanished: genuine absence, OR a dangling symlink (entry present, target
             // gone). Only the former is the quiet first run.
             Files.exists(path, LinkOption.NOFOLLOW_LINKS) -> "dangling symlink ($failure)"

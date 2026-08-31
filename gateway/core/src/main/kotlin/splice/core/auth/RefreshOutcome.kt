@@ -10,6 +10,7 @@ package splice.core.auth
 
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 
 /** The Rejected.reason marker for a CONFIRMED invalid_grant (401/403/explicit invalid_grant body) —
  *  as opposed to any other non-retryable refresh rejection. Paired with [InvalidGrantLatch]. */
@@ -68,11 +69,11 @@ public sealed class RefreshOutcome {
             null
         }
         is ReadFailed -> {
-            log("[$tag] credential file read failed (NOT a logged-out state): $cause")
+            log("[$tag] credential file read failed (NOT a logged-out state): ${SafeFailureText.render(cause)}")
             null
         }
         is TransportFailed -> {
-            log("[$tag] refresh transport failed (likely transient): $cause")
+            log("[$tag] refresh transport failed (likely transient): ${SafeFailureText.render(cause)}")
             null
         }
         is PersistFailed -> {

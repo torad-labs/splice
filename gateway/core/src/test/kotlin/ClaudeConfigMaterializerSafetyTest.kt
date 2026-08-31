@@ -348,6 +348,31 @@ class JsonStateReadsSafetyTest {
         )
     }
 
+    // DR-65 (codex security probe, materializer flavor): kotlinx parse exceptions embed a
+    // "JSON input:" excerpt, so a malformed local .claude.json leaked its bytes (MCP env values,
+    // approved keys) through the strict abort message, and a malformed global leaked through the
+    // tolerant degrade log. The abort still names the PATH — only the file's bytes are withheld.
+    @Test
+    fun `state-file bytes never ride diagnostics - DR-65`(@TempDir home: Path) {
+        seedGlobal(home)
+        val sentinel = "sk-SENTINEL-LEAK-CANARY"
+        val configDir = home.resolve(".claude-head")
+        Files.createDirectories(configDir)
+        configDir.resolve(".claude.json").writeText("""{"mcpServers":{"x":{"env":{"KEY":"$sentinel"""")
+        val thrown = assertThrows(IOException::class.java) {
+            ClaudeConfigMaterializer(home).materialize(spec(configDir))
+        }
+        assertTrue(!thrown.message.orEmpty().contains(sentinel), "state bytes in the abort: ${thrown.message}")
+        assertTrue(thrown.message.orEmpty().contains(".claude.json"), "the abort still names the file")
+
+        Files.delete(configDir.resolve(".claude.json"))
+        home.resolve(".claude.json").writeText("""{"mcpServers":{"x":{"env":{"KEY":"$sentinel"""")
+        val log = mutableListOf<String>()
+        ClaudeConfigMaterializer(home, log = LogSink { log += it }).materialize(spec(configDir))
+        assertTrue(log.any { it.contains("NOT inherited") }, "the tolerant degrade stays loud: $log")
+        assertTrue(log.none { it.contains(sentinel) }, "state bytes in the degrade log: $log")
+    }
+
     @Test
     fun `a symlinked global claude json is a readable merge source`(@TempDir home: Path) {
         seedGlobal(home)

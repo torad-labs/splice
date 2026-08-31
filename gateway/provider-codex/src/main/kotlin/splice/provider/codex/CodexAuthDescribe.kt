@@ -14,6 +14,7 @@ import splice.core.auth.RefreshOutcome
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -61,7 +62,7 @@ internal class CodexAuthDescribe(
             // DR-59: indeterminate is not logged-out — name it in the description instead.
             val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
                 !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
-            if (!genuinelyAbsent) out["read_error"] = failure.toString()
+            if (!genuinelyAbsent) out["read_error"] = SafeFailureText.render(failure)
         }
         val mtime = authFile.codexAuthMtimeOrNull(authPath, log)
         if (invalidGrantLatch.isLatched(mtime)) out["refresh_latched"] = INVALID_GRANT_REASON
@@ -123,7 +124,7 @@ internal class CodexAuthDescribe(
         val reread = Cancellables.runCatchingCancellable { authJson.parseObject() }
         val rereadFailure = reread.exceptionOrNull()
         if (rereadFailure != null) {
-            val detail = rereadFailure.message.orEmpty().take(REFRESH_ERROR_SNIPPET)
+            val detail = SafeFailureText.render(rereadFailure).take(REFRESH_ERROR_SNIPPET)
             return RefreshOutcome.Rejected("$reason; credential reread failed: $detail")
         }
         val fresh = reread.getOrThrow()

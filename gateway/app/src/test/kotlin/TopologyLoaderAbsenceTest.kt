@@ -32,6 +32,9 @@ class TopologyLoaderAbsenceTest {
         assertTrue(Files.isSymbolicLink(link), "the operator's link survives")
     }
 
+    // Status-quo PIN, not a red-proof (codex replay 2026-08-31): the pre-fix loader also threw
+    // here — from its starter-write attempt — so both sides abort; what this pins is that the
+    // operator's file stays byte-intact and no starter appears, the never-below-status-quo floor.
     @Test
     fun `an existing splice-toml behind a denied parent aborts intact - DR-66`(@TempDir tmp: Path) {
         val dir = Files.createDirectories(tmp.resolve("cfg"))
@@ -53,5 +56,27 @@ class TopologyLoaderAbsenceTest {
         val loaded = TopologyLoader.loadOrMaterializeWithDigest(file)
         assertTrue(Files.exists(file), "starter created on true first run")
         assertTrue(loaded.digest.isNotEmpty())
+    }
+
+    // DR-66 redo (codex replay): the no-concurrent-clobber invariant, pinned on the production
+    // path. The seam plants a foreign topology AFTER the proven-absence read and BEFORE the
+    // claim, then delegates to the real ExclusiveStarterWrite — which must LOSE, and the
+    // winner's bytes must be what gets loaded. A truncating claim (the CREATE_NEW-removal
+    // mutant) overwrites the winner and reds both assertions.
+    @Test
+    fun `a concurrent creator between proven absence and the claim wins - DR-66`(@TempDir tmp: Path) {
+        val file = tmp.resolve("cfg").resolve("splice.toml")
+        val foreign = "[daemon]\ncontrol_port = 4242\n"
+        val interleaved = splice.app.StarterWrite { path, starter ->
+            Files.writeString(path, foreign)
+            splice.app.ExclusiveStarterWrite.claim(path, starter)
+        }
+
+        val loaded = TopologyLoader.loadOrMaterializeWithDigest(file, interleaved)
+
+        assertEquals(foreign, Files.readString(file), "the winner's file survives the claim")
+        val foreignDigest = java.security.MessageDigest.getInstance("SHA-256")
+            .digest(foreign.toByteArray()).joinToString("") { "%02x".format(it) }
+        assertEquals(foreignDigest, loaded.digest, "the winner's bytes are what got loaded back")
     }
 }

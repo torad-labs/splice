@@ -19,6 +19,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
+import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import java.util.Base64
 
@@ -40,8 +41,12 @@ public object ReasoningReplay {
 
     /** Responses `reasoning` output item -> base64 envelope for a redacted_thinking block. */
     public fun encodeReasoningEnvelope(item: JsonObject): String? {
-        val id = (item[FIELD_ID] as? JsonPrimitive)?.content ?: return null
-        val encrypted = (item[FIELD_ENCRYPTED] as? JsonPrimitive)?.content ?: return null
+        // DR-76: JsonNull IS a JsonPrimitive whose .content is the literal "null" — the cast read
+        // minted an envelope whose ciphertext was those four bytes. JsonScalars makes JSON-null
+        // and absent the same no-envelope answer (empty joins them: decode drops it anyway, and
+        // the Node source's falsy check never encoded either).
+        val id = JsonScalars.strOrEmpty(item[FIELD_ID]).ifEmpty { return null }
+        val encrypted = JsonScalars.strOrEmpty(item[FIELD_ENCRYPTED]).ifEmpty { return null }
         val summary = item[FIELD_SUMMARY] as? JsonArray
         val envelope = buildJsonObject {
             put(FIELD_TAG, REASONING_ENVELOPE_TAG)
@@ -70,8 +75,10 @@ public object ReasoningReplay {
         val tagOk = (parsed?.get(FIELD_TAG) as? JsonPrimitive)?.content == REASONING_ENVELOPE_TAG
         val versionOk = (parsed?.get(FIELD_VERSION) as? JsonPrimitive)?.content == REASONING_ENVELOPE_VERSION.toString()
         val item = if (tagOk && versionOk) parsed[FIELD_ITEM] as? JsonObject else null
-        val id = (item?.get(FIELD_ID) as? JsonPrimitive)?.content
-        val encrypted = (item?.get(FIELD_ENCRYPTED) as? JsonPrimitive)?.content
+        // DR-76: same JsonNull hazard as encode — a null-carrying envelope must be dropped, not
+        // decoded into an item whose ciphertext is the literal string "null".
+        val id = JsonScalars.str(item?.get(FIELD_ID))
+        val encrypted = JsonScalars.str(item?.get(FIELD_ENCRYPTED))
         if (id.isNullOrEmpty() || encrypted.isNullOrEmpty()) {
             // CMP-002: keep the drop (a foreign/garbled payload must still pass through as null, not
             // throw) but stop it being silent — a dropped block is prior reasoning vanishing from the
@@ -88,7 +95,7 @@ public object ReasoningReplay {
             put("type", "reasoning")
             put(FIELD_ID, id)
             put(FIELD_ENCRYPTED, encrypted)
-            put(FIELD_SUMMARY, (item[FIELD_SUMMARY] as? JsonArray) ?: JsonArray(emptyList()))
+            put(FIELD_SUMMARY, (item?.get(FIELD_SUMMARY) as? JsonArray) ?: JsonArray(emptyList()))
         }
     }
 }

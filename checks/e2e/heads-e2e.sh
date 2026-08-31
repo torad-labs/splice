@@ -70,7 +70,9 @@ skip()  { SKIP+=("$1: $2"); note "  - $1 SKIP — $2"; }
 # RequestBuilder produced). Until that lands, this records what IS observable client-side and marks
 # contract_bound=false. See gateway/CONTRACT.md for the tap + the enforcement it unlocks. This makes
 # the receipt file + emission point real, not the binding — so wiring the tap is a localized change.
-RECEIPT_DIR="$ROOT/checks/e2e/receipts"
+# DR-111: E2E_RECEIPT_DIR redirects emission for harness selftests — a loopback run against a
+# real head KEY must never fabricate that head's in-repo receipt (the binding would grade fakes).
+RECEIPT_DIR="${E2E_RECEIPT_DIR:-$ROOT/checks/e2e/receipts}"
 emit_receipt() { # key model http_status
   mkdir -p "$RECEIPT_DIR"
   cat > "$RECEIPT_DIR/$1.json" <<JSON
@@ -83,7 +85,7 @@ emit_receipt() { # key model http_status
   "note": "upstream-request-bytes tap not wired; sha256(builderOutput)==receipt.hash inactive — see gateway/CONTRACT.md"
 }
 JSON
-  note "    receipt: checks/e2e/receipts/$1.json (contract_bound=false — see gateway/CONTRACT.md)"
+  note "    receipt: $RECEIPT_DIR/$1.json (contract_bound=false — see gateway/CONTRACT.md)"
 }
 
 # ── preflight ────────────────────────────────────────────────────────────────

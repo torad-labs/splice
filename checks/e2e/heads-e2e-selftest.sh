@@ -22,6 +22,12 @@ mkdir -p "$STATE"
 MGMT="mgmt-key-for-selftest-32bytes!!"
 printf '%s' "$MGMT" > "$STATE/mgmt-key"
 
+# DR-111: the loopback head key deliberately matches the real head in splice.example.toml, so an
+# unredirected tier-1 pass would FABRICATE the real head's receipt in-repo. Snapshot now, assert
+# untouched at the end; every harness invocation below redirects via E2E_RECEIPT_DIR.
+REPO_RECEIPT="$ROOT/checks/e2e/receipts/claude-splice.json"
+receipt_sha_before="$(sha256sum "$REPO_RECEIPT" 2>/dev/null || echo absent)"
+
 python3 "$LOOPBACK" --record "$tmp/rec.jsonl" --ready-file "$tmp/ready" --head-key claude-splice \
   --duplicate-stop-file "$tmp/duplicate-stop" --unknown-kind-head unknown-kind \
   --count-tokens-drop-file "$tmp/ct-drop" \
@@ -51,6 +57,7 @@ run_arm() { # name extra-env...
   env -u SPLICE_E2E_CLIENT_TOKEN \
     CLAUDEX_STATE_DIR="$STATE" \
     SPLICE_CONTROL_PORT="$CONTROL" \
+    E2E_RECEIPT_DIR="$tmp/receipts" \
     "$@" \
     bash "$HARNESS" --tier 1 --head claude-splice \
     >"$tmp/$name.out" 2>"$tmp/$name.err"
@@ -155,7 +162,7 @@ fi
 # ── selector: a requested key absent from discovery must fail, not report 0/0/0 success. ──
 : > "$tmp/rec.jsonl"
 if env -u SPLICE_E2E_CLIENT_TOKEN \
-  CLAUDEX_STATE_DIR="$STATE" SPLICE_CONTROL_PORT="$CONTROL" \
+  CLAUDEX_STATE_DIR="$STATE" SPLICE_CONTROL_PORT="$CONTROL" E2E_RECEIPT_DIR="$tmp/receipts" \
   bash "$HARNESS" --tier 1 --head absent-head >"$tmp/absent.out" 2>"$tmp/absent.err"; then
   err "absent --head selector must exit nonzero"
 elif grep -q "requested head 'absent-head' was not returned" "$tmp/absent.err"; then
@@ -176,7 +183,7 @@ fi
 # run exited 0 with the FATAL text scrolling past as decoration.
 : > "$tmp/rec.jsonl"
 if env -u SPLICE_E2E_CLIENT_TOKEN \
-  CLAUDEX_STATE_DIR="$STATE" SPLICE_CONTROL_PORT="$CONTROL" \
+  CLAUDEX_STATE_DIR="$STATE" SPLICE_CONTROL_PORT="$CONTROL" E2E_RECEIPT_DIR="$tmp/receipts" \
   bash "$HARNESS" --tier 1 --head unknown-kind >"$tmp/unknown.out" 2>"$tmp/unknown.err"; then
   err "unknown authKind must be FATAL (exit nonzero), not a SKIP"
   cat "$tmp/unknown.err"
@@ -202,7 +209,7 @@ printf '%s\n' \
   '{"ts":2000,"model":"healthy-model","outcome":"ok"}' \
   '{"ts":3000,"model":"broken-model","outcome":"http_500"}' \
   '{"ts":4000,"model":"healthy-model","outcome":"ok"}' > "$PERF"
-if env CLAUDEX_STATE_DIR="$STATE" SPLICE_CONTROL_PORT="$CONTROL" \
+if env CLAUDEX_STATE_DIR="$STATE" SPLICE_CONTROL_PORT="$CONTROL" E2E_RECEIPT_DIR="$tmp/receipts" \
   E2E_PERF_SINCE=0 E2E_PERF_WANT=1 \
   bash "$HARNESS" --tier perf-oracle --head claude-splice >"$tmp/perf-lie.out" 2>"$tmp/perf-lie.err"; then
   err "interleaved cross-model oks must not pardon a persistently failing model"
@@ -219,7 +226,7 @@ printf '%s\n' \
   '{"ts":1000,"model":"m","outcome":"http_500"}' \
   '{"ts":2000,"model":"m","outcome":"ok"}' \
   '{"ts":3000,"model":"m","outcome":"ok"}' > "$PERF"
-if env CLAUDEX_STATE_DIR="$STATE" SPLICE_CONTROL_PORT="$CONTROL" \
+if env CLAUDEX_STATE_DIR="$STATE" SPLICE_CONTROL_PORT="$CONTROL" E2E_RECEIPT_DIR="$tmp/receipts" \
   E2E_PERF_SINCE=0 E2E_PERF_WANT=2 \
   bash "$HARNESS" --tier perf-oracle --head claude-splice >"$tmp/perf-ok.out" 2>"$tmp/perf-ok.err"; then
   if grep -q "retried-then-ok: http_500x1" "$tmp/perf-ok.err"; then
@@ -260,7 +267,7 @@ if command -v tmux >/dev/null 2>&1; then
   printf '#!/bin/sh\necho "not logged in"\nsleep 60\n' > "$tmp/claude-splice"
   chmod +x "$tmp/claude-splice"
   if env -u SPLICE_E2E_CLIENT_TOKEN PATH="$tmp:$PATH" \
-      CLAUDEX_STATE_DIR="$STATE" SPLICE_CONTROL_PORT="$CONTROL" \
+      CLAUDEX_STATE_DIR="$STATE" SPLICE_CONTROL_PORT="$CONTROL" E2E_RECEIPT_DIR="$tmp/receipts" \
       bash "$HARNESS" --tier 2 --head claude-splice >"$tmp/tui-skip.out" 2>"$tmp/tui-skip.err"; then
     if grep -q "head not logged in" "$tmp/tui-skip.err"; then
       ok "tier-2 not-logged-in records a SKIP and the run completes"
@@ -277,8 +284,24 @@ else
   ok "tier-2 SKIP arm not run (no tmux on this box) — the DR-110 line is still gate-covered on boxes with tmux"
 fi
 
+# ── DR-111: the selftest must never fabricate the REAL head's e2e receipt. ──
+# Red on the unfixed harness: emit_receipt wrote loopback data (model claude-splice--claude-
+# haiku-4-5, a head no real run ever touched) into checks/e2e/receipts/claude-splice.json on
+# every gate run — when the 924 receipt binding activates it would grade against fabrications.
+receipt_sha_after="$(sha256sum "$REPO_RECEIPT" 2>/dev/null || echo absent)"
+if [ "$receipt_sha_before" = "$receipt_sha_after" ]; then
+  ok "repo receipts untouched by the selftest"
+else
+  err "selftest fabricated/overwrote $REPO_RECEIPT — receipt binding would grade loopback bytes"
+fi
+if [ -f "$tmp/receipts/claude-splice.json" ]; then
+  ok "tier-1 receipt emission intact (redirected to scratch)"
+else
+  err "no receipt landed in scratch — emission broke or E2E_RECEIPT_DIR was ignored"
+fi
+
 if [ "$fail" -eq 0 ]; then
-  echo "heads-e2e-selftest OK — skip stays off the head, fake token probes with the caller bearer, mgmt-key token is FATAL, unknown authKind is FATAL, perf recovery is model-scoped, transport failures and not-logged-in are per-head verdicts"
+  echo "heads-e2e-selftest OK — skip stays off the head, fake token probes with the caller bearer, mgmt-key token is FATAL, unknown authKind is FATAL, perf recovery is model-scoped, transport failures and not-logged-in are per-head verdicts, receipts stay real"
   exit 0
 fi
 echo "heads-e2e-selftest FAIL"

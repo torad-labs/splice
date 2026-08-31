@@ -24,6 +24,9 @@ import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.PosixFilePermissions
+import java.util.concurrent.CancellationException
+import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.CountDownLatch
 
 class LoginInterceptionWireTest {
 
@@ -32,6 +35,16 @@ class LoginInterceptionWireTest {
         tokenPattern = "sk-or-[A-Za-z0-9_-]{20,}",
         providerLabel = "OpenRouter",
     )
+
+    // A probe that always reports the dir CAN execute, so a write-stage fault test lands in
+    // writeHookScript instead of short-circuiting at the exec probe (which shares the chmod seam a
+    // chmod-failure test injects and would otherwise fail first — DR-8 redo-3 / codex catch).
+    private val passProbe = HookExecProbe { _, _ -> null }
+
+    // The stage is a unique createTempFile now ("$name.<random>.tmp"), so "no stranded stage" is a
+    // glob over the dir, not a fixed-name existence check that a random name passes vacuously.
+    private fun strayFiles(dir: Path, glob: String): List<String> =
+        Files.newDirectoryStream(dir, glob).use { stream -> stream.map { it.fileName.toString() } }
 
     private fun wire(
         configDir: Path,
@@ -110,8 +123,8 @@ class LoginInterceptionWireTest {
         val hooks = wire(tmp, loginCommand = "openrouter login", tokenCapture = capture, log = log)
 
         assertTrue(hooks.isNotEmpty(), "an ordinary dir must wire hooks, got $hooks")
-        assertFalse(
-            Files.exists(tmp.resolve(".splice-exec-probe.tmp")),
+        assertTrue(
+            strayFiles(tmp, ".splice-exec-probe.*").isEmpty(),
             "the probe file must be deleted after the exec attempt",
         )
     }
@@ -193,6 +206,7 @@ class LoginInterceptionWireTest {
                 tokenCapture = capture,
                 log = LogSink { },
                 chmod = { _, _ -> throw IOException("injected chmod failure") },
+                execProbe = passProbe,
             )
         }
         assertTrue(
@@ -225,6 +239,7 @@ class LoginInterceptionWireTest {
                 tokenCapture = capture,
                 log = LogSink { },
                 chmod = { _, _ -> throw IOException("injected chmod failure") },
+                execProbe = passProbe,
             )
         }
         assertEquals(
@@ -232,8 +247,8 @@ class LoginInterceptionWireTest {
             Files.readString(existing),
             "a failed chmod must leave the pre-existing hook byte-identical, not truncated or deleted",
         )
-        assertFalse(
-            Files.exists(tmp.resolve("splice-key-capture-hook.sh.tmp")),
+        assertTrue(
+            strayFiles(tmp, "splice-key-capture-hook.sh.*.tmp").isEmpty(),
             "the staged copy must be cleaned up on failure",
         )
     }
@@ -260,6 +275,7 @@ class LoginInterceptionWireTest {
                     tokenCapture = capture,
                     log = LogSink { },
                     chmod = { _, _ -> throw thrown },
+                    execProbe = passProbe,
                 )
             }
             assertEquals(
@@ -267,8 +283,8 @@ class LoginInterceptionWireTest {
                 Files.readString(existing),
                 "${thrown::class.simpleName} must leave the pre-existing hook untouched",
             )
-            assertFalse(
-                Files.exists(tmp.resolve("splice-key-capture-hook.sh.tmp")),
+            assertTrue(
+                strayFiles(tmp, "splice-key-capture-hook.sh.*.tmp").isEmpty(),
                 "${thrown::class.simpleName} must not leave the staged copy behind",
             )
         }
@@ -291,7 +307,128 @@ class LoginInterceptionWireTest {
             PosixFilePermissions.toString(Files.getPosixFilePermissions(target)),
             "the published hook must carry the staged copy's proven mode",
         )
-        assertFalse(Files.exists(tmp.resolve("splice-key-capture-hook.sh.tmp")))
+        assertTrue(strayFiles(tmp, "splice-key-capture-hook.sh.*.tmp").isEmpty())
+    }
+
+    // DR-31 (codex): a MOVE failure — here the publish target pre-exists as a NON-EMPTY directory
+    // that REPLACE_EXISTING cannot atomically swap — must clean the stage and fail the capture
+    // launch, the same fail-closed contract as a chmod failure. Exercised past the exec probe so it
+    // lands in writeHookScript's move, not the probe short-circuit.
+    @Test
+    fun `a capture hook whose atomic move fails cleans the stage and fails the launch`(@TempDir tmp: Path) {
+        val blocker = tmp.resolve("splice-key-capture-hook.sh")
+        Files.createDirectory(blocker)
+        Files.writeString(blocker.resolve("occupant"), "x") // non-empty: the atomic move cannot replace it
+
+        assertThrows<IOException> {
+            wire(tmp, loginCommand = "", tokenCapture = capture, log = mutableListOf(), execProbe = passProbe)
+        }
+        assertTrue(
+            strayFiles(tmp, "splice-key-capture-hook.sh.*.tmp").isEmpty(),
+            "a move failure must not strand the staged copy",
+        )
+    }
+
+    // DR-31 (codex): an interrupt/cancellation mid-wire — modeled through the chmod seam throwing
+    // CancellationException, which Cancellables.runCatchingCancellable deliberately does NOT catch —
+    // must still run the finally cleanup AND propagate the cancellation, never swallow it into an
+    // IOException nor strand the stage.
+    @Test
+    fun `a cancellation during staging propagates and still cleans the stage`(@TempDir tmp: Path) {
+        assertThrows<CancellationException> {
+            LoginInterception.wire(
+                configDir = tmp,
+                loginCommand = "",
+                signInLabel = "OpenRouter",
+                globalCommands = null,
+                viaBrowser = false,
+                tokenCapture = capture,
+                log = LogSink { },
+                chmod = { _, _ -> throw CancellationException("cancelled mid-wire") },
+                execProbe = passProbe,
+            )
+        }
+        assertTrue(
+            strayFiles(tmp, "splice-key-capture-hook.sh.*.tmp").isEmpty(),
+            "cancellation must not strand the staged copy",
+        )
+    }
+
+    // DR-31 (codex): two launches writing the capture hook into ONE config dir must not race through
+    // a shared stage. With the old fixed "$name.tmp", one writer's move consumed the other's stage
+    // (the loser's move hit NoSuchFile) or published a half-written body. A unique per-writer stage
+    // makes both moves independent: neither writer fails and the published hook is always one
+    // writer's COMPLETE body. A barrier over many rounds makes the old shared-name race reproduce.
+    @Test
+    fun `concurrent writers of one capture hook never race through a shared stage`(@TempDir tmp: Path) {
+        val hookPath = tmp.resolve("splice-key-capture-hook.sh")
+        val expected = LoginHookScripts.captureHookScript(capture)
+        val failures = ConcurrentLinkedQueue<Throwable>()
+        repeat(64) { round ->
+            val start = CountDownLatch(1)
+            val done = CountDownLatch(2)
+            repeat(2) {
+                Thread {
+                    start.await()
+                    try {
+                        wire(
+                            tmp,
+                            loginCommand = "",
+                            tokenCapture = capture,
+                            log = mutableListOf(),
+                            execProbe = passProbe,
+                        )
+                    } catch (e: Throwable) {
+                        failures += e
+                    } finally {
+                        done.countDown()
+                    }
+                }.start()
+            }
+            start.countDown()
+            done.await()
+            assertEquals(expected, Files.readString(hookPath), "round $round published a torn body")
+            assertTrue(
+                strayFiles(tmp, "splice-key-capture-hook.sh.*.tmp").isEmpty(),
+                "round $round stranded a stage",
+            )
+        }
+        assertTrue(failures.isEmpty(), "no writer may fail on a unique stage: $failures")
+    }
+
+    // DR-8 SECURITY (codex): the OLD fixed "$name.tmp" was a predictable path a local peer could
+    // pre-plant as a symlink to a victim file — Files.writeString FOLLOWS the symlink and clobbers
+    // the victim. A unique createTempFile stage never lands on the pre-planted name, so the victim
+    // survives. RED on the fixed-name stage (victim overwritten with the hook body).
+    @Test
+    fun `a pre-planted symlink at the stage path cannot redirect the write to a victim`(@TempDir tmp: Path) {
+        val victim = tmp.resolve("victim")
+        val precious = "PRECIOUS — must not be overwritten\n"
+        Files.writeString(victim, precious)
+        Files.createSymbolicLink(tmp.resolve("splice-key-capture-hook.sh.tmp"), victim)
+
+        wire(tmp, loginCommand = "", tokenCapture = capture, log = mutableListOf(), execProbe = passProbe)
+
+        assertEquals(precious, Files.readString(victim), "the write must not have followed the pre-planted symlink")
+    }
+
+    // DR-8 SECURITY (codex): the SAME symlink-follow hazard on the exec probe's own fixed
+    // ".splice-exec-probe.tmp". The real probe (createTempFile) must leave a pre-planted victim
+    // untouched. RED on a fixed-name probe (the probe's write clobbers the victim).
+    @Test
+    fun `a pre-planted symlink at the probe path cannot redirect the probe write to a victim`(@TempDir tmp: Path) {
+        val victim = tmp.resolve("victim")
+        val precious = "PRECIOUS — must not be overwritten\n"
+        Files.writeString(victim, precious)
+        Files.createSymbolicLink(tmp.resolve(".splice-exec-probe.tmp"), victim)
+
+        wire(tmp, loginCommand = "openrouter login", tokenCapture = null, log = mutableListOf())
+
+        assertEquals(
+            precious,
+            Files.readString(victim),
+            "the probe write must not have followed the pre-planted symlink",
+        )
     }
 
     @Test

@@ -101,7 +101,13 @@ public data class ModelCatalog(
         val fallback = defaultOverride?.takeIf { it > 0 } ?: defaultContextWindow
         if (model.isNullOrEmpty()) return fallback
         val id = stripSuffixes(model)
+        // An UNDECLARED suffixed variant ("grok-4.6[1m]" over rows grok-4.6 + grok-4.6[500k])
+        // resolves to the stripped id's OWN row, not through exactWindows — that map collapses
+        // colliding rows by associate-last-wins, so the undeclared tier's denominator moved with
+        // fixture declaration order (DR-24 redo). exactWindows still answers a bare id declared
+        // only via suffixed rows (k3 <- k3[1m]), where no raw row exists to prefer.
         return rawWindows[unwrap(model)]
+            ?: rawWindows[id]
             ?: exactWindows[id]
             ?: windowRules.firstOrNull { id.startsWith(it.prefix) }?.contextWindow
             ?: fallback

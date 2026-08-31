@@ -11,8 +11,17 @@ ASSETS=(
   bom.cdx.json dependency-licenses.json
 )
 for asset in "${ASSETS[@]}" sha256sums.txt; do
-  [ -f "$DIST/$asset" ] || { echo "release accept: missing $DIST/$asset" >&2; exit 1; }
+  # DR-25 redo (codex catch, 2026-08-31): -f accepted zero-byte artifacts whose checksums were
+  # computed AFTER truncation — sha256sum -c cannot defend a staged-empty file. Non-empty is the
+  # floor for every published artifact.
+  [ -s "$DIST/$asset" ] || { echo "release accept: missing or EMPTY $DIST/$asset" >&2; exit 1; }
 done
+# Semantic floor for the one pure-prose artifact: PROVENANCE must actually be the provenance
+# document, not any non-empty placeholder.
+head -1 "$DIST/PROVENANCE.md" | grep -q "^# Provenance" || {
+  echo "release accept: PROVENANCE.md does not open with the provenance header" >&2
+  exit 1
+}
 
 jar_version="$(java -jar "$DIST/splice.jar" version)"
 jar_version="${jar_version#splice }"

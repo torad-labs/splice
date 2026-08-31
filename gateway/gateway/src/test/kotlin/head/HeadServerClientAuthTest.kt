@@ -344,6 +344,54 @@ class HeadServerClientAuthTest {
         assertEquals(before, upstream.requests.size, "splice's own key must never reach the vendor")
     }
 
+    // Third DR-30 redo (codex adversarial verdict, 2026-08-31): whitespace tokens are not the only
+    // syntax a downstream parser extracts credentials from. RFC 7235 auth-params delimit with "=",
+    // DQUOTE and "," — so `Digest response=<key>` split on whitespace alone yields no token equal
+    // to the key, passed the guard, and the raw header (key included) forwarded verbatim. The
+    // split is the full delimiter class now; the mgmt key is splice-authored hex, so a delimiter
+    // can never occur INSIDE the key and the class split can surface it but never break it.
+
+    @Test
+    fun `an auth-param spelling of the key is refused - Digest response equals key`() {
+        val port = startHead(forwardClientAuth = true)
+        val before = upstream.requests.size
+        val (status, body) = turn(port, mapOf("Authorization" to "Digest response=$MGMT_KEY"))
+        assertEquals(HttpStatusCode.Unauthorized, status)
+        assertTrue(body.contains("management key"), body)
+        assertEquals(before, upstream.requests.size, "splice's own key must never reach the vendor")
+    }
+
+    @Test
+    fun `a quoted auth-param spelling of the key is refused`() {
+        val port = startHead(forwardClientAuth = true)
+        val before = upstream.requests.size
+        val (status, _) = turn(port, mapOf("Authorization" to "Digest response=\"$MGMT_KEY\""))
+        assertEquals(HttpStatusCode.Unauthorized, status)
+        assertEquals(before, upstream.requests.size, "splice's own key must never reach the vendor")
+    }
+
+    @Test
+    fun `a comma-delimited auth-param list carrying the key is refused`() {
+        val port = startHead(forwardClientAuth = true)
+        val before = upstream.requests.size
+        val (status, _) = turn(port, mapOf("Authorization" to "Digest realm=proxy,response=$MGMT_KEY,qop=auth"))
+        assertEquals(HttpStatusCode.Unauthorized, status)
+        assertEquals(before, upstream.requests.size, "splice's own key must never reach the vendor")
+    }
+
+    @Test
+    fun `a delimiter-rich credential that is NOT the key still forwards verbatim`() {
+        // The widened split must not over-refuse: a legitimate auth-param header with the same
+        // shape and a different credential rides upstream untouched, byte-for-byte.
+        val port = startHead(forwardClientAuth = true)
+        val before = upstream.requests.size
+        val header = "Digest username=\"alice\", response=caller-own-digest, qop=auth"
+        val (status, _) = turn(port, mapOf("Authorization" to header))
+        assertEquals(HttpStatusCode.OK, status)
+        assertEquals(before + 1, upstream.requests.size, "one turn must produce one upstream request")
+        assertEquals(listOf(header), upstream.requests[before]["authorization"].orEmpty())
+    }
+
     // ── the cell that was never built ─────────────────────────────────────────────────────────
     //
     // Bypass ON while splice STILL HOLDS a credential. Every case above ties the flag to the auth

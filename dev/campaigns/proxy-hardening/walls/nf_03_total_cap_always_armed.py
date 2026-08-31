@@ -124,12 +124,17 @@ def detect(watchdog_text: str | None, driver_text: str | None) -> list[str]:
         # unconditionally-executed val assignment (the live TurnOneDrive shape), and there must be
         # exactly ONE site, so a compliant decoy cannot vouch for a conditional real one. A reshaped
         # future call site reds fail-closed rather than passing unexamined.
+        # DR-35f (codex catch #4, 2026-08-31): the anchor pinned the CALLEE but not the ARGUMENTS —
+        # `launchTotalCap(self, if (pingClient) turnJob else Job())` compiled, matched the prefix,
+        # and armed the poller against a THROWAWAY Job on non-ping paths: breach cancelled nothing.
+        # The whole argument list is pinned to the live `(self, turnJob)` shape; any reshape reds.
         elif (len(re.findall(r"launchTotalCap\(", cap_sites)) != 1
-              or not re.search(r"^[ \t]*val\s+\w+\s*=\s*drive\.watchdog\.launchTotalCap\(",
+              or not re.search(r"^[ \t]*val\s+\w+\s*=\s*drive\.watchdog\.launchTotalCap\(self,\s*turnJob\)\s*$",
                                cap_sites, re.M)):
             problems.append("the launchTotalCap call site is not exactly one unconditional "
-                            "`val x = drive.watchdog.launchTotalCap(` statement — a conditional "
-                            "or indirect launch arms the whole-turn cap on only some paths")
+                            "`val x = drive.watchdog.launchTotalCap(self, turnJob)` statement — a "
+                            "conditional/indirect launch, or any TARGET other than the bare turnJob, "
+                            "arms the whole-turn cap on only some paths or against a throwaway job")
         else:
             # DR-35d (codex catch #2, 2026-08-31): the line anchor cannot see ENCLOSING control
             # flow — a multi-line `if (pingClient) { val armed = launchTotalCap(...); armed }`
@@ -205,6 +210,11 @@ DRV_TRY_RUN = DRV_OPEN + "\n val capPoller = drive.watchdog.launchTotalCap(self,
     "\n try {" + \
     "\n     roundRun.run(drive, self, turnJob)" + \
     "\n } finally { capPoller.cancel() }"
+# DR-35f: codex's fourth reproduced false green — an unconditional anchored val whose TARGET is
+# conditional: the poller runs on every path but cancels a throwaway Job() on non-ping paths.
+DRV_CONDITIONAL_TARGET = DRV_OPEN + \
+    "\n val capPoller = drive.watchdog.launchTotalCap(self, if (pingClient) turnJob else Job())" + \
+    "\n roundRun.run(drive, self, turnJob)"
 # DR-35e: codex's third reproduced false green — a compilable raw string carries the anchored
 # launch line while the live poller is an inert Job(). Every scan must run masked.
 DRV_STRING_DECOY = DRV_OPEN + '\n val fake = """' + \
@@ -238,6 +248,9 @@ def selftest() -> int:
     if not detect(WD_CLOSED, DRV_STRING_DECOY):
         fails.append("a raw-string decoy carrying the anchored launch line beside an inert Job() "
                      "poller must be RED — scans run on masked text (DR-35e)")
+    if not detect(WD_CLOSED, DRV_CONDITIONAL_TARGET):
+        fails.append("an unconditional launch whose TARGET is conditional (self, if (pingClient) "
+                     "turnJob else Job()) must be RED — the argument list is pinned (DR-35f)")
     if detect(WD_CLOSED, DRV_TRY_RUN):
         fails.append(f"the live shape (launch at ancestor scope, run inside try) must be GREEN — "
                      f"dominance is prefix, not equality; got {detect(WD_CLOSED, DRV_TRY_RUN)}")
@@ -251,9 +264,10 @@ def selftest() -> int:
             print("  " + f)
         return 1
     print("NF-03 SELFTEST OK — red on missing poller, missing launch site, launch-after-rounds "
-          "placement, conditional/decoyed/branch-nested arming, missing roundRun shape, missing "
-          "files, and launchIn shape change; green only when exactly one unconditional cap launch "
-          "scope-dominates and precedes the rounds AND idle keeps launchIn")
+          "placement, conditional/decoyed/branch-nested/conditional-target arming, missing "
+          "roundRun shape, missing files, and launchIn shape change; green only when exactly one "
+          "unconditional `launchTotalCap(self, turnJob)` scope-dominates and precedes the rounds "
+          "AND idle keeps launchIn")
     return 0
 
 

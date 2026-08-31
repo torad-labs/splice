@@ -28,7 +28,12 @@ internal class ClientAuth(
     private val responses: AdmissionResponses,
 ) {
     // Splits an Authorization value into scheme/credential/parameter tokens for the own-key check.
-    private val whitespaceRe = Regex("\\s+")
+    // The FULL RFC 7235 delimiter class, not just whitespace (third DR-30 redo): auth-params
+    // delimit with "=", DQUOTE and "," — `Digest response=<key>` hid the key from a whitespace
+    // split while the raw header still forwarded verbatim. ";" and "'" ride along for legacy
+    // scheme syntax. The mgmt key is splice-authored hex, so no delimiter can occur INSIDE it:
+    // this split can surface the key but never break it.
+    private val authDelimiterRe = Regex("[\\s,=;'\"]+")
 
     suspend fun authorize(call: ApplicationCall): Boolean {
         // A client-auth head has NO splice-held credential to protect: the mgmt key is what the
@@ -67,12 +72,14 @@ internal class ClientAuth(
      * a caller whose Authorization bearer is its own token could still ride the mgmt key upstream
      * in x-api-key. And the Authorization value is compared TOKEN-WISE, not as one string or one
      * parsed Bearer: `Bearer <key>`, a schemeless `<key>`, `Basic <key>`, or any other scheme all
-     * forward the raw header verbatim, so the key must not appear as ANY whitespace-separated
-     * token of it (second redo — the Basic spelling slipped the raw-equality check).
+     * forward the raw header verbatim, so the key must not appear as ANY token of it — under the
+     * full auth-param delimiter class, not just whitespace (second redo — the Basic spelling
+     * slipped the raw-equality check; third redo — `Digest response=<key>` slipped the
+     * whitespace-only split while the raw header still carried the key to the vendor).
      */
     private suspend fun allowUnlessOwnKey(call: ApplicationCall): Boolean {
         val forwardable =
-            call.request.headers[HttpHeaders.Authorization].orEmpty().split(whitespaceRe) +
+            call.request.headers[HttpHeaders.Authorization].orEmpty().split(authDelimiterRe) +
                 listOfNotNull(call.request.headers["x-api-key"])
         if (forwardable.none { matchesInferenceToken(it) }) return true
         deps.log(

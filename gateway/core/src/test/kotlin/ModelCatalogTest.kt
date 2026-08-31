@@ -268,24 +268,31 @@ class ModelCatalogTest {
         // catalog — passes the head's own-models gate, and Claude Code applies its /\[1m\]/i rule to
         // the raw string and uses 1e6 regardless of anything splice does. Left unscaled the session
         // runs toward 850k on a model xAI cuts off at 500k: one hard upstream failure, no warning.
-        // Scaling maps the client's 1e6 onto the stripped id's declared window instead.
-        val xai = ModelCatalog(
-            discoveryPrefix = "claude-grok--",
-            models = listOf(
-                ModelEntry(id = "grok-4.6", contextWindow = 256_000),
-                ModelEntry(id = "grok-4.6[500k]", contextWindow = 500_000),
-            ),
-            defaultContextWindow = 256_000,
-            pinnedModel = "grok-4.6",
+        // Scaling maps the client's 1e6 onto the stripped id's OWN row — the bare 256k cap here —
+        // never onto whichever colliding sibling was declared last: this arm's old 500k expectation
+        // was exactWindows' associate-last-wins leaking through an undeclared id (DR-24 redo), so
+        // the same fixture reversed moved the denominator. Both orders must agree on the bare row.
+        val rows = listOf(
+            ModelEntry(id = "grok-4.6", contextWindow = 256_000),
+            ModelEntry(id = "grok-4.6[500k]", contextWindow = 500_000),
         )
-        assertTrue(xai.contains("grok-4.6[1m]"), "the gate lets it through — that is the hazard")
-        assertEquals(
-            500_000L,
-            xai.contextWindowFor("grok-4.6[1m]"),
-            "pin the undeclared tier's real denominator before asserting its scale",
-        )
-        assertEquals(2.0, xai.usageScale("grok-4.6[1m]"), "1e6 client / 500k real => compact at 500k")
-        assertEquals(1_000_000L, xai.clientContextWindowFor("grok-4.6[1m]"), "what the client uses regardless")
+        for (models in listOf(rows, rows.reversed())) {
+            val order = "order ${models.map { it.id }}"
+            val xai = ModelCatalog(
+                discoveryPrefix = "claude-grok--",
+                models = models,
+                defaultContextWindow = 256_000,
+                pinnedModel = "grok-4.6",
+            )
+            assertTrue(xai.contains("grok-4.6[1m]"), "the gate lets it through — that is the hazard ($order)")
+            assertEquals(
+                256_000L,
+                xai.contextWindowFor("grok-4.6[1m]"),
+                "the undeclared tier's denominator is the bare row's own window ($order)",
+            )
+            assertEquals(3.90625, xai.usageScale("grok-4.6[1m]"), "1e6 client / 256k real ($order)")
+            assertEquals(1_000_000L, xai.clientContextWindowFor("grok-4.6[1m]"), "client's number regardless ($order)")
+        }
     }
 
     @Test

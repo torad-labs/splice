@@ -279,8 +279,16 @@ internal object LoginInterception {
      *  probe file proves exactly what the hook needs without executing any hook logic. EACCES from
      *  a noexec mount surfaces here as ProcessBuilder's IOException — the codex /run/lock repro. */
     private fun probeExecutability(dir: Path, chmod: HookChmod): Throwable? {
-        val probe = dir.resolve(".splice-exec-probe.tmp")
+        // DR-8 redo-3 (codex symlink catch): a FIXED ".splice-exec-probe.tmp" was a predictable
+        // path a local peer could pre-plant as a symlink (the write would follow it and clobber the
+        // victim) and a shared name two concurrent launches raced. createTempFile picks a random
+        // name and creates it with CREATE_NEW (O_EXCL), which refuses ANY pre-existing path —
+        // symlink or dangling symlink included — so the write can only land on the fresh regular
+        // file it just made. Creation runs INSIDE the try, so a creation failure returns as the
+        // probe's Throwable (fail-closed); the finally deletes only a probe that was created.
+        var probe: Path? = null
         return try {
+            probe = Files.createTempFile(dir, ".splice-exec-probe.", ".tmp")
             Files.writeString(probe, "#!/bin/sh\nexit 0\n")
             chmod(probe, PosixFilePermissions.fromString("rwx------"))
             val process = ProcessBuilder(probe.toString()).redirectErrorStream(true).start()
@@ -299,32 +307,44 @@ internal object LoginInterception {
         } catch (e: SecurityException) {
             e
         } finally {
-            Cancellables.runCatchingCancellable { Files.deleteIfExists(probe) }
+            probe?.let { p -> Cancellables.runCatchingCancellable { Files.deleteIfExists(p) } }
         }
     }
 
     private fun writeHookScript(configDir: Path, name: String, content: String, chmod: HookChmod): Path {
         val script = configDir.resolve(name)
-        val staged = configDir.resolve("$name.tmp")
-        Files.writeString(staged, content)
-        val chmodFailure = try {
-            Cancellables.runCatchingCancellable {
-                chmod(staged, PosixFilePermissions.fromString("rwx------"))
-            }.exceptionOrNull()
-        } catch (e: UnsupportedOperationException) {
-            e
-        } catch (e: SecurityException) {
-            e
+        // DR-8/DR-31 redo (codex): a FIXED "$name.tmp" stage was a predictable path (symlink
+        // pre-plant → the write clobbers a victim) AND a shared name two concurrent launches raced
+        // (A's move published B's body). createTempFile picks a unique random name and creates it
+        // with CREATE_NEW (O_EXCL) in the SAME dir, so each launch owns its own stage and the write
+        // cannot follow a pre-existing symlink. The finally removes the stage on EVERY exit that
+        // did not consume it by move — write failure, chmod failure, an interrupt/cancellation
+        // mid-write — so no ".tmp" is ever stranded; the live hook is untouched until move succeeds.
+        val staged = Files.createTempFile(configDir, "$name.", ".tmp")
+        var moved = false
+        try {
+            Files.writeString(staged, content)
+            val chmodFailure = try {
+                Cancellables.runCatchingCancellable {
+                    chmod(staged, PosixFilePermissions.fromString("rwx------"))
+                }.exceptionOrNull()
+            } catch (e: UnsupportedOperationException) {
+                e
+            } catch (e: SecurityException) {
+                e
+            }
+            if (chmodFailure != null) {
+                throw IOException(
+                    "$script: chmod rwx------ failed on the staged copy (${chmodFailure.message}) — " +
+                        "staged file deleted, any existing hook left untouched",
+                )
+            }
+            Files.move(staged, script, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            moved = true
+            return script
+        } finally {
+            if (!moved) Cancellables.runCatchingCancellable { Files.deleteIfExists(staged) }
         }
-        if (chmodFailure != null) {
-            Files.deleteIfExists(staged)
-            throw IOException(
-                "$script: chmod rwx------ failed on the staged copy (${chmodFailure.message}) — " +
-                    "staged file deleted, any existing hook left untouched",
-            )
-        }
-        Files.move(staged, script, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-        return script
     }
 
     private fun hookEntry(script: Path, timeoutSeconds: Int): JsonObject = buildJsonObject {

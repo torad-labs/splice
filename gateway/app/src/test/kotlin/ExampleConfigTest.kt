@@ -126,6 +126,36 @@ class ExampleConfigTest {
         }
     }
 
+    // DR-24 redo: the shipped grok windows were not source-wired — mutating the example's grok-4.6
+    // row 500000->400000 left every suite green, because the head-level context_window override
+    // replaces the provider rows inside catalogFor and nothing pinned either number. Expectations
+    // here are the DOCUMENTED xAI values (docs.x.ai, quoted beside the rows in the example file),
+    // asserted against the real parse -> catalogFor path, so a silent edit to any shipped window —
+    // provider row, head override, or the roster itself — fails by name. The [1m] legs pin the
+    // production undeclared-tier spelling from the DR-24 counterexample on the same real catalog.
+    @Test
+    fun `example grok windows carry the documented xAI values through the real catalog`() {
+        val topology = TopologyLoader.parse(exampleToml())
+        val head = topology.heads.getValue("claude-grok")
+        val xai = topology.providers.getValue(head.provider)
+        assertEquals(
+            mapOf(
+                "grok-4.6" to 500_000L,
+                "grok-4.5" to 500_000L,
+                "grok-4.3" to 1_000_000L,
+                "grok-build-latest" to 256_000L,
+            ),
+            xai.models.associate { it.id to it.contextWindow },
+            "every declared provider row, exactly the docs.x.ai numbers, none extra",
+        )
+        assertEquals(500_000L, head.contextWindow, "the head override agrees with the grok-4.6 row it replaces")
+        val catalog = xai.catalogFor(head)
+        assertEquals(500_000L, catalog.contextWindowFor("grok-4.6"))
+        assertEquals(500_000L, catalog.contextWindowFor("grok-4.6[1m]"), "undeclared tier lands on the real ceiling")
+        assertEquals(2.0, catalog.usageScale("grok-4.6[1m]"), "client 1e6 / real 500k")
+        assertEquals(1_000_000L, catalog.clientContextWindowFor("grok-4.6[1m]"))
+    }
+
     // DR-44b: ktoml unions duplicate keys instead of rejecting them (TOML spec: duplicates are an
     // error), so a stale second `models = [...]` line kept retired models in the picker with
     // nothing red anywhere. The pre-decode guard makes it loud and names the section.

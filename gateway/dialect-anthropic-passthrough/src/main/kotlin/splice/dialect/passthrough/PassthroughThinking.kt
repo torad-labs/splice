@@ -50,12 +50,15 @@ internal class PassthroughThinking(
         effort: String,
     ) {
         val thinking = typed.thinking ?: return // absent -> omit both keys
-        if (thinking.disabled) return // disabled -> OMIT thinking (never send type:"disabled")
         if (!quirks.mapThinkingToAdaptive) {
-            // Fallback: forward the raw thinking config verbatim (cache_control scrubbed).
+            // Neutral surface: forward the raw thinking config verbatim (cache_control scrubbed) —
+            // INCLUDING an explicit type:"disabled" (DR-120). Dropping the disable used to run
+            // first, so a vendor whose models default thinking ON silently ran thinking anyway
+            // (behavior AND cost change). Only the adaptive rewrite below owns omit-on-disabled.
             rawThinking?.let { sink.put(THINKING, cache.stripCacheControl(it)) }
             return
         }
+        if (thinking.disabled) return // disabled -> OMIT thinking (never send type:"disabled" to kimi)
         sink.put(
             THINKING,
             buildJsonObject {

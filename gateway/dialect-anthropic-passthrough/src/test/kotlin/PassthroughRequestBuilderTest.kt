@@ -443,6 +443,20 @@ class PassthroughRequestBuilderTest {
     }
 
     @Test
+    fun `neutral forwards an explicit thinking disable instead of deleting it - DR-120`() {
+        val req = build(
+            """{"model":"m","messages":[{"role":"user","content":"go"}],
+                "thinking":{"type":"disabled"}}""",
+            quirks = NEUTRAL,
+        )
+        // A generic Anthropic-surface vendor whose models default thinking ON must receive the
+        // client's explicit disable; deleting the key silently re-enables thinking (behavior AND
+        // cost). Only the adaptive rewrite (kimi) owns the omit-on-disabled rule.
+        assertEquals("disabled", req["thinking"]!!.jsonObject["type"]?.jsonPrimitive?.content)
+        assertNull(req["output_config"])
+    }
+
+    @Test
     fun `the compaction directive is NOT a quirk — every passthrough head gets it`() {
         val req = build(
             """{"model":"m","system":"be brief","messages":[{"role":"user","content":"s"}]}""",

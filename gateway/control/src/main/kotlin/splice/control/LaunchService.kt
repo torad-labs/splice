@@ -4,7 +4,12 @@
 // version broke two things: (1) Claude Code fell back to Anthropic /login because it saw a custom
 // ANTHROPIC_API_KEY instead of an ANTHROPIC_AUTH_TOKEN bearer; (2) only the pinned model showed
 // because CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY wasn't set, so the /model picker never queried
-// /v1/models. Both are set here now, plus the alias slots, context sizing, and the loopback NO_PROXY.
+// /v1/models. The bearer stays. Discovery was RETIRED (2026-08-30): the materialized roster —
+// settings.json availableModels + .claude.json additionalModelOptionsCache, both from the head's
+// selected catalog — is the picker's ONE source now, all bare ids. Discovery re-served the same
+// models under wrapped /v1/models ids, so every picker row appeared twice, and a wrapped ACTIVE id
+// makes Claude Code ignore CLAUDE_CODE_MAX_CONTEXT_TOKENS (ab5ca6b: honored for unwrapped names
+// only), which per-head context windows depend on.
 package splice.control
 
 import splice.core.launch.ClaudeConfigMaterializer
@@ -84,8 +89,9 @@ public class LaunchService(
             // reach the head untouched, and this would override it.
             if (!spec.forwardClientAuth) put("ANTHROPIC_AUTH_TOKEN", spec.inferenceToken)
             put("CLAUDE_CONFIG_DIR", spec.configDir.toString())
-            // THE fix for "only one model shows": lets the /model picker list every /v1/models id.
-            put("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY", "1")
+            // NO gateway model discovery: the picker reads the materialized roster (settings.json
+            // availableModels + .claude.json additionalModelOptionsCache) — see the header for why
+            // the wrapped /v1/models spelling must never reach the picker.
             put("ANTHROPIC_MODEL", spec.pinnedModel)
             slots.forEach { (slot, model) ->
                 put("ANTHROPIC_DEFAULT_${slot}_MODEL", model)
@@ -123,28 +129,64 @@ public class LaunchService(
             .distinct()
             .joinToString(",")
 
-    // opus/sonnet/haiku/fable → Claude Code's tier env slots. Prefer Codex 5.6 tier names when the
-    // catalog carries them (sol=frontier, terra=mid, luna=fast); otherwise fall back to catalog
-    // order, with haiku still preferring a mini/fast id. Fable shares the frontier (opus) slot —
-    // positional at(2) used to park it on luna whenever sol/terra/luna were listed in that order.
+    // opus/sonnet/haiku/fable → Claude Code's tier env slots.
+    //
+    // A head that DECLARES slots gets EXACTLY its declared tiers and nothing else (2026-08-30):
+    // the positional scheme maps four slots onto catalog order, so a roster without sol/terra/luna
+    // names lands two models in four slots — the picker then shows the same names repeatedly, and
+    // the catalog's ORDER becomes load-bearing (splice.toml still carries a banner saying so).
+    // Filling the UNDECLARED tiers positionally just re-created the duplication on any roster
+    // smaller than four (a 2-model head still planted one model in 3 slots — codex redo verdict),
+    // so declaring anything retires positional order outright: a tier the head does not declare is
+    // not emitted, never pointed at an already-claimed model.
     private fun aliasSlots(spec: LaunchSpec): List<Pair<String, String>> {
         val ids = (listOf(spec.pinnedModel) + spec.availableModelIds).distinct()
-        fun at(i: Int) = ids.getOrElse(i) { spec.pinnedModel }
+        val declared = declaredSlots(spec, ids)
+        if (declared.isNotEmpty()) {
+            return listOf("OPUS", "SONNET", "HAIKU", "FABLE").mapNotNull { slot ->
+                declared[slot.lowercase()]?.let { model -> slot to model }
+            }
+        }
+        val fallback = positionalTiers(ids)
+        return listOf(
+            "OPUS" to fallback.frontier,
+            "SONNET" to fallback.mid,
+            "HAIKU" to fallback.fast,
+            // Fable shares the frontier (opus) slot — positional at(2) used to park it on luna
+            // whenever sol/terra/luna were listed in that order.
+            "FABLE" to fallback.frontier,
+        )
+    }
+
+    private data class PositionalTiers(val frontier: String, val mid: String, val fast: String)
+
+    /** The pre-slot heuristic, byte-identical for a head that declares nothing (every head that
+     *  existed before slots): Codex 5.6 tier names when the catalog carries them, else catalog
+     *  order, with haiku preferring a mini/fast id. [ids] starts with the pinned model, so
+     *  `ids.first()` is the never-empty floor. */
+    private fun positionalTiers(ids: List<String>): PositionalTiers {
         fun named(tier: String): String? =
             ids.firstOrNull { id ->
                 val tail = id.substringAfterLast('-', missingDelimiterValue = id)
                 tail.equals(tier, ignoreCase = true)
             }
-        val frontier = named("sol") ?: ids.first()
-        val mid = named("terra") ?: at(1)
-        val fast = named("luna")
-            ?: ids.firstOrNull { it.contains("mini", ignoreCase = true) || it.contains("fast", ignoreCase = true) }
-            ?: at(1)
-        return listOf(
-            "OPUS" to frontier,
-            "SONNET" to mid,
-            "HAIKU" to fast,
-            "FABLE" to frontier,
+
+        val miniOrFast = ids.firstOrNull {
+            it.contains("mini", ignoreCase = true) || it.contains("fast", ignoreCase = true)
+        }
+        return PositionalTiers(
+            frontier = named("sol") ?: ids.first(),
+            mid = named("terra") ?: ids.getOrNull(1) ?: ids.first(),
+            fast = named("luna") ?: miniOrFast ?: ids.getOrNull(1) ?: ids.first(),
         )
     }
+
+    /** slot name -> model id, keeping only slots this catalog actually offers. A declared slot
+     *  naming a model the head does not serve is ignored rather than planted, so a stale row in
+     *  splice.toml cannot point a tier at a model every turn would 400 on. */
+    private fun declaredSlots(spec: LaunchSpec, ids: List<String>): Map<String, String> =
+        spec.modelSlots
+            .filterKeys { it in ids }
+            .entries
+            .associate { (model, slot) -> slot.lowercase() to model }
 }

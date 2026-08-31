@@ -14,6 +14,13 @@ public data class LaunchSpec(
     val pinnedModel: String,
     val availableModelIds: List<String>,
     val modelLabels: Map<String, String>, // id -> display label (for the alias slot names)
+    /** id -> Claude tier slot ("opus"/"sonnet"/"haiku"/"fable"), declared per row in the head's
+     *  catalog. Empty = fall back to [LaunchService]'s positional heuristic, which is what every
+     *  catalog used before slots existed and is the reason splice.toml carries an "ORDER IS
+     *  LOAD-BEARING" banner. Non-empty = ONLY the declared tiers are emitted — positional order is
+     *  fully retired for that head, and an undeclared tier stays un-set rather than pointing a
+     *  second alias at an already-claimed model (the 2-model duplication this exists to remove). */
+    val modelSlots: Map<String, String> = emptyMap(),
     val contextWindow: Int,
     val modelOptionsCache: JsonElement, // the /model picker option list
     val statuslineCommand: String, // per-head statusline command (…/statusline/<head>)

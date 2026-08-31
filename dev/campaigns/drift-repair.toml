@@ -1249,3 +1249,16 @@ verify = "gradle :provider-spi:test --tests 'UpstreamFailureRetryWordingTest' gr
 # [2026-08-31] ATTEST-START: tree=676473e39d396165181f1c1034abf0be67450291 at=2026-08-31T12:12:34Z
 # [2026-08-31] 2026-08-31 landed: negation clause boundary now includes em/en dash + CR/LF and spans the full MAX_MESSAGE budget (was 120 chars); won't/will-not join the negators; 'retry' joins 'try again' as the invitation synonym (\b keeps retried/retries out); service[- ]is[- ]unavailable matches as a qualified outage; engine_overloaded + model_overloaded join RETRYABLE_CODES. UpstreamFailureRetryWordingTest 7 arms: 7/7 RED on pre-fix classifier (XML 12:14:00), green 7/7 post-fix; existing UpstreamFailureClassifierTest 18/18 green post-fix (DR-45/DR-10 postures preserved); restore cmp byte-identical. Matches codex's 6/6 probe.
 # [2026-08-31] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
+
+[[items]]
+id = "DR-72"
+phase = "repair"
+title = "Soak-caught live miss (2x, 06:51:07 + 07:31:16 2026-08-31): ChatGPT cyber_policy content-flag refusal classifies as authentication_error — authRe's bare word-prefix auth match hits 'authorized' in the vendor's invitation sentence ('To get authorized for security work, join the Trusted Access...'), so a deterministic policy refusal presents to Claude Code as an auth failure (re-login UX) while surrounding turns are ok"
+files = ["gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt", "gateway/provider-spi/src/test/kotlin/UpstreamFailurePolicyRefusalTest.kt"]
+status = "done"
+verify = "gradle :provider-spi:test --tests UpstreamFailurePolicyRefusalTest green; exact production message red (AUTHENTICATION) on pre-fix authRe"
+# [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T12:33:14Z
+# [2026-08-31] ATTEST-START: tree=9ef5bf177c31dfb5d50ff4826f36ecd8dbb5ead8 at=2026-08-31T12:33:14Z
+# [2026-08-31] ATTEST-START: tree=4125d350ab9513825cf9ae990d79ebdee49d7889 at=2026-08-31T12:33:14Z
+# [2026-08-31] 2026-08-31 landed: authRe rewritten to auth-FAILURE wordings only (authenticat*/unauthori[sz]*/not-authori[sz]ed/bare auth/auth error/authorization/token-expired family) — the standalone positive 'authorized' no longer matches. cyber_policy now falls through to non-transient api_error with the vendor's remedy text preserved; provenance holds (code=cyber_policy not in RETRYABLE_CODES, 'try rephrasing' does not match the retry invitation). UpstreamFailurePolicyRefusalTest: exact production message arm RED on pre-fix authRe (1/2 failures), 6-wording auth control green both ways; restore cmp byte-identical; full classifier suites 27/27 green. Soak provenance: two identical live failures 06:51:07 + 07:31:16.
+# [2026-08-31] ATTEST: scoped diffstat: .../kotlin/splice/spi/UpstreamFailureClassifier.kt | 10 ++++- | .../kotlin/UpstreamFailurePolicyRefusalTest.kt     | 43 ++++++++++++++++++++++ | 2 files changed, 52 insertions(+), 1 deletion(-); sidecar: .claude/ledger-diffs/DR-72.diff; off-scope: none

@@ -12,6 +12,7 @@ import splice.app.DaemonProbe
 import splice.app.TopologyLoader
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -82,7 +83,10 @@ internal class DoctorCommand {
         .getOrElse { e ->
             val genuinelyAbsent = e is java.nio.file.NoSuchFileException &&
                 !Files.exists(configPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
-            if (genuinelyAbsent) DoctorTopology.Absent else DoctorTopology.Broken(e.message ?: "unreadable")
+            // DR-92: parse text can quote the offending value, and splice.toml legally carries
+            // credential-like values (extra_headers Authorization on non-client topologies) —
+            // render() keeps fs-failure diagnostics and withholds parser excerpts.
+            if (genuinelyAbsent) DoctorTopology.Absent else DoctorTopology.Broken(SafeFailureText.render(e))
         }
 
     private fun renderSection(title: String, checks: List<DoctorCheck>) {

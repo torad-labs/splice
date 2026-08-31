@@ -218,7 +218,11 @@ class ArchitectureLawsTest {
 
     private companion object {
         val MODULE_PATH = Regex("\"(:[A-Za-z0-9._-]+)\"")
-        val PROJECT_DEPENDENCY = Regex("""project\("(:[A-Za-z0-9._-]+)"\)""")
+        // DR-112: match every Gradle spelling of a project edge — positional `project(":x")`, the
+        // named-arg form `project(path = ":x")`, whitespace variants, and a trailing
+        // `, configuration = ...` — not just the exact positional idiom. An edge written any other
+        // way was invisible to the direction law and the ratchet-staleness check alike.
+        val PROJECT_DEPENDENCY = Regex("""project\(\s*(?:path\s*=\s*)?"(:[A-Za-z0-9._-]+)"""")
         val BLOCK_COMMENT = Regex("""/\*.*?\*/""", RegexOption.DOT_MATCHES_ALL)
         val LINE_COMMENT = Regex("//[^\n]*")
 

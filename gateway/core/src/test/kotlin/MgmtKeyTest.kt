@@ -58,6 +58,69 @@ class MgmtKeyTest {
         }
     }
 
+    // DR-56: an access-INDETERMINATE key is not a first run. The operator's key sits behind a symlink
+    // whose target parent loses read (a permissions blip); Files.exists FOLLOWS the link and reads
+    // false, so ensure() used to skip the read block and mint QUIETLY — SH-12 demands a LOUD rotation.
+    // The NOFOLLOW gate sees the present link, enters the read, hits AccessDenied, and rotates loudly.
+    @Test
+    fun `an inaccessible-target key symlink rotates LOUDLY, not a silent first run - SH-12 DR-56`(@TempDir tmp: Path) {
+        val sp = paths(tmp)
+        Files.createDirectories(sp.mgmtKeyFile.parent)
+        val externalDir = Files.createDirectories(tmp.resolve("external"))
+        val target = Files.writeString(externalDir.resolve("mgmt.key"), "old-key\n")
+        Files.createSymbolicLink(sp.mgmtKeyFile, target)
+        Files.setPosixFilePermissions(externalDir, PosixFilePermissions.fromString("---------"))
+        val logs = mutableListOf<String>()
+        try {
+            val key = MgmtKey(sp, log = logs::add, clock = { 9L })
+            val minted = key.get()
+            assertEquals(64, minted.length)
+            assertNotEquals("old-key", minted)
+            assertEquals(1, logs.size, "an inaccessible key symlink must rotate loudly, not mint quietly: $logs")
+            assertTrue(logs[0].contains("every existing bearer"), "names the consequence: ${logs[0]}")
+            assertEquals(9L, key.mintedAtMs)
+        } finally {
+            Files.setPosixFilePermissions(externalDir, PosixFilePermissions.fromString("rwx------"))
+        }
+    }
+
+    // DR-56 (codex class law): the key file sits DIRECTLY under a dir whose search bit is gone — no
+    // symlink. Files.exists(path, NOFOLLOW) still reads false here (it can't stat through an
+    // untraversable parent), so a NOFOLLOW pre-gate mints SILENTLY. A direct read hits AccessDenied
+    // and classifies it LOUDLY before the inevitable mint-into-the-same-dir failure propagates.
+    @Test
+    fun `an inaccessible state dir warns LOUDLY before the mint fails - SH-12 DR-56`(@TempDir tmp: Path) {
+        val sp = paths(tmp)
+        Files.createDirectories(sp.mgmtKeyFile.parent)
+        Files.writeString(sp.mgmtKeyFile, "old-key\n")
+        Files.setPosixFilePermissions(sp.mgmtKeyFile.parent, PosixFilePermissions.fromString("---------"))
+        val logs = mutableListOf<String>()
+        try {
+            runCatching { MgmtKey(sp, log = logs::add, clock = { 11L }).get() }
+            assertEquals(1, logs.size, "an inaccessible state dir must warn before the mint fails: $logs")
+            assertTrue(logs[0].contains("every existing bearer"), "names the consequence: ${logs[0]}")
+        } finally {
+            Files.setPosixFilePermissions(sp.mgmtKeyFile.parent, PosixFilePermissions.fromString("rwx------"))
+        }
+    }
+
+    // DR-56 (codex class law): a DANGLING key symlink throws NoSuchFile on read, but the path entry
+    // exists — it is NOT a first run. exists(NOFOLLOW) disambiguates: present link => rotate loudly,
+    // not a quiet mint that would silently swap the operator's (repairable) symlink for a fresh key.
+    @Test
+    fun `a dangling key symlink rotates LOUDLY, not a silent first run - SH-12 DR-56`(@TempDir tmp: Path) {
+        val sp = paths(tmp)
+        Files.createDirectories(sp.mgmtKeyFile.parent)
+        Files.createSymbolicLink(sp.mgmtKeyFile, tmp.resolve("never-created.key"))
+        val logs = mutableListOf<String>()
+        val key = MgmtKey(sp, log = logs::add, clock = { 13L })
+        val minted = key.get()
+        assertEquals(64, minted.length)
+        assertEquals(1, logs.size, "a dangling key symlink is not a first run — the entry exists: $logs")
+        assertTrue(logs[0].contains("dangling symlink"), "classifies the dangling link: ${logs[0]}")
+        assertEquals(13L, key.mintedAtMs)
+    }
+
     @Test
     fun `blank existing file is unreadable state, not a valid key - SH-12`(@TempDir tmp: Path) {
         val sp = paths(tmp)

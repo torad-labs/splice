@@ -9,12 +9,13 @@
 package splice.core.config
 
 import splice.core.auth.BearerScheme
+import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
-import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.security.MessageDigest
 import java.security.SecureRandom
 
@@ -36,27 +37,26 @@ public class MgmtKey(
 
     private fun ensure(): String {
         val path = statePaths.mgmtKeyFile
-        // SH-12: absent = first run, mint quietly. PRESENT but unreadable/blank = a permissions
-        // change, a partial read, disk pressure — minting here revokes every existing bearer, so
-        // it must be LOUD, never a silent fallthrough.
-        var readFailure: String? = null
-        if (Files.exists(path)) {
-            try {
-                val existing = Files.readString(path).trim()
-                if (existing.isNotEmpty()) return existing
-                readFailure = "present but blank"
-            } catch (_: java.nio.file.AccessDeniedException) {
-                // Named by BRANCH, not by reflecting on the caught throwable's runtime class. These
-                // are the two IOException shapes a state-dir read actually produces — a permissions
-                // change and a file that vanished between exists() and readString() — and each
-                // clause spells the label it already knows it is standing in. Most specific first:
-                // both extend FileSystemException, which extends IOException.
-                readFailure = "unreadable (AccessDeniedException)"
-            } catch (_: java.nio.file.NoSuchFileException) {
-                readFailure = "unreadable (NoSuchFileException)"
-            } catch (_: IOException) {
-                readFailure = "unreadable (IOException)"
-            }
+        // SH-12: only a genuine first run mints QUIETLY. A present-but-blank file, a permissions
+        // change, an inaccessible parent dir, a dangling symlink — each revokes every existing bearer
+        // when we mint, so it must be LOUD. The absence test is a DIRECT READ, never Files.exists as
+        // a pre-gate: NoSuchFileException is the only positive evidence of absence, and even it is
+        // ambiguous — a DANGLING symlink throws NoSuch while the path entry still exists. So after a
+        // NoSuch we disambiguate with exists(NOFOLLOW): present => dangling link, unreadable-PRESENT,
+        // rotate loudly; truly absent => quiet mint. A bare/NOFOLLOW exists() PRE-gate can't do this:
+        // it reads false for an untraversable parent too and would mint SILENTLY on a permissions
+        // blip — the exact SH-12 bug (DR-56). Cancellables, not a catch-net: cancellation propagates,
+        // every other read failure is classified below.
+        val read = Cancellables.runCatchingCancellable { Files.readString(path).trim() }
+        val failure = read.exceptionOrNull()
+        val readFailure = when {
+            failure == null && read.getOrThrow().isNotEmpty() -> return read.getOrThrow()
+            failure == null -> "present but blank"
+            failure !is java.nio.file.NoSuchFileException -> "unreadable ($failure)"
+            // A read that vanished: genuine absence, OR a dangling symlink (entry present, target
+            // gone). Only the former is the quiet first run.
+            Files.exists(path, LinkOption.NOFOLLOW_LINKS) -> "dangling symlink ($failure)"
+            else -> null
         }
         if (readFailure != null) {
             log(

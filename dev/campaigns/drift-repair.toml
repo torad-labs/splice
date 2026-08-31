@@ -383,7 +383,7 @@ id = "DR-29"
 phase = "responses"
 title = "ReanchorRunner re-POSTs with ZERO backoff when a mid-stream SSE failure comes back as TurnOutcome.Failure: UpstreamClient.post carries retry/backoff only INSIDE one POST (HTTP status, transport, pre-client tear), so a stream that dies after first byte returns to the outer loop as Done and the next reanchor round fires immediately — outer rounds multiply the inner attempt budget (up to 3x) with no delay, maximizing upstream pressure exactly while the upstream is failing. Found by codex-splice during DR-2. Fix: backoff (or classifier retry-after) between reanchor rounds; test pins that a mid-stream failure round does not re-POST immediately. NEVER-BELOW-STATUS-QUO: on the final round the failure surfaces exactly as today."
 files = ["gateway/gateway/src/main/kotlin/splice/gateway/head/ReanchorRunner.kt"]
-status = "done"
+status = "verified"
 verify = "cd gateway && ./gradlew :gateway:test --console=plain"
 # [2026-08-30] CLAIM: owner=codex-splice at=2026-08-30T22:26:40Z
 # [2026-08-30] ATTEST-START: tree=4113ee07ebf15f9657b5a639c68a7f36efe08fca at=2026-08-30T22:26:40Z
@@ -438,7 +438,7 @@ id = "DR-32"
 phase = "walls"
 title = "Oracle regression net is never armed: cx_19_oracle_replay.py polices the expectations ledger + fixture sha256s but oracle:replay (hermetic jar-vs-pinned-mock, in package.json) is wired into NO gate leg, NO CI workflow, NO hook - a dialect regression breaking byte-parity with all 11 captured scenarios leaves gate.sh, CI and the campaign gate green. Fix: one gate.sh leg (run oracle replay -> npm run --silent oracle:replay) after the gradle leg; prove it can fail by mutating one fixture byte locally. Found by close-out wall lens (closeout/d-walls.md #1)."
 files = ["checks/gate.sh", "package.json"]
-status = "done"
+status = "verified"
 verify = "bash checks/gate.sh"
 # [2026-08-30] RESIDUAL found by claude gate: the armed leg is 11/11 standalone (cold-start repro included) but HARNESS-failed inside gate.sh (head boot budget 10s vs control 30s; post-clean shadowJar load). One-line fold: head waits use the default 120-try budget (replay.mjs:418, announced to codex). Leg design otherwise verified: both-direction pins + fail-closed no-pin refusal read in 12ef979/7235233 diffs.
 # [2026-08-30] RECEIPT ancestor-verified: 12ef979+7235233 on origin. Adversarial read: gate.sh runs oracle:replay as a leg; sanctioned rows pin BOTH directions (fixture deep-diff or pinned_upstream_sha256) and an unpinned sanction FAILS CLOSED ('refusing a one-direction-only verdict'). Leg proven armed in-gate: my gate run dr47d shows 11/11 in the ladder. Boot-budget residual found+fixed (7168fb1, noted above).
@@ -450,7 +450,7 @@ id = "DR-33"
 phase = "walls"
 title = "DaemonLogWiringTest test 4 asserts on its own local (val asDefault = DaemonLog::write at :83) - re-pointing any provider real default stays green, and the claimed signature in its comment is extinct (production is LogSink(DaemonLog::write) at ~21 sites). Only instance of the shape repo-wide. Fix: assert against the actual provider-construction defaults (reflectively or by exercising a provider built with defaults), correct the comment. Found by close-out wall lens (closeout/d-walls.md #2)."
 files = ["gateway/app/src/test/kotlin/DaemonLogWiringTest.kt"]
-status = "done"
+status = "verified"
 verify = "cd gateway && ./gradlew :app:test --tests 'DaemonLogWiringTest' --console=plain"
 # [2026-08-30] RECEIPT ancestor-verified: 510733e on origin. Adversarial read: self-local assert (DaemonLog::write into a local val) replaced by a REAL provider (ApiKeyAuthProvider, default log param) proving the unreadable-keyFile failure line lands in the DaemonLog-installed sink; main-source touch is comment-only, correcting the FALSE 'defaults to a no-op' claim. Exercises the nine-provider default through one real provider - the class of proof the item demanded.
 # [2026-08-30] Attribution unavailable: missing in_flight tree snapshot
@@ -461,7 +461,7 @@ id = "DR-34"
 phase = "walls"
 title = "Every wire-level ChatGPT-Account-ID claim is unenforceable: MockChatGptUpstream records only Authorization (:123-124), so the OpenAiResponsesTest no-account-header NAME, GrokProviderTest:140 and DaemonTest:137 comments assert nothing on the wire; adding the header on grok/openai or dropping it on the assembled codex head passes everything (CodexProviderTest:67/75 is unit-level extraHeaders only). GrokAuthProvider.kt:4 / OpenAiResponsesProvider.kt:2 guards are bare comments. Fix: capture the header in the mock + three one-line assertions (grok absent, openai absent, codex present). Found by close-out wall lens (closeout/d-walls.md #3)."
 files = ["gateway/gateway/src/testFixtures/kotlin/mock/MockChatGptUpstream.kt", "gateway/provider-grok/src/test/kotlin/grok/GrokProviderTest.kt", "gateway/app/src/test/kotlin/DaemonTest.kt", "gateway/provider-openai/src/test/kotlin/openai/OpenAiResponsesTest.kt"]
-status = "done"
+status = "verified"
 verify = "cd gateway && ./gradlew :gateway:test :provider-grok:test :app:test --console=plain"
 # [2026-08-30] FENCE-EDITED: files = ["gateway/gateway/src/testFixtures/kotlin/mock/MockChatGptUpstream.kt", "gateway/provider-grok/src/test/kotlin/grok/GrokProviderTest.kt", "gateway/app/src/test/kotlin/DaemonTest.kt"] -> files = ["gateway/gateway/src/testFixtures/kotlin/mock/MockChatGptUpstream.kt", "gateway/provider-grok/src/test/kotlin/grok/GrokProviderTest.kt", "gateway/app/src/test/kotlin/DaemonTest.kt", "gateway/provider-openai/src/test/kotlin/openai/OpenAiResponsesTest.kt"] (by=orchestrator implied; no flag)
 # [2026-08-30] 2026-08-30 fence widened on codex request: OpenAiResponsesTest.kt added - the named OpenAI absent-assertion belongs there.
@@ -486,7 +486,7 @@ id = "DR-36"
 phase = "responses"
 title = "ResponsesTurnState.blocks (ResponsesTurnState.kt:22) HashMap has ZERO removals and is invisible to the NF-06 capacity guard because ResponsesStreamTranslator.kt:75-79 never passes toolIndexCount - upstream-controlled per-round growth to OOM on the shared ~1G heap. Fix: pass the count into BufferCapacity.over (and evict on block close) so the existing guard sees it. Re-confirmed open at 9700877 by the close-out resource lens."
 files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnState.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesItemFold.kt", "gateway/dialect-openai-responses/src/test/kotlin/ResponsesStreamTranslatorTest.kt"]
-status = "done"
+status = "verified"
 verify = "cd gateway && ./gradlew :dialect-openai-responses:test --console=plain"
 # [2026-08-30] FENCE-EDITED: files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnState.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt"] -> files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnState.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesItemFold.kt", "gateway/dialect-openai-responses/src/test/kotlin/ResponsesStreamTranslatorTest.kt"] (by=orchestrator implied; no flag)
 # [2026-08-30] FENCE widened per codex request (2026-08-30 msg): close paths live in ResponsesItemFold.kt, NF-06 test class in ResponsesStreamTranslatorTest.kt - both verified to exist before widening.
@@ -499,7 +499,7 @@ id = "DR-37"
 phase = "chat"
 title = "Chat guard counts the WRONG maps: ChatToolCalls.kt:43 toolCount = max(indexCount, pendingTools.size), but explicit-index opens bypass toolIndexById (ChatToolFrame.kt:41) and pendingTools DRAINS on open - so toolBlocks/toolArgsByIndex/openedToolIds grow uncounted for the STANDARD OpenAI wire shape. Upstream-controlled growth the guard was built to stop. Fix: count the maps that actually grow. Found by close-out resource lens (closeout/c-resource.md R2)."
 files = ["gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatToolCalls.kt", "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatToolFrame.kt", "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt", "gateway/dialect-openai-chat/src/test/kotlin/ChatStreamTranslatorTest.kt"]
-status = "done"
+status = "verified"
 verify = "cd gateway && ./gradlew :dialect-openai-chat:test --console=plain"
 # [2026-08-30] FENCE-EDITED: files = ["gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatToolCalls.kt", "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatToolFrame.kt"] -> files = ["gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatToolCalls.kt", "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatToolFrame.kt", "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt", "gateway/dialect-openai-chat/src/test/kotlin/ChatStreamTranslatorTest.kt"] (by=orchestrator implied; no flag)
 # [2026-08-30] FENCE widened per codex (2026-08-30, two msgs): ChatStreamTranslatorTest.kt hosts the evidence-first standard-shape red tests (existing ChatRunawayGuardTest class); ChatStreamTranslator.kt because the corrected accessor covers pending+opened buffers (renamed bufferedArgsChars, guard comment kept honest). Both verified to exist. codex report: done, local commit 90f33fe. Red: exact explicit-index count + aggregate-args drained all input, ended ordinary truncated; XML 2/2. Green: exact pass + :dialect-openai-chat:test+detekt --rerun-tasks. Guard sums every retained index-map entry (saturated), O(1)-tracks pending+opened arg chars.
@@ -511,7 +511,7 @@ id = "DR-38"
 phase = "passthrough"
 title = "PassthroughStreamTranslator.kt:59 passes only 2 of 4 capacity args, so PassthroughBlockRegistry.blocks count is unguarded; and passthrough tool args on the stream:false path accumulate in CollectingBlocks.kt:72-74 with NO cap anywhere. Fix: pass the full capacity picture + cap the collecting path. Found by close-out resource lens (closeout/c-resource.md R3, likely the prior sweep 4th)."
 files = ["gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughStreamTranslator.kt", "gateway/gateway/src/main/kotlin/splice/gateway/wire/CollectingBlocks.kt", "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughBlockRegistry.kt", "gateway/dialect-anthropic-passthrough/src/test/kotlin/PassthroughStreamTranslatorTest.kt", "gateway/gateway/src/main/kotlin/splice/gateway/wire/CollectingTerminal.kt", "gateway/gateway/src/test/kotlin/CollectingTerminalTest.kt"]
-status = "done"
+status = "verified"
 verify = "cd gateway && ./gradlew :dialect-anthropic-passthrough:test :gateway:test --console=plain"
 # [2026-08-30] FENCE-EDITED: files = ["gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughStreamTranslator.kt", "gateway/gateway/src/main/kotlin/splice/gateway/wire/CollectingBlocks.kt"] -> files = ["gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughStreamTranslator.kt", "gateway/gateway/src/main/kotlin/splice/gateway/wire/CollectingBlocks.kt", "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughBlockRegistry.kt", "gateway/dialect-anthropic-passthrough/src/test/kotlin/PassthroughStreamTranslatorTest.kt", "gateway/gateway/src/main/kotlin/splice/gateway/wire/CollectingTerminal.kt", "gateway/gateway/src/test/kotlin/CollectingTerminalTest.kt"] (by=orchestrator implied; no flag)
 # [2026-08-30] FENCE widened per codex (2026-08-30): PassthroughBlockRegistry.kt owns block count + tool-arg char accounting, CollectingTerminal.kt emits honest capacity error before block parsing, plus both test hosts. All four verified to exist. codex report: done, local commit 6e846db. Red: exact stream registry-count + aggregate-open-tool-args ended ordinary truncated; stream:false aggregate valid-tool-input returned HTTP 200; XML 3 failures. Green: exact 3 pass + :dialect-anthropic-passthrough:test :gateway:test + both detekt fresh, Kimi goldens intact. Registry supplies all four guard dimensions; collector rejects aggregate tool input pre-parse with usage-preserving local API error.
@@ -561,7 +561,7 @@ id = "DR-42"
 phase = "topology"
 title = "MEDIUM: a braces-dropped models = [id, ...] inline-array typo hangs the daemon at boot in a ktoml infinite loop at 100 percent CPU with NO error (jstack: HeadModel serializer <-> TomlArrayDecoder; boot stderr discarded per JW-01 so the hang is silent). Pre-existing ktoml class but 8740afa adds the first inline-array-spelled key, making the typo likely. Fix: pre-validate the shape before ktoml sees it (or a boot watchdog naming the file+key), plus a red arm with a timeout. Lens: closeout/a-roster.md F1."
 files = ["gateway/app/src/main/kotlin/splice/app/TopologyLoader.kt", "gateway/app/src/test/kotlin/ExampleConfigTest.kt"]
-status = "done"
+status = "verified"
 verify = "cd gateway && ./gradlew :app:test --console=plain"
 # [2026-08-30] FENCE-EDITED: files = ["gateway/app/src/main/kotlin/splice/app/TopologyLoader.kt"] -> files = ["gateway/app/src/main/kotlin/splice/app/TopologyLoader.kt", "gateway/app/src/test/kotlin/ExampleConfigTest.kt"] (by=orchestrator implied; no flag)
 # [2026-08-30] FENCE widened per codex (2026-08-30): ExampleConfigTest.kt hosts the evidence arm (mutates shipped inline head roster + assertTimeoutPreemptively around parse). File verified to exist.
@@ -601,7 +601,7 @@ id = "DR-45"
 phase = "spi"
 title = "UpstreamFailureClassifier transientRe matches NEGATED text: do not try again contains try again, so a deterministic vendor rejection classifies transient and re-POSTs the full context. Fix: negative lookbehind or negation-aware guard + arm with the negated phrase. Reported by codex lens."
 files = ["gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt", "gateway/provider-spi/src/test/kotlin/UpstreamFailureClassifierTest.kt"]
-status = "done"
+status = "verified"
 verify = "cd gateway && ./gradlew :provider-spi:test --console=plain"
 # [2026-08-30] FENCE-EDITED: files = ["gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt"] -> files = ["gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt", "gateway/provider-spi/src/test/kotlin/UpstreamFailureClassifierTest.kt"] (by=orchestrator implied; no flag)
 # [2026-08-30] FENCE widened per codex (2026-08-30): UpstreamFailureClassifierTest.kt hosts the negated retry arm + independent transient-signature control. File verified to exist.

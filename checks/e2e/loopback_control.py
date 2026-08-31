@@ -44,11 +44,13 @@ class Loopback:
         head_key: str,
         head_port: int,
         duplicate_stop_file: pathlib.Path | None = None,
+        unknown_kind_head: str | None = None,
     ) -> None:
         self.record = record
         self.head_key = head_key
         self.head_port = head_port
         self.duplicate_stop_file = duplicate_stop_file
+        self.unknown_kind_head = unknown_kind_head
         self.lock = threading.Lock()
         self.record.write_text("")
 
@@ -74,13 +76,24 @@ def _handler(loop: Loopback, plane: str) -> type[BaseHTTPRequestHandler]:
                 self._json(200, {"ok": True})
                 return
             if plane == "control" and path == "/api/heads":
-                self._json(200, {"heads": [{
+                heads = [{
                     "key": loop.head_key,
                     "label": loop.head_key,
                     "port": loop.head_port,
                     "healthy": True,
                     "authKind": "client",
-                }]})
+                }]
+                # DR-49: a second head whose authKind the harness does not recognize — every
+                # other arm filters it out via --head, so only the FATAL arm ever selects it.
+                if loop.unknown_kind_head:
+                    heads.append({
+                        "key": loop.unknown_kind_head,
+                        "label": loop.unknown_kind_head,
+                        "port": loop.head_port,
+                        "healthy": True,
+                        "authKind": "mystery-kind",
+                    })
+                self._json(200, {"heads": heads})
                 return
             if plane == "head" and path == "/v1/models":
                 self._json(200, {"data": [{"id": f"{loop.head_key}--claude-haiku-4-5"}]})
@@ -124,6 +137,7 @@ def main() -> int:
     p.add_argument("--ready-file", required=True)
     p.add_argument("--head-key", default="claude-splice")
     p.add_argument("--duplicate-stop-file")
+    p.add_argument("--unknown-kind-head", help="advertise a second head with authKind mystery-kind")
     args = p.parse_args()
 
     # Bind the head first so /api/heads can advertise the real port. Handlers
@@ -133,7 +147,13 @@ def main() -> int:
     duplicate_stop_file = pathlib.Path(args.duplicate_stop_file) if args.duplicate_stop_file else None
     placeholder = Loopback(pathlib.Path(args.record), args.head_key, 0, duplicate_stop_file)
     head_srv = ThreadingHTTPServer(("127.0.0.1", 0), _handler(placeholder, "head"))
-    loop = Loopback(pathlib.Path(args.record), args.head_key, head_srv.server_address[1], duplicate_stop_file)
+    loop = Loopback(
+        pathlib.Path(args.record),
+        args.head_key,
+        head_srv.server_address[1],
+        duplicate_stop_file,
+        args.unknown_kind_head,
+    )
     head_srv.RequestHandlerClass = _handler(loop, "head")
     control_srv = ThreadingHTTPServer(("127.0.0.1", 0), _handler(loop, "control"))
 

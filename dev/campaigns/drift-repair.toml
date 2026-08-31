@@ -615,10 +615,15 @@ id = "DR-46"
 phase = "ws"
 title = "WS robustness batch (codex lens): (a) handshake binary anomaly BEFORE holder publication = anomaly no-op + no request(1), demand stalls - latch anomaly pre-publish; (b) WsConnectionPool all-busy overshoot never trims on release; (c) WsRoundDriver acquires the cold Flow before pre-try ensureStarted, so throw/cancel strands a busy lease."
 files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/WsUpstream.kt", "gateway/gateway/src/main/kotlin/splice/gateway/head/WsRoundDriver.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/WsConnectionFactory.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/WsConnectionPool.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/InboxListener.kt", "gateway/dialect-openai-responses/src/test/kotlin/WsUpstreamTest.kt", "gateway/gateway/src/test/kotlin/head/WsRoundDriverTest.kt"]
-status = "todo"
+status = "verified"
 verify = "cd gateway && ./gradlew :dialect-openai-responses:test :gateway:test --console=plain"
 # [2026-08-30] FENCE-EDITED: files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/WsUpstream.kt", "gateway/gateway/src/main/kotlin/splice/gateway/head/WsRoundDriver.kt"] -> files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/WsUpstream.kt", "gateway/gateway/src/main/kotlin/splice/gateway/head/WsRoundDriver.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/WsConnectionFactory.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/WsConnectionPool.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/InboxListener.kt", "gateway/dialect-openai-responses/src/test/kotlin/WsUpstreamTest.kt", "gateway/gateway/src/test/kotlin/head/WsRoundDriverTest.kt"] (by=orchestrator implied; no flag)
 # [2026-08-30] FENCE widened per codex post-inspection paths (2026-08-30): +WsConnectionFactory.kt +WsConnectionPool.kt +InboxListener.kt (production) +WsUpstreamTest.kt +WsRoundDriverTest.kt (evidence). All five verified to exist.
+# [2026-08-30] 2026-08-30 claude-splice adversarial verdict on 6a07798: three-round review. R1 diff-read verified factory latch (SC store-buffer pair, CAS-idempotent kill), onBinary request(1) re-arm (listener law), pool trim-on-release with exceptKey insertion guard (load-bearing: fresh conn is busy=false until acquire CAS), driver onEach start-inside-collection (old shape stranded busy lease when ensureStarted threw post-handoff pre-collection — flow never collected, onCompletion never ran). R2: THEIR reviewer caught a residual I missed — trim's idle-read raced acquire's out-of-lock busy CAS (victim could be killed mid-hand-out); fix CAS-reserves the victim under lock, firstOrNull short-circuit keeps reservation exactly-one. My note (a) adopted: factory null-returns on latched anomaly (no dead-entry registration, no connected-log lie). R3 pushed delta beyond review: one masked logKey diagnostic on the anomaly path — safe. XML: WsUpstreamTest 31/0, InboxListener 7/0, WsRoundDriverTest 4/0 --rerun-tasks.
+# [2026-08-30] VERDICT: outcome=accepted
+# [2026-08-30] CLAIM: owner=codex-splice at=2026-08-31T03:01:05Z
+# [2026-08-30] ATTEST-START: tree=54a7343023f726c5cb0228e87be615791271ebcb at=2026-08-31T03:01:05Z
+# [2026-08-30] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
 
 [[items]]
 id = "DR-47"
@@ -652,8 +657,10 @@ id = "DR-49"
 phase = "e2e"
 title = "heads-e2e harness batch (codex lens): (a) unknown authKind FATAL is neutered to SKIP by command substitution (subshell exit swallowed); (b) perf recovery check pairs unrelated failure,ok rows across heads/windows. Both are harness-lies-green shapes."
 files = ["checks/e2e/heads-e2e.sh"]
-status = "todo"
+status = "in_flight"
 verify = "bash -n checks/e2e/heads-e2e.sh"
+# [2026-08-30] CLAIM: owner=claude-splice at=2026-08-31T02:43:56Z
+# [2026-08-30] ATTEST-START: tree=f45006105974cd5a3278463af8fccc30e21cb23d at=2026-08-31T02:43:56Z
 
 [[items]]
 id = "DR-50"
@@ -675,9 +682,14 @@ verify = "bash checks/gate.sh"
 id = "DR-52"
 phase = "walls"
 title = "Wall scanner gaps (codex lens): config-guard scans .yml but not .yaml; the dispatcher wall misses import aliases. Both are silent-scope holes - a renamed file or aliased import walks past."
-files = ["checks/rule-routing.sh"]
-status = "todo"
-verify = "bash checks/rule-routing.sh"
+files = ["checks/config-guard.sh", ".rules/kotlin-splice/kt-no-hardcoded-dispatchers.yml", ".rules/rule-tests/kt-no-hardcoded-dispatchers-test.yml"]
+status = "in_flight"
+verify = "bash checks/config-guard.sh && npm run gate:rules"
+# [2026-08-30] FENCE-EDITED: files = ["checks/rule-routing.sh"] -> files = ["checks/config-guard.sh", ".rules/kotlin-splice/kt-no-hardcoded-dispatchers.yml", ".rules/rule-tests/kt-no-hardcoded-dispatchers-test.yml"] (by=orchestrator implied; no flag)
+# [2026-08-30] VERIFY-EDITED: verify = "bash checks/rule-routing.sh" -> verify = "bash checks/config-guard.sh && npm run gate:rules" (by=orchestrator implied; no flag)
+# [2026-08-30] 2026-08-30 claude-splice fence+verify widened per codex inspection, tree-verified before edit: rule-routing.sh:44 already counts yml+yaml (no semantic edit needed there — dropped from fence); config-guard.sh has zero yaml handling (the .yaml hole is real, lives there); both .rules targets exist. Verify uses gate:rules (runs ast-grep test incl. the vendored pack config) rather than bare ast-grep test.
+# [2026-08-30] CLAIM: owner=codex-splice at=2026-08-31T03:03:12Z
+# [2026-08-30] ATTEST-START: tree=facc22403c68890078bf6d0e19b3c250f07a36c6 at=2026-08-31T03:03:12Z
 
 [[items]]
 id = "DR-53"

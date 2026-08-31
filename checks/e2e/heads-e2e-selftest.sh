@@ -23,7 +23,8 @@ MGMT="mgmt-key-for-selftest-32bytes!!"
 printf '%s' "$MGMT" > "$STATE/mgmt-key"
 
 python3 "$LOOPBACK" --record "$tmp/rec.jsonl" --ready-file "$tmp/ready" --head-key claude-splice \
-  --duplicate-stop-file "$tmp/duplicate-stop" >"$tmp/loop.out" 2>"$tmp/loop.err" &
+  --duplicate-stop-file "$tmp/duplicate-stop" --unknown-kind-head unknown-kind \
+  >"$tmp/loop.out" 2>"$tmp/loop.err" &
 LOOP_PID=$!
 for _ in $(seq 1 50); do
   [ -f "$tmp/ready" ] && break
@@ -168,8 +169,72 @@ else
   ok "absent --head selector never touched a head"
 fi
 
+# ── unknown authKind: harness-FATAL by name, never a silent SKIP (DR-49a). ──
+# Red on the unfixed harness: probe_bearer's `exit 1` died inside tier1's command-substitution
+# SUBSHELL, the parent read rc=1 — the same code as the legit "no caller token" skip — and the
+# run exited 0 with the FATAL text scrolling past as decoration.
+: > "$tmp/rec.jsonl"
+if env -u SPLICE_E2E_CLIENT_TOKEN \
+  CLAUDEX_STATE_DIR="$STATE" SPLICE_CONTROL_PORT="$CONTROL" \
+  bash "$HARNESS" --tier 1 --head unknown-kind >"$tmp/unknown.out" 2>"$tmp/unknown.err"; then
+  err "unknown authKind must be FATAL (exit nonzero), not a SKIP"
+  cat "$tmp/unknown.err"
+elif grep -q "unrecognized authKind 'mystery-kind'" "$tmp/unknown.err"; then
+  ok "unknown authKind is FATAL by name"
+else
+  err "unknown authKind exited nonzero without naming the kind"
+  cat "$tmp/unknown.err"
+fi
+if [ "$(head_hits)" != 0 ]; then
+  err "unknown-authKind arm probed the head ($(head_hits) hits) — the exact leak the FATAL exists to stop"
+else
+  ok "unknown-authKind arm never touched the head"
+fi
+
+# ── perf oracle: recovery pairing is model-scoped, not whole-file adjacency (DR-49b). ──
+# Red on the unfixed harness: a healthy model's interleaved ok rows sat adjacent to every
+# failure of a broken model, so a lane that NEVER recovered read "retried-then-ok" and the
+# oracle exited 0 (proven: exit 0 + "retried-then-ok: http_500x2" on this exact fixture).
+PERF="$STATE/claude-splice-perf.jsonl"
+printf '%s\n' \
+  '{"ts":1000,"model":"broken-model","outcome":"http_500"}' \
+  '{"ts":2000,"model":"healthy-model","outcome":"ok"}' \
+  '{"ts":3000,"model":"broken-model","outcome":"http_500"}' \
+  '{"ts":4000,"model":"healthy-model","outcome":"ok"}' > "$PERF"
+if env CLAUDEX_STATE_DIR="$STATE" SPLICE_CONTROL_PORT="$CONTROL" \
+  E2E_PERF_SINCE=0 E2E_PERF_WANT=1 \
+  bash "$HARNESS" --tier perf-oracle --head claude-splice >"$tmp/perf-lie.out" 2>"$tmp/perf-lie.err"; then
+  err "interleaved cross-model oks must not pardon a persistently failing model"
+  cat "$tmp/perf-lie.err"
+elif grep -q "unrecovered non-ok rows" "$tmp/perf-lie.err"; then
+  ok "cross-model interleave stays unrecovered (adjacency pardon closed)"
+else
+  err "perf oracle went red without naming the unrecovered rows"
+  cat "$tmp/perf-lie.err"
+fi
+
+# Same-model retry-through is the DESIGNED pardon and must survive the scoping.
+printf '%s\n' \
+  '{"ts":1000,"model":"m","outcome":"http_500"}' \
+  '{"ts":2000,"model":"m","outcome":"ok"}' \
+  '{"ts":3000,"model":"m","outcome":"ok"}' > "$PERF"
+if env CLAUDEX_STATE_DIR="$STATE" SPLICE_CONTROL_PORT="$CONTROL" \
+  E2E_PERF_SINCE=0 E2E_PERF_WANT=2 \
+  bash "$HARNESS" --tier perf-oracle --head claude-splice >"$tmp/perf-ok.out" 2>"$tmp/perf-ok.err"; then
+  if grep -q "retried-then-ok: http_500x1" "$tmp/perf-ok.err"; then
+    ok "same-model retry-through is still pardoned and reported"
+  else
+    err "same-model retry-through passed but lost its informational tally"
+    cat "$tmp/perf-ok.err"
+  fi
+else
+  err "same-model retry-through must stay green (the pardon design is deliberate)"
+  cat "$tmp/perf-ok.err"
+fi
+rm -f "$PERF"
+
 if [ "$fail" -eq 0 ]; then
-  echo "heads-e2e-selftest OK — skip stays off the head, fake token probes with the caller bearer, mgmt-key token is FATAL"
+  echo "heads-e2e-selftest OK — skip stays off the head, fake token probes with the caller bearer, mgmt-key token is FATAL, unknown authKind is FATAL, perf recovery is model-scoped"
   exit 0
 fi
 echo "heads-e2e-selftest FAIL"

@@ -27,7 +27,8 @@
 # already universal. Instead the spend is announced per head at dispatch time — see tier2().
 #
 # Usage:
-#   checks/e2e/heads-e2e.sh [--tier 1|2|all] [--head KEY] [--list]
+#   checks/e2e/heads-e2e.sh [--tier 1|2|all|perf-oracle] [--head KEY] [--list]
+#   (perf-oracle: selftest hook — tier 2's perf gate alone, over E2E_PERF_SINCE/E2E_PERF_WANT)
 # Env:
 #   E2E_TTFB_MS / E2E_FIRST_DELTA_MS / E2E_TOTAL_MS / E2E_GAP_MS   latency budgets (ms)
 #   E2E_MODEL_<HEADKEY>   full discovery model id override (default: cheapest-looking row)
@@ -183,7 +184,7 @@ print("%s\t%s" % ((cheap or rows)[0], why))'
 # value here is reachable by config alone. Whether such a head forwards the caller's Authorization
 # upstream is exactly what we do not know, so it is refused rather than probed with $MGMT.
 # Review 2026-08-28 (PR 99, comment 3).
-probe_bearer() { # auth_kind -> bearer on stdout; rc=1 means "do not probe this head"
+probe_bearer() { # auth_kind -> bearer on stdout; rc=1 "skip this head", rc=2 harness-FATAL
   case "$1" in
     client)
       [ -n "${SPLICE_E2E_CLIENT_TOKEN:-}" ] || return 1
@@ -195,16 +196,26 @@ probe_bearer() { # auth_kind -> bearer on stdout; rc=1 means "do not probe this 
       echo "       harness does not know may forward the Authorization header upstream, so" >&2
       echo "       presenting \$MGMT could leak the daemon management key to a vendor. Add the" >&2
       echo "       kind to probe_bearer() once you have confirmed which side holds the credential." >&2
-      exit 1 ;;
+      # return, NOT exit (DR-49a): tier1 calls this inside a command substitution, so an exit
+      # only killed the SUBSHELL — the parent read rc=1, the same code as the legit client-auth
+      # skip, and the FATAL above scrolled past as decoration on a run that exited 0. The caller
+      # turns rc>=2 into the real harness exit.
+      return 2 ;;
   esac
 }
 
 # ── tier 1: wire probe ───────────────────────────────────────────────────────
 tier1() {
-  local key="$1" port="$2" auth_kind="$3" model model_var summary bearer picked why
+  local key="$1" port="$2" auth_kind="$3" model model_var summary bearer picked why rc=0
   # The credential decision comes FIRST — before /v1/models, before the turn, before count_tokens.
   # Every one of those presents a bearer to the head, so there is no safe "probe a little" state.
-  if ! bearer="$(probe_bearer "$auth_kind")"; then
+  # rc discrimination (DR-49a): 1 = the legit client-auth skip; >=2 = probe_bearer's FATAL, which
+  # its own exit could never deliver from inside the substitution's subshell. tier1 runs in the
+  # parent shell, so THIS exit is the harness-fatal the FATAL text promises.
+  bearer="$(probe_bearer "$auth_kind")" || rc=$?
+  if [ "$rc" -ge 2 ]; then
+    exit 1
+  elif [ "$rc" -eq 1 ]; then
     skip "$key/wire" "client-auth head, no caller credential supplied (set SPLICE_E2E_CLIENT_TOKEN to probe it)"
     skip "$key/count_tokens" "client-auth head, no caller credential supplied"
     return
@@ -292,18 +303,24 @@ send_prompt() { # session text
 #     136 on claude-kimi, 71 on claudex. It is EXCLUDED from the fail set and reported as info.
 #   · a transient upstream 5xx that Claude Code retried successfully writes one non-ok row AND a
 #     following ok row. User-visible outcome is success, so failing it is a false red.
-# A non-ok row therefore counts as RECOVERED iff the very next row in the window is outcome=ok —
-# precisely "the retry worked". Measured over the live JSONLs, that adjacency is the dominant
-# shape of a blip (claudex: 63% of failure runs are a single row, p50 1735ms from the failure to
-# the next ok) while a genuinely sick head produces RUNS (claude-kimi's bad period: runs of 12,
-# 44, 83, 149 consecutive failures). Adjacency also cannot be bought with volume: unrelated
-# concurrent ok traffic breaks runs up rather than pardoning failures wholesale, which a
-# count-based pardon would allow on a busy head. Teeth check against the very window that first
-# proved this assertion (claudex ts>=1786930524162; the snapshot measured here was 107 rows,
-# 91 ok / 16 non-ok, run lengths 1,1,1,1,5,7): still RED with 11 unrecovered — the run of 5 and
-# the trailing run of 7 — while the 4 isolated blips and the tail of the 5-run are pardoned as
-# retried-through. A trailing failure with nothing after it is unrecovered by construction, so a
-# head that dies at the end of the window still reds.
+# A non-ok row therefore counts as RECOVERED iff the next row OF THE SAME MODEL in the window is
+# outcome=ok — precisely "the retry worked". Measured over the live JSONLs, that adjacency is the
+# dominant shape of a blip (claudex: 63% of failure runs are a single row, p50 1735ms from the
+# failure to the next ok) while a genuinely sick head produces RUNS (claude-kimi's bad period:
+# runs of 12, 44, 83, 149 consecutive failures).
+# SAME MODEL is load-bearing (DR-49b): whole-file adjacency paired unrelated turns, and a healthy
+# model's interleaved oks pardoned EVERY failure of a broken one (fail-A, ok-B, fail-A, ok-B read
+# as zero unrecovered — proven red by the selftest fixture). `model` is the only relatedness key a
+# perf row carries (PerfStats.kt: no session/PID), so same-model concurrent traffic still
+# adjacency-pairs — the residual is stated, not solved. Lane-scoping only ever moves rows toward
+# unrecovered (live claudex window: 93 -> 89 recovered, 256 -> 260 unrecovered), so it cannot
+# newly pardon anything. Teeth check against the very window that first proved this assertion
+# (claudex ts>=1786930524162; the snapshot measured here was 107 rows, 91 ok / 16 non-ok across
+# THREE models, run lengths 1,1,1,1,5,7): whole-file pairing scored it 11 unrecovered / 5
+# pardoned, and lane-scoping reds HARDER on the same rows — 16 unrecovered / 0 pardoned, because
+# every one of those 5 pardons was itself a cross-model adjacency, the exact lie this fix closes.
+# A trailing failure with nothing after it in its lane is unrecovered by construction, so a head
+# that dies at the end of the window still reds.
 #
 # Counter semantics are verified against TurnPerf and ~200k live rows, because the obvious
 # assertions are wrong in two different ways:
@@ -342,13 +359,19 @@ def tally(outcomes):
         seen[o] = seen.get(o, 0) + 1
     return ", ".join(f"{k}x{v}" for k, v in sorted(seen.items()))
 
+# DR-49b: pair within the MODEL lane, never across the whole file — see the SAME MODEL
+# paragraph above for why raw adjacency lied green under interleaved concurrent traffic.
+lanes = {}
+for r in rows:
+    lanes.setdefault(r.get("model"), []).append(r)
 unrecovered, recovered = [], []
-for i, r in enumerate(rows):
-    o = r.get("outcome")
-    if o in ("ok", "client_abort"):
-        continue
-    nxt = rows[i + 1].get("outcome") if i + 1 < len(rows) else None
-    (recovered if nxt == "ok" else unrecovered).append(o)
+for lane in lanes.values():
+    for i, r in enumerate(lane):
+        o = r.get("outcome")
+        if o in ("ok", "client_abort"):
+            continue
+        nxt = lane[i + 1].get("outcome") if i + 1 < len(lane) else None
+        (recovered if nxt == "ok" else unrecovered).append(o)
 
 problems = []
 if len(ok) < want:
@@ -417,14 +440,20 @@ tier2() {
   fi
   pass "$key/tui-turn2"
 
-  local perf
-  if perf="$(perf_rows_ok "$key" "$start_ms" 2)"; then
-    note "    perf: $perf"
-    pass "$key/perf-rows"
-  else
-    fail "$key/perf-rows" "$perf"
-  fi
+  perf_gate "$key" "$start_ms" 2
   tier2_cleanup "$key" "$sess" "$scratch"
+}
+
+# The pass/fail wrapper around perf_rows_ok — shared by tier 2 and the perf-oracle tier so the
+# selftest exercises the exact gate tier 2 runs, not a lookalike.
+perf_gate() { # head_key since_epoch_ms min_rows
+  local perf
+  if perf="$(perf_rows_ok "$1" "$2" "$3")"; then
+    note "    perf: $perf"
+    pass "$1/perf-rows"
+  else
+    fail "$1/perf-rows" "$perf"
+  fi
 }
 
 tier2_cleanup() {
@@ -452,6 +481,10 @@ while IFS=$'\t' read -r key label port healthy auth_kind; do
     1)   tier1 "$key" "$port" "$auth_kind" ;;
     2)   tier2 "$key" "$label" "$auth_kind" ;;
     all) tier1 "$key" "$port" "$auth_kind"; tier2 "$key" "$label" "$auth_kind" ;;
+    # Selftest hook (DR-49b): run tier 2's perf gate alone over an E2E_PERF_SINCE/WANT window,
+    # so the oracle's pairing rules are red/green provable without a tmux drive or provider spend.
+    perf-oracle) perf_gate "$key" "${E2E_PERF_SINCE:?set E2E_PERF_SINCE (epoch ms)}" \
+                   "${E2E_PERF_WANT:?set E2E_PERF_WANT (min ok rows)}" ;;
     *)   echo "bad --tier $TIER" >&2; exit 2 ;;
   esac
 done <<< "$HEADS"

@@ -19,6 +19,7 @@ import splice.core.topology.AuthKindRegistry
 import splice.core.topology.ProviderConfig
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import java.nio.file.Files
 import java.nio.file.Path
@@ -106,7 +107,7 @@ internal class LoginIo {
         envReader: EnvReader,
     ): Boolean {
         val file = provider.auth.file ?: AuthKindRegistry.defaultAuthFileFor(provider.auth.kind)
-        val filePresent = file?.let { Files.exists(Paths.get(TopologyLoader.expandHome(it))) } == true
+        val filePresent = file?.let { credentialFileConfigured(Paths.get(TopologyLoader.expandHome(it))) } == true
         // OAuth heads authenticate by file only; api-key heads read the effective env var (the explicit
         // auth.env OR the derived <KEY>_API_KEY default the daemon wires) so the derived path matches.
         val oauth = AuthKindRegistry.isOAuth(provider.auth.kind)
@@ -118,6 +119,24 @@ internal class LoginIo {
             KeyStore(KeyStorePath.defaultPath(envReader)).read(envVar) != null
         return filePresent || envPresent || storePresent
     }
+
+    /** DR-70 (the DR-59 posture at CLI assembly): an UNREADABLE credential file counts as
+     *  configured — intact tokens one chmod away must never re-prompt a login — said out loud.
+     *  Only proven absence (NoSuch + no NOFOLLOW entry) reads as not-configured. */
+    private fun credentialFileConfigured(path: java.nio.file.Path): Boolean = Cancellables
+        .runCatchingCancellable { Files.getLastModifiedTime(path) }
+        .exceptionOrNull()
+        .let { failure ->
+            val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+                !Files.exists(path, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+            if (failure != null && !genuinelyAbsent) {
+                println(
+                    "splice: $path unreadable (${SafeFailureText.render(failure)}) — " +
+                        "treating the credential as configured; fix access, not login",
+                )
+            }
+            !genuinelyAbsent
+        }
 
     internal fun wrapperInstalled(command: String, envReader: EnvReader): Boolean =
         Files.isSymbolicLink(InstallPaths(envReader = envReader).binDir.resolve(command))

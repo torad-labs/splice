@@ -12,6 +12,7 @@ import splice.core.topology.Topology
 import splice.core.topology.TopologyKnobLayer
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.Paths
@@ -81,7 +82,21 @@ internal object AdminSupport {
         }.getOrNull()
         if (loc != null) return loc
         val installed = home().resolve(".local").resolve("share").resolve("splice").resolve("splice.jar")
-        return installed.takeIf { Files.exists(it) }
+        // DR-70: an unreadable installed jar is not a dev build — return it and let the consumer
+        // fail with the real access error rather than misreporting "not installed".
+        return Cancellables.runCatchingCancellable { Files.getLastModifiedTime(installed) }
+            .exceptionOrNull()
+            .let { failure ->
+                val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+                    !Files.exists(installed, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                if (failure != null && !genuinelyAbsent) {
+                    println(
+                        "splice: $installed unreadable (${SafeFailureText.render(failure)}) — " +
+                            "treating it as the installed jar; commands may fail until access is fixed",
+                    )
+                }
+                if (genuinelyAbsent) null else installed
+            }
     }
 
     /** Cold-start the daemon detached (survives this CLI exiting) and wait until it answers. */
@@ -101,8 +116,24 @@ internal object AdminSupport {
 
     fun home(): Path = Paths.get(System.getProperty("user.home"))
 
-    fun authPresent(authFile: String): Boolean =
-        runCatching { Files.exists(Paths.get(TopologyLoader.expandHome(authFile))) }.getOrDefault(false)
+    // DR-70 (the DR-59 posture at CLI assembly): denied access to an auth file is not
+    // logged-out — status/setup must not tell the operator to re-login through a chmod.
+    fun authPresent(authFile: String): Boolean {
+        val path = Paths.get(TopologyLoader.expandHome(authFile))
+        return Cancellables.runCatchingCancellable { Files.getLastModifiedTime(path) }
+            .exceptionOrNull()
+            .let { failure ->
+                val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+                    !Files.exists(path, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                if (failure != null && !genuinelyAbsent) {
+                    println(
+                        "splice: $path unreadable (${SafeFailureText.render(failure)}) — " +
+                            "treating the credential as present; fix access, not login",
+                    )
+                }
+                !genuinelyAbsent
+            }
+    }
 
     /** Read a y/n from the terminal; returns [default] when there's no TTY (piped/CI). */
     fun confirm(prompt: String, default: Boolean = true): Boolean {

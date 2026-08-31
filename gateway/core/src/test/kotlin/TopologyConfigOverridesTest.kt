@@ -4,9 +4,11 @@ import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.config.ConfigService
+import splice.core.config.Knob
 import splice.core.config.StatePaths
 import splice.core.model.ModelEntry
 import splice.core.topology.AuthConfig
+import splice.core.topology.AuthKindRegistry
 import splice.core.topology.DaemonConfig
 import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
@@ -263,5 +265,17 @@ class TopologyConfigOverridesTest {
         assertNull(q.mapThinkingAdaptive)
         assertNull(q.stripSamplingParams)
         assertNull(q.blockAllowlist)
+    }
+
+    // DR-79 (assembly sweep): the knob default pointed at ~/.local/share/claude-grok/auth.json (a
+    // spike-era path) while login writes, AuthKind declares, ChatArm reads and doctor checks
+    // ~/.grok/auth.json — a grok head omitting auth.file 401ed every turn while doctor said
+    // signed-in. The knob default must agree with the registry's single source.
+    @Test
+    fun `grokAuthPath knob default agrees with the auth-kind registry - DR-79`() {
+        assertEquals(
+            AuthKindRegistry.defaultAuthFileFor("grok-oauth"),
+            Knob.GROK_AUTH_PATH.default,
+        )
     }
 }

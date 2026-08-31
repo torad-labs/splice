@@ -211,7 +211,10 @@ public enum class Knob(
         "grokAuthPath",
         KnobKind.STRING,
         listOf("GROK_AUTH_PATH"),
-        "~/.local/share/claude-grok/auth.json",
+        // DR-79: must agree with AuthKind.GrokOAuth's registry default — login writes there, the
+        // arm reads here, and the spike-era ~/.local/share/claude-grok path made a head omitting
+        // auth.file 401 forever while doctor said signed-in (pinned by the registry-agreement arm).
+        "~/.grok/auth.json",
         restartRequired = true,
     ),
     CONTROL_PORT(

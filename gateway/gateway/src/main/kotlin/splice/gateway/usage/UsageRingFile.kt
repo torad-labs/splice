@@ -9,6 +9,7 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.jsonArray
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -62,7 +63,10 @@ internal class UsageRingFile(
             val genuinelyAbsent = it is java.nio.file.NoSuchFileException &&
                 !Files.exists(usageFile, LinkOption.NOFOLLOW_LINKS)
             if (!genuinelyAbsent) {
-                log("[usage] $usageFile unreadable/corrupt (${it.message}) — treating as empty, 5h window reset\n")
+                log(
+                    "[usage] $usageFile unreadable/corrupt (${SafeFailureText.render(it)}) — " +
+                        "treating as empty, 5h window reset\n",
+                )
             }
             emptyList()
         }

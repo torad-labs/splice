@@ -9,6 +9,7 @@ import kotlinx.serialization.json.jsonObject
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import java.nio.file.Files
 import java.nio.file.LinkOption
@@ -34,7 +35,10 @@ internal class RateLimitFile(
         val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
             !Files.exists(ratelimitFile, LinkOption.NOFOLLOW_LINKS)
         if (!genuinelyAbsent && unreadableLogged.compareAndSet(false, true)) {
-            log("[usage] $ratelimitFile unreadable ($failure) — ratelimit HUD state treated as absent\n")
+            log(
+                "[usage] $ratelimitFile unreadable (${SafeFailureText.render(failure)}) — " +
+                    "ratelimit HUD state treated as absent\n",
+            )
         }
         if (genuinelyAbsent) unreadableLogged.set(false)
         null

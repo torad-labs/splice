@@ -9,6 +9,7 @@ import splice.app.TopologyLoader
 import splice.core.config.StatePaths
 import splice.core.topology.Topology
 import splice.core.util.Cancellables
+import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.NoSuchFileException
 import java.nio.file.Path
@@ -100,7 +101,7 @@ internal class DoctorHeadChecks(private val doctorRuntime: DoctorRuntime) {
             failure != null && failure !is NoSuchFileException -> DoctorCheck(
                 mgmtKeyCheckName,
                 CheckStatus.FAIL,
-                "unreadable at $keyFile (${failure.message}) — admin endpoints will 401",
+                "unreadable at $keyFile (${SafeFailureText.render(failure)}) — admin endpoints will 401",
                 "fix the file's permissions; it may exist, so nothing needs re-minting",
             )
             daemonRunning -> DoctorCheck(

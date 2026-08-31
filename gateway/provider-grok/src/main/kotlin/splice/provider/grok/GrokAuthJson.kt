@@ -60,7 +60,10 @@ internal class GrokAuthJson(
         val onDisk = Cancellables.runCatchingCancellable {
             json.parseToJsonElement(Files.readString(authPath)).jsonObject
         }.onFailure {
-            log("[grok-auth] re-read of $authPath for merge failed: $it — writing tokens-only file")
+            log(
+                "[grok-auth] re-read of $authPath for merge failed: ${SafeFailureText.render(it)} — " +
+                    "writing tokens-only file",
+            )
         }.getOrNull() ?: JsonObject(emptyMap())
         val oldTokens = onDisk[FIELD_TOKENS] as? JsonObject ?: JsonObject(emptyMap())
         return buildJsonObject {

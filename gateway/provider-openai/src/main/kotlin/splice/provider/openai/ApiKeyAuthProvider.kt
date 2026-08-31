@@ -16,6 +16,7 @@ import splice.core.util.DaemonLog
 import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
@@ -94,7 +95,10 @@ public class ApiKeyAuthProvider(
             val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
                 !Files.exists(file, LinkOption.NOFOLLOW_LINKS)
             if (!genuinelyAbsent) {
-                log("[api-key-auth] failed to read $file: $failure — treating as no key configured")
+                log(
+                    "[api-key-auth] failed to read $file: ${SafeFailureText.render(failure)} — " +
+                        "treating as no key configured",
+                )
             }
             null
         }

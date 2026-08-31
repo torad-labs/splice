@@ -27,7 +27,6 @@ import splice.core.util.EnvReader
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
-import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption
 import java.nio.file.Path
@@ -256,7 +255,7 @@ public class ConfigService(
                 SecureFile.writeAtomic0600(path, json.encodeToString(JsonObject.serializer(), next) + "\n")
                 fileCache = null
             }
-        }.onFailure { e -> log("[config] failed to persist config to disk: $e") }
+        }.onFailure { e -> log("[config] failed to persist config to disk: ${SafeFailureText.render(e)}") }
     }
 
     /** MUTATION-path read (DR-9, the KeyStore.entriesStrict doctrine): PROVEN-ABSENT = legitimately
@@ -274,10 +273,15 @@ public class ConfigService(
                 val genuinelyAbsent = it is java.nio.file.NoSuchFileException &&
                     !Files.exists(path, LinkOption.NOFOLLOW_LINKS)
                 if (!genuinelyAbsent) {
-                    // IOException so the outer best-effort wrap catches it — an IllegalState would
-                    // escape runCatchingCancellable's caught set and fail patch() itself.
-                    throw IOException(
-                        "config.json unreadable ($it) — refusing to rewrite, persisted knobs preserved",
+                    // A FileSystemException — still IOException, so the outer best-effort wrap
+                    // catches it (an IllegalState would escape runCatchingCancellable's caught set
+                    // and fail patch() itself) AND SafeFailureText passes its reason through
+                    // verbatim when the persist log renders it (DR-73).
+                    throw java.nio.file.FileSystemException(
+                        path.toString(),
+                        null,
+                        "config.json unreadable (${SafeFailureText.render(it)}) — refusing to rewrite, " +
+                            "persisted knobs preserved",
                     )
                 }
                 JsonObject(emptyMap())

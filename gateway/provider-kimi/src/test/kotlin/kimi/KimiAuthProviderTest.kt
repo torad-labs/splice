@@ -623,3 +623,33 @@ class KimiSynthesizedExpiryTest {
         assertNull(absent.fields["read_error"], "true absence carries no read_error: ${absent.fields}")
     }
 }
+
+// DR-73 (invariant audit): kimi's persist-side merge re-read, the same seam GrokMergeDiagnosticsTest
+// seals — the refreshCall corrupts the file mid-flow so the pre-persist re-read fails on real bytes.
+class KimiPersistMergeDiagnosticsTest {
+
+    @Test
+    fun `merge diagnostics never quote credential bytes - DR-73`() = runTest {
+        val sentinel = "sk-kimi-SENTINEL-MERGE"
+        val dir = Files.createTempDirectory("kimi-merge-leak")
+        val file = dir.resolve("auth.json")
+        Files.writeString(
+            file,
+            """{"access_token":"a","refresh_token":"r","expires_at":1,"token_type":"Bearer","expires_in":1}""",
+        )
+        val log = mutableListOf<String>()
+        val auth = KimiAuthProvider(
+            authPath = file,
+            clock = { 5_000_000L },
+            refreshCall = {
+                Files.writeString(file, """{"access_token":"$sentinel""")
+                RefreshAttempt.Granted(splice.provider.kimi.KimiRefreshedTokens("new-access", "new-refresh", 3600))
+            },
+            log = splice.core.util.LogSink { log += it },
+        )
+        auth.refresh()
+        val joined = log.joinToString("\n")
+        assertTrue(!joined.contains(sentinel), "credential bytes must never surface: $joined")
+        assertTrue(log.any { it.contains("could not re-read") }, "the merge degrade must log: $joined")
+    }
+}

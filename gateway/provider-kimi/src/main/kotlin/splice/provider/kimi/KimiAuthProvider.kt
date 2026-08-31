@@ -26,6 +26,7 @@ import splice.core.auth.RefreshableAuthProvider
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import splice.spi.CredentialLock
@@ -159,7 +160,10 @@ public class KimiAuthProvider(
         val onDisk = Cancellables.runCatchingCancellable {
             kimiJson.parseToJsonElement(Files.readString(authPath)) as? JsonObject ?: JsonObject(emptyMap())
         }.onFailure {
-            log("[kimi-auth] could not re-read $authPath before persist ($it) — writing tokens-only")
+            log(
+                "[kimi-auth] could not re-read $authPath before persist " +
+                    "(${SafeFailureText.render(it)}) — writing tokens-only",
+            )
         }.getOrNull()
         Cancellables.runCatchingCancellable {
             val merged = CredentialJson.mergedCredentialJson(onDisk, oauth.kimiAuthJson(tokens, clock()))

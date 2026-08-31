@@ -14,6 +14,7 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
 import splice.core.util.Cancellables
+import splice.core.util.SafeFailureText
 import splice.provider.kimi.KimiDeviceAuthorization
 import splice.provider.kimi.KimiOAuth
 import splice.spi.ProcessWaiter
@@ -70,7 +71,7 @@ public object DeviceLoginFlow {
                 announce(spec, auth)
                 poll(client, spec, auth, waiter)
             }.getOrElse { e ->
-                println("splice: login error: ${e.message}")
+                println("splice: login error: ${SafeFailureText.render(e)}")
                 Outcome.ABORT
             }
         } finally {

@@ -160,7 +160,10 @@ public class KeyStore(
             .getOrElse {
                 val genuinelyAbsent = it is java.nio.file.NoSuchFileException &&
                     !Files.exists(path, LinkOption.NOFOLLOW_LINKS)
-                check(genuinelyAbsent) { "keys.toml unreadable ($it) — refusing to write, existing keys preserved" }
+                check(genuinelyAbsent) {
+                    "keys.toml unreadable (${SafeFailureText.render(it)}) — refusing to write, " +
+                        "existing keys preserved"
+                }
                 emptyMap()
             }
 

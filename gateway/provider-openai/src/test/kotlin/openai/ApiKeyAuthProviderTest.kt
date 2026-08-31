@@ -163,3 +163,27 @@ class ApiKeyAuthProviderTest {
         assertTrue(logs.isEmpty(), "genuine absence must not warn: $logs")
     }
 }
+
+// DR-73 (invariant audit): the key-file read failure logged the raw parse throwable, whose
+// "JSON input:" excerpt quotes the credential file's bytes into daemon.log + /mgmt/logs.
+class ApiKeyDiagnosticsTest {
+
+    @Test
+    fun `diagnostics never quote key-file bytes from a malformed key file - DR-73`(@TempDir tmp: Path) = runBlocking {
+        val sentinel = "sk-SENTINEL-KEYFILE"
+        val file = tmp.resolve("key.json")
+        Files.writeString(file, """{"api_key":"$sentinel""")
+        val log = mutableListOf<String>()
+        val p = ApiKeyAuthProvider(
+            envVar = "OPENROUTER_API_KEY",
+            keyFile = file,
+            envReader = { null },
+            keyStore = KeyStore(tmp.resolve("keys.toml")),
+            log = splice.core.util.LogSink { log += it },
+        )
+        assertNull(p.credentials())
+        val joined = log.joinToString("\n")
+        assertTrue(!joined.contains(sentinel), "key bytes must never surface: $joined")
+        assertTrue(log.any { it.contains("failed to read") }, "the read failure must log: $joined")
+    }
+}

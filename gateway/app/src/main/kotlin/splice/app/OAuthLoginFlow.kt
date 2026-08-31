@@ -13,6 +13,7 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
 import splice.core.util.Cancellables
+import splice.core.util.SafeFailureText
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.URLDecoder
@@ -193,7 +194,9 @@ public object OAuthLoginFlow {
     /** Strip control/ANSI chars from provider-supplied text before it reaches the operator's terminal. */
     private fun sanitize(s: String): String = s.filter { !it.isISOControl() }.take(ERR_BODY_CAP)
 
-    private suspend fun exchangeAndPersist(spec: LoginSpec, code: String): Boolean {
+    // internal (DR-73): the sentinel arm exercises this exchange boundary against a loopback
+    // token endpoint without the browser/callback dance run() owns.
+    internal suspend fun exchangeAndPersist(spec: LoginSpec, code: String): Boolean {
         val client = authClients.create()
         return try {
             Cancellables.runCatchingCancellable {
@@ -214,7 +217,7 @@ public object OAuthLoginFlow {
                     true
                 }
             }.getOrElse { e ->
-                println("splice: token exchange error: ${e.message}")
+                println("splice: token exchange error: ${SafeFailureText.render(e)}")
                 false
             }
         } finally {

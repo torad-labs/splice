@@ -131,3 +131,26 @@ class ConfigServiceAbsenceTest {
         assertTrue(logged.any { it.contains("refusing to rewrite") }, "the abort must log: $logged")
     }
 }
+
+// DR-73 (invariant audit): the persist path's strict-read refusal embedded the raw parse
+// throwable — config.json bytes rode "JSON input:" excerpts into daemon.log. The refusal now
+// travels as an allowlisted FileSystemException whose reason is already rendered safe, so the
+// log line keeps the whole refusing-to-rewrite story while the bytes stay withheld.
+class ConfigPersistDiagnosticsTest {
+
+    @Test
+    fun `persist diagnostics never quote config bytes and keep the refusal story - DR-73`(@TempDir tmp2: Path) {
+        val sentinel = "SENTINEL-CONFIG-BYTES"
+        val paths = StatePaths(baseOverride = tmp2.resolve("state"))
+        val logged = mutableListOf<String>()
+        val svc = ConfigService(paths, envReader = { null }, log = { logged += it })
+        Files.createDirectories(paths.configFile.parent)
+        Files.writeString(paths.configFile, """{"maxQueued": "$sentinel""")
+
+        svc.patch(mapOf("maxQueued" to 77))
+
+        val joined = logged.joinToString("\n")
+        assertTrue(!joined.contains(sentinel), "config bytes must never ride diagnostics: $joined")
+        assertTrue(logged.any { it.contains("refusing to rewrite") }, "the refusal diagnostic survives: $joined")
+    }
+}

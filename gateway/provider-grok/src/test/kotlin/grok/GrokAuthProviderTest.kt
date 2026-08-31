@@ -513,3 +513,33 @@ class GrokAuthProviderTest {
         assertEquals(2, calls.get(), "after the backoff window a refresh is allowed again")
     }
 }
+
+// DR-73 (invariant audit): the persist-side merge re-read is the one credential parse DR-65 did
+// not seal on grok — a file gone malformed between the pre-refresh read and the persist quoted
+// its bytes through the raw throwable. The refreshCall corrupts the file mid-flow (the :311
+// peer-rotation interleave idiom) so the merge re-read fails on real bytes.
+class GrokMergeDiagnosticsTest {
+
+    @Test
+    fun `merge diagnostics never quote credential bytes - DR-73`() = runTest {
+        val sentinel = "xai-SENTINEL-MERGE-LEAK"
+        val dir = Files.createTempDirectory("grok-merge-leak")
+        val file = dir.resolve(".grok").resolve("auth.json")
+        Files.createDirectories(file.parent)
+        Files.writeString(file, """{"tokens":{"access_token":"acc","refresh_token":"R1"}}""")
+        val log = mutableListOf<String>()
+        val auth = GrokAuthProvider(
+            authPath = file,
+            clock = { 1_000_000L },
+            refreshCall = {
+                Files.writeString(file, """{"tokens":{"access_token":"$sentinel""")
+                RefreshAttempt.Granted(splice.provider.grok.GrokRefreshedTokens("new-access", "new-refresh", 3600))
+            },
+            log = splice.core.util.LogSink { log += it },
+        )
+        auth.refresh()
+        val joined = log.joinToString("\n")
+        assertTrue(!joined.contains(sentinel), "credential bytes must never surface: $joined")
+        assertTrue(log.any { it.contains("merge failed") }, "the merge degrade must log: $joined")
+    }
+}

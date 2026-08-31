@@ -83,7 +83,6 @@ internal class GrokAuthJson(
         }
 
     internal fun readSnapshot(authCacheMs: Long): Snapshot? = Cancellables.runCatchingCancellable {
-        if (!Files.exists(authPath)) return@runCatchingCancellable null
         val mtime = Files.getLastModifiedTime(authPath).toMillis()
         val now = clock()
         cache?.let { c ->
@@ -98,13 +97,29 @@ internal class GrokAuthJson(
             // SH-01: shared policy
             ?.let { it.copy(expiresAtMs = it.expiresAtMs ?: synthesizeExpiry(mtime, now)) }
             ?.also { cache = Cache(it, mtime, now) }
-    }.onFailure {
-        log("[grok-auth] failed to read $authPath: $it — treating as not logged in")
-    }.getOrNull()
+    }.getOrElse { failure ->
+        // DR-59 (class law): only NoSuch with no NOFOLLOW entry is the quiet not-logged-in null;
+        // an untraversable parent or dangling link is a PRESENT credential problem and logs.
+        val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+            !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+        if (!genuinelyAbsent) {
+            log("[grok-auth] failed to read $authPath: $failure — no credentials served (NOT a logged-out state)")
+        }
+        null
+    }
 
     internal fun parseSnapshot(): Snapshot? {
-        if (!Files.exists(authPath)) return null
-        val onDisk = json.parseToJsonElement(Files.readString(authPath)).jsonObject
+        // DR-59: the read IS the absence probe (the old exists() pre-gate read an inaccessible
+        // file as logged-out). Genuine absence returns null; anything else throws into the
+        // caller's wrapper (readSnapshot's classified null, refreshLocked's ReadFailed).
+        val raw = Cancellables.runCatchingCancellable { Files.readString(authPath) }
+            .getOrElse { failure ->
+                val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+                    !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                if (genuinelyAbsent) return null
+                throw failure
+            }
+        val onDisk = json.parseToJsonElement(raw).jsonObject
         val access = JsonScalars.str((onDisk[FIELD_TOKENS] as? JsonObject)?.get(FIELD_ACCESS_TOKEN)) ?: return null
         return Snapshot(access, JsonScalars.long(onDisk, FIELD_EXPIRES))
     }

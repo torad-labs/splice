@@ -172,7 +172,18 @@ public class GrokAuthProvider(
     // a dead token no longer gets re-POSTed every turn. The gate gives way the instant the file's
     // mtime changes (re-login), so a genuinely stale latch never outlives the credentials it named.
     private suspend fun doRefresh(): RefreshOutcome {
-        if (!Files.exists(authPath)) return RefreshOutcome.NoCredentialsFile
+        // DR-59 (class law): logged-out is PROVEN by the stat, never an exists() pre-gate —
+        // exists() reads false through an untraversable parent, so an operator with intact tokens
+        // was told "not logged in". Only NoSuch with no NOFOLLOW entry is a genuine first
+        // run/logout; everything else is ReadFailed, whose flatten line says NOT-logged-out.
+        val statFailure = Cancellables.runCatchingCancellable {
+            Files.getLastModifiedTime(authPath)
+        }.exceptionOrNull()
+        if (statFailure != null) {
+            val genuinelyAbsent = statFailure is java.nio.file.NoSuchFileException &&
+                !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+            return if (genuinelyAbsent) RefreshOutcome.NoCredentialsFile else RefreshOutcome.ReadFailed(statFailure)
+        }
         val mtime = authFile.grokAuthMtimeOrNull(authPath, log)
         if (invalidGrantLatch.isLatched(mtime)) return RefreshOutcome.Rejected(INVALID_GRANT_REASON)
         val priorAccess = authJson.cachedAccess()

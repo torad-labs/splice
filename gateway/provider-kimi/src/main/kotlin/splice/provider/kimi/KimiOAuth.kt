@@ -145,8 +145,17 @@ public class KimiOAuth {
         authPath: Path,
         synthesizeExpiry: KimiAuthStore.SynthesizeExpiry,
     ): KimiAuthStore.Snapshot? {
-        if (!Files.exists(authPath)) return null
-        val obj = jsonObjectOrEmpty(kimiJson.parseToJsonElement(Files.readString(authPath)))
+        // DR-59: the read IS the absence probe (the old exists() pre-gate read an inaccessible
+        // file as logged-out). Genuine absence returns null; anything else throws into the
+        // caller's wrapper (readSnapshot's classified null, the exchange paths' ReadFailed).
+        val raw = Cancellables.runCatchingCancellable { Files.readString(authPath) }
+            .getOrElse { failure ->
+                val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+                    !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                if (genuinelyAbsent) return null
+                throw failure
+            }
+        val obj = jsonObjectOrEmpty(kimiJson.parseToJsonElement(raw))
         val access = JsonScalars.str(obj, "access_token") ?: return null
         return KimiAuthStore.Snapshot(
             access = access,

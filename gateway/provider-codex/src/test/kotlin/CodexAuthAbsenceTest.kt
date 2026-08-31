@@ -1,0 +1,61 @@
+// DR-59 absence-class arms for the codex auth chain, in their own class so CodexAuthTest stays
+// under detekt's LargeClass ceiling (ConfigServiceAbsenceTest precedent).
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.test.runTest
+import org.junit.jupiter.api.AfterEach
+import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
+import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.provider.codex.CodexAuthProvider
+import java.nio.file.Files
+import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
+import kotlin.io.path.writeText
+
+class CodexAuthAbsenceTest {
+
+    private val prefetchJob = SupervisorJob()
+    private val prefetchScope =
+        kotlinx.coroutines.CoroutineScope(prefetchJob + kotlinx.coroutines.Dispatchers.Default)
+
+    @AfterEach
+    fun drainPrefetch() {
+        prefetchScope.cancel()
+    }
+
+    // DR-59 (class law): an INACCESSIBLE auth file is not a logged-out state. exists() as a
+    // pre-gate read false through an untraversable parent, so credentials() went silently null
+    // and refresh() flattened to "no credential file — not logged in" while intact tokens sat
+    // unreadable one chmod away.
+    @Test
+    fun `an inaccessible auth file is read-failed, never logged-out - DR-59`(@TempDir tmp: Path) = runTest {
+        val authPath = tmp.resolve(".codex/auth.json")
+        Files.createDirectories(authPath.parent)
+        authPath.writeText("""{"tokens":{"access_token":"tok-1","refresh_token":"r-1"}}""")
+        val log = mutableListOf<String>()
+        val auth = CodexAuthProvider(
+            authPath = authPath,
+            authCacheMs = 60_000,
+            refreshCall = { error("refresh endpoint must not be reached on a read failure") },
+            prefetchScope = prefetchScope,
+            log = splice.core.util.LogSink { log += it },
+        )
+        Files.setPosixFilePermissions(authPath.parent, PosixFilePermissions.fromString("---------"))
+        try {
+            assertNull(auth.credentials(), "unreadable degrades to null credentials")
+            assertTrue(log.any { it.contains("failed to read") }, "the display path must log: $log")
+            assertNull(auth.refresh())
+        } finally {
+            Files.setPosixFilePermissions(authPath.parent, PosixFilePermissions.fromString("rwx------"))
+        }
+        assertTrue(log.any { it.contains("NOT a logged-out state") }, "ReadFailed story required: $log")
+        assertTrue(log.none { it.contains("not logged in") }, "must never claim logged-out: $log")
+
+        Files.delete(authPath)
+        log.clear()
+        assertNull(auth.refresh())
+        assertTrue(log.any { it.contains("no credential file — not logged in") }, "true absence stays honest: $log")
+    }
+}

@@ -48,6 +48,7 @@ import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 import kotlin.time.Duration.Companion.seconds
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -212,5 +213,30 @@ class GrokProviderTest {
     @Test
     fun `health carries the grok port`(): Unit = runBlocking {
         assertTrue(client.get("http://127.0.0.1:$port/health").bodyAsText().contains("\"port\":$port"))
+    }
+
+    // DR-59 (class law): an INACCESSIBLE auth file is not a logged-out state — the old exists()
+    // pre-gate flattened it to "no credential file — not logged in" while intact tokens sat
+    // unreadable one chmod away. ReadFailed's flatten line says NOT-logged-out.
+    @Test
+    fun `an inaccessible auth file is read-failed, never logged-out - DR-59`(): Unit = runBlocking {
+        val dir = Files.createTempDirectory("grok-dr59")
+        val lockedDir = Files.createDirectories(dir.resolve("locked"))
+        val lockedAuth = lockedDir.resolve("auth.json")
+        Files.writeString(lockedAuth, """{"tokens":{"access_token":"tok"},"expires":1}""")
+        val drLog = mutableListOf<String>()
+        val deniedAuth = GrokAuthProvider(
+            authPath = lockedAuth,
+            refreshCall = { RefreshAttempt.Denied("must-not-be-reached") },
+            log = splice.core.util.LogSink { drLog += it },
+        )
+        Files.setPosixFilePermissions(lockedDir, PosixFilePermissions.fromString("---------"))
+        try {
+            assertNull(deniedAuth.refresh())
+        } finally {
+            Files.setPosixFilePermissions(lockedDir, PosixFilePermissions.fromString("rwx------"))
+        }
+        assertTrue(drLog.any { it.contains("NOT a logged-out state") }, "ReadFailed story required: $drLog")
+        assertTrue(drLog.none { it.contains("not logged in") }, "must never claim logged-out: $drLog")
     }
 }

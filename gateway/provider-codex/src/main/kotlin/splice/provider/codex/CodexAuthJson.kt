@@ -69,7 +69,6 @@ internal class CodexAuthJson(
     }
 
     internal fun readSnapshot(authCacheMs: Long): Snapshot? = Cancellables.runCatchingCancellable {
-        if (!Files.exists(authPath)) return@runCatchingCancellable null
         val mtime = Files.getLastModifiedTime(authPath).toMillis()
         val size = Files.size(authPath)
         val now = clock()
@@ -90,9 +89,20 @@ internal class CodexAuthJson(
             cache = Cache(snapshot, mtime, now, size)
             snapshot
         }
-    }.onFailure {
-        log("[codex-auth] failed to read $authPath: $it — treating as not logged in")
-    }.getOrNull()
+    }.getOrElse { failure ->
+        logUnlessGenuinelyAbsent(failure)
+        null
+    }
+
+    /** DR-59 (class law): only NoSuch with no NOFOLLOW entry is the quiet not-logged-in null;
+     *  an untraversable parent or dangling link is a PRESENT credential problem and logs. */
+    private fun logUnlessGenuinelyAbsent(failure: Throwable) {
+        val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+            !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+        if (!genuinelyAbsent) {
+            log("[codex-auth] failed to read $authPath: $failure — no credentials served (NOT a logged-out state)")
+        }
+    }
 
     internal fun cachedAccess(): String? = cache?.snapshot?.access
 

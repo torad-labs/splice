@@ -57,16 +57,22 @@ internal class KimiAuthStore(
     }
 
     internal fun readSnapshot(authCacheMs: Long): Snapshot? = Cancellables.runCatchingCancellable {
-        if (!Files.exists(authPath)) return@runCatchingCancellable null
         val mtime = Files.getLastModifiedTime(authPath).toMillis()
         val now = clock()
         cache?.let { c ->
             if (c.mtimeMs == mtime && (now - c.loadedAt) < authCacheMs) return@runCatchingCancellable c.snapshot
         }
         oauth.parseSnapshot(authPath, synthesizeExpiry)?.also { cache = Cache(it, mtime, now) }
-    }.onFailure {
-        log("[kimi-auth] failed to read $authPath: $it — treating as not logged in")
-    }.getOrNull()
+    }.getOrElse { failure ->
+        // DR-59 (class law): only NoSuch with no NOFOLLOW entry is the quiet not-logged-in null;
+        // an untraversable parent or dangling link is a PRESENT credential problem and logs.
+        val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+            !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+        if (!genuinelyAbsent) {
+            log("[kimi-auth] failed to read $authPath: $failure — no credentials served (NOT a logged-out state)")
+        }
+        null
+    }
 
     internal fun peerRotation(priorAccess: String?, snap: Snapshot?): RefreshOutcome? {
         if (priorAccess == null || snap == null) return null
@@ -120,10 +126,12 @@ internal class KimiAuthStore(
     }
 
     internal fun describe(mtime: Long?, latch: InvalidGrantLatch): AuthDescription {
-        // ast-grep-ignore: kt-no-silent-result-collapse -- introspection display only: a read failure renders as present=false, which is the displayed truth
-        val present = Cancellables.runCatchingCancellable {
-            Files.exists(authPath) && oauth.parseSnapshot(authPath, synthesizeExpiry) != null
-        }.getOrDefault(false)
+        // ast-grep-ignore: kt-no-silent-result-collapse -- introspection display: present=false plus
+        // a read_error field when the failure is not genuine absence (DR-59), never a silent collapse
+        val presentOutcome = Cancellables.runCatchingCancellable {
+            oauth.parseSnapshot(authPath, synthesizeExpiry) != null
+        }
+        val present = presentOutcome.getOrDefault(false)
         return AuthDescription(
             present = present,
             kind = "kimi-oauth",
@@ -131,6 +139,9 @@ internal class KimiAuthStore(
                 put("auth_path", authPath.toString())
                 put("login", "device")
                 if (latch.isLatched(mtime)) put("refresh_latched", INVALID_GRANT_REASON)
+                // DR-59: parseSnapshot already classified — genuine absence returned null quietly,
+                // so ANY failure reaching here is indeterminate access, named for the dashboard.
+                presentOutcome.exceptionOrNull()?.let { put("read_error", it.toString()) }
             },
         )
     }

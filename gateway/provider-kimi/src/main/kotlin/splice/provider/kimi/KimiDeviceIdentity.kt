@@ -24,12 +24,25 @@ public class KimiDeviceIdentity(
     private val osArch: String = System.getProperty("os.arch").orEmpty(),
 ) {
 
-    /** Read-or-create the persisted device_id (uuid, 0600). */
+    /** Read-or-create the persisted device_id (uuid, 0600). Minting happens ONLY on proven
+     *  absence (DR-59, codex): an unreadable file is NOT a first run — a fresh uuid here ROTATES
+     *  the device identity kimi has bound to the operator's session, so indeterminate access
+     *  throws instead, naming the file. */
     public fun deviceId(): String {
-        // ast-grep-ignore: kt-no-silent-result-collapse -- unreadable device-id file regenerates a fresh uuid below; identity continuity is best-effort
-        val existing = Cancellables.runCatchingCancellable {
-            if (Files.exists(deviceIdPath)) Files.readString(deviceIdPath).trim() else null
-        }.getOrNull()
+        val read = Cancellables.runCatchingCancellable { Files.readString(deviceIdPath).trim() }
+        val failure = read.exceptionOrNull()
+        if (failure != null) {
+            val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+                !Files.exists(deviceIdPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+            if (!genuinelyAbsent) {
+                throw java.io.IOException(
+                    "$deviceIdPath unreadable ($failure) — refusing to mint a NEW device id " +
+                        "over an existing identity; fix the file or remove it",
+                    failure,
+                )
+            }
+        }
+        val existing = read.getOrNull()
         if (!existing.isNullOrEmpty()) return existing
         val id = UUID.randomUUID().toString()
         writeSecure(deviceIdPath, id)

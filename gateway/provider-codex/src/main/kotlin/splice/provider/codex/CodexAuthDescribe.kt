@@ -45,9 +45,9 @@ internal class CodexAuthDescribe(
 ) {
     suspend fun describe(): AuthDescription {
         val out = mutableMapOf("auth_path" to authPath.toString())
-        // ast-grep-ignore: kt-no-silent-result-collapse -- introspection display only: a read failure renders as present=false, which is the displayed truth
-        val present = Cancellables.runCatchingCancellable {
-            if (!Files.exists(authPath)) return@runCatchingCancellable false
+        // ast-grep-ignore: kt-no-silent-result-collapse -- introspection display: present=false plus
+        // a read_error field when the failure is not genuine absence (DR-59), never a silent collapse
+        val presentOutcome = Cancellables.runCatchingCancellable {
             val raw = authJson.parseObject()
             val tokens = raw[FIELD_TOKENS] as? JsonObject
             val hasAccess = JsonScalars.str(tokens, FIELD_ACCESS_TOKEN)?.isNotEmpty() == true
@@ -56,7 +56,14 @@ internal class CodexAuthDescribe(
                 if (acct.isNotEmpty()) "${acct.take(MASK_KEEP)}…${acct.takeLast(MASK_KEEP)}" else ""
             JsonScalars.str(raw, FIELD_LAST_REFRESH)?.let { out[FIELD_LAST_REFRESH] = it }
             hasAccess
-        }.getOrDefault(false)
+        }
+        val present = presentOutcome.getOrDefault(false)
+        presentOutcome.exceptionOrNull()?.let { failure ->
+            // DR-59: indeterminate is not logged-out — name it in the description instead.
+            val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+                !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+            if (!genuinelyAbsent) out["read_error"] = failure.toString()
+        }
         val mtime = authFile.codexAuthMtimeOrNull(authPath, log)
         if (invalidGrantLatch.isLatched(mtime)) out["refresh_latched"] = INVALID_GRANT_REASON
         return AuthDescription(present = present, kind = KIND, fields = out)

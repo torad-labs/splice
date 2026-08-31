@@ -63,10 +63,12 @@ internal class GrokAuthDescribe(
     }.getOrNull()
 
     internal fun describe(): AuthDescription {
-        // ast-grep-ignore: kt-no-silent-result-collapse -- introspection display only: a read failure renders as present=false, which is the displayed truth
-        val present = Cancellables.runCatchingCancellable {
-            Files.exists(authPath) && authJson.tokensOf()?.get("access_token") != null
-        }.getOrDefault(false)
+        // ast-grep-ignore: kt-no-silent-result-collapse -- introspection display: present=false plus
+        // a read_error field when the failure is not genuine absence (DR-59), never a silent collapse
+        val presentOutcome = Cancellables.runCatchingCancellable {
+            authJson.tokensOf()?.get("access_token") != null
+        }
+        val present = presentOutcome.getOrDefault(false)
         val mtime = grokAuthMtimeOrNull(authPath, log)
         return AuthDescription(
             present = present,
@@ -75,6 +77,12 @@ internal class GrokAuthDescribe(
                 put("auth_path", authPath.toString())
                 put("login", "browser")
                 if (invalidGrantLatch.isLatched(mtime)) put("refresh_latched", INVALID_GRANT_REASON)
+                presentOutcome.exceptionOrNull()?.let { failure ->
+                    // DR-59: indeterminate is not logged-out — name it in the description instead.
+                    val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+                        !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                    if (!genuinelyAbsent) put("read_error", failure.toString())
+                }
             },
         )
     }

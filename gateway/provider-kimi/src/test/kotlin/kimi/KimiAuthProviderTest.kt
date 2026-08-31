@@ -533,4 +533,39 @@ class KimiSynthesizedExpiryTest {
         assertTrue("vendor_future_field" in onDisk, "unknown vendor field must survive: $onDisk")
         assertEquals("7200", onDisk["expires_in"]!!.jsonPrimitive.content, "rotation fields must replace")
     }
+
+    // DR-59 (class law): an INACCESSIBLE auth file is not a logged-out state — the old exists()
+    // pre-gate flattened it to "no credential file — not logged in" while intact tokens sat
+    // unreadable one chmod away. Describe names the same condition instead of rendering a clean
+    // logged-out dashboard.
+    @Test
+    fun `an inaccessible auth file is read-failed, never logged-out - DR-59`() = runTest {
+        val dir = Files.createTempDirectory("kimi-dr59")
+        val lockedDir = Files.createDirectories(dir.resolve("locked"))
+        val authPath = lockedDir.resolve("auth.json")
+        Files.writeString(authPath, """{"access_token":"tok","refresh_token":"r","expires_at":9999999999}""")
+        val drLog = mutableListOf<String>()
+        val auth = KimiAuthProvider(
+            authPath = authPath,
+            refreshCall = { RefreshAttempt.InvalidGrant("must-not-be-reached") },
+            log = splice.core.util.LogSink { drLog += it },
+        )
+        Files.setPosixFilePermissions(lockedDir, PosixFilePermissions.fromString("---------"))
+        try {
+            assertNull(auth.refresh())
+            val desc = auth.describe()
+            assertTrue(
+                desc.fields["read_error"].orEmpty().isNotEmpty(),
+                "describe must name indeterminate access, got ${desc.fields}",
+            )
+        } finally {
+            Files.setPosixFilePermissions(lockedDir, PosixFilePermissions.fromString("rwx------"))
+        }
+        assertTrue(drLog.any { it.contains("NOT a logged-out state") }, "ReadFailed story required: $drLog")
+        assertTrue(drLog.none { it.contains("not logged in") }, "must never claim logged-out: $drLog")
+
+        Files.delete(authPath)
+        val absent = auth.describe()
+        assertNull(absent.fields["read_error"], "true absence carries no read_error: ${absent.fields}")
+    }
 }

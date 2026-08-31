@@ -59,4 +59,35 @@ class KimiDeviceIdentityTest {
         assertEquals(first, KimiDeviceIdentity(deviceIdPath = path).deviceId()) // stable across instances
         assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(path)))
     }
+
+    // DR-59 (codex): minting on INDETERMINATE access ROTATES the device identity kimi has bound
+    // to the operator's session — an unreadable file must throw, never regenerate. True absence
+    // (a first run) still mints.
+    @Test
+    fun `an unreadable device id file never regenerates the identity - DR-59`() {
+        val dir = Files.createTempDirectory("kimi-id-locked")
+        val locked = Files.createDirectories(dir.resolve("locked"))
+        val path = locked.resolve("device_id")
+        Files.writeString(path, "11111111-1111-1111-1111-111111111111")
+        val id = KimiDeviceIdentity(deviceIdPath = path)
+        Files.setPosixFilePermissions(locked, PosixFilePermissions.fromString("---------"))
+        val thrown = try {
+            id.deviceId()
+            null
+        } catch (e: java.io.IOException) {
+            e
+        } finally {
+            Files.setPosixFilePermissions(locked, PosixFilePermissions.fromString("rwx------"))
+        }
+        assertTrue(thrown != null, "indeterminate access must throw, not mint")
+        assertTrue(thrown!!.message.orEmpty().contains("refusing to mint"), "named refusal: ${thrown.message}")
+        assertEquals(
+            "11111111-1111-1111-1111-111111111111",
+            Files.readString(path),
+            "the persisted identity must survive untouched",
+        )
+
+        val fresh = KimiDeviceIdentity(deviceIdPath = dir.resolve("never-created"))
+        assertTrue(fresh.deviceId().isNotEmpty(), "true absence still mints a first-run id")
+    }
 }

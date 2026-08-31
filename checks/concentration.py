@@ -241,7 +241,26 @@ SRC_GLOB = "gateway/*/src/main"
 SRC_RE = re.compile(r"^gateway/[^/]+/src/main/.*\.kt$")
 
 TYPE_DECL = re.compile(
-    r"^(public |internal |private )?(sealed |data |abstract |open |value |enum )*(class|interface|object) "
+    r"^(public |internal |private )?(sealed |data |abstract |open |value |enum |fun )*(class|interface|object) "
+)
+# THE CENSUS COUNTS EVERY SPELLING OF A TYPE, OR IT IS A DODGE LIST (DR-51, 2026-08-30).
+# `fun interface` — Kotlin's SAM seam, 92 of them across 43 files of this tree — failed TYPE_DECL
+# (no `fun ` in the modifier set) and PASSED EXPORT_DECL via its `fun `, so every one was billed 3
+# points as a function instead of 8 as the declared type it is. A ports file of ten seams read as
+# 30 where ten plain interfaces read as 80. Measured on landing: HIGH 0 -> 0, over-1.8 18 -> 18,
+# 7 moderate<->low flips, 43 files' C moved — the ONE DECLARATION, ONE BILL radius, and the same
+# kind of correction: it says only that a declaration is billed AS a declaration.
+#
+# NESTED types are REPORTED (the `nested_types` field below), deliberately NOT billed into C.
+# Counting them at 8 was measured first: HIGH 0 -> 1 (cli/Command.kt 1.60 -> 6.12), 20 band flips,
+# 76 files' C moved — and the minted HIGH rows are sealed hierarchies (Command's data-object
+# variants, ContentBlock's wire cases), i.e. the exact shape this repo's own style law produces,
+# not hidden collaborators. Charging the mandated idiom 8 points a variant re-scopes the campaign,
+# which the denominator paragraph above already reserves to the orchestrator as a calibration
+# decision. The field makes the blindness visible; the bill stays a human call.
+NESTED_TYPE_DECL = re.compile(
+    r"^[ \t]+(public |internal |private |protected )?"
+    r"(sealed |data |abstract |open |value |enum |inner |fun )*(class|interface|object)[ \t]+[A-Za-z_]"
 )
 EXPORT_DECL = re.compile(
     r"^(public |internal )?(sealed |data |abstract |open |value |enum |suspend |inline )*"
@@ -488,6 +507,9 @@ def measure(rel: str, text: str) -> dict:
     # admits `private ` and EXPORT_DECL does not, so a file with a top-level private class would
     # otherwise be CREDITED 3 points for hiding a collaborator. See the module docstring.
     non_type_exports = [line for line in exports if not TYPE_DECL.match(line)]
+    # Matched over LOGIC lines, not raw lines, so `* class Foo does ...` inside a doc comment is
+    # never a type; a type-shaped line inside a multiline string still counts, stated as the limit.
+    nested_types = [line for line in logic if NESTED_TYPE_DECL.match(line)]
     subsystems = {m.group(1) for line in lines if (m := SPLICE_IMPORT.match(line))}
     concerns = len(types) + len(subsystems)
     return {
@@ -497,6 +519,8 @@ def measure(rel: str, text: str) -> dict:
         "exports": len(exports),
         "exports_non_type": len(non_type_exports),
         "types": len(types),
+        # REPORTED, NOT BILLED — see NESTED_TYPE_DECL above for the measured re-scoping radius.
+        "nested_types": len(nested_types),
         "subsystems": sorted(subsystems),
         "concerns": concerns,
         "C": round(0.5 * len(logic) + 3 * len(non_type_exports) + 8 * concerns, 1),
@@ -557,7 +581,12 @@ def scan(rows: list[dict]) -> list[dict]:
         # output is not auditable.
         row["denominator"] = round(denominator, 1)
         row["denominator_floored"] = median < floor
-        row["ratio"] = round(row["C"] / denominator, 2) if denominator else 0.0
+        # The ratio divides the denominator AS REPORTED, never the unrounded value it came from
+        # (DR-51, 2026-08-30): dividing the raw value left 18 of 428 rows where C / the printed
+        # denominator reproduced a DIFFERENT ratio than the row carried — the exact "arithmetic
+        # cannot be reproduced from its own output" defect the REPORT-THE-DIVISOR comment above
+        # was written against, one rounding step further down.
+        row["ratio"] = round(row["C"] / row["denominator"], 2) if row["denominator"] else 0.0
         if row["C"] < global_median:
             row["band"] = "low"
         else:
@@ -591,11 +620,19 @@ def cause_of(was: dict, now: dict) -> tuple[str, float | None]:
         if neighbourhood_moved and not own_moved:
             return "neighbourhood", None
         return "mixed", None
-    own = abs(math.log(now["C"] / was["C"]))
-    neighbourhood = abs(math.log(was["denominator"] / now["denominator"]))
-    if own + neighbourhood == 0:
+    # SIGNED, never abs() (DR-51, 2026-08-30). With abs() the two shares still summed to 1, but the
+    # sum being claimed was a lie whenever the factors OPPOSED: C falling while the denominator fell
+    # faster is a ratio RISE that abs() split as "12% own / 88% neighbourhood" — reading as if the
+    # file's own density helped push the ratio up, when its signed contribution was NEGATIVE. Signed
+    # shares keep own + neighbourhood == 1 exactly (they are the two log factors over their sum) and
+    # a share outside [0, 1] is the honest picture: one factor amplified the move past 100% and the
+    # other pushed back. The dominance thresholds are unchanged and stay monotone over signed values.
+    own = math.log(now["C"] / was["C"])
+    neighbourhood = math.log(was["denominator"] / now["denominator"])
+    total = own + neighbourhood
+    if total == 0:
         return "mixed", None
-    share = own / (own + neighbourhood)
+    share = own / total
     if share >= CAUSE_DOMINANCE:
         return "own", share
     if share <= 1 - CAUSE_DOMINANCE:
@@ -613,6 +650,50 @@ def movement(ref: str, rows: list[dict]) -> list[dict]:
     before = {r["file"]: r for r in scan(collect_ref(ref))}
     after = {r["file"]: r for r in rows}
     moved = []
+    # ADDED AND DELETED FILES ARE MOVEMENT (DR-51, 2026-08-30). The old intersection loop silently
+    # dropped both, so "reports every file whose ratio moved" excluded the largest move there is —
+    # a file that did not exist at the ref. A new god object created since <ref> appeared in no row
+    # of the instrument whose docstring promises a landing note may not claim a ratio without it.
+    for name in sorted(set(after) - set(before)):
+        now = after[name]
+        moved.append(
+            {
+                "file": name,
+                "cause": "added",
+                "own_share": None,
+                "neighbourhood_share": None,
+                "C_before": None,
+                "C_after": now["C"],
+                "C_delta": now["C"],
+                "denominator_before": None,
+                "denominator_after": now["denominator"],
+                "denominator_delta": None,
+                "ratio_before": None,
+                "ratio_after": now["ratio"],
+                "band_before": None,
+                "band_after": now["band"],
+            }
+        )
+    for name in sorted(set(before) - set(after)):
+        was = before[name]
+        moved.append(
+            {
+                "file": name,
+                "cause": "deleted",
+                "own_share": None,
+                "neighbourhood_share": None,
+                "C_before": was["C"],
+                "C_after": None,
+                "C_delta": round(-was["C"], 1),
+                "denominator_before": was["denominator"],
+                "denominator_after": None,
+                "denominator_delta": None,
+                "ratio_before": was["ratio"],
+                "ratio_after": None,
+                "band_before": was["band"],
+                "band_after": None,
+            }
+        )
     for name in sorted(set(before) & set(after)):
         was, now = before[name], after[name]
         if was["ratio"] == now["ratio"]:
@@ -644,8 +725,11 @@ def report_movement(ref: str, moved: list[dict], max_ratio: float | None) -> Non
     # derived from withheld is the binary this replaced, wearing a longer word. `cause` stays the
     # last field on the line so `awk '{print $NF}'` and `grep 'neighbourhood$'` still work, and
     # "neighbourhood" contains no "own" substring, so the two grep cleanly.
+    survivors = [m for m in moved if m["cause"] not in ("added", "deleted")]
     print(f"{'file':52} {'ratio':>14}  {'ΔC':>8} {'Δdenom':>8}  {'band':>18}  {'own%':>5}  cause")
-    for m in moved:
+    for m in survivors:
+        # A signed share can sit outside [0, 1] — one factor amplified the move past 100% and the
+        # other pushed back. See cause_of; printing it clamped would re-create the abs() lie.
         share = "  n/a" if m["own_share"] is None else f"{m['own_share']:>5.0%}"
         print(
             f"{m['file'].replace('gateway/', '').replace('/src/main/kotlin/splice', '~')[:52]:52} "
@@ -653,10 +737,25 @@ def report_movement(ref: str, moved: list[dict], max_ratio: float | None) -> Non
             f"{m['C_delta']:+8.1f} {m['denominator_delta']:+8.1f}  "
             f"{m['band_before']:>8} ->{m['band_after']:>8}  {share}  {m['cause']}"
         )
-    counts = {c: sum(1 for m in moved if m["cause"] == c) for c in ("own", "neighbourhood", "mixed")}
+    # Added and deleted files are their own sections rather than rows forced into a before/after
+    # table half of which they do not have (DR-51 — the intersection loop used to drop them).
+    for m in (m for m in moved if m["cause"] == "added"):
+        print(
+            f"{m['file'].replace('gateway/', '').replace('/src/main/kotlin/splice', '~')[:52]:52} "
+            f"{'(none)':>6} ->{m['ratio_after']:6.2f}  {m['C_delta']:+8.1f} {'':8}  "
+            f"{'':>8} ->{m['band_after']:>8}  {'  n/a'}  added"
+        )
+    for m in (m for m in moved if m["cause"] == "deleted"):
+        print(
+            f"{m['file'].replace('gateway/', '').replace('/src/main/kotlin/splice', '~')[:52]:52} "
+            f"{m['ratio_before']:6.2f} ->{'(gone)':>6}  {m['C_delta']:+8.1f} {'':8}  "
+            f"{m['band_before']:>8} ->{'':>8}  {'  n/a'}  deleted"
+        )
+    counts = {c: sum(1 for m in moved if m["cause"] == c) for c in ("own", "neighbourhood", "mixed", "added", "deleted")}
     print(
         f"\n{len(moved)} file(s) moved since {ref} | own {counts['own']} "
         f"| neighbourhood {counts['neighbourhood']} | mixed {counts['mixed']} "
+        f"| added {counts['added']} | deleted {counts['deleted']} "
         f"(dominance threshold {CAUSE_DOMINANCE:.0%} of the log move)"
     )
     if max_ratio is not None:
@@ -736,10 +835,24 @@ def main() -> int:
         return 0
 
     if args.file:
-        target = next((r for r in rows if r["file"].endswith(args.file)), None)
-        if target is None:
+        matches = [r for r in rows if r["file"].endswith(args.file)]
+        if not matches:
             print(f"no such production file: {args.file}", file=sys.stderr)
             return 2
+        # AMBIGUITY IS EXIT 2, NEVER A SILENT PICK (DR-51, 2026-08-30). next() took whichever
+        # matching file sorted worst and reported it as THE answer, so `--file Topology.kt` with a
+        # twin basename graded a file the caller never named — the per-target acceptance gate
+        # (HD-24) then passes or fails on the wrong file with nothing red anywhere.
+        if len(matches) > 1:
+            print(
+                f"--file {args.file!r} is ambiguous — {len(matches)} production files match; "
+                f"name it uniquely:",
+                file=sys.stderr,
+            )
+            for r in matches:
+                print(f"  {r['file']}", file=sys.stderr)
+            return 2
+        target = matches[0]
         print(json.dumps(target, indent=2))
         # An excepted file is graded against its own ceiling here too, and says so out loud. A
         # per-target check that passed silently under an exemption would be the quietest possible

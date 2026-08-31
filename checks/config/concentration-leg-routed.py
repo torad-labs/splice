@@ -86,6 +86,15 @@ PYTHON = re.compile(r"^python(3(\.\d+)?)?$")
 # trailing comment.
 LEG_RUNNER = ("npm", "run")
 
+# MIDDLE FLAGS ARE PINNED TO AN ALLOWLIST (DR-51, 2026-08-30). `npm run <anything> gate:concentration`
+# used to satisfy the forward half as long as the first two tokens and the last one matched — but
+# npm flags can re-point or disarm the run: `--prefix <dir>` reads a DIFFERENT package.json than the
+# one the inverse half validates, and with `--if-present` beside it the leg exits 0 without the
+# oracle ever executing, both halves green. Reproduced against the pre-DR-51 guard:
+# `run "concentration" npm run --prefix /tmp --if-present gate:concentration` PASSED. Only output
+# shaping is benign; everything else is not a routing.
+LEG_FLAGS_ALLOWED = frozenset({"--silent", "-s"})
+
 
 def tokenize(line: str) -> list[str] | None:
     """The argv a POSIX shell would actually execute for `line`, or None if it does not tokenize.
@@ -235,7 +244,11 @@ def forward_problems() -> list[str]:
         if not argv or argv[0] != "run":
             continue
         command = argv[2:]  # argv[1] is run()'s label; everything after it is the command
-        if tuple(command[:2]) == LEG_RUNNER and command[-1:] == [SCRIPT]:
+        if (
+            tuple(command[:2]) == LEG_RUNNER
+            and command[-1:] == [SCRIPT]
+            and all(flag in LEG_FLAGS_ALLOWED for flag in command[2:-1])
+        ):
             routed.append(line.strip())
     if routed:
         return []

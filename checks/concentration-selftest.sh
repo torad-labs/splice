@@ -285,7 +285,141 @@ routing
 must_fail "6b. the gate.sh leg replaced by 'true', script name left in a trailing comment" "does not run 'gate:concentration'"
 reset_config
 
+# ── 7. census: `fun interface` is a TYPE, nested types are REPORTED (DR-51) ───────────────────
+# Red on the pre-DR-51 oracle: `fun interface` failed TYPE_DECL (no `fun ` modifier) and was
+# billed 3 as an export, and no nested_types field existed at all.
+SYNTH2="$tmp/gateway/zz-selftest-census/src/main/kotlin/splice/selftest2"
+mkdir -p "$SYNTH2"
+cat > "$SYNTH2/SelftestCensus.kt" <<'KT'
+package splice.selftest2
+fun interface SelftestSeam { fun run(): Int }
+class SelftestHost(val v: String) {
+    class Nested(val x: Int)
+}
+KT
+oracle --file SelftestCensus.kt
+if [ "$rc" -ne 0 ]; then
+  err "7. census arm — --file SelftestCensus.kt must succeed (exit $rc): $(head -3 "$tmp/out" | tr '\n' ' ')"
+elif ! grep -q '"types": 2' "$tmp/out"; then
+  err "7. census arm — fun interface must be counted as a TYPE (want types=2): $(grep -E '\"(types|C)\"' "$tmp/out" | tr '\n' ' ')"
+elif ! grep -q '"nested_types": 1' "$tmp/out"; then
+  err "7. census arm — the nested class must be REPORTED in nested_types: $(grep nested "$tmp/out" | tr '\n' ' ')"
+elif ! grep -q '"C": 18.0' "$tmp/out"; then
+  err "7. census arm — C must bill the fun interface at 8 and the nested type at 0 (want 18.0): $(grep '\"C\"' "$tmp/out" | tr '\n' ' ')"
+else
+  note "✓ 7. census: fun interface billed as a type, nested type reported unbilled"
+fi
+rm -rf "$tmp/gateway/zz-selftest-census"
+
+# ── 8. --file ambiguity is exit 2, never a silent pick (DR-51) ────────────────────────────────
+mkdir -p "$tmp/gateway/zz-selftest-twin-a/src/main/kotlin/splice/twina" \
+         "$tmp/gateway/zz-selftest-twin-b/src/main/kotlin/splice/twinb"
+printf 'package splice.twina\nclass TwinA(val v: Int)\n' > "$tmp/gateway/zz-selftest-twin-a/src/main/kotlin/splice/twina/SelftestTwin.kt"
+printf 'package splice.twinb\nclass TwinB(val v: Int)\n' > "$tmp/gateway/zz-selftest-twin-b/src/main/kotlin/splice/twinb/SelftestTwin.kt"
+oracle --file SelftestTwin.kt
+must_fail "8. duplicate --file basename must be refused as ambiguous" "is ambiguous"
+if ! grep -q "zz-selftest-twin-a" "$tmp/out" || ! grep -q "zz-selftest-twin-b" "$tmp/out"; then
+  err "8. ambiguity arm — the refusal must NAME both matching files: $(tail -4 "$tmp/out" | tr '\n' ' ')"
+fi
+rm -rf "$tmp/gateway/zz-selftest-twin-a" "$tmp/gateway/zz-selftest-twin-b"
+
+# ── 9. every emitted ratio reproduces from its own row (DR-51) ────────────────────────────────
+# Red on the pre-DR-51 oracle: 18 of 428 live rows divided the UNROUNDED denominator, so
+# C / the printed denominator gave a different ratio than the row carried.
+oracle --json
+if [ "$rc" -ne 0 ]; then
+  err "9. reproducibility arm — --json must succeed (exit $rc)"
+elif ! python3 - "$tmp/out" <<'PY'
+import json, sys
+rows = json.load(open(sys.argv[1]))
+bad = [r["file"] for r in rows if r["denominator"] and r["ratio"] != round(r["C"] / r["denominator"], 2)]
+sys.exit(1 if bad else 0)
+PY
+then
+  err "9. reproducibility arm — some row's ratio does not equal round(C / denominator, 2): the gate's arithmetic cannot be reproduced from its own output"
+else
+  note "✓ 9. every row's ratio reproduces from its printed C and denominator"
+fi
+
+# ── 10. routing guard: npm middle flags are pinned (DR-51) ────────────────────────────────────
+# Red on the pre-DR-51 guard: --prefix re-points npm at a package.json the inverse half never
+# validates, and --if-present turns the missing script into exit 0 — both halves stayed green.
+python3 - "$tmp/checks/gate.sh" <<'PY'
+import pathlib, sys
+path = pathlib.Path(sys.argv[1])
+hijacked = 'run "concentration"  npm run --prefix /tmp --if-present gate:concentration\n'
+out, n = [], 0
+for line in path.read_text().splitlines(keepends=True):
+    if "gate:concentration" in line and line.lstrip().startswith("run "):
+        out.append(hijacked)
+        n += 1
+    else:
+        out.append(line)
+assert n == 1, "gate.sh has no `run` leg naming gate:concentration"
+path.write_text("".join(out))
+PY
+routing
+must_fail "10. npm middle flags (--prefix /tmp --if-present) must not count as a routing" "does not run 'gate:concentration'"
+reset_config
+
+# ── 11. --since: added/deleted files and SIGNED cause shares (DR-51) ──────────────────────────
+# A tiny self-contained git repo, so collect_ref has a real HEAD to archive. Red on the
+# pre-DR-51 oracle: the intersection loop dropped the added and deleted rows entirely, and abs()
+# shares could not go negative, so an own-C FALL during a ratio RISE read as a positive share.
+G="$tmp/since-repo"
+mkdir -p "$G/checks" "$G/gateway/m1/src/main/kotlin/splice/a" "$G/gateway/m2/src/main/kotlin/splice/b"
+cp "$ROOT/checks/concentration.py" "$G/checks/concentration.py"
+{ printf 'package splice.a\nimport splice.b.SelftestMarkerB\nclass A0(val v: Int)\n'; for i in $(seq 1 40); do printf 'class AF%s(val v: Int)\n' "$i"; done; } > "$G/gateway/m1/src/main/kotlin/splice/a/A.kt"
+{ printf 'package splice.b\nclass SelftestMarkerB(val v: Int)\n'; for i in $(seq 1 200); do printf 'class BF%s(val v: Int)\n' "$i"; done; } > "$G/gateway/m2/src/main/kotlin/splice/b/B.kt"
+printf 'package splice.b\nclass Doomed(val v: Int)\n' > "$G/gateway/m2/src/main/kotlin/splice/b/Doomed.kt"
+git -C "$G" -c init.defaultBranch=selftest init -q
+git -C "$G" add -A
+git -C "$G" -c user.email=selftest@invalid -c user.name=selftest commit -qm fixture
+# Working-tree movement: A loses a line (own C FALLS), B loses most of its bulk (the neighbour
+# median COLLAPSES, so A's ratio RISES on an opposing own factor), one file is added, one deleted.
+{ printf 'package splice.a\nimport splice.b.SelftestMarkerB\nclass A0(val v: Int)\n'; for i in $(seq 1 39); do printf 'class AF%s(val v: Int)\n' "$i"; done; } > "$G/gateway/m1/src/main/kotlin/splice/a/A.kt"
+printf 'package splice.b\nclass SelftestMarkerB(val v: Int)\n' > "$G/gateway/m2/src/main/kotlin/splice/b/B.kt"
+printf 'package splice.a\nclass Fresh(val v: Int)\n' > "$G/gateway/m1/src/main/kotlin/splice/a/Fresh.kt"
+rm "$G/gateway/m2/src/main/kotlin/splice/b/Doomed.kt"
+python3 "$G/checks/concentration.py" --since HEAD --json >"$tmp/out" 2>&1; rc=$?
+if [ "$rc" -ne 0 ]; then
+  err "11. --since arm — the fixture repo run must succeed (exit $rc): $(head -3 "$tmp/out" | tr '\n' ' ')"
+elif ! python3 - "$tmp/out" <<'PY'
+import json, sys
+rows = {r["file"]: r for r in json.load(open(sys.argv[1]))}
+a = rows.get("gateway/m1/src/main/kotlin/splice/a/A.kt")
+fresh = rows.get("gateway/m1/src/main/kotlin/splice/a/Fresh.kt")
+doomed = rows.get("gateway/m2/src/main/kotlin/splice/b/Doomed.kt")
+problems = []
+if fresh is None or fresh["cause"] != "added":
+    problems.append(f"added file missing or mislabelled: {fresh}")
+if doomed is None or doomed["cause"] != "deleted":
+    problems.append(f"deleted file missing or mislabelled: {doomed}")
+if a is None:
+    problems.append("A.kt (the signed-share case) did not appear in the movement report")
+else:
+    if a["ratio_after"] <= a["ratio_before"]:
+        problems.append(f"fixture defect: A's ratio must RISE, got {a['ratio_before']} -> {a['ratio_after']}")
+    if a["cause"] != "neighbourhood":
+        problems.append(f"A's move is denominator-dominated; cause must be neighbourhood, got {a['cause']}")
+    if a["own_share"] is None or a["own_share"] >= 0:
+        problems.append(
+            f"A's own C FELL while its ratio ROSE — the signed own share must be NEGATIVE, got "
+            f"{a['own_share']} (abs() shares cannot say this)")
+    if a["own_share"] is not None and abs(a["own_share"] + a["neighbourhood_share"] - 1) > 0.002:
+        problems.append(f"shares must sum to 1: {a['own_share']} + {a['neighbourhood_share']}")
+for p in problems:
+    print(p)
+sys.exit(1 if problems else 0)
+PY
+then
+  err "11. --since arm — added/deleted rows or signed shares wrong: $(tail -5 "$tmp/out" | tr '\n' ' ')"
+else
+  note "✓ 11. --since reports added/deleted files, and cause shares are signed"
+fi
+rm -rf "$G"
+
 if [ "$fail" -eq 0 ]; then
-  note "concentration selftest: control green, 11 fixtures red for their stated reasons"
+  note "concentration selftest: control green, 11 mutation fixtures red for their stated reasons, 5 DR-51 arms green"
 fi
 exit "$fail"

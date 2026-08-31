@@ -680,30 +680,41 @@ verify = "python3 dev/campaigns/manifest.py dev/campaigns/drift-repair.toml self
 id = "DR-51"
 phase = "tooling"
 title = "Concentration tooling batch (codex lens): guard accepts npm run --if-present no-such-script; census misses nested types + fun interface; --since omits added/deleted files; emitted denominator disagrees with the ratio; abs cause shares lose sign/direction; duplicate --file basename silently picks the first."
-files = ["dev/concentration"]
-status = "todo"
+files = ["checks/concentration.py", "checks/concentration-selftest.sh", "checks/config/concentration-leg-routed.py", "checks/gate.sh"]
+status = "done"
 verify = "bash checks/gate.sh"
+# [2026-08-30] CLAIM: owner=claude-splice at=2026-08-31T03:16:05Z
+# [2026-08-30] ATTEST-START: tree=337002105910e5e17029a30b98c6a7f074cdc44f at=2026-08-31T03:16:05Z
+# [2026-08-30] FENCE-EDITED: files = ["dev/concentration"] -> files = ["checks/concentration.py", "checks/concentration-selftest.sh", "checks/config/concentration-leg-routed.py", "checks/gate.sh"] (by=orchestrator implied; no flag)
+# [2026-08-30] 2026-08-30 claude-splice fence corrected: dev/concentration does not exist in the tree — the concentration tooling is checks/concentration.py + checks/concentration-selftest.sh + checks/config/concentration-leg-routed.py (enumerated from the source, sect-24); gate.sh included in case the leg line needs pinning.
+# [2026-08-30] 2026-08-30 claude-splice landed, six sub-fixes: (1) guard middle-flag allowlist {--silent,-s} — reproduced the --prefix/--if-present hijack green on the old guard; (2) census: fun interface billed as a TYPE (was 3-pt export; radius measured: HIGH 0->0, over-1.8 18->18, 7 mod<->low flips, 43 C moved — ONE-BILL-precedent size); nested types REPORTED unbilled in new nested_types field (billing them measured HIGH 0->1 via cli/Command.kt 1.60->6.12 + 20 flips — the minted HIGHs are the mandated sealed idiom, so the 8-pt bill stays an operator calibration call, docstring-recorded); (3) --since emits added/deleted rows (intersection loop dropped them); (4) ratio divides the REPORTED denominator (18/428 live rows disagreed); (5) cause shares SIGNED (abs() hid opposing factors; sum==1 now exact); (6) --file ambiguity is exit 2 naming all matches. Selftest arms 7-11: red-proven via stash-run against unfixed checkers (all 5 red for stated reasons), green 18/18 after; RATCHET_MAX_HIGH stays 0. OPERATOR FLAG for close-out: whether nested types should ever be billed into C.
+# [2026-08-30] ATTEST: scoped diffstat: checks/concentration-selftest.sh          | 136 +++++++++++++++++++++++++++++- | checks/concentration.py                   | 133 ++++++++++++++++++++++++++--- | checks/config/concentration-leg-routed.py |  15 +++- | 3 files changed, 272 insertions(+), 12 deletions(-); sidecar: .claude/ledger-diffs/DR-51.diff; off-scope: none
 
 [[items]]
 id = "DR-52"
 phase = "walls"
 title = "Wall scanner gaps (codex lens): config-guard scans .yml but not .yaml; the dispatcher wall misses import aliases. Both are silent-scope holes - a renamed file or aliased import walks past."
 files = ["checks/config-guard.sh", ".rules/kotlin-splice/kt-no-hardcoded-dispatchers.yml", ".rules/rule-tests/kt-no-hardcoded-dispatchers-test.yml"]
-status = "in_flight"
+status = "verified"
 verify = "bash checks/config-guard.sh && npm run gate:rules"
 # [2026-08-30] FENCE-EDITED: files = ["checks/rule-routing.sh"] -> files = ["checks/config-guard.sh", ".rules/kotlin-splice/kt-no-hardcoded-dispatchers.yml", ".rules/rule-tests/kt-no-hardcoded-dispatchers-test.yml"] (by=orchestrator implied; no flag)
 # [2026-08-30] VERIFY-EDITED: verify = "bash checks/rule-routing.sh" -> verify = "bash checks/config-guard.sh && npm run gate:rules" (by=orchestrator implied; no flag)
 # [2026-08-30] 2026-08-30 claude-splice fence+verify widened per codex inspection, tree-verified before edit: rule-routing.sh:44 already counts yml+yaml (no semantic edit needed there — dropped from fence); config-guard.sh has zero yaml handling (the .yaml hole is real, lives there); both .rules targets exist. Verify uses gate:rules (runs ast-grep test incl. the vendored pack config) rather than bare ast-grep test.
 # [2026-08-30] CLAIM: owner=codex-splice at=2026-08-31T03:03:12Z
 # [2026-08-30] ATTEST-START: tree=facc22403c68890078bf6d0e19b3c250f07a36c6 at=2026-08-31T03:03:12Z
+# [2026-08-30] 2026-08-30 claude-splice adversarial verdict on 265915a: final rule = 3 literal patterns + member-import pattern (import Dispatchers.$LANE, matches aliased+bare spellings, flags the import line) + object-alias relational arm (unified $ALIAS binding). Verified myself on the pushed tip: config-guard PASS (my 40-file .yaml severity sweep had pre-cleared collateral), gate:rules 46/46, dispatcher fixture 15/15, plus an independent sgconfig probe of the member-import alias shape (1 finding). Their loop caught two shapes past my first review (member-import alias; a mutation-proven redundant pattern removed) — both red-first. rule-routing.sh untouched per fence note (yml+yaml already handled at :44).
+# [2026-08-30] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: checks/concentration.py, checks/config/concentration-leg-routed.py, checks/e2e/heads-e2e.sh, dev/campaigns/manifest.py, gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/InboxListener.kt, gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/WsConnectionFactory.kt, gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/WsConnectionPool.kt, gateway/dialect-openai-responses/src/test/kotlin/WsUpstreamTest.kt, ... 2 more
+# [2026-08-30] VERDICT: outcome=accepted
 
 [[items]]
 id = "DR-53"
 phase = "walls"
 title = "Mutation-proven weak walls (codex lens, five sites): NF-01 clear scope, NF-04 date fallback call, NF-06 live guard site, SH-10 lexical provenance, SH-11 both strict RMW sites - each survived a mutation that should have killed it. Strengthen each until its mutation dies."
 files = ["dev/campaigns/proxy-hardening/walls"]
-status = "todo"
+status = "in_flight"
 verify = "bash checks/gate.sh"
+# [2026-08-30] CLAIM: owner=codex-splice at=2026-08-31T03:26:08Z
+# [2026-08-30] ATTEST-START: tree=19e325a004b744103549f68713e58aeb271d6a25 at=2026-08-31T03:26:08Z
 
 [[items]]
 id = "DR-54"

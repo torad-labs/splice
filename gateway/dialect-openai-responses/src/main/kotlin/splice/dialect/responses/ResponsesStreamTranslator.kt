@@ -4,7 +4,8 @@
 //     (empty thinking widgets otherwise);
 //   - reasoning summary PARTS join with "\n\n" into ONE thinking block; closing per part was
 //     v24's truncation bug — blocks close only on output_item.done / the end sweep;
-//   - *_text.done / *_part.done are IGNORED (fire per part);
+//   - outside sequential_cutoff, *_text.done / *_part.done are IGNORED (fire per part); cutoff
+//     renders reasoning_summary_text.done atomically and ignores its deltas;
 //   - tool args stream as input_json_delta on the SAME wire block index;
 //   - failure events are captured and the loop CONTINUES (the terminal decision happens after);
 //   - replay (gated) emits redacted_thinking IN POSITION right after its item closes;

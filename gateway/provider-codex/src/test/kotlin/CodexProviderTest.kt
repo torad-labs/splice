@@ -2,8 +2,11 @@
 // longer adds it in applyAuth — that made account_id_header=false a no-op). This pins the gate:
 // flag=true + a Bearer with an account id => header present; flag=false => absent, even with an
 // account id available.
+import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -14,6 +17,7 @@ import org.junit.jupiter.api.Test
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.core.index.WireBlockIndex
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.parse.AnthropicParse
@@ -23,6 +27,8 @@ import splice.dialect.responses.ToolDeferralPolicy
 import splice.provider.codex.CodexProvider
 import splice.provider.codex.CodexQuirks
 import splice.spi.ProviderTuning
+import splice.spi.TurnSignals
+import splice.spi.WireSink
 import kotlin.time.Duration.Companion.seconds
 
 class CodexProviderTest {
@@ -32,6 +38,26 @@ class CodexProviderTest {
         override suspend fun refresh() = credentials()
         override suspend fun describe() = AuthDescription(true, "chatgpt-oauth", emptyMap())
     }
+
+    private class SummarySink : WireSink {
+        val thinking = mutableListOf<String>()
+        private var next = 0
+        override suspend fun openText(): WireBlockIndex = WireBlockIndex(next++)
+        override suspend fun openThinking(): WireBlockIndex = WireBlockIndex(next++)
+        override suspend fun openTool(id: String, name: String): WireBlockIndex = WireBlockIndex(next++)
+        override suspend fun textDelta(index: WireBlockIndex, text: String) = Unit
+        override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) {
+            this.thinking += thinking
+        }
+
+        override suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String) = Unit
+        override suspend fun closeBlock(index: WireBlockIndex) = Unit
+        override suspend fun closeAll() = Unit
+        override suspend fun addTextBlock(text: String) = Unit
+        override suspend fun addRedactedThinking(data: String) = Unit
+    }
+
+    private fun event(json: String): JsonObject = Json.parseToJsonElement(json).jsonObject
 
     private fun provider(
         accountIdHeader: Boolean,
@@ -85,6 +111,40 @@ class CodexProviderTest {
         )
 
         assertEquals("", built.requestBody.getValue("instructions").jsonPrimitive.content)
+    }
+
+    @Test
+    fun `codex production profile suppresses an exact within-item summary repeat`() = runTest {
+        val codex = provider(accountIdHeader = false)
+        val built = codex.buildTurn(deferrableTurnBody(), compact = false, sessionId = "s1")
+        val repeated = "Checking the exact same migration precondition"
+        val sink = SummarySink()
+        codex.streamTranslator(
+            built.meta,
+            TurnSignals(clientGone = { false }, watchdogFired = { null }),
+        ).driveTurn(
+            listOf(
+                event(
+                    """{"type":"response.output_item.added","output_index":0,""" +
+                        """"item":{"type":"reasoning","id":"rs_repeat"}}""",
+                ),
+                event(
+                    """{"type":"response.reasoning_summary_text.done","item_id":"rs_repeat",""" +
+                        """"output_index":0,"summary_index":0,"text":"$repeated"}""",
+                ),
+                event(
+                    """{"type":"response.reasoning_summary_text.done","item_id":"rs_repeat",""" +
+                        """"output_index":0,"summary_index":0,"text":"$repeated"}""",
+                ),
+                event(
+                    """{"type":"response.completed","response":{"id":"r1",""" +
+                        """"usage":{"input_tokens":1,"output_tokens":1}}}""",
+                ),
+            ).asFlow(),
+            sink,
+        )
+
+        assertEquals(1, sink.thinking.count { repeated in it }, "repeat leaked: ${sink.thinking}")
     }
 
     // A turn body with 1 builtin (eager) + 10 mcp-prefixed tools (deferrable at minDeferred=4).

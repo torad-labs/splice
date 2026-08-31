@@ -5,7 +5,7 @@
 # This makes that regression fail CI — the config surface is now a checked boundary, not a soft one.
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT"
+cd "$ROOT" || exit 1
 fail=0
 err() { echo "  ✗ $1"; fail=1; }
 
@@ -38,8 +38,19 @@ while IFS= read -r f; do
   if grep -qE '^[[:space:]]*(valid|invalid):' "$f" && ! grep -qE '^[[:space:]]*rule:' "$f"; then
     continue # a rule-test fixture, not a rule definition
   fi
-  sev=$(grep -E '^[[:space:]]*severity:' "$f" | head -1 | awk '{print $2}')
-  [ "$sev" = "error" ] || err "$f severity is '${sev:-unset}', must be 'error'"
+  # DR-115: ast-grep loads MULTI-DOCUMENT YAML, and a doc runs NON-BLOCKING both when its
+  # severity is downgraded AND when severity is omitted (proven: a severity-less matching doc
+  # exits `ast-grep scan` 0). The old `head -1` read only the first doc, so an appended
+  # warning/severity-less doc dodged this wall by document position. Every doc — counted by its
+  # id line, the same marker the fixture exemption above keys on — must carry severity: error.
+  bad=$(grep -nE '^[[:space:]]*severity:' "$f" | grep -vE 'severity:[[:space:]]*error([[:space:]]|$)' | head -3)
+  ids=$(grep -cE '^[[:space:]]*id:' "$f")
+  errors=$(grep -cE '^[[:space:]]*severity:[[:space:]]*error([[:space:]]|$)' "$f")
+  if [ -n "$bad" ]; then
+    err "$f has a non-error severity (every YAML doc must be 'severity: error'): $bad"
+  elif [ "$errors" -ne "$ids" ]; then
+    err "$f declares $ids rule doc(s) but $errors 'severity: error' line(s) — a doc without one runs non-blocking"
+  fi
 done < <(find .rules -type f \( -name '*.yml' -o -name '*.yaml' \) -print)
 
 # 4. Dependabot Kotlin ignore block stays scoped to the compiler/toolchain (#18/#37),

@@ -9,7 +9,7 @@
 # Run: `npm run gate`  or  `bash checks/gate.sh`
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT"
+cd "$ROOT" || exit 1
 
 # Splice requires JDK 21 (module law + toolchain). Resolve JAVA_HOME from the running VM's own
 # java.home property rather than OS/package-manager-specific paths. This works for Linux and macOS
@@ -99,6 +99,7 @@ run "oracle replay" npm run --silent oracle:replay
 # The live `e2e:heads` lane is billed and stays out of this ladder.
 run "heads-e2e selftest" bash checks/e2e/heads-e2e-selftest.sh
 run "config guard"   bash checks/config-guard.sh
+run "config-guard selftest" bash checks/config-guard-selftest.sh
 run "pr title"       bash checks/pr-title.sh
 # Two layers, deliberately. The generator makes the hazards inexpressible (#924); the canary
 # selftest is defence in depth over its OUTPUT, so a bug in the generator itself still gets caught.

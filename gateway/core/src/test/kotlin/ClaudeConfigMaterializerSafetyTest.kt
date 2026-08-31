@@ -222,3 +222,146 @@ class ClaudeConfigMaterializerSafetyTest {
         )
     }
 }
+
+// DR-64 (sweep 2026-08-31, both seats independently): JsonStateReads carried an exists/symlink
+// pre-gate into both modes. Strict read a REAL local .claude.json under an untraversable dir —
+// and any symlinked local — as "fresh head, safe to seed" and destroyed operator state; tolerant
+// silently blanked unreadable global sources and skipped readable dotfiles symlinks. Own class:
+// the safety suite above sits near the LargeClass ceiling. Fixtures duplicated per its header.
+class JsonStateReadsSafetyTest {
+
+    private val allPolicy = ClaudePolicy(
+        share = setOf("settings", "mcps", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE.md"),
+        isolate = emptySet(),
+    )
+    private val optionsCache: JsonElement = buildJsonObject { put("cache", "codex-models") }
+    private val statusline = "\"/usr/bin/curl\" -s :3096/statusline"
+
+    private fun seedGlobal(home: Path) {
+        val g = home.resolve(".claude")
+        Files.createDirectories(g.resolve("agents"))
+        g.resolve("settings.json").writeText("""{"theme":"dark","permissions":{"allow":["Bash"]}}""")
+        g.resolve("CLAUDE.md").writeText("global rules")
+        home.resolve(".claude.json").writeText(
+            """{"mcpServers":{"fs":{"command":"x"}},"verbose":true,"theme":"dark","extra":"keepme"}""",
+        )
+    }
+
+    private fun spec(configDir: Path) =
+        MaterializeSpec(configDir, allPolicy, listOf("m1"), "m1", optionsCache, statusline)
+
+    // codex's red repro: a REAL local .claude.json under an untraversable head dir read as absent
+    // through the pre-gate, and materialize rebuilt the file over the operator's keys. The
+    // SymlinkOp seam restores access AFTER the strict read, so on unfixed code the materialize
+    // completes and the overwrite is observable; fixed code aborts before any mutation.
+    @Test
+    fun `a real local claude json under an untraversable dir aborts before mutation`(@TempDir home: Path) {
+        seedGlobal(home)
+        val configDir = home.resolve(".claude-head")
+        Files.createDirectories(configDir)
+        val precious = """{"operator_key":"must-survive"}"""
+        configDir.resolve(".claude.json").writeText(precious)
+        Files.setPosixFilePermissions(configDir, PosixFilePermissions.fromString("---------"))
+        val restoringSeam = SymlinkOp { link, target ->
+            Files.setPosixFilePermissions(configDir, PosixFilePermissions.fromString("rwx------"))
+            Files.createSymbolicLink(link, target)
+        }
+        try {
+            assertThrows(IOException::class.java) {
+                ClaudeConfigMaterializer(home, LogSink { }, restoringSeam).materialize(spec(configDir))
+            }
+        } finally {
+            Files.setPosixFilePermissions(configDir, PosixFilePermissions.fromString("rwx------"))
+        }
+        assertEquals(
+            precious,
+            configDir.resolve(".claude.json").readText(),
+            "an indeterminate strict read must abort with the operator's local keys untouched",
+        )
+    }
+
+    @Test
+    fun `a symlinked local claude json aborts instead of replacing the operator's link`(@TempDir home: Path) {
+        seedGlobal(home)
+        val configDir = home.resolve(".claude-head")
+        Files.createDirectories(configDir)
+        val target = home.resolve("dotfiles-claude.json")
+        target.writeText("""{"operator_key":"must-survive"}""")
+        val local = configDir.resolve(".claude.json")
+        Files.createSymbolicLink(local, target)
+
+        assertThrows(IOException::class.java) {
+            ClaudeConfigMaterializer(home).materialize(spec(configDir))
+        }
+
+        assertTrue(Files.isSymbolicLink(local), "the operator's link must survive the abort")
+        assertEquals("""{"operator_key":"must-survive"}""", target.readText(), "the link target stays untouched")
+    }
+
+    @Test
+    fun `an unreadable global claude json degrades loud, never silent`(@TempDir home: Path) {
+        seedGlobal(home)
+        val configDir = home.resolve(".claude-head")
+        Files.createDirectories(configDir)
+        Files.setPosixFilePermissions(home.resolve(".claude.json"), PosixFilePermissions.fromString("---------"))
+        val log = mutableListOf<String>()
+        try {
+            ClaudeConfigMaterializer(home, log = LogSink { log += it }).materialize(spec(configDir))
+        } finally {
+            Files.setPosixFilePermissions(home.resolve(".claude.json"), PosixFilePermissions.fromString("rw-------"))
+        }
+        assertTrue(
+            log.any { it.contains("NOT inherited") },
+            "an unreadable merge source must leave a trace: $log",
+        )
+        assertFalse(
+            configDir.resolve(".claude.json").readText().contains("mcpServers"),
+            "nothing inherited from the unreadable source",
+        )
+    }
+
+    // codex's third repro, file-level flavor: settings.json itself unreadable while the dir
+    // traverses. The old chain (exists pre-gate -> tolerant swallow) read the base as EMPTY and
+    // rebuilt the file, silently resetting the operator's saved model; a real settings file the
+    // rewrite cannot verify must abort instead. Symlink stays the deliberate EMPTY case and a
+    // corrupt-content file still rebuilds (the materializer owns it) — both pinned by neighbors.
+    @Test
+    fun `an unreadable real settings file aborts instead of being rebuilt over`(@TempDir home: Path) {
+        seedGlobal(home)
+        val configDir = home.resolve(".claude-head")
+        Files.createDirectories(configDir)
+        val settings = configDir.resolve("settings.json")
+        val precious = """{"model":"m-special","operator_key":"must-survive"}"""
+        settings.writeText(precious)
+        Files.setPosixFilePermissions(settings, PosixFilePermissions.fromString("---------"))
+        try {
+            assertThrows(IOException::class.java) {
+                ClaudeConfigMaterializer(home).materialize(spec(configDir))
+            }
+        } finally {
+            Files.setPosixFilePermissions(settings, PosixFilePermissions.fromString("rw-------"))
+        }
+        assertEquals(
+            precious,
+            settings.readText(),
+            "an unverifiable real settings file must survive the abort byte-identically",
+        )
+    }
+
+    @Test
+    fun `a symlinked global claude json is a readable merge source`(@TempDir home: Path) {
+        seedGlobal(home)
+        val real = home.resolve("dotfiles-claude.json")
+        Files.move(home.resolve(".claude.json"), real)
+        Files.createSymbolicLink(home.resolve(".claude.json"), real)
+        val configDir = home.resolve(".claude-head")
+        Files.createDirectories(configDir)
+
+        ClaudeConfigMaterializer(home).materialize(spec(configDir))
+
+        assertTrue(
+            configDir.resolve(".claude.json").readText().contains("\"fs\""),
+            "a dotfiles-symlinked global must still feed the mcp inherit",
+        )
+    }
+}

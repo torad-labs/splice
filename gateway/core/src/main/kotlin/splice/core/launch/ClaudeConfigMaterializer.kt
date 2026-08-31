@@ -66,7 +66,7 @@ public class ClaudeConfigMaterializer(
         prettyPrint = true
     }
     private val sessionRegistry = SessionRegistryLink()
-    private val jsonReads = JsonStateReads(json)
+    private val jsonReads = JsonStateReads(json, log)
 
     /** Materialize a head's isolated CLAUDE_CONFIG_DIR from [spec]. */
     public fun materialize(spec: MaterializeSpec): MaterializeResult {
@@ -258,8 +258,19 @@ public class ClaudeConfigMaterializer(
     // ATOMIC_MOVE replaces the symlink NAME without following it — the operator's global is never
     // clobbered and the swap is a single atomic step with no missing-file window.
     private fun readSettingsModelBase(dst: Path): JsonObject {
-        if (!Files.exists(dst, NOFOLLOW_LINKS) || dst.isSymbolicLink()) return EMPTY_JSON
-        return jsonReads.tolerant(dst)
+        // A symlink stays the deliberate EMPTY case (the operator's global model is not this
+        // head's to preserve). Everything else direct-reads (DR-64): proven absence or corrupt
+        // CONTENT rebuilds (the materializer owns this file), but indeterminate ACCESS to a real
+        // settings file aborts — rebuilding over it silently reset the operator's saved model.
+        if (dst.isSymbolicLink()) return EMPTY_JSON
+        return Cancellables.runCatchingCancellable { json.parseToJsonElement(Files.readString(dst)).jsonObject }
+            .getOrElse { failure ->
+                val genuinelyAbsent = failure is NoSuchFileException && !Files.exists(dst, NOFOLLOW_LINKS)
+                if (failure is IOException && !genuinelyAbsent) {
+                    throw IOException("$dst unreadable ($failure) — refusing to rebuild the head settings over it")
+                }
+                EMPTY_JSON
+            }
     }
 
     private fun isCarriedGlobalKey(key: String): Boolean =
@@ -321,18 +332,40 @@ public class ClaudeConfigMaterializer(
 // KeyStore.entriesStrict doctrine): ABSENT = a fresh head, safe to seed; UNPARSEABLE = unknown
 // state — abort the materialize (and with it the launch) rather than rebuild a five-key file over
 // every local key Claude Code owns, the approved customApiKeyResponses included.
-private class JsonStateReads(private val json: Json) {
+private class JsonStateReads(private val json: Json, private val log: LogSink) {
 
-    fun tolerant(path: Path): JsonObject {
-        if (path.isSymbolicLink() || !Files.exists(path)) return EMPTY_JSON
-        return Cancellables.runCatchingCancellable { json.parseToJsonElement(Files.readString(path)).jsonObject }
-            .getOrDefault(EMPTY_JSON)
-    }
+    // Sweep 2026-08-31 (absence class): both modes carried an exists/symlink pre-gate. Tolerant
+    // read an unreadable global as silent EMPTY (the head lost every carried key with no trace)
+    // and skipped readable dotfiles symlinks; strict read a symlinked local as "fresh head" and
+    // seeded OVER the operator's link. Now the read is attempted first and only a proven absence
+    // (NoSuch + no NOFOLLOW entry) is quiet-empty.
+    fun tolerant(path: Path): JsonObject = Cancellables
+        .runCatchingCancellable { json.parseToJsonElement(Files.readString(path)).jsonObject }
+        .getOrElse { failure ->
+            val genuinelyAbsent = failure is NoSuchFileException && !Files.exists(path, NOFOLLOW_LINKS)
+            if (!genuinelyAbsent) {
+                log("[materialize] $path unreadable ($failure) — global state NOT inherited by this head\n")
+            }
+            EMPTY_JSON
+        }
 
     fun strict(path: Path): JsonObject {
-        if (path.isSymbolicLink() || !Files.exists(path)) return EMPTY_JSON
+        // A symlink here is the KeyStore.entriesStrict doctrine: the entry EXISTS (dangling
+        // included), and the atomic rewrite would replace the operator's link with a plain file.
+        if (path.isSymbolicLink()) {
+            throw IOException(
+                "$path is a symlink — refusing to replace the operator's link with a materialized file; " +
+                    "remove the link or point the head at a real file",
+            )
+        }
         return Cancellables.runCatchingCancellable { json.parseToJsonElement(Files.readString(path)).jsonObject }
-            .getOrElse { throw IOException("$path unreadable ($it) — refusing to rewrite it; fix or remove the file") }
+            .getOrElse { failure ->
+                val genuinelyAbsent = failure is NoSuchFileException && !Files.exists(path, NOFOLLOW_LINKS)
+                if (!genuinelyAbsent) {
+                    throw IOException("$path unreadable ($failure) — refusing to rewrite it; fix or remove the file")
+                }
+                EMPTY_JSON
+            }
     }
 }
 

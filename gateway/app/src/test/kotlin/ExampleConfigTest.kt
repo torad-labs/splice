@@ -4,6 +4,7 @@
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTimeoutPreemptively
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.app.TopologyLoader
@@ -12,6 +13,7 @@ import splice.core.topology.Dialect
 import splice.core.topology.HeadModel
 import java.nio.file.Files
 import java.nio.file.Paths
+import java.time.Duration
 
 class ExampleConfigTest {
 
@@ -102,6 +104,110 @@ class ExampleConfigTest {
 
         assertEquals(emptyList<HeadModel>(), head.models)
         assertThrows(IllegalArgumentException::class.java) { provider.catalogFor(head) }
+    }
+
+    @Test
+    fun `a braces-dropped inline model roster fails promptly before ktoml`() {
+        val valid = exampleToml()
+        val malformed = valid.replace(
+            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }]""",
+            """models = ["grok-4.6", "grok-4.5"]""",
+        )
+        assertTrue(malformed != valid, "test must mutate the shipped inline roster")
+
+        lateinit var failure: IllegalArgumentException
+        assertTimeoutPreemptively(Duration.ofSeconds(2)) {
+            failure = assertThrows(IllegalArgumentException::class.java) { TopologyLoader.parse(malformed) }
+        }
+        assertTrue(failure.message.orEmpty().contains("models"), failure.message)
+    }
+
+    @Test
+    fun `a quoted models key with a bare roster also fails promptly before ktoml`() {
+        val valid = exampleToml()
+        val malformed = valid.replace(
+            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }]""",
+            """"models" = ["grok-4.6", "grok-4.5"]""",
+        )
+        assertTrue(malformed != valid, "test must mutate the shipped inline roster")
+
+        lateinit var failure: IllegalArgumentException
+        assertTimeoutPreemptively(Duration.ofSeconds(2)) {
+            failure = assertThrows(IllegalArgumentException::class.java) { TopologyLoader.parse(malformed) }
+        }
+        assertTrue(failure.message.orEmpty().contains("models"), failure.message)
+    }
+
+    @Test
+    fun `a four-quote multiline terminator cannot hide a malformed roster`() {
+        val valid = exampleToml().replace(
+            "discovery_prefix = \"claude-grok--\"",
+            "discovery_prefix = \"\"\"claude-grok--\"\"\"\"",
+        )
+        assertEquals("claude-grok--\"", TopologyLoader.parse(valid).heads.getValue("claude-grok").discoveryPrefix)
+        val malformed = valid.replace(
+            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }]""",
+            """models = ["grok-4.6", "grok-4.5"]""",
+        )
+
+        lateinit var failure: IllegalArgumentException
+        assertTimeoutPreemptively(Duration.ofSeconds(2)) {
+            failure = assertThrows(IllegalArgumentException::class.java) { TopologyLoader.parse(malformed) }
+        }
+        assertTrue(failure.message.orEmpty().contains("models"), failure.message)
+    }
+
+    @Test
+    fun `an inline-table head with a bare roster also fails promptly before ktoml`() {
+        val tableHead = """
+            [heads.claude-grok]
+            provider = "xai"
+            port = 3100
+            discovery_prefix = "claude-grok--"
+            pinned_model = "grok-4.6"
+            models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }]
+            context_window = 500000
+            [heads.claude-grok.claude]
+            command = "claude-grok"
+            isolate = ["commands"]         # this head gets its own commands/, everything else shared
+        """.trimIndent()
+        val inlineRoster =
+            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }]"""
+        val inlineHead = """
+            [heads]
+            claude-grok = { provider = "xai", port = 3100, discovery_prefix = "claude-grok--", pinned_model = "grok-4.6", $inlineRoster, context_window = 500000, claude = { command = "claude-grok", isolate = ["commands"] } }
+        """.trimIndent()
+        val valid = exampleToml().replace(tableHead, inlineHead)
+        assertTrue(valid != exampleToml(), "test must rewrite the shipped head as an inline table")
+        assertEquals("grok-4.6", TopologyLoader.parse(valid).heads.getValue("claude-grok").pinnedModel)
+
+        val malformed = valid.replace(inlineRoster, """models = ["grok-4.6", "grok-4.5"]""")
+        lateinit var failure: IllegalArgumentException
+        assertTimeoutPreemptively(Duration.ofSeconds(2)) {
+            failure = assertThrows(IllegalArgumentException::class.java) { TopologyLoader.parse(malformed) }
+        }
+        assertTrue(failure.message.orEmpty().contains("models"), failure.message)
+    }
+
+    @Test
+    fun `valid multiline model rosters ignore comments and quoted text`() {
+        val inlineRoster =
+            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }]"""
+        val multilineRoster = """
+            models = [
+                # models = ["comment", "text"]
+                { id = "grok-4.6", slot = "opus" },
+                { id = "grok-4.5", slot = "sonnet" },
+            ]
+        """.trimIndent()
+        val quotedText = "discovery_prefix = \"\"\"\n\"models\" = [\"quoted\", \"text\"]\n" +
+            "x".repeat(2_000) + "\n\"\"\""
+        val toml = exampleToml()
+            .replace(inlineRoster, multilineRoster)
+            .replace("discovery_prefix = \"claude-grok--\"", quotedText)
+
+        val head = TopologyLoader.parse(toml).heads.getValue("claude-grok")
+        assertEquals(listOf("grok-4.6", "grok-4.5"), head.models?.map(HeadModel::id))
     }
 
     @Test

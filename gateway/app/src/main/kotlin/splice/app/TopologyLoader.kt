@@ -92,7 +92,27 @@ command = "claude-openrouter"
     private fun sha256Hex(bytes: ByteArray): String =
         java.security.MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
-    public fun parse(text: String): Topology = Toml.decodeFromString(text)
+    // ktoml loops instead of rejecting a head roster spelled as an array of strings. Mask quoted
+    // text/comments first; '?' keeps a real quoted array element visible to this pre-decode guard.
+    private val MODEL_ARRAY_ASSIGNMENT = Regex("(?<![A-Za-z0-9_-])models[ \\t]*=[ \\t]*\\[")
+
+    public fun parse(text: String): Topology {
+        validateInlineModelArrays(text)
+        return Toml.decodeFromString(text)
+    }
+
+    private fun validateInlineModelArrays(text: String) {
+        val structure = TomlStructureMasker(text).mask()
+        MODEL_ARRAY_ASSIGNMENT.findAll(structure).forEach { assignment ->
+            val valueStart = assignment.range.last + 1
+            val firstElement = structure.asSequence()
+                .drop(valueStart)
+                .firstOrNull { !it.isWhitespace() }
+            require(firstElement == '{' || firstElement == ']') {
+                "models must be an array of inline tables; write models = [{ id = \"...\" }]"
+            }
+        }
+    }
 
     public fun expandHome(raw: String): String =
         if (raw.startsWith("~/")) System.getProperty("user.home") + raw.substring(1) else raw
@@ -101,4 +121,85 @@ command = "claude-openrouter"
     // taking the floor. Same pattern as DaemonHealth.cliVersion / ControlPayloads.gatewayVersion.
     public fun gatewayVersion(): String = GATEWAY_VERSION
     public fun shimVersion(): String = SHIM_VERSION
+}
+
+private class TomlStructureMasker(private val text: String) {
+    private val masked = StringBuilder(text)
+
+    fun mask(): String {
+        var index = 0
+        while (index < text.length) {
+            val keyLength = quotedModelsKeyLength(index)
+            index = when {
+                keyLength > 0 -> preserveModelsKey(index, keyLength)
+                text[index] == '#' -> maskComment(index)
+                text.startsWith("\"\"\"", index) -> maskQuoted(index, "\"\"\"", escapes = true)
+                text.startsWith("'''", index) -> maskQuoted(index, "'''", escapes = false)
+                text[index] == '"' -> maskQuoted(index, "\"", escapes = true)
+                text[index] == '\'' -> maskQuoted(index, "'", escapes = false)
+                else -> index + 1
+            }
+        }
+        return masked.toString()
+    }
+
+    private fun quotedModelsKeyLength(start: Int): Int {
+        val token = when {
+            text.startsWith("\"models\"", start) -> "\"models\""
+            text.startsWith("'models'", start) -> "'models'"
+            else -> return 0
+        }
+        var cursor = start + token.length
+        while (cursor < text.length && isHorizontalSpace(text[cursor])) cursor++
+        return if (text.getOrNull(cursor) == '=') token.length else 0
+    }
+
+    private fun preserveModelsKey(start: Int, length: Int): Int {
+        "models".padEnd(length).forEachIndexed { offset, char -> masked.setCharAt(start + offset, char) }
+        return start + length
+    }
+
+    private fun maskComment(start: Int): Int {
+        var cursor = start
+        while (cursor < masked.length && !isLineBreak(masked[cursor])) {
+            masked.setCharAt(cursor++, ' ')
+        }
+        return cursor
+    }
+
+    private fun maskQuoted(start: Int, delimiter: String, escapes: Boolean): Int {
+        masked.setCharAt(start, '?')
+        maskRange(start + 1, start + delimiter.length)
+        var cursor = start + delimiter.length
+        while (cursor < text.length) {
+            if (text.startsWith(delimiter, cursor)) {
+                val closingLength = closingDelimiterLength(cursor, delimiter)
+                maskRange(cursor, cursor + closingLength)
+                return cursor + closingLength
+            }
+            val escaped = escapes && text[cursor] == '\\'
+            val escapePair = escaped && cursor + 1 < text.length
+            val count = if (escapePair) 2 else 1
+            maskRange(cursor, cursor + count)
+            cursor += count
+        }
+        return cursor
+    }
+
+    private fun closingDelimiterLength(start: Int, delimiter: String): Int {
+        if (delimiter.length == 1) return 1
+        var length = delimiter.length
+        val maxLength = delimiter.length + 2
+        while (length < maxLength && text.getOrNull(start + length) == delimiter.first()) length++
+        return length
+    }
+
+    private fun maskRange(start: Int, end: Int) {
+        for (index in start until end) {
+            if (!isLineBreak(masked[index])) masked.setCharAt(index, ' ')
+        }
+    }
+
+    private fun isHorizontalSpace(char: Char): Boolean = char == ' ' || char == '\t'
+    private fun isLineBreak(char: Char): Boolean = char == '\r' || char == '\n'
 }

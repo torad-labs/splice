@@ -1,0 +1,13 @@
+// RED fixture (DR-116): `!!` (FirCheckNotNullCall) yields exactly the wrapped value — a bare
+// bang-bang statement is the same discard. The kt-no-unsafe-bang-bang ast-grep rule happens to
+// close this spelling in main sources; the checker itself must not depend on that.
+package fixtures.red
+
+import splice.core.annotation.MustConsume
+
+@MustConsume
+fun produceOrNull(): Int? = 1
+
+fun caller() {
+    produceOrNull()!!
+}

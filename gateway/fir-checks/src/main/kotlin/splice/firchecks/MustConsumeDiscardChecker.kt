@@ -30,15 +30,20 @@ import org.jetbrains.kotlin.fir.declarations.FirAnonymousFunction
 import org.jetbrains.kotlin.fir.declarations.FirAnonymousInitializer
 import org.jetbrains.kotlin.fir.declarations.FirFunction
 import org.jetbrains.kotlin.fir.declarations.hasAnnotation
+import org.jetbrains.kotlin.fir.expressions.FirArgumentList
 import org.jetbrains.kotlin.fir.expressions.FirBlock
 import org.jetbrains.kotlin.fir.expressions.FirCatch
+import org.jetbrains.kotlin.fir.expressions.FirCheckNotNullCall
 import org.jetbrains.kotlin.fir.expressions.FirElvisExpression
 import org.jetbrains.kotlin.fir.expressions.FirFunctionCall
 import org.jetbrains.kotlin.fir.expressions.FirLoop
+import org.jetbrains.kotlin.fir.expressions.FirOperation
 import org.jetbrains.kotlin.fir.expressions.FirSafeCallExpression
 import org.jetbrains.kotlin.fir.expressions.FirTryExpression
+import org.jetbrains.kotlin.fir.expressions.FirTypeOperatorCall
 import org.jetbrains.kotlin.fir.expressions.FirWhenBranch
 import org.jetbrains.kotlin.fir.expressions.FirWhenExpression
+import org.jetbrains.kotlin.fir.expressions.argument
 import org.jetbrains.kotlin.fir.references.toResolvedNamedFunctionSymbol
 import org.jetbrains.kotlin.fir.resolve.toRegularClassSymbol
 import org.jetbrains.kotlin.fir.types.resolvedType
@@ -92,8 +97,15 @@ internal class MustConsumeDiscardChecker : FirFunctionCallChecker(MppCheckerKind
         val start = path.indexOfLast { it === call }.let { if (it < 0) path.size else it } - 1
         var child: FirElement = call
         for (index in start downTo 0) {
-            stepVerdict(path[index], child)?.let { return it }
-            child = path[index]
+            val parent = path[index]
+            // DR-116: FirArgumentList is a HOLDER, not a value position — both real calls and the
+            // value-transparent wrapper calls (`as`/`as?`/`!!`) park their operand in one. Stepping
+            // onto it hit carriesValue's `else -> false` (= consumed) before the owning call was
+            // ever consulted, so `produce() as Int` escaped the wall. Skip it without moving
+            // [child]: the owner one step up decides (real call -> consumed, wrapper -> transparent).
+            if (parent is FirArgumentList) continue
+            stepVerdict(parent, child)?.let { return it }
+            child = parent
         }
         return false
     }
@@ -115,7 +127,7 @@ internal class MustConsumeDiscardChecker : FirFunctionCallChecker(MppCheckerKind
 
     /** A non-tail block statement is a discard; a tail statement's fate is the block's own. */
     private fun blockVerdict(parent: FirBlock, child: FirElement): Boolean? {
-        val index = parent.statements.indexOfLast { it === child }
+        val index = parent.statements.indexOfLast { yields(it, child) }
         return when {
             index < 0 -> false
             index < parent.statements.lastIndex -> true
@@ -136,11 +148,50 @@ internal class MustConsumeDiscardChecker : FirFunctionCallChecker(MppCheckerKind
      *  not guaranteed there, so [child] may be either the holder or its block. Everything else
      *  (a when subject, a branch condition, a `?.` receiver) genuinely consumes the value. */
     private fun carriesValue(parent: FirElement, child: FirElement): Boolean = when (parent) {
-        is FirWhenBranch -> parent.result === child
-        is FirWhenExpression -> parent.branches.any { it === child || it.result === child }
+        is FirWhenBranch, is FirWhenExpression -> whenCarriesValue(parent, child)
         is FirCatch -> parent.block === child
-        is FirSafeCallExpression -> parent.selector === child
-        is FirElvisExpression -> parent.lhs === child || parent.rhs === child
+        is FirSafeCallExpression -> yields(parent.selector, child)
+        is FirElvisExpression -> yields(parent.lhs, child) || yields(parent.rhs, child)
+        is FirTypeOperatorCall, is FirCheckNotNullCall -> wrapperCarriesValue(parent, child)
+        else -> false
+    }
+
+    private fun whenCarriesValue(parent: FirElement, child: FirElement): Boolean = when (parent) {
+        is FirWhenBranch -> yields(parent.result, child)
+        is FirWhenExpression -> parent.branches.any { it === child || yields(it.result, child) }
+        else -> false
+    }
+
+    /** DR-116, the load-bearing half: does [node]'s value reduce to [child]'s value through
+     *  transparent wrappers? The diagnostic visitor does NOT push `as`/`as?` (FirTypeOperatorCall)
+     *  or `!!` (FirCheckNotNullCall) onto containingElements, so a value-position node may BE the
+     *  wrapper while the walk's child is still the inner call — identity comparison alone read a
+     *  bare `produce() as Int` statement as "not found in this block" and fell to the
+     *  conservative consumed verdict. `is`/`!is` stays non-transparent on purpose: the type test
+     *  consumes the value into a Boolean (pinned by the green bare-is fixture). */
+    private fun yields(node: FirElement?, child: FirElement): Boolean {
+        var cur = node
+        while (cur !== child) {
+            cur = when {
+                cur is FirTypeOperatorCall && cur.operation in TRANSPARENT_CAST_OPS -> cur.argument
+                cur is FirCheckNotNullCall -> cur.argument
+                else -> return false
+            }
+        }
+        return true
+    }
+
+    /** DR-116: value-transparent wrapper CALLS. `as`/`as?` and `!!` yield exactly the wrapped
+     *  value, so a bare `produce() as Int` statement fell to carriesValue's `else -> false`
+     *  (= consumed) and escaped the wall behind a no-op cast. An `is`/`!is` test stays consuming
+     *  on purpose: it turns the value into a Boolean, and the discarded Boolean is not
+     *  @MustConsume (conservative, never a false positive — pinned by the green bare-is fixture). */
+    private fun wrapperCarriesValue(parent: FirElement, child: FirElement): Boolean = when (parent) {
+        is FirTypeOperatorCall -> parent.operation in TRANSPARENT_CAST_OPS && parent.argument === child
+        is FirCheckNotNullCall -> parent.argument === child
         else -> false
     }
 }
+
+// FILE SCOPE ON PURPOSE: one shared immutable set for the hot carriesValue dispatch.
+private val TRANSPARENT_CAST_OPS = setOf(FirOperation.AS, FirOperation.SAFE_AS)

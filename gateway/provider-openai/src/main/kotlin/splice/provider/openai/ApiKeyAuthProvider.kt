@@ -33,8 +33,8 @@ public class ApiKeyAuthProvider(
     /** Daemon log sink (Main.persistentLogger): writes BOTH stderr and daemon.log, which is what
      *  /mgmt/logs tails. A bare System.err.println reaches stderr ONLY, so its line never appears in
      *  the log endpoint — the failure you most want to read is the one you cannot (wall
-     *  kt-no-println, 2026-07-27). Defaults to a no-op so tests need not thread it; the daemon
-     *  always injects the real sink. */
+     *  kt-no-println, 2026-07-27). Defaults through DaemonLog to the sink Main installs; tests that
+     *  need isolation inject their own sink. */
     private val log: LogSink = LogSink(DaemonLog::write),
 ) : RefreshableAuthProvider {
 

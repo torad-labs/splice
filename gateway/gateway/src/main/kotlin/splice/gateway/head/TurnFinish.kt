@@ -9,6 +9,7 @@ package splice.gateway.head
 
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
+import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 
@@ -22,12 +23,25 @@ internal class TurnFinish(
     suspend fun finishTurn(drive: TurnDrive, outcome: TurnOutcome) {
         val latencyMs = clock() - drive.t0
         log(telemetry.turnLine(drive.meta, drive.upstreamModel, outcome, latencyMs))
-        val outcomeTag = drive.pipeline.finishStream(drive.emitter, outcome, drive.meta, latencyMs)
+        // DR-129: terminal frames still go FIRST (the header invariant — usage I/O must never sit
+        // between the last delta and message_stop), but the stamps below must survive the
+        // dead-client IOException emitTerminal rethrows after sealing: the outcome's usage is IN
+        // HAND and already billed, and pre-fix the turn landed as a TOKEN-LESS conn-reset row
+        // (stampSuccess is the only production writer of appendOutputTokens for successes).
+        // Catch-stamp-rethrow, never reorder. The conn-reset surface that catches the rethrow
+        // keeps owning the row tag and health (recordPerf below is skipped on the throw path
+        // exactly as before — the counts stamped here ride that row via the shared TurnPerf).
+        // Cancellation still skips the stamps (runCatchingCancellable rethrows immediately):
+        // a cancellation seal is the documented no-bill case, unchanged.
+        val streamed = Cancellables.runCatchingCancellable {
+            drive.pipeline.finishStream(drive.emitter, outcome, drive.meta, latencyMs)
+        }
         drive.perf.mark(PerfKeys.FINISH)
         (outcome as? TurnOutcome.Success)?.let { usageStamp.stampSuccess(drive, it) }
         (outcome as? TurnOutcome.Failure)?.let { usageStamp.stampSalvaged(drive, it.salvagedUsage) }
         // DR-125: an abandoned turn's absorbed rounds burned the same real billed tokens.
         (outcome as? TurnOutcome.ClientAbandoned)?.let { usageStamp.stampSalvaged(drive, it.salvagedUsage) }
+        val outcomeTag = streamed.getOrThrow()
         // G20 (corrected, review 2026-07-19): attribution rides the outcome's provenance flag, not
         // the ErrorType — the old OVERLOADED-implies-local heuristic misfiled a passthrough
         // provider's genuine overloaded_error as local-origin. providerReported is set ONLY where a

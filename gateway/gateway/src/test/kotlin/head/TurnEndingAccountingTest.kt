@@ -23,6 +23,7 @@ import splice.core.perf.TurnPerf
 import splice.core.turn.ErrorType
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
 import splice.core.util.AsyncFileIo
@@ -34,12 +35,15 @@ import splice.gateway.head.TurnConnEnd
 import splice.gateway.head.TurnDrive
 import splice.gateway.head.TurnEnding
 import splice.gateway.head.TurnFailures
+import splice.gateway.head.TurnFinish
 import splice.gateway.head.TurnKnownEnd
 import splice.gateway.head.TurnTelemetry
+import splice.gateway.head.TurnUsageStamp
 import splice.gateway.perf.PerfStats
 import splice.gateway.pipeline.TurnPipeline
 import splice.gateway.round.RunnerSignals
 import splice.gateway.usage.OutputClamp
+import splice.gateway.usage.UsageStore
 import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.ImmediateSseWriter
 import splice.gateway.wire.TurnTerminal
@@ -71,6 +75,27 @@ private class BranchlessFakeAuth : splice.core.auth.RefreshableAuthProvider {
 private class DeadClientTerminal : TurnTerminal {
     override val hasEnded: Boolean = true
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
+    override suspend fun emitError(type: ErrorType, message: String): Unit =
+        throw IOException("client hung up mid error frame")
+    override fun abandon() = Unit
+    override suspend fun openText() = WireBlockIndex(0)
+    override suspend fun openThinking() = WireBlockIndex(0)
+    override suspend fun openTool(id: String, name: String) = WireBlockIndex(0)
+    override suspend fun textDelta(index: WireBlockIndex, text: String) = Unit
+    override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) = Unit
+    override suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String) = Unit
+    override suspend fun closeBlock(index: WireBlockIndex) = Unit
+    override suspend fun closeAll() = Unit
+    override suspend fun addTextBlock(text: String) = Unit
+    override suspend fun addRedactedThinking(data: String) = Unit
+}
+
+/** DR-129's shape: the turn SUCCEEDED and its usage is in hand, but the terminal frame write
+ *  dies on the hung-up client — everything before the terminal already reached the wire. */
+private class DeadClientSuccessTerminal : TurnTerminal {
+    override val hasEnded: Boolean = false
+    override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage): Unit =
+        throw IOException("client hung up mid terminal frame")
     override suspend fun emitError(type: ErrorType, message: String): Unit =
         throw IOException("client hung up mid error frame")
     override fun abandon() = Unit
@@ -137,7 +162,7 @@ class TurnEndingAccountingTest {
             )
         }
 
-        suspend fun drive(): TurnDrive = TurnDrive(
+        suspend fun drive(emitter: TurnTerminal = DeadClientTerminal()): TurnDrive = TurnDrive(
             bodyJson = "{}",
             requestBody = buildJsonObject { },
             meta = TurnMeta(
@@ -151,7 +176,7 @@ class TurnEndingAccountingTest {
                 summary = "detailed",
                 budgetTokens = null,
             ),
-            emitter = DeadClientTerminal(),
+            emitter = emitter,
             watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
             slot = InflightGate(LiveLimit { 1 }).acquire(),
             pipeline = TurnPipeline(
@@ -189,6 +214,44 @@ class TurnEndingAccountingTest {
             }
         } finally {
             drive.slot.release()
+        }
+    }
+
+    // DR-129: finishTurn ran finishStream before the stamps, and a dead client's IOException out
+    // of the SUCCESS terminal skipped stampSuccess — the only production writer of
+    // appendOutputTokens for successes — so a turn whose usage was IN HAND landed as a token-less
+    // conn-reset row. The stamps must survive the throw; the row tag and health stay owned by the
+    // conn-reset surface that catches the rethrow (status quo, no double count).
+    @Test
+    fun `a Success whose terminal write fails still stamps its known usage - DR-129`() {
+        val rig = Rig("dr129-success")
+        val store = UsageStore(tmp.resolve("usage-dr129.json"), tmp.resolve("rl-dr129.json"))
+        val finish = TurnFinish(
+            clock = ElapsedClock { 5L },
+            log = rig.log,
+            usageStamp = TurnUsageStamp(store, rig.log, rig.telemetry),
+            health = rig.health,
+            telemetry = rig.telemetry,
+        )
+        val success = TurnOutcome.Success(
+            hasToolUse = false,
+            incomplete = false,
+            usage = Usage(inputTokens = 100, outputTokens = 42, cachedTokens = 7),
+            bodyText = "answer",
+            emittedText = true,
+        )
+        runBlocking {
+            val drive = rig.drive(emitter = DeadClientSuccessTerminal())
+            try {
+                assertThrows<IOException>("the dead-client write still propagates (status quo at the driver)") {
+                    runBlocking { finish.finishTurn(drive, success) }
+                }
+                assertEquals(42L, drive.perf.snapshot().counters["out_tokens"], "perf counts must carry the tokens")
+                assertEquals(100L, drive.perf.snapshot().counters["in_tokens"])
+                assertEquals(42, store.readState().outputTokens5h, "the usage store must receive the billed tokens")
+            } finally {
+                drive.slot.release()
+            }
         }
     }
 

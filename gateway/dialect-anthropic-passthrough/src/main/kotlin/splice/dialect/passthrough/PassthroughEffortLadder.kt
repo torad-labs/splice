@@ -16,7 +16,11 @@ private const val EFFORT_HIGH = "high"
 private const val EFFORT_MAX = "max"
 private const val HIGH_BUDGET_FLOOR = 8_192L
 private const val MAX_BUDGET_FLOOR = 24_576L
-private val KIMI_EFFORTS = setOf(EFFORT_LOW, EFFORT_HIGH, EFFORT_MAX)
+
+// internal + camelCase (TopLevelPropertyNaming exempts only private SCREAMING_CASE):
+// PassthroughQuirks.init is the second reader (DR-121) — the config-time vocabulary wall for
+// compact_effort must be the SAME set the ladder emits, or the two drift.
+internal val kimiEfforts = setOf(EFFORT_LOW, EFFORT_HIGH, EFFORT_MAX)
 
 internal class PassthroughEffortLadder {
 
@@ -43,7 +47,7 @@ internal class PassthroughEffortLadder {
         log: LogSink,
     ): String {
         val trimmed = configEffort?.trim()?.lowercase() ?: return EFFORT_MAX
-        if (trimmed in KIMI_EFFORTS) return trimmed
+        if (trimmed in kimiEfforts) return trimmed
         if (warned.compareAndSet(false, true)) {
             log(
                 "[$providerTag] configured effort '$trimmed' is not a kimi rung (low|high|max) — " +

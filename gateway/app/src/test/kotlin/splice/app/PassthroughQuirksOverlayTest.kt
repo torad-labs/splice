@@ -6,7 +6,9 @@ package splice.app
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.assertThrows
 import splice.app.provider.QuirksOverlay
 import splice.core.topology.AuthConfig
 import splice.core.topology.Dialect
@@ -59,6 +61,27 @@ class PassthroughQuirksOverlayTest {
         )
         assertEquals(false, quirks.stripCacheControl)
         assertEquals(false, quirks.mfjsSanitize)
+    }
+
+    // DR-121: compact_effort's TOML field is shared with the codex knob, whose vocabulary
+    // includes "medium" — a value the kimi ladder never emits. Pre-fix the overlay returned it
+    // raw, so every thinking-carrying compact turn shipped output_config.effort "medium" and
+    // 400ed until the TOML was fixed. The wall is the quirk type's own init, so it fires at
+    // assembly (daemon boot), naming the fix, instead of riding the wire.
+    @Test
+    fun `compact_effort outside the kimi rungs fails at assembly, never rides the wire - DR-121`() {
+        val ex = assertThrows<IllegalArgumentException> {
+            assembly.passthroughQuirks(provider(QuirksConfig(compactEffort = "medium")), kimiBase)
+        }
+        assertTrue("compact_effort" in ex.message!!, ex.message)
+        // the legal vocabulary rides in the message — the operator learns the fix from the failure
+        assertTrue("low|high|max" in ex.message!!, ex.message)
+    }
+
+    @Test
+    fun `compact_effort on a kimi rung still overlays cleanly - DR-121 control`() {
+        val quirks = assembly.passthroughQuirks(provider(QuirksConfig(compactEffort = "high")), kimiBase)
+        assertEquals("high", quirks.compactEffort)
     }
 
     // A neutral base (the claude head) declares nothing and must stay faithful.

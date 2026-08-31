@@ -64,7 +64,22 @@ public data class PassthroughQuirks(
      *  only if these reach the transcript. Kimi keeps its historical swallow (byte-identity law —
      *  flipping kimi's translator output is an operator decision, DR-123-class). */
     val dropServerToolBlocks: Boolean = false,
-)
+) {
+    init {
+        // DR-121: compact_effort vocabulary wall. The TOML field is shared with the codex knob,
+        // whose vocabulary includes "medium" — a rung this dialect's ladder never emits (the
+        // SCH-006 confusion class). effortLadder returns the pin RAW, so an unvalidated value
+        // reaches kimi's wire as output_config.effort on every thinking-carrying compact turn and
+        // 400s every compaction until the TOML is fixed. Failing in init covers every
+        // construction path — the QuirksOverlay copy() at daemon assembly included — and the
+        // message names the fix. Case-exact on purpose: the ladder emits lowercase only.
+        require(compactEffort == null || compactEffort in kimiEfforts) {
+            "[$providerTag] compact_effort '$compactEffort' is not a kimi rung (low|high|max) — " +
+                "the sibling codex knob's vocabulary (e.g. 'medium') does not apply here; fix " +
+                "[providers.*.quirks] compact_effort or remove it to let compact inherit the session effort"
+        }
+    }
+}
 
 /**
  * The vendor deformation sets this dialect ships. A type rather than a companion factory on

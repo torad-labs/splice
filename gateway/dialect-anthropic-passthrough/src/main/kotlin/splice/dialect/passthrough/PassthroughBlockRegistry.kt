@@ -65,9 +65,22 @@ internal class PassthroughBlockRegistry(
                 sink.addRedactedThinking(JsonScalars.strOrEmpty(cb?.get("data")))
                 Block(Kind.IGNORED, null)
             }
-            // server_tool_use / web_search_tool_result / unknown: record + swallow its deltas.
+            // DR-119: the server-tool result surface rides VERBATIM on the neutral head (CH-2 —
+            // a head that declares nothing gets its bytes forwarded as sent); Claude Code renders
+            // the search and keeps citations only if these blocks reach the transcript. Kimi's
+            // profile keeps the historical swallow (quirk-gated, byte-identity law).
+            "server_tool_use", "web_search_tool_result" -> openServerToolBlock(cb, sink)
+            // unknown: record + swallow its deltas.
             else -> Block(Kind.IGNORED, null)
         }
+    }
+
+    private suspend fun openServerToolBlock(cb: JsonObject?, sink: WireSink): Block {
+        if (quirks.dropServerToolBlocks || cb == null) return Block(Kind.IGNORED, null)
+        // A sink that cannot forward raw blocks (openRawBlock's default) degrades to the
+        // pre-DR-119 ignore, never to a half-opened block.
+        val wire = sink.openRawBlock(cb) ?: return Block(Kind.IGNORED, null)
+        return Block(Kind.RAW, wire)
     }
 
     // The upstream delta type already matches the (non-ignored) block it targets, so we dispatch on
@@ -101,6 +114,11 @@ internal class PassthroughBlockRegistry(
             "signature_delta" -> {
                 sink.signatureDelta(wire, JsonScalars.strOrEmpty(delta["signature"]))
                 block.signatureSeen = true
+            }
+            // DR-119: citations ride text blocks; the neutral head forwards the delta object
+            // verbatim. Kimi keeps the historical swallow (same gate as the server-tool blocks).
+            "citations_delta" -> {
+                if (!quirks.dropServerToolBlocks) sink.rawDelta(wire, delta)
             }
             else -> Unit
         }

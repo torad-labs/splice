@@ -38,6 +38,9 @@ private class Rec : WireSink {
     override suspend fun closeAll() { calls.add("closeAll") }
     override suspend fun addTextBlock(text: String) { calls.add("addText:$text") }
     override suspend fun addRedactedThinking(data: String) { calls.add("redacted:$data") }
+    override suspend fun openRawBlock(contentBlock: JsonObject) =
+        WireBlockIndex(n++).also { calls.add("rawOpen:$contentBlock") }
+    override suspend fun rawDelta(index: WireBlockIndex, delta: JsonObject) { calls.add("rawDelta:$delta") }
 }
 
 private val KIMI = PassthroughQuirksDefaults().kimi("kimi")
@@ -623,5 +626,114 @@ class PassthroughRedactedThinkingTest {
         )
         // Control: the neighbouring text block still flows normally around the pass-through.
         assertTrue(sink.calls.contains("text:hi"))
+    }
+}
+
+// DR-119: the branch repurposed this dialect as the faithful NEUTRAL head (CH-2: a head that
+// declares nothing gets its bytes forwarded as sent), but the registry's record+swallow arm
+// predates that — server_tool_use / web_search_tool_result blocks and citations_delta deltas
+// were dropped, so Claude Code rendered answers citing results the client never received and
+// the stored transcript lost every citation. Neutral forwards VERBATIM; kimi keeps its
+// historical swallow (byte-identity law — flipping kimi bytes is operator territory).
+class PassthroughServerToolForwardTest {
+
+    private suspend fun neutralDrive(sink: Rec, vararg evs: JsonObject): TurnOutcome =
+        PassthroughStreamTranslator(ctx(), PassthroughQuirks(providerTag = "claude-splice"))
+            .driveTurn(evs.toList().asFlow(), sink)
+
+    @Test
+    fun `neutral head forwards a server_tool_use block and its args verbatim - DR-119`() = runTest {
+        val sink = Rec()
+        val outcome = neutralDrive(
+            sink,
+            ev("""{"type":"message_start","message":{"usage":{"input_tokens":1}}}"""),
+            ev(
+                """{"type":"content_block_start","index":0,""" +
+                    """"content_block":{"type":"server_tool_use","id":"srvtoolu_1","name":"web_search","input":{}}}""",
+            ),
+            ev(
+                """{"type":"content_block_delta","index":0,""" +
+                    """"delta":{"type":"input_json_delta","partial_json":"{\"query\":\"splice\"}"}}""",
+            ),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}"""),
+            ev("""{"type":"message_stop"}"""),
+        )
+        assertTrue(outcome is TurnOutcome.Success, "got $outcome")
+        assertEquals(
+            listOf(
+                """rawOpen:{"type":"server_tool_use","id":"srvtoolu_1","name":"web_search","input":{}}""",
+                """json:{"query":"splice"}""",
+                "close",
+                "closeAll",
+            ),
+            sink.calls,
+        )
+    }
+
+    @Test
+    fun `neutral head forwards a web_search_tool_result block verbatim - DR-119`() = runTest {
+        val sink = Rec()
+        val outcome = neutralDrive(
+            sink,
+            ev("""{"type":"message_start","message":{"usage":{"input_tokens":1}}}"""),
+            ev(
+                """{"type":"content_block_start","index":0,"content_block":{"type":"web_search_tool_result",""" +
+                    """"tool_use_id":"srvtoolu_1","content":[{"type":"web_search_result","url":"https://x.test"}]}}""",
+            ),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}"""),
+            ev("""{"type":"message_stop"}"""),
+        )
+        assertTrue(outcome is TurnOutcome.Success, "got $outcome")
+        assertTrue(
+            sink.calls.any { it.startsWith("""rawOpen:{"type":"web_search_tool_result"""") },
+            "search results must reach the client sink; calls=${sink.calls}",
+        )
+    }
+
+    @Test
+    fun `neutral head forwards citations_delta on a live text block - DR-119`() = runTest {
+        val sink = Rec()
+        val outcome = neutralDrive(
+            sink,
+            ev("""{"type":"message_start","message":{"usage":{"input_tokens":1}}}"""),
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""),
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"cited"}}"""),
+            ev(
+                """{"type":"content_block_delta","index":0,"delta":{"type":"citations_delta",""" +
+                    """"citation":{"type":"web_search_result_location","url":"https://x.test"}}}""",
+            ),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}"""),
+            ev("""{"type":"message_stop"}"""),
+        )
+        assertTrue(outcome is TurnOutcome.Success, "got $outcome")
+        assertTrue(
+            sink.calls.any { it.startsWith("rawDelta:{\"type\":\"citations_delta\"") },
+            "citations must survive to the transcript; calls=${sink.calls}",
+        )
+        assertTrue(sink.calls.contains("text:cited"))
+    }
+
+    @Test
+    fun `kimi profile still swallows citations_delta - DR-119 control`() = runTest {
+        val sink = Rec()
+        val outcome = drive(
+            sink,
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""),
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"t"}}"""),
+            ev(
+                """{"type":"content_block_delta","index":0,"delta":{"type":"citations_delta",""" +
+                    """"citation":{"type":"web_search_result_location","url":"https://x.test"}}}""",
+            ),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"message_stop"}"""),
+        )
+        assertTrue(outcome is TurnOutcome.Success, "got $outcome")
+        assertTrue(
+            sink.calls.none { it.startsWith("rawDelta:") },
+            "kimi behavior is byte-pinned — no citation forward; calls=${sink.calls}",
+        )
     }
 }

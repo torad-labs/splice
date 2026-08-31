@@ -58,6 +58,12 @@ public data class PassthroughQuirks(
      *  that signs and verifies — a truncated block would otherwise persist a forged signature into
      *  the transcript and return it upstream on the next turn. */
     val synthesizeSignatures: Boolean = false,
+    /** DR-119: drop the RESPONSE-side server-tool surface — server_tool_use /
+     *  web_search_tool_result blocks and citations_delta on text — instead of forwarding it
+     *  verbatim. Neutral forwards: Claude Code renders server search results and keeps citations
+     *  only if these reach the transcript. Kimi keeps its historical swallow (byte-identity law —
+     *  flipping kimi's translator output is an operator decision, DR-123-class). */
+    val dropServerToolBlocks: Boolean = false,
 )
 
 /**
@@ -76,6 +82,7 @@ public class PassthroughQuirksDefaults {
         blockAllowlist = KIMI_BLOCK_TYPES,
         stripCacheControl = true,
         synthesizeSignatures = true,
+        dropServerToolBlocks = true,
     )
 }
 

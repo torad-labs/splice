@@ -8,7 +8,9 @@ package splice.dialect.passthrough
 
 import splice.core.index.WireBlockIndex
 
-internal enum class Kind { TEXT, THINKING, TOOL, IGNORED }
+// RAW (DR-119): a server-tool block forwarded verbatim — it owns a wire so its deltas and stop
+// flow, but it is neither prose (never buffered) nor a client tool (never sets hasToolUse).
+internal enum class Kind { TEXT, THINKING, TOOL, RAW, IGNORED }
 
 internal data class Block(val kind: Kind, val wire: WireBlockIndex?) {
     var signatureSeen: Boolean = false

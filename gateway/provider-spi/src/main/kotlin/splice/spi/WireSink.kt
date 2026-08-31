@@ -4,6 +4,7 @@
 // provider translator cannot fake a clean stop by construction.
 package splice.spi
 
+import kotlinx.serialization.json.JsonObject
 import splice.core.index.WireBlockIndex
 
 public interface WireSink {
@@ -33,4 +34,15 @@ public interface WireSink {
 
     /** Encrypted-reasoning replay block (redacted_thinking) — data rides in content_block_start. */
     public suspend fun addRedactedThinking(data: String)
+
+    /** DR-119 (neutral passthrough): open a block whose content_block payload is forwarded
+     *  VERBATIM as received (server_tool_use / web_search_tool_result today). Deltas ride the
+     *  typed verbs or [rawDelta]; [closeBlock] ends it. Returns null when this sink cannot
+     *  forward raw blocks — the default, so existing implementors keep their pre-DR-119
+     *  behavior (callers treat the block as ignored). */
+    public suspend fun openRawBlock(contentBlock: JsonObject): WireBlockIndex? = null
+
+    /** DR-119: forward one content_block_delta payload VERBATIM (citations_delta today).
+     *  Default no-op keeps existing implementors source-compatible. */
+    public suspend fun rawDelta(index: WireBlockIndex, delta: JsonObject) {}
 }

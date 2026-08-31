@@ -1342,3 +1342,50 @@ class ResponsesItemDoneToolArgsTest {
         assertTrue(s.bodyText == "hello", "the real text survives untouched: '${s.bodyText}'")
     }
 }
+
+// DR-109: a proxy/gateway shape ships `error` as a PLAIN STRING — both object casts fell
+// through to the event itself, so code/message read empty and the placeholder replaced the
+// vendor's text: the rate-limit/transient signal never reached the classifier and the
+// operator-visible line hid the vendor reason.
+class ResponsesStringErrorTest {
+
+    @Test
+    fun `a string-typed error payload keeps the vendor's text - DR-109`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"error","error":"rate limit exceeded, slow down"}"""),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val failure = assertInstanceOf(TurnOutcome.Failure::class.java, outcome)
+        assertTrue(
+            failure.message.contains("rate limit exceeded, slow down"),
+            "the vendor's text must survive to the classifier and the surfaced line: ${failure.message}",
+        )
+        assertEquals(ErrorType.RATE_LIMIT, failure.type, "the classifier must see the vendor signal")
+    }
+
+    @Test
+    fun `a string-typed error under response also keeps its text - DR-109`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.failed","response":{"error":"backend proxy timeout"}}"""),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val failure = assertInstanceOf(TurnOutcome.Failure::class.java, outcome)
+        assertTrue(failure.message.contains("backend proxy timeout"), failure.message)
+    }
+
+    @Test
+    fun `an object error payload is unchanged - control`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.failed","response":{"error":{"code":"server_error","message":"boom"}}}"""),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val failure = assertInstanceOf(TurnOutcome.Failure::class.java, outcome)
+        assertTrue(failure.message.contains("boom"), failure.message)
+    }
+}

@@ -10,6 +10,8 @@ import splice.spi.UpstreamFailureClassifier
 import splice.spi.WireSink
 
 private const val INCOMPLETE_REASON_MAX_TOKENS = "max_output_tokens"
+private const val KEY_RESPONSE = "response"
+private const val KEY_ERROR = "error"
 
 /**
  * Folds the upstream SSE event stream into per-turn buffers/flags via its collaborating folds. One
@@ -58,7 +60,7 @@ internal class ResponsesEventReducer(
     }
 
     private fun onTerminal(evt: JsonObject) {
-        val resp = (evt["response"] as? JsonObject) ?: evt
+        val resp = (evt[KEY_RESPONSE] as? JsonObject) ?: evt
         state.finalResponse = resp
         if (JsonScalars.strOrEmpty(evt["type"]) == "response.incomplete" ||
             JsonScalars.strOrEmpty(resp["status"]) == "incomplete"
@@ -75,8 +77,8 @@ internal class ResponsesEventReducer(
     private fun onFailure(evt: JsonObject) {
         // v25 honesty: failure events were silently discarded and the turn finished as a
         // clean empty end-of-turn, corrupting the transcript. Capture; keep reading.
-        val e = (evt["response"] as? JsonObject)?.get("error") as? JsonObject
-            ?: evt["error"] as? JsonObject
+        val e = (evt[KEY_RESPONSE] as? JsonObject)?.get(KEY_ERROR) as? JsonObject
+            ?: evt[KEY_ERROR] as? JsonObject
             ?: evt
         // DR-10 redo (codex): the vendor's structured code rides SEPARATELY into classify() —
         // flattening it into the text let free wording ("...unavailable...") overrule a
@@ -90,7 +92,14 @@ internal class ResponsesEventReducer(
         val typeField = JsonScalars.strOrEmpty(e["type"])
         val realCode = JsonScalars.strOrEmpty(e["code"]).ifEmpty { if (e === evt) "" else typeField }
         val code = JsonScalars.strOrEmpty(e["code"]).ifEmpty { typeField }.ifEmpty { "upstream_failed" }
-        val message = JsonScalars.strOrEmpty(e["message"]).ifEmpty { "ChatGPT backend reported failure" }
+        // DR-109: a proxy/gateway shape ships `error` as a PLAIN STRING — both object casts above
+        // fall through to the event, so message read empty and the placeholder replaced the
+        // vendor's text, hiding its rate-limit/transient signal from the classifier and the
+        // operator line. strOrEmpty reads the string form and stays "" for the object form.
+        val stringError = JsonScalars.strOrEmpty((evt[KEY_RESPONSE] as? JsonObject)?.get(KEY_ERROR) ?: evt[KEY_ERROR])
+        val message = JsonScalars.strOrEmpty(e["message"])
+            .ifEmpty { stringError }
+            .ifEmpty { "ChatGPT backend reported failure" }
         state.upstreamFailure = UpstreamFailureClassifier.classify(
             FailureSource.SSE,
             "$code $message",
@@ -99,7 +108,7 @@ internal class ResponsesEventReducer(
         // A response.failed payload can carry the round's usage — harvest it so the salvage
         // accounting is real (code-review 2026-07-24: the terminal-only harvest left
         // PartialRound.usage permanently zero).
-        (evt["response"] as? JsonObject)?.let { accumulateUsage(it) }
+        (evt[KEY_RESPONSE] as? JsonObject)?.let { accumulateUsage(it) }
     }
 
     /** Shared usage harvest for terminal AND failure payloads. Guarded >0 so a later, richer

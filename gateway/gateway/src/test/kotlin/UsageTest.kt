@@ -217,6 +217,41 @@ class UsageTest {
         assertEquals("2m0s", fresh.resetTokens)
     }
 
+    // DR-127: flushRateLimit consumed the pending payload with getAndSet(null) BEFORE the disk
+    // write could fail, so a throwing writer discarded the NEWEST rate-limit state with no log
+    // and no retention — statusline/HUD served the stale older snapshot until the next round
+    // carried headers. The sibling UsageRingFile.persistSnapshot keeps memory state and logs a
+    // failure streak; this pins the same contract for the ratelimit lane.
+    @Test
+    fun `a failing ratelimit write retains the payload for the next flush - DR-127`(@TempDir tmp: Path) {
+        val roDir = tmp.resolve("ro")
+        Files.createDirectories(roDir)
+        val rateFile = roDir.resolve("ratelimit.json")
+        val store = UsageStore(tmp.resolve("usage.json"), rateFile)
+        store.persistRateLimit { name ->
+            mapOf(
+                "x-ratelimit-limit-tokens" to "5000",
+                "x-ratelimit-remaining-tokens" to "1200",
+                "x-ratelimit-reset-tokens" to "6m0s",
+            )[name]
+        }
+        Files.setPosixFilePermissions(roDir, PosixFilePermissions.fromString("r-x------"))
+        try {
+            store.flushNow()
+            val retained = store.readRateLimit()
+            assertEquals(
+                1200,
+                retained?.remainingTokens,
+                "the failed write must not consume the newest snapshot",
+            )
+        } finally {
+            Files.setPosixFilePermissions(roDir, PosixFilePermissions.fromString("rwx------"))
+        }
+        store.flushNow()
+        val fresh = UsageStore(tmp.resolve("usage.json"), rateFile).readRateLimit()
+        assertEquals(1200, fresh?.remainingTokens, "the retained payload must land on disk once the writer recovers")
+    }
+
     @Test
     fun `concurrent completions aggregate and restart without lost usage`(@TempDir tmp: Path) {
         val usageFile = tmp.resolve("usage.json")

@@ -40,9 +40,18 @@ internal object TomlStructurePreflight {
         val seenHeaders = HashSet<String>()
         var sectionStart = 0
         for (end in bounds) {
+            // DR-96: a header at offset 0 makes the first bound a zero-width slice — skip it, or
+            // the first table would be seen twice (once here, once as its own section).
+            if (end == sectionStart) continue
             val section = structure.substring(sectionStart, end)
             val header = structure.substring(sectionStart).lineSequence().first().trim()
-            if (sectionStart > 0 && !header.startsWith("[[")) {
+            // DR-96: gate on the SHAPE of the slice's first line, not on the offset. The old
+            // `sectionStart > 0` preamble skip also skipped REGISTERING the first table of a
+            // header-first file, so one exact reopen of it passed and ktoml merged both bodies —
+            // the DR-44-redo scar, resurrected for the offset-0 table. A preamble slice can never
+            // start with '[' (that line would itself be a TABLE_HEADER bound), so the shape test
+            // is exactly the old preamble exclusion plus the missing first-table registration.
+            if (header.startsWith("[") && !header.startsWith("[[")) {
                 require(seenHeaders.add(header)) {
                     "table $header is defined twice — TOML forbids redefining a table and ktoml " +
                         "silently merges both bodies (a stale roster would ride the union); keep " +

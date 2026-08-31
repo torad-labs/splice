@@ -55,7 +55,10 @@ internal class LaunchSpecFactory(
             forwardClientAuth = forwardClientAuth,
             pinnedModel = head.pinnedModel,
             availableModelIds = ctx.catalog.availableModelIds(),
-            modelLabels = providerCfg.models.associate { it.id to it.label.ifEmpty { it.id } },
+            modelLabels = ctx.catalog.models.associate { it.id to it.label.ifEmpty { it.id } },
+            modelSlots = head.models.orEmpty().mapNotNull { model ->
+                model.slot?.let { slot -> model.id to slot }
+            }.toMap(),
             contextWindow = ctx.catalog.contextWindowFor(head.pinnedModel).toInt(),
             modelOptionsCache = buildInputs.modelOptionsCache(ctx.catalog),
             statuslineCommand = "curl -sS --data-binary @- http://127.0.0.1:$controlPort/statusline/$key",

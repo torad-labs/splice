@@ -40,6 +40,7 @@ import splice.core.topology.AuthKind
 import splice.core.topology.ClaudeWrapperConfig
 import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
+import splice.core.topology.HeadModel
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
 import splice.core.turn.WatchdogBudget
@@ -148,5 +149,35 @@ class LaunchSpecClientAuthTest {
             .getValue("context_window").jsonPrimitive.long
 
         assertEquals(333_000, cachedWindow)
+    }
+
+    @Test
+    fun `launch spec exposes labels only for the head catalog`(@TempDir tmp: Path) {
+        val shown = ModelEntry(id = "shown", label = "Shown", contextWindow = 500_000)
+        val hidden = ModelEntry(id = "hidden", label = "Hidden", contextWindow = 256_000)
+        val base = build(tmp, Dialect.ANTHROPIC_PASSTHROUGH)
+        val ctx = base.copy(
+            head = base.head.copy(
+                pinnedModel = shown.id,
+                models = listOf(HeadModel(shown.id, slot = "opus")),
+            ),
+            providerCfg = base.providerCfg.copy(models = listOf(hidden, shown)),
+            catalog = ModelCatalog(
+                discoveryPrefix = "claude-splice--",
+                models = listOf(shown),
+                defaultContextWindow = shown.contextWindow,
+                pinnedModel = shown.id,
+            ),
+        )
+
+        val spec = factory(tmp).launchSpecFor(ctx, 3099, keyPresent = true, forwardClientAuth = true)
+
+        assertEquals(listOf(shown.id), spec.availableModelIds)
+        assertEquals(mapOf(shown.id to shown.label), spec.modelLabels)
+        assertEquals(mapOf(shown.id to "opus"), spec.modelSlots)
+        assertEquals(
+            listOf(shown.id),
+            spec.modelOptionsCache.jsonArray.map { it.jsonObject.getValue("value").jsonPrimitive.content },
+        )
     }
 }

@@ -9,6 +9,7 @@ import splice.core.topology.AuthConfig
 import splice.core.topology.DaemonConfig
 import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
+import splice.core.topology.HeadModel
 import splice.core.topology.ProviderConfig
 import splice.core.topology.QuirksConfig
 import splice.core.topology.ToolSurfaceConfig
@@ -100,6 +101,43 @@ class TopologyConfigOverridesTest {
         val catalog = provider.catalogFor(head, contextWindowOverride = 333_000)
         assertEquals(333_000, catalog.contextWindowFor("toml-codex"))
         assertEquals(333_000, catalog.contextWindowFor("future-model"))
+    }
+
+    @Test
+    fun `head owns its ordered model roster and one honest process window`() {
+        val provider = topology.providers.getValue("codex").copy(
+            models = listOf(
+                ModelEntry("narrow", contextWindow = 200_000),
+                ModelEntry("wide-a", contextWindow = 500_000),
+                ModelEntry("wide-b", contextWindow = 500_000),
+            ),
+        )
+        val head = topology.heads.getValue("codex").copy(
+            pinnedModel = "wide-b",
+            models = listOf(HeadModel("wide-b", "opus"), HeadModel("wide-a", "sonnet")),
+            contextWindow = 500_000,
+        )
+
+        val catalog = provider.catalogFor(head)
+
+        assertEquals(listOf("wide-b", "wide-a"), catalog.availableModelIds())
+        assertEquals(provider.models.map { it.id }, provider.catalogFor(head.copy(models = null)).availableModelIds())
+        assertEquals(setOf(500_000L), catalog.models.map { it.contextWindow }.toSet())
+        assertEquals(1.0, catalog.usageScale("wide-a"))
+        assertThrows(IllegalArgumentException::class.java) {
+            provider.catalogFor(head.copy(models = listOf(HeadModel("not-declared-by-provider"))))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            provider.catalogFor(head.copy(models = emptyList()))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            provider.catalogFor(
+                head.copy(models = listOf(HeadModel("wide-b", "opus"), HeadModel("wide-a", "OPUS"))),
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            provider.catalogFor(head.copy(models = listOf(HeadModel("wide-b", "turbo"))))
+        }
     }
 
     // [providers.*.quirks.tool_surface] — the nullable-overlay idiom (Topology.kt): an absent

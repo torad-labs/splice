@@ -3,11 +3,13 @@
 // the example into an invalid shape, this fails.
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.app.TopologyLoader
 import splice.core.config.knobsByKey
 import splice.core.topology.Dialect
+import splice.core.topology.HeadModel
 import java.nio.file.Files
 import java.nio.file.Paths
 
@@ -86,6 +88,54 @@ class ExampleConfigTest {
         // the isolate override survives the round-trip
         assertTrue(topology.heads["claude-grok"]!!.claude.isolate.contains("commands"))
         assertEquals("claudex", topology.heads["claudex"]!!.claude.command)
+    }
+
+    @Test
+    fun `an explicit empty head model list is rejected rather than exposing the provider`() {
+        val toml = exampleToml().replace(
+            "models = [{ id = \"grok-4.6\", slot = \"opus\" }, { id = \"grok-4.5\", slot = \"sonnet\" }]",
+            "models = []",
+        )
+        val topology = TopologyLoader.parse(toml)
+        val head = topology.heads.getValue("claude-grok")
+        val provider = topology.providers.getValue(head.provider)
+
+        assertEquals(emptyList<HeadModel>(), head.models)
+        assertThrows(IllegalArgumentException::class.java) { provider.catalogFor(head) }
+    }
+
+    @Test
+    fun `each example head owns its model roster and process window`() {
+        val topology = TopologyLoader.parse(exampleToml())
+        val headProfiles = mapOf(
+            "claudex" to (
+                listOf("gpt-5.6-sol" to "opus", "gpt-5.6-terra" to "sonnet", "gpt-5.6-luna" to "haiku") to
+                    400_000L
+                ),
+            "claude-grok" to (listOf("grok-4.6" to "opus", "grok-4.5" to "sonnet") to 500_000L),
+            "openrouter" to (listOf("meta-llama/llama-4-maverick" to "opus") to 1_048_576L),
+            "fireworks" to (
+                listOf("accounts/fireworks/models/llama-v3p1-70b-instruct" to "opus") to 131_072L
+                ),
+            "claude-kimi" to (listOf("k3[1m]" to "opus") to 1_000_000L),
+            "claude-splice" to (
+                listOf(
+                    "claude-fable-5" to "fable",
+                    "claude-opus-5" to "opus",
+                    "claude-sonnet-5" to "sonnet",
+                    "claude-haiku-4-5" to "haiku",
+                ) to 200_000L
+                ),
+        )
+        headProfiles.forEach { (key, profile) ->
+            val head = topology.heads.getValue(key)
+            assertEquals(
+                profile.first,
+                head.models?.map { it.id to it.slot },
+                "$key must expose only its own slotted model roster",
+            )
+            assertEquals(profile.second, head.contextWindow, "$key must declare its process window")
+        }
     }
 
     // The campaign's whole claim, asserted on the shipped example: a head whose upstream is

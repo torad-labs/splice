@@ -123,17 +123,23 @@ public data class ProviderConfig(
 
     /** A catalog is the JOIN of this provider's models with the head's [HeadConfig.discoveryPrefix]
      *  — which is why it lives on the provider and takes the head, and why the two types stay in one
-     *  file. [contextWindowOverride], when positive, replaces the window on EVERY entry; the null
-     *  test is per-call, not per-element (HD-25 collapsed three identical per-element branches — the
-     *  test is loop-invariant, so hoisting it changes no result). */
+     *  file. A non-empty [HeadConfig.models] is an ordered per-head allowlist; an absent list preserves
+     *  the provider-wide surface for older topologies. [contextWindowOverride] wins over the declared
+     *  per-head window and, when positive, replaces the window on every selected entry. */
     public fun catalogFor(head: HeadConfig, contextWindowOverride: Long? = null): ModelCatalog {
-        val window = contextWindowOverride?.takeIf { it > 0 }
+        val selectedModels = modelsFor(head)
+        head.contextWindow?.let { require(it > 0) { "head context_window must be positive" } }
+        val window = contextWindowOverride?.takeIf { it > 0 } ?: head.contextWindow
         return ModelCatalog(
             // The pinned row's window IS the launch env, so the catalog needs it to know what the
             // client believes about every OTHER row (ModelCatalog.clientContextWindowFor).
             pinnedModel = head.pinnedModel,
             discoveryPrefix = head.discoveryPrefix,
-            models = if (window == null) models else models.map { it.copy(contextWindow = window) },
+            models = if (window == null) {
+                selectedModels
+            } else {
+                selectedModels.map { it.copy(contextWindow = window) }
+            },
             extraWindows = if (window == null) extraWindows else extraWindows.map { it.copy(contextWindow = window) },
             windowRules = if (window == null) windowRules else windowRules.map { it.copy(contextWindow = window) },
             defaultContextWindow = if (window != null) {
@@ -141,9 +147,28 @@ public data class ProviderConfig(
             } else if (defaultContextWindow > 0) {
                 defaultContextWindow
             } else {
-                models.firstOrNull()?.contextWindow ?: DEFAULT_WINDOW_FLOOR
+                selectedModels.firstOrNull()?.contextWindow ?: DEFAULT_WINDOW_FLOOR
             },
         )
+    }
+
+    private fun modelsFor(head: HeadConfig): List<ModelEntry> {
+        val requested = head.models ?: return models
+        require(requested.isNotEmpty()) { "head model list must not be empty" }
+        require(requested.map { it.id }.distinct().size == requested.size) { "head model list contains duplicates" }
+        val slots = requested.mapNotNull { it.slot?.lowercase() }
+        require(slots.all { it in headModelSlots }) { "unknown Claude model slot" }
+        require(slots.distinct().size == slots.size) { "head model slots contain duplicates" }
+        val byId = models.associateBy(ModelEntry::id)
+        val selected = requested.map { model ->
+            requireNotNull(byId[model.id]) {
+                "head model '${model.id}' is not declared by provider '${head.provider}'"
+            }
+        }
+        require(selected.any { it.id == head.pinnedModel }) {
+            "pinned model must belong to the head model list"
+        }
+        return selected
     }
 }
 
@@ -151,13 +176,22 @@ public data class ProviderConfig(
 // TopologySchema.kt (concentration, 2026-08-19). Same-package FQCNs are unchanged.
 
 @Serializable
+public data class HeadModel(
+    val id: String,
+    val slot: String? = null,
+)
+
+@Serializable
 public data class HeadConfig(
     val provider: String,
     val port: Int,
     @SerialName("discovery_prefix") val discoveryPrefix: String,
     @SerialName("pinned_model") val pinnedModel: String,
+    val models: List<HeadModel>? = null,
+    @SerialName("context_window") val contextWindow: Long? = null,
     val overrides: Map<String, String> = emptyMap(),
     val claude: ClaudeWrapperConfig = ClaudeWrapperConfig(),
 )
 
 private const val DEFAULT_WINDOW_FLOOR: Long = 200_000
+private val headModelSlots = setOf("opus", "sonnet", "haiku", "fable")

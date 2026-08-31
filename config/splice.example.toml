@@ -193,6 +193,8 @@ context_window = 262144
 
 # ── heads: each is a Claude Code wrapper on its own loopback port ───────────────
 # `command` names the installed wrapper (`splice install` links ~/.local/bin/<command>).
+# `models` is this process's ordered provider-model allowlist; `context_window` becomes its REAL
+# CLAUDE_CODE_MAX_CONTEXT_TOKENS. Put a different window tier on a separate head/process.
 [claude]                       # global config-sharing policy for every wrapper
 # `sessions` shares the cross-session-messaging peer registry, so sessions on ANY head (and plain
 # `claude`) can see and message each other; drop it (or isolate it per head) to wall a head off.
@@ -203,6 +205,8 @@ provider = "codex"
 port = 3099
 discovery_prefix = "claude-codex--"
 pinned_model = "gpt-5.6-sol"
+models = [{ id = "gpt-5.6-sol", slot = "opus" }, { id = "gpt-5.6-terra", slot = "sonnet" }, { id = "gpt-5.6-luna", slot = "haiku" }]
+context_window = 400000
 [heads.claudex.claude]
 command = "claudex"
 
@@ -211,6 +215,8 @@ provider = "xai"
 port = 3100
 discovery_prefix = "claude-grok--"
 pinned_model = "grok-4.6"
+models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }]
+context_window = 500000
 [heads.claude-grok.claude]
 command = "claude-grok"
 isolate = ["commands"]         # this head gets its own commands/, everything else shared
@@ -220,6 +226,8 @@ provider = "openrouter"
 port = 3101
 discovery_prefix = "claude-openrouter--"
 pinned_model = "meta-llama/llama-4-maverick"
+models = [{ id = "meta-llama/llama-4-maverick", slot = "opus" }]
+context_window = 1048576
 [heads.openrouter.claude]
 command = "claude-openrouter"
 
@@ -228,6 +236,8 @@ provider = "fireworks"
 port = 3103
 discovery_prefix = "claude-fireworks--"
 pinned_model = "accounts/fireworks/models/llama-v3p1-70b-instruct"
+models = [{ id = "accounts/fireworks/models/llama-v3p1-70b-instruct", slot = "opus" }]
+context_window = 131072
 [heads.fireworks.claude]
 command = "claudefw"
 
@@ -236,6 +246,8 @@ provider = "kimi"
 port = 3102
 discovery_prefix = "claude-kimi--"
 pinned_model = "k3[1m]"
+models = [{ id = "k3[1m]", slot = "opus" }]
+context_window = 1000000
 [heads.claude-kimi.claude]
 command = "claude-kimi"
 # PER-HEAD KNOBS. Keys are the knob names from ConfigService's Knob enum (maxInflight, maxQueued,
@@ -301,6 +313,8 @@ provider = "anthropic"
 port = 3104                    # 3103 is fireworks above
 discovery_prefix = "claude-splice--"
 pinned_model = "claude-fable-5"
+models = [{ id = "claude-fable-5", slot = "fable" }, { id = "claude-opus-5", slot = "opus" }, { id = "claude-sonnet-5", slot = "sonnet" }, { id = "claude-haiku-4-5", slot = "haiku" }]
+context_window = 200000
 [heads.claude-splice.claude]
 # MUST NOT be `claude`: that is the real binary this head launches, and shadowing it on PATH
 # would make the wrapper invoke itself.

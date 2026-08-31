@@ -357,10 +357,14 @@ id = "DR-26"
 phase = "hygiene"
 title = "Review-round hygiene batch, one item so none get lost: (a) accept.sh lines 168/203/240 bare grep -q under set -e fail the script with zero diagnostic — name the failure; (b) CHANGELOG line 37 attributes the masked-commands rejection to release gates, it is concentration-selftest arm 5c — reword; (c) RequestBodyReader.kt:43/48 declares var read Int shadowing the read property it then calls — rename the local; (d) ChannelReads.MAX_SPURIOUS_WAKEUPS is internal while the object is public cross-module and the cap is contract-bearing — make it visible or document; (e) ModelCatalogTest kimi fixtures still declare 1_048_576 with a matching-shipped-config rationale the same range made false (config now 1000000) — sync value or rationale; (f) SessionRegistryLink rollback discard label says refused migration but rollback runs on failed COMMIT, never on refusal — fix the label."
 files = ["checks/release/accept.sh", "CHANGELOG.md", "gateway/provider-spi/src/main/kotlin/splice/spi/RequestBodyReader.kt", "gateway/provider-spi/src/main/kotlin/splice/spi/ChannelReads.kt", "gateway/core/src/test/kotlin/ModelCatalogTest.kt", "gateway/core/src/main/kotlin/splice/core/launch/SessionRegistryLink.kt"]
-status = "todo"
+status = "done"
 verify = "bash checks/gate.sh"
 # [2026-08-30] 2026-08-30 claude-splice progress: (a) six bare grep -q sites in accept.sh now name their failure; (b) CHANGELOG gate line reworded per-gate (masked commands = concentration, not release); (f) rollback label landed with DR-1. (e) HANDED to codex-splice (ModelCatalogTest is its file via DR-24/27). (c)+(d) next in this seat.
 # [2026-08-30] 2026-08-30 (c) read->count rename with comment, (d) MAX_SPURIOUS_WAKEUPS public with contract KDoc — :provider-spi:test + :gateway:test green. Remaining in item: (e) with codex-splice in ModelCatalogTest.
+# [2026-08-30] CLAIM: owner=claude-splice at=2026-08-31T02:20:17Z
+# [2026-08-30] ATTEST-START: tree=6436ec615295af3b8a8e88d193a985c4d7806546 at=2026-08-31T02:20:17Z
+# [2026-08-30] (e) RESOLVED via the DR-24/27 ModelCatalogTest rewrite (9b7eb3c): the fixture-fitted arms were inverted; the single remaining 1_048_576 (test :257) is the DELIBERATE bug-demonstration arm 'a 1m row declaring 1024x1024 instead of 1e6 DOES scale' whose comment documents the mismatch as the point, and config/splice.example.toml:172-175 ships k3 extra_window at EXACTLY 1000000 with cross-referencing rationale. The earlier handed-to-codex note is stale. All six parts now landed/verified; the batch rode gate PASS dr47d on tip 7168fb1.
+# [2026-08-30] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
 
 [[items]]
 id = "DR-27"
@@ -379,7 +383,7 @@ id = "DR-29"
 phase = "responses"
 title = "ReanchorRunner re-POSTs with ZERO backoff when a mid-stream SSE failure comes back as TurnOutcome.Failure: UpstreamClient.post carries retry/backoff only INSIDE one POST (HTTP status, transport, pre-client tear), so a stream that dies after first byte returns to the outer loop as Done and the next reanchor round fires immediately — outer rounds multiply the inner attempt budget (up to 3x) with no delay, maximizing upstream pressure exactly while the upstream is failing. Found by codex-splice during DR-2. Fix: backoff (or classifier retry-after) between reanchor rounds; test pins that a mid-stream failure round does not re-POST immediately. NEVER-BELOW-STATUS-QUO: on the final round the failure surfaces exactly as today."
 files = ["gateway/gateway/src/main/kotlin/splice/gateway/head/ReanchorRunner.kt"]
-status = "in_flight"
+status = "done"
 verify = "cd gateway && ./gradlew :gateway:test --console=plain"
 # [2026-08-30] CLAIM: owner=codex-splice at=2026-08-30T22:26:40Z
 # [2026-08-30] ATTEST-START: tree=4113ee07ebf15f9657b5a639c68a7f36efe08fca at=2026-08-30T22:26:40Z
@@ -389,6 +393,9 @@ verify = "cd gateway && ./gradlew :gateway:test --console=plain"
 # [2026-08-30] VERDICT: outcome=redo gap=fold-path re-POST has zero backoff (FoldRunner.kt:87-89); runner-default-curve unpinned
 # [2026-08-30] ATTEST-START: tree=15ac9cf7a0eea446cc14cbebd074bffbfc95298d at=2026-08-31T00:47:04Z
 # [2026-08-30] RECEIPT ancestor-verified: 7bca38a on origin. Adversarial read vs my redo gaps: (1) FoldRunner trigger-B now calls backoff(reanchorAttempt,0) before the re-POST, injectable RetryBackoff defaulting to the SHIPPED transport curve, arm asserts waits==[0]; (2) curve pinned: 200/400/800 with jitter windows AND saturation at attempt 56 (shl overflow replaced by cappedExponentialBase - DR-47's sibling fix). Both gaps closed. Status stays in_flight until codex reports their verify green.
+# [2026-08-30] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: checks/gate.sh, checks/oss/run.sh, dev/campaigns/proxy-hardening/oracle/capture.mjs, dev/campaigns/proxy-hardening/oracle/fixtures/_manifest.json, dev/campaigns/proxy-hardening/oracle/replay.mjs, gateway/app/src/main/kotlin/splice/app/TopologyLoader.kt, gateway/app/src/main/kotlin/splice/app/cli/AdminSupport.kt, gateway/app/src/main/kotlin/splice/app/cli/DoctorHeadChecks.kt, ... 52 more
+# [2026-08-30] VERDICT: outcome=accepted
+# [2026-08-30] DONE+VERDICT on codex's fresh focused verify (exact FoldRunnerReanchorTest trigger-B arm + UpstreamClientTransportTest curve arm, --rerun-tasks --no-build-cache, XML 1/1 each) atop my earlier gaps-closed diff read of 7bca38a.
 
 [[items]]
 id = "DR-30"
@@ -466,9 +473,13 @@ verify = "cd gateway && ./gradlew :gateway:test :provider-grok:test :app:test --
 id = "DR-35"
 phase = "walls"
 title = "WEAK-wall batch from the close-out lens, one item so none get lost (full detail closeout/d-walls.md): (a) nf_03 accepts the placement half-fix its own docstring forbids; (b) jw presence-token walls cannot see neutered-but-present rot on done items (C5 polarity blind spot); (c) checks/release/oss run.sh enumerates legs as a literal {A..M} so an added check is silently skipped - derive from the directory; (d) cx_02 canary pin omits the openai-responses dialect. Each is a wall-quality fix, none blocks runtime behavior."
-files = ["dev/campaigns/proxy-hardening/walls/nf_03_placement.py", "checks/release/run.sh", "dev/campaigns/proxy-hardening/walls/cx_02_compact_directive_dialect_symmetry.py"]
-status = "todo"
+files = ["dev/campaigns/proxy-hardening/walls/nf_03_total_cap_always_armed.py", "checks/oss/run.sh", "dev/campaigns/proxy-hardening/walls/cx_02_compact_directive_dialect_symmetry.py", "gateway/dialect-openai-responses/src/test/kotlin/ResponsesRequestBuilderTest.kt", "dev/campaigns/proxy-hardening/walls/jw_02_doctor_sees_dead_heads.py", "dev/campaigns/proxy-hardening/walls/jw_04_topology_staleness_visible.py", "dev/campaigns/proxy-hardening/walls/jw_05_doctor_reads_runtime.py", "dev/campaigns/proxy-hardening/walls/jw_08_splice_logs_verb.py", "dev/campaigns/proxy-hardening/walls/jw_13_port_collision_preflight.py", "dev/campaigns/proxy-hardening/walls/jw_17_doctor_probes_writable_dirs.py"]
+status = "in_flight"
 verify = "bash checks/gate.sh"
+# [2026-08-30] CLAIM: owner=claude-splice at=2026-08-31T02:20:57Z
+# [2026-08-30] ATTEST-START: tree=ce24857f37b4e0c873afc6f46df99841adb74f1c at=2026-08-31T02:20:57Z
+# [2026-08-30] FENCE-EDITED: files = ["dev/campaigns/proxy-hardening/walls/nf_03_placement.py", "checks/release/run.sh", "dev/campaigns/proxy-hardening/walls/cx_02_compact_directive_dialect_symmetry.py"] -> files = ["dev/campaigns/proxy-hardening/walls/nf_03_total_cap_always_armed.py", "checks/oss/run.sh", "dev/campaigns/proxy-hardening/walls/cx_02_compact_directive_dialect_symmetry.py", "gateway/dialect-openai-responses/src/test/kotlin/ResponsesRequestBuilderTest.kt", "dev/campaigns/proxy-hardening/walls/jw_02_doctor_sees_dead_heads.py", "dev/campaigns/proxy-hardening/walls/jw_04_topology_staleness_visible.py", "dev/campaigns/proxy-hardening/walls/jw_05_doctor_reads_runtime.py", "dev/campaigns/proxy-hardening/walls/jw_08_splice_logs_verb.py", "dev/campaigns/proxy-hardening/walls/jw_13_port_collision_preflight.py", "dev/campaigns/proxy-hardening/walls/jw_17_doctor_probes_writable_dirs.py"] (by=orchestrator implied; no flag)
+# [2026-08-30] FENCE corrected (nf_03_placement.py never existed -> nf_03_total_cap_always_armed.py; run.sh is checks/oss/ not checks/release/) + widened with the jw family and the responses builder test. (a) nf_03 placement leg: launchTotalCap must precede roundRun.run in the code-only drive text; 2 new mutant fixtures (late-launch, missing-run) red in selftest; live green. (b) derived-mutant legs on jw_02/04/05/08/13/17: every required token deleted from the LIVE sources must red the wall; all six selftests OK (no furniture today) and the leg class is proven able to fail (monkeypatched always-green detect -> 4 findings). (c) run.sh legs derived from the directory + >=13 floor; exit-proven: added leg runs and fails (was silently skipped), 12-leg shrink fails, clean 13 green. (d) cx_02 third canary: WALL RED first (responses had NO canary - worse than the lens claim, the arm asserted a hand-typed literal), then ResponsesRequestBuilderTest bound to shared COMPACT_DIRECTIVE_HEAD + byte-equality with CompactInstructions.withCompactDirective; wall+selftest green, builder test 22/0.
 
 [[items]]
 id = "DR-36"
@@ -550,10 +561,13 @@ id = "DR-42"
 phase = "topology"
 title = "MEDIUM: a braces-dropped models = [id, ...] inline-array typo hangs the daemon at boot in a ktoml infinite loop at 100 percent CPU with NO error (jstack: HeadModel serializer <-> TomlArrayDecoder; boot stderr discarded per JW-01 so the hang is silent). Pre-existing ktoml class but 8740afa adds the first inline-array-spelled key, making the typo likely. Fix: pre-validate the shape before ktoml sees it (or a boot watchdog naming the file+key), plus a red arm with a timeout. Lens: closeout/a-roster.md F1."
 files = ["gateway/app/src/main/kotlin/splice/app/TopologyLoader.kt", "gateway/app/src/test/kotlin/ExampleConfigTest.kt"]
-status = "todo"
+status = "done"
 verify = "cd gateway && ./gradlew :app:test --console=plain"
 # [2026-08-30] FENCE-EDITED: files = ["gateway/app/src/main/kotlin/splice/app/TopologyLoader.kt"] -> files = ["gateway/app/src/main/kotlin/splice/app/TopologyLoader.kt", "gateway/app/src/test/kotlin/ExampleConfigTest.kt"] (by=orchestrator implied; no flag)
 # [2026-08-30] FENCE widened per codex (2026-08-30): ExampleConfigTest.kt hosts the evidence arm (mutates shipped inline head roster + assertTimeoutPreemptively around parse). File verified to exist.
+# [2026-08-30] RECEIPT ancestor-verified: d3fe21d on origin. Adversarial: THREE review rounds this seat (regex masker -> scanner -> lookbehind matcher), each round's findings reproduced-then-fixed by codex: quoted-key hang (my advisory, reproduced), inline-table hang (my advisory, reproduced), 2KB regex StackOverflow (their independent reviewer), 4/5-quote terminator hiding (their independent reviewer), dead-fun compile break (mine). Final scanner verified sound: '?' markers, escape pairs, spec-correct close runs, lookbehind blocks sibling keys while catching dotted/inline spellings. Five arms present by name in pushed hash; their final gate 46/46 tasks --rerun-tasks --no-build-cache, ExampleConfigTest 10/0/0.
+# [2026-08-30] Attribution unavailable: missing in_flight tree snapshot
+# [2026-08-30] VERDICT: outcome=accepted
 
 [[items]]
 id = "DR-43"
@@ -586,14 +600,18 @@ verify = "cd gateway && ./gradlew :provider-spi:test --console=plain"
 # [2026-08-30] FENCE widened per codex (2026-08-30): UpstreamFailureClassifierTest.kt hosts the negated retry arm + independent transient-signature control. File verified to exist.
 # [2026-08-30] codex report: done, local commit c7b16a2. Exact negated-retry testcase red before fix; green XML 1/0. :provider-spi:test+detekt --rerun-tasks passed. 'try again' negation-aware; independently audited transient signatures remain retryable. Ancestor-verify at next push.
 # [2026-08-30] Attribution unavailable: missing in_flight tree snapshot
+# [2026-08-30] RECEIPT ancestor-verified: d3d280b on origin, byte-identical to the c7b16a2 diff adversarially read this seat (word-bounded try-again, negation window <=2 words, control arm keeps independent transient evidence transient; also tightens the old 'retry against' false positive). UpstreamFailureClassifierTest 15/0/0 with the exact arm.
+# [2026-08-30] VERDICT: outcome=accepted
 
 [[items]]
 id = "DR-46"
 phase = "ws"
 title = "WS robustness batch (codex lens): (a) handshake binary anomaly BEFORE holder publication = anomaly no-op + no request(1), demand stalls - latch anomaly pre-publish; (b) WsConnectionPool all-busy overshoot never trims on release; (c) WsRoundDriver acquires the cold Flow before pre-try ensureStarted, so throw/cancel strands a busy lease."
-files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/WsUpstream.kt", "gateway/gateway/src/main/kotlin/splice/gateway/head/WsRoundDriver.kt"]
+files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/WsUpstream.kt", "gateway/gateway/src/main/kotlin/splice/gateway/head/WsRoundDriver.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/WsConnectionFactory.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/WsConnectionPool.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/InboxListener.kt", "gateway/dialect-openai-responses/src/test/kotlin/WsUpstreamTest.kt", "gateway/gateway/src/test/kotlin/head/WsRoundDriverTest.kt"]
 status = "todo"
 verify = "cd gateway && ./gradlew :dialect-openai-responses:test :gateway:test --console=plain"
+# [2026-08-30] FENCE-EDITED: files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/WsUpstream.kt", "gateway/gateway/src/main/kotlin/splice/gateway/head/WsRoundDriver.kt"] -> files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/WsUpstream.kt", "gateway/gateway/src/main/kotlin/splice/gateway/head/WsRoundDriver.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/WsConnectionFactory.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/WsConnectionPool.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/InboxListener.kt", "gateway/dialect-openai-responses/src/test/kotlin/WsUpstreamTest.kt", "gateway/gateway/src/test/kotlin/head/WsRoundDriverTest.kt"] (by=orchestrator implied; no flag)
+# [2026-08-30] FENCE widened per codex post-inspection paths (2026-08-30): +WsConnectionFactory.kt +WsConnectionPool.kt +InboxListener.kt (production) +WsUpstreamTest.kt +WsRoundDriverTest.kt (evidence). All five verified to exist.
 
 [[items]]
 id = "DR-47"

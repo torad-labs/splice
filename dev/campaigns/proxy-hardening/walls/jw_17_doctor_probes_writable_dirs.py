@@ -76,6 +76,24 @@ CLOSED_FIX = ('stateInfo\nwritableProbe(dir)\ntry { write } finally { Files.dele
               'fix = "chmod u+rwx <dir>"')
 
 
+def derived_mutants() -> list[str]:
+    """DR-35b: the gate's polarity law sees vacuity only on TODO items — a DONE item's wall that
+    can no longer fail is invisible (neutered-but-present rot). Derive mutants from the LIVE
+    sources, cx_02's derived-selftest idiom: deleting each required token from today's tree must
+    turn detect red, or that token has rotted into always-green furniture."""
+    live = [(_read(DOCTOR) or "") + "\n" + (_read(PROBE) or "")]
+    if detect(*live):
+        return ["derived mutants need the live tree green; the wall is RED right now"]
+    fails = []
+    for where, tokens in ((0, ["writableProbe", "probeWritable"]), (0, [".delete", "deleteIfExists"]), (0, ["chmod", "df -h"])):
+        mutated = [x for x in live]
+        for t in tokens:
+            mutated[where] = (mutated[where] or "").replace(t, "")
+        if not detect(*mutated):
+            fails.append(f"live tree with {'/'.join(tokens)} deleted must be RED — furniture token")
+    return fails
+
+
 def selftest() -> int:
     fails = []
     if not detect(OPEN_FIX):
@@ -88,6 +106,7 @@ def selftest() -> int:
         fails.append("a fixless writability failure must be RED")
     if not detect(None):
         fails.append("a missing DoctorDaemonChecks.kt must be RED, never a vacuous pass")
+    fails.extend(derived_mutants())
     if fails:
         print("JW-17 SELFTEST FAIL:")
         for f in fails:

@@ -14,6 +14,8 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.parse.AnthropicParse
+import splice.core.turn.COMPACT_DIRECTIVE_HEAD
+import splice.core.turn.CompactInstructions
 import splice.core.turn.ReasoningDisplayParser
 import splice.dialect.responses.BuildOptions
 import splice.dialect.responses.CacheKeyStrategy
@@ -290,8 +292,12 @@ class ResponsesRequestBuilderTest {
         assertNull(req["tools"])
         val instructions = req["instructions"]?.jsonPrimitive?.content.orEmpty()
         assertTrue(instructions.startsWith("base system"))
-        assertTrue(instructions.contains("COMPACT MODE (critical)"))
+        // CX-02 canary (DR-35d): bound to the SHARED definition, not a hand-typed literal — the
+        // wall greps this file for COMPACT_DIRECTIVE_HEAD, and byte-equality with the :core
+        // composition IS the dialect-symmetry claim (chat and passthrough pin the same way).
+        assertTrue(instructions.contains(COMPACT_DIRECTIVE_HEAD), "the directive must ride: $instructions")
         assertTrue(instructions.contains("No tools. No function calls."))
+        assertEquals(CompactInstructions.withCompactDirective("base system", compact = true), instructions)
         val inputs = req["input"]!!.jsonArray.map { it.jsonObject }
         assertTrue(inputs.any { it["content"]?.jsonPrimitive?.content == "[tool_result t1] result body" })
         // images dropped on compact

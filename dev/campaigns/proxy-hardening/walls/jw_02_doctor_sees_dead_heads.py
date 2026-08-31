@@ -82,6 +82,24 @@ DOCTOR_OPEN = "daemonChecks branches on version only"
 DOCTOR_OK = 'if (failedHeads > 0) FAIL\nadd("head x", ":4101 not listening")'
 
 
+def derived_mutants() -> list[str]:
+    """DR-35b: the gate's polarity law sees vacuity only on TODO items — a DONE item's wall that
+    can no longer fail is invisible (neutered-but-present rot). Derive mutants from the LIVE
+    sources, cx_02's derived-selftest idiom: deleting each required token from today's tree must
+    turn detect red, or that token has rotted into always-green furniture."""
+    live = [_read(CLIENT), _read(DOCTOR)]
+    if detect(*live):
+        return ["derived mutants need the live tree green; the wall is RED right now"]
+    fails = []
+    for where, tokens in ((0, ["HealthView"]), (1, ["failedHeads"]), (1, ["not listening"])):
+        mutated = [x for x in live]
+        for t in tokens:
+            mutated[where] = (mutated[where] or "").replace(t, "")
+        if not detect(*mutated):
+            fails.append(f"live tree with {'/'.join(tokens)} deleted must be RED — furniture token")
+    return fails
+
+
 def selftest() -> int:
     fails = []
     if not detect(CLIENT_OPEN, DOCTOR_OPEN):
@@ -96,6 +114,7 @@ def selftest() -> int:
         fails.append("missing per-head probe must be RED")
     if not detect(None, DOCTOR_OK):
         fails.append("missing files must be RED, never a vacuous pass")
+    fails.extend(derived_mutants())
     if fails:
         print("JW-02 SELFTEST FAIL:")
         for f in fails:

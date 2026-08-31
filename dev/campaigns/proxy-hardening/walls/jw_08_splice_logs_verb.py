@@ -97,6 +97,24 @@ DOC_OK = 'DoctorCheck("logs", INFO, statePaths.logsDir...daemon.log)'
 CTRL_OK = 'put("note", "refresh failed — run: splice logs")'
 
 
+def derived_mutants() -> list[str]:
+    """DR-35b: the gate's polarity law sees vacuity only on TODO items — a DONE item's wall that
+    can no longer fail is invisible (neutered-but-present rot). Derive mutants from the LIVE
+    sources, cx_02's derived-selftest idiom: deleting each required token from today's tree must
+    turn detect red, or that token has rotted into always-green furniture."""
+    live = [_read(COMMAND), _read(DOCTOR), _read_tree(CONTROL_DIR)]
+    if detect(*live):
+        return ["derived mutants need the live tree green; the wall is RED right now"]
+    fails = []
+    for where, tokens in ((0, ['"logs"']), (1, ["logsDir"])):
+        mutated = [x for x in live]
+        for t in tokens:
+            mutated[where] = (mutated[where] or "").replace(t, "")
+        if not detect(*mutated):
+            fails.append(f"live tree with {'/'.join(tokens)} deleted must be RED — furniture token")
+    return fails
+
+
 def selftest() -> int:
     fails = []
     if not detect("verb table no logs", "prints state dir only", "check daemon.log"):
@@ -121,6 +139,7 @@ def selftest() -> int:
     elif "splice logs" not in live:
         fails.append("the control-plane sweep no longer reaches any `splice logs` remediation "
                      "string — the negative assertion has nothing left to police")
+    fails.extend(derived_mutants())
     if fails:
         print("JW-08 SELFTEST FAIL:")
         for f in fails:

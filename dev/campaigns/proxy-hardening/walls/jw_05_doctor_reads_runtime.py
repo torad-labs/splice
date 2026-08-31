@@ -78,6 +78,24 @@ CLOSED_FIX = ('daemonChecks\n"runtime" to guarded { runtimeChecks }\nproviderErr
               'perf outcome tail\nfix = "splice logs --head x --tail 50"')
 
 
+def derived_mutants() -> list[str]:
+    """DR-35b: the gate's polarity law sees vacuity only on TODO items — a DONE item's wall that
+    can no longer fail is invisible (neutered-but-present rot). Derive mutants from the LIVE
+    sources, cx_02's derived-selftest idiom: deleting each required token from today's tree must
+    turn detect red, or that token has rotted into always-green furniture."""
+    live = (_read(DOCTOR) or "") + "\n" + (_read(RUNTIME) or "")
+    if detect(live):
+        return ["derived mutants need the live tree green; the wall is RED right now"]
+    fails = []
+    for tokens in (['"runtime"'], ["providerErrors"], ["perf", "outcome"], ["splice logs --head"]):
+        mutant = live
+        for t in tokens:
+            mutant = mutant.replace(t, "")
+        if not detect(mutant):
+            fails.append(f"live tree with {'/'.join(tokens)} deleted must be RED — furniture token")
+    return fails
+
+
 def selftest() -> int:
     fails = []
     if not detect(OPEN_FIX):
@@ -90,13 +108,15 @@ def selftest() -> int:
         fails.append("warnings without the fix must be RED")
     if not detect(None):
         fails.append("a missing DoctorCommand.kt must be RED, never a vacuous pass")
+    fails.extend(derived_mutants())
     if fails:
         print("JW-05 SELFTEST FAIL:")
         for f in fails:
             print("  " + f)
         return 1
     print("JW-05 SELFTEST OK — red on static-only, counter-blind, fix-less shapes and missing "
-          "file; green only when doctor reads the runtime instruments")
+          "file, and on the LIVE tree with each required token deleted; green only when doctor "
+          "reads the runtime instruments")
     return 0
 
 

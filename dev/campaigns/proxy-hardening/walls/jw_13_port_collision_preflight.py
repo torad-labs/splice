@@ -76,6 +76,24 @@ DOC_OK = "portCollisions().map { FAIL naming both }"
 DMN_OK = "portCollisionMessage pre-flight in assembleDaemonHeads"
 
 
+def derived_mutants() -> list[str]:
+    """DR-35b: the gate's polarity law sees vacuity only on TODO items — a DONE item's wall that
+    can no longer fail is invisible (neutered-but-present rot). Derive mutants from the LIVE
+    sources, cx_02's derived-selftest idiom: deleting each required token from today's tree must
+    turn detect red, or that token has rotted into always-green furniture."""
+    live = [_read(TOPO), _read(DOCTOR), _read(DAEMON)]
+    if detect(*live):
+        return ["derived mutants need the live tree green; the wall is RED right now"]
+    fails = []
+    for where, tokens in ((0, ["fun portCollisions("]), (1, ["portCollision"]), (2, ["portCollision"])):
+        mutated = [x for x in live]
+        for t in tokens:
+            mutated[where] = (mutated[where] or "").replace(t, "")
+        if not detect(*mutated):
+            fails.append(f"live tree with {'/'.join(tokens)} deleted must be RED — furniture token")
+    return fails
+
+
 def selftest() -> int:
     fails = []
     if not detect("no helper", "no check", "bare error"):
@@ -90,6 +108,7 @@ def selftest() -> int:
         fails.append("a daemon that never names the sibling must be RED")
     if not detect(None, DOC_OK, DMN_OK):
         fails.append("missing files must be RED, never a vacuous pass")
+    fails.extend(derived_mutants())
     if fails:
         print("JW-13 SELFTEST FAIL:")
         for f in fails:

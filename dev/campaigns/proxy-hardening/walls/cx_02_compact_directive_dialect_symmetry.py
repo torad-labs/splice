@@ -83,6 +83,9 @@ CALL_SITES = {
 CANARY_TESTS = {
     "openai-chat": "gateway/dialect-openai-chat/src/test/kotlin/ChatRequestBuilderTest.kt",
     "anthropic-passthrough": "gateway/dialect-anthropic-passthrough/src/test/kotlin/PassthroughRequestBuilderTest.kt",
+    # DR-35d: responses was the missing third — its builder test asserted a hand-typed literal, so
+    # the responses-side directive could be deleted with this wall green for 1 of the 3 dialects.
+    "openai-responses": "gateway/dialect-openai-responses/src/test/kotlin/ResponsesRequestBuilderTest.kt",
 }
 CANARY_TOKEN = "COMPACT_DIRECTIVE_HEAD"
 

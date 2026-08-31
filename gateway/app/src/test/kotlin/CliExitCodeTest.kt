@@ -1,7 +1,13 @@
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.io.TempDir
+import splice.app.TopologyLoader
 import splice.app.cli.Cli
 import splice.app.cli.Command
+import java.nio.file.Files
+import java.nio.file.Path
 
 class CliExitCodeTest {
 
@@ -69,4 +75,64 @@ class CliExitCodeTest {
             Cli().guarded { throw java.util.concurrent.CancellationException("turn cancelled") }
         }
     }
+
+    /** DR-99 (coverage redo, review 2026-08-31): every arm above enters at `guarded`, so all of
+     *  them stay GREEN if `runCli` regresses to `return command.run()` — the boundary being
+     *  BYPASSED is the defect, and a helper-only arm cannot see it. This one enters where the
+     *  process does: argv in, exit code out, over a real verb (`status` loads the topology on its
+     *  first line) and a real malformed splice.toml on the real resolution path.
+     *
+     *  The fixture's broken construct is an `extra_headers` string where the schema wants a table,
+     *  carrying a sentinel: that is the DR-92 shape this boundary exists for — ktoml decode text
+     *  can quote the offending config line, and the line legally holds credential-like values. So
+     *  the arm pins both halves at once: the boundary catches (exit 1, one line, no stack trace)
+     *  AND the rendered line withholds the bytes. */
+    @Test
+    fun `runCli routes a real verb's config failure through the boundary - DR-99`(@TempDir tmp: Path) {
+        val config = tmp.resolve(".config").resolve("splice").resolve("splice.toml")
+        Files.createDirectories(config.parent)
+        Files.writeString(config, MALFORMED_CONFIG_TOML)
+        val savedHome = System.getProperty("user.home")
+        System.setProperty("user.home", tmp.toString())
+        var code = -1
+        try {
+            // PREMISE, asserted not assumed: an ambient SPLICE_CONFIG / XDG_CONFIG_HOME would aim
+            // the verb at the operator's own config and make every assertion below vacuous.
+            assertEquals(
+                config,
+                TopologyLoader.configPath(),
+                "the redirected config path must be the one the verb reads",
+            )
+            val err = stderrOf { code = Cli().runCli(arrayOf("status")) }
+            assertEquals(1, code, "a malformed config must exit nonzero THROUGH runCli, not escape it")
+            assertTrue(err.startsWith("splice: "), "one safe line from the boundary, was: $err")
+            assertFalse(err.contains("\tat "), "no stack trace may reach the operator: $err")
+            assertFalse(err.contains(CONFIG_SENTINEL), "config bytes must be withheld (DR-92/DR-65): $err")
+        } finally {
+            System.setProperty("user.home", savedHome)
+        }
+    }
 }
+
+/** A sentinel that looks like what `extra_headers` legally carries, on the very construct whose
+ *  decode fails — so a renderer that quotes the offending line would leak it. */
+private const val CONFIG_SENTINEL = "sk-PROD-99-SENTINEL"
+
+/** `extra_headers` is `Map<String, String>`; a bare string is a decode-type failure, which is the
+ *  malformed-config shape DR-99 was opened against (a raw TomlDecodingException stack trace). */
+private val MALFORMED_CONFIG_TOML = """
+[daemon]
+control_port = 3096
+
+[providers.openrouter]
+dialect = "openai-chat"
+base_url = "https://example.invalid"
+auth = { kind = "api-key" }
+extra_headers = "$CONFIG_SENTINEL"
+
+[heads.fast]
+provider = "openrouter"
+port = 3101
+discovery_prefix = "claude-fast--"
+pinned_model = "m"
+"""

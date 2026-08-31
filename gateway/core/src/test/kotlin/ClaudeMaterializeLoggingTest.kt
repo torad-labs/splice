@@ -12,6 +12,7 @@ import splice.core.launch.ClaudeConfigMaterializer
 import splice.core.launch.ClaudePolicy
 import splice.core.launch.MaterializeSpec
 import splice.core.launch.SymlinkOp
+import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import java.io.IOException
 import java.nio.file.Files
@@ -108,19 +109,22 @@ class ClaudeMaterializeCleanupTest {
             made
         }
         try {
-            runCatching {
-                ClaudeConfigMaterializer(home, log = LogSink { log += it }, symlink = breaking)
-                    .materialize(
-                        MaterializeSpec(
-                            configDir = configDir,
-                            policy = ClaudePolicy(share = setOf("agents"), isolate = emptySet()),
-                            availableModelIds = listOf("m1"),
-                            defaultModel = "m1",
-                            modelOptionsCache = optionsCache,
-                            statuslineCommand = "curl",
-                        ),
-                    )
-            }
+            Cancellables.discard(
+                runCatching {
+                    ClaudeConfigMaterializer(home, log = LogSink { log += it }, symlink = breaking)
+                        .materialize(
+                            MaterializeSpec(
+                                configDir = configDir,
+                                policy = ClaudePolicy(share = setOf("agents"), isolate = emptySet()),
+                                availableModelIds = listOf("m1"),
+                                defaultModel = "m1",
+                                modelOptionsCache = optionsCache,
+                                statuslineCommand = "curl",
+                            ),
+                        )
+                },
+                "this arm asserts on the LOGGED cause, not the outcome — either result is in scope",
+            )
         } finally {
             Files.setPosixFilePermissions(configDir, PosixFilePermissions.fromString("rwx------"))
         }

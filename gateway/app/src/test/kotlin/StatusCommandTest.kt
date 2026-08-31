@@ -42,6 +42,28 @@ class StatusCommandTest {
         )
     }
 
+    // DR-98: a kimi-oauth head with default config read permanently not-signed-in — the registry
+    // row carried null (claiming a "provider-computed path" nothing computes) while every working
+    // path hard-falls-back to ~/.kimi/credentials/kimi-code.json, so credentialConfigured resolved
+    // NO file: status showed login-needed and doctor FAILed forever against a serving head.
+    @Test
+    fun `kimi-oauth default credential file counts as configured - DR-98`(@TempDir tmp: Path) {
+        val provider = ProviderConfig(
+            dialect = Dialect.ANTHROPIC_PASSTHROUGH,
+            baseUrl = "https://example.invalid",
+            auth = AuthConfig("kimi-oauth"),
+        )
+        val creds = Files.createDirectories(tmp.resolve(".kimi").resolve("credentials"))
+        Files.writeString(creds.resolve("kimi-code.json"), """{"access_token":"k"}""")
+        val savedHome = System.getProperty("user.home")
+        System.setProperty("user.home", tmp.toString())
+        try {
+            assertTrue(StatusCommand().authPresent("kimi", provider) { null })
+        } finally {
+            System.setProperty("user.home", savedHome)
+        }
+    }
+
     @Test
     fun `wrapper status honors the configured bin directory`(@TempDir root: Path) {
         val bin = root.resolve("custom-bin")

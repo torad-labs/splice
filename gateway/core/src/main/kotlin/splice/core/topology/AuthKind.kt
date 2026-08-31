@@ -19,7 +19,12 @@ public sealed class AuthKind(
 
     public data object ChatgptOAuth : OAuth("chatgpt-oauth", "~/.codex/auth.json")
     public data object GrokOAuth : OAuth("grok-oauth", "~/.grok/auth.json")
-    public data object KimiOAuth : OAuth("kimi-oauth", null) // device-flow token at a provider-computed path
+
+    // DR-98: the null here claimed a "provider-computed path", but nothing computes one — every
+    // working path (device-flow login, the provider's credential read) hard-falls-back to this
+    // same literal, while presence checks read the REGISTRY and so saw no file: a kimi-oauth head
+    // with default config showed login-needed in status and FAILed doctor forever while serving.
+    public data object KimiOAuth : OAuth("kimi-oauth", "~/.kimi/credentials/kimi-code.json")
 
     /** The head holds NO credential: the caller's own auth headers are forwarded upstream, and its
      *  native login stays enabled (campaign claude-head). No auth file, no refresh, no sign-in flow
@@ -42,8 +47,7 @@ public object AuthKindRegistry {
     /** The typed scheme for a wire kind, or null for an operator's custom/unknown kind. */
     public fun from(wire: String): AuthKind? = KNOWN.firstOrNull { it.wire == wire }
 
-    /** Default auth-file path for a registered kind, or null when unknown, env-only, or computed by
-     *  the provider (Kimi OAuth). */
+    /** Default auth-file path for a registered kind, or null when unknown or env-only. */
     public fun defaultAuthFileFor(wire: String): String? = from(wire)?.defaultAuthFile
 
     /** OAuth-ness by convention: any unregistered wire ending in `oauth` counts as future OAuth. */

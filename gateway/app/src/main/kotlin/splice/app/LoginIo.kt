@@ -81,8 +81,10 @@ internal class LoginIo {
 
     // Masked read into ~/.config/splice/keys.toml — the key never hits shell history, ps, or a
     // transcript. Live daemons pick it up on the next request; restart only refreshes status.
-    internal fun apiKeyLogin(providerKey: String, provider: ProviderConfig): Boolean {
-        val envVar = provider.auth.effectiveApiKeyEnv(providerKey)
+    // DR-97: derives from the HEAD key — the same effectiveApiKeyEnv(ctx.key) every daemon arm
+    // and doctor read; a provider-key derivation stored under a var nothing reads.
+    internal fun apiKeyLogin(headKey: String, provider: ProviderConfig): Boolean {
+        val envVar = provider.auth.effectiveApiKeyEnv(headKey)
         val console = System.console()
         val value = when {
             console == null -> {
@@ -90,7 +92,7 @@ internal class LoginIo {
                 println("  printf '%s' \"\$KEY\" | splice key set $envVar --stdin")
                 null
             }
-            else -> console.readPassword("$providerKey API key ($envVar): ")?.let { String(it).trim() }
+            else -> console.readPassword("$headKey API key ($envVar): ")?.let { String(it).trim() }
         }
         if (value != null && value.isEmpty()) println("splice: empty key — nothing stored.")
         return !value.isNullOrEmpty() && runCatching {

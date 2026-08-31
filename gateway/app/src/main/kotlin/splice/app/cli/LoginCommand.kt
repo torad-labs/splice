@@ -35,7 +35,7 @@ internal class LoginCommand {
             println("splice: unknown head '$headKey' (heads: ${topology.heads.keys})")
             return false
         }
-        val ok = runLoginFlow(headKey, providerKey, provider, topology)
+        val ok = runLoginFlow(headKey, provider, topology)
         if (!ok) println("splice: login for '$headKey' did not complete.")
         loginIo.writeLoginOutcome(headKey, ok)
         return ok
@@ -43,9 +43,9 @@ internal class LoginCommand {
 
     // kimi uses the RFC 8628 device flow (no loopback); codex/grok use the browser-loopback flow;
     // api-key heads get a masked terminal prompt into the KeyStore (no browser anywhere).
-    private suspend fun runLoginFlow(
+    // Internal for the DR-97 arm (the head-key derivation is a call-site contract).
+    internal suspend fun runLoginFlow(
         headKey: String,
-        providerKey: String,
         provider: ProviderConfig,
         topology: Topology,
     ): Boolean =
@@ -53,7 +53,9 @@ internal class LoginCommand {
             "kimi-oauth" -> DeviceLoginFlow.run(
                 kimi.spec(headKey, oauthAuthPath(provider, "~/.kimi/credentials/kimi-code.json")),
             )
-            "api-key" -> loginIo.apiKeyLogin(providerKey, provider)
+            // DR-97: the HEAD key, not the provider key — the daemon reads
+            // effectiveApiKeyEnv(ctx.key), so the prompt must store under that var.
+            "api-key" -> loginIo.apiKeyLogin(headKey, provider)
             else -> specFor(headKey, topology)?.let { OAuthLoginFlow.run(it) } ?: false
         }
 

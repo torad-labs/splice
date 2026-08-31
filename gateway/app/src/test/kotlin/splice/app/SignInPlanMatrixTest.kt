@@ -95,6 +95,16 @@ class SignInPlanMatrixTest {
         }
     }
 
+    /** DR-97: the DAEMON derives the api-key env from the HEAD key — effectiveApiKeyEnv(ctx.key)
+     *  in every provider arm and in doctor — so capture must too. The provider-key derivation
+     *  stored OPENROUTER_API_KEY while the daemon read FAST_API_KEY: login printed success, the
+     *  head kept 401ing, doctor said not set. Token SHAPE stays keyed by provider identity. */
+    @Test
+    fun `capture derives the env var from the HEAD key - the var the daemon reads - DR-97`() {
+        val plan = planner.signInPlan(providerCfg(API_KEY), head("openrouter", "claude-fast"), "fast")
+        assertEquals("FAST_API_KEY", plan.tokenCapture?.envVar, "capture must write the var the daemon reads")
+    }
+
     /** An OAuth head never captures pastes: its secret never appears in the prompt box at all. */
     @Test
     fun `oauth kinds never enable paste capture`() {

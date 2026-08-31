@@ -49,7 +49,7 @@ internal class SignInPlanner {
             CHATGPT_OAUTH -> oauthSignIn(wrapper, "Codex (ChatGPT)")
             GROK_OAUTH -> oauthSignIn(wrapper, "Grok (xAI)")
             KIMI_OAUTH -> oauthSignIn(wrapper, "Kimi (Moonshot)")
-            API_KEY -> apiKeySignIn(providerCfg, head, command)
+            API_KEY -> apiKeySignIn(providerCfg, head, command, key)
             // A client-auth head has NO splice-run sign-in, and the command must be EMPTY — not a
             // plausible-looking one. A non-blank command makes LoginInterception.wire plant splice's
             // own /login into this head's config dir plus a UserPromptSubmit hook, and that flow ends
@@ -71,11 +71,14 @@ internal class SignInPlanner {
     }
 
     /** The api-key branch, split out so [signInPlan] stays under detekt's complexity ceiling. */
-    private fun apiKeySignIn(providerCfg: ProviderConfig, head: HeadConfig, command: String): SignInPlan {
+    private fun apiKeySignIn(providerCfg: ProviderConfig, head: HeadConfig, command: String, key: String): SignInPlan {
         val label = API_KEY_LABELS[head.provider] ?: head.provider
-        // Capture only where the token shape is KNOWN and unambiguous (v1: OpenRouter).
+        // Capture only where the token shape is KNOWN and unambiguous (v1: OpenRouter). The token
+        // SHAPE is the provider's; the env var is the HEAD's (DR-97) — every daemon arm and doctor
+        // read effectiveApiKeyEnv(ctx.key), and a provider-key derivation stored the captured key
+        // under a var nothing reads (login success, head 401s, doctor "not set").
         val capture = API_KEY_TOKEN_PATTERNS[head.provider]?.let { pattern ->
-            TokenCaptureSpec(providerCfg.auth.effectiveApiKeyEnv(head.provider), pattern, label)
+            TokenCaptureSpec(providerCfg.auth.effectiveApiKeyEnv(key), pattern, label)
         }
         // EVERY head keeps /login — each one has its own sign-in path, and being in the topology is
         // what makes it supported. What differs is only the WORDING: a head that can capture a pasted

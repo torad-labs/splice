@@ -29,11 +29,15 @@ public object UpstreamFailureClassifier {
     // cyber_policy invitation sentence ("To get authorized for security work, join..."), turning
     // a deterministic content-flag refusal into authentication_error (re-login UX). Auth wording
     // must state an auth FAILURE: authenticate*/unauthorized/not-authorized/bare auth/auth error/
-    // authorization (the header word — real 401 bodies say "missing authorization header"),
-    // never the standalone positive "authorized".
+    // authorization/authorisation (the header word, suffix-open — DR-83: underscore is a word
+    // character, so a closed \bauthorization\b dropped every snake_case authorization_* code the
+    // vendor error.code field emits by construction) plus authz — never the standalone positive
+    // "authorized" ("authoriz" takes the -ed suffix, never -ation, so the suffix-open branch
+    // cannot reach it).
     private val authRe = Regex(
         "\\bauthenticat\\w*\\b|\\bunauthori[sz]\\w*\\b|\\bnot authori[sz]ed\\b|\\bauth\\b|" +
-            "\\bauth[_ ]error\\b|\\bauthorization\\b|token (?:expired|invalid|revoked)|invalid[_ ]token",
+            "\\bauth[_ ]error\\b|\\bauthori[sz]ation\\w*\\b|\\bauthz\\w*\\b|" +
+            "token (?:expired|invalid|revoked)|invalid[_ ]token",
         RegexOption.IGNORE_CASE,
     )
     private val gatewayHtmlRe = Regex("<html|bad gateway|cloudflare", RegexOption.IGNORE_CASE)
@@ -174,9 +178,15 @@ public object UpstreamFailureClassifier {
         return ClassifiedFailure(ErrorType.INVALID_REQUEST, message.take(MAX_MESSAGE))
     }
 
-    private fun isStatuslessTransient(message: String): Boolean =
-        transientConditionRe.containsMatchIn(message) ||
+    // DR-71 redo (codex red-repro): the heuristics classify exactly the take(MAX_MESSAGE) view
+    // the operator is shown — scanning the untruncated message let an invitation beyond the
+    // negation bridge's {0,2000} reach flip a visibly-negated clause to transient, and the bound
+    // is what makes that bridge genuinely whole-clause.
+    private fun isStatuslessTransient(rawMessage: String): Boolean {
+        val message = rawMessage.take(MAX_MESSAGE)
+        return transientConditionRe.containsMatchIn(message) ||
             (tryAgainRe.containsMatchIn(message) && !negatedTryAgainRe.containsMatchIn(message))
+    }
 
     /** DR-10 redo (codex): provenance beats wording. When the vendor named a structured code, the
      *  EXACT retryable allowlist decides — free text can never overrule it, so a deterministic

@@ -55,4 +55,13 @@ class UpstreamFailureRetryWordingTest {
         assertTrue(coded("engine_overloaded").transient)
         assertTrue(coded("model_overloaded").transient)
     }
+
+    // DR-71 redo (codex red-repro): the negation bridge caps at 2000 chars but the heuristic used
+    // to scan the UNTRUNCATED message — an invitation past the bridge's reach was still seen by
+    // tryAgainRe, so a clause whose visible (displayed) half is pure negation read as transient.
+    // The heuristic now classifies exactly the take(MAX_MESSAGE) view the operator sees.
+    @Test
+    fun `a retry invitation beyond the message budget cannot outrun its negation - DR-71 redo`() {
+        assertFalse(sse("Do not " + "x".repeat(2050) + " retry").transient)
+    }
 }

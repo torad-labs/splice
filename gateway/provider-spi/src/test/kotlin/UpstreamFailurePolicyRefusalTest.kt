@@ -40,4 +40,24 @@ class UpstreamFailurePolicyRefusalTest {
             assertEquals(ErrorType.AUTHENTICATION, r.type, text)
         }
     }
+
+    // DR-83 (batches 6+7 review): DR-72's fixed alternation ended its authorization branch at a
+    // word boundary, and underscore is a word character — every snake_case authorization_* code
+    // (the shape vendor error.code fields take by construction) plus the -isation spelling and
+    // authz stopped matching, the exact mirror image of the bug DR-72 fixed.
+    @Test
+    fun `snake_case authorization codes are auth failures - DR-83`() {
+        listOf("authorization_error", "authorization_required", "authorization_failed").forEach { code ->
+            val r = UpstreamFailureClassifier.classify(FailureSource.SSE, "request rejected", code = code)
+            assertEquals(ErrorType.AUTHENTICATION, r.type, code)
+        }
+    }
+
+    @Test
+    fun `authorisation spelling and authz wordings are auth failures - DR-83`() {
+        listOf("Authorisation required", "authorisation failed", "authz denied").forEach { text ->
+            val r = UpstreamFailureClassifier.classify(FailureSource.SSE, text)
+            assertEquals(ErrorType.AUTHENTICATION, r.type, text)
+        }
+    }
 }

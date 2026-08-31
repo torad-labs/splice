@@ -13,6 +13,7 @@
 package splice.core.config
 
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.longOrNull
@@ -111,7 +112,12 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         }
     }
 
+    // JsonNull IS a JsonPrimitive, so its arm must come first: falling through to el.content turned
+    // a JSON null into the four-char string "null" — which a STRING knob then APPLIED, e.g.
+    // {"chatgptApiBase": null} in config.json became the literal base URL "null" (DR-48). A JSON
+    // null is absence; the knob's default must win.
     fun jsonScalar(el: JsonElement): Any? = when (el) {
+        is JsonNull -> null
         is JsonPrimitive -> el.booleanOrNull ?: el.longOrNull ?: el.content
         else -> null
     }
@@ -144,7 +150,8 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         }
     }
 
-    private fun coerceString(raw: Any?): String? = raw.toString().trim().ifEmpty { null }
+    // raw?. not raw. — Kotlin's null.toString() is the same four-char "null" trap (DR-48).
+    private fun coerceString(raw: Any?): String? = raw?.toString()?.trim()?.ifEmpty { null }
 
     // Shared reads over the merged map — one place each so `normalize` stays a flat clamp table.
     fun str(out: Map<String, Any?>, k: Knob): String? = out[k.key]?.toString()

@@ -609,11 +609,14 @@ verify = "cd gateway && ./gradlew :provider-spi:test --console=plain"
 id = "DR-48"
 phase = "config"
 title = "ConfigCoercion turns JsonNull into the literal string null (codex lens) - a TOML/JSON null lands as a four-char credential or knob value. Fix: null stays absent + arm."
-files = ["gateway/core/src/main/kotlin/splice/core/config/ConfigService.kt"]
-status = "in_flight"
+files = ["gateway/core/src/main/kotlin/splice/core/config/ConfigCoercion.kt", "gateway/core/src/test/kotlin/ConfigServiceTest.kt"]
+status = "done"
 verify = "cd gateway && ./gradlew :core:test --console=plain"
 # [2026-08-30] CLAIM: owner=claude-splice at=2026-08-31T01:31:16Z
 # [2026-08-30] ATTEST-START: tree=29b628c389ba3378499e4617cce3e69c2e433621 at=2026-08-31T01:31:16Z
+# [2026-08-30] FENCE-EDITED: files = ["gateway/core/src/main/kotlin/splice/core/config/ConfigService.kt"] -> files = ["gateway/core/src/main/kotlin/splice/core/config/ConfigCoercion.kt", "gateway/core/src/test/kotlin/ConfigServiceTest.kt"] (by=orchestrator implied; no flag)
+# [2026-08-30] FENCE was stale (ConfigService.kt): coercion lives in ConfigCoercion.kt since HD-25. SEAMS: (1) jsonScalar fell through JsonNull (a JsonPrimitive) to el.content='null' - state-file read path, so {"chatgptApiBase":null} in config.json became the literal base URL "null" over the default; (2) coerceString(null) via Kotlin null.toString(). PATCH path was already safe (2026-07-18 audit maps JsonNull->delete); persistApplied deletes by omission - the state-file READ was the last live seam. FIX: is JsonNull -> null arm first + raw?. in coerceString. ARMS red on unfixed with exact signature (String "null" vs default URL; jsonScalar(JsonNull) returned String@...<null>): behavioral state-file arm + direct coercion arm. GREEN: :core:test+detekt --rerun-tasks XML 155/0, arms present by name.
+# [2026-08-30] ATTEST: scoped diffstat: .../kotlin/splice/core/config/ConfigCoercion.kt    |  9 ++++++++- | gateway/core/src/test/kotlin/ConfigServiceTest.kt  | 23 ++++++++++++++++++++++ | 2 files changed, 31 insertions(+), 1 deletion(-); sidecar: .claude/ledger-diffs/DR-48.diff; off-scope: checks/gate.sh, dev/campaigns/proxy-hardening/oracle/capture.mjs, dev/campaigns/proxy-hardening/oracle/fixtures/_manifest.json, dev/campaigns/proxy-hardening/oracle/replay.mjs, gateway/app/src/main/kotlin/splice/app/head/LaunchSpecFactory.kt, gateway/app/src/test/kotlin/DaemonLogWiringTest.kt, gateway/app/src/test/kotlin/DaemonTest.kt, gateway/app/src/test/kotlin/splice/app/head/LaunchSpecClientAuthTest.kt, ... 27 more
 
 [[items]]
 id = "DR-49"

@@ -2,12 +2,15 @@
 // + restart-required flagging, invalid-value/unknown-key rejection, maxInflight aliases,
 // normalization floors, showReasoning folding, sub-second cache pickup. Env is faked via the
 // injected reader seam (JVM cannot setenv).
+import kotlinx.serialization.json.JsonNull
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.ConfigCoercion
 import splice.core.config.ConfigService
+import splice.core.config.Knob
 import splice.core.config.StatePaths
 import splice.core.turn.ReasoningDisplay
 import java.nio.file.Files
@@ -136,6 +139,26 @@ class ConfigServiceTest {
         // runtime PATCH beats env
         svc.patch(mapOf("effort" to "medium"))
         assertEquals("medium", svc.getConfig().effort)
+    }
+
+    // DR-48: a JSON null in config.json is ABSENCE, never the four-char string "null". jsonScalar
+    // fell through JsonNull (a JsonPrimitive) to el.content, so a nulled STRING knob replaced its
+    // default with the literal "null" — e.g. a "null" chatgptApiBase upstream URL.
+    @Test
+    fun `a json null knob in the state file reads as absent, not the string null`() {
+        val svc = service()
+        val stateDir = tmp.resolve("state")
+        Files.createDirectories(stateDir)
+        stateDir.resolve("config.json").writeText("""{"chatgptApiBase":null,"maxQueued":null}""")
+        assertEquals(Knob.CHATGPT_API_BASE.default, svc.getConfig().chatgptApiBase)
+        assertEquals(512, svc.getConfig().maxQueued, "a nulled NUMBER knob keeps its default")
+    }
+
+    @Test
+    fun `coercion never manufactures the string null from an absent value`() {
+        val coercion = ConfigCoercion { null }
+        assertNull(coercion.jsonScalar(JsonNull))
+        assertNull(coercion.coerce(Knob.CHATGPT_API_BASE, null))
     }
 
     @Test

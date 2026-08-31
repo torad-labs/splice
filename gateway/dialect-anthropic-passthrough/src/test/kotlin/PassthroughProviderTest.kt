@@ -124,6 +124,36 @@ class PassthroughProviderTest {
         assertEquals("claude-kimi--k3[1m]", built.meta.originalModel)
     }
 
+    // DR-27 redo (codex): stripSuffixes computes the id SENT UPSTREAM, and only the valid trailing
+    // numeric tier grammar ([<digits><k|m>]) may strip on the production buildTurn path. Three
+    // shapes: a non-numeric bracket is preserved, a MALFORMED tier (no closing bracket) is
+    // preserved byte-for-byte, and only the valid tier strips. A broadened any-bracket regex, a
+    // malformed-tolerant regex, and a [1m]-only regex each red exactly one shape.
+    @Test
+    fun `only a valid trailing numeric tier strips before the wire - DR-27`() {
+        fun built(id: String) = provider(PassthroughQuirks(providerTag = "claude-splice")).buildTurn(
+            AnthropicParse.parseAnthropicBody(
+                """{"model":"$id","messages":[{"role":"user","content":"hi"}]}""",
+            ),
+            compact = false,
+            sessionId = null,
+        )
+
+        val preview = built("k3[preview]")
+        assertEquals("k3[preview]", preview.requestBody["model"]?.jsonPrimitive?.content)
+        assertEquals("k3[preview]", preview.meta.upstreamModel, "a non-numeric bracket is not a tier")
+
+        val malformed = built("k3[500k")
+        assertEquals("k3[500k", malformed.requestBody["model"]?.jsonPrimitive?.content)
+        assertEquals("k3[500k", malformed.meta.upstreamModel, "a malformed tier ships byte-for-byte")
+        assertEquals("k3[500k", malformed.meta.originalModel)
+
+        val valid = built("k3[500k]")
+        assertEquals("k3", valid.requestBody["model"]?.jsonPrimitive?.content, "the valid tier strips")
+        assertEquals("k3", valid.meta.upstreamModel)
+        assertEquals("k3[500k]", valid.meta.originalModel, "meta keeps the raw picker id")
+    }
+
     @Test
     fun `quirks reach the builder — kimi deforms where a neutral head does not`() {
         val body = """{"model":"m","messages":[{"role":"user","content":[

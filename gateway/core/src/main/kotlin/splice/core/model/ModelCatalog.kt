@@ -2,7 +2,8 @@
 // context windows resolve EXACT match -> ordered startsWith prefix rules -> default
 // (never substring: the v29 fuzzy pass silently inherited windows and hid catalog gaps);
 // discovery wrap because Claude Code drops /v1/models ids not matching /^(claude|anthropic)/i;
-// stripSuffixes removes the discovery prefix and a trailing "[1m]" hint (case-insensitive);
+// stripSuffixes removes the discovery prefix and a trailing numeric tier hint ("[1m]", "[500k]" —
+// the [<digits><k|m>] grammar, case-insensitive, DR-27);
 // discovery rows carry display_name; availableModelIds stay UNWRAPPED (a wrapped active
 // model makes Claude Code ignore the context-window env and compact early).
 package splice.core.model
@@ -13,7 +14,7 @@ import kotlinx.serialization.Serializable
 /** What Claude Code returns for a "[1m]" id — the literal it hardcodes, NOT 1024*1024. */
 private const val CLAUDE_CODE_ONE_MILLION = 1_000_000L
 
-/** Claude Code's own id-keyed window hook, matched only as a trailing tier suffix. */
+/** Claude Code's own id-keyed window hook, matched anywhere in the client id. */
 // UNANCHORED on purpose, unlike the strip rule (DR-27): this predicate exists to predict what the
 // CLIENT will do, and Claude Code's own detection is a containsMatch — `/\[1m\]/i` (cli 2.1.233
 // `G4u`) — anywhere in the id. The anchored version disagreed with the client for a mid-string
@@ -93,7 +94,9 @@ public data class ModelCatalog(
     /** True only for a picker model owned by this head (wrapped or upstream id). */
     public fun contains(id: String): Boolean = stripSuffixes(id) in modelIds
 
-    /** Discovery wrapper + "[1m]" hint stripped — what the upstream actually sees. */
+    /** Discovery wrapper + any valid trailing numeric tier ("[1m]", "[500k]") stripped — what the
+     *  upstream actually sees. Only the [<digits><k|m>] grammar strips (DR-27): a non-numeric
+     *  bracket and a malformed tier ride to the wire byte-for-byte. */
     public fun stripSuffixes(id: String): String = unwrap(id).replace(suffixHint, "")
 
     /** Exact -> ordered startsWith prefix rules -> default. Order is the law. */

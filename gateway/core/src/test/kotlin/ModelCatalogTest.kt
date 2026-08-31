@@ -138,7 +138,7 @@ class ModelCatalogTest {
             ),
             defaultContextWindow = 256_000,
         )
-        assertEquals("grok-4.6", xai.stripSuffixes("grok-4.6[500k]"), "any bracket tier strips, not just [1m]")
+        assertEquals("grok-4.6", xai.stripSuffixes("grok-4.6[500k]"), "any numeric bracket tier strips, not just [1m]")
         assertEquals(256_000L, xai.contextWindowFor("grok-4.6"), "the capped row keeps the deliberate 256k")
         assertEquals(500_000L, xai.contextWindowFor("grok-4.6[500k]"), "the long-context row gets its own window")
         assertEquals(500_000L, xai.contextWindowFor("claude-grok--grok-4.6[500k]"), "wrapped form too")

@@ -243,9 +243,13 @@ try: print("; ".join(json.load(sys.stdin)["violations"])[:300])
 except Exception: print("probe crashed")')"
   fi
   local ct
+  # DR-113: a curl transport failure (refused/reset/timeout) errexited the WHOLE harness with
+  # curl's exit code instead of recording a per-head fail — the parse below only ever saw
+  # payloads that arrived rc=0. Same set -e family as DR-110/DR-49a.
   ct="$(curl_auth "$bearer" -sS -m 10 "http://127.0.0.1:$port/v1/messages/count_tokens" \
         -H 'Content-Type: application/json' \
-        -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}]}")"
+        -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}]}")" \
+    || ct="TRANSPORT FAILURE: count_tokens curl rc=$?"
   if printf '%s' "$ct" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert isinstance(d["input_tokens"], int)' 2>/dev/null; then
     pass "$key/count_tokens"
   else
@@ -422,7 +426,11 @@ tier2() {
   tmux -L "$TMUX_SOCK" new-session -d -s "$sess" -x 200 -y 50 -c "$scratch" \
     "sh -c '$label; echo E2E_WRAPPER_EXITED=\$?; sleep 600'"
 
-  wait_pane "$sess" 90 'bypass permissions|for shortcuts'; rc=$?
+  # DR-110: the rc capture must survive set -e — the bare call's nonzero return errexited the
+  # harness before rc was read, so the README-promised SKIP path never ran: the first
+  # not-logged-in head killed the run mid-roster (no summary, no tier2_cleanup, tmux session and
+  # scratch leaked). Same family as probe_bearer's DR-49a capture below the FATAL comment.
+  rc=0; wait_pane "$sess" 90 'bypass permissions|for shortcuts' || rc=$?
   if [ $rc = 2 ]; then skip "$key/tui" "head not logged in"; tier2_cleanup "$key" "$sess" "$scratch" keep; return; fi
   if [ $rc != 0 ]; then fail "$key/tui" "TUI never became ready (90s)"; tier2_cleanup "$key" "$sess" "$scratch"; return; fi
 

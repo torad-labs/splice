@@ -45,12 +45,14 @@ class Loopback:
         head_port: int,
         duplicate_stop_file: pathlib.Path | None = None,
         unknown_kind_head: str | None = None,
+        count_tokens_drop_file: pathlib.Path | None = None,
     ) -> None:
         self.record = record
         self.head_key = head_key
         self.head_port = head_port
         self.duplicate_stop_file = duplicate_stop_file
         self.unknown_kind_head = unknown_kind_head
+        self.count_tokens_drop_file = count_tokens_drop_file
         self.lock = threading.Lock()
         self.record.write_text("")
 
@@ -116,6 +118,11 @@ def _handler(loop: Loopback, plane: str) -> type[BaseHTTPRequestHandler]:
                 self.wfile.write(body)
                 return
             if plane == "head" and path == "/v1/messages/count_tokens":
+                if loop.count_tokens_drop_file is not None and loop.count_tokens_drop_file.exists():
+                    # DR-113 arm: transport-level death — close with no HTTP response at all, so
+                    # the harness's curl sees an empty reply (a transport rc, not a payload).
+                    self.connection.close()
+                    return
                 self._json(200, {"input_tokens": 3})
                 return
             self._json(404, {"error": "not found"})
@@ -138,6 +145,7 @@ def main() -> int:
     p.add_argument("--head-key", default="claude-splice")
     p.add_argument("--duplicate-stop-file")
     p.add_argument("--unknown-kind-head", help="advertise a second head with authKind mystery-kind")
+    p.add_argument("--count-tokens-drop-file", help="while present, count_tokens closes with no response (DR-113 arm)")
     args = p.parse_args()
 
     # Bind the head first so /api/heads can advertise the real port. Handlers
@@ -145,6 +153,7 @@ def main() -> int:
     # serve_forever is running — otherwise the selftest races a refused /health
     # and heads-e2e.sh cold-starts the installed splice.jar.
     duplicate_stop_file = pathlib.Path(args.duplicate_stop_file) if args.duplicate_stop_file else None
+    ct_drop_file = pathlib.Path(args.count_tokens_drop_file) if args.count_tokens_drop_file else None
     placeholder = Loopback(pathlib.Path(args.record), args.head_key, 0, duplicate_stop_file)
     head_srv = ThreadingHTTPServer(("127.0.0.1", 0), _handler(placeholder, "head"))
     loop = Loopback(
@@ -153,6 +162,7 @@ def main() -> int:
         head_srv.server_address[1],
         duplicate_stop_file,
         args.unknown_kind_head,
+        ct_drop_file,
     )
     head_srv.RequestHandlerClass = _handler(loop, "head")
     control_srv = ThreadingHTTPServer(("127.0.0.1", 0), _handler(loop, "control"))

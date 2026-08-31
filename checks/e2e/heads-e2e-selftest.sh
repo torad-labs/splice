@@ -24,6 +24,7 @@ printf '%s' "$MGMT" > "$STATE/mgmt-key"
 
 python3 "$LOOPBACK" --record "$tmp/rec.jsonl" --ready-file "$tmp/ready" --head-key claude-splice \
   --duplicate-stop-file "$tmp/duplicate-stop" --unknown-kind-head unknown-kind \
+  --count-tokens-drop-file "$tmp/ct-drop" \
   >"$tmp/loop.out" 2>"$tmp/loop.err" &
 LOOP_PID=$!
 for _ in $(seq 1 50); do
@@ -233,8 +234,51 @@ else
 fi
 rm -f "$PERF"
 
+# ── DR-113: a count_tokens transport failure is a per-head FAIL, not a harness abort. ──
+# Red on the unfixed harness: the bare `ct=$(curl ...)` assignment errexited the whole run with
+# curl's exit code — no ✗ row, no summary, later heads unprobed. The loopback drops the
+# connection with no HTTP response while the marker file exists.
+touch "$tmp/ct-drop"
+if run_arm ctdrop SPLICE_E2E_CLIENT_TOKEN=caller-e2e-token; then
+  err "count_tokens transport-failure arm must exit nonzero (a per-head FAIL is recorded)"
+  cat "$tmp/ctdrop.err"
+elif grep -q "✓ claude-splice/wire" "$tmp/ctdrop.err" &&
+     grep -q "✗ claude-splice/count_tokens" "$tmp/ctdrop.err"; then
+  ok "count_tokens transport failure records a per-head FAIL and the run continues"
+else
+  err "count_tokens transport failure did not surface as a recorded FAIL (harness died mid-run)"
+  cat "$tmp/ctdrop.err"
+fi
+rm -f "$tmp/ct-drop"
+
+# ── DR-110: tier-2's not-logged-in SKIP survives set -e. ──
+# Red on the unfixed harness: `wait_pane ...; rc=$?` errexited at the bare call, so the
+# README-promised SKIP never ran — the first not-logged-in head killed the run mid-roster with
+# no summary and a leaked tmux session. The stub wrapper prints the auth-needed pane text
+# (wait_pane's rc=2 pattern) instantly; PATH injection resolves the advertised label to it.
+if command -v tmux >/dev/null 2>&1; then
+  printf '#!/bin/sh\necho "not logged in"\nsleep 60\n' > "$tmp/claude-splice"
+  chmod +x "$tmp/claude-splice"
+  if env -u SPLICE_E2E_CLIENT_TOKEN PATH="$tmp:$PATH" \
+      CLAUDEX_STATE_DIR="$STATE" SPLICE_CONTROL_PORT="$CONTROL" \
+      bash "$HARNESS" --tier 2 --head claude-splice >"$tmp/tui-skip.out" 2>"$tmp/tui-skip.err"; then
+    if grep -q "head not logged in" "$tmp/tui-skip.err"; then
+      ok "tier-2 not-logged-in records a SKIP and the run completes"
+    else
+      err "tier-2 arm exited 0 without the not-logged-in SKIP line"
+      cat "$tmp/tui-skip.err"
+    fi
+  else
+    err "tier-2 not-logged-in must SKIP (exit 0), not abort the harness (got rc=$?)"
+    cat "$tmp/tui-skip.err"
+  fi
+  tmux -L splice-e2e kill-server 2>/dev/null || true
+else
+  ok "tier-2 SKIP arm not run (no tmux on this box) — the DR-110 line is still gate-covered on boxes with tmux"
+fi
+
 if [ "$fail" -eq 0 ]; then
-  echo "heads-e2e-selftest OK — skip stays off the head, fake token probes with the caller bearer, mgmt-key token is FATAL, unknown authKind is FATAL, perf recovery is model-scoped"
+  echo "heads-e2e-selftest OK — skip stays off the head, fake token probes with the caller bearer, mgmt-key token is FATAL, unknown authKind is FATAL, perf recovery is model-scoped, transport failures and not-logged-in are per-head verdicts"
   exit 0
 fi
 echo "heads-e2e-selftest FAIL"

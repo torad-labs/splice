@@ -1,4 +1,4 @@
-// NEW (DR-65, codex security probe 2026-08-31): one renderer for any failure whose exception
+// NEW: DR-65 (codex security probe 2026-08-31) — one renderer for any failure whose exception
 // text may quote the bytes of the file that produced it. kotlinx parse exceptions embed a
 // "JSON input:" excerpt of the parsed input, so a bare `$failure` on a credential or state
 // file's parse cause copied token/env bytes into daemon.log and /mgmt introspection.

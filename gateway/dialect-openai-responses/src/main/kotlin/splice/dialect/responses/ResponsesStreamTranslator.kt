@@ -98,11 +98,32 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
             // malformed value in a frame: fall through to the honest terminal decision
         }
 
+        latchSweptToolBlocks(state)
         sink.closeAll()
         ResponsesTerminalBackfill().harvestFallback(state)
         val outcome = ResponsesTerminalDecision(ctx, ResponsesOutcomePayload(ctx)).terminalOutcome(state, runawayGuard)
         captureTurnReasoning(state, outcome)
         return outcome
+    }
+
+    /** DR-106: the closeAll sweep is a THIRD tool-block close path — an upstream that streamed
+     *  partial arguments and then went straight to response.completed (no arguments.done, no
+     *  output_item.done) had the block swept closed with NO CX-01 validation, grading a clean
+     *  Success that hands the client truncated tool JSON. Latch before the sweep; same latch,
+     *  same first-reason-wins as the arguments.done and output_item.done paths. Two scope gates,
+     *  each pinned by a neighbor: a stream with no completed response is the TEAR path
+     *  (ToolSalvage owns it — latching here nulled the poison-tear partial), and a completed
+     *  block that never saw an args event keeps its pre-fix Success (the undeclared-tool capture
+     *  pin; the .done paths still latch {} when a done event arrives). */
+    private fun latchSweptToolBlocks(state: ResponsesTurnState) {
+        if (state.finalResponse == null) return
+        val frames = ResponsesFrameParse()
+        for (open in state.blocks.values) {
+            val sweptWithArgs = open.tool && open.sawDelta
+            if (sweptWithArgs && state.toolArgsInvalid == null) {
+                state.toolArgsInvalid = frames.invalidToolArgsReason(open.args.toString())
+            }
+        }
     }
 
     /** RC-1 capture: only a SUCCESSFUL tool-use round seeds the reasoning cache — the client

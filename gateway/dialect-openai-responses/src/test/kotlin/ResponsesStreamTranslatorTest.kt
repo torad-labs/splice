@@ -12,6 +12,7 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
@@ -1204,5 +1205,92 @@ class ResponsesItemDoneToolArgsTest {
             RecordingSink(),
         )
         assertTrue(outcome is TurnOutcome.Success, "$outcome")
+    }
+
+    // DR-106 (sweep-2): end-of-turn sink.closeAll() was a THIRD tool-block close path bypassing
+    // CX-01 — added(function_call) + a partial arguments.delta, then response.completed with NO
+    // arguments.done and NO output_item.done left the block for the sweep: toolArgsInvalid never
+    // latched, TerminalStates graded a clean Success, and the client received tool_use carrying
+    // truncated JSON. Same latch, same first-reason-wins, now applied before the sweep.
+    @Test
+    fun `truncated args left for the end-of-turn sweep still latch CX-01 - DR-106`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t9","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"p\":"}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val f = assertInstanceOf(TurnOutcome.Failure::class.java, outcome, "swept truncated args must not grade clean")
+        assertEquals(ErrorType.API_ERROR, f.type)
+        assertTrue(f.message.contains("tool call"), f.message)
+    }
+
+    // DR-107 (sweep-2): a second output_item.added(function_call) at an already-open output_index
+    // EVICTED the live BlockState map-only — the first block's wire stayed open (start, no stop),
+    // its args never validated, and the client saw two content_block_start(tool_use) with the
+    // first dangling. The occupant now closes and validates through closeOpenBlocks first.
+    @Test
+    fun `a duplicate added at one output_index closes and validates the evicted block - DR-107`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t1","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"p\":"}"""),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t2","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"x\":1}"}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t2","name":"run"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        // Wire hygiene: the evicted block closes BEFORE the replacement opens.
+        val firstClose = sink.calls.indexOf("close#0")
+        val secondOpen = sink.calls.indexOfFirst { it.startsWith("openTool#1") }
+        assertTrue(firstClose in 0 until secondOpen, "evicted block must close before the new open: ${sink.calls}")
+        // Validation: the evicted block's truncated args latch CX-01 — the turn must not grade clean.
+        val f = assertInstanceOf(TurnOutcome.Failure::class.java, outcome, "evicted truncated args must latch")
+        assertTrue(f.message.contains("tool call"), f.message)
+    }
+
+    // DR-107 rider: the same eviction orphaned an open TEXT block when a function_call reused its
+    // output_index — the text block's wire never closed. With clean tool args the turn stays a
+    // Success; the assertion is pure wire hygiene.
+    @Test
+    fun `a function_call reusing a text block's index closes the text block first - DR-107`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":1,"delta":"hi"}"""),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t2","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"x\":1}"}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t2","name":"run"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        val textClose = sink.calls.indexOf("close#0")
+        val toolOpen = sink.calls.indexOfFirst { it.startsWith("openTool#1") }
+        assertTrue(textClose in 0 until toolOpen, "orphaned text block must close before the tool opens: ${sink.calls}")
+        assertTrue(outcome is TurnOutcome.Success, "clean args after an index reuse stay honest: $outcome")
     }
 }

@@ -23,6 +23,11 @@ internal class ResponsesItemFold(
         state.activeItemId = JsonScalars.strOrEmpty(item["id"]).ifEmpty { null }
         state.activeItemOi = oi
         if (JsonScalars.strOrEmpty(item["type"]) == "function_call") {
+            // DR-107: an added at an already-open output_index EVICTED the live block map-only —
+            // its wire stayed open (start, no stop) and its args were never validated (no CX-01
+            // latch possible), orphaning tool AND text blocks alike on index reuse. Close and
+            // validate the occupant through the one sanctioned path before opening the new block.
+            if (state.blocks[oi] != null) closeOpenBlocks(oi, sink)
             // A JsonNull call_id/name must not leak onto the wire as the literal string "null" —
             // strOrEmpty keeps both filtered so the empty-fallback chain below still triggers
             // (review 2026-07-22 round 3).

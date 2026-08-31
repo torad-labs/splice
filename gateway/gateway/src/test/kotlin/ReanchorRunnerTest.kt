@@ -249,6 +249,7 @@ class FoldRunnerReanchorTest {
     fun `fold trigger-B retries a failed round with never-forwarded prose stripped from the salvage`() = runTest {
         val h = Harness()
         val seenPartialBodies = mutableListOf<String?>()
+        val waits = mutableListOf<Int>()
         val rounds = ArrayDeque<suspend () -> TurnOutcome>()
         rounds.add { retryableFailure(outputTokens = 3, bodyText = "buffered never-sent prose") }
         rounds.add {
@@ -271,9 +272,14 @@ class FoldRunnerReanchorTest {
                 continuationBody()
             },
             signals = h.signals(),
+            backoff = RetryBackoff { attempt, minDelayMs ->
+                assertEquals(0, minDelayMs)
+                waits += attempt
+            },
         ).run(continuationBody()) { null }
 
         assertEquals(listOf(""), seenPartialBodies, "buffered prose must be stripped before the policy sees it")
+        assertEquals(listOf(0), waits, "fold trigger-B must pause before the re-POST")
         val success = h.finished as TurnOutcome.Success
         assertEquals("clean full answer", success.bodyText, "the merge-side strip must hold too")
         assertEquals(8, success.usage.outputTokens, "failed round's salvaged usage accrues")

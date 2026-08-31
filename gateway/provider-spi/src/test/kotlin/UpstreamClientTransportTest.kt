@@ -28,6 +28,8 @@ import splice.spi.RetryNotice
 import splice.spi.StreamTornBeforeClient
 import splice.spi.TransportFailures
 import splice.spi.UpstreamClient
+import splice.spi.UpstreamTransport
+import splice.spi.Waiter
 import java.net.ConnectException
 import java.net.SocketException
 import java.net.SocketTimeoutException
@@ -67,6 +69,35 @@ class UpstreamClientTransportTest {
         backoff = backoff,
         dnsBackoff = dnsBackoff,
     )
+
+    @Test
+    fun `default backoff keeps the 200ms doubling curve`() = runTest {
+        val waits = mutableListOf<Long>()
+        val backoff = UpstreamTransport().defaultBackoff(
+            object : Waiter {
+                override suspend fun wait(ms: Long) {
+                    waits += ms
+                }
+            },
+        )
+
+        repeat(3) { attempt -> backoff(attempt, 0) }
+        backoff(56, 0)
+        val dnsBackoff = UpstreamTransport().defaultDnsBackoff(
+            object : Waiter {
+                override suspend fun wait(ms: Long) {
+                    waits += ms
+                }
+            },
+        )
+        dnsBackoff(54)
+
+        assertTrue(waits[0] in 180L..219L, "attempt 0 must be 200ms with +/-10% jitter: $waits")
+        assertTrue(waits[1] in 360L..439L, "attempt 1 must double to 400ms with jitter: $waits")
+        assertTrue(waits[2] in 720L..879L, "attempt 2 must double to 800ms with jitter: $waits")
+        assertTrue(waits[3] in 9_000L..10_999L, "generic backoff must saturate without shift overflow: $waits")
+        assertTrue(waits[4] in 3_600L..4_399L, "DNS backoff must saturate without shift overflow: $waits")
+    }
 
     @Test
     fun `dns failure retries and succeeds on a later attempt`() = runTest {

@@ -56,7 +56,7 @@ public class UpstreamTransport {
      *  it), capped at MAX_BACKOFF_MS; a server Retry-After rides in as a FLOOR via minDelayMs (G3).
      *  Sleeps through [waiter] so a test can replace the WAIT without re-authoring the CURVE. */
     public fun defaultBackoff(waiter: Waiter): RetryBackoff = RetryBackoff { attempt, minDelayMs ->
-        val base = minOf(BACKOFF_BASE_MS shl attempt, MAX_BACKOFF_MS)
+        val base = cappedExponentialBase(BACKOFF_BASE_MS, MAX_BACKOFF_MS, attempt)
         val jittered = (base * Random.nextDouble(JITTER_LO, JITTER_HI)).toLong()
         waiter.wait(maxOf(jittered, minDelayMs))
     }
@@ -66,9 +66,17 @@ public class UpstreamTransport {
      *  generic 200/400/800ms curve undershoots. No minDelayMs — transport errors never carry
      *  a Retry-After header (no response was received). */
     public fun defaultDnsBackoff(waiter: Waiter): DnsBackoff = DnsBackoff { attempt ->
-        val base = minOf(DNS_BACKOFF_BASE_MS shl attempt, DNS_MAX_BACKOFF_MS)
+        val base = cappedExponentialBase(DNS_BACKOFF_BASE_MS, DNS_MAX_BACKOFF_MS, attempt)
         val jittered = (base * Random.nextDouble(JITTER_LO, JITTER_HI)).toLong()
         waiter.wait(jittered)
+    }
+
+    private fun cappedExponentialBase(baseMs: Long, maxMs: Long, attempt: Int): Long {
+        var current = baseMs
+        repeat(attempt.coerceAtLeast(0)) {
+            current = if (current > maxMs / 2) maxMs else current * 2
+        }
+        return minOf(current, maxMs)
     }
 }
 

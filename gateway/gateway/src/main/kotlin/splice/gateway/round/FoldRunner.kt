@@ -12,9 +12,12 @@ import kotlinx.serialization.json.JsonObject
 import splice.core.turn.TurnOutcome
 import splice.gateway.wire.BufferingWireSink
 import splice.spi.FoldController
+import splice.spi.ProcessWaiter
 import splice.spi.ReanchorController
+import splice.spi.RetryBackoff
 import splice.spi.RetryNotice
 import splice.spi.ToolSearchController
+import splice.spi.UpstreamTransport
 import splice.spi.WireSink
 
 internal class FoldRunner(
@@ -27,6 +30,7 @@ internal class FoldRunner(
     private val reanchor: ReanchorController? = null,
     private val signals: RunnerSignals = RunnerSignals(),
     private val toolSearch: ToolSearchController? = null,
+    private val backoff: RetryBackoff = UpstreamTransport().defaultBackoff(ProcessWaiter()),
 ) {
     private val rounds = RoundSplice()
     private val foldRounds = FoldRounds(key, log, reanchor, signals, toolSearch, finish, rounds)
@@ -85,6 +89,7 @@ internal class FoldRunner(
             }
             buffer.discard()
             log("[$key] fold re-anchor ${reanchorAttempt + 1}: ${failure.type.wireName} mid-round — retrying\n")
+            backoff(reanchorAttempt, 0)
             body = retry
             reanchorAttempt++
         }

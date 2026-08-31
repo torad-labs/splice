@@ -96,13 +96,37 @@ command = "claude-openrouter"
     // text/comments first; '?' keeps a real quoted array element visible to this pre-decode guard.
     private val MODEL_ARRAY_ASSIGNMENT = Regex("(?<![A-Za-z0-9_-])models[ \\t]*=[ \\t]*\\[")
 
+    // DR-44b twin: LINE-START assignments only — an inline-table `x = { models = [...] }` or a
+    // dotted `provider.models` is a DIFFERENT key and must not count toward the duplicate scan.
+    private val MODELS_LINE_ASSIGNMENT = Regex("(?m)^[ \\t]*models[ \\t]*=")
+    private val TABLE_HEADER = Regex("(?m)^[ \\t]*\\[")
+
     public fun parse(text: String): Topology {
-        validateInlineModelArrays(text)
+        val structure = TomlStructureMasker(text).mask()
+        validateInlineModelArrays(structure)
+        rejectDuplicateModelKeys(structure)
         return Toml.decodeFromString(text)
     }
 
-    private fun validateInlineModelArrays(text: String) {
-        val structure = TomlStructureMasker(text).mask()
+    /** DR-44b: TOML forbids a duplicated key, but ktoml accepts it silently (proven by the red
+     *  arm: a second `models = [...]` line parsed with nothing thrown) — so a stale roster line
+     *  kept retired models exposed in the picker with nothing red anywhere. Counted per table
+     *  section over the masked text, so strings and comments cannot fake or hide a line. */
+    private fun rejectDuplicateModelKeys(structure: String) {
+        val bounds = TABLE_HEADER.findAll(structure).map { it.range.first }.toList() + structure.length
+        var sectionStart = 0
+        for (end in bounds) {
+            val section = structure.substring(sectionStart, end)
+            require(MODELS_LINE_ASSIGNMENT.findAll(section).count() <= 1) {
+                val header = structure.substring(sectionStart).lineSequence().first().trim()
+                "duplicate models key in ${header.ifEmpty { "the preamble" }} — TOML forbids it " +
+                    "and ktoml silently merges; keep exactly one models = [...] line per head"
+            }
+            sectionStart = end
+        }
+    }
+
+    private fun validateInlineModelArrays(structure: String) {
         MODEL_ARRAY_ASSIGNMENT.findAll(structure).forEach { assignment ->
             val valueStart = assignment.range.last + 1
             val firstElement = structure.asSequence()

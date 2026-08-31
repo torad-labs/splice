@@ -106,6 +106,22 @@ class ExampleConfigTest {
         assertThrows(IllegalArgumentException::class.java) { provider.catalogFor(head) }
     }
 
+    // DR-44b: ktoml unions duplicate keys instead of rejecting them (TOML spec: duplicates are an
+    // error), so a stale second `models = [...]` line kept retired models in the picker with
+    // nothing red anywhere. The pre-decode guard makes it loud and names the section.
+    @Test
+    fun `a duplicated models key in one head fails loud instead of silently unioning`() {
+        val valid = exampleToml()
+        val roster =
+            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }]"""
+        val malformed = valid.replace(roster, roster + "\n" + """models = [{ id = "grok-4.3", slot = "haiku" }]""")
+        assertTrue(malformed != valid, "test must duplicate the shipped inline roster")
+
+        val failure = assertThrows(IllegalArgumentException::class.java) { TopologyLoader.parse(malformed) }
+        assertTrue(failure.message.orEmpty().contains("duplicate"), failure.message)
+        assertTrue(failure.message.orEmpty().contains("models"), failure.message)
+    }
+
     @Test
     fun `a braces-dropped inline model roster fails promptly before ktoml`() {
         val valid = exampleToml()

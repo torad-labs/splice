@@ -56,6 +56,26 @@ class DoctorCommandTest {
         "SPLICE_CONTROL_PORT" to ServerSocket(0).use { it.localPort }.toString(),
     ) + extra
 
+    // DR-69 redo (codex replay): the exists() pre-gate read a denied config parent as Absent,
+    // and doctor said "no topology yet — splice init" over a PRESENT operator config. Only
+    // proven absence is first-run; indeterminate access is a Broken FAIL naming the path.
+    @Test
+    fun `an inaccessible config parent reports broken, never first-run - DR-69`() {
+        val tmp = Files.createTempDirectory("doctor-dr69")
+        val bin = Files.createDirectories(tmp.resolve("bin"))
+        val share = Files.createDirectories(tmp.resolve("share"))
+        val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
+        Files.writeString(configDir.resolve("splice.toml"), starterToml)
+        Files.setPosixFilePermissions(configDir, PosixFilePermissions.fromString("---------"))
+        val output = try {
+            runDoctor(env(tmp, bin, share, hermetic(tmp))).second
+        } finally {
+            Files.setPosixFilePermissions(configDir, PosixFilePermissions.fromString("rwx------"))
+        }
+        assertTrue(output.contains("does not parse"), output)
+        assertFalse(output.contains("no topology yet"), output)
+    }
+
     private val starterToml = """
         [daemon]
         control_port = 4499

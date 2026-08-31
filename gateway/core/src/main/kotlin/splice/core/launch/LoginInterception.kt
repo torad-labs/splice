@@ -227,11 +227,16 @@ internal object LoginInterception {
         val chmodFailure = Cancellables.runCatchingCancellable {
             chmod(script, PosixFilePermissions.fromString("rwx------"))
         }.exceptionOrNull()
-        if (!Files.isExecutable(script)) {
+        if (chmodFailure != null) {
+            // A pre-existing script keeps its old mode through writeString, so executability proves
+            // NOTHING about the mode we asked for: a world-writable leftover passes isExecutable
+            // while anyone may rewrite what the hook runs (DR-8 redo — codex reproduced it with a
+            // seeded rwxrwxrwx file). The only sound outcome probe is the chmod itself; delete the
+            // file rather than leave it behind with whatever permissions it inherited.
+            Files.deleteIfExists(script)
             throw IOException(
-                "$script is not executable after chmod rwx------ " +
-                    "(${chmodFailure?.message ?: "the chmod reported success"}) — Claude Code cannot run " +
-                    "a hook it is told to run",
+                "$script: chmod rwx------ failed (${chmodFailure.message}) — hook deleted rather " +
+                    "than installed with inherited permissions",
             )
         }
         return script

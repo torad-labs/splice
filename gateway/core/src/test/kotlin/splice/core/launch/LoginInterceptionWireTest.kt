@@ -14,6 +14,7 @@
 package splice.core.launch
 
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -22,6 +23,7 @@ import splice.core.util.LogSink
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 
 class LoginInterceptionWireTest {
 
@@ -126,8 +128,37 @@ class LoginInterceptionWireTest {
             )
         }
         assertTrue(
-            failure.message.orEmpty().contains("executable"),
-            "the launch failure must name the un-executable hook, got ${failure.message}",
+            failure.message.orEmpty().contains("chmod"),
+            "the launch failure must name the failed chmod, got ${failure.message}",
+        )
+    }
+
+    // The redo's exact reproduction (codex adversarial verdict, 2026-08-30): the script PRE-EXISTS
+    // world-writable+executable — a leftover, or seeded by anything that can write the config dir.
+    // writeString preserves that mode, so the old `isExecutable` outcome probe stayed true and the
+    // 0777 hook registered; executability proves nothing about the mode the chmod was asked for.
+    // The only sound probe is the chmod outcome itself, and a failed chmod deletes the file.
+    @Test
+    fun `a pre-existing executable hook cannot pass for a chmod that failed`(@TempDir tmp: Path) {
+        val leftover = tmp.resolve("splice-key-capture-hook.sh")
+        Files.writeString(leftover, "#!/bin/sh\nplanted-by-anyone\n")
+        Files.setPosixFilePermissions(leftover, PosixFilePermissions.fromString("rwxrwxrwx"))
+
+        assertThrows<IOException> {
+            LoginInterception.wire(
+                configDir = tmp,
+                loginCommand = "",
+                signInLabel = "OpenRouter",
+                globalCommands = null,
+                viaBrowser = false,
+                tokenCapture = capture,
+                log = LogSink { },
+                chmod = { _, _ -> throw IOException("injected chmod failure") },
+            )
+        }
+        assertFalse(
+            Files.exists(leftover),
+            "a hook whose chmod failed must be deleted, not left behind with inherited permissions",
         )
     }
 

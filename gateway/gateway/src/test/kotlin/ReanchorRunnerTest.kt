@@ -369,6 +369,39 @@ class FoldRunnerReanchorTest {
         assertEquals(0, asks)
         assertNull(h.finished as? TurnOutcome.Success)
     }
+
+    // DR-89 (runtime sweep): trigger-A — the truncated-reasoning fold on a SUCCESS — was the only
+    // round-continuation trigger with no clientGone/watchdogFired gate; its two siblings (the
+    // search branch and trigger-B above) both refuse in exactly this state. A client that hung up
+    // must not buy more upstream fold rounds: quota burn plus a pinned InflightGate slot for a
+    // reader that already left.
+    @Test
+    fun `a gone client buys no fold continuation - DR-89`() = runTest {
+        val h = Harness()
+        var asked = 0
+        val fold = FoldController { round ->
+            if (round.roundIndex == 0) {
+                asked++
+                continuationBody()
+            } else {
+                null
+            }
+        }
+        val rounds = ArrayDeque<suspend (WireSink) -> TurnOutcome>()
+        rounds.add { _ ->
+            TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(reasoningTokens = 516))
+        }
+        rounds.add { _ -> TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(outputTokens = 1)) }
+        FoldRunner(
+            emitter = h.emitter,
+            key = "t",
+            log = { },
+            postRound = { _, sink -> rounds.removeFirst().invoke(sink) },
+            finish = { h.finish(it) },
+            signals = h.signals(gone = true),
+        ).run(continuationBody(), fold)
+        assertEquals(0, asked, "a gone client must not be asked for more fold rounds")
+    }
 }
 
 // Search-continuation walls on ReanchorRunner (the search-only path — no ReanchorController at

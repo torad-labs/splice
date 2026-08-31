@@ -126,7 +126,10 @@ class RefreshRetryTest {
         val quiet = RefreshRetry(waiter = splice.spi.Waiter { })
         val outcome = runCatching {
             quiet.refreshWithRetry(
-                call = { calls.incrementAndGet(); throw boom },
+                call = {
+                    calls.incrementAndGet()
+                    throw boom
+                },
                 classify = { RefreshStep.Terminal("never") },
             )
         }

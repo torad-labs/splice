@@ -30,8 +30,12 @@ internal class FoldContinuations(
     ): RoundCursor? {
         val (body, roundIndex, searchIndex) = cursor
         val success = outcome as? TurnOutcome.Success
-        val foldNext = success?.let { fold.continuation(FoldRound(body, it, roundIndex)) }
-        if (foldNext != null) {
+        // DR-89: the same refusal the search branch (RoundSplice.searchContinuation) and the
+        // trigger-B failed-round branch already apply — a gone client or a fired watchdog must
+        // not buy more upstream fold rounds (quota burn + a pinned slot for a reader that left).
+        val signalsClear = !signals.watchdogFired() && !signals.clientGone()
+        val foldNext = if (signalsClear) success?.let { fold.continuation(FoldRound(body, it, roundIndex)) } else null
+        if (foldNext != null && success != null) {
             buffer.discard()
             // CX-09: a fold round whose reasoning reached the client must say so, or a turn whose
             // FINAL round comes back empty is graded "nothing reached the client" and errors after

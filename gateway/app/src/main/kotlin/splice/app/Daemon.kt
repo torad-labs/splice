@@ -101,8 +101,15 @@ public class Daemon(
         // TOML the builder can't wire, e.g. a registered auth kind on an incompatible dialect) must
         // NOT abort the whole daemon with a stack trace to /dev/null. Log the degraded head and
         // serve the rest.
+        // DR-80: the legacy single-head knobs may govern only the sole head of their kind — for
+        // two-plus same-kind heads nothing was seeded, and the unconditional overwrite handed
+        // every sibling the first head's (or the default) port/model/base.
+        val legacySolo = TopologyKnobLayer(topology).soleLegacyHeadKeys()
         val failed = headBoot.assembleDaemonHeads(topology, statePaths, heads, log) { key, head, providerCfg ->
-            managedHeadFactory.assembleHead(buildInputs.providerContext(key, head, providerCfg), controlPort)
+            managedHeadFactory.assembleHead(
+                buildInputs.providerContext(key, head, providerCfg, legacyKnobsGovern = key in legacySolo),
+                controlPort,
+            )
         }
         // Start heads BEFORE opening the control plane so a launch-shim that sees /health and
         // immediately POSTs /launch/<head> does not race a still-binding head (503 head is not

@@ -50,13 +50,27 @@ public class TopologyKnobLayer(private val topology: Topology) {
         daemon.foldMaxTier?.let { out["foldMaxTier"] = it.toString() }
     }
 
+    /** DR-80: the heads the LEGACY single-head knobs may govern — for each legacy kind, the head
+     *  key ONLY when the topology declares exactly one head of that kind. The legacy knob names
+     *  cannot address heads individually, so with two-plus heads the per-head TOML is the only
+     *  coherent source; the resolve side gates on this same fact. */
+    public fun soleLegacyHeadKeys(): Set<String> = LEGACY_KINDS.mapNotNull { kind ->
+        topology.heads.entries.singleOrNull { (_, head) ->
+            topology.providers[head.provider]?.auth?.kind == kind
+        }?.key
+    }.toSet()
+
     /**
      * The management API retains the original codex/grok knob names. Seed those knobs from TOML so
      * their effective values describe the topology, then let state/env/runtime override them through
      * ConfigService's normal precedence.
      */
     private fun putLegacyProviderOverrides(out: MutableMap<String, String>) {
-        val codex = topology.heads.entries.firstOrNull { (_, head) ->
+        // DR-80: singleOrNull, never firstOrNull — these knobs live in the SHARED layer, so
+        // seeding the first of two same-kind heads handed its port/model/base/auth file to every
+        // sibling at resolve time (declared-only portCollisions never fires; the collision is
+        // created here). Two-plus heads: the per-head TOML governs, nothing is seeded.
+        val codex = topology.heads.entries.singleOrNull { (_, head) ->
             topology.providers[head.provider]?.auth?.kind == "chatgpt-oauth"
         }
         codex?.let { (_, head) ->
@@ -67,7 +81,7 @@ public class TopologyKnobLayer(private val topology: Topology) {
             provider.auth.file?.let { out["codexAuthPath"] = it }
         }
 
-        val grok = topology.heads.entries.firstOrNull { (_, head) ->
+        val grok = topology.heads.entries.singleOrNull { (_, head) ->
             topology.providers[head.provider]?.auth?.kind == "grok-oauth"
         }
         grok?.let { (_, head) ->
@@ -79,3 +93,6 @@ public class TopologyKnobLayer(private val topology: Topology) {
         }
     }
 }
+
+/** The auth kinds the pre-topology management API addressed by name — one head each, ever. */
+private val LEGACY_KINDS = listOf("chatgpt-oauth", "grok-oauth")

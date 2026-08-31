@@ -62,14 +62,24 @@ internal class HeadBuildInputs(
 
     /** Resolve one head's build inputs against ITS OWN effective config. Heads share a single
      *  ConfigService (one JVM), so every value here must come from `getConfig(key)` — reading the
-     *  global view is what made a knob tuned for one upstream govern all of them. */
+     *  global view is what made a knob tuned for one upstream govern all of them.
+     *
+     *  [legacyKnobsGovern] (DR-80): the legacy single-head knobs overwrite declared port/model/
+     *  base ONLY for the head that is the sole one of its kind (TopologyKnobLayer.
+     *  soleLegacyHeadKeys). With two-plus heads of a kind nothing was seeded, so the overwrite
+     *  would hand every head the knob DEFAULTS instead of its declared TOML. */
     // `internal`, not private: DaemonPerHeadConfigTest calls this directly (via Daemon.buildInputs)
     // to pin that each head resolves against getConfig(key). No production caller outside
     // Daemon.start() (2026-07-26 review; moved out of Daemon in the 2026-08-17 decomposition).
-    internal fun providerContext(key: String, head: HeadConfig, providerCfg: ProviderConfig): ProviderBuild {
+    internal fun providerContext(
+        key: String,
+        head: HeadConfig,
+        providerCfg: ProviderConfig,
+        legacyKnobsGovern: Boolean = true,
+    ): ProviderBuild {
         val headCfg = config.getConfig(key)
-        val resolvedHead = resolveHeadConfig(head, providerCfg, headCfg)
-        val resolvedProvider = resolveProviderConfig(providerCfg, headCfg)
+        val resolvedHead = if (legacyKnobsGovern) resolveHeadConfig(head, providerCfg, headCfg) else head
+        val resolvedProvider = if (legacyKnobsGovern) resolveProviderConfig(providerCfg, headCfg) else providerCfg
         return ProviderBuild(
             key = key,
             head = resolvedHead,

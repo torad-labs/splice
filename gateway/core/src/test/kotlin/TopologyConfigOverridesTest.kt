@@ -1,4 +1,5 @@
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -277,5 +278,50 @@ class TopologyConfigOverridesTest {
             AuthKindRegistry.defaultAuthFileFor("grok-oauth"),
             Knob.GROK_AUTH_PATH.default,
         )
+    }
+
+    // DR-80 (assembly sweep): the legacy single-head knobs were seeded from heads.firstOrNull of
+    // the kind into the SHARED knob layer — with TWO chatgpt-oauth heads, the second inherited the
+    // first's port (declared-only portCollisions never fires; the collision is created at resolve
+    // time), pinned model, base and the first ACCOUNT's auth file. Two-plus heads = the per-head
+    // TOML is the only coherent source; the legacy knobs must stay unseeded.
+    @Test
+    fun `legacy knobs are not seeded when a kind has two heads - DR-80`() {
+        val twoCodex = Topology(
+            daemon = DaemonConfig(controlPort = 4123),
+            providers = mapOf(
+                "codex-a" to ProviderConfig(
+                    dialect = Dialect.OPENAI_RESPONSES,
+                    baseUrl = "https://a.example",
+                    auth = AuthConfig("chatgpt-oauth", file = "~/a/auth.json"),
+                    models = listOf(ModelEntry("m-a", contextWindow = 100_000)),
+                ),
+                "codex-b" to ProviderConfig(
+                    dialect = Dialect.OPENAI_RESPONSES,
+                    baseUrl = "https://b.example",
+                    auth = AuthConfig("chatgpt-oauth", file = "~/b/auth.json"),
+                    models = listOf(ModelEntry("m-b", contextWindow = 100_000)),
+                ),
+            ),
+            heads = mapOf(
+                "one" to HeadConfig("codex-a", 4201, "claude-one--", "m-a"),
+                "two" to HeadConfig("codex-b", 4202, "claude-two--", "m-b"),
+            ),
+        )
+        val out = TopologyKnobLayer(twoCodex).configOverrides()
+        listOf("port", "pinnedModel", "chatgptApiBase", "codexAuthPath").forEach { knob ->
+            assertFalse(out.containsKey(knob), "$knob must not be seeded first-head-wins: $out")
+        }
+        assertTrue(
+            TopologyKnobLayer(twoCodex).soleLegacyHeadKeys().isEmpty(),
+            "neither of two same-kind heads is the sole legacy head",
+        )
+    }
+
+    // The single-head fixture keeps seeding (the `topology seeds every legacy management knob it
+    // owns` pin above) — this adds the solo-keys fact the resolve side gates on.
+    @Test
+    fun `a single legacy head per kind is the sole legacy head - DR-80 control`() {
+        assertEquals(setOf("codex", "grok"), TopologyKnobLayer(topology).soleLegacyHeadKeys())
     }
 }

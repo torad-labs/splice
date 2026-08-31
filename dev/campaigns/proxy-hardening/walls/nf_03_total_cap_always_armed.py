@@ -32,6 +32,57 @@ WATCHDOG = ROOT / "gateway/provider-spi/src/main/kotlin/splice/spi/Watchdog.kt"
 DRIVER = ROOT / "gateway/gateway/src/main/kotlin/splice/gateway/head/TurnOneDrive.kt"
 
 
+def _mask_strings(text: str) -> str:
+    """Blank Kotlin string/char literals without moving offsets (sh_10's idiom), so a brace inside
+    a log template cannot corrupt the scope stacks below."""
+    chars = list(text)
+    i = 0
+    while i < len(chars):
+        if text.startswith('"""', i):
+            close = text.find('"""', i + 3)
+            end = len(chars) if close < 0 else close + 3
+        elif chars[i] in ('"', "'"):
+            quote = chars[i]
+            end = i + 1
+            while end < len(chars):
+                if chars[end] == "\\":
+                    end += 2
+                elif chars[end] == quote:
+                    end += 1
+                    break
+                else:
+                    end += 1
+        else:
+            i += 1
+            continue
+        for at in range(i, min(end, len(chars))):
+            if chars[at] not in "\r\n":
+                chars[at] = " "
+        i = end
+    return "".join(chars)
+
+
+def _scopes_at(text: str, positions: list[int]) -> dict[int, tuple[int, ...]]:
+    """Brace ancestry of each position, one lexical pass over the masked text."""
+    targets = sorted(set(positions))
+    structure = _mask_strings(text)
+    result: dict[int, tuple[int, ...]] = {}
+    stack: list[int] = []
+    target = 0
+    for at, ch in enumerate(structure):
+        while target < len(targets) and targets[target] == at:
+            result[targets[target]] = tuple(stack)
+            target += 1
+        if ch == "{":
+            stack.append(at)
+        elif ch == "}" and stack:
+            stack.pop()
+    while target < len(targets):
+        result[targets[target]] = tuple(stack)
+        target += 1
+    return result
+
+
 def detect(watchdog_text: str | None, driver_text: str | None) -> list[str]:
     """Pure detection. No I/O — the selftest feeds it directly."""
     if watchdog_text is None:
@@ -74,6 +125,22 @@ def detect(watchdog_text: str | None, driver_text: str | None) -> list[str]:
             problems.append("the launchTotalCap call site is not exactly one unconditional "
                             "`val x = drive.watchdog.launchTotalCap(` statement — a conditional "
                             "or indirect launch arms the whole-turn cap on only some paths")
+        else:
+            # DR-35d (codex catch #2, 2026-08-31): the line anchor cannot see ENCLOSING control
+            # flow — a multi-line `if (pingClient) { val armed = launchTotalCap(...); armed }`
+            # puts a perfectly-anchored val at line start inside the branch. Dominance proof:
+            # the launch site's brace ancestry must be a PREFIX of the run site's (ancestor or
+            # same block) — then launch-before-run in a straight-line body means the cap is armed
+            # on every path that reaches the rounds. A launch nested in any block the run is not
+            # in (an if arm, a when branch) has a brace the run lacks, and reds.
+            launch_at = cap_sites.find("launchTotalCap(")
+            scopes = _scopes_at(cap_sites, [launch_at, run_at])
+            launch_scope, run_scope = scopes[launch_at], scopes[run_at]
+            if not (len(launch_scope) <= len(run_scope)
+                    and run_scope[:len(launch_scope)] == launch_scope):
+                problems.append("launchTotalCap sits inside a block that roundRun.run is not in "
+                                "(a conditional branch) — the whole-turn cap is armed on only "
+                                "some paths to the rounds")
     return problems
 
 
@@ -120,6 +187,19 @@ DRV_CONDITIONAL = DRV_OPEN + \
 DRV_DECOY = DRV_OPEN + "\n val decoy = drive.watchdog.launchTotalCap(self, turnJob)" + \
     "\n val capPoller = if (pingClient) drive.watchdog.launchTotalCap(self, turnJob) else Job()" + \
     "\n roundRun.run(drive, self, turnJob)"
+# DR-35d: codex's second reproduced false green — the multi-line nested conditional keeps a
+# line-anchored val INSIDE the branch, beating the anchor leg; only scope dominance sees it.
+DRV_NESTED = DRV_OPEN + "\n val capPoller = if (pingClient) {" + \
+    "\n     val armed = drive.watchdog.launchTotalCap(self, turnJob)" + \
+    "\n     armed" + \
+    "\n } else Job()" + \
+    "\n roundRun.run(drive, self, turnJob)"
+# Positive control for the dominance leg: run nested DEEPER (a try block) with the launch at the
+# ancestor scope is the LIVE shape and must stay green — prefix, not equality.
+DRV_TRY_RUN = DRV_OPEN + "\n val capPoller = drive.watchdog.launchTotalCap(self, turnJob)" + \
+    "\n try {" + \
+    "\n     roundRun.run(drive, self, turnJob)" + \
+    "\n } finally { capPoller.cancel() }"
 
 
 def selftest() -> int:
@@ -140,6 +220,12 @@ def selftest() -> int:
     if not detect(WD_CLOSED, DRV_DECOY):
         fails.append("a compliant decoy beside a conditional real site must be RED — exactly one "
                      "unconditional call site (DR-35c)")
+    if not detect(WD_CLOSED, DRV_NESTED):
+        fails.append("a multi-line nested conditional (line-anchored val inside the if branch) "
+                     "must be RED — scope dominance, not line shape (DR-35d)")
+    if detect(WD_CLOSED, DRV_TRY_RUN):
+        fails.append(f"the live shape (launch at ancestor scope, run inside try) must be GREEN — "
+                     f"dominance is prefix, not equality; got {detect(WD_CLOSED, DRV_TRY_RUN)}")
     if not detect(None, DRV_CLOSED) or not detect(WD_CLOSED, None):
         fails.append("missing source files must be RED, never a vacuous pass")
     if not detect("class TurnWatchdog {}", DRV_CLOSED):
@@ -150,9 +236,9 @@ def selftest() -> int:
             print("  " + f)
         return 1
     print("NF-03 SELFTEST OK — red on missing poller, missing launch site, launch-after-rounds "
-          "placement, conditional or decoyed arming, missing roundRun shape, missing files, and "
-          "launchIn shape change; green only when exactly one unconditional cap launch precedes "
-          "the rounds AND idle keeps launchIn")
+          "placement, conditional/decoyed/branch-nested arming, missing roundRun shape, missing "
+          "files, and launchIn shape change; green only when exactly one unconditional cap launch "
+          "scope-dominates and precedes the rounds AND idle keeps launchIn")
     return 0
 
 

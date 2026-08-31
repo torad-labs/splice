@@ -40,7 +40,7 @@ while IFS= read -r f; do
   fi
   sev=$(grep -E '^[[:space:]]*severity:' "$f" | head -1 | awk '{print $2}')
   [ "$sev" = "error" ] || err "$f severity is '${sev:-unset}', must be 'error'"
-done < <(find .rules -type f -name '*.yml' -print)
+done < <(find .rules -type f \( -name '*.yml' -o -name '*.yaml' \) -print)
 
 # 4. Dependabot Kotlin ignore block stays scoped to the compiler/toolchain (#18/#37),
 # not the independently-versioned kotlinx libraries (kover, coroutines, serialization).

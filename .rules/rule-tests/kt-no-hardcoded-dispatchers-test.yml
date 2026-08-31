@@ -6,8 +6,34 @@ valid:
   - 'scope.launch(dispatcher) { probe() }'
   # naming the TYPE is not choosing a lane
   - 'fun io(): CoroutineDispatcher = pick()'
+  - |
+    import kotlinx.coroutines.CoroutineDispatcher as RuntimeDispatcher
+    suspend fun run(dispatcher: RuntimeDispatcher) = withContext(dispatcher) { work() }
+  # Importing the object under an alias is not itself a violation; only selecting a hardcoded lane is.
+  - |
+    import kotlinx.coroutines.Dispatchers as RuntimeDispatchers
+    suspend fun run(dispatcher: CoroutineDispatcher) = withContext(dispatcher) { work() }
+  # The imported alias must bind to the use-site receiver; another object may legally expose IO.
+  - |
+    import kotlinx.coroutines.Dispatchers as RuntimeDispatchers
+    suspend fun run() = withContext(Lane.IO) { work() }
 invalid:
   - 'withContext(Dispatchers.IO) { channel.tryLock() }'
   - 'private val scope = LifecycleScope(Dispatchers.Default)'
   # zero live hits in this repo; the branch is what keeps it that way
   - 'launch(Dispatchers.Main) { render() }'
+  - |
+    import kotlinx.coroutines.Dispatchers as RuntimeDispatchers
+    suspend fun run() = withContext(RuntimeDispatchers.IO) { channel.tryLock() }
+  - |
+    import kotlinx.coroutines.Dispatchers as RuntimeDispatchers
+    val scope = CoroutineScope(RuntimeDispatchers.Default)
+  - |
+    import kotlinx.coroutines.Dispatchers as RuntimeDispatchers
+    fun render() = launch(RuntimeDispatchers.Main) { draw() }
+  - |
+    import kotlinx.coroutines.Dispatchers.IO as BlockingDispatcher
+    suspend fun run() = withContext(BlockingDispatcher) { channel.tryLock() }
+  - |
+    import kotlinx.coroutines.Dispatchers.Default
+    val scope = CoroutineScope(Default)

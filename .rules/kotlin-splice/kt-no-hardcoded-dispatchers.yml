@@ -49,3 +49,20 @@ rule:
     - pattern: Dispatchers.Default
     # Zero occurrences here today; the branch is what keeps it so, and it was red-proven anyway.
     - pattern: Dispatchers.Main
+    # A lane imported directly or under its own alias is already a hardcoded selection; flag the
+    # import because the bare use-site name no longer carries provenance for the selected dispatcher.
+    # This import-header pattern intentionally matches both forms, including a trailing `as Alias`.
+    - pattern: import kotlinx.coroutines.Dispatchers.$LANE
+    # An import alias changes the selector spelling, not the threading decision. Bind the use-site
+    # receiver to the alias declared by the same source file so unrelated `Lane.IO` members stay legal.
+    - all:
+        - pattern: $ALIAS.$LANE
+        - inside:
+            kind: source_file
+            stopBy: end
+            has:
+              pattern: import kotlinx.coroutines.Dispatchers as $ALIAS
+              stopBy: end
+constraints:
+  LANE:
+    regex: '^(IO|Default|Main)$'

@@ -266,3 +266,41 @@ class InstallLinkerClaimTest {
         assertTrue(bin.resolve("splice").readSymbolicLink().toString().endsWith("splice-launch"))
     }
 }
+
+// DR-74 (invariant audit): the shim pre-flight used bare Files.exists(), which reads a dangling
+// link, an untraversable parent, and an inaccessible shim all as "not installed" — telling the
+// operator to reinstall through what is actually a permissions problem.
+class InstallShimPresenceTest {
+
+    private fun layoutEnv(tmp: java.nio.file.Path) = splice.core.util.EnvReader { name ->
+        mapOf(
+            "SPLICE_SHARE_DIR" to tmp.resolve("share").toString(),
+            "SPLICE_BIN_DIR" to tmp.resolve("bin").toString(),
+        )[name]
+    }
+
+    @Test
+    fun `an unreadable shim aborts naming access, not reinstall - DR-74`(@TempDir tmp: java.nio.file.Path) {
+        val share = Files.createDirectories(tmp.resolve("share"))
+        Files.writeString(share.resolve("splice-launch"), "#!/bin/sh\n")
+        val denied = java.nio.file.attribute.PosixFilePermissions.fromString("---------")
+        val restored = java.nio.file.attribute.PosixFilePermissions.fromString("rwx------")
+        Files.setPosixFilePermissions(share, denied)
+        val failure = try {
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException::class.java) {
+                splice.app.cli.InstallLinker().installSelf(layoutEnv(tmp))
+            }
+        } finally {
+            Files.setPosixFilePermissions(share, restored)
+        }
+        assertTrue(failure.message!!.contains("fix access"), failure.message)
+    }
+
+    @Test
+    fun `a genuinely missing shim keeps the install-sh remedy - DR-74 control`(@TempDir tmp: java.nio.file.Path) {
+        val failure = org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException::class.java) {
+            splice.app.cli.InstallLinker().installSelf(layoutEnv(tmp))
+        }
+        assertTrue(failure.message!!.contains("run install.sh"), failure.message)
+    }
+}

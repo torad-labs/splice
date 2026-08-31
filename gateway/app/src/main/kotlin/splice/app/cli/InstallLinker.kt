@@ -5,7 +5,9 @@
 package splice.app.cli
 
 import splice.app.TopologyLoader
+import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
@@ -38,7 +40,7 @@ internal class InstallLinker(
     internal fun install(headArg: String?, env: EnvReader): Boolean {
         val topology = TopologyLoader.loadOrMaterialize(TopologyLoader.configPath(env))
         val launchShim = layout.launchShimPath(env)
-        check(Files.exists(launchShim)) { "launch shim not found at $launchShim (run install.sh)" }
+        requireShimPresent(launchShim)
         val bin = layout.localBin(env)
         Files.createDirectories(bin)
         // All heads for --all/no-arg, else the one named by topology key OR wrapper command (a failed
@@ -73,7 +75,7 @@ internal class InstallLinker(
     /** Link the `splice` admin command itself (so `splice dashboard/status/...` work as commands). */
     internal fun installSelf(env: EnvReader): Boolean {
         val launchShim = layout.launchShimPath(env)
-        check(Files.exists(launchShim)) { "launch shim not found at $launchShim (run install.sh)" }
+        requireShimPresent(launchShim)
         val bin = layout.localBin(env)
         Files.createDirectories(bin)
         linkOne(bin, SELF_COMMAND, SELF_COMMAND, launchShim)
@@ -92,6 +94,22 @@ internal class InstallLinker(
         } catch (e: java.io.IOException) {
             throw IllegalStateException("failed to link $command — $link was not claimable: ${e.message}", e)
         }
+    }
+
+    /** DR-74: the shim pre-flight follows the absence law — bare exists() read a dangling link,
+     *  an untraversable parent, and an inaccessible shim all as "not installed", telling the
+     *  operator to reinstall through what is actually a permissions problem. Only proven absence
+     *  keeps the install.sh remedy; indeterminate access aborts naming the real one. */
+    private fun requireShimPresent(launchShim: Path) {
+        val failure = Cancellables.runCatchingCancellable { Files.getLastModifiedTime(launchShim) }
+            .exceptionOrNull() ?: return
+        val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+            !Files.exists(launchShim, NOFOLLOW_LINKS)
+        check(!genuinelyAbsent) { "launch shim not found at $launchShim (run install.sh)" }
+        throw IllegalStateException(
+            "launch shim at $launchShim is unreadable (${SafeFailureText.render(failure)}) — " +
+                "fix access to it and its parents, not reinstall",
+        )
     }
 
     private fun requireReplaceableLink(link: Path) {

@@ -6,6 +6,7 @@ package splice.app.cli
 
 import splice.core.config.StatePaths
 import splice.core.util.Cancellables
+import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -49,10 +50,22 @@ internal class DaemonSpawn(private val health: DaemonHealth) {
     /** JW-01: shown when the daemon never answers after a cold start. Reads only the filesystem. */
     internal fun printBootLogTail() {
         val bootLog = logsDir().resolve("daemon-boot.log")
-        if (!Files.exists(bootLog)) return
-        println("splice: daemon did not come up — last boot output ($bootLog):")
+        // DR-68: a boot log that EXISTS but cannot be read is diagnosis gold going missing —
+        // say so; only proven absence stays quiet.
         Cancellables.runCatchingCancellable {
-            Files.readAllLines(bootLog).takeLast(BOOT_LOG_TAIL_LINES).forEach(::println)
+            Files.readAllLines(bootLog).takeLast(BOOT_LOG_TAIL_LINES)
+        }.onSuccess { tail ->
+            println("splice: daemon did not come up — last boot output ($bootLog):")
+            tail.forEach(::println)
+        }.onFailure { failure ->
+            val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+                !Files.exists(bootLog, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+            if (!genuinelyAbsent) {
+                println(
+                    "splice: daemon did not come up — boot log $bootLog is unreadable " +
+                        "(${SafeFailureText.render(failure)})",
+                )
+            }
         }
     }
 }

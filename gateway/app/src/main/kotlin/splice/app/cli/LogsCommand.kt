@@ -7,7 +7,9 @@ package splice.app.cli
 
 import splice.app.LogFileSource
 import splice.core.config.StatePaths
+import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.SafeFailureText
 import java.nio.file.Files
 
 /** The `logs` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources
@@ -33,9 +35,12 @@ public class LogsCommand {
      *  LogFileSource on every poll, so a followed per-head view stays filtered across a roll. */
     private fun followTail(logFile: java.nio.file.Path, source: LogFileSource) {
         var lastSize = runCatching { Files.size(logFile) }.getOrDefault(0L)
+        // DR-68: a follow that cannot STAT the file must say so once per episode instead of
+        // freezing silently; genuine absence (rotation gap) stays the quiet 0.
+        val statWarned = java.util.concurrent.atomic.AtomicBoolean(false)
         while (true) {
             Thread.sleep(FOLLOW_POLL_MS)
-            val size = runCatching { if (Files.exists(logFile)) Files.size(logFile) else 0L }.getOrDefault(0L)
+            val size = polledSize(logFile, statWarned)
             if (size == lastSize) continue
             // The bounded tail is the safe superset on both growth and a roll (shrink).
             val fresh = source.tail(FOLLOW_TAIL)
@@ -43,6 +48,18 @@ public class LogsCommand {
             lastSize = size
         }
     }
+
+    /** One poll's size, with DR-68's once-per-episode unreadable warning (the DR-63 latch idiom:
+     *  any healthy stat re-arms). Genuine absence and indeterminate access both poll on as 0. */
+    private fun polledSize(logFile: java.nio.file.Path, warned: java.util.concurrent.atomic.AtomicBoolean): Long =
+        Cancellables.runCatchingCancellable { Files.size(logFile) }.getOrElse { failure ->
+            val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+                !Files.exists(logFile, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+            if (!genuinelyAbsent && warned.compareAndSet(false, true)) {
+                println("splice: $logFile unreadable (${SafeFailureText.render(failure)}) — still polling")
+            }
+            0L
+        }.also { if (it > 0L) warned.set(false) }
 
     private fun parseLogsArgs(args: List<String>): LogsOpts? {
         val opts = LogsOpts()

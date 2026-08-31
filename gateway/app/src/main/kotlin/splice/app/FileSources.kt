@@ -11,6 +11,7 @@ import splice.control.RateLimitView
 import splice.control.UsageView
 import splice.core.util.Cancellables
 import splice.core.util.JsonlSink
+import splice.core.util.SafeFailureText
 import splice.gateway.compact.CompactStats
 import splice.gateway.perf.PerfStats
 import splice.gateway.usage.UsageStore
@@ -43,18 +44,25 @@ public class LogFileSource(
     private val logFile: Path,
     private val headTag: String? = null,
 ) : HeadLogSource {
-    override fun tail(lines: Int): String = Cancellables.runCatchingCancellable {
-        if (!Files.exists(logFile) || lines <= 0) {
-            ""
-        } else {
+    // DR-68 (class law, display flavor): genuine absence stays the quiet empty tail; an
+    // UNREADABLE log degrades to one explicit in-band line instead of a silently blank
+    // dashboard/`splice logs` — the daemon.log itself may be the unreadable file, so the
+    // surface IS the returned text.
+    override fun tail(lines: Int): String {
+        if (lines <= 0) return ""
+        return Cancellables.runCatchingCancellable {
             JsonlSink.readTail(logFile, LOG_TAIL_BYTES)
                 .asSequence()
                 .filter { headTag == null || headTag in it }
                 .toList()
                 .takeLast(lines.coerceAtMost(MAX_LOG_LINES))
                 .joinToString("\n")
+        }.getOrElse { failure ->
+            val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+                !Files.exists(logFile, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+            if (genuinelyAbsent) "" else "[logs unavailable: $logFile unreadable (${SafeFailureText.render(failure)})]"
         }
-    }.getOrDefault("")
+    }
 
     override fun path(): String = logFile.toString()
 }

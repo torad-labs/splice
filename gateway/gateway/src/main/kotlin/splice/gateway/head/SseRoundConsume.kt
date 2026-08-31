@@ -34,6 +34,12 @@ internal class SseRoundConsume(
         // admission slot ~streamIdle past turn completion. (The client pinger is whole-turn
         // now — launched once in driveOneTurn, cancelled there.)
         try {
+            // DR-90: baseline THIS ATTEMPT, not the round — UpstreamClient reuses [inputs] across
+            // stream reissues (G5), so the round-scoped [WsRoundInputs.eventsBase] counts attempt
+            // 1's events against a reissued attempt and skips the G2 zero-event reclassify exactly
+            // when the reissue came back as a dead-head body (HTML login 200). The inputs field
+            // stays for the WS overlay, which runs at most once per round and always FIRST.
+            val eventsBase = drive.perfCounter(PerfKeys.EVENTS_IN)
             val capture = ZeroEventCapture()
             val events = tearAwareEvents.run(drive, resp, capture, inputs.frameEmittedThisRound)
             val signals = TurnSignals(
@@ -46,7 +52,7 @@ internal class SseRoundConsume(
                 drive,
                 rawOutcome,
                 capture.snippet.toString(),
-                drive.perfCounter(PerfKeys.EVENTS_IN) - inputs.eventsBase,
+                drive.perfCounter(PerfKeys.EVENTS_IN) - eventsBase,
                 telemetry,
             )
         } finally {

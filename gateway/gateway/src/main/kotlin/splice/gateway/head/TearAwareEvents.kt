@@ -38,9 +38,10 @@ internal class TearAwareEvents(
                 drive.perf.markOnce(PerfKeys.FIRST_BYTE)
                 drive.perf.add(PerfKeys.SSE_BYTES_IN, chunkBytes.toLong())
             },
-            // G9: count every skipped malformed frame; log the first snippet once per turn —
-            // never influences [splice.core.turn.TurnOutcome] (L3 stays intact; the skip is silent
-            // to the client).
+            // G9: count every skipped malformed frame; log the first snippet once per ATTEMPT
+            // (the capture is attempt-scoped, SseRoundConsume constructs one per consume; DR-90
+            // rider) — never influences [splice.core.turn.TurnOutcome] (L3 stays intact; the skip
+            // is silent to the client).
             onMalformed = { sn ->
                 drive.perf.add(PerfKeys.FRAMES_SKIPPED, 1)
                 if (!capture.malformedLogged) {

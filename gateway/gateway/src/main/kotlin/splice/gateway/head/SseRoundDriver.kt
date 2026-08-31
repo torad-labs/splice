@@ -36,6 +36,9 @@ internal class SseRoundDriver(
         // silently kill pre-content reissue (HeadServerReviewTest: torn-before-client must stay a
         // retryable overloaded_error, not a raw api_error).
         val framesBase = drive.perfCounter(PerfKeys.CONTENT_FRAMES_OUT)
+        // DR-90: this capture feeds the WS overlay only (at most one ws attempt per round, always
+        // first); the SSE consume re-baselines per ATTEMPT internally, because UpstreamClient
+        // reuses these inputs across G5 stream reissues.
         val eventsBase = drive.perfCounter(PerfKeys.EVENTS_IN)
         val frameEmittedThisRound = ClientFrameEmitted { drive.perfCounter(PerfKeys.CONTENT_FRAMES_OUT) > framesBase }
         // ws-transport WS-3: try the WebSocket overlay first. It returns null for "ride SSE" on

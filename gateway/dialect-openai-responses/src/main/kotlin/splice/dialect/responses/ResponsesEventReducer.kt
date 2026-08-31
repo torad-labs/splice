@@ -78,11 +78,19 @@ internal class ResponsesEventReducer(
         val e = (evt["response"] as? JsonObject)?.get("error") as? JsonObject
             ?: evt["error"] as? JsonObject
             ?: evt
-        val code = JsonScalars.strOrEmpty(e["code"])
-            .ifEmpty { JsonScalars.strOrEmpty(e["type"]) }
-            .ifEmpty { "upstream_failed" }
+        // DR-10 redo (codex): the vendor's structured code rides SEPARATELY into classify() —
+        // flattening it into the text let free wording ("...unavailable...") overrule a
+        // deterministic code and re-POST a whole context. The display string keeps the exact
+        // old shape; only genuine provenance is passed (the "upstream_failed" placeholder is
+        // display vocabulary, not a vendor code).
+        val realCode = JsonScalars.strOrEmpty(e["code"]).ifEmpty { JsonScalars.strOrEmpty(e["type"]) }
+        val code = realCode.ifEmpty { "upstream_failed" }
         val message = JsonScalars.strOrEmpty(e["message"]).ifEmpty { "ChatGPT backend reported failure" }
-        state.upstreamFailure = UpstreamFailureClassifier.classify(FailureSource.SSE, "$code $message")
+        state.upstreamFailure = UpstreamFailureClassifier.classify(
+            FailureSource.SSE,
+            "$code $message",
+            code = realCode.ifEmpty { null },
+        )
         // A response.failed payload can carry the round's usage — harvest it so the salvage
         // accounting is real (code-review 2026-07-24: the terminal-only harvest left
         // PartialRound.usage permanently zero).

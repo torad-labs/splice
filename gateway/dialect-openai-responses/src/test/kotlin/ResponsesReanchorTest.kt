@@ -270,6 +270,27 @@ class ResponsesReanchorPartialTest {
         assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)))
     }
 
+    // DR-10 redo (codex end-to-end counterexample): the arm above passed even pre-fix because its
+    // message carries no transient wording. The SAME deterministic code whose message says
+    // "unavailable ... try again" used to flip transient — free text overruled provenance and the
+    // whole context re-POSTed. The code rides classify() separately now; wording buys no replay.
+    @Test
+    fun `a deterministic code with transient-sounding text still never re-POSTs - DR-10`() = runTest {
+        val outcome = ResponsesStreamTranslator(reanchorCtx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.failed","response":{"error":{"code":"invalid_parameter",""" +
+                        """"message":"The selected model is unavailable in your region, try again"}}}""",
+                ),
+            ).asFlow(),
+            NullSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertTrue(failure.providerReported)
+        assertNull(failure.partial, "a deterministic failure must not carry a re-POSTable partial")
+        assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)))
+    }
+
     @Test
     fun `a transient server failure remains eligible for a clean restart`() = runTest {
         val outcome = ResponsesStreamTranslator(reanchorCtx()).driveTurn(

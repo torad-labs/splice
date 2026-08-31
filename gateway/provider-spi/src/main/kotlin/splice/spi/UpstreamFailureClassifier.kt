@@ -32,16 +32,23 @@ public object UpstreamFailureClassifier {
 
     // Status-less SSE failures are re-POSTable only when the vendor text explicitly names a
     // transient server condition. Default false: policy/parameter/unknown failures can be
-    // deterministic, and replaying the full context cannot change them.
+    // deterministic, and replaying the full context cannot change them. Bare "unavailable" was
+    // dropped (DR-10 redo, codex counterexample): "The selected model is unavailable in your
+    // region" is a deterministic restriction — only a qualified service outage wording counts.
     private val transientConditionRe = Regex(
         "server[_ -]?error|internal[_ -]?error|temporar(?:y|ily)|overload(?:ed)?|" +
-            "unavailable|timed? ?out",
+            "(?:service|currently)[_ -]?unavailable|timed? ?out",
         RegexOption.IGNORE_CASE,
     )
     private val tryAgainRe = Regex("\\btry\\s+again\\b", RegexOption.IGNORE_CASE)
+
+    // DR-45 redo: the old `(?:\w+\s+){0,2}` window missed long-form negation ("do not attempt to
+    // resubmit this request or try again"). The negator now suppresses across its WHOLE clause —
+    // anything up to a clause boundary — so only a "try again" in a separate sentence/clause
+    // ("Do not panic. Please try again.") still reads as an invitation to retry.
     private val negatedTryAgainRe = Regex(
-        "\\b(?:do\\s+not|don['’]t|never|cannot|can['’]t|should\\s+not|must\\s+not)\\s+" +
-            "(?:\\w+\\s+){0,2}try\\s+again\\b",
+        "\\b(?:do\\s+not|don['’]t|never|cannot|can['’]t|should\\s+not|must\\s+not)" +
+            "[^.,;:!?]{0,120}?\\btry\\s+again\\b",
         RegexOption.IGNORE_CASE,
     )
     private val promptTooLongRe = Regex("prompt is too long", RegexOption.IGNORE_CASE)
@@ -49,12 +56,22 @@ public object UpstreamFailureClassifier {
 
     private const val MAX_MESSAGE = 2000
 
-    public fun classify(source: FailureSource, text: String?, status: Int? = null): ClassifiedFailure {
+    /** [code] is the STRUCTURED error code when the caller has one (an SSE `response.failed`
+     *  envelope's `error.code`/`error.type`), kept separate from the display text so provenance
+     *  survives into the transience decision (DR-10 redo: flattening it into the text let free
+     *  wording overrule a deterministic code). HTTP callers omit it — the body parse extracts
+     *  its own. */
+    public fun classify(
+        source: FailureSource,
+        text: String?,
+        status: Int? = null,
+        code: String? = null,
+    ): ClassifiedFailure {
         val raw = text.orEmpty()
         val extracted = if (source == FailureSource.HTTP) {
             extractHttpError(raw, status)
         } else {
-            ExtractResult.Fields(raw, "")
+            ExtractResult.Fields(raw, code.orEmpty())
         }
         return when (extracted) {
             is ExtractResult.Gateway -> extracted.failure
@@ -106,7 +123,7 @@ public object UpstreamFailureClassifier {
                 ClassifiedFailure(ErrorType.AUTHENTICATION, msg.take(MAX_MESSAGE))
             status == BAD_GATEWAY ->
                 ClassifiedFailure(ErrorType.OVERLOADED, msg.take(MAX_MESSAGE), transient = true)
-            else -> statusFallback(status, msg)
+            else -> statusFallback(status, msg, fields.code)
         }
     }
 
@@ -147,7 +164,16 @@ public object UpstreamFailureClassifier {
         transientConditionRe.containsMatchIn(message) ||
             (tryAgainRe.containsMatchIn(message) && !negatedTryAgainRe.containsMatchIn(message))
 
-    private fun statusFallback(status: Int?, msg: String): ClassifiedFailure = when {
+    /** DR-10 redo (codex): provenance beats wording. When the vendor named a structured code, the
+     *  EXACT retryable allowlist decides — free text can never overrule it, so a deterministic
+     *  `invalid_parameter` whose message happens to say "unavailable" or "try again" is never
+     *  re-POSTed. Text heuristics apply only when no code arrived. */
+    private fun statuslessTransience(code: String, message: String): Boolean = when {
+        code.isNotBlank() -> code.lowercase() in RETRYABLE_CODES
+        else -> isStatuslessTransient(message)
+    }
+
+    private fun statusFallback(status: Int?, msg: String, code: String): ClassifiedFailure = when {
         status != null && status >= SERVER_ERROR_FLOOR ->
             ClassifiedFailure(ErrorType.API_ERROR, msg.take(MAX_MESSAGE), transient = true)
         status != null && status >= CLIENT_ERROR_FLOOR ->
@@ -155,7 +181,7 @@ public object UpstreamFailureClassifier {
         else -> ClassifiedFailure(
             ErrorType.API_ERROR,
             msg.take(MAX_MESSAGE),
-            transient = isStatuslessTransient(msg),
+            transient = statuslessTransience(code, msg),
         )
     }
 
@@ -171,6 +197,21 @@ public object UpstreamFailureClassifier {
     private const val SECONDS_PER_MINUTE = 60L
     private const val SECONDS_PER_HOUR = 3600L
     private const val SECONDS_PER_DAY = 86_400L
+
+    // The exact codes a status-less failure may be re-POSTed on: named transient server
+    // conditions only. Anything else — known-deterministic or unknown — does not earn a
+    // full-context replay on the say-so of its message text.
+    private val RETRYABLE_CODES = setOf(
+        "server_error",
+        "internal_error",
+        "internal_server_error",
+        "overloaded",
+        "overloaded_error",
+        "timeout",
+        "request_timeout",
+        "service_unavailable",
+        "temporarily_unavailable",
+    )
 
     private const val RATE_LIMIT_STATUS = 429
     private const val AUTH_STATUS = 401

@@ -22,6 +22,8 @@ import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.StandardOpenOption
+import java.nio.file.attribute.FileTime
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * One read-modify-write of `keys.toml`, performed while the sibling `.lock` is held.
@@ -70,13 +72,15 @@ public class KeyStore(
 ) {
     // mtime of the corrupt keys.toml version warned about in the CURRENT unreadable episode; null =
     // no active episode. One line per broken version, not one per read: read() runs on auth paths,
-    // and a corrupt store must not turn the daemon log into a firehose. Long.MIN_VALUE stands for
-    // "mtime itself unreadable" (an access-indeterminate store) — the old init VALUE was that same
-    // sentinel, so exactly those stores had their FIRST warning swallowed (DR-40 redo). A healthy
-    // read (or proven absence) clears the latch, so a later episode — same mtime or no mtime —
-    // warns again. Benign race: two threads may both log the same version once.
-    @Volatile
-    private var warnedCorruptMtime: Long? = null
+    // and a corrupt store must not turn the daemon log into a firehose. MTIME_UNREADABLE stands for
+    // "mtime itself unreadable" (an access-indeterminate store) — the old latch INITIALIZED to that
+    // same sentinel value, so exactly those stores had their FIRST warning swallowed (DR-40 redo).
+    // A healthy read (or proven absence) clears the latch, so a later episode — same mtime or no
+    // mtime — warns again. CAS over FileTime (value-equal, no boxed-primitive identity trap), not
+    // volatile check-then-set (DR-40 redo 2, the exact DR-9 race: codex's 64-reader probe logged 29
+    // warnings across 20 versions). One attempt per caller: the winner logs, same-version losers
+    // return, a loser holding a NEWER version logs on its next call.
+    private val warnedCorruptMtime = AtomicReference<FileTime?>(null)
 
     /** The key for [envVar], or null when absent/blank/unreadable. Last assignment wins,
      *  comments (#) and blanks are skipped, single or double quotes stripped. */
@@ -123,13 +127,13 @@ public class KeyStore(
         val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
             !Files.exists(path, LinkOption.NOFOLLOW_LINKS)
         if (failure == null || genuinelyAbsent) {
-            warnedCorruptMtime = null
+            warnedCorruptMtime.set(null)
         } else {
             val mtime = Cancellables.runCatchingCancellable {
-                Files.getLastModifiedTime(path).toMillis()
-            }.getOrDefault(Long.MIN_VALUE)
-            if (warnedCorruptMtime != mtime) {
-                warnedCorruptMtime = mtime
+                Files.getLastModifiedTime(path)
+            }.getOrDefault(MTIME_UNREADABLE)
+            val seen = warnedCorruptMtime.get()
+            if (mtime != seen && warnedCorruptMtime.compareAndSet(seen, mtime)) {
                 log(
                     "[keys] $path is UNREADABLE (${failure.message}) — treating as empty for " +
                         "display, but your keys are still in the file: fix or remove it " +
@@ -264,6 +268,10 @@ public class KeyStore(
 // unquoted command word in a generated bash hook — the check has to fire where the spec is
 // BUILT, not only when the generated script finally calls `splice key set`.
 internal val envNameRegex = Regex("[A-Z][A-Z0-9_]*")
+
+/** The warned-version sentinel for a store whose mtime cannot even be statted (DR-40): a real
+ *  FileTime with a value no filesystem produces, value-equal across creations. */
+private val MTIME_UNREADABLE: FileTime = FileTime.fromMillis(Long.MIN_VALUE)
 
 // SH-11 mutation lock: holds are microseconds (parse + atomic write); 5s of contention
 // means a wedged peer, and the loud failure preserves the store.

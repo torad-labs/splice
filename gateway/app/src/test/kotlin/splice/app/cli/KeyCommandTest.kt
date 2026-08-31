@@ -19,10 +19,12 @@ class KeyCommandTest {
 
     private fun store(tmp: Path) = KeyStore(tmp.resolve("keys.toml"))
 
-    // DR-40 gap 2 (codex): in a CLI process nothing installs DaemonLog, so a store built with the
-    // old default sink swallowed the UNREADABLE warning and `splice key list` reported "no keys
-    // stored" against a corrupt store. The CLI default now warns through cliStoreSink() -> stderr;
-    // this drives `key list` with that same production sink and only the PATH swapped for hermeticity.
+    // DR-40 gap 2 (codex, redo 2): in a CLI process nothing installs DaemonLog, so a store built
+    // with the old default sink swallowed the UNREADABLE warning and `splice key list` reported
+    // "no keys stored" against a corrupt store. This drives the PRODUCTION default chain — no
+    // injected store; only the path source is swapped for hermeticity — so a mutant that drops
+    // cliStoreSink from the in-body default dies here (the first version injected an already-wired
+    // store and the default-arg mutant survived, codex's replay catch).
     @Test
     fun `key list surfaces an unreadable store on stderr, not a silent empty - DR-40`(@TempDir tmp: Path) {
         val externalDir = Files.createDirectories(tmp.resolve("external"))
@@ -33,7 +35,7 @@ class KeyCommandTest {
         val realErr = System.err
         System.setErr(PrintStream(stderr, true))
         try {
-            val ok = KeyCommand().key(listOf("list"), KeyStore(path, log = KeyCommand().cliStoreSink()))
+            val ok = KeyCommand(storePath = { path }).key(listOf("list"))
             assertTrue(ok, "list still succeeds — degraded display, loud diagnosis")
         } finally {
             System.setErr(realErr)

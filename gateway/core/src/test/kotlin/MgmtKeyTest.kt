@@ -2,6 +2,7 @@
 // bearer matching. Absent file = quiet first-run mint; a PRESENT-but-unreadable/blank file mints
 // LOUDLY (the silent fallthrough revoked every bearer with no explanation) and records mintedAtMs.
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -103,6 +104,10 @@ class MgmtKeyTest {
             assertTrue(outcome.isFailure, "the mint into an untraversable dir must fail: $outcome")
             assertEquals(1, logs.size, "an inaccessible state dir must warn before the mint fails: $logs")
             assertTrue(logs[0].contains("every existing bearer"), "names the consequence: ${logs[0]}")
+            // DR-56 redo (codex): on THIS path the write fails and the old key survives — the line
+            // must gate the consequence on the publish, never claim it already happened.
+            assertTrue(logs[0].contains("if the replacement publishes"), "publish-gated wording: ${logs[0]}")
+            assertFalse(logs[0].contains("is now invalid"), "a failed publish must not claim rotation: ${logs[0]}")
         } finally {
             Files.setPosixFilePermissions(sp.mgmtKeyFile.parent, PosixFilePermissions.fromString("rwx------"))
         }

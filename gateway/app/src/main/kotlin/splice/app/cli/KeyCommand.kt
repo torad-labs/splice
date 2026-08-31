@@ -11,9 +11,18 @@ import splice.core.util.LogSink
 
 private const val MASK_PROMPT = "API key: "
 
+/** Where the CLI's default KeyStore lives — the operator's real ~/.config/splice/keys.toml in
+ *  production, a hermetic path in the DR-40 production-wiring arm. A fun interface (not a raw
+ *  `() -> Path`) per kt-no-lambda-seam; named for the ROLE. */
+internal fun interface KeyStorePathSource {
+    operator fun invoke(): java.nio.file.Path
+}
+
 /** The `key` verb as a cohesive unit of behavior (Kotlin style law, 2026-08-15: main sources carry
  *  no top-level functions). Every member keeps the old function's name. */
-internal class KeyCommand {
+internal class KeyCommand(
+    private val storePath: KeyStorePathSource = KeyStorePathSource { KeyStorePath.defaultPath() },
+) {
 
     /** DR-40 gap 2 (codex): where the CLI's KeyStore diagnostics land. The store's default sink is
      *  DaemonLog, which only the DAEMON process installs — in this CLI process it is a no-op, so an
@@ -23,16 +32,19 @@ internal class KeyCommand {
     internal fun cliStoreSink(): LogSink = LogSink { System.err.print(it) }
 
     /** argv after `key`: set <ENV> [--value V | --stdin] | list | unset <ENV>. Store injectable
-     *  for hermetic tests (the default is the operator's real ~/.config/splice/keys.toml, warning
-     *  through [cliStoreSink]). */
+     *  for hermetic tests; null resolves the PRODUCTION default — [storePath] + [cliStoreSink] —
+     *  inside the body so the DR-40 wiring arm can drive the real chain with only the path swapped
+     *  (a default-parameter expression is invisible to a test that injects, so a mutant dropping
+     *  the sink there survived; resolving here makes it killable). */
     internal fun key(
         args: List<String>,
-        store: KeyStore = KeyStore(KeyStorePath.defaultPath(), log = cliStoreSink()),
+        store: KeyStore? = null,
     ): Boolean {
+        val resolved = store ?: KeyStore(storePath(), log = cliStoreSink())
         return when (args.firstOrNull()) {
-            "set" -> keySet(store, args.getOrNull(1), args.drop(2))
-            "list" -> keyList(store)
-            "unset" -> keyUnset(store, args.getOrNull(1))
+            "set" -> keySet(resolved, args.getOrNull(1), args.drop(2))
+            "list" -> keyList(resolved)
+            "unset" -> keyUnset(resolved, args.getOrNull(1))
             else -> {
                 System.err.println("usage: splice key set <ENV_NAME> [--value V | --stdin] | list | unset <ENV_NAME>")
                 false

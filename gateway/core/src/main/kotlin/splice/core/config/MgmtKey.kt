@@ -59,10 +59,14 @@ public class MgmtKey(
             else -> null
         }
         if (readFailure != null) {
+            // Publish-gated wording (DR-56 redo, codex): this line fires BEFORE the write below,
+            // and on an untraversable state dir that write FAILS — the old key survives and "is
+            // now invalid" was a false diagnostic. The consequence is spelled conditionally so the
+            // line is true on both paths.
             log(
-                "[mgmt-key] $path $readFailure — minting a NEW key: every existing bearer " +
-                    "(dashboard session, scripts, the launch shim's stop hook) is now invalid; " +
-                    "re-copy the key from $path\n",
+                "[mgmt-key] $path $readFailure — minting a NEW key: if the replacement publishes, " +
+                    "every existing bearer (dashboard session, scripts, the launch shim's stop " +
+                    "hook) becomes invalid; re-copy the key from $path\n",
             )
         }
         val bytes = ByteArray(KEY_BYTES).also { SecureRandom().nextBytes(it) }

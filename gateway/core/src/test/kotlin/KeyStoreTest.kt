@@ -157,6 +157,48 @@ class KeyStoreTest {
         assertEquals("sk-a", store.read("OPENROUTER_API_KEY"), "the keys were never lost")
     }
 
+    // DR-40 redo 2 (codex race probe): the version latch was volatile check-then-set — the exact
+    // DR-9 race; their 64-reader probe logged 29 warnings across 20 versions. CAS now: barriered
+    // reader rounds, one distinct mtime each, must produce exactly one line per broken version.
+    @Test
+    fun `concurrent readers of an unreadable store warn exactly once per version - DR-40`() {
+        val dir = Files.createTempDirectory("keys-concurrent-warn")
+        val path = dir.resolve("keys.toml")
+        val log = java.util.concurrent.ConcurrentLinkedQueue<String>()
+        val store = KeyStore(path, log = LogSink { log += it })
+        store.write("OPENROUTER_API_KEY", "sk-a")
+        val readers = 64
+        val rounds = 8
+        val pool = java.util.concurrent.Executors.newFixedThreadPool(readers)
+        try {
+            repeat(rounds) { round ->
+                // Bump the version while readable (setLastModifiedTime opens the file), then break
+                // it again — the reader rounds are barriered, so no read sees the readable window.
+                Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------"))
+                Files.setLastModifiedTime(
+                    path,
+                    java.nio.file.attribute.FileTime.fromMillis(1_000_000L + round * 10_000L),
+                )
+                Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("-wx------"))
+                val start = java.util.concurrent.CountDownLatch(1)
+                val done = java.util.concurrent.CountDownLatch(readers)
+                repeat(readers) {
+                    pool.execute {
+                        start.await()
+                        store.read("OPENROUTER_API_KEY")
+                        done.countDown()
+                    }
+                }
+                start.countDown()
+                assertTrue(done.await(30, java.util.concurrent.TimeUnit.SECONDS), "readers wedged")
+            }
+        } finally {
+            pool.shutdownNow()
+            Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------"))
+        }
+        assertEquals(rounds, log.count { it.contains("UNREADABLE") }, "one warning per version: $log")
+    }
+
     // DR-40 redo (codex sentinel trap): an ACCESS-INDETERMINATE store has no readable mtime either,
     // and the old latch initialized to the same Long.MIN_VALUE the unreadable-mtime path produced —
     // so exactly these stores had their FIRST warning swallowed. Streak contract: first inaccessible

@@ -68,7 +68,7 @@ internal class ResponsesInputParts {
 
 // Wire field names/pieces used by the input-item factories. All private-per-file: none is read
 // outside this file's own functions. FIELD_CONTENT is deliberately NOT widened to internal —
-// Harvested.kt / ResponsesToolSearch.kt already carry their own private copies of this literal
+// Harvested.kt / ResponsesToolSearchController.kt already carry their own private copies of this literal
 // (StringLiteralDuplication scopes per file), and a module-wide const of the same name collides
 // with those pre-existing, out-of-scope declarations.
 private const val FIELD_CONTENT = "content"

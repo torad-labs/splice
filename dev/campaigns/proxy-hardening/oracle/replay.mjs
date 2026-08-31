@@ -54,7 +54,7 @@ const REQUEST_TIMEOUT_MS = 60_000; // a replayed fixture answers in ms; 60s mean
 const HEAD_PORT = 39490;   // CI-hermetic fixed scratch ports (OSS-M pattern)
 const CONTROL_PORT = 39491;
 
-const CANON_RULES = [{ re: /msg_\d+/g, to: 'msg_CANON' }];
+const CANON_RULES = [{ re: /msg_\d+(?:_\d+)?/g, to: 'msg_CANON' }];
 const canonicalize = (t) => CANON_RULES.reduce((x, r) => x.replace(r.re, r.to), t);
 
 const args = process.argv.slice(2);
@@ -201,7 +201,12 @@ function sanctionedScenarios() {
   const rows = {};
   for (const block of text.split(/^\[\[scenario\]\]$/m).slice(1)) {
     const name = tomlStr(block, 'name');
-    if (name && tomlStr(block, 'status') === 'sanctioned') rows[name] = { pinnedSha: tomlStr(block, 'pinned_sha256') };
+    if (name && tomlStr(block, 'status') === 'sanctioned') {
+      rows[name] = {
+        pinnedSha: tomlStr(block, 'pinned_sha256'),
+        pinUpstream: tomlStr(block, 'pin_upstream'),
+      };
+    }
   }
   return rows;
 }
@@ -221,6 +226,18 @@ function isSanctioned(entry, sanctioned) {
     // sha256 is the hash OF the runner-readable pin, so the two can no longer drift apart.
     if (s.without === undefined) return false;
     return entry.obs === s.without;
+  });
+}
+
+function gradeUpstream(expected, observed, sanctioned, problems) {
+  if (observed.length !== expected.length) {
+    problems.push(`upstream request count: expected ${expected.length}, got ${observed.length}`);
+    return;
+  }
+  expected.forEach((expReq, i) => {
+    for (const d of jsonDiff(expReq, observed[i], `upstream[${i}]`)) {
+      if (!isSanctioned(d, sanctioned)) problems.push(`${d.path}: expected ${JSON.stringify(d.exp)?.slice(0, 120)}, got ${JSON.stringify(d.obs)?.slice(0, 120)}`);
+    }
   });
 }
 
@@ -435,6 +452,9 @@ command = "claudex"
         if (sha !== sanction.pinnedSha) {
           problems.push(`sanctioned bytes drifted: pinned ${sanction.pinnedSha.slice(0, 16)}…, observed ${sha.slice(0, 16)}… — the divergence is no longer the one that was authorised`);
         }
+        if (sanction.pinUpstream === 'fixture') {
+          gradeUpstream(fx.expected_upstream_requests, observedUpstream, sanctioned, problems);
+        }
         verdicts[name] = { pass: problems.length === 0, sanctioned: true, problems, observed_status: out.status, observed_sse: gotSse, observed_upstream: observedUpstream };
         console.log(problems.length === 0 ? `  ✓ ${name} (sanctioned — pinned bytes hold)` : `  ✗ ${name}`);
         for (const p of problems) console.log(`      ${p}`);
@@ -453,16 +473,7 @@ command = "claudex"
         problems.push(`  observed …${JSON.stringify(b.slice(Math.max(0, i - 60), i + 100))}`);
       }
 
-      if (observedUpstream.length !== fx.expected_upstream_requests.length) {
-        problems.push(`upstream request count: expected ${fx.expected_upstream_requests.length}, got ${observedUpstream.length}`);
-      } else {
-        fx.expected_upstream_requests.forEach((expReq, i) => {
-          for (const d of jsonDiff(expReq, observedUpstream[i], `upstream[${i}]`)) {
-            if (isSanctioned(d, sanctioned)) continue;
-            problems.push(`${d.path}: expected ${JSON.stringify(d.exp)?.slice(0, 120)}, got ${JSON.stringify(d.obs)?.slice(0, 120)}`);
-          }
-        });
-      }
+      gradeUpstream(fx.expected_upstream_requests, observedUpstream, sanctioned, problems);
 
       verdicts[name] = { pass: problems.length === 0, problems, observed_status: out.status, observed_sse: gotSse, observed_upstream: observedUpstream };
       console.log(problems.length === 0 ? `  ✓ ${name}` : `  ✗ ${name}`);

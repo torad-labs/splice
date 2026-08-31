@@ -32,7 +32,7 @@ captured = 2026-07-26
 fixtures = "dev/campaigns/proxy-hardening/oracle/fixtures"
 source = "server/ (legacy Node reference implementation)"
 source_suite_state = "104/104 pass at capture time"
-canonicalization = ["message-id: msg_<digits> -> msg_CANON"]
+canonicalization = ["message-id: msg_<digits>[_<sequence>] -> msg_CANON"]
 replayed = 11
 replayed_at = 2026-08-07  # node dev/campaigns/proxy-hardening/oracle/replay.mjs (hermetic jar + vendored mock)
 captured_count = 11
@@ -49,9 +49,12 @@ covers = "happy-path streaming turn: message_start/ping/content_block_*/message_
 
 [[scenario]]
 name = "multipart"
-status = "passing"
-proof = "replay 2026-08-07: node dev/campaigns/proxy-hardening/oracle/replay.mjs — byte-identical after msg_CANON canonicalization; upstream requests field-identical except the sanctioned stream_options divergence (see [[divergence]])"
-covers = "multi-part reasoning summary folded into ONE thinking block + the mirror text block (invariant L2)"
+status = "sanctioned"
+authority = "22a0744: codex-rs sequential_cutoff parity; PR #99 operator lock: mirror_reasoning=false"
+pin_upstream = "fixture"
+pinned_sha256 = "374e7400e62b8b655f685bbb28cad0aa751ccbe8dea2cfd25a9d83f5f7d43ee4"
+replay_note = "The frozen mock emits the legacy cumulative-summary carrier. The Codex profile now requests sequential_cutoff and renders only reasoning_summary_text.done, while the operator lock removes the duplicate mirror block. The ordinary answer text remains byte-pinned."
+covers = "sequential_cutoff handling of a legacy multipart summary plus the ordinary answer text"
 
 [[scenario]]
 name = "toolcall"
@@ -61,9 +64,12 @@ covers = "tool_use block assembly from streamed function-call arguments"
 
 [[scenario]]
 name = "nonstream_tool"
-status = "passing"
-proof = "replay 2026-08-07: node dev/campaigns/proxy-hardening/oracle/replay.mjs — byte-identical after msg_CANON canonicalization; upstream requests field-identical except the sanctioned stream_options divergence (see [[divergence]])"
-covers = "non-stream translation path + UTF-8 split-chunk handling"
+status = "sanctioned"
+authority = "PR #99 operator lock: mirror_reasoning=false"
+pin_upstream = "fixture"
+pinned_sha256 = "21e5e54d08243ec691a925020ee0f311c34692125664a1ab06b66ae3609f5435"
+replay_note = "The reference appended the reasoning summary as a duplicate text block after the real UTF-8 answer. Transcript mirroring is now operator-locked off, so the answer remains and that duplicate block is absent."
+covers = "non-stream translation path + UTF-8 split-chunk handling without transcript mirroring"
 
 [[scenario]]
 name = "truncated"
@@ -90,9 +96,12 @@ covers = "assistant-prefill request shaping"
 
 [[scenario]]
 name = "replaystream"
-status = "passing"
-proof = "replay 2026-08-07: node dev/campaigns/proxy-hardening/oracle/replay.mjs — byte-identical after msg_CANON canonicalization; upstream requests field-identical except the sanctioned stream_options divergence (see [[divergence]])"
-covers = "encrypted reasoning-item replay wire path (captured with CLAUDEX_REPLAY_REASONING=1; ships default-off)"
+status = "sanctioned"
+authority = "22a0744: codex-rs sequential_cutoff parity; PR #99 operator lock: mirror_reasoning=false"
+pin_upstream = "fixture"
+pinned_sha256 = "429edee0651e3ef935797f8a60ddbc6818521f45431c9d21a379a313f4e5dc79"
+replay_note = "The encrypted reasoning envelope and answer remain byte-pinned. sequential_cutoff drops the mock's legacy summary carrier, and mirror_reasoning=false removes its duplicate text projection."
+covers = "encrypted reasoning-item replay wire path and ordinary answer text under sequential_cutoff"
 
 [[scenario]]
 name = "failed"
@@ -110,9 +119,12 @@ covers = "output-token clamp: reported usage clamped to the client's max_tokens"
 
 [[scenario]]
 name = "compactish"
-status = "passing"
-proof = "replay 2026-08-07: node dev/campaigns/proxy-hardening/oracle/replay.mjs — byte-identical after msg_CANON canonicalization; upstream requests field-identical except the sanctioned stream_options divergence (see [[divergence]])"
-covers = "real Claude Code 2.1.207 compaction shape WITH tools -> detected, tools stripped upstream, summary delivered"
+status = "sanctioned"
+authority = "22a0744: codex-rs sequential_cutoff parity"
+pin_upstream = "fixture"
+pinned_sha256 = "e755e61e21fdd9b696ca6b5bc4409f5efafeb43e5c386b7795a51278fe23c6f9"
+replay_note = "The frozen mock predates sequential_cutoff and returns only its legacy cumulative-summary carrier. With no reasoning_summary_text.done and no answer text, the gateway now emits the honest no-content error rather than fabricating a clean stop."
+covers = "real Claude Code compaction request shaping and the honest empty-output terminal under sequential_cutoff"
 
 # ── captured deliberately NOT frozen, with reasons (never silently dropped) ──
 

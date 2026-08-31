@@ -29,31 +29,39 @@ public class LaunchService(
     private val envReader: EnvReader = EnvReader(System::getenv),
 ) {
     /** Materialize the head's config + build the exec recipe. Safe by default: the flag is added
-     *  ONLY when [dangerouslySkipPermissions] is true, and doing so returns a non-null warning. */
+     *  ONLY when [dangerouslySkipPermissions] is true, and doing so returns a non-null warning.
+     *
+     *  [keyPresentNow] (DR-81) is the LAUNCH-time key-presence read (ManagedHead.keyPresence).
+     *  The spec is assembled once at boot and carries the capture capability ungated; whether the
+     *  paste-your-key hook and advertiser materialize is decided here, per launch — `splice key
+     *  set` promises live pickup, and a present key must disarm both (an accidental paste would
+     *  silently OVERWRITE the working credential — review of #75). */
     public fun launch(
         spec: LaunchSpec,
         extraArgs: List<String>,
         dangerouslySkipPermissions: Boolean,
+        keyPresentNow: Boolean = true,
     ): LaunchRecipe {
+        val effective = if (keyPresentNow) spec.copy(tokenCapture = null, advertiseKeySetup = false) else spec
         materializer.materialize(
             MaterializeSpec(
-                configDir = spec.configDir,
-                policy = spec.policy,
-                availableModelIds = spec.availableModelIds,
-                defaultModel = spec.pinnedModel,
-                modelOptionsCache = spec.modelOptionsCache,
-                statuslineCommand = spec.statuslineCommand,
-                loginCommand = spec.loginCommand,
-                signInLabel = spec.signInLabel,
-                signInViaBrowser = spec.signInViaBrowser,
-                tokenCapture = spec.tokenCapture,
-                advertiseKeySetup = spec.advertiseKeySetup,
-                loginOutcomeFile = spec.loginOutcomeFile,
+                configDir = effective.configDir,
+                policy = effective.policy,
+                availableModelIds = effective.availableModelIds,
+                defaultModel = effective.pinnedModel,
+                modelOptionsCache = effective.modelOptionsCache,
+                statuslineCommand = effective.statuslineCommand,
+                loginCommand = effective.loginCommand,
+                signInLabel = effective.signInLabel,
+                signInViaBrowser = effective.signInViaBrowser,
+                tokenCapture = effective.tokenCapture,
+                advertiseKeySetup = effective.advertiseKeySetup,
+                loginOutcomeFile = effective.loginOutcomeFile,
             ),
         )
-        val slots = aliasSlots(spec)
-        val env = buildEnv(spec, slots)
-        val unset = staleEnvUnsets(spec, slots)
+        val slots = aliasSlots(effective)
+        val env = buildEnv(effective, slots)
+        val unset = staleEnvUnsets(effective, slots)
         val argv = buildList {
             add(claudeBinary)
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")

@@ -35,7 +35,6 @@ internal class LaunchSpecFactory(
     internal fun launchSpecFor(
         ctx: ProviderBuild,
         controlPort: Int,
-        keyPresent: Boolean,
         forwardClientAuth: Boolean,
     ): LaunchSpec {
         val key = ctx.key
@@ -68,16 +67,15 @@ internal class LaunchSpecFactory(
             loginCommand = signIn.command,
             signInLabel = signIn.label,
             signInViaBrowser = signIn.viaBrowser,
-            // ONLY while the key is MISSING (review of #75). The capture hook swallows a bare
-            // sk-or-… message and stores it; on a head that is already configured that is pure
-            // downside — an accidental paste (or discussing a key as the whole message) silently
-            // OVERWRITES a working credential and the message never reaches the model. The
-            // advertiser below was already gated this way; the hook that acts on the paste was not.
-            tokenCapture = signIn.tokenCapture?.takeIf { !keyPresent },
+            // The CAPABILITY rides ungated; whether it materializes is decided per LAUNCH by
+            // LaunchService against ManagedHead.keyPresence (DR-81 — this used to bake the
+            // boot-time key check in, so `splice key set` never disarmed the paste-capture hook:
+            // the review-of-#75 overwrite risk, frozen instead of fixed).
+            tokenCapture = signIn.tokenCapture,
             // The receipt path MUST match what LoginCommand writes (same StatePaths, same head
             // key), or a detached sign-in reports into a file nothing reads.
             loginOutcomeFile = LoginOutcomeFile.pathFor(StatePaths().stateDir, key).toString(),
-            advertiseKeySetup = signIn.tokenCapture != null && !keyPresent,
+            advertiseKeySetup = signIn.tokenCapture != null,
             policy = ClaudePolicy(share = topology.claude.share.toSet(), isolate = head.claude.isolate.toSet()),
             port = head.port,
             inferenceToken = mgmtKey.get(),

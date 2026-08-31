@@ -42,8 +42,13 @@ internal class ManagedHeadFactory(
         // no bypass. Caller auth rides upstream only on heads that do get it; every other head keeps
         // enforcing the management key.
         val forwardClientAuth = wired.auth is ClientAuthProvider
-        val apiKeyPresent = (wired.auth as? ApiKeyAuthProvider)?.hasKeyNow() != false
         val server = headServerFactory.headServerFor(ctx, wired.provider, stores, forwardClientAuth)
+        // DR-81: key presence is NOT baked into the spec — it is a per-launch read of the SAME
+        // wired credential, so `splice key set`/unset changes the very next launch. Non-api-key
+        // auth reads true: capture/advertiser stay disarmed, which is the safe side.
+        val keyPresence = splice.control.KeyPresenceProbe {
+            (wired.auth as? ApiKeyAuthProvider)?.hasKeyNow() != false
+        }
         return ManagedHead(
             head = server,
             auth = wired.auth,
@@ -56,10 +61,10 @@ internal class ManagedHeadFactory(
             launchSpec = launchSpecFactory.launchSpecFor(
                 ctx,
                 controlPort,
-                keyPresent = apiKeyPresent,
                 forwardClientAuth = forwardClientAuth,
             ),
             perf = PerfStatsSource(stores.perfStats),
+            keyPresence = keyPresence,
         )
     }
 }

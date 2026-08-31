@@ -39,6 +39,36 @@ class LaunchServiceTest {
         inferenceToken = "test-inference-token",
     )
 
+    // DR-81 (assembly sweep): the spec is assembled once at boot, but `splice key set` promises
+    // live pickup — the capture hook and advertiser used to be frozen at the boot-time key check,
+    // so every later launch still armed the paste-your-key hook against a working credential
+    // (the review-of-#75 overwrite risk) and a key unset never re-armed setup. Key presence is a
+    // LAUNCH-time input now; the spec carries the ungated capability.
+    @Test
+    fun `a present key disarms token capture and the advertiser at launch time - DR-81`() {
+        val armed = spec("cap").copy(
+            tokenCapture = splice.core.launch.TokenCaptureSpec("K_ENV", "sk-or-[A-Za-z0-9_-]{20,}", "OpenRouter"),
+            advertiseKeySetup = true,
+        )
+        service.launch(armed, emptyList(), dangerouslySkipPermissions = false, keyPresentNow = true)
+        assertFalse(treeContains(tmp.resolve(".claude-cap"), "sk-or-"), "capture hook must be disarmed")
+    }
+
+    @Test
+    fun `an absent key arms token capture at launch time - DR-81 control`() {
+        val armed = spec("cap2").copy(
+            tokenCapture = splice.core.launch.TokenCaptureSpec("K_ENV", "sk-or-[A-Za-z0-9_-]{20,}", "OpenRouter"),
+            advertiseKeySetup = true,
+        )
+        service.launch(armed, emptyList(), dangerouslySkipPermissions = false, keyPresentNow = false)
+        assertTrue(treeContains(tmp.resolve(".claude-cap2"), "sk-or-"), "capture hook must materialize")
+    }
+
+    private fun treeContains(dir: java.nio.file.Path, needle: String): Boolean =
+        Files.walk(dir).use { paths ->
+            paths.filter { Files.isRegularFile(it) }.anyMatch { Files.readString(it).contains(needle) }
+        }
+
     // Declared slots (2026-08-30). The positional heuristic maps four Claude tier slots onto
     // whatever the catalog order happens to be, which on a grok-shaped roster lands TWO models in
     // four slots — grok-4.6 as both OPUS and FABLE, grok-build-latest as both SONNET and HAIKU —

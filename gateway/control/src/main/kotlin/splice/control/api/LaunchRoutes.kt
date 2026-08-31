@@ -60,7 +60,14 @@ internal class LaunchRoutes(
         val recipe = launchResponse.withAuthWarning(
             managed,
             spec,
-            launchService.launch(spec, request.extraArgs, request.dangerouslySkipPermissions),
+            launchService.launch(
+                spec,
+                request.extraArgs,
+                request.dangerouslySkipPermissions,
+                // DR-81: key presence is read per LAUNCH — the spec is boot-frozen, and a stale
+                // gate left the capture hook armed against a credential `splice key set` landed.
+                keyPresentNow = managed.keyPresence.keyPresentNow(),
+            ),
         )
         audit.launch(key, recipe.argv)
         if (recipe.warning != null) audit.warning(recipe.warning)

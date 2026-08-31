@@ -87,7 +87,6 @@ class LaunchSpecClientAuthTest {
         val spec = factory(tmp).launchSpecFor(
             build(tmp, Dialect.OPENAI_RESPONSES),
             controlPort = 3099,
-            keyPresent = true,
             forwardClientAuth = false, // synthetic resolved input; runtime assembly rejects the tuple
         )
         assertFalse(
@@ -103,7 +102,6 @@ class LaunchSpecClientAuthTest {
         val spec = factory(tmp).launchSpecFor(
             build(tmp, Dialect.ANTHROPIC_PASSTHROUGH),
             controlPort = 3099,
-            keyPresent = true,
             forwardClientAuth = true,
         )
         assertTrue(
@@ -127,7 +125,7 @@ class LaunchSpecClientAuthTest {
             ),
         )
 
-        val spec = factory(tmp).launchSpecFor(ctx, 3099, keyPresent = true, forwardClientAuth = true)
+        val spec = factory(tmp).launchSpecFor(ctx, 3099, forwardClientAuth = true)
         val cachedWindow = spec.modelOptionsCache.jsonArray.single().jsonObject
             .getValue("context_window").jsonPrimitive.long
 
@@ -149,7 +147,7 @@ class LaunchSpecClientAuthTest {
             ),
         )
 
-        val spec = factory(tmp).launchSpecFor(ctx, 3099, keyPresent = true, forwardClientAuth = true)
+        val spec = factory(tmp).launchSpecFor(ctx, 3099, forwardClientAuth = true)
 
         assertEquals(window, spec.contextWindow)
     }
@@ -173,7 +171,7 @@ class LaunchSpecClientAuthTest {
             ),
         )
 
-        val spec = factory(tmp).launchSpecFor(ctx, 3099, keyPresent = true, forwardClientAuth = true)
+        val spec = factory(tmp).launchSpecFor(ctx, 3099, forwardClientAuth = true)
 
         assertEquals(listOf(shown.id), spec.availableModelIds)
         assertEquals(mapOf(shown.id to shown.label), spec.modelLabels)

@@ -36,18 +36,43 @@ internal class UninstallCommand(
     // Which wrapper commands a `splice uninstall [head]` removes: every head command (+ `splice`
     // itself) for --all, else the one head named by topology key OR wrapper command. Returns null (and
     // prints) for an unknown or ambiguous specific arg, so uninstall fails loudly instead of exiting 0
-    // with no output; a null/unreadable topology falls back to removing by the literal name typed.
+    // with no output; a specific arg against an unreadable topology falls back to the literal name
+    // typed (the operator named the link; the topology only disambiguates).
     private fun uninstallTargets(headArg: String?, env: EnvReader): List<String>? {
-        val topology = runCatching {
-            TopologyLoader.parse(Files.readString(TopologyLoader.configPath(env)))
-        }.getOrNull()
-        if (headArg == null || headArg == "--all") {
-            val headCommands = topology?.heads?.map { (k, h) -> h.claude.command ?: k } ?: listOfNotNull(headArg)
-            return (headCommands + SELF_COMMAND).distinct()
+        val configPath = TopologyLoader.configPath(env)
+        val attempt = Cancellables.runCatchingCancellable {
+            TopologyLoader.parse(Files.readString(configPath))
         }
+        val topology = attempt.getOrNull()
+        if (headArg == null || headArg == "--all") return allTargets(attempt, configPath)
         if (topology == null) return listOf(headArg)
         return heads.resolveSpecificHead(topology, headArg)?.let { key ->
             listOf(topology.heads.getValue(key).claude.command ?: key)
         }
+    }
+
+    /** DR-101: --all with no readable topology must never silently shrink to the self-link (the
+     *  old fallback was the literal "--all", so head wrappers stayed installed while the command
+     *  exited 0 saying nothing). Genuine absence (NoSuchFileException — the positive evidence of
+     *  absence) is a fresh box: self-link only, but SAID. Anything else is an unreadable/corrupt
+     *  config: refuse loudly with nothing removed, so the retry after the fix removes everything. */
+    private fun allTargets(
+        attempt: Result<splice.core.topology.Topology>,
+        configPath: java.nio.file.Path,
+    ): List<String>? {
+        val topology = attempt.getOrNull()
+        if (topology != null) {
+            return (topology.heads.map { (k, h) -> h.claude.command ?: k } + SELF_COMMAND).distinct()
+        }
+        if (attempt.exceptionOrNull() is java.nio.file.NoSuchFileException) {
+            println("splice: no config at $configPath — removing only the '$SELF_COMMAND' link")
+            return listOf(SELF_COMMAND)
+        }
+        val reason = attempt.exceptionOrNull()?.let { splice.core.util.SafeFailureText.render(it) } ?: "unknown"
+        System.err.println(
+            "splice uninstall --all: $configPath unreadable ($reason) — " +
+                "head wrappers NOT removed; fix or delete the config and re-run",
+        )
+        return null
     }
 }

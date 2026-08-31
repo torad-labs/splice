@@ -341,3 +341,94 @@ class InstallShimPresenceTest {
         assertTrue(failure.message!!.contains("install.sh"), failure.message)
     }
 }
+
+// DR-101: `uninstall --all` with a topology it cannot read must never silently shrink to the
+// self-link — pre-fix the fallback was listOfNotNull("--all"), so head wrappers stayed installed
+// while the command exited 0 saying nothing. Corrupt config: refuse loudly, nonzero. Genuinely
+// ABSENT config (NoSuchFileException — the positive absence evidence): self-link only, but SAID.
+class UninstallUnreadableTopologyTest {
+
+    private val noEnv: (String) -> String? = { null }
+
+    private fun withHome(home: Path, block: () -> Unit) {
+        val prev = System.getProperty("user.home")
+        System.setProperty("user.home", home.toString())
+        try {
+            block()
+        } finally {
+            System.setProperty("user.home", prev)
+        }
+    }
+
+    private fun capture(block: () -> Boolean): Triple<Boolean, String, String> {
+        val outBuf = java.io.ByteArrayOutputStream()
+        val errBuf = java.io.ByteArrayOutputStream()
+        val out = System.out
+        val err = System.err
+        System.setOut(java.io.PrintStream(outBuf, true))
+        System.setErr(java.io.PrintStream(errBuf, true))
+        return try {
+            Triple(block(), outBuf.toString(), errBuf.toString())
+        } finally {
+            System.setOut(out)
+            System.setErr(err)
+        }
+    }
+
+    private fun seedInstalled(home: Path) {
+        val cfg = home.resolve(".config").resolve("splice")
+        Files.createDirectories(cfg)
+        cfg.resolve("splice.toml").writeString(
+            """
+            [daemon]
+            control_port = 3096
+
+            [providers.codex]
+            dialect = "openai-responses"
+            base_url = "https://x"
+            auth = { kind = "chatgpt-oauth" }
+
+            [heads.claudex]
+            provider = "codex"
+            port = 3099
+            discovery_prefix = "claude-codex--"
+            pinned_model = "gpt-5.6-sol"
+
+            [heads.claudex.claude]
+            command = "claudex"
+            """.trimIndent(),
+        )
+        val share = home.resolve(".local").resolve("share").resolve("splice")
+        Files.createDirectories(share)
+        share.resolve("splice-launch").writeString("#!/usr/bin/env bash\n")
+        InstallCommand().install("--all", env = noEnv)
+    }
+
+    @Test
+    fun `corrupt topology refuses --all loudly instead of exit 0 - DR-101`(@TempDir home: Path) {
+        withHome(home) {
+            seedInstalled(home)
+            home.resolve(".config/splice/splice.toml").writeString("[heads.claudex\nnot toml at all")
+            val (ok, _, err) = capture { InstallCommand().uninstall("--all", env = noEnv) }
+            assertFalse(ok, "an unreadable topology must fail --all, not exit 0")
+            assertTrue(err.contains("unreadable"), "the failure must name the problem; stderr=$err")
+            assertTrue(err.contains("splice.toml"), "the failure must name the file; stderr=$err")
+            assertTrue(
+                home.resolve(".local/bin/claudex").isSymbolicLink(),
+                "no half-removal on a refused --all: retry after the fix removes everything",
+            )
+        }
+    }
+
+    @Test
+    fun `absent topology removes the self-link and says so - DR-101`(@TempDir home: Path) {
+        withHome(home) {
+            seedInstalled(home)
+            Files.delete(home.resolve(".config/splice/splice.toml"))
+            val (ok, out, _) = capture { InstallCommand().uninstall("--all", env = noEnv) }
+            assertTrue(ok, "a fresh box with no config is not a failure")
+            assertFalse(Files.exists(home.resolve(".local/bin/splice"), NOFOLLOW_LINKS))
+            assertTrue(out.contains("no config"), "the partial removal must be SAID; stdout=$out")
+        }
+    }
+}

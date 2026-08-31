@@ -139,6 +139,7 @@ class GrokProviderTest {
         assertTrue(sse.contains("event: message_stop"))
         // the OAuth access token rode as the bearer (no ChatGPT-Account-ID header — grok has none)
         assertTrue(mock.upstreamAuths.any { it.second == "Bearer xai-access-token-abc" })
+        assertEquals("basic" to null, mock.upstreamAccountIds.last())
         // session-id cache key in the body
         assertTrue(mock.upstreamBodies.last().second.contains("claude-grok:sess-xyz"))
     }

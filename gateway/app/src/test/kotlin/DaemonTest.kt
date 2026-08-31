@@ -136,6 +136,7 @@ class DaemonTest {
         assertTrue(sse.contains("event: message_stop"))
         // the account-id header + bearer reached the upstream
         assertTrue(mock.upstreamAuths.any { it.second == "Bearer tok-1" })
+        assertEquals("basic" to "acct-1", mock.upstreamAccountIds.last())
     }
 
     @Test

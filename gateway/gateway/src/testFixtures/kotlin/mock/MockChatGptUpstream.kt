@@ -34,6 +34,7 @@ const val RATE_LIMITED_STATUS: Int = 429
 
 class MockChatGptUpstream {
     val upstreamAuths = CopyOnWriteArrayList<Pair<String, String?>>()
+    val upstreamAccountIds = CopyOnWriteArrayList<Pair<String, String?>>()
     val upstreamBodies = CopyOnWriteArrayList<Pair<String, String>>()
     val abortedScenarios = CopyOnWriteArrayList<String>()
     val refreshCalls = AtomicInteger(0)
@@ -122,6 +123,7 @@ class MockChatGptUpstream {
         val scenario = Regex("SCENARIO:(\\w+)").find(raw)?.groupValues?.get(1) ?: "basic"
         val auth = ex.requestHeaders.getFirst("Authorization")
         upstreamAuths.add(scenario to auth)
+        upstreamAccountIds.add(scenario to ex.requestHeaders.getFirst("ChatGPT-Account-ID"))
         upstreamBodies.add(scenario to raw)
 
         if (scenario == "refresh" && auth == "Bearer tok-old") {

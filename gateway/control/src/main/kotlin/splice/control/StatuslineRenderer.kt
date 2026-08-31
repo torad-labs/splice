@@ -24,7 +24,13 @@ public class StatuslineRenderer(
     /** Clock seam: the branch-cache TTL test was a wall-clock race (two real git round-trips inside
      *  a 2s window flake on a loaded runner) — injected time makes expiry deterministic (DR-22c). */
     private val now: WallClock = WallClock(System::currentTimeMillis),
+    /** Branch-lookup seam (DR-22 redo): the real git subprocess in production; a test injects a
+     *  latched lookup so the concurrent late-publish race is deterministic instead of timing-dependent. */
+    branchLookup: GitBranchReader? = null,
 ) {
+    // Resolved in the body (not a ctor default) so the real lookup can reference the member gitBranch.
+    private val branchLookup: GitBranchReader = branchLookup ?: GitBranchReader { cwd -> gitBranch(cwd) }
+
     // Operator-trusted roots beyond $HOME//tmp for the git-branch lookup (statuslineGitRoots
     // knob / CLAUDEX_STATUSLINE_GIT_ROOTS) — devcontainer /workspace, /srv layouts. Normalized once.
     private val extraGitRoots: List<java.nio.file.Path> = extraGitRoots.mapNotNull { root ->
@@ -157,10 +163,19 @@ public class StatuslineRenderer(
         // The subprocess runs OUTSIDE the monitor (DR-22b): the renderer is process-shared per head
         // now, and holding the lock across a 200ms waitFor serialized every concurrent tick behind
         // one blocking git on a Ktor dispatcher thread. Concurrent misses may each run one
-        // duplicate git — last write wins with the same value, which is cheaper than the convoy.
-        val branch = gitBranch(cwd)
+        // duplicate git. Stamp the observation BEFORE the lookup so expiry encodes WHEN the branch
+        // was read, not when we win the publish lock (DR-22 redo): a slow lookup that publishes late
+        // must not look fresher than a racer that read the branch later.
+        val observedAt = now()
+        val branch = branchLookup(cwd)
         synchronized(branchCacheLock) {
-            branchCache[cwd] = CachedBranch(branch, now() + GIT_CACHE_TTL_MS)
+            val expiresAt = observedAt + GIT_CACHE_TTL_MS
+            // Revalidate under the lock: a concurrent lookup that observed at-or-after us may already
+            // have published a fresher branch. Our older read must not clobber it — keep and return
+            // the fresher entry (the unconditional publish here let a slow git overwrite a newer one).
+            val existing = branchCache[cwd]
+            if (existing != null && existing.expiresAtMs >= expiresAt) return existing.branch
+            branchCache[cwd] = CachedBranch(branch, expiresAt)
             while (branchCache.size > GIT_CACHE_MAX_ENTRIES) {
                 val iterator = branchCache.keys.iterator()
                 iterator.next().run { iterator.remove() }
@@ -186,6 +201,13 @@ public class StatuslineRenderer(
 }
 
 private data class CachedBranch(val branch: String, val expiresAtMs: Long)
+
+/** Reads the current git branch for a resolved working directory — the real git subprocess in
+ *  production, a latched stand-in in the late-publish race test (DR-22 redo). Named for the ROLE,
+ *  not the shape (kt-no-lambda-seam); `operator fun invoke` keeps call sites byte-identical. */
+public fun interface GitBranchReader {
+    public operator fun invoke(cwd: String): String
+}
 
 // The stdin-blob JSON adapter, split out so StatuslineRenderer stays inside detekt's per-class
 // function budget: the renderer holds 11 + fmtK + dim = 13 of 15, and folding obj/str/num back in

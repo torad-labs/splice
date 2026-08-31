@@ -246,9 +246,21 @@ internal object LoginInterception {
     }
 
     private fun linkGlobalCommandsInto(dst: Path, globalCommands: Path) {
-        if (!globalCommands.isDirectory()) return
-        Files.newDirectoryStream(globalCommands).use { entries ->
-            entries.filter { it.fileName.toString() != LOGIN_MD }.forEach { linkOneInto(dst, it) }
+        // DR-39 redo 2 (codex): `isDirectory` was an absence PRE-gate, and it lies false for an
+        // untraversable parent — the login leg then "succeeded" with login.md while every shared
+        // command silently vanished. Opening the stream is the only honest probe (class law): a
+        // no-commands operator is the one quiet skip, proven by NoSuchFileException with no
+        // NOFOLLOW entry; everything else present-but-unreadable (denied parent, dangling link,
+        // regular file) throws into the caller's existing loud leg.
+        val entries = Cancellables.runCatchingCancellable { Files.newDirectoryStream(globalCommands) }
+            .getOrElse { failure ->
+                val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+                    !Files.exists(globalCommands, NOFOLLOW_LINKS)
+                if (genuinelyAbsent) return
+                throw failure
+            }
+        entries.use { stream ->
+            stream.filter { it.fileName.toString() != LOGIN_MD }.forEach { linkOneInto(dst, it) }
         }
     }
 

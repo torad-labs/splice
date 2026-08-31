@@ -16,6 +16,7 @@ import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
 import java.nio.file.attribute.BasicFileAttributes
+import java.nio.file.attribute.PosixFilePermissions
 
 class LoginCommandsReconcileTest {
 
@@ -149,5 +150,60 @@ class LoginCommandsReconcileTest {
         assertEquals(global.resolve("global.md"), Files.readSymbolicLink(commands.resolve("global.md")))
         assertEquals("the head's own command", Files.readString(commands.resolve("own.md")))
         assertFalse(Files.exists(commands.resolve("login.md")), "no /login command on a client-auth head")
+    }
+
+    // DR-39 redo 2 (codex repro): linkGlobalCommandsInto opened with `if (!isDirectory) return`,
+    // and isDirectory lies FALSE through an untraversable parent — the login leg then "succeeded"
+    // with login.md while every shared command silently vanished. An unreadable share must fail
+    // the leg loudly, never impersonate a no-commands operator.
+    @Test
+    fun `an untraversable global-commands parent fails the leg loudly, never silently unshared - DR-39`(
+        @TempDir tmp: Path,
+    ) {
+        val parent = Files.createDirectories(tmp.resolve("global-parent"))
+        val global = Files.createDirectories(parent.resolve("commands"))
+        Files.writeString(global.resolve("global.md"), "# global")
+        Files.setPosixFilePermissions(parent, PosixFilePermissions.fromString("---------"))
+        val log = mutableListOf<String>()
+        try {
+            wire(tmp, "openrouter login", global, log)
+        } finally {
+            Files.setPosixFilePermissions(parent, PosixFilePermissions.fromString("rwx------"))
+        }
+        assertTrue(log.any { it.contains("NOT installed") }, "an unreadable share must be loud: $log")
+        assertFalse(
+            Files.exists(tmp.resolve("commands/global.md"), NOFOLLOW_LINKS),
+            "nothing was shared, so nothing may pretend to be",
+        )
+    }
+
+    // The dangling-link face of the same class: NoSuch from the stream open, but the entry exists —
+    // present-but-broken. Exercised through the blank-login reconcile leg for path coverage there.
+    @Test
+    fun `a dangling global-commands link is loud on the reconcile leg - DR-39`(@TempDir tmp: Path) {
+        val dangling = tmp.resolve("dangling-commands")
+        Files.createSymbolicLink(dangling, tmp.resolve("gone"))
+        Files.createDirectories(tmp.resolve("commands"))
+        val log = mutableListOf<String>()
+
+        wire(tmp, "", dangling, log)
+
+        assertTrue(log.any { it.contains("NOT reconciled") }, "a dangling share link must be loud: $log")
+    }
+
+    // The denominator's quiet member: a no-commands operator is genuine absence (NoSuch + no
+    // NOFOLLOW entry) on BOTH legs — no noise, and the login leg still installs normally.
+    @Test
+    fun `a genuinely absent global commands dir stays a quiet skip on both legs - DR-39`(@TempDir tmp: Path) {
+        val absent = tmp.resolve("never-created")
+        Files.createDirectories(tmp.resolve("commands"))
+        val log = mutableListOf<String>()
+
+        wire(tmp, "", absent, log)
+        assertTrue(log.isEmpty(), "true absence is the optional share, not a failure: $log")
+
+        wire(tmp, "openrouter login", absent, log)
+        assertTrue(log.isEmpty(), "the login leg must install without noise: $log")
+        assertTrue(Files.isRegularFile(tmp.resolve("commands/login.md")), "login.md still lands")
     }
 }

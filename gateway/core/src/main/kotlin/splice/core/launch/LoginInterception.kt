@@ -224,9 +224,20 @@ internal object LoginInterception {
     private fun writeHookScript(configDir: Path, name: String, content: String, chmod: HookChmod): Path {
         val script = configDir.resolve(name)
         Files.writeString(script, content)
-        val chmodFailure = Cancellables.runCatchingCancellable {
-            chmod(script, PosixFilePermissions.fromString("rwx------"))
-        }.exceptionOrNull()
+        // runCatchingCancellable's narrow net (IO/serialization/IAE) is NOT enough here:
+        // setPosixFilePermissions throws UnsupportedOperationException on a non-POSIX filesystem
+        // and SecurityException under a manager, and either escaping this seam skips the delete —
+        // leaving a pre-existing executable behind (second DR-8 redo, 2026-08-30). Same funnel
+        // for all of them: the chmod did not take, so the script must not survive.
+        val chmodFailure = try {
+            Cancellables.runCatchingCancellable {
+                chmod(script, PosixFilePermissions.fromString("rwx------"))
+            }.exceptionOrNull()
+        } catch (e: UnsupportedOperationException) {
+            e
+        } catch (e: SecurityException) {
+            e
+        }
         if (chmodFailure != null) {
             // A pre-existing script keeps its old mode through writeString, so executability proves
             // NOTHING about the mode we asked for: a world-writable leftover passes isExecutable

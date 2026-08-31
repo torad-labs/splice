@@ -162,6 +162,36 @@ class LoginInterceptionWireTest {
         )
     }
 
+    // Second DR-8 redo: the delete-and-throw funnel caught only what runCatchingCancellable
+    // catches (IO/serialization/IAE). setPosixFilePermissions also throws
+    // UnsupportedOperationException (non-POSIX filesystem) and SecurityException — either used to
+    // fly PAST the funnel, skipping the delete and leaving the seeded executable behind.
+    @Test
+    fun `chmod exceptions outside the IO net still delete the seeded hook`(@TempDir tmp: Path) {
+        for (thrown in listOf(UnsupportedOperationException("posix not supported"), SecurityException("denied"))) {
+            val leftover = tmp.resolve("splice-key-capture-hook.sh")
+            Files.writeString(leftover, "#!/bin/sh\nplanted-by-anyone\n")
+            Files.setPosixFilePermissions(leftover, PosixFilePermissions.fromString("rwxrwxrwx"))
+
+            assertThrows<IOException>("${thrown::class.simpleName} must still fail the launch") {
+                LoginInterception.wire(
+                    configDir = tmp,
+                    loginCommand = "",
+                    signInLabel = "OpenRouter",
+                    globalCommands = null,
+                    viaBrowser = false,
+                    tokenCapture = capture,
+                    log = LogSink { },
+                    chmod = { _, _ -> throw thrown },
+                )
+            }
+            assertFalse(
+                Files.exists(leftover),
+                "${thrown::class.simpleName} must not leave the seeded executable behind",
+            )
+        }
+    }
+
     @Test
     fun `the login leg stays best-effort when its own chmod fails`(@TempDir tmp: Path) {
         val log = mutableListOf<String>()

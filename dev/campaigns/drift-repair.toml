@@ -229,6 +229,7 @@ verify = "cd gateway && ./gradlew :dialect-openai-responses:test :provider-spi:t
 # [2026-08-31] VERDICT: outcome=redo gap=bare 'unavailable' classified transient; deterministic regional restriction re-POSTs verbatim
 # [2026-08-31] ATTEST-START: tree=64ac819756ac4d800428acd45cc8296ba3825263 at=2026-08-31T05:39:10Z
 # [2026-08-31] 2026-08-31 codex correction (sharper than the first note): the counterexample code is invalid_parameter — ALREADY RECOGNIZED as deterministic — but bare free-text 'unavailable' matching OVERRIDES deterministic provenance and still re-POSTs the original JSON. The fix must separate the exact retryable-code allowlist from free-text matching so text can never overrule a deterministic code.
+# [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T10:32:21Z handover-from=codex-splice
 
 [[items]]
 id = "DR-11"

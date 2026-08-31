@@ -218,6 +218,7 @@ class ArchitectureLawsTest {
 
     private companion object {
         val MODULE_PATH = Regex("\"(:[A-Za-z0-9._-]+)\"")
+
         // DR-112: match every Gradle spelling of a project edge — positional `project(":x")`, the
         // named-arg form `project(path = ":x")`, whitespace variants, and a trailing
         // `, configuration = ...` — not just the exact positional idiom. An edge written any other

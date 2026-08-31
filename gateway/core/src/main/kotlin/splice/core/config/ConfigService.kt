@@ -28,8 +28,10 @@ import splice.core.util.LogSink
 import splice.core.util.SecureFile
 import java.io.IOException
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 public class ConfigService(
@@ -146,10 +148,25 @@ public class ConfigService(
     // Best-effort by design (port fidelity): a broken/absent state file yields {} — the daemon
     // must never crash on config reads. But a PRESENT file being discarded is logged, latched per
     // mtime so the merge-per-request path cannot spam (DR-9 second arm: every persisted knob
-    // silently reverting to defaults, while envLayer logged the single-value equivalent).
+    // silently reverting to defaults, while envLayer logged the single-value equivalent). Absence
+    // is proven by the read itself, never a Files.exists pre-gate (DR-9 class law): only NoSuchFile
+    // with no NOFOLLOW path entry is the quiet fresh-install {} — a dangling link throws NoSuch too
+    // but its entry exists, and an untraversable parent fails exists() checks entirely, which is
+    // exactly how the old pre-gate lied "absent". So exists(NOFOLLOW) only disambiguates a caught
+    // NoSuch; untraversable parents, inaccessible targets, and dangling links all log their discard.
     private fun fileLayer(): Map<String, Any?> {
         val read = Cancellables.runCatchingCancellable { readFileLayer() }
-        if (read.isFailure) logFileLayerDiscard(read.exceptionOrNull())
+        val failure = read.exceptionOrNull()
+        val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+            !Files.exists(statePaths.configFile, LinkOption.NOFOLLOW_LINKS)
+        if (failure == null || genuinelyAbsent) {
+            // A healthy read OR a proven fresh install re-arms both discard latches: the next
+            // unreadable episode is new news, not a continuation.
+            discardStreakLogged.set(false)
+            discardLoggedFor.set(null)
+        } else {
+            logFileLayerDiscard(failure)
+        }
         return read.getOrDefault(emptyMap())
     }
 
@@ -159,19 +176,27 @@ public class ConfigService(
     // loser holding a NEWER mtime logs it on its next call.
     private val discardLoggedFor = AtomicReference<FileTime?>(null)
 
+    // DR-9 (codex latch trap): an access-indeterminate file usually has no readable mtime either, so
+    // the CAS above cannot dedup it — unlatched, the merge-per-request path logged the discard on
+    // EVERY call. One line per failure STREAK; fileLayer re-arms on a healthy read or proven absence.
+    private val discardStreakLogged = AtomicBoolean(false)
+
     private fun logFileLayerDiscard(cause: Throwable?) {
         val mtime = Cancellables.runCatchingCancellable { Files.getLastModifiedTime(statePaths.configFile) }
             .getOrNull()
         if (mtime != null) {
             val seen = discardLoggedFor.get()
             if (mtime == seen || !discardLoggedFor.compareAndSet(seen, mtime)) return
+        } else if (!discardStreakLogged.compareAndSet(false, true)) {
+            return
         }
         log("[config] config.json present but unreadable ($cause) — persisted knobs ignored, defaults/env in effect")
     }
 
     private fun readFileLayer(): Map<String, Any?> {
         val path = statePaths.configFile
-        if (!Files.exists(path)) return emptyMap()
+        // No existence pre-gate (DR-9): absence is proven by this stat throwing NoSuchFile, which
+        // fileLayer classifies (genuine absence quiet, dangling/inaccessible logged).
         val modified = Files.getLastModifiedTime(path)
         val size = Files.size(path)
         // A same-second edit that lands at an identical byte count is invisible to (mtime, size)
@@ -230,21 +255,29 @@ public class ConfigService(
         }.onFailure { e -> log("[config] failed to persist config to disk: $e") }
     }
 
-    /** MUTATION-path read (DR-9, the KeyStore.entriesStrict doctrine): ABSENT = legitimately empty
-     *  (safe to seed); UNREADABLE = unknown state — abort THIS persist rather than merge over an
-     *  empty base and atomically destroy every previously persisted knob. The runtime layer is
-     *  already applied either way; the file keeps its bytes for the operator to fix. */
+    /** MUTATION-path read (DR-9, the KeyStore.entriesStrict doctrine): PROVEN-ABSENT = legitimately
+     *  empty (safe to seed); UNREADABLE = unknown state — abort THIS persist rather than merge over
+     *  an empty base and atomically destroy every previously persisted knob. Absence is proven by
+     *  the read throwing NoSuchFile with no NOFOLLOW path entry — never by a Files.exists pre-gate,
+     *  which read false for an inaccessible config SYMLINK and let writeAtomic0600 atomically
+     *  REPLACE the operator's link with a fresh file (the knobs on the real target shadowed, the
+     *  link destroyed). A dangling link aborts too: its entry exists, so seeding would replace it.
+     *  The runtime layer is already applied either way; the path keeps its shape for the operator
+     *  to fix. */
     private fun readOnDiskStrict(path: Path): JsonObject =
-        if (Files.exists(path)) {
-            Cancellables.runCatchingCancellable { json.parseToJsonElement(Files.readString(path)).jsonObject }
-                .getOrElse {
+        Cancellables.runCatchingCancellable { json.parseToJsonElement(Files.readString(path)).jsonObject }
+            .getOrElse {
+                val genuinelyAbsent = it is java.nio.file.NoSuchFileException &&
+                    !Files.exists(path, LinkOption.NOFOLLOW_LINKS)
+                if (!genuinelyAbsent) {
                     // IOException so the outer best-effort wrap catches it — an IllegalState would
                     // escape runCatchingCancellable's caught set and fail patch() itself.
-                    throw IOException("config.json unreadable ($it) — refusing to rewrite, persisted knobs preserved")
+                    throw IOException(
+                        "config.json unreadable ($it) — refusing to rewrite, persisted knobs preserved",
+                    )
                 }
-        } else {
-            JsonObject(emptyMap())
-        }
+                JsonObject(emptyMap())
+            }
 
     private fun mergePersisted(onDisk: JsonObject, applied: Map<String, Any?>): JsonObject =
         buildJsonObject {

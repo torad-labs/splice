@@ -1096,46 +1096,52 @@ id = "DR-61"
 phase = "responses"
 title = "Sweep 2026-08-31 (claude classifier lens F1): ResponsesEventReducer.onFailure envelope pick falls back to e[type] even when e IS the event (flat error / degenerate response.failed) - the SSE event discriminator (error/response.failed) rode into classify() as an authoritative vendor code, so every code-less flat error became deterministic, partial withheld, no re-POST - while with no code the message heuristics (try again) grant transient. NEVER-BELOW-STATUS-QUO breach on flat-error+salvage (pre-campaign re-POSTed). Fix: trust e[type] as provenance only when e !== evt; display chain unchanged byte-identical. Recorded as DR-10 reopen note too (same seam)."
 files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesEventReducer.kt", "gateway/dialect-openai-responses/src/test/kotlin/ResponsesReanchorTest.kt"]
-status = "done"
+status = "verified"
 verify = "cd gateway && ./gradlew :dialect-openai-responses:test --console=plain"
 # [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T11:16:08Z
 # [2026-08-31] ATTEST-START: tree=87ecc4be022c0092be47accc1b1af03d58ffa59d at=2026-08-31T11:16:08Z
 # [2026-08-31] ATTEST-START: tree=7c0410b102d26d01900e464f52799af50d9063d2 at=2026-08-31T11:16:08Z
 # [2026-08-31] 2026-08-31 FIXED (claude): guard landed — typeField rides into realCode only when e !== evt; display chain (code->type->upstream_failed) untouched byte-identically. RED proof: new arm 'a flat error event discriminator is not vendor provenance - DR-10' red on unfixed code at the partial assert (expected half an ans, was null), 12/1 XML-verified. GREEN: ResponsesReanchorPartialTest 12/0 + :dialect-openai-responses:detekt clean. Arm pins: flat error {code:null, message:...try again} after prose -> providerReported, partial carries salvage, continuationForFailure returns marker-continuation containing the salvage.
 # [2026-08-31] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
+# [2026-08-31] VERDICT: outcome=accepted
+# [2026-08-31] 2026-08-31 codex replay on 37293525: ACCEPTED — flat-event type-provenance mutant red at ResponsesReanchorTest:299, restored arm green, scoped diff empty.
 
 [[items]]
 id = "DR-62"
 phase = "auth"
 title = "Sweep 2026-08-31 (claude absence lens F1): grok+kimi rejectedOrRetry swallow the G1 confirming-reread failure - getOrElse { return Rejected(reason) } returns the bare reason, so an UNCONFIRMED rejection armed the invalid_grant latch (breaking G15's survived-the-race contract) and the flatten logged 'refresh rejected: invalid_grant' when the proximate failure was a read error. Codex twin already returns the composite reason. Fix: codex-parity composite 'reason; credential reread failed: detail' - names the failure AND defeats the exact-match latch arm."
 files = ["gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthDescribe.kt", "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiRefreshedTokens.kt", "gateway/provider-grok/src/test/kotlin/grok/GrokAuthProviderTest.kt", "gateway/provider-kimi/src/test/kotlin/kimi/KimiAuthProviderTest.kt"]
-status = "done"
+status = "verified"
 verify = "cd gateway && ./gradlew :provider-grok:test :provider-kimi:test --console=plain"
 # [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T11:16:08Z
 # [2026-08-31] ATTEST-START: tree=406be68c8f8fc5fae0eef4b66606846e529fd047 at=2026-08-31T11:16:08Z
 # [2026-08-31] ATTEST-START: tree=c35feef0b30b83faaea4a69a90d893e1593ef4b8 at=2026-08-31T11:16:08Z
 # [2026-08-31] 2026-08-31 FIXED (claude): composite-reason reread landed in both twins + private REFRESH_ERROR_SNIPPET=160 consts (codex-file idiom). Arms: grok 'a failed confirming reread names the failure and never arms the latch' (GrokAuthProviderTest, chmod-000 dir inside refreshCall) + kimi same-name arm in NEW KimiRereadFailureTest class (KimiAuthProviderTest.kt at LargeClass ceiling, SH-01 precedent). GREEN: grok 21/0, kimi 1/0. MUTANTS (old swallow restored, one at a time): grok 21/1 red exactly the new arm — failure message shows bare '[grok-auth] refresh rejected by token endpoint: invalid_grant'; kimi 1/1 red same signature (first combined run was a stale-XML false green — gradle stopped at grok's failing task; replayed solo). Both restored byte-identical (diff -q + sha256 groups).
 # [2026-08-31] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
+# [2026-08-31] VERDICT: outcome=accepted
+# [2026-08-31] 2026-08-31 codex replay: ACCEPTED — old reread-swallow mutant red independently for Grok (:423) and Kimi (:474); restored; scoped diff empty.
 
 [[items]]
 id = "DR-63"
 phase = "usage"
 title = "Sweep 2026-08-31 (claude absence lens F2): PerfStats.tailNumeric + CompactStats.read re-armed the once-per-episode unreadable latch only on a NON-EMPTY parse (.also isNotEmpty guard) - a file recovering EMPTY (zero-byte create after ENOSPC, all-torn tail) left the latch armed so every LATER unreadable episode was silent forever. RateLimitFile unaffected (empty parse is loud). Fix: re-arm moves to onSuccess - ANY healthy read closes the episode; genuine-absence re-arm unchanged."
 files = ["gateway/gateway/src/main/kotlin/splice/gateway/perf/PerfStats.kt", "gateway/gateway/src/main/kotlin/splice/gateway/compact/Compact.kt", "gateway/gateway/src/test/kotlin/GatewayStateAbsenceTest.kt"]
-status = "done"
+status = "verified"
 verify = "cd gateway && ./gradlew :gateway:test --tests GatewayStateAbsenceTest --console=plain"
 # [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T11:16:08Z
 # [2026-08-31] ATTEST-START: tree=21c03f77e110fd577ec135a3af7188faa69380e0 at=2026-08-31T11:16:08Z
 # [2026-08-31] ATTEST-START: tree=46902774efc56f841af661bb37914b4b7dd0f34b at=2026-08-31T11:16:08Z
 # [2026-08-31] 2026-08-31 FIXED (claude): re-arm moved to .onSuccess in both readers; .also isNotEmpty guard removed; comment carries the sweep law. New arm 'a healthy-but-empty read re-arms the once-per-episode latch - DR-60' drives perf AND compact through episode1-unreadable -> healthy-EMPTY recovery -> episode2-unreadable, asserting 2 log lines each. GREEN: GatewayStateAbsenceTest 4/0. MUTANT (isNotEmpty guard restored in both): 4/1 red exactly 'perf episode two must log: expected 2 but was 1'; restored byte-identical (diff -q both files).
 # [2026-08-31] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
+# [2026-08-31] VERDICT: outcome=accepted
+# [2026-08-31] 2026-08-31 codex replay: ACCEPTED — old non-empty-rearm mutant red independently for Perf (line 114) and Compact (line 132); restored; scoped diff empty.
 
 [[items]]
 id = "DR-64"
 phase = "launch"
 title = "Sweep 2026-08-31 (claude absence lens F3 + codex independent red repro, same day): JsonStateReads carried the forbidden exists/symlink pre-gate into BOTH modes. STRICT: a real local .claude.json under an untraversable head dir read as absent -> materialize rebuilt it over the operator's keys (codex probe: operator_key must-survive overwritten); a symlinked local (dotfiles) read as fresh -> writeAtomic0600 ATOMIC_MOVE replaced the operator's link with a plain file. TOLERANT: unreadable global sources silently blanked every carried key; readable dotfiles symlinks silently skipped the mcp/portKeys inherit. Fix: direct-read both modes; only NoSuch+no-NOFOLLOW-entry is quiet-empty; strict aborts on symlink (KeyStore.entriesStrict doctrine) and on indeterminate access BEFORE mutation; tolerant logs 'NOT inherited' loud."
 files = ["gateway/core/src/main/kotlin/splice/core/launch/ClaudeConfigMaterializer.kt", "gateway/core/src/test/kotlin/ClaudeConfigMaterializerSafetyTest.kt"]
-status = "done"
+status = "verified"
 verify = "cd gateway && ./gradlew :core:test --tests JsonStateReadsSafetyTest --tests ClaudeConfigMaterializerSafetyTest --tests ClaudeConfigMaterializerTest --console=plain"
 # [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T11:21:10Z
 # [2026-08-31] ATTEST-START: tree=a32cbd60d49133c17d828b99a756514fe7b93ce0 at=2026-08-31T11:21:10Z
@@ -1143,6 +1149,8 @@ verify = "cd gateway && ./gradlew :core:test --tests JsonStateReadsSafetyTest --
 # [2026-08-31] 2026-08-31 FIXED (claude): JsonStateReads rewritten (ctor gains LogSink); tolerant = direct read, getOrElse classifies, non-absence logs '[materialize] path unreadable — global state NOT inherited by this head'; strict = isSymbolicLink -> throw (refusing to replace the operator's link), direct read, indeterminate -> throw before mutation, proven absence -> EMPTY (fresh head seed). readSettingsModelBase's own documented model-preservation pre-guard untouched (caller policy, not absence classification). NEW class JsonStateReadsSafetyTest (safety suite at LargeClass ceiling), 4 arms: untraversable-dir abort-before-mutation w/ SymlinkOp restoring seam (codex's repro shape), symlinked-local abort + link survives, unreadable-global loud degrade, symlinked-global still feeds mcp inherit. GREEN 4/0 + neighbors 7/0 + 22/0. MUTANT: old pre-gate impl restored -> 4/4 red; restored byte-identical (diff -q).
 # [2026-08-31] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
 # [2026-08-31] 2026-08-31 THIRD LEG (codex repro, model-base flavor): readSettingsModelBase's own exists(NOFOLLOW) pre-gate + tolerant swallow read a REAL-but-unreadable local settings.json as EMPTY and rebuilt over it, silently resetting the operator's saved model. Landed: symlink stays the deliberate EMPTY (documented), direct read otherwise; corrupt CONTENT still rebuilds (materializer owns the file); indeterminate ACCESS (IOException, not genuine absence) aborts before replacement. New arm 'an unreadable real settings file aborts instead of being rebuilt over' (file-level chmod flavor of codex's probe — dir-level is already covered by the strict arm since DR-64 aborts at the earlier strict read). GREEN 5/0 + neighbors + :core:detekt; MUTANT (old pre-gate restored) 5/1 red exactly the new arm; restored byte-identical.
+# [2026-08-31] VERDICT: outcome=accepted
+# [2026-08-31] 2026-08-31 codex replay: ACCEPTED — strict pre-gate mutant red on recovery-overwrite + local-symlink arms; tolerant mutant red on unreadable-global/symlinked-global/security arms; settings pre-gate red at :338; restored suite green. Codex explicitly accepts the deliberate readable-global-symlink read-through (stow/chezmoi inheritance; tolerant sources never rewritten).
 
 [[items]]
 id = "DR-65"
@@ -1156,45 +1164,88 @@ verify = "cd gateway && ./gradlew :core:test :provider-codex:test :provider-grok
 # [2026-08-31] ATTEST-START: tree=0f34138075f6554362623bded89131ee399bde5d at=2026-08-31T11:30:22Z
 # [2026-08-31] 2026-08-31 FIXED (claude): new splice.core.util.SafeFailureText.render — FileSystemException/Socket/UnknownHost/InterruptedIO/EOF keep toString (paths+hosts, safe+useful); everything else renders class-name-only via toString().substringBefore(':') (reflection-free after kt-no-reflection wall). 13 sinks patched: RefreshOutcome flatten (ReadFailed+TransportFailed), codex/grok/kimi readSnapshot logs, codex/grok/kimi describe read_error, 3x reread composite details (DR-62's .message replaced), JsonStateReads tolerant log + strict throw + readSettingsModelBase throw, MgmtKey unreadable, KeyStore UNREADABLE warn, ConfigService config.json (nullable via ?.let), KimiDeviceIdentity throw. Triage recorded: RateLimitFile/Compact/PerfStats logs NOT routed (instrument files, no credential bytes). RED-FIRST: 4 sentinel arms (codex/grok/kimi providers over credentials+refresh+describe; materializer strict abort + tolerant degrade) written before the patch — all 4 red with the sentinel visible in the failure text (6/1, 22/1, 2/1, 6/1); after the patch all green (6/0, 22/0, 2/0, 6/0), diagnostics still classify (NOT-a-logged-out-state / NOT-inherited asserts). Full 6-module tests+detekt green, walls 0.
 # [2026-08-31] ATTEST: scoped diffstat: .../main/kotlin/splice/core/auth/RefreshOutcome.kt |  5 +++-- | .../splice/provider/codex/CodexAuthDescribe.kt     |  5 +++-- | .../kotlin/splice/provider/codex/CodexAuthJson.kt  |  6 ++++- | .../src/test/kotlin/CodexAuthAbsenceTest.kt        | 26 ++++++++++++++++++++++ | .../splice/provider/grok/GrokAuthDescribe.kt       |  5 +++-- | .../kotlin/splice/provider/grok/GrokAuthJson.kt    |  6 ++++- | .../src/test/kotlin/grok/GrokAuthProviderTest.kt   | 23 +++++++++++++++++++ | .../splice/provider/kimi/KimiRefreshedTokens.kt    | 10 ++++++--- | .../src/test/kotlin/kimi/KimiAuthProviderTest.kt   | 21 +++++++++++++++++ | 9 files changed, 96 insertions(+), 11 deletions(-); sidecar: .claude/ledger-diffs/DR-65.diff; off-scope: gateway/core/src/main/kotlin/splice/core/config/ConfigService.kt, gateway/core/src/main/kotlin/splice/core/config/KeyStore.kt, gateway/core/src/main/kotlin/splice/core/config/MgmtKey.kt, gateway/core/src/main/kotlin/splice/core/launch/ClaudeConfigMaterializer.kt, gateway/core/src/main/kotlin/splice/core/util/SafeFailureText.kt, gateway/core/src/test/kotlin/ClaudeConfigMaterializerSafetyTest.kt, gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiDeviceIdentity.kt
+# [2026-08-31] VERDICT: outcome=redo gap=virtual-toString escape: a throwable overriding toString() with colon-free text passes verbatim through substringBefore(':') — non-allowlisted classes must render a fixed literal with no virtual call
+# [2026-08-31] 2026-08-31 codex replay: 4 production sentinel arms green + verbatim-diagnostic mutant red all four (materializer:365, Codex:98, Grok:454, Kimi:502) — parser-byte wiring mutation-proven. REDO solely for the virtual-toString escape (codex probe red at SafeFailureTextProbeTest:13). Fix: fixed literal for non-allowlisted classes; permanent direct sanitizer arm in :core.
+# [2026-08-31] ATTEST-START: tree=b69cfbad0effe2a9cd37233972f305c1c254bd6c at=2026-08-31T12:04:51Z
+# [2026-08-31] 2026-08-31 redo landed: render() executes NO virtual method outside the fs/net allowlist — non-allowlisted failures render the fixed literal 'failure (message withheld — may quote file bytes)'. New SafeFailureTextTest (:core, 3 arms): hostile toString-override arm RED on pre-fix render (1/3 failures, XML 12:14:01), parser-quote-withheld + filesystem-text-control arms; restore cmp byte-identical, green 3/3. The 4 production sentinel arms unaffected (assert secret-absence, not render shape).
+# [2026-08-31] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: gateway/app/src/test/kotlin/CliAuthPresenceTest.kt, gateway/app/src/test/kotlin/DoctorShimAbsenceTest.kt, gateway/app/src/test/kotlin/LogSurfaceAbsenceTest.kt, gateway/core/src/main/kotlin/splice/core/util/SafeFailureText.kt, gateway/core/src/test/kotlin/SafeFailureTextTest.kt, gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt, gateway/provider-spi/src/test/kotlin/UpstreamFailureRetryWordingTest.kt
 
 [[items]]
 id = "DR-66"
 phase = "config"
 title = "codex sweep 2026-08-31: TopologyLoader.kt:70-74 exists-then-write clobber — if (!Files.exists(path)) then Files.writeString (TRUNCATE_EXISTING default) writes starter defaults; a temporarily untraversable EXISTING splice.toml (exists=false through denied parent) or a concurrent creator between check and write gets overwritten once access recovers. DaemonTest covers clean absence only. Repair: direct-read first; first-run creation via CREATE_NEW (never truncate an unobserved file); on FileAlreadyExists read the winner; indeterminate access fails loud. Red-prove with a deterministic seam/interleaving arm before repair."
 files = ["gateway/app/src/main/kotlin/splice/app/TopologyLoader.kt", "gateway/app/src/test/kotlin/DaemonTest.kt"]
-status = "todo"
+status = "done"
 verify = "cd gateway && ./gradlew :app:test --console=plain"
+# [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T11:54:34Z
+# [2026-08-31] ATTEST-START: tree=66f4af9b54685e7bb83a9cb374e2962d92c62321 at=2026-08-31T11:54:34Z
+# [2026-08-31] ATTEST-START: tree=0a290fb83e045a24560feff5875a36dd7000b864 at=2026-08-31T11:54:34Z
+# [2026-08-31] 2026-08-31 FIXED (claude): loadOrMaterializeWithDigest — read IS the probe; only NoSuch+no-NOFOLLOW-entry materializes; dangling symlink or indeterminate access rethrows before any write. materializeStarter uses CREATE_NEW (never truncates an unobserved path — closes the check/write race BY CONSTRUCTION; the codex interleaving case cannot lose a concurrent creator because symlink-less CREATE_NEW loses instead and reads the winner back on FileAlreadyExists). RED-FIRST: dangling-dotfiles-symlink arm red on unfixed code (starter written THROUGH the link, 3/1); denied-parent-intact pin + genuine-absence control green. Post-fix TopologyLoaderAbsenceTest 3/0 + DaemonTest 12/0 + ExampleConfigTest 15/0 + :app:detekt.
+# [2026-08-31] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
 
 [[items]]
 id = "DR-67"
 phase = "tooling"
 title = "codex sweep 2026-08-31: InstallLinker.kt:67-89 TOCTOU — requireReplaceableLink checks, then Files.move(candidate, link, ATOMIC_MOVE, REPLACE_EXISTING) can overwrite a foreign regular file created after the check (or revealed after an indeterminate false). Repair shape: staged candidate + never REPLACE an unobserved destination — delete only a CONFIRMED symlink then move WITHOUT REPLACE_EXISTING; a concurrent creator wins and install fails loud. Red-prove with a staging seam/interleaving arm."
 files = ["gateway/app/src/main/kotlin/splice/app/cli/InstallLinker.kt", "gateway/app/src/test/kotlin/InstallCommandTest.kt"]
-status = "todo"
+status = "done"
 verify = "cd gateway && ./gradlew :app:test --console=plain"
+# [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T11:54:34Z
+# [2026-08-31] ATTEST-START: tree=aa17573db65fe465ae7074b59318bde89c292729 at=2026-08-31T11:54:34Z
+# [2026-08-31] ATTEST-START: tree=21a807f2487fd4dcb9c754703e1a7dca391bcf0a at=2026-08-31T11:54:34Z
+# [2026-08-31] 2026-08-31 FIXED (claude): linkOne — delete only a CONFIRMED symlink, then claim via new ExclusiveSymlinkClaim (symlink(2) is exclusive; it can NEVER replace). NOTE on the spec: Files.move without REPLACE_EXISTING is NOT a safe primitive on Linux (rename(2) silently replaces) — direct createSymbolicLink is the honest never-replace claim; staging temp removed. WrapperClaim fun-interface seam (SymlinkOp precedent, kt-no-lambda-seam-compliant) lets the arm interleave the foreign creator deterministically on the production path. GREEN: InstallCommandTest 11/0 + InstallLinkerClaimTest 2/0 (interleaved-creator-wins + existing-symlink-repoint control). MUTANT: ExclusiveSymlinkClaim body reverted to exact pre-fix staged ATOMIC_MOVE+REPLACE_EXISTING -> 2/1 red (nothing thrown, foreign eaten); restored byte-identical (diff -q).
+# [2026-08-31] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
 
 [[items]]
 id = "DR-68"
 phase = "hygiene"
 title = "codex sweep 2026-08-31 (display class): FileSources.kt:46-57 (dashboard log source), LogsCommand.kt:35-38 (splice logs), DaemonSpawn.kt:50-56 (boot-failure tail) — exists/catch collapse renders an untraversable logs parent as an empty dashboard / empty logs / suppressed boot tail with no diagnosis. Class-law repair: may degrade empty but must distinguish proven absence from access-indeterminate with one explicit line/surface; denied-parent arms for all three."
 files = ["gateway/app/src/main/kotlin/splice/app/FileSources.kt", "gateway/app/src/main/kotlin/splice/app/cli/LogsCommand.kt", "gateway/app/src/main/kotlin/splice/app/cli/DaemonSpawn.kt", "gateway/app/src/test/kotlin/LogsCommandTest.kt", "gateway/app/src/test/kotlin/LogFileSourceTagTest.kt"]
-status = "todo"
+status = "done"
 verify = "cd gateway && ./gradlew :app:test --console=plain"
+# [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T12:12:33Z
+# [2026-08-31] ATTEST-START: tree=5722b4399a1406fad9c700eadd8e4dcedba68ba1 at=2026-08-31T12:12:33Z
+# [2026-08-31] ATTEST-START: tree=e85f96a012364f88d17a2f1102c0237cfa20b678 at=2026-08-31T12:12:33Z
+# [2026-08-31] 2026-08-31 landed: LogFileSource.tail renders one in-band '[logs unavailable: ... unreadable (...)]' line on access-indeterminate (absence stays quiet ''); DaemonSpawn.printBootLogTail says 'boot log ... is unreadable' instead of silent; LogsCommand.followTail warns once per episode and keeps polling. LogSurfaceAbsenceTest 4 arms: 2 RED on pre-fix FileSources+DaemonSpawn (XML 12:14:03 failures=2), 2 absence controls green both ways; restore cmp byte-identical, green 4/4. followTail is an unbounded poll loop — no direct arm; its classify+latch is the same proven shape (DR-63 latch + this item's classify), noted honestly.
+# [2026-08-31] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
 
 [[items]]
 id = "DR-69"
 phase = "hygiene"
 title = "codex sweep 2026-08-31 (doctor class): DoctorCommand.loadTopology:77-81, DoctorInstallProbes.shimCheck:49-57, DoctorPathCheck.wrapperCheck:29-41 — exists pre-gates report denied config/share/bin parents as topology Absent (INFO + auth checks skipped) / shim missing / wrapper not-linked. Doctor's contract is exact diagnosis: direct stat/read classification, unreadable FAIL/WARN distinct from true absence; permanent denied-parent arms for all three."
 files = ["gateway/app/src/main/kotlin/splice/app/cli/DoctorCommand.kt", "gateway/app/src/main/kotlin/splice/app/cli/DoctorProbes.kt", "gateway/app/src/main/kotlin/splice/app/cli/DoctorRuntime.kt", "gateway/app/src/main/kotlin/splice/app/InstallShim.kt", "gateway/app/src/main/kotlin/splice/app/Main.kt", "gateway/app/src/test/kotlin/splice/app/cli/DoctorCommandTest.kt", "gateway/app/src/test/kotlin/InstallCommandTest.kt", "gateway/app/src/test/kotlin/MainTest.kt"]
-status = "todo"
+status = "done"
 verify = "cd gateway && ./gradlew :app:test --console=plain"
 # [2026-08-31] FENCE-EDITED: files = ["gateway/app/src/main/kotlin/splice/app/cli/DoctorCommand.kt", "gateway/app/src/main/kotlin/splice/app/cli/DoctorProbes.kt", "gateway/app/src/main/kotlin/splice/app/cli/DoctorRuntime.kt", "gateway/app/src/test/kotlin/splice/app/cli/DoctorCommandTest.kt"] -> files = ["gateway/app/src/main/kotlin/splice/app/cli/DoctorCommand.kt", "gateway/app/src/main/kotlin/splice/app/cli/DoctorProbes.kt", "gateway/app/src/main/kotlin/splice/app/cli/DoctorRuntime.kt", "gateway/app/src/main/kotlin/splice/app/InstallShim.kt", "gateway/app/src/main/kotlin/splice/app/Main.kt", "gateway/app/src/test/kotlin/splice/app/cli/DoctorCommandTest.kt", "gateway/app/src/test/kotlin/InstallCommandTest.kt", "gateway/app/src/test/kotlin/MainTest.kt"] (by=orchestrator implied; no flag)
 # [2026-08-31] 2026-08-31 codex extension: InstallShim.kt:30-47 pre-gates marker read + staleness warning with exists — a present shim behind denied access returns null, Main emits no stale/unreadable warning, doctor compounds with 'missing'. Same repair: read/stat first; absence may stay null; indeterminate surfaces an unreadable warning (never file bytes). Denied-share-dir arms alongside readable/current/stale/clean-absence.
+# [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T12:12:33Z
+# [2026-08-31] ATTEST-START: tree=2f7bd7bffcdee9263a53455dc9ca7038e8d1d2ed at=2026-08-31T12:12:33Z
+# [2026-08-31] ATTEST-START: tree=c4aa7e4f6260b06a9937fac7e2b34dd871e16279 at=2026-08-31T12:12:33Z
+# [2026-08-31] 2026-08-31 landed: wrapperCheck entry-stat classifies unreadable-not-missing before symlink probes; DoctorInstallProbes.shimCheck splits proven-missing vs unreadable; InstallShim.installedShimVersion THROWS on indeterminate (both callers classify), shimStalenessWarning renders UNREADABLE warning. DoctorShimAbsenceTest 5 arms: 3 RED pre-fix (failures=3, XML 12:14:03), not-linked + absent-null controls green both ways; restore cmp byte-identical, green 5/5. DoctorCommand.loadTopology (private) carries the same classify into DoctorTopology.Broken vs Absent — no direct arm (private, surfaced only through full doctor run), same-shape note.
+# [2026-08-31] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
 
 [[items]]
 id = "DR-70"
 phase = "tooling"
 title = "codex sweep 2026-08-31 (CLI assembly of the DR-59 class): LoginIo.credentialConfigured:102-120 + AdminSupport.authPresent:104-105 collapse denied OAuth-file access to false — status/login/setup/doctor tell the operator to log in while intact tokens sit one chmod away. Boolean presence cannot encode it: use present/absent/read-error (or direct read/stat with caller-specific loud failure); denied-parent arms across status/login/setup/doctor; never read or log credential contents. Also (lower leg) AdminSupport.selfJar:76-85 takeIf{exists} — inaccessible fallback jar reports dev-build/not-installed instead of unreadable; direct metadata classification, clean absence keeps null."
 files = ["gateway/app/src/main/kotlin/splice/app/LoginIo.kt", "gateway/app/src/main/kotlin/splice/app/cli/AdminSupport.kt", "gateway/app/src/test/kotlin/AdminSupportTest.kt", "gateway/app/src/test/kotlin/splice/app/cli/LoginCommandTest.kt", "gateway/app/src/test/kotlin/StatusCommandTest.kt"]
-status = "todo"
+status = "done"
 verify = "cd gateway && ./gradlew :app:test --console=plain"
+# [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T12:12:33Z
+# [2026-08-31] ATTEST-START: tree=cde0ab5d187766bfd2c037fcccc1af9f85ad2e85 at=2026-08-31T12:12:33Z
+# [2026-08-31] ATTEST-START: tree=25a0452a34022f95053aefc277827de203720d4a at=2026-08-31T12:12:33Z
+# [2026-08-31] 2026-08-31 landed: AdminSupport.authPresent + LoginIo.credentialFileConfigured treat denied-access credential files as present/configured with 'fix access, not login' said on stdout; AdminSupport.selfJar returns the unreadable installed jar instead of misreporting dev-build/not-installed. CliAuthPresenceTest 3 arms ALL RED pre-fix (failures=3, XML 12:14:03), absence controls inside each arm; restore cmp byte-identical, green 3/3.
+# [2026-08-31] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
+
+[[items]]
+id = "DR-71"
+phase = "repair"
+title = "Classifier retry-wording residue (codex adjudication 2026-08-31, 6/6 red probe): clause boundaries missing em/en dash + line breaks, no 'retry' invitation synonym, 'service is unavailable' unmatched, engine_overloaded/model_overloaded absent from RETRYABLE_CODES, 120-char clause budget outrun by long negations, won't/will-not negators missing"
+files = ["gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt", "gateway/provider-spi/src/test/kotlin/UpstreamFailureRetryWordingTest.kt"]
+status = "done"
+verify = "gradle :provider-spi:test --tests 'UpstreamFailureRetryWordingTest' green; pre-fix classifier red on all six cases"
+# [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T12:12:33Z
+# [2026-08-31] ATTEST-START: tree=aa6451b240950158bfaf1739800c301f91759172 at=2026-08-31T12:12:33Z
+# [2026-08-31] ATTEST-START: tree=676473e39d396165181f1c1034abf0be67450291 at=2026-08-31T12:12:34Z
+# [2026-08-31] 2026-08-31 landed: negation clause boundary now includes em/en dash + CR/LF and spans the full MAX_MESSAGE budget (was 120 chars); won't/will-not join the negators; 'retry' joins 'try again' as the invitation synonym (\b keeps retried/retries out); service[- ]is[- ]unavailable matches as a qualified outage; engine_overloaded + model_overloaded join RETRYABLE_CODES. UpstreamFailureRetryWordingTest 7 arms: 7/7 RED on pre-fix classifier (XML 12:14:00), green 7/7 post-fix; existing UpstreamFailureClassifierTest 18/18 green post-fix (DR-45/DR-10 postures preserved); restore cmp byte-identical. Matches codex's 6/6 probe.
+# [2026-08-31] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none

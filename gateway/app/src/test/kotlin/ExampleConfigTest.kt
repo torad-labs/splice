@@ -126,6 +126,41 @@ class ExampleConfigTest {
         }
     }
 
+    // DR-43 redo (codex denominator catch): the documented-degradation set is FOUR local decisions —
+    // grok's declined-fable marker plus three opus-only markers — anchored by the central slot note.
+    // Each marker is pinned INSIDE its own head's section slice (or the comment block directly above
+    // its header), with boundaries derived from the source text, so one comment elsewhere cannot
+    // satisfy all four. Removing any single marker reds by head name.
+    @Test
+    fun `every tier decision is documented beside its own head - DR-43`() {
+        val text = exampleToml()
+        val header = Regex("\\n\\[heads\\.[a-z-]+]")
+        fun section(head: String): String {
+            val headerAt = text.indexOf("[heads.$head]")
+            assertTrue(headerAt >= 0, "missing [heads.$head]")
+            val preambleStart = text.lastIndexOf("\n\n", headerAt).coerceAtLeast(0)
+            val end = header.find(text, headerAt + 1)?.range?.first ?: text.length
+            return text.substring(preambleStart, end)
+        }
+
+        val central = section("claudex")
+        assertTrue(
+            "A tier NO row" in central && "clean pre-upstream 400" in central,
+            "the central slot-semantics note must live on [heads.claudex]",
+        )
+        val grok = section("claude-grok")
+        assertTrue(
+            "No fable analog" in grok && "400s cleanly" in grok,
+            "grok must document its declined fable tier beside its own roster",
+        )
+        for (head in listOf("openrouter", "fireworks", "claude-kimi")) {
+            assertTrue(
+                "opus-only on purpose" in section(head),
+                "$head must document its opus-only decision beside its own roster",
+            )
+        }
+    }
+
     // DR-24 redo (codex honesty catch): this test used to CLAIM the documented xAI values "carry
     // through the real catalog" but only checked grok-4.6 after catalogFor — and 4.6's roster window
     // (500k) equals the head override (500k), so it could never reveal the flattening. The head's

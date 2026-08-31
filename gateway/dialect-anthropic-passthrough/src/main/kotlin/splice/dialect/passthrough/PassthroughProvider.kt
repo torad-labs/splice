@@ -1,16 +1,16 @@
 // NEW: (no Node source) the ONE provider for the anthropic-passthrough dialect. Every vendor on
-// this dialect differs only in DECLARED data — quirks (which deformations its wire needs), static
-// headers, and whether it has computed per-install identity state — so there is no vendor subclass
-// to write. Kimi was the dialect's only consumer and its provider class held the vendor facts as
-// code; the claude head needs the same dialect with none of them (campaign claude-head, CH-3).
+// this dialect differs only in assembly-provided data — quirks, static headers, and optional
+// runtime host/OS identity — so there is no vendor subclass. Generic vendors declare their facts in
+// TOML; Kimi OAuth/API-key arms receive compatibility defaults before TOML overrides. CLIENT stays
+// neutral regardless of provider ID (campaign claude-head, CH-3).
 //
 // What stays in code here is what is genuinely invariant for the dialect: the Anthropic Messages
 // path, `Accept: text/event-stream`, and OFF reasoning display (passthrough emits REAL thinking
 // blocks, so the transcript text-mirror must not double-render them).
 //
 // Auth is applied by UpstreamClient from the head's AuthProvider — this provider NEVER sets an
-// Authorization header itself, which is what lets kimi ride Credentials.ApiKey(x-api-key) and a
-// client-auth head forward the caller's own credential untouched.
+// Authorization header itself: Kimi OAuth rides Credentials.ApiKey(x-api-key), Kimi API-key auth
+// uses the configured Bearer path, and a client-auth head forwards the caller credential untouched.
 package splice.dialect.passthrough
 
 import splice.core.auth.Credentials
@@ -27,11 +27,11 @@ import splice.spi.TurnSignals
 public class PassthroughProvider(
     private val tuning: ProviderTuning,
     private val quirks: PassthroughQuirks,
-    /** Operator-declared vendor headers (TOML `extra_headers`) — e.g. `anthropic-version`, a UA a
-     *  vendor gates on. Pure data, which is what makes a new anthropic-compatible vendor TOML-only. */
+    /** Effective vendor headers selected by assembly: generic and CLIENT arms contribute TOML
+     *  `extra_headers`; Kimi OAuth/API-key adds compatibility defaults that TOML can override. */
     private val staticHeaders: Map<String, String> = emptyMap(),
-    /** COMPUTED per-install identity a vendor requires (Kimi's persisted X-Msh-* device set). A
-     *  function, not config, precisely because it cannot be declared; absent for every other head. */
+    /** Computed runtime identity headers a vendor requires (Kimi OAuth/API-key's X-Msh host and OS
+     *  set). A function, not config, because these values are not operator declarations. */
     private val identityHeaders: IdentityHeaders = IdentityHeaders { emptyMap() },
     /** PT-002/v27: the daemon's configured default effort ([daemon] effort / Knob.EFFORT) — the
      *  session-stable proxy the request builder falls back to on a turn with no `thinking` config

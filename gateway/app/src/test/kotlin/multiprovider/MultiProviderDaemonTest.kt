@@ -1,9 +1,8 @@
-// NEW (P6-TOML): the zero-code multi-provider proof. One daemon, THREE heads defined purely in
-// TOML — codex (responses + chatgpt-oauth), grok (responses + api-key, session cache key), and
-// openrouter (openai-chat + api-key) — assembled by the (dialect, auth-kind) dispatch with NO new
-// Kotlin per vendor. Proves each head is built with the RIGHT provider + auth: all three reachable
-// on their ports, /api/heads reports each authKind, and a real turn to the openrouter head hits the
-// chat-shaped upstream with its api-key bearer (i.e. it was wired as chat, not codex).
+// NEW (P6-TOML): the zero-code multi-provider proof. One daemon, providers defined purely in TOML —
+// codex (responses + chatgpt-oauth), grok (responses + api-key, session cache key), openrouter
+// (openai-chat + api-key), generic Anthropic passthrough (api-key), and Kimi's built-in API-key
+// compatibility path. Dialect selects the arm, auth kind selects credentials, and provider ID owns
+// Kimi defaults; the generic vendors still require NO new Kotlin.
 package multiprovider
 
 import com.sun.net.httpserver.HttpExchange
@@ -77,6 +76,7 @@ private class AnthropicUpstream {
     private val pool = Executors.newCachedThreadPool()
     val baseUrl get() = "http://127.0.0.1:${server.address.port}"
     val seen = mutableListOf<Map<String, List<String>>>()
+    val bodies = mutableListOf<String>()
 
     init {
         server.executor = pool
@@ -91,7 +91,7 @@ private class AnthropicUpstream {
 
     private fun handle(ex: HttpExchange) {
         seen.add(ex.requestHeaders.entries.associate { it.key.lowercase() to it.value.toList() })
-        val _ = ex.requestBody.readBytes()
+        bodies.add(ex.requestBody.readBytes().toString(Charsets.UTF_8))
         ex.responseHeaders.add("Content-Type", "text/event-stream")
         ex.sendResponseHeaders(200, 0)
         val frames = listOf(
@@ -123,6 +123,8 @@ class MultiProviderDaemonTest {
     private val grokPort = freshPort()
     private val chatPort = freshPort()
     private val claudePort = freshPort()
+    private val neutralPort = freshPort()
+    private val kimiPort = freshPort()
 
     @BeforeAll
     fun setUp() {
@@ -133,23 +135,36 @@ class MultiProviderDaemonTest {
         Files.writeString(grokKey, """{"api_key":"xai-daemon-key"}""")
         val orKey = tmp.resolve("or.json")
         Files.writeString(orKey, """{"api_key":"or-daemon-key"}""")
+        val neutralKey = tmp.resolve("neutral.json")
+        Files.writeString(neutralKey, """{"api_key":"neutral-daemon-key"}""")
+        val kimiKey = tmp.resolve("kimi.json")
+        Files.writeString(kimiKey, """{"api_key":"kimi-daemon-key"}""")
         val statePaths = StatePaths(baseOverride = tmp.resolve("state"))
         key = MgmtKey(statePaths).get()
 
         daemon = Daemon(
-            topology = TopologyLoader.parse(topologyToml(codexAuth, grokKey, orKey)),
+            topology = TopologyLoader.parse(topologyToml(codexAuth, grokKey, orKey, neutralKey, kimiKey)),
             statePaths = statePaths,
             dashboardHtml = { "<!doctype html>" },
             log = {},
             refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
         )
         runBlocking { daemon.start() }
-        awaitListening(controlPort, codexPort, grokPort, chatPort, claudePort)
+        awaitListening(controlPort, codexPort, grokPort, chatPort, claudePort, neutralPort, kimiPort)
     }
 
-    // THE POINT: grok + openrouter are NEW vendors added as pure TOML — no new Kotlin per vendor.
-    private fun topologyToml(codexAuth: Path, grokKey: Path, orKey: Path): String =
-        providersToml(codexAuth, grokKey, orKey) + "\n" + headsToml()
+    // THE POINT: grok + openrouter + neutral are pure TOML vendors — no new Kotlin per vendor.
+    private fun topologyToml(
+        codexAuth: Path,
+        grokKey: Path,
+        orKey: Path,
+        neutralKey: Path,
+        kimiKey: Path,
+    ): String = listOf(
+        providersToml(codexAuth, grokKey, orKey),
+        apiKeyPassthroughProvidersToml(neutralKey, kimiKey),
+        headsToml(),
+    ).joinToString("\n")
 
     private fun providersToml(codexAuth: Path, grokKey: Path, orKey: Path): String = """
         [daemon]
@@ -189,7 +204,25 @@ class MultiProviderDaemonTest {
         [[providers.anthropic.models]]
         id = "claude-fable-5"
         context_window = 200000
+    """.trimIndent()
 
+    private fun apiKeyPassthroughProvidersToml(neutralKey: Path, kimiKey: Path): String = """
+        [providers.neutral]
+        dialect = "anthropic-passthrough"
+        base_url = "${anthropicMock.baseUrl}"
+        auth = { kind = "api-key", file = "${neutralKey.esc()}" }
+        extra_headers = { X-Vendor = "neutral" }
+        [[providers.neutral.models]]
+        id = "vendor-model"
+        context_window = 128000
+
+        [providers.kimi]
+        dialect = "anthropic-passthrough"
+        base_url = "${anthropicMock.baseUrl}"
+        auth = { kind = "api-key", file = "${kimiKey.esc()}" }
+        [[providers.kimi.models]]
+        id = "kimi-model"
+        context_window = 128000
     """.trimIndent()
 
     private fun headsToml(): String = """
@@ -216,6 +249,18 @@ class MultiProviderDaemonTest {
         port = $claudePort
         discovery_prefix = "claude-splice--"
         pinned_model = "claude-fable-5"
+
+        [heads.neutral]
+        provider = "neutral"
+        port = $neutralPort
+        discovery_prefix = "claude-neutral--"
+        pinned_model = "vendor-model"
+
+        [heads.kimi-api]
+        provider = "kimi"
+        port = $kimiPort
+        discovery_prefix = "claude-kimi--"
+        pinned_model = "kimi-model"
     """.trimIndent()
 
     @AfterAll
@@ -298,9 +343,56 @@ class MultiProviderDaemonTest {
         assertTrue(sent["authorization"] == listOf("Bearer callers-own-credential"), sent.toString())
         assertTrue(sent["anthropic-beta"] == listOf("oauth-2025-04-20"), sent.toString())
         assertTrue(sent["anthropic-version"] == listOf("2023-06-01"), sent.toString())
-        // and none of kimi's vendor identity leaked onto a head that never declared it
+        // and none of Kimi's vendor identity leaked onto a non-Kimi provider ID
         assertTrue(sent.keys.none { it.startsWith("x-msh-") }, sent.keys.toString())
         assertTrue(sent["user-agent"].orEmpty().none { it.contains("KimiCLI") }, sent.toString())
+    }
+
+    @Test
+    fun `generic api-key passthrough keeps vendor headers neutral`() = runBlocking {
+        val before = anthropicMock.seen.size
+        val body = client.post("http://127.0.0.1:$neutralPort/v1/messages") {
+            header("Authorization", "Bearer $key")
+            header("Content-Type", "application/json")
+            setBody(
+                """{"model":"claude-neutral--vendor-model","max_tokens":16,""" +
+                    """"messages":[{"role":"user","content":[{"type":"text","text":"hi",""" +
+                    """"cache_control":{"type":"ephemeral"}}]}],"stream":true}""",
+            )
+        }.bodyAsText()
+        assertTrue(body.contains("hi"), body)
+
+        assertEquals(before + 1, anthropicMock.seen.size)
+        val sent = anthropicMock.seen[before]
+        assertEquals(listOf("Bearer neutral-daemon-key"), sent["authorization"])
+        assertEquals(listOf("neutral"), sent["x-vendor"])
+        assertTrue(sent["anthropic-version"].isNullOrEmpty(), sent.toString())
+        assertTrue(sent.keys.none { it.startsWith("x-msh-") }, sent.keys.toString())
+        assertTrue(sent["user-agent"].orEmpty().none { it.contains("KimiCLI") }, sent.toString())
+        assertTrue(anthropicMock.bodies[before].contains("cache_control"), anthropicMock.bodies[before])
+    }
+
+    @Test
+    fun `kimi api-key passthrough retains Moonshot identity headers`() = runBlocking {
+        val before = anthropicMock.seen.size
+        val body = client.post("http://127.0.0.1:$kimiPort/v1/messages") {
+            header("Authorization", "Bearer $key")
+            header("Content-Type", "application/json")
+            setBody(
+                """{"model":"claude-kimi--kimi-model","max_tokens":16,""" +
+                    """"messages":[{"role":"user","content":[{"type":"text","text":"hi",""" +
+                    """"cache_control":{"type":"ephemeral"}}]}],"stream":true}""",
+            )
+        }.bodyAsText()
+        assertTrue(body.contains("hi"), body)
+
+        assertEquals(before + 1, anthropicMock.seen.size)
+        val sent = anthropicMock.seen[before]
+        assertEquals(listOf("Bearer kimi-daemon-key"), sent["authorization"])
+        assertEquals(listOf("2023-06-01"), sent["anthropic-version"])
+        assertEquals(listOf("KimiCLI/1.5"), sent["user-agent"])
+        assertEquals(listOf("splice"), sent["x-msh-platform"])
+        assertTrue(!anthropicMock.bodies[before].contains("cache_control"), anthropicMock.bodies[before])
     }
 
     @Test

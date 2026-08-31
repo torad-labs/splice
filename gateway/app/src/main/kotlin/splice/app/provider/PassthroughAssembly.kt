@@ -1,6 +1,6 @@
 // PORT-OF: splice/app/Daemon.kt (PassthroughAssembly.passthroughProviderFor) @ ed5c868 —
-// invariants unchanged: the anthropic-passthrough construction site — the dialect's ONE provider
-// fed DECLARED data, plus the TOML quirk overlay it reads (now QuirksOverlay.passthroughQuirks).
+// the anthropic-passthrough construction site — the dialect's ONE provider fed assembly-selected
+// base data plus the TOML quirk/header overlays (now QuirksOverlay.passthroughQuirks).
 package splice.app.provider
 
 import splice.core.auth.RefreshableAuthProvider
@@ -11,14 +11,14 @@ import splice.spi.Provider
 import splice.spi.ProviderTuning
 
 /**
- * The anthropic-passthrough construction site: the dialect's ONE provider fed DECLARED data, plus
- * the TOML quirk overlay it reads.
+ * The anthropic-passthrough construction site: the dialect's ONE provider fed effective quirks and
+ * headers selected by assembly then overlaid by TOML, plus optional Kimi runtime identity.
  */
 internal class PassthroughAssembly {
     private val quirksOverlay = QuirksOverlay()
 
-    /** The dialect's ONE provider, fed DECLARED data: TOML quirks overlaid on the head's base
-     *  profile, TOML static headers, and (kimi only) the computed device identity. */
+    /** The dialect's ONE provider, fed assembly-selected data: TOML quirks overlaid on the head's
+     *  base profile, provider-default headers overridden by TOML, and (Kimi only) device identity. */
     internal fun passthroughProviderFor(
         ctx: ProviderBuild,
         label: String,

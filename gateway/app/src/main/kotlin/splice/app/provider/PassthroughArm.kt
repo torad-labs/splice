@@ -1,14 +1,14 @@
 // PORT-OF: splice/app/Daemon.kt (ProviderAssembly.passthroughProvider, KIMI_BASE_HEADERS) @
-// ed5c868 — invariants unchanged: anthropic-passthrough dispatch: client-auth (no credential held)
-// vs kimi-oauth (device flow, x-api-key, proactive refresh) vs any other kind (ApiKeyAuthProvider
-// -> Bearer, correct for Moonshot's anthropic pay-per-token base). All three build the SAME generic
-// PassthroughProvider; what differs is DATA — the auth, the base quirk profile, and whether a
-// computed device identity rides along.
+// ed5c868 — anthropic-passthrough dispatch: client-auth holds no credential; Kimi can use OAuth or
+// API-key auth and keeps its Moonshot wire deformations; every other API-key vendor takes the
+// neutral profile. All arms build the SAME generic PassthroughProvider: auth kind selects the
+// credential, while provider ID selects Kimi's base quirks, static headers, and device identity.
 package splice.app.provider
 
 import splice.app.TopologyLoader
 import splice.core.auth.ClientAuthProvider
 import splice.core.config.StatePaths
+import splice.dialect.passthrough.IdentityHeaders
 import splice.dialect.passthrough.PassthroughQuirks
 import splice.dialect.passthrough.PassthroughQuirksDefaults
 import splice.provider.kimi.KimiDeviceIdentity
@@ -29,16 +29,11 @@ internal class PassthroughArm(
     private val passthroughAssembly: PassthroughAssembly,
     private val kimiOAuth: KimiOAuth,
 ) {
-    // anthropic-passthrough dispatch: kimi-oauth (device flow, x-api-key, proactive refresh) vs any
-    // other kind (ApiKeyAuthProvider → Bearer, correct for Moonshot's anthropic pay-per-token base).
-    // Both build the SAME generic PassthroughProvider; what differs is DATA — the auth, the base
-    // quirk profile, and whether a computed device identity rides along.
-    //
-    // The base profile is what a pre-campaign splice.toml relies on: a kimi-oauth head bases on
-    // Kimi's deformation set, so an operator who never declared the new quirks keeps working, while
-    // any knob their TOML DOES set still overrides. The api-key arm bases on Kimi's set too, because
-    // that arm exists for Moonshot's own anthropic endpoint (the pay-per-token twin of the OAuth
-    // head) — an unrelated anthropic-compatible vendor declares what it needs in TOML.
+    // The provider key, not the auth mechanism, owns vendor deformations. Kimi keeps its base
+    // quirks, static headers, and computed X-Msh identity under both OAuth and API-key auth, so a
+    // pre-campaign kimi head remains byte-identical. Every other API-key provider starts neutral and
+    // declares vendor facts in TOML; otherwise merely choosing api-key would silently impersonate
+    // Moonshot on every anthropic-compatible upstream.
     internal fun passthroughProvider(ctx: ProviderBuild, label: String): Wired {
         val key = ctx.key
         val providerCfg = ctx.providerCfg
@@ -51,6 +46,7 @@ internal class PassthroughArm(
                 auth,
             )
         }
+        val kimiProvider = ctx.head.provider == "kimi"
         val (auth, identity) = when (providerCfg.auth.kind) {
             KIMI_OAUTH -> kimiOAuth.kimiOauthAuth(ctx)
             else -> {
@@ -58,7 +54,12 @@ internal class PassthroughArm(
                     envVar = providerCfg.auth.effectiveApiKeyEnv(key),
                     keyFile = providerCfg.auth.file?.let { Paths.get(TopologyLoader.expandHome(it)) },
                 )
-                apiKey to KimiDeviceIdentity(deviceIdPath = statePaths.stateDir.resolve("$key-device_id"))
+                val kimiIdentity = if (kimiProvider) {
+                    KimiDeviceIdentity(deviceIdPath = statePaths.stateDir.resolve("$key-device_id"))
+                } else {
+                    null
+                }
+                apiKey to kimiIdentity
             }
         }
         return Wired(
@@ -66,9 +67,17 @@ internal class PassthroughArm(
                 ctx = ctx,
                 label = label,
                 auth = auth,
-                base = PassthroughQuirksDefaults().kimi(key),
-                baseHeaders = KIMI_BASE_HEADERS,
-                identityHeaders = identity::headers,
+                base = if (kimiProvider) {
+                    PassthroughQuirksDefaults().kimi(key)
+                } else {
+                    PassthroughQuirks(providerTag = key)
+                },
+                baseHeaders = if (kimiProvider) KIMI_BASE_HEADERS else emptyMap(),
+                identityHeaders = if (kimiProvider) {
+                    IdentityHeaders(requireNotNull(identity)::headers)
+                } else {
+                    IdentityHeaders { emptyMap() }
+                },
             ),
             auth,
         )

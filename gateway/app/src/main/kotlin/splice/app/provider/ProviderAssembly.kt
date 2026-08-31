@@ -1,6 +1,6 @@
 // PORT-OF: splice/app/Daemon.kt (ProviderAssembly.buildProvider + collaborator wiring) @ ed5c868 —
-// invariants unchanged: the (dialect, auth.kind) dispatch, reduced to buildProvider plus the arm
-// collaborators it holds. [probeScope] is the daemon's OWN scope, passed by reference on purpose —
+// dispatch selects an arm by dialect, credentials by auth kind, and Kimi compatibility defaults by
+// provider ID. [probeScope] is the daemon's OWN scope, passed by reference on purpose —
 // every auth provider built under this tree receives it as `prefetchScope`, and Daemon.stop()
 // cancels exactly that scope. Constructing a second scope anywhere here would leave half the
 // prefetch coroutines alive after stop().
@@ -15,7 +15,7 @@ import splice.core.topology.Dialect
 import splice.core.util.LogSink
 
 /**
- * The (dialect, auth.kind) dispatch: everything that turns one head's resolved [ProviderBuild]
+ * The dialect/auth/provider-ID dispatch: everything that turns one head's resolved [ProviderBuild]
  * into the provider + auth pair it serves with. [probeScope] is the daemon's OWN scope, passed by
  * reference on purpose — see file header.
  */
@@ -43,8 +43,9 @@ internal class ProviderAssembly(
         return when (ctx.providerCfg.dialect) {
             Dialect.OPENAI_RESPONSES -> responsesArm.responsesProvider(ctx, label)
             Dialect.OPENAI_CHAT -> chatArm.chatProvider(ctx, label)
-            // anthropic-passthrough: kimi (device-oauth, x-api-key) or ANY anthropic-compatible
-            // vendor (api-key Bearer, e.g. Moonshot's pay-per-token https://api.moonshot.ai/anthropic).
+            // anthropic-passthrough: Kimi owns its Moonshot quirks and identity under OAuth or
+            // API-key auth; every other compatible API-key vendor starts neutral and declares its
+            // own wire facts in TOML.
             Dialect.ANTHROPIC_PASSTHROUGH -> passthroughArm.passthroughProvider(ctx, label)
         }
     }

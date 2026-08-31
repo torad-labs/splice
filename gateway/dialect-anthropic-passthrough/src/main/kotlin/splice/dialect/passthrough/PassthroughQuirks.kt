@@ -1,22 +1,16 @@
 // NEW: the vendor-deformation configuration surface — split out of PassthroughRequestBuilder.kt
-// (2026-08-17, concentration campaign). This is the only part of the dialect the outside world
-// touches (Daemon.kt constructs it; PassthroughProvider and PassthroughStreamTranslator take it as
-// a constructor param), and it is declarative config with zero JSON-walking logic and zero splice
-// imports. Every relocated member kept its identical name and argument list.
+// (2026-08-17, concentration campaign). PassthroughArm/PassthroughAssembly select it, while
+// PassthroughProvider and PassthroughStreamTranslator consume it. It is declarative config with zero
+// JSON-walking logic and zero splice imports. Every relocated member kept its name and argument list.
 package splice.dialect.passthrough
 
 /**
- * The COMPUTED per-install device identity a vendor requires on every upstream call — today only
- * Kimi's persisted `X-Msh-*` set.
+ * Computed runtime identity headers a vendor requires on upstream calls — today Kimi OAuth/API-key's
+ * `X-Msh-*` host, platform, version, and OS set.
  *
- * A function and not config, which is the distinction this type exists to hold: `staticHeaders`
- * beside it is operator-DECLARED TOML (`anthropic-version`, a gated UA) and is why a new
- * anthropic-compatible vendor is TOML-only, while these cannot be declared — they are derived from
- * per-install state the daemon persists and re-reads. Absent (`{ emptyMap() }`) for every head but
- * kimi, and that empty default is the reason a head that needs no identity wires nothing.
- *
- * Re-read per call rather than captured, so a device identity rotated on disk is picked up without
- * rebuilding the provider.
+ * A function and not config, which is the distinction this type exists to hold: static headers are
+ * data, while these values derive from runtime state. Absent (`{ emptyMap() }`) for generic and
+ * CLIENT arms, so a head that needs no computed identity wires nothing.
  */
 public fun interface IdentityHeaders {
     public operator fun invoke(): Map<String, String>
@@ -25,14 +19,14 @@ public fun interface IdentityHeaders {
 /**
  * The knobs that turn a FAITHFUL Anthropic passthrough into one vendor's accepted shape.
  *
- * DEFAULTS ARE NEUTRAL, and that inversion is the point (campaign claude-head, CH-2). Every knob
- * below was hardcoded ON when Kimi was the dialect's only consumer, which made "passthrough" a
- * misnomer: a real Anthropic upstream loses prompt caching to [stripCacheControl], has its tool
- * schemas rewritten by [mfjsSanitize], has `redacted_thinking` silently dropped by
- * [blockAllowlist], and can be handed a forged thinking signature by [synthesizeSignatures] that
- * a signature-VERIFYING upstream later rejects. A vendor now opts INTO its own deformations
- * ([PassthroughQuirksDefaults.kimi] is the one definition of Kimi's set); a head that declares
- * nothing gets its bytes forwarded as sent.
+ * CONSTRUCTOR DEFAULTS ARE NEUTRAL, and that inversion is the point (campaign claude-head, CH-2).
+ * Every knob below was hardcoded ON when Kimi was the dialect's only consumer, which made
+ * "passthrough" a misnomer: a real Anthropic upstream loses prompt caching to [stripCacheControl],
+ * has its tool schemas rewritten by [mfjsSanitize], has `redacted_thinking` silently dropped by
+ * [blockAllowlist], and can be handed a forged thinking signature by [synthesizeSignatures] that a
+ * signature-VERIFYING upstream later rejects. Assembly selects [PassthroughQuirksDefaults.kimi]
+ * only for provider ID `kimi` on OAuth/API-key arms, then applies TOML overrides. Generic and CLIENT
+ * arms receive no Kimi/vendor deformations unless TOML opts into them.
  */
 public data class PassthroughQuirks(
     val providerTag: String,

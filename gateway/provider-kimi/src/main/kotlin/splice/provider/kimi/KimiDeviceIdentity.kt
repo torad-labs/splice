@@ -1,9 +1,8 @@
-// NEW: Kimi (Moonshot) device identity — the X-Msh-* headers sent on OAuth calls AND upstream
-// turns, plus a stable device_id (uuid) persisted next to the auth file (0600). Every header value
-// is ASCII-sanitized: non-ASCII chars are stripped and an empty result becomes "unknown", because
-// Ktor throws on non-Latin1 header values and CJK hostnames exist in the wild. The header set is
-// exactly the five X-Msh-* names the wire contract enumerates; device_id is persisted for identity
-// continuity and exposed via deviceId() for the login/wire layers.
+// NEW: Kimi (Moonshot) device identity — the five X-Msh-* runtime headers sent on OAuth calls and
+// upstream turns, plus a deviceId() helper that persists a stable UUID when explicitly requested.
+// Every header value is ASCII-sanitized: non-ASCII chars are stripped and an empty result becomes
+// "unknown", because Ktor rejects non-Latin1 header values and CJK hostnames exist in the wild.
+// The header map contains platform/version/hostname/OS values; it does not read or expose device_id.
 package splice.provider.kimi
 
 import splice.core.GATEWAY_VERSION

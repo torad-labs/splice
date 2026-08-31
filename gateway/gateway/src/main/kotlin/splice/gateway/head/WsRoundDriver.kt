@@ -11,6 +11,7 @@
 // reimplemented here.
 package splice.gateway.head
 
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.onEach
 import splice.core.turn.TurnOutcome
 import splice.core.util.LogSink
@@ -28,44 +29,50 @@ internal class WsRoundDriver(
     suspend fun run(inputs: WsRoundInputs): TurnOutcome? {
         val runner = provider.wsRunner ?: return null
         val drive = inputs.drive
-        // Credentials come from the provider's auth surface, NOT from a WS-side refresh: L5 keeps
-        // the single-flight 401 refresh in UpstreamClient, so a missing/expired credential here
-        // simply rides SSE and gets refreshed there.
-        val events = provider.auth.credentials()
-            ?.let { creds -> runner.attempt(inputs.bodyJson, drive.meta, drive.turnHeaders, creds) }
-        if (events == null) {
-            // SSE is about to serve this round, so the conversation advances outside any chain.
-            runner.roundBypassed(drive.meta)
-            return null
-        }
-        drive.slot.touch()
-        // Start the client while the acquired cold flow is being collected, not before: if the
-        // start write throws or is cancelled, the exception unwinds through the transport flow's
-        // onCompletion and poisons its busy lease instead of stranding the connection forever.
-        val startingEvents = events.onEach { drive.emitter.ensureStarted() }
-        drive.watchdog.resetFirstByte()
-        val poller = drive.watchdog.launchIn(inputs.scope, drive.slot, inputs.turnJob)
-        // CON-003: every exit below reports the round exactly once. [drive] reports ok=true on a
-        // clean terminal and the sentinel path reports a bypass; anything else — an unexpected throw
-        // out of the translator, or cancellation — leaves this false and the finally clears the
-        // chain, which is [WsRoundRunner.roundEnded]'s stated contract ("anything else must clear
-        // the chaining state"). Reported via a flag rather than a catch so the exception itself
-        // continues untouched.
+        // CON-003 + DR-91: every exit below reports the round exactly once, INCLUDING a
+        // cancellation that lands while credentials()/attempt() are in flight — the WS send may
+        // already have advanced the runner's chaining state, and an unreported unwind left the
+        // next turn chained onto a round that never finished. [roundDrive] reports ok=true on a
+        // clean terminal and the sentinel path reports a bypass; anything else leaves the flag
+        // false and the finally clears the chain, which is [WsRoundRunner.roundEnded]'s stated
+        // contract ("anything else must clear the chaining state"). Reported via a flag rather
+        // than a catch so the exception itself continues untouched.
         var reported = false
-        return try {
-            roundDrive.drive(inputs, runner, startingEvents).also { reported = true }
-        } catch (ignored: WsRoundNeedsSse) {
-            // The round failed while the client had seen nothing, so it can still be re-served with
-            // the full recovery machinery. Serving the failure raw over the WebSocket instead would
-            // bypass retry/refresh/cooldown entirely — the one way this overlay could land BELOW
-            // the status quo.
-            log("[${provider.key}] websocket round failed before any client frame — serving over SSE\n")
-            runner.roundBypassed(drive.meta)
-            reported = true
-            null
+        var poller: Job? = null
+        try {
+            // Credentials come from the provider's auth surface, NOT from a WS-side refresh: L5
+            // keeps the single-flight 401 refresh in UpstreamClient, so a missing/expired
+            // credential here simply rides SSE and gets refreshed there.
+            val events = provider.auth.credentials()
+                ?.let { creds -> runner.attempt(inputs.bodyJson, drive.meta, drive.turnHeaders, creds) }
+            if (events == null) {
+                // SSE is about to serve this round, so the conversation advances outside any chain.
+                runner.roundBypassed(drive.meta)
+                reported = true
+                return null
+            }
+            drive.slot.touch()
+            // Start the client while the acquired cold flow is being collected, not before: if the
+            // start write throws or is cancelled, the exception unwinds through the transport flow's
+            // onCompletion and poisons its busy lease instead of stranding the connection forever.
+            val startingEvents = events.onEach { drive.emitter.ensureStarted() }
+            drive.watchdog.resetFirstByte()
+            poller = drive.watchdog.launchIn(inputs.scope, drive.slot, inputs.turnJob)
+            return try {
+                roundDrive.drive(inputs, runner, startingEvents).also { reported = true }
+            } catch (ignored: WsRoundNeedsSse) {
+                // The round failed while the client had seen nothing, so it can still be re-served
+                // with the full recovery machinery. Serving the failure raw over the WebSocket
+                // instead would bypass retry/refresh/cooldown entirely — the one way this overlay
+                // could land BELOW the status quo.
+                log("[${provider.key}] websocket round failed before any client frame — serving over SSE\n")
+                runner.roundBypassed(drive.meta)
+                reported = true
+                null
+            }
         } finally {
             if (!reported) runner.roundEnded(drive.meta, ok = false)
-            poller.cancel()
+            poller?.cancel()
         }
     }
 }

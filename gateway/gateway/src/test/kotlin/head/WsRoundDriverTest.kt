@@ -131,6 +131,30 @@ private class ScriptedRunner(private val events: List<String>, private val throw
     }
 }
 
+/** DR-91: stands in for a turn cancelled while attempt() is in flight — the WS send may already
+ *  have advanced the runner's chaining state when the cancellation unwinds. */
+private class CancellingAttemptRunner(private val cancel: CancellationException) : WsRoundRunner {
+    var endedNotOk = 0
+    var bypassed = 0
+
+    override suspend fun attempt(
+        bodyJson: String,
+        meta: TurnMeta,
+        turnHeaders: Map<String, String>,
+        creds: Credentials,
+    ): Flow<JsonObject>? = throw cancel
+
+    override fun isFailureTerminal(event: JsonObject): Boolean = false
+
+    override fun roundEnded(meta: TurnMeta, ok: Boolean) {
+        if (!ok) endedNotOk += 1
+    }
+
+    override fun roundBypassed(meta: TurnMeta) {
+        bypassed += 1
+    }
+}
+
 private class ThrowingStartTerminal(
     private val failure: CancellationException,
 ) : TurnTerminal, WireSink by RecordingSink2() {
@@ -147,7 +171,7 @@ private class ThrowingStartTerminal(
  *  behaviour (buildTurn, the stream translator, the SSE path) genuinely real. */
 private class ScriptedWsProvider(
     private val inner: CodexProvider,
-    private val runner: ScriptedRunner,
+    private val runner: WsRoundRunner,
 ) : Provider by inner {
     override val wsRunner: WsRoundRunner get() = runner
 }
@@ -172,7 +196,7 @@ class WsRoundDriverTest {
 
     private fun freshPort(): Int = ServerSocket(0).use { it.localPort }
 
-    private fun provider(runner: ScriptedRunner): Provider = ScriptedWsProvider(
+    private fun provider(runner: WsRoundRunner): Provider = ScriptedWsProvider(
         CodexProvider(
             tuning = ProviderTuning(
                 key = "codex",
@@ -378,5 +402,35 @@ class WsRoundDriverTest {
         } finally {
             runBlocking { h.stop() }
         }
+    }
+
+    /** DR-91: the credential+attempt acquisition sat OUTSIDE the reporting try, so a cancellation
+     *  landing while attempt() was in flight (post-send) unwound without roundEnded — the chain
+     *  stayed anchored on a round that never finished and the NEXT turn chained onto it. Same
+     *  CON-003 contract as the mid-round throw above, one suspension point earlier. */
+    @Test
+    fun `cancellation during the ws attempt still clears the chaining state - DR-91`() = runTest {
+        val cancel = CancellationException("cancelled mid-send")
+        val runner = CancellingAttemptRunner(cancel)
+        val inputs = coldFlowInputs(ThrowingStartTerminal(CancellationException("unused")), this)
+        val driver = WsRoundDriver(
+            provider(runner),
+            log = {},
+            classifyZeroEvent = ZeroEventClassifier { _, outcome, _, _ -> outcome },
+        )
+        var thrown: CancellationException? = null
+
+        try {
+            driver.run(inputs)
+        } catch (failure: CancellationException) {
+            thrown = failure
+        } finally {
+            inputs.turnJob.cancel()
+            inputs.drive.slot.release()
+        }
+
+        assertSame(cancel, thrown, "the genuine cancellation must propagate unchanged")
+        assertEquals(1, runner.endedNotOk, "the aborted acquisition must clear the chaining state")
+        assertEquals(0, runner.bypassed, "an aborted acquisition is not a bypass")
     }
 }

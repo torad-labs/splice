@@ -37,18 +37,24 @@ public object UpstreamFailureClassifier {
     // region" is a deterministic restriction — only a qualified service outage wording counts.
     private val transientConditionRe = Regex(
         "server[_ -]?error|internal[_ -]?error|temporar(?:y|ily)|overload(?:ed)?|" +
-            "(?:service|currently)[_ -]?unavailable|timed? ?out",
+            "service[_ -]?(?:is[_ -])?unavailable|currently[_ -]?unavailable|timed? ?out",
         RegexOption.IGNORE_CASE,
     )
-    private val tryAgainRe = Regex("\\btry\\s+again\\b", RegexOption.IGNORE_CASE)
+
+    // DR-71 (codex adjudication probe, 2026-08-31): "retry" is the invitation synonym vendors
+    // actually use ("Please retry") — \b keeps retried/retries/retrying out.
+    private val tryAgainRe = Regex("\\b(?:try\\s+again|retry)\\b", RegexOption.IGNORE_CASE)
 
     // DR-45 redo: the old `(?:\w+\s+){0,2}` window missed long-form negation ("do not attempt to
     // resubmit this request or try again"). The negator now suppresses across its WHOLE clause —
     // anything up to a clause boundary — so only a "try again" in a separate sentence/clause
-    // ("Do not panic. Please try again.") still reads as an invitation to retry.
+    // ("Do not panic. Please try again.") still reads as an invitation to retry. DR-71: the
+    // boundary set includes em/en dash and line breaks (a dash-cut fresh clause is a real
+    // invitation), the negators include won't/will not, and the clause budget is the full
+    // MAX_MESSAGE — a 120-char cap let long clauses outrun their own negation.
     private val negatedTryAgainRe = Regex(
-        "\\b(?:do\\s+not|don['’]t|never|cannot|can['’]t|should\\s+not|must\\s+not)" +
-            "[^.,;:!?]{0,120}?\\btry\\s+again\\b",
+        "\\b(?:do\\s+not|don['’]t|never|cannot|can['’]t|should\\s+not|must\\s+not|won['’]t|will\\s+not)" +
+            "[^.,;:!?—–\\n\\r]{0,2000}?\\b(?:try\\s+again|retry)\\b",
         RegexOption.IGNORE_CASE,
     )
     private val promptTooLongRe = Regex("prompt is too long", RegexOption.IGNORE_CASE)
@@ -211,6 +217,10 @@ public object UpstreamFailureClassifier {
         "request_timeout",
         "service_unavailable",
         "temporarily_unavailable",
+        // DR-71: the engine/model-scoped overload spellings vendors emit are the same named
+        // transient server condition — a deterministic-looking absence here made them non-retryable.
+        "engine_overloaded",
+        "model_overloaded",
     )
 
     private const val RATE_LIMIT_STATUS = 429

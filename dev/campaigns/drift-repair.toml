@@ -466,26 +466,34 @@ id = "DR-36"
 phase = "responses"
 title = "ResponsesTurnState.blocks (ResponsesTurnState.kt:22) HashMap has ZERO removals and is invisible to the NF-06 capacity guard because ResponsesStreamTranslator.kt:75-79 never passes toolIndexCount - upstream-controlled per-round growth to OOM on the shared ~1G heap. Fix: pass the count into BufferCapacity.over (and evict on block close) so the existing guard sees it. Re-confirmed open at 9700877 by the close-out resource lens."
 files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnState.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesItemFold.kt", "gateway/dialect-openai-responses/src/test/kotlin/ResponsesStreamTranslatorTest.kt"]
-status = "todo"
+status = "done"
 verify = "cd gateway && ./gradlew :dialect-openai-responses:test --console=plain"
 # [2026-08-30] FENCE-EDITED: files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnState.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt"] -> files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnState.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesItemFold.kt", "gateway/dialect-openai-responses/src/test/kotlin/ResponsesStreamTranslatorTest.kt"] (by=orchestrator implied; no flag)
 # [2026-08-30] FENCE widened per codex request (2026-08-30 msg): close paths live in ResponsesItemFold.kt, NF-06 test class in ResponsesStreamTranslatorTest.kt - both verified to exist before widening.
+# [2026-08-30] codex report: done, local final-history commit fe8df77. Red exact: retained-block-count + aggregate-open-tool-args ended ordinary truncated (not runaway); duplicate close#0 after args.done+output_item.done; XML 3/3 failures by name. Green: exact 3 fresh pass + :dialect-openai-responses:test+detekt --rerun-tasks. State O(1)-tracks retained arg chars in Long, saturates at shared Int guard, passes blocks.size, evicts closed blocks. Ancestor-verify at next push.
+# [2026-08-30] Attribution unavailable: missing in_flight tree snapshot
 
 [[items]]
 id = "DR-37"
 phase = "chat"
 title = "Chat guard counts the WRONG maps: ChatToolCalls.kt:43 toolCount = max(indexCount, pendingTools.size), but explicit-index opens bypass toolIndexById (ChatToolFrame.kt:41) and pendingTools DRAINS on open - so toolBlocks/toolArgsByIndex/openedToolIds grow uncounted for the STANDARD OpenAI wire shape. Upstream-controlled growth the guard was built to stop. Fix: count the maps that actually grow. Found by close-out resource lens (closeout/c-resource.md R2)."
-files = ["gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatToolCalls.kt", "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatToolFrame.kt"]
-status = "todo"
+files = ["gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatToolCalls.kt", "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatToolFrame.kt", "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt", "gateway/dialect-openai-chat/src/test/kotlin/ChatStreamTranslatorTest.kt"]
+status = "done"
 verify = "cd gateway && ./gradlew :dialect-openai-chat:test --console=plain"
+# [2026-08-30] FENCE-EDITED: files = ["gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatToolCalls.kt", "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatToolFrame.kt"] -> files = ["gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatToolCalls.kt", "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatToolFrame.kt", "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt", "gateway/dialect-openai-chat/src/test/kotlin/ChatStreamTranslatorTest.kt"] (by=orchestrator implied; no flag)
+# [2026-08-30] FENCE widened per codex (2026-08-30, two msgs): ChatStreamTranslatorTest.kt hosts the evidence-first standard-shape red tests (existing ChatRunawayGuardTest class); ChatStreamTranslator.kt because the corrected accessor covers pending+opened buffers (renamed bufferedArgsChars, guard comment kept honest). Both verified to exist. codex report: done, local commit 90f33fe. Red: exact explicit-index count + aggregate-args drained all input, ended ordinary truncated; XML 2/2. Green: exact pass + :dialect-openai-chat:test+detekt --rerun-tasks. Guard sums every retained index-map entry (saturated), O(1)-tracks pending+opened arg chars.
+# [2026-08-30] Attribution unavailable: missing in_flight tree snapshot
 
 [[items]]
 id = "DR-38"
 phase = "passthrough"
 title = "PassthroughStreamTranslator.kt:59 passes only 2 of 4 capacity args, so PassthroughBlockRegistry.blocks count is unguarded; and passthrough tool args on the stream:false path accumulate in CollectingBlocks.kt:72-74 with NO cap anywhere. Fix: pass the full capacity picture + cap the collecting path. Found by close-out resource lens (closeout/c-resource.md R3, likely the prior sweep 4th)."
-files = ["gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughStreamTranslator.kt", "gateway/gateway/src/main/kotlin/splice/gateway/wire/CollectingBlocks.kt"]
-status = "todo"
+files = ["gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughStreamTranslator.kt", "gateway/gateway/src/main/kotlin/splice/gateway/wire/CollectingBlocks.kt", "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughBlockRegistry.kt", "gateway/dialect-anthropic-passthrough/src/test/kotlin/PassthroughStreamTranslatorTest.kt", "gateway/gateway/src/main/kotlin/splice/gateway/wire/CollectingTerminal.kt", "gateway/gateway/src/test/kotlin/CollectingTerminalTest.kt"]
+status = "done"
 verify = "cd gateway && ./gradlew :dialect-anthropic-passthrough:test :gateway:test --console=plain"
+# [2026-08-30] FENCE-EDITED: files = ["gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughStreamTranslator.kt", "gateway/gateway/src/main/kotlin/splice/gateway/wire/CollectingBlocks.kt"] -> files = ["gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughStreamTranslator.kt", "gateway/gateway/src/main/kotlin/splice/gateway/wire/CollectingBlocks.kt", "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughBlockRegistry.kt", "gateway/dialect-anthropic-passthrough/src/test/kotlin/PassthroughStreamTranslatorTest.kt", "gateway/gateway/src/main/kotlin/splice/gateway/wire/CollectingTerminal.kt", "gateway/gateway/src/test/kotlin/CollectingTerminalTest.kt"] (by=orchestrator implied; no flag)
+# [2026-08-30] FENCE widened per codex (2026-08-30): PassthroughBlockRegistry.kt owns block count + tool-arg char accounting, CollectingTerminal.kt emits honest capacity error before block parsing, plus both test hosts. All four verified to exist. codex report: done, local commit 6e846db. Red: exact stream registry-count + aggregate-open-tool-args ended ordinary truncated; stream:false aggregate valid-tool-input returned HTTP 200; XML 3 failures. Green: exact 3 pass + :dialect-anthropic-passthrough:test :gateway:test + both detekt fresh, Kimi goldens intact. Registry supplies all four guard dimensions; collector rejects aggregate tool input pre-parse with usage-preserving local API error.
+# [2026-08-30] Attribution unavailable: missing in_flight tree snapshot
 
 [[items]]
 id = "DR-39"
@@ -581,8 +589,10 @@ id = "DR-48"
 phase = "config"
 title = "ConfigCoercion turns JsonNull into the literal string null (codex lens) - a TOML/JSON null lands as a four-char credential or knob value. Fix: null stays absent + arm."
 files = ["gateway/core/src/main/kotlin/splice/core/config/ConfigService.kt"]
-status = "todo"
+status = "in_flight"
 verify = "cd gateway && ./gradlew :core:test --console=plain"
+# [2026-08-30] CLAIM: owner=claude-splice at=2026-08-31T01:31:16Z
+# [2026-08-30] ATTEST-START: tree=29b628c389ba3378499e4617cce3e69c2e433621 at=2026-08-31T01:31:16Z
 
 [[items]]
 id = "DR-49"

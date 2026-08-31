@@ -14,7 +14,12 @@ import kotlinx.serialization.Serializable
 private const val CLAUDE_CODE_ONE_MILLION = 1_000_000L
 
 /** Claude Code's own id-keyed window hook, matched only as a trailing tier suffix. */
-private val oneMillionHint = Regex("\\[1m]$", RegexOption.IGNORE_CASE)
+// UNANCHORED on purpose, unlike the strip rule (DR-27): this predicate exists to predict what the
+// CLIENT will do, and Claude Code's own detection is a containsMatch — `/\[1m\]/i` (cli 2.1.233
+// `G4u`) — anywhere in the id. The anchored version disagreed with the client for a mid-string
+// spelling ("k3[1m]-preview"): the client used 1e6 while usageScale corrected against the pinned
+// window, a silently wrong factor. Mirror the client, never improve on it.
+private val oneMillionHint = Regex("\\[1m]", RegexOption.IGNORE_CASE)
 
 @Serializable
 public data class ModelEntry(

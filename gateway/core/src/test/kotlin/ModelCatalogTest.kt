@@ -67,10 +67,15 @@ class ModelCatalogTest {
             catalog.stripSuffixes("provider-model[preview]"),
             "a genuine bracketed provider id is not a numeric tier hint",
         )
+        // INVERTED (DR-27, 2026-08-30): this arm pinned 272_000 under the claim "the client
+        // recognizes [1m] only as a trailing suffix" — read against the actual cli 2.1.233 binary
+        // that claim is false: `function KE(e){...return/\[1m\]/i.test(e)}` is an UNANCHORED
+        // containsMatch and G4u gates window resolution on KE first. The predicate exists to
+        // predict the client, so it mirrors the client.
         assertEquals(
-            272_000L,
+            1_000_000L,
             catalog.clientContextWindowFor("gpt-5.6-sol[1m]-preview"),
-            "the client recognizes [1m] only as a trailing suffix",
+            "the client's KE() is containsMatch — [1m] anywhere in the id means 1e6",
         )
         assertEquals("plain-id", catalog.unwrap("plain-id"))
     }
@@ -168,6 +173,59 @@ class ModelCatalogTest {
         assertEquals(256_000L, xai.clientContextWindowFor("grok-4.6[500k]"))
         assertEquals(0.512, xai.usageScale("grok-4.6[500k]"))
         assertEquals(0.512, xai.usageScale("claude-grok--grok-4.6[500k]"), "wrapped form too")
+    }
+
+    // DR-24: the 0.512 pin above once depended on exactWindows last-wins — fixture DECLARATION
+    // ORDER — so reordering the two rows silently flipped the expected scale. rawWindows raw-first
+    // made both lookups order-independent; this arm REORDERS the same fixture and demands the same
+    // numbers, so a regression back to stripped-key collision fails HERE instead of moving a green
+    // number somewhere else.
+    @Test
+    fun `the 500k scale is declaration-order-proof`() {
+        val orders = listOf(
+            listOf(
+                ModelEntry(id = "grok-4.6", contextWindow = 256_000),
+                ModelEntry(id = "grok-4.6[500k]", contextWindow = 500_000),
+            ),
+            listOf(
+                ModelEntry(id = "grok-4.6[500k]", contextWindow = 500_000),
+                ModelEntry(id = "grok-4.6", contextWindow = 256_000),
+            ),
+        )
+        for (rows in orders) {
+            val xai = ModelCatalog(
+                discoveryPrefix = "claude-grok--",
+                models = rows,
+                defaultContextWindow = 256_000,
+                pinnedModel = "grok-4.6",
+            )
+            assertEquals(0.512, xai.usageScale("grok-4.6[500k]"), "order ${rows.map { it.id }}")
+            assertEquals(1.0, xai.usageScale("grok-4.6"), "order ${rows.map { it.id }}")
+        }
+    }
+
+    // DR-27: suffix stripping is a NUMERIC-TIER-only, END-anchored rule. A genuine vendor id with
+    // a bracket (model[preview]) must reach the provider byte-for-byte, and a mid-string "[1m]"
+    // still gets Claude Code's 1e6 — the client's own detection is containsMatch, not anchored,
+    // and we mirror the client rather than improve on it.
+    @Test
+    fun `non-tier brackets ship byte-identical and only trailing tier hints strip`() {
+        val cat = ModelCatalog(
+            discoveryPrefix = "claude-x--",
+            models = listOf(
+                ModelEntry(id = "model[preview]", contextWindow = 128_000),
+                ModelEntry(id = "k3[1m]", contextWindow = 1_000_000),
+                ModelEntry(id = "k3[1m]-preview", contextWindow = 1_000_000),
+            ),
+            defaultContextWindow = 128_000,
+            pinnedModel = "model[preview]",
+        )
+        assertEquals("model[preview]", cat.stripSuffixes("model[preview]"), "non-tier bracket survives")
+        assertEquals("k3", cat.stripSuffixes("k3[1m]"))
+        assertEquals("k3[1m]-preview", cat.stripSuffixes("k3[1m]-preview"), "anchored: mid-string stays")
+        assertEquals(128_000L, cat.contextWindowFor("model[preview]"))
+        assertEquals(1_000_000L, cat.clientContextWindowFor("k3[1m]-preview"), "client containsMatch mirrored")
+        assertTrue(cat.contains("model[preview]"))
     }
 
     @Test

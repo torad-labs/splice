@@ -14,9 +14,9 @@ Under a two-parser split that is no longer enough — a chain that tries the dat
 have passed the old check. The ordering is now checked. Not broadened: still one exact file, still
 exact tokens, no module-wide or substring matching.
 
-GREEN requires, in RetryAfter.kt: a `retryAfterMs` entry point; a strict seconds parse
-(`toLongOrNull`); an RFC_1123_DATE_TIME branch; and the seconds parse textually AHEAD of the date
-branch, which is the numeric-first spec.
+GREEN requires, in RetryAfter.kt: a `retryAfterMs` entry point that reaches both a strict seconds
+parse (`toLongOrNull`) and an RFC_1123_DATE_TIME parser; and the seconds call textually AHEAD of the
+date call, which is the numeric-first spec. A dead date helper elsewhere in the file earns nothing.
 
 EXIT 0 = date form honoured, seconds first. EXIT 1 = gap open.
 --selftest = the POSITIVE CONTROL (gate check C6).
@@ -29,26 +29,50 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 CLIENT = ROOT / "gateway/provider-spi/src/main/kotlin/splice/spi/RetryAfter.kt"
+_NEXT_FUNCTION_RE = re.compile(
+    r"\n\s*(?:(?:public|private|internal|protected|override|suspend|inline)\s+)*fun\s+\w+\s*\("
+)
+
+
+def function_source(text: str, name: str) -> str | None:
+    """One top-level/member function, through (but not including) the next function declaration."""
+    start = re.search(r"\bfun\s+" + re.escape(name) + r"\s*\(", text)
+    if not start:
+        return None
+    following = _NEXT_FUNCTION_RE.search(text, start.end())
+    end = len(text) if following is None else following.start()
+    return text[start.start():end]
 
 
 def detect(client_text: str | None) -> list[str]:
     """Pure detection. No I/O — the selftest feeds it directly."""
     if client_text is None:
         return ["RetryAfter.kt missing — refusing to pass vacuously"]
-    if "fun retryAfterMs(" not in client_text:
+    retry = function_source(client_text, "retryAfterMs")
+    if retry is None:
         return ["retryAfterMs not found (shape changed?) — refusing to pass vacuously"]
+
     problems: list[str] = []
-    if "RFC_1123_DATE_TIME" not in client_text:
-        problems.append("retryAfterMs has no HTTP-date branch (RFC_1123_DATE_TIME) — a date-form "
-                        "Retry-After is silently discarded: no backoff floor, no absurd-pushback "
-                        "give-up, cooldown falls back to the 20s guess")
-    elif "toLongOrNull" not in client_text:
-        problems.append("the strict seconds-form parse (toLongOrNull) disappeared — numeric-first "
-                        "ordering is the pinned behavior; the date branch may only be a FALLBACK")
-    elif client_text.index("toLongOrNull") > client_text.index("RFC_1123_DATE_TIME"):
+    seconds_call = retry.find("secondsFormMs(")
+    seconds_inline = retry.find("toLongOrNull")
+    seconds_at = seconds_call if seconds_call >= 0 else seconds_inline
+    seconds_helper = function_source(client_text, "secondsFormMs")
+    if seconds_at < 0 or (seconds_call >= 0 and
+                          (seconds_helper is None or "toLongOrNull" not in seconds_helper)):
+        problems.append("retryAfterMs no longer reaches the strict seconds-form parse "
+                        "(toLongOrNull) — numeric-first ordering is the pinned behavior")
+
+    date_call = retry.find("httpDateMs(")
+    date_inline = retry.find("RFC_1123_DATE_TIME")
+    date_at = date_call if date_call >= 0 else date_inline
+    date_helper = function_source(client_text, "httpDateMs")
+    if date_at < 0 or (date_call >= 0 and
+                       (date_helper is None or "RFC_1123_DATE_TIME" not in date_helper)):
+        problems.append("retryAfterMs does not call an HTTP-date parser backed by "
+                        "RFC_1123_DATE_TIME — a dead helper does not honour date-form pushback")
+    elif seconds_at >= 0 and date_at < seconds_at:
         problems.append("the HTTP-date branch is attempted BEFORE the strict seconds parse — "
-                        "numeric-first is the spec, and a date-first chain re-reads every plain "
-                        "`Retry-After: 30` through a parser that cannot accept it")
+                        "numeric-first is the spec, and the date parser must only be a fallback")
     return problems
 
 
@@ -77,11 +101,16 @@ def _read(p: pathlib.Path) -> str | None:
 
 
 OPEN_FIX = "fun retryAfterMs(header: String?): Long? =\n    header?.trim()?.toLongOrNull()"
-CLOSED_FIX = OPEN_FIX + "\n    // fallback\n    DateTimeFormatter.RFC_1123_DATE_TIME"
+_HELPERS = ("fun secondsFormMs(value: String): Long? = value.toLongOrNull()\n"
+            "fun httpDateMs(value: String): Long? = "
+            "parse(value, DateTimeFormatter.RFC_1123_DATE_TIME)")
+CLOSED_FIX = ("fun retryAfterMs(header: String): Long? =\n"
+              "    secondsFormMs(header) ?: httpDateMs(header)\n" + _HELPERS)
 BROKEN_FIX = "fun retryAfterMs(h: String?): Long? = DateTimeFormatter.RFC_1123_DATE_TIME_only"
-INVERTED_FIX = ("fun retryAfterMs(header: String?): Long? =\n"
-                "    httpDateMs(header, DateTimeFormatter.RFC_1123_DATE_TIME)\n"
-                "        ?: header?.trim()?.toLongOrNull()")
+INVERTED_FIX = ("fun retryAfterMs(header: String): Long? =\n"
+                "    httpDateMs(header) ?: secondsFormMs(header)\n" + _HELPERS)
+UNWIRED_DATE_FIX = ("fun retryAfterMs(header: String): Long? = secondsFormMs(header)\n" +
+                    _HELPERS)
 
 
 def selftest() -> int:
@@ -95,6 +124,8 @@ def selftest() -> int:
     if not detect(INVERTED_FIX):
         fails.append("a chain that tries the HTTP-date form FIRST must be RED — that is the "
                      "ordering this wall pins")
+    if not detect(UNWIRED_DATE_FIX):
+        fails.append("an HTTP-date helper that retryAfterMs never calls must be RED")
     if not detect(None):
         fails.append("missing RetryAfter.kt must be RED, never a vacuous pass")
     if not detect("class RetryAfterHeader"):

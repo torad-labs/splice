@@ -81,6 +81,43 @@ _FORWARD = re.compile(r"private fun (\w+)\s*\([^)]*\)[^={]*(?:\{[^{}]*|=\s*)" + 
 _LOCAL = re.compile(r"^(\w+)(?:\.toString\(\))?$")
 
 
+def _brace_stack(text: str, stop: int) -> tuple[int, ...]:
+    """Open lexical braces at `stop`, ignoring braces carried only by Kotlin strings/chars."""
+    stack: list[int] = []
+    i = 0
+    while i < stop:
+        if text.startswith('"""', i):
+            close = text.find('"""', i + 3)
+            i = stop if close < 0 else close + 3
+            continue
+        ch = text[i]
+        if ch in ('"', "'"):
+            quote = ch
+            i += 1
+            while i < stop:
+                if text[i] == "\\":
+                    i += 2
+                elif text[i] == quote:
+                    i += 1
+                    break
+                else:
+                    i += 1
+            continue
+        if ch == "{":
+            stack.append(i)
+        elif ch == "}" and stack:
+            stack.pop()
+        i += 1
+    return tuple(stack)
+
+
+def _visible_from(assign_at: int, use_at: int, text: str) -> bool:
+    """An assignment is visible only from its own block or a descendant block."""
+    assigned = _brace_stack(text, assign_at)
+    used = _brace_stack(text, use_at)
+    return len(assigned) <= len(used) and used[:len(assigned)] == assigned
+
+
 def code_only(text: str | None) -> str | None:
     """A mention is not a wiring — and to a wall that reads CALL SITES, a comment is one.
 
@@ -128,7 +165,7 @@ def _split_args(inside: str) -> list[str]:
     return parts
 
 
-def _persist_contents(kimi: str) -> list[str]:
+def _persist_contents(kimi: str) -> list[tuple[str, int]]:
     """The content argument of every live credential persist — the atomic write itself plus any
     private forward that reaches it.
 
@@ -146,7 +183,7 @@ def _persist_contents(kimi: str) -> list[str]:
             chars[i] = " "
     scrubbed = "".join(chars)
 
-    contents: list[str] = []
+    contents: list[tuple[str, int]] = []
     for name in sorted(names):
         for m in re.finditer(r"(?<![\w.])" + re.escape(name) + r"\s*\(", scrubbed):
             open_idx = m.end() - 1
@@ -155,7 +192,7 @@ def _persist_contents(kimi: str) -> list[str]:
                 continue
             args = _split_args(scrubbed[open_idx + 1 : close])
             if len(args) >= 2:
-                contents.append(args[1])
+                contents.append((args[1], m.start()))
     return contents
 
 
@@ -183,30 +220,35 @@ def _assigned_expression(text: str, start: int) -> str:
     return text[start:]
 
 
-def _reaches_merge(content: str, kimi: str) -> bool:
-    """Does the value handed to the atomic write come from the shared merge?
+def _reaches_merge(content: str, persist_at: int, kimi: str) -> bool:
+    """Does the value handed to this persist come from the shared merge?
 
-    Two shapes, deliberately only two: the merge inlined at the write, or a LOCAL whose assigned
-    expression is the merge. The local's NAME is not part of the anchor — that is the entire point.
-    Renaming `merged` must not move this wall, and neither must renaming the forward.
+    Two shapes, deliberately only two: the merge inlined at the write, or a visible LOCAL whose
+    nearest preceding assignment is the merge. The order and lexical visibility are load-bearing:
+    a post-write assignment or a same-name merge in a closed sibling function cannot define the
+    value already written here.
 
     STATED LIMIT, so the next reader knows it is a choice and not an oversight: a THIRD shape — the
     merge reaching the write through some other transform, say `json.encodeToString(merged)` instead
     of `merged.toString()` — reddens this wall. That is the fail-closed direction, and the RED names
-    the exact expression it saw, so it is a one-line read rather than a mystery. Widening to "any
-    identifier in the content is a merge-assigned local" would cover it and is the obvious next
-    move IF that refactor ever lands; it is not made pre-emptively, because every widening of a
-    wall is a resolution loss until the case that needs it exists.
+    the exact expression it saw, so it is a one-line read rather than a mystery.
     """
     if MERGE_CALL in content:
         return True
-    m = _LOCAL.match(content)
-    if not m:
+    local = _LOCAL.match(content)
+    if not local:
         return False
-    for assign in re.finditer(r"\bval\s+" + re.escape(m.group(1)) + r"\b[^=\n]*=", kimi):
-        if MERGE_CALL in _assigned_expression(kimi, assign.end()):
-            return True
-    return False
+    assignments = [
+        assign
+        for assign in re.finditer(
+            r"\bval\s+" + re.escape(local.group(1)) + r"\b[^=\n]*=", kimi[:persist_at]
+        )
+        if _visible_from(assign.start(), persist_at, kimi)
+    ]
+    if not assignments:
+        return False
+    nearest = assignments[-1]
+    return MERGE_CALL in _assigned_expression(kimi, nearest.end())
 
 
 def detect(core: str | None, kimi: str | None) -> list[str]:
@@ -227,7 +269,7 @@ def detect(core: str | None, kimi: str | None) -> list[str]:
                         "(path, content) pair — the persist shape changed; refusing to pass "
                         "vacuously")
         return problems
-    unmerged = [c for c in contents if not _reaches_merge(c, kimi)]
+    unmerged = [c for c, at in contents if not _reaches_merge(c, at, kimi)]
     if not unmerged:
         return problems
     written = ", ".join(f"`{c}`" for c in unmerged)
@@ -295,6 +337,22 @@ KIMI_RENAMED = (
 # The merge inlined at the write with no local at all — also GREEN. A local is one way to carry the
 # value, never the invariant.
 KIMI_INLINE = _via_forward(f"CredentialJson.mergedCredentialJson(onDisk, {FRESH}).toString()")
+# A merge assignment AFTER the persist is not the provenance of the value already written. The old
+# whole-file search accepted it merely because the same local name appeared eventually.
+KIMI_POSTHOC_MERGE = (
+    _via_forward("credentialFile.toString()", persist="persistCredentials") + "\n"
+    f"val credentialFile = CredentialJson.mergedCredentialJson(onDisk, {FRESH})"
+)
+# A same-name merge in a closed sibling scope cannot define the value read by refresh(). The live
+# outer value is fresh, so persisting it is still a rewrite even though a lexical decoy is merged.
+KIMI_CROSS_SCOPE_MERGE = (
+    f"val credentialFile = {FRESH}\n"
+    f"fun decoy() {{ val credentialFile = CredentialJson.mergedCredentialJson(onDisk, {FRESH}) }}\n"
+    "fun refresh() { persistCredentials(authPath, credentialFile.toString()) }\n"
+    "private fun persistCredentials(path: Path, content: String) {\n"
+    f"    {ATOMIC_WRITE}path, content)\n"
+    "}"
+)
 # Comments lie in both directions to a wall that follows a value; both are fed through code_only,
 # exactly as the real file is. FAIL-OPEN: the merge exists only in a comment while the live local
 # holds the from-scratch object.
@@ -309,11 +367,11 @@ KIMI_COMMENT_GHOST = (
 def selftest() -> int:
     fails = []
 
-    def red(label: str, kimi: str, core: str | None = CORE_OK) -> None:
+    def red(label: str, kimi: str | None, core: str | None = CORE_OK) -> None:
         if not detect(core, kimi):
             fails.append(f"{label} must be RED")
 
-    def green(label: str, kimi: str, core: str | None = CORE_OK) -> None:
+    def green(label: str, kimi: str | None, core: str | None = CORE_OK) -> None:
         if detect(core, kimi):
             fails.append(f"{label} must be GREEN, got {detect(core, kimi)}")
 
@@ -335,6 +393,8 @@ def selftest() -> int:
         KIMI_WRONG_LOCAL)
     green("a pure rename of the local AND the forward, merge still reaching the write", KIMI_RENAMED)
     green("the merge inlined at the write with no local at all", KIMI_INLINE)
+    red("a same-name merge assignment that occurs only AFTER the persist", KIMI_POSTHOC_MERGE)
+    red("a same-name merge assignment in a closed sibling scope", KIMI_CROSS_SCOPE_MERGE)
     red("a merge that exists only in a COMMENT above a live from-scratch local",
         code_only(KIMI_COMMENT_LIE))
     green("a commented-out old from-scratch write beside the live merged one",
@@ -345,10 +405,10 @@ def selftest() -> int:
         for f in fails:
             print("  " + f)
         return 1
-    print("SH-10 SELFTEST OK — red on from-scratch rewrite (inlined, through a forward, or via the "
-          "wrong local), missing primitive, private fork, missing file, shape change, a write that "
-          "skips SecureFile.writeAtomic0600, and a merge that exists only in a comment; green on "
-          "the merge reaching the write under any local or wrapper name")
+    print("SH-10 SELFTEST OK — red on from-scratch rewrite (inlined, through a forward, via the "
+          "wrong local, posthoc assignment, or sibling scope), missing primitive, private fork, "
+          "missing file, shape change, unsafe write, and comment-only merge; green only when the "
+          "lexically visible merge value reaches the write")
     return 0
 
 

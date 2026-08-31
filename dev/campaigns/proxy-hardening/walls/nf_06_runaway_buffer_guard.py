@@ -9,7 +9,7 @@ deltas forever does not fail a turn, it OOMs codex+grok+kimi simultaneously.
 GREEN requires ALL of:
   1. a shared splice.spi.BufferCapacity definition exists (one cap, one predicate — the same
      single-source move TerminalStates made for terminal precedence);
-  2. ALL THREE translators (chat, responses, passthrough) reference BufferCapacity;
+  2. ALL THREE translators (chat, responses, passthrough) call BufferCapacity.over at the live guard;
   3. the chat translator no longer carries its own private MAX_BUFFERED_CHARS (code MOTION,
      not a fourth copy).
 
@@ -27,6 +27,7 @@ SPI = ROOT / "gateway/provider-spi/src/main/kotlin/splice/spi/BufferCapacity.kt"
 CHAT = ROOT / "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt"
 RESP = ROOT / "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt"
 PASS = ROOT / "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughStreamTranslator.kt"
+_BUFFER_GUARD_RE = re.compile(r"\bBufferCapacity\.over\s*\(")
 
 
 def detect(
@@ -52,9 +53,9 @@ def detect(
         problems.append("no shared splice.spi.BufferCapacity — the cap either does not exist or "
                         "is a per-dialect copy waiting to drift")
     for name, text in (("chat", chat), ("responses", resp), ("passthrough", pas)):
-        if "BufferCapacity" not in (text or ""):
-            problems.append(f"{name} translator does not reference BufferCapacity — its buffers "
-                            "are unbounded (or guarded by a private fork)")
+        if not _BUFFER_GUARD_RE.search(text or ""):
+            problems.append(f"{name} translator does not call BufferCapacity.over() at its guard "
+                            "site — a type reference or unrelated constant does not bound buffers")
     if chat_raw is not None and "MAX_BUFFERED_CHARS =" in chat_raw:
         problems.append("chat still carries a private MAX_BUFFERED_CHARS — the lift must be code "
                         "MOTION, not a fourth copy that can drift")
@@ -95,6 +96,7 @@ def _read(p: pathlib.Path) -> str | None:
 
 SPI_OK = "public object BufferCapacity { const val X = 1 }"
 GUARDED = "if (BufferCapacity.over(a, b)) { latch() }"
+REFERENCED_ONLY = "val capacity = BufferCapacity\nupstream.collect { evt -> onEvent(evt, sink) }"
 UNGUARDED = "upstream.collect { evt -> onEvent(evt, sink) }"
 CHAT_PRIVATE = "private const val MAX_BUFFERED_CHARS = 20_000_000\nBufferCapacity"
 
@@ -114,6 +116,13 @@ def selftest() -> int:
                      f"{detect(SPI_OK, GUARDED, GUARDED, GUARDED, chat_raw=GUARDED)}")
     if not detect(SPI_OK, GUARDED, UNGUARDED, GUARDED, chat_raw=GUARDED):
         fails.append("one unguarded translator must be RED")
+    for name, chat, resp, pas in (
+        ("chat", REFERENCED_ONLY, GUARDED, GUARDED),
+        ("responses", GUARDED, REFERENCED_ONLY, GUARDED),
+        ("passthrough", GUARDED, GUARDED, REFERENCED_ONLY),
+    ):
+        if not detect(SPI_OK, chat, resp, pas, chat_raw=chat):
+            fails.append(f"{name} mentioning BufferCapacity without calling over() must be RED")
     if not detect(SPI_OK, CHAT_PRIVATE, GUARDED, GUARDED, chat_raw=CHAT_PRIVATE):
         fails.append("a chat-side private MAX_BUFFERED_CHARS copy must be RED (motion, not a fork)")
     if not detect(SPI_OK, None, GUARDED, GUARDED, chat_raw=None):
@@ -134,8 +143,9 @@ def selftest() -> int:
         for f in fails:
             print("  " + f)
         return 1
-    print("NF-06 SELFTEST OK — red on missing shared cap, any unguarded translator, a private "
-          "chat fork, and missing files; green only when all three guard from one source")
+    print("NF-06 SELFTEST OK — red on missing shared cap, any translator without a live over() "
+          "call, a private chat fork, and missing files; green only when all three guard from one "
+          "source")
     return 0
 
 

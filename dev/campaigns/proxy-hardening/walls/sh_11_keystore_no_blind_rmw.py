@@ -8,8 +8,9 @@ silently deleting every other stored API key. No lock exists, so two concurrent 
 invocations lose one write even on healthy reads.
 
 GREEN requires ALL of:
-  1. mutations read STRICTLY (absent file = legitimately empty and safe; unreadable file ABORTS
-     with "refusing to write" — existing keys preserved); the tolerant read stays for display;
+  1. write() AND unset() each read STRICTLY (absent file = legitimately empty and safe; unreadable
+     file ABORTS with "refusing to write" — existing keys preserved); tolerant display reads do not
+     earn either mutation site's strict-read leg;
   2. mutations run under a cross-process file lock (the G1 lesson, applied to keys.toml);
   3. the tolerant getOrDefault(emptyMap()) no longer feeds persist().
 
@@ -23,18 +24,35 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 STORE = ROOT / "gateway/core/src/main/kotlin/splice/core/config/KeyStore.kt"
+_NEXT_FUNCTION_RE = re.compile(
+    r"\n\s*(?:(?:public|private|internal|protected|override|suspend|inline)\s+)*fun\s+\w+\s*\("
+)
+
+
+def function_source(text: str, name: str) -> str | None:
+    """One member function, through (but not including) the next function declaration."""
+    start = re.search(r"\bfun\s+" + re.escape(name) + r"\s*\(", text)
+    if not start:
+        return None
+    following = _NEXT_FUNCTION_RE.search(text, start.end())
+    end = len(text) if following is None else following.start()
+    return text[start.start():end]
 
 
 def detect(text: str | None) -> list[str]:
     """Pure detection. No I/O — the selftest feeds it directly."""
     if text is None:
         return ["KeyStore.kt missing — refusing to pass vacuously"]
-    if "fun write(" not in text or "fun unset(" not in text:
+    mutations = {name: function_source(text, name) for name in ("write", "unset")}
+    if any(source is None for source in mutations.values()):
         return ["KeyStore mutation surface not found (shape changed?) — refusing to pass vacuously"]
+
     problems: list[str] = []
-    if "entriesStrict" not in text:
-        problems.append("no strict mutation-path read — a transient read failure still reads as "
-                        "an empty store and the next persist() deletes every other key")
+    for name, source in mutations.items():
+        if "entriesStrict(" not in (source or ""):
+            problems.append(f"{name}() does not perform its own strict read-modify-write — a strict "
+                            "helper elsewhere cannot stop this mutation from rebuilding from a "
+                            "tolerant empty-map fallback")
     if "refusing to write" not in text:
         problems.append("an unreadable store does not abort loudly — the operator learns about "
                         "key loss from the next 401, not from the failed command")
@@ -71,9 +89,17 @@ def _read(p: pathlib.Path) -> str | None:
     return code_only(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
-OPEN_FIX = "fun write(\nfun unset(\nentries().toMutableMap()\n.getOrDefault(emptyMap())"
-CLOSED_FIX = ('fun write(\nfun unset(\nentriesStrict()\nerror("keys.toml unreadable — refusing to write")\n'
-              "channel.tryLock()")
+OPEN_FIX = ("fun write() { entries().toMutableMap() }\n"
+            "fun unset() { entries().toMutableMap() }\n"
+            ".getOrDefault(emptyMap())")
+_STRICT_SUPPORT = ('fun entriesStrict() = error("keys.toml unreadable — refusing to write")\n'
+                   "fun acquireBounded() { channel.tryLock() }\n")
+CLOSED_FIX = ("fun write() { entriesStrict().toMutableMap() }\n"
+              "fun unset() { entriesStrict().toMutableMap() }\n" + _STRICT_SUPPORT)
+WRITE_ONLY_STRICT = ("fun write() { entriesStrict().toMutableMap() }\n"
+                     "fun unset() { entries().toMutableMap() }\n" + _STRICT_SUPPORT)
+UNSET_ONLY_STRICT = ("fun write() { entries().toMutableMap() }\n"
+                     "fun unset() { entriesStrict().toMutableMap() }\n" + _STRICT_SUPPORT)
 
 
 def selftest() -> int:
@@ -84,8 +110,12 @@ def selftest() -> int:
         fails.append(f"strict read + abort + lock must be GREEN, got {detect(CLOSED_FIX)}")
     if not detect(CLOSED_FIX.replace("channel.tryLock()", "")):
         fails.append("strict read without the lock must be RED")
-    if not detect(CLOSED_FIX.replace("entriesStrict()\n", "")):
+    if not detect(CLOSED_FIX.replace("entriesStrict()", "entries()")):
         fails.append("a lock without the strict read must be RED")
+    if not detect(WRITE_ONLY_STRICT):
+        fails.append("write() strict while unset() still reads tolerantly must be RED")
+    if not detect(UNSET_ONLY_STRICT):
+        fails.append("unset() strict while write() still reads tolerantly must be RED")
     if not detect(None):
         fails.append("missing KeyStore.kt must be RED, never a vacuous pass")
     if not detect("class KeyStore"):
@@ -95,8 +125,9 @@ def selftest() -> int:
         for f in fails:
             print("  " + f)
         return 1
-    print("SH-11 SELFTEST OK — red on blind RMW, missing lock, missing strict read, missing "
-          "file, and shape change; green only on strict + loud + locked mutations")
+    print("SH-11 SELFTEST OK — red on blind RMW, either mutation site lacking its strict read, "
+          "missing lock, missing file, and shape change; green only on strict + loud + locked "
+          "mutations")
     return 0
 
 

@@ -20,6 +20,7 @@ import splice.core.launch.ClaudeConfigMaterializer
 import splice.core.launch.ClaudePolicy
 import splice.core.launch.MaterializeSpec
 import splice.core.launch.TokenCaptureSpec
+import splice.core.util.LogSink
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
@@ -76,6 +77,27 @@ class ClaudeConfigMaterializerTest {
     private val statusline = "\"/usr/bin/curl\" -s :3096/statusline"
 
     private fun materializer(home: Path) = ClaudeConfigMaterializer(home)
+
+    // DR-39: linkShared's best-effort legs were best-effort AND silent — a head could launch
+    // without the operator's agents/skills/hooks layer and nothing said so. Deterministic
+    // reproduction: a real dir the operator made where the share would link must LOG the decline.
+    // (commands is exempt by design — real-dir-ness there is the login.md steady state.)
+    @Test
+    fun `an undone share names itself in the log instead of failing silently`(@TempDir home: Path) {
+        seedGlobal(home)
+        val configDir = home.resolve(".claude-head")
+        Files.createDirectories(configDir.resolve("agents")) // operator-made REAL dir blocks the link
+        val log = mutableListOf<String>()
+
+        ClaudeConfigMaterializer(home, log = LogSink { log += it })
+            .materialize(configDir, allPolicy, listOf("m1"), "m1", optionsCache)
+
+        assertTrue(
+            log.any { it.contains("'agents'") && it.contains("not linked") },
+            "the declined agents share must be named in the log, got $log",
+        )
+        assertTrue(log.none { it.contains("'commands'") }, "commands real-dir is by design; no noise: $log")
+    }
 
     // Test shim: materialize() now takes a MaterializeSpec; supply a fixed statusline so the
     // existing positional call sites read unchanged.

@@ -26,6 +26,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.core.util.Cancellables
+import splice.core.util.DaemonLog
+import splice.core.util.LogSink
 import splice.core.util.SecureFile
 import java.io.IOException
 import java.nio.file.Files
@@ -42,6 +44,7 @@ import kotlin.io.path.isSymbolicLink
 
 public class ClaudeConfigMaterializer(
     private val home: Path,
+    private val log: LogSink = LogSink(DaemonLog::write),
 ) {
     private val json = Json {
         ignoreUnknownKeys = true
@@ -118,8 +121,11 @@ public class ClaudeConfigMaterializer(
             if (!linkable) continue
             if (item == Keys.SESSIONS) {
                 // The peer registry migrates rather than links: see SessionRegistryLink's header.
+                // link() logs its own declines; this catches what it THROWS mid-flight (DR-39).
                 Cancellables.runCatchingCancellable {
                     sessionRegistry.link(globalDir().resolve(item), configDir.resolve(item))
+                }.exceptionOrNull()?.let { cause ->
+                    log("[materialize] sessions registry NOT linked into $configDir (${cause.message})\n")
                 }
             } else {
                 linkOneShared(configDir, item)
@@ -133,12 +139,35 @@ public class ClaudeConfigMaterializer(
         // Best-effort, and now truly so: the swap below is atomic, so an I/O failure at any point
         // leaves whatever is already on disk (DR-11a — the old delete-then-create pair made this
         // comment a lie: a create failing after the delete had destroyed the operator's file).
-        Cancellables.runCatchingCancellable { replaceWithSymlink(src, configDir.resolve(item)) }
+        // Best-effort is no longer SILENT (DR-39): a head quietly launching without the operator's
+        // hooks/agents/skills layer sent every symptom hunt to the wrong place — each undone share
+        // now names itself once per materialize. The decline (a real dir where the link would go)
+        // is detected here so it can be EXEMPTED for commands, whose real-dir-ness is the designed
+        // steady state (login.md lives inside it; LoginInterception re-links shared entries
+        // item-by-item — see this file's header).
+        val dst = configDir.resolve(item)
+        if (Files.isDirectory(dst, NOFOLLOW_LINKS) && !dst.isSymbolicLink()) {
+            if (item != Keys.COMMANDS) {
+                log(
+                    "[materialize] shared '$item' kept as this head's own real directory at $dst — " +
+                        "the operator's global copy is not linked\n",
+                )
+            }
+            return
+        }
+        Cancellables.runCatchingCancellable { replaceWithSymlink(src, dst) }
+            .exceptionOrNull()
+            ?.let { cause ->
+                log(
+                    "[materialize] shared '$item' NOT linked into $configDir (${cause.message}) — " +
+                        "this head launches without the operator's $item\n",
+                )
+            }
     }
 
     private fun replaceWithSymlink(src: Path, dst: Path) {
         if (Files.isDirectory(dst, NOFOLLOW_LINKS) && !dst.isSymbolicLink()) {
-            return // never delete a real dir the operator made
+            return // belt for the caller's decline check: never delete a real dir the operator made
         }
         // Build the replacement beside dst, then swap in ONE rename (DR-11a). ENOSPC still spends
         // an inode and an LSM can deny symlink creation — with delete-then-create either lost the

@@ -17,6 +17,7 @@ import splice.core.util.EnvReader
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import java.nio.file.Files
+import java.nio.file.LinkOption
 import java.nio.file.Path
 
 private const val MASK_MIN = 8
@@ -74,16 +75,27 @@ public class ApiKeyAuthProvider(
         return keyStore.read(envVar)
     }
 
+    // DIRECT read, no Files.exists pre-gate (DR-57): an exists() check — bare OR NOFOLLOW — reads
+    // false for an inaccessible target, an untraversable parent, and (bare) a dangling link alike,
+    // so it turned "the key file cannot be read" into silent absence and auth just stopped with no
+    // line. NoSuchFileException is the only positive evidence of absence, and even it is ambiguous:
+    // a DANGLING symlink throws NoSuch while the path entry exists. exists(NOFOLLOW) is used only to
+    // disambiguate that caught NoSuch — never as a pre-gate. Every other failure logs before the
+    // existing no-key fallthrough.
     private fun readKeyFile(file: Path): String? =
         Cancellables.runCatchingCancellable {
-            if (!Files.exists(file)) return@runCatchingCancellable null
             val text = Files.readString(file).trim()
             if (text.startsWith("{")) {
                 JsonScalars.str(json.parseToJsonElement(text).jsonObject, "api_key")
             } else {
                 text.takeIf { it.isNotEmpty() }
             }
-        }.onFailure {
-            log("[api-key-auth] failed to read $file: $it — treating as no key configured")
-        }.getOrNull()
+        }.getOrElse { failure ->
+            val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+                !Files.exists(file, LinkOption.NOFOLLOW_LINKS)
+            if (!genuinelyAbsent) {
+                log("[api-key-auth] failed to read $file: $failure — treating as no key configured")
+            }
+            null
+        }
 }

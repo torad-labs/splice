@@ -14,6 +14,7 @@ import splice.core.config.KeyStore
 import splice.provider.openai.ApiKeyAuthProvider
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 
 class ApiKeyAuthProviderTest {
 
@@ -74,5 +75,91 @@ class ApiKeyAuthProviderTest {
         assertNull(p.credentials())
         store.write("OPENROUTER_API_KEY", "sk-late")
         assertEquals("sk-late", (p.credentials() as splice.core.auth.Credentials.ApiKey).key)
+    }
+
+    // DR-57: the same access-indeterminate absence as MgmtKey (DR-56). The operator's key file sits
+    // behind a symlink whose target parent loses read (a permissions blip); Files.exists FOLLOWS the
+    // link and reads false, so readKeyFile used to return null WITHOUT logging — the failure you most
+    // want to read (why did auth silently stop?) never reached the log. The NOFOLLOW gate sees the
+    // present link, enters the read, hits AccessDenied, and the onFailure logs it loudly.
+    @Test
+    fun `an inaccessible-target key-file symlink logs the read failure, not silent absence - DR-57`(
+        @TempDir tmp: Path,
+    ) = runBlocking {
+        val externalDir = Files.createDirectories(tmp.resolve("external"))
+        val target = Files.writeString(externalDir.resolve("api.key"), "sk-from-file")
+        val link = tmp.resolve("key").also { Files.createSymbolicLink(it, target) }
+        Files.setPosixFilePermissions(externalDir, PosixFilePermissions.fromString("---------"))
+        val logs = mutableListOf<String>()
+        try {
+            val p = ApiKeyAuthProvider(
+                envVar = "OPENROUTER_API_KEY",
+                keyFile = link,
+                envReader = { null },
+                keyStore = KeyStore(tmp.resolve("keys.toml")),
+                log = logs::add,
+            )
+            assertNull(p.credentials(), "an unreadable key file is not a resolved credential")
+            assertEquals(
+                1,
+                logs.size,
+                "an inaccessible key file must log the read failure, not read as silent absence: $logs",
+            )
+            assertTrue(logs[0].contains("[api-key-auth] failed to read"), "names the failure: ${logs[0]}")
+        } finally {
+            Files.setPosixFilePermissions(externalDir, PosixFilePermissions.fromString("rwx------"))
+        }
+    }
+
+    private fun loggingProvider(keyFile: Path, store: KeyStore, logs: MutableList<String>) = ApiKeyAuthProvider(
+        envVar = "OPENROUTER_API_KEY",
+        keyFile = keyFile,
+        envReader = { null },
+        keyStore = store,
+        log = logs::add,
+    )
+
+    // DR-57 (codex class law): the key file sits DIRECTLY under a dir whose search bit is gone — no
+    // symlink anywhere. Files.exists(file, NOFOLLOW) still reads false here (it cannot stat through
+    // an untraversable parent), so even a NOFOLLOW pre-gate returns silent absence. Only a direct
+    // read reaches the AccessDenied and logs it.
+    @Test
+    fun `an inaccessible-parent key file logs the read failure - DR-57`(@TempDir tmp: Path) = runBlocking {
+        val externalDir = Files.createDirectories(tmp.resolve("external"))
+        val file = Files.writeString(externalDir.resolve("api.key"), "sk-from-file")
+        Files.setPosixFilePermissions(externalDir, PosixFilePermissions.fromString("---------"))
+        val logs = mutableListOf<String>()
+        try {
+            val p = loggingProvider(file, KeyStore(tmp.resolve("keys.toml")), logs)
+            assertNull(p.credentials())
+            assertEquals(1, logs.size, "an untraversable parent must log, not read as absence: $logs")
+            assertTrue(logs[0].contains("[api-key-auth] failed to read"), logs[0])
+        } finally {
+            Files.setPosixFilePermissions(externalDir, PosixFilePermissions.fromString("rwx------"))
+        }
+    }
+
+    // DR-57 (codex class law): a DANGLING key-file symlink throws NoSuchFile on read, but the path
+    // entry exists — the operator configured a link that broke, which is not "no key configured".
+    // exists(NOFOLLOW) disambiguates the caught NoSuch; it is never a pre-gate.
+    @Test
+    fun `a dangling key-file symlink logs the read failure, not silent absence - DR-57`(@TempDir tmp: Path) =
+        runBlocking {
+            val link = tmp.resolve("key").also { Files.createSymbolicLink(it, tmp.resolve("never-created")) }
+            val logs = mutableListOf<String>()
+            val p = loggingProvider(link, KeyStore(tmp.resolve("keys.toml")), logs)
+            assertNull(p.credentials())
+            assertEquals(1, logs.size, "a dangling key link is present-but-broken, not quiet absence: $logs")
+            assertTrue(logs[0].contains("[api-key-auth] failed to read"), logs[0])
+        }
+
+    // DR-57 companion (NEVER-BELOW-STATUS-QUO): a configured-but-never-created key file is the one
+    // genuine absence — NoSuch AND no path entry — and must stay a QUIET no-key fallthrough.
+    @Test
+    fun `a configured but absent key file stays a quiet no-key`(@TempDir tmp: Path) = runBlocking {
+        val logs = mutableListOf<String>()
+        val p = loggingProvider(tmp.resolve("absent.key"), KeyStore(tmp.resolve("keys.toml")), logs)
+        assertNull(p.credentials())
+        assertTrue(logs.isEmpty(), "genuine absence must not warn: $logs")
     }
 }

@@ -1238,19 +1238,25 @@ verify = "cd gateway && ./gradlew :app:test --console=plain"
 # [2026-08-31] ATTEST-START: tree=c4aa7e4f6260b06a9937fac7e2b34dd871e16279 at=2026-08-31T12:12:33Z
 # [2026-08-31] 2026-08-31 landed: wrapperCheck entry-stat classifies unreadable-not-missing before symlink probes; DoctorInstallProbes.shimCheck splits proven-missing vs unreadable; InstallShim.installedShimVersion THROWS on indeterminate (both callers classify), shimStalenessWarning renders UNREADABLE warning. DoctorShimAbsenceTest 5 arms: 3 RED pre-fix (failures=3, XML 12:14:03), not-linked + absent-null controls green both ways; restore cmp byte-identical, green 5/5. DoctorCommand.loadTopology (private) carries the same classify into DoctorTopology.Broken vs Absent — no direct arm (private, surfaced only through full doctor run), same-shape note.
 # [2026-08-31] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
+# [2026-08-31] VERDICT: outcome=redo gap=DoctorCommand.loadTopology classify unpinned: restoring the exists() pre-gate (Absent on denied) leaves all suites green — needs an inaccessible-config-parent arm through doctor output asserting broken/unreadable, not no-topology-yet
+# [2026-08-31] ATTEST-START: tree=03e8074b63b65289e514b2235f853a12425d5f0e at=2026-08-31T18:13:37Z
+# [2026-08-31] 2026-08-31 redo landed: permanent doctor-output arm 'an inaccessible config parent reports broken, never first-run' (DoctorCommandTest harness: hermetic env + denied config/splice dir) asserting 'does not parse' present AND 'no topology yet' absent. Isolated pre-fix DoctorCommand (8ce2901c^ checkout) red exactly on that arm (1/15) with DoctorShimAbsenceTest 5/5 green (matching codex's isolated-mutant observation); restore cmp byte-identical; 15/15 + detekt green.
+# [2026-08-31] ATTEST: scoped diffstat: .../test/kotlin/splice/app/cli/DoctorCommandTest.kt  | 20 ++++++++++++++++++++ | 1 file changed, 20 insertions(+); sidecar: .claude/ledger-diffs/DR-69.diff; off-scope: none
 
 [[items]]
 id = "DR-70"
 phase = "tooling"
 title = "codex sweep 2026-08-31 (CLI assembly of the DR-59 class): LoginIo.credentialConfigured:102-120 + AdminSupport.authPresent:104-105 collapse denied OAuth-file access to false — status/login/setup/doctor tell the operator to log in while intact tokens sit one chmod away. Boolean presence cannot encode it: use present/absent/read-error (or direct read/stat with caller-specific loud failure); denied-parent arms across status/login/setup/doctor; never read or log credential contents. Also (lower leg) AdminSupport.selfJar:76-85 takeIf{exists} — inaccessible fallback jar reports dev-build/not-installed instead of unreadable; direct metadata classification, clean absence keeps null."
 files = ["gateway/app/src/main/kotlin/splice/app/LoginIo.kt", "gateway/app/src/main/kotlin/splice/app/cli/AdminSupport.kt", "gateway/app/src/test/kotlin/AdminSupportTest.kt", "gateway/app/src/test/kotlin/splice/app/cli/LoginCommandTest.kt", "gateway/app/src/test/kotlin/StatusCommandTest.kt"]
-status = "done"
+status = "verified"
 verify = "cd gateway && ./gradlew :app:test --console=plain"
 # [2026-08-31] CLAIM: owner=claude-splice at=2026-08-31T12:12:33Z
 # [2026-08-31] ATTEST-START: tree=cde0ab5d187766bfd2c037fcccc1af9f85ad2e85 at=2026-08-31T12:12:33Z
 # [2026-08-31] ATTEST-START: tree=25a0452a34022f95053aefc277827de203720d4a at=2026-08-31T12:12:33Z
 # [2026-08-31] 2026-08-31 landed: AdminSupport.authPresent + LoginIo.credentialFileConfigured treat denied-access credential files as present/configured with 'fix access, not login' said on stdout; AdminSupport.selfJar returns the unreadable installed jar instead of misreporting dev-build/not-installed. CliAuthPresenceTest 3 arms ALL RED pre-fix (failures=3, XML 12:14:03), absence controls inside each arm; restore cmp byte-identical, green 3/3.
 # [2026-08-31] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
+# [2026-08-31] VERDICT: outcome=accepted
+# [2026-08-31] 2026-08-31 codex replay on 32b4a198: ACCEPTED — 3b3e99da^ LoginIo+AdminSupport mutant red all 3 arms (authPresent:57, credentialConfigured:72, selfJar:93), absence controls executed on both sides; restores SHA-verified byte-identical; 3/3 green.
 
 [[items]]
 id = "DR-71"

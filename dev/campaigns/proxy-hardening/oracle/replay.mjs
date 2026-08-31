@@ -205,6 +205,7 @@ function sanctionedScenarios() {
       rows[name] = {
         pinnedSha: tomlStr(block, 'pinned_sha256'),
         pinUpstream: tomlStr(block, 'pin_upstream'),
+        pinnedUpstreamSha: tomlStr(block, 'pinned_upstream_sha256'),
       };
     }
   }
@@ -440,10 +441,9 @@ command = "claudex"
       const observedUpstream = m.upstreamBodies.slice(before).map((x) => x.body);
       const problems = [];
 
-      // A sanctioned scenario always pins its current client bytes. Rows whose upstream request
-      // remains reference-compatible also set pin_upstream="fixture" and keep that direction under
-      // the ordinary deep diff; older sanctions such as truncated deliberately changed request
-      // count/shape and therefore pin the authorized client result alone.
+      // A sanctioned scenario pins BOTH directions. Rows whose upstream request remains reference-
+      // compatible set pin_upstream="fixture" and keep the ordinary deep diff; rows such as truncated
+      // deliberately changed request count/shape and pin the authorized upstream array by hash.
       const sanction = sanctionedRows[name];
       if (sanction?.pinnedSha) {
         const gotSse = canonicalize(out.sse);
@@ -454,6 +454,13 @@ command = "claudex"
         }
         if (sanction.pinUpstream === 'fixture') {
           gradeUpstream(fx.expected_upstream_requests, observedUpstream, sanctioned, problems);
+        } else if (sanction.pinnedUpstreamSha) {
+          const upstreamSha = createHash('sha256').update(JSON.stringify(observedUpstream)).digest('hex');
+          if (upstreamSha !== sanction.pinnedUpstreamSha) {
+            problems.push(`sanctioned upstream bytes drifted: pinned ${sanction.pinnedUpstreamSha.slice(0, 16)}…, observed ${upstreamSha.slice(0, 16)}…`);
+          }
+        } else {
+          problems.push('sanctioned scenario has no upstream pin — refusing a one-direction-only verdict');
         }
         verdicts[name] = { pass: problems.length === 0, sanctioned: true, problems, observed_status: out.status, observed_sse: gotSse, observed_upstream: observedUpstream };
         console.log(problems.length === 0 ? `  ✓ ${name} (sanctioned — pinned bytes hold)` : `  ✗ ${name}`);

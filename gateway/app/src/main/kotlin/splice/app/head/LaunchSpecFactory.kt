@@ -59,7 +59,7 @@ internal class LaunchSpecFactory(
             modelSlots = head.models.orEmpty().mapNotNull { model ->
                 model.slot?.let { slot -> model.id to slot }
             }.toMap(),
-            contextWindow = ctx.catalog.contextWindowFor(head.pinnedModel).toInt(),
+            contextWindow = ctx.catalog.contextWindowFor(head.pinnedModel),
             modelOptionsCache = buildInputs.modelOptionsCache(ctx.catalog),
             statuslineCommand = "curl -sS --data-binary @- http://127.0.0.1:$controlPort/statusline/$key",
             // The installed wrapper (`<command> login`) runs this head's provider sign-in; the

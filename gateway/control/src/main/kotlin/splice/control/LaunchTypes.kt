@@ -21,7 +21,7 @@ public data class LaunchSpec(
      *  fully retired for that head, and an undeclared tier stays un-set rather than pointing a
      *  second alias at an already-claimed model (the 2-model duplication this exists to remove). */
     val modelSlots: Map<String, String> = emptyMap(),
-    val contextWindow: Int,
+    val contextWindow: Long,
     val modelOptionsCache: JsonElement, // the /model picker option list
     val statuslineCommand: String, // per-head statusline command (…/statusline/<head>)
     val loginCommand: String, // shell command that runs THIS head's provider sign-in (e.g. `claudex login`)

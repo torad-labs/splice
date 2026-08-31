@@ -152,6 +152,26 @@ class LaunchSpecClientAuthTest {
     }
 
     @Test
+    fun `launch spec preserves a context window above Int max`(@TempDir tmp: Path) {
+        val window = Int.MAX_VALUE.toLong() + 1
+        val model = ModelEntry(id = "m", contextWindow = window)
+        val base = build(tmp, Dialect.ANTHROPIC_PASSTHROUGH)
+        val ctx = base.copy(
+            providerCfg = base.providerCfg.copy(models = listOf(model)),
+            catalog = ModelCatalog(
+                discoveryPrefix = "claude-splice--",
+                models = listOf(model),
+                defaultContextWindow = window,
+                pinnedModel = model.id,
+            ),
+        )
+
+        val spec = factory(tmp).launchSpecFor(ctx, 3099, keyPresent = true, forwardClientAuth = true)
+
+        assertEquals(window, spec.contextWindow)
+    }
+
+    @Test
     fun `launch spec exposes labels only for the head catalog`(@TempDir tmp: Path) {
         val shown = ModelEntry(id = "shown", label = "Shown", contextWindow = 500_000)
         val hidden = ModelEntry(id = "hidden", label = "Hidden", contextWindow = 256_000)

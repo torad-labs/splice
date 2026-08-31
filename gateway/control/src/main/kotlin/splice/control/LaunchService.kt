@@ -19,7 +19,7 @@ import kotlin.math.max
 
 // Floor for CLAUDE_CODE_AUTO_COMPACT_WINDOW (buildEnv): a small context window must not shrink the
 // auto-compact window below this.
-private const val AUTO_COMPACT_FLOOR = 60_000
+private const val AUTO_COMPACT_FLOOR = 60_000L
 
 // LaunchSpec + LaunchRecipe live in LaunchTypes.kt (concentration, 2026-08-19).
 

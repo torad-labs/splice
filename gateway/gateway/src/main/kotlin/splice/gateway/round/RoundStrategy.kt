@@ -26,6 +26,8 @@ internal class RoundStrategy(
     // (max 7 required) — always passed explicitly at the one call site (driveOneTurn).
     private val toolSearch: ToolSearchController? = null,
 ) {
+    private val rounds = RoundSplice()
+
     suspend fun run(requestBody: JsonObject, fold: FoldController?, reanchor: ReanchorController?) {
         val notice = RetryNotice { log(it) }
         if (fold != null) {
@@ -40,7 +42,14 @@ internal class RoundStrategy(
                 toolSearch = toolSearch,
             ).run(requestBody, fold)
         } else if (reanchor == null && toolSearch == null) {
-            finish(postRound(requestBody.toString()))
+            // DR-130: the runners salvage a failed round's own burn through withFailureSalvage
+            // (DR-124); this path handed the raw outcome to finishTurn, which stamps ONLY
+            // salvagedUsage — so the tokens the vendor billed went unrecorded. Every compact turn
+            // comes through here (fold, re-anchor and tool-search are all null when meta.compact),
+            // which made the most expensive turn class the one that recorded nothing. There are no
+            // absorbed rounds on this path, so the accumulator is empty by construction and a
+            // Success or a clean abandonment passes through untouched.
+            finish(rounds.withFailureSalvage(postRound(requestBody.toString()), RoundUsage()))
         } else {
             ReanchorRunner(
                 key = key,

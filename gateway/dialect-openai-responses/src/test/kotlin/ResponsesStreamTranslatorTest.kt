@@ -301,6 +301,29 @@ class ResponsesStreamTranslatorTest {
         assertTrue(sink.calls.contains("text#0:still read"))
     }
 
+    // DR-130: a compact turn takes the single-round path (fold/reanchor/toolSearch are all null
+    // when meta.compact), and partialOrNull returned null for compact — so the usage this very
+    // reducer harvests from response.failed "so the salvage is not permanently zero" was thrown
+    // away on the ONE turn class the cost doctrine is written about. The buffer copies stay
+    // skipped (nothing re-anchors a compaction); only the billed burn rides.
+    @Test
+    fun `a failed compact turn still carries its billed usage - DR-130`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx(compact = true)).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.failed","response":{"error":{"code":"server_error","message":"boom"},
+                       "usage":{"input_tokens":9000,"output_tokens":120}}}""",
+                ),
+            ).asFlow(),
+            sink,
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(9000, failure.partial?.usage?.inputTokens, "the compaction's billed input must survive")
+        assertEquals(120, failure.partial?.usage?.outputTokens, "the compaction's billed output must survive")
+        assertEquals("", failure.partial?.bodyText, "no buffer copies for a turn that never re-anchors")
+    }
+
     @Test
     fun `truncated stream without terminal is an honest overloaded failure`() = runTest {
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(

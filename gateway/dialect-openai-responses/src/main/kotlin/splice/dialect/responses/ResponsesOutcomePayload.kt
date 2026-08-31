@@ -33,9 +33,14 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
     /** The salvage payload for mid-stream re-anchoring — the wire is at a block boundary
      *  (driveTurn closeAll precedes the terminal decision); watchdog failures never carry one
      *  (their turn coroutine is being cancelled — nothing may re-POST). Compact turns never
-     *  re-anchor, so skip the full-buffer copies for them. */
+     *  re-anchor, so they skip the full-buffer copies — but they keep the BURN (DR-130): the
+     *  usage [ResponsesEventReducer] harvests from `response.failed` (its own words: "so the
+     *  salvage is not permanently zero") reaches the usage store and the perf counts only
+     *  through this payload, and a compaction is the most expensive turn class there is. A
+     *  usage-only partial cannot cause a re-POST: a compact turn has no re-anchor controller at
+     *  all, which is exactly why it took the un-salvaged path. */
     fun partialOrNull(state: ResponsesTurnState): TurnOutcome.PartialRound? =
-        if (ctx.compact) null else partialRound(state)
+        if (ctx.compact) TurnOutcome.PartialRound(usage = usageOf(state)) else partialRound(state)
 
     private fun partialRound(state: ResponsesTurnState): TurnOutcome.PartialRound = TurnOutcome.PartialRound(
         thinkingText = state.thinkingBuf.toString(),
@@ -45,11 +50,15 @@ internal class ResponsesOutcomePayload(private val ctx: StreamTurnContext) {
         hasToolUse = state.hasToolUse,
         reasoningEnvelopes = state.reasoningEnvelopes.toList(),
         toolTearOpen = state.toolSalvage.tearOpen,
-        usage = Usage(
-            inputTokens = state.inputTokens,
-            outputTokens = state.outputTokens,
-            cachedTokens = state.cachedTokens,
-            reasoningTokens = state.reasoningTokens,
-        ),
+        usage = usageOf(state),
+    )
+
+    /** The round's harvested burn. One reader for both payload shapes (DR-130) so the compact
+     *  carve-out above cannot drift from the full one. */
+    private fun usageOf(state: ResponsesTurnState): Usage = Usage(
+        inputTokens = state.inputTokens,
+        outputTokens = state.outputTokens,
+        cachedTokens = state.cachedTokens,
+        reasoningTokens = state.reasoningTokens,
     )
 }

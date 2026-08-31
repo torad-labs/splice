@@ -17,6 +17,7 @@ import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.gateway.round.FoldRunner
 import splice.gateway.round.ReanchorRunner
+import splice.gateway.round.RoundStrategy
 import splice.gateway.round.RunnerSignals
 import splice.gateway.wire.SseEmitterFactory
 import splice.spi.FoldController
@@ -727,5 +728,33 @@ class FoldRunnerSearchTest {
             "fold continuation wins on round 1; the search gate never sees that round's outcome",
         )
         assertEquals(1, h.count("message_stop"))
+    }
+}
+
+/** DR-130: RoundStrategy's third branch — `finish(postRound(...))`, taken when neither fold nor
+ *  re-anchor nor tool-search applies — hands the raw outcome straight to finishTurn, which stamps
+ *  only `salvagedUsage`. So the failed round's OWN harvested burn (the DR-124 mechanism) never
+ *  reached the usage store or the perf counts on that path. Every compact turn takes it. */
+class RoundStrategySingleRoundTest {
+
+    @Test
+    fun `the single-round path carries the failed round's own burn - DR-130`() = runTest {
+        val h = Harness()
+        RoundStrategy(
+            key = "t",
+            log = { },
+            emitter = h.emitter,
+            signals = h.signals(),
+            postRoundToSink = { _, _ -> error("the single-round path must not buffer") },
+            postRound = { retryableFailure(outputTokens = 11) },
+            finish = { h.finish(it) },
+            toolSearch = null,
+        ).run(continuationBody(), fold = null, reanchor = null)
+        val failure = h.finished as TurnOutcome.Failure
+        assertEquals(
+            11,
+            failure.salvagedUsage.outputTokens,
+            "a single-round failure's harvested burn must reach finishTurn's stamp (DR-124's mechanism)",
+        )
     }
 }

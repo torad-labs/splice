@@ -1293,4 +1293,52 @@ class ResponsesItemDoneToolArgsTest {
         assertTrue(textClose in 0 until toolOpen, "orphaned text block must close before the tool opens: ${sink.calls}")
         assertTrue(outcome is TurnOutcome.Success, "clean args after an index reuse stay honest: $outcome")
     }
+
+    // DR-108: a wire output_index was trusted without a block-type check — an output_text.delta
+    // carrying an OPEN function_call block's index emitted text_delta INSIDE tool_use on the wire
+    // (protocol-corrupt) and polluted the emittedText/textBuf honesty state. Mistargeted deltas
+    // drop, the same fate as the passthrough's PT-001 unmapped-index deltas.
+    @Test
+    fun `a text delta aimed at an open tool block's index is dropped - DR-108`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t1","name":"run"}}""",
+                ),
+                ev("""{"type":"response.output_text.delta","output_index":1,"delta":"leak"}"""),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"x\":1}"}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t1","name":"run"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        assertTrue(sink.calls.none { it.startsWith("text#") }, "no text_delta may enter a tool block: ${sink.calls}")
+        val s = assertInstanceOf(TurnOutcome.Success::class.java, outcome, "clean tool args stay a Success")
+        assertTrue(!s.emittedText, "a dropped mistarget must not claim emitted text")
+        assertTrue(s.bodyText.isEmpty(), "a dropped mistarget must not pollute the text buffer: '${s.bodyText}'")
+    }
+
+    // DR-108 mirror: an arguments delta aimed at an open TEXT block's index emitted
+    // input_json_delta inside a text block, and the .done shape could even CLOSE the text block
+    // through the args path. Dropped the same way.
+    @Test
+    fun `an args delta aimed at an open text block's index is dropped - DR-108`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"hello"}"""),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":0,"delta":"{\"x\":1}"}"""),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        assertTrue(sink.calls.none { it.startsWith("json#") }, "no args delta may enter a text block: ${sink.calls}")
+        val s = assertInstanceOf(TurnOutcome.Success::class.java, outcome, "the text turn stays a Success")
+        assertTrue(s.bodyText == "hello", "the real text survives untouched: '${s.bodyText}'")
+    }
 }

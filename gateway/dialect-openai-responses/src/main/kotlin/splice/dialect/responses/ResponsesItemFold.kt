@@ -107,7 +107,14 @@ internal class ResponsesItemFold(
         val delta = JsonScalars.strOrEmpty(evt[DELTA])
         if (delta.isEmpty()) return
         val key = frames.intOr(evt[OUTPUT_INDEX]) ?: 0
-        val b = state.blocks[key] ?: BlockState(sink.openText(), sawDelta = false).also { state.blocks[key] = it }
+        val existing = state.blocks[key]
+        // DR-108: an output_index does not cross block TYPES — a text delta aimed at an open
+        // function_call block would emit text_delta INSIDE tool_use on the wire (protocol-
+        // corrupt) and pollute the emittedText/textBuf honesty state. Dropped, the same fate as
+        // the passthrough's PT-001 unmapped-index deltas.
+        val mistargeted = existing != null && existing.tool
+        if (mistargeted) return
+        val b = existing ?: BlockState(sink.openText(), sawDelta = false).also { state.blocks[key] = it }
         state.emittedText = true
         state.textBuf.append(delta)
         sink.textDelta(b.index, delta)
@@ -119,6 +126,9 @@ internal class ResponsesItemFold(
     suspend fun onArgs(evt: JsonObject, sink: WireSink) {
         val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: return
         val b = state.blocks[oi] ?: return
+        // DR-108 mirror: an args frame aimed at an open TEXT block would emit input_json_delta
+        // inside a text block, and the .done shape would even CLOSE it through the args path.
+        if (!b.tool) return
         if (JsonScalars.strOrEmpty(evt["type"]) == "response.function_call_arguments.done") {
             if (!b.sawDelta) emitToolArgText(b, JsonScalars.strOrEmpty(evt["arguments"]), sink)
             // CX-01: a backend can truncate arguments mid-string and STILL send .done — the block

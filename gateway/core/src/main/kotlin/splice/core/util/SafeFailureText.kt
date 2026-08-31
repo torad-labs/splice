@@ -7,8 +7,11 @@ package splice.core.util
 public object SafeFailureText {
 
     /** Filesystem and network failures keep their full text — their messages are paths, hosts
-     *  and timeouts, the useful safe diagnostics. Every other exception renders as its class
-     *  name alone: parser messages especially can quote the input they failed on. */
+     *  and timeouts, the useful safe diagnostics. Every other exception renders as a FIXED
+     *  literal: parser messages can quote the input they failed on, and the class name is only
+     *  reachable through overridable toString() (reflection is walled), so a throwable that
+     *  overrides toString() colon-free would ride any prefix-taking render into diagnostics
+     *  verbatim (codex probe, 2026-08-31). No virtual call happens outside the allowlist. */
     public fun render(failure: Throwable): String = when (failure) {
         is java.nio.file.FileSystemException,
         is java.net.SocketException,
@@ -16,8 +19,6 @@ public object SafeFailureText {
         is java.io.InterruptedIOException,
         is java.io.EOFException,
         -> failure.toString()
-        // Throwable.toString() is "classname: message" (or bare classname) — the prefix names
-        // the type with no reflection; everything after the first colon is the withheld message.
-        else -> "${failure.toString().substringBefore(":")} (message withheld — may quote file bytes)"
+        else -> "failure (message withheld — may quote file bytes)"
     }
 }

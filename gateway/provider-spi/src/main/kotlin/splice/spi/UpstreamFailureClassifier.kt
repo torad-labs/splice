@@ -24,8 +24,16 @@ public object UpstreamFailureClassifier {
         RegexOption.IGNORE_CASE,
     )
     private val rateRe = Regex("rate.?limit|quota|\\b429\\b", RegexOption.IGNORE_CASE)
+
+    // DR-72 (soak, 2x live): the bare \bauth\w*\b prefix matched "authorized" inside ChatGPT's
+    // cyber_policy invitation sentence ("To get authorized for security work, join..."), turning
+    // a deterministic content-flag refusal into authentication_error (re-login UX). Auth wording
+    // must state an auth FAILURE: authenticate*/unauthorized/not-authorized/bare auth/auth error/
+    // authorization (the header word — real 401 bodies say "missing authorization header"),
+    // never the standalone positive "authorized".
     private val authRe = Regex(
-        "\\bauth\\w*\\b|unauthorized|token (?:expired|invalid|revoked)|invalid[_ ]token",
+        "\\bauthenticat\\w*\\b|\\bunauthori[sz]\\w*\\b|\\bnot authori[sz]ed\\b|\\bauth\\b|" +
+            "\\bauth[_ ]error\\b|\\bauthorization\\b|token (?:expired|invalid|revoked)|invalid[_ ]token",
         RegexOption.IGNORE_CASE,
     )
     private val gatewayHtmlRe = Regex("<html|bad gateway|cloudflare", RegexOption.IGNORE_CASE)

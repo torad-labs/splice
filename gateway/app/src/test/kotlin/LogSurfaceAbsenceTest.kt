@@ -55,6 +55,53 @@ class LogSurfaceAbsenceTest {
         assertEquals("", printed)
     }
 
+    // DR-68 redo (codex adversarial probe): the once-per-episode latch must re-arm on ANY healthy
+    // stat — a zero-byte log is a healthy read, not a continuing unreadable episode. The pre-redo
+    // `size > 0` guard (the DR-63 isNotEmpty scar reintroduced) warned once across
+    // denied → healthy-empty → denied instead of once per denied episode.
+    @Test
+    fun `a healthy zero-byte stat re-arms the follow latch - DR-68`(@TempDir tmp: Path) {
+        val dir = Files.createDirectories(tmp.resolve("logs"))
+        val log = dir.resolve("daemon.log")
+        Files.writeString(log, "x")
+        val warned = java.util.concurrent.atomic.AtomicBoolean(false)
+        val cmd = splice.app.cli.LogsCommand()
+        val deny = PosixFilePermissions.fromString("---------")
+        val allow = PosixFilePermissions.fromString("rwx------")
+
+        Files.setPosixFilePermissions(dir, deny)
+        val firstEpisode = try {
+            capturingStdout { cmd.polledSize(log, warned) } to capturingStdout { cmd.polledSize(log, warned) }
+        } finally {
+            Files.setPosixFilePermissions(dir, allow)
+        }
+        assertTrue(firstEpisode.first.contains("unreadable"), "episode 1 warns: ${firstEpisode.first}")
+        assertEquals("", firstEpisode.second, "the episode stays latched")
+
+        Files.writeString(log, "")
+        assertEquals("", capturingStdout { assertEquals(0L, cmd.polledSize(log, warned)) })
+
+        Files.setPosixFilePermissions(dir, deny)
+        val secondEpisode = try {
+            capturingStdout { cmd.polledSize(log, warned) }
+        } finally {
+            Files.setPosixFilePermissions(dir, allow)
+        }
+        assertTrue(secondEpisode.contains("unreadable"), "a fresh episode after a healthy empty stat warns again")
+    }
+
+    private fun capturingStdout(block: () -> Unit): String {
+        val savedOut = System.out
+        val out = ByteArrayOutputStream()
+        try {
+            System.setOut(PrintStream(out, true))
+            block()
+        } finally {
+            System.setOut(savedOut)
+        }
+        return out.toString()
+    }
+
     private fun withHomeCapturingStdout(home: Path, block: () -> Unit): String {
         val savedHome = System.getProperty("user.home")
         val savedOut = System.out

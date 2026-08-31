@@ -50,16 +50,22 @@ public class LogsCommand {
     }
 
     /** One poll's size, with DR-68's once-per-episode unreadable warning (the DR-63 latch idiom:
-     *  any healthy stat re-arms). Genuine absence and indeterminate access both poll on as 0. */
-    private fun polledSize(logFile: java.nio.file.Path, warned: java.util.concurrent.atomic.AtomicBoolean): Long =
-        Cancellables.runCatchingCancellable { Files.size(logFile) }.getOrElse { failure ->
-            val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
-                !Files.exists(logFile, java.nio.file.LinkOption.NOFOLLOW_LINKS)
-            if (!genuinelyAbsent && warned.compareAndSet(false, true)) {
-                println("splice: $logFile unreadable (${SafeFailureText.render(failure)}) — still polling")
+     *  ANY healthy stat re-arms — a zero-byte file is a healthy read, not a continuing episode
+     *  (DR-68 redo; `size > 0` was the DR-63 isNotEmpty scar reintroduced). Proven absence
+     *  re-arms too (the RateLimitFile sibling); only indeterminate access holds the latch. */
+    internal fun polledSize(logFile: java.nio.file.Path, warned: java.util.concurrent.atomic.AtomicBoolean): Long =
+        Cancellables.runCatchingCancellable { Files.size(logFile) }
+            .onSuccess { warned.set(false) }
+            .getOrElse { failure ->
+                val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+                    !Files.exists(logFile, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+                if (genuinelyAbsent) {
+                    warned.set(false)
+                } else if (warned.compareAndSet(false, true)) {
+                    println("splice: $logFile unreadable (${SafeFailureText.render(failure)}) — still polling")
+                }
+                0L
             }
-            0L
-        }.also { if (it > 0L) warned.set(false) }
 
     private fun parseLogsArgs(args: List<String>): LogsOpts? {
         val opts = LogsOpts()

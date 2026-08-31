@@ -267,10 +267,15 @@ id = "DR-18"
 phase = "usage"
 title = "Usage-wire scaling ships with zero observability and an unguarded claude-head assumption. TurnWiring.kt:43-52 reports SCALED input/cache counts to the client (scaling itself is OPERATOR DOCTRINE — the proxy authors the numerator so picker rows get real windows; do NOT revert). Defects: (a) nothing logs the factor, so a wrong factor is self-consistent on every surface — statusline absolute numbers are already 2x off on grok-4.3 rows vs the example config; (b) ModelCatalog.clientContextWindowFor has no claude- branch while Claude Code ignores CLAUDE_CODE_MAX_CONTEXT_TOKENS for claude-* ids, so the claude-splice factor is 1.0 today ONLY because all four rows declare 200k — the first differing row produces silent bogus scaling with no test that notices. Fix: head-scoped log line when factor != 1.0 (once per turn, not per event); a test pinning every claude-splice catalog row window-equal whose failure message names the clientContextWindowFor claude- gap; TurnWiring KDoc stating non-launched clients (e2e probe, bare curl) receive scaled counts by design."
 files = ["gateway/gateway/src/main/kotlin/splice/gateway/usage/TurnWiring.kt", "gateway/core/src/main/kotlin/splice/core/config/ModelCatalog.kt"]
-status = "todo"
+status = "verified"
 verify = "cd gateway && ./gradlew :core:test :gateway:test --console=plain"
 # [2026-08-30] 2026-08-30 split execution across seats to respect the ModelCatalogTest fence: codex-splice lands the claude-row equal-window pin test (message sent); claude-splice lands the TurnWiring factor logging + KDoc. Item closes when both halves land.
 # [2026-08-30] 2026-08-30 TurnWiring half landed by claude-splice: once-per-turn factor log (row, factor, client window), comment truth-updated, non-launched-client caveat documented. Mutation-proven (disabled log line reds the UsageScalingTest arm — first mutation attempt was vacuous: the --tests filter excluded the arm's CLASS, a small §24 lesson; re-proven against UsageScalingTest). Awaiting codex-splice claude-row pin test to close.
+# [2026-08-30] CLAIM: owner=claude-splice at=2026-08-31T01:20:26Z
+# [2026-08-30] ATTEST-START: tree=695ae01ab511a4fff84ca040bbc96c10f09e7ba6 at=2026-08-31T01:20:26Z
+# [2026-08-30] 2026-08-30 ALREADY IMPLEMENTED - verified by claude adversarial read at 59c39bd: (a) TurnWiring logs the factor+client-window once per turn via the factorLogged latch (comment cites DR-18); (b) ExampleConfigTest pins all claude-splice rows window-equal with the exact demanded message naming the clientContextWindowFor claude-* gap; (c) the TurnWiring KDoc states non-launched clients receive scaled counts by design. Item verify run verbatim, XML-counted green. Scaling doctrine untouched (operator lock).
+# [2026-08-30] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: none
+# [2026-08-30] VERDICT: outcome=accepted
 
 [[items]]
 id = "DR-19"
@@ -330,8 +335,12 @@ id = "DR-24"
 phase = "usage"
 title = "The a3ec6b4 regression test pins a number that fixture DECLARATION ORDER can move: its expected 2.0 depends on exactWindows last-wins between the grok-4.6 (256k) and grok-4.6-500k rows — reorder the two ModelEntry lines and the assertion silently becomes 3.90625, failing for the wrong reason or passing wrongly. Pin the invariant instead: distinct unambiguous ids, or assert the window lookup directly before asserting the scale."
 files = ["gateway/core/src/test/kotlin/ModelCatalogTest.kt"]
-status = "todo"
+status = "done"
 verify = "cd gateway && ./gradlew :core:test --console=plain"
+# [2026-08-30] CLAIM: owner=claude-splice at=2026-08-31T01:14:43Z
+# [2026-08-30] ATTEST-START: tree=344344ca9125f3c1538e9c7c5289b8ddc0790afd at=2026-08-31T01:14:43Z
+# [2026-08-30] 2026-08-30 FIXED (claude): scale pin re-asserted under both fixture orders - rawWindows raw-first design is order-independent and the new arm mutation-proofs it. core 153/153.
+# [2026-08-30] ATTEST: scoped diffstat: gateway/core/src/test/kotlin/ModelCatalogTest.kt | 62 +++++++++++++++++++++++- | 1 file changed, 60 insertions(+), 2 deletions(-); sidecar: .claude/ledger-diffs/DR-24.diff; off-scope: gateway/core/src/main/kotlin/splice/core/model/ModelCatalog.kt
 
 [[items]]
 id = "DR-25"
@@ -358,8 +367,12 @@ id = "DR-27"
 phase = "usage"
 title = "stripSuffixes widened from a [1m] literal to any-trailing-bracket (ModelCatalog.kt:60) and it computes the id SENT UPSTREAM — any provider id with a genuine trailing bracket is now silently mangled before the wire (latent: no shipped id has one, but the blast radius moved from one literal to a class and nothing pins it). Worse, oneMillionHint (line 112) is UNANCHORED while stripSuffixes is anchored, so the two predicates that must agree do not: k3[1m]-preview would get the 1e6 client window but ship unstripped. Fix: strip only suffixes that resolve to a catalog row (or anchor and unify the two regexes); add the mangling-class test."
 files = ["gateway/core/src/main/kotlin/splice/core/config/ModelCatalog.kt"]
-status = "todo"
+status = "done"
 verify = "cd gateway && ./gradlew :core:test --console=plain"
+# [2026-08-30] CLAIM: owner=claude-splice at=2026-08-31T01:14:43Z
+# [2026-08-30] ATTEST-START: tree=d7e9d96e7f57056bcd185d7b75dfcf75f20c562d at=2026-08-31T01:14:43Z
+# [2026-08-30] 2026-08-30 FIXED (claude): oneMillionHint un-anchored to mirror the client (cli 2.1.233 binary read: KE() is containsMatch /\[1m\]/i, G4u gates on it) - the anchored version produced a wrong scale factor for mid-string [1m] spellings. Mangling class already narrowed (anchored numeric-tier regex); now mutation-pinned (any-bracket revert kills 2 arms). One legacy arm pinning the false trailing-only claim inverted with binary evidence in place. core 153/153.
+# [2026-08-30] ATTEST: scoped diffstat: (no scoped file changes); sidecar: none; off-scope: gateway/core/src/main/kotlin/splice/core/model/ModelCatalog.kt, gateway/core/src/test/kotlin/ModelCatalogTest.kt
 
 [[items]]
 id = "DR-29"
@@ -432,9 +445,13 @@ verify = "cd gateway && ./gradlew :app:test --tests 'DaemonLogWiringTest' --cons
 id = "DR-34"
 phase = "walls"
 title = "Every wire-level ChatGPT-Account-ID claim is unenforceable: MockChatGptUpstream records only Authorization (:123-124), so the OpenAiResponsesTest no-account-header NAME, GrokProviderTest:140 and DaemonTest:137 comments assert nothing on the wire; adding the header on grok/openai or dropping it on the assembled codex head passes everything (CodexProviderTest:67/75 is unit-level extraHeaders only). GrokAuthProvider.kt:4 / OpenAiResponsesProvider.kt:2 guards are bare comments. Fix: capture the header in the mock + three one-line assertions (grok absent, openai absent, codex present). Found by close-out wall lens (closeout/d-walls.md #3)."
-files = ["gateway/gateway/src/testFixtures/kotlin/mock/MockChatGptUpstream.kt", "gateway/provider-grok/src/test/kotlin/grok/GrokProviderTest.kt", "gateway/app/src/test/kotlin/DaemonTest.kt"]
-status = "todo"
+files = ["gateway/gateway/src/testFixtures/kotlin/mock/MockChatGptUpstream.kt", "gateway/provider-grok/src/test/kotlin/grok/GrokProviderTest.kt", "gateway/app/src/test/kotlin/DaemonTest.kt", "gateway/provider-openai/src/test/kotlin/openai/OpenAiResponsesTest.kt"]
+status = "done"
 verify = "cd gateway && ./gradlew :gateway:test :provider-grok:test :app:test --console=plain"
+# [2026-08-30] FENCE-EDITED: files = ["gateway/gateway/src/testFixtures/kotlin/mock/MockChatGptUpstream.kt", "gateway/provider-grok/src/test/kotlin/grok/GrokProviderTest.kt", "gateway/app/src/test/kotlin/DaemonTest.kt"] -> files = ["gateway/gateway/src/testFixtures/kotlin/mock/MockChatGptUpstream.kt", "gateway/provider-grok/src/test/kotlin/grok/GrokProviderTest.kt", "gateway/app/src/test/kotlin/DaemonTest.kt", "gateway/provider-openai/src/test/kotlin/openai/OpenAiResponsesTest.kt"] (by=orchestrator implied; no flag)
+# [2026-08-30] 2026-08-30 fence widened on codex request: OpenAiResponsesTest.kt added - the named OpenAI absent-assertion belongs there.
+# [2026-08-30] codex report: done, local final-history commit 8a78ab8. Red mutations: shared ResponsesProvider injected ChatGPT-Account-ID=mutant -> exact OpenAI+Grok tests failed (basic,null)vs(basic,mutant); Codex accountIdHeader condition inverted -> exact Daemon test failed (basic,acct-1)vs(basic,null). XML named each testcase; production restored; three exact tests + 4-module suite --rerun-tasks green + 4 detekt modules. Receipt hash to ancestor-verify at their next announced push.
+# [2026-08-30] Attribution unavailable: missing in_flight tree snapshot
 
 [[items]]
 id = "DR-35"
@@ -448,9 +465,11 @@ verify = "bash checks/gate.sh"
 id = "DR-36"
 phase = "responses"
 title = "ResponsesTurnState.blocks (ResponsesTurnState.kt:22) HashMap has ZERO removals and is invisible to the NF-06 capacity guard because ResponsesStreamTranslator.kt:75-79 never passes toolIndexCount - upstream-controlled per-round growth to OOM on the shared ~1G heap. Fix: pass the count into BufferCapacity.over (and evict on block close) so the existing guard sees it. Re-confirmed open at 9700877 by the close-out resource lens."
-files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnState.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt"]
+files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnState.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesItemFold.kt", "gateway/dialect-openai-responses/src/test/kotlin/ResponsesStreamTranslatorTest.kt"]
 status = "todo"
 verify = "cd gateway && ./gradlew :dialect-openai-responses:test --console=plain"
+# [2026-08-30] FENCE-EDITED: files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnState.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt"] -> files = ["gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesTurnState.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesStreamTranslator.kt", "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesItemFold.kt", "gateway/dialect-openai-responses/src/test/kotlin/ResponsesStreamTranslatorTest.kt"] (by=orchestrator implied; no flag)
+# [2026-08-30] FENCE widened per codex request (2026-08-30 msg): close paths live in ResponsesItemFold.kt, NF-06 test class in ResponsesStreamTranslatorTest.kt - both verified to exist before widening.
 
 [[items]]
 id = "DR-37"
@@ -548,9 +567,14 @@ verify = "cd gateway && ./gradlew :dialect-openai-responses:test :gateway:test -
 id = "DR-47"
 phase = "usage"
 title = "RetryAfter seconds*1000 Long overflow disables the floor/cooldown (codex lens; may pair with codex local 2b643d8 launch-window overflow fix - dedupe at landing). Fix: saturating multiply + arm at Long.MAX_VALUE/1000+1."
-files = ["gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamResponse.kt"]
-status = "todo"
+files = ["gateway/provider-spi/src/main/kotlin/splice/spi/RetryAfter.kt", "gateway/provider-spi/src/test/kotlin/UpstreamClientRetryPolicyTest.kt"]
+status = "done"
 verify = "cd gateway && ./gradlew :provider-spi:test --console=plain"
+# [2026-08-30] CLAIM: owner=claude-splice at=2026-08-31T01:22:51Z
+# [2026-08-30] ATTEST-START: tree=b404016d2e9432eabaa4a8b0f29554ce63ef1f03 at=2026-08-31T01:22:51Z
+# [2026-08-30] FENCE-EDITED: files = ["gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamResponse.kt"] -> files = ["gateway/provider-spi/src/main/kotlin/splice/spi/RetryAfter.kt", "gateway/provider-spi/src/test/kotlin/UpstreamClientRetryPolicyTest.kt"] (by=orchestrator implied; no flag)
+# [2026-08-30] FENCE was stale (UpstreamResponse.kt): retryAfterMs lives in RetryAfter.kt since the HD-25 split. FIX: secondsFormMs saturates at Long.MAX_VALUE when seconds > MAX/1000 (was naive *1000 wrap-to-negative disabling floor/give-up/cooldown). ARMS: behavioral 503+Retry-After=MAX/1000+1 (fixed: 1 call, no backoff floor, follower blocked by UP-001 cooldown; RED on unfixed: 3 calls, wrapped floor) + direct boundary pins (MAX/1000 exact multiply, MAX/1000+1 and MAX saturate; RED: expected MAX got -9223372036854775616). GREEN: :provider-spi:test --rerun-tasks XML 125/0 + detekt. codex 2b643d8 is launch-window overflow (LaunchSpecFactory/LaunchService) - different files, no dedupe conflict.
+# [2026-08-30] ATTEST: scoped diffstat: .../src/main/kotlin/splice/spi/RetryAfter.kt       |  9 +++++-- | .../test/kotlin/UpstreamClientRetryPolicyTest.kt   | 29 ++++++++++++++++++++++ | 2 files changed, 36 insertions(+), 2 deletions(-); sidecar: .claude/ledger-diffs/DR-47.diff; off-scope: none
 
 [[items]]
 id = "DR-48"

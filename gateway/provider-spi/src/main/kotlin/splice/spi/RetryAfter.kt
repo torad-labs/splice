@@ -32,9 +32,14 @@ internal class RetryAfter {
     }
 
     /** The COMMON path: `Retry-After: 30`. A negative delay is not a delay — null, and the curve
-     *  decides. */
+     *  decides. SATURATING above Long.MAX/1000 (DR-47): the naive ×1000 wrapped a hostile or
+     *  broken header to a NEGATIVE delay, which read as "tiny pushback" everywhere — floor,
+     *  give-up threshold, and cooldown all disabled by one absurd number. Saturated MAX_VALUE
+     *  trips the give-up comparison instead, which is what an absurd pushback should do. */
     private fun secondsFormMs(value: String): Long? =
-        value.toLongOrNull()?.takeIf { it >= 0 }?.times(MS_PER_S)
+        value.toLongOrNull()
+            ?.takeIf { it >= 0 }
+            ?.let { seconds -> if (seconds > Long.MAX_VALUE / MS_PER_S) Long.MAX_VALUE else seconds * MS_PER_S }
 
     /** The NF-04 fallback: `Retry-After: Wed, 21 Oct 2026 07:28:00 GMT`. Converted against the WALL
      *  clock deliberately — an HTTP-date is wall time and MonoClock has no epoch — clamping past

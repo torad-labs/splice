@@ -15,6 +15,7 @@ import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
 import splice.spi.PostContext
+import splice.spi.RetryAfter
 import splice.spi.UpstreamClient
 import splice.spi.UpstreamFailed
 import splice.spi.Waiter
@@ -140,6 +141,34 @@ class UpstreamClientRetryPolicyTest {
         }
         assertThrows<UpstreamFailed> { postOnce(clientOver(engine)) }
         assertEquals(1, calls.get())
+    }
+
+    @Test
+    fun `overflowing retry-after saturates instead of wrapping negative`() = runTest {
+        // DR-47: seconds*1000 past Long.MAX wrapped NEGATIVE, which read as "tiny pushback" — the
+        // give-up branch never fired, the curve retried on a negative floor, and the cooldown armed
+        // an already-expired horizon. Saturation turns it into the absurd-pushback case above: one
+        // attempt, shared cooldown armed at the NF-01 ceiling.
+        val calls = AtomicInteger()
+        val capture = Capture()
+        val engine = MockEngine {
+            calls.incrementAndGet()
+            respond("busy", HttpStatusCode.ServiceUnavailable, headersOf("Retry-After", "${Long.MAX_VALUE / 1000 + 1}"))
+        }
+        val client = clientOver(engine, capture, clock = { 0L })
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(1, calls.get(), "saturated pushback must give up, not retry on a wrapped-negative floor")
+        assertTrue(capture.minDelays.isEmpty())
+        assertThrows<UpstreamFailed> { postOnce(client) }
+        assertEquals(1, calls.get(), "a 5xx carrying the same pushback arms the shared cooldown (UP-001)")
+    }
+
+    @Test
+    fun `retry-after seconds saturate exactly at the Long boundary`() {
+        val retryAfter = RetryAfter()
+        assertEquals(Long.MAX_VALUE / 1000 * 1000, retryAfter.retryAfterMs("${Long.MAX_VALUE / 1000}"))
+        assertEquals(Long.MAX_VALUE, retryAfter.retryAfterMs("${Long.MAX_VALUE / 1000 + 1}"))
+        assertEquals(Long.MAX_VALUE, retryAfter.retryAfterMs("${Long.MAX_VALUE}"))
     }
 
     @Test

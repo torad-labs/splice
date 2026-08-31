@@ -50,9 +50,15 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
         // Dropped media leaves an HONEST MARKER (the v25 doctrine: screenshots silently
         // vanishing is the regression class; the model must know something was omitted).
         val markers = quirks.omissionMarkers(content)
+        val imageBlocks = content.filterIsInstance<ImageBlock>()
+        val images = imageBlocks.mapNotNull { imagePart(it.source) }
+        // DR-94: vision-ON drops (a source imagePart cannot map) escaped the omissionMarkers gate,
+        // which keys on supportsVision alone — an image-only message then vanished ENTIRELY,
+        // breaking role alternation and hiding the loss from the model. Marker on the DELTA the
+        // mapping actually produced; the no-vision case stays omissionMarkers' (one marker, not two).
+        val sourceMarkers = unreadableSourceMarkers(imageBlocks.size - images.size)
         val textsRaw = content.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
-        val texts = (listOf(textsRaw) + markers).filter { it.isNotEmpty() }.joinToString("\n")
-        val images = content.filterIsInstance<ImageBlock>().mapNotNull { imagePart(it.source) }
+        val texts = (listOf(textsRaw) + markers + sourceMarkers).filter { it.isNotEmpty() }.joinToString("\n")
 
         if (toolUses.isNotEmpty()) {
             appendAssistantToolCalls(sink, toolUses, texts)
@@ -129,12 +135,13 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
         toolResults.forEach { tr ->
             val out = tr.content.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
             val images = tr.content.filterIsInstance<ImageBlock>().mapNotNull { imagePart(it.source) }
-            val imageCount = tr.content.count { it is ImageBlock }
+            val dropped = tr.content.count { it is ImageBlock } - images.size
             sink.addJsonObject {
                 put(ROLE, "tool")
                 put("tool_call_id", tr.toolUseId)
-                // string-only channel: dropped images (no vision) are declared IN the output.
-                put(CONTENT, if (imageCount > 0 && images.isEmpty()) markerFold(out, imageCount) else out)
+                // string-only channel: dropped images (no vision, or an unreadable source) are
+                // declared IN the output — on the DELTA, so a partial drop is marked too (DR-94).
+                put(CONTENT, if (dropped > 0) markerFold(out, dropped) else out)
             }
             if (images.isNotEmpty()) {
                 trailingImages.add(tr.toolUseId to images)
@@ -147,10 +154,23 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
         }
     }
 
-    fun markerFold(out: String, imageCount: Int): String =
-        (listOf(out) + "[$imageCount image(s) omitted by ${quirks.providerTag} proxy: backend has no vision]")
+    fun markerFold(out: String, imageCount: Int): String {
+        // DR-94: with vision ON the drop was an unreadable SOURCE, not a capability gap — the
+        // marker must not blame vision the backend has.
+        val reason = if (quirks.supportsVision) "unreadable image source" else "backend has no vision"
+        return (listOf(out) + "[$imageCount image(s) omitted by ${quirks.providerTag} proxy: $reason]")
             .filter { it.isNotEmpty() }
             .joinToString("\n")
+    }
+
+    // DR-94: the vision-ON drop marker (empty base64, unknown source type). Distinct from
+    // omissionMarkers so the no-vision path never emits two markers for the same images.
+    private fun unreadableSourceMarkers(dropped: Int): List<String> =
+        if (dropped > 0 && quirks.supportsVision) {
+            listOf("[$dropped image(s) omitted by ${quirks.providerTag} proxy: unreadable image source]")
+        } else {
+            emptyList()
+        }
 
     // ARGUMENT ORDER (HD-20): the former `JsonObjectBuilder` receiver became the first parameter and
     // [name]/[args] kept their order, so the sole call site reads `putFunction(this, tu.name,

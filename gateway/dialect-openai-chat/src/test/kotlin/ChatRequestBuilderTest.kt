@@ -174,6 +174,51 @@ class ChatRequestBuilderTest {
     }
 
     @Test
+    fun `unreadable image source leaves an honest marker instead of dropping the message - DR-94`() {
+        // Vision is ON (default quirk) but the source cannot be mapped: pre-fix the image-only
+        // message vanished ENTIRELY - role alternation broken, omission hidden from the model.
+        val req = build(
+            """{"model":"m","messages":[
+                {"role":"user","content":[
+                    {"type":"image","source":{"type":"base64","media_type":"image/png","data":""}}
+                ]}
+            ]}""",
+        )
+        val user = req.messages().single()
+        assertEquals("user", user["role"]?.jsonPrimitive?.content)
+        val content = user["content"]?.jsonPrimitive?.content.orEmpty()
+        assertTrue(
+            content.contains("1 image(s) omitted by kimi proxy: unreadable image source"),
+            "marker missing: $content",
+        )
+    }
+
+    @Test
+    fun `a partially unreadable tool_result declares the dropped image - DR-94`() {
+        // Pre-fix the tool-output marker fired only when ALL images dropped, so losing one of two
+        // was silent - and with vision ON the old wording blamed vision the backend has.
+        val req = build(
+            """{"model":"m","messages":[
+                {"role":"assistant","content":[{"type":"tool_use","id":"t9","name":"shot","input":{}}]},
+                {"role":"user","content":[{"type":"tool_result","tool_use_id":"t9","content":[
+                    {"type":"text","text":"took screenshot"},
+                    {"type":"image","source":{"type":"base64","media_type":"image/png","data":"aGk="}},
+                    {"type":"image","source":{"type":"base64","media_type":"image/png","data":""}}
+                ]}]}
+            ]}""",
+        )
+        val msgs = req.messages()
+        val tool = msgs.first { it["role"]?.jsonPrimitive?.content == "tool" }
+        val content = tool["content"]?.jsonPrimitive?.content.orEmpty()
+        assertTrue(
+            content.contains("1 image(s) omitted by kimi proxy: unreadable image source"),
+            "marker missing: $content",
+        )
+        // the readable sibling still rides the follow-up user message
+        assertTrue(msgs.last().toString().contains("data:image/png;base64,aGk="))
+    }
+
+    @Test
     fun `document blocks leave an omission marker`() {
         val req = build(
             """{"model":"m","messages":[

@@ -2,6 +2,7 @@
 // token capture. Round-trip, precedence-irrelevant mechanics (that lives in the provider test),
 // parse tolerance, and the 0600 + SPLICE_CONFIG-sibling path contract.
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -241,6 +242,10 @@ class KeyStoreTest {
         val dangling = KeyStore(link, log = LogSink { log += it })
         assertTrue(dangling.names().isEmpty())
         assertEquals(1, log.count { it.contains("UNREADABLE") }, "a dangling store link must warn: $log")
+        // Wording honesty (codex): here the link's TARGET is gone — "your keys are still in the
+        // file" would be a false diagnostic. The line may only claim what every branch can prove.
+        assertTrue(log.single().contains("may still reference operator key state"), "hedged consequence: $log")
+        assertFalse(log.single().contains("still in the file"), "must not assert survival it cannot know: $log")
     }
 
     // DR-40 redo (codex write repro): the operator's keys.toml is a symlink whose target parent lost

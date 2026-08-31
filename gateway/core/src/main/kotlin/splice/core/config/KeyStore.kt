@@ -134,10 +134,13 @@ public class KeyStore(
             }.getOrDefault(MTIME_UNREADABLE)
             val seen = warnedCorruptMtime.get()
             if (mtime != seen && warnedCorruptMtime.compareAndSet(seen, mtime)) {
+                // Epistemically honest consequence (DR-40, codex): "your keys are still in the
+                // file" is a claim this branch cannot make — for a dangling link the target is
+                // GONE, and through an untraversable parent the state is unknowable.
                 log(
                     "[keys] $path is UNREADABLE (${failure.message}) — treating as empty for " +
-                        "display, but your keys are still in the file: fix or remove it " +
-                        "(writes abort rather than clobber)\n",
+                        "display; the path may still reference operator key state, fix or " +
+                        "remove it (writes abort rather than clobber)\n",
                 )
             }
         }

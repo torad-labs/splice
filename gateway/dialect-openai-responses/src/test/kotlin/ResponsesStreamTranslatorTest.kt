@@ -6,6 +6,8 @@ import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -19,6 +21,7 @@ import splice.core.turn.TurnOutcome
 import splice.dialect.responses.EmitEncryptedReasoning
 import splice.dialect.responses.ResponsesStreamTranslator
 import splice.dialect.responses.StreamTurnContext
+import splice.spi.BufferCapacity
 import splice.spi.WatchdogFired
 import splice.spi.WireSink
 
@@ -151,6 +154,10 @@ class ResponsesStreamTranslatorTest {
                 ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"c\":"}"""),
                 ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"1}"}"""),
                 ev("""{"type":"response.function_call_arguments.done","output_index":1}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":1,
+                       "item":{"type":"function_call"}}""",
+                ),
                 completed,
             ).asFlow(),
             sink,
@@ -768,6 +775,61 @@ class ToolSearchCaptureTest {
 
 // NF-06 lives in its own class: ResponsesStreamTranslatorTest sits at detekt's LargeClass ceiling.
 class ResponsesRunawayGuardTest {
+
+    private fun toolAdded(outputIndex: Int): JsonObject = buildJsonObject {
+        put("type", JsonPrimitive("response.output_item.added"))
+        put("output_index", JsonPrimitive(outputIndex))
+        put(
+            "item",
+            buildJsonObject {
+                put("type", JsonPrimitive("function_call"))
+                put("call_id", JsonPrimitive("call_$outputIndex"))
+                put("name", JsonPrimitive("run"))
+            },
+        )
+    }
+
+    private fun toolArgs(outputIndex: Int, delta: String): JsonObject = buildJsonObject {
+        put("type", JsonPrimitive("response.function_call_arguments.delta"))
+        put("output_index", JsonPrimitive(outputIndex))
+        put("delta", JsonPrimitive(delta))
+    }
+
+    @Test
+    fun `retained tool block count trips the shared capacity guard`() = runTest {
+        val sink = RecordingSink()
+        var emitted = 0
+        val events = kotlinx.coroutines.flow.flow {
+            repeat(BufferCapacity.MAX_TOOL_INDEX_ENTRIES + 10) { outputIndex ->
+                emitted += 1
+                emit(toolAdded(outputIndex))
+            }
+        }
+
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(events, sink)
+        val failure = outcome as TurnOutcome.Failure
+        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        assertEquals(BufferCapacity.MAX_TOOL_INDEX_ENTRIES, sink.calls.count { it.startsWith("openTool") })
+        assertEquals(BufferCapacity.MAX_TOOL_INDEX_ENTRIES + 1, emitted, "guard must stop collection")
+    }
+
+    @Test
+    fun `aggregate arguments across open tool blocks trip the shared capacity guard`() = runTest {
+        val chunk = "x".repeat(1_000_000)
+        val sink = RecordingSink()
+        val events = kotlinx.coroutines.flow.flow {
+            repeat(25) { outputIndex ->
+                emit(toolAdded(outputIndex))
+                emit(toolArgs(outputIndex, chunk))
+            }
+        }
+
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(events, sink)
+        val failure = outcome as TurnOutcome.Failure
+        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        assertEquals(20, sink.calls.count { it.startsWith("json#") })
+    }
+
     @Test
     fun `runaway upstream trips the shared buffer cap into an honest local failure - NF-06`() = runTest {
         // 25 x 1M-char text deltas, never a response.completed — the misbehaving-upstream shape.

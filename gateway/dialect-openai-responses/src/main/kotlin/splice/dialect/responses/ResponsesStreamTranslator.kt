@@ -69,13 +69,19 @@ public class ResponsesStreamTranslator(private val ctx: StreamTurnContext) : Str
         try {
             upstream
                 .takeWhile {
-                    // NF-06: reasoningEnvelopes accumulate before any block opens, so they ride the
-                    // pendingArgs surface of the cap. Stop collection so the producer unwinds too.
-                    val envelopeChars = state.reasoningEnvelopes.sumOf { it.length }
+                    // NF-06: reasoning envelopes and function arguments accumulate outside the
+                    // rendered text buffers. Saturate their sum before the Int-shaped shared guard;
+                    // block count separately bounds an upstream that opens indexes without closing.
+                    val envelopeChars = state.reasoningEnvelopes.sumOf { it.length.toLong() }
+                    val pendingArgsChars = minOf(
+                        Int.MAX_VALUE.toLong(),
+                        envelopeChars + state.bufferedToolArgsChars,
+                    ).toInt()
                     val withinCapacity = !BufferCapacity.over(
                         state.textBuf.length,
                         state.thinkingBuf.length,
-                        pendingArgsLen = envelopeChars,
+                        toolIndexCount = state.blocks.size,
+                        pendingArgsLen = pendingArgsChars,
                     )
                     if (!withinCapacity) runawayGuard = RUNAWAY_GUARD_MESSAGE
                     withinCapacity

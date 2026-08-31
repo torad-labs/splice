@@ -20,6 +20,25 @@ internal class ResponsesTurnState {
     // use REASONING_KEY_BASE + output_index so the two families never collide and we never
     // allocate "reasoning:$oi" / oi.toString() strings on the hot path.
     val blocks = HashMap<Int, BlockState>()
+    private var retainedToolArgsChars = 0L
+    val bufferedToolArgsChars: Long get() = retainedToolArgsChars
+
+    fun putBlock(key: Int, block: BlockState) {
+        removeBlock(key)
+        blocks[key] = block
+    }
+
+    fun bufferToolArgs(block: BlockState, text: String) {
+        if (block.args.length >= BufferCapacity.MAX_BUFFERED_CHARS) return
+        val before = block.args.length
+        block.args.append(text)
+        retainedToolArgsChars += (block.args.length - before).toLong()
+    }
+
+    fun removeBlock(key: Int): BlockState? = blocks.remove(key)?.also {
+        retainedToolArgsChars -= it.args.length.toLong()
+    }
+
     var hasToolUse = false
     var emittedText = false
 

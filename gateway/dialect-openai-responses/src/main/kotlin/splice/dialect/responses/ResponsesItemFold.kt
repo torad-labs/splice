@@ -4,7 +4,6 @@ package splice.dialect.responses
 
 import kotlinx.serialization.json.JsonObject
 import splice.core.util.JsonScalars
-import splice.spi.BufferCapacity
 import splice.spi.WireSink
 
 internal class ResponsesItemFold(
@@ -31,7 +30,7 @@ internal class ResponsesItemFold(
             val id = rawId.ifEmpty { "toolu_synth_${toolSynthCounter++}_$oi" }
             if (rawId.isNotEmpty()) state.turnToolIds.add(rawId)
             val idx = sink.openTool(id = id, name = JsonScalars.strOrEmpty(item["name"]))
-            state.blocks[oi] = BlockState(idx, sawDelta = false)
+            state.putBlock(oi, BlockState(idx, sawDelta = false))
             state.hasToolUse = true
             state.toolSalvage.opened(oi)
         }
@@ -68,8 +67,8 @@ internal class ResponsesItemFold(
      *  this output_index, and clear the salvage-open marker. */
     suspend fun closeOpenBlocks(oi: Int?, sink: WireSink) {
         if (oi == null) return
-        state.blocks[oi]?.let { sink.closeBlock(it.index) }
-        state.blocks[frames.reasoningKey(oi)]?.let { sink.closeBlock(it.index) }
+        state.removeBlock(oi)?.let { sink.closeBlock(it.index) }
+        state.removeBlock(frames.reasoningKey(oi))?.let { sink.closeBlock(it.index) }
         state.toolSalvage.closedClean(oi)
     }
 
@@ -103,6 +102,7 @@ internal class ResponsesItemFold(
             // a malformed tool_use ({} for a tool that needed arguments). Latched, not thrown.
             if (state.toolArgsInvalid == null) state.toolArgsInvalid = frames.invalidToolArgsReason(b.args.toString())
             sink.closeBlock(b.index)
+            state.removeBlock(oi)
             state.toolSalvage.closedClean(oi)
         } else {
             emitToolArgText(b, JsonScalars.strOrEmpty(evt[DELTA]), sink)
@@ -114,6 +114,6 @@ internal class ResponsesItemFold(
         if (text.isEmpty()) return
         sink.inputJsonDelta(b.index, text)
         b.sawDelta = true
-        if (b.args.length < BufferCapacity.MAX_BUFFERED_CHARS) b.args.append(text)
+        state.bufferToolArgs(b, text)
     }
 }

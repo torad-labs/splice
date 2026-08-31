@@ -388,6 +388,7 @@ verify = "cd gateway && ./gradlew :gateway:test --console=plain"
 # [2026-08-30] 2026-08-30 cross-seat adversarial verdict (claude lens, closeout/b-redos.md): REDO. ReanchorRunner leg fixed and pinned, but FoldRunner Trigger B consumes the SAME retryable classification (FoldRounds.kt:38-45 -> same controller) and re-POSTs at FoldRunner.kt:87-89 with ZERO backoff on every fold-eligible turn - the defect class survives on the buffered path. Also unpinned: runner default is the real 200ms-doubling curve. Reopened.
 # [2026-08-30] VERDICT: outcome=redo gap=fold-path re-POST has zero backoff (FoldRunner.kt:87-89); runner-default-curve unpinned
 # [2026-08-30] ATTEST-START: tree=15ac9cf7a0eea446cc14cbebd074bffbfc95298d at=2026-08-31T00:47:04Z
+# [2026-08-30] RECEIPT ancestor-verified: 7bca38a on origin. Adversarial read vs my redo gaps: (1) FoldRunner trigger-B now calls backoff(reanchorAttempt,0) before the re-POST, injectable RetryBackoff defaulting to the SHIPPED transport curve, arm asserts waits==[0]; (2) curve pinned: 200/400/800 with jitter windows AND saturation at attempt 56 (shl overflow replaced by cappedExponentialBase - DR-47's sibling fix). Both gaps closed. Status stays in_flight until codex reports their verify green.
 
 [[items]]
 id = "DR-30"
@@ -430,16 +431,23 @@ id = "DR-32"
 phase = "walls"
 title = "Oracle regression net is never armed: cx_19_oracle_replay.py polices the expectations ledger + fixture sha256s but oracle:replay (hermetic jar-vs-pinned-mock, in package.json) is wired into NO gate leg, NO CI workflow, NO hook - a dialect regression breaking byte-parity with all 11 captured scenarios leaves gate.sh, CI and the campaign gate green. Fix: one gate.sh leg (run oracle replay -> npm run --silent oracle:replay) after the gradle leg; prove it can fail by mutating one fixture byte locally. Found by close-out wall lens (closeout/d-walls.md #1)."
 files = ["checks/gate.sh", "package.json"]
-status = "todo"
+status = "done"
 verify = "bash checks/gate.sh"
+# [2026-08-30] RESIDUAL found by claude gate: the armed leg is 11/11 standalone (cold-start repro included) but HARNESS-failed inside gate.sh (head boot budget 10s vs control 30s; post-clean shadowJar load). One-line fold: head waits use the default 120-try budget (replay.mjs:418, announced to codex). Leg design otherwise verified: both-direction pins + fail-closed no-pin refusal read in 12ef979/7235233 diffs.
+# [2026-08-30] RECEIPT ancestor-verified: 12ef979+7235233 on origin. Adversarial read: gate.sh runs oracle:replay as a leg; sanctioned rows pin BOTH directions (fixture deep-diff or pinned_upstream_sha256) and an unpinned sanction FAILS CLOSED ('refusing a one-direction-only verdict'). Leg proven armed in-gate: my gate run dr47d shows 11/11 in the ladder. Boot-budget residual found+fixed (7168fb1, noted above).
+# [2026-08-30] Attribution unavailable: missing in_flight tree snapshot
+# [2026-08-30] VERDICT: outcome=accepted
 
 [[items]]
 id = "DR-33"
 phase = "walls"
 title = "DaemonLogWiringTest test 4 asserts on its own local (val asDefault = DaemonLog::write at :83) - re-pointing any provider real default stays green, and the claimed signature in its comment is extinct (production is LogSink(DaemonLog::write) at ~21 sites). Only instance of the shape repo-wide. Fix: assert against the actual provider-construction defaults (reflectively or by exercising a provider built with defaults), correct the comment. Found by close-out wall lens (closeout/d-walls.md #2)."
 files = ["gateway/app/src/test/kotlin/DaemonLogWiringTest.kt"]
-status = "todo"
+status = "done"
 verify = "cd gateway && ./gradlew :app:test --tests 'DaemonLogWiringTest' --console=plain"
+# [2026-08-30] RECEIPT ancestor-verified: 510733e on origin. Adversarial read: self-local assert (DaemonLog::write into a local val) replaced by a REAL provider (ApiKeyAuthProvider, default log param) proving the unreadable-keyFile failure line lands in the DaemonLog-installed sink; main-source touch is comment-only, correcting the FALSE 'defaults to a no-op' claim. Exercises the nine-provider default through one real provider - the class of proof the item demanded.
+# [2026-08-30] Attribution unavailable: missing in_flight tree snapshot
+# [2026-08-30] VERDICT: outcome=accepted
 
 [[items]]
 id = "DR-34"
@@ -452,6 +460,7 @@ verify = "cd gateway && ./gradlew :gateway:test :provider-grok:test :app:test --
 # [2026-08-30] 2026-08-30 fence widened on codex request: OpenAiResponsesTest.kt added - the named OpenAI absent-assertion belongs there.
 # [2026-08-30] codex report: done, local final-history commit 8a78ab8. Red mutations: shared ResponsesProvider injected ChatGPT-Account-ID=mutant -> exact OpenAI+Grok tests failed (basic,null)vs(basic,mutant); Codex accountIdHeader condition inverted -> exact Daemon test failed (basic,acct-1)vs(basic,null). XML named each testcase; production restored; three exact tests + 4-module suite --rerun-tasks green + 4 detekt modules. Receipt hash to ancestor-verify at their next announced push.
 # [2026-08-30] Attribution unavailable: missing in_flight tree snapshot
+# [2026-08-30] VERDICT: outcome=accepted
 
 [[items]]
 id = "DR-35"
@@ -472,6 +481,7 @@ verify = "cd gateway && ./gradlew :dialect-openai-responses:test --console=plain
 # [2026-08-30] FENCE widened per codex request (2026-08-30 msg): close paths live in ResponsesItemFold.kt, NF-06 test class in ResponsesStreamTranslatorTest.kt - both verified to exist before widening.
 # [2026-08-30] codex report: done, local final-history commit fe8df77. Red exact: retained-block-count + aggregate-open-tool-args ended ordinary truncated (not runaway); duplicate close#0 after args.done+output_item.done; XML 3/3 failures by name. Green: exact 3 fresh pass + :dialect-openai-responses:test+detekt --rerun-tasks. State O(1)-tracks retained arg chars in Long, saturates at shared Int guard, passes blocks.size, evicts closed blocks. Ancestor-verify at next push.
 # [2026-08-30] Attribution unavailable: missing in_flight tree snapshot
+# [2026-08-30] VERDICT: outcome=accepted
 
 [[items]]
 id = "DR-37"
@@ -483,6 +493,7 @@ verify = "cd gateway && ./gradlew :dialect-openai-chat:test --console=plain"
 # [2026-08-30] FENCE-EDITED: files = ["gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatToolCalls.kt", "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatToolFrame.kt"] -> files = ["gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatToolCalls.kt", "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatToolFrame.kt", "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatStreamTranslator.kt", "gateway/dialect-openai-chat/src/test/kotlin/ChatStreamTranslatorTest.kt"] (by=orchestrator implied; no flag)
 # [2026-08-30] FENCE widened per codex (2026-08-30, two msgs): ChatStreamTranslatorTest.kt hosts the evidence-first standard-shape red tests (existing ChatRunawayGuardTest class); ChatStreamTranslator.kt because the corrected accessor covers pending+opened buffers (renamed bufferedArgsChars, guard comment kept honest). Both verified to exist. codex report: done, local commit 90f33fe. Red: exact explicit-index count + aggregate-args drained all input, ended ordinary truncated; XML 2/2. Green: exact pass + :dialect-openai-chat:test+detekt --rerun-tasks. Guard sums every retained index-map entry (saturated), O(1)-tracks pending+opened arg chars.
 # [2026-08-30] Attribution unavailable: missing in_flight tree snapshot
+# [2026-08-30] VERDICT: outcome=accepted
 
 [[items]]
 id = "DR-38"
@@ -494,6 +505,9 @@ verify = "cd gateway && ./gradlew :dialect-anthropic-passthrough:test :gateway:t
 # [2026-08-30] FENCE-EDITED: files = ["gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughStreamTranslator.kt", "gateway/gateway/src/main/kotlin/splice/gateway/wire/CollectingBlocks.kt"] -> files = ["gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughStreamTranslator.kt", "gateway/gateway/src/main/kotlin/splice/gateway/wire/CollectingBlocks.kt", "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughBlockRegistry.kt", "gateway/dialect-anthropic-passthrough/src/test/kotlin/PassthroughStreamTranslatorTest.kt", "gateway/gateway/src/main/kotlin/splice/gateway/wire/CollectingTerminal.kt", "gateway/gateway/src/test/kotlin/CollectingTerminalTest.kt"] (by=orchestrator implied; no flag)
 # [2026-08-30] FENCE widened per codex (2026-08-30): PassthroughBlockRegistry.kt owns block count + tool-arg char accounting, CollectingTerminal.kt emits honest capacity error before block parsing, plus both test hosts. All four verified to exist. codex report: done, local commit 6e846db. Red: exact stream registry-count + aggregate-open-tool-args ended ordinary truncated; stream:false aggregate valid-tool-input returned HTTP 200; XML 3 failures. Green: exact 3 pass + :dialect-anthropic-passthrough:test :gateway:test + both detekt fresh, Kimi goldens intact. Registry supplies all four guard dimensions; collector rejects aggregate tool input pre-parse with usage-preserving local API error.
 # [2026-08-30] Attribution unavailable: missing in_flight tree snapshot
+# [2026-08-30] RESIDUAL found by claude gate on rebased tip: 6e846db left :dialect-anthropic-passthrough:detekt RED (PassthroughBlockRegistry.kt:30 SpacingBetweenDeclarationsWithComments) - codex's 'both detekt tasks fresh passed' claim did not hold for this file. One-line blank-line fix folded into claude stack (announced to codex first, no objection window abused - mechanical). Counts against the DR-38 verdict as a process gap, not a logic gap.
+# [2026-08-30] SECOND residual, same class+cause: CollectingBlocks.kt:35 SpacingBetweenDeclarationsWithComments (first gate run failed fast at passthrough and masked it). Both folded into one claude style commit; all-modules detekt sweep green after - no third instance.
+# [2026-08-30] VERDICT: outcome=accepted
 
 [[items]]
 id = "DR-39"
@@ -535,9 +549,11 @@ verify = "cd gateway && ./gradlew :app:test :core:test --console=plain"
 id = "DR-42"
 phase = "topology"
 title = "MEDIUM: a braces-dropped models = [id, ...] inline-array typo hangs the daemon at boot in a ktoml infinite loop at 100 percent CPU with NO error (jstack: HeadModel serializer <-> TomlArrayDecoder; boot stderr discarded per JW-01 so the hang is silent). Pre-existing ktoml class but 8740afa adds the first inline-array-spelled key, making the typo likely. Fix: pre-validate the shape before ktoml sees it (or a boot watchdog naming the file+key), plus a red arm with a timeout. Lens: closeout/a-roster.md F1."
-files = ["gateway/app/src/main/kotlin/splice/app/TopologyLoader.kt"]
+files = ["gateway/app/src/main/kotlin/splice/app/TopologyLoader.kt", "gateway/app/src/test/kotlin/ExampleConfigTest.kt"]
 status = "todo"
 verify = "cd gateway && ./gradlew :app:test --console=plain"
+# [2026-08-30] FENCE-EDITED: files = ["gateway/app/src/main/kotlin/splice/app/TopologyLoader.kt"] -> files = ["gateway/app/src/main/kotlin/splice/app/TopologyLoader.kt", "gateway/app/src/test/kotlin/ExampleConfigTest.kt"] (by=orchestrator implied; no flag)
+# [2026-08-30] FENCE widened per codex (2026-08-30): ExampleConfigTest.kt hosts the evidence arm (mutates shipped inline head roster + assertTimeoutPreemptively around parse). File verified to exist.
 
 [[items]]
 id = "DR-43"
@@ -559,9 +575,13 @@ verify = "cd gateway && ./gradlew :core:test :control:test --console=plain"
 id = "DR-45"
 phase = "spi"
 title = "UpstreamFailureClassifier transientRe matches NEGATED text: do not try again contains try again, so a deterministic vendor rejection classifies transient and re-POSTs the full context. Fix: negative lookbehind or negation-aware guard + arm with the negated phrase. Reported by codex lens."
-files = ["gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt"]
-status = "todo"
+files = ["gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt", "gateway/provider-spi/src/test/kotlin/UpstreamFailureClassifierTest.kt"]
+status = "done"
 verify = "cd gateway && ./gradlew :provider-spi:test --console=plain"
+# [2026-08-30] FENCE-EDITED: files = ["gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt"] -> files = ["gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamFailureClassifier.kt", "gateway/provider-spi/src/test/kotlin/UpstreamFailureClassifierTest.kt"] (by=orchestrator implied; no flag)
+# [2026-08-30] FENCE widened per codex (2026-08-30): UpstreamFailureClassifierTest.kt hosts the negated retry arm + independent transient-signature control. File verified to exist.
+# [2026-08-30] codex report: done, local commit c7b16a2. Exact negated-retry testcase red before fix; green XML 1/0. :provider-spi:test+detekt --rerun-tasks passed. 'try again' negation-aware; independently audited transient signatures remain retryable. Ancestor-verify at next push.
+# [2026-08-30] Attribution unavailable: missing in_flight tree snapshot
 
 [[items]]
 id = "DR-46"
@@ -583,6 +603,7 @@ verify = "cd gateway && ./gradlew :provider-spi:test --console=plain"
 # [2026-08-30] FENCE-EDITED: files = ["gateway/provider-spi/src/main/kotlin/splice/spi/UpstreamResponse.kt"] -> files = ["gateway/provider-spi/src/main/kotlin/splice/spi/RetryAfter.kt", "gateway/provider-spi/src/test/kotlin/UpstreamClientRetryPolicyTest.kt"] (by=orchestrator implied; no flag)
 # [2026-08-30] FENCE was stale (UpstreamResponse.kt): retryAfterMs lives in RetryAfter.kt since the HD-25 split. FIX: secondsFormMs saturates at Long.MAX_VALUE when seconds > MAX/1000 (was naive *1000 wrap-to-negative disabling floor/give-up/cooldown). ARMS: behavioral 503+Retry-After=MAX/1000+1 (fixed: 1 call, no backoff floor, follower blocked by UP-001 cooldown; RED on unfixed: 3 calls, wrapped floor) + direct boundary pins (MAX/1000 exact multiply, MAX/1000+1 and MAX saturate; RED: expected MAX got -9223372036854775616). GREEN: :provider-spi:test --rerun-tasks XML 125/0 + detekt. codex 2b643d8 is launch-window overflow (LaunchSpecFactory/LaunchService) - different files, no dedupe conflict.
 # [2026-08-30] ATTEST: scoped diffstat: .../src/main/kotlin/splice/spi/RetryAfter.kt       |  9 +++++-- | .../test/kotlin/UpstreamClientRetryPolicyTest.kt   | 29 ++++++++++++++++++++++ | 2 files changed, 36 insertions(+), 2 deletions(-); sidecar: .claude/ledger-diffs/DR-47.diff; off-scope: none
+# [2026-08-30] PAIRED codex fix ancestor-verified: 7a6b6ce (launch window Int->Long: LaunchSpec.contextWindow, AUTO_COMPACT_FLOOR 60_000L, dropped .toInt() truncation; arm pins Int.MAX+1 preserved). My read: accepted - zero file overlap with the RetryAfter half, both saturation-class fixes now landed.
 
 [[items]]
 id = "DR-48"

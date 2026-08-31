@@ -10,6 +10,9 @@ import splice.core.index.WireBlockIndex
 internal data class BlockState(
     val index: WireBlockIndex,
     var sawDelta: Boolean,
+    // DR-77: marks a function_call block so EVERY close path can run the CX-01 validation —
+    // text/reasoning blocks share this type and must never be graded on their (empty) args.
+    val tool: Boolean = false,
     // CX-01: accumulated tool-argument text for a function_call block, validated as JSON at close.
     // Empty for text/reasoning blocks (they never reach onArgs). Capped by BufferCapacity (NF-06).
     val args: StringBuilder = StringBuilder(),

@@ -30,7 +30,7 @@ internal class ResponsesItemFold(
             val id = rawId.ifEmpty { "toolu_synth_${toolSynthCounter++}_$oi" }
             if (rawId.isNotEmpty()) state.turnToolIds.add(rawId)
             val idx = sink.openTool(id = id, name = JsonScalars.strOrEmpty(item["name"]))
-            state.putBlock(oi, BlockState(idx, sawDelta = false))
+            state.putBlock(oi, BlockState(idx, sawDelta = false, tool = true))
             state.hasToolUse = true
             state.toolSalvage.opened(oi)
         }
@@ -58,16 +58,36 @@ internal class ResponsesItemFold(
         // summary deltas). Surface that text NOW so Claude Code's thinking UI fills live,
         // not only via the end-of-turn harvest fallback.
         reasoningFold.maybeEmitLateReasoning(item, oi, sink)
+        maybeHarvestLateToolArgs(item, oi, sink)
         closeOpenBlocks(oi, sink)
         if (item == null) return
         replay.emitReplayedReasoning(item, sink)
+    }
+
+    /** DR-77: a backend may close a function_call via output_item.done ALONE — no arguments.delta,
+     *  no arguments.done. Harvest the completed item's `arguments` exactly as onArgs' .done branch
+     *  does, so the client is not handed tool_use with empty input; closeOpenBlocks then validates. */
+    private suspend fun maybeHarvestLateToolArgs(item: JsonObject?, oi: Int?, sink: WireSink) {
+        if (item == null || oi == null) return
+        if (JsonScalars.strOrEmpty(item["type"]) != "function_call") return
+        val b = state.blocks[oi] ?: return
+        if (!b.sawDelta) emitToolArgText(b, JsonScalars.strOrEmpty(item["arguments"]), sink)
     }
 
     /** onItemDone's block-closing half: close both the tool/message block and any reasoning block at
      *  this output_index, and clear the salvage-open marker. */
     suspend fun closeOpenBlocks(oi: Int?, sink: WireSink) {
         if (oi == null) return
-        state.removeBlock(oi)?.let { sink.closeBlock(it.index) }
+        state.removeBlock(oi)?.let { b ->
+            // DR-77 (CX-01 completion): output_item.done can close a tool block without ever
+            // passing the arguments.done handler — the only site that validated. Corrupt or
+            // truncated args must latch on THIS path too, or the turn ends a clean Success
+            // dispatching garbage. Same latch, same first-reason-wins.
+            if (b.tool && state.toolArgsInvalid == null) {
+                state.toolArgsInvalid = frames.invalidToolArgsReason(b.args.toString())
+            }
+            sink.closeBlock(b.index)
+        }
         state.removeBlock(frames.reasoningKey(oi))?.let { sink.closeBlock(it.index) }
         state.toolSalvage.closedClean(oi)
     }

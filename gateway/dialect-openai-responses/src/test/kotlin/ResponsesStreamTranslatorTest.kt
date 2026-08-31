@@ -1135,3 +1135,74 @@ class ResponsesRefusalHonestyTest {
         assertEquals(null, f.partial)
     }
 }
+
+// DR-77 (fresh-eyes sweep): CX-01's corrupt-args latch lived ONLY in the arguments.done handler,
+// but a backend can close a function_call via output_item.done alone — truncated args then ended
+// the turn as a clean Success dispatching garbage, and done-only args on the ITEM were dropped
+// entirely ({} input). Sibling class: the main class sits at detekt's LargeClass ceiling.
+class ResponsesItemDoneToolArgsTest {
+
+    @Test
+    fun `truncated args closed by output_item done latch CX-01 - DR-77`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t9","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"p\":"}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t9","name":"run"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, f.type)
+        assertTrue(f.message.contains("tool call"), f.message)
+    }
+
+    @Test
+    fun `item-done-only complete args are emitted and stay a clean success - DR-77`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t9","name":"run"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.done","output_index":1,"item":{"type":"function_call",""" +
+                        """"call_id":"t9","name":"run","arguments":"{\"x\":1}"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        assertTrue(outcome is TurnOutcome.Success, "complete late args are an honest tool call: $outcome")
+        assertTrue(sink.calls.contains("""json#0:{"x":1}"""), sink.calls.toString())
+    }
+
+    @Test
+    fun `the streamed-then-args-done flow is untouched - DR-77 control`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t9","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"p\":1}"}"""),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t9","name":"run"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertTrue(outcome is TurnOutcome.Success, "$outcome")
+    }
+}

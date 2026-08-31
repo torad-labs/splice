@@ -95,7 +95,8 @@ class ExampleConfigTest {
     @Test
     fun `an explicit empty head model list is rejected rather than exposing the provider`() {
         val toml = exampleToml().replace(
-            "models = [{ id = \"grok-4.6\", slot = \"opus\" }, { id = \"grok-4.5\", slot = \"sonnet\" }]",
+            "models = [{ id = \"grok-4.6\", slot = \"opus\" }, { id = \"grok-4.5\", slot = \"sonnet\" }, " +
+                "{ id = \"grok-build-latest\", slot = \"haiku\" }]",
             "models = []",
         )
         val topology = TopologyLoader.parse(toml)
@@ -106,6 +107,25 @@ class ExampleConfigTest {
         assertThrows(IllegalArgumentException::class.java) { provider.catalogFor(head) }
     }
 
+    // DR-43: undeclared tiers 400 cleanly pre-upstream (background titling / --model <tier>),
+    // characterized by the roster lens. The example's DECISIONS are pinned in both directions:
+    // grok serves a genuine fast tier (grok-build as haiku, no invented fable), and the
+    // single-model heads stay opus-only ON PURPOSE with the degradation documented in the TOML.
+    @Test
+    fun `example heads declare the tier decision - grok gains haiku, single-model heads stay opus-only`() {
+        val topology = TopologyLoader.parse(exampleToml())
+        fun slots(head: String) = topology.heads.getValue(head).models.orEmpty().mapNotNull { it.slot }
+
+        assertEquals(listOf("opus", "sonnet", "haiku"), slots("claude-grok"))
+        assertEquals(
+            "grok-build-latest",
+            topology.heads.getValue("claude-grok").models.orEmpty().first { it.slot == "haiku" }.id,
+        )
+        for (head in listOf("openrouter", "fireworks", "claude-kimi")) {
+            assertEquals(listOf("opus"), slots(head), "$head is opus-only by documented choice")
+        }
+    }
+
     // DR-44b: ktoml unions duplicate keys instead of rejecting them (TOML spec: duplicates are an
     // error), so a stale second `models = [...]` line kept retired models in the picker with
     // nothing red anywhere. The pre-decode guard makes it loud and names the section.
@@ -113,7 +133,7 @@ class ExampleConfigTest {
     fun `a duplicated models key in one head fails loud instead of silently unioning`() {
         val valid = exampleToml()
         val roster =
-            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }]"""
+            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }, { id = "grok-build-latest", slot = "haiku" }]"""
         val malformed = valid.replace(roster, roster + "\n" + """models = [{ id = "grok-4.3", slot = "haiku" }]""")
         assertTrue(malformed != valid, "test must duplicate the shipped inline roster")
 
@@ -126,7 +146,7 @@ class ExampleConfigTest {
     fun `a braces-dropped inline model roster fails promptly before ktoml`() {
         val valid = exampleToml()
         val malformed = valid.replace(
-            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }]""",
+            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }, { id = "grok-build-latest", slot = "haiku" }]""",
             """models = ["grok-4.6", "grok-4.5"]""",
         )
         assertTrue(malformed != valid, "test must mutate the shipped inline roster")
@@ -142,7 +162,7 @@ class ExampleConfigTest {
     fun `a quoted models key with a bare roster also fails promptly before ktoml`() {
         val valid = exampleToml()
         val malformed = valid.replace(
-            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }]""",
+            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }, { id = "grok-build-latest", slot = "haiku" }]""",
             """"models" = ["grok-4.6", "grok-4.5"]""",
         )
         assertTrue(malformed != valid, "test must mutate the shipped inline roster")
@@ -162,7 +182,7 @@ class ExampleConfigTest {
         )
         assertEquals("claude-grok--\"", TopologyLoader.parse(valid).heads.getValue("claude-grok").discoveryPrefix)
         val malformed = valid.replace(
-            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }]""",
+            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }, { id = "grok-build-latest", slot = "haiku" }]""",
             """models = ["grok-4.6", "grok-4.5"]""",
         )
 
@@ -181,14 +201,14 @@ class ExampleConfigTest {
             port = 3100
             discovery_prefix = "claude-grok--"
             pinned_model = "grok-4.6"
-            models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }]
+            models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }, { id = "grok-build-latest", slot = "haiku" }]
             context_window = 500000
             [heads.claude-grok.claude]
             command = "claude-grok"
             isolate = ["commands"]         # this head gets its own commands/, everything else shared
         """.trimIndent()
         val inlineRoster =
-            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }]"""
+            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }, { id = "grok-build-latest", slot = "haiku" }]"""
         val inlineHead = """
             [heads]
             claude-grok = { provider = "xai", port = 3100, discovery_prefix = "claude-grok--", pinned_model = "grok-4.6", $inlineRoster, context_window = 500000, claude = { command = "claude-grok", isolate = ["commands"] } }
@@ -208,7 +228,7 @@ class ExampleConfigTest {
     @Test
     fun `valid multiline model rosters ignore comments and quoted text`() {
         val inlineRoster =
-            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }]"""
+            """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }, { id = "grok-build-latest", slot = "haiku" }]"""
         val multilineRoster = """
             models = [
                 # models = ["comment", "text"]
@@ -234,7 +254,10 @@ class ExampleConfigTest {
                 listOf("gpt-5.6-sol" to "opus", "gpt-5.6-terra" to "sonnet", "gpt-5.6-luna" to "haiku") to
                     400_000L
                 ),
-            "claude-grok" to (listOf("grok-4.6" to "opus", "grok-4.5" to "sonnet") to 500_000L),
+            "claude-grok" to (
+                listOf("grok-4.6" to "opus", "grok-4.5" to "sonnet", "grok-build-latest" to "haiku") to
+                    500_000L
+                ),
             "openrouter" to (listOf("meta-llama/llama-4-maverick" to "opus") to 1_048_576L),
             "fireworks" to (
                 listOf("accounts/fireworks/models/llama-v3p1-70b-instruct" to "opus") to 131_072L

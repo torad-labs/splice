@@ -573,9 +573,14 @@ verify = "cd gateway && ./gradlew :app:test --console=plain"
 id = "DR-43"
 phase = "topology"
 title = "Undeclared tiers on the shipped example heads (grok: no haiku/fable; openrouter/fireworks/kimi: opus only) route Claude Code built-in Anthropic ids to a clean per-call 400 (TurnPreparation.kt:37-38 -> AdmissionResponses.kt:50-56, pre-upstream, no quota) - background titling/summarization and --model haiku degrade on those heads, undocumented. Fix: either declare full rosters in config/splice.example.toml or document the degradation beside the slot key. Lens: closeout/a-roster.md F2 (characterized, not a crash)."
-files = ["config/splice.example.toml"]
-status = "todo"
+files = ["config/splice.example.toml", "gateway/app/src/test/kotlin/ExampleConfigTest.kt"]
+status = "done"
 verify = "cd gateway && ./gradlew :app:test --tests ExampleConfigTest --console=plain"
+# [2026-08-30] CLAIM: owner=claude-splice at=2026-08-31T02:39:53Z
+# [2026-08-30] ATTEST-START: tree=26a8cf7e89b011f3ad49525b56c2b37c7792bf46 at=2026-08-31T02:39:53Z
+# [2026-08-30] FENCE-EDITED: files = ["config/splice.example.toml"] -> files = ["config/splice.example.toml", "gateway/app/src/test/kotlin/ExampleConfigTest.kt"] (by=orchestrator implied; no flag)
+# [2026-08-30] LANDED both branches of the item's either/or: grok DECLARES a genuine fast tier (grok-build-latest as haiku - a real 256k coder model already in the provider roster; no invented fable), and the single-model heads (openrouter/fireworks/kimi) stay opus-only ON PURPOSE with the degradation documented in the TOML (full slot-semantics note at [heads.claudex]: undeclared tier -> clean pre-upstream 400, no quota, background titling and --model <tier> degrade; pointer comments on each opus-only head). Arm pins the decision both directions, red-proven on the unfixed example ([opus,sonnet] vs [opus,sonnet,haiku]). Seven test fixture literals synced (incl. the escaped-quote spelling and the verbatim grok section in the inline-table arm - grok comment moved above the header to stay outside its replace span). ExampleConfigTest 12/0 + :app:detekt.
+# [2026-08-30] ATTEST: scoped diffstat: config/splice.example.toml                       | 14 +++++++- | gateway/app/src/test/kotlin/ExampleConfigTest.kt | 41 ++++++++++++++++++------ | 2 files changed, 45 insertions(+), 10 deletions(-); sidecar: .claude/ledger-diffs/DR-43.diff; off-scope: none
 
 [[items]]
 id = "DR-44"

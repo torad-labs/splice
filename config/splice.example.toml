@@ -205,17 +205,25 @@ provider = "codex"
 port = 3099
 discovery_prefix = "claude-codex--"
 pinned_model = "gpt-5.6-sol"
+# slot = the Claude Code tier alias this row answers (opus/sonnet/haiku/fable). A tier NO row
+# declares is not emitted at launch, so Claude Code requests using its built-in Anthropic ids —
+# background titling/summarization, `--model haiku` — get a clean pre-upstream 400 on this head
+# (no quota burned; the main turn is unaffected). Declare a row per tier you want served; never
+# point two tiers at one id to silence this — one honest 400 beats a duplicated picker row.
 models = [{ id = "gpt-5.6-sol", slot = "opus" }, { id = "gpt-5.6-terra", slot = "sonnet" }, { id = "gpt-5.6-luna", slot = "haiku" }]
 context_window = 400000
 [heads.claudex.claude]
 command = "claudex"
 
+# grok-build is the genuine fast tier (256k coder model) — declared as haiku below so background
+# titling and `--model haiku` stay served on this head. No fable analog exists: fable stays
+# undeclared and 400s cleanly (see the slot note on [heads.claudex]).
 [heads.claude-grok]
 provider = "xai"
 port = 3100
 discovery_prefix = "claude-grok--"
 pinned_model = "grok-4.6"
-models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }]
+models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }, { id = "grok-build-latest", slot = "haiku" }]
 context_window = 500000
 [heads.claude-grok.claude]
 command = "claude-grok"
@@ -226,6 +234,8 @@ provider = "openrouter"
 port = 3101
 discovery_prefix = "claude-openrouter--"
 pinned_model = "meta-llama/llama-4-maverick"
+# opus-only on purpose: undeclared tiers (sonnet/haiku/fable) 400 cleanly pre-upstream — the
+# slot note on [heads.claudex] explains what degrades (background titling, `--model haiku`).
 models = [{ id = "meta-llama/llama-4-maverick", slot = "opus" }]
 context_window = 1048576
 [heads.openrouter.claude]
@@ -236,6 +246,7 @@ provider = "fireworks"
 port = 3103
 discovery_prefix = "claude-fireworks--"
 pinned_model = "accounts/fireworks/models/llama-v3p1-70b-instruct"
+# opus-only on purpose — same degradation note as [heads.openrouter].
 models = [{ id = "accounts/fireworks/models/llama-v3p1-70b-instruct", slot = "opus" }]
 context_window = 131072
 [heads.fireworks.claude]
@@ -246,6 +257,7 @@ provider = "kimi"
 port = 3102
 discovery_prefix = "claude-kimi--"
 pinned_model = "k3[1m]"
+# opus-only on purpose (one upstream model) — same degradation note as [heads.openrouter].
 models = [{ id = "k3[1m]", slot = "opus" }]
 context_window = 1000000
 [heads.claude-kimi.claude]

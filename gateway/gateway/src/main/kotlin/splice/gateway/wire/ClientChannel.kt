@@ -17,6 +17,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import splice.core.perf.PerfKeys
 import splice.core.perf.TurnPerf
+import splice.core.util.Cancellables
 import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.spi.Ticker
@@ -67,6 +68,20 @@ internal data class ClientChannel(
         perf.add(PerfKeys.BYTES_OUT, frame.length.toLong())
         perf.markOnce(PerfKeys.FIRST_FRAME)
         if (frame.startsWith(DELTA_FRAME_PREFIX)) perf.markOnce(PerfKeys.FIRST_DELTA)
+    }
+
+    /** DR-93 (redo): the turn-finally flush, quiet BY CONTRACT. On a dead socket the flush itself
+     *  throws (IOException from the engine write, IllegalStateException from a closed channel),
+     *  and inside a finally that throw REPLACES the in-flight CancellationException or the turn's
+     *  real failure — hiding the causal fault from the Ktor pipeline. The flush is redundant
+     *  idempotent cleanup (terminal frames force-flush already), so its failure is discarded with
+     *  a stated reason; cancellation still propagates (runCatchingCleanup rethrows it by
+     *  contract). The kt-turn-finally-flush-quietly wall keeps head/ off the raw flush. */
+    fun flushQuietly() {
+        Cancellables.discard(
+            Cancellables.runCatchingCleanup { coalesced.flush() },
+            "turn-finally flush on a possibly-dead socket — the primary outcome must stand",
+        )
     }
 
     // Client-liveness pinger: an SSE COMMENT (spec-legal, ignored by every parser) every interval.

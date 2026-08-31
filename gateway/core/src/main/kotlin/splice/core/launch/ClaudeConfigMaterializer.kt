@@ -130,7 +130,7 @@ public class ClaudeConfigMaterializer(
         val parent = path.parent ?: return path
         return try {
             path.toRealPath()
-        } catch (absent: java.nio.file.NoSuchFileException) {
+        } catch (ignored: java.nio.file.NoSuchFileException) {
             realOf(parent).resolve(path.fileName)
         }
     }

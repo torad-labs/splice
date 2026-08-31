@@ -14,6 +14,7 @@ package splice.core.util
 
 import kotlinx.serialization.SerializationException
 import java.io.IOException
+import kotlin.coroutines.cancellation.CancellationException
 
 public object Cancellables {
 
@@ -32,6 +33,30 @@ public object Cancellables {
         } catch (e: IllegalArgumentException) {
             Result.failure(e)
         }
+
+    /**
+     * The CLEANUP-path variant (DR-93 redo): best-effort teardown in a finally — flushing or
+     * closing a possibly-dead client socket. Widens [runCatchingCancellable] by
+     * [IllegalStateException], because a closed write channel throws exactly that, and inside a
+     * finally the escape REPLACES the in-flight CancellationException or the turn's real failure.
+     * CancellationException (an IllegalStateException subtype) still propagates via the explicit
+     * guard — cleanup runs inside the cancelled coroutine's own unwind, and eating it would
+     * zombie the cancellation. Capture-then-classify rather than catch clauses: the subtype
+     * relation forces a supertype catch with an `is` guard, and that clause shape is detekt's
+     * InstanceOfCheckForException (a rethrow-only pre-clause is RethrowCaughtException). Raw
+     * runCatching is legal in core (the coroutine wall scopes to the turn/stream modules), and
+     * everything outside the cleanup set — cancellation first, then Errors and the rest — is
+     * rethrown unchanged.
+     */
+    public inline fun <R> runCatchingCleanup(block: () -> R): Result<R> {
+        val attempt = runCatching(block)
+        val failure = attempt.exceptionOrNull() ?: return attempt
+        if (failure is CancellationException) throw failure
+        val cleanupFailure = failure is IOException || failure is SerializationException ||
+            failure is IllegalArgumentException || failure is IllegalStateException
+        if (!cleanupFailure) throw failure
+        return attempt
+    }
 
     /**
      * The ONLY sanctioned way to drop a [Result] on the floor. Neither argument is read at runtime:

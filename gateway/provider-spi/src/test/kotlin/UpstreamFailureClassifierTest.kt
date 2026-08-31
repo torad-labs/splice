@@ -137,6 +137,16 @@ class UpstreamFailureClassifierTest {
     }
 
     @Test
+    fun `negated retry instructions stay deterministic while independent transient evidence wins`() {
+        listOf(
+            "do not try again",
+            "never try again",
+            "don't ever try again",
+        ).forEach { text -> assertFalse(sse(text).transient, text) }
+        assertTrue(sse("temporarily unavailable; do not try again").transient)
+    }
+
+    @Test
     fun `messages cap at 2000 chars`() {
         val r = sse("x".repeat(5000))
         assertEquals(2000, r.message.length)

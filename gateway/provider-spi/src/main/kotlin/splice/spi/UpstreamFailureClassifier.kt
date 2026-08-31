@@ -33,9 +33,15 @@ public object UpstreamFailureClassifier {
     // Status-less SSE failures are re-POSTable only when the vendor text explicitly names a
     // transient server condition. Default false: policy/parameter/unknown failures can be
     // deterministic, and replaying the full context cannot change them.
-    private val transientRe = Regex(
+    private val transientConditionRe = Regex(
         "server[_ -]?error|internal[_ -]?error|temporar(?:y|ily)|overload(?:ed)?|" +
-            "unavailable|timed? ?out|try again",
+            "unavailable|timed? ?out",
+        RegexOption.IGNORE_CASE,
+    )
+    private val tryAgainRe = Regex("\\btry\\s+again\\b", RegexOption.IGNORE_CASE)
+    private val negatedTryAgainRe = Regex(
+        "\\b(?:do\\s+not|don['’]t|never|cannot|can['’]t|should\\s+not|must\\s+not)\\s+" +
+            "(?:\\w+\\s+){0,2}try\\s+again\\b",
         RegexOption.IGNORE_CASE,
     )
     private val promptTooLongRe = Regex("prompt is too long", RegexOption.IGNORE_CASE)
@@ -137,6 +143,10 @@ public object UpstreamFailureClassifier {
         return ClassifiedFailure(ErrorType.INVALID_REQUEST, message.take(MAX_MESSAGE))
     }
 
+    private fun isStatuslessTransient(message: String): Boolean =
+        transientConditionRe.containsMatchIn(message) ||
+            (tryAgainRe.containsMatchIn(message) && !negatedTryAgainRe.containsMatchIn(message))
+
     private fun statusFallback(status: Int?, msg: String): ClassifiedFailure = when {
         status != null && status >= SERVER_ERROR_FLOOR ->
             ClassifiedFailure(ErrorType.API_ERROR, msg.take(MAX_MESSAGE), transient = true)
@@ -145,7 +155,7 @@ public object UpstreamFailureClassifier {
         else -> ClassifiedFailure(
             ErrorType.API_ERROR,
             msg.take(MAX_MESSAGE),
-            transient = transientRe.containsMatchIn(msg),
+            transient = isStatuslessTransient(msg),
         )
     }
 

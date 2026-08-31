@@ -44,6 +44,13 @@ public interface TurnTerminal : WireSink {
     /** Client vanished before any ending: seal with nothing emitted (never an error/terminal). */
     public fun abandon()
 
+    /** DR-87: non-null when THIS terminal downgraded a Success emit into an error envelope at
+     *  emit time (the collect-path malformed-tool/capacity rewrite) — the short reason tag the
+     *  perf row carries. Default null: the streaming emitter never rewrites at the terminal, and
+     *  a downgrade the caller cannot see is exactly how a client-facing 502 read "ok" in every
+     *  instrument. */
+    public val degradedReason: String? get() = null
+
     /** Open the turn on the wire NOW, before any content exists.
      *
      * message_start needs nothing from upstream — the id, model and a zeroed usage payload are all

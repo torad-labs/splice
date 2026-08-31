@@ -38,6 +38,9 @@ internal class StreamFinish(
                 outcome.usage.cachedTokens,
             ),
         )
-        return "ok"
+        // DR-87: the collect-path terminal can downgrade this emit into an error envelope
+        // (malformed-tool/capacity). A literal "ok" here is what blinded perf/health/log to a
+        // turn whose client saw a 502.
+        return emitter.degradedReason ?: "ok"
     }
 }

@@ -43,6 +43,11 @@ public class CollectingTerminal(
 
     private var body: JsonObject? = null
     private var status = DEFAULT_ERROR_STATUS
+    private var degraded: String? = null
+
+    // DR-87: the emit-time Success->error rewrites below were invisible to the caller — StreamFinish
+    // returned "ok" and health/log/perf all read green while the client got this 502.
+    override val degradedReason: String? get() = degraded
 
     /** The single JSON body to write back (a terminal message or an error envelope). Never null
      *  after a driven turn — a turn always ends in emitTerminal or emitError; the fallback covers
@@ -97,6 +102,7 @@ public class CollectingTerminal(
     override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) {
         if (!ended.compareAndSet(false, true)) return
         if (content.toolInputCapacityExceeded) {
+            degraded = "buffered_capacity"
             body = errorEnvelope(
                 ErrorType.API_ERROR.wireName,
                 "claudex: response exceeded max buffered size — aborting",
@@ -115,6 +121,7 @@ public class CollectingTerminal(
             // RG2-001: the turn's usage still rides the envelope — the client was billed for this
             // turn even though it failed honestly, and the internal usage store already recorded
             // it; the wire response must not be the one place that accounting goes missing.
+            degraded = "malformed_tool_input"
             body = errorEnvelope(
                 ErrorType.API_ERROR.wireName,
                 "claudex: malformed tool_use input from upstream — retry",

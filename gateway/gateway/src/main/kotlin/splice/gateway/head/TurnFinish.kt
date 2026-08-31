@@ -33,6 +33,16 @@ internal class TurnFinish(
         if (outcome is TurnOutcome.Failure) {
             if (outcome.providerReported) health.provider() else health.local()
         }
+        // DR-87/DR-88: a Success outcome can still end in an ERROR terminal — the collect-path
+        // malformed-tool/capacity rewrite (surfaced via TurnTerminal.degradedReason) and the
+        // promote-time empty_compact/empty_model. The turn line above rendered the Success; this
+        // makes the downgrade visible to the log and to head health (perf carries the honest tag
+        // below). Local attribution: the downgrade is the gateway's own call — G20's
+        // providerReported stays translator-owned.
+        if (outcome is TurnOutcome.Success && outcomeTag != "ok") {
+            log(telemetry.errTurn("finish-degraded", drive, "tag=$outcomeTag — client received an error terminal"))
+            health.local()
+        }
         telemetry.recordPerf(drive, outcomeTag)
     }
 }

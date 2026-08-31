@@ -141,12 +141,20 @@ excluded: dict[str, str] = {}  # name -> written reason; empty today, additions 
 inject = sys.argv[3] if len(sys.argv) > 3 else ""
 if inject:
     excluded.update(json.loads(inject))
-# §24: a blank/placeholder exclusion reason is an absence wearing a label, not a disposition. Every
-# excluded entry MUST carry a nonblank written reason or the check reds here — fail-closed, BEFORE the
-# key is allowed to account for a dist/ entry below.
-blank = sorted(name for name, reason in excluded.items() if not reason.strip())
-if blank:
-    raise SystemExit(f"VERIFY OSS-D: excluded entries with a blank/placeholder reason (§24, an absence wearing a label): {blank}")
+# §24: a blank OR placeholder exclusion reason is an absence wearing a label, not a disposition.
+# Reject a reason that is blank or is — AS A WHOLE — a known placeholder token (TODO/TBD/etc). The
+# match is on the whole normalized reason, never a substring, so a substantive reason that merely
+# MENTIONS one of these words ("see TODO-1234 for the port plan") still dispositions. Fail-closed,
+# BEFORE the key is allowed to account for a dist/ entry below.
+PLACEHOLDER_REASONS = frozenset(
+    {"todo", "tbd", "tba", "fixme", "wip", "xxx", "n/a", "na", "none", "null", "placeholder", "?", "-", "--", "..."}
+)
+def _absent(reason: str) -> bool:
+    normalized = reason.strip().lower().strip(" .:;!?-")
+    return not normalized or normalized in PLACEHOLDER_REASONS
+absent = sorted(name for name, reason in excluded.items() if _absent(reason))
+if absent:
+    raise SystemExit(f"VERIFY OSS-D: excluded entries with a blank or placeholder reason (§24, an absence wearing a label): {absent}")
 actual = {p.name for p in dist.iterdir()}  # dirs too: EVERY entry needs a disposition
 unaccounted = sorted(actual - published - set(excluded))
 missing = sorted(published - actual)
@@ -183,14 +191,30 @@ if dist_enumeration_check "$dist_mutant" '{"EXTRA-README.md": ""}' >"$blank_log"
   echo "VERIFY OSS-D: blank-reason mutant unexpectedly passed — a blank exclusion reason dispositioned a file" >&2
   exit 1
 fi
-grep -q "blank/placeholder reason" "$blank_log" || {
+grep -q "blank or placeholder reason" "$blank_log" || {
   rm -f "$blank_log"
-  echo "VERIFY OSS-D: blank-reason mutant failed for the wrong reason (not the blank-reason leg)" >&2
+  echo "VERIFY OSS-D: blank-reason mutant failed for the wrong reason (not the blank-or-placeholder leg)" >&2
   exit 1
 }
 rm -f "$blank_log"
-if ! dist_enumeration_check "$dist_mutant" '{"EXTRA-README.md": "synthetic selftest decoy, never shipped"}' >/dev/null 2>&1; then
-  echo "VERIFY OSS-D: a NONBLANK exclusion reason must disposition the file and pass (positive control)" >&2
+# Placeholder-reason mutant (§24: a placeholder like TODO is an absence wearing a label). Excluding
+# the still-present EXTRA-README.md with a whole-token "TODO" must RED on the same leg — never
+# disposition. The positive control that follows carries a substantive reason that MENTIONS the word,
+# proving whole-token matching does not reject real reasons.
+placeholder_log="$(mktemp)"
+if dist_enumeration_check "$dist_mutant" '{"EXTRA-README.md": "TODO"}' >"$placeholder_log" 2>&1; then
+  rm -f "$placeholder_log"
+  echo "VERIFY OSS-D: placeholder-reason mutant unexpectedly passed — a placeholder (TODO) dispositioned a file" >&2
+  exit 1
+fi
+grep -q "blank or placeholder reason" "$placeholder_log" || {
+  rm -f "$placeholder_log"
+  echo "VERIFY OSS-D: placeholder-reason mutant failed for the wrong reason (not the blank-or-placeholder leg)" >&2
+  exit 1
+}
+rm -f "$placeholder_log"
+if ! dist_enumeration_check "$dist_mutant" '{"EXTRA-README.md": "see TODO-1234: excluded until the platform port lands"}' >/dev/null 2>&1; then
+  echo "VERIFY OSS-D: a substantive reason (even one mentioning TODO) must disposition the file and pass (positive control)" >&2
   exit 1
 fi
 rm -f "$dist_mutant/EXTRA-README.md"

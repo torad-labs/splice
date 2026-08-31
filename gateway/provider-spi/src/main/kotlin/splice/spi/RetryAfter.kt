@@ -39,7 +39,19 @@ internal class RetryAfter {
     private fun secondsFormMs(value: String): Long? =
         value.toLongOrNull()
             ?.takeIf { it >= 0 }
-            ?.let { seconds -> if (seconds > Long.MAX_VALUE / MS_PER_S) Long.MAX_VALUE else seconds * MS_PER_S }
+            ?.let(::saturatingSecondsMs)
+            ?: oversizedSecondsMs(value)
+
+    /** Distinguish a digit-only value beyond Long from malformed text before assigning null. Leading
+     *  zeroes are normalized first so an arbitrarily padded small value stays small. */
+    private fun oversizedSecondsMs(value: String): Long? {
+        if (value.any { it !in '0'..'9' }) return null
+        val seconds = value.trimStart('0').ifEmpty { "0" }.toLongOrNull() ?: return Long.MAX_VALUE
+        return saturatingSecondsMs(seconds)
+    }
+
+    private fun saturatingSecondsMs(seconds: Long): Long =
+        if (seconds > Long.MAX_VALUE / MS_PER_S) Long.MAX_VALUE else seconds * MS_PER_S
 
     /** The NF-04 fallback: `Retry-After: Wed, 21 Oct 2026 07:28:00 GMT`. Converted against the WALL
      *  clock deliberately — an HTTP-date is wall time and MonoClock has no epoch — clamping past
@@ -49,9 +61,11 @@ internal class RetryAfter {
      *  all, so it can never wedge the head for OTHER turns. */
     private fun httpDateMs(value: String, nowEpochMs: WallClock): Long? = try {
         val at = java.time.ZonedDateTime.parse(value, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME)
-        (at.toInstant().toEpochMilli() - nowEpochMs()).coerceAtLeast(0L)
+        Math.subtractExact(at.toInstant().toEpochMilli(), nowEpochMs()).coerceAtLeast(0L)
     } catch (ignored: java.time.format.DateTimeParseException) {
         null // not seconds, not an HTTP-date: garbage stays null BY CONTRACT — the curve decides
+    } catch (ignored: ArithmeticException) {
+        null // valid date outside epoch-millisecond arithmetic: the curve decides
     }
 }
 

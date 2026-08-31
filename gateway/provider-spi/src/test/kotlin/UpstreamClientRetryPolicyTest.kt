@@ -8,6 +8,7 @@ import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
 import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -153,7 +154,7 @@ class UpstreamClientRetryPolicyTest {
         val capture = Capture()
         val engine = MockEngine {
             calls.incrementAndGet()
-            respond("busy", HttpStatusCode.ServiceUnavailable, headersOf("Retry-After", "${Long.MAX_VALUE / 1000 + 1}"))
+            respond("busy", HttpStatusCode.ServiceUnavailable, headersOf("Retry-After", "9223372036854775808"))
         }
         val client = clientOver(engine, capture, clock = { 0L })
         assertThrows<UpstreamFailed> { postOnce(client) }
@@ -164,11 +165,40 @@ class UpstreamClientRetryPolicyTest {
     }
 
     @Test
-    fun `retry-after seconds saturate exactly at the Long boundary`() {
+    fun `retry-after seconds saturate before arbitrary-length decimal narrowing`() {
         val retryAfter = RetryAfter()
         assertEquals(Long.MAX_VALUE / 1000 * 1000, retryAfter.retryAfterMs("${Long.MAX_VALUE / 1000}"))
         assertEquals(Long.MAX_VALUE, retryAfter.retryAfterMs("${Long.MAX_VALUE / 1000 + 1}"))
         assertEquals(Long.MAX_VALUE, retryAfter.retryAfterMs("${Long.MAX_VALUE}"))
+        assertEquals(Long.MAX_VALUE, retryAfter.retryAfterMs("9223372036854775808"))
+        assertEquals(Long.MAX_VALUE, retryAfter.retryAfterMs("9".repeat(100)))
+        assertEquals(1_000L, retryAfter.retryAfterMs("0".repeat(100) + "1"))
+    }
+
+    @Test
+    fun `an HTTP-date outside epoch milliseconds degrades to null`() {
+        assertNull(RetryAfter().retryAfterMs("31 Dec 999999999 23:59:59 GMT"))
+    }
+
+    @Test
+    fun `an HTTP-date outside epoch milliseconds falls back to the production retry curve`() = runTest {
+        val calls = AtomicInteger()
+        val capture = Capture()
+        val engine = MockEngine {
+            if (calls.incrementAndGet() == 1) {
+                respond(
+                    "busy",
+                    HttpStatusCode.ServiceUnavailable,
+                    headersOf("Retry-After", "31 Dec 999999999 23:59:59 GMT"),
+                )
+            } else {
+                respond("fine", HttpStatusCode.OK, headersOf())
+            }
+        }
+
+        assertEquals("ok", postOnce(clientOver(engine, capture)))
+        assertEquals(2, calls.get())
+        assertEquals(listOf(0L), capture.minDelays, "unrepresentable date must fall back to the curve")
     }
 
     @Test

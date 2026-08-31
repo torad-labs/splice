@@ -221,6 +221,13 @@ class ConversationSummaryPartsTest {
         )
     }
 
+    @Test
+    fun `shared composite identity is injective when values contain the legacy delimiter`() {
+        val encoded = ResponsesConversationIdentity.chainKey("a", "\u0000b")
+        assertEquals("1:a2:\u0000b", encoded)
+        assertNotEquals(encoded, ResponsesConversationIdentity.chainKey("a\u0000", "b"))
+    }
+
     // conversationKey is a hash of the first user message's TEXT, so two sessions that open with
     // identical words collide on it BY DESIGN (TurnMeta.sessionId: "consumers must mix BOTH, never
     // either alone"). Sharing one dedup instance across them SUPPRESSES a reasoning part rather

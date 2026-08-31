@@ -6,6 +6,7 @@ package splice.app.cli
 import splice.core.SHIM_VERSION
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
@@ -27,23 +28,37 @@ internal class InstallShim(
         println("splice: installed launch shim to $dst")
     }
 
-    /** The SPLICE_SHIM_VERSION marker embedded in the installed shim, or null if none/unreadable. */
+    /** The SPLICE_SHIM_VERSION marker, or null on PROVEN absence or a readable-but-unmarked
+     *  shim. DR-69: indeterminate access THROWS — a present shim behind denied access is not
+     *  "no marker", and both callers classify the failure loudly. */
     internal fun installedShimVersion(env: EnvReader): String? {
         val shim = layout.launchShimPath(env)
-        if (!Files.exists(shim)) return null
         return Cancellables.runCatchingCancellable {
             SHIM_VERSION_LINE.find(Files.readString(shim))?.groupValues?.get(1)
-        }.getOrNull()
+        }.getOrElse { failure ->
+            val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+                !Files.exists(shim, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+            if (genuinelyAbsent) null else throw failure
+        }
     }
 
     /** Non-fatal staleness message for the installed shim, or null when absent/current. */
     internal fun shimStalenessWarning(env: EnvReader): String? {
         val shim = layout.launchShimPath(env)
-        if (!Files.exists(shim)) return null
-        val installed = installedShimVersion(env)
-        if (installed == SHIM_VERSION) return null
-        return "splice: WARNING — installed launch shim at $shim is STALE " +
-            "(marker=${installed ?: "<missing>"}, expected=$SHIM_VERSION). " +
-            "Run: splice install (or ./install.sh) to refresh it."
+        val installed = Cancellables.runCatchingCancellable { installedShimVersion(env) }
+            .getOrElse { failure ->
+                // DR-69: an unreadable shim previously read as "absent" and the warning went
+                // missing exactly when the install was wedged. Never quotes file bytes.
+                return "splice: WARNING — launch shim at $shim is UNREADABLE " +
+                    "(${SafeFailureText.render(failure)}); its version cannot be verified. Fix access to $shim."
+            }
+        if (installed == null && !Files.exists(shim, java.nio.file.LinkOption.NOFOLLOW_LINKS)) return null
+        return if (installed == SHIM_VERSION) {
+            null
+        } else {
+            "splice: WARNING — installed launch shim at $shim is STALE " +
+                "(marker=${installed ?: "<missing>"}, expected=$SHIM_VERSION). " +
+                "Run: splice install (or ./install.sh) to refresh it."
+        }
     }
 }

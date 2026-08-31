@@ -3,7 +3,9 @@
 // neighbourhood floor drift. Same-package FQCN is unchanged.
 package splice.app.cli
 
+import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
@@ -26,19 +28,38 @@ internal class DoctorPathCheck(private val probes: DoctorProbes) {
         }
     }
 
-    internal fun wrapperCheck(link: Path, command: String): DoctorCheck = when {
-        !Files.exists(link, NOFOLLOW_LINKS) ->
-            DoctorCheck(CHECK_WRAPPER, CheckStatus.FAIL, "'$command' is not linked", FIX_RELINK)
-        !Files.isSymbolicLink(link) ->
-            DoctorCheck(
-                CHECK_WRAPPER,
-                CheckStatus.WARN,
-                "'$command' exists at $link but is not a splice-managed symlink",
-                "move the foreign file aside, then: $FIX_RELINK",
-            )
-        !Files.exists(link) ->
-            DoctorCheck(CHECK_WRAPPER, CheckStatus.FAIL, "'$command' is a dangling symlink (target gone)", FIX_RELINK)
-        else -> DoctorCheck(CHECK_WRAPPER, CheckStatus.OK, "'$command' → ${Files.readSymbolicLink(link)}")
+    internal fun wrapperCheck(link: Path, command: String): DoctorCheck {
+        // DR-69: the entry stat is the probe — NoSuch through a traversable parent is genuinely
+        // not-linked; any other failure is a PRESENT-but-unreadable bin, a different diagnosis.
+        val entryStat = Cancellables
+            .runCatchingCancellable { Files.getLastModifiedTime(link, NOFOLLOW_LINKS) }
+            .exceptionOrNull()
+        return when {
+            entryStat is java.nio.file.NoSuchFileException ->
+                DoctorCheck(CHECK_WRAPPER, CheckStatus.FAIL, "'$command' is not linked", FIX_RELINK)
+            entryStat != null ->
+                DoctorCheck(
+                    CHECK_WRAPPER,
+                    CheckStatus.FAIL,
+                    "'$command' at $link is unreadable (${SafeFailureText.render(entryStat)}) — not missing",
+                    "fix access to $link and its parents, then re-run doctor",
+                )
+            !Files.isSymbolicLink(link) ->
+                DoctorCheck(
+                    CHECK_WRAPPER,
+                    CheckStatus.WARN,
+                    "'$command' exists at $link but is not a splice-managed symlink",
+                    "move the foreign file aside, then: $FIX_RELINK",
+                )
+            !Files.exists(link) ->
+                DoctorCheck(
+                    CHECK_WRAPPER,
+                    CheckStatus.FAIL,
+                    "'$command' is a dangling symlink (target gone)",
+                    FIX_RELINK,
+                )
+            else -> DoctorCheck(CHECK_WRAPPER, CheckStatus.OK, "'$command' → ${Files.readSymbolicLink(link)}")
+        }
     }
 
     internal fun binaryOnPath(name: String, envReader: EnvReader): Path? =

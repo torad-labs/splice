@@ -74,12 +74,16 @@ internal class DoctorCommand {
             listOf(DoctorCheck("doctor", CheckStatus.FAIL, "check crashed: ${e.message}"))
         }
 
-    private fun loadTopology(configPath: Path): DoctorTopology {
-        if (!Files.exists(configPath)) return DoctorTopology.Absent
-        return Cancellables
-            .runCatchingCancellable { DoctorTopology.Parsed(TopologyLoader.parse(Files.readString(configPath))) }
-            .getOrElse { e -> DoctorTopology.Broken(e.message ?: "unreadable") }
-    }
+    // DR-69: doctor's contract is exact diagnosis — only proven absence is Absent; an
+    // unreadable (or dangling-linked) splice.toml is a PRESENT config with an access problem
+    // and reports Broken, so the auth checks are not silently skipped as first-run.
+    private fun loadTopology(configPath: Path): DoctorTopology = Cancellables
+        .runCatchingCancellable { DoctorTopology.Parsed(TopologyLoader.parse(Files.readString(configPath))) }
+        .getOrElse { e ->
+            val genuinelyAbsent = e is java.nio.file.NoSuchFileException &&
+                !Files.exists(configPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+            if (genuinelyAbsent) DoctorTopology.Absent else DoctorTopology.Broken(e.message ?: "unreadable")
+        }
 
     private fun renderSection(title: String, checks: List<DoctorCheck>) {
         println()

@@ -264,6 +264,37 @@ class PassthroughStreamTranslatorTest {
         assertTrue(s.emittedThinking, "a kimi thinking-only turn must NOT be graded empty")
     }
 
+    // DR-75 (fresh-eyes sweep): emittedText carried the exact defect CX-09 closed for thinking —
+    // an EMPTY text delta latched it, so a turn that delivered zero text characters graded as
+    // content-bearing and short-circuited the empty-turn honesty gate. Forwarding stays
+    // unconditional (the kimi goldens pin append + sink order); only the flag is gated.
+    @Test
+    fun `an empty text delta does not count as delivered content - DR-75`() = runTest {
+        val s = drive(
+            Rec(),
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""),
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":""}}"""),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":0}}"""),
+            ev("""{"type":"message_stop"}"""),
+        ) as TurnOutcome.Success
+        assertEquals("", s.bodyText)
+        assertFalse(s.emittedText, "an empty text delta delivered nothing to the client")
+    }
+
+    @Test
+    fun `real text content still counts as delivered - DR-75 control`() = runTest {
+        val s = drive(
+            Rec(),
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""),
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"hi"}}"""),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":1}}"""),
+            ev("""{"type":"message_stop"}"""),
+        ) as TurnOutcome.Success
+        assertTrue(s.emittedText)
+    }
+
     @Test
     fun `explicit JSON nulls never leak into buffers`() = runTest {
         val sink = Rec()

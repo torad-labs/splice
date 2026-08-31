@@ -21,7 +21,11 @@ internal class PassthroughProseChannels {
 
     internal suspend fun textDelta(wire: WireBlockIndex, t: String, sink: WireSink) {
         textBuf.append(t)
-        emittedText = true
+        // DR-75: the flag means "the client RECEIVED text" — the CX-09 law's text flavor. An
+        // empty delta latching it graded a zero-character turn as content-bearing, short-
+        // circuiting the empty-turn honesty gate. Append + sink stay unconditional: the kimi
+        // goldens pin the forwarded wire bytes.
+        if (t.isNotEmpty()) emittedText = true
         sink.textDelta(wire, t)
     }
 

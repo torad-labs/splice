@@ -657,18 +657,24 @@ id = "DR-49"
 phase = "e2e"
 title = "heads-e2e harness batch (codex lens): (a) unknown authKind FATAL is neutered to SKIP by command substitution (subshell exit swallowed); (b) perf recovery check pairs unrelated failure,ok rows across heads/windows. Both are harness-lies-green shapes."
 files = ["checks/e2e/heads-e2e.sh"]
-status = "in_flight"
+status = "done"
 verify = "bash -n checks/e2e/heads-e2e.sh"
 # [2026-08-30] CLAIM: owner=claude-splice at=2026-08-31T02:43:56Z
 # [2026-08-30] ATTEST-START: tree=f45006105974cd5a3278463af8fccc30e21cb23d at=2026-08-31T02:43:56Z
+# [2026-08-30] 2026-08-30 claude-splice landed 7b8fd8f: (a) return-2 + parent-shell rc discrimination; (b) model-lane pairing + perf-oracle selftest hook. Red proofs: selftest 3 new arms red on unfixed harness (unknown-kind exit 0 w/ client-auth SKIP wording; perf-oracle absent; pardon lie exit 0 retried-then-ok http_500x2 on never-recovering lane). Green: selftest 13/13 exit 0, shellcheck 0, bash -n ok. Teeth: snapshot reconstructed from jsonl+jsonl.1 (3 models, 91 ok, runs {1,1,1,1,5,7}) — lane pairing 16/0 vs old 11/5; all 5 old pardons were cross-model. Comment block rewritten to measured truth.
+# [2026-08-30] ATTEST: scoped diffstat: checks/e2e/heads-e2e.sh | 87 ++++++++++++++++++++++++++++++++++--------------- | 1 file changed, 60 insertions(+), 27 deletions(-); sidecar: .claude/ledger-diffs/DR-49.diff; off-scope: checks/e2e/heads-e2e-selftest.sh, checks/e2e/loopback_control.py, gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/InboxListener.kt, gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/WsConnectionFactory.kt, gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/WsConnectionPool.kt, gateway/dialect-openai-responses/src/test/kotlin/WsUpstreamTest.kt, gateway/gateway/src/main/kotlin/splice/gateway/head/WsRoundDriver.kt, gateway/gateway/src/test/kotlin/head/WsRoundDriverTest.kt
 
 [[items]]
 id = "DR-50"
 phase = "tooling"
 title = "manifest.py CLI batch (codex lens): (a) verdict journal append happens AFTER the ledger flock releases - concurrent verdicts can invert order between ledger and journal; (b) first-use machine-id generation races and a persistence failure returns UNSTABLE ids. Move journal append inside the lock; persist-or-die the machine id."
 files = ["dev/campaigns/manifest.py"]
-status = "todo"
+status = "done"
 verify = "python3 dev/campaigns/manifest.py dev/campaigns/drift-repair.toml selftest"
+# [2026-08-30] CLAIM: owner=claude-splice at=2026-08-31T03:08:45Z
+# [2026-08-30] ATTEST-START: tree=d3621a613a8fdd6a9dd7fe0302ff2162655b5c86 at=2026-08-31T03:08:45Z
+# [2026-08-30] 2026-08-30 claude-splice landed: (a) verdict journal append moved into _locked_rewrite after_commit (REV2-F5 posture) — ledger order == journal order by construction; appender's 2s fail-open lock timeout bounds flock hold. (b) _machine_id: os.link first-writer-wins + read-back (losers return the winner's id), persist-or-die (SystemExit on OSError/corrupt), per-ATTEMPT tmp names (the selftest race arm caught my own first cut sharing a pid-named tmp across threads — racer cleanup ENOENT'd a sibling). Selftest arms: persist-or-die SystemExit, 8-thread barrier race all-equal+read-back, subprocess A/B flock-serialization + journal-order assert. Mutation proofs: M1 (old machine-id body) reds at the SystemExit arm; M2 (journal after unlock) reds at the overtake arm. Selftest exit 0 on fixed file.
+# [2026-08-30] ATTEST: scoped diffstat: dev/campaigns/manifest.py | 172 +++++++++++++++++++++++++++++++++++++++++----- | 1 file changed, 155 insertions(+), 17 deletions(-); sidecar: .claude/ledger-diffs/DR-50.diff; off-scope: none
 
 [[items]]
 id = "DR-51"

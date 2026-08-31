@@ -100,6 +100,7 @@ import shutil
 import sys
 import sqlite3
 import tempfile
+import threading
 import time
 import tomllib
 from decimal import Decimal, ROUND_HALF_UP
@@ -961,15 +962,35 @@ def _machine_id(_path: Path | str | None = None) -> str:
         existing = ""
     if MACHINE_ID_RE.match(existing):
         return existing
+    # DR-50b: first-writer-wins + persist-or-die. os.replace let the LAST racing first-use
+    # overwrite the file, so every loser returned an id that was no longer on disk; and the old
+    # bare `except OSError: pass` answered a failed write with a FRESH random id on every call —
+    # an unstable substrate identity scattering one machine's claims across many identities.
+    # os.link refuses to overwrite (exactly one racer claims the path; losers read the winner
+    # back), and a persistence failure dies loudly instead of degrading.
     new_id = secrets.token_hex(4)
+    # tmp is unique PER ATTEMPT, not per process: two first-uses in one process (threads) sharing
+    # a pid-named tmp let one racer's cleanup unlink the other's file between write and link,
+    # turning a benign lost race into ENOENT — the selftest race arm caught exactly that.
+    tmp = path.with_name(f".{path.name}.tmp.{os.getpid()}.{new_id}")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(f".{path.name}.tmp.{os.getpid()}")
         tmp.write_text(new_id + "\n", encoding="utf-8")
-        os.replace(tmp, path)
-    except OSError:
-        pass
-    return new_id
+        try:
+            os.link(tmp, path)  # atomic claim: FileExistsError = a concurrent first-use won
+        except FileExistsError:
+            pass
+        final = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        sys.exit(f"error: cannot persist machine-id at {path}: {exc}")
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+    if not MACHINE_ID_RE.match(final):
+        sys.exit(f"error: machine-id file at {path} holds {final!r}, not 8 hex chars")
+    return final
 
 
 def _qualify_seat(seat: str, machine_id: str) -> str:
@@ -3892,22 +3913,35 @@ def cmd_verdict(
         stamp = date.today().isoformat()
         return _append_block_lines(lines, s, e, [f"# [{stamp}] {note_text}\n"])
 
+    seat = _canonical_seat() or "unknown"
+
+    def after_commit(noop):
+        # DR-50a: the journal record lands WHILE the manifest flock is still held (REV2-F5
+        # posture, same as claim's pointer write). It used to run after _locked_rewrite
+        # returned, so two racing verdicts could commit their ledger notes in one order and
+        # their journal lines in the other — the gym trajectory join then reads a verdict
+        # order the ledger never had. The appender's own 2s lock timeout is fail-open, so a
+        # wedged journal delays the flock briefly and never deadlocks it. noop is unreachable
+        # for a verdict (mutate appends or raises) but must never mint a journal line.
+        if noop:
+            return
+        _append_orchestrator_verdict_journal_line(
+            path,
+            item_id,
+            seat,
+            outcome,
+            gap_named,
+            locus,
+            bool(env_failure),
+            _this_file,
+            _journal_root,
+        )
+
     try:
-        _locked_rewrite(path, mutate)
+        _locked_rewrite(path, mutate, after_commit=after_commit)
     except _OneReviewPerRowRefusal as exc:
         sys.exit(str(exc))
     print(f"verdict recorded on {item_id}: {note_text}")
-    _append_orchestrator_verdict_journal_line(
-        path,
-        item_id,
-        _canonical_seat() or "unknown",
-        outcome,
-        gap_named,
-        locus,
-        bool(env_failure),
-        _this_file,
-        _journal_root,
-    )
     with open(path, encoding="utf-8") as handle:
         lines = handle.readlines()
     s, e = _find(lines, item_id)
@@ -5100,8 +5134,112 @@ def _cmd_selftest_body(path):
         second = _machine_id(g30_machine_id_path)
         assert MACHINE_ID_RE.match(first), first
         assert first == second, (first, second)
+
+        # DR-50b persist-or-die: an unpersistable machine-id must die loudly. The old
+        # `except OSError: pass` answered with a FRESH random id per call — an unstable
+        # substrate identity (red on that code: no SystemExit, two calls, two ids).
+        blocked_parent = g30_machine_id_dir / "not-a-dir"
+        blocked_parent.write_text("a plain file where the parent directory must be", encoding="utf-8")
+        try:
+            _machine_id(blocked_parent / "machine-id")
+            raise AssertionError("an unpersistable machine-id must SystemExit, not mint unstable ids")
+        except SystemExit:
+            pass
+
+        # DR-50b first-writer-wins: N simultaneous first-uses of ONE fresh path must all
+        # return the SAME id, and that id must be exactly what the file holds (read-back law).
+        # Red on the os.replace code: barrier-released racers each returned their OWN token.
+        race_path = g30_machine_id_dir / "raced-machine-id"
+        racers = 8
+        barrier = threading.Barrier(racers)
+        raced: list[str] = []
+        raced_lock = threading.Lock()
+
+        def _race_first_use():
+            barrier.wait()
+            got = _machine_id(race_path)
+            with raced_lock:
+                raced.append(got)
+
+        race_threads = [threading.Thread(target=_race_first_use) for _ in range(racers)]
+        for t in race_threads:
+            t.start()
+        for t in race_threads:
+            t.join()
+        on_disk = race_path.read_text(encoding="utf-8").strip()
+        assert len(raced) == racers and len(set(raced)) == 1 and raced[0] == on_disk, (raced, on_disk)
     finally:
         shutil.rmtree(g30_machine_id_dir, ignore_errors=True)
+
+    # DR-50a: the verdict journal line lands while the manifest flock is STILL HELD, so ledger
+    # order and journal order cannot invert. Proof shape: hold the journal lock; verdict A must
+    # then keep holding the manifest flock while it waits on the journal, so verdict B (a
+    # different row, different process) cannot land its ledger note inside the window. Red on
+    # the unfixed CLI: A released the flock before touching the journal, B's note landed while
+    # A's journal line was still pending — the inversion this arm exists to forbid.
+    dr50_dir = Path(tempfile.mkdtemp(prefix="manifest-dr50-order-"))
+    try:
+        dr50_script = str(Path(dr50_dir) / "manifest.py")
+        shutil.copy(__file__, dr50_script)
+        dr50_ledger = str(Path(dr50_dir) / "fixture.toml")
+        Path(dr50_ledger).write_text("", encoding="utf-8")
+        dr50_env = dict(
+            os.environ,
+            TORAD_FLEET_ROOT=str(dr50_dir),
+            TORAD_LEDGER_NOTIFY="off",
+        )
+        for iid in ("OR-1", "OR-2"):
+            subprocess.run(
+                [sys.executable, dr50_script, dr50_ledger, "add", "--id", iid, "--phase", "t",
+                 "--title", f"dr50 order fixture {iid}", "--files", "x.py", "--verify", "true"],
+                check=True, capture_output=True, env=dr50_env,
+            )
+        journal_dir = Path(dr50_dir) / "journal"
+        journal_dir.mkdir(parents=True, exist_ok=True)
+        held_lock = _journal_lock_path(journal_dir / JOURNAL_FILE_NAME)
+        os.mkdir(held_lock)  # the selftest IS the wedged journal producer
+        try:
+            proc_a = subprocess.Popen(
+                [sys.executable, dr50_script, dr50_ledger, "verdict", "OR-1", "--outcome", "accepted"],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=dr50_env,
+            )
+            deadline = time.time() + 5.0
+            while time.time() < deadline:
+                if "VERDICT: outcome=accepted" in Path(dr50_ledger).read_text(encoding="utf-8"):
+                    break
+                time.sleep(0.02)
+            else:
+                raise AssertionError("verdict A never committed its ledger note")
+            proc_b = subprocess.Popen(
+                [sys.executable, dr50_script, dr50_ledger, "verdict", "OR-2", "--outcome", "accepted"],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=dr50_env,
+            )
+            time.sleep(0.8)  # well inside A's 2s journal-lock wait
+            mid_text = Path(dr50_ledger).read_text(encoding="utf-8")
+            or2_block = mid_text.split('id = "OR-2"', 1)[1] if 'id = "OR-2"' in mid_text else ""
+            assert "VERDICT" not in or2_block, (
+                "verdict B overtook A across the ledger/journal boundary — the journal append "
+                "must hold the manifest flock (DR-50a)"
+            )
+        finally:
+            try:
+                os.rmdir(held_lock)
+            except OSError:
+                pass
+        _, a_err = proc_a.communicate(timeout=10)
+        assert proc_a.returncode == 0, a_err
+        _, b_err = proc_b.communicate(timeout=10)
+        assert proc_b.returncode == 0, b_err
+        final_text = Path(dr50_ledger).read_text(encoding="utf-8")
+        assert "VERDICT" in final_text.split('id = "OR-2"', 1)[1], "B's note must land after release"
+        journal_lines = [
+            json.loads(l) for l in (journal_dir / JOURNAL_FILE_NAME).read_text(encoding="utf-8").splitlines()
+        ]
+        verdict_order = [l["itemId"] for l in journal_lines if l.get("kind") == JOURNAL_KIND_ORCHESTRATOR_VERDICT]
+        assert verdict_order == ["OR-1", "OR-2"], (
+            "journal verdict order must equal ledger commit order", verdict_order)
+    finally:
+        shutil.rmtree(dr50_dir, ignore_errors=True)
 
     os.unlink(tmp_g30.name)
 

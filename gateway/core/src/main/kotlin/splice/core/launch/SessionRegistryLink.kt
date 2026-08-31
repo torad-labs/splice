@@ -74,7 +74,14 @@ internal class SessionRegistryLink(
                 fs.move(staged, dst, REPLACE_EXISTING, ATOMIC_MOVE)
             }
         } finally {
-            Files.deleteIfExists(staged)
+            // DR-104: the staged leftover is a courtesy — a cleanup throw must never REPLACE the
+            // in-flight outcome: after a successful migration it converted success into the
+            // caller's "sessions registry NOT linked", and after a move failure it renamed the
+            // cause. Same rule as LoginInterception's writeHookScript teardown.
+            Cancellables.discard(
+                Cancellables.runCatchingCleanup { Files.deleteIfExists(staged) },
+                "staged-link cleanup — the link outcome must stand",
+            )
         }
     }
 

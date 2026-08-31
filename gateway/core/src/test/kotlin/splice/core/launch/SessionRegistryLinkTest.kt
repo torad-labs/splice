@@ -178,4 +178,32 @@ class SessionRegistryLinkTest {
             "the preserved squatter must be loud: $log",
         )
     }
+
+    // DR-104: the bare `finally Files.deleteIfExists(staged)` let a cleanup throw REPLACE the
+    // in-flight outcome — after a successful move/migration, a delete failure converted the
+    // success into a thrown (and caller-logged) not-linked failure. The staged leftover is a
+    // courtesy; the link outcome must stand.
+    @Test
+    fun `a staged-cleanup throw never converts a successful link into a failure - DR-104`(@TempDir tmp: Path) {
+        val cfg = Files.createDirectories(tmp.resolve("cfg"))
+        val global = Files.createDirectories(tmp.resolve("global-sessions"))
+        val dst = cfg.resolve("sessions")
+        val fake = object : SessionRegistryFs {
+            override fun move(source: Path, target: Path, vararg options: CopyOption): Path {
+                // Pretend the move landed but leave `source` in place, then make the cleanup
+                // impossible: the finally's deleteIfExists now throws AccessDenied.
+                Files.setPosixFilePermissions(cfg, java.nio.file.attribute.PosixFilePermissions.fromString("r-x------"))
+                return target
+            }
+            override fun createSymbolicLink(link: Path, target: Path): Path = Files.createSymbolicLink(link, target)
+        }
+        try {
+            SessionRegistryLink(fake).link(global, dst, log = { })
+        } finally {
+            Files.setPosixFilePermissions(cfg, java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"))
+        }
+        // Reaching here without a throw IS the assertion — pre-fix the AccessDeniedException from
+        // the staged cleanup escaped link() in place of the successful outcome.
+        assertTrue(true)
+    }
 }

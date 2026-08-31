@@ -85,3 +85,50 @@ class ClaudeMaterializeLoggingTest {
         )
     }
 }
+
+// DR-104: replaceWithSymlink's bare `finally Files.deleteIfExists(staged)` let a cleanup throw
+// REPLACE the in-flight move failure — the decline log then named the wrong cause (the staged
+// path instead of the failed staged -> dst move). The two-path " -> " form is the discriminator:
+// only the move failure carries both paths.
+class ClaudeMaterializeCleanupTest {
+
+    private val optionsCache = kotlinx.serialization.json.buildJsonObject { put("cache", "x") }
+
+    @Test
+    fun `the decline log names the move failure, not the staged cleanup's - DR-104`(@TempDir home: Path) {
+        val global = home.resolve(".claude")
+        Files.createDirectories(global.resolve("agents"))
+        val configDir = home.resolve(".claude-head")
+        val log = mutableListOf<String>()
+        val breaking = SymlinkOp { link, target ->
+            val made = Files.createSymbolicLink(link, target)
+            // Freeze the parent AFTER staging: the move fails (AccessDenied staged -> dst) AND the
+            // finally's deleteIfExists fails (AccessDenied staged) — the log must name the former.
+            Files.setPosixFilePermissions(configDir, PosixFilePermissions.fromString("r-x------"))
+            made
+        }
+        try {
+            runCatching {
+                ClaudeConfigMaterializer(home, log = LogSink { log += it }, symlink = breaking)
+                    .materialize(
+                        MaterializeSpec(
+                            configDir = configDir,
+                            policy = ClaudePolicy(share = setOf("agents"), isolate = emptySet()),
+                            availableModelIds = listOf("m1"),
+                            defaultModel = "m1",
+                            modelOptionsCache = optionsCache,
+                            statuslineCommand = "curl",
+                        ),
+                    )
+            }
+        } finally {
+            Files.setPosixFilePermissions(configDir, PosixFilePermissions.fromString("rwx------"))
+        }
+        val decline = log.filter { it.contains("'agents' NOT linked") }
+        assertTrue(decline.isNotEmpty(), "the failed link must be logged; got $log")
+        assertTrue(
+            decline.any { it.contains(" -> ") },
+            "the logged cause must be the MOVE failure (two-path form), not the staged cleanup's; got $decline",
+        )
+    }
+}

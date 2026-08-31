@@ -238,7 +238,13 @@ public class ClaudeConfigMaterializer(
         try {
             Files.move(staged, dst, REPLACE_EXISTING, ATOMIC_MOVE)
         } finally {
-            Files.deleteIfExists(staged)
+            // DR-104: the staged leftover is a courtesy — a cleanup throw must never REPLACE the
+            // in-flight outcome (the decline log would name the wrong cause, and a success would
+            // read as failed). Same rule as LoginInterception's writeHookScript teardown.
+            Cancellables.discard(
+                Cancellables.runCatchingCleanup { Files.deleteIfExists(staged) },
+                "staged-link cleanup — the move outcome must stand",
+            )
         }
     }
 

@@ -42,15 +42,14 @@ public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTran
         try {
             upstream
                 .takeWhile {
-                    // pendingTools' per-entry `args` accumulate BEFORE the tool opens (deferred-open:
-                    // a backend may stream index+id and large argument deltas but never function.name),
-                    // so an entry count alone leaves those chars unbounded — review #49. Stop
-                    // collection at the cap so the producer and its upstream response unwind too.
+                    // Tool args accumulate both before deferred opens and after explicit-index tools
+                    // open; the guard counts both retained surfaces. Stop collection at the cap so
+                    // the producer and its upstream response unwind too.
                     val withinCapacity = !BufferCapacity.over(
                         channels.textBuf.length,
                         channels.thinkingBuf.length,
-                        toolCalls.toolCount,
-                        toolCalls.pendingArgsChars,
+                        toolIndexCount = toolCalls.retainedIndexEntryCount,
+                        pendingArgsLen = toolCalls.bufferedArgsChars,
                     )
                     if (!withinCapacity) terminal.runawayGuard = RUNAWAY_GUARD_MESSAGE
                     withinCapacity

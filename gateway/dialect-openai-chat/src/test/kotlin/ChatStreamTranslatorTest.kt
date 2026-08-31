@@ -9,6 +9,7 @@ import org.junit.jupiter.api.Test
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.dialect.chat.ChatStreamTranslator
+import splice.spi.BufferCapacity
 
 class ChatStreamTranslatorTest {
 
@@ -681,6 +682,45 @@ class ChatRefusalHonestyTest {
 }
 
 class ChatRunawayGuardTest {
+
+    private fun explicitToolFrame(index: Int, arguments: String): kotlinx.serialization.json.JsonObject =
+        ev(
+            """{"choices":[{"delta":{"tool_calls":[{"index":$index,"id":"tool_$index","function":{"name":"run","arguments":"$arguments"}}]}}]}""",
+        )
+
+    @Test
+    fun `explicit-index opened tools count toward the runaway guard`() = runTest {
+        var emitted = 0
+        val events = kotlinx.coroutines.flow.flow {
+            repeat(BufferCapacity.MAX_TOOL_INDEX_ENTRIES) { index ->
+                emitted += 1
+                emit(explicitToolFrame(index, "{}"))
+            }
+        }
+
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(events, Rec())
+        val failure = outcome as TurnOutcome.Failure
+        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        assertTrue(emitted < BufferCapacity.MAX_TOOL_INDEX_ENTRIES, "guard must stop collection: $emitted")
+    }
+
+    @Test
+    fun `aggregate arguments across explicit-index tools count toward the runaway guard`() = runTest {
+        val chunk = "x".repeat(1_000_000)
+        var emitted = 0
+        val events = kotlinx.coroutines.flow.flow {
+            repeat(25) { index ->
+                emitted += 1
+                emit(explicitToolFrame(index, chunk))
+            }
+        }
+
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(events, Rec())
+        val failure = outcome as TurnOutcome.Failure
+        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        assertTrue(emitted < 25, "guard must stop collection: $emitted")
+    }
+
     @Test
     fun `runaway guard unwinds the upstream instead of draining it`() = runTest {
         val chunk = "x".repeat(1_000_000)

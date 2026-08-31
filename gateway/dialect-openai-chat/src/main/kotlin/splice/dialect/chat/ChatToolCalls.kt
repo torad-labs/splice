@@ -32,6 +32,8 @@ internal class ChatToolCalls(private val frame: ChatToolFrame) {
     // Opening with name="" freezes an empty tool_use on the Anthropic wire — buffer until name
     // arrives (or finish_reason forces a flush).
     internal val pendingTools = HashMap<Int, PendingTool>()
+    private var pendingArgsCharCount = 0L
+    private var openedArgsCharCount = 0L
 
     internal data class PendingTool(
         var id: String,
@@ -39,9 +41,18 @@ internal class ChatToolCalls(private val frame: ChatToolFrame) {
         val args: StringBuilder = StringBuilder(),
     )
 
-    // NF-06 buffer-capacity accessors — read by ChatStreamTranslator's runaway guard.
-    internal val toolCount: Int get() = maxOf(frame.indexCount, pendingTools.size)
-    internal val pendingArgsChars: Int get() = pendingTools.values.sumOf { it.args.length }
+    // NF-06 buffer-capacity accessors — count every retained map entry, not only synthesized
+    // indices/pending opens. A standard explicit-index call bypasses frame.indexCount and leaves
+    // pendingTools as soon as its name arrives, while the three opened-call maps keep growing.
+    internal val retainedIndexEntryCount: Int get() = minOf(
+        Int.MAX_VALUE.toLong(),
+        frame.indexCount.toLong() + pendingTools.size + toolBlocks.size +
+            toolArgsByIndex.size + openedToolIds.size,
+    ).toInt()
+    internal val bufferedArgsChars: Int get() = minOf(
+        Int.MAX_VALUE.toLong(),
+        pendingArgsCharCount + openedArgsCharCount,
+    ).toInt()
 
     // CX-01: the indices with an opened block — what firstInvalidToolArgs walks at terminal.
     internal val openIndices: Set<Int> get() = toolBlocks.keys
@@ -61,7 +72,11 @@ internal class ChatToolCalls(private val frame: ChatToolFrame) {
         }
         if (parsed.id.isNotEmpty()) pending.id = parsed.id
         if (parsed.name.isNotEmpty()) pending.name = parsed.name
-        if (parsed.args.isNotEmpty()) pending.args.append(parsed.args)
+        if (parsed.args.isNotEmpty()) {
+            val before = pending.args.length
+            pending.args.append(parsed.args)
+            pendingArgsCharCount += (pending.args.length - before).toLong()
+        }
         if (pending.name.isNotEmpty()) {
             openPendingTool(parsed.index, pending, sink)
         }
@@ -76,6 +91,7 @@ internal class ChatToolCalls(private val frame: ChatToolFrame) {
         openedToolIds.add(pending.id)
         hasToolUse = true
         pendingTools.remove(index)
+        pendingArgsCharCount -= pending.args.length.toLong()
         if (pending.args.isNotEmpty()) {
             sink.inputJsonDelta(opened, pending.args.toString())
             accumulateToolArgs(index, pending.args.toString())
@@ -94,7 +110,10 @@ internal class ChatToolCalls(private val frame: ChatToolFrame) {
     // wire; this is the only place the whole buffer exists to parse at terminal). NF-06 cap.
     private fun accumulateToolArgs(index: Int, chunk: String) {
         val buf = toolArgsByIndex.getOrPut(index) { StringBuilder() }
-        if (buf.length < BufferCapacity.MAX_BUFFERED_CHARS) buf.append(chunk)
+        if (buf.length >= BufferCapacity.MAX_BUFFERED_CHARS) return
+        val before = buf.length
+        buf.append(chunk)
+        openedArgsCharCount += (buf.length - before).toLong()
     }
 
     /** CX-01: the first opened tool whose accumulated args are empty or not valid JSON, or null when

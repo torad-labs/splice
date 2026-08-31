@@ -202,6 +202,28 @@ class TurnPipelineTest {
     // because the mirror is off for compact by construction (Mirror.willMirror: "compact is a
     // text-only summarizer turn").
 
+    // DR-126: the (compact, no-text, tooled) shape fell through BOTH recorders — the promote
+    // branch skips on hasToolUse and the model_text arm requires emittedText — so the compact
+    // JSONL drift instrument was blind for exactly the anomalous class (a compact turn has no
+    // tools to call; a model calling one anyway is the drift worth a row). The turn itself must
+    // flow on unchanged: recorded, not rewritten.
+    @Test
+    fun `a tooled no-text compact turn records a row naming the shape - DR-126`() = runTest {
+        val rec = RecTerminal()
+        val tooled = TurnOutcome.Success(
+            hasToolUse = true,
+            incomplete = false,
+            usage = Usage(0, 0, 0),
+            thinkingText = "",
+            bodyText = "",
+            emittedText = false,
+        )
+        val tag = pipeline(mirrorReasoning = false)
+            .finishStream(rec, tooled, meta("text", compact = true), elapsedMs = 1)
+        assertEquals(mapOf("tooled_no_text" to 1), recordedCompact().byOutcome, "the shape must get a row")
+        assertEquals("ok", tag, "recorded, not rewritten — the turn flows to the normal terminal")
+    }
+
     @Test
     fun `an empty compact turn is an empty_compact error, never an empty success`() = runTest {
         val (rec, tag) = runCompact(thinking = "")

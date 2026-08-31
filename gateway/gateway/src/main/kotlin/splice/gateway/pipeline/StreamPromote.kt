@@ -49,9 +49,23 @@ internal class StreamPromote(
                 emitter.emitError(ErrorType.API_ERROR, "claudex: model returned no content (empty response) — retry")
                 return "empty_model"
             }
-        } else if (meta.compact && emittedText) {
-            compact.record("model_text", elapsedMs, chars = bodyText.length)
+        } else {
+            recordCompactShape(meta, emittedText, bodyText, elapsedMs)
         }
         return null
+    }
+
+    /** The compact rows for every shape the promote guard skips: text present (model_text) or —
+     *  DR-126 — tool_use with NO text, which fell through both recorders and left the drift
+     *  instrument blind for exactly the anomalous class (a compact turn has no tools to call; a
+     *  model calling one anyway is the drift worth a row). Recorded, not rewritten: the turn
+     *  flows on to mirror+emit either way. */
+    private fun recordCompactShape(meta: TurnMeta, emittedText: Boolean, bodyText: String, elapsedMs: Long) {
+        if (!meta.compact) return
+        if (emittedText) {
+            compact.record("model_text", elapsedMs, chars = bodyText.length)
+        } else {
+            compact.record("tooled_no_text", elapsedMs)
+        }
     }
 }

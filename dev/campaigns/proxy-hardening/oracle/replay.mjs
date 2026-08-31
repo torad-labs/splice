@@ -415,7 +415,10 @@ command = "claudex"
   let exit = 0;
   try {
     await Promise.race([
-      (async () => { await waitHttp(CONTROL_PORT, '/health'); await waitHttp(HEAD_PORT, '/health', 40).catch(() => waitHttp(HEAD_PORT, '/', 40)); })(),
+      // Head waits carry the same 30s budget as control: right after gate.sh's `clean check` +
+      // inline shadowJar the JVM boots under full gradle-daemon load, and the head listener
+      // (which binds AFTER control) blew a 10s ceiling — a slow boot is not a dead daemon.
+      (async () => { await waitHttp(CONTROL_PORT, '/health'); await waitHttp(HEAD_PORT, '/health').catch(() => waitHttp(HEAD_PORT, '/')); })(),
       deadBeforeHealthy,
     ]);
 

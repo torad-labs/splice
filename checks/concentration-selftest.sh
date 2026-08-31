@@ -285,31 +285,80 @@ routing
 must_fail "6b. the gate.sh leg replaced by 'true', script name left in a trailing comment" "does not run 'gate:concentration'"
 reset_config
 
-# ── 7. census: `fun interface` is a TYPE, nested types are REPORTED (DR-51) ───────────────────
-# Red on the pre-DR-51 oracle: `fun interface` failed TYPE_DECL (no `fun ` modifier) and was
-# billed 3 as an export, and no nested_types field existed at all.
+# ── 7. census: every Kotlin type spelling is counted, nested types reported (DR-51) ──────────
+# Red on the pre-DR-51 oracle: `fun interface` failed TYPE_DECL (no `fun ` modifier), annotation
+# classes still fail both top-level and nested regexes, and no nested_types field existed at all.
 SYNTH2="$tmp/gateway/zz-selftest-census/src/main/kotlin/splice/selftest2"
 mkdir -p "$SYNTH2"
 cat > "$SYNTH2/SelftestCensus.kt" <<'KT'
 package splice.selftest2
 fun interface SelftestSeam { fun run(): Int }
+annotation class SelftestMarker
 class SelftestHost(val v: String) {
+    annotation class NestedMarker
     class Nested(val x: Int)
 }
 KT
 oracle --file SelftestCensus.kt
 if [ "$rc" -ne 0 ]; then
   err "7. census arm — --file SelftestCensus.kt must succeed (exit $rc): $(head -3 "$tmp/out" | tr '\n' ' ')"
-elif ! grep -q '"types": 2' "$tmp/out"; then
-  err "7. census arm — fun interface must be counted as a TYPE (want types=2): $(grep -E '\"(types|C)\"' "$tmp/out" | tr '\n' ' ')"
-elif ! grep -q '"nested_types": 1' "$tmp/out"; then
-  err "7. census arm — the nested class must be REPORTED in nested_types: $(grep nested "$tmp/out" | tr '\n' ' ')"
-elif ! grep -q '"C": 18.0' "$tmp/out"; then
-  err "7. census arm — C must bill the fun interface at 8 and the nested type at 0 (want 18.0): $(grep '\"C\"' "$tmp/out" | tr '\n' ' ')"
+elif ! grep -q '"types": 3' "$tmp/out"; then
+  err "7. census arm — fun interface and annotation class must be counted as TYPEs (want types=3): $(grep -E '\"(types|C)\"' "$tmp/out" | tr '\n' ' ')"
+elif ! grep -q '"nested_types": 2' "$tmp/out"; then
+  err "7. census arm — nested class and annotation class must be REPORTED (want nested_types=2): $(grep nested "$tmp/out" | tr '\n' ' ')"
+elif ! grep -q '"C": 27.0' "$tmp/out"; then
+  err "7. census arm — C must bill all three top-level types at 8 and nested types at 0 (want 27.0): $(grep '\"C\"' "$tmp/out" | tr '\n' ' ')"
 else
-  note "✓ 7. census: fun interface billed as a type, nested type reported unbilled"
+  note "✓ 7. census: fun interface and annotation classes counted; nested types reported unbilled"
 fi
 rm -rf "$tmp/gateway/zz-selftest-census"
+
+# The live denominator comes from the Kotlin AST, not TYPE_DECL itself: every annotation-class node
+# ast-grep finds in production must be recognized in the matching top-level/nested census lane.
+# This keeps a newly added spelling visible without adding it to a second hand-authored allowlist.
+if ! command -v ast-grep >/dev/null 2>&1; then
+  err "7b. source annotation census — ast-grep is unavailable, so the external denominator cannot run"
+elif ! ast-grep run --kind class_declaration --lang kotlin --json=compact \
+  "$ROOT"/gateway/*/src/main >"$tmp/annotation-ast.json"
+then
+  err "7b. source annotation census — ast-grep could not enumerate production class declarations"
+elif ! python3 - "$ORACLE" "$tmp/annotation-ast.json" >"$tmp/annotation-check" 2>&1 <<'PY'
+import importlib.util
+import json
+import pathlib
+import re
+import sys
+
+spec = importlib.util.spec_from_file_location("concentration_annotation_census", sys.argv[1])
+oracle = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(oracle)
+nodes = [
+    node
+    for node in json.loads(pathlib.Path(sys.argv[2]).read_text())
+    if re.search(r"\bannotation\s+class\b", node["text"])
+]
+problems = []
+if not nodes:
+    problems.append("AST source denominator found zero annotation classes — refusing a vacuous pass")
+for node in nodes:
+    column = node["range"]["start"]["column"]
+    measured = oracle.measure(node["file"], " " * column + node["text"])
+    lane = "types" if column == 0 else "nested_types"
+    if measured[lane] != 1:
+        problems.append(
+            f"{node['file']}:{node['range']['start']['line'] + 1} is an AST annotation class "
+            f"but {lane}={measured[lane]}"
+        )
+for problem in problems:
+    print(problem)
+print(f"AST annotation denominator: {len(nodes)} declaration(s)")
+sys.exit(1 if problems else 0)
+PY
+then
+  err "7b. source annotation census — regex disagrees with the AST denominator: $(tail -5 "$tmp/annotation-check" | tr '\n' ' ')"
+else
+  note "✓ 7b. every source-derived AST annotation class lands in the matching census lane"
+fi
 
 # ── 8. --file ambiguity is exit 2, never a silent pick (DR-51) ────────────────────────────────
 mkdir -p "$tmp/gateway/zz-selftest-twin-a/src/main/kotlin/splice/twina" \
@@ -420,6 +469,6 @@ fi
 rm -rf "$G"
 
 if [ "$fail" -eq 0 ]; then
-  note "concentration selftest: control green, 11 mutation fixtures red for their stated reasons, 5 DR-51 arms green"
+  note "concentration selftest: control green, 11 mutation fixtures red for their stated reasons, 6 DR-51 arms green"
 fi
 exit "$fail"

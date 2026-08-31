@@ -241,7 +241,8 @@ SRC_GLOB = "gateway/*/src/main"
 SRC_RE = re.compile(r"^gateway/[^/]+/src/main/.*\.kt$")
 
 TYPE_DECL = re.compile(
-    r"^(public |internal |private )?(sealed |data |abstract |open |value |enum |fun )*(class|interface|object) "
+    r"^(public |internal |private )?(sealed |data |abstract |open |value |enum |fun |annotation )*"
+    r"(class|interface|object) "
 )
 # THE CENSUS COUNTS EVERY SPELLING OF A TYPE, OR IT IS A DODGE LIST (DR-51, 2026-08-30).
 # `fun interface` — Kotlin's SAM seam, 92 of them across 43 files of this tree — failed TYPE_DECL
@@ -249,7 +250,10 @@ TYPE_DECL = re.compile(
 # points as a function instead of 8 as the declared type it is. A ports file of ten seams read as
 # 30 where ten plain interfaces read as 80. Measured on landing: HIGH 0 -> 0, over-1.8 18 -> 18,
 # 7 moderate<->low flips, 43 files' C moved — the ONE DECLARATION, ONE BILL radius, and the same
-# kind of correction: it says only that a declaration is billed AS a declaration.
+# kind of correction: it says only that a declaration is billed AS a declaration. `annotation
+# class` was the same remaining dodge: the live MustConsume marker read types=0 until both type
+# regexes admitted the modifier. The selftest derives annotation nodes from ast-grep's Kotlin AST,
+# so its denominator is outside these regexes and a future spelling cannot disappear from both.
 #
 # NESTED types are REPORTED (the `nested_types` field below), deliberately NOT billed into C.
 # Counting them at 8 was measured first: HIGH 0 -> 1 (cli/Command.kt 1.60 -> 6.12), 20 band flips,
@@ -260,7 +264,8 @@ TYPE_DECL = re.compile(
 # decision. The field makes the blindness visible; the bill stays a human call.
 NESTED_TYPE_DECL = re.compile(
     r"^[ \t]+(public |internal |private |protected )?"
-    r"(sealed |data |abstract |open |value |enum |inner |fun )*(class|interface|object)[ \t]+[A-Za-z_]"
+    r"(sealed |data |abstract |open |value |enum |inner |fun |annotation )*"
+    r"(class|interface|object)[ \t]+[A-Za-z_]"
 )
 EXPORT_DECL = re.compile(
     r"^(public |internal )?(sealed |data |abstract |open |value |enum |suspend |inline )*"
@@ -541,7 +546,9 @@ def collect_ref(ref: str) -> list[dict]:
     with tarfile.open(fileobj=io.BytesIO(blob)) as tar:
         for member in tar.getmembers():
             if member.isfile() and SRC_RE.match(member.name):
-                text = tar.extractfile(member).read().decode(errors="replace")
+                source = tar.extractfile(member)
+                assert source is not None
+                text = source.read().decode(errors="replace")
                 rows.append(measure(member.name, text))
     return rows
 

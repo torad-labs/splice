@@ -28,7 +28,6 @@ internal class ClientAuth(
     private val responses: AdmissionResponses,
 ) {
     suspend fun authorize(call: ApplicationCall): Boolean {
-        val presented = presentedCredential(call)
         // A client-auth head has NO splice-held credential to protect: the mgmt key is what the
         // launcher plants in a client whose own credentials it replaced, and this head does the
         // opposite — it leaves the client's native auth intact and forwards it. Comparing the
@@ -36,8 +35,8 @@ internal class ClientAuth(
         // head exists to serve. The listener is loopback-only, and an unauthenticated caller
         // simply forwards no valid upstream credential and gets the upstream's own 401.
         // ONE exception, below: the mgmt key itself is never a credential this head may forward.
-        if (deps.forwardClientAuth) return allowUnlessOwnKey(call, presented)
-        if (matchesInferenceToken(presented)) return true
+        if (deps.forwardClientAuth) return allowUnlessOwnKey(call)
+        if (matchesInferenceToken(presentedCredential(call))) return true
         responses.respondUnauthorized(call)
         return false
     }
@@ -59,9 +58,21 @@ internal class ClientAuth(
      * unset list is empty by design — so a native head launched from inside another head's session
      * inherits that bearer. Forwarding it would ALSO mean the caller's real credential never rides,
      * turning a fixable environment slip into an opaque vendor 401. Refusing here says which.
+     *
+     * EVERY forwardable spelling is checked, not the one [presentedCredential] would pick (DR-30
+     * redo): [forwardedClientHeaders] sends Authorization AND x-api-key when both are present, so
+     * a caller whose Authorization bearer is its own token could still ride the mgmt key upstream
+     * in x-api-key — and a schemeless `Authorization: <key>` parses as no bearer at all yet the
+     * raw header value is forwarded verbatim. The key must not leave in ANY of the three.
      */
-    private suspend fun allowUnlessOwnKey(call: ApplicationCall, presented: String?): Boolean {
-        if (!matchesInferenceToken(presented)) return true
+    private suspend fun allowUnlessOwnKey(call: ApplicationCall): Boolean {
+        val rawAuthorization = call.request.headers[HttpHeaders.Authorization]
+        val forwardable = listOf(
+            rawAuthorization,
+            BearerScheme.bearerToken(rawAuthorization),
+            call.request.headers["x-api-key"],
+        )
+        if (forwardable.none { matchesInferenceToken(it) }) return true
         deps.log(
             "[auth] refused a turn on a client-auth head that presented splice's own management key — " +
                 "ANTHROPIC_AUTH_TOKEN is set in the launching environment and shadowed the caller's own " +

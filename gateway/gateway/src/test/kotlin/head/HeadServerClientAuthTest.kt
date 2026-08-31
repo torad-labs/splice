@@ -302,6 +302,35 @@ class HeadServerClientAuthTest {
         assertEquals(before, upstream.requests.size, "splice's own key must never reach the vendor")
     }
 
+    // DR-30 redo (codex adversarial verdict, 2026-08-30): the first guard checked only the ONE
+    // credential presentedCredential would pick — Authorization's bearer first — while the
+    // forwarding allowlist sends BOTH headers. A caller whose bearer is its own token could
+    // therefore still ride the mgmt key upstream in x-api-key; and a schemeless
+    // `Authorization: <key>` parsed as no bearer at all yet the raw value is forwarded verbatim.
+    // Every forwardable spelling is now checked independently; both arms were red on the first fix.
+
+    @Test
+    fun `mixed headers cannot smuggle the key - own bearer plus mgmt x-api-key is refused`() {
+        val port = startHead(forwardClientAuth = true)
+        val before = upstream.requests.size
+        val (status, body) = turn(
+            port,
+            mapOf("Authorization" to "Bearer caller-own-token", "x-api-key" to MGMT_KEY),
+        )
+        assertEquals(HttpStatusCode.Unauthorized, status)
+        assertTrue(body.contains("management key"), body)
+        assertEquals(before, upstream.requests.size, "splice's own key must never reach the vendor")
+    }
+
+    @Test
+    fun `a schemeless Authorization spelling of the key is refused, not forwarded verbatim`() {
+        val port = startHead(forwardClientAuth = true)
+        val before = upstream.requests.size
+        val (status, _) = turn(port, mapOf("Authorization" to MGMT_KEY))
+        assertEquals(HttpStatusCode.Unauthorized, status)
+        assertEquals(before, upstream.requests.size, "splice's own key must never reach the vendor")
+    }
+
     // ── the cell that was never built ─────────────────────────────────────────────────────────
     //
     // Bypass ON while splice STILL HOLDS a credential. Every case above ties the flag to the auth

@@ -81,12 +81,17 @@ class ClaudeConfigMaterializerTest {
     // DR-39: linkShared's best-effort legs were best-effort AND silent — a head could launch
     // without the operator's agents/skills/hooks layer and nothing said so. Deterministic
     // reproduction: a real dir the operator made where the share would link must LOG the decline.
-    // (commands is exempt by design — real-dir-ness there is the login.md steady state.)
+    // (commands is exempt by design — real-dir-ness there is the login.md steady state — but the
+    // exemption is only honest because LoginInterception reconciles a real commands dir on EVERY
+    // launch, blank-login included: this arm materializes with a blank loginCommand and a real
+    // local commands dir, and the operator's entry must still arrive. codex repro, DR-39 redo.)
     @Test
     fun `an undone share names itself in the log instead of failing silently`(@TempDir home: Path) {
         seedGlobal(home)
+        home.resolve(".claude/commands/team.md").writeText("# team")
         val configDir = home.resolve(".claude-head")
         Files.createDirectories(configDir.resolve("agents")) // operator-made REAL dir blocks the link
+        Files.createDirectories(configDir.resolve("commands")) // by-design real dir: exempt AND reconciled
         val log = mutableListOf<String>()
 
         ClaudeConfigMaterializer(home, log = LogSink { log += it })
@@ -97,6 +102,10 @@ class ClaudeConfigMaterializerTest {
             "the declined agents share must be named in the log, got $log",
         )
         assertTrue(log.none { it.contains("'commands'") }, "commands real-dir is by design; no noise: $log")
+        assertTrue(
+            Files.isSymbolicLink(configDir.resolve("commands/team.md")),
+            "a blank-login head's real commands dir must still receive the operator's entries",
+        )
     }
 
     // Test shim: materialize() now takes a MaterializeSpec; supply a fixed statusline so the

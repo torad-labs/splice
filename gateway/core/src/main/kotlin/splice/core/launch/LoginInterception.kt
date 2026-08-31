@@ -72,6 +72,7 @@ internal fun interface HookExecProbe {
 }
 
 internal object LoginInterception {
+    private const val COMMANDS_DIR = "commands"
     private const val LOGIN_MD = "login.md"
     private const val LOGIN_HOOK_SH = "splice-login-hook.sh"
     private const val CAPTURE_HOOK_SH = "splice-key-capture-hook.sh"
@@ -106,6 +107,7 @@ internal object LoginInterception {
         chmod: HookChmod = HookChmod(Files::setPosixFilePermissions),
         execProbe: HookExecProbe = HookExecProbe(LoginInterception::probeExecutability),
     ): Map<String, List<JsonObject>> {
+        if (loginCommand.isBlank()) reconcileBlankLoginCommands(configDir, globalCommands, log)
         if (loginCommand.isBlank() && tokenCapture == null) return emptyMap()
         if (!dirCanExecuteHooks(configDir, tokenCapture, log, chmod, execProbe)) return emptyMap()
         val upsHooks = mutableListOf<JsonObject>()
@@ -200,12 +202,47 @@ internal object LoginInterception {
         }
     }
 
+    /** DR-39 redo (codex): commands reconciliation is not login plumbing. A client-auth head
+     *  (blank loginCommand) still shares the operator's commands, and the materializer EXEMPTS
+     *  commands' real-dir decline on the promise that THIS file reconciles them — so for a
+     *  blank-login head the promise must hold before wire()'s login-specific early return. Only
+     *  the head's-own-REAL-dir shape needs work: a whole-dir symlink already IS the share, and an
+     *  absent dir is linked whole by the materializer. No login.md is written — a /login command
+     *  on a client-auth head would be wrong. */
+    private fun reconcileBlankLoginCommands(configDir: Path, globalCommands: Path?, log: LogSink) {
+        if (globalCommands == null) return
+        val dst = configDir.resolve(COMMANDS_DIR)
+        if (!Files.isDirectory(dst, NOFOLLOW_LINKS) || dst.isSymbolicLink()) return
+        val leg = Cancellables.runCatchingCancellable { linkGlobalCommandsInto(dst, globalCommands) }
+        if (leg.isFailure) {
+            log(
+                "[login] shared commands NOT reconciled into $configDir " +
+                    "(${leg.exceptionOrNull()?.message}) — this head's own commands dir is " +
+                    "missing the operator's entries\n",
+            )
+        }
+    }
+
     private fun writeCommandsDir(configDir: Path, signInLabel: String, globalCommands: Path?) {
-        val dst = configDir.resolve("commands")
-        if (dst.isSymbolicLink()) Files.delete(dst)
-        Files.createDirectories(dst)
-        if (globalCommands != null) linkGlobalCommandsInto(dst, globalCommands)
-        Files.writeString(dst.resolve(LOGIN_MD), LoginHookScripts.loginCommandMd(signInLabel, LOGIN_SENTINEL))
+        val dst = configDir.resolve(COMMANDS_DIR)
+        val symlinked = dst.isSymbolicLink()
+        // A whole-dir commands symlink must become the real dir login.md lives in — but the old
+        // delete-then-createDirectories-then-populate lost the WORKING commands dir whenever a step
+        // after the delete failed (DR-39: ENOSPC/EPERM mid-populate). The real dir is now staged
+        // COMPLETE beside the link first; only unlink+rename remain after it is whole. A stale
+        // stage from a crashed attempt is a createDirectories no-op (dir) or a loud pre-delete
+        // failure (file) that leaves the link untouched.
+        val target = if (symlinked) {
+            Files.createDirectories(configDir.resolve(".$COMMANDS_DIR.staged-${ProcessHandle.current().pid()}"))
+        } else {
+            Files.createDirectories(dst)
+        }
+        if (globalCommands != null) linkGlobalCommandsInto(target, globalCommands)
+        Files.writeString(target.resolve(LOGIN_MD), LoginHookScripts.loginCommandMd(signInLabel, LOGIN_SENTINEL))
+        if (symlinked) {
+            Files.delete(dst)
+            Files.move(target, dst)
+        }
     }
 
     private fun linkGlobalCommandsInto(dst: Path, globalCommands: Path) {
@@ -217,10 +254,25 @@ internal object LoginInterception {
 
     private fun linkOneInto(dir: Path, src: Path) {
         val dst = dir.resolve(src.fileName.toString())
-        if (Files.exists(dst, NOFOLLOW_LINKS)) {
-            if (dst.isSymbolicLink() || !dst.isDirectory()) Files.delete(dst) else return
+        val present = Files.exists(dst, NOFOLLOW_LINKS)
+        // Steady state first (DR-39): commands reconcile on EVERY launch, and most launches find
+        // the link already correct — the old unconditional delete-and-recreate churned the inode
+        // and opened a window where a crash between the two syscalls left the command MISSING. A
+        // correct link is a no-op; a real directory is operator content and stays; only a stale
+        // file or wrong-target link is replaced, via a staged sibling published in ONE atomic
+        // rename so no reader ever sees the name absent. A staged-name collision (crashed attempt
+        // debris, or a fault-injection double) fails BEFORE dst is touched.
+        val alreadyCorrect = present && dst.isSymbolicLink() &&
+            Cancellables.runCatchingCancellable { Files.readSymbolicLink(dst) }.getOrNull() == src
+        when {
+            alreadyCorrect || (present && dst.isDirectory(NOFOLLOW_LINKS)) -> Unit
+            !present -> Files.createSymbolicLink(dst, src)
+            else -> {
+                val staged = dir.resolve(".${dst.fileName}.staged-${ProcessHandle.current().pid()}")
+                Files.createSymbolicLink(staged, src)
+                Files.move(staged, dst, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            }
         }
-        Files.createSymbolicLink(dst, src)
     }
 
     /**

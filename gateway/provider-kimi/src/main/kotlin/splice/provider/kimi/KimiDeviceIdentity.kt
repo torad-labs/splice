@@ -42,6 +42,7 @@ public class KimiDeviceIdentity(
                 )
             }
         }
+        // ast-grep-ignore: kt-no-silent-result-collapse -- non-absence failures threw above; null is proven absence
         val existing = read.getOrNull()
         if (!existing.isNullOrEmpty()) return existing
         val id = UUID.randomUUID().toString()

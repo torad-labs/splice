@@ -63,11 +63,10 @@ internal class GrokAuthDescribe(
     }.getOrNull()
 
     internal fun describe(): AuthDescription {
-        // ast-grep-ignore: kt-no-silent-result-collapse -- introspection display: present=false plus
-        // a read_error field when the failure is not genuine absence (DR-59), never a silent collapse
         val presentOutcome = Cancellables.runCatchingCancellable {
             authJson.tokensOf()?.get("access_token") != null
         }
+        // ast-grep-ignore: kt-no-silent-result-collapse -- failure consumed below via exceptionOrNull -> read_error
         val present = presentOutcome.getOrDefault(false)
         val mtime = grokAuthMtimeOrNull(authPath, log)
         return AuthDescription(

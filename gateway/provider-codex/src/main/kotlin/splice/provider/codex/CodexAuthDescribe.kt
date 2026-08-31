@@ -57,6 +57,7 @@ internal class CodexAuthDescribe(
             JsonScalars.str(raw, FIELD_LAST_REFRESH)?.let { out[FIELD_LAST_REFRESH] = it }
             hasAccess
         }
+        // ast-grep-ignore: kt-no-silent-result-collapse -- failure consumed below via exceptionOrNull -> read_error
         val present = presentOutcome.getOrDefault(false)
         presentOutcome.exceptionOrNull()?.let { failure ->
             // DR-59: indeterminate is not logged-out — name it in the description instead.

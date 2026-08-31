@@ -126,11 +126,10 @@ internal class KimiAuthStore(
     }
 
     internal fun describe(mtime: Long?, latch: InvalidGrantLatch): AuthDescription {
-        // ast-grep-ignore: kt-no-silent-result-collapse -- introspection display: present=false plus
-        // a read_error field when the failure is not genuine absence (DR-59), never a silent collapse
         val presentOutcome = Cancellables.runCatchingCancellable {
             oauth.parseSnapshot(authPath, synthesizeExpiry) != null
         }
+        // ast-grep-ignore: kt-no-silent-result-collapse -- failure consumed below via exceptionOrNull -> read_error
         val present = presentOutcome.getOrDefault(false)
         return AuthDescription(
             present = present,

@@ -39,13 +39,20 @@ internal class ChatEventRouter(
 
     /** The final-message fold: only fills channels the streamed deltas left empty/unseen. */
     internal suspend fun applyFinalMessage(msg: JsonObject, sink: WireSink) {
-        prose.foldFinalProse(msg, sink)
+        if (!toolCalls.hasToolUse) prose.foldFinalProse(msg, sink)
         finalToolFold.foldFinalToolCalls(msg, sink)
         refusal.appendRefusal(terminal.refusalBuf, msg, isDelta = false) // CX-08: the whole-copy final-message carrier
     }
 
     internal suspend fun applyDelta(delta: JsonObject, sink: WireSink) {
-        prose.applyDeltaProse(delta, sink)
+        // DR-153: prose still runs BEFORE tool_calls, so a frame carrying both emits its prose and
+        // THEN closes it as the tool opens — the order is unchanged. What changes is prose arriving
+        // AFTER a tool block is live: it is dropped rather than opened. OpenAI chat has no per-tool
+        // stop event, so the only way to open a prose block would be to close the tool first, and a
+        // later argument delta for that tool would then land on a closed block and vanish. Dropping
+        // late prose loses the prose; closing the tool loses the CALL. Neither is good and this one
+        // is recoverable — the turn still carries every argument byte.
+        if (!toolCalls.hasToolUse) prose.applyDeltaProse(delta, sink)
         (delta["tool_calls"] as? JsonArray)?.forEach { tc ->
             toolCalls.applyToolCall(tc as? JsonObject ?: return@forEach, sink)
         }

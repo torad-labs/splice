@@ -13,7 +13,7 @@ import splice.spi.WireSink
 /** Streamed tool-call state: opened blocks, pending (deferred-open) slots, and CX-01's terminal
  *  validation latch. [frame] resolves and parses the raw delta shape so this class never needs a
  *  JSON-scalar import of its own. */
-internal class ChatToolCalls(private val frame: ChatToolFrame) {
+internal class ChatToolCalls(private val frame: ChatToolFrame, private val prose: ChatProseChannels) {
 
     internal val toolBlocks = HashMap<Int, WireBlockIndex>()
 
@@ -86,6 +86,12 @@ internal class ChatToolCalls(private val frame: ChatToolFrame) {
     // with no suspension before calling here, and flushPendingTools only iterates keys still in
     // pendingTools (removed below in the same uninterruptible span that fills toolBlocks).
     internal suspend fun openPendingTool(index: Int, pending: PendingTool, sink: WireSink) {
+        // DR-153: prose closes HERE, at the one place every tool block is born — the streamed path,
+        // the finish_reason flush, and the final-message fold all funnel through this method, so a
+        // close in the delta path alone would leave the other two overlapping. Anthropic's grammar
+        // is one block at a time; a tool_use opened over a live text or thinking block is the same
+        // violation DR-143 fixed between the two prose channels.
+        prose.closeOpenProse(sink)
         val opened = sink.openTool(pending.id, pending.name.ifEmpty { "tool" })
         toolBlocks[index] = opened
         openedToolIds.add(pending.id)

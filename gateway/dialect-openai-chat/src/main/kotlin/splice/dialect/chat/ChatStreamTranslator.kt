@@ -33,7 +33,7 @@ private const val RUNAWAY_GUARD_MESSAGE = "chat backend: response exceeded max b
 public class ChatStreamTranslator(private val ctx: ChatTurnContext) : StreamTranslator {
 
     private val channels = ChatProseChannels()
-    private val toolCalls = ChatToolCalls(ChatToolFrame())
+    private val toolCalls = ChatToolCalls(ChatToolFrame(), channels)
     private val terminal = ChatTerminalState(toolCalls)
     private val usage = ChatUsage()
     private val router = ChatEventRouter(channels, toolCalls, ChatFinalToolFold(toolCalls), terminal, usage)

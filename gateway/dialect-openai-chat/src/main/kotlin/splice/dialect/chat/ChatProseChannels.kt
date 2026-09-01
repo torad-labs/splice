@@ -41,6 +41,24 @@ internal class ChatProseChannels {
         return thinkingBlock ?: sink.openThinking().also { thinkingBlock = it }
     }
 
+    /** DR-153: close whichever prose block is open, for a caller that is about to open a block of a
+     *  DIFFERENT kind. DR-143 stopped text and thinking overlapping EACH OTHER, but a tool block
+     *  opening over live prose is the same one-block-at-a-time violation and was left standing —
+     *  [ChatToolCalls.openPendingTool] called sink.openTool with a text or thinking block still open,
+     *  on all three of its paths (streamed, deferred flush, final-message fold). Named for what the
+     *  caller needs rather than exposing the two fields, so the tool side cannot reach into prose
+     *  state to decide the order for itself. */
+    internal suspend fun closeOpenProse(sink: WireSink) {
+        textBlock?.let {
+            sink.closeBlock(it)
+            textBlock = null
+        }
+        thinkingBlock?.let {
+            sink.closeBlock(it)
+            thinkingBlock = null
+        }
+    }
+
     /** The [ensureThinking] twin: a text block closes any open thinking block first. */
     private suspend fun ensureText(sink: WireSink): WireBlockIndex {
         thinkingBlock?.let {

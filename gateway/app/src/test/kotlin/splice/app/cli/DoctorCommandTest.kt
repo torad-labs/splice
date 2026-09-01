@@ -27,7 +27,7 @@ class DoctorCommandTest {
         val original = System.out
         System.setOut(PrintStream(buffer, true, Charsets.UTF_8))
         return try {
-            doctor(reader) to buffer.toString(Charsets.UTF_8)
+            DoctorCommand().doctor(reader) to buffer.toString(Charsets.UTF_8)
         } finally {
             System.setOut(original)
         }
@@ -55,6 +55,26 @@ class DoctorCommandTest {
         "CLAUDEX_STATE_DIR" to Files.createDirectories(tmp.resolve("state")).toString(),
         "SPLICE_CONTROL_PORT" to ServerSocket(0).use { it.localPort }.toString(),
     ) + extra
+
+    // DR-69 redo (codex replay): the exists() pre-gate read a denied config parent as Absent,
+    // and doctor said "no topology yet — splice init" over a PRESENT operator config. Only
+    // proven absence is first-run; indeterminate access is a Broken FAIL naming the path.
+    @Test
+    fun `an inaccessible config parent reports broken, never first-run - DR-69`() {
+        val tmp = Files.createTempDirectory("doctor-dr69")
+        val bin = Files.createDirectories(tmp.resolve("bin"))
+        val share = Files.createDirectories(tmp.resolve("share"))
+        val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
+        Files.writeString(configDir.resolve("splice.toml"), starterToml)
+        Files.setPosixFilePermissions(configDir, PosixFilePermissions.fromString("---------"))
+        val output = try {
+            runDoctor(env(tmp, bin, share, hermetic(tmp))).second
+        } finally {
+            Files.setPosixFilePermissions(configDir, PosixFilePermissions.fromString("rwx------"))
+        }
+        assertTrue(output.contains("does not parse"), output)
+        assertFalse(output.contains("no topology yet"), output)
+    }
 
     private val starterToml = """
         [daemon]
@@ -97,6 +117,54 @@ class DoctorCommandTest {
         [heads.openrouter2.claude]
         command = "claude-openrouter2"
     """.trimIndent()
+
+    // A client-auth head holds NO splice credential by design (campaign claude-head). Falling
+    // through to the api-key branch made doctor FAIL a working head and offer
+    // `export CLAUDE-MAX_API_KEY=…` as the fix — a name `export` cannot even accept.
+    private val clientAuthToml = """
+        [daemon]
+        control_port = 4499
+
+        [providers.anthropic]
+        dialect = "anthropic-passthrough"
+        base_url = "https://api.anthropic.com"
+        auth = { kind = "client" }
+
+        [[providers.anthropic.models]]
+        id = "claude-fable-5"
+        context_window = 200000
+
+        [heads.claude-splice]
+        provider = "anthropic"
+        port = 4599
+        discovery_prefix = "claude-splice--"
+        pinned_model = "claude-fable-5"
+
+        [heads.claude-splice.claude]
+        command = "claude-splice"
+    """.trimIndent()
+
+    @Test
+    fun `a client-auth head reads as configured, never as a missing api key`() {
+        val tmp = Files.createTempDirectory("doctor-client-auth")
+        val bin = Files.createDirectories(tmp.resolve("bin"))
+        val share = Files.createDirectories(tmp.resolve("share"))
+        val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
+        Files.writeString(configDir.resolve("splice.toml"), clientAuthToml)
+        val shim = share.resolve("splice-launch")
+        Files.writeString(shim, "#!/usr/bin/env bash\nSPLICE_SHIM_VERSION=\"$SHIM_VERSION\"\n")
+        shim.toFile().setExecutable(true)
+        fakeBinaries(bin, "claude", "node", "python3", "curl", "bash")
+        Files.createSymbolicLink(bin.resolve("claude-splice"), shim)
+        Files.createSymbolicLink(bin.resolve("splice"), shim)
+
+        // no credential env at all — the caller supplies it per request, not the environment
+        val (ok, out) = runDoctor(env(tmp, bin, share, hermetic(tmp, emptyMap())))
+        assertTrue(ok, "a client-auth head must not fail doctor:\n$out")
+        assertTrue(out.contains("client-native"), out)
+        assertFalse(out.contains("CLAUDE-MAX_API_KEY"), "never offer an illegal env var name:\n$out")
+        assertFalse(out.contains("export CLAUDE"), out)
+    }
 
     @Test
     fun `an api-key head with no explicit env resolves the derived KEY_API_KEY`() {
@@ -406,5 +474,64 @@ class DoctorCommandTest {
         } finally {
             Files.setPosixFilePermissions(state, PosixFilePermissions.fromString("rwx------"))
         }
+    }
+}
+
+// DR-92 (codex adjudication under the DR-65 law): splice.toml legally carries credential-like
+// values (extra_headers Authorization on non-client topologies), and ktoml/kotlinx parse
+// failures can quote the offending value — doctor rendered e.message verbatim into its table.
+// Sibling class (the main class sits at detekt's LargeClass ceiling) with its own mini-harness.
+class DoctorTopologyLeakTest {
+
+    private fun runDoctor(env: Map<String, String?>): String {
+        val buffer = ByteArrayOutputStream()
+        val original = System.out
+        System.setOut(PrintStream(buffer, true, Charsets.UTF_8))
+        return try {
+            DoctorCommand().doctor { env[it] }
+            buffer.toString(Charsets.UTF_8)
+        } finally {
+            System.setOut(original)
+        }
+    }
+
+    // The sentinel IS the value the parser trips on (an invalid Dialect), so a verbatim
+    // e.message render must leak it — red on the raw-message shape, green through render().
+    @Test
+    fun `a broken topology's parse text never quotes config bytes - DR-92`() {
+        val tmp = Files.createTempDirectory("doctor-dr92")
+        val configDir = Files.createDirectories(tmp.resolve("config").resolve("splice"))
+        Files.writeString(
+            configDir.resolve("splice.toml"),
+            """
+            [daemon]
+            control_port = 4499
+
+            [providers.p]
+            dialect = "Bearer sk-SENT-99"
+            base_url = "https://x.example"
+            auth = { kind = "api-key", env = "K" }
+
+            [[providers.p.models]]
+            id = "m"
+            context_window = 1000
+
+            [heads.h]
+            provider = "p"
+            port = 3111
+            """.trimIndent(),
+        )
+        val output = runDoctor(
+            mapOf(
+                "XDG_CONFIG_HOME" to tmp.resolve("config").toString(),
+                "SPLICE_BIN_DIR" to Files.createDirectories(tmp.resolve("bin")).toString(),
+                "SPLICE_SHARE_DIR" to Files.createDirectories(tmp.resolve("share")).toString(),
+                "PATH" to tmp.resolve("bin").toString(),
+                "CLAUDEX_STATE_DIR" to Files.createDirectories(tmp.resolve("state")).toString(),
+                "SPLICE_CONTROL_PORT" to ServerSocket(0).use { it.localPort }.toString(),
+            ),
+        )
+        assertTrue(output.contains("does not parse"), output)
+        assertFalse(output.contains("sk-SENT-99"), "parse text must not quote config bytes: $output")
     }
 }

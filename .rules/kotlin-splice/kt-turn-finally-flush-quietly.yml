@@ -1,0 +1,18 @@
+# DR-93 (drift-repair redo) — the turn finally's client flush must go through
+# ClientChannel.flushQuietly(). A direct coalesced.flush() from head/ code throws on a dead
+# socket (IOException from the engine write, IllegalStateException from a closed channel), and
+# inside a finally that throw REPLACES the in-flight CancellationException or the turn's real
+# failure — the Ktor pipeline then reports the flush instead of the causal fault. The codex
+# replay proved a contract test alone cannot see this revert (swapping the finally back to a
+# direct flush left every suite green), so the wall makes the revert structurally
+# inexpressible; ClientChannelFlushQuietlyTest pins the quiet-flush behavior itself.
+# The two-part `coalesced.flush()` inside ClientChannel stays legal — the pattern requires a
+# receiver chain, and ClientChannel.kt lives in wire/, outside this rule's files scope anyway.
+id: kt-turn-finally-flush-quietly
+language: kotlin
+severity: error
+message: "head/ must not call coalesced.flush() directly — ClientChannel.flushQuietly() is the only sanctioned turn-cleanup flush (DR-93: a raw flush throw replaces the primary outcome)."
+files:
+  - gateway/gateway/src/main/kotlin/**/head/*.kt
+rule:
+  pattern: $C.coalesced.flush()

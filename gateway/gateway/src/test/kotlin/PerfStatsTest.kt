@@ -15,7 +15,7 @@ class PerfStatsTest {
     @Test
     fun `record then tailNumeric roundtrips numeric fields`() {
         val tmp = Files.createTempDirectory("perf-stats")
-        val stats = PerfStats(tmp.resolve("perf.jsonl")) { 123L }
+        val stats = PerfStats(tmp.resolve("perf.jsonl"), clock = { 123L })
         val perf = TurnPerf { 0L }
         perf.setCount(PerfKeys.OUT_TOKENS, 850)
         perf.add(PerfKeys.FRAMES_OUT, 12)
@@ -34,7 +34,7 @@ class PerfStatsTest {
     fun `tailNumeric bounds to tailN newest-last and skips corrupt lines`() {
         val tmp = Files.createTempDirectory("perf-stats")
         val file = tmp.resolve("perf.jsonl")
-        val stats = PerfStats(file) { 1L }
+        val stats = PerfStats(file, clock = { 1L })
         repeat(5) { i ->
             val perf = TurnPerf { 0L }
             perf.setCount(PerfKeys.OUT_TOKENS, i.toLong())

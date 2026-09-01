@@ -2,6 +2,7 @@
 // ("too many tokens" must never classify as auth — the v29 bug), rate/auth/5xx/4xx/fallback,
 // HTTP json extraction + html gateway branch, SSE parity, 502->529 remap, 2000-char cap.
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.turn.ErrorType
@@ -113,6 +114,90 @@ class UpstreamFailureClassifierTest {
         assertEquals(ErrorType.API_ERROR, http("oops", 503).type)
         assertEquals(ErrorType.INVALID_REQUEST, http("bad shape", 422).type)
         assertEquals(ErrorType.API_ERROR, sse("mystery failure").type)
+    }
+
+    @Test
+    fun `transience is explicit for 5xx gateway and the audited SSE signatures`() {
+        assertTrue(http("oops", 503).transient)
+        assertTrue(http("<html>bad gateway</html>", 502).transient)
+        assertFalse(http("bad shape", 422).transient)
+        listOf(
+            "server_error",
+            "internal-error",
+            "temporarily unavailable",
+            "backend overloaded",
+            "request timed out",
+            "please try again",
+        ).forEach { text -> assertTrue(sse(text).transient, text) }
+        listOf(
+            "request rejected by policy",
+            "invalid parameter",
+            "mystery failure",
+        ).forEach { text -> assertFalse(sse(text).transient, text) }
+    }
+
+    @Test
+    fun `negated retry instructions stay deterministic while independent transient evidence wins`() {
+        listOf(
+            "do not try again",
+            "never try again",
+            "don't ever try again",
+        ).forEach { text -> assertFalse(sse(text).transient, text) }
+        assertTrue(sse("temporarily unavailable; do not try again").transient)
+    }
+
+    // DR-45 redo (codex long-form repro): the old two-word window stopped suppressing once the
+    // negation ran longer — a deterministic vendor rejection re-POSTed a whole context on its
+    // own "try again". Negation now covers its whole clause; a separate clause stays a real
+    // invitation to retry.
+    @Test
+    fun `long-form negation suppresses across its clause, a fresh clause does not - DR-45`() {
+        listOf(
+            "do not attempt to resubmit this request or try again",
+            "you must not resend this exact request and try again",
+            "cannot be retried; never modify the payload and try again",
+        ).forEach { text -> assertFalse(sse(text).transient, text) }
+        assertTrue(sse("Do not panic. Please try again.").transient, "negation is clause-bounded")
+    }
+
+    // DR-10 redo (codex counterexample): "The selected model is unavailable in your region" is a
+    // deterministic restriction — bare "unavailable" is not transient wording. Qualified service
+    // outages keep their retry.
+    @Test
+    fun `bare unavailable is deterministic, qualified service outages stay transient - DR-10`() {
+        assertFalse(sse("The selected model is unavailable in your region").transient)
+        listOf(
+            "service unavailable",
+            "the backend is currently unavailable",
+            "model temporarily unavailable",
+        ).forEach { text -> assertTrue(sse(text).transient, text) }
+    }
+
+    // DR-10 redo, the provenance law: a structured code decides via the exact retryable
+    // allowlist, and free text can never overrule it in either direction.
+    @Test
+    fun `a structured code beats free text in both directions - DR-10`() {
+        val deterministic = UpstreamFailureClassifier.classify(
+            FailureSource.SSE,
+            "invalid_parameter The selected model is unavailable in your region, please try again",
+            code = "invalid_parameter",
+        )
+        assertFalse(deterministic.transient, "a deterministic code is never re-POSTable on wording")
+        assertEquals(ErrorType.API_ERROR, deterministic.type)
+
+        val transient = UpstreamFailureClassifier.classify(
+            FailureSource.SSE,
+            "server_error something broke",
+            code = "server_error",
+        )
+        assertTrue(transient.transient, "an allowlisted code keeps its retry with neutral text")
+
+        val unknownCode = UpstreamFailureClassifier.classify(
+            FailureSource.SSE,
+            "mystery_condition please try again shortly",
+            code = "mystery_condition",
+        )
+        assertFalse(unknownCode.transient, "an unknown code does not earn a replay on its message")
     }
 
     @Test

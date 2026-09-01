@@ -11,7 +11,7 @@ import splice.app.AuthProbeLoop
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
-import splice.core.util.headScopedLog
+import splice.core.util.HeadScopedLogs
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -32,7 +32,7 @@ class LogFileSourceTagTest {
 
         // 2. A provider refresh line through the JW-03 injection wrapper (pre-fix: bare
         //    "[codex-auth] ..." — invisible).
-        headScopedLog("claudex", captured::add)("[codex-auth] refresh failed: invalid_grant\n")
+        HeadScopedLogs.headScopedLog("claudex", captured::add)("[codex-auth] refresh failed: invalid_grant\n")
 
         // 3. The boot-failure shape assembleDaemonHeads emits (pre-fix: "[daemon] head 'claudex'
         //    ..." — invisible; the kt-head-log-prefix wall bans that shape at write time).

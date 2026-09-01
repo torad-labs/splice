@@ -7,8 +7,9 @@
 # single string_content node then contains the full substring. Do NOT narrow it back; that reopens
 # the concatenation evasion.
 #
-# Daemon.kt is ignored deliberately, not incidentally. Its `"~/.claude-$key"` (launchSpecFor) is the
-# per-head CLAUDE_CONFIG_DIR default for the WRAPPED Claude Code instance — `~/.claude-claudex`,
+# LaunchSpecFactory.kt is ignored deliberately, not incidentally. Its `"~/.claude-$key"`
+# (launchSpecFor, moved out of Daemon.kt in the 2026-08-17 decomposition) is the per-head
+# CLAUDE_CONFIG_DIR default for the WRAPPED Claude Code instance — `~/.claude-claudex`,
 # `~/.claude-grok`, one per head. That is a different external contract from this wall's subject,
 # which is the GATEWAY's own state dir (StatePaths.kt:16 — `~/.claude-codex/state`). They share a
 # prefix and nothing else; routing the launcher's config dir through StatePaths would be wrong.
@@ -21,7 +22,7 @@ files:
 ignores:
   - gateway/core/src/main/kotlin/**/config/StatePaths.kt
   # per-head CLAUDE_CONFIG_DIR for the wrapped Claude Code — a separate contract, see header
-  - gateway/app/src/main/kotlin/splice/app/Daemon.kt
+  - gateway/app/src/main/kotlin/splice/app/head/LaunchSpecFactory.kt
 rule:
   kind: string_content
   regex: \.claude-

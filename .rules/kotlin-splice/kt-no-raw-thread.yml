@@ -1,0 +1,44 @@
+# Thread-ownership discipline — a raw `Thread(...)` is a thread nobody owns. It is outside every
+# structured-concurrency scope the gateway runs turns in, so nothing cancels it, nothing joins it,
+# and its lifetime is decided by whoever remembers to flip `isDaemon` before `start()`. The daemon
+# already learned this the expensive way from the other direction: a single non-daemon thread left
+# running is what turned SIGTERM into a no-op and made an operator reach for SIGKILL (BS-4, see
+# DaemonProcess.runBoundedTeardown). An unnamed one is worse — a stack dump of a wedged stop names
+# it `Thread-3` and says nothing about which lane is blocked.
+#
+# Compliant forms, in the order this repo actually reaches for them:
+#   - a coroutine on the caller's scope, for anything on the turn path (the whole gateway module);
+#   - a NAMED executor — `Executors.newSingleThreadExecutor(factory)` /
+#     `ScheduledThreadPoolExecutor(1, factory)` — for a lane that must outlive one call:
+#     AsyncFileIo's file lane and OAuthLoginFlow's stdin reader are both this shape;
+#   - `Executors.defaultThreadFactory().newThread(task)` where a JVM API demands the Thread TYPE
+#     and no coroutine can stand in. There are exactly two such places: the factory lambda an
+#     executor is built from, and `Runtime.addShutdownHook`, which takes an unstarted Thread.
+#     Obtaining it from the platform factory keeps thread group and priority in one seam and still
+#     lets the caller set the two properties that are its own contract (name, daemon-ness).
+#
+# `Thread.sleep`, `Thread.currentThread()`, `Thread.setDefaultUncaughtExceptionHandler` and
+# `Thread.UncaughtExceptionHandler { }` are untouched — this wall is about CONSTRUCTING a thread,
+# not about naming the type. Main.kt's boot-failure net uses two of those and stays green.
+#
+# PROMOTED 2026-08-16 (HD-18) from the dormant .rules/kotlin/ast-grep pack, which sgconfig.yml
+# references from nowhere and so had never run. Red-proven against a synthetic violation before the
+# census was trusted: 4 hits in gateway/*/src/main, all four converted in the same commit.
+id: kt-no-raw-thread
+language: kotlin
+severity: error
+message: "Don't construct threads. Use a coroutine, a named executor, or Executors.defaultThreadFactory()."
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  any:
+    # The constructor call in argument form — `Thread(task, "name")`, `Thread(runnable)`, `Thread()`.
+    # `$$$ARGS` matches zero-or-more, so one branch covers every arity.
+    - pattern: Thread($$$ARGS)
+    # The trailing-lambda spelling is a DIFFERENT call shape in this grammar (the lambda is not an
+    # argument node), so `Thread($$$ARGS)` above does not reach it. Both branches are load-bearing.
+    - pattern: Thread { $$$BODY }
+    # kotlin.concurrent.thread — the same unowned thread with a `start = true` default that makes
+    # it even easier to leave running. Zero occurrences here today; the branch is what keeps it so.
+    - pattern: thread($$$ARGS)
+    - pattern: thread { $$$BODY }

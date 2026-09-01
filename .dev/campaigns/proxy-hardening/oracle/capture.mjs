@@ -128,15 +128,16 @@ export { mock, upstreamAuths, upstreamBodies, abortedScenarios, AUTH_PATH, state
  * CANONICALIZATION — deliberately ONE rule, declared in the manifest.
  *
  * Measured 2026-07-26 by diffing two independent captures of all 11 scenarios: the ONLY byte that
- * moves between runs is the Anthropic message id, minted as `msg_<epoch_ms>`. Everything else —
- * event ordering, block indices, usage numbers, mirror text — is already byte-stable.
+ * moves between runs is the Anthropic message id. Node minted `msg_<epoch_ms>`; Kotlin appends a
+ * process-wide uniqueness sequence as `msg_<epoch_ms>_<sequence>`. Everything else — event ordering,
+ * block indices, usage numbers, mirror text — is already byte-stable.
  *
  * The rule stays narrow ON PURPOSE. A broad normalizer (strip all digits, sort keys, ignore
  * whitespace) would make the oracle pass on drift it should catch. Anything added here must be
  * justified by an observed diff, never by anticipation.
  */
 const CANON_RULES = [
-  { name: 'message-id', pattern: 'msg_<digits> -> msg_CANON', re: /msg_\d+/g, to: 'msg_CANON' },
+  { name: 'message-id', pattern: 'msg_<digits>[_<sequence>] -> msg_CANON', re: /msg_\d+(?:_\d+)?/g, to: 'msg_CANON' },
 ];
 
 function canonicalize(text) {

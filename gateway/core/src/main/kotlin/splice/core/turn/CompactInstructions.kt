@@ -26,11 +26,16 @@ public val compactDirective: String = listOf(
     "Be concrete (paths, commands, numbers). Omit boilerplate.",
 ).joinToString("\n")
 
-/** [base] with the directive appended on a compact turn, empty parts dropped. The shared shape:
- *  every dialect that carries its system prompt as TEXT composes it exactly this way. */
-public fun withCompactDirective(base: String?, compact: Boolean): String =
-    if (!compact) {
-        base.orEmpty()
-    } else {
-        listOf(base.orEmpty(), compactDirective).filter { it.isNotEmpty() }.joinToString("\n")
-    }
+/** The composer, as a named object since the 2026-08-16 style migration (HD-M8) — the directive text
+ *  itself stays a top-level `val` above, which is what the CX-02 wall and every canary key on. */
+public object CompactInstructions {
+
+    /** [base] with the directive appended on a compact turn, empty parts dropped. The shared shape:
+     *  every dialect that carries its system prompt as TEXT composes it exactly this way. */
+    public fun withCompactDirective(base: String?, compact: Boolean): String =
+        if (!compact) {
+            base.orEmpty()
+        } else {
+            listOf(base.orEmpty(), compactDirective).filter { it.isNotEmpty() }.joinToString("\n")
+        }
+}

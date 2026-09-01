@@ -7,72 +7,35 @@
 // orphans its history. Recording is best-effort telemetry: it must never throw into the turn.
 package splice.core.perf
 
-/** The single source of every perf field name (marks are *_ms-since-arrival; counters are raw). */
-public object PerfKeys {
-    // stage completion marks (ms since arrival)
-    public const val RECV: String = "recv"
-    public const val PARSE: String = "parse"
-    public const val BUILD: String = "build"
-    public const val GATE: String = "gate"
-    public const val HEADERS: String = "headers"
-    public const val FIRST_BYTE: String = "first_byte"
-    public const val FIRST_FRAME: String = "first_frame"
-    public const val FIRST_DELTA: String = "first_delta"
-    public const val STREAM_END: String = "stream_end"
-    public const val FINISH: String = "finish"
-    public const val TOTAL: String = "total"
+import splice.core.util.ElapsedClock
 
-    // counters (durations are summed ms; sizes are bytes; the rest are counts)
-    public const val AUTH_MS: String = "auth_ms"
-    public const val BACKOFF_MS: String = "backoff_ms"
-    public const val REFRESH_MS: String = "refresh_ms"
-    public const val WRITE_MS: String = "write_ms"
-    public const val USAGE_MS: String = "usage_ms"
-    public const val ATTEMPTS: String = "attempts"
-    public const val RETRIES: String = "retries"
-    public const val REFRESHES: String = "refreshes"
-    public const val REQ_BYTES: String = "req_bytes"
-    public const val UPSTREAM_REQ_BYTES: String = "upstream_req_bytes"
-    public const val SSE_BYTES_IN: String = "sse_bytes_in"
-    public const val EVENTS_IN: String = "events_in"
-    public const val FRAMES_OUT: String = "frames_out"
-
-    /** Frames that carried CONTENT — everything except the structural turn-opening pair
-     *  (message_start + ping). G5's safe-reissue probe keys off THIS, not [FRAMES_OUT]: since
-     *  message_start moved to upstream-handoff (dead-air fix), frames_out goes non-zero before the
-     *  client has seen a single token, which would silently disable pre-content reissue and
-     *  downgrade a torn stream from a retryable overloaded_error to a raw api_error. Reissuing
-     *  after only the opening pair is safe — ensureStarted() is idempotent, so nothing duplicates. */
-    public const val CONTENT_FRAMES_OUT: String = "content_frames_out"
-    public const val FRAMES_SKIPPED: String = "frames_skipped"
-    public const val BYTES_OUT: String = "bytes_out"
-    public const val OUT_TOKENS: String = "out_tokens"
-    public const val IN_TOKENS: String = "in_tokens"
-    public const val CACHED_TOKENS: String = "cached_tokens"
-
-    /** Concurrent turns in flight on this head at admission — the live-concurrency gauge. */
-    public const val INFLIGHT: String = "inflight"
-
-    // Tool-surface deferral (responses-lite tool_search) — the expected-delta instrument (#959):
-    // a deploy where TOOLS_DEFERRED stays 0 is a false landing, not a quiet success.
-    public const val TOOLS_EAGER: String = "tools_eager"
-    public const val TOOLS_DEFERRED: String = "tools_deferred"
-    public const val SEARCH_ROUNDS: String = "search_rounds"
-
-    /** Mark keys in pipeline order — the aggregation and the log line render in THIS order. */
-    public val markOrder: List<String> = listOf(
-        RECV, PARSE, BUILD, GATE, HEADERS, FIRST_BYTE, FIRST_FRAME, FIRST_DELTA,
-        STREAM_END, FINISH, TOTAL,
-    )
+/**
+ * A span of turn work whose DURATION is the measurement — the thing [TurnPerf.timed] brackets.
+ *
+ * Named rather than left a bare `suspend () -> T` (HD-22) because the seam is not "any function":
+ * it is the region an [ElapsedClock] difference is attributed to, and the counter name passed
+ * beside it is a claim about what ran inside. The `finally` in [TurnPerf.timed] is the contract —
+ * a span that throws is still charged to its counter, so a failed auth still shows up as
+ * `auth_ms` rather than vanishing from the row.
+ *
+ * NOT inlined, so there is no non-local return to lose: `timed` was already allocating a lambda
+ * object per call and the only change is that the object now has a name.
+ */
+public fun interface TimedWork<T> {
+    public suspend operator fun invoke(): T
 }
 
-/** Immutable view of a turn's recorded telemetry. */
-public data class PerfSnapshot(
-    val marks: Map<String, Long>,
-    val counters: Map<String, Long>,
-)
+// PerfKeys lives in PerfKeys.kt; PerfSnapshot + TurnPerfTiming live in
+// PerfSnapshot.kt (concentration, 2026-08-19).
 
-public class TurnPerf(private val clock: () -> Long = System::currentTimeMillis) {
+/** Every reading here is consumed as a DIFFERENCE (`clock() - startedAt`, `clock() - t0`) and none
+ *  is ever persisted or put on the wire, so this is an [ElapsedClock] seam, not a [WallClock] one.
+ *  Production always passes the head's monotonic clock explicitly — `TurnPerf(clock)` at
+ *  HeadServer.handleMessages, off `HeadDeps.clock` = `MonoClock::nowMs` — so the wall-clock DEFAULT
+ *  below is reached only by tests that construct a bare `TurnPerf()`. It is left as it was rather
+ *  than quietly retuned to `MonoClock::nowMs`: that would be a behaviour change on a frozen tree,
+ *  and it belongs to whoever measures it, not to a typing wave. */
+public class TurnPerf(private val clock: ElapsedClock = ElapsedClock(System::currentTimeMillis)) {
 
     private val startedAt: Long = clock()
     private val lock = Any()
@@ -109,7 +72,7 @@ public class TurnPerf(private val clock: () -> Long = System::currentTimeMillis)
     }
 
     /** Time a suspending [block] into [counter] (summed across calls). */
-    public suspend fun <T> timed(counter: String, block: suspend () -> T): T {
+    public suspend fun <T> timed(counter: String, block: TimedWork<T>): T {
         val t0 = clock()
         try {
             return block()
@@ -120,28 +83,5 @@ public class TurnPerf(private val clock: () -> Long = System::currentTimeMillis)
 
     public fun snapshot(): PerfSnapshot = synchronized(lock) {
         PerfSnapshot(LinkedHashMap(marks), LinkedHashMap(counters))
-    }
-}
-
-/** Time a suspending [block] into [counter] when perf is wired; run it plain otherwise. */
-public suspend fun <T> TurnPerf?.timedOr(counter: String, block: suspend () -> T): T =
-    if (this == null) block() else timed(counter, block)
-
-/**
- * The one-line perf summary: marks in pipeline order, then counters, skipping absent fields.
- * `[codex] perf outcome=ok compact=false model=m recv=3 ... | auth_ms=1 ... out_tokens=850`
- */
-public fun perfLine(head: String, outcome: String, compact: Boolean, model: String, snap: PerfSnapshot): String {
-    val markPart = PerfKeys.markOrder
-        .mapNotNull { k -> snap.marks[k]?.let { "$k=$it" } }
-        .joinToString(" ")
-    val counterPart = snap.counters.entries.joinToString(" ") { (k, v) -> "$k=$v" }
-    return buildString {
-        append("[").append(head).append("] perf outcome=").append(outcome)
-        append(" compact=").append(compact)
-        append(" model=").append(model)
-        if (markPart.isNotEmpty()) append(" ").append(markPart)
-        if (counterPart.isNotEmpty()) append(" | ").append(counterPart)
-        append("\n")
     }
 }

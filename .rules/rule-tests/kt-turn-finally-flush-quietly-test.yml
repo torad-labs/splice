@@ -1,0 +1,7 @@
+id: kt-turn-finally-flush-quietly
+valid:
+  - 'channel.flushQuietly()'
+  - 'coalesced.flush()'
+invalid:
+  - 'channel.coalesced.flush()'
+  - 'drive.channel.coalesced.flush()'

@@ -1,0 +1,8 @@
+openThinking
+think:plan
+sig:splice-synth-v1
+close
+openText
+text:done
+close
+closeAll

@@ -4,92 +4,69 @@
 // version broke two things: (1) Claude Code fell back to Anthropic /login because it saw a custom
 // ANTHROPIC_API_KEY instead of an ANTHROPIC_AUTH_TOKEN bearer; (2) only the pinned model showed
 // because CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY wasn't set, so the /model picker never queried
-// /v1/models. Both are set here now, plus the alias slots, context sizing, and the loopback NO_PROXY.
+// /v1/models. The bearer stays. Discovery was RETIRED (2026-08-30): the materialized roster —
+// settings.json availableModels + .claude.json additionalModelOptionsCache, both from the head's
+// selected catalog — is the picker's ONE source now, all bare ids. Discovery re-served the same
+// models under wrapped /v1/models ids, so every picker row appeared twice, and a wrapped ACTIVE id
+// makes Claude Code ignore CLAUDE_CODE_MAX_CONTEXT_TOKENS (ab5ca6b: honored for unwrapped names
+// only), which per-head context windows depend on.
 package splice.control
 
-import kotlinx.serialization.json.JsonElement
 import splice.core.launch.ClaudeConfigMaterializer
-import splice.core.launch.ClaudePolicy
 import splice.core.launch.MaterializeSpec
-import splice.core.launch.TokenCaptureSpec
-import java.nio.file.Path
+import splice.core.util.EnvReader
 import kotlin.math.max
 
-/** What a head needs to produce a launch recipe (supplied by :app at wiring time). */
-public data class LaunchSpec(
-    val configDir: Path,
-    val pinnedModel: String,
-    val availableModelIds: List<String>,
-    val modelLabels: Map<String, String>, // id -> display label (for the alias slot names)
-    val contextWindow: Int,
-    val modelOptionsCache: JsonElement, // the /model picker option list
-    val statuslineCommand: String, // per-head statusline command (…/statusline/<head>)
-    val loginCommand: String, // shell command that runs THIS head's provider sign-in (e.g. `claudex login`)
-    val signInLabel: String, // provider label for the /login UX ("Codex (ChatGPT)", "Grok (xAI)")
-    /** False for api-key heads: the /login block reason points at a masked terminal prompt. */
-    val signInViaBrowser: Boolean = true,
-    /** api-key heads: capture a bare pasted token into the KeyStore (blocked from model context). */
-    val tokenCapture: TokenCaptureSpec? = null,
-    /** Install the SessionStart key-missing advertiser (daemon sets it only while unconfigured). */
-    val advertiseKeySetup: Boolean = false,
-    /** Absolute path of this head's login receipt (LoginOutcomeFile) — the channel a DETACHED
-     *  sign-in uses to tell the session what happened. Empty = no in-session confirmation. */
-    val loginOutcomeFile: String = "",
-    val policy: ClaudePolicy,
-    val port: Int,
-    /** Per-install local gateway credential; shared with the head's inbound verifier. */
-    val inferenceToken: String,
-)
+// Floor for CLAUDE_CODE_AUTO_COMPACT_WINDOW (buildEnv): a small context window must not shrink the
+// auto-compact window below this.
+private const val AUTO_COMPACT_FLOOR = 60_000L
 
-public data class LaunchRecipe(
-    val env: Map<String, String>,
-    val unset: List<String>,
-    val argv: List<String>,
-    // Non-null only when dangerouslySkipPermissions was engaged — surfaced to the operator via the
-    // control log and the /launch response so the danger is never silent.
-    val warning: String? = null,
-)
+// LaunchSpec + LaunchRecipe live in LaunchTypes.kt (concentration, 2026-08-19).
 
 public class LaunchService(
     private val materializer: ClaudeConfigMaterializer,
     private val claudeBinary: String = "claude",
-    private val envReader: (String) -> String? = System::getenv,
+    private val envReader: EnvReader = EnvReader(System::getenv),
 ) {
     /** Materialize the head's config + build the exec recipe. Safe by default: the flag is added
-     *  ONLY when [dangerouslySkipPermissions] is true, and doing so returns a non-null warning. */
+     *  ONLY when [dangerouslySkipPermissions] is true, and doing so returns a non-null warning.
+     *
+     *  [keyPresentNow] (DR-81) is the LAUNCH-time key-presence read (ManagedHead.keyPresence).
+     *  The spec is assembled once at boot and carries the capture capability ungated; whether the
+     *  paste-your-key hook and advertiser materialize is decided here, per launch — `splice key
+     *  set` promises live pickup, and a present key must disarm both (an accidental paste would
+     *  silently OVERWRITE the working credential — review of #75). */
     public fun launch(
         spec: LaunchSpec,
         extraArgs: List<String>,
         dangerouslySkipPermissions: Boolean,
+        keyPresentNow: Boolean = true,
     ): LaunchRecipe {
+        val effective = if (keyPresentNow) spec.copy(tokenCapture = null, advertiseKeySetup = false) else spec
         materializer.materialize(
             MaterializeSpec(
-                configDir = spec.configDir,
-                policy = spec.policy,
-                availableModelIds = spec.availableModelIds,
-                defaultModel = spec.pinnedModel,
-                modelOptionsCache = spec.modelOptionsCache,
-                statuslineCommand = spec.statuslineCommand,
-                loginCommand = spec.loginCommand,
-                signInLabel = spec.signInLabel,
-                signInViaBrowser = spec.signInViaBrowser,
-                tokenCapture = spec.tokenCapture,
-                advertiseKeySetup = spec.advertiseKeySetup,
-                loginOutcomeFile = spec.loginOutcomeFile,
+                configDir = effective.configDir,
+                policy = effective.policy,
+                availableModelIds = effective.availableModelIds,
+                defaultModel = effective.pinnedModel,
+                modelOptionsCache = effective.modelOptionsCache,
+                statuslineCommand = effective.statuslineCommand,
+                loginCommand = effective.loginCommand,
+                signInLabel = effective.signInLabel,
+                signInViaBrowser = effective.signInViaBrowser,
+                tokenCapture = effective.tokenCapture,
+                advertiseKeySetup = effective.advertiseKeySetup,
+                loginOutcomeFile = effective.loginOutcomeFile,
             ),
         )
-        val env = buildEnv(spec)
-        // Clear anything ambient that would override the proxy or a stale Anthropic session.
-        val unset = listOf(
-            "ANTHROPIC_API_KEY",
-            "CLAUDE_CODE_OAUTH_TOKEN",
-            "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
-        )
+        val slots = aliasSlots(effective)
+        val env = buildEnv(effective, slots)
+        val unset = staleEnvUnsets(effective, slots)
         val argv = buildList {
             add(claudeBinary)
             if (dangerouslySkipPermissions) add("--dangerously-skip-permissions")
             // NB: no --model — the active model is ANTHROPIC_MODEL + settings.json, so the /model
-            // picker (populated by gateway discovery) can freely switch. Forcing --model locked it.
+            // picker (populated by the materialized bare-id roster) can freely switch. Forcing it locked the row.
             addAll(extraArgs)
         }
         val warning = if (dangerouslySkipPermissions) {
@@ -101,17 +78,50 @@ public class LaunchService(
         return LaunchRecipe(env, unset, argv, warning)
     }
 
-    private fun buildEnv(spec: LaunchSpec): Map<String, String> {
-        val slots = aliasSlots(spec)
+    /** Vars a launched head must SCRUB from the inherited environment: bin/splice-launch execs
+     *  `env` WITHOUT -i, so a head launched from inside another head's session inherits the OUTER
+     *  recipe (the same mechanism that let the mgmt key reach a native head — DR-30). Three
+     *  classes: (1) a foreign head strips the client's Anthropic session; a native head keeps it —
+     *  those variables ARE the credential being forwarded. (2) Gateway model discovery, retired:
+     *  an ambient =1 would re-add the wrapped /v1/models spelling this recipe keeps out of the
+     *  picker. (3) Every alias-tier triplet this head does NOT emit — an explicit-slots head that
+     *  omits a tier must not let the outer head's value leak through and point that tier at a
+     *  model this head cannot serve (codex redo verdict, 2026-08-30). */
+    private fun staleEnvUnsets(spec: LaunchSpec, slots: List<Pair<String, String>>): List<String> {
+        val auth = if (spec.forwardClientAuth) {
+            emptyList()
+        } else {
+            listOf(
+                "ANTHROPIC_API_KEY",
+                "CLAUDE_CODE_OAUTH_TOKEN",
+                "CLAUDE_CODE_OAUTH_REFRESH_TOKEN",
+            )
+        }
+        val emitted = slots.map { it.first }.toSet()
+        val absentTiers = listOf("OPUS", "SONNET", "HAIKU", "FABLE")
+            .filterNot { it in emitted }
+            .flatMap { tier ->
+                listOf(
+                    "ANTHROPIC_DEFAULT_${tier}_MODEL",
+                    "ANTHROPIC_DEFAULT_${tier}_MODEL_NAME",
+                    "ANTHROPIC_DEFAULT_${tier}_MODEL_DESCRIPTION",
+                )
+            }
+        return auth + "CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY" + absentTiers
+    }
+
+    private fun buildEnv(spec: LaunchSpec, slots: List<Pair<String, String>>): Map<String, String> {
         return buildMap {
             put("ANTHROPIC_BASE_URL", "http://127.0.0.1:${spec.port}")
             // AUTH_TOKEN (bearer), NOT API_KEY — a bearer avoids Claude Code's custom-api-key
             // approval flow. The head validates this per-install credential before any quota-
-            // consuming work.
-            put("ANTHROPIC_AUTH_TOKEN", spec.inferenceToken)
+            // consuming work. A native-auth head plants NOTHING: the client's own credential must
+            // reach the head untouched, and this would override it.
+            if (!spec.forwardClientAuth) put("ANTHROPIC_AUTH_TOKEN", spec.inferenceToken)
             put("CLAUDE_CONFIG_DIR", spec.configDir.toString())
-            // THE fix for "only one model shows": lets the /model picker list every /v1/models id.
-            put("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY", "1")
+            // NO gateway model discovery: the picker reads the materialized roster (settings.json
+            // availableModels + .claude.json additionalModelOptionsCache) — see the header for why
+            // the wrapped /v1/models spelling must never reach the picker.
             put("ANTHROPIC_MODEL", spec.pinnedModel)
             slots.forEach { (slot, model) ->
                 put("ANTHROPIC_DEFAULT_${slot}_MODEL", model)
@@ -128,8 +138,14 @@ public class LaunchService(
             // proxy bearer above, so /login (a local-jsx command hardwired to platform.claude.com —
             // no hook or base-url override can reach it) and /logout are dead doors. These are the
             // CLI's own boolean env flags (Pe.bool over process.env), so the commands never register.
-            put("DISABLE_LOGIN_COMMAND", "1")
-            put("DISABLE_LOGOUT_COMMAND", "1")
+            //
+            // A native-auth head keeps BOTH: its upstream really is Anthropic, so /login is a live
+            // door and the only one that can heal a rejected credential — splice runs no sign-in
+            // flow of its own for this head precisely because the client's still works.
+            if (!spec.forwardClientAuth) {
+                put("DISABLE_LOGIN_COMMAND", "1")
+                put("DISABLE_LOGOUT_COMMAND", "1")
+            }
             put("SPLICE", "1")
         }
     }
@@ -143,32 +159,64 @@ public class LaunchService(
             .distinct()
             .joinToString(",")
 
-    // opus/sonnet/haiku/fable → Claude Code's tier env slots. Prefer Codex 5.6 tier names when the
-    // catalog carries them (sol=frontier, terra=mid, luna=fast); otherwise fall back to catalog
-    // order, with haiku still preferring a mini/fast id. Fable shares the frontier (opus) slot —
-    // positional at(2) used to park it on luna whenever sol/terra/luna were listed in that order.
+    // opus/sonnet/haiku/fable → Claude Code's tier env slots.
+    //
+    // A head that DECLARES slots gets EXACTLY its declared tiers and nothing else (2026-08-30):
+    // the positional scheme maps four slots onto catalog order, so a roster without sol/terra/luna
+    // names lands two models in four slots — the picker then shows the same names repeatedly, and
+    // the catalog's ORDER becomes load-bearing (splice.toml still carries a banner saying so).
+    // Filling the UNDECLARED tiers positionally just re-created the duplication on any roster
+    // smaller than four (a 2-model head still planted one model in 3 slots — codex redo verdict),
+    // so declaring anything retires positional order outright: a tier the head does not declare is
+    // not emitted, never pointed at an already-claimed model.
     private fun aliasSlots(spec: LaunchSpec): List<Pair<String, String>> {
         val ids = (listOf(spec.pinnedModel) + spec.availableModelIds).distinct()
-        fun at(i: Int) = ids.getOrElse(i) { spec.pinnedModel }
+        val declared = declaredSlots(spec, ids)
+        if (declared.isNotEmpty()) {
+            return listOf("OPUS", "SONNET", "HAIKU", "FABLE").mapNotNull { slot ->
+                declared[slot.lowercase()]?.let { model -> slot to model }
+            }
+        }
+        val fallback = positionalTiers(ids)
+        return listOf(
+            "OPUS" to fallback.frontier,
+            "SONNET" to fallback.mid,
+            "HAIKU" to fallback.fast,
+            // Fable shares the frontier (opus) slot — positional at(2) used to park it on luna
+            // whenever sol/terra/luna were listed in that order.
+            "FABLE" to fallback.frontier,
+        )
+    }
+
+    private data class PositionalTiers(val frontier: String, val mid: String, val fast: String)
+
+    /** The pre-slot heuristic, byte-identical for a head that declares nothing (every head that
+     *  existed before slots): Codex 5.6 tier names when the catalog carries them, else catalog
+     *  order, with haiku preferring a mini/fast id. [ids] starts with the pinned model, so
+     *  `ids.first()` is the never-empty floor. */
+    private fun positionalTiers(ids: List<String>): PositionalTiers {
         fun named(tier: String): String? =
             ids.firstOrNull { id ->
                 val tail = id.substringAfterLast('-', missingDelimiterValue = id)
                 tail.equals(tier, ignoreCase = true)
             }
-        val frontier = named("sol") ?: ids.first()
-        val mid = named("terra") ?: at(1)
-        val fast = named("luna")
-            ?: ids.firstOrNull { it.contains("mini", ignoreCase = true) || it.contains("fast", ignoreCase = true) }
-            ?: at(1)
-        return listOf(
-            "OPUS" to frontier,
-            "SONNET" to mid,
-            "HAIKU" to fast,
-            "FABLE" to frontier,
+
+        val miniOrFast = ids.firstOrNull {
+            it.contains("mini", ignoreCase = true) || it.contains("fast", ignoreCase = true)
+        }
+        return PositionalTiers(
+            frontier = named("sol") ?: ids.first(),
+            mid = named("terra") ?: ids.getOrNull(1) ?: ids.first(),
+            fast = named("luna") ?: miniOrFast ?: ids.getOrNull(1) ?: ids.first(),
         )
     }
 
-    private companion object {
-        const val AUTO_COMPACT_FLOOR = 60_000
-    }
+    /** slot name -> model id, keeping only slots this catalog actually offers. A declared slot
+     *  naming a model the head does not serve is ignored rather than planted, so a stale row in
+     *  splice.toml cannot point a tier at a model every turn would 400 on. */
+    private fun declaredSlots(spec: LaunchSpec, ids: List<String>): Map<String, String> =
+        spec.modelSlots
+            .filterKeys { it in ids }
+            .entries
+            .associate { (model, slot) -> slot.lowercase() to model }
 }

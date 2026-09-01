@@ -27,9 +27,9 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
-import splice.core.parse.parseAnthropicBody
+import splice.core.parse.AnthropicParse
 import splice.core.turn.WatchdogBudget
-import splice.core.util.discard
+import splice.core.util.Cancellables
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.ChatRequestBuilder
 import splice.gateway.compact.CompactStats
@@ -84,8 +84,8 @@ private class MockChatUpstream {
         sse(ex, CONTENT_FRAME)
         sse(ex, FINISH_FRAME)
         ex.responseBody.write("data: [DONE]\n\n".toByteArray())
-        runCatching { ex.responseBody.close() }.discard("test-server teardown")
-        runCatching { ex.close() }.discard("test-server teardown")
+        Cancellables.discard(runCatching { ex.responseBody.close() }, "test-server teardown")
+        Cancellables.discard(runCatching { ex.close() }, "test-server teardown")
     }
 }
 
@@ -172,7 +172,7 @@ class OpenAiChatTest {
 
     @Test
     fun `request builder maps messages, tools, and tool results to chat shape`() {
-        val parsed = parseAnthropicBody(
+        val parsed = AnthropicParse.parseAnthropicBody(
             """{"model":"m","system":"be brief","max_tokens":100,
                 "tools":[{"name":"run","input_schema":{"type":"object"}}],
                 "messages":[

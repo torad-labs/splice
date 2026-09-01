@@ -3,6 +3,7 @@
 // These tests drive the probe against both shapes — a server that ANSWERS (even with an error
 // status: a 400 is proof of life) and a server that ACCEPTS-THEN-HANGS (the wedge) — and pin
 // that only the second flips the stalled flag, after exactly the threshold, with recovery back.
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -13,8 +14,10 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.app.TurnPathProbeLoop
+import splice.core.util.Cancellables
 import java.net.ServerSocket
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
 import kotlin.concurrent.thread
 
 class TurnPathProbeLoopTest {
@@ -23,27 +26,35 @@ class TurnPathProbeLoopTest {
     private val logs = mutableListOf<String>()
 
     @AfterEach
-    fun tearDown() = sockets.forEach { runCatching { it.close() } }
+    fun tearDown() = sockets.forEach {
+        Cancellables.discard(runCatching { it.close() }, "turn-probe test server teardown")
+    }
 
     /** A server that answers every request with an HTTP error — alive, just unhappy. */
     private fun answeringServer(): Int {
         val ss = ServerSocket(0, 8, java.net.InetAddress.getLoopbackAddress()).also(sockets::add)
         thread(isDaemon = true) {
             while (!ss.isClosed) {
-                runCatching {
-                    val c = ss.accept()
-                    thread(isDaemon = true) {
-                        runCatching {
-                            c.getInputStream().read(ByteArray(1024)) // drain a little
-                            c.getOutputStream().write(
-                                "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray(),
+                Cancellables.discard(
+                    runCatching {
+                        val c = ss.accept()
+                        thread(isDaemon = true) {
+                            Cancellables.discard(
+                                runCatching {
+                                    c.getInputStream().read(ByteArray(1024)) // drain a little
+                                    c.getOutputStream().write(
+                                        "HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n".toByteArray(),
+                                    )
+                                    c.close()
+                                },
+                                "turn-probe test connection teardown",
                             )
-                            c.close()
-                        }
-                    }
-                }
+                        }.name = "turn-probe-answer"
+                    },
+                    "turn-probe test accept loop",
+                )
             }
-        }
+        }.name = "turn-probe-answer-accept"
         return ss.localPort
     }
 
@@ -52,9 +63,12 @@ class TurnPathProbeLoopTest {
         val ss = ServerSocket(0, 8, java.net.InetAddress.getLoopbackAddress()).also(sockets::add)
         thread(isDaemon = true) {
             while (!ss.isClosed) {
-                runCatching { ss.accept() } // hold it open, say nothing
+                Cancellables.discard(
+                    runCatching { ss.accept() }, // hold it open, say nothing
+                    "turn-probe hanging test accept loop",
+                )
             }
-        }
+        }.name = "turn-probe-hang-accept"
         return ss.localPort
     }
 
@@ -118,7 +132,8 @@ class TurnPathProbeLoopTest {
         val stalled = ConcurrentHashMap<String, Boolean>()
         stalled["t"] = false // healthy right up until the probe breaks — the dangerous case
         val boom = RuntimeException("probe internals exploded")
-        val scope = CoroutineScope(Job())
+        val uncaught = CopyOnWriteArrayList<Throwable>()
+        val scope = CoroutineScope(Job() + CoroutineExceptionHandler { _, error -> uncaught += error })
         // A loop whose body throws a non-cancellation error, supervised by the SAME completion
         // handler start() installs. Driven through the real class so the handler under test is
         // the shipped one.
@@ -132,6 +147,7 @@ class TurnPathProbeLoopTest {
         val dying = scope.launch { throw boom }
         loop.supervise(dying)
         dying.join()
+        assertEquals(listOf(boom), uncaught, "the test handler must observe the abnormal failure exactly once")
         assertTrue(stalled["t"] == true, "a dead probe must fail toward alarm, not freeze healthy")
         assertTrue(logs.any { "PROBE DIED" in it }, "the death must be loud in the log")
     }

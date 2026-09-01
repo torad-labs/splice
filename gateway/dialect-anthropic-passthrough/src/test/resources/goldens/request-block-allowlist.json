@@ -1,0 +1,20 @@
+{
+  "model": "k3",
+  "stream": true,
+  "messages": [
+    {
+      "role": "assistant",
+      "content": [
+        {
+          "type": "thinking",
+          "thinking": "kept",
+          "signature": "sig-abc"
+        },
+        {
+          "type": "text",
+          "text": "after"
+        }
+      ]
+    }
+  ]
+}

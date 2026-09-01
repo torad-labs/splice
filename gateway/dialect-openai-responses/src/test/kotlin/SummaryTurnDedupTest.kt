@@ -1,9 +1,11 @@
 // NEW: the 2026-07-26 mirror-duplication fix, turn-scoped. Continuation rounds (fold / reanchor /
 // tool_search) re-request the detailed reasoning summary (operator: "always show the reasoning,
-// detailed"), and the backend re-titles already-summarized reasoning with the same generic section
-// titles. Per-round translators each had their own dedup state, so the repeat passed every round.
-// SharedSummaryParts (TurnMeta) makes the dedup turn-scoped: exact repeats die across rounds,
-// genuinely-new sections always pass.
+// detailed"), and the backend restates already-summarized sections under FRESH item ids — which
+// the codex-parity active-item filter cannot catch (the fresh item IS active in its round).
+// Per-round translators each had their own dedup state, so the repeat passed every round.
+// SharedSummaryParts makes the dedup shared across rounds: exact repeats die, genuinely-new
+// sections always pass. Reworked 2026-08-26 for the sequential_cutoff port: parts arrive as
+// reasoning_summary_text.done events (the mode's only render surface), not deltas.
 import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -73,11 +75,18 @@ private val completed = ev(
     """{"type":"response.completed","response":{"id":"r1","usage":{"input_tokens":10,"output_tokens":7}}}""",
 )
 
-private fun reasoningRound(section: String) = listOf(
-    ev("""{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}"""),
-    ev("""{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$section"}"""),
-    completed,
-).asFlow()
+private fun reasoningRound(id: String, vararg sections: String) = buildList {
+    add(ev("""{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"$id"}}"""))
+    sections.forEachIndexed { i, s ->
+        add(
+            ev(
+                """{"type":"response.reasoning_summary_text.done","item_id":"$id","output_index":0,""" +
+                    """"summary_index":$i,"text":"$s"}""",
+            ),
+        )
+    }
+    add(completed)
+}.asFlow()
 
 class SummaryTurnDedupTest {
 
@@ -88,21 +97,14 @@ class SummaryTurnDedupTest {
         val fresh = "**Deploying the hardened fleet build**"
 
         val r1 = Sink()
-        ResponsesStreamTranslator(ctx(shared)).driveTurn(reasoningRound(section), r1)
+        ResponsesStreamTranslator(ctx(shared)).driveTurn(reasoningRound("rs_a", section), r1)
         assertEquals(1, r1.calls.count { it.contains(section) }, "round 1 must emit its section once")
 
-        // round 2 (continuation round, FRESH translator, shared turn state): the backend re-titles
-        // the same section, then adds a genuinely new one
+        // round 2 (continuation round, FRESH translator, shared turn state): the backend restates
+        // the same section under a FRESH item id (active in its round, so the codex filter passes
+        // it — only the shared text match can kill it), then adds a genuinely new one
         val r2 = Sink()
-        ResponsesStreamTranslator(ctx(shared)).driveTurn(
-            listOf(
-                ev("""{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$section"}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$fresh"}"""),
-                completed,
-            ).asFlow(),
-            r2,
-        )
+        ResponsesStreamTranslator(ctx(shared)).driveTurn(reasoningRound("rs_b", section, fresh), r2)
         assertEquals(0, r2.calls.count { it.contains(section) }, "re-titled section leaked: ${r2.calls}")
         assertEquals(1, r2.calls.count { it.contains(fresh) }, "new section wrongly suppressed: ${r2.calls}")
     }
@@ -111,9 +113,9 @@ class SummaryTurnDedupTest {
     fun `without shared state the same repeat passes (the bug this fixes)`() = runTest {
         val section = "**Analyzing CLI exit and async error handling**"
         val r1 = Sink()
-        ResponsesStreamTranslator(ctx(SharedSummaryParts())).driveTurn(reasoningRound(section), r1)
+        ResponsesStreamTranslator(ctx(SharedSummaryParts())).driveTurn(reasoningRound("rs_a", section), r1)
         val r2 = Sink()
-        ResponsesStreamTranslator(ctx(SharedSummaryParts())).driveTurn(reasoningRound(section), r2)
+        ResponsesStreamTranslator(ctx(SharedSummaryParts())).driveTurn(reasoningRound("rs_b", section), r2)
         assertEquals(
             1,
             r2.calls.count { it.contains(section) },

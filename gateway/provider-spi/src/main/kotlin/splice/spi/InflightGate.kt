@@ -12,6 +12,7 @@ package splice.spi
 
 import kotlinx.coroutines.CancellableContinuation
 import kotlinx.coroutines.suspendCancellableCoroutine
+import splice.core.util.ElapsedClock
 import splice.core.util.MonoClock
 import java.util.ArrayDeque
 import java.util.concurrent.atomic.AtomicBoolean
@@ -19,11 +20,26 @@ import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 
+/**
+ * A concurrency limit READ FRESH at every admission decision, never captured at construction.
+ *
+ * That freshness is the port's entire reason to exist and the reason kotlinx `Semaphore` is banned
+ * in [InflightGate]: a live `PATCH` of `maxInflight` must change the next admission without a head
+ * restart, and a semaphore cannot hot-resize. `0` means unlimited, the same convention for both
+ * limits.
+ *
+ * Distinct from a GAUGE (`ControlServer.failedHeads`), which is also `() -> Int` but reports what
+ * IS rather than bounding what may happen next.
+ */
+public fun interface LiveLimit {
+    public operator fun invoke(): Int
+}
+
 public class InflightGate(
-    private val maxInflight: () -> Int,
-    private val maxQueued: () -> Int = { 0 },
+    private val maxInflight: LiveLimit,
+    private val maxQueued: LiveLimit = LiveLimit { 0 },
     // Default is monotonic — wall-clock jumps must not invent idle timeouts or freeze slots.
-    private val clock: () -> Long = MonoClock::nowMs,
+    private val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
 ) {
     private val lock = Any()
     private var inflight = 0
@@ -47,16 +63,35 @@ public class InflightGate(
     }
 
     public suspend fun acquire(): Slot {
-        val admitted = synchronized(lock) {
-            if (hasCapacityLocked()) {
-                inflight += 1
-                true
-            } else {
-                false
-            }
+        // DR-147: DRAIN BEFORE SELF-ADMITTING. The fast path used to ask only "is there capacity?",
+        // so after a live PATCH raised maxInflight nothing woke the waiters already parked — the
+        // queue is drained solely by release(), and with every slot held by a long-lived SSE stream
+        // there is no release to come. Newcomers were admitted straight past waiters that had been
+        // queued for the whole backlog, so the operator's relief PATCH did nothing until a stream
+        // ended, and the file's own "FIFO admission" and "live-PATCHable" claims were both false.
+        // Draining under the CURRENT limit and self-admitting only behind an empty queue makes the
+        // raise take effect immediately and keeps admission in arrival order.
+        val (toResume, admitted) = synchronized(lock) {
+            val drained = drainAdmissibleLocked()
+            val canSelfAdmit = hasCapacityLocked() && queue.isEmpty()
+            if (canSelfAdmit) inflight += 1
+            drained to canSelfAdmit
         }
+        resumeAll(toResume)
         if (!admitted) awaitTurn()
         return Slot(this, clock)
+    }
+
+    /** The one hand-off. The admitted permit transfers ONLY if the waiter actually uses the
+     *  resumption: a waiter cancelled between admission and delivery would otherwise leak its
+     *  inflight slot permanently, shrinking the head's capacity by one per race until it admits
+     *  nothing. DR-147 routes acquire's drain through the SAME helper release() uses, so the two
+     *  drain sites cannot drift on that compensation. */
+    private fun resumeAll(waiters: List<Waiter>) {
+        for (w in waiters) {
+            val cont = w.continuation ?: continue
+            cont.resume(Unit) { _, _, _ -> release() }
+        }
     }
 
     private fun hasCapacityLocked(): Boolean {
@@ -114,15 +149,7 @@ public class InflightGate(
             inflight -= 1
             drainAdmissibleLocked()
         }
-        for (w in toResume) {
-            val cont = w.continuation ?: continue
-            // The admitted permit transfers ONLY if the waiter actually uses the resumption.
-            // A waiter cancelled between admission and delivery would otherwise leak its
-            // inflight slot permanently (each race shrinking the head's capacity by one until
-            // it admits nothing). The onCancellation hook fires exactly in that case — hand
-            // the permit back (the kotlinx Semaphore hand-off pattern).
-            cont.resume(Unit) { _, _, _ -> release() }
-        }
+        resumeAll(toResume)
     }
 
     // ported drain loop: skip-resumed + capacity guard
@@ -130,18 +157,22 @@ public class InflightGate(
         val admitted = mutableListOf<Waiter>()
         while (queue.isNotEmpty() && hasCapacityLocked()) {
             val next = queue.pollFirst() ?: break
-            if (!next.resumed) {
-                next.resumed = true
-                inflight += 1
-                admitted.add(next)
-            }
+            // DR-149: the `if (!next.resumed)` guard here was tautological — `resumed` is only ever
+            // set on the admittedNow path, which never queues, or by a prior drain, which already
+            // removed the waiter, so a QUEUED waiter always has it false. Worse, had it ever been
+            // true the else silently dropped the waiter from the queue without resuming it, and
+            // that request would hang forever. The flag itself stays: the cancellation hook reads
+            // it to decide whether a waiter still owns a queue slot.
+            next.resumed = true
+            inflight += 1
+            admitted.add(next)
         }
         return admitted
     }
 
     public class Slot internal constructor(
         private val gate: InflightGate,
-        private val clock: () -> Long,
+        private val clock: ElapsedClock,
     ) {
         private val released = AtomicBoolean(false)
         private val lastTouch = AtomicLong(clock())

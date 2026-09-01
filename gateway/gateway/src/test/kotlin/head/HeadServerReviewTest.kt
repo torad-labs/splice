@@ -18,7 +18,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
-import io.ktor.utils.io.readUTF8Line
+import io.ktor.utils.io.readLine
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -188,7 +188,7 @@ class HeadServerReviewTest {
         }.execute { resp ->
             val ch = resp.bodyAsChannel()
             while (true) {
-                val line = ch.readUTF8Line() ?: break
+                val line = ch.readLine() ?: break
                 sb.append(line).append('\n')
                 if (!opened.isCompleted && line.contains("event: message_start")) {
                     opened.complete(System.currentTimeMillis() - t0)

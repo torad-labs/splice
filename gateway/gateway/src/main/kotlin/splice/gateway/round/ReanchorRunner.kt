@@ -1,0 +1,88 @@
+// PORT-OF: splice/gateway/head/TurnDriver.kt (ReanchorRunner.run, the class shell) @ 86f1411 —
+// invariants unchanged: mid-stream re-anchoring loop (eli design 2026-07-24), the LIVE-emitter
+// counterpart of [FoldRunner], split from splice.gateway.head (HD-24, the round subsystem's own
+// package). Rounds drive the real wire directly — committed blocks stay; a round that fails with a
+// continuable partial re-POSTs the continuation and APPENDS; everything else finishes with the
+// round's honest outcome. The emitter's seal + monotonic block indices make the spliced turn a
+// single coherent Anthropic message ending in exactly ONE terminal (L3). This header used to end
+// "a watchdog fire never continues — its cancellation owns the turn", which DR-7 made false: an
+// Idle fire now reaps one ROUND, not the turn, and a stalled round's partial is salvageable and
+// continuable. The continuation decision + cross-round merge live in [ReanchorContinuation] (now
+// its own file), which states the current rule; this class keeps only the loop.
+package splice.gateway.round
+
+import kotlinx.serialization.json.JsonObject
+import splice.core.turn.TurnOutcome
+import splice.spi.ProcessWaiter
+import splice.spi.ReanchorController
+import splice.spi.RetryBackoff
+import splice.spi.RetryNotice
+import splice.spi.ToolSearchController
+import splice.spi.UpstreamTransport
+
+internal class ReanchorRunner(
+    private val key: String,
+    private val log: RetryNotice,
+    private val postRound: PostRound,
+    private val finish: FinishTurn,
+    private val signals: RunnerSignals,
+    private val toolSearch: ToolSearchController? = null,
+    private val backoff: RetryBackoff = UpstreamTransport().defaultBackoff(ProcessWaiter()),
+) {
+    private val rounds = RoundSplice()
+    private val continuation = ReanchorContinuation(toolSearch, signals, rounds)
+
+    // [reanchor] is nullable — a turn may reach this runner with search-only continuation (no
+    // ReanchorController at all): driveOneTurn routes here whenever EITHER exists, so the seam is
+    // total rather than resting on an undocumented cross-object invariant.
+    suspend fun run(initialBody: JsonObject, reanchor: ReanchorController?) {
+        var body = initialBody
+        var attempt = 0
+        var searchIndex = 0
+        var acc = RoundUsage()
+        val salvaged = mutableListOf<TurnOutcome.PartialRound>()
+        val absorbedFailures = mutableListOf<TurnOutcome.Failure>()
+        while (true) {
+            val outcome = postRound(body.toString())
+            val next = continuation.continuationForFailure(reanchor, outcome, body, attempt)
+            if (next == null) {
+                // A search round is inserted HERE — after the failure-continuation is computed and
+                // found null, so it never competes with re-anchor for a retryable failure, and
+                // only ever fires on a Success (searchContinuation's own type guard).
+                val searchNext = continuation.searchContinuation(outcome, body, searchIndex)
+                if (searchNext != null) {
+                    val searched = outcome as TurnOutcome.Success
+                    salvaged.add(rounds.searchPartial(searched, buffered = false))
+                    acc = acc.plusRound(searched.usage)
+                    body = searchNext
+                    searchIndex++
+                    signals.onSearchRound(searchIndex)
+                    log("[$key] tool search round $searchIndex: answering locally, continuing\n")
+                    continue
+                }
+                // Absorbed failures hit the health split unless the turn itself ultimately FAILS
+                // — that one is attributed exactly once by finishTurn, and firing per absorbed
+                // round would triple-count one logical failure (HeadServerIntegrationTest). A
+                // rescued turn must not report a degraded provider as healthy, and (DR-125) a
+                // ClientAbandoned ending is attributed nowhere else at all: pre-fix a degraded
+                // provider grinding retries while clients hung up kept head health clean.
+                if (outcome !is TurnOutcome.Failure) absorbedFailures.forEach(signals.onRoundFailure::invoke)
+                finish(rounds.withFailureSalvage(continuation.finalOutcome(outcome, salvaged, acc), acc))
+                return
+            }
+            val failure = outcome as TurnOutcome.Failure
+            absorbedFailures.add(failure)
+            failure.partial?.let { p ->
+                salvaged.add(p)
+                acc = acc.plusRound(p.usage)
+            }
+            // A clean-slate restart returns the request verbatim; log it as what it is rather
+            // than claiming a partial that does not exist.
+            val restarted = if (next == body) "restarting the round from scratch" else "continuing from partial output"
+            log("[$key] re-anchor ${attempt + 1}: ${failure.type.wireName} mid-stream — $restarted\n")
+            backoff(attempt, 0)
+            body = next
+            attempt++
+        }
+    }
+}

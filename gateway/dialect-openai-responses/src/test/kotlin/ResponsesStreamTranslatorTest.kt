@@ -6,10 +6,13 @@ import kotlinx.coroutines.flow.asFlow
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertInstanceOf
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
@@ -19,6 +22,7 @@ import splice.core.turn.TurnOutcome
 import splice.dialect.responses.EmitEncryptedReasoning
 import splice.dialect.responses.ResponsesStreamTranslator
 import splice.dialect.responses.StreamTurnContext
+import splice.spi.BufferCapacity
 import splice.spi.WatchdogFired
 import splice.spi.WireSink
 
@@ -101,7 +105,7 @@ class ResponsesStreamTranslatorTest {
         // was parsed. A fully-received turn must NOT be discarded as OVERLOADED (that retries a
         // successful compaction — the quota waste the watchdog exists to prevent).
         val outcome = ResponsesStreamTranslator(
-            ctx(fired = WatchdogFired.Idle(idleMs = 200_000, sawFirstByte = true)),
+            ctx(fired = WatchdogFired.Idle(idleMs = 200_000, sawClientFrame = true, limitMs = 180_000)),
         ).driveTurn(listOf(completed).asFlow(), RecordingSink())
         val success = outcome as TurnOutcome.Success
         assertEquals(100, success.usage.inputTokens)
@@ -131,87 +135,13 @@ class ResponsesStreamTranslatorTest {
         assertTrue(sink.calls.contains("think#0:\n\n"))
     }
 
-    // sequential_cutoff (A): each NEW reasoning item restates the running summary as a leading
-    // prefix, then appends one new part. The recap MUST be suppressed — emitting it re-sends every
-    // prior line per item, the duplication staircase (2026-07-23). Parts are >= the dedup min so
-    // the quirk engages; the quirk is on for codex via summaryDelivery="sequential_cutoff".
-    @Test
-    fun `cross-item summary recap is suppressed - each part reaches the wire exactly once`() = runTest {
-        val p0 = "Planning the prioritized review findings"
-        val p1 = "Identifying stale plan conflicts and missing files"
-        val p2 = "Highlighting certification gaps across the runtime"
-        val sink = RecordingSink()
-        val outcome = ResponsesStreamTranslator(ctx(dedupe = true)).driveTurn(
-            listOf(
-                ev("""{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$p0"}"""),
-                // item 1 recaps p0, then adds p1
-                ev("""{"type":"response.output_item.added","output_index":1,"item":{"type":"reasoning"}}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":1,"delta":"$p0"}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":1,"delta":"$p1"}"""),
-                // item 2 recaps p0 + p1, then adds p2
-                ev("""{"type":"response.output_item.added","output_index":2,"item":{"type":"reasoning"}}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":2,"delta":"$p0"}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":2,"delta":"$p1"}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":2,"delta":"$p2"}"""),
-                completed,
-            ).asFlow(),
-            sink,
-        )
-        assertTrue(outcome is TurnOutcome.Success)
-        // Every summary part reaches the wire exactly once — no restatement staircase.
-        assertEquals(1, sink.calls.count { it.contains(p0) }, "p0 duplicated: ${sink.calls}")
-        assertEquals(1, sink.calls.count { it.contains(p1) }, "p1 duplicated")
-        assertEquals(1, sink.calls.count { it.contains(p2) }, "p2 duplicated")
-    }
+    // sequential_cutoff rendering (codex-parity port 2026-08-26) lives in
+    // SequentialCutoffRenderTest — in that mode summary DELTAS are dropped entirely and the
+    // reasoning_summary_text.done events of the ACTIVE item are the render surface. The three
+    // delta-path dedup pins that lived here died with the delta path.
 
-    // Regression guard (2026-07-20): a paragraph two DISTINCT items genuinely share byte-for-byte is
-    // NOT a leading recap of item 2 (item 2's own new part comes first), so it must be KEPT — a
-    // turn-global seen-set wrongly cross-dropped it, causing summary starvation.
-    @Test
-    fun `a paragraph two distinct items coincidentally share is kept, not cross-dropped`() = runTest {
-        val p0 = "Weighing the two candidate migration designs"
-        val shared = "The token write must precede the navigation step"
-        val fresh = "Now reconciling the session store mismatch cleanly"
-        val sink = RecordingSink()
-        val outcome = ResponsesStreamTranslator(ctx(dedupe = true)).driveTurn(
-            listOf(
-                ev("""{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$p0"}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$shared"}"""),
-                // item 1: a genuinely-new leading part (NOT a recap of p0), then the same shared paragraph
-                ev("""{"type":"response.output_item.added","output_index":1,"item":{"type":"reasoning"}}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":1,"delta":"$fresh"}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":1,"delta":"$shared"}"""),
-                completed,
-            ).asFlow(),
-            sink,
-        )
-        assertTrue(outcome is TurnOutcome.Success)
-        assertEquals(1, sink.calls.count { it.contains(p0) })
-        assertEquals(1, sink.calls.count { it.contains(fresh) })
-        // Kept in BOTH items — the coincidence is not a leading cross-item recap.
-        assertEquals(2, sink.calls.count { it.contains(shared) }, "shared paragraph wrongly dropped: ${sink.calls}")
-    }
-
-    // Regression guard (openai/codex#16801, live 2026-07-19): a part restated WITHIN one item (an
-    // exact re-arrival at the same output_index) is suppressed, without affecting other items.
-    @Test
-    fun `an exact within-item part repeat is suppressed`() = runTest {
-        val q0 = "Deferring the atomic publication ordering decision"
-        val sink = RecordingSink()
-        val outcome = ResponsesStreamTranslator(ctx(dedupe = true)).driveTurn(
-            listOf(
-                ev("""{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$q0"}"""),
-                ev("""{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$q0"}"""),
-                completed,
-            ).asFlow(),
-            sink,
-        )
-        assertTrue(outcome is TurnOutcome.Success)
-        assertEquals(1, sink.calls.count { it.contains(q0) }, "within-item repeat leaked: ${sink.calls}")
-    }
+    // Cross-TURN recap suppression (2026-08-26) lives in SummaryDedupCrossTurnTest — this class
+    // sits at detekt's LargeClass ceiling.
 
     @Test
     fun `tool flow - eager open on item added, args stream to same index, done closes`() = runTest {
@@ -225,6 +155,10 @@ class ResponsesStreamTranslatorTest {
                 ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"c\":"}"""),
                 ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"1}"}"""),
                 ev("""{"type":"response.function_call_arguments.done","output_index":1}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":1,
+                       "item":{"type":"function_call"}}""",
+                ),
                 completed,
             ).asFlow(),
             sink,
@@ -367,6 +301,29 @@ class ResponsesStreamTranslatorTest {
         assertTrue(sink.calls.contains("text#0:still read"))
     }
 
+    // DR-130: a compact turn takes the single-round path (fold/reanchor/toolSearch are all null
+    // when meta.compact), and partialOrNull returned null for compact — so the usage this very
+    // reducer harvests from response.failed "so the salvage is not permanently zero" was thrown
+    // away on the ONE turn class the cost doctrine is written about. The buffer copies stay
+    // skipped (nothing re-anchors a compaction); only the billed burn rides.
+    @Test
+    fun `a failed compact turn still carries its billed usage - DR-130`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx(compact = true)).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.failed","response":{"error":{"code":"server_error","message":"boom"},
+                       "usage":{"input_tokens":9000,"output_tokens":120}}}""",
+                ),
+            ).asFlow(),
+            sink,
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(9000, failure.partial?.usage?.inputTokens, "the compaction's billed input must survive")
+        assertEquals(120, failure.partial?.usage?.outputTokens, "the compaction's billed output must survive")
+        assertEquals("", failure.partial?.bodyText, "no buffer copies for a turn that never re-anchors")
+    }
+
     @Test
     fun `truncated stream without terminal is an honest overloaded failure`() = runTest {
         val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
@@ -388,13 +345,13 @@ class ResponsesStreamTranslatorTest {
             ).asFlow(),
             RecordingSink(),
         )
-        assertEquals(TurnOutcome.ClientAbandoned, outcome)
+        assertEquals(TurnOutcome.ClientAbandoned(), outcome)
     }
 
     @Test
     fun `watchdog fired maps to overloaded with the idle cap message`() = runTest {
         val outcome = ResponsesStreamTranslator(
-            ctx(fired = WatchdogFired.Idle(idleMs = 200_000, sawFirstByte = true)),
+            ctx(fired = WatchdogFired.Idle(idleMs = 200_000, sawClientFrame = true, limitMs = 180_000)),
         ).driveTurn(emptyList<JsonObject>().asFlow(), RecordingSink())
         val failure = outcome as TurnOutcome.Failure
         assertEquals(ErrorType.OVERLOADED, failure.type)
@@ -842,6 +799,61 @@ class ToolSearchCaptureTest {
 
 // NF-06 lives in its own class: ResponsesStreamTranslatorTest sits at detekt's LargeClass ceiling.
 class ResponsesRunawayGuardTest {
+
+    private fun toolAdded(outputIndex: Int): JsonObject = buildJsonObject {
+        put("type", JsonPrimitive("response.output_item.added"))
+        put("output_index", JsonPrimitive(outputIndex))
+        put(
+            "item",
+            buildJsonObject {
+                put("type", JsonPrimitive("function_call"))
+                put("call_id", JsonPrimitive("call_$outputIndex"))
+                put("name", JsonPrimitive("run"))
+            },
+        )
+    }
+
+    private fun toolArgs(outputIndex: Int, delta: String): JsonObject = buildJsonObject {
+        put("type", JsonPrimitive("response.function_call_arguments.delta"))
+        put("output_index", JsonPrimitive(outputIndex))
+        put("delta", JsonPrimitive(delta))
+    }
+
+    @Test
+    fun `retained tool block count trips the shared capacity guard`() = runTest {
+        val sink = RecordingSink()
+        var emitted = 0
+        val events = kotlinx.coroutines.flow.flow {
+            repeat(BufferCapacity.MAX_TOOL_INDEX_ENTRIES + 10) { outputIndex ->
+                emitted += 1
+                emit(toolAdded(outputIndex))
+            }
+        }
+
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(events, sink)
+        val failure = outcome as TurnOutcome.Failure
+        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        assertEquals(BufferCapacity.MAX_TOOL_INDEX_ENTRIES, sink.calls.count { it.startsWith("openTool") })
+        assertEquals(BufferCapacity.MAX_TOOL_INDEX_ENTRIES + 1, emitted, "guard must stop collection")
+    }
+
+    @Test
+    fun `aggregate arguments across open tool blocks trip the shared capacity guard`() = runTest {
+        val chunk = "x".repeat(1_000_000)
+        val sink = RecordingSink()
+        val events = kotlinx.coroutines.flow.flow {
+            repeat(25) { outputIndex ->
+                emit(toolAdded(outputIndex))
+                emit(toolArgs(outputIndex, chunk))
+            }
+        }
+
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(events, sink)
+        val failure = outcome as TurnOutcome.Failure
+        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        assertEquals(20, sink.calls.count { it.startsWith("json#") })
+    }
+
     @Test
     fun `runaway upstream trips the shared buffer cap into an honest local failure - NF-06`() = runTest {
         // 25 x 1M-char text deltas, never a response.completed — the misbehaving-upstream shape.
@@ -849,8 +861,10 @@ class ResponsesRunawayGuardTest {
         // non-provider-reported API_ERROR (never a crash, never a provider attribution).
         val chunk = "x".repeat(1_000_000)
         val sink = RecordingSink()
+        var emitted = 0
         val events = kotlinx.coroutines.flow.flow {
             repeat(25) {
+                emitted += 1
                 emit(
                     kotlinx.serialization.json.buildJsonObject {
                         put("type", kotlinx.serialization.json.JsonPrimitive("response.output_text.delta"))
@@ -868,6 +882,7 @@ class ResponsesRunawayGuardTest {
         // consumption stopped at the latch: 20 x 1M reaches the cap, later deltas never emit
         val deltas = sink.calls.count { it.startsWith("text#") }
         assertTrue(deltas in 20..21, "expected the guard to stop the stream at the cap, saw $deltas deltas")
+        assertTrue(emitted < 25, "the guard must unwind the upstream, not drain it; emitted=$emitted")
     }
 }
 
@@ -1142,5 +1157,288 @@ class ResponsesRefusalHonestyTest {
         assertTrue(f.providerReported)
         assertTrue(f.message.contains("but I stop here"), f.message)
         assertEquals(null, f.partial)
+    }
+}
+
+// DR-77 (fresh-eyes sweep): CX-01's corrupt-args latch lived ONLY in the arguments.done handler,
+// but a backend can close a function_call via output_item.done alone — truncated args then ended
+// the turn as a clean Success dispatching garbage, and done-only args on the ITEM were dropped
+// entirely ({} input). Sibling class: the main class sits at detekt's LargeClass ceiling.
+class ResponsesItemDoneToolArgsTest {
+
+    @Test
+    fun `truncated args closed by output_item done latch CX-01 - DR-77`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t9","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"p\":"}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t9","name":"run"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val f = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, f.type)
+        assertTrue(f.message.contains("tool call"), f.message)
+    }
+
+    @Test
+    fun `item-done-only complete args are emitted and stay a clean success - DR-77`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t9","name":"run"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.done","output_index":1,"item":{"type":"function_call",""" +
+                        """"call_id":"t9","name":"run","arguments":"{\"x\":1}"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        assertTrue(outcome is TurnOutcome.Success, "complete late args are an honest tool call: $outcome")
+        assertTrue(sink.calls.contains("""json#0:{"x":1}"""), sink.calls.toString())
+    }
+
+    @Test
+    fun `the streamed-then-args-done flow is untouched - DR-77 control`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t9","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"p\":1}"}"""),
+                ev("""{"type":"response.function_call_arguments.done","output_index":1}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t9","name":"run"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertTrue(outcome is TurnOutcome.Success, "$outcome")
+    }
+
+    // DR-106 (sweep-2): end-of-turn sink.closeAll() was a THIRD tool-block close path bypassing
+    // CX-01 — added(function_call) + a partial arguments.delta, then response.completed with NO
+    // arguments.done and NO output_item.done left the block for the sweep: toolArgsInvalid never
+    // latched, TerminalStates graded a clean Success, and the client received tool_use carrying
+    // truncated JSON. Same latch, same first-reason-wins, now applied before the sweep.
+    @Test
+    fun `truncated args left for the end-of-turn sweep still latch CX-01 - DR-106`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t9","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"p\":"}"""),
+                completed,
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val f = assertInstanceOf(TurnOutcome.Failure::class.java, outcome, "swept truncated args must not grade clean")
+        assertEquals(ErrorType.API_ERROR, f.type)
+        assertTrue(f.message.contains("tool call"), f.message)
+    }
+
+    // DR-107 (sweep-2): a second output_item.added(function_call) at an already-open output_index
+    // EVICTED the live BlockState map-only — the first block's wire stayed open (start, no stop),
+    // its args never validated, and the client saw two content_block_start(tool_use) with the
+    // first dangling. The occupant now closes and validates through closeOpenBlocks first.
+    @Test
+    fun `a duplicate added at one output_index closes and validates the evicted block - DR-107`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t1","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"p\":"}"""),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t2","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"x\":1}"}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t2","name":"run"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        // Wire hygiene: the evicted block closes BEFORE the replacement opens.
+        val firstClose = sink.calls.indexOf("close#0")
+        val secondOpen = sink.calls.indexOfFirst { it.startsWith("openTool#1") }
+        assertTrue(firstClose in 0 until secondOpen, "evicted block must close before the new open: ${sink.calls}")
+        // Validation: the evicted block's truncated args latch CX-01 — the turn must not grade clean.
+        val f = assertInstanceOf(TurnOutcome.Failure::class.java, outcome, "evicted truncated args must latch")
+        assertTrue(f.message.contains("tool call"), f.message)
+    }
+
+    // DR-107 rider: the same eviction orphaned an open TEXT block when a function_call reused its
+    // output_index — the text block's wire never closed. With clean tool args the turn stays a
+    // Success; the assertion is pure wire hygiene.
+    @Test
+    fun `a function_call reusing a text block's index closes the text block first - DR-107`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":1,"delta":"hi"}"""),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t2","name":"run"}}""",
+                ),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"x\":1}"}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t2","name":"run"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        val textClose = sink.calls.indexOf("close#0")
+        val toolOpen = sink.calls.indexOfFirst { it.startsWith("openTool#1") }
+        assertTrue(textClose in 0 until toolOpen, "orphaned text block must close before the tool opens: ${sink.calls}")
+        assertTrue(outcome is TurnOutcome.Success, "clean args after an index reuse stay honest: $outcome")
+    }
+
+    // DR-108: a wire output_index was trusted without a block-type check — an output_text.delta
+    // carrying an OPEN function_call block's index emitted text_delta INSIDE tool_use on the wire
+    // (protocol-corrupt) and polluted the emittedText/textBuf honesty state. Mistargeted deltas
+    // drop, the same fate as the passthrough's PT-001 unmapped-index deltas.
+    @Test
+    fun `a text delta aimed at an open tool block's index is dropped - DR-108`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t1","name":"run"}}""",
+                ),
+                ev("""{"type":"response.output_text.delta","output_index":1,"delta":"leak"}"""),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":1,"delta":"{\"x\":1}"}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":1,""" +
+                        """"item":{"type":"function_call","call_id":"t1","name":"run"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        assertTrue(sink.calls.none { it.startsWith("text#") }, "no text_delta may enter a tool block: ${sink.calls}")
+        val s = assertInstanceOf(TurnOutcome.Success::class.java, outcome, "clean tool args stay a Success")
+        assertTrue(!s.emittedText, "a dropped mistarget must not claim emitted text")
+        assertTrue(s.bodyText.isEmpty(), "a dropped mistarget must not pollute the text buffer: '${s.bodyText}'")
+    }
+
+    // DR-108 mirror: an arguments delta aimed at an open TEXT block's index emitted
+    // input_json_delta inside a text block, and the .done shape could even CLOSE the text block
+    // through the args path. Dropped the same way.
+    @Test
+    fun `an args delta aimed at an open text block's index is dropped - DR-108`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"hello"}"""),
+                ev("""{"type":"response.function_call_arguments.delta","output_index":0,"delta":"{\"x\":1}"}"""),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        assertTrue(sink.calls.none { it.startsWith("json#") }, "no args delta may enter a text block: ${sink.calls}")
+        val s = assertInstanceOf(TurnOutcome.Success::class.java, outcome, "the text turn stays a Success")
+        assertTrue(s.bodyText == "hello", "the real text survives untouched: '${s.bodyText}'")
+    }
+
+    // DR-134: the THIRD args-emitting path. DR-108 guarded onTextDelta and onArgs, but the DR-77
+    // late harvest checks only that the ITEM is a function_call — never that the BLOCK sitting at
+    // that output_index is one. Text blocks are built with sawDelta=false and only emitToolArgText
+    // ever flips it, so `!b.sawDelta` is permanently true for a text block and the harvest always
+    // fired: a text delta followed by an item-done carrying a function_call at the SAME index wrote
+    // input_json_delta into the open text block, and closeOpenBlocks then skipped the CX-01 latch
+    // (b.tool false), so the turn graded a clean Success while the client got a corrupt wire. No
+    // output_item.added arrives here, so DR-107's eviction never runs and cannot cover this.
+    @Test
+    fun `a late tool-args harvest aimed at an open text block is dropped - DR-134`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"Hello"}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"function_call",""" +
+                        """"call_id":"t1","name":"run","arguments":"{\"x\":1}"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        assertTrue(
+            sink.calls.none { it.startsWith("json#") },
+            "no harvested args may enter a text block: ${sink.calls}",
+        )
+        val s = assertInstanceOf(TurnOutcome.Success::class.java, outcome, "the text turn stays a Success")
+        assertTrue(s.bodyText == "Hello", "the real text survives untouched: '${s.bodyText}'")
+    }
+}
+
+// DR-109: a proxy/gateway shape ships `error` as a PLAIN STRING — both object casts fell
+// through to the event itself, so code/message read empty and the placeholder replaced the
+// vendor's text: the rate-limit/transient signal never reached the classifier and the
+// operator-visible line hid the vendor reason.
+class ResponsesStringErrorTest {
+
+    @Test
+    fun `a string-typed error payload keeps the vendor's text - DR-109`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"error","error":"rate limit exceeded, slow down"}"""),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val failure = assertInstanceOf(TurnOutcome.Failure::class.java, outcome)
+        assertTrue(
+            failure.message.contains("rate limit exceeded, slow down"),
+            "the vendor's text must survive to the classifier and the surfaced line: ${failure.message}",
+        )
+        assertEquals(ErrorType.RATE_LIMIT, failure.type, "the classifier must see the vendor signal")
+    }
+
+    @Test
+    fun `a string-typed error under response also keeps its text - DR-109`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.failed","response":{"error":"backend proxy timeout"}}"""),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val failure = assertInstanceOf(TurnOutcome.Failure::class.java, outcome)
+        assertTrue(failure.message.contains("backend proxy timeout"), failure.message)
+    }
+
+    @Test
+    fun `an object error payload is unchanged - control`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.failed","response":{"error":{"code":"server_error","message":"boom"}}}"""),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        val failure = assertInstanceOf(TurnOutcome.Failure::class.java, outcome)
+        assertTrue(failure.message.contains("boom"), failure.message)
     }
 }

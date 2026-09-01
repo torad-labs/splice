@@ -11,12 +11,16 @@ public enum class ReasoningDisplay {
     ;
 
     public val isOff: Boolean get() = this == OFF
+}
 
-    public companion object {
-        public fun from(raw: String?): ReasoningDisplay = when (raw?.lowercase()) {
-            "text" -> TEXT
-            "thinking" -> THINKING
-            else -> OFF
-        }
+/** The tolerant config-string reader for [ReasoningDisplay]. A named object since the 2026-08-16
+ *  style migration (HD-M8) made the companion illegal; same name, same table, same fallback to OFF
+ *  for a legacy or malformed value (never a throw on a typo). */
+public object ReasoningDisplayParser {
+
+    public fun from(raw: String?): ReasoningDisplay = when (raw?.lowercase()) {
+        "text" -> ReasoningDisplay.TEXT
+        "thinking" -> ReasoningDisplay.THINKING
+        else -> ReasoningDisplay.OFF
     }
 }

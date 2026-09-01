@@ -22,7 +22,9 @@
 // [ClientFrameEmitted] probe (CONTENT_FRAMES_OUT above the round's baseline — the same fact G5
 // keys reissue on): until the client has seen content, the silence is prefill/reasoning and the
 // first-output cap applies; after it, the stream is mid-output and streamIdle applies. Bytes still
-// TOUCH the slot (liveness: a keepalive resets idleness); they no longer choose the limit.
+// TOUCH the slot (liveness: a keepalive resets idleness); they no longer choose the limit. A COMPACT
+// turn's first-output cap is totalCap itself (WatchdogBudget.forCompact, wired at TurnDriveFactory):
+// the first compaction on the corrected tier still died silent at 300s.
 package splice.spi
 
 import kotlinx.coroutines.CoroutineScope

@@ -29,8 +29,9 @@
   reasoned silently over a large transcript for longer than 180s was aborted and re-sent cold by the
   client, in a loop (109 stalls on one head in a single day). The tier now follows the first client
   content frame: until the client has seen output the silence is judged on `firstByteTimeoutMs`,
-  after it on `streamIdleMs`, on both the SSE and WebSocket transports. The stall message names the
-  tier that actually fired.
+  after it on `streamIdleMs`, on both the SSE and WebSocket transports. A compact turn's pre-output
+  silence is bounded by `upstreamTimeoutMs` alone (compactions on the corrected tier still
+  died silent at the 300s cap). The stall message names the tier that actually fired.
 - **A content-policy refusal is terminal, not retried.** ChatGPT's `cyber_policy` flag (and the
   Responses API's documented prompt refusals: `invalid_prompt`, `bio_policy`,
   `image_content_policy_violation`) reached Claude Code as a retryable `api_error`, so every refusal

@@ -17,7 +17,7 @@ junit = "6.1.3"
 # alerts sat open with no PR ever appearing. Declaring the floor gives the resolver a minimum AND
 # Dependabot a line to bump next time. Raise, never lower; drop it once ktor's own netty clears it.
 #
-netty = "4.2.16.Final"          # 4.2.15.Final resolved; CVEs in netty-codec-http/http2/compression
+netty = "4.2.17.Final"          # 4.2.16.Final resolved; GHSA-8c42-7qj2-3j46 (CORS Vary cache poisoning) in netty-codec-http
 # jackson rides in on the PLUGIN classpath via detekt's jackson-dataformat-xml, which subproject
 # constraints cannot reach — so the floor is applied in build-logic/build.gradle.kts, the one build
 # that owns that classpath (see the reasoning there). Build-time only, never in the shipped jar.

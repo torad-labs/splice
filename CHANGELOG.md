@@ -1,5 +1,68 @@
 # Changelog
 
+## splice v0.3.0-beta.1 — native Claude auth and a hardened multi-head gateway - 2026-08-30
+
+### Added
+
+- **`claude-splice`, the native-auth Claude head.** Claude Code keeps its own Anthropic login and
+  sends the caller credential through the local passthrough head; splice never stores, reads,
+  refreshes, or logs that credential. The management key is not reused on this route.
+- **Per-model context windows in the live model picker.** Each configured row reports its effective
+  window without spelling a model above its real backend ceiling, so `/model` can switch windows
+  without restarting Claude Code.
+- Provider OAuth sign-in plans for ChatGPT, Grok, and Kimi now resolve from the configured auth kind,
+  with deterministic matrix coverage for every supported head.
+
+### Changed
+
+- Provider-native readable reasoning remains visible as thinking blocks, while
+  `mirror_reasoning` is locked off after every configuration layer. TOML, state, environment, runtime
+  PATCH, and direct construction cannot enable synthetic transcript reinjection.
+- The release pipeline now accepts SemVer prerelease tags and marks versions containing `-` as GitHub
+  prereleases. Beta installs use a version-pinned URL; the stable `latest` installer remains stable-only.
+
+### Fixed
+
+- **Codex compaction no longer dies at the idle cap while the model is still reading.** The stall
+  watchdog switched to its short `streamIdleMs` tier on the first upstream byte, and on the
+  Responses API that byte is the `response.created` handshake, not output — so a compaction that
+  reasoned silently over a large transcript for longer than 180s was aborted and re-sent cold by the
+  client, in a loop (109 stalls on one head in a single day). The tier now follows the first client
+  content frame: until the client has seen output the silence is judged on `firstByteTimeoutMs`,
+  after it on `streamIdleMs`, on both the SSE and WebSocket transports. A compact turn's pre-output
+  silence is bounded by `upstreamTimeoutMs` alone (compactions on the corrected tier still
+  died silent at the 300s cap). The stall message names the tier that actually fired.
+- **A content-policy refusal is terminal, not retried.** ChatGPT's `cyber_policy` flag (and the
+  Responses API's documented prompt refusals: `invalid_prompt`, `bio_policy`,
+  `image_content_policy_violation`) reached Claude Code as a retryable `api_error`, so every refusal
+  became a backoff storm of the same multi-megabyte transcript. They now surface as
+  `invalid_request_error` with the vendor's own remedy text, matching the HTTP 400 the vendor returns
+  for the same refusal pre-stream.
+- Refresh failures for Codex, Grok, and Kimi no longer risk logging vendor response bodies, and
+  KeyStore values containing `#`, quotes, or backslashes round-trip without corruption.
+- Request-body torn wakeups become an Anthropic-shaped HTTP 400 without swallowing genuine coroutine
+  cancellation; chat and Responses stream translators also stop draining runaway producers.
+- A newly created Responses WebSocket can no longer evict itself while older pooled sockets are busy.
+- Session-registry migration now preflights destination collisions, rolls back earlier transfers after
+  a later failure, preserves stale links when replacement fails, and retains cross-filesystem support.
+- OAuth callback paste handling no longer double-encodes URLs, and stopped auth-probe loops cannot
+  restart themselves after shutdown.
+- Repeated statusline ticks reuse a bounded branch cache instead of spawning an uncached Git process
+  every time.
+- The release gate now rejects invalid SemVer tags and a mutated prerelease flag; the concentration
+  gate rejects masked commands and contradictory ratchet modes; the head-E2E gate rejects unmatched
+  head selectors and duplicate stream terminals. All previously reported false green.
+
+### Security
+
+- Client-auth providers reject configured `Authorization` and `x-api-key` headers case-insensitively,
+  preventing a splice-held upstream credential from sharing the local management-gate bypass.
+- OAuth wrapper overrides are restricted to portable command names; paths, shell syntax, whitespace,
+  blank names, and option-like names are rejected before launch.
+- The transitive netty floor is raised to 4.2.17.Final (GHSA-8c42-7qj2-3j46, CORS `Vary` cache
+  poisoning in `netty-codec-http`); the constraint stays a floor, so a newer ktor-shipped netty still
+  wins.
+
 ## splice v0.2.0 — reasoning continuity, the cache-drain fix, and every-head login - 2026-08-02
 
 ### Changed — BREAKING

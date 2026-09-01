@@ -1,6 +1,6 @@
 name: release
 
-# Two ways in, ONE release identity (the vX.Y.Z tag):
+# Two ways in, ONE release identity (the vX.Y.Z or vX.Y.Z-PRERELEASE tag):
 #
 #   promote:  merge the main -> prod PR (merge commit, never squash). The merge's push fires
 #     this workflow — GitHub generates the release; nobody runs a release command. The version is
@@ -12,7 +12,7 @@ name: release
 #     Promoting without a version bump fails twice: promotion-check.yml pre-merge, and the
 #     resolve step here at build time.
 #
-#   tag push (the plumbing):  git push origin v0.2.0     — still works, unchanged.
+#   tag push (the plumbing):  git push origin v0.3.0-beta.1     — still works, unchanged.
 #
 # The tag created on publish uses the workflow's own GITHUB_TOKEN, and events created with that
 # token do not trigger workflows — so a promotion cannot recursively fire the tag path.
@@ -109,7 +109,12 @@ jobs:
         run: ./gradlew :app:shadowJar --no-daemon --no-parallel --stacktrace
 
       - name: stage exact release bundle
-        run: bash checks/release/stage.sh
+        # DR-19: thread the resolved version in as the tag so the SemVer + tag/version equality
+        # block runs on the PROMOTION path too (a real pushed tag still wins inside stage.sh via
+        # GITHUB_REF_TYPE). Without this, the gate was skipped exactly where releases are cut.
+        env:
+          RESOLVED_VERSION: ${{ steps.version.outputs.version }}
+        run: SPLICE_RELEASE_TAG="v$RESOLVED_VERSION" bash checks/release/stage.sh
 
       - name: accept exact release bundle
         env:
@@ -161,6 +166,7 @@ jobs:
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2 # zizmor: ignore[superfluous-actions]
         with:
           draft: true
+          prerelease: ${{ contains(needs.build.outputs.version, '-') }}
           # Explicit on BOTH paths: on a prod promotion there is no tag yet — it is created when
           # the draft publishes, at the exact SHA the build job gated and attested.
           tag_name: v${{ needs.build.outputs.version }}

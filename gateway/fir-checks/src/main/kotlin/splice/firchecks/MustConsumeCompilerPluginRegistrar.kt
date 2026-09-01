@@ -1,4 +1,4 @@
-// NEW (discipline L4): the K2 compiler-plugin entry point. Discovered via the
+// NEW: (discipline L4) the K2 compiler-plugin entry point. Discovered via the
 // META-INF/services/org.jetbrains.kotlin.compiler.plugin.CompilerPluginRegistrar resource; no
 // CommandLineProcessor / -P options in v1 (the plugin has no configuration).
 package splice.firchecks

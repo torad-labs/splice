@@ -20,26 +20,7 @@ public fun interface StreamTranslator {
     public suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome
 }
 
-/** The upstream request the provider built from an Anthropic body: wire JSON + per-turn meta +
- *  per-turn extra HTTP headers (e.g. grok's x-grok-conv-id — PER TURN, never provider-shared
- *  state: a shared field races concurrent sessions into each other's affinity headers). */
-public data class BuiltTurn(
-    val requestBody: JsonObject,
-    val meta: TurnMeta,
-    val extraHeaders: Map<String, String> = emptyMap(),
-    /** The answering policy for THIS turn's deferred surface, built by the request builder (the
-     *  only place that knows what was deferred). Null = no deferral this turn, or the feature is
-     *  off — the gateway's round loop is byte-for-byte unchanged. */
-    val toolSearch: ToolSearchController? = null,
-)
-
-/** Per-turn liveness signals the gateway hands the translator: the watchdog's typed sentinel and
- *  a REAL client-liveness probe (flipped when a downstream write fails — the head owns it; a
- *  provider must never hardcode it, that makes ClientAbandoned unreachable dead code). */
-public data class TurnSignals(
-    val watchdogFired: () -> WatchdogFired?,
-    val clientGone: () -> Boolean,
-)
+// BuiltTurn + TurnSignals live in ProviderTurns.kt (concentration, 2026-08-19).
 
 /** The dialect-invariant identity a provider exposes: which head it is, its catalog, auth, budget.
  *  Every concrete provider shares this exact cluster, so it's grouped (see [ProviderTuning]) and
@@ -82,7 +63,10 @@ public interface Provider : ProviderIdentity {
 
     public fun streamTranslator(meta: TurnMeta, signals: TurnSignals): StreamTranslator
 
-    public fun extraHeaders(creds: Credentials): Map<String, String>
+    /** Default: the bare SSE accept header every Responses/Chat upstream needs. Providers with a
+     *  credential-derived header (codex's ChatGPT-Account-ID, passthrough's identity headers)
+     *  override with more; this covers the three that don't. */
+    public fun extraHeaders(creds: Credentials): Map<String, String> = mapOf("Accept" to "text/event-stream")
 
     /** Reasoning-continuation folding for this turn, or null when the feature is off for this
      *  model/head (the default — every non-codex provider stays pure passthrough). */

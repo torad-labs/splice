@@ -12,9 +12,17 @@ a class. Canaries and review CAUGHT them; nothing PREVENTED them.
 This generator moves all three from detected to inexpressible:
 
     hazard                          before                    after
-    unanchored entry                hand-written, hopefully   generator applies ^...$
+    unanchored entry                hand-written, hopefully   generator applies ^(...)$
     prose as a live regex           `#` looks like a comment  no prose slot exists at all
     invalid ERE breaks the file     silent until CI           generation fails
+    alternation escapes the anchors generator applied ^...$   pattern is BRACKETED (DR-188)
+
+DR-188 is the same hazard as the first row, under a spelling the first fix did not cover: `|` has
+the LOWEST precedence in ERE, so `^...a|b...$` is `(^...a)` OR `(b...$)` and the anchors bind only
+the outermost alternatives. The generator now wraps the pattern in a group, and refuses a pattern
+that would close that group itself. The row above it is why this file exists at all — a hazard
+fixed as an instance re-derives itself as a class — and DR-188 is that sentence coming true a
+second time about this very table.
 
 The remaining hand-edit risk — someone editing the .txt directly — is closed by `--check`, which
 the gate runs (the same regenerate-and-diff idiom already used for webui/dist).
@@ -87,7 +95,24 @@ def render() -> str:
         if "\n" in pattern:
             die(f"exemption {i}: `pattern` must be a single line")
 
-        line = f"{PREFIX}{pattern}{SUFFIX}"
+        # DR-188: the pattern is BRACKETED, and that group is what makes the anchors mean anything.
+        # ERE gives `|` the LOWEST precedence, so a bare `{PREFIX}a|b{SUFFIX}` parses as
+        # `(^…a)` OR `(b…$)`: the anchors bind only the first and last alternatives and every branch
+        # between them floats free. A pattern of `a|b` therefore reintroduced hazard 1 — a credential
+        # appended to the first branch, or prepended to the second, was silently exempted — while the
+        # anchor check below passed it (it carries no leading `^` and no trailing `$`), the selftest's
+        # structural rule called it "fully anchored" (it does start with `^` and end with `$`), and
+        # the canaries missed it whenever the branches did not collide with the canary corpus. Three
+        # guards, three misses, on the one hazard this generator exists to make inexpressible.
+        #
+        # The group cannot be escaped, and the reason is the BARE-pattern half of the ERE check
+        # below — not a paren walk of our own. A pattern would break out by closing the added group
+        # itself (`a)|(b` becomes `(a)|(b)`, whose second alternative floats free again), and that
+        # requires an unmatched `)`, which grep rejects outright. The GENERATED line for such a
+        # pattern is perfectly valid, so it is validating the pattern ON ITS OWN that closes this —
+        # drop that half and the breakout reopens. The selftest pins it; a paren walk here would be
+        # a check that cannot fire, which is the defect this file's own subject matter is about.
+        line = f"{PREFIX}({pattern}){SUFFIX}"
         for candidate, what in ((pattern, "pattern"), (line, "generated line")):
             err = valid_ere(candidate)
             if err:

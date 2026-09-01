@@ -19,7 +19,14 @@ import java.net.InetSocketAddress
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicInteger
-import splice.core.util.discard
+import splice.core.util.Cancellables
+
+/** Bound for the test mock's zstd decode — far above any fixture request. */
+private const val MAX_DECOMPRESSED_BYTES = 8 * 1024 * 1024
+
+// DR-7 foldstall: comfortably past the acceptance head's 1s streamIdle, short enough that a
+// wrongly-unreaped turn still fails the test in seconds rather than hanging the suite.
+private const val STALL_SLEEP_MS = 6_000L
 
 // The two summary sections the "foldsummary" scenario streams (both over the 20-char dedup floor):
 // section A is re-titled verbatim by the continuation round, B only ever arrives in round 2.
@@ -31,6 +38,7 @@ const val RATE_LIMITED_STATUS: Int = 429
 
 class MockChatGptUpstream {
     val upstreamAuths = CopyOnWriteArrayList<Pair<String, String?>>()
+    val upstreamAccountIds = CopyOnWriteArrayList<Pair<String, String?>>()
     val upstreamBodies = CopyOnWriteArrayList<Pair<String, String>>()
     val abortedScenarios = CopyOnWriteArrayList<String>()
     val refreshCalls = AtomicInteger(0)
@@ -85,11 +93,6 @@ class MockChatGptUpstream {
         pool.shutdownNow()
     }
 
-    private companion object {
-        /** Bound for the test mock's zstd decode — far above any fixture request. */
-        const val MAX_DECOMPRESSED_BYTES = 8 * 1024 * 1024
-    }
-
     private fun sse(ex: HttpExchange, json: String) {
         ex.responseBody.write("data: $json\n\n".toByteArray())
         ex.responseBody.flush()
@@ -124,6 +127,7 @@ class MockChatGptUpstream {
         val scenario = Regex("SCENARIO:(\\w+)").find(raw)?.groupValues?.get(1) ?: "basic"
         val auth = ex.requestHeaders.getFirst("Authorization")
         upstreamAuths.add(scenario to auth)
+        upstreamAccountIds.add(scenario to ex.requestHeaders.getFirst("ChatGPT-Account-ID"))
         upstreamBodies.add(scenario to raw)
 
         if (scenario == "refresh" && auth == "Bearer tok-old") {
@@ -149,10 +153,11 @@ class MockChatGptUpstream {
             // EOF (IOException) BEFORE any complete client frame — the StreamTornBeforeClient path.
             ex.responseHeaders.add("Content-Type", "text/event-stream")
             ex.sendResponseHeaders(200, 4096)
-            runCatching {
+            val torn = runCatching {
                 ex.responseBody.write("data: {\"type\":\"resp".toByteArray())
                 ex.responseBody.flush()
-            }.discard("tear: drop mid-frame")
+            }
+            Cancellables.discard(torn, "tear: drop mid-frame")
             ex.close()
             return
         }
@@ -185,13 +190,17 @@ class MockChatGptUpstream {
             streamScenario(scenario, ex, body)
         } catch (abort: IOException) {
             // a broken pipe mid-stream is the drip/hold scenarios' EXPECTED client-abort exit
-            if (scenario == "drip" || scenario == "hold") abortedScenarios.add(scenario)
-            check(scenario == "drip" || scenario == "hold") {
+            // DR-7 adds foldstall: the head's idle watchdog reaps the stalled round, so this
+            // server thread wakes from its sleep onto a socket the head already hung up.
+            val expected = scenario == "drip" || scenario == "hold" ||
+                scenario == "foldstall" || scenario == "idlepre"
+            if (expected) abortedScenarios.add(scenario)
+            check(expected) {
                 "unexpected mid-stream I/O failure in scenario '$scenario': ${abort.message}"
             }
         } finally {
-            runCatching { ex.responseBody.close() }.discard("test-server teardown")
-            runCatching { ex.close() }.discard("test-server teardown")
+            Cancellables.discard(runCatching { ex.responseBody.close() }, "test-server teardown")
+            Cancellables.discard(runCatching { ex.close() }, "test-server teardown")
         }
     }
 
@@ -203,9 +212,18 @@ class MockChatGptUpstream {
             (it as? JsonObject)?.get("type")?.jsonPrimitive?.content == "reasoning"
         } ?: false
 
+    // sequential_cutoff realism (2026-08-26 codex-parity port): the live backend streams summary
+    // DELTAS and then a reasoning_summary_text.done carrying the COMPLETE part text under the
+    // item's id. Cutoff-mode heads render ONLY the done events, so every reasoning scenario here
+    // sends both — which also pins that dropping the deltas loses no text.
     private fun foldTruncatedRound(ex: HttpExchange) {
-        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""")
+        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_trunc"}}""")
         sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Thinking round one."}""")
+        sse(
+            ex,
+            """{"type":"response.reasoning_summary_text.done","item_id":"rs_trunc","output_index":0,""" +
+                """"summary_index":0,"text":"Thinking round one."}""",
+        )
         sse(
             ex,
             """{"type":"response.output_item.done","output_index":0,""" +
@@ -221,9 +239,37 @@ class MockChatGptUpstream {
         )
     }
 
+    // DR-7: round 1 streams REAL reasoning and then goes silent forever — a mid-part stall, not a
+    // truncation. The head has seen bytes (so the watchdog is on its streamIdle tier) and holds a
+    // partial summary, which is exactly the state the old code threw away: the watchdog cancelled
+    // the whole turn, the outcome carried no partial, and both continuation gates vetoed on
+    // watchdogFired. The sleep outlives the head's idle cap; the write that follows it lands on a
+    // socket the head has already hung up, which is the expected IOException above.
+    private fun foldStalledRound(ex: HttpExchange) {
+        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_stall"}}""")
+        sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Thinking round one."}""")
+        sse(
+            ex,
+            """{"type":"response.reasoning_summary_text.done","item_id":"rs_stall","output_index":0,""" +
+                """"summary_index":0,"text":"Thinking round one."}""",
+        )
+        sse(
+            ex,
+            """{"type":"response.output_item.done","output_index":0,""" +
+                """"item":{"type":"reasoning","id":"rs_stall","encrypted_content":"ENC-STALL"}}""",
+        )
+        Thread.sleep(STALL_SLEEP_MS)
+        sse(ex, """{"type":"response.output_text.delta","output_index":1,"delta":"NEVER REACHES THE CLIENT"}""")
+    }
+
     private fun foldCleanRound(ex: HttpExchange) {
-        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""")
+        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_clean"}}""")
         sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Thinking round two."}""")
+        sse(
+            ex,
+            """{"type":"response.reasoning_summary_text.done","item_id":"rs_clean","output_index":0,""" +
+                """"summary_index":0,"text":"Thinking round two."}""",
+        )
         sse(ex, """{"type":"response.output_item.done","output_index":0}""")
         sse(ex, """{"type":"response.output_item.added","output_index":1,"item":{"type":"message"}}""")
         sse(ex, """{"type":"response.output_text.delta","output_index":1,"delta":"FINAL ANSWER"}""")
@@ -239,8 +285,13 @@ class MockChatGptUpstream {
     // round-1 summary section verbatim before adding a new one — exactly what sequential_cutoff does
     // when a continuation re-requests the detailed summary over already-summarized reasoning.
     private fun foldSummaryTruncatedRound(ex: HttpExchange) {
-        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""")
+        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_trunc"}}""")
         sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$SUMMARY_SECTION_A"}""")
+        sse(
+            ex,
+            """{"type":"response.reasoning_summary_text.done","item_id":"rs_trunc","output_index":0,""" +
+                """"summary_index":0,"text":"$SUMMARY_SECTION_A"}""",
+        )
         sse(
             ex,
             """{"type":"response.output_item.done","output_index":0,""" +
@@ -258,9 +309,19 @@ class MockChatGptUpstream {
 
     private fun foldSummaryCleanRound(ex: HttpExchange) {
         // output_index restarts at 0 for the continuation round, as the real backend does.
-        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""")
+        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_clean2"}}""")
         sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$SUMMARY_SECTION_A"}""")
+        sse(
+            ex,
+            """{"type":"response.reasoning_summary_text.done","item_id":"rs_clean2","output_index":0,""" +
+                """"summary_index":0,"text":"$SUMMARY_SECTION_A"}""",
+        )
         sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"$SUMMARY_SECTION_B"}""")
+        sse(
+            ex,
+            """{"type":"response.reasoning_summary_text.done","item_id":"rs_clean2","output_index":0,""" +
+                """"summary_index":1,"text":"$SUMMARY_SECTION_B"}""",
+        )
         sse(ex, """{"type":"response.output_item.done","output_index":0}""")
         sse(ex, """{"type":"response.output_item.added","output_index":1,"item":{"type":"message"}}""")
         sse(ex, """{"type":"response.output_text.delta","output_index":1,"delta":"FINAL ANSWER"}""")
@@ -278,15 +339,41 @@ class MockChatGptUpstream {
             "foldsummary" ->
                 if (isContinuationRound(body)) foldSummaryCleanRound(ex) else foldSummaryTruncatedRound(ex)
             "foldcap" -> foldTruncatedRound(ex)
+            "foldstall" -> if (isContinuationRound(body)) foldCleanRound(ex) else foldStalledRound(ex)
+            // DR-7: an acknowledgement, then silence — the PRE-CONTENT stall. "Pre-content" means
+            // no CLIENT FRAME has been emitted (the state G5's reissue path claims); it does NOT
+            // mean no event and not no byte, and an earlier version of this comment said both.
+            // The distinction matters because response.created IS bytes on the wire but NOT a
+            // client frame, so the watchdog keeps its first-output tier (firstByteTimeout) through
+            // the stall — bytes touch the slot, frames pick the tier (Watchdog.kt, 2026-09-01). See
+            // the arm in SseRoundConsumeTest, whose budgets are split to prove which tier fires.
+            "idlepre" -> {
+                // The backend ACKNOWLEDGES and then goes quiet: response.created carries no
+                // content, so the round reaches its stall having emitted nothing to the client —
+                // the pre-content state the G5 reissue path claims. A scenario that only slept
+                // would be untestable, because the client blocks on headers and the stall would
+                // land before the head had a stream to watch at all; and a bare SSE comment ends
+                // the round instantly as a dead-head body rather than stalling it.
+                sse(ex, """{"type":"response.created","response":{"id":"rs_idle"}}""")
+                Thread.sleep(STALL_SLEEP_MS)
+            }
             "multipart" -> {
-                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""")
+                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_mp"}}""")
                 sse(ex, """{"type":"response.reasoning_summary_part.added","output_index":0}""")
                 sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Part one."}""")
-                sse(ex, """{"type":"response.reasoning_summary_text.done","output_index":0}""")
+                sse(
+                    ex,
+                    """{"type":"response.reasoning_summary_text.done","item_id":"rs_mp","output_index":0,""" +
+                        """"summary_index":0,"text":"Part one."}""",
+                )
                 sse(ex, """{"type":"response.reasoning_summary_part.done","output_index":0}""")
                 sse(ex, """{"type":"response.reasoning_summary_part.added","output_index":0}""")
                 sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Part two."}""")
-                sse(ex, """{"type":"response.reasoning_summary_text.done","output_index":0}""")
+                sse(
+                    ex,
+                    """{"type":"response.reasoning_summary_text.done","item_id":"rs_mp","output_index":0,""" +
+                        """"summary_index":1,"text":"Part two."}""",
+                )
                 sse(ex, """{"type":"response.reasoning_summary_part.done","output_index":0}""")
                 sse(ex, """{"type":"response.output_item.done","output_index":0}""")
                 sse(ex, """{"type":"response.output_item.added","output_index":1,"item":{"type":"message"}}""")
@@ -420,11 +507,16 @@ class MockChatGptUpstream {
                 ex.responseBody.write(buf.copyOfRange(at, buf.size))
             }
             "compactish" -> {
-                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""")
+                sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_cp"}}""")
                 sse(
                     ex,
                     """{"type":"response.reasoning_summary_text.delta","output_index":0,""" +
                         """"delta":"Goal: port the proxy. Decisions: split modules. Next: tests."}""",
+                )
+                sse(
+                    ex,
+                    """{"type":"response.reasoning_summary_text.done","item_id":"rs_cp","output_index":0,""" +
+                        """"summary_index":0,"text":"Goal: port the proxy. Decisions: split modules. Next: tests."}""",
                 )
                 sse(ex, """{"type":"response.output_item.done","output_index":0}""")
                 sse(

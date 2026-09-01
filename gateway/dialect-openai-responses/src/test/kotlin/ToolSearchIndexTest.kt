@@ -1,4 +1,4 @@
-// Walls for ToolSearchIndex's deterministic field-weighted ranking (ResponsesToolSearch.kt): the
+// Walls for ToolSearchIndex's deterministic field-weighted ranking (ToolSearchIndex.kt): the
 // corpus is name / name-with-spaces / description / property names+descriptions, weighted so a
 // name hit always outranks a description/property hit; ties break by name for reproducibility.
 import kotlinx.serialization.json.buildJsonObject

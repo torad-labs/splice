@@ -250,6 +250,85 @@ class HeadServerFoldTest {
         ),
     )
 
+    /** DR-7's acceptance rig: a SHORT streamIdle (1s) with generous firstByte and totalCap, so the
+     *  only thing that can fire is the mid-stream idle watchdog. The fold head above cannot express
+     *  this — its 3s idle is longer than the stall is useful for. */
+    private fun stallHead(stallPort: Int): HeadServer = HeadServer(
+        provider = CodexProvider(
+            tuning = ProviderTuning(
+                key = "codex",
+                label = "claudex",
+                catalog = catalog,
+                pinnedModel = "gpt-5.6-luna",
+                auth = FoldFakeAuth(),
+                baseUrl = mock.baseUrl,
+                watchdog = WatchdogBudget(20.seconds, 1.seconds, 60.seconds),
+                loginCommand = "claudex login",
+            ),
+            showReasoning = ReasoningDisplay.TEXT,
+            replayReasoning = false,
+            configEffort = "high",
+            configSummary = "detailed",
+            foldConfig = FoldConfig(models = setOf("gpt-5.6-luna")),
+        ),
+        listenPort = stallPort,
+        deps = HeadDeps(
+            upstream = UpstreamClient(firstByteTimeoutMs = 20_000, totalTimeoutMs = 60_000, maxRetries = 2),
+            inferenceToken = "test-inference-token",
+            gate = InflightGate({ 0 }),
+            shadow = ShadowClassifier(log = {}),
+            compactStats = CompactStats(tmp.resolve("stall-compact.jsonl")),
+            usageStore = UsageStore(tmp.resolve("stall-usage.json"), tmp.resolve("stall-ratelimit.json")),
+            perfStats = PerfStats(tmp.resolve("stall-perf.jsonl")),
+            log = {},
+        ),
+    )
+
+    // DR-7, THE acceptance wall. A round that streams reasoning and then stalls mid-part used to
+    // lose everything: the idle watchdog cancelled the whole turn subtree, ResponsesTerminalDecision
+    // built its Failure with NO partial, and BOTH continuation gates (FoldRounds and
+    // ReanchorContinuation) vetoed unconditionally on watchdogFired. The client got a stalled
+    // terminal and the reasoning it had already been shown was orphaned.
+    //
+    // This drives the REAL production path — HeadServer over HTTP, two upstream POSTs, one client
+    // stream — because the direct-controller version of this test is the fake that let the gap
+    // survive: it proved the controller would continue if asked, while nothing ever asked it.
+    @Test
+    fun `a round stalled mid-reasoning salvages its partial and continues - DR-7`() = runTest {
+        val stallPort = freshPort()
+        val stallServer = stallHead(stallPort)
+        stallServer.start()
+        awaitListening(stallPort)
+        try {
+            val before = mock.upstreamBodies.size
+            val sse = client.post("http://127.0.0.1:$stallPort/v1/messages") {
+                header("Content-Type", "application/json")
+                setBody(
+                    """{"model":"claude-codex--gpt-5.6-luna","stream":true,"max_tokens":8000,
+                        "system":"You are a test. SCENARIO:foldstall",
+                        "messages":[{"role":"user","content":"go"}]}""",
+                )
+            }.bodyAsText()
+            val rounds = mock.upstreamBodies.drop(before)
+
+            assertEquals(2, rounds.size, "the stalled round must be continued, not abandoned: $sse")
+            assertTrue(
+                rounds[1].second.contains("ENC-STALL"),
+                "round 2 must replay the stalled round's reasoning: ${rounds[1].second}",
+            )
+            // the reasoning the client was already shown stays shown, and round 2's answer lands
+            assertTrue(sse.contains("Thinking round one."), "the salvaged reasoning must survive: $sse")
+            assertTrue(sse.contains("FINAL ANSWER"), "the continuation's answer must reach the client: $sse")
+            assertFalse(sse.contains("NEVER REACHES THE CLIENT"), "post-stall bytes must not appear: $sse")
+            // ONE honest terminal, and it is a clean end — not a stalled/cancelled one (L3)
+            assertEquals(1, Regex("event: message_stop").findAll(sse).count(), "exactly one terminal: $sse")
+            assertTrue(sse.contains("\"stop_reason\":\"end_turn\""), "expected a clean end_turn: $sse")
+            assertFalse(sse.contains("stalled ("), "no stall error may reach the client: $sse")
+        } finally {
+            stallServer.stop()
+        }
+    }
+
     @Test
     fun `totalCap reaps a turn stalled BEFORE upstream headers and frees the slot - NF-03`() = runTest {
         // The window launchIn never covered: the mock sleeps 3s before sending response headers,

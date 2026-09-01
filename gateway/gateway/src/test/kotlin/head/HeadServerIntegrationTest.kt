@@ -45,6 +45,7 @@ import splice.spi.InflightGate
 import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
 import java.nio.file.Files
+import java.security.MessageDigest
 import kotlin.time.Duration.Companion.seconds
 
 private class FakeAuth : RefreshableAuthProvider {
@@ -101,11 +102,11 @@ class HeadServerIntegrationTest {
                 upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 2),
                 inferenceToken = "test-inference-token",
                 gate = InflightGate({ 0 }),
-                shadow = ShadowClassifier(log = { logs.add(it) }),
+                shadow = ShadowClassifier(log = { synchronized(logs) { logs.add(it) } }),
                 compactStats = CompactStats(tmp.resolve("compact.jsonl")),
                 usageStore = UsageStore(tmp.resolve("usage.json"), tmp.resolve("ratelimit.json")),
                 perfStats = PerfStats(tmp.resolve("perf.jsonl")),
-                log = { logs.add(it) },
+                log = { synchronized(logs) { logs.add(it) } },
                 maxRequestBytes = 1_024,
             ),
         )
@@ -129,6 +130,19 @@ class HeadServerIntegrationTest {
                     "messages":[{"role":"user","content":"go"}]}""",
             )
         }.bodyAsText()
+
+    // TurnFinish sends the terminal frames FIRST (DR-129) and records perf LAST, so the client's
+    // body completes before this turn's perf line lands in `logs`. Waiting for a line past `from`
+    // reads THIS turn's telemetry instead of whichever earlier turn's line happened to be last —
+    // the read that failed under kover on a slow runner (coverage run 33551147526, 2026-09-01).
+    private fun awaitLog(from: Int, timeoutMs: Long = 5_000, match: (String) -> Boolean): String? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (true) {
+            synchronized(logs) { logs.drop(from).lastOrNull(match) }?.let { return it }
+            if (System.currentTimeMillis() >= deadline) return null
+            Thread.sleep(20)
+        }
+    }
 
     @Test
     fun `health carries version and port`() = runTest {
@@ -195,23 +209,68 @@ class HeadServerIntegrationTest {
         assertTrue(sse.trimEnd().endsWith("event: message_stop\ndata: {\"type\":\"message_stop\"}"))
     }
 
+    // DR-168: nothing asserted the bytes splice actually puts on the upstream wire. codex-splice's
+    // fourth finding, corrected by its own verifier — TurnDrive.bodyJson (assembled in
+    // TurnDriveFactory) was dead: the round loop posts drive.requestBody.toString() (RoundStrategy),
+    // so a row pinning that field would have pinned nothing; it is deleted alongside this arm. The
+    // real gap sat one level down: with SseRoundDriver's live dispatch body mutated to stream:false,
+    // every dialect contract suite, this whole suite and the provider-spi transport suites stayed
+    // GREEN. This arm reads the request the mock DECODED off the socket
+    // (MockChatGptUpstream.upstreamBodies — zstd-inflated, exactly what the ChatGPT backend would
+    // parse) and compares the WHOLE body to the canonical production bytes of a "basic" codex turn.
+    // Pinned as literal bytes on purpose: the closed ResponsesRequest DTO makes field order =
+    // declaration order, so a reordered field, a dropped `stream:true`, or a Chat-only knob leaking
+    // in all go RED here. Update the pin only after reading the diff.
+    @Test
+    fun `upstream wire body is the canonical Responses request, byte for byte (DR-168)`() = runTest {
+        val before = mock.upstreamBodies.size
+        messages("basic")
+        val captured = mock.upstreamBodies.drop(before)
+        assertEquals(1, captured.size, "one basic turn is exactly one upstream POST, got: $captured")
+        val (scenario, body) = captured.single()
+        assertEquals("basic", scenario)
+        assertTrue(body.contains("\"stream\":true"), "the upstream body must ask for a stream: $body")
+        // One wire field per line for the reader; joined back to the single line the socket carried
+        // before comparing. prompt_cache_key/thread_id are "splice-" + sha256(user content)[:32] — a
+        // pure function of the request, so the pin holds across processes; derived here (not pasted)
+        // because the 32-hex literal trips the repo's secret scan by entropy alone.
+        val cacheKey = "splice-" + MessageDigest.getInstance("SHA-256").digest("go".toByteArray())
+            .joinToString("") { "%02x".format(it) }.take(CACHE_KEY_HEX)
+        val expected = """
+            |{"model":"gpt-5.6-sol",
+            |"input":[{"role":"developer","content":"You are a test. SCENARIO:basic"},{"role":"user","content":"go"}],
+            |"store":false,
+            |"stream":true,
+            |"include":["reasoning.encrypted_content"],
+            |"prompt_cache_key":"$cacheKey",
+            |"instructions":"",
+            |"parallel_tool_calls":false,
+            |"reasoning":{"effort":"high","summary":"detailed","context":"all_turns"},
+            |"text":{"verbosity":"low"},
+            |"client_metadata":{"client":"splice","thread_id":"$cacheKey"},
+            |"stream_options":{"reasoning_summary_delivery":"sequential_cutoff"}}
+        """.trimMargin().lines().joinToString("")
+        assertEquals(expected, body)
+    }
+
     @Test
     fun `malformed SSE frame is skipped with FRAMES_SKIPPED telemetry and one snippet log`() = runTest {
         val before = logs.size
         val sse = messages("malformed_sse")
         assertTrue(sse.contains("\"stop_reason\":\"end_turn\""))
-        val scoped = logs.drop(before)
+        val perfLine = awaitLog(before) { it.contains("] perf outcome=ok") }
+        val scoped = synchronized(logs) { logs.drop(before) }
         val malformedLines = scoped.filter { it.contains("malformed SSE frame skipped: {not-json}") }
         assertEquals(1, malformedLines.size, "expected exactly one malformed-frame log line, got: $scoped")
-        val perfLine = scoped.lastOrNull { it.contains("] perf outcome=ok") }
         assertTrue(perfLine != null, "expected a perf line in the log, got: $scoped")
         assertTrue(perfLine!!.contains("frames_skipped=1"), "expected frames_skipped=1 in: $perfLine")
     }
 
     @Test
     fun `turn records perf telemetry - log line and JSONL row with pipeline marks`() = runTest {
+        val before = logs.size
         messages("basic")
-        val perfLine = logs.lastOrNull { it.contains("] perf outcome=ok") }
+        val perfLine = awaitLog(before) { it.contains("] perf outcome=ok") }
         assertTrue(perfLine != null, "expected a perf line in the log, got: $logs")
         val expectedFields = listOf(
             "recv=", "parse=", "build=", "gate=", "headers=", "first_byte=",
@@ -235,10 +294,10 @@ class HeadServerIntegrationTest {
     }
 
     @Test
-    fun `multipart reasoning mirrors into a visible text block`() = runTest {
+    fun `multipart reasoning stays native and is never mirrored into transcript text`() = runTest {
         val sse = messages("multipart")
         assertTrue(sse.contains("thinking_delta"))
-        assertTrue(sse.contains("[reasoning summary]")) // the L2 mirror
+        assertFalse(sse.contains("[reasoning summary]"), sse)
         assertTrue(sse.contains("Answer text."))
     }
 
@@ -405,3 +464,6 @@ class HeadServerIntegrationTest {
         assertTrue(body.contains("invalid request body"))
     }
 }
+
+// The 32 hex chars the gateway keeps of the sha256 for prompt_cache_key / thread_id.
+private const val CACHE_KEY_HEX = 32

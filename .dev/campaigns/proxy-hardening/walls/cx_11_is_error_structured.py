@@ -40,7 +40,7 @@ from collections.abc import Mapping
 ROOT = pathlib.Path(__file__).resolve().parents[4]
 
 PATHS = {
-    "wire": "gateway/core/src/main/kotlin/splice/core/wire/AnthropicRequest.kt",
+    "wire": "gateway/core/src/main/kotlin/splice/core/wire/ContentBlock.kt",
     "guard": "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/LoopGuard.kt",
 }
 

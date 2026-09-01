@@ -6,13 +6,48 @@
 package splice.gateway.wire
 
 /**
+ * Writes one SSE frame's bytes to the client socket, unbuffered by us.
+ *
+ * The RAW half of the pair: it does not flush, so a frame written and not flushed is a frame the
+ * user cannot see. That is the lull bug this file's rename exists to warn about, and it is why the
+ * write and the flush are two named ports rather than one `emit` — [ImmediateSseWriter] is the only
+ * thing entitled to pair them, and it always does.
+ */
+public fun interface RawSseWrite {
+    public operator fun invoke(frame: String)
+}
+
+/**
+ * Pushes whatever the underlying writer is holding out to the client.
+ *
+ * Idempotent and cheap by contract: [ImmediateSseWriter.flush] is called again from the head's
+ * finally block on abandon and exception paths, after every frame has already flushed itself.
+ */
+public fun interface RawSseFlush {
+    public operator fun invoke()
+}
+
+/**
+ * Writes one already-serialized frame to the client.
+ *
+ * Suspending, which is the contract that matters: the write can back-pressure on the client socket,
+ * and a failure out of it is how the head learns the client is gone. [splice.gateway.wire.SseEmitter]
+ * is a strict frame-level user of it — it never batches, and every frame it hands over is complete.
+ * The third rung of this file's write-port ladder: FrameWrite -> ImmediateSseWriter.write ->
+ * RawSseWrite + RawSseFlush.
+ */
+public fun interface FrameWrite {
+    public suspend operator fun invoke(frame: String)
+}
+
+/**
  * Wraps a raw SSE [writeRaw]/[flushRaw] pair. Every frame is written AND flushed immediately.
  * [flush] stays public for the head's finally-block (abandon / exception paths); it is a plain
  * push of the underlying writer and safe to call after every frame already flushed.
  */
 public class ImmediateSseWriter(
-    private val writeRaw: (String) -> Unit,
-    private val flushRaw: () -> Unit,
+    private val writeRaw: RawSseWrite,
+    private val flushRaw: RawSseFlush,
 ) {
     public fun write(frame: String) {
         writeRaw(frame)

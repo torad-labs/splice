@@ -1,0 +1,58 @@
+# Locality discipline — a function's receiver must be visible in its signature, not implied by where
+# it happens to be written. An extension DECLARATION hides the thing it operates on: the body reads
+# `put(key, value)` / `this.forEach { }` with no local statement of what `this` is, and the same name
+# can resolve to a member, an import, or a file-private extension depending on scope. Extensions on
+# FOREIGN receivers (kotlinx `JsonObjectBuilder`/`JsonElement`, `StringBuilder`, ktor
+# `HttpRequestBuilder`, `FlowCollector`) are the worst case: they read like vendor API but are ours,
+# so a reader cannot tell whose contract a call site is bound by.
+#
+# Two compliant forms, chosen by who owns the receiver:
+#   - a type THIS repo owns -> make it a MEMBER of that type. `daemon.putFoldOverrides(out)` in
+#     core/topology/Topology.kt is the pattern: same name, byte-identical call site.
+#   - a FOREIGN type -> the receiver becomes the FIRST PARAMETER of a method on the owning class or
+#     object, keeping the old name. This is the `JsonScalars` shape core/util already established
+#     (`el.str()` became `JsonScalars.str(el)`) and what HD-20 applied to 26 declarations.
+# CALLING third-party extensions (`Flow.stateIn`, `JsonObjectBuilder.put`, `String.orEmpty`) is
+# untouched — this matches DECLARATIONS only.
+#
+# PROMOTED 2026-08-17 (HD-20) from the dormant .rules/kotlin/ast-grep pack, which was wired to
+# nothing and so had never run. 28 violations at census, 26 fixed, 2 carved out (below).
+#
+# MATCHER STRENGTHENED at promotion. The source rule was `kind: function_declaration` plus a regex
+# enumerating modifier keywords, a generic-parameter clause, a dotted receiver and an opening paren —
+# a spelling census that a `context(...)` clause, an unlisted modifier, an annotation on the same
+# line or a line-wrapped receiver would each walk straight through. The Kotlin grammar names the
+# thing directly: `function_declaration` has a `receiver:` FIELD holding a `receiver_type` node,
+# present if and only if the declaration is an extension. Matching the field is exact where the
+# regex was approximate. Both matchers agreed at 28 on the pre-HD-20 tree, so the strengthening
+# changed no census number here; it removes a class of future blindness, not a current finding.
+#
+# CARVE-OUT — `override`. Two declarations in gateway/fir-checks CANNOT be written any other way:
+# the Kotlin compiler plugin API declares
+#   `abstract fun ExtensionStorage.registerExtensions(configuration: CompilerConfiguration)`
+#   `protected abstract fun ExtensionRegistrarContext.configurePlugin()`
+# (verified against kotlin-compiler-embeddable 2.4.0 with javap). An override must match the
+# supertype's receiver shape, so there is no compliant spelling — a rule that fired on them would be
+# demanding the impossible, which is how walls get suppressed instead of obeyed. This is NOT a
+# general escape hatch: a supertype declared IN THIS REPO would itself be a `function_declaration`
+# with a `receiver:` field and is still caught at its own declaration site, so `override` can only
+# excuse an extension whose contract a foreign library owns.
+id: kt-no-extension-functions
+language: kotlin
+severity: error
+message: "No extension declarations — put the receiver in the signature. A type we own takes it as a MEMBER; a foreign type takes it as the FIRST PARAMETER (the JsonScalars shape)."
+note: "Keep the function's NAME identical so the diff reads as a receiver insertion. Calling third-party extensions is fine — only declarations match. `override` of a foreign abstract extension member is exempt (no compliant spelling exists); a supertype declared here is caught at its own declaration."
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  kind: function_declaration
+  # the grammar's own name for "this declaration is an extension" — present iff there is a receiver.
+  has:
+    field: receiver
+    kind: receiver_type
+  not:
+    has:
+      kind: modifiers
+      has:
+        kind: member_modifier
+        regex: "^override$"

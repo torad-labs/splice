@@ -17,6 +17,7 @@ show_reasoning = "text"      # "text" | "thinking" | "off"  — stream thinking 
 summary        = "detailed"  # "detailed" | "concise" | "auto" | "none"
 # effort       = "high"      # optional; omit → high (Grok floors invalid values to low)
 replay_reasoning = false     # NEVER turn on lightly: replaying prior opaque encrypted reasoning items thins fresh reasoning
+mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtime PATCH cannot enable transcript mirrors
 
 # ── EXPERIMENTAL OPT-IN: ChatGPT Codex subscription via OAuth ─────────────────
 [providers.codex]
@@ -150,16 +151,37 @@ base_url = "https://api.kimi.com/coding"
 # third-party integration. kimi-code.json is password-equivalent; splice reads AND refreshes it in place.
 # Documented alternative: a Moonshot API key (kind = "api-key", env = "MOONSHOT_API_KEY").
 auth = { kind = "kimi-oauth", file = "~/.kimi/credentials/kimi-code.json" }
+# The anthropic-passthrough dialect forwards the client's bytes FAITHFULLY by default; each knob
+# below opts into one deformation Kimi's /coding surface requires. They were hardcoded while Kimi
+# was the dialect's only consumer — declaring them here is what lets an api.anthropic.com-shaped
+# vendor share the dialect without inheriting Moonshot's wire (see the [providers.anthropic] entry).
+#   mfjs                  — rewrite tool input_schema into Moonshot-Flavored JSON Schema (drops
+#                           format, prefix-item schemas, $ref siblings; collapses tuple items)
+#   block_allowlist       — Kimi's own 400 enumerates these tags; every other block is DROPPED
+#   strip_cache_control   — Kimi rejects cache_control markers (no prompt caching to lose here)
+#   synthesize_signatures — Kimi never signs thinking blocks and Claude Code discards unsigned ones
+#   map_thinking_adaptive — Kimi takes adaptive thinking + output_config.effort, not budget_tokens
+quirks = { mfjs = true, strip_cache_control = true, synthesize_signatures = true, map_thinking_adaptive = true, block_allowlist = ["text", "image", "thinking", "tool_use", "tool_result", "server_tool_use", "web_search_tool_result"] }
+# Static vendor headers, pure TOML. Kimi's /coding endpoint 403s unrecognized user agents (this
+# exact UA is proven-accepted), and the Anthropic wire needs its version header on every request.
+# `Accept` and the X-Msh-* device identity stay in code: one is a dialect invariant, the other is
+# COMPUTED per install rather than declared.
+extra_headers = { anthropic-version = "2023-06-01", User-Agent = "KimiCLI/1.5" }
 # Window lookups happen on the STRIPPED id ("k3"), while the picker entry below keeps the "[1m]"
 # hint — this exact-match row keeps K3's 1M window independent of model-list order.
 [[providers.kimi.extra_windows]]
 id = "k3"
-context_window = 1048576
+# EXACTLY 1e6, matching the k3[1m] row below — see the note there.
+context_window = 1000000
 [[providers.kimi.models]]
 id = "k3[1m]"                  # sent upstream as bare `k3`; [1m] is a display/context-tier hint
 label = "Kimi K3 (1M)"
 description = "1M context needs the Allegretto plan or higher — Moderato serves 256K."
-context_window = 1048576
+# EXACTLY 1e6, NOT 1024*1024. Claude Code hardcodes 1e6 for any id matching /\[1m\]/i and never
+# reads this number, so declaring 1048576 asks ModelCatalog.usageScale to correct a 4.6% gap that
+# is pure notation. This row is ALSO this head's pinned_model, so that scale would ride every
+# default turn, compacting ~4.6% late with nothing logging the factor. A "[1m]" row declares 1000000.
+context_window = 1000000
 [[providers.kimi.models]]
 id = "kimi-for-coding"
 label = "Kimi K2.7 Code"
@@ -171,22 +193,39 @@ context_window = 262144
 
 # ── heads: each is a Claude Code wrapper on its own loopback port ───────────────
 # `command` names the installed wrapper (`splice install` links ~/.local/bin/<command>).
+# `models` is this process's ordered provider-model allowlist. An explicit `context_window` forces
+# one window onto every selected row; omit it when their real backend ceilings differ. The pinned
+# row sets CLAUDE_CODE_MAX_CONTEXT_TOKENS, and usage scaling makes every other row compact at its
+# own declared window while switching live through /model.
 [claude]                       # global config-sharing policy for every wrapper
-share = ["settings", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE.md", "mcps"]
+# `sessions` shares the cross-session-messaging peer registry, so sessions on ANY head (and plain
+# `claude`) can see and message each other; drop it (or isolate it per head) to wall a head off.
+share = ["settings", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE.md", "mcps", "sessions"]
 
 [heads.claudex]
 provider = "codex"
 port = 3099
 discovery_prefix = "claude-codex--"
 pinned_model = "gpt-5.6-sol"
+# slot = the Claude Code tier alias this row answers (opus/sonnet/haiku/fable). A tier NO row
+# declares is not emitted at launch, so Claude Code requests using its built-in Anthropic ids —
+# background titling/summarization, `--model haiku` — get a clean pre-upstream 400 on this head
+# (no quota burned; the main turn is unaffected). Declare a row per tier you want served; never
+# point two tiers at one id to silence this — one honest 400 beats a duplicated picker row.
+models = [{ id = "gpt-5.6-sol", slot = "opus" }, { id = "gpt-5.6-terra", slot = "sonnet" }, { id = "gpt-5.6-luna", slot = "haiku" }]
+context_window = 400000
 [heads.claudex.claude]
 command = "claudex"
 
+# grok-build is the genuine fast tier (256k coder model) — declared as haiku below so background
+# titling and `--model haiku` stay served on this head. No fable analog exists: fable stays
+# undeclared and 400s cleanly (see the slot note on [heads.claudex]).
 [heads.claude-grok]
 provider = "xai"
 port = 3100
 discovery_prefix = "claude-grok--"
 pinned_model = "grok-4.6"
+models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }, { id = "grok-build-latest", slot = "haiku" }]
 [heads.claude-grok.claude]
 command = "claude-grok"
 isolate = ["commands"]         # this head gets its own commands/, everything else shared
@@ -196,6 +235,10 @@ provider = "openrouter"
 port = 3101
 discovery_prefix = "claude-openrouter--"
 pinned_model = "meta-llama/llama-4-maverick"
+# opus-only on purpose: undeclared tiers (sonnet/haiku/fable) 400 cleanly pre-upstream — the
+# slot note on [heads.claudex] explains what degrades (background titling, `--model haiku`).
+models = [{ id = "meta-llama/llama-4-maverick", slot = "opus" }]
+context_window = 1048576
 [heads.openrouter.claude]
 command = "claude-openrouter"
 
@@ -204,6 +247,9 @@ provider = "fireworks"
 port = 3103
 discovery_prefix = "claude-fireworks--"
 pinned_model = "accounts/fireworks/models/llama-v3p1-70b-instruct"
+# opus-only on purpose — same degradation note as [heads.openrouter].
+models = [{ id = "accounts/fireworks/models/llama-v3p1-70b-instruct", slot = "opus" }]
+context_window = 131072
 [heads.fireworks.claude]
 command = "claudefw"
 
@@ -212,6 +258,9 @@ provider = "kimi"
 port = 3102
 discovery_prefix = "claude-kimi--"
 pinned_model = "k3[1m]"
+# opus-only on purpose (one upstream model) — same degradation note as [heads.openrouter].
+models = [{ id = "k3[1m]", slot = "opus" }]
+context_window = 1000000
 [heads.claude-kimi.claude]
 command = "claude-kimi"
 # PER-HEAD KNOBS. Keys are the knob names from ConfigService's Knob enum (maxInflight, maxQueued,
@@ -232,3 +281,54 @@ maxInflight = "8"
 # kimi K3 reasons 10-20 min; keep the long cap HERE instead of [defaults], where it also handed
 # codex and grok a 40-min ceiling (a wedged turn holds its inflight slot for the whole budget).
 upstreamTimeoutMs = "2400000"
+
+# ── Claude on the CLIENT's OWN login (the "no shortcuts" head) ───────────────────
+# The only head whose upstream is Anthropic itself, and the only one where splice holds NO
+# credential: `kind = "client"` forwards the caller's own Authorization / x-api-key /
+# anthropic-version / anthropic-beta upstream and keeps Claude Code's native auth lifecycle —
+# credentials, keychain, refresh and /login all stay the client's. Nothing to sign into here,
+# nothing for splice to rotate, and no vendor OAuth reimplemented.
+#
+# It exists so a Claude session gets the same gateway machinery every other head has — unified
+# usage/telemetry, per-head knobs, the model picker, the dashboard — without changing how it
+# authenticates. Two consequences worth knowing:
+#   · this head's port does NOT enforce the local gateway credential (there is none to protect:
+#     a caller that forwards no valid Anthropic auth simply gets Anthropic's own 401). It is
+#     loopback-only, like every head.
+#   · being a faithful passthrough, it declares no quirks at all — cache_control markers, full
+#     JSON Schema tool definitions and native thinking blocks all reach Anthropic untouched.
+[providers.anthropic]
+dialect = "anthropic-passthrough"
+base_url = "https://api.anthropic.com"
+auth = { kind = "client" }
+# A DEFAULT: whatever the client sends wins. Present so a caller that omits the header still
+# produces a valid Anthropic request.
+extra_headers = { anthropic-version = "2023-06-01" }
+[[providers.anthropic.models]]
+id = "claude-fable-5"
+label = "Claude Fable 5"
+context_window = 200000
+[[providers.anthropic.models]]
+id = "claude-opus-5"
+label = "Claude Opus 5"
+context_window = 200000
+[[providers.anthropic.models]]
+id = "claude-sonnet-5"
+label = "Claude Sonnet 5"
+context_window = 200000
+[[providers.anthropic.models]]
+id = "claude-haiku-4-5"
+label = "Claude Haiku 4.5"
+context_window = 200000
+
+[heads.claude-splice]
+provider = "anthropic"
+port = 3104                    # 3103 is fireworks above
+discovery_prefix = "claude-splice--"
+pinned_model = "claude-fable-5"
+models = [{ id = "claude-fable-5", slot = "fable" }, { id = "claude-opus-5", slot = "opus" }, { id = "claude-sonnet-5", slot = "sonnet" }, { id = "claude-haiku-4-5", slot = "haiku" }]
+context_window = 200000
+[heads.claude-splice.claude]
+# MUST NOT be `claude`: that is the real binary this head launches, and shadowing it on PATH
+# would make the wrapper invoke itself.
+command = "claude-splice"

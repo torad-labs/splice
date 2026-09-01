@@ -25,9 +25,10 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import splice.app.Daemon
+import splice.app.DaemonBoundary
 import splice.app.DaemonLock
+import splice.app.DashboardHtml
 import splice.app.TopologyLoader
-import splice.app.runCatchingDaemonBoundary
 import splice.core.auth.RefreshAttempt
 import splice.core.config.MgmtKey
 import splice.core.config.StatePaths
@@ -37,6 +38,8 @@ import java.util.concurrent.CancellationException
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class DaemonTest {
+
+    private val boundary = DaemonBoundary()
 
     private val mock = MockChatGptUpstream()
     private val client = HttpClient(CIO)
@@ -133,6 +136,7 @@ class DaemonTest {
         assertTrue(sse.contains("event: message_stop"))
         // the account-id header + bearer reached the upstream
         assertTrue(mock.upstreamAuths.any { it.second == "Bearer tok-1" })
+        assertEquals("basic" to "acct-1", mock.upstreamAccountIds.last())
     }
 
     @Test
@@ -249,7 +253,7 @@ class DaemonTest {
         val tmp = Files.createTempDirectory("dashboard-loader")
         val dist = tmp.resolve("index.html")
         var packagedReads = 0
-        val dashboard = Daemon.dashboardFrom(dist) {
+        val dashboard = DashboardHtml().source(dist) {
             packagedReads += 1
             "<html>packaged</html>"
         }
@@ -264,20 +268,20 @@ class DaemonTest {
 
     @Test
     fun `daemon isolation catches expected startup failures`() {
-        assertTrue(runCatchingDaemonBoundary { throw IllegalStateException("bad head") }.isFailure)
+        assertTrue(boundary.runCatchingDaemonBoundary { throw IllegalStateException("bad head") }.isFailure)
     }
 
     @Test
     fun `daemon isolation never catches cancellation`() {
         assertThrows(CancellationException::class.java) {
-            runCatchingDaemonBoundary { throw CancellationException("cancelled") }
+            boundary.runCatchingDaemonBoundary { throw CancellationException("cancelled") }
         }
     }
 
     @Test
     fun `daemon isolation never catches fatal errors`() {
         assertThrows(OutOfMemoryError::class.java) {
-            runCatchingDaemonBoundary { throw OutOfMemoryError("fatal") }
+            boundary.runCatchingDaemonBoundary { throw OutOfMemoryError("fatal") }
         }
     }
 }

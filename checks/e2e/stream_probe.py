@@ -17,6 +17,7 @@ Stdlib only — no dependencies.
 import argparse
 import http.client
 import json
+import os
 import sys
 import time
 
@@ -92,9 +93,12 @@ def validate(events, comments, chunks_with_events, args, timings):
         v.append(f"first substantive event is {non_ping[0] if non_ping else 'absent'}, not message_start")
     if names.count("message_start") != 1:
         v.append(f"message_start count = {names.count('message_start')} (want exactly 1)")
-    if "message_stop" not in names:
+    stop_count = names.count("message_stop")
+    if stop_count == 0:
         v.append("no message_stop — stream did not end cleanly")
-    elif names[-1] != "message_stop":
+    elif stop_count != 1:
+        v.append(f"message_stop count = {stop_count} (want exactly 1)")
+    if stop_count and names[-1] != "message_stop":
         v.append(f"events AFTER message_stop: {names[names.index('message_stop') + 1:]}")
 
     open_blocks, pairing_ok = set(), True
@@ -142,9 +146,20 @@ def main():
         "max_tokens": args.max_tokens,
         "messages": [{"role": "user", "content": args.prompt}],
     })
+    # Every head route sits behind authorize(), so the probe must present a credential exactly as a
+    # real client does; without one the head answers 401 and the probe reports "no SSE events" for
+    # what is really a missing header. WHICH credential is the caller's decision, not this script's,
+    # and the distinction is a safety boundary rather than a preference: on a splice-credentialed
+    # head this is the daemon's mgmt key, but on a CLIENT-auth head the gateway forwards this exact
+    # header verbatim to the vendor, so the mgmt key must never be what lands here. heads-e2e.sh
+    # (probe_bearer) owns that choice and hands the result down in SPLICE_PROBE_BEARER.
+    headers = {"Content-Type": "application/json"}
+    bearer = os.environ.get("SPLICE_PROBE_BEARER", "")
+    if bearer:
+        headers["Authorization"] = f"Bearer {bearer}"
     conn = http.client.HTTPConnection("127.0.0.1", args.port, timeout=60)
     t0 = time.monotonic()
-    conn.request("POST", "/v1/messages", body=body, headers={"Content-Type": "application/json"})
+    conn.request("POST", "/v1/messages", body=body, headers=headers)
     resp = conn.getresponse()
     ttfb_ms = int((time.monotonic() - t0) * 1000)
 
@@ -161,8 +176,6 @@ def main():
         before = len(col.events)
         col.feed(t_ms, chunk.decode("utf-8", errors="replace"))
         event_times.extend(t for t, _, _ in col.events[before:])
-        if col.events and col.events[-1][1] == "message_stop":
-            break
     conn.close()
 
     total_ms = event_times[-1] if event_times else int((time.monotonic() - t0) * 1000)

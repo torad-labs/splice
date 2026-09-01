@@ -31,7 +31,7 @@ public interface WsRoundRunner {
         meta: TurnMeta,
         turnHeaders: Map<String, String>,
         creds: Credentials,
-    ): Flow<JsonObject>?
+    ): WsRound?
 
     /** True when [event] ends the round in FAILURE. The head uses this to bail to SSE while the
      *  client has still seen nothing, so an upstream error keeps SSE's retry/refresh/cooldown
@@ -48,6 +48,41 @@ public interface WsRoundRunner {
      *  be dropped — a chain anchored before a turn the server never saw would make the next delta
      *  omit that turn entirely. */
     public fun roundBypassed(meta: TurnMeta)
+}
+
+/**
+ * One accepted round: its events, and the one operation the head needs on it besides collecting.
+ *
+ * [abort] tears down THIS round's event source so a stalled round can be reaped without taking the
+ * turn down with it (DR-7). It must make [events] fail with an **IOException**, not cancel a
+ * coroutine: a torn read is something every stream translator already folds into an honest
+ * terminal, so the round's partial survives and the fold loop can continue from it, whereas
+ * cancelling the collector takes the translator down with the round and the salvage dies with it.
+ * The SSE path reaps exactly this way, by cancelling the response body.
+ *
+ * WHY THE ABORT RIDES THE ROUND instead of being a method keyed by [TurnMeta], which is what this
+ * seam was first widened to: the head has no name for a round that is precise enough. The chaining
+ * identity is (session, conversation), but a CONNECTION is identified by that plus the model and a
+ * digest of the per-turn headers — deliberately, since a compact turn needs a socket opened without
+ * the lite marker — so one conversation can legitimately hold two live rounds on two sockets, and a
+ * registry keyed by chain would abort the wrong one (grok-splice, before it shipped). The head
+ * cannot recompute the connection key either; the headers are not on the meta. Closing over the
+ * round removes the identity question rather than answering it, which is also exactly what the SSE
+ * path does with its response body.
+ *
+ * It may fire LATE, after the round has ended, because the signal and the round's own completion
+ * race by construction. An implementation must make that a no-op — see the lease check in the
+ * Responses runner for why "has this round finished" is not the same question as "is this
+ * connection idle".
+ */
+public data class WsRound(
+    public val events: Flow<JsonObject>,
+    public val abort: WsRoundAbort,
+)
+
+/** [WsRound.abort]'s one operation, as an interface rather than a function type (kt-no-lambda-seam). */
+public fun interface WsRoundAbort {
+    public fun abort()
 }
 
 /** Thrown by the head when a WS round failed BEFORE the client saw any content, so the round is

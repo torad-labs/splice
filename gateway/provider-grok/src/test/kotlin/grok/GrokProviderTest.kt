@@ -31,7 +31,7 @@ import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
 import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
-import splice.core.parse.parseAnthropicBody
+import splice.core.parse.AnthropicParse
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
 import splice.gateway.compact.CompactStats
@@ -48,6 +48,7 @@ import splice.spi.ProviderTuning
 import splice.spi.UpstreamClient
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 import kotlin.time.Duration.Companion.seconds
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -139,13 +140,14 @@ class GrokProviderTest {
         assertTrue(sse.contains("event: message_stop"))
         // the OAuth access token rode as the bearer (no ChatGPT-Account-ID header — grok has none)
         assertTrue(mock.upstreamAuths.any { it.second == "Bearer xai-access-token-abc" })
+        assertEquals("basic" to null, mock.upstreamAccountIds.last())
         // session-id cache key in the body
         assertTrue(mock.upstreamBodies.last().second.contains("claude-grok:sess-xyz"))
     }
 
     @Test
     fun `grok quirks - xhigh passes through (upstream clamps pre-4_6), detailed summary, session cache key`() = runBlocking {
-        val parsed = parseAnthropicBody(
+        val parsed = AnthropicParse.parseAnthropicBody(
             """{"model":"grok-4.5","effort":"xhigh","messages":[{"role":"user","content":"first"}]}""",
         )
         val grokProvider = provider(oauthAuth(Files.createTempDirectory("q")))
@@ -170,7 +172,7 @@ class GrokProviderTest {
     fun `conv-id affinity rides the per-turn BuiltTurn, never shared provider state`() {
         // A @Volatile lastSessionId raced concurrent sessions into each other's affinity header
         // (audit 2026-07-18) — the header now travels with the turn it belongs to.
-        val parsed = parseAnthropicBody(
+        val parsed = AnthropicParse.parseAnthropicBody(
             """{"model":"grok-4.5","messages":[{"role":"user","content":"hi"}]}""",
         )
         val grokProvider = provider(oauthAuth(Files.createTempDirectory("hdr")))
@@ -211,5 +213,41 @@ class GrokProviderTest {
     @Test
     fun `health carries the grok port`(): Unit = runBlocking {
         assertTrue(client.get("http://127.0.0.1:$port/health").bodyAsText().contains("\"port\":$port"))
+    }
+
+    // DR-59 (class law): an INACCESSIBLE auth file is not a logged-out state — the old exists()
+    // pre-gate flattened it to "no credential file — not logged in" while intact tokens sat
+    // unreadable one chmod away. ReadFailed's flatten line says NOT-logged-out.
+    @Test
+    fun `an inaccessible auth file is read-failed, never logged-out - DR-59`(): Unit = runBlocking {
+        val dir = Files.createTempDirectory("grok-dr59")
+        val lockedDir = Files.createDirectories(dir.resolve("locked"))
+        val lockedAuth = lockedDir.resolve("auth.json")
+        Files.writeString(lockedAuth, """{"tokens":{"access_token":"tok"},"expires":1}""")
+        val drLog = mutableListOf<String>()
+        val deniedAuth = GrokAuthProvider(
+            authPath = lockedAuth,
+            refreshCall = { RefreshAttempt.Denied("must-not-be-reached") },
+            log = splice.core.util.LogSink { drLog += it },
+        )
+        Files.setPosixFilePermissions(lockedDir, PosixFilePermissions.fromString("---------"))
+        try {
+            assertNull(deniedAuth.refresh())
+        } finally {
+            Files.setPosixFilePermissions(lockedDir, PosixFilePermissions.fromString("rwx------"))
+        }
+        assertTrue(drLog.any { it.contains("NOT a logged-out state") }, "ReadFailed story required: $drLog")
+        assertTrue(drLog.none { it.contains("not logged in") }, "must never claim logged-out: $drLog")
+
+        // True-absence control (codex/kimi sibling parity): a genuinely missing file IS the
+        // logged-out state, and must never borrow the read-failure wording.
+        Files.delete(lockedAuth)
+        drLog.clear()
+        assertNull(deniedAuth.refresh())
+        assertTrue(
+            drLog.any { it.contains("no credential file — not logged in") },
+            "true absence stays honest: $drLog",
+        )
+        assertTrue(drLog.none { it.contains("NOT a logged-out state") }, "absence is not a read failure: $drLog")
     }
 }

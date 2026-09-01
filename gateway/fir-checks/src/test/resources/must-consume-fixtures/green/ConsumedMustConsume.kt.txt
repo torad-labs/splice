@@ -85,3 +85,29 @@ fun consumedLambdaTail(): Int {
 fun unitLambdaTail(items: List<Int>) {
     items.forEach { produce() }
 }
+
+// DR-116 additions: consumed transparent wrappers stay green, and a bare `is` test is the
+// deliberate conservative case — the type test CONSUMES the value into a Boolean, and the
+// discarded Boolean is not @MustConsume, so the checker must not fire (never a false positive).
+@MustConsume
+fun produceAny(): Any = 1
+
+fun consumedCast(): Int {
+    val c = produceAny() as Int
+    return c
+}
+
+fun consumedSafeCast(): Int? {
+    val s = produceAny() as? Int
+    return s
+}
+
+fun consumedBangBang(): Int {
+    val b = produceOrNull()!!
+    return b
+}
+
+fun bareIsCheckStaysGreen(): Boolean {
+    produce() is Int
+    return true
+}

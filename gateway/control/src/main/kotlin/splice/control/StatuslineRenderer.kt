@@ -13,13 +13,24 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
 import splice.core.usage.RateLimitState
-import splice.core.usage.computeUsageWarn
+import splice.core.usage.UsageWarnPolicy
+import splice.core.util.JsonScalars
+import splice.core.util.WallClock
 import java.util.concurrent.TimeUnit
 
 public class StatuslineRenderer(
     private val label: String,
     extraGitRoots: List<String> = emptyList(),
+    /** Clock seam: the branch-cache TTL test was a wall-clock race (two real git round-trips inside
+     *  a 2s window flake on a loaded runner) — injected time makes expiry deterministic (DR-22c). */
+    private val now: WallClock = WallClock(System::currentTimeMillis),
+    /** Branch-lookup seam (DR-22 redo): the real git subprocess in production; a test injects a
+     *  latched lookup so the concurrent late-publish race is deterministic instead of timing-dependent. */
+    branchLookup: GitBranchReader? = null,
 ) {
+    // Resolved in the body (not a ctor default) so the real lookup can reference the member gitBranch.
+    private val branchLookup: GitBranchReader = branchLookup ?: GitBranchReader { cwd -> gitBranch(cwd) }
+
     // Operator-trusted roots beyond $HOME//tmp for the git-branch lookup (statuslineGitRoots
     // knob / CLAUDEX_STATUSLINE_GIT_ROOTS) — devcontainer /workspace, /srv layouts. Normalized once.
     private val extraGitRoots: List<java.nio.file.Path> = extraGitRoots.mapNotNull { root ->
@@ -37,6 +48,14 @@ public class StatuslineRenderer(
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    private val blob = StatuslineJson()
+    private val branchCacheLock = Any()
+    private val branchCache = LinkedHashMap<String, CachedBranch>(
+        GIT_CACHE_INITIAL_CAPACITY,
+        GIT_CACHE_LOAD_FACTOR,
+        true,
+    )
+
     public fun render(stdinJson: String, usage: HeadUsageSource?, warnPct: Int, warnTokens5h: Long): String {
         val root = runCatching { json.parseToJsonElement(stdinJson).jsonObject }.getOrNull() ?: return dim(label)
         val segments = listOfNotNull(
@@ -50,16 +69,16 @@ public class StatuslineRenderer(
     }
 
     private fun modelSegment(root: JsonObject): String? {
-        val model = obj(root, "model") ?: return null
-        val name = str(model["display_name"]) ?: str(model["id"]) ?: return null
+        val model = blob.obj(root, "model") ?: return null
+        val name = blob.str(model["display_name"]) ?: blob.str(model["id"]) ?: return null
         return "$BOLD$CYAN●$RESET $BOLD$name$RESET"
     }
 
     private fun contextSegment(root: JsonObject): String? {
-        val cw = obj(root, "context_window") ?: return null
-        val size = num(cw["context_window_size"]) ?: 0
+        val cw = blob.obj(root, "context_window") ?: return null
+        val size = blob.num(cw["context_window_size"]) ?: 0
         val used = usedTokens(cw)
-        val pct = num(cw["used_percentage"])?.toInt() ?: if (size > 0) (used * PERCENT / size).toInt() else 0
+        val pct = blob.num(cw["used_percentage"])?.toInt() ?: if (size > 0) (used * PERCENT / size).toInt() else 0
         val color = when {
             pct >= CTX_CRITICAL_PCT -> RED
             pct >= CTX_WARN_PCT -> YELLOW
@@ -70,14 +89,14 @@ public class StatuslineRenderer(
     }
 
     private fun cacheSegment(root: JsonObject): String? {
-        val cu = obj(obj(root, "context_window"), "current_usage") ?: return null
+        val cu = blob.obj(blob.obj(root, "context_window"), "current_usage") ?: return null
         val hit = cacheHitPct(cu) ?: return null
         return "${cacheColor(hit)}⚡ $hit%$RESET"
     }
 
     private fun cacheHitPct(cu: JsonObject): Int? {
-        val read = num(cu["cache_read_input_tokens"]) ?: 0
-        val total = (num(cu["input_tokens"]) ?: 0) + read + (num(cu["cache_creation_input_tokens"]) ?: 0)
+        val read = blob.num(cu["cache_read_input_tokens"]) ?: 0
+        val total = (blob.num(cu["input_tokens"]) ?: 0) + read + (blob.num(cu["cache_creation_input_tokens"]) ?: 0)
         return if (total <= 0) null else (read * PERCENT / total).toInt()
     }
 
@@ -93,7 +112,7 @@ public class StatuslineRenderer(
         val ratelimit = snapshot.ratelimit?.let {
             RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens)
         }
-        val warn = computeUsageWarn(snapshot.outputTokens5h, ratelimit, warnPct, warnTokens5h)
+        val warn = UsageWarnPolicy.computeUsageWarn(snapshot.outputTokens5h, ratelimit, warnPct, warnTokens5h)
         return when (warn.level) {
             "critical" -> "$RED⚠ ${warn.pct}%$RESET"
             "warn" -> "$YELLOW⚠ ${warn.pct}%$RESET"
@@ -102,13 +121,15 @@ public class StatuslineRenderer(
     }
 
     private fun locationSegment(root: JsonObject): String? {
-        val cwd = str(obj(root, "workspace")?.get("current_dir")) ?: str(root["cwd"]) ?: return null
+        val cwd = blob.str(blob.obj(root, "workspace")?.get("current_dir"))
+            ?: blob.str(root["cwd"])
+            ?: return null
         val base = cwd.trim('/').substringAfterLast('/').ifEmpty { return null }
         // Only git when cwd RESOLVES to a real directory under the user home (or /tmp) — never
         // exec git -C against an attacker-chosen path from unauthenticated /statusline. Run git in
         // the symlink-resolved path, not the raw cwd.
         val safe = safeGitCwd(cwd)
-        val branch = if (safe != null) gitBranch(safe.toString()) else ""
+        val branch = if (safe != null) cachedGitBranch(safe.toString()) else ""
         val loc = if (branch.isEmpty()) base else "$base  ⎇ $branch"
         return dim(loc)
     }
@@ -116,10 +137,10 @@ public class StatuslineRenderer(
     /** current_usage.* is the correct per-turn count on every version; total_input_tokens is the
      * pre-2.1.132 fallback. */
     private fun usedTokens(cw: JsonObject): Long {
-        val cu = obj(cw, "current_usage") ?: return num(cw["total_input_tokens"]) ?: 0
-        return (num(cu["input_tokens"]) ?: 0) +
-            (num(cu["cache_read_input_tokens"]) ?: 0) +
-            (num(cu["cache_creation_input_tokens"]) ?: 0)
+        val cu = blob.obj(cw, "current_usage") ?: return blob.num(cw["total_input_tokens"]) ?: 0
+        return (blob.num(cu["input_tokens"]) ?: 0) +
+            (blob.num(cu["cache_read_input_tokens"]) ?: 0) +
+            (blob.num(cu["cache_creation_input_tokens"]) ?: 0)
     }
 
     /** The symlink-RESOLVED absolute directory if it lies under $HOME, /tmp, or an operator-trusted
@@ -134,6 +155,35 @@ public class StatuslineRenderer(
         return real.takeIf { p -> java.nio.file.Files.isDirectory(p) && trustedRoots.any { p.startsWith(it) } }
     }
 
+    private fun cachedGitBranch(cwd: String): String {
+        synchronized(branchCacheLock) {
+            val cached = branchCache[cwd]
+            if (cached != null && now() < cached.expiresAtMs) return cached.branch
+        }
+        // The subprocess runs OUTSIDE the monitor (DR-22b): the renderer is process-shared per head
+        // now, and holding the lock across a 200ms waitFor serialized every concurrent tick behind
+        // one blocking git on a Ktor dispatcher thread. Concurrent misses may each run one
+        // duplicate git. Stamp the observation BEFORE the lookup so expiry encodes WHEN the branch
+        // was read, not when we win the publish lock (DR-22 redo): a slow lookup that publishes late
+        // must not look fresher than a racer that read the branch later.
+        val observedAt = now()
+        val branch = branchLookup(cwd)
+        synchronized(branchCacheLock) {
+            val expiresAt = observedAt + GIT_CACHE_TTL_MS
+            // Revalidate under the lock: a concurrent lookup that observed at-or-after us may already
+            // have published a fresher branch. Our older read must not clobber it — keep and return
+            // the fresher entry (the unconditional publish here let a slow git overwrite a newer one).
+            val existing = branchCache[cwd]
+            if (existing != null && existing.expiresAtMs >= expiresAt) return existing.branch
+            branchCache[cwd] = CachedBranch(branch, expiresAt)
+            while (branchCache.size > GIT_CACHE_MAX_ENTRIES) {
+                val iterator = branchCache.keys.iterator()
+                iterator.next().run { iterator.remove() }
+            }
+        }
+        return branch
+    }
+
     private fun gitBranch(cwd: String): String = runCatching {
         val process = ProcessBuilder("git", "-C", cwd, "branch", "--show-current")
             .redirectErrorStream(false)
@@ -145,27 +195,53 @@ public class StatuslineRenderer(
         process.inputStream.readBytes().decodeToString().trim()
     }.getOrDefault("")
 
-    private companion object {
-        fun obj(parent: JsonObject?, key: String): JsonObject? = parent?.get(key) as? JsonObject
-        fun str(element: JsonElement?): String? = (element as? JsonPrimitive)?.content?.takeIf { it.isNotEmpty() }
-        fun num(element: JsonElement?): Long? = (element as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong()
-        fun fmtK(n: Long): String = if (n >= K) "${n / K}k" else n.toString()
-        fun dim(s: String) = "$DIM$s$RESET"
+    private fun fmtK(n: Long): String = if (n >= K) "${n / K}k" else n.toString()
 
-        const val RESET = "[0m"
-        const val DIM = "[2m"
-        const val BOLD = "[1m"
-        const val CYAN = "[36m"
-        const val GREEN = "[32m"
-        const val YELLOW = "[33m"
-        const val RED = "[31m"
-        const val SEPARATOR = "[2m   [0m"
-        const val PERCENT = 100
-        const val CTX_CRITICAL_PCT = 85
-        const val CTX_WARN_PCT = 60
-        const val CACHE_GOOD_PCT = 70
-        const val CACHE_OK_PCT = 40
-        const val K = 1000
-        const val GIT_TIMEOUT_MS = 200L
-    }
+    private fun dim(s: String) = "$DIM$s$RESET"
 }
+
+private data class CachedBranch(val branch: String, val expiresAtMs: Long)
+
+/** Reads the current git branch for a resolved working directory — the real git subprocess in
+ *  production, a latched stand-in in the late-publish race test (DR-22 redo). Named for the ROLE,
+ *  not the shape (kt-no-lambda-seam); `operator fun invoke` keeps call sites byte-identical. */
+public fun interface GitBranchReader {
+    public operator fun invoke(cwd: String): String
+}
+
+// The stdin-blob JSON adapter, split out so StatuslineRenderer stays inside detekt's per-class
+// function budget: the renderer holds 11 + fmtK + dim = 13 of 15, and folding obj/str/num back in
+// makes 16.
+private class StatuslineJson {
+    fun obj(parent: JsonObject?, key: String): JsonObject? = parent?.get(key) as? JsonObject
+
+    // Through JsonScalars, not a second `as? JsonPrimitive` read: JsonNull IS a JsonPrimitive whose
+    // content is the literal "null", which is non-empty, so the unfiltered read survived takeIf and
+    // rendered the word "null" instead of falling through to model.id / root.cwd (review 2026-08-28,
+    // PR 99). The same class this PR fixes in SystemTextSerializer and ContentSerializer.
+    fun str(element: JsonElement?): String? = JsonScalars.str(element)?.takeIf { it.isNotEmpty() }
+
+    fun num(element: JsonElement?): Long? = (element as? JsonPrimitive)?.content?.toDoubleOrNull()?.toLong()
+}
+
+// StatuslineRenderer's companion constants at their sanctioned file-scope home. The ANSI values
+// carry raw ESC bytes and were moved verbatim — only the modifier and the indentation changed.
+private const val RESET = "[0m"
+private const val DIM = "[2m"
+private const val BOLD = "[1m"
+private const val CYAN = "[36m"
+private const val GREEN = "[32m"
+private const val YELLOW = "[33m"
+private const val RED = "[31m"
+private const val SEPARATOR = "[2m   [0m"
+private const val PERCENT = 100
+private const val CTX_CRITICAL_PCT = 85
+private const val CTX_WARN_PCT = 60
+private const val CACHE_GOOD_PCT = 70
+private const val CACHE_OK_PCT = 40
+private const val K = 1000
+private const val GIT_TIMEOUT_MS = 200L
+private const val GIT_CACHE_TTL_MS = 2_000L
+private const val GIT_CACHE_INITIAL_CAPACITY = 16
+private const val GIT_CACHE_LOAD_FACTOR = 0.75f
+private const val GIT_CACHE_MAX_ENTRIES = 64

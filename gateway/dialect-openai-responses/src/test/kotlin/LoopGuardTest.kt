@@ -2,6 +2,7 @@
 // 2026-07-26): the same Edit re-issued 89-101x against the harness staleness guard. Pinned: the
 // directive arms at the 3rd identical failure, escalates at the 5th, resets on success or changed
 // arguments, treats key order as irrelevant, and never arms on unmarked (polling/flaky) results.
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonArray
@@ -12,8 +13,12 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.parse.parseAnthropicBody
-import splice.core.turn.ReasoningDisplay
+import splice.core.parse.AnthropicParse
+import splice.core.turn.ReasoningDisplayParser
+import splice.core.wire.AnthropicMessage
+import splice.core.wire.TextBlock
+import splice.core.wire.ToolResultBlock
+import splice.core.wire.ToolUseBlock
 import splice.dialect.responses.BuildOptions
 import splice.dialect.responses.InjectPriorReasoning
 import splice.dialect.responses.LoopGuard
@@ -29,7 +34,7 @@ private fun opts() = BuildOptions(
     upstreamModel = "gpt-5.6-sol",
     configEffort = null,
     configSummary = null,
-    showReasoning = ReasoningDisplay.from("text"),
+    showReasoning = ReasoningDisplayParser.from("text"),
     replayReasoning = InjectPriorReasoning(false),
     includeEncryptedReasoning = RequestEncryptedReasoning(true),
     sessionId = null,
@@ -58,7 +63,7 @@ class LoopGuardTest {
     }
 
     private fun analyze(bodyJson: String) =
-        LoopGuard.analyze(parseAnthropicBody(bodyJson).typed.messages)
+        LoopGuard.analyze(AnthropicParse.parseAnthropicBody(bodyJson).typed.messages)
 
     private fun body(tail: String) = """{
         "model":"claude-codex--gpt-5.6-sol","max_tokens":1024,"stream":true,
@@ -126,7 +131,7 @@ class LoopGuardTest {
 
     @Test
     fun `the directive rides the wire ahead of the error text`() {
-        val parsed = parseAnthropicBody(body(conversation(3)))
+        val parsed = AnthropicParse.parseAnthropicBody(body(conversation(3)))
         val built = ResponsesRequestBuilder(CODEX).build(
             parsed.typed,
             parsed.raw,
@@ -199,7 +204,7 @@ class LoopGuardTest {
 
     @Test
     fun `quirk off restores plain passthrough`() {
-        val parsed = parseAnthropicBody(body(conversation(4)))
+        val parsed = AnthropicParse.parseAnthropicBody(body(conversation(4)))
         val built = ResponsesRequestBuilder(CODEX.copy(loopGuard = false)).build(
             parsed.typed,
             parsed.raw,
@@ -207,5 +212,43 @@ class LoopGuardTest {
         )
         val text = built.req["input"]!!.jsonArray.toString()
         assertFalse(text.contains("loop-guard"))
+    }
+}
+
+// DR-95 (codex adjudication): tool input is untrusted and kotlinx exposes no max-depth knob, so
+// LoopGuard's canonicalization — a recursive rebuild plus toString of the result — was the one
+// unbounded walk over client-authored JSON; a deep enough input StackOverflowError'd outside every
+// sanctioned catch. Wire types are constructed DIRECTLY here: routing through AnthropicParse (the
+// sibling class's helpers) would measure the kotlinx parser's own recursion, not sortKeys.
+class LoopGuardDepthTest {
+
+    @Test
+    fun `deeply nested tool input cannot blow the canonicalization - DR-95`() {
+        var deep: JsonElement = JsonPrimitive(1)
+        repeat(60_000) {
+            val inner = deep
+            deep = buildJsonObject { put("k", inner) }
+        }
+        val input = buildJsonObject {
+            put("path", "/tmp/x")
+            put("payload", deep)
+        }
+        val messages = (1..3).flatMap { i ->
+            listOf(
+                AnthropicMessage("assistant", listOf(ToolUseBlock("t$i", "edit", input))),
+                AnthropicMessage(
+                    "user",
+                    listOf(
+                        ToolResultBlock(
+                            "t$i",
+                            listOf(TextBlock("File has been modified since read")),
+                            isError = true,
+                        ),
+                    ),
+                ),
+            )
+        }
+        // Identical deep spam must still share a canonical: the third failure arms the guard.
+        assertEquals(setOf("t3"), LoopGuard.analyze(messages).keys)
     }
 }

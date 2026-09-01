@@ -60,6 +60,23 @@ class MustConsumeCheckerTest {
         assertFixtureRed("red/FinallyTailDiscard.kt.txt", "FinallyTailDiscard.kt")
     }
 
+    // DR-116: value-transparent wrapper calls — a no-op cast or !! yields exactly the wrapped
+    // value, so the bare wrapped statement is the same discard. Pre-fix all three compiled green.
+    @Test
+    fun `a bare as-cast statement discard is a compile error - DR-116`() {
+        assertFixtureRed("red/CastStatementDiscard.kt.txt", "CastStatementDiscard.kt")
+    }
+
+    @Test
+    fun `a bare safe-cast statement discard is a compile error - DR-116`() {
+        assertFixtureRed("red/SafeCastStatementDiscard.kt.txt", "SafeCastStatementDiscard.kt")
+    }
+
+    @Test
+    fun `a bare bang-bang statement discard is a compile error - DR-116`() {
+        assertFixtureRed("red/BangBangStatementDiscard.kt.txt", "BangBangStatementDiscard.kt")
+    }
+
     @Test
     fun `consumed values, consumed branch tails, safe-call and elvis, and lambda tails all compile clean`() {
         val result = compileFixture("green/ConsumedMustConsume.kt.txt", "ConsumedMustConsume.kt")

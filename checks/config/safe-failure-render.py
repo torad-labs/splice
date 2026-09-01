@@ -33,6 +33,15 @@ reach is worse than a narrow one: the overstatement is what stops anyone looking
   untyped, including a destructured list and a trailing comma — and a `catch` parameter is itself
   a throwable.
 
+  CLAIMED, anywhere in a scope file (DR-187): the NON-interpolated spellings of the same two
+  renders — `failure.message`, `cause?.message`, `someException.toString()`, and the implicit
+  `"x " + failure` / `append(failure)` — on a receiver the named tier already trusts. Until DR-187
+  every matcher here keyed on a `$`, so `put("read_error", failure.message)` matched nothing, which
+  is the DR-65 sink shape verbatim. The receiver's NAME is the type evidence, which is why these are
+  not in [THROWABLE_TEXT_MEMBER]'s unconditional list: `.message` on an arbitrary receiver says
+  nothing, `failure.message` says exactly what `$failure` says. The short-name spellings are claimed
+  on the same failure-frame condition as the interpolated ones, below.
+
   CLAIMED, conditionally: an interpolation of a SHORT name (`it`, `e`, `t`, `ex`, `err`) inside the
   body of a lambda opened by `onFailure` / `exceptionOrNull` / `recover` / `recoverCatching` /
   `catch (`, at the column where `it` is still bound to that lambda — not inside a nested lambda,
@@ -278,6 +287,36 @@ RENDERED_SHORT = re.compile(
 # the interpolated form and there is no reading under which one is safe and the other is not.
 THROWABLE_TEXT_MEMBER = re.compile(
     r"\.(?:stackTraceToString\s*\(|printStackTrace\s*\(|localizedMessage\b)"
+)
+
+# DR-187: DR-170's own ruling — "it reaches the same sink with the same bytes, so there is no
+# reading under which the interpolated form is forbidden and the direct call is fine" — applied to
+# the two members DR-170 could not make unconditional. Every matcher above this line keys on a `$`:
+# [RENDERED] wants `${…message…}` or `$failure`, [RENDERED_SHORT] wants `$it`, [INTERPOLATED_NAME]
+# wants `$name`. So `put("read_error", failure.message)` held no `$` and was matched by NOTHING —
+# and that is the DR-65 sink shape verbatim, since the compliant sites in GrokAuthDescribe,
+# CodexAuthDescribe and KimiRefreshedTokens all spell it `put("read_error", render(failure))`. The
+# form the wall could not see was the one its own subject matter is written in.
+#
+# The RECEIVER carries the type evidence, which is why this is not the unconditional matcher DR-170
+# declined to write: `.message` on an arbitrary receiver says nothing (any response or result type
+# carries one), but `failure.message` says exactly what `$failure` says, under the same naming the
+# named tier already trusts everywhere. Consistent with that tier's standing rule — name a String
+# `failure` in a credential path and you owe it an exemption.
+#
+# `String.plus` and `Appendable.append` call toString() too, so the implicit spellings are here as
+# well. They match NO live site today; they are included because leaving a known render form out of
+# the wall being widened for exactly that reason is the bug, not the economy.
+_TEXT_MEMBER = r"(?:message\b|toString\s*\()"
+_DOT = r"\s*\??\s*\."                       # `failure.cause?.message` reaches text through a safe call
+_IMPLICIT = r'(?:"\s*\+\s*|\+\s*"|\bappend\s*\(\s*)'
+RENDERED_DIRECT = re.compile(
+    r"(?<![$\w.])" + THROWABLE_NAMED + _DOT + _TEXT_MEMBER
+    + r"|" + _IMPLICIT + THROWABLE_NAMED + r"\b(?![\w.(])"
+)
+RENDERED_DIRECT_SHORT = re.compile(
+    r"(?<![$\w.])" + THROWABLE_SHORT + _DOT + _TEXT_MEMBER
+    + r"|" + _IMPLICIT + THROWABLE_SHORT + r"\b(?![\w.(])"
 )
 
 
@@ -610,7 +649,11 @@ def renders_throwable(lines, idx, spans=None, text_lines=None, bindings=None):
     # DR-170: an EXPRESSION render — `${e.stackTraceToString()}`, or a bare printStackTrace call —
     # is decided by the member alone, with no name or frame test. See [THROWABLE_TEXT_MEMBER] for
     # why the receiver's type is not in doubt there while it is for `.message`.
-    if THROWABLE_TEXT_MEMBER.search(line) or RENDERED.search(line):
+    # DR-187: the same line also carries the NON-interpolated forms. Read from this view, not the
+    # code one, because the code view blanks a string's quotes and the implicit spelling
+    # (`"x " + failure`) is only recognisable with them; an interpolated hit here is the same SITE
+    # [RENDERED] already reports, so the overlap costs nothing.
+    if THROWABLE_TEXT_MEMBER.search(line) or RENDERED.search(line) or RENDERED_DIRECT.search(line):
         return True
     if bindings is None:
         bindings = throwable_bindings(lines)
@@ -621,16 +664,18 @@ def renders_throwable(lines, idx, spans=None, text_lines=None, bindings=None):
         col = hit.start()
         if col < len(per_col) and (hit.group(1) or hit.group(2)) in per_col[col]:
             return True
-    hit = RENDERED_SHORT.search(line)
-    if not hit:
+    # DR-187 adds the non-interpolated short form alongside the interpolated one. Both are
+    # frame-scoped for the same reason and each is judged at its OWN column, so a line carrying one
+    # of each cannot have the second silently decided by the first one's position.
+    hits = [h for h in (RENDERED_SHORT.search(line), RENDERED_DIRECT_SHORT.search(line)) if h]
+    if not hits:
         return False
     if spans is None:
         spans = failure_spans(lines)
     # DR-159: at the MATCH's own column, because a nested lambda can rebind `it` partway along the
     # very same line.
     flags = spans[idx]
-    col = hit.start()
-    return bool(col < len(flags) and flags[col])
+    return any(hit.start() < len(flags) and flags[hit.start()] for hit in hits)
 
 
 # DR-160: positional_folds() is GONE. It existed because `.fold(` was in FAILURE_CONTEXT and

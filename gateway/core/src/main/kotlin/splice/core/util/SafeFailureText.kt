@@ -12,6 +12,7 @@ public object SafeFailureText {
      *  reachable through overridable toString() (reflection is walled), so a throwable that
      *  overrides toString() colon-free would ride any prefix-taking render into diagnostics
      *  verbatim (codex probe, 2026-08-31). No virtual call happens outside the allowlist. */
+    // SAFE-RENDER-EXEMPT[2026-09-01]: this IS the sanctioned renderer, and the allowlist below is the law's own definition of a throwable that cannot quote file bytes — a path, a host, a timeout. Routing it would recurse; the marker sits here so the allowlist carries its justification where DR-187 made it visible, rather than being the one render the wall structurally cannot ask about.
     public fun render(failure: Throwable): String = when (failure) {
         is java.nio.file.FileSystemException,
         is java.net.SocketException,

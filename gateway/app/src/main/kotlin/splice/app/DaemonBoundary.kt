@@ -45,6 +45,7 @@ internal class DaemonBoundary {
      *  no message. Named by BRANCH over the three classes [runCatchingDaemonBoundary] can actually
      *  produce — the catch list above IS the closed set — rather than by reflecting on the runtime
      *  class, which is what this used to do. */
+    // SAFE-RENDER-EXEMPT[2026-09-01]: safety here is a property of the CALLERS, not of the catch list — kotlinx SerializationException extends IllegalArgumentException (verified against kotlinx-serialization-core 1.11.0), so a parser excerpt is squarely inside what runCatchingDaemonBoundary catches. The one caller is HeadBoot's assembly, which wires objects from already-parsed topology: every auth provider's init only wires cancellation, and ApiKeyAuthProvider's file reads are lazy and swallowed, so no credential file is opened inside the boundary. A caller that wraps a credential PARSE invalidates this exemption and must route instead.
     internal fun reason(failure: Throwable): String = failure.message ?: when (failure) {
         is IOException -> "IOException"
         is IllegalArgumentException -> "IllegalArgumentException"

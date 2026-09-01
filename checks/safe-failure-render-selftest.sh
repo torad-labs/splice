@@ -889,6 +889,62 @@ fun a(e: Throwable) {
     log("boom ${SafeFailureText.render(e)}" + frames)
 }'
 
+# 45 — DR-187, and the boring case is the whole point: every matcher before it keyed on a `$`, so a
+#      render with no interpolation matched NOTHING. This exact shape — a throwable's message handed
+#      to a diagnostic map as an ARGUMENT — is what the compliant sites in GrokAuthDescribe,
+#      CodexAuthDescribe and KimiRefreshedTokens spell as `put("read_error", render(failure))`, so
+#      the form the wall could not see was the one its own subject matter is written in.
+arm_at "a non-interpolated .message is reported" 5 "renders a throwable raw" Direct.kt 'package p
+import java.nio.file.Files
+fun a(failure: Throwable) {
+    Files.size(p)
+    out.put("read_error", failure.message)
+}'
+
+# 45b — the same for toString, on a SHORT name, which is claimed only inside a failure frame.
+arm_at "a non-interpolated toString in a failure lambda is reported" 5 "renders a throwable raw" DirectShort.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    outcome.onFailure { log(it.toString()) }
+}'
+
+# 45c — String.plus calls toString too, so the implicit spelling is the same render as `$failure`.
+arm_at "an implicit toString by concatenation is reported" 5 "renders a throwable raw" Concat.kt 'package p
+import java.nio.file.Files
+fun a(failure: Throwable) {
+    Files.size(p)
+    log("read failed: " + failure)
+}'
+
+# 45d — THE CONTROL THAT BOUNDS DR-187, and the reason `.message` is not in the unconditional list:
+#       any response or result type carries one, so the RECEIVER is the type evidence. Widening this
+#       to a bare `.message` would flag every line below and make the law unsatisfiable.
+arm ".message on a non-throwable receiver is not flagged" 0 Response.kt 'package p
+import java.nio.file.Files
+fun a(response: HttpResponse) {
+    Files.size(p)
+    log("status " + response.status)
+    val m = response.message
+}'
+
+# 45e — the routed form of arm 45 still passes; the widening must not flag the remedy it demands.
+arm "a routed put() passes" 0 RoutedPut.kt 'package p
+import java.nio.file.Files
+fun a(failure: Throwable) {
+    Files.size(p)
+    out.put("read_error", SafeFailureText.render(failure))
+}'
+
+# 45f — the other bound: `it.toString()` is one of Kotlin'"'"'s most common idioms, so the short tier
+#       stays frame-scoped. Outside a failure lambda it is not a throwable and is not reported.
+arm "a short name outside a failure frame is not flagged" 0 ShortOut.kt 'package p
+import java.nio.file.Files
+fun a(items: List<String>) {
+    Files.size(p)
+    items.forEach { log(it.toString()) }
+}'
+
 # 14 — the real gate must be green on the real tree, or the leg is reporting on nothing.
 ( cd "$ROOT" && python3 checks/config/safe-failure-render.py check . >/dev/null 2>&1 ) \
   || err "the real repository does not pass its own wall"

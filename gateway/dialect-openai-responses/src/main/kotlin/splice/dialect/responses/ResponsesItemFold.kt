@@ -76,7 +76,14 @@ internal class ResponsesItemFold(
         if (item == null || oi == null) return
         if (JsonScalars.strOrEmpty(item["type"]) != "function_call") return
         val b = state.blocks[oi] ?: return
-        if (!b.sawDelta) emitToolArgText(b, JsonScalars.strOrEmpty(item["arguments"]), sink)
+        // DR-134: the ITEM being a function_call says nothing about the BLOCK at this index. A text
+        // block is built with sawDelta=false and only emitToolArgText ever flips it, so `!b.sawDelta`
+        // is permanently true for one — without `b.tool` a text delta followed by an item-done
+        // function_call at the SAME index harvested args straight into the open text block, and
+        // closeOpenBlocks then skipped the CX-01 latch, grading a corrupt wire a clean Success. Third
+        // site of the DR-108 law, and the only one reached with no output_item.added — so DR-107's
+        // eviction never runs here and cannot cover it.
+        if (b.tool && !b.sawDelta) emitToolArgText(b, JsonScalars.strOrEmpty(item["arguments"]), sink)
     }
 
     /** onItemDone's block-closing half: close both the tool/message block and any reasoning block at

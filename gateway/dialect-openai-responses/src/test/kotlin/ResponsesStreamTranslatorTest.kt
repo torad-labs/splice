@@ -1364,6 +1364,36 @@ class ResponsesItemDoneToolArgsTest {
         val s = assertInstanceOf(TurnOutcome.Success::class.java, outcome, "the text turn stays a Success")
         assertTrue(s.bodyText == "hello", "the real text survives untouched: '${s.bodyText}'")
     }
+
+    // DR-134: the THIRD args-emitting path. DR-108 guarded onTextDelta and onArgs, but the DR-77
+    // late harvest checks only that the ITEM is a function_call — never that the BLOCK sitting at
+    // that output_index is one. Text blocks are built with sawDelta=false and only emitToolArgText
+    // ever flips it, so `!b.sawDelta` is permanently true for a text block and the harvest always
+    // fired: a text delta followed by an item-done carrying a function_call at the SAME index wrote
+    // input_json_delta into the open text block, and closeOpenBlocks then skipped the CX-01 latch
+    // (b.tool false), so the turn graded a clean Success while the client got a corrupt wire. No
+    // output_item.added arrives here, so DR-107's eviction never runs and cannot cover this.
+    @Test
+    fun `a late tool-args harvest aimed at an open text block is dropped - DR-134`() = runTest {
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"Hello"}"""),
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"function_call",""" +
+                        """"call_id":"t1","name":"run","arguments":"{\"x\":1}"}}""",
+                ),
+                completed,
+            ).asFlow(),
+            sink,
+        )
+        assertTrue(
+            sink.calls.none { it.startsWith("json#") },
+            "no harvested args may enter a text block: ${sink.calls}",
+        )
+        val s = assertInstanceOf(TurnOutcome.Success::class.java, outcome, "the text turn stays a Success")
+        assertTrue(s.bodyText == "Hello", "the real text survives untouched: '${s.bodyText}'")
+    }
 }
 
 // DR-109: a proxy/gateway shape ships `error` as a PLAIN STRING — both object casts fell

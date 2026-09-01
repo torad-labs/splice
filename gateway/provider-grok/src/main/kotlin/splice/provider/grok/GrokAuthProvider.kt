@@ -37,7 +37,6 @@ import splice.core.auth.SYNTHETIC_EXPIRY_TTL_MS
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
-import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
 import splice.core.util.WallClock
 import splice.core.util.WallClockIso
@@ -244,7 +243,8 @@ public class GrokAuthProvider(
                 authPath,
                 authJson.mergedAuthJson(access, fresh.refreshToken ?: refreshToken, expiresAtMs).toString(),
             )
-        }.getOrElse { return RefreshOutcome.PersistFailed("auth.json write failed: ${SafeFailureText.render(it)}") }
+            // DR-151: the throwable travels WHOLE to the sink, which owns the render.
+        }.getOrElse { return RefreshOutcome.PersistFailed.Write(it) }
         authJson.clearCache()
         return RefreshOutcome.Refreshed(Credentials.Bearer(access, null))
     }
@@ -252,5 +252,6 @@ public class GrokAuthProvider(
     override suspend fun describe(): AuthDescription = authFile.describe()
 
     // Atomic 0600 credential write — routes to the shared primitive (was an inline temp→chmod→move).
+
     private fun writeSecure(path: Path, content: String) { SecureFile.writeAtomic0600(path, content) }
 }

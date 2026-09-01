@@ -36,8 +36,39 @@ public sealed class RefreshOutcome {
     /** The refresh network hop threw before the endpoint could answer (DNS, connect, TLS). */
     public data class TransportFailed(val cause: Throwable) : RefreshOutcome()
 
-    /** Tokens were rotated upstream but persisting/re-reading them locally failed — urgent: the old refresh token may already be dead. */
-    public data class PersistFailed(val reason: String) : RefreshOutcome()
+    /**
+     * Tokens were rotated upstream but persisting/re-reading them locally failed — urgent: the old
+     * refresh token may already be dead.
+     *
+     * DR-151: this used to be `PersistFailed(val reason: String)`, and the String was the hazard.
+     * A pre-rendered message means the sanitizer decision is made at the CALL SITE, before the
+     * value ever reaches the sink — so the DR-140 wall, which can only see a call site it is
+     * looking at, cannot stop a future one from baking raw throwable text into the field. The
+     * three live write paths were routed correctly; the TYPE still permitted the bypass, and a
+     * wall that depends on everyone remembering is the thing DR-65 keeps re-learning.
+     *
+     * Split into the two shapes the tree actually constructs — a write that threw, and one
+     * semantic post-write condition — so there is nowhere left to put a string. The throwable is
+     * carried whole and rendered ONCE, at the sink below, by the renderer that owns the decision.
+     * The hazard is now inexpressible rather than merely absent.
+     */
+    public sealed class PersistFailed : RefreshOutcome() {
+        /** The credential write itself threw. The cause travels raw and is rendered at the sink. */
+        public data class Write(val cause: Throwable) : PersistFailed()
+
+        /** The write reported success but the file did not read back — no throwable exists to carry. */
+        public data object UnreadableAfterWrite : PersistFailed()
+
+        /** The operator-facing half of the persist line. `internal` because rendering is the sink's
+         *  job and no caller may pre-empt it — that is the whole point of the split. */
+        internal fun detail(): String = when (this) {
+            // Deliberately does NOT name a file. The three providers write three different paths
+            // (codex/grok auth.json, kimi credentials/kimi-code.json), and `[$tag]` already says
+            // which provider is speaking, so a hardcoded "auth.json" would be wrong for kimi.
+            is Write -> "credential write failed: ${SafeFailureText.render(cause)}"
+            UnreadableAfterWrite -> "credential file unreadable after rotated-token write"
+        }
+    }
 
     /**
      * The SINGLE sanctioned flatten to the `RefreshableAuthProvider.refresh(): Credentials?` SPI shape.
@@ -78,7 +109,7 @@ public sealed class RefreshOutcome {
         }
         is PersistFailed -> {
             log(
-                "[$tag] refresh rotated upstream but local persist failed: $reason — " +
+                "[$tag] refresh rotated upstream but local persist failed: ${detail()} — " +
                     "old token may be dead, re-login if errors persist",
             )
             null

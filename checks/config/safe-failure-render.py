@@ -95,8 +95,12 @@ NAMED_FOLD_HALVES = re.compile(r"onFailure\s*=")
 #   * `}` inside a block comment and inside a char literal popped the brace depth early, closing the
 #     failure span so a genuine raw render below it was missed (FALSE NEGATIVE — a green lie);
 #   * Kotlin block comments NEST, and a boolean in/out flag exits at the INNER `*/`, so
-#     `/* outer /* inner */ still outer } */` leaked its brace — four such comments exist in this
-#     tree, so this was live, not hypothetical;
+#     `/* outer /* inner */ still outer } */` leaked its brace. RETRACTION: an earlier version of
+#     this comment claimed four such comments exist in this tree. They do not. That count came from
+#     a crude regex of mine that matched `sessions/*` inside a LINE comment; codex-splice's
+#     ast-grep over real Kotlin multiline_comment nodes finds ZERO, and a second probe of my own
+#     produced a third, equally wrong number. The arm guards the GRAMMAR, which Kotlin defines and
+#     any future comment may use — not an observed instance;
 #   * the render matcher read the RAW line, so prose in a trailing `// … $it …` comment was
 #     reported as runtime interpolation.
 #

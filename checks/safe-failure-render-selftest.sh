@@ -196,8 +196,10 @@ fun a() = write().onFailure {
 }'
 
 # 15 — DR-156, codex-splice: Kotlin block comments NEST. A boolean in/out flag exits at the INNER
-#      `*/`, so the rest of the outer comment is read as code and its `}` pops the real depth. Four
-#      nested comments exist in this tree, so this was live. The lexer counts DEPTH.
+#      `*/`, so the rest of the outer comment is read as code and its `}` pops the real depth. The
+#      lexer counts DEPTH. RETRACTION: an earlier version claimed four such comments exist in this
+#      tree. They do not — that came from a regex of mine matching `sessions/*` inside a LINE
+#      comment. This arm guards the grammar Kotlin defines, not an observed instance.
 arm "a nested block comment does not close the span" 1 Nested.kt 'package p
 import java.nio.file.Files
 fun a() = write().onFailure {

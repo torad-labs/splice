@@ -168,7 +168,8 @@ public class KimiAuthProvider(
         Cancellables.runCatchingCancellable {
             val merged = CredentialJson.mergedCredentialJson(onDisk, oauth.kimiAuthJson(tokens, clock()))
             writeSecure(authPath, merged.toString())
-        }.getOrElse { return RefreshOutcome.PersistFailed("credentials write failed: ${SafeFailureText.render(it)}") }
+            // DR-151: the throwable travels WHOLE to the sink, which owns the render.
+        }.getOrElse { return RefreshOutcome.PersistFailed.Write(it) }
         store.clearCache()
         return RefreshOutcome.Refreshed(apiKey(tokens.accessToken))
     }
@@ -181,6 +182,7 @@ public class KimiAuthProvider(
 
     // Atomic 0600 credential write — routes to the shared primitive, mirroring the private member
     // CodexAuthProvider/GrokAuthProvider already carry.
+
     private fun writeSecure(path: Path, content: String) {
         SecureFile.writeAtomic0600(path, content)
     }

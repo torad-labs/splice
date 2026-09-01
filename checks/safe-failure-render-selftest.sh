@@ -393,6 +393,150 @@ fun onFailure(e: Event) {
     log("$e")
 }'
 
+# ---------------------------------------------------------------------------------------------
+# DR-160 ROUND 2. codex-splice probed the round-1 recognizer and reddened ten shapes; every one is
+# pinned here. Six were FALSE POSITIVES (the wall firing on a String), two FALSE NEGATIVES (the
+# wall blind to a real throwable), and two were published-claim violations — the coverage note
+# named `catch` and plain parameters while the code did the opposite. The last kind is the worst:
+# a claim the code contradicts is what stops anyone looking again.
+
+# 26 — arm 23 fixed a bare exceptionOrNull STATEMENT poisoning a later CONTROL block. The same
+#      statement reaching forward into a sibling LAMBDA survived it, because only the brace
+#      decision was fixed and not the statement boundary. `$it` here is a String.
+arm "a bare exceptionOrNull statement does not poison the next lambda" 0 NextLambda.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    names.forEach {
+        outcome.exceptionOrNull()
+        values.forEach { log("$it") }
+    }
+}'
+
+# 27 — the FALSE NEGATIVE that a single shadow depth could not express: a genuine failure lambda
+#      nested INSIDE a shadowing one. The innermost binder wins, which is what a frame STACK says
+#      and a lone depth cannot.
+arm_at "a failure lambda inside a shadowing lambda is still caught" 5 "renders a throwable raw" Restored.kt 'package p
+import java.nio.file.Files
+fun a() = Files.size(p).onFailure {
+    names.forEach {
+        runCatching { z() }.onFailure { log("$it") }
+    }
+}'
+
+# 28 — the binding walk took the depth at the END of the line, so a block that OPENED AND CLOSED on
+#      one line registered its local at the outer depth and the binding outlived its scope. The
+#      `val e` below is a String and was rendered as a throwable.
+arm "a binding dies with the block that closes on its own line" 0 SameLine.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    if (x) { val e = outcome.exceptionOrNull() }
+    val e = "event"
+    log("$e")
+}'
+
+# 28b — THE BOUND on 28: a binding is scoped to its BLOCK, so it survives an unrelated nested block
+#       that opens and closes beside it, and stays live inside blocks nested within its own.
+#       Narrowing 28 by clearing bindings at every closing brace passes 28 and guts the rule — and
+#       the first draft of this arm could not tell: it put the only brace AFTER the use, so the
+#       prune it exists to guard was never reached and the over-narrowing mutant ran green.
+arm_at "a binding survives a sibling block and stays live in a nested one" 8 "renders a throwable raw" NestedLive.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull()
+    if (x) { log("unrelated") }
+    if (y) {
+        log("$e")
+    }
+}'
+
+# 29 — the walk used .search, which finds the FIRST binding on a statement and stops. The second
+#      one was invisible.
+arm_at "every binding in a statement is recorded, not just the first" 6 "renders a throwable raw" TwoBind.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = first.exceptionOrNull(); val err = second.exceptionOrNull()
+    log("$err")
+}'
+
+# 30 — arm 25 stripped `fun <name>(`, which does not describe a receiver or a generic. This
+#      contradicted the published claim that a plain PARAMETER is never attributed.
+arm "a receiver-and-generic fun declaration is not a failure lambda" 0 FunRecv.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+}
+fun Result<Event>.onFailure(e: Event) {
+    log("$e")
+}'
+
+# 31 — `.cause` was inferred to bind a throwable. It is no more typed than getOrElse: `incident.cause`
+#      may be a String, and an AST census found zero live `.cause` bindings, so the inference bought
+#      nothing and cost this false positive.
+arm "an untyped .cause binding is not a throwable" 0 Cause.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val err = incident.cause
+    log("$err")
+}'
+
+# 32 — the published coverage list named `catch (` as attributed while the code could not attribute
+#      it AT ALL: `catch (e: IOException) {` matches both the combinator list and the control-head
+#      list, and the control test ran first, so the brace opened a transparent block. The order of
+#      those two tests is the fix and is load-bearing.
+arm_at "catch binds the throwable, as the coverage note claims" 4 "renders a throwable raw" Catch.kt 'package p
+import java.nio.file.Files
+fun a() {
+    try { Files.size(p) } catch (e: java.io.IOException) { log("$e") }
+}'
+
+# 33 — arm 24b skipped a binding whose LINE called the sanitizer. An unrelated sanitized call
+#      beside a raw binding therefore laundered it. The test is scoped to the binding OWN
+#      right-hand side.
+arm_at "a sanitized call beside a raw binding does not launder it" 6 "renders a throwable raw" Launder.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull(); log(SafeFailureText.render(other))
+    log("$e")
+}'
+
+# 34 — a `var` can be reassigned to a String and this scanner has no flow typing, so the claim
+#      cannot be honoured and is not made.
+arm "a var binding is not claimed" 0 VarBind.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    var e: Any? = outcome.exceptionOrNull()
+    e = "plain"
+    log("$e")
+}'
+
+# 35 — the walk matched per LINE, so a binding wrapped after `val e =` was missed entirely.
+arm_at "a binding wrapped onto the next line is seen" 7 "renders a throwable raw" Wrapped.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e =
+        outcome.exceptionOrNull()
+    log("$e")
+}'
+
+# 35b — THE BOUND on 35: a `{` INTERRUPTS a statement rather than ending it. Resetting at the brace
+#       would pass 28 and 35 while losing the head of every binding whose source runs through a
+#       lambda — which is the tree own runCatching idiom.
+arm_at "a binding whose source runs through a lambda keeps its head" 6 "renders a throwable raw" ThroughLambda.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = runCatching { z() }.exceptionOrNull()
+    log("$e")
+}'
+
 # 13 — CONTROL: prose ABOUT the law is a comment and cannot render anything at runtime.
 arm "comment mentioning \$failure is not flagged" 0 A.kt 'package p
 import java.nio.file.Files
@@ -403,5 +547,5 @@ fun a(e: Throwable) = Files.exists(p).also { log("x (${SafeFailureText.render(e)
 ( cd "$ROOT" && python3 checks/config/safe-failure-render.py check . >/dev/null 2>&1 ) \
   || err "the real repository does not pass its own wall"
 
-[ "$fail" = 0 ] && echo "  ✓ safe-failure-render selftest: 40 arms"
+[ "$fail" = 0 ] && echo "  ✓ safe-failure-render selftest: 52 arms"
 exit "$fail"

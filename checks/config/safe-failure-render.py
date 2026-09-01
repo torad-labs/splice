@@ -26,8 +26,8 @@ COVERAGE — what this wall claims, and what it does NOT. Stated because a wall 
 reach is worse than a narrow one: the overstatement is what stops anyone looking again.
 
   CLAIMED, anywhere in a scope file: an interpolation of an UNAMBIGUOUS throwable name —
-  `${x.message}`, `$failure`, `$cause`, `${someException}` — and any local bound from
-  `exceptionOrNull()` or `.cause` while that binding is in scope.
+  `${x.message}`, `$failure`, `$cause`, `${someException}` — and any `val` bound from
+  `exceptionOrNull()`, for the block that binding is scoped to.
 
   CLAIMED, conditionally: an interpolation of a SHORT name (`it`, `e`, `t`, `ex`, `err`) inside the
   body of a lambda opened by `onFailure` / `exceptionOrNull` / `recover` / `recoverCatching` /
@@ -84,7 +84,7 @@ THROWABLE_SHORT = r"(?:it|e|t|ex|err)"
 # success lambda's `$it` was flagged and the failure lambda's `$it` was missed, i.e. a false
 # positive and a false negative from one entry. The named form `onFailure = { … }` still matches on
 # `onFailure`, which is how the tree's only real fold site is classified; the POSITIONAL form is
-# undecidable by short name and is failed by name instead (see [POSITIONAL_FOLD]).
+# undecidable by short name and is attributed in NEITHER half (see the coverage note).
 # DR-160: `getOrElse` came OUT on codex-splice's evidence that it does not imply a Throwable
 # receiver — `list.getOrElse(0) { "missing $it" }` binds an Int and `map.getOrElse(k) { … }` binds
 # nothing, so both flagged plain Strings. What remains are combinators whose lambda parameter is a
@@ -106,7 +106,11 @@ FAILURE_CONTEXT = re.compile(
 # DR-160: a DECLARATION is not a call. `fun onFailure(e: Event) { … }` matched the combinator name
 # and made the whole method body a failure span, so `$e` — an Event — was flagged. Declarations are
 # stripped from a segment before the combinator search.
-FUN_DECL = re.compile(r"\bfun\s+\w+\s*\(")
+#
+# Round 2: `\bfun\s+\w+\s*\(` only recognised a bare name, so `fun Result<Event>.onFailure(…)`
+# — a receiver with a generic — still collided. It now runs from `fun` to that declaration's opening
+# paren, which covers receivers, generics and qualified names alike.
+FUN_DECL = re.compile(r"\bfun\b[^(\n]*\(")
 
 # DR-159: a `{` that opens a CONTROL BLOCK versus one that opens a LAMBDA. Kotlin's `it` is bound
 # per lambda, so a nested lambda inside a failure lambda REBINDS it — `onFailure { names.forEach {
@@ -119,14 +123,6 @@ CONTROL_HEAD = re.compile(
     r"(?:\belse|\btry|\bfinally|\bdo|\binit|\bwhen|->)\s*$"
     r"|\b(?:if|while|for|when|catch)\s*\(.*\)\s*$"
 )
-
-# DR-157, fail-closed: a `.fold(` whose failure half is NOT named cannot be attributed by this
-# scanner — `fold({ a }, { b })` gives it no way to tell onSuccess from onFailure. Guessing is what
-# produced the inversion above, and silently declining to look is a false green. So an unnamed fold
-# in a scope file is reported BY NAME and the author must use the named form (which the tree
-# already does) or exempt it. An unclassifiable site becomes a build failure, never an absence.
-POSITIONAL_FOLD = re.compile(r"\.fold\s*\(")
-NAMED_FOLD_HALVES = re.compile(r"onFailure\s*=")
 
 # DR-154 / DR-156 / DR-158 / DR-160 — ONE lexer with a STATE STACK, because every hole in this
 # scanner traced back to reading structure off text that still contained non-syntax, and each
@@ -242,6 +238,31 @@ RENDERED_SHORT = re.compile(
 )
 
 
+# DR-160 round 2: a segment must end at a STATEMENT boundary, not only at a brace. `outcome
+# .exceptionOrNull()` on one line followed by `values.forEach {` on the next let the combinator
+# reach forward into an unrelated lambda — the control-head cut fixed the `if` case and left this
+# one. A newline ends the statement unless the expression is still open: the next line continues a
+# call chain (`.onFailure {` on its own line is the tree's own idiom), or this one ends on an
+# operator.
+CONTINUES = re.compile(r"[.,=+\-*/%&|?:<>(\[{]$|->$|\b(?:and|or)$")
+CONTINUED_BY = re.compile(r"^\s*[.)\]}]|^\s*\?\.")
+
+
+def _frame_kind(segment):
+    """Which kind of frame a `{` opens: "failure", None (a transparent control block), or "shadow".
+
+    FAILURE is tested FIRST and that order is load-bearing. `catch (e: IOException) {` matches both
+    the combinator list and the control-head list, and when the control test won, `catch` could not
+    open a failure frame at all — while the published coverage statement named it. A claim the code
+    contradicts is worse than a narrower claim.
+    """
+    if FAILURE_CONTEXT.search(FUN_DECL.sub(" ", segment)):
+        return "failure"
+    if CONTROL_HEAD.search(segment.rstrip() or " "):
+        return None
+    return "shadow"
+
+
 def failure_spans(lines):
     """Per line and COLUMN: may a SHORT name (`it`, `e`, …) be read as the throwable here?
 
@@ -249,89 +270,140 @@ def failure_spans(lines):
     the question is precisely "is `it` bound to the throwable at this column".
 
     Structural, not a fixed lookback. The first version asked whether a failure combinator appeared
-    within 3 lines above, and codex-splice mutation-proved the hole: a real `.onFailure { … }` in
-    SecureFile.kt whose nested cleanup pushes the `$it` render five lines below the opener stayed
-    GREEN. Widening the constant only moves the hole into the next nested block, so scope is tracked
-    by BRACE DEPTH: the body is in context until its own closing brace, at any depth and any length.
+    within 3 lines above, and codex-splice mutation-proved the hole: a real `.onFailure { … }` whose
+    nested cleanup pushes the render five lines below the opener stayed GREEN. Widening the constant
+    only moves the hole into the next nested block.
 
-    DR-157 makes the combinator/brace pairing POSITIONAL. It used to be a per-LINE flag — "this line
-    mentions a failure combinator" — which then attached to the next brace opened anywhere,
-    including one already opened EARLIER on the same line. codex-splice's fixture:
-    `runCatching { names.forEach { log("$it = stored") } }.exceptionOrNull()` was flagged, because
-    the trailing `exceptionOrNull` reached back and claimed the leading `runCatching {`. A
-    combinator can only govern a brace that comes AFTER it, so each `{` is judged on the code
-    between it and the previous brace token — the call that actually opened it.
+    DR-157 made the combinator/brace pairing POSITIONAL: a combinator can only govern a brace that
+    comes AFTER it, so each `{` is judged on the code between it and the previous boundary.
 
-    DR-159 adds SHADOWING, and forces column resolution. A nested LAMBDA rebinds `it`, so its body
-    is not attributable; a nested CONTROL BLOCK does not, so its body still is. Both can share a
-    line with the failure lambda that encloses them — codex-splice's `m.getOrElse(k) { names.forEach
-    { log("$it") } }` is one line holding both — so a per-line answer cannot be right. The two lex
-    views are column-aligned with the raw line by construction, which is what makes this checkable.
+    DR-159 added shadowing, and DR-160 round 2 replaced that single shadow depth with a FRAME STACK.
+    One depth could not express a genuine failure lambda nested INSIDE a shadowing one —
+    `onFailure { names.forEach { runCatching { … }.onFailure { log("$it") } } }` — where the
+    innermost frame rebinds `it` back to a throwable. That was a false negative, and a stack is what
+    the language's own scoping rule looks like: the innermost binder wins.
     """
     code_lines, _ = lex(lines)
     attributable = []
-    depth, stack, shadow = 0, [], None
-    segment = ""  # code seen since the previous brace token: the call that opens the next `{`
-    for code in code_lines:
+    depth, frames = 0, []  # frames: (depth, is_failure) — only LAMBDAS push; control blocks are transparent
+    segment = ""
+    for i, code in enumerate(code_lines):
         flags = bytearray(len(code))
         for col, ch in enumerate(code):
             if ch == "{":
                 depth += 1
-                is_block = bool(CONTROL_HEAD.search(segment.rstrip() or " "))
-                if not is_block and FAILURE_CONTEXT.search(FUN_DECL.sub(" ", segment)):
-                    stack.append(depth)
-                elif stack and shadow is None and not is_block:
-                    # A lambda (or a local fun body) opening inside a failure lambda. Either way
-                    # `it` is no longer the throwable in there.
-                    shadow = depth
+                kind = _frame_kind(segment)
+                if kind:
+                    frames.append((depth, kind == "failure"))
                 segment = ""
             elif ch == "}":
-                if shadow == depth:
-                    shadow = None
-                if stack and stack[-1] == depth:
-                    stack.pop()
+                while frames and frames[-1][0] == depth:
+                    frames.pop()
                 depth = max(0, depth - 1)
+                segment = ""
+            elif ch == ";":
                 segment = ""
             else:
                 segment += ch
-            flags[col] = 1 if (stack and shadow is None) else 0
-        segment += "\n"
+            flags[col] = 1 if (frames and frames[-1][1]) else 0
+        nxt = code_lines[i + 1] if i + 1 < len(code_lines) else ""
+        if CONTINUES.search(segment.rstrip()) or CONTINUED_BY.match(nxt):
+            segment += "\n"
+        else:
+            segment = ""
         attributable.append(flags)
     return attributable
 
 
-# DR-160: a throwable BOUND TO A LOCAL, which has no lambda and therefore no failure span at all.
-# codex-splice's fixture — `val e = outcome.exceptionOrNull()` then `log("$e")` — was missed
-# entirely: `e` is too short for [THROWABLE_NAMED], and there is no brace for [failure_spans] to
-# attribute it to. The binding itself is the evidence, so it is tracked directly. Scoped by brace
-# depth, so a later unrelated `e` in a sibling block is not tainted by it.
-THROWABLE_BINDING = re.compile(
-    r"\b(?:val|var)\s+(\w+)\s*(?::[^=]+)?=\s*(?![=])[^;]*?(?:exceptionOrNull\s*\(|\.cause\b)"
-)
+# DR-160: a throwable BOUND TO A LOCAL, which has no lambda and therefore no failure frame at all.
+# codex-splice's fixture — `val e = outcome.exceptionOrNull()` then `log("$e")` — was missed: `e` is
+# too short for [THROWABLE_NAMED] and there is no brace to attribute it to. The binding itself is
+# the evidence.
+#
+# Round 2 narrowed the rule on five counts, each a probe codex-splice reddened against round 1:
+#   * `.cause` is GONE. It is no more typed than getOrElse — `incident.cause` may be a String — and
+#     an AST census found zero live `.cause` local bindings, so the inference bought no coverage
+#     and cost a false positive.
+#   * `var` is GONE. `var e: Any? = outcome.exceptionOrNull(); e = "plain"` reassigns to a String,
+#     and without flow typing that claim cannot be honoured. `val` is this tree's idiom regardless.
+#   * the head and the SOURCE are separate patterns, so the compliance test can read the binding's
+#     WHOLE right-hand side. Round 1 tested the line, and an unrelated `SafeFailureText.render(…)`
+#     sitting beside a raw binding laundered it.
+#   * every binding in a statement, not just the first.
+#   * matched per STATEMENT, so `val e =` wrapped onto the next line is still seen.
+BINDING_HEAD = re.compile(r"\bval\s+(\w+)\s*(?::[^=]+)?=\s*(?![=])")
+THROWABLE_SOURCE = re.compile(r"\bexceptionOrNull\s*\(")
+
+# On restoring an interrupted statement (see [throwable_bindings]) the lambda body comes back with
+# it, and a `val` declared INSIDE that body has already been registered at its own inner depth. The
+# keyword is blanked so the body can still be read for compliance evidence without re-declaring
+# anything at the outer depth — which is the scope leak this round is fixing.
+INNER_DECL = re.compile(r"\bval\b")
 
 
 def throwable_bindings(lines):
-    """Per line: the set of local names currently bound to a throwable and still in scope."""
+    """Per line: the set of local names bound to a throwable and still IN SCOPE at that line.
+
+    Round 1 walked lines and took the depth at the END of the line, so
+    `if (x) { val e = outcome.exceptionOrNull() }` registered `e` at the depth the line CLOSED at
+    and the binding outlived its block — codex-splice's fixture then rendered an unrelated
+    `val e = "event"` below it. Depth is per COLUMN here, and a binding dies with the brace that
+    closes over it.
+
+    A `{` INTERRUPTS the statement it appears in rather than ending it: `val e = runCatching { … }
+    .exceptionOrNull()` is one binding, and resetting at the brace lost its head. The interrupted
+    statement is stashed with the depth it belongs to and resumes when its brace closes, carrying
+    the block body with it so the compliance test can see a sanitizer call inside the lambda.
+    """
     code_lines, _ = lex(lines)
-    live, out, depth = [], [], 0
-    for code in code_lines:
-        found = THROWABLE_BINDING.search(code)
-        # A binding whose own right-hand side routes through the sanitizer holds a rendered
-        # STRING, not a throwable — `val reason = attempt.exceptionOrNull()?.let { render(it) }`
-        # in UninstallCommand.kt is the live shape, and treating it as a throwable was a false
-        # positive this rule created on its first run.
-        if found and COMPLIANT.search(code):
-            found = None
+    live, out, stash = [], [], []
+    depth, segment, seg_depth = 0, "", 0
+    for i, code in enumerate(code_lines):
         for ch in code:
             if ch == "{":
+                stash.append([segment, seg_depth, depth, ""])
                 depth += 1
+                segment, seg_depth = "", depth
             elif ch == "}":
+                # Register the block's own trailing statement BEFORE the depth drops, so it is
+                # recorded at the inner depth and the prune below takes it back out again.
+                _register(segment, seg_depth, live)
                 depth = max(0, depth - 1)
                 live = [b for b in live if b[1] <= depth]
-        if found:
-            live.append((found.group(1), depth))
+                if stash and stash[-1][2] == depth:
+                    outer, outer_depth, _, body = stash.pop()
+                    segment, seg_depth = outer + " { " + INNER_DECL.sub("   ", body) + " } ", outer_depth
+                else:
+                    segment, seg_depth = "", depth
+            elif ch == ";":
+                _register(segment, seg_depth, live)
+                segment, seg_depth = "", depth
+            else:
+                segment += ch
+                for frame in stash:
+                    frame[3] += ch
+        nxt = code_lines[i + 1] if i + 1 < len(code_lines) else ""
+        if CONTINUES.search(segment.rstrip()) or CONTINUED_BY.match(nxt):
+            segment += "\n"
+        else:
+            _register(segment, seg_depth, live)
+            segment, seg_depth = "", depth
         out.append({name for name, _ in live})
     return out
+
+
+def _register(statement, depth, live):
+    """Record every throwable binding in one completed statement, scoped to [depth]."""
+    heads = list(BINDING_HEAD.finditer(statement))
+    for n, head in enumerate(heads):
+        stop = heads[n + 1].start() if n + 1 < len(heads) else len(statement)
+        rhs = statement[head.end():stop]
+        # A binding whose OWN right-hand side routes through the sanitizer holds a rendered STRING,
+        # not a throwable — `val reason = attempt.exceptionOrNull()?.let { render(it) }` in
+        # UninstallCommand.kt is the live shape, and it is why the window must be the whole RHS
+        # rather than the head: the sanitizer call sits past the combinator, inside the lambda.
+        if THROWABLE_SOURCE.search(rhs) and not COMPLIANT.search(rhs):
+            live.append((head.group(1), depth))
 
 
 def renders_throwable(lines, idx, spans=None, text_lines=None, bindings=None):

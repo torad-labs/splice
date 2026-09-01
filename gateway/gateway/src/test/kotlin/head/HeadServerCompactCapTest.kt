@@ -3,12 +3,15 @@
 // a direct test of WatchdogBudget.forCompact proves the arithmetic while nothing proves the factory
 // ever calls it (the shape of gap DR-7's acceptance wall exists to close).
 //
-// One head, one budget: 1s first-output / 20s streamIdle / 4s total. A NORMAL turn that goes silent
-// after the handshake is reaped by the 1s first-output cap and says so. A COMPACT turn on the same
-// head is not — its first-output cap IS the total cap, so the only thing that can end it is the 4s
-// whole-turn wall, which surfaces as the cancellation seal's generic watchdog wording. Live
-// provenance (2026-09-01 14:07): the first compaction on the corrected tier died at "no first output
-// within the 300s first-output cap".
+// One head PER ARM, same 1s first-output / 20s streamIdle tiers, different whole-turn wall. A NORMAL
+// turn that goes silent after the handshake is reaped by the 1s first-output cap and says so; its
+// wall is far away (30s) because the turn spans two upstream attempts (the WS round, then the SSE
+// re-serve) and sharing the compact arm's 4s wall let a slow CI runner reach the wall first (coverage
+// run 33549293551 failed this arm at the first-output assertion; locally it took 3.7s). A COMPACT
+// turn's first-output cap IS the total cap, so the only thing that can end it is its 4s whole-turn
+// wall — which surfaces as the cancellation seal's generic watchdog wording. Live provenance
+// (2026-09-01 14:07): the first compaction on the corrected tier died at "no first output within
+// the 300s first-output cap".
 package head
 
 import io.ktor.client.HttpClient
@@ -26,7 +29,6 @@ import mock.freshPort
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
-import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import splice.core.auth.AuthDescription
@@ -62,13 +64,16 @@ class HeadServerCompactCapTest {
     private val client = HttpClient(CIO) {
         defaultRequest { bearerAuth("test-inference-token") }
     }
-    private val port = freshPort()
-    private lateinit var head: HeadServer
 
-    @BeforeAll
-    fun setUp() = runTest {
+    @AfterAll
+    fun tearDown() {
+        client.close()
+        mock.stop()
+    }
+
+    private fun head(port: Int, watchdog: WatchdogBudget): HeadServer {
         val tmp = Files.createTempDirectory("head-compact-cap")
-        head = HeadServer(
+        return HeadServer(
             provider = CodexProvider(
                 tuning = ProviderTuning(
                     key = "codex",
@@ -81,9 +86,7 @@ class HeadServerCompactCapTest {
                     pinnedModel = "gpt-5.6-sol",
                     auth = CapFakeAuth(),
                     baseUrl = mock.baseUrl,
-                    // first-output 1s, streamIdle 20s, total 4s: the two arms below can only be
-                    // told apart by WHICH cap ends them, and the mock stalls for 6s — past both.
-                    watchdog = WatchdogBudget(1.seconds, 20.seconds, 4.seconds),
+                    watchdog = watchdog,
                     loginCommand = "claudex login",
                 ),
                 showReasoning = ReasoningDisplay.TEXT,
@@ -103,18 +106,22 @@ class HeadServerCompactCapTest {
                 log = {},
             ),
         )
-        head.start()
+    }
+
+    // Drives one turn through a head built for this arm's budget; the mock stalls 6s per attempt.
+    private suspend fun turnOn(watchdog: WatchdogBudget, system: String): String {
+        val port = freshPort()
+        val server = head(port, watchdog)
+        server.start()
         awaitListening(port)
+        try {
+            return turn(port, system)
+        } finally {
+            server.stop()
+        }
     }
 
-    @AfterAll
-    fun tearDown() = runTest {
-        head.stop()
-        client.close()
-        mock.stop()
-    }
-
-    private suspend fun turn(system: String): String =
+    private suspend fun turn(port: Int, system: String): String =
         client.post("http://127.0.0.1:$port/v1/messages") {
             header("Content-Type", "application/json")
             setBody(
@@ -126,10 +133,10 @@ class HeadServerCompactCapTest {
 
     @Test
     fun `a normal turn silent after the handshake is reaped by the first-output cap`() = runTest {
-        val sse = turn("You are a test. SCENARIO:idlepre")
+        val sse = turnOn(WatchdogBudget(1.seconds, 20.seconds, 30.seconds), "You are a test. SCENARIO:idlepre")
         assertTrue(sse.contains("overloaded_error"), "a stall is an honest, retryable failure: $sse")
         assertTrue(sse.contains("first-output cap"), "the 1s first-output tier must be the one that fired: $sse")
-        assertFalse(sse.contains("total cap"), "the 4s whole-turn wall must not have been reached: $sse")
+        assertFalse(sse.contains("stalled (watchdog)"), "the whole-turn wall must not have been reached: $sse")
     }
 
     // The system prompt carries Claude Code's verbatim summarizer marker, so the gateway classifies
@@ -137,7 +144,10 @@ class HeadServerCompactCapTest {
     @Test
     fun `a compact turn silent after the handshake survives the first-output cap and dies only on the total cap`() =
         runTest {
-            val sse = turn("SCENARIO:idlepre You are tasked with summarizing conversations for another agent.")
+            val sse = turnOn(
+                WatchdogBudget(1.seconds, 20.seconds, 4.seconds),
+                "SCENARIO:idlepre You are tasked with summarizing conversations for another agent.",
+            )
             assertTrue(sse.contains("overloaded_error"), "a stall is an honest, retryable failure: $sse")
             assertFalse(
                 sse.contains("first-output cap"),

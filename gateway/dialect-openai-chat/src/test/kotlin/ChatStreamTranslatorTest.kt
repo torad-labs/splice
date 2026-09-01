@@ -31,8 +31,14 @@ class ChatStreamTranslatorTest {
         assertEquals("Hi there", s.bodyText)
         assertEquals("why", s.thinkingText)
         assertEquals(5, s.usage.inputTokens)
-        assertTrue(sink.calls.contains("openThinking"))
-        assertTrue(sink.calls.contains("text:Hi "))
+        // DR-143: the EXACT wire, not membership. `contains` could not distinguish a compliant
+        // one-block-at-a-time stream from the overlapping one chat actually emitted — openThinking
+        // and text:Hi are both present either way. Anthropic's grammar is start, deltas, stop, then
+        // the next block, so the thinking block must be CLOSED (close#0) before the text block opens.
+        assertEquals(
+            listOf("openThinking", "think:why", "close#0", "openText", "text:Hi ", "text:there", "closeAll"),
+            sink.calls,
+        )
     }
 
     @Test

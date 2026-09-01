@@ -85,6 +85,28 @@ class CompactTest {
         assertFalse(classifier.markerPresent(quoted))
     }
 
+    // DR-141 (dialect sweep, 2026-08-31): the invariant three code sites state — system prompt OR
+    // the LAST user message, never the transcript — was not what lastUserTextOf did. It walked
+    // backwards past every user message with no TEXT block, and a tool_result-only user message is
+    // the DOMINANT shape in Claude Code's agentic loop, so a marker anywhere earlier re-triggered
+    // compaction on ordinary tool turns. That is not cosmetic: passthrough drops tools and
+    // tool_choice, chat sets emitTools=false, the mirror goes off and compact rows start recording,
+    // so a mid-task turn silently becomes a tool-less summarizer turn whose only trace looks like a
+    // normal compaction. Every pre-existing fixture here gave the last user message text, which is
+    // exactly why none of them could catch it.
+    @Test
+    fun `a tool-result-only last user message never re-triggers compaction - DR-141`() {
+        val toolTurn = body(
+            """{"model":"m","messages":[
+                {"role":"user","content":"$COMPACT_MARKER"},
+                {"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Read","input":{}}]},
+                {"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}
+            ]}""",
+        )
+        assertFalse(classifier.classifyCompact(toolTurn).compact, "a tool-result turn must not compact")
+        assertFalse(classifier.markerPresent(toolTurn), "the marker lives in history, not the last user turn")
+    }
+
     @Test
     fun `explicit compaction affordances match`() {
         assertTrue(

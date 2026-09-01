@@ -41,6 +41,10 @@ internal class PassthroughBlockRegistry(
     // it just stops repeating.
     private var unmappedIndexLogged = false
 
+    // DR-142: same once-per-turn latch idiom as unmappedIndexLogged, for a delta whose type does
+    // not belong to the KIND of the block it targets.
+    private var crossKindDeltaLogged = false
+
     internal suspend fun onBlockStart(evt: JsonObject, sink: WireSink) {
         val index = JsonScalars.int(evt, "index") ?: return
         val cb = evt["content_block"] as? JsonObject
@@ -99,7 +103,39 @@ internal class PassthroughBlockRegistry(
             }
             return
         }
-        applyDelta(block, evt["delta"] as? JsonObject ?: EMPTY, sink)
+        val delta = evt["delta"] as? JsonObject ?: EMPTY
+        // DR-142: decided HERE, before dispatch — an upstream index does not cross block KINDS.
+        val type = JsonScalars.strOrEmpty(delta["type"])
+        if (!deltaSuitsKind(block.kind, type)) return dropCrossKind(block.kind, type)
+        applyDelta(block, delta, sink)
+    }
+
+    /** DR-142: does this delta type belong to this block's KIND?
+     *
+     *  DR-108 fixed exactly this in the Responses dialect — "an output_index does not cross block
+     *  TYPES" — and the passthrough twin was never swept, though it is the dialect whose whole job
+     *  is re-indexing arbitrary upstream blocks onto the client wire. Deliberately permissive on the
+     *  one pairing where the protocol genuinely crosses: a server_tool_use block (RAW) streams its
+     *  arguments through input_json_delta, so narrowing that to TOOL would regress DR-119. Citations
+     *  ride TEXT blocks, as the citations_delta branch below has always said. Unknown delta types
+     *  keep falling through to the existing no-op rather than being judged here. */
+    private fun deltaSuitsKind(kind: Kind, deltaType: String): Boolean {
+        if (kind == Kind.IGNORED) return true // no wire; applyDelta swallows it silently, as before
+        return when (deltaType) {
+            "text_delta" -> kind == Kind.TEXT
+            "thinking_delta", "signature_delta" -> kind == Kind.THINKING
+            "input_json_delta" -> kind == Kind.TOOL || kind == Kind.RAW
+            "citations_delta" -> kind == Kind.TEXT
+            else -> true
+        }
+    }
+
+    /** One line per TURN, never per delta: a misbehaving upstream must not firehose the log. Same
+     *  latch idiom as the unmapped-index path, which is the translator's other anomaly channel. */
+    private fun dropCrossKind(kind: Kind, type: String) {
+        if (crossKindDeltaLogged) return
+        ctx.log("[${quirks.providerTag}] $type targeted a $kind block — dropped\n")
+        crossKindDeltaLogged = true
     }
 
     private suspend fun applyDelta(block: Block, delta: JsonObject, sink: WireSink) {

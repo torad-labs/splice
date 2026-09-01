@@ -75,6 +75,57 @@ private fun fullTurnEvents(): List<JsonObject> = listOf(
 
 class PassthroughStreamTranslatorTest {
 
+    // DR-142 (dialect sweep, 2026-08-31): applyDelta dispatched on the DELTA type and never checked
+    // the KIND of the block it targeted — DR-108's exact defect, fixed in the Responses dialect and
+    // never swept in the passthrough twin, which is the dialect whose whole job is re-indexing
+    // arbitrary upstream blocks onto the client wire. A text_delta aimed at an open tool_use block
+    // was forwarded verbatim (WireBlockWriter guards openness, not kind), emitting text_delta INSIDE
+    // tool_use on the wire and latching emittedText so TurnOutcome claimed text was delivered when
+    // the bytes went into a tool block. The non-stream sibling CollectingBlocks type-checks every
+    // one, so the SAME upstream frame was dropped on stream:false and forwarded corrupt on
+    // stream:true. Every fixture in this file sends a delta matching the block it opened.
+    @Test
+    fun `a text delta aimed at an open tool block is dropped - DR-142`() = runTest {
+        val sink = Rec()
+        drive(
+            sink,
+            ev("""{"type":"message_start","message":{"usage":{"input_tokens":1}}}"""),
+            ev(
+                """{"type":"content_block_start","index":0,""" +
+                    """"content_block":{"type":"tool_use","id":"t1","name":"Read"}}""",
+            ),
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"LEAK-142"}}"""),
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{}"}}"""),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"message_delta","delta":{"stop_reason":"tool_use"}}"""),
+            ev("""{"type":"message_stop"}"""),
+        )
+        assertFalse(
+            sink.calls.any { it.startsWith("text:") },
+            "a text_delta must never enter a tool_use block: ${sink.calls}",
+        )
+        assertTrue(sink.calls.contains("json:{}"), "the tool's OWN delta must still forward: ${sink.calls}")
+    }
+
+    // DR-142 control: the guard must stay permissive where the protocol genuinely crosses kinds.
+    // A thinking_delta into a text block is corrupt and dropped, but narrowing input_json_delta to
+    // TOOL alone would break server_tool_use blocks, which stream their input the same way.
+    @Test
+    fun `a thinking delta aimed at an open text block is dropped - DR-142`() = runTest {
+        val sink = Rec()
+        drive(
+            sink,
+            ev("""{"type":"message_start","message":{"usage":{"input_tokens":1}}}"""),
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""),
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"LEAK-142"}}"""),
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"real"}}"""),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"message_stop"}"""),
+        )
+        assertFalse(sink.calls.any { it.startsWith("think:") }, "thinking_delta into a text block: ${sink.calls}")
+        assertTrue(sink.calls.contains("text:real"), "the text block's own delta must forward: ${sink.calls}")
+    }
+
     @Test
     fun `full turn re-indexes blocks, synthesizes one signature, and normalizes usage`() = runTest {
         val sink = Rec()

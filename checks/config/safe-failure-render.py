@@ -10,10 +10,12 @@ the instance; only a checker closes the class.
 DENOMINATOR (the part that matters, per the completeness law): scope is derived from the
 SOURCE, never from a list of known-interesting files, and never from "files that already
 call SafeFailureText" — that last one is the tautology this wall exists to avoid, since a
-NEW credential path that never learned the law would not be in its own denominator. A file
-is in scope when it names any credential/state vocabulary (SCOPE_MARKERS): those are the
-types that read or write the bytes the law protects. Measured at authoring time: 91 of 430
-main-source files in scope, holding 20 rendered-throwable sites.
+NEW credential path that never learned the law would not be in its own denominator. Scope is
+CAUSAL: DR-65's hazard is an exception quoting the bytes of the file that produced it, which
+is only reachable if the code TOUCHED FILES, so a source is in scope when it does filesystem
+I/O (SCOPE_IO) or names credential/state vocabulary (SCOPE_VOCAB, which covers a file that
+delegates its I/O to a collaborator). No site count is quoted here on purpose: a number in a
+header rots the first time the tree moves, and `report` prints the live roll on demand.
 
 DISPOSITION: every site in scope is COMPLIANT (routed through SafeFailureText.render) or
 EXEMPT (carries a dated marker naming why that throwable cannot quote state bytes).
@@ -56,7 +58,10 @@ THROWABLE_SHORT = r"(?:it|e|t|ex|err)"
 FAILURE_CONTEXT = re.compile(
     r"onFailure|getOrElse|exceptionOrNull|recoverCatching|recover\b|\bcatch\s*\(|\.fold\("
 )
-FAILURE_LOOKBACK = 3
+
+# String literals, stripped before brace counting so a template's own braces (`"${e.message}"`)
+# and a literal brace in prose cannot corrupt the depth.
+_STRING = re.compile(r'"(?:\\.|[^"\\])*"')
 
 # A throwable rendered INTO TEXT. Both interpolation forms, because the BARE one is strictly
 # WORSE: `$failure` calls toString(), which is the class name PLUS the same message — including
@@ -72,14 +77,55 @@ RENDERED_SHORT = re.compile(
 )
 
 
-def renders_throwable(lines, idx):
+def failure_spans(lines):
+    """Per line: is it inside the BODY of a failure-handling lambda?
+
+    Structural, not a fixed lookback. The first version asked whether a failure combinator
+    appeared within 3 lines above, and codex-splice mutation-proved the hole: a real
+    `.onFailure { ... }` in SecureFile.kt whose nested cleanup pushes the `$it` render five lines
+    below the opener stayed GREEN. Widening the constant only moves the hole deeper into the next
+    nested block, so scope is tracked by BRACE DEPTH: the lambda's body is in context until its own
+    closing brace, at any nesting depth and any length.
+    """
+    inside = [False] * len(lines)
+    depth, stack, pending, in_raw = 0, [], False, False
+    for i, raw in enumerate(lines):
+        # A multi-line raw string ("""...""") carries arbitrary unbalanced braces; skip its body.
+        ticks = raw.count('"""')
+        if in_raw:
+            inside[i] = bool(stack)
+            if ticks % 2:
+                in_raw = False
+            continue
+        if ticks % 2:
+            in_raw = True
+        code = _STRING.sub('""', raw.split("//")[0])
+        pending = pending or bool(FAILURE_CONTEXT.search(code))
+        line_inside = bool(stack)
+        for ch in code:
+            if ch == "{":
+                depth += 1
+                if pending:
+                    stack.append(depth)
+                    pending = False
+                    line_inside = True
+            elif ch == "}":
+                if stack and stack[-1] == depth:
+                    stack.pop()
+                depth = max(0, depth - 1)
+        inside[i] = line_inside or bool(stack)
+    return inside
+
+
+def renders_throwable(lines, idx, spans=None):
     """Does line [idx] interpolate a throwable into text?"""
     if RENDERED.search(lines[idx]):
         return True
     if not RENDERED_SHORT.search(lines[idx]):
         return False
-    window = lines[max(0, idx - FAILURE_LOOKBACK):idx + 1]
-    return any(FAILURE_CONTEXT.search(l) for l in window)
+    if spans is None:
+        spans = failure_spans(lines)
+    return spans[idx]
 
 # A site that already obeys the law. Enumerated DELIBERATELY, even though it can never
 # violate: scoring only the raw form would let the denominator SHRINK by one every time a
@@ -111,13 +157,13 @@ def in_scope(text):
     return why
 
 
-def disposition(lines, idx):
+def disposition(lines, idx, spans=None):
     """COMPLIANT / EXEMPT / the failure reason for the site at 0-based [idx].
 
     A raw render is judged raw even on a line that ALSO calls the sanitizer: one sanitized
     half never launders the other, so a mixed line still needs its own exemption.
     """
-    if not renders_throwable(lines, idx):
+    if not renders_throwable(lines, idx, spans):
         return "compliant", None
     for back in range(idx, max(-1, idx - EXEMPT_LOOKBACK - 1), -1):
         found = EXEMPT.search(lines[back])
@@ -143,14 +189,15 @@ def sites(root):
         if not markers:
             continue
         lines = text.splitlines()
+        spans = failure_spans(lines)
         for idx, line in enumerate(lines):
             # A comment cannot render anything at runtime. Skipped so prose ABOUT the law (this
             # file's own header quotes `$failure` as the thing it forbids) is not a violation.
             if line.lstrip().startswith(("//", "*", "/*")):
                 continue
-            if not renders_throwable(lines, idx) and not COMPLIANT.search(line):
+            if not renders_throwable(lines, idx, spans) and not COMPLIANT.search(line):
                 continue
-            verdict, detail = disposition(lines, idx)
+            verdict, detail = disposition(lines, idx, spans)
             out.append((str(path), idx + 1, line.strip(), verdict, detail, markers))
     return out
 

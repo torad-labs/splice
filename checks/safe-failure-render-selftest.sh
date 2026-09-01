@@ -112,6 +112,32 @@ arm "\$it in onFailure fails" 1 A.kt 'package p
 import java.nio.file.Files
 fun a() = Files.size(p).onFailure { log("stat failed: $it — skipping") }'
 
+# 12b — codex-splice's mutation, 2026-08-31: the first version asked whether a failure combinator
+#       appeared within a FIXED 3-line lookback, and a real `.onFailure { ... }` in SecureFile.kt
+#       whose nested cleanup pushes the `$it` render five lines below the opener stayed GREEN.
+#       Widening the constant only moves the hole into the next nested block, so context is now
+#       tracked by brace depth. This arm reproduces that exact shape: a multi-line nested call
+#       between the opener and the render.
+arm "\$it deep inside a multi-line onFailure body fails" 1 Deep.kt 'package p
+import java.nio.file.Files
+fun a() = write().onFailure {
+    discard(
+        runCatching { Files.deleteIfExists(tmp) },
+        "cleanup is best-effort; the write failure rethrows",
+    )
+    throw java.io.IOException("secure write failed: $it", it)
+}'
+
+# 12c — and the span must CLOSE with its lambda: a `$it` after the body ended is not a throwable.
+arm "\$it after the lambda closes is not flagged" 0 After.kt 'package p
+import java.nio.file.Files
+fun a() {
+    write().onFailure {
+        log("failed")
+    }
+    names.forEach { log("$it = stored") }
+}'
+
 # 13 — CONTROL: prose ABOUT the law is a comment and cannot render anything at runtime.
 arm "comment mentioning \$failure is not flagged" 0 A.kt 'package p
 import java.nio.file.Files
@@ -122,5 +148,5 @@ fun a(e: Throwable) = Files.exists(p).also { log("x (${SafeFailureText.render(e)
 ( cd "$ROOT" && python3 checks/config/safe-failure-render.py check . >/dev/null 2>&1 ) \
   || err "the real repository does not pass its own wall"
 
-[ "$fail" = 0 ] && echo "  ✓ safe-failure-render selftest: 14 arms"
+[ "$fail" = 0 ] && echo "  ✓ safe-failure-render selftest: 16 arms"
 exit "$fail"

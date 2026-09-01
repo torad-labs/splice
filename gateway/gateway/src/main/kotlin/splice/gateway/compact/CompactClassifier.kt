@@ -23,17 +23,27 @@ public data class CompactProbe(
 public class CompactClassifier {
     public fun systemText(body: AnthropicRequest): String = body.system.orEmpty()
 
-    public fun lastUserTextOf(body: AnthropicRequest): String {
-        for (msg in body.messages.asReversed()) {
-            if (msg.role != "user") continue
-            val t = msg.content.filterIsInstance<TextBlock>()
-                .map { it.text }
-                .filter { it.isNotEmpty() }
-                .joinToString("\n")
-            if (t.isNotEmpty()) return t
-        }
-        return ""
-    }
+    /**
+     * The LAST user message's text — empty when that message carries none.
+     *
+     * DR-141: this used to keep walking backwards past every user message with no TEXT block,
+     * returning the first one that had some. That is not "the last user message", and the shape it
+     * skips is the DOMINANT one in Claude Code's agentic loop: a tool_result-only user turn. So
+     * after a compaction — Claude Code re-seeds the summary as user text — every following tool
+     * turn re-read that summary and re-classified as compact. A false compact is not cosmetic:
+     * passthrough drops tools and tool_choice, chat sets emitTools=false, the mirror goes off and
+     * compact rows start recording, so a mid-task turn silently becomes a tool-less summarizer turn
+     * whose only trace looks like an ordinary compaction. An empty return is the honest answer —
+     * a turn whose last user message is a tool result is not asking for a summary.
+     */
+    public fun lastUserTextOf(body: AnthropicRequest): String =
+        body.messages.lastOrNull { it.role == "user" }
+            ?.content
+            ?.filterIsInstance<TextBlock>()
+            ?.map { it.text }
+            ?.filter { it.isNotEmpty() }
+            ?.joinToString("\n")
+            .orEmpty()
 
     /** Marker in the system prompt OR the LAST user message — never the whole transcript. */
     public fun markerPresent(body: AnthropicRequest): Boolean = classifyCompact(body).hasMarker

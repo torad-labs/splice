@@ -6,15 +6,19 @@ package splice.core.util
 
 import java.nio.ByteBuffer
 import java.nio.channels.FileChannel
+import java.nio.channels.FileLock
+import java.nio.channels.OverlappingFileLockException
 import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardCopyOption
 import java.nio.file.StandardOpenOption
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 
 public object JsonlSink {
     private val locks = ConcurrentHashMap<Path, Any>()
+    private val unrotated = AtomicInteger()
 
     /**
      * Append [line], rotating one generation before [maxBytes] can grow without bound.
@@ -22,29 +26,78 @@ public object JsonlSink {
      * IO-001: the [locks] map only serializes writers within THIS JVM; two head PROCESSES writing
      * the same file coordinate not at all otherwise, so both can read a stale size and overshoot
      * the cap. A cross-process [FileLock] on a sibling `.lock` file (the CredentialLock shape,
-     * provider-spi/CredentialLock.kt) closes that gap. Every appendLine caller already runs on
-     * AsyncFileIo's dedicated background thread, never a shared coroutine dispatcher, so a plain
-     * blocking lock (not CredentialLock's bounded poll, which exists to avoid parking a scarce
-     * dispatcher thread under a slow HTTP refresh) is enough — the critical section here is a stat
-     * + maybe-rename + append, held for microseconds, and a dead peer's advisory lock releases
-     * automatically with the process.
+     * provider-spi/CredentialLock.kt) closes that gap.
+     *
+     * DR-178: that gap used to be closed with a plain blocking `channel.lock()`, justified here by
+     * "the critical section is a stat + maybe-rename + append, held for microseconds". The hold is
+     * microseconds only when no peer holds the lock — which is the one case the lock is not for.
+     * The justification also had the AsyncFileIo argument backwards: running on that lane is the
+     * reason a blocking wait is WORSE, not safer. FileIoTask states the contract — the single
+     * `splice-file-io` daemon thread "must not block for long (it holds the one lane every other
+     * writer queues behind)" — so a wedged writer or a second process parked every perf, usage,
+     * compact and state write behind one advisory lock, with no bound at all.
+     *
+     * So: KeyStore.withStoreLock's bounded tryLock poll (SH-11, same module, same blocking shape),
+     * with the opposite degrade. KeyStore FAILS LOUDLY because an unlocked read-modify-write of
+     * keys.toml is the lost update it exists to prevent; this is an append-only best-effort
+     * telemetry line whose callers already wrap it in runCatchingCancellable, so throwing would
+     * just drop the row silently. On expiry it appends anyway, WITHOUT rotating — the rotate is
+     * the stat-then-rename that actually needs cross-process exclusion, while the append itself is
+     * O_APPEND. The cost is that the file may sit over [maxBytes] until an uncontended append
+     * rotates it, which is the same bounded overshoot IO-001 already admits two processes cause,
+     * and it is strictly above the status quo of parking the lane forever. [unrotatedAppends]
+     * counts the degrade so it is observable rather than silent.
      */
     public fun appendLine(file: Path, line: String, maxBytes: Long = DEFAULT_MAX_BYTES) {
         val normalized = file.toAbsolutePath().normalize()
         synchronized(locks.computeIfAbsent(normalized) { Any() }) {
             val lockPath = normalized.resolveSibling("${normalized.fileName}.lock")
             FileChannel.open(lockPath, StandardOpenOption.CREATE, StandardOpenOption.WRITE).use { channel ->
-                channel.lock().use {
-                    val encoded = (line + "\n").toByteArray(StandardCharsets.UTF_8)
-                    val currentSize = if (Files.exists(file)) Files.size(file) else 0L
-                    if (currentSize > 0 && currentSize + encoded.size > maxBytes) {
-                        val rolled = file.resolveSibling("${file.fileName}.1")
-                        Files.move(file, rolled, StandardCopyOption.REPLACE_EXISTING)
-                    }
-                    Files.write(file, encoded, StandardOpenOption.CREATE, StandardOpenOption.APPEND)
+                val lock = acquireBounded(channel)
+                try {
+                    append(file, line, maxBytes, rotate = lock != null)
+                } finally {
+                    lock?.release()
                 }
             }
         }
+    }
+
+    /** Appends that gave up on the cross-process lock and therefore skipped the rotation check.
+     *  Mirrors [AsyncFileIo.droppedCount]: this lane cannot report through a log that it owns, so
+     *  a counter is how the degrade stays visible. */
+    public fun unrotatedAppends(): Int = unrotated.get()
+
+    /** tryLock poll to [LOCK_WAIT_MS]; null means the budget is spent and the caller appends
+     *  UNROTATED. A same-JVM overlap throws instead of queueing, so held-is-held either way —
+     *  KeyStore.acquireBounded says the same thing about the same primitive. */
+    private fun acquireBounded(channel: FileChannel): FileLock? {
+        val deadline = System.currentTimeMillis() + LOCK_WAIT_MS
+        while (true) {
+            val lock = try {
+                channel.tryLock()
+            } catch (ignored: OverlappingFileLockException) {
+                null // held by this JVM via another channel — same contention, same poll
+            }
+            if (lock != null) return lock
+            if (System.currentTimeMillis() >= deadline) {
+                unrotated.incrementAndGet()
+                return null
+            }
+            Thread.sleep(LOCK_POLL_MS)
+        }
+    }
+
+    private fun append(file: Path, line: String, maxBytes: Long, rotate: Boolean) {
+        val encoded = (line + "\n").toByteArray(StandardCharsets.UTF_8)
+        if (rotate) {
+            val currentSize = if (Files.exists(file)) Files.size(file) else 0L
+            if (currentSize > 0 && currentSize + encoded.size > maxBytes) {
+                val rolled = file.resolveSibling("${file.fileName}.1")
+                Files.move(file, rolled, StandardCopyOption.REPLACE_EXISTING)
+            }
+        }
+        Files.write(file, encoded, StandardOpenOption.CREATE, StandardOpenOption.APPEND)
     }
 
     /**
@@ -95,6 +148,13 @@ public object JsonlSink {
 
     private const val DEFAULT_MAX_BYTES = 64L * 1024 * 1024
     private const val NEWLINE_BYTE = '\n'.code.toByte()
+
+    // DR-178: three orders of magnitude above a healthy hold (stat + maybe-rename + append) and far
+    // below the multi-second parking that harms the lane. Deliberately much tighter than
+    // KeyStore's 5s, because what waits here is not one CLI command but every other writer in the
+    // process. Poll interval matches KeyStore's.
+    private const val LOCK_WAIT_MS = 250L
+    private const val LOCK_POLL_MS = 25L
 }
 
 /** [JsonlSink.readTailAt]'s result: the complete lines in the trailing window, and the absolute

@@ -261,6 +261,25 @@ RENDERED_SHORT = re.compile(
     r"\$\{\s*%s\s*\}|\$%s\b" % (THROWABLE_SHORT, THROWABLE_SHORT)    # ${it} / $it
 )
 
+# DR-170: a throwable rendered by CALLING one of its text-producing members. Every matcher above
+# keys on a throwable NAME — bare `$failure`, braced `${failure}`, or the one property spelling
+# `${x.message}` — so an interpolation whose content is an EXPRESSION was invisible to all of them:
+# `${e.stackTraceToString()}` contains no bare `$e` and is not `${e}`, and "stackTraceToString"
+# does not contain ".message". DaemonBoundary's boot handler used exactly that form and the wall
+# read the whole file as clean, in a file that is in scope and already routes its OTHER failure
+# correctly. A wall blind to the STRONGEST render — a stack trace carries the message AND the
+# frames — while catching the weaker ones is the same shape as the bare-`$failure` hole this
+# checker's own selftest header records from its first draft.
+#
+# Unconditional, with no failure-frame or binding test, and that is deliberate rather than lazy:
+# these three members exist ONLY on Throwable, so unlike `.message` (which any response or result
+# type may carry) the receiver's type is not in doubt. Matched anywhere in a scope file, inside a
+# string or not, because `print(e.stackTraceToString())` renders the same bytes to the same sink as
+# the interpolated form and there is no reading under which one is safe and the other is not.
+THROWABLE_TEXT_MEMBER = re.compile(
+    r"\.(?:stackTraceToString\s*\(|printStackTrace\s*\(|localizedMessage\b)"
+)
+
 
 # DR-160 round 2: a segment must end at a STATEMENT boundary, not only at a brace. `outcome
 # .exceptionOrNull()` on one line followed by `values.forEach {` on the next let the combinator
@@ -588,7 +607,10 @@ def renders_throwable(lines, idx, spans=None, text_lines=None, bindings=None):
         text_lines = lex(lines)[1]
         bindings = throwable_bindings(lines)
     line = text_lines[idx]
-    if RENDERED.search(line):
+    # DR-170: an EXPRESSION render — `${e.stackTraceToString()}`, or a bare printStackTrace call —
+    # is decided by the member alone, with no name or frame test. See [THROWABLE_TEXT_MEMBER] for
+    # why the receiver's type is not in doubt there while it is for `.message`.
+    if THROWABLE_TEXT_MEMBER.search(line) or RENDERED.search(line):
         return True
     if bindings is None:
         bindings = throwable_bindings(lines)

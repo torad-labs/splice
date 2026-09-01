@@ -848,6 +848,47 @@ import java.nio.file.Files
 // a bare `$failure` here would quote file bytes, which is why ${e.message} is banned
 fun a(e: Throwable) = Files.exists(p).also { log("x (${SafeFailureText.render(e)})") }'
 
+# 44 — DR-170. Every matcher before this one keys on a throwable NAME, so an interpolation whose
+#      content is an EXPRESSION slipped past all of them: `${e.stackTraceToString()}` holds no bare
+#      `$e`, is not `${e}`, and "stackTraceToString" does not contain ".message". DaemonBoundary's
+#      boot handler shipped exactly that form and the wall read the file as clean — while catching
+#      the weaker renders in the same file. Same shape as the bare-`$failure` hole in this header.
+arm_at "an interpolated stackTraceToString is reported" 5 "renders a throwable raw" StackTrace.kt 'package p
+import java.nio.file.Files
+fun a(e: Throwable) {
+    Files.size(p)
+    log("boom ${e.stackTraceToString()}")
+}'
+
+# 44b — the same render OUTSIDE a string. It reaches the same sink with the same bytes, so there is
+#       no reading under which the interpolated form is forbidden and the direct call is fine.
+arm_at "a bare stackTraceToString call is reported" 5 "renders a throwable raw" StackTraceBare.kt 'package p
+import java.nio.file.Files
+fun a(e: Throwable) {
+    Files.size(p)
+    System.err.print(e.stackTraceToString())
+}'
+
+# 44c — localizedMessage is the same hazard under a spelling the `.message` alternative cannot see,
+#       because the literal ".message" does not appear in ".localizedMessage".
+arm_at "localizedMessage is reported" 5 "renders a throwable raw" Localized.kt 'package p
+import java.nio.file.Files
+fun a(e: Throwable) {
+    Files.size(p)
+    log("boom ${e.localizedMessage}")
+}'
+
+# 44d — the CONTROL, and the one that matters most: DR-170 fixes DaemonBoundary by keeping the
+#       FRAMES and dropping the message, so a member test that over-matched `.stackTrace` would
+#       flag the very remedy it demands and make the law unsatisfiable. This is that exact shape.
+arm "iterating stackTrace frames beside a routed message is not flagged" 0 Frames.kt 'package p
+import java.nio.file.Files
+fun a(e: Throwable) {
+    Files.size(p)
+    val frames = e.stackTrace.take(3).joinToString("") { frame -> "    at $frame\n" }
+    log("boom ${SafeFailureText.render(e)}" + frames)
+}'
+
 # 14 — the real gate must be green on the real tree, or the leg is reporting on nothing.
 ( cd "$ROOT" && python3 checks/config/safe-failure-render.py check . >/dev/null 2>&1 ) \
   || err "the real repository does not pass its own wall"

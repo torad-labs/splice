@@ -112,17 +112,40 @@ internal class DaemonBoundary {
      *  thread that dies with the JVM, and this fires when the JVM is dying. No catch clause on the
      *  boot path itself (an uncaught-exception handler needs none), so the cancellation and
      *  broad-catch walls stay untouched. Covers runtime uncaught throwables on other threads too —
-     *  a net, not a boot-only special case. */
+     *  a net, not a boot-only special case.
+     *
+     *  DR-170: this rendered `e.stackTraceToString()` — the whole throwable, MESSAGE included — to
+     *  stderr and appended it to daemon.log, defeating DR-65 on the one path that parses
+     *  splice.toml. [Main.runDaemon] installs this handler BEFORE TopologyLoader runs, and a ktoml
+     *  decoding failure is a SerializationException, which [runCatchingDaemonBoundary] does not
+     *  catch, so it lands here; ktoml quotes the offending line, and DR-92 established that
+     *  splice.toml legally carries credential-like values in extra_headers. Doctor (DR-92) and the
+     *  CLI verbs (DR-99) already withhold on the same input. The message now goes through the
+     *  sanctioned renderer this file already used ten lines above.
+     *
+     *  The FRAMES are kept deliberately rather than dropped with the message. Withholding both
+     *  would leave an operator whose daemon will not start with a single sentence that names
+     *  nothing, which is precisely the /dev/null outcome JW-01 exists to end — and a frame is a
+     *  class, a method and a line number produced by the VM, never a byte of the file that failed
+     *  to parse. Message and frames are separable here, so the law costs no diagnosis. */
     internal fun bootFailureHandler(statePaths: StatePaths): Thread.UncaughtExceptionHandler =
         Thread.UncaughtExceptionHandler { thread, e ->
             val line = "[${LocalTime.now().truncatedTo(ChronoUnit.SECONDS)}] [daemon] UNCAUGHT on " +
-                "${thread.name}: ${e.stackTraceToString()}\n"
+                "${thread.name}: ${SafeFailureText.render(e)}\n" + bootFrames(e)
             System.err.print(line)
             Cancellables.runCatchingCancellable {
                 Files.createDirectories(statePaths.logsDir)
                 Files.writeString(statePaths.logsDir.resolve("daemon.log"), line, CREATE, APPEND)
             }
         }
+
+    /** DR-170: the boot trace WITHOUT its message. A StackTraceElement is a declaring class, a
+     *  method, a file and a line — all produced by the VM from the loaded class, none of them
+     *  content of the file whose parse failed — so the frames carry the whole diagnostic value of
+     *  a stack trace and none of its DR-65 hazard. Bounded because an uncaught boot failure can
+     *  carry a deep or recursive trace, and this writes synchronously into a rotating log. */
+    private fun bootFrames(failure: Throwable): String =
+        failure.stackTrace.take(BOOT_TRACE_FRAMES).joinToString("") { frame -> "    at $frame\n" }
 
     // Port→pid lookup that used to live on DaemonStop. The stop ladder still decides
     // WHEN to signal; this type already owns process-boundary isolation, so the ss
@@ -144,3 +167,7 @@ internal class DaemonBoundary {
 
 // One rolled generation at 64MB caps daemon.log disk at ~128MB — plenty of tail history, bounded.
 private const val MAX_LOG_BYTES = 64L * 1024 * 1024
+
+// DR-170: deep enough to name the failing call chain through the daemon's own boot, short enough
+// that a recursive trace cannot flood a synchronous write into the log.
+private const val BOOT_TRACE_FRAMES = 20

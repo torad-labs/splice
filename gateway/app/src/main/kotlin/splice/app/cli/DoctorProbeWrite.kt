@@ -11,20 +11,52 @@ import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.Path
 
+/** The probe's BYTE write, as a named seam (the [WrapperClaim] precedent, and a fun interface
+ *  rather than a raw lambda type for the same reason that one is).
+ *
+ *  DR-171 redo, on codex-splice's review: creating the file and writing bytes into it are two
+ *  different claims, and this probe makes the second one — its non-access remedy is `df`, which is
+ *  advice about SPACE. Metadata can succeed where data cannot (ENOSPC, a quota, a failing device),
+ *  so an exclusive create alone would report INFO over a directory that cannot actually take a
+ *  byte. Nothing could prove the write survived the DR-171 port while it was an unmockable direct
+ *  call — the mutant that deleted it passed every arm — so the seam exists to make that property
+ *  testable, not to make the probe configurable. */
+internal fun interface ProbeWrite {
+    operator fun invoke(probe: Path, content: String)
+}
+
+/** The production write. */
+internal object FileProbeWrite : ProbeWrite {
+    override fun invoke(probe: Path, content: String) {
+        Files.writeString(probe, content)
+    }
+}
+
 /** The writability probe as a constructed collaborator rather than a free function (Kotlin style
  *  law, 2026-08-15: main sources carry no top-level functions). Stateless — doctor builds one and
  *  asks it; the member keeps the old function's name so every historical grep still lands. */
-internal class DoctorProbeWrite {
+internal class DoctorProbeWrite(private val write: ProbeWrite = FileProbeWrite) {
 
     /** JW-17: write-and-delete a dot-prefixed probe in [dir] (created first, as the daemon would).
      *  OK carries [okDetail] (the path, or a richer label); a failure is a FAIL whose fix is chosen
      *  by cause — AccessDenied wants chmod, anything else (typically no space) wants df. Non-mutating
      *  in spirit: the probe is removed in a finally. */
     internal fun writableProbe(name: String, dir: Path, okDetail: String? = null): DoctorCheck {
-        val probe = dir.resolve(".splice-doctor-write-probe")
+        // DR-171: this resolved the FIXED name ".splice-doctor-write-probe" and wrote to it, so a
+        // local peer could pre-plant that name as a symlink — the write FOLLOWED it and truncated
+        // the victim to the five bytes below, the finally then removed only the link, and doctor
+        // reported INFO over the damage. That is DR-8 redo-3's defect in the sibling exec probe, so
+        // its remedy PORTS rather than gets re-invented: createTempFile picks a random name and
+        // creates it with CREATE_NEW (O_EXCL), which refuses ANY pre-existing path — symlink and
+        // dangling symlink included — so the write can only land on the fresh regular file it just
+        // made. Creation sits INSIDE the try, so a creation failure is reported as the probe's own
+        // failure (fail-closed) rather than escaping; the finally deletes only a probe that was
+        // actually created, which is why this is a nullable var and not a val.
+        var probe: Path? = null
         return try {
             Files.createDirectories(dir)
-            Files.writeString(probe, "probe")
+            probe = Files.createTempFile(dir, ".splice-doctor-write-probe.", ".tmp")
+            write(probe, "probe")
             DoctorCheck(name, CheckStatus.INFO, okDetail ?: dir.toString())
         } catch (_: java.nio.file.AccessDeniedException) {
             // The label is read off the BRANCH, not off the caught throwable's runtime class: this
@@ -39,7 +71,7 @@ internal class DoctorProbeWrite {
                 "check free space: df -h $dir",
             )
         } finally {
-            Cancellables.runCatchingCancellable { Files.deleteIfExists(probe) }
+            probe?.let { p -> Cancellables.runCatchingCancellable { Files.deleteIfExists(p) } }
         }
     }
 

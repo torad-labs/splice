@@ -49,7 +49,17 @@ internal class KimiAuthStore(
     @Volatile
     private var cache: Cache? = null
 
-    internal data class Cache(val snapshot: Snapshot, val mtimeMs: Long, val loadedAt: Long)
+    // DR-148: [sizeBytes] joins the identity, mirroring the codex twin. mtime alone cannot see a
+    // peer rotation that lands inside the same filesystem timestamp tick, and this file is written
+    // concurrently by peers by design — a torn read then serves the stale token for up to
+    // authCacheMs. ext4/xfs nanosecond timestamps make that rare, but two of the four readers in
+    // this tree already carried the defence and nothing explained why these two did not.
+    internal data class Cache(
+        val snapshot: Snapshot,
+        val mtimeMs: Long,
+        val loadedAt: Long,
+        val sizeBytes: Long,
+    )
 
     internal data class Snapshot(val access: String, val refresh: String?, val expiresAtS: Long, val expiresInS: Long)
 
@@ -61,11 +71,13 @@ internal class KimiAuthStore(
 
     internal fun readSnapshot(authCacheMs: Long): Snapshot? = Cancellables.runCatchingCancellable {
         val mtime = Files.getLastModifiedTime(authPath).toMillis()
+        val size = Files.size(authPath)
         val now = clock()
         cache?.let { c ->
-            if (c.mtimeMs == mtime && (now - c.loadedAt) < authCacheMs) return@runCatchingCancellable c.snapshot
+            val sameFile = c.mtimeMs == mtime && c.sizeBytes == size
+            if (sameFile && (now - c.loadedAt) < authCacheMs) return@runCatchingCancellable c.snapshot
         }
-        oauth.parseSnapshot(authPath, synthesizeExpiry)?.also { cache = Cache(it, mtime, now) }
+        oauth.parseSnapshot(authPath, synthesizeExpiry)?.also { cache = Cache(it, mtime, now, size) }
     }.getOrElse { failure ->
         // DR-59 (class law): only NoSuch with no NOFOLLOW entry is the quiet not-logged-in null;
         // an untraversable parent or dangling link is a PRESENT credential problem and logs.
@@ -86,7 +98,14 @@ internal class KimiAuthStore(
         // Contended-window stat, same as the grok/codex twins: a peer can replace the file between
         // the read that produced [snap] and this one. Unguarded, an IOException escaped
         // refreshLocked() as a crash while every other failure there degrades to an outcome.
-        return Cancellables.runCatchingCancellable { Files.getLastModifiedTime(authPath).toMillis() }
+        // DR-148: the size stat joins the mtime stat INSIDE the same guard, and the whole Cache is
+        // built in here — the codex twin's shape. Two stats in the contended window are two chances
+        // to throw, and DR-145 is the standing lesson that a second unguarded call in this exact
+        // ladder escapes refreshLocked() as a crash.
+        return Cancellables.runCatchingCancellable {
+            val mtime = Files.getLastModifiedTime(authPath).toMillis()
+            Cache(snap, mtime, clock(), Files.size(authPath))
+        }
             .onFailure {
                 log(
                     "[kimi-auth] stat of $authPath failed: ${SafeFailureText.render(it)} — " +
@@ -94,9 +113,11 @@ internal class KimiAuthStore(
                 )
             }
             .getOrNull()
-            ?.let { mtime ->
-                cache = Cache(snap, mtime, clock())
-                RefreshOutcome.Refreshed(Credentials.ApiKey(key = snap.access, header = "x-api-key", prefix = ""))
+            ?.let { fresh ->
+                cache = fresh
+                RefreshOutcome.Refreshed(
+                    Credentials.ApiKey(key = fresh.snapshot.access, header = "x-api-key", prefix = ""),
+                )
             }
     }
 

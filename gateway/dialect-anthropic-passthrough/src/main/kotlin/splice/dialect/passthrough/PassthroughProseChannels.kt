@@ -35,7 +35,15 @@ internal class PassthroughProseChannels {
         // Kimi can open a thinking block and close it having sent nothing; counting that
         // as content short-circuits the empty-turn honesty gate and lets a turn carrying
         // literally zero characters end as a clean terminal — the L3 violation CX-09
-        // exists to close. Set it where chat and responses set theirs: on real content.
+        // exists to close.
+        //
+        // DR-144: this used to claim it sets the flag "where chat and responses set theirs", which
+        // is FALSE and misled a reader about two other dialects. Chat latches on isNotEmpty (see
+        // ChatProseFold.reasoningDeltaText) and responses latches on reaching the sink at all, so
+        // isNotBlank here is STRICTER than both siblings, not the same rule. The divergence is
+        // deliberate and adjudicated: passthrough alone is defending against the observed Kimi
+        // shape, and the two OpenAI-family dialects forward what the vendor sent. Do not
+        // "harmonize" them — the chat side is pinned by a DR-144 arm that will red.
         if (t.isNotBlank()) emittedThinking = true
         sink.thinkingDelta(wire, t)
     }

@@ -72,8 +72,21 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
             (positiveLong(out, Knob.CONTROL_PORT) ?: (Knob.CONTROL_PORT.default as Long)).coerceAtMost(MAX_PORT)
         out[Knob.MAX_INFLIGHT.key] = clampLong(out, Knob.MAX_INFLIGHT, floor = 0L, ceiling = MAX_INT)
         out[Knob.MAX_QUEUED.key] = clampLong(out, Knob.MAX_QUEUED, floor = 0L, ceiling = MAX_INT)
-        out[Knob.UPSTREAM_RETRIES.key] =
-            clampLong(out, Knob.UPSTREAM_RETRIES, floor = 1L, default = 2L, ceiling = MAX_RETRIES)
+        // DR-150: this said `default = 2L` — the PRE-G4b number, left behind when Knob's default
+        // moved to 4. It is unreachable in production (mergedRaw seeds every knob with its
+        // Knob.default before normalize runs, so the key is never absent here), which is exactly
+        // why it rotted unnoticed: a reader comparing the two sites learns the wrong number, and
+        // any future caller that normalizes an unseeded map silently gets half the retries the
+        // knob declares. Read the declared default rather than restating it, so the two cannot
+        // diverge again. Dropping the argument is NOT equivalent — it defaults to 0, which the
+        // floor of 1 then turns into a single attempt.
+        out[Knob.UPSTREAM_RETRIES.key] = clampLong(
+            out,
+            Knob.UPSTREAM_RETRIES,
+            floor = 1L,
+            default = Knob.UPSTREAM_RETRIES.default as Long,
+            ceiling = MAX_RETRIES,
+        )
         out[Knob.FOLD_MAX_CONTINUE.key] =
             clampLong(out, Knob.FOLD_MAX_CONTINUE, floor = 0L, ceiling = MAX_FOLD_ROUNDS)
         out[Knob.FOLD_MAX_TIER.key] = clampLong(out, Knob.FOLD_MAX_TIER, floor = 0L, ceiling = MAX_FOLD_TIER)

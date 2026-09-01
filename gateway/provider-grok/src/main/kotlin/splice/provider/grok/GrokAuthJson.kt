@@ -41,7 +41,12 @@ internal class GrokAuthJson(
     @Volatile
     private var cache: Cache? = null
 
-    internal data class Cache(val snapshot: Snapshot, val mtimeMs: Long, val loadedAt: Long)
+    // DR-148: [sizeBytes] joins the identity, mirroring the codex twin. mtime alone cannot see a
+    // peer rotation that lands inside the same filesystem timestamp tick, and this file is written
+    // concurrently by the official grok CLI by design — a torn read then serves the stale token for
+    // up to authCacheMs. ext4/xfs nanosecond timestamps make that rare, but two of the four readers
+    // in this tree already carried the defence and nothing explained why these two did not.
+    internal data class Cache(val snapshot: Snapshot, val mtimeMs: Long, val loadedAt: Long, val sizeBytes: Long)
 
     internal data class Snapshot(val access: String, val expiresAtMs: Long?)
 
@@ -88,19 +93,16 @@ internal class GrokAuthJson(
 
     internal fun readSnapshot(authCacheMs: Long): Snapshot? = Cancellables.runCatchingCancellable {
         val mtime = Files.getLastModifiedTime(authPath).toMillis()
+        val size = Files.size(authPath)
         val now = clock()
-        cache?.let { c ->
-            if (c.mtimeMs == mtime && (now - c.loadedAt) < authCacheMs) {
-                return@runCatchingCancellable c.snapshot
-            }
-        }
+        cacheHit(mtime, size, now, authCacheMs)?.let { return@runCatchingCancellable it }
         // G18: a file with no top-level `expires` (legacy shape, or a foreign CLI write that
         // stripped it) is otherwise never-expiring — synthesize a ceiling off the mtime already
         // read above, no new I/O.
         parseSnapshot()
             // SH-01: shared policy
             ?.let { it.copy(expiresAtMs = it.expiresAtMs ?: synthesizeExpiry(mtime, now)) }
-            ?.also { cache = Cache(it, mtime, now) }
+            ?.also { cache = Cache(it, mtime, now, size) }
     }.getOrElse { failure ->
         // DR-59 (class law): only NoSuch with no NOFOLLOW entry is the quiet not-logged-in null;
         // an untraversable parent or dangling link is a PRESENT credential problem and logs.
@@ -114,6 +116,14 @@ internal class GrokAuthJson(
         }
         null
     }
+
+    /** DR-148: the cached snapshot only when the file is BOTH unchanged (mtime AND size — see
+     *  [Cache]) and still inside the TTL. Extracted from [readSnapshot] because adding the size
+     *  comparison put that function on the cyclomatic ceiling; the predicate is also the one thing
+     *  here worth naming. */
+    private fun cacheHit(mtime: Long, size: Long, now: Long, authCacheMs: Long): Snapshot? = cache
+        ?.takeIf { it.mtimeMs == mtime && it.sizeBytes == size && (now - it.loadedAt) < authCacheMs }
+        ?.snapshot
 
     internal fun parseSnapshot(): Snapshot? {
         // DR-59: the read IS the absence probe (the old exists() pre-gate read an inaccessible
@@ -141,7 +151,22 @@ internal class GrokAuthJson(
         // splice, the official grok CLI) write it concurrently, so the window between the read that
         // produced [snap] and this stat is the contended one. Every other failure in this ladder
         // degrades to an outcome; an unguarded IOException here escaped refreshLocked() as a crash.
-        return Cancellables.runCatchingCancellable { Files.getLastModifiedTime(authPath).toMillis() }
+        // DR-148: the size stat joins the mtime stat INSIDE the same guard, and the whole Cache is
+        // built in here — the codex twin's shape. Two stats in the contended window are two chances
+        // to throw, and DR-145 is the standing lesson that a second unguarded call in this exact
+        // ladder escapes refreshLocked() as a crash.
+        return Cancellables.runCatchingCancellable {
+            val mtime = Files.getLastModifiedTime(authPath).toMillis()
+            val size = Files.size(authPath)
+            // DR-145: adopt through the SAME synthesized-expiry policy readSnapshot applies. This
+            // is a second writer of the cache, and it used to store `snap` verbatim — so a peer
+            // token from the drifted shape G18/SH-01 exist for (no top-level `expires`) was cached
+            // with a NULL expiry and then served as never-expiring: no proactive refresh, no stale
+            // floor, no shape-drift warning, until a mid-turn 401. The kimi twin never had this
+            // because it synthesizes inside parseSnapshot.
+            val adopted = snap.copy(expiresAtMs = snap.expiresAtMs ?: synthesizeExpiry(mtime, clock()))
+            Cache(adopted, mtime, clock(), size)
+        }
             .onFailure {
                 log(
                     "[grok-auth] stat of $authPath failed: ${SafeFailureText.render(it)} — " +
@@ -149,16 +174,9 @@ internal class GrokAuthJson(
                 )
             }
             .getOrNull()
-            ?.let { mtime ->
-                // DR-145: adopt through the SAME synthesized-expiry policy readSnapshot applies.
-                // This is a second writer of the cache, and it used to store `snap` verbatim — so a
-                // peer token from the drifted shape G18/SH-01 exist for (no top-level `expires`)
-                // was cached with a NULL expiry and then served as never-expiring: no proactive
-                // refresh, no stale floor, no shape-drift warning, until a mid-turn 401. The kimi
-                // twin never had this because it synthesizes inside parseSnapshot.
-                val adopted = snap.copy(expiresAtMs = snap.expiresAtMs ?: synthesizeExpiry(mtime, clock()))
-                cache = Cache(adopted, mtime, clock())
-                RefreshOutcome.Refreshed(Credentials.Bearer(adopted.access, null))
+            ?.let { fresh ->
+                cache = fresh
+                RefreshOutcome.Refreshed(Credentials.Bearer(fresh.snapshot.access, null))
             }
     }
 }

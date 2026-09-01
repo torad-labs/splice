@@ -653,3 +653,44 @@ class KimiPersistMergeDiagnosticsTest {
         assertTrue(log.any { it.contains("could not re-read") }, "the merge degrade must log: $joined")
     }
 }
+
+// DR-148, the kimi half of the same finding: KimiRefreshedTokens keyed its cache on mtime ALONE
+// while the codex twin also compared sizeBytes, so a peer rotation inside one filesystem timestamp
+// tick kept the STALE token in service for the whole authCacheMs window. Own class because
+// KimiAuthProviderTest is large enough already.
+class KimiTornReadCacheTest {
+
+    @Test
+    fun `a same-mtime rewrite is not served from the cache - DR-148`() = runTest {
+        val dir = Files.createTempDirectory("kimi-torn-read")
+        val file = dir.resolve(".kimi").resolve("credentials").resolve("kimi-code.json")
+        Files.createDirectories(file.parent)
+        val write = { access: String, scope: String ->
+            Files.writeString(
+                file,
+                """{"access_token":"$access","refresh_token":"kimi-refresh",
+                    "expires_at":${Long.MAX_VALUE / 2},"scope":"$scope",
+                    "token_type":"Bearer","expires_in":3600}""",
+            )
+        }
+        write("token-A", "coding")
+        val auth = KimiAuthProvider(
+            authPath = file,
+            // A generous TTL is the POINT: the arm must fail on staleness, never on expiry.
+            authCacheMs = 600_000,
+            clock = { 1000L },
+            refreshCall = { RefreshAttempt.Denied("test-denied") },
+        )
+        assertEquals("token-A", (auth.credentials() as Credentials.ApiKey).key)
+
+        val stamp = Files.getLastModifiedTime(file)
+        write("token-B", "coding-and-then-some-more")
+        Files.setLastModifiedTime(file, stamp)
+
+        assertEquals(
+            "token-B",
+            (auth.credentials() as Credentials.ApiKey).key,
+            "a same-mtime rewrite of a DIFFERENT size must miss the cache, not serve the dead token",
+        )
+    }
+}

@@ -13,6 +13,32 @@ import splice.spi.BufferCapacity
 
 class ChatStreamTranslatorTest {
 
+    // DR-144, adjudicated rather than reflex-fixed: chat gates reasoning on isNotEmpty, passthrough
+    // on isNotBlank, so a backend emitting one WHITESPACE-only reasoning delta and then finishing
+    // with no content grades a clean end_turn here while passthrough would fail the turn honestly.
+    // The divergence is DELIBERATE and stays: chat and responses forward what the vendor sent and
+    // let the empty-turn gate read a genuinely empty turn, whereas passthrough is defending against
+    // one specific observed shape — Kimi opening a thinking block and closing it having sent
+    // nothing. Changing chat to isNotBlank would silently reclassify real turns whose reasoning is
+    // whitespace-delimited across deltas. This arm exists so that decision is PINNED: a future
+    // reader who "harmonizes" the three siblings reds here and finds this note.
+    @Test
+    fun `a whitespace-only reasoning delta still counts as delivered thinking - DR-144`() = runTest {
+        val sink = Rec()
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"choices":[{"delta":{"reasoning_content":" "}}]}"""),
+                ev("""{"choices":[{"delta":{},"finish_reason":"stop"}]}"""),
+            ).asFlow(),
+            sink,
+        )
+        val s = outcome as TurnOutcome.Success
+        assertTrue(s.emittedThinking, "chat latches on non-EMPTY, so whitespace counts as delivered")
+        assertEquals(" ", s.thinkingText, "and the buffer carries exactly what the vendor sent")
+        assertFalse(s.emittedText, "no content delta arrived")
+        assertEquals(listOf("openThinking", "think: ", "closeAll"), sink.calls)
+    }
+
     @Test
     fun `reasoning, text, finish stop`() = runTest {
         val sink = Rec()

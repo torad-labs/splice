@@ -138,6 +138,48 @@ fun a() {
     names.forEach { log("$it = stored") }
 }'
 
+# 12d — DR-154, codex-splice's probe: a URL inside a one-line failure lambda must not eat the
+#       closing brace. Comment stripping used to run before string stripping, so the `//` in
+#       https:// truncated the line, the span never closed, and the LATER non-failure `$it` was
+#       flagged — a blocking-gate false positive.
+arm "a URL in a one-line failure lambda does not leak the span" 0 Url.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p).onFailure { log("https://example.test/failure") }
+    names.forEach { log("$it = stored") }
+}'
+
+# 12e — DR-154 REDO, codex-splice mutation-proved from the scanner source, 2026-08-31: a `}` inside
+#       a BLOCK comment popped the real brace depth, the failure span closed early, and the genuine
+#       raw `$it` below it was never seen. FALSE NEGATIVE — the direction that makes a green gate a
+#       lie. Ordering patches cannot fix this class; the masker lexes comments out entirely.
+arm "a brace inside a block comment does not close the span" 1 BlockComment.kt 'package p
+import java.nio.file.Files
+fun a() = write().onFailure {
+    /* nested cleanup closes with } after retries */
+    log("failed: $it")
+}'
+
+# 12f — codex-splice'"'"'s second false-negative fixture, same root: a `}` inside a CHAR literal.
+#       `val close = '"'"'}'"'"'` popped the depth exactly like the comment did.
+arm "a brace inside a char literal does not close the span" 1 CharLit.kt 'package p
+import java.nio.file.Files
+fun a() = write().onFailure {
+    val close = '"'"'}'"'"'
+    log("failed: $it, terminator $close")
+}'
+
+# 12g — the multi-line half the per-line regex could never express: a block comment OPENED on one
+#       line and CLOSED on another, with the stray brace in between.
+arm "a brace inside a multi-line block comment does not close the span" 1 MultiComment.kt 'package p
+import java.nio.file.Files
+fun a() = write().onFailure {
+    /* the retry ladder
+       closes with } here
+       and continues */
+    log("failed: $it")
+}'
+
 # 13 — CONTROL: prose ABOUT the law is a comment and cannot render anything at runtime.
 arm "comment mentioning \$failure is not flagged" 0 A.kt 'package p
 import java.nio.file.Files
@@ -148,5 +190,5 @@ fun a(e: Throwable) = Files.exists(p).also { log("x (${SafeFailureText.render(e)
 ( cd "$ROOT" && python3 checks/config/safe-failure-render.py check . >/dev/null 2>&1 ) \
   || err "the real repository does not pass its own wall"
 
-[ "$fail" = 0 ] && echo "  ✓ safe-failure-render selftest: 16 arms"
+[ "$fail" = 0 ] && echo "  ✓ safe-failure-render selftest: 20 arms"
 exit "$fail"

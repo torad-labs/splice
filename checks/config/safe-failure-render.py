@@ -59,9 +59,68 @@ FAILURE_CONTEXT = re.compile(
     r"onFailure|getOrElse|exceptionOrNull|recoverCatching|recover\b|\bcatch\s*\(|\.fold\("
 )
 
-# String literals, stripped before brace counting so a template's own braces (`"${e.message}"`)
-# and a literal brace in prose cannot corrupt the depth.
-_STRING = re.compile(r'"(?:\\.|[^"\\])*"')
+# DR-154: a real lexical masker, because two rounds of ordering patches each left a hole that
+# codex-splice mutation-proved from the scanner's own source:
+#   * comment-before-string produced a FALSE POSITIVE — a URL inside a one-line failure lambda
+#     ("https://…") had its `//` treated as a comment, the closing brace vanished, the span never
+#     closed, and every later bare `$it` in the file was flagged. A blocking-gate false positive is
+#     the failure direction that gets a wall switched off rather than fixed.
+#   * counting braces inside `/* … */` and inside a char literal `'}'` produced FALSE NEGATIVES —
+#     the depth popped early, the failure lambda looked closed, and a genuine raw `$it` render
+#     inside it was missed entirely.
+# Both classes come from the same root: brace depth was read off text that still contained
+# non-syntax. So mask first, in ONE stateful pass over the file, and count only what is left.
+def mask_source(lines):
+    """Every string, char literal and comment replaced by spaces, so only real syntax remains.
+
+    Multi-line aware: block comments and raw strings carry state across lines, which per-line
+    regex stripping structurally cannot do.
+    """
+    masked, state = [], None  # state: None | "block" | "raw"
+    for raw in lines:
+        out, i, n = [], 0, len(raw)
+        while i < n:
+            if state == "block":
+                if raw.startswith("*/", i):
+                    state, i = None, i + 2
+                    out.append("  ")
+                    continue
+                out.append(" ")
+                i += 1
+            elif state == "raw":
+                if raw.startswith('"""', i):
+                    state, i = None, i + 3
+                    out.append("   ")
+                    continue
+                out.append(" ")
+                i += 1
+            elif raw.startswith("//", i):
+                out.append(" " * (n - i))
+                break
+            elif raw.startswith("/*", i):
+                state, i = "block", i + 2
+                out.append("  ")
+            elif raw.startswith('"""', i):
+                state, i = "raw", i + 3
+                out.append("   ")
+            elif raw[i] in "\"'":
+                quote, i = raw[i], i + 1
+                out.append(" ")
+                while i < n:
+                    if raw[i] == "\\":
+                        out.append("  ")
+                        i += 2
+                        continue
+                    out.append(" ")
+                    closed = raw[i] == quote
+                    i += 1
+                    if closed:
+                        break
+            else:
+                out.append(raw[i])
+                i += 1
+        masked.append("".join(out))
+    return masked
 
 # A throwable rendered INTO TEXT. Both interpolation forms, because the BARE one is strictly
 # WORSE: `$failure` calls toString(), which is the class name PLUS the same message — including
@@ -88,18 +147,8 @@ def failure_spans(lines):
     closing brace, at any nesting depth and any length.
     """
     inside = [False] * len(lines)
-    depth, stack, pending, in_raw = 0, [], False, False
-    for i, raw in enumerate(lines):
-        # A multi-line raw string ("""...""") carries arbitrary unbalanced braces; skip its body.
-        ticks = raw.count('"""')
-        if in_raw:
-            inside[i] = bool(stack)
-            if ticks % 2:
-                in_raw = False
-            continue
-        if ticks % 2:
-            in_raw = True
-        code = _STRING.sub('""', raw.split("//")[0])
+    depth, stack, pending = 0, [], False
+    for i, code in enumerate(mask_source(lines)):
         pending = pending or bool(FAILURE_CONTEXT.search(code))
         line_inside = bool(stack)
         for ch in code:

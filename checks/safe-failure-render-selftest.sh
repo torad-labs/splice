@@ -667,6 +667,181 @@ fun a() {
     }
 }'
 
+# ---------------------------------------------------------------------------------------------
+# DR-160 ROUND 4. Round 3 taught the walk that a lambda parameter is a declaration, and then
+# recognised only the BARE-NAME spelling of one. Every typed spelling still declared nothing, so an
+# outer throwable stayed visible under a name that no longer referred to it — round 3's own false
+# positive, alive in six shapes. codex-splice found it; grok-splice enumerated them and separated
+# what is lexically decidable (these) from what is not (the implicit-`it` residual at arm 43).
+# All seven arms below are RED on the committed round-3 scanner, measured, not assumed.
+
+# 41 — the plain typed parameter.
+arm "a typed lambda parameter hides an outer throwable" 0 TypedParam.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull()
+    items.forEach { e: Event -> log("$e") }
+}'
+
+# 41b — parenthesised, which round 3 accepted only while untyped.
+arm "a parenthesised typed parameter hides it too" 0 TypedParen.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull()
+    items.forEach { (e: Event) -> log("$e") }
+}'
+
+# 41c — two parameters, both typed: the split must survive the annotations.
+arm "two typed parameters both declare" 0 TypedTwo.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull()
+    items.forEachIndexed { e: Event, i: Int -> log("$e") }
+}'
+
+# 41d — a typed DESTRUCTURE declares each component.
+arm "a typed destructure declares its components" 0 TypedDestructure.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull()
+    pairs.forEach { (e: Event, n: Int) -> log("$e") }
+}'
+
+# 41e — THE REASON THE LIST IS PARSED AND NOT MATCHED: a generic type carries its own comma, and a
+#       flat split on `,` would read `Map<String` as one parameter and reject the whole list.
+arm "a generic type carrying a comma is one parameter" 0 TypedGeneric.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull()
+    groups.forEach { e: Map<String, Event> -> log("$e") }
+}'
+
+# 41f — a trailing comma is legal Kotlin and declares nothing extra.
+arm "a trailing comma in the parameter list is tolerated" 0 TrailingComma.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull()
+    items.forEach { e, -> log("$e") }
+}'
+
+# 41g — the type on the OUTSIDE of a destructure, where the colon is not inside the parens.
+arm "a destructure typed on the outside still declares" 0 DestructureOuterType.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull()
+    pairs.forEach { (e, n): Pair<Event, Int> -> log("$e") }
+}'
+
+# 41h — THE BOUND on all of them, and the same bound arm 38b puts on `val`: the shadow lasts for its
+#       own block and not one character longer. A fix that dropped the outer binding instead of
+#       hiding it passes every arm above and loses the real render on the next line.
+arm_at "a typed parameter's shadow ends with its block" 7 "renders a throwable raw" TypedEnds.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull()
+    items.forEach { e: Event -> log("$e") }
+    log("$e")
+}'
+
+# 41i — and the bound that 40d puts on the `when` guard, re-run typed: suppressing parameters under
+#       any enclosing `when` would pass arms 42e/40b and reopen this one.
+arm "a typed parameter inside a when branch still shadows" 0 TypedWhenLambda.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull()
+    when (k) {
+        else -> items.forEach { e: Event -> log("$e") }
+    }
+}'
+
+# 42 — THE FAIL-CLOSED WALL. Parsing a parameter list is a licence to declare names, and every arm
+#      here is a shape that must declare NOTHING. An undeclared name is reported; a wrongly declared
+#      one is hidden, which is the direction this wall cannot afford.
+
+# 42a — an explicit zero-argument lambda declares nothing at all.
+arm_at "an explicit zero-arg lambda declares nothing" 6 "renders a throwable raw" ZeroArg.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull()
+    items.forEach { -> log("$e") }
+}'
+
+# 42b — `_` declares `_`, and nothing else. It must not clear an outer name of another spelling.
+arm_at "an underscore parameter does not clear an outer throwable" 6 "renders a throwable raw" Underscore.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull()
+    items.forEach { _ -> log("$e") }
+}'
+
+# 42c — `run { … }` has no parameter list and rebinds nothing. The named tier must still see it.
+arm_at "run does not rebind a named throwable" 6 "renders a throwable raw" RunCapture.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull()
+    run { log("$e") }
+}'
+
+# 42d — and neither does `apply { … }`, which binds a RECEIVER rather than a parameter.
+arm_at "apply does not rebind a named throwable" 6 "renders a throwable raw" ApplyCapture.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull()
+    cfg.apply { log("$e") }
+}'
+
+# 42e — WHOLE-LIST rejection, and the trade it makes. A backticked parameter name is legal Kotlin
+#       and this parser cannot read it, so the list is rejected ENTIRELY and `e` is not declared —
+#       the render is reported even though `e` really is a parameter here. That is a false positive,
+#       and it is the direction chosen deliberately: skipping the unreadable entry instead would
+#       declare `e` and HIDE the render, and a wall that hides is worse than a wall that over-reports
+#       (an over-report is an exemption away; a hidden one is invisible). The mutant is exactly that
+#       alternative, and it reds this arm.
+arm_at "an unreadable entry rejects the whole parameter list" 6 "renders a throwable raw" Backtick.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull()
+    items.forEach { `odd name`, e -> log("$e") }
+}'
+
+# 43 — THE DOCUMENTED RESIDUAL, pinned as behaviour rather than left to be rediscovered. `run { … }`
+#      does NOT rebind `it`, so this `$it` is the failure and the wall does not report it. The other
+#      plane reads every nested lambda as rebinding the short name, and `forEach { … }` — which
+#      genuinely does rebind — is spelled identically, so no lexical rule separates them. Declaring
+#      an implicit `it` everywhere would green this one and open a false positive on every `forEach`
+#      inside a failure lambda: errors that HIDE renders instead of over-reporting them, which is the
+#      worse direction. Named in the module's coverage note as NOT CLAIMED. This arm exists so a
+#      later change to that trade is a deliberate one and not a silent one.
+arm "the implicit-it residual: run inside a failure lambda is not reported" 0 ItResidual.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    outcome.onFailure { run { log("$it") } }
+}'
+
+# 43b — the CONTROL on 43, so the residual cannot quietly widen: a short name in a failure lambda
+#       with no nesting at all is still reported, which is the tier working as claimed.
+arm_at "a short name directly in a failure lambda is still reported" 5 "renders a throwable raw" ItDirect.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    outcome.onFailure { log("$it") }
+}'
+
 # 13 — CONTROL: prose ABOUT the law is a comment and cannot render anything at runtime.
 arm "comment mentioning \$failure is not flagged" 0 A.kt 'package p
 import java.nio.file.Files
@@ -677,5 +852,9 @@ fun a(e: Throwable) = Files.exists(p).also { log("x (${SafeFailureText.render(e)
 ( cd "$ROOT" && python3 checks/config/safe-failure-render.py check . >/dev/null 2>&1 ) \
   || err "the real repository does not pass its own wall"
 
-[ "$fail" = 0 ] && echo "  ✓ safe-failure-render selftest: 62 arms"
+# Counted FROM THE FILE. Round 3 recorded that the previous count had been hand-maintained and was
+# "exactly the kind of number that rots"; it then rotted again the moment round 4 added arms. A
+# number a script can derive should never be a number a comment asserts.
+arms=$(grep -cE '^[[:space:]]*arm(_at)? "' "${BASH_SOURCE[0]}")
+[ "$fail" = 0 ] && echo "  ✓ safe-failure-render selftest: $arms arms"
 exit "$fail"

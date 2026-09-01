@@ -29,7 +29,8 @@ reach is worse than a narrow one: the overstatement is what stops anyone looking
   `${x.message}`, `$failure`, `$cause`, `${someException}` — and any `val` bound from
   `exceptionOrNull()`, at every COLUMN that binding is in scope for. Scope is the language's: an
   inner declaration of the same name hides it for exactly its own block, whether that declaration
-  is a `val`, a `var`, a `for` parameter or a lambda parameter, and a `catch` parameter is itself
+  is a `val`, a `var`, a `for` parameter or an EXPLICIT lambda parameter at its arrow — typed or
+  untyped, including a destructured list and a trailing comma — and a `catch` parameter is itself
   a throwable.
 
   CLAIMED, conditionally: an interpolation of a SHORT name (`it`, `e`, `t`, `ex`, `err`) inside the
@@ -47,6 +48,16 @@ reach is worse than a narrow one: the overstatement is what stops anyone looking
   reassigned to a String and this scanner has no flow typing to see it. Neither is a local bound
   from `.cause`, which is no more typed than getOrElse. Type information would settle all of these;
   this scanner has none, and guessing is what produced the inversions DR-157 and DR-160 record.
+
+  NOT CLAIMED, and this one is a KNOWN residual rather than an oversight: an IMPLICIT `it` is not a
+  declaration on the binding plane, and a nested arrowless lambda is read as rebinding the short
+  name on the other plane. `forEach { … }` does rebind it; `run { … }` and `apply { … }` do not, and
+  the two are spelled identically, so no lexical rule separates them. The consequence, pinned by an
+  arm so a future change cannot silently alter it: a raw `$it` inside `run { … }` inside a failure
+  lambda is NOT reported. Declaring an implicit `it` everywhere would green that one and open a
+  false positive on every `forEach` in a failure lambda — a strictly worse trade, since this plane's
+  errors would then hide renders instead of over-reporting them. Use a named throwable, or an
+  explicit parameter, and the wall sees it.
 
   NOT CLAIMED, and deliberately: shadowing does NOT apply to the unambiguous tier. A local literally
   named `failure`, `cause` or `...Exception` holding a String is still reported, even where it hides
@@ -373,9 +384,22 @@ THROWABLE_SOURCE = re.compile(r"\bexceptionOrNull\s*\(")
 # grok-splice caught failing to shadow an outer throwable of the same name.
 FOR_PARAM = re.compile(r"\bfor\s*\(\s*(?:val\s+|var\s+)?(\w+)(?:\s*:[^)]*?)?\s+in\b")
 CATCH_PARAM = re.compile(r"\bcatch\s*\(\s*(\w+)\s*:")
-LAMBDA_PARAMS = re.compile(r"^\s*\(?\s*(\w+(?:\s*,\s*\w+)*)\s*\)?\s*$")
-# `else ->` and `is Foo ->` are when-branch arrows, not parameter lists. Only `else` can look like a
-# single bare name, and a one-word branch head is the only thing [LAMBDA_PARAMS] would accept.
+# DR-160 round 4. Round 3's parameter pattern accepted BARE NAMES only, so every typed spelling of
+# the same declaration silently declared nothing and an outer throwable stayed visible under a name
+# that no longer referred to it — the false positive round 3 fixed for `{ e -> … }`, still open for
+# `{ e: Event -> … }`. codex-splice found it; grok-splice enumerated what leaked: `e: Event`,
+# `(e: Event)`, `e: Event, i: Int`, `(e: Event, n: Int)`, `e: List<Event>`, a trailing comma, and a
+# destructure carrying its type on the outside.
+#
+# The list is PARSED rather than matched, because a type can contain both commas and brackets
+# (`Map<String, Event>`) and no flat pattern splits that correctly. Depth is counted over `()` and
+# `<>`, a top-level `:` ends the name half, and a parenthesised group is a destructure whose
+# components are each declared. Anything left that is not an identifier REJECTS THE WHOLE LIST, which
+# is the fail-closed direction — an undeclared name is reported, never hidden — and it is also what
+# keeps `is Foo ->` out without a second keyword list.
+IDENTIFIER = re.compile(r"^\w+$")
+# `else ->` is a when-branch arrow, not a parameter list, and it is the one branch head that looks
+# exactly like a single bare name. `is Foo ->` is rejected by [IDENTIFIER] before this list is read.
 NOT_A_PARAM = frozenset({"else", "is", "in", "when", "true", "false", "null", "this"})
 
 # ...but a keyword list is not enough, and this one is mine rather than a reviewer's: `when (k) { e
@@ -498,13 +522,56 @@ def _declare_params(segment, depth, live):
         live.append((found.group(1), depth, True))
 
 
+def _split_top(text, sep):
+    """[text] split on [sep] at bracket depth zero, counting `()` and `<>` alike.
+
+    A type's own commas and colons belong to the type: `Map<String, Event>` is ONE parameter and
+    `(e, n): Pair<Event, Int>` is one destructure, not two of anything.
+    """
+    parts, depth, item = [], 0, ""
+    for ch in text:
+        if ch in "(<":
+            depth += 1
+        elif ch in ")>":
+            depth = max(0, depth - 1)
+        if ch == sep and depth == 0:
+            parts.append(item)
+            item = ""
+        else:
+            item += ch
+    parts.append(item)
+    return parts
+
+
+def _param_names(text):
+    """The names an explicit parameter list declares, or None when [text] is not one."""
+    names = []
+    for raw in _split_top(text, ","):
+        item = _split_top(raw, ":")[0].strip()
+        if not item:
+            continue  # a trailing comma declares nothing, and neither does an empty list
+        if item.startswith("(") and item.endswith(")"):
+            inner = _param_names(item[1:-1])
+            if inner is None:
+                return None
+            names.extend(inner)
+        elif IDENTIFIER.match(item):
+            names.append(item)
+        else:
+            return None
+    return names
+
+
 def _declare_lambda(segment, depth, live):
-    """`{ e -> … }` and `{ a, b -> … }` declare their parameters for the enclosing block."""
-    found = LAMBDA_PARAMS.match(segment)
-    if not found:
-        return
-    for name in (n.strip() for n in found.group(1).split(",")):
-        if name and name not in NOT_A_PARAM:
+    """`{ e -> … }`, `{ a, b -> … }`, `{ e: Event -> … }` declare their parameters for the block.
+
+    An EXPLICIT parameter list only — the arrow is what makes it decidable. An arrowless lambda's
+    implicit `it` never reaches here and is deliberately not declared: `forEach { … }` rebinds it
+    while `run { … }` and `apply { … }` do not, the two are spelled identically, and guessing either
+    way trades one wrong answer for another. That non-claim is in the module's coverage note.
+    """
+    for name in _param_names(segment) or []:
+        if name not in NOT_A_PARAM:
             live.append((name, depth, False))
 
 

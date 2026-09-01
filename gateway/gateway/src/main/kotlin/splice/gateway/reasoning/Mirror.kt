@@ -12,43 +12,48 @@ import splice.core.wire.ContentBlock
 import splice.core.wire.ThinkingBlock
 import splice.spi.WireSink
 
-/** WIRE CONTRACT (external): the mirror block format transcript tooling keys on. */
-public fun mirrorWireText(thinking: String): String = "\n[reasoning summary]\n${thinking.trim()}\n"
+/** The reasoning mirror: the gate predicate, the wire format, and the single [mirrorInto].
+ *  Collaborators construct one (`private val mirror = Mirror()`); it holds no state, so the
+ *  L2 "one definition" law is unchanged — the definition just moved inside the type. */
+public class Mirror {
+    /** WIRE CONTRACT (external): the mirror block format transcript tooling keys on. */
+    public fun mirrorWireText(thinking: String): String = "\n[reasoning summary]\n${thinking.trim()}\n"
 
-/**
- * Whether [mirrorInto] would emit for this turn — the gate cascade as a pure predicate.
- *
- * CX-09: the honesty check must ask this BEFORE declaring an empty turn an error, because the
- * mirror is the only thing covering thinking between the mirror floor and the promote floor.
- * Exposed as one definition rather than a second copy in the pipeline: a drifting duplicate would
- * silently re-open the band (the one-definition discipline the L2 wall pins on [mirrorInto]).
- */
-public fun willMirror(thinkingText: String?, showReasoning: ReasoningDisplay, compact: Boolean): Boolean {
-    if (compact) return false // compact is a text-only summarizer turn
-    // Gate cascade (ported contract): only when reasoning is shown as text AND the trimmed
-    // summary clears the wire threshold; order preserved (showReasoning gate before length gate).
-    val t = thinkingText.orEmpty().trim()
-    return showReasoning == ReasoningDisplay.TEXT && t.length >= MIRROR_MIN_CHARS
+    /**
+     * Whether [mirrorInto] would emit for this turn — the gate cascade as a pure predicate.
+     *
+     * CX-09: the honesty check must ask this BEFORE declaring an empty turn an error, because the
+     * mirror is the only thing covering thinking between the mirror floor and the promote floor.
+     * Exposed as one definition rather than a second copy in the pipeline: a drifting duplicate would
+     * silently re-open the band (the one-definition discipline the L2 wall pins on [mirrorInto]).
+     */
+    public fun willMirror(thinkingText: String?, showReasoning: ReasoningDisplay, compact: Boolean): Boolean {
+        if (compact) return false // compact is a text-only summarizer turn
+        // Gate cascade (ported contract): only when reasoning is shown as text AND the trimmed
+        // summary clears the wire threshold; order preserved (showReasoning gate before length gate).
+        val t = thinkingText.orEmpty().trim()
+        return showReasoning == ReasoningDisplay.TEXT && t.length >= MIRROR_MIN_CHARS
+    }
+
+    /**
+     * Mirror the turn's thinking into the transcript as a visible text block.
+     * Returns true when the mirror was emitted.
+     */
+    public suspend fun mirrorInto(
+        sink: WireSink,
+        thinkingText: String?,
+        showReasoning: ReasoningDisplay,
+        compact: Boolean,
+    ): Boolean {
+        if (!willMirror(thinkingText, showReasoning, compact)) return false
+        sink.addTextBlock(mirrorWireText(thinkingText.orEmpty().trim()))
+        return true
+    }
+
+    /** Join the thinking blocks of an Anthropic content list (non-stream path). */
+    public fun extractThinking(content: List<ContentBlock>): String =
+        content.filterIsInstance<ThinkingBlock>()
+            .map { it.thinking.trim() }
+            .filter { it.isNotEmpty() }
+            .joinToString("\n\n")
 }
-
-/**
- * Mirror the turn's thinking into the transcript as a visible text block.
- * Returns true when the mirror was emitted.
- */
-public suspend fun mirrorInto(
-    sink: WireSink,
-    thinkingText: String?,
-    showReasoning: ReasoningDisplay,
-    compact: Boolean,
-): Boolean {
-    if (!willMirror(thinkingText, showReasoning, compact)) return false
-    sink.addTextBlock(mirrorWireText(thinkingText.orEmpty().trim()))
-    return true
-}
-
-/** Join the thinking blocks of an Anthropic content list (non-stream path). */
-public fun extractThinking(content: List<ContentBlock>): String =
-    content.filterIsInstance<ThinkingBlock>()
-        .map { it.thinking.trim() }
-        .filter { it.isNotEmpty() }
-        .joinToString("\n\n")

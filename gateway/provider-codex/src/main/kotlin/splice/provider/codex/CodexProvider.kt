@@ -7,6 +7,7 @@ package splice.provider.codex
 import splice.core.auth.Credentials
 import splice.core.turn.ReasoningDisplay
 import splice.core.util.DaemonLog
+import splice.core.util.LogSink
 import splice.dialect.responses.FoldConfig
 import splice.dialect.responses.ResponsesProvider
 import splice.dialect.responses.ResponsesQuirks
@@ -18,13 +19,13 @@ public class CodexProvider(
     replayReasoning: Boolean,
     configEffort: String?,
     configSummary: String?,
-    quirks: ResponsesQuirks = defaultQuirks(),
+    quirks: ResponsesQuirks = CodexQuirks().defaultQuirks(),
     // Reasoning-continuation folding (codex 518n-2). null = off; the daemon wires it from config.
     foldConfig: FoldConfig? = null,
     private val accountIdHeader: Boolean = true,
     /** Daemon log sink — forwarded to ResponsesProvider so its diagnostics reach
      *  /mgmt/logs and not stderr alone (wall kt-no-println, 2026-07-27). */
-    log: (String) -> Unit = DaemonLog::write,
+    log: LogSink = LogSink(DaemonLog::write),
 ) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks, foldConfig, log) {
 
     /** Proven against the live ChatGPT backend by the WS-0 spike
@@ -38,20 +39,5 @@ public class CodexProvider(
         if (accountIdHeader && accountId != null) {
             put("ChatGPT-Account-ID", accountId)
         }
-    }
-
-    public companion object {
-        /** The codex quirk profile — injectable so the TOML [providers.*.quirks] table is REAL. */
-        public fun defaultQuirks(): ResponsesQuirks = ResponsesQuirks(
-            providerTag = "claudex",
-            // richer titled reasoning sections from the ChatGPT backend (probed 2026-07-19)
-            summaryDelivery = "sequential_cutoff",
-            // codex-rs parity: hard-sets strict:false on every function tool (responses_api.rs:29-32);
-            // OpenCode does the same, marked "Codex parity". Omitting it lets the backend attempt
-            // strict auto-normalisation of ~87 MCP schemas and silently report whatever it settled on.
-            // forceStrictFalse, NOT emitStrict (review 2026-07-24): emitStrict is grok's pre-existing,
-            // never-consequential pass-through flag — reusing it here silently changed grok's bytes too.
-            forceStrictFalse = true,
-        )
     }
 }

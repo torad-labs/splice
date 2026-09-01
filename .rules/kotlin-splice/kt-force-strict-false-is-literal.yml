@@ -26,7 +26,7 @@ message: "A forceStrictFalse branch must emit the LITERAL false — passing the 
 note: >
   Write `put(FIELD_STRICT, false)`. If a provider genuinely needs the tool's own value passed
   through, that is the SEPARATE `emitStrict` quirk — do not overload forceStrictFalse, which is
-  defined as an unconditional hard-set (ResponsesQuirks KDoc, ResponsesRequestBuilder.kt).
+  defined as an unconditional hard-set (ResponsesQuirks KDoc, ResponsesQuirks.kt).
 files:
   - gateway/*/src/main/**/*.kt
 rule:

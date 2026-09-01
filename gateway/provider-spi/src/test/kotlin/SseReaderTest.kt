@@ -21,7 +21,8 @@ import org.junit.jupiter.params.ParameterizedTest
 import org.junit.jupiter.params.provider.Arguments
 import org.junit.jupiter.params.provider.MethodSource
 import splice.spi.SseFrameTooLargeException
-import splice.spi.sseJsonEvents
+import splice.spi.SseReader
+import splice.spi.SseSpuriousWakeupException
 
 class SseReaderTest {
 
@@ -38,7 +39,7 @@ class SseReaderTest {
                 }
                 channel.close(null)
             }
-            texts = sseJsonEvents(channel, onBytes = { touches++ }, onMalformed = { malformed.add(it) })
+            texts = SseReader().sseJsonEvents(channel, onBytes = { touches++ }, onMalformed = { malformed.add(it) })
                 .toList()
                 .map { it["v"]?.jsonPrimitive?.content ?: it.toString() }
         }
@@ -138,7 +139,7 @@ class SseReaderTest {
             channel.flush()
             channel.close(null)
         }
-        sseJsonEvents(channel, onRawText = {
+        SseReader().sseJsonEvents(channel, onRawText = {
             captured.append(it)
             true
         }).toList()
@@ -156,7 +157,7 @@ class SseReaderTest {
             }
             channel.close(null)
         }
-        sseJsonEvents(channel, onRawText = {
+        SseReader().sseJsonEvents(channel, onRawText = {
             calls++
             false
         }).toList()
@@ -167,7 +168,7 @@ class SseReaderTest {
     fun `unterminated line is rejected at the configured safety limit`() = runTest {
         val channel = ByteReadChannel("x".repeat(64))
         assertThrows<SseFrameTooLargeException> {
-            sseJsonEvents(channel, maxLineChars = 16).toList()
+            SseReader().sseJsonEvents(channel, maxLineChars = 16).toList()
         }
     }
 
@@ -175,7 +176,7 @@ class SseReaderTest {
     fun `multi-line event is rejected at the configured safety limit`() = runTest {
         val channel = ByteReadChannel("data: 12345678\ndata: 90\n\n")
         assertThrows<SseFrameTooLargeException> {
-            sseJsonEvents(channel, maxLineChars = 64, maxEventChars = 8).toList()
+            SseReader().sseJsonEvents(channel, maxLineChars = 64, maxEventChars = 8).toList()
         }
     }
 
@@ -187,10 +188,14 @@ class SseReaderTest {
     // explicit failure instead of an infinite loop.
     @Test
     fun `torn channel that never yields bytes terminates instead of hot-spinning`() = runTest {
-        val emitted = withTimeout(TORN_CHANNEL_TIMEOUT_MS) {
-            sseJsonEvents(TornChannel()).count()
+        // UP-005: the bound's exhaustion now throws (distinguishable from a clean EOF) instead of
+        // quietly completing — the critical invariant this regression test guards is unchanged:
+        // it TERMINATES PROMPTLY (withTimeout would fail on the old hot-spin) rather than hanging.
+        withTimeout(TORN_CHANNEL_TIMEOUT_MS) {
+            assertThrows<SseSpuriousWakeupException> {
+                SseReader().sseJsonEvents(TornChannel()).count()
+            }
         }
-        assertEquals(0, emitted) // no frames, and — critically — it RETURNED
     }
 
     // G12 (WHATWG HTML §9.2 event-stream assembly): table-driven coverage of the behaviors the old

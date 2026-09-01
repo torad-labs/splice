@@ -21,6 +21,7 @@ EXIT 0 = supervised. EXIT 1 = gap open. --selftest = the POSITIVE CONTROL (C6).
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[4]
@@ -48,13 +49,39 @@ def detect(text: str | None) -> list[str]:
     return problems
 
 
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+_LINE_COMMENT = re.compile(r"//.*?$", re.M)
+_IMPORT_LINE = re.compile(r"^import .*$", re.M)
+
+
+def code_only(text: str | None) -> str | None:
+    """A mention is not a wiring: a token left behind in a `// TODO: restore ...` must not satisfy a
+    REQUIRED token after the real call site is deleted. Same stripper cx_02/cx_09/cx_18 carry.
+    Proven against this wall's own source: with the whole `launched.invokeOnCompletion { ... }`
+    supervisor deleted and its literal text left in a TODO, the raw-matching wall printed WALL GREEN
+    while a dead probe loop stayed dead for the daemon's lifetime again. AuthProbeLoop.kt already
+    carries a 6-line SH-04 comment naming the supervisor directly above it, so all three required
+    tokens were one deletion away from a free pass.
+
+    Every assertion in detect() is a REQUIRED token — there is no banned string a comment could be
+    used to HIDE — so the whole read is stripped and the jw_08 raw/code split does not apply here."""
+    if text is None:
+        return None
+    stripped = _BLOCK_COMMENT.sub("", text)
+    stripped = _LINE_COMMENT.sub("", stripped)
+    return _IMPORT_LINE.sub("", stripped)
+
+
 def _read(p: pathlib.Path) -> str | None:
-    return p.read_text(encoding="utf-8") if p.exists() else None
+    return code_only(p.read_text(encoding="utf-8")) if p.exists() else None
 
 
 OPEN_FIX = "class AuthProbeLoop\nrunCatchingCancellable { probeOnce() }"
 CLOSED_FIX = ("class AuthProbeLoop\nrunCatchingCancellable { probeOnce() }\n"
               "invokeOnCompletion\nMAX_RESTARTS\nlog(\"permanently down\")")
+SUPERVISOR_COMMENTED = ("class AuthProbeLoop\nrunCatchingCancellable { probeOnce() }\n"
+                        "// TODO(SH-04): restore launched.invokeOnCompletion { ... MAX_RESTARTS "
+                        "budget ... log(\"probe permanently down\") }")
 
 
 def selftest() -> int:
@@ -71,6 +98,14 @@ def selftest() -> int:
         fails.append("no restart budget must be RED")
     if not detect(None):
         fails.append("missing AuthProbeLoop.kt must be RED, never a vacuous pass")
+    # HD-26 comment-satisfiability control, in the two halves that make it a proof: the raw shape is
+    # the BUG (green with the supervisor deleted), the stripped shape is the FIX.
+    if detect(SUPERVISOR_COMMENTED):
+        fails.append("the raw shape must read GREEN — otherwise this fixture is not the bug and "
+                     "the control below proves nothing")
+    if not detect(code_only(SUPERVISOR_COMMENTED)):
+        fails.append("a supervisor that survives only as comment text must be RED — this wall must "
+                     "read code_only, never raw file text")
     if fails:
         print("SH-04 SELFTEST FAIL:")
         for f in fails:

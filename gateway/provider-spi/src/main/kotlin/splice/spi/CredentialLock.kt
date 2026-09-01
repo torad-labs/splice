@@ -12,11 +12,10 @@
 // the cross-PROCESS half; the Mutex is the intra-process half.
 package splice.spi
 
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import splice.core.util.LogSink
 import java.nio.channels.FileChannel
 import java.nio.channels.FileLock
 import java.nio.channels.OverlappingFileLockException
@@ -24,6 +23,22 @@ import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.random.Random
+
+/**
+ * The read→POST→write of one credential refresh, run while the `<authPath>.lock` is held.
+ *
+ * The three steps being INSIDE one of these is the entire G1 fix, and is what the name has to
+ * carry: a refresh that read the file outside the lock and only wrote inside it would still POST a
+ * refresh_token a peer had already rotated, which is the incident (the kimi-code token, 2026-07-18).
+ * So this is not "some suspending work" — it is the whole indivisible unit, and anything split out
+ * of it leaves the race open.
+ *
+ * It may run WITHOUT the lock after the bounded wait expires (SH-06: bounded beats hung), honestly
+ * logged. That is deliberate and is why G1 keeps three more layers behind this one.
+ */
+public fun interface CredentialRefresh<T> {
+    public suspend operator fun invoke(): T
+}
 
 /** Serializes a credential-file refresh across processes (FileLock) and threads (per-path Mutex). */
 public object CredentialLock {
@@ -53,18 +68,25 @@ public object CredentialLock {
     public suspend fun <T> withLock(
         path: Path,
         waitMs: Long = CREDENTIAL_LOCK_WAIT_MS,
-        log: (String) -> Unit = {},
-        block: suspend () -> T,
+        log: LogSink = LogSink {},
+        // HD-19: the two runtime reaches this primitive used to make directly, as one cohesive
+        // argument — `runtime.waiter` paces the tryLock poll (was `delay`) and `runtime.dispatcher`
+        // is where the poll runs (was Dispatchers.IO). The default is the production runtime, so a
+        // caller that passes nothing is unchanged — and CredentialLockTest can now assert the
+        // backoff CURVE instead of waiting out 600ms of it.
+        runtime: PollRuntime = PollRuntime(),
+        block: CredentialRefresh<T>,
     ): T =
         inProcess.computeIfAbsent(path) { Mutex() }.withLock {
-            withFileLock(path, waitMs, log, block)
+            withFileLock(path, waitMs, log, runtime, block)
         }
 
     private suspend fun <T> withFileLock(
         path: Path,
         waitMs: Long,
-        log: (String) -> Unit,
-        block: suspend () -> T,
+        log: LogSink,
+        runtime: PollRuntime,
+        block: CredentialRefresh<T>,
     ): T {
         // Lock a SIBLING `<name>.lock` file, NEVER the credential file itself — an advisory lock on
         // the auth JSON would make a plain read of it block, which must never happen.
@@ -73,7 +95,9 @@ public object CredentialLock {
         try {
             // tryLock is non-blocking; the poll loop delays on the IO context so no shared
             // coroutine-dispatcher thread ever parks (the old blocking lock() parked a real one).
-            val lock = withContext(Dispatchers.IO) { acquireBounded(channel, lockPath, waitMs, log) }
+            val lock = withContext(runtime.dispatcher) {
+                acquireBounded(channel, lockPath, waitMs, log, runtime.waiter)
+            }
             try {
                 return block()
             } finally {
@@ -92,7 +116,8 @@ public object CredentialLock {
         channel: FileChannel,
         lockPath: Path,
         waitMs: Long,
-        log: (String) -> Unit,
+        log: LogSink,
+        waiter: Waiter,
     ): FileLock? {
         val t0 = System.nanoTime()
         var backoffMs = POLL_BASE_MS
@@ -114,7 +139,7 @@ public object CredentialLock {
                 )
                 return null
             }
-            delay((backoffMs * Random.nextDouble(JITTER_LO, JITTER_HI)).toLong())
+            waiter.wait((backoffMs * Random.nextDouble(JITTER_LO, JITTER_HI)).toLong())
             backoffMs = minOf(backoffMs * 2, POLL_MAX_MS)
         }
     }

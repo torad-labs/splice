@@ -1,0 +1,51 @@
+# Clock discipline — a bare `delay(...)` in production logic is an unnamed dependency on the global
+# clock. It cannot be replaced, so it cannot be observed: every backoff curve, poll interval and
+# retry pause becomes untestable except by sleeping through it in real time. This repo paid for that
+# twice. The retry curve in provider-spi/UpstreamClient.kt (200/400/800ms, ±10% jitter, Retry-After
+# as a floor) had NO coverage — every test overrode the whole `backoff` lambda with a no-op and the
+# two tests that claimed to pin it re-derived `minOf(200L shl it, 10_000L)` in their own assertion,
+# so they would have passed against any implementation. And the wall-clock waits this shape forces
+# are the HeadServerFoldTest NF-03 flake class: a test that measures elapsed milliseconds under full
+# build load fails for reasons that have nothing to do with the code.
+#
+# Compliant forms, both `fun interface` seams in provider-spi/RuntimeSeams.kt:
+#   - `Waiter.wait(ms)` for a ONE-SHOT wait — backoff, a poll pause, an RFC 8628 device-login
+#     interval. Production wires ProcessWaiter (which is `delay(ms)` and nothing else); a test wires
+#     a recorder that returns instantly and captures the intervals, which is how
+#     UpstreamClientRetryPolicyTest now asserts the real curve in 12 milliseconds.
+#   - `Ticker.awaitTick(intervalMs): Boolean` for LOOP PACING — the
+#     `while (isActive) { work(); delay(interval) }` shape in AuthProbeLoop, TurnPathProbeLoop,
+#     TurnWatchdog's two pollers and TurnDriver's client pinger. The Boolean return is what lets a
+#     fake end the loop cleanly instead of throwing, which matters because TurnPathProbeLoop.supervise
+#     treats a non-cancellation completion as a stall alarm.
+# Both default to the production adapter at every call site, so a production run is unchanged.
+#
+# THE ONE IGNORE, stated rather than hidden: an injected process must name its concrete runtime
+# somewhere. ProcessRuntime.kt is that one file and does nothing else, so the exemption cannot grow
+# to cover logic. Same shape as kt-no-system-getenv's `core/**/config/**` and kt-no-println's inline
+# AsyncFileIo carve-out: convert every site, exempt exactly the edge, say so here.
+#
+# PROMOTED 2026-08-16 (HD-19) from the dormant .rules/kotlin/ast-grep pack, which sgconfig.yml
+# references from nowhere and so had never run. Red-proven against a synthetic violation BEFORE the
+# census was believed (the no-lateinit lesson): 11 hits in gateway/*/src/main, all 11 converted in
+# the same commit. Two spellings were checked and are NOT hits — `tcp_nodelay(...)` inside a log
+# string (HeadServer.kt, UpstreamClient.kt) does not match, and `delay(timeMillis = 5L)` does.
+#
+# Android framing dropped from the source header, which argued "delay() means you're waiting for
+# something that should emit — use Flow operators (debounce, timeout)". That is a UI-stream tenet
+# and is NOT adopted here: a gateway's retry backoff is a genuine wait with nothing to emit. What
+# is walled is the UN-NAMED wait, not waiting.
+id: kt-no-delay-in-production
+language: kotlin
+severity: error
+message: "No bare delay() in production — inject a Waiter (one-shot wait) or a Ticker (loop pacing)."
+files:
+  - gateway/*/src/main/**/*.kt
+ignores:
+  # The process runtime edge — the single main-source file allowed to name the global clock.
+  - gateway/provider-spi/src/main/kotlin/splice/spi/ProcessRuntime.kt
+rule:
+  # `$$$ARGS` matches zero-or-more, so one branch covers delay(ms), delay(duration) and the named
+  # spelling delay(timeMillis = 5L) alike. A receiver-qualified `x.delay(...)` is deliberately NOT
+  # matched: that is somebody's own method, not kotlinx.coroutines.delay.
+  pattern: delay($$$ARGS)

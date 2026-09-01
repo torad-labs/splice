@@ -31,11 +31,6 @@ public interface HeadLogSource {
     public fun path(): String
 }
 
-/** Reads the head's per-turn perf rows (file truth, numeric fields only, newest last). */
-public fun interface HeadPerfSource {
-    public fun tailNumeric(n: Int): List<Map<String, Long>>
-}
-
 public data class ManagedHead(
     val head: Head,
     val auth: AuthProvider,
@@ -50,4 +45,14 @@ public data class ManagedHead(
     val launchSpec: LaunchSpec? = null,
     /** Per-turn perf telemetry rows for /api/perf; null = head has no perf sink wired. */
     val perf: HeadPerfSource? = null,
+    /** DR-81: "does this head hold a working api key RIGHT NOW" — read per /launch, never frozen
+     *  into [launchSpec] (the spec is assembled once at boot; `splice key set` promises live
+     *  pickup, and a boot-frozen gate left the paste-your-key capture hook armed against a
+     *  working credential). Default true = capture/advertiser stay disarmed, the safe side. */
+    val keyPresence: KeyPresenceProbe = KeyPresenceProbe { true },
 )
+
+/** The launch-time key-presence read [ManagedHead.keyPresence] carries (role-named ctor seam). */
+public fun interface KeyPresenceProbe {
+    public fun keyPresentNow(): Boolean
+}

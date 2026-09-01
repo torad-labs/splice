@@ -8,12 +8,12 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.app.cli.CheckStatus
-import splice.app.cli.ControlPlaneClient
-import splice.app.cli.turnPathCheck
+import splice.app.cli.DoctorRuntime
+import splice.app.cli.HealthView
 
 class DoctorTurnPathCheckTest {
 
-    private fun health(ok: Boolean?, stalled: List<String> = emptyList()) = ControlPlaneClient.HealthView(
+    private fun health(ok: Boolean?, stalled: List<String> = emptyList()) = HealthView(
         version = "kt-1",
         heads = 4,
         readyHeads = 4, // the wedge's own numbers: everything "ready" while nothing works
@@ -24,7 +24,7 @@ class DoctorTurnPathCheckTest {
 
     @Test
     fun `a stalled head is a FAIL that names the head and the outage signature`() {
-        val row = turnPathCheck(health(ok = false, stalled = listOf("claudex")))!!
+        val row = DoctorRuntime().turnPathCheck(health(ok = false, stalled = listOf("claudex")))!!
         assertEquals(CheckStatus.FAIL, row.status, "4-ready-0-failed must not outrank a wedged turn path")
         assertTrue("claudex" in row.detail, "the operator needs the head named")
         assertTrue(row.fix != null, "every FAIL carries its fix command")
@@ -32,16 +32,16 @@ class DoctorTurnPathCheckTest {
 
     @Test
     fun `a live turn path is OK`() {
-        assertEquals(CheckStatus.OK, turnPathCheck(health(ok = true))!!.status)
+        assertEquals(CheckStatus.OK, DoctorRuntime().turnPathCheck(health(ok = true))!!.status)
     }
 
     @Test
     fun `ok false with no named head still refuses to certify health`() {
-        assertEquals(CheckStatus.WARN, turnPathCheck(health(ok = false))!!.status)
+        assertEquals(CheckStatus.WARN, DoctorRuntime().turnPathCheck(health(ok = false))!!.status)
     }
 
     @Test
     fun `a pre-probe daemon gets no row - absent evidence is not evidence of health`() {
-        assertNull(turnPathCheck(health(ok = null)), "an omitted field must not be read as healthy")
+        assertNull(DoctorRuntime().turnPathCheck(health(ok = null)), "an omitted field must not be read as healthy")
     }
 }

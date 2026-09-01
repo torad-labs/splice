@@ -10,7 +10,7 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import splice.core.parse.parseAnthropicBody
+import splice.core.parse.AnthropicParse
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.ChatRequestBuilder
 import java.io.File
@@ -22,7 +22,7 @@ class ChatContractTest {
             """{"model":"claude-kimi--kimi-k2","stream":true,"max_tokens":1024,""" +
                 """"system":"You are Splice, a contract fixture.",""" +
                 """"messages":[{"role":"user","content":"Ping."}]}"""
-        val body = parseAnthropicBody(anthropic).typed
+        val body = AnthropicParse.parseAnthropicBody(anthropic).typed
         val req = ChatRequestBuilder(ChatQuirks(providerTag = "kimi"))
             .build(body, upstreamModel = "kimi-k2", originalModel = "claude-kimi--kimi-k2", compact = false)
             .req

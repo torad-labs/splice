@@ -1,0 +1,11 @@
+// RED fixture (DR-116): the `as?` spelling of the transparent-cast discard.
+package fixtures.red
+
+import splice.core.annotation.MustConsume
+
+@MustConsume
+fun produceAny(): Any = 1
+
+fun caller() {
+    produceAny() as? Int
+}

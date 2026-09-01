@@ -1,0 +1,13 @@
+// RED fixture (DR-116): `as` is a value-transparent wrapper — `produceAny() as Int` yields exactly
+// the wrapped value, so a bare cast statement is the same discard. Pre-fix FirTypeOperatorCall fell
+// to carriesValue's `else -> false` (= consumed) and this compiled green.
+package fixtures.red
+
+import splice.core.annotation.MustConsume
+
+@MustConsume
+fun produceAny(): Any = 1
+
+fun caller() {
+    produceAny() as Int
+}

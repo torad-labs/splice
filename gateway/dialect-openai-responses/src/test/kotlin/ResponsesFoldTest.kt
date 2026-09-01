@@ -16,14 +16,14 @@ import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.reasoning.encodeReasoningEnvelope
+import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.dialect.responses.FoldConfig
+import splice.dialect.responses.ResponsesContinuation
 import splice.dialect.responses.ResponsesFoldController
-import splice.dialect.responses.continuationRequest
 import splice.spi.FoldRound
-import splice.core.reasoning.decodeReasoningEnvelope as coreDecode
+import splice.core.reasoning.ReasoningReplay.decodeReasoningEnvelope as coreDecode
 
 private val CONFIG = FoldConfig(models = setOf("gpt-5.6-luna"))
 private val controller = ResponsesFoldController(CONFIG) { coreDecode(it) }
@@ -35,7 +35,7 @@ private val priorRequest: JsonObject = Json.parseToJsonElement(
         "store":false,"stream":true,"instructions":"You are a test."}""",
 ).jsonObject
 
-private fun envelopeFor(id: String): String = encodeReasoningEnvelope(
+private fun envelopeFor(id: String): String = ReasoningReplay.encodeReasoningEnvelope(
     buildJsonObject {
         put("type", "reasoning")
         put("id", id)
@@ -61,18 +61,18 @@ class ResponsesFoldTest {
     @Test
     fun `518n-2 fingerprint - 516 1034 1552 truncate, off-by-one and others do not`() {
         for (truncated in listOf(516L, 1034L, 1552L, 2070L)) {
-            assertTrue(ResponsesFoldController.isTruncationFingerprint(truncated), "$truncated should be truncation")
+            assertTrue(controller.isTruncationFingerprint(truncated), "$truncated should be truncation")
         }
         for (clean in listOf(515L, 517L, 1035L, 2858L, 800L, 0L)) {
-            assertFalse(ResponsesFoldController.isTruncationFingerprint(clean), "$clean should NOT be truncation")
+            assertFalse(controller.isTruncationFingerprint(clean), "$clean should NOT be truncation")
         }
     }
 
     @Test
     fun `tier n derives from the fingerprint`() {
-        assertEquals(1L, ResponsesFoldController.tierOf(516))
-        assertEquals(2L, ResponsesFoldController.tierOf(1034))
-        assertEquals(3L, ResponsesFoldController.tierOf(1552))
+        assertEquals(1L, controller.tierOf(516))
+        assertEquals(2L, controller.tierOf(1034))
+        assertEquals(3L, controller.tierOf(1552))
     }
 
     @Test
@@ -129,7 +129,7 @@ class ResponsesFoldTest {
                 "reasoning":{"effort":"high","summary":"detailed","context":"all_turns"},
                 "stream_options":{"reasoning_summary_delivery":"sequential_cutoff"}}""",
         ).jsonObject
-        val next = continuationRequest(withSummary, emptyList())
+        val next = ResponsesContinuation().continuationRequest(withSummary, emptyList())
         val reasoning = next["reasoning"]!!.jsonObject
         assertEquals("detailed", reasoning["summary"]?.jsonPrimitive?.content)
         assertEquals("high", reasoning["effort"]?.jsonPrimitive?.content)

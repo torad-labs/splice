@@ -35,12 +35,12 @@ ast-grep scan --config .rules/kotlin/ast-grep/sgconfig.yml --json
 | `no-sealed-interface` | Prefer sealed class over sealed interface |
 | `no-loose-function` | Behavior belongs on a type |
 | `no-companion-objects` | Use top-level declarations |
-| `no-secondary-constructor` | Primary constructor + factories |
+| `no-secondary-constructor` | Primary constructor + factories — PROMOTED 2026-08-16 to `.rules/kotlin-splice/kt-no-secondary-constructor.yml`; do not re-vendor |
 | `no-invented-layer` | No Controller/Presenter/Contract |
 | `no-lambda-seam` | Use fun interface, not raw function types |
 | `sealed-class-no-body-properties` | Shared properties in constructor |
 | **Flow & Concurrency** | |
-| `flow-over-suspend` | Flow is composable, suspend is single-shot |
+| `flow-over-suspend` | Flow is composable, suspend is single-shot — PROMOTED 2026-08-16 to `.rules/kotlin-splice/kt-flow-over-suspend.yml` (narrowed there to the suspend-returns-Flow case only); do not re-vendor |
 | `data-layer-flow-only` | Repository/DataSource returns Flow |
 | `usecases-return-flow` | UseCases return Flow not suspend |
 | `no-logic-in-collect` | Thin collect terminals |
@@ -74,7 +74,7 @@ ast-grep scan --config .rules/kotlin/ast-grep/sgconfig.yml --json
 | `no-empty-catch` | Handle or log exceptions |
 | `no-unsafe-cast` | Use as? safe cast |
 | `no-any-parameters` | Use specific types or generics |
-| `no-lateinit` | Use constructor injection or lazy |
+| `no-lateinit` | Use constructor injection or lazy — PROMOTED 2026-08-16 to `.rules/kotlin-splice/kt-no-lateinit.yml` (the vendored copy's `property_modifier` node kind does not exist and never matched; fixed to `member_modifier` there); do not re-vendor |
 | `use-or-empty` | Use .orEmpty() not ?: "" |
 | `prefer-immutable-collections` | Don't return mutable collections |
 | **Testing** | |
@@ -97,7 +97,7 @@ ast-grep scan --config .rules/kotlin/ast-grep/sgconfig.yml --json
 | **Production Safety** | |
 | `no-println-in-production` | Use logging framework |
 | `agent-no-println` | Agent code uses middleware |
-| `no-todo-throws` | No TODO() in production |
+| `no-todo-throws` | No TODO() in production — PROMOTED 2026-08-16 to `.rules/kotlin-splice/kt-no-todo-throws.yml` (widened there to cover `NotImplementedError` longhand); do not re-vendor |
 | `no-raw-thread` | Use coroutines |
 | `no-system-exit` | Throw exceptions for shutdown |
 | `no-hardcoded-secrets` | Use env vars or vaults |

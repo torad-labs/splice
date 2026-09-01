@@ -5,7 +5,8 @@
 // anthropicUpstream + claudeCredentialsPath keys (nothing read them; claudithos leftovers).
 package splice.core.config
 
-public enum class KnobKind { STRING, NUMBER, BOOL }
+// KnobKind + knobsByKey + restartRequiredKnobKeys live in KnobKind.kt
+// (concentration, 2026-08-19).
 
 // HONESTY (audit 2026-07-18): nearly every knob is SNAPSHOTTED at Daemon.start into constructed
 // objects (providers, watchdog budgets, auth caches, warn thresholds) — so nearly every knob is
@@ -80,15 +81,14 @@ public enum class Knob(
         restartRequired = true,
     ),
 
-    // The transcript mirror ("[reasoning summary]" text block, L2). ON is the measured codex
-    // distillation-loop default. Turning it OFF stops the summary riding back upstream in the
-    // transcript (token cost) while reasoning still displays as thinking blocks — the operator
-    // accepts the cross-step continuity trade consciously (2026-07-19).
+    // The transcript mirror ("[reasoning summary]" text block, L2) is operator-locked OFF.
+    // Provider-native reasoning still displays as thinking blocks, but splice never authors a
+    // summary into the transcript or sends that synthetic block back upstream.
     MIRROR_REASONING(
         "mirrorReasoning",
         KnobKind.BOOL,
         listOf("CLAUDEX_MIRROR_REASONING"),
-        true,
+        false,
         restartRequired = true,
     ),
 
@@ -211,7 +211,10 @@ public enum class Knob(
         "grokAuthPath",
         KnobKind.STRING,
         listOf("GROK_AUTH_PATH"),
-        "~/.local/share/claude-grok/auth.json",
+        // DR-79: must agree with AuthKind.GrokOAuth's registry default — login writes there, the
+        // arm reads here, and the spike-era ~/.local/share/claude-grok path made a head omitting
+        // auth.file 401 forever while doctor said signed-in (pinned by the registry-agreement arm).
+        "~/.grok/auth.json",
         restartRequired = true,
     ),
     CONTROL_PORT(
@@ -221,13 +224,7 @@ public enum class Knob(
         3096L,
         restartRequired = true,
     ),
-    USAGE_WARN_PCT(
-        "usageWarnPct",
-        KnobKind.NUMBER,
-        listOf("SPLICE_USAGE_WARN_PCT"),
-        80L,
-        restartRequired = true,
-    ),
+    USAGE_WARN_PCT("usageWarnPct", KnobKind.NUMBER, listOf("SPLICE_USAGE_WARN_PCT"), 80L, restartRequired = true),
     USAGE_WARN_TOKENS_5H(
         "usageWarnTokens5h",
         KnobKind.NUMBER,
@@ -246,10 +243,4 @@ public enum class Knob(
         listOf("CLAUDEX_STATUSLINE_GIT_ROOTS"),
         "",
     ),
-    ;
-
-    public companion object {
-        public val byKey: Map<String, Knob> = entries.associateBy { it.key }
-        public val restartRequiredKeys: List<String> = entries.filter { it.restartRequired }.map { it.key }
-    }
 }

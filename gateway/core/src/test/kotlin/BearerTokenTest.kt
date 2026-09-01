@@ -5,30 +5,30 @@
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
-import splice.core.auth.bearerToken
+import splice.core.auth.BearerScheme
 
 class BearerTokenTest {
 
     @Test
     fun `lowercase and mixed-case bearer schemes are accepted`() {
-        assertEquals("tok", bearerToken("bearer tok"))
-        assertEquals("tok", bearerToken("Bearer tok"))
-        assertEquals("tok", bearerToken("BEARER tok"))
-        assertEquals("tok", bearerToken("BeArEr    tok"))
+        assertEquals("tok", BearerScheme.bearerToken("bearer tok"))
+        assertEquals("tok", BearerScheme.bearerToken("Bearer tok"))
+        assertEquals("tok", BearerScheme.bearerToken("BEARER tok"))
+        assertEquals("tok", BearerScheme.bearerToken("BeArEr    tok"))
     }
 
     @Test
     fun `surrounding whitespace on the header and token is trimmed`() {
-        assertEquals("tok", bearerToken("  bearer   tok  "))
+        assertEquals("tok", BearerScheme.bearerToken("  bearer   tok  "))
     }
 
     @Test
     fun `non-bearer, malformed, and missing headers are rejected`() {
-        assertNull(bearerToken("Basic tok"))
-        assertNull(bearerToken("bearertok")) // no scheme delimiter
-        assertNull(bearerToken("bearer")) // scheme only, no token
-        assertNull(bearerToken("bearer   ")) // scheme + only whitespace
-        assertNull(bearerToken(""))
-        assertNull(bearerToken(null))
+        assertNull(BearerScheme.bearerToken("Basic tok"))
+        assertNull(BearerScheme.bearerToken("bearertok")) // no scheme delimiter
+        assertNull(BearerScheme.bearerToken("bearer")) // scheme only, no token
+        assertNull(BearerScheme.bearerToken("bearer   ")) // scheme + only whitespace
+        assertNull(BearerScheme.bearerToken(""))
+        assertNull(BearerScheme.bearerToken(null))
     }
 }

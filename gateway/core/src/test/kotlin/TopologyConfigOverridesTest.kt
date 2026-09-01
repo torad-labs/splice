@@ -1,19 +1,24 @@
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.config.ConfigService
+import splice.core.config.Knob
 import splice.core.config.StatePaths
 import splice.core.model.ModelEntry
 import splice.core.topology.AuthConfig
+import splice.core.topology.AuthKindRegistry
 import splice.core.topology.DaemonConfig
 import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
+import splice.core.topology.HeadModel
 import splice.core.topology.ProviderConfig
 import splice.core.topology.QuirksConfig
 import splice.core.topology.ToolSurfaceConfig
 import splice.core.topology.Topology
-import splice.core.topology.catalogFor
-import splice.core.topology.configOverrides
+import splice.core.topology.TopologyKnobLayer
 import java.nio.file.Files
 
 class TopologyConfigOverridesTest {
@@ -42,7 +47,7 @@ class TopologyConfigOverridesTest {
 
     @Test
     fun `topology seeds every legacy management knob it owns`() {
-        val layer = topology.configOverrides()
+        val layer = TopologyKnobLayer(topology).configOverrides()
         assertEquals("4123", layer["controlPort"])
         assertEquals("4101", layer["port"])
         assertEquals("toml-codex", layer["pinnedModel"])
@@ -55,11 +60,32 @@ class TopologyConfigOverridesTest {
     }
 
     @Test
+    fun `head key text cannot seed Grok management knobs`() {
+        val unrelated = Topology(
+            providers = mapOf(
+                "openrouter" to ProviderConfig(
+                    dialect = Dialect.OPENAI_RESPONSES,
+                    baseUrl = "https://openrouter.example",
+                    auth = AuthConfig("api-key"),
+                ),
+            ),
+            heads = mapOf(
+                "not-grok" to HeadConfig("openrouter", 4107, "claude-router--", "router-model"),
+            ),
+        )
+        val layer = TopologyKnobLayer(unrelated).configOverrides()
+
+        assertNull(layer["grokPort"])
+        assertNull(layer["grokModel"])
+        assertNull(layer["xaiApiBase"])
+    }
+
+    @Test
     fun `environment wins over topology for restart-applied settings`() {
         val paths = StatePaths(baseOverride = Files.createTempDirectory("topology-config"))
         val service = ConfigService(
             paths,
-            headOverrides = topology.configOverrides(),
+            headOverrides = TopologyKnobLayer(topology).configOverrides(),
             envReader = { name ->
                 when (name) {
                     "SPLICE_CONTROL_PORT" -> "5123"
@@ -79,6 +105,75 @@ class TopologyConfigOverridesTest {
         val catalog = provider.catalogFor(head, contextWindowOverride = 333_000)
         assertEquals(333_000, catalog.contextWindowFor("toml-codex"))
         assertEquals(333_000, catalog.contextWindowFor("future-model"))
+    }
+
+    @Test
+    fun `head owns its ordered model roster and one honest process window`() {
+        val provider = topology.providers.getValue("codex").copy(
+            models = listOf(
+                ModelEntry("narrow", contextWindow = 200_000),
+                ModelEntry("wide-a", contextWindow = 500_000),
+                ModelEntry("wide-b", contextWindow = 500_000),
+            ),
+        )
+        val head = topology.heads.getValue("codex").copy(
+            pinnedModel = "wide-b",
+            models = listOf(HeadModel("wide-b", "opus"), HeadModel("wide-a", "sonnet")),
+            contextWindow = 500_000,
+        )
+
+        val catalog = provider.catalogFor(head)
+
+        assertEquals(listOf("wide-b", "wide-a"), catalog.availableModelIds())
+        assertEquals(provider.models.map { it.id }, provider.catalogFor(head.copy(models = null)).availableModelIds())
+        assertEquals(setOf(500_000L), catalog.models.map { it.contextWindow }.toSet())
+        assertEquals(1.0, catalog.usageScale("wide-a"))
+        assertThrows(IllegalArgumentException::class.java) {
+            provider.catalogFor(head.copy(models = listOf(HeadModel("not-declared-by-provider"))))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            provider.catalogFor(head.copy(models = emptyList()))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            provider.catalogFor(
+                head.copy(models = listOf(HeadModel("wide-b", "opus"), HeadModel("wide-a", "OPUS"))),
+            )
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            provider.catalogFor(head.copy(models = listOf(HeadModel("wide-b", "turbo"))))
+        }
+        // DR-44d: duplicate model IDS reject (the arm above pins duplicate SLOTS; this claim was
+        // enforced but unpinned — a stale roster line repeating an id must fail loud, not last-wins).
+        assertThrows(IllegalArgumentException::class.java) {
+            provider.catalogFor(
+                head.copy(models = listOf(HeadModel("wide-b", "opus"), HeadModel("wide-b", "sonnet"))),
+            )
+        }
+    }
+
+    // DR-44a: the pinned-membership failure names the id, the roster, and the knob provenance —
+    // resolveHeadConfig swaps pinned_model with the pinnedModel/grokModel knob for oauth heads, so
+    // the failing id can come from env/config.json/PATCH and appear NOWHERE in splice.toml. An
+    // operator grepping the TOML for a bare "pinned model must belong" message found nothing.
+    @Test
+    fun `pinned-membership failure names the id, the roster, and the knob provenance`() {
+        val provider = topology.providers.getValue("codex").copy(
+            models = listOf(
+                ModelEntry("narrow", contextWindow = 200_000),
+                ModelEntry("wide-a", contextWindow = 500_000),
+            ),
+        )
+        val head = topology.heads.getValue("codex").copy(
+            pinnedModel = "env-seeded-ghost",
+            models = listOf(HeadModel("wide-a", "opus"), HeadModel("narrow", "sonnet")),
+        )
+
+        val failure = assertThrows(IllegalArgumentException::class.java) { provider.catalogFor(head) }
+
+        val message = failure.message.orEmpty()
+        assertTrue(message.contains("'env-seeded-ghost'"), message)
+        assertTrue(message.contains("wide-a, narrow"), message)
+        assertTrue(message.contains("pinnedModel/grokModel knob"), message)
     }
 
     // [providers.*.quirks.tool_surface] — the nullable-overlay idiom (Topology.kt): an absent
@@ -112,5 +207,121 @@ class TopologyConfigOverridesTest {
         assertEquals(6, table.minDeferred)
         assertEquals(5, table.searchLimit)
         assertEquals(2, table.searchRounds)
+    }
+
+    // ktoml hands back a QUOTED TOML key with its quote characters intact, and
+    // `extra_headers = { "anthropic-version" = "..." }` is both valid TOML and the natural thing
+    // to write for a dashed header name. Unnormalized, that ships a header literally named
+    // "anthropic-version" — quotes included — to the upstream. Both spellings must agree.
+    @Test
+    fun `staticHeaders strips TOML key quoting so both spellings agree`() {
+        val quoted = ProviderConfig(
+            dialect = Dialect.ANTHROPIC_PASSTHROUGH,
+            baseUrl = "https://api.anthropic.com",
+            auth = AuthConfig("client"),
+            extraHeaders = mapOf("\"anthropic-version\"" to "2023-06-01"),
+        )
+        val bare = quoted.copy(extraHeaders = mapOf("anthropic-version" to "2023-06-01"))
+        assertEquals(mapOf("anthropic-version" to "2023-06-01"), quoted.staticHeaders)
+        assertEquals(quoted.staticHeaders, bare.staticHeaders)
+    }
+
+    @Test
+    fun `client auth rejects configured upstream credentials case-insensitively`() {
+        listOf("\"aUtHoRiZaTiOn\"", "\"X-Api-Key\"").forEach { header ->
+            assertThrows(IllegalArgumentException::class.java) {
+                ProviderConfig(
+                    dialect = Dialect.ANTHROPIC_PASSTHROUGH,
+                    baseUrl = "https://api.anthropic.com",
+                    auth = AuthConfig("client"),
+                    extraHeaders = mapOf(header to "splice-held-secret"),
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `non-client auth may configure its own upstream credential headers`() {
+        val provider = ProviderConfig(
+            dialect = Dialect.ANTHROPIC_PASSTHROUGH,
+            baseUrl = "https://api.anthropic.com",
+            auth = AuthConfig("api-key"),
+            extraHeaders = mapOf("\"Authorization\"" to "Bearer configured", "X-API-KEY" to "configured"),
+        )
+
+        assertEquals(
+            mapOf("Authorization" to "Bearer configured", "X-API-KEY" to "configured"),
+            provider.staticHeaders,
+        )
+    }
+
+    // ABSENT means "keep the head's base profile", never "false" — the nullable-overlay idiom.
+    // Non-nullable knobs would make a pre-campaign splice.toml silently neuter a kimi head.
+    @Test
+    fun `passthrough quirks are absent by default so a base profile survives`() {
+        val q = QuirksConfig()
+        assertNull(q.mfjs)
+        assertNull(q.stripCacheControl)
+        assertNull(q.synthesizeSignatures)
+        assertNull(q.mapThinkingAdaptive)
+        assertNull(q.stripSamplingParams)
+        assertNull(q.blockAllowlist)
+    }
+
+    // DR-79 (assembly sweep): the knob default pointed at ~/.local/share/claude-grok/auth.json (a
+    // spike-era path) while login writes, AuthKind declares, ChatArm reads and doctor checks
+    // ~/.grok/auth.json — a grok head omitting auth.file 401ed every turn while doctor said
+    // signed-in. The knob default must agree with the registry's single source.
+    @Test
+    fun `grokAuthPath knob default agrees with the auth-kind registry - DR-79`() {
+        assertEquals(
+            AuthKindRegistry.defaultAuthFileFor("grok-oauth"),
+            Knob.GROK_AUTH_PATH.default,
+        )
+    }
+
+    // DR-80 (assembly sweep): the legacy single-head knobs were seeded from heads.firstOrNull of
+    // the kind into the SHARED knob layer — with TWO chatgpt-oauth heads, the second inherited the
+    // first's port (declared-only portCollisions never fires; the collision is created at resolve
+    // time), pinned model, base and the first ACCOUNT's auth file. Two-plus heads = the per-head
+    // TOML is the only coherent source; the legacy knobs must stay unseeded.
+    @Test
+    fun `legacy knobs are not seeded when a kind has two heads - DR-80`() {
+        val twoCodex = Topology(
+            daemon = DaemonConfig(controlPort = 4123),
+            providers = mapOf(
+                "codex-a" to ProviderConfig(
+                    dialect = Dialect.OPENAI_RESPONSES,
+                    baseUrl = "https://a.example",
+                    auth = AuthConfig("chatgpt-oauth", file = "~/a/auth.json"),
+                    models = listOf(ModelEntry("m-a", contextWindow = 100_000)),
+                ),
+                "codex-b" to ProviderConfig(
+                    dialect = Dialect.OPENAI_RESPONSES,
+                    baseUrl = "https://b.example",
+                    auth = AuthConfig("chatgpt-oauth", file = "~/b/auth.json"),
+                    models = listOf(ModelEntry("m-b", contextWindow = 100_000)),
+                ),
+            ),
+            heads = mapOf(
+                "one" to HeadConfig("codex-a", 4201, "claude-one--", "m-a"),
+                "two" to HeadConfig("codex-b", 4202, "claude-two--", "m-b"),
+            ),
+        )
+        val out = TopologyKnobLayer(twoCodex).configOverrides()
+        listOf("port", "pinnedModel", "chatgptApiBase", "codexAuthPath").forEach { knob ->
+            assertFalse(out.containsKey(knob), "$knob must not be seeded first-head-wins: $out")
+        }
+        assertTrue(
+            TopologyKnobLayer(twoCodex).soleLegacyHeadKeys().isEmpty(),
+            "neither of two same-kind heads is the sole legacy head",
+        )
+    }
+
+    // The single-head fixture keeps seeding (the `topology seeds every legacy management knob it
+    // owns` pin above) — this adds the solo-keys fact the resolve side gates on.
+    @Test
+    fun `a single legacy head per kind is the sole legacy head - DR-80 control`() {
+        assertEquals(setOf("codex", "grok"), TopologyKnobLayer(topology).soleLegacyHeadKeys())
     }
 }

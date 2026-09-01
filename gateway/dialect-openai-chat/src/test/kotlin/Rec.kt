@@ -26,7 +26,11 @@ internal class Rec : WireSink {
     override suspend fun textDelta(index: WireBlockIndex, text: String) { calls.add("text:$text") }
     override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) { calls.add("think:$thinking") }
     override suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String) { calls.add("json:$partialJson") }
-    override suspend fun closeBlock(index: WireBlockIndex) { calls.add("close") }
+
+    // DR-143: the INDEX is the assertion. Recording a bare "close" made block pairing and ordering
+    // unrepresentable, so "block 0 closed before block 1 opened" could not be written as a test at
+    // all — the harness, not the suite, was why chat could ship overlapping blocks.
+    override suspend fun closeBlock(index: WireBlockIndex) { calls.add("close#${index.value}") }
     override suspend fun closeAll() { calls.add("closeAll") }
     override suspend fun addTextBlock(text: String) { calls.add("addText:$text") }
     override suspend fun addRedactedThinking(data: String) = Unit

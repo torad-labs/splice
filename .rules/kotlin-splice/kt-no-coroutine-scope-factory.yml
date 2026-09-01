@@ -1,0 +1,48 @@
+# Scope-ownership discipline — `CoroutineScope(ctx)` and `MainScope()` mint a scope whose lifetime
+# nobody is responsible for. The factory returns an anonymous object, so there is no type to hang a
+# lifecycle on, no name in a stack trace, and nothing that says who is supposed to cancel it. This
+# gateway already depends on the opposite: Daemon.stop() cancels the probe scope, and the auth
+# providers tie their shared SingleFlight refresh to that scope's completion precisely so a refresh
+# cannot persist a token after shutdown. That contract was carried entirely by a comment.
+#
+# Compliant forms, in the order this repo reaches for them:
+#   - AN INJECTED SCOPE, passed by the component that owns the lifecycle. CodexAuthProvider and
+#     GrokAuthProvider take `prefetchScope`, and the daemon hands them its own probe scope — the
+#     shape was already right; only the DEFAULT VALUE was a factory call.
+#   - `LifecycleScope(context)` (provider-spi/RuntimeSeams.kt) where a component genuinely owns a
+#     scope: Daemon's probe scope and SingleFlight's shared-refresh scope. It is a named class that
+#     IMPLEMENTS CoroutineScope rather than a function that calls the factory — the difference is
+#     not cosmetic. A `newScope()` helper would be the factory with a new spelling and this wall
+#     would be pointless; a type puts an owner in the field declaration, gives the scope a name in
+#     a stack trace, and is where the SupervisorJob-on-the-right invariant now lives instead of
+#     being re-typed at each site. Cancellation stays the standard `CoroutineScope.cancel()`
+#     extension — no new lifecycle vocabulary was invented.
+#
+# The Android framing of the source header ("use viewModelScope, lifecycleScope") is dropped: there
+# is no ViewModel here. The TENET survives it exactly — application code must not fabricate a scope;
+# a scope comes from a lifecycle owner. viewModelScope is itself built by the factory inside the
+# framework, which is the same division of labour LifecycleScope draws here.
+#
+# NO IGNORES, and that is a real result rather than an oversight: unlike its two HD-19 siblings this
+# wall needs no runtime-edge carve-out, because a scope can be constructed without naming the global
+# factory at all. gateway/*/src/main is at a true zero.
+#
+# PROMOTED 2026-08-16 (HD-19) from the dormant .rules/kotlin/ast-grep pack, which sgconfig.yml
+# references from nowhere and so had never run. Red-proven against a synthetic violation before the
+# census was believed, INCLUDING the MainScope() branch that has zero real hits here. 4 hits in
+# gateway/*/src/main, all 4 converted in the same commit. `files:` narrowed from the source's
+# `**/*.kt` to this repo's house glob, which already exempts src/test and src/testFixtures — the
+# source's separate `ignores: **/test/**` is redundant under it and was dropped rather than copied.
+id: kt-no-coroutine-scope-factory
+language: kotlin
+severity: error
+message: "Don't call CoroutineScope()/MainScope(). Inject the owner's scope, or hold a named LifecycleScope."
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  any:
+    # `$$$ARGS` matches zero-or-more, so this covers CoroutineScope(), CoroutineScope(ctx) and
+    # CoroutineScope(ctx + SupervisorJob()) alike. It does NOT match `: CoroutineScope` as a
+    # supertype or a type annotation — those are the compliant forms and stay green.
+    - pattern: CoroutineScope($$$ARGS)
+    - pattern: MainScope()

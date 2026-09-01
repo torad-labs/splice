@@ -5,6 +5,7 @@
 // gate opens.
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitCancellation
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.Test
 import splice.spi.SingleFlight
 import java.util.concurrent.atomic.AtomicInteger
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class SingleFlightTest {
 
     @Test

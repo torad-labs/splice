@@ -3,26 +3,15 @@
 // string OR text-block list; tool_result content is string OR block list; tool input/input_schema
 // stay opaque JsonObject; UNKNOWN block types must decode (never throw) so new client block kinds
 // degrade gracefully; thinking.type disabled/disabled_thinking disables reasoning.
+// The serializers named in the @Serializable(with = ...) annotations below are declared in
+// AnthropicWireCodecs.kt — same package, so nothing here imports them.
+// Content-block subtypes live nested in ContentBlock.kt; the typealiases below keep
+// `import splice.core.wire.TextBlock` working. ToolDefinition/ToolChoice/MediaSource live
+// in AnthropicTools.kt.
 package splice.core.wire
 
-import kotlinx.serialization.DeserializationStrategy
-import kotlinx.serialization.KSerializer
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.descriptors.SerialDescriptor
-import kotlinx.serialization.descriptors.buildClassSerialDescriptor
-import kotlinx.serialization.encoding.Decoder
-import kotlinx.serialization.encoding.Encoder
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonContentPolymorphicSerializer
-import kotlinx.serialization.json.JsonDecoder
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonEncoder
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 
 @Serializable
 public data class AnthropicRequest(
@@ -44,70 +33,6 @@ public data class AnthropicMessage(
     val content: List<ContentBlock> = emptyList(),
 )
 
-@Serializable(with = ContentBlockSerializer::class)
-public sealed class ContentBlock
-
-@Serializable
-public data class TextBlock(val text: String = "") : ContentBlock()
-
-@Serializable
-public data class ImageBlock(val source: MediaSource? = null) : ContentBlock()
-
-@Serializable
-public data class DocumentBlock(val source: MediaSource? = null) : ContentBlock()
-
-@Serializable
-public data class ThinkingBlock(val thinking: String = "") : ContentBlock()
-
-@Serializable
-public data class RedactedThinkingBlock(val data: String = "") : ContentBlock()
-
-@Serializable
-public data class ToolUseBlock(
-    val id: String = "",
-    val name: String = "",
-    val input: JsonObject = JsonObject(emptyMap()),
-) : ContentBlock()
-
-@Serializable
-public data class ToolResultBlock(
-    @SerialName("tool_use_id") val toolUseId: String = "",
-    @Serializable(with = ContentSerializer::class)
-    val content: List<ContentBlock> = emptyList(),
-    /** Anthropic's structured failure verdict. `null` means the client said nothing — NOT `false`;
-     *  consumers fall back to text heuristics only in that case. */
-    @SerialName("is_error") val isError: Boolean? = null,
-) : ContentBlock()
-
-/** Unknown block kinds decode losslessly instead of throwing (forward compatibility). */
-@Serializable(with = UnknownBlockSerializer::class)
-public data class UnknownBlock(val raw: JsonObject) : ContentBlock() {
-    public val type: String get() = raw["type"]?.let { (it as? JsonPrimitive)?.content } ?: ""
-}
-
-@Serializable
-public data class MediaSource(
-    val type: String = "",
-    @SerialName("media_type") val mediaType: String? = null,
-    val data: String? = null,
-    val url: String? = null,
-)
-
-@Serializable
-public data class ToolDefinition(
-    val name: String,
-    val description: String? = null,
-    @SerialName("input_schema") val inputSchema: JsonObject? = null,
-    val strict: Boolean? = null,
-)
-
-@Serializable
-public data class ToolChoice(
-    val type: String = "auto",
-    val name: String? = null,
-    @SerialName("disable_parallel_tool_use") val disableParallelToolUse: Boolean? = null,
-)
-
 @Serializable
 public data class ThinkingConfig(
     val type: String = "",
@@ -116,76 +41,11 @@ public data class ThinkingConfig(
     public val disabled: Boolean get() = type == "disabled" || type == "disabled_thinking"
 }
 
-/** `content` accepts a bare string or a block list; a bare string becomes one TextBlock. */
-public object ContentSerializer : KSerializer<List<ContentBlock>> {
-    private val listSerializer = ListSerializer(ContentBlockSerializer)
-    override val descriptor: SerialDescriptor = listSerializer.descriptor
-
-    override fun deserialize(decoder: Decoder): List<ContentBlock> {
-        val input = decoder as JsonDecoder
-        return when (val element = input.decodeJsonElement()) {
-            is JsonPrimitive -> listOf(TextBlock(element.content))
-            else -> input.json.decodeFromJsonElement(listSerializer, element)
-        }
-    }
-
-    override fun serialize(encoder: Encoder, value: List<ContentBlock>) {
-        listSerializer.serialize(encoder, value)
-    }
-}
-
-/** `system` accepts a bare string or [{type:"text",text}] blocks; joins text blocks. */
-public object SystemTextSerializer : KSerializer<String?> {
-    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("splice.SystemText")
-
-    override fun deserialize(decoder: Decoder): String? {
-        val input = decoder as JsonDecoder
-        return when (val element = input.decodeJsonElement()) {
-            is JsonPrimitive -> element.content
-            else -> element.jsonObjectListTexts()
-        }
-    }
-
-    override fun serialize(encoder: Encoder, value: String?) {
-        error("system text is read-only on the ingress side")
-    }
-
-    private fun JsonElement.jsonObjectListTexts(): String? {
-        val arr = this as? JsonArray ?: return null
-        // Byte-preserving concatenation with NO separator — Anthropic's own multi-block system
-        // behavior joins text blocks back-to-back (verified 2026-07-23); a delimiter here invents a
-        // character the client never sent and can break cache-control prefixes. Callers that want a
-        // boundary put it in the block text (the fixtures carry their own trailing spaces).
-        return arr.mapNotNull { el ->
-            val obj = el as? JsonObject ?: return@mapNotNull null
-            if (obj["type"]?.jsonPrimitive?.content == "text") obj["text"]?.jsonPrimitive?.content else null
-        }.joinToString("")
-    }
-}
-
-public object ContentBlockSerializer : JsonContentPolymorphicSerializer<ContentBlock>(ContentBlock::class) {
-    override fun selectDeserializer(element: JsonElement): DeserializationStrategy<ContentBlock> =
-        when (element.jsonObject["type"]?.jsonPrimitive?.content) {
-            "text" -> TextBlock.serializer()
-            "image" -> ImageBlock.serializer()
-            "document" -> DocumentBlock.serializer()
-            "thinking" -> ThinkingBlock.serializer()
-            "redacted_thinking" -> RedactedThinkingBlock.serializer()
-            "tool_use" -> ToolUseBlock.serializer()
-            "tool_result" -> ToolResultBlock.serializer()
-            else -> UnknownBlockSerializer
-        }
-}
-
-public object UnknownBlockSerializer : KSerializer<UnknownBlock> {
-    override val descriptor: SerialDescriptor = buildClassSerialDescriptor("splice.UnknownBlock")
-
-    override fun deserialize(decoder: Decoder): UnknownBlock {
-        val input = decoder as JsonDecoder
-        return UnknownBlock(input.decodeJsonElement().jsonObject)
-    }
-
-    override fun serialize(encoder: Encoder, value: UnknownBlock) {
-        (encoder as JsonEncoder).encodeJsonElement(value.raw)
-    }
-}
+public typealias TextBlock = ContentBlock.TextBlock
+public typealias ImageBlock = ContentBlock.ImageBlock
+public typealias DocumentBlock = ContentBlock.DocumentBlock
+public typealias ThinkingBlock = ContentBlock.ThinkingBlock
+public typealias RedactedThinkingBlock = ContentBlock.RedactedThinkingBlock
+public typealias ToolUseBlock = ContentBlock.ToolUseBlock
+public typealias ToolResultBlock = ContentBlock.ToolResultBlock
+public typealias UnknownBlock = ContentBlock.UnknownBlock

@@ -24,11 +24,11 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
+import splice.core.util.JsonScalars
 import splice.core.util.LogSink
 import splice.core.util.SafeFailureText
 import splice.core.util.SecureFile
@@ -269,7 +269,14 @@ public class ClaudeConfigMaterializer(
         } else {
             EMPTY_JSON
         }
-        val savedModel = existing[Keys.MODEL]?.jsonPrimitive?.content
+        // DR-136: the LAST aborting read, and the one the DR-105 hoist missed — the hoist moved
+        // readSettingsModelBase up but left this EXTRACTION here, after linkShared and the one-way
+        // sessions migration. `?.jsonPrimitive?.content` throws on a non-primitive, so a head
+        // settings.json whose "model" is an object parses cleanly, escapes the corrupt-content
+        // rebuild, and then throws from here — the half-built config dir the header forbids.
+        // JsonScalars is the sanctioned throw-free read (and filters JsonNull, which this chain
+        // used to leak as the literal string "null"; both shapes now fall back to the default).
+        val savedModel = JsonScalars.str(existing[Keys.MODEL])
         val model = if (savedModel != null && savedModel in allow) savedModel else spec.defaultModel
         val hooks = LoginInterception.mergeInto(global[Keys.HOOKS], hookAdditions)
         val merged = buildJsonObject {

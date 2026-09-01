@@ -178,4 +178,43 @@ class ClaudeMaterializeCleanupTest {
             Files.setPosixFilePermissions(settings, PosixFilePermissions.fromString("rw-------"))
         }
     }
+
+    // DR-136: an aborting read SURVIVED the DR-105 hoist. readSettingsModelBase moved up, but the
+    // extraction stayed behind in writeSettings — `existing[MODEL]?.jsonPrimitive?.content` — and
+    // kotlinx's jsonPrimitive throws IllegalArgumentException on a non-primitive. A settings.json
+    // whose "model" is an object PARSES fine, so the corrupt-content rebuild path is never taken;
+    // the throw lands out of writeSettings, out of materialize, out of LaunchService.launch, after
+    // linkShared and after SessionRegistryLink's ONE-WAY sessions migration — exactly the
+    // half-built config dir the hoist promises cannot happen. JsonScalars.kt:2 names that very
+    // chain as the anti-pattern and is both throw-free and JsonNull-safe.
+    @Test
+    fun `a non-primitive saved model does not abort the materialize - DR-136`(@TempDir home: Path) {
+        Files.createDirectories(home.resolve(".claude").resolve("agents"))
+        val configDir = Files.createDirectories(home.resolve(".claude-head"))
+        val settings = configDir.resolve("settings.json")
+        Files.writeString(settings, """{"model":{"id":"m1"}}""")
+        val outcome = runCatching {
+            ClaudeConfigMaterializer(home, log = LogSink { }).materialize(
+                MaterializeSpec(
+                    configDir = configDir,
+                    policy = ClaudePolicy(share = setOf("agents"), isolate = emptySet()),
+                    availableModelIds = listOf("m1"),
+                    defaultModel = "m1",
+                    modelOptionsCache = optionsCache,
+                    statuslineCommand = "curl",
+                    loginCommand = "claudex login",
+                    signInLabel = "Codex",
+                ),
+            )
+        }
+        assertTrue(
+            outcome.isSuccess,
+            "a non-primitive saved model must not throw out of materialize: ${outcome.exceptionOrNull()}",
+        )
+        val written = Files.readString(settings).filterNot { it.isWhitespace() }
+        assertTrue(
+            written.contains("\"model\":\"m1\""),
+            "an unusable saved model falls back to the spec default: $written",
+        )
+    }
 }

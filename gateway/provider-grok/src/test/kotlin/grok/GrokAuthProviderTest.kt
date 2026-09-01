@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
 import splice.core.auth.SYNTHETIC_EXPIRY_TTL_MS
@@ -30,6 +31,13 @@ import java.nio.file.attribute.FileTime
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.readText
+
+// DR-186: the backstop InflightGateTest already puts on its racing arm ("a genuine leak hangs, and
+// must FAIL the suite, never wedge it"), applied to the other unbounded spin-wait. JUnit's
+// TimeoutInvocation schedules a real interrupt and runBlocking's joinBlocking tests
+// Thread.interrupted() on every turn of its event loop, so this bounds a spin that yield() alone
+// never will. Generous on purpose: it is a hang backstop, not a latency assertion.
+private const val HANG_BACKSTOP_S = 60L
 
 class GrokAuthProviderTest {
 
@@ -235,6 +243,7 @@ class GrokAuthProviderTest {
     // Mirrors KimiAuthProviderTest's "two concurrent refreshes coalesce" idiom (runBlocking, not
     // runTest, for deterministic real-dispatcher async proof).
     @Test
+    @Timeout(HANG_BACKSTOP_S) // DR-186: two SPINS below, and a spin that never ends wedges the suite
     fun `prefetch tier does not block on a slow background refresh`() = runBlocking {
         val dir = Files.createTempDirectory("grok-prefetch-async")
         val now = 1_000_000L

@@ -11,6 +11,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import splice.core.auth.CredentialExpiry
 import splice.core.auth.Pkce
 import splice.core.util.EnvReader
 import splice.core.util.FormEncoding
@@ -24,8 +25,6 @@ private const val PKCE_VERIFIER_BYTES = 48
 
 // The refresh-token grant name doubles as the persisted token field key (the wire contract).
 private const val WIRE_REFRESH_TOKEN = "refresh_token"
-
-private const val MS_PER_S = 1000L
 
 // FILE SCOPE ON PURPOSE: one configured Json parser shared by every call. As a member it would be
 // rebuilt per GrokOAuth construction, and the callers construct one per login/refresh.
@@ -113,7 +112,13 @@ public class GrokOAuth {
                     if (refresh != null) put(WIRE_REFRESH_TOKEN, JsonPrimitive(refresh))
                 },
             )
-            if (expiresIn != null) put("expires", JsonPrimitive(nowMs + expiresIn * MS_PER_S))
+            // DR-177: this was nowMs + expiresIn * 1000, which wrapped to a large NEGATIVE
+            // instant for any absurd expires_in — the persisted file then read as expired on
+            // every turn, and every turn refreshed. The file-local seconds constant went with
+            // it: the conversion belongs to CredentialExpiry now, not to each provider.
+            if (expiresIn != null) {
+                put("expires", JsonPrimitive(CredentialExpiry.expiryFromNowMs(nowMs, expiresIn)))
+            }
             put("last_refresh", JsonPrimitive(nowIso))
         }
     }

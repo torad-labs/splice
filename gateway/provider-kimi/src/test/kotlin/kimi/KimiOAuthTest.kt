@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.auth.SYNTHETIC_EXPIRY_TTL_MS
 import splice.provider.kimi.KimiOAuth
 import splice.provider.kimi.KimiOAuthEndpoints
 
@@ -99,6 +100,25 @@ class KimiOAuthTest {
         assertEquals("coding", obj["scope"]?.jsonPrimitive?.content)
         assertEquals("Bearer", obj["token_type"]?.jsonPrimitive?.content)
         assertEquals("3600", obj["expires_in"]?.jsonPrimitive?.content)
+    }
+
+    // DR-177, the seconds-domain twin. kimi writes unix SECONDS, so this site never multiplied and
+    // looked safe — but now/1000 + expires_in wraps just as readily, and the file's expires_at then
+    // sits in the past forever. The unit is why the shared conversion is divided back down here
+    // rather than skipped; the arm above pins that the ordinary case is byte-identical.
+    @Test
+    fun `an absurd expires_in cannot persist an expires_at in the past - DR-177`() {
+        val absurd = Long.MAX_VALUE - 1
+        val body = """{"access_token":"at","refresh_token":"rt","expires_in":$absurd}"""
+        val written = oauth.kimiAuthJsonFromTokenResponse(body, nowMs = 5000L)
+        val obj = Json.parseToJsonElement(written.toString()).jsonObject
+        val expiresAt = obj["expires_at"]!!.jsonPrimitive.content.toLong()
+        assertTrue(expiresAt > 5L, "a wrapped expires_at reads as already-expired forever: got $expiresAt")
+        assertEquals(
+            (5000L + SYNTHETIC_EXPIRY_TTL_MS) / 1000,
+            expiresAt,
+            "an unusable lifetime takes the synthesized ceiling, in this file's SECONDS",
+        )
     }
 
     @Test

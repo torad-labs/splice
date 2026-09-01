@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonObject
+import splice.core.auth.CredentialExpiry
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshOutcome
 import splice.core.util.Cancellables
@@ -26,7 +27,6 @@ private const val FIELD_ID_TOKEN = "id_token"
 private const val FIELD_LAST_REFRESH = "last_refresh"
 private const val FIELD_ACCOUNT_ID = "account_id"
 private const val FIELD_EXP = "exp"
-private const val MS_PER_S = 1000L
 
 internal fun interface SynthesizeExpiry {
     operator fun invoke(mtimeMs: Long): Long
@@ -84,7 +84,11 @@ internal class CodexAuthJson(
             val accountId = JsonScalars.str(tokens, FIELD_ACCOUNT_ID)
             // SH-01 (G18's codex twin): a token with no decodable exp was cached FOREVER — no
             // proactive refresh, first signal a mid-turn 401. Shared policy: synthesize mtime+TTL.
-            val expiresAtMs = JsonScalars.long(oauth.decodeJwtClaims(access), FIELD_EXP)?.let { it * MS_PER_S }
+            // DR-177: this was exp * 1000, which wrapped for an absurd claim. An unrepresentable
+            // exp is not a usable expiry, so it now takes the same synthesized path a MISSING
+            // one takes. The file-local seconds constant went with it.
+            val expiresAtMs = JsonScalars.long(oauth.decodeJwtClaims(access), FIELD_EXP)
+                ?.let(CredentialExpiry::epochSecondsToMs)
                 ?: synthesizeExpiry(mtime)
             val snapshot = Snapshot(access, accountId, expiresAtMs)
             cache = Cache(snapshot, mtime, now, size)
@@ -138,8 +142,9 @@ internal class CodexAuthJson(
         return Cancellables.runCatchingCancellable {
             val mtime = Files.getLastModifiedTime(authPath).toMillis()
             val size = Files.size(authPath)
+            // DR-177: the adopted token gets the same total conversion as the read path.
             val expiresAtMs = JsonScalars.long(oauth.decodeJwtClaims(freshAccess), FIELD_EXP)
-                ?.let { it * MS_PER_S }
+                ?.let(CredentialExpiry::epochSecondsToMs)
                 ?: synthesizeExpiry(mtime)
             Cache(Snapshot(freshAccess, accountId, expiresAtMs), mtime, clock(), size)
         }

@@ -14,6 +14,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import splice.core.auth.CredentialExpiry
 import splice.core.auth.CredentialFileIdentity
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
@@ -123,7 +124,11 @@ public class KimiOAuth {
     internal fun kimiAuthJson(tokens: KimiRefreshedTokens, nowMs: Long): JsonObject = buildJsonObject {
         put(F_ACCESS_TOKEN, JsonPrimitive(tokens.accessToken))
         put(F_REFRESH_TOKEN, JsonPrimitive(tokens.refreshToken))
-        put("expires_at", JsonPrimitive(nowMs / MS_PER_S + tokens.expiresIn))
+        // DR-177: the file's unit is unix SECONDS, so the shared millisecond conversion is
+        // divided back down rather than skipped. Byte-identical for every representable
+        // lifetime — floor(now/1000) + s and floor((now + 1000s)/1000) are the same integer —
+        // and only the wrapping and negative cases change, which is the whole row.
+        put("expires_at", JsonPrimitive(CredentialExpiry.expiryFromNowMs(nowMs, tokens.expiresIn) / MS_PER_S))
         put("scope", JsonPrimitive(tokens.scope))
         put("token_type", JsonPrimitive(tokens.tokenType))
         put(F_EXPIRES_IN, JsonPrimitive(tokens.expiresIn))

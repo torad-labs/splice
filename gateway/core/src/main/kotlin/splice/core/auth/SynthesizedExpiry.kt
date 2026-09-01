@@ -20,4 +20,42 @@ public object CredentialExpiry {
      *  ceiling further out than a healthy clock would; it can only ever be as stale as "now". */
     public fun synthesizedExpiryMs(mtimeMs: Long, nowMs: Long): Long =
         minOf(mtimeMs, nowMs) + SYNTHETIC_EXPIRY_TTL_MS
+
+    /** DR-177: the instant a credential granted NOW for [lifetimeSeconds] expires — the one
+     *  conversion the providers share, instead of three spellings of `now + seconds * 1000`.
+     *
+     *  None of those spellings was total. `seconds * 1000` WRAPS for any lifetime past
+     *  Long.MAX_VALUE/1000, and the sum wraps well before that, so a garbled or hostile expires_in
+     *  produced a large NEGATIVE instant: the credential reads expired on every turn, every turn
+     *  refreshes, and the refresh returns the same bad field — a permanent storm out of one number.
+     *
+     *  Neither end saturates to Long.MAX_VALUE, which would hand back exactly the never-expiring
+     *  credential SH-01 above exists to abolish. A lifetime that cannot be represented is not a
+     *  usable expiry, and "no usable expiry" is precisely the case this file already rules on, so
+     *  it degrades to the synthesized ceiling. A non-positive lifetime clamps to [nowMs]: already
+     *  expired either way — the provider's own post-refresh stale-floor backoff owns the pathology
+     *  from there — but without a bogus pre-epoch instant travelling downstream.
+     *
+     *  Both directions can only ever force an EXTRA refresh, never suppress one: the invariant
+     *  stated at the top of this file, and the reason neither clamp can land below the status quo. */
+    public fun expiryFromNowMs(nowMs: Long, lifetimeSeconds: Long): Long {
+        if (lifetimeSeconds <= 0) return nowMs
+        val lifetimeMs =
+            if (lifetimeSeconds > Long.MAX_VALUE / MS_PER_S) Long.MAX_VALUE else lifetimeSeconds * MS_PER_S
+        // Two non-negative Longs sum to something SMALLER than either only by wrapping, which is
+        // the check the multiply-side guard alone cannot make: a lifetime can be perfectly
+        // representable in milliseconds and still overflow once added to the clock.
+        val expiresAt = nowMs + lifetimeMs
+        return if (expiresAt < nowMs) nowMs + SYNTHETIC_EXPIRY_TTL_MS else expiresAt
+    }
+
+    /** DR-177: an ABSOLUTE epoch-seconds claim (a JWT `exp`) in milliseconds, or null when it does
+     *  not fit — which is the same "no usable expiry" the callers already answer with
+     *  [synthesizedExpiryMs], so an unrepresentable claim now takes the path a missing one takes.
+     *  Distinct from [expiryFromNowMs] because this is a point in time, not a lifetime: there is no
+     *  clock to add and a negative value is not "expired now", it is nonsense. */
+    public fun epochSecondsToMs(epochSeconds: Long): Long? =
+        if (epochSeconds < 0 || epochSeconds > Long.MAX_VALUE / MS_PER_S) null else epochSeconds * MS_PER_S
 }
+
+private const val MS_PER_S = 1000L

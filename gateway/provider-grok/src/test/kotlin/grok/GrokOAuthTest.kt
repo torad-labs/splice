@@ -10,6 +10,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.auth.SYNTHETIC_EXPIRY_TTL_MS
 import splice.provider.grok.GrokOAuth
 import splice.provider.grok.GrokOAuthEndpoints
 
@@ -88,6 +89,20 @@ class GrokOAuthTest {
         assertEquals("at", tokens["access_token"]?.jsonPrimitive?.content)
         assertEquals("rt", tokens["refresh_token"]?.jsonPrimitive?.content)
         assertEquals("3601000", obj["expires"]?.jsonPrimitive?.content) // 1000 + 3600*1000
+    }
+
+    // DR-177: expires_in came off the wire and went straight into `nowMs + it * 1000`. An absurd
+    // value WRAPPED, so the persisted `expires` was a large NEGATIVE instant — the credential read
+    // as expired on every single turn, every turn refreshed, and the refresh returned the same
+    // field. A permanent storm out of one number, and the file said so in plain sight.
+    @Test
+    fun `an absurd expires_in cannot persist an expiry in the past - DR-177`() {
+        val absurd = Long.MAX_VALUE / 1000 + 1
+        val body = """{"access_token":"at","refresh_token":"rt","expires_in":$absurd}"""
+        val auth = oauth.grokAuthJsonFromTokenResponse(body, fallbackRefresh = null, nowMs = 1000L, nowIso = "z")
+        val expires = Json.parseToJsonElement(auth.toString()).jsonObject["expires"]!!.jsonPrimitive.content.toLong()
+        assertTrue(expires > 1000L, "a wrapped expiry reads as already-expired forever: got $expires")
+        assertEquals(1000L + SYNTHETIC_EXPIRY_TTL_MS, expires, "an unusable lifetime takes the synthesized ceiling")
     }
 
     @Test

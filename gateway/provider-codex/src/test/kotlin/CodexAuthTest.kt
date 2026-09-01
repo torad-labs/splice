@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.Credentials
 import splice.core.auth.InvalidGrantLatch
@@ -43,6 +44,13 @@ private fun jwt(payloadJson: String): String {
     val payload = enc.encodeToString(payloadJson.toByteArray())
     return "$header.$payload.sig"
 }
+
+// DR-186: the backstop InflightGateTest already puts on its racing arm ("a genuine leak hangs, and
+// must FAIL the suite, never wedge it"), applied to the other unbounded spin-wait. JUnit's
+// TimeoutInvocation schedules a real interrupt and runBlocking's joinBlocking tests
+// Thread.interrupted() on every turn of its event loop, so this bounds a spin that yield() alone
+// never will. Generous on purpose: it is a hang backstop, not a latency assertion.
+private const val HANG_BACKSTOP_S = 60L
 
 class CodexAuthTest {
 
@@ -107,7 +115,13 @@ class CodexAuthTest {
     // the whole class, so the window is not even confined to the forgetful test. Draining in
     // @AfterEach makes it structural: no test can forget, and the per-test drainPrefetch() calls
     // below stay only because they document intent at the point the prefetch is launched.
+    // DR-186: the drain needs its OWN backstop, and it is the reason a @Timeout on the arm alone was
+    // not enough. When an arm dies before completing the gate its refresh coroutine stays parked on
+    // gate.await() forever, so this join never returns and the suite wedges in @AfterEach — after the
+    // arm has already been failed and reported. Measured: with only the arm bounded, a starved
+    // prefetch arm still hung past a 200s probe; with this line it fails and the suite finishes.
     @AfterEach
+    @Timeout(HANG_BACKSTOP_S)
     fun settlePrefetchBeforeTempDirCleanup(): Unit = runBlocking {
         prefetchJob.children.toList().forEach { it.join() }
     }
@@ -314,6 +328,7 @@ class CodexAuthTest {
     // Mirrors GrokAuthProviderTest's "prefetch tier does not block on a slow background refresh"
     // (runBlocking, not runTest, for deterministic real-dispatcher async proof).
     @Test
+    @Timeout(HANG_BACKSTOP_S) // DR-186: the wait below is a SPIN, and a spin that never ends wedges the suite
     fun `prefetch tier does not block on a slow background refresh`(@TempDir tmp: Path) = runBlocking {
         val now = 1_000_000L
         val access = jwt("""{"exp":${(now + 120_000) / 1000}}""") // inside window, above the floor
@@ -507,6 +522,63 @@ class CodexAuthTest {
         val refreshed = auth.credentials() as Credentials.Bearer
         assertEquals(1, calls.get(), "past the synthesized ceiling: exactly one blocking refresh")
         assertTrue(refreshed.token != "opaque-no-jwt", "the refreshed token must serve")
+    }
+}
+
+/** DR-177's overflow arm, in its own class for the same reason the peer-rotation one below is —
+ *  CodexAuthTest sits at detekt's LargeClass ceiling and this arm tips it. Same reason it carries
+ *  its own copy of the provider helper. */
+class CodexExpiryOverflowTest {
+
+    private val prefetchJob = kotlinx.coroutines.SupervisorJob()
+    private val prefetchScope = CoroutineScope(prefetchJob + kotlinx.coroutines.Dispatchers.Default)
+
+    private fun provider(
+        tmp: Path,
+        clock: () -> Long,
+        refresh: suspend (String) -> RefreshAttempt<RefreshedTokens>,
+    ): Pair<CodexAuthProvider, Path> {
+        val authPath = tmp.resolve(".codex/auth.json")
+        return CodexAuthProvider(
+            authPath = authPath,
+            authCacheMs = 60_000,
+            clock = clock,
+            nowIso = { "2026-07-16T00:00:00Z" },
+            refreshCall = refresh,
+            prefetchScope = prefetchScope,
+        ) to authPath
+    }
+
+    // DR-177: the exp claim went into a bare multiply by 1000, so an absurd one WRAPPED to a large
+    // negative instant and the token read as expired on its very first read — a blocking refresh
+    // per turn, forever, off one JWT field, and the refreshed token is not even the problem. An
+    // unrepresentable exp is not a usable expiry, which is precisely what the SH-01 ceiling already
+    // rules on, so it now takes that path: this is the SH-01 arm's shape with a HOSTILE exp in
+    // place of a missing one, and the call counts are what separate the two behaviours.
+    @Test
+    fun `a jwt exp too large to represent ages out at the ceiling, not immediately - DR-177`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        var now = 0L
+        val calls = AtomicInteger(0)
+        val hostile = jwt("""{"exp":${Long.MAX_VALUE}}""")
+        val (auth, path) = provider(tmp, { now }) {
+            calls.incrementAndGet()
+            RefreshAttempt.Granted(
+                RefreshedTokens(accessToken = jwt("""{"exp":99999999999}"""), refreshToken = "r2", idToken = null),
+            )
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"$hostile","refresh_token":"r1","account_id":"a"}}""")
+        val mtime = Files.getLastModifiedTime(path).toMillis()
+
+        now = mtime + 1_000
+        assertEquals(hostile, (auth.credentials() as Credentials.Bearer).token)
+        assertEquals(0, calls.get(), "a wrapped exp read as already-expired and refreshed on the FIRST call")
+
+        now = mtime + 4 * 60 * 60 * 1000L + 1_000
+        assertTrue((auth.credentials() as Credentials.Bearer).token != hostile, "past the ceiling it refreshes")
+        assertEquals(1, calls.get(), "and exactly once — the ceiling is a floor on staleness, not a storm")
     }
 }
 

@@ -222,7 +222,10 @@ public class GrokAuthProvider(
         // Review finding: synthesizedExpiryMs(clock(), clock()) read the clock twice and clamped
         // the second read against the first, making the clamp a guaranteed no-op — there is no
         // real credential-file mtime here to clamp, only "now" itself, so write that directly.
-        val expiresAtMs = fresh.expiresIn?.let { clock() + it * MS_PER_S } ?: (clock() + SYNTHETIC_EXPIRY_TTL_MS)
+        // DR-177: the same conversion the persist path uses, and for the same reason — a wrapped
+        // expiry here reads as expired forever, which is a refresh per turn rather than one.
+        val expiresAtMs = fresh.expiresIn?.let { CredentialExpiry.expiryFromNowMs(clock(), it) }
+            ?: (clock() + SYNTHETIC_EXPIRY_TTL_MS)
         // SH-02(b): even with (a), a sub-floor grant (expires_in shorter than the stale floor)
         // leaves the next read inside the blocking tier — a SUCCESSFUL refresh that cannot satisfy
         // the tier logic. Back off instead of looping (CLIProxyAPI refreshIneffectiveBackoff),

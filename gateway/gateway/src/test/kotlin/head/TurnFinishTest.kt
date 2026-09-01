@@ -73,7 +73,6 @@ class TurnFinishTest {
         )
 
         suspend fun drive(emitter: TurnTerminal): TurnDrive = TurnDrive(
-            bodyJson = "{}",
             requestBody = buildJsonObject { },
             meta = TurnMeta(
                 compact = false,

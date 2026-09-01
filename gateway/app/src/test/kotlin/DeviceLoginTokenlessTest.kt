@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.DeviceLoginFlow
 import splice.app.DeviceLoginSpec
+import splice.spi.Waiter
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.net.InetSocketAddress
@@ -22,7 +23,7 @@ import java.nio.file.Path
 class DeviceLoginTokenlessTest {
 
     /** A loopback device-flow provider: a valid device authorization, then [tokenBody] on poll. */
-    private fun serving(tokenBody: String): HttpServer {
+    private fun serving(tokenBody: String, expiresIn: Long = 30, interval: Long = 0): HttpServer {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
         server.createContext("/device") { ex ->
             // interval 0 and a short expiry so the poll runs once and the deadline is never the
@@ -30,7 +31,7 @@ class DeviceLoginTokenlessTest {
             val body = """
                 {"user_code":"ABCD-EFGH","device_code":"dev-code",
                  "verification_uri":"http://127.0.0.1/verify","verification_uri_complete":"",
-                 "expires_in":30,"interval":0}
+                 "expires_in":$expiresIn,"interval":$interval}
             """.trimIndent().toByteArray()
             ex.sendResponseHeaders(200, body.size.toLong())
             ex.responseBody.use { it.write(body) }
@@ -58,15 +59,14 @@ class DeviceLoginTokenlessTest {
         },
     )
 
-    private fun runFlow(server: HttpServer, authPath: Path): Pair<Boolean, String> {
+    private fun runFlow(server: HttpServer, authPath: Path, waiter: Waiter = Waiter { }): Pair<Boolean, String> {
         val savedOut = System.out
         val out = ByteArrayOutputStream()
         return try {
             System.setOut(PrintStream(out, true))
             // A no-op waiter: the RFC 8628 interval is not what this arm is about, and without the
             // seam the arm would spend real seconds sleeping.
-            runBlocking { DeviceLoginFlow.run(specFor(server, authPath), waiter = splice.spi.Waiter { }) } to
-                out.toString()
+            runBlocking { DeviceLoginFlow.run(specFor(server, authPath), waiter = waiter) } to out.toString()
         } finally {
             System.setOut(savedOut)
             server.stop(0)
@@ -92,4 +92,35 @@ class DeviceLoginTokenlessTest {
         assertTrue(Files.exists(authPath), "a real token must still be persisted: $printed")
         assertTrue(Files.readString(authPath).contains("tok_device"))
     }
+
+    // DR-190 (DR-177's unenumerated fifth site): expires_in and interval come off the wire. A value that
+    // does not fit in milliseconds wrapped `now + expiresInS * 1000` negative, so the poll never ran and
+    // every attempt was EXPIRED before the first token request; the same product on the interval made
+    // the wait negative. The deadline now degrades the way DR-177's credential expiry does.
+    @Test
+    fun `an expires_in past the millisecond range still polls and signs in - DR-190`(@TempDir tmp: Path) {
+        val authPath = tmp.resolve("auth.json")
+        val (ok, printed) = runFlow(serving("""{"access_token":"tok_device"}""", expiresIn = Long.MAX_VALUE), authPath)
+
+        assertTrue(ok, "an unrepresentable lifetime is not an instant expiry: $printed")
+        assertTrue(Files.exists(authPath), printed)
+    }
+
+    @Test
+    fun `an interval past the millisecond range waits a bounded, non-negative time - DR-190`(@TempDir tmp: Path) {
+        val authPath = tmp.resolve("auth.json")
+        val waits = mutableListOf<Long>()
+        val (ok, printed) = runFlow(
+            serving("""{"access_token":"tok_device"}""", interval = Long.MAX_VALUE),
+            authPath,
+            waiter = Waiter { waits += it },
+        )
+
+        assertTrue(ok, printed)
+        assertTrue(waits.isNotEmpty(), "the poll must have waited at least once")
+        assertTrue(waits.all { it in 0L..MAX_POLL_WAIT_MS }, "every wait must be bounded and non-negative: $waits")
+    }
 }
+
+// One hour, the cap DeviceLoginFlow applies to a wire interval before multiplying it into milliseconds.
+private const val MAX_POLL_WAIT_MS = 3_600_000L

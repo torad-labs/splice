@@ -59,6 +59,9 @@
   preventing a splice-held upstream credential from sharing the local management-gate bypass.
 - OAuth wrapper overrides are restricted to portable command names; paths, shell syntax, whitespace,
   blank names, and option-like names are rejected before launch.
+- The transitive netty floor is raised to 4.2.17.Final (GHSA-8c42-7qj2-3j46, CORS `Vary` cache
+  poisoning in `netty-codec-http`); the constraint stays a floor, so a newer ktor-shipped netty still
+  wins.
 
 ## splice v0.2.0 — reasoning continuity, the cache-drain fix, and every-head login - 2026-08-02
 

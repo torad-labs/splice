@@ -310,12 +310,16 @@ THROWABLE_TEXT_MEMBER = re.compile(
 _TEXT_MEMBER = r"(?:message\b|toString\s*\()"
 _DOT = r"\s*\??\s*\."                       # `failure.cause?.message` reaches text through a safe call
 _IMPLICIT = r'(?:"\s*\+\s*|\+\s*"|\bappend\s*\(\s*)'
+# DR-187 gap (2026-09-01): the matcher was single-hop, so `failure.cause?.message` — the very form the
+# _DOT comment names — was invisible (0 sites, the disappearing-denominator failure this wall exists
+# to stop). Zero or more `receiver?.` hops may now precede the throwable-named segment.
+_HOPS = r"(?:\w+\s*\??\s*\.\s*)*"
 RENDERED_DIRECT = re.compile(
-    r"(?<![$\w.])" + THROWABLE_NAMED + _DOT + _TEXT_MEMBER
+    r"(?<![$\w.])" + _HOPS + THROWABLE_NAMED + _DOT + _TEXT_MEMBER
     + r"|" + _IMPLICIT + THROWABLE_NAMED + r"\b(?![\w.(])"
 )
 RENDERED_DIRECT_SHORT = re.compile(
-    r"(?<![$\w.])" + THROWABLE_SHORT + _DOT + _TEXT_MEMBER
+    r"(?<![$\w.])" + _HOPS + THROWABLE_SHORT + _DOT + _TEXT_MEMBER
     + r"|" + _IMPLICIT + THROWABLE_SHORT + r"\b(?![\w.(])"
 )
 

@@ -127,7 +127,6 @@ class SseRoundConsumeTest {
     private suspend fun drive(
         budget: WatchdogBudget = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
     ): TurnDrive = TurnDrive(
-        bodyJson = "{}",
         requestBody = buildJsonObject { },
         meta = TurnMeta(
             compact = false,

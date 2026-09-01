@@ -304,7 +304,6 @@ class WsRoundDriverTest {
     ): WsRoundInputs {
         val slot = InflightGate(LiveLimit { 1 }).acquire()
         val drive = TurnDrive(
-            bodyJson = "{}",
             requestBody = buildJsonObject { },
             meta = TurnMeta(
                 compact = false,

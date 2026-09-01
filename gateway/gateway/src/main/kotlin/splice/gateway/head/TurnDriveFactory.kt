@@ -31,6 +31,8 @@ internal class TurnDriveFactory(
         val built = inputs.built
         val perf = inputs.perf
         val meta = built.meta
+        // Serialized here ONLY to stamp the size instrument — the wire bytes are the round loop's own
+        // requestBody.toString() (RoundStrategy), not this local (DR-168).
         val bodyJson = built.requestBody.toString()
         perf.setCount(PerfKeys.UPSTREAM_REQ_BYTES, bodyJson.length.toLong())
         // Tool-surface partition sizes — the expected-delta instrument (#959): setCount (not add)
@@ -43,7 +45,6 @@ internal class TurnDriveFactory(
         val watchdog = TurnWatchdog(budget, deps.clock)
         val signals = driveSignals.make(watchdog, channel, perf)
         return TurnDrive(
-            bodyJson = bodyJson,
             requestBody = built.requestBody,
             meta = meta,
             emitter = emitter,

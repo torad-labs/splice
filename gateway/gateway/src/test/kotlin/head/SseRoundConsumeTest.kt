@@ -229,15 +229,26 @@ class SseRoundConsumeTest {
             TurnTelemetry("codex", PerfStats(tmp.resolve("perf-dr7.jsonl")), log = {}, clock = ElapsedClock { 0L }),
             TearAwareEvents(provider, log = {}),
         )
-        // Short FIRST-BYTE tier, because no byte ever arrives: pre-content idleness is judged
-        // against firstByteTimeout, not streamIdle.
-        val drive = drive(WatchdogBudget(1.seconds, 1.seconds, 30.seconds))
+        // STREAM-IDLE is the tier that reaps this, not firstByteTimeout — the opposite of what this
+        // comment used to claim. The scenario's response.created is bytes on the wire, and
+        // TearAwareEvents.onBytes marks them on the RAW read, so the watchdog has already flipped
+        // tiers before the stall begins. "Pre-content" is about CLIENT FRAMES, not bytes.
+        //
+        // The budgets are now far apart so the arm can actually tell the tiers apart: with both at
+        // 1s (as they were) either tier produced the same pass, which is how the false claim went
+        // unnoticed. A generous 20s first-byte tier blows REAP_DEADLINE_MS if markByte never ran.
+        val drive = drive(WatchdogBudget(20.seconds, 1.seconds, 30.seconds))
         val inputs = WsRoundInputs(
             drive = drive,
             bodyJson = "{}",
             sink = RecordingSink2(),
             scope = this,
             turnJob = Job(),
+            // A STUB, and named as one: SseRoundDriver wires this to CONTENT_FRAMES_OUT. A constant
+            // false happens to agree with the real probe here (response.created emits no client
+            // frame), so this arm exercises the reissue gate's pre-content branch without observing
+            // that the production wiring reaches the same answer. Pinning the real probe is a
+            // separate arm on a separate seam, not something to smuggle in behind this one.
             frameEmittedThisRound = ClientFrameEmitted { false },
             eventsBase = 0,
         )
@@ -257,13 +268,20 @@ class SseRoundConsumeTest {
                 val outcome = consume.consume(inputs, UpstreamResponse(raw))
                 val tookMs = System.currentTimeMillis() - t0
                 assertTrue(outcome is TurnOutcome.Failure, "a reaped round must report an outcome: $outcome")
+                val fired = drive.watchdog.fired
+                assertTrue(fired is WatchdogFired.Idle, "expected an Idle reap: $fired")
+                // Names the TIER directly instead of inferring it from a pass. The ack is a byte,
+                // so a correct watchdog reports sawFirstByte=true and judged this against
+                // streamIdle; the arm previously asserted nothing about it and could not have
+                // noticed if the first-byte tier had been the one that fired.
                 assertTrue(
-                    drive.watchdog.fired is WatchdogFired.Idle,
-                    "expected an Idle reap: ${drive.watchdog.fired}",
+                    (fired as? WatchdogFired.Idle)?.sawFirstByte == true,
+                    "the ack is a byte, so the stall is judged on streamIdle, not firstByteTimeout: $fired",
                 )
                 assertTrue(
                     tookMs < REAP_DEADLINE_MS,
-                    "reaped by the 1s idle cap, not by the mock hanging up ($tookMs ms)",
+                    "reaped by the 1s streamIdle cap, not by the 20s first-byte tier or the mock hanging up " +
+                        "($tookMs ms)",
                 )
             }
         } finally {
@@ -273,5 +291,7 @@ class SseRoundConsumeTest {
     }
 }
 
-// The mock stalls for 6s; a reap driven by the 1s idle cap must land far inside that.
+// The mock stalls for 6s, and the arm's first-byte tier is 20s. A reap driven by the 1s STREAM-IDLE
+// cap must land far inside both — which is what makes this deadline name the tier rather than just
+// asserting that something eventually happened.
 private const val REAP_DEADLINE_MS = 4_000L

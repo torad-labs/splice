@@ -4,9 +4,11 @@
 // package). Rounds drive the real wire directly — committed blocks stay; a round that fails with a
 // continuable partial re-POSTs the continuation and APPENDS; everything else finishes with the
 // round's honest outcome. The emitter's seal + monotonic block indices make the spliced turn a
-// single coherent Anthropic message ending in exactly ONE terminal (L3). A watchdog fire never
-// continues — its cancellation owns the turn. The continuation decision + cross-round merge live in
-// [ReanchorContinuation] (now its own file); this class keeps only the loop.
+// single coherent Anthropic message ending in exactly ONE terminal (L3). This header used to end
+// "a watchdog fire never continues — its cancellation owns the turn", which DR-7 made false: an
+// Idle fire now reaps one ROUND, not the turn, and a stalled round's partial is salvageable and
+// continuable. The continuation decision + cross-round merge live in [ReanchorContinuation] (now
+// its own file), which states the current rule; this class keeps only the loop.
 package splice.gateway.round
 
 import kotlinx.serialization.json.JsonObject

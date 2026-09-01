@@ -14,9 +14,16 @@
 // WHY [WatchdogTripped] IS NOT [splice.spi.WatchdogProbe]. They ask different questions and return
 // different types: the SPI's probe returns the [splice.spi.WatchdogFired] REASON, because a
 // translator has to end the stream with the specific budget that blew; this one is a plain boolean
-// gate on whether a runner may start another round, and no reason it could carry would change the
-// answer. Same word in the parameter name, two roles, so two types — measured at the seams, not
-// inferred from the name.
+// gate on whether a runner may start another SUCCESS-side round, and on that question no reason it
+// could carry would change the answer. Same word in the parameter name, two roles, so two types —
+// measured at the seams, not inferred from the name.
+//
+// DR-7 found the one place where the reason DID change the answer, and the fix was to move that
+// path off this port rather than to widen the port: a Failure re-anchor salvages a partial after an
+// Idle round-reap but must not after a TotalCap, so [ReanchorContinuation.continuationForFailure]
+// stopped consuming this boolean entirely and reads the reason from the SPI. If a third consumer
+// ever needs to tell Idle from TotalCap, that is the same signal — take the reason, do not teach
+// this boolean to carry one.
 package splice.gateway.round
 
 import splice.core.turn.TurnOutcome
@@ -61,12 +68,17 @@ internal fun interface FinishTurn {
 }
 
 /**
- * Whether the watchdog has already fired on this turn — the runner's gate on starting ANOTHER
- * round.
+ * Whether the watchdog has already fired on this turn — the gate on starting another SUCCESS-side
+ * round. Its two live consumers are [FoldContinuations] (reasoning-continuation fold) and
+ * [RoundSplice.searchContinuation] (tool search); both ask more work of a turn whose budget already
+ * blew, which is why neither cares WHICH budget blew.
  *
- * A boolean and not a reason: see this file's header. A fire never continues; its cancellation owns
- * the turn from that point, and this exists so a runner between rounds notices rather than issuing
- * one more upstream request against a turn that is already over.
+ * A boolean and not a reason: see this file's header. It used to say "a fire never continues; its
+ * cancellation owns the turn from that point", which described a watchdog that cancelled the whole
+ * TURN. DR-7 made an Idle fire reap one ROUND, so the turn survives its own watchdog and a Failure
+ * re-anchor may continue past one — that path no longer consults this port at all. What is left
+ * true is narrower and still worth a gate: a runner between rounds must not issue one more upstream
+ * request for MORE output on a turn that has already run out of budget.
  */
 internal fun interface WatchdogTripped {
     operator fun invoke(): Boolean

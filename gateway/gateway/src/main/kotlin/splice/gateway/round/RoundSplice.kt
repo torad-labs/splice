@@ -12,8 +12,13 @@ import splice.spi.ToolSearchRound
  *  its own `private val rounds = RoundSplice()`; the bodies below are the single definition. */
 internal class RoundSplice {
     /** The search-continuation gate, shared by both runners (never two copies — the v29 law). A
-     *  search NEVER continues past a watchdog fire or a dead client (the same rule re-anchor
-     *  applies), and never past a round that already committed a real tool_use to the client's wire
+     *  search NEVER continues past a watchdog fire or a dead client — and that is no longer the
+     *  same rule re-anchor applies, as this KDoc used to say. DR-7 removed the watchdog half of
+     *  [ReanchorContinuation.continuationForFailure]'s gate, so a stalled round's FAILURE can
+     *  re-anchor while a stalled round's search still cannot. The two diverged deliberately: a
+     *  search continuation asks the model to do more work on a turn whose budget already blew,
+     *  where a failure re-anchor recovers content the client has already been promised. It also
+     *  never continues past a round that already committed a real tool_use to the client's wire
      *  — that check lives inside ResponsesToolSearchController itself (TurnOutcome.Success.hasToolUse),
      *  so it need not be repeated here. */
     fun searchContinuation(

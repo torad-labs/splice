@@ -535,8 +535,13 @@ class ReanchorRunnerSearchTest {
         assertEquals(1, h.count("message_stop"))
     }
 
+    // The veto itself survived DR-7; its REASON did not. This name used to end "its cancellation
+    // owns the turn", which described a watchdog that killed the whole turn — an Idle fire now
+    // reaps one round and the turn continues. What still holds is narrower: a search asks the model
+    // for MORE work on a turn whose budget already blew, so the gate stays. Its sibling arm below
+    // (an idle fire continues a FAILURE re-anchor) is the half that changed.
     @Test
-    fun `a watchdog fire never continues a search - its cancellation owns the turn`() = runTest {
+    fun `a watchdog fire never continues a search - more work on a spent budget`() = runTest {
         val h = Harness()
         var asks = 0
         val search = ToolSearchController {

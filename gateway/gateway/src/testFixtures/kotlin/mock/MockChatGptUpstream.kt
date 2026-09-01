@@ -340,9 +340,12 @@ class MockChatGptUpstream {
                 if (isContinuationRound(body)) foldSummaryCleanRound(ex) else foldSummaryTruncatedRound(ex)
             "foldcap" -> foldTruncatedRound(ex)
             "foldstall" -> if (isContinuationRound(body)) foldCleanRound(ex) else foldStalledRound(ex)
-            // DR-7: headers, then silence, with NO event ever sent — the PRE-CONTENT stall. The
-            // head has emitted no client frame, which is precisely the state the G5 reissue path
-            // claims, so this is the shape that separates a reaped round from a transport tear.
+            // DR-7: an acknowledgement, then silence — the PRE-CONTENT stall. "Pre-content" means
+            // no CLIENT FRAME has been emitted (the state G5's reissue path claims); it does NOT
+            // mean no event and not no byte, and an earlier version of this comment said both.
+            // The distinction matters because response.created IS bytes on the wire, so the
+            // watchdog has already flipped from its first-byte tier to streamIdle by the time this
+            // stalls. See the arm in SseRoundConsumeTest, whose budgets are split to prove it.
             "idlepre" -> {
                 // The backend ACKNOWLEDGES and then goes quiet: response.created carries no
                 // content, so the round reaches its stall having emitted nothing to the client —

@@ -92,6 +92,21 @@ internal class DoctorCommand {
     private fun renderSection(title: String, checks: List<DoctorCheck>) {
         println()
         println("  $DIM$title$RESET")
+        // DR-173: maxOf THROWS NoSuchElementException on an empty list, and this render loop sits
+        // OUTSIDE guarded() — that wraps only the collectors, which have already run by the time
+        // sections is built. An empty list is reachable without anything being wrong: a daemon that
+        // is running, with a readable key and /api/heads answering, but configured with ZERO heads
+        // returns one, because DaemonLock.headsRuntime reserves null for a failed request and hands
+        // back an empty List for an empty array. So `splice doctor` died with a stack trace instead
+        // of printing a report, on an install whose only sin was having no heads yet.
+        //
+        // Total by construction rather than guarded from outside: an empty section SAYS it is
+        // empty. A bare heading with nothing under it is the silence doctor exists to replace, and
+        // DoctorAuth already answers the same input with a one-line INFO.
+        if (checks.isEmpty()) {
+            println("  $DIM–  nothing to report$RESET")
+            return
+        }
         val width = checks.maxOf { it.name.length }
         checks.forEach { check ->
             val glyph = when (check.status) {

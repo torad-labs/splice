@@ -51,6 +51,38 @@ internal class LoginIo {
         SecureFile.writeAtomic0600(path, content)
     }
 
+    /** DR-172: an HTTP 200 is not a sign-in, and this is the boundary that decides the message.
+     *
+     *  Both flows treated `isSuccess` as the whole test and wrote whatever the body produced. A
+     *  token endpoint answering 200 with `{}` therefore had an EMPTY access token persisted at
+     *  0600 under "signed in — credentials written to …", and the operator walked away believing
+     *  they were authenticated while every later turn failed on a credential that was never
+     *  issued. Kimi already refused exactly this input — kimiAuthJsonFromTokenResponse errors on a
+     *  missing access_token, with a test pinning it — so the correct behaviour was established
+     *  in-repo and two providers diverged from it.
+     *
+     *  The check lives here rather than in each provider's toAuthJson because BOTH login flows
+     *  print the same sentence from the same collaborator; per-provider guards would have to be
+     *  re-derived for the next provider and for the device flow, which had the identical shape.
+     *
+     *  Fail-closed on an unparseable body too: a credential file whose token we cannot read is not
+     *  one to call a successful login. Nothing is written on refusal — the previous credential, if
+     *  any, is left intact rather than replaced by a worthless one. */
+    internal fun persistIfSignedIn(path: Path, authJson: String): Boolean {
+        val token = Cancellables.runCatchingCancellable {
+            loginJson.parseToJsonElement(authJson).let { element ->
+                (element as? JsonObject)?.get("access_token") as? JsonPrimitive
+            }?.content
+        }.getOrNull()
+        if (token.isNullOrBlank()) {
+            println("splice: token endpoint returned no access token — NOT signed in, nothing written")
+            return false
+        }
+        writeCredentialFile(path, authJson)
+        println("splice: signed in — credentials written to $path")
+        return true
+    }
+
     internal fun formHeaders(request: HttpRequestBuilder, identityHeaders: Map<String, String>) {
         request.header("Content-Type", "application/x-www-form-urlencoded")
         request.header("Accept", "application/json")

@@ -128,9 +128,10 @@ public object DeviceLoginFlow {
     private suspend fun classifyPoll(resp: HttpResponse, spec: DeviceLoginSpec, intervalS: Long): PollStep {
         val body = resp.bodyAsText()
         if (resp.status.isSuccess()) {
-            loginIo.writeCredentialFile(spec.authPath, spec.toAuthJson(body))
-            println("splice: signed in — credentials written to ${spec.authPath}")
-            return PollStep.Stop(Outcome.SUCCESS)
+            // DR-172: the identical shape OAuthLoginFlow carried — a 200 was the whole test, so a
+            // body with no access token ended the poll as a SUCCESS over an empty credential.
+            val signedIn = loginIo.persistIfSignedIn(spec.authPath, spec.toAuthJson(body))
+            return PollStep.Stop(if (signedIn) Outcome.SUCCESS else Outcome.ABORT)
         }
         if (resp.status.value >= HTTP_SERVER_ERROR_FLOOR) {
             println("splice: login failed (HTTP ${resp.status.value}): ${loginIo.sanitize(body)}")

@@ -213,9 +213,9 @@ public object OAuthLoginFlow {
                     println("splice: token exchange failed (HTTP ${resp.status.value})")
                     false
                 } else {
-                    loginIo.writeCredentialFile(spec.authPath, spec.toAuthJson(bodyText))
-                    println("splice: signed in — credentials written to ${spec.authPath}")
-                    true
+                    // DR-172: a 200 alone used to mean "signed in" here. The token check and the
+                    // message now live together in one place, shared with the device flow.
+                    loginIo.persistIfSignedIn(spec.authPath, spec.toAuthJson(bodyText))
                 }
             }.getOrElse { e ->
                 println("splice: token exchange error: ${SafeFailureText.render(e)}")

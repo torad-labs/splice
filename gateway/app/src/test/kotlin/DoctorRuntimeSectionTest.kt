@@ -118,4 +118,41 @@ class DoctorRuntimeSectionTest {
         val (_, out) = runDoctor(baseEnv(tmp, freePort))
         assertTrue(out.contains("skipped (daemon stopped)"), out)
     }
+
+    // DR-173 (grok-splice source sweep): a LIVE daemon with zero heads crashed `splice doctor`
+    // outright. DoctorRuntime legitimately returns an empty list there — daemon up, key readable,
+    // /api/heads answering with an empty array, and DaemonLock.headsRuntime reserves null for a
+    // FAILED request — and DoctorCommand.renderSection called maxOf on it, which throws
+    // NoSuchElementException. The render loop runs OUTSIDE guarded(), so nothing caught it: an
+    // install whose only sin was having no heads yet got a stack trace instead of a report.
+    @Test
+    fun `a live daemon with zero heads still prints a report - DR-173`(@TempDir tmp: Path) {
+        val server = com.sun.net.httpserver.HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        val version = splice.core.GATEWAY_VERSION
+        server.createContext("/health") { ex ->
+            val b = """{"ok":true,"version":"$version","heads":0,"readyHeads":0,"failedHeads":0}""".toByteArray()
+            ex.sendResponseHeaders(200, b.size.toLong())
+            ex.responseBody.use { it.write(b) }
+        }
+        // The whole fixture: a well-formed EMPTY heads array, which is not an error condition.
+        server.createContext("/api/heads") { ex ->
+            val b = """{"heads":[]}""".toByteArray()
+            ex.sendResponseHeaders(200, b.size.toLong())
+            ex.responseBody.use { it.write(b) }
+        }
+        server.start()
+        try {
+            val (_, out) = runDoctor(baseEnv(tmp, server.address.port))
+            // Reaching an assertion at all is half the arm — before DR-173 runDoctor threw.
+            assertTrue(out.contains("runtime"), "the runtime section must still be rendered:\n$out")
+            assertTrue(out.contains("nothing to report"), "an empty section must say so:\n$out")
+            // ...and the report must still COMPLETE, not stop at the section that was empty.
+            assertTrue(
+                out.contains("Everything checks out.") || out.contains("issue(s)") || out.contains("No blockers"),
+                "the summary line must still be reached:\n$out",
+            )
+        } finally {
+            server.stop(0)
+        }
+    }
 }

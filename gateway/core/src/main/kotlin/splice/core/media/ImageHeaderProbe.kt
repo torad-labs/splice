@@ -18,9 +18,17 @@
 // fail-CLOSED (a legal image dropped) and the chunk borrow fail-open (an undersized one forwarded),
 // so an invented dimension lies both ways and neither is safe.
 //
-// The rule that replaced them, applied to PNG, JPEG and RIFF alike: a reader may only touch bytes
-// its segment DECLARES it owns and that are actually present, every multi-byte read is unsigned
-// into a Long, and a number that is not a possible image is UNKNOWN rather than small.
+// The rule that replaced them: a reader may only touch bytes its segment DECLARES it owns and that
+// are actually present, every multi-byte read is unsigned into a Long, and a number that is not a
+// possible image is UNKNOWN rather than small.
+//
+// That sentence used to end "applied to PNG, JPEG and RIFF alike", and the RIFF third of it was
+// FALSE when written: the rule reached every chunk and not the container holding them, so a RIFF
+// declaring it ended after its form word still had a VP8X read out of the bytes past that end.
+// Both reviewing seats found it independently by replaying the rule against every reader rather
+// than against the ones this note named — which is the argument for stating a claim narrowly
+// enough to be checked. The container bound now lives in WebpChunks.read, and the rule is applied
+// where it says it is.
 //
 // PACKAGE (arch law, caught by the gate): splice.core.wire is for SERIALIZABLE wire DTOs and the
 // arch test enforces that every class there carries @Serializable. This is behaviour, not a wire

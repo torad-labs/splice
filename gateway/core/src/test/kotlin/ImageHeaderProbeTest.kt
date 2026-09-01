@@ -225,9 +225,36 @@ class MalformedHeaderTest {
         assertNull(ImageFloor(XAI_FLOOR).violatedMinimum(base64(overflowing)))
     }
 
+    // THE SAME RULE ONE LEVEL UP, and the level the first hardening pass missed while its own
+    // header claimed otherwise. The RIFF header declares the container's size at bytes 4..7; a
+    // chunk sitting past that end is not in this file. With the walk bounded only by the array, a
+    // container declaring size 4 — the WEBP form word and nothing else — still had an honest-looking
+    // VP8X read out of the bytes after it and answered a confident 8x8. Found by codex-splice and
+    // reproduced independently by grok-splice. This arm cannot go through fx.riff, which always
+    // writes a truthful size: the lie IS the fixture. Mutant: bound the walk by b.size alone.
+    @Test
+    fun `a webp chunk beyond the container's declared end is unknown - DR-155`() {
+        val liesAboutItsEnd = fx.riffSized(fx.vp8x(8, 8), declared = RIFF_FORM_LEN.toLong())
+        assertNull(probe.probe(liesAboutItsEnd), "a chunk outside the declared container is not in this file")
+        assertNull(ImageFloor(XAI_FLOOR).violatedMinimum(base64(liesAboutItsEnd)))
+    }
+
+    // THE BOUND on it, because min() is doing the work and a hard length check would pass the arm
+    // above while breaking every partial download: a container declaring MORE than it holds is a
+    // truncated file, and its header must still read.
+    @Test
+    fun `a webp container declaring more bytes than it holds still reads its header - DR-155`() {
+        val overDeclared = fx.riffSized(fx.vp8x(8, 8), declared = HUGE_DECLARED_RIFF)
+        assertEquals(ImagePx(8, 8, "webp"), probe.probe(overDeclared))
+    }
+
     private fun base64(bytes: ByteArray): MediaSource =
         MediaSource(type = "base64", mediaType = "image/png", data = Base64.getEncoder().encodeToString(bytes))
 }
+
+// Larger than any fixture here, so the container's declared end is past the array and min() must
+// fall back to the array bound.
+private const val HUGE_DECLARED_RIFF = 1_000_000L
 
 /** A CharSequence that counts the characters actually read, so the header-window law can be
  *  asserted instead of described. */
@@ -353,8 +380,13 @@ class ImageBytesFixture {
     fun jpeg(sof: Int, w: Int, h: Int, lead: ByteArray = ByteArray(0)): ByteArray =
         bytes(0xFF, 0xD8) + lead + sofSegment(sof, w, h)
 
-    fun riff(chunks: ByteArray): ByteArray =
-        ascii("RIFF") + le32(chunks.size + RIFF_FORM_LEN) + ascii("WEBP") + chunks
+    fun riff(chunks: ByteArray): ByteArray = riffSized(chunks, (chunks.size + RIFF_FORM_LEN).toLong())
+
+    /** A container whose DECLARED size can disagree with the bytes that follow it. [riff] always
+     *  tells the truth, which is exactly why no arm built on it could ever catch a walk that
+     *  ignored this field. */
+    fun riffSized(chunks: ByteArray, declared: Long): ByteArray =
+        ascii("RIFF") + le32L(declared) + ascii("WEBP") + chunks
 
     fun chunk(tag: String, body: ByteArray): ByteArray = chunkSized(tag, body, body.size.toLong())
 

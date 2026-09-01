@@ -27,19 +27,32 @@ reach is worse than a narrow one: the overstatement is what stops anyone looking
 
   CLAIMED, anywhere in a scope file: an interpolation of an UNAMBIGUOUS throwable name —
   `${x.message}`, `$failure`, `$cause`, `${someException}` — and any `val` bound from
-  `exceptionOrNull()`, for the block that binding is scoped to.
+  `exceptionOrNull()`, at every COLUMN that binding is in scope for. Scope is the language's: an
+  inner declaration of the same name hides it for exactly its own block, whether that declaration
+  is a `val`, a `var`, a `for` parameter or a lambda parameter, and a `catch` parameter is itself
+  a throwable.
 
   CLAIMED, conditionally: an interpolation of a SHORT name (`it`, `e`, `t`, `ex`, `err`) inside the
   body of a lambda opened by `onFailure` / `exceptionOrNull` / `recover` / `recoverCatching` /
   `catch (`, at the column where `it` is still bound to that lambda — not inside a nested lambda,
-  which rebinds it, though nested control blocks keep it.
+  which rebinds it, though nested control blocks keep it. This tier is FRAME-scoped, not
+  declaration-scoped: inside a failure lambda a short name is attributed for the whole frame, so a
+  local of that spelling holding a String is reported there.
 
   NOT CLAIMED. `getOrElse` is overloaded and says nothing about the receiver, so a short name in
   its lambda is not attributed. Neither half of a POSITIONAL `Result.fold({…},{…})` is attributed,
   because nothing lexical distinguishes onSuccess from onFailure and `Iterable.fold` shares the
   spelling; the named form is attributed through `onFailure`. A short name reaching a scope file as
-  a plain function PARAMETER is not attributed. Type information would settle all three; this
-  scanner has none, and guessing is what produced the inversions DR-157 and DR-160 record.
+  a plain function PARAMETER is not attributed. A `var` is not attributed, because it can be
+  reassigned to a String and this scanner has no flow typing to see it. Neither is a local bound
+  from `.cause`, which is no more typed than getOrElse. Type information would settle all of these;
+  this scanner has none, and guessing is what produced the inversions DR-157 and DR-160 record.
+
+  NOT CLAIMED, and deliberately: shadowing does NOT apply to the unambiguous tier. A local literally
+  named `failure`, `cause` or `...Exception` holding a String is still reported, even where it hides
+  a same-named outer throwable. Suppressing the named tier on a declaration would trade this wall's
+  one unconditional guarantee for a contrived shape, so the cost is paid the other way — name a
+  String `failure` in a credential path and you owe it an exemption.
 
   The honest summary: use a NAMED throwable and the wall sees it wherever it is. The short-name
   tier is a convenience over the idioms this tree actually uses, never a guarantee.
@@ -244,8 +257,26 @@ RENDERED_SHORT = re.compile(
 # one. A newline ends the statement unless the expression is still open: the next line continues a
 # call chain (`.onFailure {` on its own line is the tree's own idiom), or this one ends on an
 # operator.
+#
+# ROUND 3 — these are tested against the TEXT view, and that is the whole fix for grok-splice's
+# third root. The code view BLANKS string content, so `val e = "event"` becomes `val e =` and
+# rstrip-ends on `=`: the statement was read as still open, swallowed the next line, and the brace
+# stash then spliced that line's exceptionOrNull() onto the string's right-hand side, rebinding the
+# name at the OUTER depth. A continuation test run against a view that deleted the evidence it
+# needs cannot be right; the text view keeps the closing quote, so the statement ends where it
+# visibly ends. (`val e = 1` never reproduced it — an int leaves a digit behind, a string leaves
+# nothing. That pair is the discriminator, and it is arm 36 below.)
 CONTINUES = re.compile(r"[.,=+\-*/%&|?:<>(\[{]$|->$|\b(?:and|or)$")
 CONTINUED_BY = re.compile(r"^\s*[.)\]}]|^\s*\?\.")
+
+
+def continuations(text_lines):
+    """Per line: is the statement still open across the newline that follows it?"""
+    out = []
+    for i, txt in enumerate(text_lines):
+        nxt = text_lines[i + 1] if i + 1 < len(text_lines) else ""
+        out.append(bool(CONTINUES.search(txt.rstrip()) or CONTINUED_BY.match(nxt)))
+    return out
 
 
 def _frame_kind(segment):
@@ -283,7 +314,8 @@ def failure_spans(lines):
     innermost frame rebinds `it` back to a throwable. That was a false negative, and a stack is what
     the language's own scoping rule looks like: the innermost binder wins.
     """
-    code_lines, _ = lex(lines)
+    code_lines, text_lines = lex(lines)
+    cont = continuations(text_lines)
     attributable = []
     depth, frames = 0, []  # frames: (depth, is_failure) — only LAMBDAS push; control blocks are transparent
     segment = ""
@@ -306,11 +338,7 @@ def failure_spans(lines):
             else:
                 segment += ch
             flags[col] = 1 if (frames and frames[-1][1]) else 0
-        nxt = code_lines[i + 1] if i + 1 < len(code_lines) else ""
-        if CONTINUES.search(segment.rstrip()) or CONTINUED_BY.match(nxt):
-            segment += "\n"
-        else:
-            segment = ""
+        segment = segment + "\n" if cont[i] else ""
         attributable.append(flags)
     return attributable
 
@@ -320,80 +348,129 @@ def failure_spans(lines):
 # too short for [THROWABLE_NAMED] and there is no brace to attribute it to. The binding itself is
 # the evidence.
 #
-# Round 2 narrowed the rule on five counts, each a probe codex-splice reddened against round 1:
-#   * `.cause` is GONE. It is no more typed than getOrElse — `incident.cause` may be a String — and
-#     an AST census found zero live `.cause` local bindings, so the inference bought no coverage
-#     and cost a false positive.
-#   * `var` is GONE. `var e: Any? = outcome.exceptionOrNull(); e = "plain"` reassigns to a String,
-#     and without flow typing that claim cannot be honoured. `val` is this tree's idiom regardless.
-#   * the head and the SOURCE are separate patterns, so the compliance test can read the binding's
-#     WHOLE right-hand side. Round 1 tested the line, and an unrelated `SafeFailureText.render(…)`
-#     sitting beside a raw binding laundered it.
-#   * every binding in a statement, not just the first.
-#   * matched per STATEMENT, so `val e =` wrapped onto the next line is still seen.
-BINDING_HEAD = re.compile(r"\bval\s+(\w+)\s*(?::[^=]+)?=\s*(?![=])")
+# Round 2 narrowed it: `.cause` and `var` came out (neither is typed, and without flow typing
+# neither claim can be honoured), the head and the SOURCE became separate patterns so compliance is
+# tested against the binding's own WHOLE right-hand side, every binding in a statement is recorded
+# rather than the first, and matching moved from the line to the statement.
+#
+# Round 3 rebuilt the SCOPE model, because round 2 computed structure per column and then REPORTED
+# it per line — the same inversion the spans plane had before round 2, and it cut both ways at once.
+# grok-splice and codex-splice each reddened one side:
+#   * FALSE NEGATIVE — `if (x) { val e = outcome.exceptionOrNull(); log("$e") }`. The binding and its
+#     use are on one line, and the closing brace pruned the name before the line-end snapshot, so
+#     the render was invisible. Nothing was wrong with the walk; the REPORT threw the answer away.
+#   * FALSE POSITIVE — an outer throwable `e` with an inner `val e = "event"` beside its use. Only
+#     THROWABLE sources were recorded, so a plain declaration could not hide anything, and the outer
+#     binding stayed visible under a name that no longer referred to it.
+# Both say the same thing: a name's meaning is a property of a POSITION, not of a line. So bindings
+# are now reported per column like spans, and EVERY declaration is recorded — throwable or not —
+# with lookup taking the innermost. A shadow is just a binding that is not a throwable, which is
+# also how the language sees it.
+BINDING_HEAD = re.compile(r"\b(?:val|var)\s+(\w+)\s*(?::[^=]+)?=\s*(?![=])")
 THROWABLE_SOURCE = re.compile(r"\bexceptionOrNull\s*\(")
 
-# On restoring an interrupted statement (see [throwable_bindings]) the lambda body comes back with
-# it, and a `val` declared INSIDE that body has already been registered at its own inner depth. The
-# keyword is blanked so the body can still be read for compliance evidence without re-declaring
-# anything at the outer depth — which is the scope leak this round is fixing.
-INNER_DECL = re.compile(r"\bval\b")
+# Declarations that are not `val x = …` and so are invisible to [BINDING_HEAD], each of which
+# grok-splice caught failing to shadow an outer throwable of the same name.
+FOR_PARAM = re.compile(r"\bfor\s*\(\s*(?:val\s+|var\s+)?(\w+)(?:\s*:[^)]*?)?\s+in\b")
+CATCH_PARAM = re.compile(r"\bcatch\s*\(\s*(\w+)\s*:")
+LAMBDA_PARAMS = re.compile(r"^\s*\(?\s*(\w+(?:\s*,\s*\w+)*)\s*\)?\s*$")
+# `else ->` and `is Foo ->` are when-branch arrows, not parameter lists. Only `else` can look like a
+# single bare name, and a one-word branch head is the only thing [LAMBDA_PARAMS] would accept.
+NOT_A_PARAM = frozenset({"else", "is", "in", "when", "true", "false", "null", "this"})
+
+# ...but a keyword list is not enough, and this one is mine rather than a reviewer's: `when (k) { e
+# -> … }` compares the subject to the VALUE e, it does not declare one. Read as a lambda parameter
+# it shadowed the real throwable and the render went silent — a false negative introduced by the
+# fix for the false positives above. The two arrows are only separable by the block they sit in, so
+# the block remembers whether a `when` head opened it.
+WHEN_BLOCK = re.compile(r"\bwhen\s*(?:\([^)]*\))?\s*$")
 
 
 def throwable_bindings(lines):
-    """Per line: the set of local names bound to a throwable and still IN SCOPE at that line.
+    """Per line, per COLUMN: the names that mean a throwable AT that column.
 
-    Round 1 walked lines and took the depth at the END of the line, so
-    `if (x) { val e = outcome.exceptionOrNull() }` registered `e` at the depth the line CLOSED at
-    and the binding outlived its block — codex-splice's fixture then rendered an unrelated
-    `val e = "event"` below it. Depth is per COLUMN here, and a binding dies with the brace that
-    closes over it.
+    Scope is the language's, not the line's: declarations push, a closing brace pops everything it
+    encloses, and a lookup takes the INNERMOST declaration of a name — so an inner `val e = "event"`
+    hides an outer throwable `e` for exactly its own block and no longer.
 
     A `{` INTERRUPTS the statement it appears in rather than ending it: `val e = runCatching { … }
     .exceptionOrNull()` is one binding, and resetting at the brace lost its head. The interrupted
     statement is stashed with the depth it belongs to and resumes when its brace closes, carrying
-    the block body with it so the compliance test can see a sanitizer call inside the lambda.
+    the block body with it so the compliance test can still see a sanitizer call inside the lambda.
     """
-    code_lines, _ = lex(lines)
+    code_lines, text_lines = lex(lines)
+    cont = continuations(text_lines)
     live, out, stash = [], [], []
     depth, segment, seg_depth = 0, "", 0
+    visible = frozenset()
     for i, code in enumerate(code_lines):
+        per_col, before = [], len(live)
         for ch in code:
+            if len(live) != before:
+                visible, before = _visible(live), len(live)
+            per_col.append(visible)
             if ch == "{":
-                stash.append([segment, seg_depth, depth, ""])
+                # for/catch parameters belong to the block the brace opens, not to the head.
+                _declare_params(segment, depth + 1, live)
+                _register(segment, seg_depth, live)
+                stash.append([segment, seg_depth, depth, "", bool(WHEN_BLOCK.search(segment.rstrip()))])
                 depth += 1
                 segment, seg_depth = "", depth
             elif ch == "}":
                 # Register the block's own trailing statement BEFORE the depth drops, so it is
-                # recorded at the inner depth and the prune below takes it back out again.
+                # recorded at the inner depth and the pop below takes it back out again.
                 _register(segment, seg_depth, live)
                 depth = max(0, depth - 1)
                 live = [b for b in live if b[1] <= depth]
                 if stash and stash[-1][2] == depth:
-                    outer, outer_depth, _, body = stash.pop()
+                    outer, outer_depth, _, body, _when = stash.pop()
                     segment, seg_depth = outer + " { " + INNER_DECL.sub("   ", body) + " } ", outer_depth
                 else:
                     segment, seg_depth = "", depth
             elif ch == ";":
                 _register(segment, seg_depth, live)
                 segment, seg_depth = "", depth
+            elif ch == ">" and segment.endswith("-"):
+                # A lambda's parameter list: `{ e -> …` declares e for this block. A when BRANCH
+                # arrow declares nothing, so the enclosing block decides which arrow this is.
+                if not (stash and stash[-1][4]):
+                    _declare_lambda(segment[:-1], depth, live)
+                segment, seg_depth = "", depth
             else:
                 segment += ch
                 for frame in stash:
                     frame[3] += ch
-        nxt = code_lines[i + 1] if i + 1 < len(code_lines) else ""
-        if CONTINUES.search(segment.rstrip()) or CONTINUED_BY.match(nxt):
+        if cont[i]:
             segment += "\n"
         else:
             _register(segment, seg_depth, live)
             segment, seg_depth = "", depth
-        out.append({name for name, _ in live})
+        if len(live) != before:
+            visible = _visible(live)
+        out.append(per_col)
     return out
 
 
+def _visible(live):
+    """The names that mean a throwable, taking the INNERMOST declaration of each."""
+    innermost = {}
+    for name, _, throwable in live:
+        innermost[name] = throwable
+    return frozenset(name for name, throwable in innermost.items() if throwable)
+
+
+# On restoring an interrupted statement the lambda body comes back with it, and a declaration made
+# INSIDE that body has already been recorded at its own inner depth. The keywords are blanked so the
+# body can still be read for compliance evidence without re-declaring anything at the outer depth.
+INNER_DECL = re.compile(r"\b(?:val|var)\b")
+
+
 def _register(statement, depth, live):
-    """Record every throwable binding in one completed statement, scoped to [depth]."""
+    """Record every local declared by one completed statement, at [depth].
+
+    A declaration whose right-hand side is an unsanitized `exceptionOrNull()` means a throwable;
+    every other declaration is a SHADOW, recorded so it can hide an outer name of its own spelling.
+    """
     heads = list(BINDING_HEAD.finditer(statement))
     for n, head in enumerate(heads):
         stop = heads[n + 1].start() if n + 1 < len(heads) else len(statement)
@@ -402,8 +479,33 @@ def _register(statement, depth, live):
         # not a throwable — `val reason = attempt.exceptionOrNull()?.let { render(it) }` in
         # UninstallCommand.kt is the live shape, and it is why the window must be the whole RHS
         # rather than the head: the sanitizer call sits past the combinator, inside the lambda.
-        if THROWABLE_SOURCE.search(rhs) and not COMPLIANT.search(rhs):
-            live.append((head.group(1), depth))
+        # `var` can be reassigned to a String with no flow typing to catch it, so it never claims.
+        throwable = (
+            head.group(0).lstrip().startswith("val")
+            and bool(THROWABLE_SOURCE.search(rhs))
+            and not COMPLIANT.search(rhs)
+        )
+        live.append((head.group(1), depth, throwable))
+
+
+def _declare_params(segment, depth, live):
+    """`for (e in xs)` and `catch (e: IOException)` declare e for the block their head precedes."""
+    for found in FOR_PARAM.finditer(segment):
+        live.append((found.group(1), depth, False))
+    for found in CATCH_PARAM.finditer(segment):
+        # A catch parameter IS a throwable, and saying so here is what lets it shadow correctly
+        # rather than merely being covered by the short-name tier.
+        live.append((found.group(1), depth, True))
+
+
+def _declare_lambda(segment, depth, live):
+    """`{ e -> … }` and `{ a, b -> … }` declare their parameters for the enclosing block."""
+    found = LAMBDA_PARAMS.match(segment)
+    if not found:
+        return
+    for name in (n.strip() for n in found.group(1).split(",")):
+        if name and name not in NOT_A_PARAM:
+            live.append((name, depth, False))
 
 
 def renders_throwable(lines, idx, spans=None, text_lines=None, bindings=None):
@@ -423,8 +525,12 @@ def renders_throwable(lines, idx, spans=None, text_lines=None, bindings=None):
         return True
     if bindings is None:
         bindings = throwable_bindings(lines)
-    for name in bindings[idx]:
-        if re.search(r"\$\{\s*%s\s*\}|\$%s\b" % (re.escape(name), re.escape(name)), line):
+    # DR-160 round 3: at the MATCH's own column, for the same reason the short-name tier already
+    # was — a name can be declared, shadowed, or closed out of scope partway along one line.
+    per_col = bindings[idx]
+    for hit in INTERPOLATED_NAME.finditer(line):
+        col = hit.start()
+        if col < len(per_col) and (hit.group(1) or hit.group(2)) in per_col[col]:
             return True
     hit = RENDERED_SHORT.search(line)
     if not hit:
@@ -452,6 +558,10 @@ def renders_throwable(lines, idx, spans=None, text_lines=None, bindings=None):
 # count — the same disappearing-denominator move this wall exists to stop. Routed sites
 # stay in the roll, so `compliant + exempt + bad` is the whole population every run.
 COMPLIANT = re.compile(r"SafeFailureText\.render\(")
+
+# Any interpolated identifier, so the binding tier can be asked "does THIS name mean a throwable at
+# THIS column" in one pass rather than once per known name.
+INTERPOLATED_NAME = re.compile(r"\$\{\s*(\w+)\s*\}|\$(\w+)\b")
 
 # The disposition marker. Dated so a review can age it, and reasoned so it can be judged.
 EXEMPT = re.compile(r"SAFE-RENDER-EXEMPT\[(\d{4}-\d{2}-\d{2})\]:[ \t]*(.*)")

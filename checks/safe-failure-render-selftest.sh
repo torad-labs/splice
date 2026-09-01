@@ -537,6 +537,136 @@ fun a() {
     log("$e")
 }'
 
+# ---------------------------------------------------------------------------------------------
+# DR-160 ROUND 3. Round 2 computed binding structure per COLUMN and then REPORTED it per LINE —
+# the same inversion the spans plane had before round 2, and it cut both ways at once. codex-splice
+# reddened one side each way; grok-splice's adjacent sweep widened the shadow half and found a
+# third root underneath both. Bindings are now reported per column, EVERY declaration is recorded
+# (a shadow is just a binding that is not a throwable, which is how the language sees it), and the
+# statement-continuation test reads the TEXT view instead of the string-blanked code view.
+
+# 36 — THE THIRD ROOT, and the one neither reviewer had to guess at. lex blanks string CONTENT in
+#      the code view, so `val e = "event"` rstrip-ended on `=`, the statement was read as still
+#      open, and the brace stash spliced the NEXT line's exceptionOrNull() onto that string's
+#      right-hand side — rebinding e at the outer depth. `val e = 1` never reproduced it, because an
+#      int leaves a digit behind and a string leaves nothing. That pair is the whole diagnosis.
+arm "a string-valued binding does not swallow the next statement" 0 StringCont.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = "event"
+    if (x) { outcome.exceptionOrNull() }
+    log("$e")
+}'
+
+# 36b — CONTROL for 36: the continuation itself must still work, or the fix is just a deletion.
+arm_at "a genuinely open statement still continues across the newline" 7 "renders a throwable raw" StillCont.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e =
+        outcome.exceptionOrNull()
+    log("$e")
+}'
+
+# 37 — FALSE NEGATIVE (codex-splice): binding and use on ONE line inside a block that also closes
+#      there. The walk was right; the line-end snapshot threw the answer away before it was read.
+arm_at "a binding used on the same line it closes is still seen" 5 "renders a throwable raw" SameLineUse.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    if (x) { val e = outcome.exceptionOrNull(); log("$e") }
+}'
+
+# 37b — the same shape one level deeper and through a non-control lambda, because arm 37 alone
+#       would pass a fix that special-cased `if`.
+arm_at "the same-line shape holds nested and inside a lambda" 5 "renders a throwable raw" SameLineNest.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    run { if (y) { val e = outcome.exceptionOrNull(); log("$e") } }
+}'
+
+# 38 — FALSE POSITIVE (codex-splice): only THROWABLE sources were recorded, so a plain declaration
+#      could not hide anything and an outer binding stayed visible under a name that no longer
+#      referred to it. Every declaration is recorded now; a shadow is a binding that is not one.
+arm "an inner nonthrowable val hides the outer throwable" 0 ShadowVal.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull()
+    if (x) { val e = "event"; log("$e") }
+}'
+
+# 38b — THE BOUND on 38: the shadow lasts for its own block and NOT one character longer. A fix
+#       that dropped the outer binding instead of hiding it would pass 38 and lose the real render.
+arm_at "the outer throwable comes back when the shadow block ends" 7 "renders a throwable raw" ShadowEnds.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull()
+    if (x) { val e = "event"; log("$e") }
+    log("$e")
+}'
+
+# 39 — grok-splice widened the shadow class: a `for` parameter is a declaration too.
+arm "a for-loop parameter hides an outer throwable" 0 ShadowFor.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull()
+    for (e in xs) { log("$e") }
+}'
+
+# 40 — and so is a lambda parameter, which is the same rebinding the SHORT-name tier already
+#      respected on its own plane. The two planes disagreeing about what `e` means was the defect.
+arm "a lambda parameter hides an outer throwable" 0 ShadowLambda.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull()
+    items.forEach { e -> log("$e") }
+}'
+
+# 40b — THE BOUND on 39/40, and this one is a defect the FIX introduced rather than one a reviewer
+#       reported. `when (k) { e -> … }` COMPARES the subject to the value e; it declares nothing.
+#       Read as a lambda parameter it shadowed the real throwable and the render went silent — a
+#       false negative bought with the two false positives above. A keyword list cannot separate the
+#       two arrows (the name here is neither `else` nor `is`), so the block remembers whether a
+#       `when` head opened it.
+arm_at "a when-branch head is a comparison, not a parameter" 7 "renders a throwable raw" WhenArrow.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull()
+    when (k) {
+        e -> log("$e")
+    }
+}'
+
+# 40c — subjectless `when { … }` takes the same path and is spelled differently enough to miss.
+arm_at "a subjectless when branch head is not a parameter either" 7 "renders a throwable raw" WhenBare.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull()
+    when {
+        e -> log("$e")
+    }
+}'
+
+# 40d — and the bound on THAT: a real lambda nested inside a when branch still shadows. Suppressing
+#       parameter declarations for everything under a `when` would pass 40b and 40c and reopen 40.
+arm "a lambda inside a when branch still shadows" 0 WhenLambda.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull()
+    when (k) {
+        else -> items.forEach { e -> log("$e") }
+    }
+}'
+
 # 13 — CONTROL: prose ABOUT the law is a comment and cannot render anything at runtime.
 arm "comment mentioning \$failure is not flagged" 0 A.kt 'package p
 import java.nio.file.Files
@@ -547,5 +677,5 @@ fun a(e: Throwable) = Files.exists(p).also { log("x (${SafeFailureText.render(e)
 ( cd "$ROOT" && python3 checks/config/safe-failure-render.py check . >/dev/null 2>&1 ) \
   || err "the real repository does not pass its own wall"
 
-[ "$fail" = 0 ] && echo "  ✓ safe-failure-render selftest: 52 arms"
+[ "$fail" = 0 ] && echo "  ✓ safe-failure-render selftest: 62 arms"
 exit "$fail"

@@ -13,6 +13,7 @@ import io.ktor.client.request.setBody
 import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.isSuccess
+import splice.core.auth.CredentialExpiry
 import splice.core.util.Cancellables
 import splice.core.util.SafeFailureText
 import splice.provider.kimi.KimiDeviceAuthorization
@@ -31,6 +32,13 @@ public object DeviceLoginFlow {
     private const val MAX_EXPIRED_RESTARTS = 2
     private const val SLOW_DOWN_INCREMENT_S = 5L
     private const val MS_PER_S = 1000L
+
+    // DR-190 (DR-177's unenumerated fifth site): expires_in and interval come off the wire. A value that
+    // does not fit in milliseconds wrapped `now + expiresInS * MS_PER_S` negative — EXPIRED before the
+    // first poll — and `intervalS * MS_PER_S` negative. The deadline degrades the way DR-177's
+    // CredentialExpiry does (unrepresentable → the synthetic 4h ceiling, never an instant expiry) and
+    // the interval is capped in seconds before it is multiplied; both are no-ops for RFC 8628 values.
+    private const val MAX_POLL_INTERVAL_S = 3600L
     private const val HTTP_SERVER_ERROR_FLOOR = 500
 
     private enum class Outcome { SUCCESS, ABORT, EXPIRED }
@@ -111,9 +119,9 @@ public object DeviceLoginFlow {
         waiter: Waiter,
     ): Outcome {
         var intervalS = auth.intervalS
-        val deadline = System.currentTimeMillis() + auth.expiresInS * MS_PER_S
+        val deadline = CredentialExpiry.expiryFromNowMs(System.currentTimeMillis(), auth.expiresInS)
         while (System.currentTimeMillis() < deadline) {
-            waiter.wait(intervalS * MS_PER_S)
+            waiter.wait(intervalS.coerceIn(0L, MAX_POLL_INTERVAL_S) * MS_PER_S)
             val resp = Cancellables.runCatchingCancellable { postToken(client, spec, auth.deviceCode) }.getOrNull()
             val step = if (resp == null) PollStep.Wait(intervalS) else classifyPoll(resp, spec, intervalS)
             when (step) {

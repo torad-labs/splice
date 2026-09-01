@@ -264,6 +264,54 @@ fun a() = Files.size(p).onFailure {
     log("failed: $it") // the $it above is the violation, this prose is not
 }'
 
+# 19 — DR-159, from codex-splice's getOrElse scope note: Kotlin binds `it` PER LAMBDA, so a nested
+#      lambda inside a failure lambda REBINDS it. This body renders a String, not the throwable.
+arm "a nested lambda inside a failure lambda rebinds it" 0 Shadow.kt 'package p
+import java.nio.file.Files
+fun a() = Files.size(p).onFailure {
+    names.forEach { log("$it = stored") }
+}'
+
+# 19b — the other side, and the reason this needed real discrimination rather than a depth cutoff:
+#       a nested CONTROL BLOCK does NOT rebind, so the throwable is still `it` and must stay caught.
+#       Narrowing on depth alone would have traded a false positive for a false negative here.
+arm "a nested control block does not rebind it" 1 ControlBlock.kt 'package p
+import java.nio.file.Files
+fun a() = Files.size(p).onFailure {
+    if (x) {
+        log("failed: $it")
+    }
+}'
+
+# 19c — codex's exact one-liner: failure lambda AND shadowing lambda on the SAME line, which is why
+#       attribution is per COLUMN rather than per line.
+arm "shadowing on the same line as the failure lambda" 0 OneLine.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    m.getOrElse(k) { names.forEach { log("$it") } }
+}'
+
+# 19d — when-branch arrows open blocks, not lambdas.
+arm "a when branch does not rebind it" 1 WhenBranch.kt 'package p
+import java.nio.file.Files
+fun a() = Files.size(p).onFailure {
+    when (x) {
+        is Foo -> {
+            log("failed: $it")
+        }
+    }
+}'
+
+# 19e — THE BOUND on the narrowing: it applies to SHORT names only. An unambiguous throwable name
+#       is a render wherever it appears, including inside a shadowing lambda — otherwise DR-159
+#       would have bought a false-positive fix with a false-negative hole.
+arm "a named throwable inside a nested lambda still fails" 1 NamedInside.kt 'package p
+import java.nio.file.Files
+fun a(failure: Throwable) = Files.size(p).onFailure {
+    names.forEach { log("$failure") }
+}'
+
 # 13 — CONTROL: prose ABOUT the law is a comment and cannot render anything at runtime.
 arm "comment mentioning \$failure is not flagged" 0 A.kt 'package p
 import java.nio.file.Files
@@ -274,5 +322,5 @@ fun a(e: Throwable) = Files.exists(p).also { log("x (${SafeFailureText.render(e)
 ( cd "$ROOT" && python3 checks/config/safe-failure-render.py check . >/dev/null 2>&1 ) \
   || err "the real repository does not pass its own wall"
 
-[ "$fail" = 0 ] && echo "  ✓ safe-failure-render selftest: 27 arms"
+[ "$fail" = 0 ] && echo "  ✓ safe-failure-render selftest: 32 arms"
 exit "$fail"

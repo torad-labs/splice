@@ -67,6 +67,18 @@ FAILURE_CONTEXT = re.compile(
     r"onFailure|getOrElse|exceptionOrNull|recoverCatching|recover\b|\bcatch\s*\("
 )
 
+# DR-159: a `{` that opens a CONTROL BLOCK versus one that opens a LAMBDA. Kotlin's `it` is bound
+# per lambda, so a nested lambda inside a failure lambda REBINDS it — `onFailure { names.forEach {
+# log("$it") } }` renders a String, not the throwable. A nested control block does NOT rebind, so
+# `onFailure { if (x) { log("$it") } }` really is the throwable and must stay caught. Distinguishing
+# them is what keeps this from being a choice between a false positive and a false negative.
+# A segment ending in `->` is a `when` branch arrow (`is Foo -> {`), which is a block; the lambda
+# parameter arrow appears AFTER its own brace and so never ends a segment.
+CONTROL_HEAD = re.compile(
+    r"(?:\belse|\btry|\bfinally|\bdo|\binit|\bwhen|->)\s*$"
+    r"|\b(?:if|while|for|when|catch)\s*\(.*\)\s*$"
+)
+
 # DR-157, fail-closed: a `.fold(` whose failure half is NOT named cannot be attributed by this
 # scanner — `fold({ a }, { b })` gives it no way to tell onSuccess from onFailure. Guessing is what
 # produced the inversion above, and silently declining to look is a false green. So an unnamed fold
@@ -167,7 +179,10 @@ RENDERED_SHORT = re.compile(
 
 
 def failure_spans(lines):
-    """Per line: is it inside the BODY of a failure-handling lambda?
+    """Per line and COLUMN: may a SHORT name (`it`, `e`, …) be read as the throwable here?
+
+    Only short names consult this — an unambiguous `$failure` is a render wherever it appears — so
+    the question is precisely "is `it` bound to the throwable at this column".
 
     Structural, not a fixed lookback. The first version asked whether a failure combinator appeared
     within 3 lines above, and codex-splice mutation-proved the hole: a real `.onFailure { … }` in
@@ -177,35 +192,47 @@ def failure_spans(lines):
 
     DR-157 makes the combinator/brace pairing POSITIONAL. It used to be a per-LINE flag — "this line
     mentions a failure combinator" — which then attached to the next brace opened anywhere,
-    including one that had already been opened EARLIER on the same line. codex-splice's fixture:
+    including one already opened EARLIER on the same line. codex-splice's fixture:
     `runCatching { names.forEach { log("$it = stored") } }.exceptionOrNull()` was flagged, because
     the trailing `exceptionOrNull` reached back and claimed the leading `runCatching {`. A
-    combinator can only govern a brace that comes AFTER it, so each `{` is now judged on the code
+    combinator can only govern a brace that comes AFTER it, so each `{` is judged on the code
     between it and the previous brace token — the call that actually opened it.
+
+    DR-159 adds SHADOWING, and forces column resolution. A nested LAMBDA rebinds `it`, so its body
+    is not attributable; a nested CONTROL BLOCK does not, so its body still is. Both can share a
+    line with the failure lambda that encloses them — codex-splice's `m.getOrElse(k) { names.forEach
+    { log("$it") } }` is one line holding both — so a per-line answer cannot be right. The two lex
+    views are column-aligned with the raw line by construction, which is what makes this checkable.
     """
     code_lines, _ = lex(lines)
-    inside = [False] * len(lines)
-    depth, stack = 0, []
+    attributable = []
+    depth, stack, shadow = 0, [], None
     segment = ""  # code seen since the previous brace token: the call that opens the next `{`
-    for i, code in enumerate(code_lines):
-        line_inside = bool(stack)
-        for ch in code:
+    for code in code_lines:
+        flags = bytearray(len(code))
+        for col, ch in enumerate(code):
             if ch == "{":
                 depth += 1
                 if FAILURE_CONTEXT.search(segment):
                     stack.append(depth)
-                    line_inside = True
+                elif stack and shadow is None and not CONTROL_HEAD.search(segment.rstrip() or " "):
+                    # A lambda (or a local fun body) opening inside a failure lambda. Either way
+                    # `it` is no longer the throwable in there.
+                    shadow = depth
                 segment = ""
             elif ch == "}":
+                if shadow == depth:
+                    shadow = None
                 if stack and stack[-1] == depth:
                     stack.pop()
                 depth = max(0, depth - 1)
                 segment = ""
             else:
                 segment += ch
+            flags[col] = 1 if (stack and shadow is None) else 0
         segment += "\n"
-        inside[i] = line_inside or bool(stack)
-    return inside
+        attributable.append(flags)
+    return attributable
 
 
 def renders_throwable(lines, idx, spans=None, text_lines=None):
@@ -222,11 +249,16 @@ def renders_throwable(lines, idx, spans=None, text_lines=None):
     line = text_lines[idx]
     if RENDERED.search(line):
         return True
-    if not RENDERED_SHORT.search(line):
+    hit = RENDERED_SHORT.search(line)
+    if not hit:
         return False
     if spans is None:
         spans = failure_spans(lines)
-    return spans[idx]
+    # DR-159: at the MATCH's own column, because a nested lambda can rebind `it` partway along the
+    # very same line.
+    flags = spans[idx]
+    col = hit.start()
+    return bool(col < len(flags) and flags[col])
 
 
 def positional_folds(lines):

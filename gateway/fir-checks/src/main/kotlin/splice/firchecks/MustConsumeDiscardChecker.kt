@@ -1,4 +1,4 @@
-// NEW (discipline L4): the wall itself. Fires on any FirFunctionCall whose result is annotated
+// NEW: (discipline L4) the wall itself. Fires on any FirFunctionCall whose result is annotated
 // @MustConsume (on the callee, or on the return type's class — the Rust #[must_use]-on-a-struct
 // shape) AND is discarded. A call is "discarded" when its value provably flows nowhere: the walk in
 // isDiscarded() climbs from the call through value-transparent wrappers — `?.` selectors, `?:`

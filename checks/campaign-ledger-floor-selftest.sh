@@ -20,7 +20,11 @@ ROOT=$PWD
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-before=$(sha256sum checks/config/campaign-ledger-floor.json dev/campaigns/*.toml | sha256sum)
+# DR-189: the non-destructive assertion has to cover the same set the check now measures, or the
+# selftest could corrupt a NESTED registry and still report itself clean.
+ledgers() { find dev/campaigns -name '*.toml' | sort; }
+
+before=$(sha256sum checks/config/campaign-ledger-floor.json $(ledgers) | sha256sum)
 
 fail=0
 pass=0
@@ -31,7 +35,12 @@ fixture() {
   rm -rf "$dir"
   mkdir -p "$dir/checks/config" "$dir/dev/campaigns"
   cp "$ROOT/checks/campaign-ledger-floor.py" "$dir/checks/"
-  cp "$ROOT/dev/campaigns"/*.toml "$dir/dev/campaigns/"
+  # DR-189: the whole TREE of ledgers, structure preserved — copying only the top level would
+  # leave every fixture blind to exactly the nested registries the check was widened to cover.
+  while IFS= read -r rel; do
+    mkdir -p "$dir/dev/campaigns/$(dirname "$rel")"
+    cp "$ROOT/dev/campaigns/$rel" "$dir/dev/campaigns/$rel"
+  done < <(cd "$ROOT/dev/campaigns" && find . -name '*.toml' -printf '%P\n')
   python3 "$dir/checks/campaign-ledger-floor.py" >/dev/null || return 1
   echo "$dir"
 }
@@ -93,6 +102,27 @@ d=$(fixture vanished) || exit 1
 rm "$d/dev/campaigns/drift-repair.toml"
 arm "a recorded ledger deleted outright" RED "$d" "RECORDED BUT GONE"
 
+# 4b — DR-189, THE BORING CASE ONE DIRECTORY DOWN. law_registry.toml carries "a row may NEVER be
+#      deleted to silence the gate" in its own header, and nothing enforced it: its wall
+#      (inf_02_every_law_walled.py) iterates the very rows it grades, so a deleted row is simply
+#      absent from the denominator. Truncating it 19 laws to 1 left the campaign wall gate, the
+#      campaign selftest and this floor ALL green — measured, not argued. The floor's glob was
+#      one level deep, so "campaign memory" silently meant "whatever sits at the top of the
+#      directory". This arm is that exact file, that exact truncation.
+d=$(fixture nested-registry) || exit 1
+python3 - "$d" <<'PY'
+import sys, pathlib
+reg = pathlib.Path(sys.argv[1]) / "dev/campaigns/proxy-hardening/walls/law_registry.toml"
+head, sep, _ = reg.read_text(encoding="utf-8").partition("[[law]]")
+reg.write_text(head + sep + '\ntag = "ONLY-ONE-LEFT"\nwall = "x.py"\n', encoding="utf-8")
+PY
+arm "a NESTED registry truncated to one row" RED "$d" "lines fell"
+
+# 4c — and the same file vanishing outright, which the one-level glob could not have noticed either.
+d=$(fixture nested-vanished) || exit 1
+rm "$d/dev/campaigns/proxy-hardening/walls/law_registry.toml"
+arm "a nested registry deleted outright" RED "$d" "RECORDED BUT GONE"
+
 # 5 — CONTROL: the campaign grew. Rows and notes added, nothing lost. Must stay green, or the
 # leg blocks the ordinary act of doing the work it exists to protect.
 d=$(fixture grown) || exit 1
@@ -104,7 +134,7 @@ arm "a campaign that grew rows and notes" GREEN "$d"
 d=$(fixture pristine) || exit 1
 arm "the tree as committed" GREEN "$d"
 
-after=$(sha256sum checks/config/campaign-ledger-floor.json dev/campaigns/*.toml | sha256sum)
+after=$(sha256sum checks/config/campaign-ledger-floor.json $(ledgers) | sha256sum)
 if [ "$before" != "$after" ]; then
   fail=$((fail + 1))
   echo "  *** the selftest modified real ledgers — it must be non-destructive ***"

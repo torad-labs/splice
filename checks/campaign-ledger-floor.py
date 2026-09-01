@@ -25,10 +25,22 @@ Two instruments per ledger, both monotonic under every verb a campaign actually 
            every note would still destroy the campaign, so row count alone is not enough.
 
 THE DENOMINATOR COMES FROM THE DIRECTORY, NOT FROM THE FLOOR FILE. Ledgers are enumerated by
-globbing dev/campaigns/*.toml. A ledger present on disk but absent from the floor file FAILS by
-name — absence is not a disposition. A ledger named in the floor file but gone from disk fails
-too: a whole campaign vanishing is the loudest truncation there is, and a check that only iterated
-its own allowlist would report success over an empty directory.
+RECURSIVELY globbing dev/campaigns/**/*.toml. A ledger present on disk but absent from the floor
+file FAILS by name — absence is not a disposition. A ledger named in the floor file but gone from
+disk fails too: a whole campaign vanishing is the loudest truncation there is, and a check that
+only iterated its own allowlist would report success over an empty directory.
+
+DR-189 MADE THAT GLOB RECURSIVE, and the reason is the whole point of the paragraph above. The
+first version globbed one level, which quietly meant "campaign memory" was defined as "files that
+happen to sit at the top of the directory". Three memory-bearing registries live one level down —
+proxy-hardening's wall_registry.toml (88 rows), law_registry.toml (19 rows) and the oracle's
+expectations.toml — and each carries an explicit never-delete law in its own header. Truncating
+each and running every leg that reads it showed wall_registry and expectations are caught by the
+campaign wall gate, which grades them against an EXTERNAL denominator; law_registry is not, because
+its wall (inf_02_every_law_walled.py) iterates the very rows it checks and so cannot fail for a row
+that was deleted. 19 laws to 1 with every leg green — the same tautology this file was written
+about, one directory down. Keys are paths relative to dev/campaigns/, so two registries sharing a
+basename cannot collide into one floor entry.
 
 THE FLOOR LIVES OUTSIDE dev/campaigns/. If the high-water marks were stored in the ledgers, the
 same accident would take both and the check would agree with the wreckage. Two hand-authored lists
@@ -66,8 +78,17 @@ def measure(path: Path) -> dict[str, int]:
 
 
 def survey() -> dict[str, dict[str, int]]:
-    """Every ledger in the directory — the denominator, read from the source."""
-    return {p.name: measure(p) for p in sorted(LEDGER_DIR.glob("*.toml"))}
+    """Every ledger under the directory — the denominator, read from the source.
+
+    DR-189: recursive, and keyed by the path relative to LEDGER_DIR rather than by basename. A
+    top-level ledger's key is unchanged by that (its relative path IS its name), so the existing
+    floor entries carry over; a nested one gets its full relative path and cannot collide with a
+    sibling campaign's file of the same name.
+    """
+    return {
+        str(p.relative_to(LEDGER_DIR)): measure(p)
+        for p in sorted(LEDGER_DIR.rglob("*.toml"))
+    }
 
 
 def load_floor() -> dict[str, dict[str, int]]:

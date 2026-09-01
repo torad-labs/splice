@@ -12,8 +12,8 @@
     "rows": 13
   },
   "drift-repair.toml": {
-    "lines": 2771,
-    "rows": 180
+    "lines": 2969,
+    "rows": 188
   },
   "head-decoupling.toml": {
     "lines": 973,
@@ -29,6 +29,18 @@
   },
   "proxy-hardening.toml": {
     "lines": 1059,
+    "rows": 88
+  },
+  "proxy-hardening/oracle/expectations.toml": {
+    "lines": 198,
+    "rows": 0
+  },
+  "proxy-hardening/walls/law_registry.toml": {
+    "lines": 122,
+    "rows": 0
+  },
+  "proxy-hardening/walls/wall_registry.toml": {
+    "lines": 463,
     "rows": 88
   },
   "reasoning-cache.toml": {

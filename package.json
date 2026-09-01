@@ -28,7 +28,7 @@
     "promote": "bash checks/promote.sh"
   },
   "devDependencies": {
-    "@ast-grep/cli": "0.45.0"
+    "@ast-grep/cli": "0.45.1"
   },
   "overrides": {
     "handlebars": "4.7.9"

@@ -115,17 +115,45 @@ internal class ResponsesInputTools(
         if (imageParts.isNotEmpty()) {
             sink.add(parts.toolResultImageMessage(block.toolUseId, imageParts))
         }
+        // Unreadable first, then the floor — the same order the chat sibling's markerFold emits
+        // them in, so a tool_result carrying one of each tells the same story in both dialects.
+        appendUnreadableDrops(sink, block.toolUseId, mappable.size - imageParts.size)
         appendFloorDrops(sink, block.toolUseId, undersized)
+    }
+
+    /**
+     * DR-164: the DR-94 twin, in the dialect it was never swept into.
+     *
+     * An image inside a tool_result whose SOURCE cannot be mapped (empty base64 payload, a source
+     * type that is neither base64 nor url) was dropped in silence here — mapNotNull swallowed it —
+     * while the message walk two files over emits "unsupported source" for the identical failure and
+     * the chat dialect has emitted a marker on THIS path since DR-94. So the same corrupt screenshot
+     * announced itself on a plain user message, announced itself on kimi, and vanished without trace
+     * from a Responses tool_result: the exact regression the v25 marker doctrine exists to prevent,
+     * where the model is left reasoning about an image it was never told it did not receive.
+     *
+     * Wording follows THIS dialect's message walk ("unsupported source"), not chat's "unreadable
+     * image source": within one dialect the same event must read the same way, and
+     * ResponsesImageFloorTest already pins that phrase as the non-floor drop's story.
+     */
+    private fun appendUnreadableDrops(sink: JsonArrayBuilder, toolUseId: String, dropped: Int) {
+        if (dropped <= 0) return
+        sink.add(
+            parts.roleText(
+                "user",
+                "[$dropped image(s) from tool_result $toolUseId omitted by " +
+                    "${quirks.providerTag} proxy: unsupported source]",
+            ),
+        )
     }
 
     /**
      * DR-155: say so when a tool_result image was dropped for being under the backend's minimum.
      *
-     * This path drops an UNMAPPABLE image silently today — unlike the message walk, which emits an
-     * "unsupported source" marker — and that silence is a real gap but not this row's, so it is
-     * deliberately left exactly as it is. The floor drop does not join it: an undersized image is
-     * the one case measured to cost a whole turn, and a screenshot tool whose output quietly lost
-     * its image is precisely the regression the v25 marker doctrine exists to prevent.
+     * Kept separate from [appendUnreadableDrops] rather than merged into one count: an undersized
+     * image read perfectly and the backend simply refuses images that small, so relabelling it
+     * "unsupported source" would be a lie the operator cannot debug. A tool_result carrying one of
+     * each emits TWO markers, each with its own count and its own reason.
      */
     private fun appendFloorDrops(sink: JsonArrayBuilder, toolUseId: String, undersized: List<ImageBlock>) {
         val min = undersized.firstNotNullOfOrNull { parts.belowFloor(it.source) } ?: return

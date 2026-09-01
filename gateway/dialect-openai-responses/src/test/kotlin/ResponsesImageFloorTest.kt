@@ -4,9 +4,9 @@
 // spellings are live, which is the argument for the constraint belonging to the VENDOR rather than
 // to whichever dialect a head happens to select — GrokQuirks carries the identical floor.
 //
-// Two of these arms exist to pin what this row deliberately did NOT change: an unreadable
-// tool_result image is still dropped silently here (a real gap, and not this one), and a compact
-// turn still drops every image with no probe at all.
+// One arm still pins what DR-155 deliberately did NOT change: a compact turn drops every image with
+// no probe at all. The other such pin — an unreadable tool_result image dropped in silence — was
+// written to red when someone repaired it, and DR-164 is that repair, so it now asserts the marker.
 //
 // The png builder below is duplicated from :core's ImageHeaderProbeTest on purpose — test source
 // sets are not visible across Gradle modules, and per-format layout coverage lives there.
@@ -90,12 +90,12 @@ class ResponsesImageFloorTest {
         assertTrue(items.any { it["output"]?.jsonPrimitive?.content == "out" }, "the text output is untouched")
     }
 
-    // SCOPE PIN, not an endorsement: an unmappable tool_result image is still dropped in silence
-    // here, unlike the message walk which marks it. That is a real gap and it is NOT DR-155's — this
-    // arm exists so the silence is a recorded decision rather than something nobody noticed, and so
-    // a future repair of it reds here and gets read.
+    // DR-164 — this arm WAS the DR-155 scope pin asserting the silence, written so "a future repair
+    // of it reds here and gets read". This is that repair, and it did red here. An unmappable
+    // tool_result image now declares itself, as the message walk and the chat dialect (DR-94) both
+    // already did for the identical failure.
     @Test
-    fun `an unreadable tool_result image is still silent, which this row did not change - DR-155`() {
+    fun `an unreadable tool_result image is declared, not dropped in silence - DR-164`() {
         val items = floored(
             """{"model":"m","messages":[
                 {"role":"assistant","content":[{"type":"tool_use","id":"t7","name":"shot","input":{}}]},
@@ -105,7 +105,53 @@ class ResponsesImageFloorTest {
                 ]}]}
             ]}""",
         )
-        assertFalse(items.toString().contains("omitted by"), "unchanged behaviour: $items")
+        assertEquals(
+            "[1 image(s) from tool_result t7 omitted by claude-grok proxy: unsupported source]",
+            items.last().textContent(),
+        )
+        assertTrue(items.any { it["output"]?.jsonPrimitive?.content == "out" }, "the text output is untouched")
+        assertFalse(items.toString().contains("images from tool_result"), "no follow-up for a dropped image")
+    }
+
+    // DR-164 + DR-155 together: the realistic mixed tool_result. TWO markers with their OWN counts
+    // and OWN reasons, never one merged count — an undersized image read perfectly and the backend
+    // refused the size, so calling it an unsupported source is a lie the operator cannot debug.
+    @Test
+    fun `an unreadable and an undersized tool_result image each get their own marker - DR-164`() {
+        val items = floored(
+            """{"model":"m","messages":[
+                {"role":"assistant","content":[{"type":"tool_use","id":"t8","name":"shot","input":{}}]},
+                {"role":"user","content":[{"type":"tool_result","tool_use_id":"t8","content":[
+                    {"type":"image","source":{"type":"base64","media_type":"image/png","data":""}},
+                    {"type":"image","source":{"type":"base64","media_type":"image/png","data":"${png(1, 1)}"}}
+                ]}]}
+            ]}""",
+        )
+        val markers = items.mapNotNull { it.textContent().takeIf { t -> t.contains("omitted by") } }
+        assertEquals(
+            listOf(
+                "[1 image(s) from tool_result t8 omitted by claude-grok proxy: unsupported source]",
+                "[1 image(s) from tool_result t8 omitted by claude-grok proxy: $FLOOR_REASON]",
+            ),
+            markers,
+            "unreadable first, then the floor — the order the chat sibling emits them in",
+        )
+    }
+
+    // CONTROL (green both sides): a tool_result whose images ALL map emits no marker at all. The
+    // count is a DELTA, so a guard keyed on "any images present" would mark every healthy screenshot.
+    @Test
+    fun `a fully readable tool_result image emits no drop marker - DR-164 control`() {
+        val items = floored(
+            """{"model":"m","messages":[
+                {"role":"assistant","content":[{"type":"tool_use","id":"t10","name":"shot","input":{}}]},
+                {"role":"user","content":[{"type":"tool_result","tool_use_id":"t10","content":[
+                    {"type":"image","source":{"type":"base64","media_type":"image/png","data":"${png(8, 8)}"}}
+                ]}]}
+            ]}""",
+        )
+        assertFalse(items.toString().contains("omitted by"), "a readable image must not be marked: $items")
+        assertTrue(items.toString().contains("images from tool_result t10"), "it rides the follow-up message")
     }
 
     // An image splice cannot read is not an image splice may delete. "aGk=" is base64 of the word

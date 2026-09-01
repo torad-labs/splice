@@ -59,9 +59,18 @@ public class LogsCommand {
         // bounded tail, the only safe reset across a discontinuity.
         val discontinuity = size < lastSize || lastSize == 0L
         if (discontinuity) {
-            val fresh = source.tail(FOLLOW_TAIL)
-            if (fresh.isNotEmpty()) println(fresh)
-            return size
+            // DR-135: the new baseline is the end of the last line actually PRINTED, read
+            // atomically with the text — never the `size` stat above. That stat is taken before
+            // the read and counts bytes the tail withholds, so it broke DR-100's contract both
+            // ways: readTail drops a torn final line, and returning `size` advanced the baseline
+            // past it, so the operator saw a bare `tial` next poll and never the line's head; and
+            // a line appended between the stat and the read was printed here and printed AGAIN by
+            // the next delta. Every --follow start against a torn tail hit this, not just a roll —
+            // persistentLogger writes through an 8 KB BufferedWriter, so any longer line reaches
+            // disk in several write(2) calls.
+            val fresh = source.tailAt(FOLLOW_TAIL)
+            if (fresh.text.isNotEmpty()) println(fresh.text)
+            return fresh.offset
         }
         // DR-100: ordinary growth prints exactly the NEW bytes' complete lines. The old 20-line
         // snapshot repeated up to 19 already-shown lines per new line and silently dropped any

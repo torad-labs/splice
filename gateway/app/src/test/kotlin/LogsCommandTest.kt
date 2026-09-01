@@ -160,4 +160,66 @@ class LogsFollowDeltaTest {
         assertEquals(listOf("gen2 a", "gen2 b"), out.trim().lines(), "a roll resets to the bounded tail")
         assertEquals(Files.size(log), next)
     }
+
+    // DR-135: the discontinuity path printed source.tail() but adopted the SIZE STAT taken before
+    // that read. readTail withholds a torn final line, so the baseline advanced past bytes the
+    // operator never saw and the line's HEAD was lost forever — the next poll printed a bare
+    // remnant. Torn tails are reachable on every --follow start, not just a roll: persistentLogger
+    // writes through an 8 KB BufferedWriter, so any longer line reaches disk in several write(2)
+    // calls. The baseline must come from the same read as the text.
+    @org.junit.jupiter.api.Test
+    fun `a discontinuity re-baselines to what was printed, not the size stat - DR-135`(@TempDir tmp: Path) {
+        val log = tmp.resolve("daemon.log")
+        Files.writeString(log, (1..30).joinToString("") { "gen1 $it\n" })
+        val bigBaseline = Files.size(log)
+        Files.writeString(log, "gen2 a\ngen2 b\ngen2 c-par") // roll, writer caught mid-line
+        val (next, out) = pollCapture {
+            LogsCommand().followPoll(log, splice.app.LogFileSource(log), bigBaseline, warned())
+        }
+        assertEquals(
+            listOf("gen2 a", "gen2 b"),
+            out.trim().lines(),
+            "the torn line is withheld, as DR-100 requires",
+        )
+        assertEquals(
+            14L,
+            next,
+            "the baseline is the end of the last PRINTED line, not the ${Files.size(log)}-byte stat",
+        )
+
+        Files.writeString(log, "tial\n", java.nio.file.StandardOpenOption.APPEND)
+        val (_, completed) = pollCapture {
+            LogsCommand().followPoll(log, splice.app.LogFileSource(log), next, warned())
+        }
+        assertEquals(
+            listOf("gen2 c-partial"),
+            completed.trim().lines(),
+            "the finished line arrives WHOLE — pre-fix the baseline had eaten its head and printed a bare 'tial'",
+        )
+    }
+
+    // DR-138: a line longer than LOG_TAIL_BYTES left the window with no newline, so consumed was 0,
+    // followPoll returned its baseline unchanged, and every later poll re-read the identical 1 MiB
+    // forever — a PERMANENT freeze losing every subsequent line, twice a second, silently. Skipping
+    // one over-long line is the never-below-status-quo trade, and the skip is announced in-band.
+    @org.junit.jupiter.api.Test
+    fun `a line longer than the tail window does not wedge --follow - DR-138`(@TempDir tmp: Path) {
+        val log = tmp.resolve("daemon.log")
+        Files.writeString(log, "seed\n")
+        val baseline = Files.size(log)
+        val giant = "x".repeat(1024 * 1024 + 10) // one line, longer than the whole read window
+        Files.writeString(log, giant + "\nafter the giant\n", java.nio.file.StandardOpenOption.APPEND)
+
+        val (next, out) = pollCapture {
+            LogsCommand().followPoll(log, splice.app.LogFileSource(log), baseline, warned())
+        }
+        assertTrue(next > baseline, "the poll must advance past an over-long line instead of freezing")
+        assertTrue(out.contains("exceeds"), "the skip is announced in-band rather than leaving a silent gap: $out")
+
+        val (after, rest) = pollCapture {
+            LogsCommand().followPoll(log, splice.app.LogFileSource(log), next, warned())
+        }
+        assertTrue(rest.contains("after the giant"), "lines after the over-long one still arrive: $rest")
+        assertEquals(Files.size(log), after, "and the follow is caught up, not stuck")
+    }
 }

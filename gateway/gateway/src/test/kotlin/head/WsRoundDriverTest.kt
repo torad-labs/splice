@@ -19,6 +19,7 @@ import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
@@ -541,6 +542,9 @@ class WsRoundDriverTest {
      *  it must still let go of its socket. A free-standing job would leave the round reading into a
      *  turn nobody is listening to. Long budgets here on purpose — the watchdog must not be what
      *  fires, or the arm would pass without proving the parent link. */
+    // runCurrent, not advanceUntilIdle: the watchdog poller loops on delay forever, so advancing
+    // virtual time to idle would never return. Opted in narrowly, on this arm alone.
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun `cancelling the turn still aborts the round beneath it - DR-7`() = runTest {
         val runner = StallingRunner(listOf("""{"type":"response.created","response":{"id":"r1"}}"""))

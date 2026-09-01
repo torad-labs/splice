@@ -17,9 +17,11 @@ internal class WsRoundDrive(
     private val provider: Provider,
     private val classifyZeroEvent: ZeroEventClassifier,
 ) {
-    /** The per-round bookkeeping mirrors the SSE path exactly — slot touch, watchdog byte mark,
-     *  first-byte/events perf, zero-event classification — because the client must not be able to
-     *  tell which transport served its turn. */
+    /** The per-round bookkeeping mirrors the SSE path exactly — slot touch, first-byte/events
+     *  perf, zero-event classification — because the client must not be able to tell which
+     *  transport served its turn. An EVENT touches the slot (liveness) but never picks the watchdog
+     *  tier: response.created is the handshake, not output, and this is the transport on which the
+     *  2026-09-01 compaction stalls were measured — see Watchdog.kt. */
     suspend fun drive(
         inputs: WsRoundInputs,
         runner: WsRoundRunner,
@@ -33,7 +35,6 @@ internal class WsRoundDrive(
         val instrumented = events.onEach { evt ->
             if (runner.isFailureTerminal(evt) && !inputs.frameEmittedThisRound()) throw WsRoundNeedsSse()
             drive.slot.touch()
-            drive.watchdog.markByte()
             drive.perf.markOnce(PerfKeys.FIRST_BYTE)
             drive.perf.add(PerfKeys.EVENTS_IN, 1)
         }

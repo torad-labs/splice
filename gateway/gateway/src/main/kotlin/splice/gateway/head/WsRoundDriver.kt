@@ -58,7 +58,7 @@ internal class WsRoundDriver(
             // start write throws or is cancelled, the exception unwinds through the transport flow's
             // onCompletion and poisons its busy lease instead of stranding the connection forever.
             val startingEvents = accepted.events.onEach { drive.emitter.ensureStarted() }
-            drive.watchdog.resetFirstByte()
+            drive.watchdog.resetRound()
             // DR-7 round 2: the idle watchdog reaps THIS ROUND here too, the same way
             // SseRoundConsume does. It used to cancel inputs.turnJob, so a WS stall killed the
             // translator along with the round and the salvage died with it — the SSE path earned
@@ -96,7 +96,7 @@ internal class WsRoundDriver(
             val round = Job(inputs.turnJob)
             roundJob = round
             round.invokeOnCompletion { cause -> if (cause != null) accepted.abort.abort() }
-            poller = drive.watchdog.launchIn(inputs.scope, drive.slot, round)
+            poller = drive.watchdog.launchIn(inputs.scope, drive.slot, round, inputs.frameEmittedThisRound)
             return try {
                 roundDrive.drive(inputs, runner, startingEvents).also { reported = true }
             } catch (ignored: WsRoundNeedsSse) {

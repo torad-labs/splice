@@ -105,8 +105,14 @@ internal class ResponsesTerminalDecision(
     // away text the client had already been shown and could not continue even in principle.
     private fun watchdogOutcome(fired: WatchdogFired, state: ResponsesTurnState): TurnOutcome {
         val why = when (fired) {
-            is WatchdogFired.Idle ->
+            // The tier that fired is named, not assumed: before any client frame the silence was
+            // judged on the first-output cap (firstByteTimeoutMs), after it on streamIdle. An
+            // operator reading "180s idle cap" on a 300s pre-output stall was reading a lie.
+            is WatchdogFired.Idle -> if (fired.sawClientFrame) {
                 "no completion within the ${ctx.streamIdleMsForMessage / MS_PER_S}s idle cap"
+            } else {
+                "no first output within the ${fired.limitMs / MS_PER_S}s first-output cap"
+            }
             is WatchdogFired.TotalCap ->
                 "no completion within the ${ctx.upstreamTimeoutMsForMessage / MS_PER_S}s total cap"
         }

@@ -9,6 +9,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.yield
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.assertThrows
@@ -32,6 +34,39 @@ class InflightGateTest {
         a.join()
         b.join()
         assertEquals(listOf(1, 2, 3), order)
+        assertEquals(0, gate.snapshot().inflight)
+    }
+
+    // DR-147 (provider sweep, 2026-08-31): raising maxInflight live did not drain the waiters
+    // already parked. acquire()'s fast path asked only "is there capacity?", and the queue is
+    // drained solely by release() — so with every slot held by a long-lived SSE stream there was no
+    // release to come, newcomers were admitted straight past waiters queued for the whole backlog,
+    // and the operator's relief PATCH did nothing until a stream ended. The file's own header
+    // claims FIFO admission and a limit read fresh per admission decision; both were false in this
+    // state. Existing arms exercise the live limit and the queue SEPARATELY; the defect is only
+    // visible in the mid-state where a waiter is parked AND the limit rises AND a newcomer arrives.
+    @Test
+    fun `raising the limit admits the parked waiter, not the newcomer - DR-147`() = runTest {
+        var limit = 1
+        val gate = InflightGate({ limit })
+        val holder = gate.acquire() // holds the only slot
+        val parked = async { gate.acquire() }
+        yield()
+        assertEquals(InflightGate.Snapshot(1, 1, 1), gate.snapshot())
+
+        limit = 2 // the operator's relief PATCH
+        val newcomer = async { gate.acquire() }
+        yield() // the newcomer runs acquire() and drains
+        yield() // the drained waiter's continuation is delivered
+
+        assertTrue(parked.isCompleted, "the raise must admit the waiter that was already queued")
+        assertFalse(newcomer.isCompleted, "a newcomer must not overtake a waiter parked before it")
+        assertEquals(InflightGate.Snapshot(2, 1, 2), gate.snapshot())
+
+        holder.release()
+        yield()
+        parked.await().release()
+        newcomer.await().release()
         assertEquals(0, gate.snapshot().inflight)
     }
 

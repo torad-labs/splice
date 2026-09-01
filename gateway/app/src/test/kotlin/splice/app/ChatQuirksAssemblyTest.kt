@@ -76,10 +76,14 @@ class ChatQuirksAssemblyTest {
     // disposition here. :app is the only module that can see all three at once, which is why they
     // are asserted from here rather than one arm per provider suite.
     //
-    // No grok head rides the Responses dialect today, so its floor is dormant — but a dormant knob
-    // that is silently wrong is exactly what surfaces the day a head moves, and codex is the
-    // highest-traffic head in the fleet: a floor appearing on that profile would start deleting
-    // real screenshots against a rule its backend never stated.
+    // An earlier version of this comment called the Responses floor dormant because "no grok head
+    // rides that dialect". That was wrong, and wrong in the way worth recording: the shipped
+    // config/splice.example.toml puts [providers.xai] on openai-responses while the operator config
+    // behind the DR-152 soak has it on openai-chat, so BOTH profiles are live depending on which
+    // file you read. Neither floor is dormant, which is why both carry the number.
+    //
+    // codex is the highest-traffic head in the fleet: a floor appearing on that profile would start
+    // deleting real screenshots against a rule its backend never stated.
     @Test
     fun `every responses profile states its floor, and only grok has one - DR-155`() {
         assertEquals(8, GrokQuirks().defaultQuirks().minImageEdgePx, "xAI enforces a minimum")

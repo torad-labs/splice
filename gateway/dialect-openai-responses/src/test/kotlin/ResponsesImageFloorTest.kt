@@ -1,7 +1,8 @@
-// NEW (DR-155): the vendor minimum-edge floor on the Responses wire. The live claude-grok head
-// rides the chat dialect, so the failure measured in the DR-152 soak reached xAI through
-// ChatWireMapper — but the vendor constraint belongs to the VENDOR, not to whichever dialect a head
-// happens to select, and GrokQuirks carries the same floor for any Responses-dialect grok head.
+// NEW (DR-155): the vendor minimum-edge floor on the Responses wire. This is the dialect the
+// SHIPPED config/splice.example.toml puts [providers.xai] on; the operator config behind the DR-152
+// soak has it on openai-chat, so that particular failure reached xAI through ChatWireMapper. Both
+// spellings are live, which is the argument for the constraint belonging to the VENDOR rather than
+// to whichever dialect a head happens to select — GrokQuirks carries the identical floor.
 //
 // Two of these arms exist to pin what this row deliberately did NOT change: an unreadable
 // tool_result image is still dropped silently here (a real gap, and not this one), and a compact

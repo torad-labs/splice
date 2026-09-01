@@ -52,10 +52,17 @@ public class GrokQuirks {
         // request's include[] for nothing (untested surface on xai). TOML
         // `reasoning_cache = true` re-enables via the overlay if that ever changes.
         reasoningCache = false,
-        // DR-155: xAI enforces a minimum image edge and 400s the WHOLE turn below it. The claude-grok
-        // head rides the chat dialect today (ChatArm carries the same number for the same reason),
-        // but this profile is what any Responses-dialect grok head would use, and the vendor
-        // constraint belongs to the vendor rather than to whichever dialect happens to be selected.
+        // DR-155: xAI enforces a minimum image edge and 400s the WHOLE turn below it.
+        //
+        // WHICH DIALECT A GROK HEAD RIDES IS NOT SETTLED, and this comment said it was. The shipped
+        // config/splice.example.toml puts [providers.xai] on openai-responses; the operator config
+        // that produced the DR-152 soak has it on openai-chat. Both are valid — grok-oauth works on
+        // either — so a reader of one file will confidently contradict a reader of the other, which
+        // is exactly what happened in review.
+        //
+        // That is the argument for putting the number on BOTH profiles rather than on the one that
+        // looked live: a vendor's constraint belongs to the vendor, and a floor that depends on a
+        // dialect an operator can switch in one TOML line is a floor that goes missing silently.
         minImageEdgePx = XAI_MIN_IMAGE_EDGE_PX,
     )
 }

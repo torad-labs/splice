@@ -8,6 +8,7 @@
 // height must be at least 8 pixels." A 1x1 PNG is the first arm below.
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.media.ImageFloor
 import splice.core.media.ImageHeaderProbe
@@ -127,9 +128,6 @@ class ImageHeaderProbeTest {
         assertNull(probe.probe(ByteArray(0)))
     }
 
-    // The base64 door reads a WINDOW. A screenshot is megabytes and the answer is settled by byte
-    // 30, so decoding the payload to read two integers would put a copy of the image on the heap
-    // for nothing. The oversized fixture proves the window is enough, not that it is fast.
     @Test
     fun `base64 is decoded only far enough to answer, and bad base64 is unknown - DR-155`() {
         val fx = ImageBytesFixture()
@@ -138,6 +136,113 @@ class ImageHeaderProbeTest {
         assertNull(probe.probeBase64("!!!! not base64 !!!!"))
         assertNull(probe.probeBase64(""))
     }
+
+    // The header-window law, made OBSERVABLE. It was previously only a comment, and the comment was
+    // false: probeBase64 filtered whitespace across the ENTIRE payload before taking 128 chars, so
+    // a multi-megabyte screenshot was copied in full to reach two integers — twice for an undersized
+    // one, since the marker re-probes. The arm above could not catch it, because "answer correctly
+    // despite a long tail" is true of both versions. Counting the characters actually touched is
+    // what turns the law into an assertion. Found by codex-splice reading the code, not the tests.
+    @Test
+    fun `base64 is never scanned past the header window - DR-155`() {
+        val fx = ImageBytesFixture()
+        // The tail is encoded WITH the header, not concatenated after it: appending characters to a
+        // finished base64 string puts its "=" padding in the middle, and the window then fails to
+        // decode for a reason that has nothing to do with what this arm measures.
+        val encoded = Base64.getEncoder().encodeToString(fx.png(1, 1) + ByteArray(HUGE_TAIL) { PIXEL_FILL })
+        val payload = CountingChars(encoded)
+        assertEquals(ImagePx(1, 1, "png"), probe.probeBase64(payload))
+        assertTrue(
+            payload.reads <= WINDOW_READ_CAP,
+            "touched ${payload.reads} chars of a ${payload.length}-char payload to read two integers",
+        )
+    }
+}
+
+// A HOSTILE header is an input, not a fact. Every arm here plants a number a real encoder would
+// never write and asserts the probe answers UNKNOWN — never a dimension it invented, and never an
+// exception. All five holes were found by codex-splice's adversarial replay and independently
+// reproduced by grok-splice; each shipped in the first version of this file.
+class MalformedHeaderTest {
+
+    private val probe = ImageHeaderProbe()
+    private val fx = ImageBytesFixture()
+
+    // The worst of the five, because it made splice DELETE a picture. A 32-bit width read into an
+    // Int made 0x80000000 negative, and ImageFloor's "width < minimum" test then reported a huge
+    // image as undersized. Fail-CLOSED on a malformed header is the exact direction this policy
+    // must never take. Mutant: read the u32 into an Int.
+    @Test
+    fun `a png width too large for an Int is unknown, never an undersized image - DR-155`() {
+        val huge = fx.png32(OVERFLOW_U32, OVERFLOW_U32)
+        assertNull(probe.probe(huge), "an unrepresentable dimension is unknown")
+        assertNull(ImageFloor(XAI_FLOOR).violatedMinimum(base64(huge)), "and must NOT be dropped")
+    }
+
+    // The other end of the same range: zero is not a small image, it is a broken header.
+    @Test
+    fun `a zero dimension is unknown, not something small - DR-155`() {
+        assertNull(probe.probe(fx.png(0, 0)))
+        assertNull(ImageFloor(XAI_FLOOR).violatedMinimum(base64(fx.png(0, 0))))
+    }
+
+    // IHDR is fixed-size by the spec. A chunk announcing a different length is not an IHDR, and
+    // reading width and height out of it anyway is the JPEG/WebP borrow wearing a third format.
+    @Test
+    fun `a png IHDR that misdeclares its own length is unknown - DR-155`() {
+        val bad = fx.png(64, 64).copyOf()
+        fx.be32(1).copyInto(bad, PNG_CHUNK_LEN_AT)
+        assertNull(probe.probe(bad))
+    }
+
+    // A SOF declaring length 2 is an EMPTY segment. Reading height and width out of the bytes that
+    // happen to follow returned a confident 1x1 — an invented dimension that then dropped a legal
+    // image. Mutant: bound sofDims by the buffer only, not by the segment's declared length.
+    @Test
+    fun `a jpeg frame header shorter than its own fields is unknown - DR-155`() {
+        val emptySof = fx.bytes(0xFF, 0xD8, 0xFF, SOF0, 0x00, 0x02) + fx.bytes(0x08) +
+            fx.be16(1) + fx.be16(1) + fx.bytes(3, 1, 0x22, 0)
+        assertNull(probe.probe(emptySof), "a SOF carrying no dimensions must not produce one")
+    }
+
+    // Same defect in RIFF: a chunk may only be read for the bytes it DECLARES it owns. A VP8X
+    // claiming size 1 had ten bytes read past its own end and answered 8x8 — this direction
+    // FORWARDS an undersized image, so the borrow lies in both directions.
+    @Test
+    fun `a webp chunk that under-declares its size is unknown - DR-155`() {
+        val underDeclared = fx.riff(fx.chunkSized("VP8X", fx.vp8xBody(8, 8), declared = 1))
+        assertNull(probe.probe(underDeclared))
+    }
+
+    // The one that could take a turn down rather than merely lie about it. `i += 8 + size + pad`
+    // with an attacker-chosen unsigned size overflowed the cursor NEGATIVE, and the next iteration
+    // indexed the array at a negative offset: ArrayIndexOutOfBoundsException out of a parser whose
+    // stated law is that failure is always null. Mutant: make the cursor an Int again.
+    @Test
+    fun `a webp chunk size that would overflow the walk is unknown, not a crash - DR-155`() {
+        val overflowing = fx.riff(fx.chunkSized("ICCP", ByteArray(ICCP_PAYLOAD), declared = Int.MAX_VALUE.toLong()))
+        assertNull(probe.probe(overflowing))
+        assertNull(ImageFloor(XAI_FLOOR).violatedMinimum(base64(overflowing)))
+    }
+
+    private fun base64(bytes: ByteArray): MediaSource =
+        MediaSource(type = "base64", mediaType = "image/png", data = Base64.getEncoder().encodeToString(bytes))
+}
+
+/** A CharSequence that counts the characters actually read, so the header-window law can be
+ *  asserted instead of described. */
+class CountingChars(private val s: String) : CharSequence {
+    var reads: Int = 0
+        private set
+
+    override val length: Int get() = s.length
+
+    override fun get(index: Int): Char {
+        reads++
+        return s[index]
+    }
+
+    override fun subSequence(startIndex: Int, endIndex: Int): CharSequence = s.subSequence(startIndex, endIndex)
 }
 
 class ImageFloorTest {
@@ -171,10 +276,8 @@ class ImageFloorTest {
         assertNull(floor.violatedMinimum(source(fx.png(8, 9))), "and anything above it")
     }
 
-    @Test
-    fun `a zero dimension is under every floor - DR-155`() {
-        assertEquals(XAI_FLOOR, ImageFloor(XAI_FLOOR).violatedMinimum(source(fx.png(0, 0))))
-    }
+    // (A zero or unrepresentable dimension used to be graded as "under the floor" here. It is a
+    // BROKEN HEADER, not a small image, and it now answers unknown — see MalformedHeaderTest.)
 
     // Everything the proxy cannot READ forwards. This is the fail-open half of the policy and the
     // reason the return type is "the floor it is PROVEN under" rather than a boolean verdict:
@@ -223,9 +326,19 @@ class ImageBytesFixture {
 
     fun le32(v: Int): ByteArray = le24(v) + bytes((v ushr BITS_24) and BYTE)
 
-    fun png(w: Int, h: Int): ByteArray =
+    // Long-valued writers, so an arm can plant a 32-bit number no Int can hold — which is exactly
+    // the shape that made the probe report a huge image as undersized.
+    fun be32L(v: Long): ByteArray = bytes(byteOf(v, BITS_24), byteOf(v, BITS_16), byteOf(v, BITS_8), byteOf(v, 0))
+
+    fun le32L(v: Long): ByteArray = bytes(byteOf(v, 0), byteOf(v, BITS_8), byteOf(v, BITS_16), byteOf(v, BITS_24))
+
+    private fun byteOf(v: Long, shift: Int): Int = ((v ushr shift) and BYTE.toLong()).toInt()
+
+    fun png(w: Int, h: Int): ByteArray = png32(w.toLong(), h.toLong())
+
+    fun png32(w: Long, h: Long): ByteArray =
         bytes(0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A) +
-            be32(PNG_IHDR_LEN) + ascii("IHDR") + be32(w) + be32(h) + bytes(8, 6, 0, 0, 0)
+            be32(PNG_IHDR_LEN) + ascii("IHDR") + be32L(w) + be32L(h) + bytes(8, 6, 0, 0, 0)
 
     fun gif(signature: String, w: Int, h: Int): ByteArray =
         ascii(signature) + le16(w) + le16(h) + bytes(0xF7, 0x00, 0x00)
@@ -243,12 +356,18 @@ class ImageBytesFixture {
     fun riff(chunks: ByteArray): ByteArray =
         ascii("RIFF") + le32(chunks.size + RIFF_FORM_LEN) + ascii("WEBP") + chunks
 
-    fun chunk(tag: String, body: ByteArray): ByteArray {
+    fun chunk(tag: String, body: ByteArray): ByteArray = chunkSized(tag, body, body.size.toLong())
+
+    /** A chunk whose DECLARED size can disagree with the bytes that follow it — the whole point of
+     *  the under-declare and overflow arms. */
+    fun chunkSized(tag: String, body: ByteArray, declared: Long): ByteArray {
         val pad = if (body.size % 2 == 1) bytes(0) else ByteArray(0)
-        return ascii(tag) + le32(body.size) + body + pad
+        return ascii(tag) + le32L(declared) + body + pad
     }
 
-    fun vp8x(w: Int, h: Int): ByteArray = chunk("VP8X", bytes(0x10, 0, 0, 0) + le24(w - 1) + le24(h - 1))
+    fun vp8xBody(w: Int, h: Int): ByteArray = bytes(0x10, 0, 0, 0) + le24(w - 1) + le24(h - 1)
+
+    fun vp8x(w: Int, h: Int): ByteArray = chunk("VP8X", vp8xBody(w, h))
 
     fun vp8l(w: Int, h: Int): ByteArray = chunk("VP8L", bytes(0x2F) + le32(((h - 1) shl BITS_14) or (w - 1)))
 
@@ -285,3 +404,11 @@ private const val BOGUS = 4096
 private const val ICCP_PAYLOAD = 6
 private const val BIG_TAIL = 4096
 private const val PIXEL_FILL: Byte = 0x5A
+
+private const val OVERFLOW_U32 = 0x80000000L
+private const val PNG_CHUNK_LEN_AT = 8
+private const val HUGE_TAIL = 750_000 // bytes; about a million base64 characters
+
+// 128 chars of window plus slack. A payload a million characters long must cost about the window,
+// not about the payload.
+private const val WINDOW_READ_CAP = 200

@@ -45,6 +45,21 @@ arm() {
   rm -f "$SRC/$name"
 }
 
+# Same, but also asserts WHICH line the checker blames and a phrase from its reason. Exit code
+# alone cannot discriminate a correct verdict from a wrong one that happens to be non-zero — the
+# DR-157 fold fixture failed under BOTH the old and new checkers, the old one blaming the SUCCESS
+# lambda it had misidentified. An arm that cannot tell those apart is not a proof.
+# $1 label · $2 expected line · $3 expected phrase · $4 file basename · $5 body
+arm_at() {
+  local label="$1" line="$2" phrase="$3" name="$4" body="$5"
+  printf '%s\n' "$body" > "$SRC/$name"
+  local out
+  out=$( cd "$tmp" && python3 checks/config/safe-failure-render.py check . 2>&1 )
+  echo "$out" | grep -q "$name:$line:" || err "$label: expected the blame on line $line, got: $(echo "$out" | head -1)"
+  echo "$out" | grep -q -- "$phrase" || err "$label: expected reason to mention '$phrase'"
+  rm -f "$SRC/$name"
+}
+
 # 1 — a routed sink passes.
 arm "routed sink passes" 0 A.kt 'package p
 import java.nio.file.Files
@@ -180,6 +195,75 @@ fun a() = write().onFailure {
     log("failed: $it")
 }'
 
+# 15 — DR-156, codex-splice: Kotlin block comments NEST. A boolean in/out flag exits at the INNER
+#      `*/`, so the rest of the outer comment is read as code and its `}` pops the real depth. Four
+#      nested comments exist in this tree, so this was live. The lexer counts DEPTH.
+arm "a nested block comment does not close the span" 1 Nested.kt 'package p
+import java.nio.file.Files
+fun a() = write().onFailure {
+    /* outer /* inner */ still outer } */
+    log("failed: $it")
+}'
+
+# 16 — DR-157, codex-splice: a combinator can only govern a brace that comes AFTER it. The per-line
+#      flag let a TRAILING exceptionOrNull reach back and claim a LEADING runCatching brace, so a
+#      plain String `$it` was flagged. Blocking-gate false positive.
+arm "a trailing exceptionOrNull does not claim an earlier brace" 0 Trailing.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    runCatching { names.forEach { log("$it = stored") } }.exceptionOrNull()
+}'
+
+# 16b — but exceptionOrNull that DOES feed a lambda still opens the span; the fix must not blunt it.
+arm "exceptionOrNull feeding a let still opens the span" 1 FeedsLet.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    outcome.exceptionOrNull()?.let { log("read_error: $it") }
+}'
+
+# 17 — DR-157, the other half: Result.fold takes TWO lambdas and `.fold(` matched the FIRST, so the
+#      SUCCESS `$it` was flagged and the real FAILURE `$it` was missed — one entry producing a false
+#      positive and a false negative at once. Unnamed fold is now failed BY NAME rather than guessed.
+#      The blame must land on the FOLD CALL (line 5), not on either lambda: the old checker also
+#      exited non-zero here, blaming line 6 — the success lambda — so exit code alone proves nothing.
+arm_at "an unnamed fold is reported rather than guessed" 5 "positional .fold(" PosFold.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    result.fold(
+        { names.forEach { log("$it = stored") } },
+        { log("failed: $it") },
+    )
+}'
+
+# 17b — CONTROL: the NAMED form is decidable and is exactly what this tree already uses, so it must
+#       pass when routed. A fail-closed rule that also fails the compliant form is unusable.
+arm "a named fold routed through the sanitizer passes" 0 NamedFold.kt 'package p
+import java.nio.file.Files
+fun a() = Files.size(p).fold(
+    onSuccess = { true },
+    onFailure = { log("failed: ${SafeFailureText.render(it)}"); false },
+)'
+
+# 18 — DR-158, codex-splice: the render matcher read the RAW line, so prose in a TRAILING comment
+#      was indistinguishable from a runtime interpolation. The comment-blanked view fixes it while
+#      PRESERVING string content, because a real interpolation lives inside a string by definition.
+arm "a throwable named only in a trailing comment is not a render" 0 TrailingProse.kt 'package p
+import java.nio.file.Files
+fun a() = Files.size(p).onFailure {
+    val ignored = 1 // raw $it would leak here
+    log("failed: ${SafeFailureText.render(it)}")
+}'
+
+# 18b — and the same line shape with a REAL render still fails, so 18 did not simply blind it.
+arm "a real render on a line that also carries comment prose still fails" 1 ProseAndReal.kt 'package p
+import java.nio.file.Files
+fun a() = Files.size(p).onFailure {
+    log("failed: $it") // the $it above is the violation, this prose is not
+}'
+
 # 13 — CONTROL: prose ABOUT the law is a comment and cannot render anything at runtime.
 arm "comment mentioning \$failure is not flagged" 0 A.kt 'package p
 import java.nio.file.Files
@@ -190,5 +274,5 @@ fun a(e: Throwable) = Files.exists(p).also { log("x (${SafeFailureText.render(e)
 ( cd "$ROOT" && python3 checks/config/safe-failure-render.py check . >/dev/null 2>&1 ) \
   || err "the real repository does not pass its own wall"
 
-[ "$fail" = 0 ] && echo "  ✓ safe-failure-render selftest: 20 arms"
+[ "$fail" = 0 ] && echo "  ✓ safe-failure-render selftest: 27 arms"
 exit "$fail"

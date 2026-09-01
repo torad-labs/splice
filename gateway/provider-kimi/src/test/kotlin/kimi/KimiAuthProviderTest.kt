@@ -665,7 +665,9 @@ class KimiTornReadCacheTest {
         val dir = Files.createTempDirectory("kimi-torn-read")
         val file = dir.resolve(".kimi").resolve("credentials").resolve("kimi-code.json")
         Files.createDirectories(file.parent)
-        val write = { access: String, scope: String ->
+        // Explicitly Unit: Files.writeString returns Path, and an inferred lambda type makes
+        // every call site a discarded-return warning.
+        val write: (String, String) -> Unit = { access, scope ->
             Files.writeString(
                 file,
                 """{"access_token":"$access","refresh_token":"kimi-refresh",

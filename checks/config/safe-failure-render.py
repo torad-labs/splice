@@ -55,72 +55,102 @@ SCOPE_IO = (r"java\.nio\.file", r"\bFiles\.", r"\bPath\b", r"FileChannel", r"wri
 # count anywhere.
 THROWABLE_NAMED = r"(?:cause|failure|throwable|\w+(?:Failure|Error|Exception|Cause))"
 THROWABLE_SHORT = r"(?:it|e|t|ex|err)"
+#
+# DR-157: `\.fold\(` USED to be in this list and had to come out. Result.fold takes TWO lambdas,
+# and the list is only consulted for "was a failure combinator seen before this brace" — so the
+# FIRST lambda matched, which is onSuccess. codex-splice's fixture proved the exact inversion: the
+# success lambda's `$it` was flagged and the failure lambda's `$it` was missed, i.e. a false
+# positive and a false negative from one entry. The named form `onFailure = { … }` still matches on
+# `onFailure`, which is how the tree's only real fold site is classified; the POSITIONAL form is
+# undecidable by short name and is failed by name instead (see [POSITIONAL_FOLD]).
 FAILURE_CONTEXT = re.compile(
-    r"onFailure|getOrElse|exceptionOrNull|recoverCatching|recover\b|\bcatch\s*\(|\.fold\("
+    r"onFailure|getOrElse|exceptionOrNull|recoverCatching|recover\b|\bcatch\s*\("
 )
 
-# DR-154: a real lexical masker, because two rounds of ordering patches each left a hole that
-# codex-splice mutation-proved from the scanner's own source:
-#   * comment-before-string produced a FALSE POSITIVE — a URL inside a one-line failure lambda
-#     ("https://…") had its `//` treated as a comment, the closing brace vanished, the span never
-#     closed, and every later bare `$it` in the file was flagged. A blocking-gate false positive is
-#     the failure direction that gets a wall switched off rather than fixed.
-#   * counting braces inside `/* … */` and inside a char literal `'}'` produced FALSE NEGATIVES —
-#     the depth popped early, the failure lambda looked closed, and a genuine raw `$it` render
-#     inside it was missed entirely.
-# Both classes come from the same root: brace depth was read off text that still contained
-# non-syntax. So mask first, in ONE stateful pass over the file, and count only what is left.
-def mask_source(lines):
-    """Every string, char literal and comment replaced by spaces, so only real syntax remains.
+# DR-157, fail-closed: a `.fold(` whose failure half is NOT named cannot be attributed by this
+# scanner — `fold({ a }, { b })` gives it no way to tell onSuccess from onFailure. Guessing is what
+# produced the inversion above, and silently declining to look is a false green. So an unnamed fold
+# in a scope file is reported BY NAME and the author must use the named form (which the tree
+# already does) or exempt it. An unclassifiable site becomes a build failure, never an absence.
+POSITIONAL_FOLD = re.compile(r"\.fold\s*\(")
+NAMED_FOLD_HALVES = re.compile(r"onFailure\s*=")
 
-    Multi-line aware: block comments and raw strings carry state across lines, which per-line
+# DR-154 / DR-156 / DR-158 — ONE lexer, because every hole in this scanner so far came from
+# reading structure off text that still contained non-syntax, and each targeted patch just moved
+# the hole. codex-splice mutation-proved four classes from the scanner's own source:
+#   * a URL's `//` inside a string ate a one-line failure lambda's closing brace (FALSE POSITIVE —
+#     the direction that gets a wall switched off rather than fixed);
+#   * `}` inside a block comment and inside a char literal popped the brace depth early, closing the
+#     failure span so a genuine raw render below it was missed (FALSE NEGATIVE — a green lie);
+#   * Kotlin block comments NEST, and a boolean in/out flag exits at the INNER `*/`, so
+#     `/* outer /* inner */ still outer } */` leaked its brace — four such comments exist in this
+#     tree, so this was live, not hypothetical;
+#   * the render matcher read the RAW line, so prose in a trailing `// … $it …` comment was
+#     reported as runtime interpolation.
+#
+# Hence TWO views from one pass. They differ in exactly one respect, and that difference is the
+# point: brace structure must not see string CONTENT, while interpolation matching must see nothing
+# BUT string content.
+def lex(lines):
+    """(code, text) per line.
+
+    `code` blanks strings, char literals and comments — structure only, for brace depth and for
+    deciding which combinator governs a brace.
+    `text` blanks comments but PRESERVES string and char content — for matching an interpolation
+    that is, by definition, inside a string.
+
+    Multi-line aware: block-comment DEPTH and raw-string state carry across lines, which per-line
     regex stripping structurally cannot do.
     """
-    masked, state = [], None  # state: None | "block" | "raw"
+    code_out, text_out = [], []
+    block = 0        # nesting depth of /* */ — Kotlin nests these
+    in_raw = False
     for raw in lines:
-        out, i, n = [], 0, len(raw)
+        code, text, i, n = [], [], 0, len(raw)
         while i < n:
-            if state == "block":
-                if raw.startswith("*/", i):
-                    state, i = None, i + 2
-                    out.append("  ")
-                    continue
-                out.append(" ")
-                i += 1
-            elif state == "raw":
-                if raw.startswith('"""', i):
-                    state, i = None, i + 3
-                    out.append("   ")
-                    continue
-                out.append(" ")
-                i += 1
+            if block:
+                # Check the OPENER first: `/*/` must not read as an open and a close.
+                if raw.startswith("/*", i):
+                    block += 1
+                    code.append("  "); text.append("  "); i += 2
+                elif raw.startswith("*/", i):
+                    block -= 1
+                    code.append("  "); text.append("  "); i += 2
+                else:
+                    code.append(" "); text.append(" "); i += 1
+            elif in_raw:
+                if raw.startswith('\"\"\"', i):
+                    in_raw = False
+                    code.append("   "); text.append(raw[i:i + 3]); i += 3
+                else:
+                    code.append(" "); text.append(raw[i]); i += 1
             elif raw.startswith("//", i):
-                out.append(" " * (n - i))
+                code.append(" " * (n - i)); text.append(" " * (n - i))
                 break
             elif raw.startswith("/*", i):
-                state, i = "block", i + 2
-                out.append("  ")
-            elif raw.startswith('"""', i):
-                state, i = "raw", i + 3
-                out.append("   ")
+                block = 1
+                code.append("  "); text.append("  "); i += 2
+            elif raw.startswith('\"\"\"', i):
+                in_raw = True
+                code.append("   "); text.append(raw[i:i + 3]); i += 3
             elif raw[i] in "\"'":
-                quote, i = raw[i], i + 1
-                out.append(" ")
+                quote = raw[i]
+                code.append(" "); text.append(raw[i]); i += 1
                 while i < n:
                     if raw[i] == "\\":
-                        out.append("  ")
-                        i += 2
+                        code.append("  "); text.append(raw[i:i + 2]); i += 2
                         continue
-                    out.append(" ")
+                    code.append(" "); text.append(raw[i])
                     closed = raw[i] == quote
                     i += 1
                     if closed:
                         break
             else:
-                out.append(raw[i])
-                i += 1
-        masked.append("".join(out))
-    return masked
+                code.append(raw[i]); text.append(raw[i]); i += 1
+        code_out.append("".join(code))
+        text_out.append("".join(text))
+    return code_out, text_out
+
 
 # A throwable rendered INTO TEXT. Both interpolation forms, because the BARE one is strictly
 # WORSE: `$failure` calls toString(), which is the class name PLUS the same message — including
@@ -139,42 +169,84 @@ RENDERED_SHORT = re.compile(
 def failure_spans(lines):
     """Per line: is it inside the BODY of a failure-handling lambda?
 
-    Structural, not a fixed lookback. The first version asked whether a failure combinator
-    appeared within 3 lines above, and codex-splice mutation-proved the hole: a real
-    `.onFailure { ... }` in SecureFile.kt whose nested cleanup pushes the `$it` render five lines
-    below the opener stayed GREEN. Widening the constant only moves the hole deeper into the next
-    nested block, so scope is tracked by BRACE DEPTH: the lambda's body is in context until its own
-    closing brace, at any nesting depth and any length.
+    Structural, not a fixed lookback. The first version asked whether a failure combinator appeared
+    within 3 lines above, and codex-splice mutation-proved the hole: a real `.onFailure { … }` in
+    SecureFile.kt whose nested cleanup pushes the `$it` render five lines below the opener stayed
+    GREEN. Widening the constant only moves the hole into the next nested block, so scope is tracked
+    by BRACE DEPTH: the body is in context until its own closing brace, at any depth and any length.
+
+    DR-157 makes the combinator/brace pairing POSITIONAL. It used to be a per-LINE flag — "this line
+    mentions a failure combinator" — which then attached to the next brace opened anywhere,
+    including one that had already been opened EARLIER on the same line. codex-splice's fixture:
+    `runCatching { names.forEach { log("$it = stored") } }.exceptionOrNull()` was flagged, because
+    the trailing `exceptionOrNull` reached back and claimed the leading `runCatching {`. A
+    combinator can only govern a brace that comes AFTER it, so each `{` is now judged on the code
+    between it and the previous brace token — the call that actually opened it.
     """
+    code_lines, _ = lex(lines)
     inside = [False] * len(lines)
-    depth, stack, pending = 0, [], False
-    for i, code in enumerate(mask_source(lines)):
-        pending = pending or bool(FAILURE_CONTEXT.search(code))
+    depth, stack = 0, []
+    segment = ""  # code seen since the previous brace token: the call that opens the next `{`
+    for i, code in enumerate(code_lines):
         line_inside = bool(stack)
         for ch in code:
             if ch == "{":
                 depth += 1
-                if pending:
+                if FAILURE_CONTEXT.search(segment):
                     stack.append(depth)
-                    pending = False
                     line_inside = True
+                segment = ""
             elif ch == "}":
                 if stack and stack[-1] == depth:
                     stack.pop()
                 depth = max(0, depth - 1)
+                segment = ""
+            else:
+                segment += ch
+        segment += "\n"
         inside[i] = line_inside or bool(stack)
     return inside
 
 
-def renders_throwable(lines, idx, spans=None):
-    """Does line [idx] interpolate a throwable into text?"""
-    if RENDERED.search(lines[idx]):
+def renders_throwable(lines, idx, spans=None, text_lines=None):
+    """Does line [idx] interpolate a throwable into text?
+
+    DR-158: reads the COMMENT-BLANKED view, not the raw line. A trailing `// … $it …` explaining
+    the law is prose and cannot interpolate anything at runtime, but the raw line made it
+    indistinguishable from a real render — codex-splice proved it with
+    `val ignored = 1 // raw $it would leak` inside an onFailure. String content is deliberately
+    PRESERVED in this view, because a real interpolation lives inside a string by definition.
+    """
+    if text_lines is None:
+        text_lines = lex(lines)[1]
+    line = text_lines[idx]
+    if RENDERED.search(line):
         return True
-    if not RENDERED_SHORT.search(lines[idx]):
+    if not RENDERED_SHORT.search(line):
         return False
     if spans is None:
         spans = failure_spans(lines)
     return spans[idx]
+
+
+def positional_folds(lines):
+    """Line numbers of `.fold(` calls whose failure half is not named — DR-157, fail-closed.
+
+    `fold({ a }, { b })` gives the scanner no way to tell onSuccess from onFailure, and guessing is
+    exactly what inverted the two. Rather than guess or silently skip, the call is reported by name
+    so the author uses the named form the tree already uses, or exempts it.
+    """
+    code_lines, _ = lex(lines)
+    out = []
+    for idx, code in enumerate(code_lines):
+        if not POSITIONAL_FOLD.search(code):
+            continue
+        # The named half may sit on a following line — `.fold(` then `onFailure = { … }`.
+        window = "\n".join(code_lines[idx:idx + EXEMPT_LOOKBACK])
+        if not NAMED_FOLD_HALVES.search(window):
+            out.append(idx)
+    return out
+
 
 # A site that already obeys the law. Enumerated DELIBERATELY, even though it can never
 # violate: scoring only the raw form would let the denominator SHRINK by one every time a
@@ -206,13 +278,13 @@ def in_scope(text):
     return why
 
 
-def disposition(lines, idx, spans=None):
+def disposition(lines, idx, spans=None, text_lines=None):
     """COMPLIANT / EXEMPT / the failure reason for the site at 0-based [idx].
 
     A raw render is judged raw even on a line that ALSO calls the sanitizer: one sanitized
     half never launders the other, so a mixed line still needs its own exemption.
     """
-    if not renders_throwable(lines, idx, spans):
+    if not renders_throwable(lines, idx, spans, text_lines):
         return "compliant", None
     for back in range(idx, max(-1, idx - EXEMPT_LOOKBACK - 1), -1):
         found = EXEMPT.search(lines[back])
@@ -239,15 +311,30 @@ def sites(root):
             continue
         lines = text.splitlines()
         spans = failure_spans(lines)
+        # DR-158: the comment-blanked view decides BOTH matchers. Comment prose about the law —
+        # this file's own header quotes `$failure` as the thing it forbids — is blank here, so it
+        # drops out structurally instead of via a "does the line START with //" test that a
+        # TRAILING comment walked straight past.
+        text_lines = lex(lines)[1]
         for idx, line in enumerate(lines):
-            # A comment cannot render anything at runtime. Skipped so prose ABOUT the law (this
-            # file's own header quotes `$failure` as the thing it forbids) is not a violation.
-            if line.lstrip().startswith(("//", "*", "/*")):
+            rendered = renders_throwable(lines, idx, spans, text_lines)
+            if not rendered and not COMPLIANT.search(text_lines[idx]):
                 continue
-            if not renders_throwable(lines, idx, spans) and not COMPLIANT.search(line):
-                continue
-            verdict, detail = disposition(lines, idx, spans)
+            verdict, detail = disposition(lines, idx, spans, text_lines)
             out.append((str(path), idx + 1, line.strip(), verdict, detail, markers))
+        # DR-157: an unnamed fold is undecidable, so it is a site with its own failure reason
+        # rather than a silent skip. It still passes through the SAME exemption machinery.
+        for idx in positional_folds(lines):
+            verdict, detail = "bad", (
+                "positional .fold( — name the halves (onSuccess =/onFailure =) so the failure "
+                "lambda can be attributed; the unnamed form is undecidable by this scanner"
+            )
+            for back in range(idx, max(-1, idx - EXEMPT_LOOKBACK - 1), -1):
+                found = EXEMPT.search(lines[back])
+                if found and len(found.group(2).strip()) >= MIN_REASON_CHARS:
+                    verdict, detail = "exempt", found.group(1)
+                    break
+            out.append((str(path), idx + 1, lines[idx].strip(), verdict, detail, markers))
     return out
 
 

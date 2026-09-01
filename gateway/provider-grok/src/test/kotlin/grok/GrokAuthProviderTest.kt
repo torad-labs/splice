@@ -671,7 +671,9 @@ class GrokTornReadCacheTest {
         val now = 5_000_000_000L
         val file = dir.resolve(".grok").resolve("auth.json")
         Files.createDirectories(file.parent)
-        val write = { access: String, pad: String ->
+        // Explicitly Unit: Files.writeString returns Path, and an inferred lambda type makes
+        // every call site a discarded-return warning.
+        val write: (String, String) -> Unit = { access, pad ->
             Files.writeString(
                 file,
                 """{"tokens":{"access_token":"$access","refresh_token":"grok-refresh"},

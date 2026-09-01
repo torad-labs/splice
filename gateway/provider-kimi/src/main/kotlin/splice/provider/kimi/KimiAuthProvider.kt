@@ -136,15 +136,15 @@ public class KimiAuthProvider(
                 !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
             return if (genuinelyAbsent) RefreshOutcome.NoCredentialsFile else RefreshOutcome.ReadFailed(statFailure)
         }
-        val mtime = oauth.kimiAuthMtimeOrNull(authPath, log)
-        if (invalidGrantLatch.isLatched(mtime)) return RefreshOutcome.Rejected(INVALID_GRANT_REASON)
+        val identity = oauth.kimiAuthIdentityOrNull(authPath, log)
+        if (invalidGrantLatch.isLatched(identity)) return RefreshOutcome.Rejected(INVALID_GRANT_REASON)
         val priorAccess = store.cachedAccess()
         // AUTH-002: wire the daemon log sink so the lock's proceed-unlocked fallback is observable
         // (CredentialLock.withLock's `log` default is a silent no-op) instead of only greppable
         // in a source comment.
         val outcome = CredentialLock.withLock(authPath, log = log) { store.refreshLocked(priorAccess) }
         if (outcome is RefreshOutcome.Rejected && outcome.reason == INVALID_GRANT_REASON) {
-            invalidGrantLatch.latch(mtime)
+            invalidGrantLatch.latch(identity)
         }
         return outcome
     }
@@ -178,7 +178,7 @@ public class KimiAuthProvider(
         Credentials.ApiKey(key = token, header = "x-api-key", prefix = "")
 
     override suspend fun describe(): AuthDescription =
-        store.describe(oauth.kimiAuthMtimeOrNull(authPath, log), invalidGrantLatch)
+        store.describe(oauth.kimiAuthIdentityOrNull(authPath, log), invalidGrantLatch)
 
     // Atomic 0600 credential write — routes to the shared primitive, mirroring the private member
     // CodexAuthProvider/GrokAuthProvider already carry.

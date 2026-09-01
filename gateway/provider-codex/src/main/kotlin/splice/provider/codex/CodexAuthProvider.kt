@@ -146,8 +146,8 @@ public class CodexAuthProvider(
                 !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
             return if (genuinelyAbsent) RefreshOutcome.NoCredentialsFile else RefreshOutcome.ReadFailed(statFailure)
         }
-        val mtime = authFile.codexAuthMtimeOrNull(authPath, log)
-        if (invalidGrantLatch.isLatched(mtime)) return RefreshOutcome.Rejected(INVALID_GRANT_REASON)
+        val identity = authFile.codexAuthIdentityOrNull(authPath, log)
+        if (invalidGrantLatch.isLatched(identity)) return RefreshOutcome.Rejected(INVALID_GRANT_REASON)
         val priorAccess = authJson.cachedAccess()
         // AUTH-002: wire the daemon log sink so the lock's proceed-unlocked fallback is observable
         // (CredentialLock.withLock's `log` default is a silent no-op) instead of only greppable
@@ -161,7 +161,7 @@ public class CodexAuthProvider(
             )
         }
         if (outcome is RefreshOutcome.Rejected && outcome.reason == INVALID_GRANT_REASON) {
-            invalidGrantLatch.latch(mtime)
+            invalidGrantLatch.latch(identity)
         }
         return outcome
     }

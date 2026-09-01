@@ -3,6 +3,7 @@
 // class drops below 1.8, 2026-08-19). Shared by doRefresh() and describe().
 package splice.provider.codex
 
+import splice.core.auth.CredentialFileIdentity
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
@@ -34,12 +35,14 @@ public object CodexOAuthEndpoints {
 }
 
 internal class CodexAuthFile {
-    fun codexAuthMtimeOrNull(authPath: Path, log: LogSink): Long? =
+    // DR-176: returns the file IDENTITY, not a bare mtime. Truncated milliseconds could not tell a
+    // freshly re-authenticated credential from the rejected one it replaced within the same tick.
+    fun codexAuthIdentityOrNull(authPath: Path, log: LogSink): CredentialFileIdentity? =
         Cancellables.runCatchingCancellable {
-            Files.getLastModifiedTime(authPath).toMillis()
+            CredentialFileIdentity(Files.getLastModifiedTime(authPath).toMillis(), Files.size(authPath))
         }.onFailure {
             log(
-                "[codex-auth] failed to stat $authPath mtime: ${SafeFailureText.render(it)} — " +
+                "[codex-auth] failed to stat $authPath identity: ${SafeFailureText.render(it)} — " +
                     "invalid_grant latch check skipped",
             )
         }.getOrNull()

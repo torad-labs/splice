@@ -5,6 +5,7 @@
 package splice.provider.kimi
 
 import splice.core.auth.AuthDescription
+import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.Credentials
 import splice.core.auth.INVALID_GRANT_REASON
 import splice.core.auth.InvalidGrantLatch
@@ -166,7 +167,7 @@ internal class KimiAuthStore(
         }
     }
 
-    internal fun describe(mtime: Long?, latch: InvalidGrantLatch): AuthDescription {
+    internal fun describe(identity: CredentialFileIdentity?, latch: InvalidGrantLatch): AuthDescription {
         val presentOutcome = Cancellables.runCatchingCancellable {
             oauth.parseSnapshot(authPath, synthesizeExpiry) != null
         }
@@ -178,7 +179,7 @@ internal class KimiAuthStore(
             fields = buildMap {
                 put("auth_path", authPath.toString())
                 put("login", "device")
-                if (latch.isLatched(mtime)) put("refresh_latched", INVALID_GRANT_REASON)
+                if (latch.isLatched(identity)) put("refresh_latched", INVALID_GRANT_REASON)
                 // DR-59: parseSnapshot already classified — genuine absence returned null quietly,
                 // so ANY failure reaching here is indeterminate access, named for the dashboard.
                 presentOutcome.exceptionOrNull()?.let { put("read_error", SafeFailureText.render(it)) }

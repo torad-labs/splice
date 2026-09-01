@@ -10,6 +10,7 @@ import splice.app.DeviceLoginSpec
 import splice.app.LoginIo
 import splice.core.topology.AuthKind
 import splice.core.topology.AuthKindRegistry
+import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.Topology
@@ -74,11 +75,37 @@ internal class LoginKimi {
         else -> "$YELLOW— set key$RESET"
     }
 
-    internal fun backendLabel(provider: ProviderConfig): String = when (provider.auth.kind) {
-        "chatgpt-oauth" -> "codex / ChatGPT"
-        "grok-oauth" -> "xAI Grok"
-        "client" -> "Anthropic (your login)"
-        else -> if (provider.dialect.name == "OPENAI_CHAT") "OpenAI-compatible" else "OpenAI platform"
+    /** DR-175: the status table's backend column, and it named the wrong vendor for kimi.
+     *
+     *  This matched three wire strings and let everything else fall through to a DIALECT guess,
+     *  whose own else-branch was the literal "OpenAI platform". kimi ships as dialect
+     *  anthropic-passthrough with auth kind kimi-oauth, so it landed in that final else: the head
+     *  whose whole point is Moonshot told the operator they were signing in to OpenAI. The
+     *  documented api-key alternative in the shipped example config (MOONSHOT_API_KEY over
+     *  anthropic-passthrough) read the same way.
+     *
+     *  The shape was the defect, not the missing branch. AuthKind.kt says knownKinds() exists so
+     *  "compatibility matrices derive their denominator from the registry rather than maintaining a
+     *  second list that can silently omit a new kind" — and a `when` over wire STRINGS with an else
+     *  was exactly that second list. Both `when`s below are exhaustive over a sealed hierarchy and
+     *  an enum, so the next registered auth kind or dialect fails to COMPILE here rather than
+     *  quietly acquiring a vendor name that has nothing to do with it. */
+    internal fun backendLabel(provider: ProviderConfig): String =
+        when (AuthKindRegistry.from(provider.auth.kind)) {
+            AuthKind.ChatgptOAuth -> "codex / ChatGPT"
+            AuthKind.GrokOAuth -> "xAI Grok"
+            AuthKind.KimiOAuth -> "Moonshot Kimi"
+            AuthKind.Client -> "Anthropic (your login)"
+            // Unregistered kinds — api-key, or an operator's custom scheme, which AuthKind.kt
+            // deliberately leaves unregistered. The wire dialect is then the only evidence there
+            // is, so the label describes the WIRE and names no vendor it cannot verify.
+            null -> dialectLabel(provider.dialect)
+        }
+
+    private fun dialectLabel(dialect: Dialect): String = when (dialect) {
+        Dialect.OPENAI_CHAT -> "OpenAI-compatible"
+        Dialect.OPENAI_RESPONSES -> "OpenAI platform"
+        Dialect.ANTHROPIC_PASSTHROUGH -> "Anthropic-compatible"
     }
 
     internal fun printNextSteps(topology: Topology, envReader: EnvReader) {

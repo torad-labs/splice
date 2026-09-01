@@ -64,8 +64,8 @@ internal class CodexAuthDescribe(
                 !Files.exists(authPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
             if (!genuinelyAbsent) out["read_error"] = SafeFailureText.render(failure)
         }
-        val mtime = authFile.codexAuthMtimeOrNull(authPath, log)
-        if (invalidGrantLatch.isLatched(mtime)) out["refresh_latched"] = INVALID_GRANT_REASON
+        val identity = authFile.codexAuthIdentityOrNull(authPath, log)
+        if (invalidGrantLatch.isLatched(identity)) out["refresh_latched"] = INVALID_GRANT_REASON
         return AuthDescription(present = present, kind = KIND, fields = out)
     }
 

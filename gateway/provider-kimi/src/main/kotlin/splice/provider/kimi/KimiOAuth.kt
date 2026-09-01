@@ -14,6 +14,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
+import splice.core.auth.CredentialFileIdentity
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.FormEncoding
@@ -170,12 +171,14 @@ public class KimiOAuth {
     // G15: best-effort mtime probe for the invalid_grant latch gate; shared by doRefresh() and
     // describe(). The failure is logged, not swallowed, before collapsing to null — a stat failure is
     // "unknown", which InvalidGrantLatch treats as fail-open (never suppresses), NOT "file unchanged".
-    internal fun kimiAuthMtimeOrNull(authPath: Path, log: LogSink): Long? =
+    // DR-176: returns the file IDENTITY, not a bare mtime. Truncated milliseconds could not tell a
+    // freshly re-authenticated credential from the rejected one it replaced within the same tick.
+    internal fun kimiAuthIdentityOrNull(authPath: Path, log: LogSink): CredentialFileIdentity? =
         Cancellables.runCatchingCancellable {
-            Files.getLastModifiedTime(authPath).toMillis()
+            CredentialFileIdentity(Files.getLastModifiedTime(authPath).toMillis(), Files.size(authPath))
         }.onFailure {
             log(
-                "[kimi-auth] failed to stat $authPath mtime: ${SafeFailureText.render(it)} — " +
+                "[kimi-auth] failed to stat $authPath identity: ${SafeFailureText.render(it)} — " +
                     "invalid_grant latch check skipped",
             )
         }.getOrNull()

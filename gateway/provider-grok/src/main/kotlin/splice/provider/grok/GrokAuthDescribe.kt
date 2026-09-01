@@ -10,6 +10,7 @@
 package splice.provider.grok
 
 import splice.core.auth.AuthDescription
+import splice.core.auth.CredentialFileIdentity
 import splice.core.auth.INVALID_GRANT_REASON
 import splice.core.auth.InvalidGrantLatch
 import splice.core.auth.RefreshAttempt
@@ -59,14 +60,17 @@ internal class GrokAuthDescribe(
     private val log: LogSink,
     private val refreshCall: RefreshCall<GrokRefreshedTokens>,
 ) {
-    fun grokAuthMtimeOrNull(authPath: Path, log: LogSink): Long? = Cancellables.runCatchingCancellable {
-        Files.getLastModifiedTime(authPath).toMillis()
-    }.onFailure {
-        log(
-            "[grok-auth] failed to stat $authPath mtime: ${SafeFailureText.render(it)} — " +
-                "invalid_grant latch check skipped",
-        )
-    }.getOrNull()
+    // DR-176: returns the file IDENTITY, not a bare mtime. Truncated milliseconds could not tell a
+    // freshly re-authenticated credential from the rejected one it replaced within the same tick.
+    fun grokAuthIdentityOrNull(authPath: Path, log: LogSink): CredentialFileIdentity? =
+        Cancellables.runCatchingCancellable {
+            CredentialFileIdentity(Files.getLastModifiedTime(authPath).toMillis(), Files.size(authPath))
+        }.onFailure {
+            log(
+                "[grok-auth] failed to stat $authPath identity: ${SafeFailureText.render(it)} — " +
+                    "invalid_grant latch check skipped",
+            )
+        }.getOrNull()
 
     internal fun describe(): AuthDescription {
         val presentOutcome = Cancellables.runCatchingCancellable {
@@ -74,14 +78,14 @@ internal class GrokAuthDescribe(
         }
         // ast-grep-ignore: kt-no-silent-result-collapse -- failure consumed below via exceptionOrNull -> read_error
         val present = presentOutcome.getOrDefault(false)
-        val mtime = grokAuthMtimeOrNull(authPath, log)
+        val identity = grokAuthIdentityOrNull(authPath, log)
         return AuthDescription(
             present = present,
             kind = "grok-oauth",
             fields = buildMap {
                 put("auth_path", authPath.toString())
                 put("login", "browser")
-                if (invalidGrantLatch.isLatched(mtime)) put("refresh_latched", INVALID_GRANT_REASON)
+                if (invalidGrantLatch.isLatched(identity)) put("refresh_latched", INVALID_GRANT_REASON)
                 presentOutcome.exceptionOrNull()?.let { failure ->
                     // DR-59: indeterminate is not logged-out — name it in the description instead.
                     val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&

@@ -15,13 +15,16 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.Credentials
+import splice.core.auth.InvalidGrantLatch
 import splice.core.auth.RefreshAttempt
 import splice.core.auth.SYNTHETIC_EXPIRY_TTL_MS
+import splice.provider.codex.CodexAuthFile
 import splice.provider.codex.CodexAuthProvider
 import splice.provider.codex.CodexOAuth
 import splice.provider.codex.RefreshedTokens
@@ -566,4 +569,54 @@ class CodexPeerRotationExpiryTest {
             auth.credentials()
             assertEquals(1, calls.get(), "an adopted opaque token must not be served as never-expiring")
         }
+}
+
+// DR-176 (grok-splice finding H): the plumbing half. The core arms pin what CredentialFileIdentity
+// MEANS; this one proves a provider actually derives it from the file, because the defect lived in
+// the derivation — codexAuthMtimeOrNull returned FileTime.toMillis(), which truncates the
+// nanoseconds ext4 and xfs store, so two genuinely different credentials could not be told apart.
+// The fixture is the row's own scenario: rewrite the content, then RESTORE the original FileTime,
+// which is exactly what a same-tick re-login or a backup restore produces.
+class CodexAuthIdentityTest {
+
+    private fun identity(path: Path) =
+        CodexAuthFile().codexAuthIdentityOrNull(path) { }
+
+    @Test
+    fun `a rewritten credential with a restored FileTime is a DIFFERENT identity - DR-176`(@TempDir tmp: Path) {
+        val auth = tmp.resolve("auth.json")
+        Files.writeString(auth, """{"tokens":{"access_token":"old"}}""")
+        val before = identity(auth)
+        val stamp = Files.getLastModifiedTime(auth)
+
+        Files.writeString(auth, """{"tokens":{"access_token":"a-freshly-minted-replacement"}}""")
+        Files.setLastModifiedTime(auth, stamp)
+        val after = identity(auth)
+
+        assertEquals(
+            stamp.toMillis(),
+            after?.mtimeMs,
+            "the fixture must actually restore the timestamp, or this arm proves nothing",
+        )
+        assertNotEquals(before, after, "a replaced credential must not share the rejected file's identity")
+
+        val latch = InvalidGrantLatch()
+        latch.latch(before)
+        assertFalse(latch.isLatched(after), "the operator re-authenticated; the latch must release")
+    }
+
+    @Test
+    fun `an untouched credential keeps its identity and stays latched - DR-176 trap control`(@TempDir tmp: Path) {
+        val auth = tmp.resolve("auth.json")
+        Files.writeString(auth, """{"tokens":{"access_token":"unchanged"}}""")
+        val before = identity(auth)
+
+        val latch = InvalidGrantLatch()
+        latch.latch(before)
+        assertEquals(before, identity(auth), "statting an untouched file twice must agree")
+        assertTrue(
+            latch.isLatched(identity(auth)),
+            "an untouched credential must keep suppressing, or the lockout fix becomes a refresh storm",
+        )
+    }
 }

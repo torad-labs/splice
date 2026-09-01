@@ -162,44 +162,31 @@ class ExampleConfigTest {
         }
     }
 
-    // DR-24 redo (codex honesty catch): this test used to CLAIM the documented xAI values "carry
-    // through the real catalog" but only checked grok-4.6 after catalogFor — and 4.6's roster window
-    // (500k) equals the head override (500k), so it could never reveal the flattening. The head's
-    // context_window=500k replaces every SELECTED row's window (Topology.catalogFor:141), so
-    // grok-build-latest's real 256k ceiling is served to the client as 500k. Pin two source-derived
-    // layers (denominators enumerated from the SOURCE, not a hand-list):
-    //   (1) the raw provider roster carries the exact docs.x.ai numbers — all four declared rows;
-    //   (2) the head-effective catalog CURRENTLY flattens every row the head SELECTS to 500k.
-    // A silent edit to any shipped window — provider row, head override, or the roster — reds by name.
-    // §22 / DECISION-REQUIRED — layer (2) is NOT an endorsement. Serving grok-build-latest (haiku slot)
-    // at 500k over-declares its 256k backend ceiling: the forbidden "never spell a row past its real
-    // ceiling" shape (a `--model haiku` turn past 256k hard-fails instead of compacting). The compliant
-    // fix — remove the head override so each selected row reports its provider window (500k/500k/256k;
-    // pinned grok-4.6 still launches at 500k) — changes a value the operator LOCKED for DR-24 ("never
-    // shipped window values"), so it is an operator decision, recorded in the DR-24 ledger and NOT
-    // taken here. Layer (2) is a TRIPWIRE on the current unsafe behavior: the operator's fix reds it
-    // and forces the update through review.
+    // DR-24 / §22: every selected Grok row keeps its REAL backend ceiling. A head-wide 500k
+    // override used to flatten grok-build-latest from 256k to 500k, so a haiku turn could run past
+    // the backend limit and hard-fail instead of compacting. The pinned 4.6 row still sets the
+    // process's 500k client window; ModelCatalog.usageScale bridges that fixed denominator to each
+    // selected row live through /model. Both denominators below come from the parsed source.
     @Test
-    fun `example grok windows are the documented roster, flattened to the head window in the catalog`() {
+    fun `example grok windows stay per row while the pinned row sets the process window`() {
         val topology = TopologyLoader.parse(exampleToml())
         val head = topology.heads.getValue("claude-grok")
         val xai = topology.providers.getValue(head.provider)
 
-        // (1) SOURCE OF TRUTH: the raw declared rows are exactly the docs.x.ai windows, none extra.
+        val rawModels = xai.models.map { it.id to it.contextWindow }
         assertEquals(
-            mapOf(
+            listOf(
                 "grok-4.6" to 500_000L,
                 "grok-4.5" to 500_000L,
                 "grok-4.3" to 1_000_000L,
                 "grok-build-latest" to 256_000L,
             ),
-            xai.models.associate { it.id to it.contextWindow },
-            "every declared provider row, exactly the docs.x.ai numbers, none extra",
+            rawModels,
+            "every declared provider row, exactly once and in source order",
         )
+        val rawWindows = rawModels.toMap()
 
-        // (2) PRODUCTION: the head window replaces every SELECTED row. Denominator from head.models
-        // (the source), so a newly-selected row cannot slip the flattening unpinned.
-        assertEquals(500_000L, head.contextWindow, "the head-level context_window override under test")
+        assertNull(head.contextWindow, "mixed-ceiling Grok rows must not have a head-wide override")
         val catalog = xai.catalogFor(head)
         val selectedIds = head.models.orEmpty().map { it.id }
         assertEquals(
@@ -208,16 +195,20 @@ class ExampleConfigTest {
             "the head selects exactly these three rows (grok-4.3 is declared but NOT served here)",
         )
         assertEquals(
-            selectedIds.associateWith { 500_000L },
+            selectedIds.associateWith { rawWindows.getValue(it) },
             selectedIds.associateWith { catalog.contextWindowFor(it) },
-            "TRIPWIRE (§22, DECISION-REQUIRED): the head window currently over-declares every SELECTED " +
-                "row to 500k — grok-build-latest's real 256k included; removing the override reds this",
+            "every selected row must retain its source-declared backend ceiling",
         )
 
-        // The undeclared [1m] tier lands on the real ceiling and scales usage (DR-24 ModelCatalog fix).
-        assertEquals(500_000L, catalog.contextWindowFor("grok-4.6[1m]"), "undeclared tier lands on the real ceiling")
-        assertEquals(2.0, catalog.usageScale("grok-4.6[1m]"), "client 1e6 / real 500k")
-        assertEquals(1_000_000L, catalog.clientContextWindowFor("grok-4.6[1m]"))
+        assertEquals(500_000L, catalog.contextWindowFor(head.pinnedModel), "the pinned row launches the 500k process")
+        assertEquals(500_000L, catalog.clientContextWindowFor("grok-build-latest"), "non-[1m] rows use that process window")
+
+        // Undeclared [1m] selectors strip to the row's real ceiling while the client uses literal 1m.
+        assertEquals(500_000L, catalog.contextWindowFor("grok-4.6[1m]"))
+        assertEquals(2.0, catalog.usageScale("grok-4.6[1m]"), "client 1m / real 500k")
+        assertEquals(256_000L, catalog.contextWindowFor("grok-build-latest[1m]"))
+        assertEquals(1_000_000.0 / 256_000.0, catalog.usageScale("grok-build-latest[1m]"), "client 1m / real 256k")
+        assertEquals(1_000_000L, catalog.clientContextWindowFor("grok-build-latest[1m]"))
     }
 
     // DR-44b: ktoml unions duplicate keys instead of rejecting them (TOML spec: duplicates are an
@@ -336,7 +327,6 @@ class ExampleConfigTest {
             discovery_prefix = "claude-grok--"
             pinned_model = "grok-4.6"
             models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }, { id = "grok-build-latest", slot = "haiku" }]
-            context_window = 500000
             [heads.claude-grok.claude]
             command = "claude-grok"
             isolate = ["commands"]         # this head gets its own commands/, everything else shared
@@ -345,7 +335,7 @@ class ExampleConfigTest {
             """models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }, { id = "grok-build-latest", slot = "haiku" }]"""
         val inlineHead = """
             [heads]
-            claude-grok = { provider = "xai", port = 3100, discovery_prefix = "claude-grok--", pinned_model = "grok-4.6", $inlineRoster, context_window = 500000, claude = { command = "claude-grok", isolate = ["commands"] } }
+            claude-grok = { provider = "xai", port = 3100, discovery_prefix = "claude-grok--", pinned_model = "grok-4.6", $inlineRoster, claude = { command = "claude-grok", isolate = ["commands"] } }
         """.trimIndent()
         val valid = exampleToml().replace(tableHead, inlineHead)
         assertTrue(valid != exampleToml(), "test must rewrite the shipped head as an inline table")
@@ -381,7 +371,7 @@ class ExampleConfigTest {
     }
 
     @Test
-    fun `each example head owns its model roster and process window`() {
+    fun `each example head owns its model roster and explicit window policy`() {
         val topology = TopologyLoader.parse(exampleToml())
         val headProfiles = mapOf(
             "claudex" to (
@@ -390,7 +380,7 @@ class ExampleConfigTest {
                 ),
             "claude-grok" to (
                 listOf("grok-4.6" to "opus", "grok-4.5" to "sonnet", "grok-build-latest" to "haiku") to
-                    500_000L
+                    null
                 ),
             "openrouter" to (listOf("meta-llama/llama-4-maverick" to "opus") to 1_048_576L),
             "fireworks" to (
@@ -413,7 +403,7 @@ class ExampleConfigTest {
                 head.models?.map { it.id to it.slot },
                 "$key must expose only its own slotted model roster",
             )
-            assertEquals(profile.second, head.contextWindow, "$key must declare its process window")
+            assertEquals(profile.second, head.contextWindow, "$key must preserve its explicit head-window policy")
         }
     }
 

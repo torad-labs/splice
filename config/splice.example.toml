@@ -193,8 +193,10 @@ context_window = 262144
 
 # ── heads: each is a Claude Code wrapper on its own loopback port ───────────────
 # `command` names the installed wrapper (`splice install` links ~/.local/bin/<command>).
-# `models` is this process's ordered provider-model allowlist; `context_window` becomes its REAL
-# CLAUDE_CODE_MAX_CONTEXT_TOKENS. Put a different window tier on a separate head/process.
+# `models` is this process's ordered provider-model allowlist. An explicit `context_window` forces
+# one window onto every selected row; omit it when their real backend ceilings differ. The pinned
+# row sets CLAUDE_CODE_MAX_CONTEXT_TOKENS, and usage scaling makes every other row compact at its
+# own declared window while switching live through /model.
 [claude]                       # global config-sharing policy for every wrapper
 # `sessions` shares the cross-session-messaging peer registry, so sessions on ANY head (and plain
 # `claude`) can see and message each other; drop it (or isolate it per head) to wall a head off.
@@ -224,7 +226,6 @@ port = 3100
 discovery_prefix = "claude-grok--"
 pinned_model = "grok-4.6"
 models = [{ id = "grok-4.6", slot = "opus" }, { id = "grok-4.5", slot = "sonnet" }, { id = "grok-build-latest", slot = "haiku" }]
-context_window = 500000
 [heads.claude-grok.claude]
 command = "claude-grok"
 isolate = ["commands"]         # this head gets its own commands/, everything else shared

@@ -70,9 +70,7 @@ internal class LoginIo {
      *  any, is left intact rather than replaced by a worthless one. */
     internal fun persistIfSignedIn(path: Path, authJson: String): Boolean {
         val token = Cancellables.runCatchingCancellable {
-            loginJson.parseToJsonElement(authJson).let { element ->
-                (element as? JsonObject)?.get("access_token") as? JsonPrimitive
-            }?.content
+            (loginJson.parseToJsonElement(authJson) as? JsonObject)?.let { accessTokenOf(it) }
         }.getOrNull()
         if (token.isNullOrBlank()) {
             println("splice: token endpoint returned no access token — NOT signed in, nothing written")
@@ -81,6 +79,17 @@ internal class LoginIo {
         writeCredentialFile(path, authJson)
         println("splice: signed in — credentials written to $path")
         return true
+    }
+
+    /** DR-172 gap (2026-09-01): the codex and grok login specs hand this the ON-DISK shape their
+     *  providers read back — the token nested under "tokens" (CodexAuthJson / GrokAuthJson) — while
+     *  kimi's is flat. The first cut read the top level only, so every real codex and grok exchange was
+     *  refused as tokenless. A JSON null is not a token either: JsonNull is a JsonPrimitive whose
+     *  content is the string "null", the same trap [errorCode] already steps around. */
+    private fun accessTokenOf(obj: JsonObject): String? {
+        val nested = (obj["tokens"] as? JsonObject)?.get("access_token")
+        val primitive = (obj["access_token"] ?: nested) as? JsonPrimitive
+        return primitive?.takeUnless { it is JsonNull }?.content
     }
 
     internal fun formHeaders(request: HttpRequestBuilder, identityHeaders: Map<String, String>) {

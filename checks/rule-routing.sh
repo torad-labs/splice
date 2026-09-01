@@ -35,14 +35,29 @@ UNROUTED_ALLOWLIST=(
   ".rules/kotlin|2026-08-17: the torad-toolkit Android/Compose/XR pack, vendored 2026-07-16 for reference only. Its rules (Compose, ViewModel, no-mutable-var, no-runblocking) encode a different project type and contradict this Ktor gateway's mandated idioms, so routing it here would turn the gate red on correct code. Splice's own Kotlin walls live in .rules/kotlin-splice. UNSCANNED IS NOT UNTESTED (HD-21): the pack now carries its own sgconfig testConfigs, and npm run gate:rules runs 'ast-grep test --config .rules/kotlin/ast-grep/sgconfig.yml' so a dormant matcher can be red/green pinned BEFORE it graduates — a rule-test dropped into the root .rules/rule-tests for a rule outside the root ruleDirs is silently skipped, not reported."
 )
 
-# A "rule file" is a .yml/.yaml carrying an `id:` key — the SAME test checks/config-guard.sh uses to
-# decide what is a rule definition, so the two legs cannot disagree about what a rule is.
+# A "rule file" is a .yml/.yaml holding a YAML document with a top-level `id` — the SAME definition
+# checks/config-guard.sh uses, via the SAME module, so the two legs cannot disagree about what a
+# rule is.
+#
+# DR-132: that shared definition used to be `grep -E '^[[:space:]]*id:'`, and two lists agreeing
+# with each other is not a check against reality. A flow-style rule — `{id: x, language: kotlin,
+# rule: {pattern: p()}}` — has no line-leading `id:`, so it was invisible here while ast-grep
+# loaded and ran it. That made the FORWARD direction below fail-OPEN in the one case it exists to
+# catch: a dormant directory holding a flow-style rule reported PASS, reproducing the 2026-07-16
+# .rules/kotlin scar inside the script written to prevent it (measured: unreferenced dir with a
+# flow-style rule exited 0; the block-style equivalent exited 1). The denominator now comes from a
+# real YAML parse.
+#
+# Fail-CLOSED preflight: a broken enumerator would return 0 for every directory, and 0 rule files
+# means "nothing to check here" — silently converting this whole leg into a no-op. That is the bug
+# class the script exists to catch, one level up, so an unrunnable module is a hard failure. The
+# `|| printf 0` inside rule_file_count is only an arithmetic safety net for that already-failed
+# world; the preflight is what makes it safe, and it is not a fallback path.
+python3 checks/config/ast-grep-rule-docs.py count .rules 1 >/dev/null 2>&1 ||
+  err "checks/config/ast-grep-rule-docs.py is not runnable (needs python3 + PyYAML) — the rule-file denominator cannot be computed, so this leg can vouch for nothing."
+
 rule_file_count() { # rule_file_count <dir> <maxdepth>
-  local n=0 f
-  while IFS= read -r f; do
-    grep -qE '^[[:space:]]*id:' "$f" && n=$((n + 1))
-  done < <(find "$1" -maxdepth "$2" -type f \( -name '*.yml' -o -name '*.yaml' \) 2>/dev/null)
-  printf '%s\n' "$n"
+  python3 checks/config/ast-grep-rule-docs.py count "$1" "$2" 2>/dev/null || printf '0\n'
 }
 
 normalize_path() { # strip surrounding quotes and any trailing slash

@@ -72,6 +72,10 @@ run "ast-grep walls" npm run --silent gate:rules
 # sat in the tree unreferenced for a month reporting zero findings, because ast-grep never errors on a
 # rule directory nobody named. This leg is that missing half — completeness, not conformance.
 run "rule routing"   bash checks/rule-routing.sh
+# DR-132: and the canary over that leg. rule-routing.sh shipped without a selftest, which is how its
+# forward direction ran fail-OPEN on flow-style rules — a dormant pack reported PASS, reproducing
+# the scar the leg above exists to prevent, inside the leg itself. Same pairing as config-guard.
+run "rule-routing selftest" bash checks/rule-routing-selftest.sh
 # checks/concentration.py — the decomposition campaign's own oracle — was itself the thing the leg
 # above exists to catch: referenced by nothing but its ledger, so this gate printed PASS while
 # saying nothing about concentration and every ratio in the campaign was advisory. Wired 2026-08-18

@@ -24,34 +24,20 @@ grep -qE 'maxIssues:[[:space:]]*0' "$DETEKT" || err "detekt.yml build.maxIssues 
 grep -qE 'warningsAsErrors:[[:space:]]*true' "$DETEKT" || err "detekt.yml config.warningsAsErrors must be true"
 
 # 3. Every ast-grep rule definition stays a blocking error (no silent downgrade to
-# warning/hint). Rule-test fixtures also have an id but are not rule definitions.
+# warning/hint). Rule-test fixtures also have an id but are not rule definitions; the exemption is
+# structural (`valid:`/`invalid:` cases and no `rule:`), never a hardcoded path, so a real rule
+# dropped into any directory named rule-tests is still checked.
 #
-# A fixture is identified STRUCTURALLY (`valid:`/`invalid:` cases, and no `rule:` block), not by
-# living at one hardcoded path. It used to be `-path .rules/rule-tests -prune`, which broke the
-# moment a second test directory appeared — .rules/kotlin/ast-grep/rule-tests, added 2026-08-17
-# (HD-21) so the dormant pack can red/green pin a matcher before it graduates. Deriving the
-# exemption from the file's SHAPE also closes the hole the old prune opened: a real rule definition
-# dropped into any directory named rule-tests skipped this check entirely, and now does not,
-# because it carries a `rule:` block. Fixture-shaped, exempt; rule-shaped, checked — wherever it sits.
-while IFS= read -r f; do
-  grep -qE '^[[:space:]]*id:' "$f" || continue
-  if grep -qE '^[[:space:]]*(valid|invalid):' "$f" && ! grep -qE '^[[:space:]]*rule:' "$f"; then
-    continue # a rule-test fixture, not a rule definition
-  fi
-  # DR-115: ast-grep loads MULTI-DOCUMENT YAML, and a doc runs NON-BLOCKING both when its
-  # severity is downgraded AND when severity is omitted (proven: a severity-less matching doc
-  # exits `ast-grep scan` 0). The old `head -1` read only the first doc, so an appended
-  # warning/severity-less doc dodged this wall by document position. Every doc — counted by its
-  # id line, the same marker the fixture exemption above keys on — must carry severity: error.
-  bad=$(grep -nE '^[[:space:]]*severity:' "$f" | grep -vE 'severity:[[:space:]]*error([[:space:]]|$)' | head -3)
-  ids=$(grep -cE '^[[:space:]]*id:' "$f")
-  errors=$(grep -cE '^[[:space:]]*severity:[[:space:]]*error([[:space:]]|$)' "$f")
-  if [ -n "$bad" ]; then
-    err "$f has a non-error severity (every YAML doc must be 'severity: error'): $bad"
-  elif [ "$errors" -ne "$ids" ]; then
-    err "$f declares $ids rule doc(s) but $errors 'severity: error' line(s) — a doc without one runs non-blocking"
-  fi
-done < <(find .rules -type f \( -name '*.yml' -o -name '*.yaml' \) -print)
+# DR-131/DR-132: this used to be a line grep — `id:` lines counted against `severity: error` lines.
+# That denominator was indentation-blind and shape-blind, and four shapes rode through it while
+# ast-grep loaded the rule and ran it NON-BLOCKING: severity nested under `metadata:`, severity
+# sitting inside a `note:` block scalar, a multi-doc file whose second doc has no severity at all,
+# and flow style (`{id: x, rule: {...}}`), which has no line-leading `id:` at all and so skipped
+# this check entirely. Structure is the denominator now: checks/config/ast-grep-rule-docs.py parses
+# the YAML and enumerates documents the way ast-grep does. rule-routing.sh calls the same module,
+# so the two legs still cannot disagree about what a rule is — the difference is that they now
+# agree with ast-grep rather than only with each other.
+python3 checks/config/ast-grep-rule-docs.py severity . || fail=1
 
 # 4. Dependabot Kotlin ignore block stays scoped to the compiler/toolchain (#18/#37),
 # not the independently-versioned kotlinx libraries (kover, coroutines, serialization).

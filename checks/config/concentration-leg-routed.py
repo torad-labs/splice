@@ -241,6 +241,31 @@ def inverse_problems() -> list[str]:
 _OPENERS = frozenset({"if", "while", "until", "for", "case"})
 _CLOSERS = frozenset({"fi", "done", "esac"})
 
+# DR-133: the docstring below claims only a TOP-LEVEL leg counts, but those five keywords were the
+# whole nesting model, so two other constructs held a leg that bash never runs:
+#   A  a leg moved into a function body nobody calls  — `disabled_legs() { run "concentration" … }`
+#   B  the identical text as heredoc DATA             — `cat <<'EOF' >/dev/null … EOF`
+# Both were measured PASSING against the real guard, with the real leg removed; A is a plausible
+# refactor artifact if gate.sh ever groups legs into functions and one call site is dropped.
+# Braces close A: shlex yields a bare `{` token for `name() {` and a bare `}` for the closer, while
+# every brace inside a quoted payload (awk programs, `${VAR}`) stays inside its token and cannot be
+# miscounted. A heredoc opener tokenizes as `<<DELIM` / `<<-DELIM` after shlex strips comments and
+# quotes, so B is skipped as the data it is — a leg found only there leaves the guard unrouted, and
+# the near-miss report below shows the reader the line and why it is text rather than a command.
+_BRACE_OPEN = "{"
+_BRACE_CLOSE = "}"
+
+
+def _heredoc_delimiter(argv: list[str]) -> str | None:
+    """The delimiter a heredoc redirection on this line opens, or None. `<<` and `<<-` only —
+    `<<<` is a here-STRING, one line of data with no terminator to search for."""
+    for token in argv:
+        if token.startswith("<<") and not token.startswith("<<<"):
+            delimiter = token[2:].removeprefix("-")
+            if delimiter:
+                return delimiter
+    return None
+
 
 def forward_problems() -> list[str]:
     """checks/gate.sh really runs that script, through `run`, so its exit code is captured."""
@@ -248,10 +273,18 @@ def forward_problems() -> list[str]:
     routed = []
     buried = []
     depth = 0
+    heredoc_delimiter = None
     for line in gate.splitlines():
+        # DR-133: a heredoc body is DATA. Skip to its terminator before anything else, or the leg
+        # text inside one reads as a command that runs.
+        if heredoc_delimiter is not None:
+            if line.strip() == heredoc_delimiter:
+                heredoc_delimiter = None
+            continue
         argv = tokenize(line)
         if not argv:
             continue
+        heredoc_delimiter = _heredoc_delimiter(argv)
         command = argv[2:]  # argv[1] is run()'s label; everything after it is the command
         shaped = (
             argv[0] == "run"
@@ -267,14 +300,18 @@ def forward_problems() -> list[str]:
         elif shaped:
             buried.append(line.strip())
         depth += sum(1 for t in argv if t in _OPENERS) - sum(1 for t in argv if t in _CLOSERS)
+        # DR-133: brace groups nest exactly like the keyword structures — a function body is the
+        # common one, and a leg inside a function nobody calls never executes.
+        depth += argv.count(_BRACE_OPEN) - argv.count(_BRACE_CLOSE)
         depth = max(depth, 0)  # an unbalanced closer never retro-unlocks earlier acceptance
     if routed:
         return []
     if buried:
         return [
-            f"checks/gate.sh runs '{SCRIPT}' only inside a shell control structure ({buried[0]!r}) "
-            f"— a wrapped leg (if false; then ... fi) tokenizes identically but may never execute. "
-            f"The routing must be an unconditional top-level `run` leg."
+            f"checks/gate.sh runs '{SCRIPT}' only inside a nested scope ({buried[0]!r}) — a leg "
+            f"wrapped in a control structure (if false; then ... fi) or buried in a function body "
+            f"nobody calls tokenizes identically but may never execute. The routing must be an "
+            f"unconditional top-level `run` leg."
         ]
 
     # Name the near-misses. The whole point of this rewrite is that a line CONTAINING the script

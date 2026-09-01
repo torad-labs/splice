@@ -18,9 +18,11 @@ import splice.spi.TurnWatchdog
 /** The per-turn collaborators + data the drive needs, grouped so the drive signature stays one
  *  cohesive argument (they are all created together per request inside the SSE writer). */
 internal data class TurnDrive(
-    val bodyJson: String,
-    /** The same request as [bodyJson], kept typed so reasoning-continuation folding can extend its
-     *  `input` and re-POST without re-parsing (non-fold turns never read it). */
+    /** The upstream request, typed. This IS the wire: the round loop serializes it per round
+     *  (RoundStrategy) and reasoning-continuation folding extends its `input` and re-POSTs without
+     *  re-parsing. DR-168: a pre-serialized String twin used to sit beside it — dispatch never read
+     *  it, so a test pinning it would have pinned nothing; HeadServerIntegrationTest pins the bytes
+     *  the mock upstream decodes instead. */
     val requestBody: JsonObject,
     val meta: TurnMeta,
     val emitter: TurnTerminal,

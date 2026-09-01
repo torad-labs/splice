@@ -163,7 +163,6 @@ class TurnEndingAccountingTest {
         }
 
         suspend fun drive(emitter: TurnTerminal = DeadClientTerminal()): TurnDrive = TurnDrive(
-            bodyJson = "{}",
             requestBody = buildJsonObject { },
             meta = TurnMeta(
                 compact = false,

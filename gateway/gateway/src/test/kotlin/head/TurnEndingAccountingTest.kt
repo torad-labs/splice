@@ -255,6 +255,44 @@ class TurnEndingAccountingTest {
         }
     }
 
+    // DR-125 (review 2026-08-31, codex): the permanent DR-125 arms all live at the RUNNERS —
+    // they prove FoldRunner/ReanchorRunner emit a ClientAbandoned carrying the absorbed rounds'
+    // usage. None of them reaches finishTurn, so deleting the production ClientAbandoned
+    // stampSalvaged call left every one of them green: an abandoned turn's real billed tokens
+    // could stop reaching UsageStore and perf entirely with the wall green. Same hole DR-129
+    // closed for Success, one outcome over. This drives the real finish path.
+    @Test
+    fun `a ClientAbandoned turn stamps its salvaged usage - DR-125`() {
+        val rig = Rig("dr125-abandoned")
+        val store = UsageStore(tmp.resolve("usage-dr125.json"), tmp.resolve("rl-dr125.json"))
+        val finish = TurnFinish(
+            clock = ElapsedClock { 5L },
+            log = rig.log,
+            usageStamp = TurnUsageStamp(store, rig.log, rig.telemetry),
+            health = rig.health,
+            telemetry = rig.telemetry,
+        )
+        val abandoned = TurnOutcome.ClientAbandoned(
+            salvagedUsage = Usage(inputTokens = 310, outputTokens = 64, cachedTokens = 11),
+        )
+        runBlocking {
+            val drive = rig.drive()
+            try {
+                finish.finishTurn(drive, abandoned)
+                val counters = drive.perf.snapshot().counters
+                assertEquals(64L, counters["out_tokens"], "the abandoned turn's burned output must reach perf")
+                assertEquals(310L, counters["in_tokens"], "and its input")
+                assertEquals(
+                    64,
+                    store.readState().outputTokens5h,
+                    "the usage store must receive tokens the vendor already billed for an abandoned turn",
+                )
+            } finally {
+                drive.slot.release()
+            }
+        }
+    }
+
     @Test
     fun `upstream-failed records perf + provider health despite a dead client - DR-128`() {
         val rig = Rig("dr128-upstream")

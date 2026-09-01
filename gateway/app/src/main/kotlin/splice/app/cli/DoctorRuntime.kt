@@ -7,9 +7,7 @@ package splice.app.cli
 
 import splice.app.DaemonProbe
 import splice.core.config.StatePaths
-import splice.core.util.Cancellables
 import splice.core.util.EnvReader
-import java.nio.file.Files
 
 /** The doctor runtime section as a constructed collaborator (Kotlin style law, 2026-08-15: main
  *  sources carry no top-level functions). Stateless — DoctorCommand builds one and asks it; every
@@ -26,10 +24,16 @@ internal class DoctorRuntime {
         // Read the key ONCE (review #94, F154): the old guard-and-use double read raced key rotation —
         // a key emptying between reads threw checkNotNull, and `guarded` printed a FAIL row,
         // contradicting this section's own contract that an unreadable key degrades to INFO.
-        val key = readMgmtKey(statePaths)
+        // DR-174: the mirror of the restart defect. This section's private reader collapsed the
+        // same two states, and then rendered BOTH as "mgmt-key unreadable" — so a fresh box that
+        // has simply never minted a key was told its key could not be read. Still one read (review
+        // #94, F154 above); the shared reader just returns which of the two it found.
+        val read = AdminSupport.readMgmtKey(envReader)
+        val key = (read as? MgmtKeyRead.Present)?.key
         val skip = when {
             !snapshot.running -> "skipped (daemon stopped)"
-            key == null -> "skipped (mgmt-key unreadable)"
+            read is MgmtKeyRead.Unreadable -> "skipped (mgmt-key unreadable: ${read.reason})"
+            key == null -> "skipped (mgmt-key not minted yet)"
             else -> null
         }
         if (skip != null) return listOf(DoctorCheck("runtime", CheckStatus.INFO, skip))
@@ -37,10 +41,6 @@ internal class DoctorRuntime {
             ?: return listOf(DoctorCheck("runtime", CheckStatus.INFO, "skipped (/api/heads unreachable)"))
         return heads.flatMap { h -> headRuntimeRows(h, statePaths) }
     }
-
-    private fun readMgmtKey(statePaths: StatePaths): String? =
-        Cancellables.runCatchingCancellable { Files.readString(statePaths.mgmtKeyFile).trim() }
-            .getOrNull()?.takeIf { it.isNotEmpty() }
 
     internal fun headRuntimeRows(
         h: DaemonProbe.HeadRuntime,

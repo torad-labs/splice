@@ -112,6 +112,35 @@ class DoctorRuntimeSectionTest {
         }
     }
 
+    // DR-174: the runtime section held its own private mgmt-key reader that collapsed absence and
+    // denied access, and then rendered BOTH as "skipped (mgmt-key unreadable)". So a live daemon on
+    // a box that has simply never minted a key told the operator the key could not be READ — the
+    // mirror of the restart defect, pointing at permissions on a file that is not there. The state
+    // dir is deliberately readable here: the ONLY thing wrong is that the key does not exist yet.
+    @Test
+    fun `a live daemon with no key minted says so, not unreadable - DR-174`(@TempDir tmp: Path) {
+        val server = com.sun.net.httpserver.HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        val version = splice.core.GATEWAY_VERSION
+        server.createContext("/health") { ex ->
+            val b = """{"ok":true,"version":"$version","heads":0,"readyHeads":0,"failedHeads":0}""".toByteArray()
+            ex.sendResponseHeaders(200, b.size.toLong())
+            ex.responseBody.use { it.write(b) }
+        }
+        server.start()
+        try {
+            val env = baseEnv(tmp, server.address.port)
+            Files.delete(tmp.resolve("state").resolve("mgmt-key"))
+            val (_, out) = runDoctor(env)
+            assertTrue(out.contains("not minted yet"), "an unminted key must be named as such:\n$out")
+            assertTrue(
+                !out.contains("mgmt-key unreadable"),
+                "a key that was never written is not a key that cannot be read:\n$out",
+            )
+        } finally {
+            server.stop(0)
+        }
+    }
+
     @Test
     fun `runtime section is INFO-skipped when the daemon is stopped - JW-05`(@TempDir tmp: Path) {
         val freePort = ServerSocket(0).use { it.localPort }

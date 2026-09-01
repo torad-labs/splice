@@ -37,13 +37,16 @@ internal class RestartCommand {
         return started
     }
 
-    private fun stopIfRunning(port: Int, tomlPorts: List<Int>): Boolean {
+    // envReader is threaded (the splitBrainChecks / AdminSupport.controlPort idiom) so the stop
+    // decision and its message are drivable against a temp CLAUDEX_STATE_DIR — DR-174's arms drive
+    // THIS function, not the helper under it.
+    internal fun stopIfRunning(
+        port: Int,
+        tomlPorts: List<Int>,
+        envReader: EnvReader = EnvReader(System::getenv),
+    ): Boolean {
         val running = DaemonProbe.healthVersion(port) ?: return true
-        val key = AdminSupport.mgmtKey()
-        if (key == null) {
-            println("splice: mgmt-key not found at ${StatePaths().mgmtKeyFile} — can't stop the daemon")
-            return false
-        }
+        val key = stopKeyOrExplain(envReader) ?: return false
         val scope = stopScope(DaemonProbe.headPorts(port, key), tomlPorts)
         if (scope.degraded) {
             println(
@@ -55,6 +58,29 @@ internal class RestartCommand {
         println("splice: stopping daemon $running on :$port…")
         return daemonStop.stopDaemon(port, key, scope.ports).also { stopped ->
             if (!stopped) println("splice: the daemon did not stop — terminate it manually and retry")
+        }
+    }
+
+    /** DR-174: the stop key, or null having SAID which of the two states it is.
+     *
+     *  This printed "mgmt-key not found at <path>" for a key sitting at 0000 as well as for one
+     *  never minted, because AdminSupport.mgmtKey collapsed both into null. The remedies are
+     *  opposites — one chmod versus a re-mint the operator cannot even perform while the daemon
+     *  holds the old key in memory — so an operator following the message on the unreadable path
+     *  was sent to fix the wrong thing, on a verb whose whole job is to stop a running daemon. */
+    private fun stopKeyOrExplain(envReader: EnvReader): String? {
+        val keyFile = StatePaths(envReader = envReader).mgmtKeyFile
+        return when (val read = AdminSupport.readMgmtKey(envReader)) {
+            is MgmtKeyRead.Present -> read.key
+            is MgmtKeyRead.Unreadable -> null.also {
+                println(
+                    "splice: mgmt-key at $keyFile is unreadable (${read.reason}) — can't stop the " +
+                        "daemon. Fix the file's permissions; it may exist, so nothing needs re-minting.",
+                )
+            }
+            is MgmtKeyRead.Absent -> null.also {
+                println("splice: mgmt-key not found at $keyFile — can't stop the daemon")
+            }
         }
     }
 
@@ -75,10 +101,17 @@ internal class RestartCommand {
         envReader: EnvReader,
     ): List<DoctorCheck> {
         if (!snapshot.running) return emptyList()
-        val key = AdminSupport.mgmtKey(envReader)
+        // DR-174: "no mgmt-key" was also this check's word for a key it simply could not read, so
+        // the flagship split-brain diagnosis blamed a missing file on a box where one exists.
+        val read = AdminSupport.readMgmtKey(envReader)
+        val key = (read as? MgmtKeyRead.Present)?.key
         val daemonSees = key?.let { DaemonProbe.authPresence(snapshot.port, it) }
         if (daemonSees == null) {
-            val reason = if (key == null) "no mgmt-key" else "daemon /api/auth unreachable"
+            val reason = when {
+                read is MgmtKeyRead.Unreadable -> "mgmt-key unreadable (${read.reason}) — fix its permissions"
+                key == null -> "no mgmt-key"
+                else -> "daemon /api/auth unreachable"
+            }
             return listOf(DoctorCheck("daemon-auth", CheckStatus.WARN, "daemon-side auth check skipped: $reason"))
         }
         return heads.filter { it.present && it.envVar != null && daemonSees[it.key] == false }.map { auth ->

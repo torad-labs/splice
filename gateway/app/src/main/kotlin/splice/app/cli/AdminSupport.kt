@@ -116,9 +116,34 @@ internal object AdminSupport {
 
     fun openUrl(url: String): Boolean = LoginIo().openBrowser(url)
 
-    fun mgmtKey(envReader: EnvReader = EnvReader(System::getenv)): String? =
-        runCatching { Files.readString(StatePaths(envReader = envReader).mgmtKeyFile).trim() }
-            .getOrNull()?.takeIf { it.isNotEmpty() }
+    /** DR-174: the mgmt-key read, with absence and denied access kept apart.
+     *
+     *  This replaced `mgmtKey(): String?`, which collapsed both into null — every caller then had to
+     *  invent a sentence for a state it could not distinguish, and all three invented the wrong one.
+     *  Returning the distinction rather than a nullable is what stops the next caller re-deriving it;
+     *  the old accessor is gone rather than kept beside this one, so there is no longer a shape that
+     *  can silently lose the difference.
+     *
+     *  Mirrors DoctorHeadChecks.mgmtKeyCheck (DR-41a): a definitive NoSuchFileException is the only
+     *  positive evidence of absence, and an empty file is treated as absent because MgmtKey.ensure
+     *  writes the key and the path exists only once minted — a zero-byte file is a half-written
+     *  mint, not a permissions problem. */
+    fun readMgmtKey(envReader: EnvReader = EnvReader(System::getenv)): MgmtKeyRead {
+        val path = StatePaths(envReader = envReader).mgmtKeyFile
+        val attempt = Cancellables.runCatchingCancellable { Files.readString(path).trim() }
+        val failure = attempt.exceptionOrNull()
+        if (failure != null) {
+            return if (failure is java.nio.file.NoSuchFileException &&
+                !Files.exists(path, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+            ) {
+                MgmtKeyRead.Absent
+            } else {
+                MgmtKeyRead.Unreadable(SafeFailureText.render(failure))
+            }
+        }
+        val key = attempt.getOrDefault("")
+        return if (key.isEmpty()) MgmtKeyRead.Absent else MgmtKeyRead.Present(key)
+    }
 
     fun home(): Path = Paths.get(System.getProperty("user.home"))
 

@@ -14,8 +14,16 @@ internal class DashboardCommand {
             return false
         }
         val url = "http://127.0.0.1:$port"
-        AdminSupport.mgmtKey()?.let {
-            println("splice: dashboard key (paste if prompted): $it")
+        // DR-174: the silent member of the class. An unreadable key printed NOTHING here, so the
+        // dashboard prompted for a key the operator had no way to learn they already own — the
+        // absent case is legitimately silent (nothing to paste yet), the unreadable one is not.
+        when (val read = AdminSupport.readMgmtKey()) {
+            is MgmtKeyRead.Present -> println("splice: dashboard key (paste if prompted): ${read.key}")
+            is MgmtKeyRead.Unreadable -> println(
+                "splice: dashboard key unreadable (${read.reason}) — fix its permissions; " +
+                    "the dashboard will prompt and there is nothing to paste until you do",
+            )
+            is MgmtKeyRead.Absent -> Unit
         }
         if (AdminSupport.openUrl(url)) {
             println("splice: opened $url")

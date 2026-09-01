@@ -219,7 +219,39 @@ class LogsFollowDeltaTest {
         val (after, rest) = pollCapture {
             LogsCommand().followPoll(log, splice.app.LogFileSource(log), next, warned())
         }
-        assertTrue(rest.contains("after the giant"), "lines after the over-long one still arrive: $rest")
+        // Exact, not `contains`: the first fix consumed only the window, so the next poll started
+        // MID-LINE and emitted the giant's remaining bytes as a fake standalone line before this
+        // one. The over-long line must be skipped WHOLE — no fragment may leak.
+        assertEquals(
+            listOf("after the giant"),
+            rest.trim().lines(),
+            "only the following line may appear — no tail fragment of the skipped one: $rest",
+        )
         assertEquals(Files.size(log), after, "and the follow is caught up, not stuck")
+    }
+
+    // DR-135 (review 2026-08-31): the --follow START, the shape the row actually names. The first
+    // fix repaired only followPoll's discontinuity branch, while logs() printed tail() and
+    // followTail independently stat'd Files.size — the same stat-versus-read split one level up,
+    // reached on every --follow start against a torn tail rather than only on a roll.
+    @org.junit.jupiter.api.Test
+    fun `the follow start baselines from what it printed, not a size stat - DR-135`(@TempDir tmp: Path) {
+        val log = tmp.resolve("daemon.log")
+        Files.writeString(log, "shown\ntorn-head") // writer caught mid-line, codex's repro shape
+        val (baseline, shown) = pollCapture {
+            LogsCommand().followStart(splice.app.LogFileSource(log), 50)
+        }
+        assertEquals(listOf("shown"), shown.trim().lines(), "the torn line is withheld at the start too")
+        assertEquals(6L, baseline, "the start baseline is the end of 'shown\\n', not the ${Files.size(log)}-byte stat")
+
+        Files.writeString(log, "-done\n", java.nio.file.StandardOpenOption.APPEND)
+        val (_, completed) = pollCapture {
+            LogsCommand().followPoll(log, splice.app.LogFileSource(log), baseline, warned())
+        }
+        assertEquals(
+            listOf("torn-head-done"),
+            completed.trim().lines(),
+            "the finished line arrives WHOLE — pre-fix the start baseline had eaten its head and printed a bare '-done'",
+        )
     }
 }

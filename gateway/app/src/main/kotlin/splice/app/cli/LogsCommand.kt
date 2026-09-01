@@ -23,18 +23,35 @@ public class LogsCommand {
         val source = LogFileSource(logFile, opts.head?.let { "[$it]" })
 
         // Missing file is not an error (a fresh install has no turns yet) — empty output, exit 0.
-        val head = source.tail(opts.tail)
-        if (head.isNotEmpty()) println(head)
-        if (!opts.follow) return true
-        followTail(logFile, source)
+        if (!opts.follow) {
+            val head = source.tail(opts.tail)
+            if (head.isNotEmpty()) println(head)
+            return true
+        }
+        followTail(logFile, source, followStart(source, opts.tail))
         return true
+    }
+
+    /** DR-135 (review 2026-08-31): the --follow START, which is the shape the row names and the
+     *  first fix missed — it repaired only followPoll's discontinuity branch. `logs()` printed
+     *  `tail()` and then followTail independently stat'd Files.size for its baseline, the same
+     *  stat-versus-read split one level up: tail withholds a torn final line, the stat counts it,
+     *  so the poll loop began PAST bytes nobody had seen. Measured on codex's repro, file
+     *  "shown\ntorn-head": tail prints "shown", the stat baseline is 15, the end of the last
+     *  printed line is 6 — nine unprinted bytes skipped, so the completed line later surfaced as a
+     *  bare "-done". Initial text and initial baseline now come from ONE read, exactly as the
+     *  discontinuity path does. `internal` so the start sequence is testable without the loop. */
+    internal fun followStart(source: LogFileSource, tail: Int): Long {
+        val head = source.tailAt(tail)
+        if (head.text.isNotEmpty()) println(head.text)
+        return head.offset
     }
 
     /** --follow: poll file size; reopen on shrink so a rotation (daemon.log -> daemon.log.1) does
      *  not silently freeze the tail (Main.kt's one-generation roll). Head filtering rides through
      *  LogFileSource on every poll, so a followed per-head view stays filtered across a roll. */
-    private fun followTail(logFile: java.nio.file.Path, source: LogFileSource) {
-        var lastSize = runCatching { Files.size(logFile) }.getOrDefault(0L)
+    private fun followTail(logFile: java.nio.file.Path, source: LogFileSource, startOffset: Long) {
+        var lastSize = startOffset
         // DR-68: a follow that cannot STAT the file must say so once per episode instead of
         // freezing silently; genuine absence (rotation gap) stays the quiet 0.
         val statWarned = java.util.concurrent.atomic.AtomicBoolean(false)

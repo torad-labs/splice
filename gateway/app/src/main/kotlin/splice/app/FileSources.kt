@@ -100,13 +100,59 @@ public class LogFileSource(
 
     private fun readDelta(fromOffset: Long): LogDelta =
         java.nio.channels.FileChannel.open(logFile, java.nio.file.StandardOpenOption.READ).use { ch ->
-            val end = minOf(ch.size(), fromOffset + LOG_TAIL_BYTES)
+            val size = ch.size()
+            val end = minOf(size, fromOffset + LOG_TAIL_BYTES)
             val want = (end - fromOffset).toInt()
-            // `end < ch.size()` means the window was cut by the byte cap, not by EOF — there IS
-            // more file past it. DR-138 needs that to tell "a line still being written" (wait)
-            // from "a line longer than the whole window" (never completes inside it).
-            if (want <= 0) LogDelta("", 0L) else completeLines(readBytes(ch, fromOffset, want), end < ch.size())
+            if (want <= 0) LogDelta("", 0L) else fromWindow(ch, readBytes(ch, fromOffset, want), fromOffset, end, size)
         }
+
+    /** The window holds a newline: ordinary complete lines. It does not, but ended at EOF: the
+     *  ordinary torn tail — wait. It does not and there is MORE FILE past it: the line is longer
+     *  than one window and can never complete inside it (DR-138). */
+    private fun fromWindow(
+        ch: java.nio.channels.FileChannel,
+        bytes: ByteArray,
+        fromOffset: Long,
+        end: Long,
+        size: Long,
+    ): LogDelta {
+        val lastNewline = bytes.indexOfLast { it == NEWLINE_BYTE }
+        return when {
+            lastNewline >= 0 -> completeLines(bytes, lastNewline)
+            end < size -> skipOverlongLine(ch, fromOffset, end, size)
+            else -> LogDelta("", 0L)
+        }
+    }
+
+    /** DR-138 (review 2026-08-31): skip the over-long line WHOLE. The first fix consumed just the
+     *  window, which left the next poll starting mid-line and emitting the line's tail as a fake
+     *  standalone entry — codex measured `[xxxxxxxxxx, after the giant]`. Consuming through the
+     *  line's own newline means no fragment can leak. If the file ends with no newline the line is
+     *  still being written: consume nothing and wait, which is exactly what a normal torn tail
+     *  does, and the follow resumes whole the moment that newline lands. */
+    private fun skipOverlongLine(
+        ch: java.nio.channels.FileChannel,
+        fromOffset: Long,
+        end: Long,
+        size: Long,
+    ): LogDelta {
+        val lineEnd = nextLineEnd(ch, end, size) ?: return LogDelta("", 0L)
+        val skipped = lineEnd - fromOffset
+        val notice = "[log line exceeds $LOG_TAIL_BYTES bytes — skipped $skipped bytes to keep --follow live]"
+        return LogDelta(notice, skipped)
+    }
+
+    /** The offset just past the first newline at or after [from], or null if [size] arrives first. */
+    private fun nextLineEnd(ch: java.nio.channels.FileChannel, from: Long, size: Long): Long? {
+        var pos = from
+        while (pos < size) {
+            val want = minOf(LOG_TAIL_BYTES.toLong(), size - pos).toInt()
+            val idx = readBytes(ch, pos, want).indexOfFirst { it == NEWLINE_BYTE }
+            if (idx >= 0) return pos + idx + 1
+            pos += want
+        }
+        return null
+    }
 
     private fun readBytes(ch: java.nio.channels.FileChannel, from: Long, want: Int): ByteArray {
         val buf = java.nio.ByteBuffer.allocate(want)
@@ -119,25 +165,10 @@ public class LogFileSource(
         return ByteArray(buf.remaining()).also { buf.get(it) }
     }
 
-    private fun completeLines(bytes: ByteArray, moreBeyondWindow: Boolean): LogDelta {
-        // '\n' is unambiguous in UTF-8, so the byte split is safe before decoding.
-        val lastNewline = bytes.indexOfLast { it == NEWLINE_BYTE }
-        // DR-138: no newline anywhere in the window. If the window ended at EOF this is the
-        // ordinary torn tail — consume nothing and wait for the writer to finish the line. But if
-        // there is MORE FILE past the window, the line is longer than LOG_TAIL_BYTES and can never
-        // complete inside one: consumed stayed 0, followPoll returned its baseline unchanged, and
-        // every later poll re-read the identical window forever. That is a PERMANENT freeze —
-        // every subsequent line lost for the life of the process, re-reading 1 MiB twice a second,
-        // silently. Skipping the over-long line costs one line and keeps the follow alive, which
-        // is the never-below-status-quo side of the trade; the skip is announced in-band, the
-        // DR-68 idiom, because a silent gap in a log follower is its own defect.
-        if (lastNewline < 0) {
-            return if (moreBeyondWindow) {
-                LogDelta("[log line exceeds ${bytes.size} bytes — skipped to keep --follow live]", bytes.size.toLong())
-            } else {
-                LogDelta("", 0L)
-            }
-        }
+    /** [lastNewline] is the index of the window's final newline — the caller has already
+     *  established there is one. '\n' is unambiguous in UTF-8, so the byte split is safe before
+     *  decoding. */
+    private fun completeLines(bytes: ByteArray, lastNewline: Int): LogDelta {
         val text = String(bytes, 0, lastNewline, Charsets.UTF_8)
             .lineSequence()
             .filter { headTag == null || headTag in it }

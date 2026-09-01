@@ -21,6 +21,28 @@ DISPOSITION: every site in scope is COMPLIANT (routed through SafeFailureText.re
 EXEMPT (carries a dated marker naming why that throwable cannot quote state bytes).
 Absence is not a disposition — an undispositioned site fails BY NAME. A blank, placeholder
 or too-short reason is an absence wearing a label and fails the same way.
+
+COVERAGE — what this wall claims, and what it does NOT. Stated because a wall that overstates its
+reach is worse than a narrow one: the overstatement is what stops anyone looking again.
+
+  CLAIMED, anywhere in a scope file: an interpolation of an UNAMBIGUOUS throwable name —
+  `${x.message}`, `$failure`, `$cause`, `${someException}` — and any local bound from
+  `exceptionOrNull()` or `.cause` while that binding is in scope.
+
+  CLAIMED, conditionally: an interpolation of a SHORT name (`it`, `e`, `t`, `ex`, `err`) inside the
+  body of a lambda opened by `onFailure` / `exceptionOrNull` / `recover` / `recoverCatching` /
+  `catch (`, at the column where `it` is still bound to that lambda — not inside a nested lambda,
+  which rebinds it, though nested control blocks keep it.
+
+  NOT CLAIMED. `getOrElse` is overloaded and says nothing about the receiver, so a short name in
+  its lambda is not attributed. Neither half of a POSITIONAL `Result.fold({…},{…})` is attributed,
+  because nothing lexical distinguishes onSuccess from onFailure and `Iterable.fold` shares the
+  spelling; the named form is attributed through `onFailure`. A short name reaching a scope file as
+  a plain function PARAMETER is not attributed. Type information would settle all three; this
+  scanner has none, and guessing is what produced the inversions DR-157 and DR-160 record.
+
+  The honest summary: use a NAMED throwable and the wall sees it wherever it is. The short-name
+  tier is a convenience over the idioms this tree actually uses, never a guarantee.
 """
 import pathlib
 import re
@@ -63,9 +85,28 @@ THROWABLE_SHORT = r"(?:it|e|t|ex|err)"
 # positive and a false negative from one entry. The named form `onFailure = { … }` still matches on
 # `onFailure`, which is how the tree's only real fold site is classified; the POSITIONAL form is
 # undecidable by short name and is failed by name instead (see [POSITIONAL_FOLD]).
+# DR-160: `getOrElse` came OUT on codex-splice's evidence that it does not imply a Throwable
+# receiver — `list.getOrElse(0) { "missing $it" }` binds an Int and `map.getOrElse(k) { … }` binds
+# nothing, so both flagged plain Strings. What remains are combinators whose lambda parameter is a
+# Throwable by the type's signature.
+#
+# `exceptionOrNull` STAYED, though codex also reported it, because the evidence pointed at a
+# different cause. Its false positive was a bare `outcome.exceptionOrNull()` STATEMENT poisoning a
+# later `if (x) {` inside a sibling lambda — the segment between two braces held the combinator, so
+# a CONTROL block was opened as a failure lambda. That is fixed at the brace decision below (a
+# control-flow head is never a lambda), not by deleting the combinator. Deleting it would have cost
+# real coverage: `exceptionOrNull()?.let { … }` genuinely binds the throwable to `it` and is live in
+# KimiRefreshedTokens.
+# A NAMED throwable is still matched anywhere by [RENDERED], so this narrows only the short-name
+# claim — see the module docstring's coverage note.
 FAILURE_CONTEXT = re.compile(
-    r"onFailure|getOrElse|exceptionOrNull|recoverCatching|recover\b|\bcatch\s*\("
+    r"onFailure|exceptionOrNull|recoverCatching|recover\b|\bcatch\s*\("
 )
+
+# DR-160: a DECLARATION is not a call. `fun onFailure(e: Event) { … }` matched the combinator name
+# and made the whole method body a failure span, so `$e` — an Event — was flagged. Declarations are
+# stripped from a segment before the combinator search.
+FUN_DECL = re.compile(r"\bfun\s+\w+\s*\(")
 
 # DR-159: a `{` that opens a CONTROL BLOCK versus one that opens a LAMBDA. Kotlin's `it` is bound
 # per lambda, so a nested lambda inside a failure lambda REBINDS it — `onFailure { names.forEach {
@@ -87,82 +128,101 @@ CONTROL_HEAD = re.compile(
 POSITIONAL_FOLD = re.compile(r"\.fold\s*\(")
 NAMED_FOLD_HALVES = re.compile(r"onFailure\s*=")
 
-# DR-154 / DR-156 / DR-158 — ONE lexer, because every hole in this scanner so far came from
-# reading structure off text that still contained non-syntax, and each targeted patch just moved
-# the hole. codex-splice mutation-proved four classes from the scanner's own source:
-#   * a URL's `//` inside a string ate a one-line failure lambda's closing brace (FALSE POSITIVE —
-#     the direction that gets a wall switched off rather than fixed);
-#   * `}` inside a block comment and inside a char literal popped the brace depth early, closing the
-#     failure span so a genuine raw render below it was missed (FALSE NEGATIVE — a green lie);
-#   * Kotlin block comments NEST, and a boolean in/out flag exits at the INNER `*/`, so
-#     `/* outer /* inner */ still outer } */` leaked its brace. RETRACTION: an earlier version of
-#     this comment claimed four such comments exist in this tree. They do not. That count came from
-#     a crude regex of mine that matched `sessions/*` inside a LINE comment; codex-splice's
-#     ast-grep over real Kotlin multiline_comment nodes finds ZERO, and a second probe of my own
-#     produced a third, equally wrong number. The arm guards the GRAMMAR, which Kotlin defines and
-#     any future comment may use — not an observed instance;
-#   * the render matcher read the RAW line, so prose in a trailing `// … $it …` comment was
-#     reported as runtime interpolation.
+# DR-154 / DR-156 / DR-158 / DR-160 — ONE lexer with a STATE STACK, because every hole in this
+# scanner traced back to reading structure off text that still contained non-syntax, and each
+# targeted patch only moved the hole. codex-splice mutation-proved each class from the source:
+#   * a URL's `//` inside a string ate a one-line failure lambda's closing brace (FALSE POSITIVE);
+#   * `}` inside a block comment and inside a char literal popped the brace depth early, closing a
+#     failure span so a genuine render below it was missed (FALSE NEGATIVE — a green lie);
+#   * Kotlin block comments NEST, and a boolean in/out flag exits at the INNER `*/`;
+#   * the render matcher read the RAW line, so trailing-comment prose counted as interpolation;
+#   * DR-160: a string TEMPLATE's `${ … }` is CODE, and blanking it hid a whole failure lambda
+#     (`"outer ${runCatching { x }.getOrElse { "failed $it" }} tail"`) — including its braces, its
+#     combinators, and the nested string inside it;
+#   * DR-160: `\$it` is an ESCAPED dollar, a literal, not an interpolation.
 #
-# Hence TWO views from one pass. They differ in exactly one respect, and that difference is the
-# point: brace structure must not see string CONTENT, while interpolation matching must see nothing
-# BUT string content.
+# A flat flag cannot express any of that. Kotlin nests string-in-template-in-string arbitrarily, so
+# the lexer carries a STACK and the two views differ in exactly one respect: `code` sees structure
+# and never string CONTENT; `text` sees content and never COMMENTS. Interpolation code appears in
+# BOTH, because it is simultaneously real code and inside a string.
 def lex(lines):
-    """(code, text) per line.
+    r"""(code, text) per line, column-aligned with the raw line.
 
-    `code` blanks strings, char literals and comments — structure only, for brace depth and for
-    deciding which combinator governs a brace.
-    `text` blanks comments but PRESERVES string and char content — for matching an interpolation
-    that is, by definition, inside a string.
+    `code`  — strings, char literals and comments blanked; template `${…}` KEPT. Drives brace depth
+              and decides which combinator governs a brace.
+    `text`  — comments blanked, string/char content KEPT, escaped `\$` neutralised. Drives
+              interpolation matching, which by definition happens inside a string.
 
-    Multi-line aware: block-comment DEPTH and raw-string state carry across lines, which per-line
-    regex stripping structurally cannot do.
+    Every branch emits exactly as many characters as it consumes, so a column index means the same
+    thing in `code`, `text` and the raw line. renders_throwable relies on that alignment.
     """
     code_out, text_out = [], []
-    block = 0        # nesting depth of /* */ — Kotlin nests these
-    in_raw = False
+    stack = []  # innermost last: ("block", depth) | ("str", quote) | ("raw",) | ("char",) | ("interp", depth)
     for raw in lines:
         code, text, i, n = [], [], 0, len(raw)
         while i < n:
-            if block:
-                # Check the OPENER first: `/*/` must not read as an open and a close.
-                if raw.startswith("/*", i):
-                    block += 1
+            top = stack[-1][0] if stack else "code"
+
+            if top == "block":
+                if raw.startswith("/*", i):          # Kotlin block comments NEST
+                    stack[-1] = ("block", stack[-1][1] + 1)
                     code.append("  "); text.append("  "); i += 2
                 elif raw.startswith("*/", i):
-                    block -= 1
+                    depth = stack[-1][1] - 1
+                    if depth:
+                        stack[-1] = ("block", depth)
+                    else:
+                        stack.pop()
                     code.append("  "); text.append("  "); i += 2
                 else:
                     code.append(" "); text.append(" "); i += 1
-            elif in_raw:
-                if raw.startswith('\"\"\"', i):
-                    in_raw = False
-                    code.append("   "); text.append(raw[i:i + 3]); i += 3
+
+            elif top in ("str", "raw", "char"):
+                closer = stack[-1][1] if top == "str" else ("\"\"\"" if top == "raw" else "'")
+                if top != "raw" and raw[i] == "\\" and i + 1 < n:
+                    # An escape. `\$` in particular is a LITERAL dollar and must not read as an
+                    # interpolation in the text view — the whole point of DR-160's second boundary.
+                    code.append("  ")
+                    text.append("  " if raw[i + 1] == "$" else raw[i:i + 2])
+                    i += 2
+                elif raw.startswith("${", i):
+                    stack.append(("interp", 0))
+                    code.append("${"); text.append("${"); i += 2
+                elif raw.startswith(closer, i):
+                    stack.pop()
+                    code.append(" " * len(closer)); text.append(raw[i:i + len(closer)])
+                    i += len(closer)
                 else:
                     code.append(" "); text.append(raw[i]); i += 1
-            elif raw.startswith("//", i):
-                code.append(" " * (n - i)); text.append(" " * (n - i))
-                break
-            elif raw.startswith("/*", i):
-                block = 1
-                code.append("  "); text.append("  "); i += 2
-            elif raw.startswith('\"\"\"', i):
-                in_raw = True
-                code.append("   "); text.append(raw[i:i + 3]); i += 3
-            elif raw[i] in "\"'":
-                quote = raw[i]
-                code.append(" "); text.append(raw[i]); i += 1
-                while i < n:
-                    if raw[i] == "\\":
-                        code.append("  "); text.append(raw[i:i + 2]); i += 2
-                        continue
-                    code.append(" "); text.append(raw[i])
-                    closed = raw[i] == quote
-                    i += 1
-                    if closed:
-                        break
-            else:
-                code.append(raw[i]); text.append(raw[i]); i += 1
+
+            else:  # "code" (top level) or "interp" (inside a template) — both are real code
+                if raw.startswith("//", i):
+                    code.append(" " * (n - i)); text.append(" " * (n - i))
+                    break
+                elif raw.startswith("/*", i):
+                    stack.append(("block", 1))
+                    code.append("  "); text.append("  "); i += 2
+                elif raw.startswith('\"\"\"', i):
+                    stack.append(("raw",))
+                    code.append("   "); text.append(raw[i:i + 3]); i += 3
+                elif raw[i] == '"':
+                    stack.append(("str", '"'))
+                    code.append(" "); text.append(raw[i]); i += 1
+                elif raw[i] == "'":
+                    stack.append(("char",))
+                    code.append(" "); text.append(raw[i]); i += 1
+                elif top == "interp" and raw[i] == "{":
+                    stack[-1] = ("interp", stack[-1][1] + 1)
+                    code.append("{"); text.append("{"); i += 1
+                elif top == "interp" and raw[i] == "}":
+                    if stack[-1][1]:
+                        stack[-1] = ("interp", stack[-1][1] - 1)
+                    else:
+                        stack.pop()  # the template hole closes; we are back inside the string
+                    code.append("}"); text.append("}"); i += 1
+                else:
+                    code.append(raw[i]); text.append(raw[i]); i += 1
+
         code_out.append("".join(code))
         text_out.append("".join(text))
     return code_out, text_out
@@ -217,9 +277,10 @@ def failure_spans(lines):
         for col, ch in enumerate(code):
             if ch == "{":
                 depth += 1
-                if FAILURE_CONTEXT.search(segment):
+                is_block = bool(CONTROL_HEAD.search(segment.rstrip() or " "))
+                if not is_block and FAILURE_CONTEXT.search(FUN_DECL.sub(" ", segment)):
                     stack.append(depth)
-                elif stack and shadow is None and not CONTROL_HEAD.search(segment.rstrip() or " "):
+                elif stack and shadow is None and not is_block:
                     # A lambda (or a local fun body) opening inside a failure lambda. Either way
                     # `it` is no longer the throwable in there.
                     shadow = depth
@@ -239,7 +300,41 @@ def failure_spans(lines):
     return attributable
 
 
-def renders_throwable(lines, idx, spans=None, text_lines=None):
+# DR-160: a throwable BOUND TO A LOCAL, which has no lambda and therefore no failure span at all.
+# codex-splice's fixture — `val e = outcome.exceptionOrNull()` then `log("$e")` — was missed
+# entirely: `e` is too short for [THROWABLE_NAMED], and there is no brace for [failure_spans] to
+# attribute it to. The binding itself is the evidence, so it is tracked directly. Scoped by brace
+# depth, so a later unrelated `e` in a sibling block is not tainted by it.
+THROWABLE_BINDING = re.compile(
+    r"\b(?:val|var)\s+(\w+)\s*(?::[^=]+)?=\s*(?![=])[^;]*?(?:exceptionOrNull\s*\(|\.cause\b)"
+)
+
+
+def throwable_bindings(lines):
+    """Per line: the set of local names currently bound to a throwable and still in scope."""
+    code_lines, _ = lex(lines)
+    live, out, depth = [], [], 0
+    for code in code_lines:
+        found = THROWABLE_BINDING.search(code)
+        # A binding whose own right-hand side routes through the sanitizer holds a rendered
+        # STRING, not a throwable — `val reason = attempt.exceptionOrNull()?.let { render(it) }`
+        # in UninstallCommand.kt is the live shape, and treating it as a throwable was a false
+        # positive this rule created on its first run.
+        if found and COMPLIANT.search(code):
+            found = None
+        for ch in code:
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth = max(0, depth - 1)
+                live = [b for b in live if b[1] <= depth]
+        if found:
+            live.append((found.group(1), depth))
+        out.append({name for name, _ in live})
+    return out
+
+
+def renders_throwable(lines, idx, spans=None, text_lines=None, bindings=None):
     """Does line [idx] interpolate a throwable into text?
 
     DR-158: reads the COMMENT-BLANKED view, not the raw line. A trailing `// … $it …` explaining
@@ -250,9 +345,15 @@ def renders_throwable(lines, idx, spans=None, text_lines=None):
     """
     if text_lines is None:
         text_lines = lex(lines)[1]
+        bindings = throwable_bindings(lines)
     line = text_lines[idx]
     if RENDERED.search(line):
         return True
+    if bindings is None:
+        bindings = throwable_bindings(lines)
+    for name in bindings[idx]:
+        if re.search(r"\$\{\s*%s\s*\}|\$%s\b" % (re.escape(name), re.escape(name)), line):
+            return True
     hit = RENDERED_SHORT.search(line)
     if not hit:
         return False
@@ -265,23 +366,12 @@ def renders_throwable(lines, idx, spans=None, text_lines=None):
     return bool(col < len(flags) and flags[col])
 
 
-def positional_folds(lines):
-    """Line numbers of `.fold(` calls whose failure half is not named — DR-157, fail-closed.
-
-    `fold({ a }, { b })` gives the scanner no way to tell onSuccess from onFailure, and guessing is
-    exactly what inverted the two. Rather than guess or silently skip, the call is reported by name
-    so the author uses the named form the tree already uses, or exempts it.
-    """
-    code_lines, _ = lex(lines)
-    out = []
-    for idx, code in enumerate(code_lines):
-        if not POSITIONAL_FOLD.search(code):
-            continue
-        # The named half may sit on a following line — `.fold(` then `onFailure = { … }`.
-        window = "\n".join(code_lines[idx:idx + EXEMPT_LOOKBACK])
-        if not NAMED_FOLD_HALVES.search(window):
-            out.append(idx)
-    return out
+# DR-160: positional_folds() is GONE. It existed because `.fold(` was in FAILURE_CONTEXT and
+# matched onSuccess, so an unnamed fold had to be failed by name rather than guessed. With short
+# names no longer attributed through fold at all, the polarity question disappears — a NAMED
+# throwable in either lambda is caught by [RENDERED] wherever it sits, and `it` is attributed in
+# neither. The rule was also a live FALSE POSITIVE on `items.fold(0) { acc, x -> … }`, which is
+# Iterable.fold and has no failure half to name.
 
 
 # A site that already obeys the law. Enumerated DELIBERATELY, even though it can never
@@ -314,13 +404,13 @@ def in_scope(text):
     return why
 
 
-def disposition(lines, idx, spans=None, text_lines=None):
+def disposition(lines, idx, spans=None, text_lines=None, bindings=None):
     """COMPLIANT / EXEMPT / the failure reason for the site at 0-based [idx].
 
     A raw render is judged raw even on a line that ALSO calls the sanitizer: one sanitized
     half never launders the other, so a mixed line still needs its own exemption.
     """
-    if not renders_throwable(lines, idx, spans, text_lines):
+    if not renders_throwable(lines, idx, spans, text_lines, bindings):
         return "compliant", None
     for back in range(idx, max(-1, idx - EXEMPT_LOOKBACK - 1), -1):
         found = EXEMPT.search(lines[back])
@@ -352,25 +442,13 @@ def sites(root):
         # drops out structurally instead of via a "does the line START with //" test that a
         # TRAILING comment walked straight past.
         text_lines = lex(lines)[1]
+        bindings = throwable_bindings(lines)
         for idx, line in enumerate(lines):
-            rendered = renders_throwable(lines, idx, spans, text_lines)
+            rendered = renders_throwable(lines, idx, spans, text_lines, bindings)
             if not rendered and not COMPLIANT.search(text_lines[idx]):
                 continue
-            verdict, detail = disposition(lines, idx, spans, text_lines)
+            verdict, detail = disposition(lines, idx, spans, text_lines, bindings)
             out.append((str(path), idx + 1, line.strip(), verdict, detail, markers))
-        # DR-157: an unnamed fold is undecidable, so it is a site with its own failure reason
-        # rather than a silent skip. It still passes through the SAME exemption machinery.
-        for idx in positional_folds(lines):
-            verdict, detail = "bad", (
-                "positional .fold( — name the halves (onSuccess =/onFailure =) so the failure "
-                "lambda can be attributed; the unnamed form is undecidable by this scanner"
-            )
-            for back in range(idx, max(-1, idx - EXEMPT_LOOKBACK - 1), -1):
-                found = EXEMPT.search(lines[back])
-                if found and len(found.group(2).strip()) >= MIN_REASON_CHARS:
-                    verdict, detail = "exempt", found.group(1)
-                    break
-            out.append((str(path), idx + 1, lines[idx].strip(), verdict, detail, markers))
     return out
 
 

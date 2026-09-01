@@ -225,12 +225,14 @@ fun a() {
     outcome.exceptionOrNull()?.let { log("read_error: $it") }
 }'
 
-# 17 — DR-157, the other half: Result.fold takes TWO lambdas and `.fold(` matched the FIRST, so the
-#      SUCCESS `$it` was flagged and the real FAILURE `$it` was missed — one entry producing a false
-#      positive and a false negative at once. Unnamed fold is now failed BY NAME rather than guessed.
-#      The blame must land on the FOLD CALL (line 5), not on either lambda: the old checker also
-#      exited non-zero here, blaming line 6 — the success lambda — so exit code alone proves nothing.
-arm_at "an unnamed fold is reported rather than guessed" 5 "positional .fold(" PosFold.kt 'package p
+# 17 — DR-157/DR-160. `.fold(` used to be in FAILURE_CONTEXT and matched Result.fold's FIRST
+#      lambda (onSuccess), so the success `$it` was a false positive and the real failure `$it` a
+#      false negative — one entry producing both directions. DR-157 answered that by FAILING any
+#      unnamed fold; DR-160 removes even that, because codex-splice showed `items.fold(0) { acc, x
+#      -> … }` is Iterable.fold and has no failure half to name, so the rule was itself a
+#      blocking-gate false positive. With short names no longer attributed through fold at all, the
+#      polarity question disappears: a NAMED throwable is caught in either lambda, `it` in neither.
+arm "an unnamed positional fold is not itself a violation" 0 PosFold.kt 'package p
 import java.nio.file.Files
 fun a() {
     Files.size(p)
@@ -238,6 +240,14 @@ fun a() {
         { names.forEach { log("$it = stored") } },
         { log("failed: $it") },
     )
+}'
+
+# 17a — the Iterable.fold codex-splice used to prove the rule over-fired.
+arm "Iterable.fold is not a failure combinator" 0 IterFold.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    items.fold(0) { acc, x -> acc + x }
 }'
 
 # 17b — CONTROL: the NAMED form is decidable and is exactly what this tree already uses, so it must
@@ -314,6 +324,75 @@ fun a(failure: Throwable) = Files.size(p).onFailure {
     names.forEach { log("$failure") }
 }'
 
+# 20 — DR-160/1, codex-splice: getOrElse is OVERLOADED and does not imply a Throwable receiver.
+#      `list.getOrElse(0) { … }` binds an Int; `map.getOrElse(k) { … }` binds nothing.
+arm "getOrElse does not bind a throwable" 0 GetOrElse.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    list.getOrElse(0) { "missing $it" }
+}'
+
+# 21 — DR-160/2: an ESCAPED dollar is a literal, not an interpolation.
+arm "an escaped dollar is not an interpolation" 0 Escaped.kt 'package p
+import java.nio.file.Files
+fun a() = Files.size(p).onFailure {
+    log("literal \$it stays literal")
+}'
+
+# 22 — DR-160/3: a string TEMPLATE hole is CODE. Blanking it hid an entire failure lambda —
+#      braces, combinator and the nested string inside it — so the render went unseen.
+arm "a failure lambda inside a template hole is still seen" 1 Template.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val s = "outer ${runCatching { x }.onFailure { "failed $it" }} tail"
+}'
+
+# 23 — DR-160/4: a bare exceptionOrNull STATEMENT must not poison a later CONTROL block in a
+#      sibling lambda. Fixed at the brace decision — a control-flow head is never a lambda — rather
+#      than by deleting the combinator, which arm 16b shows would have cost real coverage.
+arm "a bare exceptionOrNull statement does not poison a sibling lambda" 0 Poison.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    names.forEach {
+        outcome.exceptionOrNull()
+        if (x) { log("$it") }
+    }
+}'
+
+# 24 — DR-160/5: a throwable bound to a short LOCAL has no lambda to be attributed to, so the
+#      binding itself is the evidence.
+arm "a throwable bound to a short local is still a render" 1 Bound.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val e = outcome.exceptionOrNull()
+    log("$e")
+}'
+
+# 24b — but a binding already routed through the sanitizer holds a STRING. This is the live shape
+#       in UninstallCommand.kt, and the binding rule flagged it on its first run.
+arm "a sanitized binding is not a throwable" 0 BoundSafe.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+    val reason = outcome.exceptionOrNull()?.let { SafeFailureText.render(it) } ?: "unknown"
+    log("failed ($reason)")
+}'
+
+# 25 — DR-160/6: a DECLARATION is not a call. `fun onFailure(e: Event)` made a whole method body a
+#      failure span, so an Event named `e` was flagged.
+arm "a fun named onFailure is not a failure lambda" 0 FunDecl.kt 'package p
+import java.nio.file.Files
+fun a() {
+    Files.size(p)
+}
+fun onFailure(e: Event) {
+    log("$e")
+}'
+
 # 13 — CONTROL: prose ABOUT the law is a comment and cannot render anything at runtime.
 arm "comment mentioning \$failure is not flagged" 0 A.kt 'package p
 import java.nio.file.Files
@@ -324,5 +403,5 @@ fun a(e: Throwable) = Files.exists(p).also { log("x (${SafeFailureText.render(e)
 ( cd "$ROOT" && python3 checks/config/safe-failure-render.py check . >/dev/null 2>&1 ) \
   || err "the real repository does not pass its own wall"
 
-[ "$fail" = 0 ] && echo "  ✓ safe-failure-render selftest: 32 arms"
+[ "$fail" = 0 ] && echo "  ✓ safe-failure-render selftest: 40 arms"
 exit "$fail"

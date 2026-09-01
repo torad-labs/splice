@@ -108,6 +108,71 @@ class ChatProseToolGrammarTest {
         assertTrue(outcome is splice.core.turn.TurnOutcome.Success)
     }
 
+    // codex-splice, DR-153 review: the arms above could not tell the real fix from a ROUTER-ONLY
+    // one — closing prose in ChatEventRouter just before applyToolCall instead of in
+    // openPendingTool. That mutant passed both deferred-path arms, because their fixtures emit
+    // nothing between the slot's reservation and its actual open, so the premature close was
+    // indistinguishable from the right one. Late prose in that window separates them: the correct
+    // code keeps the prose block live and closes it when the tool is really born, while the mutant
+    // closes an empty gap, lets the prose REOPEN a text block, and then opens the tool over it.
+    @Test
+    fun `prose between a nameless slot and its flush is closed at the real open - DR-153`() = runTest {
+        val sink = Rec()
+        drive(
+            sink,
+            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":{"arguments":"{\"a\":1}"}}]}}]}""",
+            """{"choices":[{"delta":{"content":"late prose"}}]}""",
+            toolStop,
+        )
+        assertEquals(
+            listOf("openText", "text:late prose", "close#0", "openTool:tool", "json:{\"a\":1}", "closeAll"),
+            sink.calls,
+            "the prose block must close as the deferred tool opens, not when its slot was reserved",
+        )
+    }
+
+    // The fourth path to openPendingTool: a slot reserved by deltas that never carried a name, and
+    // adopted by the FINAL message's echo. It reaches the open through applyFinalMessage rather
+    // than applyDelta, so a close placed in the delta router never runs for it at all.
+    @Test
+    fun `prose between a nameless slot and its final echo is closed at the real open - DR-153`() = runTest {
+        val sink = Rec()
+        drive(
+            sink,
+            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":{"arguments":"{\"a\":1}"}}]}}]}""",
+            """{"choices":[{"delta":{"content":"late prose"}}]}""",
+            """{"choices":[{"message":{"tool_calls":[{"id":"t1","function":{"name":"Read"}}]},""" +
+                """"finish_reason":"tool_calls"}]}""",
+        )
+        assertEquals(
+            listOf("openText", "text:late prose", "close#0", "openTool:Read", "json:{\"a\":1}", "closeAll"),
+            sink.calls,
+            "the final-echo open must close the prose block it opens over",
+        )
+    }
+
+    // The OTHER half of the late-prose drop, and it was entirely unpinned: DR-153 guards
+    // applyDeltaProse with hasToolUse, and foldFinalProse identically — but only the delta guard
+    // had an arm, so making the final one unconditional passed the whole chat suite. A vendor that
+    // repeats the turn's prose on the final message would then open a text block over the live
+    // tool, which is the exact grammar violation the delta guard exists to prevent.
+    @Test
+    fun `final-message prose after a live tool is dropped, not interleaved - DR-153`() = runTest {
+        val sink = Rec()
+        drive(
+            sink,
+            """{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":""" +
+                """{"name":"Read","arguments":"{\"a\":1}"}}]}}]}""",
+            """{"choices":[{"message":{"content":"final prose"},"finish_reason":"tool_calls"}]}""",
+        )
+        assertEquals(
+            listOf("openTool:Read", "json:{\"a\":1}", "closeAll"),
+            sink.calls,
+            "no text block may open over a live tool on the final-message path either",
+        )
+        assertTrue(sink.calls.none { it.contains("final prose") }, "the dropped prose must not reach the wire")
+    }
+
     // Sibling tools are deliberately NOT closed when the next one opens. OpenAI interleaves
     // arguments across parallel calls, so closing tool 0 to open tool 1 would silently drop tool 0's
     // remaining args — a worse failure than the overlap. Scoped out of DR-153 on purpose.

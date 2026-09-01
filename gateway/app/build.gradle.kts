@@ -52,6 +52,17 @@ tasks.test {
     inputs.file(rootProject.layout.projectDirectory.file("../config/splice.example.toml"))
         .withPropertyName("spliceExampleToml")
         .withPathSensitivity(PathSensitivity.RELATIVE)
+
+    // The arms that enter at a production call site (DR-97 login(), DR-99 runCli()) redirect
+    // `user.home` to a @TempDir, but TopologyLoader.configPath() consults SPLICE_CONFIG and
+    // XDG_CONFIG_HOME BEFORE user.home — so an ambient value in the runner's environment aims
+    // the verb at the operator's own config and the arm fails on its own PREMISE assertion.
+    // That is not hypothetical: green on a machine with neither set, red on CI with
+    // XDG_CONFIG_HOME set, reproduced locally by exporting it (expected /tmp/junit-.../.config,
+    // was ~/.config). Removed here rather than asserted around, because the hermetic JVM covers
+    // the whole CLASS - every future arm that redirects user.home - not just the two that
+    // happen to assert the premise today.
+    environment = environment.filterKeys { it != "XDG_CONFIG_HOME" && it != "SPLICE_CONFIG" }
 }
 
 val repositoryRoot = rootProject.layout.projectDirectory.dir("..")

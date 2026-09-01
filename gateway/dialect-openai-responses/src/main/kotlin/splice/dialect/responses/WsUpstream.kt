@@ -43,6 +43,8 @@ import splice.core.util.LogSink
 public class WsUpstream(
     private val firstEventTimeoutMs: Long = FIRST_EVENT_TIMEOUT_MS,
     private val maxConnections: Int = MAX_CONNECTIONS,
+    /** DR-182: the send half of the pre-commit window, which had no budget at all. */
+    private val sendTimeoutMs: Long = SEND_TIMEOUT_MS,
     private val log: LogSink = LogSink {},
     /** Injectable socket factory — tests script a fake WebSocket without a live server. Receives
      *  the wss URI, the handshake headers, and the listener the socket must feed. */
@@ -52,7 +54,7 @@ public class WsUpstream(
 ) {
     private val logKeys = WsLogKeys()
     private val pool = WsConnectionPool(maxConnections, log, logKeys, connector)
-    private val opener = WsRoundOpener(log, logKeys, firstEventTimeoutMs, pool)
+    private val opener = WsRoundOpener(log, logKeys, firstEventTimeoutMs, pool, sendTimeoutMs)
     private val stream = WsRoundStream(log, logKeys, pool)
 
     /**
@@ -98,4 +100,12 @@ private const val CONNECT_TIMEOUT_MS = 10_000L // same budget as UpstreamClient'
 // response.created is an immediate ack (probed live: arrives instantly even ahead of a
 // long prefill), so a missing first event is a broken round, not a slow model.
 private const val FIRST_EVENT_TIMEOUT_MS = 15_000L
+
+// DR-182: the frame's delivery budget, and until now the one step of a round with no budget at
+// all. Sized against the CONNECT budget rather than the first-event one: both bound a transport
+// write on a live socket, where the only variable is bandwidth — the largest frames observed in
+// the perf log are ~1.5 MB, which is orders of magnitude inside 10s on any link that could have
+// completed the handshake. A model's thinking time is NOT in this window; that is what
+// FIRST_EVENT_TIMEOUT_MS covers, and it starts once this one is satisfied.
+private const val SEND_TIMEOUT_MS = 10_000L
 private const val MAX_CONNECTIONS = 32

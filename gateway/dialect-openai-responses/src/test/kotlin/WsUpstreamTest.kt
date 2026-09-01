@@ -47,6 +47,10 @@ private const val KEY = "conv-1"
 private const val WSS_URL = "wss://chatgpt.com/backend-api/codex/responses"
 private const val FRAME = """{"type":"response.create","input":[]}"""
 private const val BUDGET = 15_000L
+
+// DR-182: deliberately DIFFERENT from BUDGET. The send and the first event are separate budgets,
+// and a test that gave them the same number could not tell which one a fallback was charged to.
+private const val SEND_BUDGET = 3_000L
 private const val CREATED = """{"type":"response.created"}"""
 private const val DELTA = """{"type":"response.output_text.delta","delta":"hi"}"""
 private const val DONE = """{"type":"response.completed"}"""
@@ -155,10 +159,15 @@ private class Fixture {
             socket
         }
 
-    fun start(firstEventTimeoutMs: Long = BUDGET, maxConnections: Int = 32): Fixture {
+    fun start(
+        firstEventTimeoutMs: Long = BUDGET,
+        maxConnections: Int = 32,
+        sendTimeoutMs: Long = SEND_BUDGET,
+    ): Fixture {
         up = WsUpstream(
             firstEventTimeoutMs = firstEventTimeoutMs,
             maxConnections = maxConnections,
+            sendTimeoutMs = sendTimeoutMs,
             log = { log += it },
             connector = connector,
         )
@@ -878,5 +887,52 @@ class WsUpstreamLogHygieneTest {
         assertTrue(flow != null, "round should acquire")
         flow!!.collect { }
         assertSafeLogs(fx, key)
+    }
+}
+
+// DR-182's arms live in their own class rather than the main suite: adding them tipped
+// WsUpstreamTest past detekt's LargeClass threshold, and "the send budget" is a coherent subject
+// of its own — the same split this file already makes for the inbox listener and log hygiene.
+@OptIn(ExperimentalCoroutinesApi::class)
+class WsUpstreamSendBudgetTest {
+
+    // DR-182: the third failure mode, and the one that does not throw. sendText's future completes
+    // when the write reaches the transport, so a peer that stops reading — zero window, a
+    // black-holed connection — leaves it pending forever with nothing raised. The first-event
+    // budget cannot save the round because it is applied AFTER the send returns, so before this
+    // there was no bound in the transport at all: the only one left was the whole-turn totalCap,
+    // and the round burned it instead of degrading to SSE. Unfixed, this arm does not fail fast —
+    // it HANGS until runTest's own timeout, which is the shape of the bug.
+    @Test
+    fun `a send whose future never completes falls back on the SEND budget - DR-182`() = runTest {
+        val fx = Fixture().apply { sendFuture = { CompletableFuture() } }.start()
+        val before = testScheduler.currentTime
+        assertNull(fx.go(), "a stalled send must ride SSE, not hang the turn")
+        assertEquals(
+            SEND_BUDGET,
+            testScheduler.currentTime - before,
+            "a stalled send is charged to the send budget and nothing else",
+        )
+        assertTrue(fx.logged("send failed stalled"), "stalled is its own diagnostic: log=${fx.log}")
+        assertTrue(fx.logged("no delivery in ${SEND_BUDGET}ms"), "the budget it blew must be nameable: ${fx.log}")
+        assertTrue(fx.handed.single().dead.get(), "a stalled send poisons the connection")
+    }
+
+    // The trap, pinned deliberately: charging the stall to firstEventTimeoutMs would look identical
+    // on a fixture where the two budgets are equal, and would silently make a slow-to-deliver frame
+    // wait out the model's whole thinking budget. SEND_BUDGET and BUDGET differ so the arm above
+    // can only pass by using the right one; this one proves the first-event budget still governs
+    // its own step, so DR-182 bounded the send WITHOUT shortening the wait for response.created.
+    @Test
+    fun `the first-event budget is untouched by the send budget - DR-182 trap control`() = runTest {
+        val fx = Fixture().start() // sends fine, never replies
+        val before = testScheduler.currentTime
+        assertNull(fx.go(), "no first event must still ride SSE")
+        assertEquals(
+            BUDGET,
+            testScheduler.currentTime - before,
+            "the wait for response.created is the FIRST-EVENT budget, not the send one",
+        )
+        assertTrue(fx.logged("no first event in ${BUDGET}ms"), "log=${fx.log}")
     }
 }

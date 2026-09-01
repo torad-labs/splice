@@ -117,6 +117,12 @@ DEFAULT = os.path.join(os.path.dirname(__file__), "kotlin-hardening.toml")
 # Verbs that are meaningful with no ledger path (`laws` aggregates across every ledger).
 # Everything else addresses ONE campaign and must be told which.
 PATHLESS_VERBS = frozenset({"laws"})
+# DR-183: one usage string, reachable from BOTH of add's rejection paths — the malformed flag and
+# the missing required one. It was inline at the first, so the second had nothing to print with.
+_ADD_USAGE = (
+    "usage: add --id <ID> --phase <P> --title <T> "
+    "[--files <f1, f2, ...>] [--verify <cmd>] [--status <s>]"
+)
 DEFAULT_WORKSPACES_DB = os.path.expanduser("~/.openclaw/workspaces/workspaces.db")
 DEFAULT_LITELLM_PRICING = os.path.expanduser("~/.openclaw/workspaces/litellm-pricing.json")
 HDR = re.compile(r"^\[\[items?\]\]\s*$")
@@ -4841,6 +4847,55 @@ def cmd_amend_header(path, old, new):
     print("header line amended")
 
 
+def _selftest_fixture_copy(source_ledger, dest):
+    """DR-184: the one way the selftest may take a copy of the ledger it was pointed at.
+
+    Every fixture in the suite is such a copy, so the suite INHERITED that ledger's shape — and
+    the packet/dispatch arms need a campaign name. Two of the ten ledgers in dev/campaigns carry
+    none, so `selftest` passed on eight and failed on two: once on a raw KeyError in the packet
+    arm, once on a clean sys.exit escaping mid-arm out of a redirect_stdout block. A suite whose
+    verdict depends on which campaign you hand it is not a regression suite, and nothing caught
+    the split because no gate leg ran it at all (DR-184's other half).
+
+    Copying THROUGH here is what makes a fixture a fixture: it supplies the field the source may
+    lack. A ledger that already has a name is left exactly as it was, so every existing arm on a
+    named ledger keeps its current subject."""
+    shutil.copy(source_ledger, dest)
+    _selftest_ensure_campaign_name(os.fspath(dest), "selftest-fixture")
+    return dest
+
+
+def _selftest_ensure_campaign_name(fixture_path, name):
+    """DR-184: give a COPIED ledger a campaign name if it has none, so the packet arm's outcome
+    does not depend on which campaign the selftest was pointed at.
+
+    The arm read `packet_manifest["campaign"]["name"]` as a raw subscript, so `selftest` passed on
+    8 of the 10 ledgers in dev/campaigns and died on a KeyError traceback on the other 2 — and
+    nothing noticed, because no gate leg ran it (that is DR-184's other half). Production was never
+    the problem: cmd_packet's own missing-name path is a clean `sys.exit("error: manifest missing
+    campaign name")`. Same remedy as the self-sufficient-target note in the arm itself: the FIXTURE
+    supplies what it needs. An existing name is left alone, so behaviour on named ledgers is
+    unchanged.
+
+    Text, not a TOML round-trip: rewriting the file through a serializer would reorder and reflow
+    every row this suite then asserts on byte ranges. `[campaign]` is a header line to insert
+    under, or a table to append when the ledger has none — appending at EOF is only safe in the
+    second case, which is why the two are distinguished rather than merged.
+    """
+    with open(fixture_path, "rb") as handle:
+        doc = tomllib.load(handle)
+    if (doc.get("campaign") or {}).get("name"):
+        return
+    lines = _read(fixture_path)
+    header = next((i for i, line in enumerate(lines) if line.strip() == "[campaign]"), None)
+    if header is None:
+        lines = lines + ["\n", "[campaign]\n", f'name = "{name}"\n']
+    else:
+        lines = lines[: header + 1] + [f'name = "{name}"\n'] + lines[header + 1 :]
+    with open(fixture_path, "w", encoding="utf-8") as handle:
+        handle.writelines(lines)
+
+
 def cmd_selftest(path):
     """Wraps the real selftest body with TORAD_LEDGER_NOTIFY=off (save/restore) so a selftest
     run — which flips several fixture items to done/BLOCKED — never pokes a real seat.
@@ -4957,7 +5012,7 @@ def _cross_ledger_duplicate_ids() -> dict[str, list[str]]:
 def _cmd_selftest_body(path):
     tmp = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp.close()
-    shutil.copy(path, tmp.name)
+    _selftest_fixture_copy(path, tmp.name)
     cmd_add(tmp.name, "ZZTEST", "Z", "selftest item", "a/**, b/**", "n/a")
     cmd_set_status(tmp.name, "ZZTEST", "in_flight")
     cmd_note(tmp.name, "ZZTEST", "note line one")
@@ -4979,7 +5034,7 @@ def _cmd_selftest_body(path):
 
     tmp_fence = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_fence.close()
-    shutil.copy(path, tmp_fence.name)
+    _selftest_fixture_copy(path, tmp_fence.name)
     cmd_add(tmp_fence.name, "FENCETEST", "F", "fence item", "a/**", "n/a")
     cmd_edit_fence(tmp_fence.name, "FENCETEST", "one/**, two/**")
     lines = _read(tmp_fence.name)
@@ -4997,7 +5052,7 @@ def _cmd_selftest_body(path):
 
     tmp_dirfence = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_dirfence.close()
-    shutil.copy(path, tmp_dirfence.name)
+    _selftest_fixture_copy(path, tmp_dirfence.name)
     # G62: these fixtures deliberately test G32's own bare-directory OVERLAP warning, which
     # requires bare-directory fences to exercise at all — override_bare_dir=True opts each one
     # out of G62's own (separate, unconditional) block, matching a real --override-bare-dir use.
@@ -5032,7 +5087,7 @@ def _cmd_selftest_body(path):
     # scoped to directory-vs-directory collisions only, per the slot.
     tmp_dirfence_file_peer = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_dirfence_file_peer.close()
-    shutil.copy(path, tmp_dirfence_file_peer.name)
+    _selftest_fixture_copy(path, tmp_dirfence_file_peer.name)
     cmd_add(tmp_dirfence_file_peer.name, "DIRFENCEE", "D", "exact file claimant", "shared/sub/exact.kt", "n/a")
     cmd_claim(tmp_dirfence_file_peer.name, "DIRFENCEE", "dir-owner-e", _alive=lambda _sid: False)
     cmd_add(tmp_dirfence_file_peer.name, "DIRFENCEF", "D", "dir vs file peer", "shared/sub/", "n/a", override_bare_dir=True)
@@ -5047,7 +5102,7 @@ def _cmd_selftest_body(path):
     # injectable override — a real seat name could accidentally hit live state on this machine.
     tmp_g30 = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_g30.close()
-    shutil.copy(path, tmp_g30.name)
+    _selftest_fixture_copy(path, tmp_g30.name)
     cmd_add(tmp_g30.name, "G30ITEM", "Q", "qualified identity item", "a/**", "n/a")
 
     # Machine A claims under seat "g30-fixture-seat" with machine-id aaaaaaaa.
@@ -5283,7 +5338,7 @@ def _cmd_selftest_body(path):
     try:
         journal_ledger_dir = Path(tempfile.mkdtemp(prefix="manifest-s34-ledger-"))
         journal_fixture = journal_ledger_dir / "fixture.toml"
-        shutil.copy(path, journal_fixture)
+        _selftest_fixture_copy(path, journal_fixture)
         journal_fixture_script = journal_ledger_dir / "manifest.py"
         shutil.copy(__file__, journal_fixture_script)
 
@@ -5827,7 +5882,7 @@ def _cmd_selftest_body(path):
 
     tmp_verify = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_verify.close()
-    shutil.copy(path, tmp_verify.name)
+    _selftest_fixture_copy(path, tmp_verify.name)
     cmd_add(tmp_verify.name, "VERIFYTEST", "V", "verify item", "a/**", "old verify")
     cmd_edit_verify(tmp_verify.name, "VERIFYTEST", "new verify command")
     lines = _read(tmp_verify.name)
@@ -5840,7 +5895,7 @@ def _cmd_selftest_body(path):
 
     tmp_title = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_title.close()
-    shutil.copy(path, tmp_title.name)
+    _selftest_fixture_copy(path, tmp_title.name)
     cmd_add(tmp_title.name, "TITLETEST", "T", "old title", "a/**", "n/a")
     cmd_edit_title(tmp_title.name, "TITLETEST", "new title with three inversions")
     lines = _read(tmp_title.name)
@@ -5853,7 +5908,7 @@ def _cmd_selftest_body(path):
 
     tmp_packet = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_packet.close()
-    shutil.copy(path, tmp_packet.name)
+    _selftest_fixture_copy(path, tmp_packet.name)
     cmd_add(tmp_packet.name, "PACKETPEER", "P", "peer rm clean", "peer/**", "n/a")
     cmd_claim(tmp_packet.name, "PACKETPEER", "peer-owner", _alive=lambda _sid: False)
     # Self-sufficient packet target: reference ledgers (files=[] everywhere, e.g.
@@ -5934,7 +5989,7 @@ def _cmd_selftest_body(path):
 
     tmp_no_verify = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_no_verify.close()
-    shutil.copy(path, tmp_no_verify.name)
+    _selftest_fixture_copy(path, tmp_no_verify.name)
     cmd_add(tmp_no_verify.name, "PKTNOVERIFY", "N", "missing verify item", "a/**", "n/a")
     lines = _read(tmp_no_verify.name)
     s, e = _find(lines, "PKTNOVERIFY")
@@ -5954,7 +6009,7 @@ def _cmd_selftest_body(path):
 
     tmp_destructive = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_destructive.close()
-    shutil.copy(path, tmp_destructive.name)
+    _selftest_fixture_copy(path, tmp_destructive.name)
     cmd_add(tmp_destructive.name, "PKTDESTRUCTIVE", "D", "rm clean release", "a/**", "rm -rf dist")
     try:
         cmd_packet(tmp_destructive.name, "PKTDESTRUCTIVE")
@@ -5964,7 +6019,7 @@ def _cmd_selftest_body(path):
 
     tmp_apostrophe = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_apostrophe.close()
-    shutil.copy(path, tmp_apostrophe.name)
+    _selftest_fixture_copy(path, tmp_apostrophe.name)
     cmd_add(tmp_apostrophe.name, "APOSTEST", "A", "session's packet title", "a/**", "echo ok")
     apostrophe_buf = io.StringIO()
     with redirect_stdout(apostrophe_buf):
@@ -5976,7 +6031,7 @@ def _cmd_selftest_body(path):
     # emits the packet + records claim intent on a real one.
     tmp_dispatch = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_dispatch.close()
-    shutil.copy(path, tmp_dispatch.name)
+    _selftest_fixture_copy(path, tmp_dispatch.name)
     # (a) uncut ID -> nonzero, naming the fix. This is the antibody the item exists for.
     try:
         cmd_dispatch(tmp_dispatch.name, "NEVERCUTID", "seat-x")
@@ -6012,7 +6067,7 @@ def _cmd_selftest_body(path):
 
     tmp_claim = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_claim.close()
-    shutil.copy(path, tmp_claim.name)
+    _selftest_fixture_copy(path, tmp_claim.name)
     cmd_add(tmp_claim.name, "CLAIMTEST", "C", "claim item", "a/**", "n/a")
     cmd_claim(tmp_claim.name, "CLAIMTEST", "sid-a", _alive=lambda _sid: False)
     lines = _read(tmp_claim.name)
@@ -6104,7 +6159,7 @@ def _cmd_selftest_body(path):
         )
         fixture_manifest = git_repo / "dev" / "campaigns" / "orchestration-product.toml"
         fixture_manifest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(path, fixture_manifest)
+        _selftest_fixture_copy(path, fixture_manifest)
         fixture_script = git_repo / "dev" / "campaigns" / "manifest.py"
         shutil.copy(__file__, fixture_script)
         fixture_toml = git_repo / "dev" / "campaigns" / "fixture.toml"
@@ -6269,7 +6324,7 @@ def _cmd_selftest_body(path):
 
     tmp_notify = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_notify.close()
-    shutil.copy(path, tmp_notify.name)
+    _selftest_fixture_copy(path, tmp_notify.name)
     cmd_add(tmp_notify.name, "NOTIFYTEST", "N", "notify wiring item", "a/**", "n/a")
     notify_calls = []
 
@@ -6289,7 +6344,7 @@ def _cmd_selftest_body(path):
     fixture_script = fixture_campaigns_dir / "manifest.py"
     shutil.copy(__file__, fixture_script)
     fixture_ledger = fixture_campaigns_dir / "fixture-notify.toml"
-    shutil.copy(path, fixture_ledger)
+    _selftest_fixture_copy(path, fixture_ledger)
     cmd_add(fixture_ledger.as_posix(), "NOTIFYTEST", "N", "notify wiring item (canonical fixture)", "a/**", "n/a")
     cmd_add(fixture_ledger.as_posix(), "POINTERTEST", "N", "pointer writer item (canonical fixture)", "a/**", "n/a")
 
@@ -6431,7 +6486,7 @@ def _cmd_selftest_body(path):
     ) if real_root is not None else None
     tmp_pointer_ledger = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_pointer_ledger.close()
-    shutil.copy(path, tmp_pointer_ledger.name)
+    _selftest_fixture_copy(path, tmp_pointer_ledger.name)
     cmd_add(tmp_pointer_ledger.name, "POINTERNONCANON", "P", "non-canonical pointer item", "a/**", "n/a")
     cmd_claim(tmp_pointer_ledger.name, "POINTERNONCANON", "seat-a", _registry_dir=registry_dir, _alive=lambda _sid: False)
     if real_root is not None:
@@ -6459,7 +6514,7 @@ def _cmd_selftest_body(path):
     # (NOTIFYTEST + POINTERTEST above), which would trip the review-debt brake before these
     # dispatch assertions even ran — same fixture_root/fixture_script, a fresh ledger file.
     fixture_dispatch_ledger = fixture_campaigns_dir / "fixture-dispatch.toml"
-    shutil.copy(path, fixture_dispatch_ledger)
+    _selftest_fixture_copy(path, fixture_dispatch_ledger)
     _neutralize_done_items(fixture_dispatch_ledger)
 
     cmd_add(
@@ -6540,7 +6595,7 @@ def _cmd_selftest_body(path):
     )
 
     fixture_debt_ledger = fixture_campaigns_dir / "fixture-debt.toml"
-    shutil.copy(path, fixture_debt_ledger)
+    _selftest_fixture_copy(path, fixture_debt_ledger)
     _neutralize_done_items(fixture_debt_ledger)
     cmd_add(fixture_debt_ledger.as_posix(), "DEBT1", "N", "unreviewed done item one", "debt-a/**", "n/a", status="done")
     cmd_add(fixture_debt_ledger.as_posix(), "DEBT2", "N", "unreviewed done item two", "debt-b/**", "n/a", status="done")
@@ -6570,7 +6625,7 @@ def _cmd_selftest_body(path):
         encoding="utf-8",
     )
     fixture_handover_ledger = fixture_campaigns_dir / "fixture-handover.toml"
-    shutil.copy(path, fixture_handover_ledger)
+    _selftest_fixture_copy(path, fixture_handover_ledger)
     handover_kwargs = {"_registry_dir": registry_dir, "_this_file": fixture_script.as_posix()}
     handover_state_dir = fixture_root / ".claude" / "state"
 
@@ -6767,6 +6822,46 @@ def _cmd_selftest_body(path):
         else:
             raise AssertionError("init overwrote an existing ledger")
         assert born.read_bytes() == stamp, "a refused init altered the ledger anyway"
+
+        # DR-183: `add` printed usage for a MALFORMED flag and tracebacked on an ABSENT one — the
+        # three required keys went into cmd_add as raw subscripts, so a bare `add` (what you type
+        # to find out what the verb wants) died on a KeyError three lines under the comment
+        # forbidding exactly that. Same law as the arms above: a traceback is not a diagnosis.
+        # `wanted` is the WHOLE missing-flag sentence, not just a flag name: the usage line lists
+        # every flag, so `"--title" in message` is satisfied by printing usage alone and cannot
+        # tell "named what is missing" from "printed the menu". Caught by mutating the diagnosis
+        # down to a bare _ADD_USAGE and watching this arm stay green.
+        for label, argv, wanted in (
+            ("bare", ["add"], "add is missing --id, --phase, --title"),
+            ("missing --title", ["add", "--id", "X1", "--phase", "repair"], "add is missing --title"),
+            ("missing --phase", ["add", "--id", "X1", "--title", "t"], "add is missing --phase"),
+        ):
+            try:
+                with redirect_stdout(io.StringIO()):
+                    main(["manifest.py", born.as_posix(), *argv])
+            except SystemExit as exit_code:
+                assert exit_code.code not in (0, None), f"add {label} exited clean"
+                assert "usage: add" in str(exit_code.code), (
+                    f"add {label} must print its usage, not merely fail: {exit_code.code}"
+                )
+                assert wanted in str(exit_code.code), (
+                    f"add {label} must NAME what is missing, not just print the menu: {exit_code.code}"
+                )
+            except BaseException as raw:  # noqa: BLE001 — a traceback is the defect, not the report
+                raise AssertionError(
+                    f"add {label} died undiagnosed ({type(raw).__name__}) — a traceback is not a diagnosis"
+                ) from raw
+            else:
+                raise AssertionError(f"add {label} did not exit at all")
+            assert born.read_bytes() == stamp, f"add {label} was rejected but wrote to the ledger anyway"
+
+        # The control the rejections are measured against: a complete `add` through the same
+        # dispatch still lands, so the guard rejects absence and nothing else.
+        with redirect_stdout(io.StringIO()):
+            main(["manifest.py", born.as_posix(), "add", "--id", "REAL2", "--phase", "X", "--title", "complete"])
+        rows2 = _read(born.as_posix())
+        s2, e2 = _find(rows2, "REAL2")
+        assert 'id = "REAL2"' in "".join(rows2[s2:e2]), "a complete add must still land"
     finally:
         shutil.rmtree(absent_dir, ignore_errors=True)
 
@@ -7119,11 +7214,16 @@ def main(argv):
             # never traceback on an empty pop — an instrument that crashes on its own usage
             # errors trains users to stop asking it questions.
             if not flag.startswith("--") or not rest:
-                sys.exit(
-                    "usage: add --id <ID> --phase <P> --title <T> "
-                    "[--files <f1, f2, ...>] [--verify <cmd>] [--status <s>]"
-                )
+                sys.exit(_ADD_USAGE)
             kw[flag.lstrip("-").replace("-", "_")] = rest.pop(0)
+        # DR-183: the guard above covered the MALFORMED flag and stopped at the doorstep of the
+        # ABSENT one — the three required keys went straight into cmd_add as raw subscripts, so a
+        # bare `add`, or one missing --title, died on a KeyError traceback three lines under the
+        # comment that forbids exactly that. Absence is the commoner mistake of the two (it is what
+        # you get typing the verb to see what it wants), and it got the worse answer.
+        missing = [f"--{k}" for k in ("id", "phase", "title") if not kw.get(k)]
+        if missing:
+            sys.exit(f"error: add is missing {', '.join(missing)}\n{_ADD_USAGE}")
         cmd_add(
             path,
             kw["id"],

@@ -81,9 +81,18 @@ internal class WsRoundDriver(
             //
             // NOT covered, and named rather than left to be discovered: the window INSIDE attempt()
             // — connect, send, and the wait for the first event — has no round job yet, so a stall
-            // there is still owned by the transport's own first-event timeout, which ends it with a
-            // null and rides SSE. That is the status quo and it is bounded; this repair is about
-            // the window after the round is accepted.
+            // there is still owned by the transport's OWN budgets, which end it with a null and
+            // ride SSE. That is the status quo and it is bounded; this repair is about the window
+            // after the round is accepted.
+            //
+            // DR-182: "the transport's own first-event timeout" is what this said, and it was true
+            // of two of those three steps. The send had no budget: sendText's future completes when
+            // the write reaches the transport, so a peer that stops reading left it pending with
+            // nothing thrown, and the first-event budget never started because it is applied after
+            // the send returns. The only remaining bound was the totalCap poller below, so a
+            // stalled send burned the whole upstream timeout and failed the turn instead of
+            // degrading to SSE in seconds. The transport now bounds the send too (SEND_TIMEOUT_MS),
+            // which is what makes this paragraph true as written.
             val round = Job(inputs.turnJob)
             roundJob = round
             round.invokeOnCompletion { cause -> if (cause != null) accepted.abort.abort() }

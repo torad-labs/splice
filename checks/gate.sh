@@ -101,6 +101,11 @@ run "campaign selftest" npm run --silent gate:campaign:selftest
 # about the one artifact whose entire purpose is to outlive the session that wrote it.
 run "campaign ledger floor" python3 checks/campaign-ledger-floor.py --check
 run "campaign ledger floor selftest" bash checks/campaign-ledger-floor-selftest.sh
+# DR-184: and the CLI's own suite, which nothing ran. The leg two lines up named "campaign
+# selftest" is campaign_wall_gate.py's, not manifest.py's — so every arm guarding the instrument
+# that owns campaign memory fired only when a session remembered to type it.
+run "campaign CLI selftest" bash checks/campaign-cli-selftest.sh
+run "campaign CLI selftest canary" bash checks/campaign-cli-selftest-canary.sh
 # Eleven frozen request/response scenarios grade the built Kotlin gateway byte-for-byte against the
 # captured Node oracle. Keeping the replay as a package script without a gate leg left the parity
 # claim entirely opt-in: every other check could pass while none of these fixtures ran.

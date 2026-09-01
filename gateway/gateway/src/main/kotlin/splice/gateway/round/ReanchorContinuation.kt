@@ -15,9 +15,14 @@ internal class ReanchorContinuation(
     private val signals: RunnerSignals,
     private val rounds: RoundSplice,
 ) {
-    /** Whether a Failure is continuable via re-anchor: the reanchor controller is consulted only
-     *  when the watchdog hasn't fired and the client hasn't gone — a watchdog fire never continues;
-     *  its cancellation owns the turn from that point. */
+    /** Whether a Failure is continuable via re-anchor: the reanchor controller is consulted
+     *  whenever the client is still listening.
+     *
+     *  DR-7: the watchdog half of this gate is gone. "A watchdog fire never continues; its
+     *  cancellation owns the turn from that point" was true of a watchdog that cancelled the whole
+     *  TURN — it now cancels one ROUND, so the sentence no longer describes the machine. Keeping
+     *  the veto made a stalled round unsalvageable no matter what it carried. clientGone stays: a
+     *  continuation for a client that hung up is upstream spend with no reader. */
     fun continuationForFailure(
         reanchor: ReanchorController?,
         outcome: TurnOutcome,
@@ -25,7 +30,7 @@ internal class ReanchorContinuation(
         attempt: Int,
     ): JsonObject? =
         (outcome as? TurnOutcome.Failure)
-            ?.takeIf { !signals.watchdogFired() && !signals.clientGone() }
+            ?.takeIf { !signals.clientGone() }
             ?.let { reanchor?.continuationForFailure(ReanchorRound(body, it, attempt)) }
 
     fun searchContinuation(outcome: TurnOutcome, body: JsonObject, searchIndex: Int): JsonObject? =

@@ -396,8 +396,12 @@ class ResponsesReanchorPartialTest {
         assertEquals(42, partial?.usage?.outputTokens)
     }
 
+    // DR-7 REVERSES the arm that stood here ("a watchdog fire carries no partial - its cancellation
+    // owns the turn"). That sentence described a watchdog that cancelled the whole TURN; it now
+    // reaps a single ROUND, so an idle fire is a stall report about a round that still has real
+    // salvage — and withholding it threw away text the client had already been shown.
     @Test
-    fun `a watchdog fire carries no partial - its cancellation owns the turn`() = runTest {
+    fun `an idle watchdog fire carries its partial - the round is reaped, not the turn`() = runTest {
         val outcome = ResponsesStreamTranslator(
             reanchorCtx(fired = WatchdogFired.Idle(idleMs = 1, sawFirstByte = true)),
         ).driveTurn(
@@ -406,7 +410,33 @@ class ResponsesReanchorPartialTest {
             ).asFlow(),
             NullSink(),
         )
-        assertNull((outcome as TurnOutcome.Failure).partial)
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals("text", failure.partial?.bodyText, "an idle stall must keep what the round produced")
+        assertNotNull(
+            controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)),
+            "and that salvage must be enough to earn the continuation",
+        )
+    }
+
+    // The half that did NOT reverse, and the reason the split is not cosmetic: totalCap is the
+    // whole-turn wall. Handing it a partial would let the turn continue past the one budget that
+    // exists to stop it, which is the opposite of what its own name says.
+    @Test
+    fun `a totalCap watchdog fire carries no partial - the whole-turn wall is not continuable`() = runTest {
+        val outcome = ResponsesStreamTranslator(
+            reanchorCtx(fired = WatchdogFired.TotalCap(elapsedMs = 1)),
+        ).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"text"}"""),
+            ).asFlow(),
+            NullSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertNull(failure.partial, "the whole-turn cap must not hand out salvage")
+        assertNull(
+            controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)),
+            "and with no salvage there is nothing to continue from",
+        )
     }
 
     @Test

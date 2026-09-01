@@ -187,8 +187,13 @@ class ReanchorRunnerTest {
         assertTrue(h.finished is TurnOutcome.Failure)
     }
 
+    // DR-7 REVERSES this arm. It used to assert the controller is never consulted after a watchdog
+    // fire — true of a watchdog that cancelled the whole turn, false of one that reaps a single
+    // round. A stalled round is the case most worth continuing: the client is still listening and
+    // the round left real reasoning behind. The bound is the controller's own attempt budget, which
+    // is why this fixture caps at two rather than returning a continuation forever.
     @Test
-    fun `a watchdog fire never continues - its cancellation owns the turn`() = runTest {
+    fun `an idle watchdog fire continues - the round is reaped, not the turn`() = runTest {
         val h = Harness()
         var asks = 0
         ReanchorRunner(
@@ -199,13 +204,14 @@ class ReanchorRunnerTest {
             signals = h.signals(watchdog = true),
         ).run(
             continuationBody(),
-            ReanchorController {
+            ReanchorController { round ->
                 asks++
-                continuationBody()
+                if (round.attempt < 2) continuationBody() else null
             },
         )
-        assertEquals(0, asks, "the controller is never consulted after a watchdog fire")
-        assertEquals(1, h.count("error"))
+        assertEquals(3, asks, "the controller is consulted despite the watchdog fire")
+        assertEquals(1, h.count("error"), "the turn still ends on ONE honest terminal")
+        assertEquals(0, h.count("message_stop"), "never a fabricated clean stop")
     }
 
     @Test

@@ -3,11 +3,13 @@
 // billed for the other's subsystems. Same-package.
 package splice.gateway.head
 
+import kotlinx.coroutines.Job
 import splice.core.perf.PerfKeys
 import splice.core.turn.TurnOutcome
 import splice.spi.Provider
 import splice.spi.TurnSignals
 import splice.spi.UpstreamResponse
+import java.io.IOException
 
 internal class SseRoundConsume(
     private val provider: Provider,
@@ -28,7 +30,22 @@ internal class SseRoundConsume(
         // silent) prefill is judged against firstByteTimeout, not the short streamIdle a prior
         // round's first byte would otherwise pin it to. totalCap still spans the whole turn.
         drive.watchdog.resetFirstByte()
-        val poller = drive.watchdog.launchIn(inputs.scope, drive.slot, inputs.turnJob)
+        // DR-7: the idle watchdog reaps THIS ROUND, not the turn. It used to cancel inputs.turnJob,
+        // which killed driveTurn along with the round — so the translator never returned, the
+        // salvaged reasoning died with it, and the fold loop had nothing left to continue from. The
+        // round job carries no work of its own; it is a cancellation SIGNAL, and the thing it
+        // signals is "stop reading this body". Cancelling the channel with an IOException rather
+        // than a CancellationException is what keeps driveTurn alive: the translator already folds
+        // an IOException into an honest terminal, and the terminal decision then sees the watchdog
+        // sentinel and reports a stall WITH its partial. A CancellationException here would
+        // propagate into the turn coroutine and reproduce the very bug this fixes.
+        //
+        // Parented to turnJob so the reverse direction still holds: a client hang-up or the
+        // whole-turn totalCap cancels the turn, which cancels this, which aborts the read.
+        val roundJob = Job(inputs.turnJob)
+        val body = resp.bodyChannel()
+        roundJob.invokeOnCompletion { cause -> if (cause != null) body.cancel(IOException(REAPED, cause)) }
+        val poller = drive.watchdog.launchIn(inputs.scope, drive.slot, roundJob)
         // Leak wall (review 2026-07-19): the attempt's poller dies on EVERY exit of this
         // block — a torn-then-reissued stream used to leak it into `self`, pinning the
         // admission slot ~streamIdle past turn completion. (The client pinger is whole-turn
@@ -41,7 +58,7 @@ internal class SseRoundConsume(
             // stays for the WS overlay, which runs at most once per round and always FIRST.
             val eventsBase = drive.perfCounter(PerfKeys.EVENTS_IN)
             val capture = ZeroEventCapture()
-            val events = tearAwareEvents.run(drive, resp, capture, inputs.frameEmittedThisRound)
+            val events = tearAwareEvents.run(drive, body, capture, inputs.frameEmittedThisRound)
             val signals = TurnSignals(
                 watchdogFired = { drive.watchdog.fired },
                 clientGone = { drive.channel.clientGone.get() },
@@ -57,6 +74,11 @@ internal class SseRoundConsume(
             )
         } finally {
             poller.cancel()
+            // Completes with no cause on every ordinary exit, so the handler above leaves a healthy
+            // channel alone; a no-op if the watchdog already cancelled it.
+            roundJob.complete()
         }
     }
 }
+
+private const val REAPED = "round reaped by the idle watchdog"

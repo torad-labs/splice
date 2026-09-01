@@ -4,6 +4,7 @@
 // ZeroEventCapture.kt.
 package splice.gateway.head
 
+import io.ktor.utils.io.ByteReadChannel
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.onEach
 import splice.core.perf.PerfKeys
@@ -12,7 +13,6 @@ import splice.spi.ClientFrameEmitted
 import splice.spi.Provider
 import splice.spi.SseReader
 import splice.spi.StreamTornBeforeClient
-import splice.spi.UpstreamResponse
 import java.io.IOException
 
 internal class TearAwareEvents(
@@ -26,12 +26,12 @@ internal class TearAwareEvents(
      *  [StreamTornBeforeClient] (plain RuntimeException) so no translator catch matches. */
     suspend fun run(
         drive: TurnDrive,
-        resp: UpstreamResponse,
+        body: ByteReadChannel,
         capture: ZeroEventCapture,
         frameEmittedThisRound: ClientFrameEmitted,
     ) =
         SseReader().sseJsonEvents(
-            resp.bodyChannel(),
+            body,
             onBytes = { chunkBytes ->
                 drive.slot.touch()
                 drive.watchdog.markByte()
@@ -56,9 +56,21 @@ internal class TearAwareEvents(
         }.catch { e ->
             // Per-round (not per-turn) pre-frame test: a continuation round's early tear is as
             // safely reissuable as a first round's — its own body re-POSTs (code-review 2026-07-24).
-            if (e is IOException && !frameEmittedThisRound()) {
+            //
+            // DR-7 rider: NOT when the watchdog reaped this round. Reaping now aborts the body
+            // channel, which surfaces here as exactly the IOException a transport tear does — so
+            // without this test a round stalled BEFORE its first client frame would enter the G5
+            // reissue path and silently re-POST, racing the salvage-and-continue decision the
+            // terminal outcome is about to make. A stall is not a tear: the socket was fine, the
+            // backend went quiet, and the round has an outcome to report.
+            if (reissuable(e, drive, frameEmittedThisRound)) {
                 throw StreamTornBeforeClient(e)
             }
             throw e
         }
+
+    /** Whether a thrown [e] is a transport tear this round may silently re-POST: an I/O failure,
+     *  before any client frame, that the watchdog did NOT cause. */
+    private fun reissuable(e: Throwable, drive: TurnDrive, frameEmittedThisRound: ClientFrameEmitted): Boolean =
+        e is IOException && !frameEmittedThisRound() && drive.watchdog.fired == null
 }

@@ -57,6 +57,16 @@ internal class WsRoundDriver(
             // onCompletion and poisons its busy lease instead of stranding the connection forever.
             val startingEvents = events.onEach { drive.emitter.ensureStarted() }
             drive.watchdog.resetFirstByte()
+            // DR-7 scope note, deliberate and not an oversight: this path still targets the TURN
+            // job, while the SSE path now reaps a per-round job (SseRoundConsume). Reaping a round
+            // means aborting the byte source under a live translator, and SSE has one to abort —
+            // the response's ByteReadChannel. A WS round's events arrive as an opaque Flow from
+            // WsRoundRunner, which exposes no per-round abort, so giving this path the same
+            // treatment means widening that SPI and every implementation of it. Left as-is because
+            // the behaviour is UNCHANGED here rather than newly wrong: a WS stall still ends the
+            // turn exactly as it did before, and the whole-turn cap still rides launchTotalCap in
+            // driveOneTurn. What a WS turn does not yet get is the salvage-and-continue the SSE
+            // path just earned.
             poller = drive.watchdog.launchIn(inputs.scope, drive.slot, inputs.turnJob)
             return try {
                 roundDrive.drive(inputs, runner, startingEvents).also { reported = true }

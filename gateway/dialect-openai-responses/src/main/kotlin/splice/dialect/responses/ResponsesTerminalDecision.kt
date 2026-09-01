@@ -49,7 +49,7 @@ internal class ResponsesTerminalDecision(
         watchdogFired = ctx.watchdogFired(),
     ).terminalPrecedence(
         onFinished = { payload.successOutcome(state) },
-        onWatchdog = ::watchdogOutcome,
+        onWatchdog = { watchdogOutcome(it, state) },
         onUnfinished = { noCompletionOutcome(state) },
     )
 
@@ -97,7 +97,13 @@ internal class ResponsesTerminalDecision(
             )
         }
 
-    private fun watchdogOutcome(fired: WatchdogFired): TurnOutcome {
+    // DR-7: an IDLE tear carries the round's salvage; a TOTAL-CAP tear does not, and the split is
+    // the whole point. Idle is a STALL DETECTOR — the backend went quiet mid-part, the reasoning
+    // already streamed to the client is real, and re-anchoring on it costs one POST and keeps the
+    // turn. TotalCap is the whole-turn wall: handing it a partial would invite the continuation it
+    // exists to forbid. Before this, BOTH built a Failure with no partial, so a stalled round threw
+    // away text the client had already been shown and could not continue even in principle.
+    private fun watchdogOutcome(fired: WatchdogFired, state: ResponsesTurnState): TurnOutcome {
         val why = when (fired) {
             is WatchdogFired.Idle ->
                 "no completion within the ${ctx.streamIdleMsForMessage / MS_PER_S}s idle cap"
@@ -107,6 +113,10 @@ internal class ResponsesTerminalDecision(
         return TurnOutcome.Failure(
             ErrorType.OVERLOADED,
             "claudex: upstream stream stalled ($why) — aborted; retry",
+            partial = when (fired) {
+                is WatchdogFired.Idle -> payload.partialOrNull(state)
+                is WatchdogFired.TotalCap -> null
+            },
         )
     }
 }

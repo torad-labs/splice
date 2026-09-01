@@ -24,6 +24,10 @@ import splice.core.util.Cancellables
 /** Bound for the test mock's zstd decode — far above any fixture request. */
 private const val MAX_DECOMPRESSED_BYTES = 8 * 1024 * 1024
 
+// DR-7 foldstall: comfortably past the acceptance head's 1s streamIdle, short enough that a
+// wrongly-unreaped turn still fails the test in seconds rather than hanging the suite.
+private const val STALL_SLEEP_MS = 6_000L
+
 // The two summary sections the "foldsummary" scenario streams (both over the 20-char dedup floor):
 // section A is re-titled verbatim by the continuation round, B only ever arrives in round 2.
 const val SUMMARY_SECTION_A: String = "**Analyzing CLI exit and async error handling**"
@@ -186,8 +190,11 @@ class MockChatGptUpstream {
             streamScenario(scenario, ex, body)
         } catch (abort: IOException) {
             // a broken pipe mid-stream is the drip/hold scenarios' EXPECTED client-abort exit
-            if (scenario == "drip" || scenario == "hold") abortedScenarios.add(scenario)
-            check(scenario == "drip" || scenario == "hold") {
+            // DR-7 adds foldstall: the head's idle watchdog reaps the stalled round, so this
+            // server thread wakes from its sleep onto a socket the head already hung up.
+            val expected = scenario == "drip" || scenario == "hold" || scenario == "foldstall"
+            if (expected) abortedScenarios.add(scenario)
+            check(expected) {
                 "unexpected mid-stream I/O failure in scenario '$scenario': ${abort.message}"
             }
         } finally {
@@ -229,6 +236,29 @@ class MockChatGptUpstream {
             """{"type":"response.completed","response":{"id":"rt","status":"completed","output":[],""" +
                 """"usage":{"input_tokens":100,"output_tokens":600,"output_tokens_details":{"reasoning_tokens":516}}}}""",
         )
+    }
+
+    // DR-7: round 1 streams REAL reasoning and then goes silent forever — a mid-part stall, not a
+    // truncation. The head has seen bytes (so the watchdog is on its streamIdle tier) and holds a
+    // partial summary, which is exactly the state the old code threw away: the watchdog cancelled
+    // the whole turn, the outcome carried no partial, and both continuation gates vetoed on
+    // watchdogFired. The sleep outlives the head's idle cap; the write that follows it lands on a
+    // socket the head has already hung up, which is the expected IOException above.
+    private fun foldStalledRound(ex: HttpExchange) {
+        sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_stall"}}""")
+        sse(ex, """{"type":"response.reasoning_summary_text.delta","output_index":0,"delta":"Thinking round one."}""")
+        sse(
+            ex,
+            """{"type":"response.reasoning_summary_text.done","item_id":"rs_stall","output_index":0,""" +
+                """"summary_index":0,"text":"Thinking round one."}""",
+        )
+        sse(
+            ex,
+            """{"type":"response.output_item.done","output_index":0,""" +
+                """"item":{"type":"reasoning","id":"rs_stall","encrypted_content":"ENC-STALL"}}""",
+        )
+        Thread.sleep(STALL_SLEEP_MS)
+        sse(ex, """{"type":"response.output_text.delta","output_index":1,"delta":"NEVER REACHES THE CLIENT"}""")
     }
 
     private fun foldCleanRound(ex: HttpExchange) {
@@ -308,6 +338,7 @@ class MockChatGptUpstream {
             "foldsummary" ->
                 if (isContinuationRound(body)) foldSummaryCleanRound(ex) else foldSummaryTruncatedRound(ex)
             "foldcap" -> foldTruncatedRound(ex)
+            "foldstall" -> if (isContinuationRound(body)) foldCleanRound(ex) else foldStalledRound(ex)
             "multipart" -> {
                 sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_mp"}}""")
                 sse(ex, """{"type":"response.reasoning_summary_part.added","output_index":0}""")

@@ -38,7 +38,12 @@ internal class FoldRounds(
     fun continuationForFailedRound(outcome: TurnOutcome, body: JsonObject, attempt: Int): JsonObject? =
         when {
             reanchor == null || outcome !is TurnOutcome.Failure -> null
-            signals.watchdogFired() || signals.clientGone() -> null
+            // DR-7: the watchdog veto is GONE; clientGone stays. A watchdog fire used to end the
+            // turn here unconditionally, which made the salvage above unreachable by construction.
+            // A stalled round is exactly the case worth continuing — the client is still listening
+            // and the round left real reasoning behind. A client that HAS gone is still never
+            // continued: there is nobody to continue for.
+            signals.clientGone() -> null
             else -> reanchor.continuationForFailure(
                 ReanchorRound(body, outcome.copy(partial = outcome.partial?.copy(bodyText = "")), attempt),
             )

@@ -54,6 +54,13 @@ public class TurnWatchdog(
      *  Only the first-byte tier resets; startedAt/totalCap are untouched. */
     public fun resetFirstByte() {
         sawFirstByte.set(false)
+        // DR-7: also clear a STALE IDLE fire. The sentinel is sticky by design so the terminal
+        // decision can name why a round died, but a salvaged round is followed by another round —
+        // and a sentinel left set makes every later round terminate as "stalled" no matter how
+        // healthy it is, and re-vetoes the continuation gates. Only Idle is cleared, and only by
+        // CAS: TotalCap is a WHOLE-TURN verdict that no new round may erase, and a compareAndSet
+        // against the exact observed value cannot race away a fire landing at this instant.
+        firedRef.get()?.let { if (it is WatchdogFired.Idle) firedRef.compareAndSet(it, null) }
     }
 
     public fun pollInterval(): Duration {
@@ -78,14 +85,13 @@ public class TurnWatchdog(
                 } else {
                     budget.firstByteTimeout.inWholeMilliseconds
                 }
-                val elapsed = clock() - startedAt
-                val breach = when {
-                    elapsed >= budget.totalCap.inWholeMilliseconds -> WatchdogFired.TotalCap(elapsed)
-                    idle >= idleLimit -> WatchdogFired.Idle(idle, first)
-                    else -> null
-                }
-                if (breach != null) {
-                    firedRef.compareAndSet(null, breach)
+                // DR-7: totalCap is NOT sampled here any more. [launchTotalCap] owns the only
+                // whole-turn cancel, and it targets the turn job; this poller now targets a single
+                // ROUND, so raising a TotalCap verdict from here would reap one round and let the
+                // fold loop open the next — spending past the cap under a name that means "stop".
+                // One breach kind per poller, each cancelling the scope it actually owns.
+                if (idle >= idleLimit) {
+                    firedRef.compareAndSet(null, WatchdogFired.Idle(idle, first))
                     target.cancel()
                     return@launch
                 }

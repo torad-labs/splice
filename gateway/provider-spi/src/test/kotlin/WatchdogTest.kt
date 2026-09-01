@@ -43,6 +43,23 @@ class WatchdogTest {
         }
     }
 
+    /** DR-7: [VirtualTicks] never stops, because every loop it was written for exits by FIRING.
+     *  Proving a loop does NOT fire needs the other kind of ticker — one that returns false after
+     *  [max] samples, which is the documented way to stop these loops. Without it the assertion
+     *  "nothing fired" is written as an infinite instant loop, and the test JVM dies of heap
+     *  exhaustion rather than failing. */
+    private class BoundedTicks {
+        var now: Long = 0L
+            private set
+        val clock: () -> Long = { now }
+        private var taken = 0
+        val ticker = Ticker { ms ->
+            now += ms
+            taken += 1
+            taken < BOUNDED_SAMPLES
+        }
+    }
+
     private fun budget(firstByteMs: Long, idleMs: Long, capMs: Long) = WatchdogBudget(
         firstByteTimeout = firstByteMs.milliseconds,
         streamIdle = idleMs.milliseconds,
@@ -93,11 +110,42 @@ class WatchdogTest {
         }
     }
 
+    // DR-7 REVERSES the arm that stood here (`total cap reaps even a lively stream`, via launchIn).
+    // launchIn is now ROUND-scoped: it cancels one round so the turn can salvage and continue. A
+    // whole-turn verdict raised from there would reap a round and let the fold loop open the next
+    // — spending past the one budget whose name means stop — so the cap check moved out entirely.
     @Test
-    fun `total cap reaps even a lively stream`() {
+    fun `launchIn never raises a whole-turn TotalCap - launchTotalCap owns that cancel - DR-7`() {
         runBlocking {
             val gate = InflightGate({ 0 })
             val slot = gate.acquire()
+            val ticks = BoundedTicks()
+            val dog = TurnWatchdog(
+                budget(firstByteMs = 10_000, idleMs = 5_000, capMs = 600),
+                clock = ticks.clock,
+                ticker = ticks.ticker,
+            )
+            val target = launch { delay(10.seconds) }
+            // lively and past first byte: real idle is ~0 against a 5s limit, so Idle cannot fire
+            // and the virtual clock is far past the 600ms cap. Nothing is left that could.
+            slot.touch()
+            dog.markByte()
+            val poller = dog.launchIn(this, slot, target)
+            poller.join()
+            assertNull(dog.fired, "a round-scoped poller must not raise a whole-turn verdict")
+            assertTrue(ticks.now > 600, "the virtual clock really did run past the cap (${ticks.now}ms)")
+            assertTrue(target.isActive, "and the turn it was handed was never cancelled")
+            target.cancel()
+            slot.release()
+        }
+    }
+
+    // The other half: the cap still reaps a stream that is chattering happily. launchTotalCap never
+    // consults the slot, so liveliness cannot buy a turn extra time — which is exactly why it, and
+    // not the idle poller, is the right owner of the whole-turn cancel.
+    @Test
+    fun `the whole-turn cap still reaps a lively stream - DR-7`() {
+        runBlocking {
             val ticks = VirtualTicks()
             val dog = TurnWatchdog(
                 budget(firstByteMs = 10_000, idleMs = 5_000, capMs = 600),
@@ -105,21 +153,16 @@ class WatchdogTest {
                 ticker = ticks.ticker,
             )
             val target = launch {
-                // lively: touch constantly so idle never fires
                 while (true) {
-                    slot.touch()
                     dog.markByte()
                     delay(50)
                 }
             }
-            val poller = dog.launchIn(this, slot, target)
+            val capPoller = dog.launchTotalCap(this, target)
             target.join()
             assertTrue(dog.fired is WatchdogFired.TotalCap, "expected TotalCap, got ${dog.fired}")
-            // liveliness is real, not virtual: the slot was touched microseconds ago, so real idle
-            // is ~0 against a 5s idle limit — the ONLY thing that can have fired is the cap.
-            assertEquals(1_666L, ticks.intervals.first(), "streamIdle/3, coerced into 250ms..15s")
-            poller.cancel()
-            slot.release()
+            assertTrue(target.isCancelled)
+            capPoller.cancel()
         }
     }
 
@@ -180,3 +223,8 @@ class WatchdogTest {
         assertEquals(1_000, TurnWatchdog(budget(1, 3_000, 1)).pollInterval().inWholeMilliseconds)
     }
 }
+
+// DR-7: how many samples [WatchdogTest.BoundedTicks] allows before it stops its loop. Four is well
+// past every cap in this file's budgets, so "nothing fired" is proven against a clock that really
+// did run out rather than one that never got going.
+private const val BOUNDED_SAMPLES = 4

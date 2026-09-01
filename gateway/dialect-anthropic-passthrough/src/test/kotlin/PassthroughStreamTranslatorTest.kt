@@ -808,3 +808,132 @@ class PassthroughServerToolForwardTest {
         )
     }
 }
+
+// DR-163: the block-eviction contract — a duplicate content_block_start at a STILL-OPEN
+// upstream index. Its own class (the file's idiom: PassthroughStopReasonHonestyTest,
+// PassthroughRedactedThinkingTest, PassthroughServerToolForwardTest) because
+// PassthroughStreamTranslatorTest is already at detekt's LargeClass ceiling.
+class PassthroughBlockEvictionTest {
+
+    // DR-163 (dialect sweep, 2026-09-01): onBlockStart overwrote blocks[index] unconditionally, so
+    // a second content_block_start at a STILL-OPEN index evicted the live block map-only — DR-107's
+    // exact defect in the Responses twin. closeAll bounds the wire damage, but synthesis lives in
+    // onBlockStop, which the evicted block never reaches: its thinking shipped UNSIGNED and Claude
+    // Code silently discards an unsigned thinking block. The exactly-once contract became NEVER.
+    @Test
+    fun `a duplicate start at a live thinking index signs the evicted block - DR-163`() = runTest {
+        val sink = Rec()
+        drive(
+            sink,
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}"""),
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"first"}}"""),
+            // no content_block_stop — the upstream reuses the index while block 1 is still open
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"thinking"}}"""),
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"thinking_delta","thinking":"second"}}"""),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"message_stop"}"""),
+        )
+        assertEquals(
+            2,
+            sink.calls.count { it == "sig:splice-synth-v1" },
+            "both thinking blocks must be signed, not just the survivor: ${sink.calls}",
+        )
+        // the evicted block retires BEFORE the replacement opens — never interleaved
+        assertTrue(
+            sink.calls.indexOf("close") < sink.calls.lastIndexOf("openThinking"),
+            "the occupant must close before the new block opens: ${sink.calls}",
+        )
+    }
+
+    // The evicted block must also be CLOSED, not merely signed — an orphan left open relies on the
+    // end-of-turn closeAll sweep, which emits its stop out of order after every later block.
+    @Test
+    fun `a duplicate start at a live tool index closes the evicted block - DR-163`() = runTest {
+        val sink = Rec()
+        drive(
+            sink,
+            ev(
+                """{"type":"content_block_start","index":0,""" +
+                    """"content_block":{"type":"tool_use","id":"t1","name":"Read"}}""",
+            ),
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"input_json_delta","partial_json":"{}"}}"""),
+            ev(
+                """{"type":"content_block_start","index":0,""" +
+                    """"content_block":{"type":"tool_use","id":"t2","name":"Write"}}""",
+            ),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"message_stop"}"""),
+        )
+        assertEquals(2, sink.calls.count { it == "close" }, "both tool blocks must close: ${sink.calls}")
+        assertEquals(
+            listOf("openTool:Read", "json:{}", "close", "openTool:Write", "close", "closeAll"),
+            sink.calls,
+            "the evicted tool block retires in place, before its replacement opens",
+        )
+    }
+
+    // CONTROL (green both sides): the guard keys on a LIVE occupant, not on index history. An index
+    // legitimately reused after its own content_block_stop must open clean — PT-006 already removed
+    // the entry, so no second close may be invented for a block that already retired.
+    @Test
+    fun `an index reused after a proper stop opens clean - DR-163 control`() = runTest {
+        val sink = Rec()
+        drive(
+            sink,
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""),
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"a"}}"""),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""),
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"b"}}"""),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"message_stop"}"""),
+        )
+        assertEquals(
+            listOf("openText", "text:a", "close", "openText", "text:b", "close", "closeAll"),
+            sink.calls,
+        )
+    }
+
+    // CONTROL (green both sides): an IGNORED occupant owns no wire, so evicting it must emit
+    // NOTHING. A guard that closed unconditionally would invent a close for a block never opened.
+    @Test
+    fun `evicting a wireless ignored block emits nothing - DR-163 control`() = runTest {
+        val sink = Rec()
+        drive(
+            sink,
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"who_knows"}}"""),
+            ev("""{"type":"content_block_start","index":0,"content_block":{"type":"text"}}"""),
+            ev("""{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"real"}}"""),
+            ev("""{"type":"content_block_stop","index":0}"""),
+            ev("""{"type":"message_stop"}"""),
+        )
+        assertEquals(listOf("openText", "text:real", "close", "closeAll"), sink.calls)
+    }
+
+    // CONTROL (green both sides): KIMI BYTE-IDENTITY. A well-formed turn never trips the guard, so
+    // the whole wire sequence must be unchanged by this repair — the same list the primary
+    // full-turn arm pins, re-asserted here as the DR-163 no-op proof.
+    @Test
+    fun `a well-formed turn is untouched by the eviction guard - DR-163 control`() = runTest {
+        val sink = Rec()
+        PassthroughStreamTranslator(ctx(), KIMI).driveTurn(fullTurnEvents().asFlow(), sink)
+        assertEquals(
+            listOf(
+                "openThinking",
+                "think:th1",
+                "think:th2",
+                "sig:splice-synth-v1",
+                "close",
+                "openText",
+                "text:Hello",
+                "close",
+                "openTool:run",
+                "json:{\"a\":",
+                "json:1}",
+                "close",
+                "closeAll",
+            ),
+            sink.calls,
+        )
+    }
+}

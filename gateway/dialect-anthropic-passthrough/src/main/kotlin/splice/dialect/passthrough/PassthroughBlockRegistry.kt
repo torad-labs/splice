@@ -47,6 +47,17 @@ internal class PassthroughBlockRegistry(
 
     internal suspend fun onBlockStart(evt: JsonObject, sink: WireSink) {
         val index = JsonScalars.int(evt, "index") ?: return
+        // DR-163: a second content_block_start at a STILL-OPEN index used to overwrite the map
+        // entry outright — DR-107's exact defect ("an added at an already-open output_index EVICTED
+        // the live block map-only"), fixed in the Responses dialect and never swept in the
+        // passthrough twin, the dialect whose whole job is re-indexing arbitrary upstream blocks.
+        // closeAll bounds the WIRE damage (the orphan is closed at end of turn), but signature
+        // synthesis lives in [onBlockStop], which an evicted block never reaches: on the
+        // synthesizing profile its thinking content shipped UNSIGNED and Claude Code silently
+        // discards an unsigned thinking block. That is the exactly-once contract degrading to
+        // NEVER — the reason this file holds registry, latch and open/close together. Retire the
+        // occupant through the one sanctioned path before the new block takes the index.
+        blocks.remove(index)?.let { retire(it, sink) }
         val cb = evt["content_block"] as? JsonObject
         blocks[index] = when (JsonScalars.strOrEmpty(cb?.get("type"))) {
             "text" -> Block(Kind.TEXT, sink.openText())
@@ -172,7 +183,14 @@ internal class PassthroughBlockRegistry(
         // PT-006: remove on close — a delta arriving after this index's content_block_stop must
         // find no entry (and drop honestly via onBlockDelta's unmapped-index path), not apply
         // itself to a logically closed block.
-        val block = blocks.remove(JsonScalars.int(evt, "index") ?: return) ?: return
+        retire(blocks.remove(JsonScalars.int(evt, "index") ?: return) ?: return, sink)
+    }
+
+    /** The ONE sanctioned retirement path for an open block: synthesize-at-most-once, then close.
+     *  Statement order here is byte-pinned by the translator goldens and is unchanged from when it
+     *  was inlined in [onBlockStop]. Shared with [onBlockStart]'s DR-163 eviction guard on purpose
+     *  — a SECOND close path is precisely how the exactly-once signature contract becomes twice. */
+    private suspend fun retire(block: Block, sink: WireSink) {
         val wire = block.wire ?: return // ignored block: nothing was opened
         val unsignedThinking = block.kind == Kind.THINKING && !block.signatureSeen
         if (quirks.synthesizeSignatures && unsignedThinking) {

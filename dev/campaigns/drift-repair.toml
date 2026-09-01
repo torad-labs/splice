@@ -2747,17 +2747,45 @@ verify = "cd gateway and ./gradlew --no-daemon :core:test :core:detekt --rerun-t
 id = "DR-179"
 phase = "repair"
 title = "LoginOutcomeFile maps two DISTINCT head keys onto one receipt path (grok-splice finding L). The sanitizer replaces every character outside A-Za-z0-9_- with an underscore, so head a.b and head a_b both become login-outcome-a_b.txt and one head reads the other head login result. The existing test covers only the ../../etc/passwd escape, not collision. Fix: an injective encoding of the head key, proven by a red-on-unfixed arm asserting the two keys produce different paths."
-files = ["gateway/core/src/main/kotlin/splice/core/launch/LoginOutcomeFile.kt"]
-status = "todo"
+files = ["gateway/core/src/main/kotlin/splice/core/launch/LoginOutcomeFile.kt", "gateway/core/src/test/kotlin/LoginOutcomeFileTest.kt"]
+status = "done"
 verify = "cd gateway and ./gradlew --no-daemon :core:test :core:detekt --rerun-tasks"
+# [2026-09-01] ATTEST-START: tree=8ee83e4909d79776346218e156fa14d6e306a85f at=2026-09-01T13:50:05Z
+# [2026-09-01] FENCE-EDITED: files = ["gateway/core/src/main/kotlin/splice/core/launch/LoginOutcomeFile.kt"] -> files = ["gateway/core/src/main/kotlin/splice/core/launch/LoginOutcomeFile.kt", "gateway/core/src/test/kotlin/LoginOutcomeFileTest.kt"] (by=orchestrator implied; no flag)
+# [2026-09-01] LANDED. pathFor now ESCAPES instead of collapsing: every byte outside A-Za-z0-9- becomes underscore plus two hex over the UTF-8 bytes, and the marker underscore is itself escaped to _5f. Injective by construction, and still inside [A-Za-z0-9_-] so the traversal guarantee the old arm pins is untouched (dot becomes _2e, slash becomes _2f, so .. cannot be spelled).
+# [2026-09-01] SINGLE PRODUCER confirmed by reading the call sites, not by trusting the row: the generated bash /login hook does NOT recompute this name. LaunchSpecFactory.kt:77 calls pathFor once and the absolute path is embedded into the hook script at launch time (ClaudeMaterializeTypes.loginOutcomeFile -> LoginInterception.wire -> LoginHookScripts). So the row really is one file, and no bash-side escape has to agree with the Kotlin one.
+# [2026-09-01] ARMS in gateway/core/src/test/kotlin/LoginOutcomeFileTest.kt, both new:
+# [2026-09-01] - heads whose keys differ only in a sanitized character do not share a receipt - DR-179: the operator-visible defect end to end. gpt-5.6 signs in; gpt-5_6 must not consume or announce that line, and gpt-5.6 must still find its own receipt afterwards (the consume by the wrong head used to DELETE it, so the head that actually signed in learned nothing).
+# [2026-09-01] - distinct head keys map to distinct receipts across the collision set - DR-179: the invariant itself, over the keys that break each half-measure - a.b vs a_b breaks a collapsing sanitizer, a.b vs a_2eb breaks an escape whose marker is not escaped, a.b vs a2eb breaks a markerless hex escape.
+# [2026-09-01] MUTATION 4/4 killed, harness at scratchpad/dr179_180_mutants.py, restore verified byte-identical by sha256:
+# [2026-09-01] - N1 the literal pre-fix collapsing sanitizer -> both new arms red; the pre-existing hostile-name arm stays GREEN, which is exactly why the collision survived review for so long.
+# [2026-09-01] - N2 escape but leave the marker unescaped -> collision-set arm red.
+# [2026-09-01] - N3 hex escape with no marker at all -> collision-set arm red.
+# [2026-09-01] - N4 control, admit dot to the safe set -> the pre-existing traversal arm reds, proving the new escape did not quietly drop the old guarantee.
+# [2026-09-01] VERIFY green: :core:test --tests LoginOutcomeFileTest 9/9 plus :core:detekt.
+# [2026-09-01] ATTEST: scoped diffstat: .../kotlin/splice/core/launch/LoginOutcomeFile.kt  | 25 +++++++++++- | .../core/src/test/kotlin/LoginOutcomeFileTest.kt   | 46 ++++++++++++++++++++++ | 2 files changed, 70 insertions(+), 1 deletion(-); sidecar: .claude/ledger-diffs/DR-179.diff; off-scope: gateway/core/src/main/kotlin/splice/core/launch/LoginInterception.kt, gateway/core/src/test/kotlin/splice/core/launch/LoginCommandsReconcileTest.kt
 
 [[items]]
 id = "DR-180"
 phase = "repair"
 title = "commands/login.md is written truncate-in-place while its sibling hook scripts are atomic (grok-splice finding M). LoginInterception writes LOGIN_MD with a plain Files.writeString, so a crash or a concurrent reader sees a half-written or empty command file; writeHookScript in the same class already stages to a temp file, chmods the staged copy and ATOMIC_MOVEs it into place under DR-31. Distinct from DR-8 (fail-closed capture) and from DR-31 itself, whose scope was the hook script. Fix: put login.md on the existing stage-and-swap path, proven by an arm asserting the write is atomic rather than in-place."
-files = ["gateway/core/src/main/kotlin/splice/core/launch/LoginInterception.kt"]
-status = "todo"
+files = ["gateway/core/src/main/kotlin/splice/core/launch/LoginInterception.kt", "gateway/core/src/test/kotlin/splice/core/launch/LoginCommandsReconcileTest.kt"]
+status = "done"
 verify = "cd gateway and ./gradlew --no-daemon :core:test :core:detekt --rerun-tasks"
+# [2026-09-01] ATTEST-START: tree=d2cd6992fd8925073295be0cc5f1163111f85766 at=2026-09-01T13:50:05Z
+# [2026-09-01] FENCE-EDITED: files = ["gateway/core/src/main/kotlin/splice/core/launch/LoginInterception.kt"] -> files = ["gateway/core/src/main/kotlin/splice/core/launch/LoginInterception.kt", "gateway/core/src/test/kotlin/splice/core/launch/LoginCommandsReconcileTest.kt"] (by=orchestrator implied; no flag)
+# [2026-09-01] LANDED. writeCommandsDir now publishes login.md through SecureFile.writeAtomic0600 (temp plus ATOMIC_MOVE, perms before content) instead of Files.writeString. The defect is real only on the NON-symlinked branch: when the commands dir is a whole-dir symlink the staged DIRECTORY is atomically moved into place a few lines later, so login.md was already published atomically there. The other branch writes straight into the LIVE commands dir Claude Code re-reads on every prompt.
+# [2026-09-01] TWO consequences, not one, and the row named only the first: truncate-in-place leaves a window where the running head sees an empty or half-written /login command, AND Files.writeString FOLLOWS a symlink at the destination, so a pre-planted link at that name aims the truncation at whatever it points at. Rename does not follow, so the atomic path closes both.
+# [2026-09-01] ARMS in gateway/core/src/test/kotlin/splice/core/launch/LoginCommandsReconcileTest.kt, three new:
+# [2026-09-01] - a symlink pre-planted at login_md is replaced, not followed and truncated - DR-180: victim file keeps its content, the entry itself becomes a regular file, the /login command still lands.
+# [2026-09-01] - rewriting an existing login_md swaps a fresh inode in, never truncates the live one - DR-180: fileKey before and after a second wire() must differ. Uses the fileKey helper the DR-39 arms already had.
+# [2026-09-01] - an entry login_md cannot replace is preserved, never deleted first - DR-180: an empty directory at the name survives and the leg logs NOT installed. This is the arm that separates stage-and-swap from delete-then-create; see the mutation note below.
+# [2026-09-01] MUTATION 3/3 killed, same harness, restore verified byte-identical by sha256:
+# [2026-09-01] - P1 the literal pre-fix Files.writeString line -> the symlink arm and the inode arm both red; every DR-39 arm stays green.
+# [2026-09-01] - P2 the naive half-fix, deleteIfExists then writeString -> SURVIVED the first pass. It fixes the symlink follow and it does land a new inode, so neither of the first two arms can see it; what it loses is the never-absent window, which is not observable single-threaded. Closed by the third arm: delete-then-create destroys an empty dir at the name, stage-and-swap refuses and preserves it, which is the same law linkOneInto states as a real directory is operator content and stays.
+# [2026-09-01] - P3 control, publish into the live dst instead of the staged target -> the whole-dir-symlink conversion arm reds, proving the arm set still covers the staged-dir branch.
+# [2026-09-01] VERIFY green: :core:test --tests splice.core.launch.LoginCommandsReconcileTest 12/12 plus :core:detekt.
+# [2026-09-01] ATTEST: scoped diffstat: .../kotlin/splice/core/launch/LoginInterception.kt | 16 +++++- | .../core/launch/LoginCommandsReconcileTest.kt      | 58 ++++++++++++++++++++++ | 2 files changed, 73 insertions(+), 1 deletion(-); sidecar: .claude/ledger-diffs/DR-180.diff; off-scope: gateway/core/src/main/kotlin/splice/core/launch/LoginOutcomeFile.kt, gateway/core/src/test/kotlin/LoginOutcomeFileTest.kt
 
 [[items]]
 id = "DR-181"

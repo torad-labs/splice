@@ -31,8 +31,31 @@ public object LoginOutcomeFile {
     internal const val FRESH_WINDOW_MINUTES: Long = 10
     private const val FRESH_WINDOW_MS: Long = FRESH_WINDOW_MINUTES * 60 * 1000
 
+    /** DR-179: the receipt path, and it has to be INJECTIVE.
+     *
+     *  The old sanitizer replaced every character outside A-Za-z0-9_- with a literal underscore, so
+     *  head `a.b` and head `a_b` both resolved to login-outcome-a_b.txt. Two heads then shared one
+     *  receipt: whichever signed in last, the OTHER head's next prompt consumed the line and
+     *  announced its result — including announcing a success for a login that head never ran, and
+     *  deleting it so the head that did run learned nothing. The existing arm covered the
+     *  ../../etc/passwd escape, which the old sanitizer did stop; collision it could not see,
+     *  because a collapse is exactly what that sanitizer was written to do.
+     *
+     *  Escaping instead of collapsing: `_` becomes `_5f` and every other disallowed byte becomes
+     *  `_<2-hex>` over its UTF-8 bytes. That is injective by construction — the escape marker is
+     *  itself escaped, so no two distinct keys can produce one name — while staying inside
+     *  [A-Za-z0-9_-], so the traversal guarantee the old arm pins is unchanged: no separator and no
+     *  dot survives, and `..` cannot be spelled. */
     public fun pathFor(stateDir: Path, head: String): Path =
-        stateDir.resolve("login-outcome-${head.replace(Regex("[^A-Za-z0-9_-]"), "_")}.txt")
+        stateDir.resolve("login-outcome-${escapeHeadKey(head)}.txt")
+
+    private fun escapeHeadKey(head: String): String = buildString {
+        head.toByteArray(Charsets.UTF_8).forEach { byte ->
+            val ch = byte.toInt().toChar()
+            val safe = ch in 'A'..'Z' || ch in 'a'..'z' || ch in '0'..'9' || ch == '-'
+            if (safe) append(ch) else append('_').append("%02x".format(byte))
+        }
+    }
 
     /** Record the outcome. Best-effort by construction: a login that SUCCEEDED must never be
      *  reported as failed because its receipt could not be written. */

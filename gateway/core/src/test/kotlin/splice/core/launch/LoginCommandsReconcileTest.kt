@@ -8,6 +8,7 @@ package splice.core.launch
 
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -189,6 +190,63 @@ class LoginCommandsReconcileTest {
         wire(tmp, "", dangling, log)
 
         assertTrue(log.any { it.contains("NOT reconciled") }, "a dangling share link must be loud: $log")
+    }
+
+    // DR-180: login.md was the one entry in this class still written with Files.writeString, i.e.
+    // truncate-in-place, straight into the LIVE commands dir. writeString FOLLOWS a symlink at the
+    // destination, so a pre-planted link at that name aims the truncation at whatever it points at.
+    // The staged idiom every sibling here already uses replaces the ENTRY instead (rename does not
+    // follow), so the victim is untouched and the /login command lands as a real file.
+    @Test
+    fun `a symlink pre-planted at login_md is replaced, not followed and truncated - DR-180`(
+        @TempDir tmp: Path,
+    ) {
+        val victim = tmp.resolve("victim.md")
+        Files.writeString(victim, "operator content that must survive")
+        val commands = Files.createDirectories(tmp.resolve("commands"))
+        Files.createSymbolicLink(commands.resolve("login.md"), victim)
+
+        wire(tmp, "openrouter login", null)
+
+        assertEquals("operator content that must survive", Files.readString(victim), "the link target must survive")
+        val landed = commands.resolve("login.md")
+        assertFalse(Files.isSymbolicLink(landed), "the entry itself is replaced")
+        assertTrue(Files.readString(landed).contains("Sign in to OpenRouter"), "the /login command still lands")
+    }
+
+    // The other half of truncate-in-place: Claude Code re-reads these command files on every
+    // prompt, so a rewrite of an EXISTING login.md must publish through a new inode rather than
+    // emptying the live one and refilling it. Same reason writeHookScript has staged since DR-31.
+    @Test
+    fun `rewriting an existing login_md swaps a fresh inode in, never truncates the live one - DR-180`(
+        @TempDir tmp: Path,
+    ) {
+        Files.createDirectories(tmp.resolve("commands"))
+        wire(tmp, "openrouter login", null)
+        val landed = tmp.resolve("commands/login.md")
+        val before = fileKey(landed)
+
+        wire(tmp, "openrouter login", null)
+
+        assertNotEquals(before, fileKey(landed), "a stage-and-swap publishes a new inode; a truncate reuses it")
+        assertTrue(Files.readString(landed).contains("Sign in to OpenRouter"))
+    }
+
+    // The half-fix this row must NOT settle for: delete-then-write also stops the symlink follow
+    // and also lands a new inode, but it removes the live entry BEFORE the replacement exists, so
+    // any failure after the delete leaves the /login command simply gone — the DR-39 window this
+    // whole class was written to close, and what linkOneInto means by "a real directory is operator
+    // content and stays". An entry the publish cannot replace is preserved, and the leg says so.
+    @Test
+    fun `an entry login_md cannot replace is preserved, never deleted first - DR-180`(@TempDir tmp: Path) {
+        val commands = Files.createDirectories(tmp.resolve("commands"))
+        val occupied = Files.createDirectories(commands.resolve("login.md"))
+        val log = mutableListOf<String>()
+
+        wire(tmp, "openrouter login", null, log)
+
+        assertTrue(Files.isDirectory(occupied, NOFOLLOW_LINKS), "a publish that cannot land removes nothing")
+        assertTrue(log.any { it.contains("NOT installed") }, "the failed leg must be loud: $log")
     }
 
     // The denominator's quiet member: a no-commands operator is genuine absence (NoSuch + no

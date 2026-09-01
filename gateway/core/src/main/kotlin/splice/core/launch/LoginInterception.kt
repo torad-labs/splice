@@ -23,6 +23,7 @@ import splice.core.config.envNameRegex
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
+import splice.core.util.SecureFile
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
@@ -242,7 +243,20 @@ internal object LoginInterception {
             Files.createDirectories(dst)
         }
         if (globalCommands != null) linkGlobalCommandsInto(target, globalCommands)
-        Files.writeString(target.resolve(LOGIN_MD), LoginHookScripts.loginCommandMd(signInLabel, LOGIN_SENTINEL))
+        // DR-180: stage-and-swap, not truncate-in-place. When `symlinked` is true the whole staged
+        // DIRECTORY is moved into place below, so login.md was already published atomically; the
+        // other branch writes straight into the LIVE commands dir, where Files.writeString truncates
+        // the running head's /login command and refills it — a crash or a concurrent read in that
+        // window yields a half-written or empty command file, and following a pre-planted symlink at
+        // that name truncates whatever it points at. writeHookScript in this same class has staged
+        // through a unique temp + ATOMIC_MOVE since DR-31 for exactly these two reasons; login.md
+        // was the sibling that never got it. SecureFile is the codebase's one atomic-write
+        // primitive (temp + ATOMIC_MOVE, perms before content) — 0600 is right for a file only this
+        // operator's own head reads.
+        SecureFile.writeAtomic0600(
+            target.resolve(LOGIN_MD),
+            LoginHookScripts.loginCommandMd(signInLabel, LOGIN_SENTINEL),
+        )
         if (symlinked) {
             Files.delete(dst)
             Files.move(target, dst)

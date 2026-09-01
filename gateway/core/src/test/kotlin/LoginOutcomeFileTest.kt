@@ -4,6 +4,7 @@
 // and Kilo Code both confirm in-client rather than via a callback page).
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -61,6 +62,51 @@ class LoginOutcomeFileTest {
         val path = LoginOutcomeFile.pathFor(tmp, "../../etc/passwd")
         assertEquals(tmp, path.parent, "the receipt must stay inside the state dir")
         assertFalse(path.toString().contains(".."))
+    }
+
+    /** DR-179: the receipt name COLLAPSED every character outside [A-Za-z0-9_-] to a literal
+     *  underscore, so two heads whose keys differ only there resolved to ONE file. Whichever
+     *  signed in last, the other head's next prompt consumed the line and announced a result for a
+     *  login it never ran — and deleted it, so the head that DID sign in learned nothing. The arm
+     *  above covered the traversal escape, which that sanitizer genuinely stopped; it could not see
+     *  a collision, because collapsing is exactly what it was written to do. */
+    @Test
+    fun `heads whose keys differ only in a sanitized character do not share a receipt - DR-179`(
+        @TempDir tmp: Path,
+    ) {
+        assertNotEquals(
+            LoginOutcomeFile.pathFor(tmp, "gpt-5.6"),
+            LoginOutcomeFile.pathFor(tmp, "gpt-5_6"),
+            "distinct head keys must not resolve to one receipt file",
+        )
+        LoginOutcomeFile.write(tmp, "gpt-5.6", "gpt-5.6 signed in")
+        assertNull(
+            LoginOutcomeFile.consume(tmp, "gpt-5_6"),
+            "a head must not announce — or eat — the receipt another head's login wrote",
+        )
+        assertEquals(
+            "gpt-5.6 signed in",
+            LoginOutcomeFile.consume(tmp, "gpt-5.6"),
+            "the head that actually signed in must still find its own receipt",
+        )
+    }
+
+    /** The arm above names ONE collision; the invariant is injectivity, so this pins the property
+     *  itself over the keys that break each half-measure. `a.b` vs `a_b` breaks a collapsing
+     *  sanitizer. `a.b` vs `a_2eb` breaks an escape whose MARKER is not itself escaped — a head
+     *  keyed the escaped spelling collides with the key that escapes to it, which is why `_` maps
+     *  to `_5f`. `a.b` vs `a2eb` breaks a markerless hex escape. Distinct keys in, distinct
+     *  receipts out, or one head eats another's confirmation. */
+    @Test
+    fun `distinct head keys map to distinct receipts across the collision set - DR-179`(@TempDir tmp: Path) {
+        val keys = listOf("a.b", "a_b", "a-b", "a b", "a/b", "a_2eb", "a2eb", "a__b", "_ab", "ab_", "a..b", "a")
+        val paths = keys.map { LoginOutcomeFile.pathFor(tmp, it) }
+        assertEquals(
+            keys.size,
+            paths.toSet().size,
+            "every distinct head key needs its own receipt; collided: " + keys.zip(paths).groupBy { it.second }
+                .filterValues { it.size > 1 }.values.map { pair -> pair.map { it.first } },
+        )
     }
 
     /** Newlines would break the one-line shell read-back in the hook. */

@@ -201,7 +201,11 @@ class ExampleConfigTest {
         )
 
         assertEquals(500_000L, catalog.contextWindowFor(head.pinnedModel), "the pinned row launches the 500k process")
-        assertEquals(500_000L, catalog.clientContextWindowFor("grok-build-latest"), "non-[1m] rows use that process window")
+        assertEquals(
+            500_000L,
+            catalog.clientContextWindowFor("grok-build-latest"),
+            "non-[1m] rows use that process window",
+        )
 
         // Undeclared [1m] selectors strip to the row's real ceiling while the client uses literal 1m.
         assertEquals(500_000L, catalog.contextWindowFor("grok-4.6[1m]"))

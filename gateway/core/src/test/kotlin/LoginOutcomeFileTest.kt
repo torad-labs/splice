@@ -99,7 +99,23 @@ class LoginOutcomeFileTest {
      *  receipts out, or one head eats another's confirmation. */
     @Test
     fun `distinct head keys map to distinct receipts across the collision set - DR-179`(@TempDir tmp: Path) {
-        val keys = listOf("a.b", "a_b", "a-b", "a b", "a/b", "a_2eb", "a2eb", "a__b", "_ab", "ab_", "a..b", "a")
+        // The ASCII list alone left the injectivity claim pinned over a subset, so two more groups.
+        //
+        // MULTIBYTE, because every non-ASCII byte is NEGATIVE as a signed Byte and the escape leans
+        // on "%02x" rendering it as exactly two hex digits — verified on this JDK: -30 -> "e2",
+        // -128 -> "80", -61 -> "c3", NOT a sign-extended "ffffffe2".
+        //
+        // The last pair is what makes the zero-PADDING load-bearing rather than decorative, and it
+        // is the only pair here that a plain "%x" would collide: U+0001 then "23" escapes to
+        // _01 2 3, while U+0012 then "3" escapes to _12 3 — distinct only because both escapes are
+        // two digits wide. Drop the padding and both become "_123". A fixed-width escape following
+        // an always-unsafe "_" is the whole reason distinct keys cannot collide, and without this
+        // pair nothing in the suite fails when that width stops being fixed.
+        val keys = listOf(
+            "a.b", "a_b", "a-b", "a b", "a/b", "a_2eb", "a2eb", "a__b", "_ab", "ab_", "a..b", "a",
+            "gpt‑5", "gpt-5", "café", "cafe",
+            "\u0001" + "23", "\u0012" + "3",
+        )
         val paths = keys.map { LoginOutcomeFile.pathFor(tmp, it) }
         assertEquals(
             keys.size,

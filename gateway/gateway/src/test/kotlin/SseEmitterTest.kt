@@ -240,4 +240,52 @@ class SseEmitterTest {
         emitter.emitError(ErrorType.API_ERROR, "conn reset")
         assertEquals(before, frames.size) // emitError no-ops: nothing new on the wire
     }
+
+    // DR-119 (review 2026-08-31): the PRODUCTION sink's raw verbs, driven through the emitter a
+    // client actually receives. The passthrough suite proves the TRANSLATOR calls openRawBlock and
+    // rawDelta, but it injects a test Rec that implements both itself — so deleting BOTH real
+    // WireBlockWriter overrides compiled clean and left that wall green while the real emitter fell
+    // back to WireSink's defaults (openRawBlock returning null, rawDelta a no-op) and silently
+    // swallowed every forwarded block and delta. Four claims, one per way that can break: the
+    // content_block payload rides verbatim, a raw delta reaches the wire verbatim, closeBlock ends
+    // it, and the L3 open-guard still refuses a delta to a block that is not open.
+    @Test
+    fun `raw block verbs forward verbatim through the production emitter - DR-119`() = runTest {
+        val deltaEvent = "event: content_block_delta"
+        val (frames, e) = collector()
+        val raw = e.openRawBlock(
+            buildJsonObject {
+                put("type", "server_tool_use")
+                put("id", "srvtoolu_119")
+                put("name", "web_search")
+            },
+        )
+        assertTrue(raw != null, "the production sink must forward raw blocks, not WireSink's null default")
+        val start = frames.first { it.startsWith("event: content_block_start") }
+        assertTrue(start.contains("\"index\":${raw!!.value}"), "the raw block owns the index it returned: $start")
+        assertTrue(start.contains("\"type\":\"server_tool_use\""), "content_block type rides verbatim: $start")
+        assertTrue(start.contains("\"id\":\"srvtoolu_119\""), "content_block id rides verbatim: $start")
+        assertTrue(start.contains("\"name\":\"web_search\""), "content_block name rides verbatim: $start")
+
+        e.rawDelta(
+            raw,
+            buildJsonObject {
+                put("type", "citations_delta")
+                put("cited_text", "verbatim-119")
+            },
+        )
+        val deltas = frames.filter { it.startsWith(deltaEvent) }
+        assertEquals(1, deltas.size, "rawDelta must reach the wire — WireSink's default no-op swallows it")
+        assertTrue(deltas[0].contains("\"type\":\"citations_delta\""), "the delta rides verbatim: ${deltas[0]}")
+        assertTrue(deltas[0].contains("\"cited_text\":\"verbatim-119\""), "delta payload verbatim: ${deltas[0]}")
+
+        e.closeBlock(raw)
+        assertEquals(1, frames.count { it.contains("content_block_stop") }, "closeBlock ends the raw block")
+
+        // The open-guard, both shapes of not-open: an index removed from `open` by the close above,
+        // and one that was never opened at all. Neither may reach the wire (L3 block-pairing).
+        e.rawDelta(raw, buildJsonObject { put("type", "citations_delta") })
+        e.rawDelta(WireBlockIndex(raw.value + 1), buildJsonObject { put("type", "citations_delta") })
+        assertEquals(1, frames.count { it.startsWith(deltaEvent) }, "a rawDelta to a non-open block is a no-op")
+    }
 }

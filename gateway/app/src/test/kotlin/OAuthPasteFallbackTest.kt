@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import splice.app.OAuthLoginFlow
+import splice.core.util.FormEncoding
 
 class OAuthPasteFallbackTest {
 
@@ -28,6 +29,15 @@ class OAuthPasteFallbackTest {
     @Test
     fun `a fragment-delivered code is found too`() {
         assertEquals("frag-code-1", OAuthLoginFlow.extractCode("http://127.0.0.1:1455/cb#code=frag-code-1"))
+    }
+
+    @Test
+    fun `a pasted URL code is decoded once before form encoding`() {
+        val encoded = "code%2Fpart%3Dvalue%2525"
+        val code = OAuthLoginFlow.extractCode("http://127.0.0.1/callback?code=$encoded&state=s1")
+
+        assertEquals("code/part=value%25", code)
+        assertEquals("code=$encoded", FormEncoding.formEncode("code" to code.orEmpty()))
     }
 
     /** The other realistic paste: the user copies just the code out of the URL. */

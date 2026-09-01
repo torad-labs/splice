@@ -11,284 +11,151 @@
 // stream); onBytes fires ON RAW READ with the chunk size (the watchdog touch + byte telemetry —
 // never after downstream write; a slow client must not fake idleness). Hot-path shape: one reused
 // decode scratch + one event assembler per stream (no per-chunk buffer allocs) and index-scanned
-// lines (no per-line StringBuilder churn).
+// lines (no per-line StringBuilder churn). Decode/assemble live in SseDecode.kt; the public seams
+// live in SseObservers.kt; the two transport failures live in SseExceptions.kt.
 package splice.spi
 
 import io.ktor.utils.io.ByteReadChannel
-import io.ktor.utils.io.readAvailable
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.FlowCollector
 import kotlinx.coroutines.flow.flow
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonObject
-import splice.core.util.runCatchingCancellable
-import java.nio.ByteBuffer
-import java.nio.CharBuffer
-import java.nio.charset.CharsetDecoder
-import java.nio.charset.CodingErrorAction
-
-private val lenient = Json {
-    ignoreUnknownKeys = true
-    isLenient = true
-}
 
 // no space: SSE field syntax is `data:` + optional single space + value (WHATWG spec); the
 // leading-ws trim in processLine absorbs the space when present.
 private const val DATA_PREFIX = "data:"
-private const val DONE_SENTINEL = "[DONE]"
-private const val READ_BUFFER_BYTES = 16384
 
-// A healthy channel never reports content it cannot deliver; a run of consecutive torn wakeups
-// means the upstream is broken — end the stream honestly rather than pin a core (600%-CPU incident).
-private const val MAX_SPURIOUS_WAKEUPS = 1024
+/** The SSE line/event reader. Stateless — every buffer it needs is per-[sseJsonEvents] local state,
+ *  so callers construct one wherever they used to call the top-level function. */
+public class SseReader {
 
-// UTF-8 codepoints are at most 4 bytes; carry never needs more than that across a chunk edge.
-private const val UTF8_MAX_BYTES = 4
-
-// the chunk/line/skip walk is the literal port; malformed frames must never crash the stream.
-// onRawText (opt-in, null for every hot-path caller) exposes the FULL decoded body text as it
-// arrives — not just `data:`-prefixed lines — so a zero-event terminal can classify a non-SSE
-// dead-head body (HTML/JSON login page). Null-callback matches the `perf: TurnPerf? = null` idiom:
-// when null the added cost is one null check per chunk, preserving the no-per-chunk-alloc invariant.
-public fun sseJsonEvents(
-    channel: ByteReadChannel,
-    onBytes: (Int) -> Unit = {},
-    onMalformed: (String) -> Unit = {},
-    onRawText: ((CharSequence) -> Boolean)? = null,
-    maxLineChars: Int = MAX_SSE_LINE_CHARS,
-    maxEventChars: Int = MAX_SSE_EVENT_CHARS,
-): Flow<JsonObject> = flow {
-    val scratch = DecodeScratch()
-    val lineBuffer = StringBuilder(READ_BUFFER_BYTES)
-    val assembler = SseEventAssembler(onMalformed, maxEventChars)
-    var bomChecked = false
-    var rawObserver = onRawText
-    var n = scratch.readChunk(channel)
-    while (n >= 0) {
-        onBytes(n)
-        val before = lineBuffer.length
-        scratch.decodeInto(n, lineBuffer)
-        // Strip a leading UTF-8 BOM exactly once, only after real characters exist (a first chunk
-        // that decodes to zero chars — all bytes still UTF-8 carry — must not falsely mark the
-        // check done); never re-checked mid-stream (a later U+FEFF is an ordinary character).
-        if (!bomChecked) bomChecked = stripLeadingBomWhenReady(lineBuffer)
-        if (lineBuffer.length > maxLineChars) throw SseFrameTooLargeException("SSE line", maxLineChars)
-        rawObserver = notifyRawObserver(rawObserver, lineBuffer, before)
-        emitCompleteLines(lineBuffer, assembler)
-        n = scratch.readChunk(channel)
+    // the chunk/line/skip walk is the literal port; malformed frames must never crash the stream.
+    // onRawText (opt-in, null for every hot-path caller) exposes the FULL decoded body text as it
+    // arrives — not just `data:`-prefixed lines — so a zero-event terminal can classify a non-SSE
+    // dead-head body (HTML/JSON login page). Null-callback matches the `perf: TurnPerf? = null` idiom:
+    // when null the added cost is one null check per chunk, preserving the no-per-chunk-alloc invariant.
+    public fun sseJsonEvents(
+        channel: ByteReadChannel,
+        onBytes: BytesRead = BytesRead {},
+        onMalformed: MalformedLine = MalformedLine {},
+        onRawText: RawTextObserver? = null,
+        maxLineChars: Int = MAX_SSE_LINE_CHARS,
+        maxEventChars: Int = MAX_SSE_EVENT_CHARS,
+    ): Flow<JsonObject> = flow {
+        val scratch = DecodeScratch()
+        val lineBuffer = StringBuilder(SSE_READ_BUFFER_BYTES)
+        val assembler = SseEventAssembler(onMalformed, maxEventChars)
+        var bomChecked = false
+        var rawObserver = onRawText
+        var n = scratch.readChunk(channel)
+        while (n >= 0) {
+            onBytes(n)
+            val before = lineBuffer.length
+            scratch.decodeInto(n, lineBuffer)
+            // Strip a leading UTF-8 BOM exactly once, only after real characters exist (a first chunk
+            // that decodes to zero chars — all bytes still UTF-8 carry — must not falsely mark the
+            // check done); never re-checked mid-stream (a later U+FEFF is an ordinary character).
+            if (!bomChecked) bomChecked = stripLeadingBomWhenReady(lineBuffer)
+            if (lineBuffer.length > maxLineChars) throw SseFrameTooLargeException("SSE line", maxLineChars)
+            rawObserver = notifyRawObserver(rawObserver, lineBuffer, before)
+            emitCompleteLines(this, lineBuffer, assembler)
+            n = scratch.readChunk(channel)
+        }
     }
-}
 
-private fun stripLeadingBomWhenReady(lineBuffer: StringBuilder): Boolean {
-    if (lineBuffer.isEmpty()) return false
-    if (lineBuffer[0] == '\uFEFF') lineBuffer.deleteCharAt(0)
-    return true
-}
+    private fun stripLeadingBomWhenReady(lineBuffer: StringBuilder): Boolean {
+        if (lineBuffer.isEmpty()) return false
+        if (lineBuffer[0] == '\uFEFF') lineBuffer.deleteCharAt(0)
+        return true
+    }
 
-private fun notifyRawObserver(
-    observer: ((CharSequence) -> Boolean)?,
-    lineBuffer: StringBuilder,
-    before: Int,
-): ((CharSequence) -> Boolean)? {
-    if (observer == null || lineBuffer.length <= before) return observer
-    return observer.takeIf { it(lineBuffer.subSequence(before, lineBuffer.length)) }
-}
-
-/**
- * Reused per-stream decode state: the read buffer, the UTF-8 streaming decoder, its input/output
- * buffers, and the undecoded carry tail (CharsetDecoder does NOT buffer partial codepoints across
- * decode() calls the way Node's streaming TextDecoder does). One allocation per stream, zero per
- * chunk — input capacity is bytes(READ_BUFFER_BYTES) + carry(UTF8_MAX_BYTES), so carry + a full
- * read always fits and no overflow branch is needed.
- */
-private class DecodeScratch {
-    private val decoder: CharsetDecoder = Charsets.UTF_8.newDecoder()
-        .onMalformedInput(CodingErrorAction.REPLACE)
-        .onUnmappableCharacter(CodingErrorAction.REPLACE)
-    private val bytes = ByteArray(READ_BUFFER_BYTES)
-    private val inputBuf: ByteBuffer = ByteBuffer.wrap(ByteArray(READ_BUFFER_BYTES + UTF8_MAX_BYTES))
-    private val charBuf: CharBuffer = CharBuffer.allocate(READ_BUFFER_BYTES)
-    private val carry = ByteArray(UTF8_MAX_BYTES)
-    private var carryLen = 0
+    private fun notifyRawObserver(
+        observer: RawTextObserver?,
+        lineBuffer: StringBuilder,
+        before: Int,
+    ): RawTextObserver? {
+        if (observer == null || lineBuffer.length <= before) return observer
+        return observer.takeIf { it(lineBuffer.subSequence(before, lineBuffer.length)) }
+    }
 
     /**
-     * Read the next chunk; returns byte count (> 0) or -1 at end of stream.
-     *
-     * On a healthy channel `readAvailable` suspends inside `awaitContent` when the buffer is empty,
-     * so the guarded branch below is never reached. It exists for the TORN case — a half-closed /
-     * degenerate upstream where `readAvailable` returns 0 WITHOUT suspending. The old
-     * `while (readAvailable() == 0)` loop had no suspension or cancellation point there, so a turn
-     * whose client already disconnected (turnJob cancelled by the pinger/watchdog) could not exit
-     * it: the coroutine hot-spun kqueue syscalls forever, pinning a core per leaked stream — the
-     * 600%-CPU / "connection closed mid-response" incident (2026-07-18). The guards make the loop
-     * cancellation-cooperative and impossible to hot-spin: honor cancellation, then actually WAIT
-     * on `awaitContent` (false == closed → EOF), and bail if the channel keeps claiming content it
-     * cannot deliver (a state a healthy channel never produces).
+     * Scan [lineBuffer] for complete lines (terminated by `\n`, `\r`, or `\r\n`) and feed each to
+     * [processLine], compacting the trailing partial in place. No per-line StringBuilder realloc — the
+     * same builder is reused for the whole stream. Line/event state ([SseEventAssembler.pendingCR],
+     * [SseEventAssembler.dataBuffer]) persists across calls so terminators split across chunk boundaries
+     * resolve correctly. An unterminated trailing partial is LEFT untouched — that IS the discard-at-EOF
+     * behavior (no flush anywhere on channel close).
      */
-    suspend fun readChunk(channel: ByteReadChannel): Int {
-        var spuriousWakeups = 0
-        while (true) {
-            val n = channel.readAvailable(bytes, 0, bytes.size)
-            if (n != 0) return n // > 0 bytes, or -1 at end of stream
-            // n == 0 on an open channel: readAvailable did NOT suspend (torn/half-closed peer).
-            currentCoroutineContext().ensureActive() // a cancelled turn exits here, never spins
-            if (!channel.awaitContent(1)) return -1 // suspends until content or close; false == closed
-            if (++spuriousWakeups >= MAX_SPURIOUS_WAKEUPS) return -1 // channel lies — end honestly
-        }
-    }
-
-    /** Decode carry + the fresh [n] read bytes into [lineBuffer]; retains the new UTF-8 tail. */
-    fun decodeInto(n: Int, lineBuffer: StringBuilder) {
-        inputBuf.clear()
-        if (carryLen > 0) inputBuf.put(carry, 0, carryLen)
-        inputBuf.put(bytes, 0, n)
-        inputBuf.flip()
-        while (true) {
-            charBuf.clear()
-            val result = decoder.decode(inputBuf, charBuf, false)
-            charBuf.flip()
-            if (charBuf.hasRemaining()) lineBuffer.append(charBuf)
-            if (!result.isOverflow) break
-        }
-        saveCarry()
-    }
-
-    private fun saveCarry() {
-        // Remaining is always a partial codepoint (<= 3 bytes) under UTF-8; clamp defensively.
-        val keep = inputBuf.remaining().coerceAtMost(carry.size)
-        if (keep > 0) {
-            inputBuf.position(inputBuf.limit() - keep)
-            inputBuf.get(carry, 0, keep)
-        }
-        carryLen = keep
-    }
-}
-
-/**
- * Reused per-stream event-assembly state that must persist ACROSS [emitCompleteLines] calls (i.e.
- * across chunk boundaries), mirroring how [DecodeScratch] carries decode state across chunks. One
- * allocation per stream. Implements the WHATWG blank-line-dispatch model: `data:` field values
- * accumulate into [dataBuffer] and are only turned into an event on a blank line ([dispatch]); a
- * pending buffer at EOF is discarded (the outer loop never flushes).
- */
-private class SseEventAssembler(
-    private val onMalformed: (String) -> Unit,
-    private val maxEventChars: Int,
-) {
-    // Joined `data:` field values for the event not yet dispatched. A single `data:` line with an
-    // EMPTY value is a no-op append (spec-literal "append then strip one trailing LF" is skipped):
-    // since every real payload is JSON-parsed and JSON treats leading/trailing/inner whitespace and
-    // newlines as insignificant, both bookkeeping styles yield identical parse results, and an
-    // empty-only buffer fails `parseToJsonElement("")` identically either way (no emitted event).
-    val dataBuffer = StringBuilder()
-
-    fun append(buf: StringBuilder, start: Int, end: Int) {
-        val separator = if (dataBuffer.isEmpty()) 0 else 1
-        if (dataBuffer.length + separator + (end - start) > maxEventChars) {
-            throw SseFrameTooLargeException("SSE event", maxEventChars)
-        }
-        if (separator == 1) dataBuffer.append('\n')
-        dataBuffer.append(buf, start, end)
-    }
-
-    // True when the most recently scanned char was a bare `\r` whose following byte hadn't arrived
-    // yet — the CRLF-vs-lone-CR chunk-boundary case (a `\n` opening the next chunk completes a CRLF).
-    var pendingCR = false
-
-    /** Dispatch the pending event (WHATWG): empty buffer aborts; [DONE_SENTINEL] and malformed JSON never emit. */
-    suspend fun dispatch(collector: FlowCollector<JsonObject>) {
-        if (dataBuffer.isEmpty()) return
-        val payload = dataBuffer.toString()
-        dataBuffer.setLength(0)
-        if (payload == DONE_SENTINEL) return
-        runCatchingCancellable { lenient.parseToJsonElement(payload).jsonObject }
-            .onFailure { onMalformed(payload) }
-            .getOrNull()
-            ?.let { collector.emit(it) }
-    }
-}
-
-/**
- * Scan [lineBuffer] for complete lines (terminated by `\n`, `\r`, or `\r\n`) and feed each to
- * [processLine], compacting the trailing partial in place. No per-line StringBuilder realloc — the
- * same builder is reused for the whole stream. Line/event state ([SseEventAssembler.pendingCR],
- * [SseEventAssembler.dataBuffer]) persists across calls so terminators split across chunk boundaries
- * resolve correctly. An unterminated trailing partial is LEFT untouched — that IS the discard-at-EOF
- * behavior (no flush anywhere on channel close).
- */
-private suspend fun FlowCollector<JsonObject>.emitCompleteLines(
-    lineBuffer: StringBuilder,
-    assembler: SseEventAssembler,
-) {
-    var start = 0
-    var i = 0
-    val end = lineBuffer.length
-    while (i < end) {
-        val c = lineBuffer[i]
-        if (assembler.pendingCR) {
-            assembler.pendingCR = false
-            if (c == '\n') {
-                // CRLF: the CR already terminated the line (this call or the previous chunk); eat the LF.
+    private suspend fun emitCompleteLines(
+        collector: FlowCollector<JsonObject>,
+        lineBuffer: StringBuilder,
+        assembler: SseEventAssembler,
+    ) {
+        var start = 0
+        var i = 0
+        val end = lineBuffer.length
+        while (i < end) {
+            val c = lineBuffer[i]
+            if (assembler.pendingCR) {
+                assembler.pendingCR = false
+                if (c == '\n') {
+                    // CRLF: the CR already terminated the line (this call or the previous chunk); eat the LF.
+                    i++
+                    start = i
+                    continue
+                }
+            }
+            if (c == '\n' || c == '\r') {
+                processLine(collector, lineBuffer, start, i, assembler)
+                assembler.pendingCR = c == '\r' // a lone CR may still be the CR of a CRLF split next
                 i++
                 start = i
-                continue
+            } else {
+                i++
             }
         }
-        if (c == '\n' || c == '\r') {
-            processLine(lineBuffer, start, i, assembler)
-            assembler.pendingCR = c == '\r' // a lone CR may still be the CR of a CRLF split next
-            i++
-            start = i
-        } else {
-            i++
+        if (start == 0) return
+        if (start >= end) lineBuffer.setLength(0) else lineBuffer.delete(0, start)
+    }
+
+    /**
+     * Interpret one complete line [start, end) (WHATWG field parsing, `data:` only): a blank line
+     * dispatches the pending event; a `data:`-prefixed line trims its value (ASCII-ws, kimi-space-safe)
+     * and appends it to the assembler's dataBuffer joined by `\n`; every other line shape (comments,
+     * `event:`/`id:`/`retry:`, anything not matching [DATA_PREFIX]) is silently ignored.
+     */
+    private suspend fun processLine(
+        collector: FlowCollector<JsonObject>,
+        buf: StringBuilder,
+        start: Int,
+        end: Int,
+        assembler: SseEventAssembler,
+    ) {
+        if (end == start) {
+            assembler.dispatch(collector)
+            return
         }
+        if (!matchesAt(buf, start, end, DATA_PREFIX)) return
+        // trim ASCII whitespace at both ends (SSE payloads are JSON — no full Unicode trim needed)
+        var pStart = start + DATA_PREFIX.length
+        var pEnd = end
+        while (pStart < pEnd && isAsciiWs(buf[pStart])) pStart++
+        while (pEnd > pStart && isAsciiWs(buf[pEnd - 1])) pEnd--
+        assembler.append(buf, pStart, pEnd)
     }
-    if (start == 0) return
-    if (start >= end) lineBuffer.setLength(0) else lineBuffer.delete(0, start)
-}
 
-/**
- * Interpret one complete line [start, end) (WHATWG field parsing, `data:` only): a blank line
- * dispatches the pending event; a `data:`-prefixed line trims its value (ASCII-ws, kimi-space-safe)
- * and appends it to the assembler's dataBuffer joined by `\n`; every other line shape (comments,
- * `event:`/`id:`/`retry:`, anything not matching [DATA_PREFIX]) is silently ignored.
- */
-private suspend fun FlowCollector<JsonObject>.processLine(
-    buf: StringBuilder,
-    start: Int,
-    end: Int,
-    assembler: SseEventAssembler,
-) {
-    if (end == start) {
-        assembler.dispatch(this)
-        return
+    /** [literal] present at [start] within [start, end) of [buf]? Char-wise — no substring allocation. */
+    private fun matchesAt(buf: StringBuilder, start: Int, end: Int, literal: String): Boolean {
+        if (end - start < literal.length) return false
+        for (j in literal.indices) {
+            if (buf[start + j] != literal[j]) return false
+        }
+        return true
     }
-    if (!buf.matchesAt(start, end, DATA_PREFIX)) return
-    // trim ASCII whitespace at both ends (SSE payloads are JSON — no full Unicode trim needed)
-    var pStart = start + DATA_PREFIX.length
-    var pEnd = end
-    while (pStart < pEnd && buf[pStart].isAsciiWs()) pStart++
-    while (pEnd > pStart && buf[pEnd - 1].isAsciiWs()) pEnd--
-    assembler.append(buf, pStart, pEnd)
+
+    private fun isAsciiWs(c: Char): Boolean =
+        c == ' ' || c == '\t' || c == '\r' || c == '\n'
 }
-
-/** [literal] present at [start] within [start, end)? Char-wise — no substring allocation. */
-private fun StringBuilder.matchesAt(start: Int, end: Int, literal: String): Boolean {
-    if (end - start < literal.length) return false
-    for (j in literal.indices) {
-        if (this[start + j] != literal[j]) return false
-    }
-    return true
-}
-
-private fun Char.isAsciiWs(): Boolean =
-    this == ' ' || this == '\t' || this == '\r' || this == '\n'
-
-public class SseFrameTooLargeException(kind: String, limit: Int) :
-    RuntimeException("$kind exceeds the $limit-character safety limit")
 
 private const val MAX_SSE_LINE_CHARS = 1024 * 1024
 private const val MAX_SSE_EVENT_CHARS = 4 * 1024 * 1024

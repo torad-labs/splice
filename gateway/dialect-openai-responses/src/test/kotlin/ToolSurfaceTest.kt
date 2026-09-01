@@ -13,7 +13,7 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.turn.ReasoningDisplay
+import splice.core.turn.ReasoningDisplayParser
 import splice.core.wire.AnthropicMessage
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.ToolChoice
@@ -24,10 +24,10 @@ import splice.dialect.responses.InjectPriorReasoning
 import splice.dialect.responses.RequestEncryptedReasoning
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ToolDeferralPolicy
-import splice.dialect.responses.dropToolSearchTool
-import splice.dialect.responses.isToolSurfaceRejection
-import splice.dialect.responses.partitionTools
-import splice.dialect.responses.warmToolNames
+import splice.dialect.responses.ToolPartitioner
+import splice.dialect.responses.ToolSurfaceRecovery
+
+private val recovery = ToolSurfaceRecovery()
 
 private fun opts(
     compact: Boolean = false,
@@ -39,7 +39,7 @@ private fun opts(
     upstreamModel = model,
     configEffort = null,
     configSummary = null,
-    showReasoning = ReasoningDisplay.from("text"),
+    showReasoning = ReasoningDisplayParser.from("text"),
     replayReasoning = InjectPriorReasoning(false),
     includeEncryptedReasoning = RequestEncryptedReasoning(true),
     sessionId = null,
@@ -65,7 +65,7 @@ class ToolSurfaceTest {
     @Test
     fun `feature off - every tool eager, deferred empty`() {
         val body = requestOf(mcpTools(20) + builtins(16))
-        val partition = QUIRKS_OFF.partitionTools(body, opts())
+        val partition = ToolPartitioner(QUIRKS_OFF).partitionTools(body, opts())
         assertEquals(body.tools, partition.eager)
         assertTrue(partition.deferred.isEmpty())
     }
@@ -73,7 +73,7 @@ class ToolSurfaceTest {
     @Test
     fun `non-lite model with the policy set - every tool eager`() {
         val body = requestOf(mcpTools(20) + builtins(16))
-        val partition = QUIRKS_ON.partitionTools(body, opts(model = "gpt-5.5"))
+        val partition = ToolPartitioner(QUIRKS_ON).partitionTools(body, opts(model = "gpt-5.5"))
         assertEquals(body.tools, partition.eager)
         assertTrue(partition.deferred.isEmpty())
     }
@@ -81,7 +81,7 @@ class ToolSurfaceTest {
     @Test
     fun `compact turn - every tool eager`() {
         val body = requestOf(mcpTools(20) + builtins(16))
-        val partition = QUIRKS_ON.partitionTools(body, opts(compact = true))
+        val partition = ToolPartitioner(QUIRKS_ON).partitionTools(body, opts(compact = true))
         assertEquals(body.tools, partition.eager)
         assertTrue(partition.deferred.isEmpty())
     }
@@ -89,7 +89,7 @@ class ToolSurfaceTest {
     @Test
     fun `latch closed - every tool eager`() {
         val body = requestOf(mcpTools(20) + builtins(16))
-        val partition = QUIRKS_ON.partitionTools(body, opts(toolSurfaceOpen = false))
+        val partition = ToolPartitioner(QUIRKS_ON).partitionTools(body, opts(toolSurfaceOpen = false))
         assertEquals(body.tools, partition.eager)
         assertTrue(partition.deferred.isEmpty())
     }
@@ -97,7 +97,7 @@ class ToolSurfaceTest {
     @Test
     fun `mcp prefix rule - 50 MCP deferred, 16 built-ins eager`() {
         val body = requestOf(builtins(16) + mcpTools(50))
-        val partition = QUIRKS_ON.partitionTools(body, opts())
+        val partition = ToolPartitioner(QUIRKS_ON).partitionTools(body, opts())
         assertEquals(50, partition.deferred.size)
         assertEquals(16, partition.eager.size)
         assertTrue(partition.deferred.all { it.name.startsWith("mcp__") })
@@ -119,13 +119,13 @@ class ToolSurfaceTest {
         )
         val cold = requestOf(builtins(16) + mcp)
         val warm = requestOf(builtins(16) + mcp, messages = messages)
-        val coldPartition = QUIRKS_ON.partitionTools(cold, opts())
-        val warmPartition = QUIRKS_ON.partitionTools(warm, opts())
+        val coldPartition = ToolPartitioner(QUIRKS_ON).partitionTools(cold, opts())
+        val warmPartition = ToolPartitioner(QUIRKS_ON).partitionTools(warm, opts())
         assertEquals(coldPartition.eager.map { it.name }, warmPartition.eager.map { it.name })
         assertEquals(coldPartition.deferred.map { it.name }, warmPartition.deferred.map { it.name })
         // the warmed tool still defers, exactly as it would with no history at all
         assertTrue(warmPartition.deferred.any { it.name == warmed.name })
-        assertEquals(setOf(warmed.name), warmToolNames(warm))
+        assertEquals(setOf(warmed.name), ToolPartitioner(QUIRKS_ON).warmToolNames(warm))
     }
 
     @Test
@@ -133,7 +133,8 @@ class ToolSurfaceTest {
         val builtinTask = ToolDefinition(name = "Task")
         val body = requestOf(mcpTools(10) + builtins(15) + builtinTask)
         val policy = ToolDeferralPolicy(defer = setOf("Task"))
-        val partition = ResponsesQuirks(providerTag = "t", toolSurface = policy).partitionTools(body, opts())
+        val quirks = ResponsesQuirks(providerTag = "t", toolSurface = policy)
+        val partition = ToolPartitioner(quirks).partitionTools(body, opts())
         assertTrue(partition.deferred.any { it.name == "Task" })
     }
 
@@ -142,7 +143,8 @@ class ToolSurfaceTest {
         val forcedEager = ToolDefinition(name = "mcp__exa__web_search_exa")
         val body = requestOf(mcpTools(10) + builtins(16) + forcedEager)
         val policy = ToolDeferralPolicy(eager = setOf("mcp__exa__web_search_exa"))
-        val partition = ResponsesQuirks(providerTag = "t", toolSurface = policy).partitionTools(body, opts())
+        val quirks = ResponsesQuirks(providerTag = "t", toolSurface = policy)
+        val partition = ToolPartitioner(quirks).partitionTools(body, opts())
         assertTrue(partition.eager.any { it.name == "mcp__exa__web_search_exa" })
         assertFalse(partition.deferred.any { it.name == "mcp__exa__web_search_exa" })
     }
@@ -152,7 +154,7 @@ class ToolSurfaceTest {
         val mcp = mcpTools(10)
         val chosen = mcp[5]
         val body = requestOf(builtins(16) + mcp, toolChoice = ToolChoice(type = "tool", name = chosen.name))
-        val partition = QUIRKS_ON.partitionTools(body, opts())
+        val partition = ToolPartitioner(QUIRKS_ON).partitionTools(body, opts())
         assertTrue(partition.eager.any { it.name == chosen.name })
         assertFalse(partition.deferred.any { it.name == chosen.name })
     }
@@ -160,11 +162,11 @@ class ToolSurfaceTest {
     @Test
     fun `min_deferred floor - 7 MCP tools all eager, 8 splits`() {
         val below = requestOf(builtins(16) + mcpTools(7))
-        val belowPartition = QUIRKS_ON.partitionTools(below, opts())
+        val belowPartition = ToolPartitioner(QUIRKS_ON).partitionTools(below, opts())
         assertTrue(belowPartition.deferred.isEmpty())
 
         val atFloor = requestOf(builtins(16) + mcpTools(8))
-        val atFloorPartition = QUIRKS_ON.partitionTools(atFloor, opts())
+        val atFloorPartition = ToolPartitioner(QUIRKS_ON).partitionTools(atFloor, opts())
         assertEquals(8, atFloorPartition.deferred.size)
     }
 
@@ -172,7 +174,8 @@ class ToolSurfaceTest {
     fun `degenerate config never empties the eager set`() {
         val body = requestOf(mcpTools(20))
         val policy = ToolDeferralPolicy(deferPrefixes = listOf(""))
-        val partition = ResponsesQuirks(providerTag = "t", toolSurface = policy).partitionTools(body, opts())
+        val quirks = ResponsesQuirks(providerTag = "t", toolSurface = policy)
+        val partition = ToolPartitioner(quirks).partitionTools(body, opts())
         assertTrue(partition.eager.isNotEmpty())
         assertTrue(partition.deferred.isEmpty())
     }
@@ -180,18 +183,18 @@ class ToolSurfaceTest {
     @Test
     fun `order stability and idempotence`() {
         val body = requestOf(builtins(16) + mcpTools(20))
-        val first = QUIRKS_ON.partitionTools(body, opts())
-        val second = QUIRKS_ON.partitionTools(body, opts())
+        val first = ToolPartitioner(QUIRKS_ON).partitionTools(body, opts())
+        val second = ToolPartitioner(QUIRKS_ON).partitionTools(body, opts())
         assertEquals(first, second)
         assertEquals(body.tools.filter { it in first.eager }, first.eager, "eager preserves body.tools order")
     }
 
     @Test
     fun `isToolSurfaceRejection fires on a shape-400, not an unrelated one`() {
-        assertTrue(isToolSurfaceRejection(400, """{"error":{"message":"Unknown parameter: 'tool_search'"}}"""))
-        assertTrue(isToolSurfaceRejection(422, "unsupported field defer_loading"))
-        assertFalse(isToolSurfaceRejection(400, "rate limit exceeded"))
-        assertFalse(isToolSurfaceRejection(500, "tool_search unsupported"), "status outside 400..422")
+        assertTrue(recovery.isToolSurfaceRejection(400, """{"error":{"message":"Unknown parameter: 'tool_search'"}}"""))
+        assertTrue(recovery.isToolSurfaceRejection(422, "unsupported field defer_loading"))
+        assertFalse(recovery.isToolSurfaceRejection(400, "rate limit exceeded"))
+        assertFalse(recovery.isToolSurfaceRejection(500, "tool_search unsupported"), "status outside 400..422")
     }
 
     @Test
@@ -204,7 +207,7 @@ class ToolSurfaceTest {
             ]},
             {"role":"developer","content":"hi"}
         ],"store":false,"stream":true}"""
-        val stripped = dropToolSearchTool(withSearch)
+        val stripped = recovery.dropToolSearchTool(withSearch)
         assertTrue(stripped != null)
         val parsed = Json.parseToJsonElement(stripped!!).jsonObject
         val toolsArr = parsed["input"]!!.jsonArray[0].jsonObject["tools"]!!.jsonArray
@@ -217,7 +220,7 @@ class ToolSurfaceTest {
                 {"type":"function","name":"Bash","description":"d","parameters":{"type":"object","properties":{}}}
             ]}
         ],"store":false,"stream":true}"""
-        assertNull(dropToolSearchTool(withoutSearch))
+        assertNull(recovery.dropToolSearchTool(withoutSearch))
     }
 
     // review 2026-07-24 (known HIGH): the first cut of this recovery stripped only the tool_search
@@ -237,7 +240,7 @@ class ToolSurfaceTest {
             {"type":"tool_search_call","call_id":"ts_1","execution":"client","arguments":"{}"},
             {"type":"tool_search_output","call_id":"ts_1","status":"completed","execution":"client","tools":[]}
         ],"store":false,"stream":true}"""
-        val stripped = dropToolSearchTool(withSearchRound)
+        val stripped = recovery.dropToolSearchTool(withSearchRound)
         assertTrue(stripped != null)
         val input = Json.parseToJsonElement(stripped!!).jsonObject["input"]!!.jsonArray
 

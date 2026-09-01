@@ -14,7 +14,7 @@ import io.ktor.server.response.respondBytesWriter
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.get
 import io.ktor.server.routing.routing
-import io.ktor.utils.io.readUTF8Line
+import io.ktor.utils.io.readLine
 import io.ktor.utils.io.writeStringUtf8
 import java.io.File
 import kotlinx.coroutines.Job
@@ -71,7 +71,7 @@ class PoolCancelSpike {
         runBlocking {
             val warm: Job = launch {
                 client.prepareGet("http://127.0.0.1:$PORT/slow-drip").execute { resp ->
-                    resp.bodyAsChannel().readUTF8Line()
+                    resp.bodyAsChannel().readLine()
                     delay(Long.MAX_VALUE)
                 }
             }
@@ -85,7 +85,7 @@ class PoolCancelSpike {
                     val job: Job = launch {
                         client.prepareGet("http://127.0.0.1:$PORT/slow-drip").execute { resp ->
                             val ch = resp.bodyAsChannel()
-                            repeat(3) { ch.readUTF8Line() } // read a few frames mid-stream
+                            repeat(3) { ch.readLine() } // read a few frames mid-stream
                             delay(Long.MAX_VALUE) // hold the stream open until cancelled
                         }
                     }

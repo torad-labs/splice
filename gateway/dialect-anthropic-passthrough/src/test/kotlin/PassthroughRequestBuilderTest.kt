@@ -8,25 +8,31 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.parse.parseAnthropicBody
+import splice.core.parse.AnthropicParse
 import splice.core.turn.COMPACT_DIRECTIVE_HEAD
+import splice.core.turn.CompactInstructions
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.compactDirective
-import splice.core.turn.withCompactDirective
 import splice.dialect.passthrough.BuiltPassthroughRequest
 import splice.dialect.passthrough.PassthroughQuirks
+import splice.dialect.passthrough.PassthroughQuirksDefaults
 import splice.dialect.passthrough.PassthroughRequestBuilder
 
-private val PASS = PassthroughQuirks(providerTag = "kimi")
+private val PASS = PassthroughQuirksDefaults().kimi("kimi")
+
+/** The inverted defaults: a faithful passthrough, which is what the claude head rides. */
+private val NEUTRAL = PassthroughQuirks(providerTag = "claude-splice")
 
 private fun buildFull(
     json: String,
     quirks: PassthroughQuirks = PASS,
     compact: Boolean = false,
+    configEffort: String? = null,
 ): BuiltPassthroughRequest {
-    val body = parseAnthropicBody(json)
-    return PassthroughRequestBuilder(quirks)
+    val body = AnthropicParse.parseAnthropicBody(json)
+    return PassthroughRequestBuilder(quirks, configEffort)
         .build(body, upstreamModel = "k3", originalModel = "claude-kimi--k3[1m]", compact = compact)
 }
 
@@ -64,7 +70,7 @@ class PassthroughRequestBuilderTest {
             compact = true,
         )
         val system = req["system"]!!.jsonPrimitive.content
-        assertEquals(withCompactDirective("be brief", compact = true), system)
+        assertEquals(CompactInstructions.withCompactDirective("be brief", compact = true), system)
     }
 
     @Test
@@ -203,6 +209,55 @@ class PassthroughRequestBuilderTest {
         assertEquals("max", thinkingReq(null).effort()) // absent -> native default
     }
 
+    // Review finding PT-002 (KIMI BYTE-IDENTITY): a configured daemon effort must never move
+    // kimi's wire bytes for a request shape the pre-diff builder produced identically. Guards the
+    // exact hole the review found — a non-null configEffort silently replacing EFFORT_MAX in
+    // output_config.effort whenever `thinking` carried no budget_tokens.
+    @Test
+    fun `a configured effort never moves the wire bytes for thinking-present-without-budget`() {
+        val built = buildFull(
+            """{"model":"m","messages":[{"role":"user","content":"hi"}],
+                "thinking":{"type":"enabled"}}""",
+            configEffort = "low",
+        )
+        assertEquals("max", built.req.effort())
+    }
+
+    // The companion case: configEffort is not dead code — it DOES inform TurnMeta.effort, but only
+    // on the one shape (`thinking` entirely absent) that never reaches kimi's wire at all, since
+    // putThinking omits both `thinking` and `output_config` in that case.
+    @Test
+    fun `a configured effort informs meta effort only when thinking is entirely absent`() {
+        val built = buildFull(
+            """{"model":"m","messages":[{"role":"user","content":"hi"}]}""",
+            configEffort = "low",
+        )
+        assertNull(built.req["thinking"])
+        assertNull(built.req["output_config"])
+        assertEquals("low", built.meta.effort)
+    }
+
+    // SCH-006: a configured effort valid for another provider's vocab (CODEX_REASONING_EFFORT's
+    // "medium") but not one of kimi's own rungs must never silently escalate to the priciest one.
+    @Test
+    fun `an unrecognized configured effort falls to the cheapest rung, never escalates to max`() {
+        val built = buildFull(
+            """{"model":"m","messages":[{"role":"user","content":"hi"}]}""",
+            configEffort = "medium",
+        )
+        assertEquals("low", built.meta.effort)
+    }
+
+    @Test
+    fun `the unrecognized-effort fallback logs once per builder lifetime, not per turn`() {
+        val logged = mutableListOf<String>()
+        val builder = PassthroughRequestBuilder(PASS, configEffort = "medium", log = logged::add)
+        val body = AnthropicParse.parseAnthropicBody("""{"model":"m","messages":[{"role":"user","content":"hi"}]}""")
+        builder.build(body, upstreamModel = "k3", originalModel = "claude-kimi--k3", compact = false)
+        builder.build(body, upstreamModel = "k3", originalModel = "claude-kimi--k3", compact = false)
+        assertEquals(1, logged.size)
+    }
+
     @Test
     fun `disabled thinking omits both thinking and output_config`() {
         val req = build(
@@ -307,5 +362,107 @@ class PassthroughRequestBuilderTest {
         assertEquals(512, meta.clientMaxTokens?.toInt())
         assertEquals(9000, meta.budgetTokens?.toInt())
         assertNull(meta.summary)
+    }
+
+    // --- NEUTRAL defaults: the faithful passthrough a real Anthropic upstream needs -------------
+    //
+    // Every assertion here is a deformation that would be WRONG against api.anthropic.com. They are
+    // the claude head's actual contract (campaign claude-head, CH-2): kimi opts into the deformations
+    // via PassthroughQuirksDefaults().kimi(), and a head that declares nothing gets its bytes forwarded as sent.
+
+    @Test
+    fun `neutral preserves cache_control everywhere kimi strips it`() {
+        val req = build(
+            """{"model":"m","system":[{"type":"text","text":"s","cache_control":{"type":"ephemeral"}}],
+                "messages":[{"role":"user","content":[
+                  {"type":"text","text":"hi","cache_control":{"type":"ephemeral"}}]}],
+                "tools":[{"name":"run","description":"d","input_schema":{"type":"object"},
+                  "cache_control":{"type":"ephemeral"}}]}""",
+            quirks = NEUTRAL,
+        )
+        // prompt caching is the whole economics of a subscription head — a strip here is a silent
+        // cold read on every single turn, not an error anyone would notice.
+        assertEquals(
+            "ephemeral",
+            req["system"]!!.jsonArray[0].jsonObject["cache_control"]!!.jsonObject["type"]?.jsonPrimitive?.content,
+        )
+        assertEquals(
+            "ephemeral",
+            req.blocks(0)[0]["cache_control"]!!.jsonObject["type"]?.jsonPrimitive?.content,
+        )
+        assertEquals(
+            "ephemeral",
+            req["tools"]!!.jsonArray[0].jsonObject["cache_control"]!!.jsonObject["type"]?.jsonPrimitive?.content,
+        )
+    }
+
+    @Test
+    fun `neutral forwards full JSON Schema and never invents a description`() {
+        val req = build(
+            """{"model":"m","messages":[{"role":"user","content":"go"}],
+                "tools":[{"name":"t","input_schema":{"type":"object","properties":{
+                  "when":{"type":"string","format":"date-time"},
+                  "tuple":{"type":"array","items":[{"type":"string"}]}}},"strict":true}]}""",
+            quirks = NEUTRAL,
+        )
+        val tool = req["tools"]!!.jsonArray[0].jsonObject
+        val props = tool["input_schema"]!!.jsonObject["properties"]!!.jsonObject
+        // MFJS strips `format` and collapses tuple `items` — both change tool SEMANTICS upstream.
+        assertEquals("date-time", props["when"]!!.jsonObject["format"]?.jsonPrimitive?.content)
+        assertEquals(1, props["tuple"]!!.jsonObject["items"]!!.jsonArray.size)
+        assertTrue(tool["strict"] != null, "strict is the client's field to send")
+        assertNull(tool["description"], "a faithful passthrough invents nothing")
+    }
+
+    @Test
+    fun `neutral passes content blocks kimi's allowlist drops`() {
+        val req = build(
+            """{"model":"m","messages":[{"role":"assistant","content":[
+                 {"type":"redacted_thinking","data":"enc"},
+                 {"type":"document","source":{"type":"text","data":"d"}},
+                 {"type":"text","text":"t"}]}]}""",
+            quirks = NEUTRAL,
+        )
+        // redacted_thinking round-trips through Claude Code; dropping it corrupts the thinking chain.
+        assertEquals(listOf("redacted_thinking", "document", "text"), req.blockTypes(0))
+    }
+
+    @Test
+    fun `neutral forwards thinking verbatim and leaves output_config to the client`() {
+        val req = build(
+            """{"model":"m","messages":[{"role":"user","content":"go"}],
+                "thinking":{"type":"enabled","budget_tokens":30000},
+                "output_config":{"effort":"client-chosen"}}""",
+            quirks = NEUTRAL,
+        )
+        val thinking = req["thinking"]!!.jsonObject
+        assertEquals("enabled", thinking["type"]?.jsonPrimitive?.content)
+        assertEquals(30000, thinking["budget_tokens"]?.jsonPrimitive?.content?.toInt())
+        // the adaptive rewrite would replace both of these with Moonshot vocabulary
+        assertEquals("client-chosen", req["output_config"]!!.jsonObject["effort"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `neutral forwards an explicit thinking disable instead of deleting it - DR-120`() {
+        val req = build(
+            """{"model":"m","messages":[{"role":"user","content":"go"}],
+                "thinking":{"type":"disabled"}}""",
+            quirks = NEUTRAL,
+        )
+        // A generic Anthropic-surface vendor whose models default thinking ON must receive the
+        // client's explicit disable; deleting the key silently re-enables thinking (behavior AND
+        // cost). Only the adaptive rewrite (kimi) owns the omit-on-disabled rule.
+        assertEquals("disabled", req["thinking"]!!.jsonObject["type"]?.jsonPrimitive?.content)
+        assertNull(req["output_config"])
+    }
+
+    @Test
+    fun `the compaction directive is NOT a quirk — every passthrough head gets it`() {
+        val req = build(
+            """{"model":"m","system":"be brief","messages":[{"role":"user","content":"s"}]}""",
+            quirks = NEUTRAL,
+            compact = true,
+        )
+        assertTrue(req["system"]!!.jsonPrimitive.content.contains(COMPACT_DIRECTIVE_HEAD))
     }
 }

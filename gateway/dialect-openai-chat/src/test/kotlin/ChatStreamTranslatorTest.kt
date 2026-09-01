@@ -9,8 +9,35 @@ import org.junit.jupiter.api.Test
 import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.dialect.chat.ChatStreamTranslator
+import splice.spi.BufferCapacity
 
 class ChatStreamTranslatorTest {
+
+    // DR-144, adjudicated rather than reflex-fixed: chat gates reasoning on isNotEmpty, passthrough
+    // on isNotBlank, so a backend emitting one WHITESPACE-only reasoning delta and then finishing
+    // with no content grades a clean end_turn here while passthrough would fail the turn honestly.
+    // The divergence is DELIBERATE and stays: chat and responses forward what the vendor sent and
+    // let the empty-turn gate read a genuinely empty turn, whereas passthrough is defending against
+    // one specific observed shape — Kimi opening a thinking block and closing it having sent
+    // nothing. Changing chat to isNotBlank would silently reclassify real turns whose reasoning is
+    // whitespace-delimited across deltas. This arm exists so that decision is PINNED: a future
+    // reader who "harmonizes" the three siblings reds here and finds this note.
+    @Test
+    fun `a whitespace-only reasoning delta still counts as delivered thinking - DR-144`() = runTest {
+        val sink = Rec()
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev("""{"choices":[{"delta":{"reasoning_content":" "}}]}"""),
+                ev("""{"choices":[{"delta":{},"finish_reason":"stop"}]}"""),
+            ).asFlow(),
+            sink,
+        )
+        val s = outcome as TurnOutcome.Success
+        assertTrue(s.emittedThinking, "chat latches on non-EMPTY, so whitespace counts as delivered")
+        assertEquals(" ", s.thinkingText, "and the buffer carries exactly what the vendor sent")
+        assertFalse(s.emittedText, "no content delta arrived")
+        assertEquals(listOf("openThinking", "think: ", "closeAll"), sink.calls)
+    }
 
     @Test
     fun `reasoning, text, finish stop`() = runTest {
@@ -30,8 +57,14 @@ class ChatStreamTranslatorTest {
         assertEquals("Hi there", s.bodyText)
         assertEquals("why", s.thinkingText)
         assertEquals(5, s.usage.inputTokens)
-        assertTrue(sink.calls.contains("openThinking"))
-        assertTrue(sink.calls.contains("text:Hi "))
+        // DR-143: the EXACT wire, not membership. `contains` could not distinguish a compliant
+        // one-block-at-a-time stream from the overlapping one chat actually emitted — openThinking
+        // and text:Hi are both present either way. Anthropic's grammar is start, deltas, stop, then
+        // the next block, so the thinking block must be CLOSED (close#0) before the text block opens.
+        assertEquals(
+            listOf("openThinking", "think:why", "close#0", "openText", "text:Hi ", "text:there", "closeAll"),
+            sink.calls,
+        )
     }
 
     @Test
@@ -242,7 +275,9 @@ class ChatStreamTranslatorTest {
 
     @Test
     fun `finished turn beats a late watchdog fire - success not overloaded`() = runTest {
-        val outcome = ChatStreamTranslator(firedCtx(splice.spi.WatchdogFired.Idle(180_000, true))).driveTurn(
+        val outcome = ChatStreamTranslator(
+            firedCtx(splice.spi.WatchdogFired.Idle(180_000, sawClientFrame = true, limitMs = 180_000)),
+        ).driveTurn(
             listOf(
                 ev("""{"choices":[{"delta":{"content":"done"},"finish_reason":null}]}"""),
                 ev("""{"choices":[{"delta":{},"finish_reason":"stop"}]}"""),
@@ -254,7 +289,9 @@ class ChatStreamTranslatorTest {
 
     @Test
     fun `watchdog fire without a finish stays an overloaded failure`() = runTest {
-        val outcome = ChatStreamTranslator(firedCtx(splice.spi.WatchdogFired.Idle(180_000, true))).driveTurn(
+        val outcome = ChatStreamTranslator(
+            firedCtx(splice.spi.WatchdogFired.Idle(180_000, sawClientFrame = true, limitMs = 180_000)),
+        ).driveTurn(
             listOf(ev("""{"choices":[{"delta":{"content":"partial"},"finish_reason":null}]}""")).asFlow(),
             Rec(),
         )
@@ -677,5 +714,65 @@ class ChatRefusalHonestyTest {
         assertTrue(f.providerReported)
         assertTrue(f.message.contains("but I stop here"), f.message)
         assertTrue(sink.calls.contains("text:Sure, here goes. "), sink.calls.toString())
+    }
+}
+
+class ChatRunawayGuardTest {
+
+    private fun explicitToolFrame(index: Int, arguments: String): kotlinx.serialization.json.JsonObject =
+        ev(
+            """{"choices":[{"delta":{"tool_calls":[{"index":$index,"id":"tool_$index","function":{"name":"run","arguments":"$arguments"}}]}}]}""",
+        )
+
+    @Test
+    fun `explicit-index opened tools count toward the runaway guard`() = runTest {
+        var emitted = 0
+        val events = kotlinx.coroutines.flow.flow {
+            repeat(BufferCapacity.MAX_TOOL_INDEX_ENTRIES) { index ->
+                emitted += 1
+                emit(explicitToolFrame(index, "{}"))
+            }
+        }
+
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(events, Rec())
+        val failure = outcome as TurnOutcome.Failure
+        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        assertTrue(emitted < BufferCapacity.MAX_TOOL_INDEX_ENTRIES, "guard must stop collection: $emitted")
+    }
+
+    @Test
+    fun `aggregate arguments across explicit-index tools count toward the runaway guard`() = runTest {
+        val chunk = "x".repeat(1_000_000)
+        var emitted = 0
+        val events = kotlinx.coroutines.flow.flow {
+            repeat(25) { index ->
+                emitted += 1
+                emit(explicitToolFrame(index, chunk))
+            }
+        }
+
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(events, Rec())
+        val failure = outcome as TurnOutcome.Failure
+        assertTrue(failure.message.contains("exceeded max buffered size"), failure.message)
+        assertTrue(emitted < 25, "guard must stop collection: $emitted")
+    }
+
+    @Test
+    fun `runaway guard unwinds the upstream instead of draining it`() = runTest {
+        val chunk = "x".repeat(1_000_000)
+        val frame = ev("""{"choices":[{"delta":{"content":"$chunk"}}]}""")
+        var emitted = 0
+        val events = kotlinx.coroutines.flow.flow {
+            repeat(25) {
+                emitted += 1
+                emit(frame)
+            }
+        }
+
+        val outcome = ChatStreamTranslator(ctx()).driveTurn(events, Rec())
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, failure.type)
+        assertFalse(failure.providerReported)
+        assertTrue(emitted < 25, "the guard must unwind the upstream, not drain it; emitted=$emitted")
     }
 }

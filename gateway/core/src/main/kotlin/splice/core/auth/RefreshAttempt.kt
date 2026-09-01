@@ -22,3 +22,25 @@ public sealed class RefreshAttempt<out T> {
      *  shared retry loop's attempts exhausted. NOT evidence the refresh token itself is dead. */
     public data class Denied(val detail: String) : RefreshAttempt<Nothing>()
 }
+
+/**
+ * The one refresh POST — `grant_type=refresh_token` against the provider's token endpoint —
+ * returning the classified verdict rather than a nullable token bundle.
+ *
+ * The seam the three OAuth providers (codex, grok, kimi) inject over their own token URL, and the
+ * reason it is a seam at all: the HTTP hop lives in :app (where Ktor and the retry loop are) while
+ * the credential state machine lives in :provider-*, so a provider is handed the CALL and never the
+ * client. That is also what lets a provider test drive invalid-grant, denial and rotation paths with
+ * no network.
+ *
+ * [T] is the provider's own rotated-token shape (`RefreshedTokens`, `GrokRefreshedTokens`,
+ * `KimiRefreshedTokens`), which is why this is generic rather than three near-identical types: the
+ * ROLE is identical at all three seams and only the payload differs. Distinct from the daemon's own
+ * two-argument refresh, which additionally chooses the token URL — see `TokenUrlRefreshCall`.
+ *
+ * Transport exceptions are NOT modelled here: they still throw, and the provider's
+ * `runCatchingCancellable { refreshCall(...) }` owns them.
+ */
+public fun interface RefreshCall<T> {
+    public suspend operator fun invoke(refreshToken: String): RefreshAttempt<T>
+}

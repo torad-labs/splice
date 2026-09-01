@@ -2,11 +2,30 @@
 package splice.core.util
 
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.Executors
 import java.util.concurrent.RejectedExecutionException
 import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
+
+/**
+ * One best-effort write handed to the [AsyncFileIo] lane — a perf/compact JSONL append, a usage
+ * flush, a state-file rewrite.
+ *
+ * Named rather than left a bare `() -> Unit` (HD-22) because the seam carries a real contract the
+ * shape does not: it runs on the single `splice-file-io` DAEMON thread, off the turn coroutine, so
+ * it must not assume a coroutine context, must not block for long (it holds the one lane every
+ * other writer queues behind), and MAY NEVER RUN AT ALL — [submit] returns false at the pending
+ * cap and on executor rejection, and a daemon thread is not drained at JVM exit. Anything that must
+ * happen is not one of these.
+ *
+ * The same role as `UsageHud.scheduleCoalesced`'s flush parameter, which exists only to be
+ * submitted here, so both name this one type.
+ */
+public fun interface FileIoTask {
+    public operator fun invoke()
+}
 
 /**
  * One bounded, process-wide lane for best-effort state/telemetry writes.
@@ -18,14 +37,23 @@ public object AsyncFileIo {
     private val pending = AtomicInteger()
     private val dropped = AtomicInteger()
     private val warned = AtomicBoolean(false)
+
+    // Threads come from the platform factory, never from an ad-hoc `Thread(...)`: the factory owns
+    // thread group and priority, and this lane only overrides the two properties that are its own
+    // contract — the name (so a stack dump says which lane is blocked) and daemon-ness (so a
+    // pending file write can never keep a dying JVM alive).
+    private val threads = Executors.defaultThreadFactory()
     private val executor = ScheduledThreadPoolExecutor(1) { task ->
-        Thread(task, "splice-file-io").apply { isDaemon = true }
+        threads.newThread(task).apply {
+            name = "splice-file-io"
+            isDaemon = true
+        }
     }.apply {
         removeOnCancelPolicy = true
         setExecuteExistingDelayedTasksAfterShutdownPolicy(false)
     }
 
-    public fun submit(delayMs: Long = 0L, task: () -> Unit): Boolean {
+    public fun submit(delayMs: Long = 0L, task: FileIoTask): Boolean {
         if (pending.incrementAndGet() > MAX_PENDING_TASKS) {
             pending.decrementAndGet()
             recordDrop()

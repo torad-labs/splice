@@ -1,4 +1,4 @@
-// Walls for the gateway-side tool_search answer (ResponsesToolSearch.kt): the continuation is an
+// Walls for the gateway-side tool_search answer (ResponsesToolSearchController.kt): the continuation is an
 // APPEND-ONLY extension of the prior request (closed-DTO continuationRequest, every non-input field
 // untouched), the stop conditions (hasToolUse, empty toolSearches, round cap), the exhaustive-vs-
 // ranked answer split, limit clamping, call_id dedup, and the no-dangling-reasoning-item rule.
@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.reasoning.encodeReasoningEnvelope
+import splice.core.reasoning.ReasoningReplay
 import splice.core.turn.ToolSearchCall
 import splice.core.turn.ToolSearchCallId
 import splice.core.turn.TurnOutcome
@@ -26,7 +26,7 @@ import splice.dialect.responses.ToolDeferralPolicy
 import splice.dialect.responses.ToolSearchIndex
 import splice.dialect.responses.responsesRequestJson
 import splice.spi.ToolSearchRound
-import splice.core.reasoning.decodeReasoningEnvelope as coreDecode
+import splice.core.reasoning.ReasoningReplay.decodeReasoningEnvelope as coreDecode
 
 private val DEFERRED = List(12) { ToolDefinition(name = "mcp__exa__tool_$it", description = "tool number $it") }
 private val POLICY = ToolDeferralPolicy(searchLimit = 4, searchRounds = 3)
@@ -35,6 +35,7 @@ private val CONTROLLER = ResponsesToolSearchController(
     policy = POLICY,
     emitStrict = false,
     forceStrictFalse = false,
+    normalizeSchemas = false,
     decodeReasoningEnvelope = { coreDecode(it) },
 )
 
@@ -88,7 +89,7 @@ private fun appendedTail(next: JsonObject): List<JsonElement> {
     return nextInput.subList(prevSize, nextInput.size)
 }
 
-private fun envelopeFor(id: String): String = encodeReasoningEnvelope(
+private fun envelopeFor(id: String): String = ReasoningReplay.encodeReasoningEnvelope(
     buildJsonObject {
         put("type", "reasoning")
         put("id", id)
@@ -201,7 +202,7 @@ class ResponsesToolSearchTest {
         val outputs = tail.map { it.jsonObject }.filter { it["type"]?.jsonPrimitive?.content == "tool_search_output" }
         assertEquals(1, outputs.size)
         // review 2026-07-25 (comment 4): pin WHICH duplicate is answered, not just the count.
-        // answeredOnce (ResponsesToolSearch.kt:136-140) is documented first-wins; "tool_0" (the
+        // answeredOnce (ResponsesToolSearchController.kt:88-91) is documented first-wins; "tool_0" (the
         // first call's query) matches only mcp__exa__tool_0 (no "tool_10"/"tool_11" substring
         // collision the way "tool_1" would) — a first->last regression would answer with
         // mcp__exa__tool_1 (and its "tool_1x" siblings) instead, and only this assertion catches it.

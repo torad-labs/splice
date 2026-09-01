@@ -9,44 +9,76 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.config.KeyStore
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
+import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 
 class KeyCommandTest {
 
     private fun store(tmp: Path) = KeyStore(tmp.resolve("keys.toml"))
 
+    // DR-40 gap 2 (codex, redo 2): in a CLI process nothing installs DaemonLog, so a store built
+    // with the old default sink swallowed the UNREADABLE warning and `splice key list` reported
+    // "no keys stored" against a corrupt store. This drives the PRODUCTION default chain — no
+    // injected store; only the path source is swapped for hermeticity — so a mutant that drops
+    // cliStoreSink from the in-body default dies here (the first version injected an already-wired
+    // store and the default-arg mutant survived, codex's replay catch).
+    @Test
+    fun `key list surfaces an unreadable store on stderr, not a silent empty - DR-40`(@TempDir tmp: Path) {
+        val externalDir = Files.createDirectories(tmp.resolve("external"))
+        val path = externalDir.resolve("keys.toml")
+        KeyStore(path).write("OPENROUTER_API_KEY", "sk-a")
+        Files.setPosixFilePermissions(externalDir, PosixFilePermissions.fromString("---------"))
+        val stderr = ByteArrayOutputStream()
+        val realErr = System.err
+        System.setErr(PrintStream(stderr, true))
+        try {
+            val ok = KeyCommand(storePath = { path }).key(listOf("list"))
+            assertTrue(ok, "list still succeeds — degraded display, loud diagnosis")
+        } finally {
+            System.setErr(realErr)
+            Files.setPosixFilePermissions(externalDir, PosixFilePermissions.fromString("rwx------"))
+        }
+        assertTrue(
+            stderr.toString().contains("UNREADABLE"),
+            "the CLI must surface the corrupt-vs-empty warning on stderr, got '${stderr.toString().trim()}'",
+        )
+    }
+
     @Test
     fun `set --value stores and list shows the name`(@TempDir tmp: Path) {
         val s = store(tmp)
-        assertTrue(key(listOf("set", "OPENROUTER_API_KEY", "--value", "sk-or-abc"), s))
+        assertTrue(KeyCommand().key(listOf("set", "OPENROUTER_API_KEY", "--value", "sk-or-abc"), s))
         assertEquals("sk-or-abc", s.read("OPENROUTER_API_KEY"))
-        assertTrue(key(listOf("list"), s))
+        assertTrue(KeyCommand().key(listOf("list"), s))
     }
 
     @Test
     fun `set without value and without console fails with guidance`(@TempDir tmp: Path) {
         val s = store(tmp)
-        assertFalse(key(listOf("set", "OPENROUTER_API_KEY"), s))
+        assertFalse(KeyCommand().key(listOf("set", "OPENROUTER_API_KEY"), s))
         assertEquals(null, s.read("OPENROUTER_API_KEY"))
     }
 
     @Test
     fun `set rejects invalid env names`(@TempDir tmp: Path) {
         val s = store(tmp)
-        assertFalse(key(listOf("set", "not-a-name", "--value", "x"), s))
+        assertFalse(KeyCommand().key(listOf("set", "not-a-name", "--value", "x"), s))
         assertTrue(s.names().isEmpty())
     }
 
     @Test
     fun `unset removes and reports`(@TempDir tmp: Path) {
         val s = store(tmp)
-        key(listOf("set", "OPENROUTER_API_KEY", "--value", "sk-or-abc"), s)
-        assertTrue(key(listOf("unset", "OPENROUTER_API_KEY"), s))
+        KeyCommand().key(listOf("set", "OPENROUTER_API_KEY", "--value", "sk-or-abc"), s)
+        assertTrue(KeyCommand().key(listOf("unset", "OPENROUTER_API_KEY"), s))
         assertEquals(null, s.read("OPENROUTER_API_KEY"))
     }
 
     @Test
     fun `unknown subcommand is a usage error`(@TempDir tmp: Path) {
-        assertFalse(key(listOf("frobnicate"), store(tmp)))
+        assertFalse(KeyCommand().key(listOf("frobnicate"), store(tmp)))
     }
 }

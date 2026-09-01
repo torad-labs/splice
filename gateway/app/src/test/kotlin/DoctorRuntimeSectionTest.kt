@@ -5,13 +5,14 @@
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.cli.doctor
+import splice.app.cli.DoctorCommand
 import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 
 class DoctorRuntimeSectionTest {
 
@@ -20,7 +21,7 @@ class DoctorRuntimeSectionTest {
         val original = System.out
         System.setOut(PrintStream(buf, true))
         return try {
-            doctor { name -> env[name] } to buf.toString()
+            DoctorCommand().doctor { name -> env[name] } to buf.toString()
         } finally {
             System.setOut(original)
         }
@@ -37,6 +38,39 @@ class DoctorRuntimeSectionTest {
             "CLAUDEX_STATE_DIR" to state.toString(),
             "SPLICE_CONTROL_PORT" to port.toString(),
         )
+    }
+
+    // DR-41a: an EXISTING-but-unreadable mgmt key reported as "missing"/"minted on first launch",
+    // sending the operator to re-mint a key sitting there behind a permission error. No daemon is
+    // needed: with the daemon stopped the old code said INFO minted-on-first-launch; unreadable
+    // must out-rank that guess.
+    @Test
+    fun `an unreadable mgmt key is reported unreadable, not missing`(@TempDir tmp: Path) {
+        val env = baseEnv(tmp, port = 1) // nothing listens on port 1: daemon not running
+        val keyFile = tmp.resolve("state").resolve("mgmt-key")
+        Files.setPosixFilePermissions(keyFile, PosixFilePermissions.fromString("-wx------"))
+        try {
+            val (_, out) = runDoctor(env)
+            assertTrue(out.contains("unreadable at"), out)
+            assertTrue(!out.contains("minted on first launch"), out)
+        } finally {
+            Files.setPosixFilePermissions(keyFile, PosixFilePermissions.fromString("rw-------"))
+        }
+    }
+
+    @Test
+    fun `an inaccessible mgmt key parent is unreadable, not missing`(@TempDir tmp: Path) {
+        val env = baseEnv(tmp, port = 1)
+        val stateDir = tmp.resolve("state")
+        val original = Files.getPosixFilePermissions(stateDir)
+        Files.setPosixFilePermissions(stateDir, PosixFilePermissions.fromString("---------"))
+        try {
+            val (_, out) = runDoctor(env)
+            assertTrue(out.contains("unreadable at"), out)
+            assertTrue(!out.contains("minted on first launch"), out)
+        } finally {
+            Files.setPosixFilePermissions(stateDir, original)
+        }
     }
 
     @Test
@@ -78,10 +112,76 @@ class DoctorRuntimeSectionTest {
         }
     }
 
+    // DR-174: the runtime section held its own private mgmt-key reader that collapsed absence and
+    // denied access, and then rendered BOTH as "skipped (mgmt-key unreadable)". So a live daemon on
+    // a box that has simply never minted a key told the operator the key could not be READ — the
+    // mirror of the restart defect, pointing at permissions on a file that is not there. The state
+    // dir is deliberately readable here: the ONLY thing wrong is that the key does not exist yet.
+    @Test
+    fun `a live daemon with no key minted says so, not unreadable - DR-174`(@TempDir tmp: Path) {
+        val server = com.sun.net.httpserver.HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        val version = splice.core.GATEWAY_VERSION
+        server.createContext("/health") { ex ->
+            val b = """{"ok":true,"version":"$version","heads":0,"readyHeads":0,"failedHeads":0}""".toByteArray()
+            ex.sendResponseHeaders(200, b.size.toLong())
+            ex.responseBody.use { it.write(b) }
+        }
+        server.start()
+        try {
+            val env = baseEnv(tmp, server.address.port)
+            Files.delete(tmp.resolve("state").resolve("mgmt-key"))
+            val (_, out) = runDoctor(env)
+            assertTrue(out.contains("not minted yet"), "an unminted key must be named as such:\n$out")
+            assertTrue(
+                !out.contains("mgmt-key unreadable"),
+                "a key that was never written is not a key that cannot be read:\n$out",
+            )
+        } finally {
+            server.stop(0)
+        }
+    }
+
     @Test
     fun `runtime section is INFO-skipped when the daemon is stopped - JW-05`(@TempDir tmp: Path) {
         val freePort = ServerSocket(0).use { it.localPort }
         val (_, out) = runDoctor(baseEnv(tmp, freePort))
         assertTrue(out.contains("skipped (daemon stopped)"), out)
+    }
+
+    // DR-173 (grok-splice source sweep): a LIVE daemon with zero heads crashed `splice doctor`
+    // outright. DoctorRuntime legitimately returns an empty list there — daemon up, key readable,
+    // /api/heads answering with an empty array, and DaemonLock.headsRuntime reserves null for a
+    // FAILED request — and DoctorCommand.renderSection called maxOf on it, which throws
+    // NoSuchElementException. The render loop runs OUTSIDE guarded(), so nothing caught it: an
+    // install whose only sin was having no heads yet got a stack trace instead of a report.
+    @Test
+    fun `a live daemon with zero heads still prints a report - DR-173`(@TempDir tmp: Path) {
+        val server = com.sun.net.httpserver.HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
+        val version = splice.core.GATEWAY_VERSION
+        server.createContext("/health") { ex ->
+            val b = """{"ok":true,"version":"$version","heads":0,"readyHeads":0,"failedHeads":0}""".toByteArray()
+            ex.sendResponseHeaders(200, b.size.toLong())
+            ex.responseBody.use { it.write(b) }
+        }
+        // The whole fixture: a well-formed EMPTY heads array, which is not an error condition.
+        server.createContext("/api/heads") { ex ->
+            val b = """{"heads":[]}""".toByteArray()
+            ex.sendResponseHeaders(200, b.size.toLong())
+            ex.responseBody.use { it.write(b) }
+        }
+        server.start()
+        try {
+            val (_, out) = runDoctor(baseEnv(tmp, server.address.port))
+            // Reaching an assertion at all is half the arm — before DR-173 runDoctor threw.
+            assertTrue(out.contains("runtime"), "the runtime section must still be rendered:\n$out")
+            assertTrue(out.contains("nothing to report"), "an empty section must say so:\n$out")
+            // ...and the report must still COMPLETE, not stop at the section that was empty.
+            assertTrue(
+                out.contains("Everything checks out.") || out.contains("issue(s)") || out.contains("No blockers"),
+                "the summary line must still be reached:\n$out",
+            )
+        } finally {
+            server.stop(0)
+        }
     }
 }

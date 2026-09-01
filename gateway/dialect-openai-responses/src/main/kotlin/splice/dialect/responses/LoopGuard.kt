@@ -13,6 +13,7 @@ package splice.dialect.responses
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import splice.core.wire.AnthropicMessage
@@ -24,6 +25,12 @@ internal object LoopGuard {
     const val TRIGGER = 3
     const val REFUSAL = 5
     private const val ERROR_MARKER = "<tool_use_error>"
+
+    // DR-95: tool input is untrusted and kotlinx exposes no max-depth knob, so the recursive
+    // rebuild below (and canonical()'s toString of its result) was the one unbounded walk over
+    // client-authored JSON — deep enough nesting StackOverflowError'd outside every sanctioned
+    // catch. Same 200-depth invariant as PassthroughCacheControl's placement walk.
+    private const val DEPTH_CAP = 200
 
     /** toolUseId -> directive text for every result whose (tool, input) has failed TRIGGER+
      *  times since its last success. The caller prepends the directive to that result's output. */
@@ -84,11 +91,16 @@ internal object LoopGuard {
     // Key-order-independent encoding so {a:1,b:2} and {b:2,a:1} share a failure streak.
     private fun canonical(input: JsonObject): String = sortKeys(input).toString()
 
-    private fun sortKeys(el: JsonElement): JsonElement = when (el) {
-        is JsonObject -> buildJsonObject {
-            el.keys.sorted().forEach { k -> put(k, sortKeys(el.getValue(k))) }
+    // Subtrees at DEPTH_CAP collapse to a marker, not a pass-through: canonical()'s toString
+    // would still recurse the original deep subtree. Inputs identical down to the cap share a
+    // canonical, so identical deep spam still streaks (the guard FIRES); inputs differing only
+    // below the cap coalesce, which a nudge-only feature may coarsen but a crash may not.
+    private fun sortKeys(el: JsonElement, depth: Int = 0): JsonElement = when {
+        depth >= DEPTH_CAP -> JsonPrimitive("[splice depth-capped]")
+        el is JsonObject -> buildJsonObject {
+            el.keys.sorted().forEach { k -> put(k, sortKeys(el.getValue(k), depth + 1)) }
         }
-        is JsonArray -> buildJsonArray { el.forEach { add(sortKeys(it)) } }
+        el is JsonArray -> buildJsonArray { el.forEach { add(sortKeys(it, depth + 1)) } }
         else -> el
     }
 }

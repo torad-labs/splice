@@ -1,0 +1,5 @@
+openThinking
+think:plan
+sig:real-sig
+close
+closeAll

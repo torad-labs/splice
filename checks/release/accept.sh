@@ -11,8 +11,17 @@ ASSETS=(
   bom.cdx.json dependency-licenses.json
 )
 for asset in "${ASSETS[@]}" sha256sums.txt; do
-  [ -f "$DIST/$asset" ] || { echo "release accept: missing $DIST/$asset" >&2; exit 1; }
+  # DR-25 redo (codex catch, 2026-08-31): -f accepted zero-byte artifacts whose checksums were
+  # computed AFTER truncation — sha256sum -c cannot defend a staged-empty file. Non-empty is the
+  # floor for every published artifact.
+  [ -s "$DIST/$asset" ] || { echo "release accept: missing or EMPTY $DIST/$asset" >&2; exit 1; }
 done
+# Semantic floor for the one pure-prose artifact: PROVENANCE must actually be the provenance
+# document, not any non-empty placeholder.
+head -1 "$DIST/PROVENANCE.md" | grep -q "^# Provenance" || {
+  echo "release accept: PROVENANCE.md does not open with the provenance header" >&2
+  exit 1
+}
 
 jar_version="$(java -jar "$DIST/splice.jar" version)"
 jar_version="${jar_version#splice }"
@@ -131,9 +140,11 @@ rm -rf "$sandbox"
 # the staged assets, while the fake GitHub CLI records which candidates were attested.
 remote_tools="$(mktemp -d)"
 remote_log="$remote_tools/gh.log"
+remote_curl_log="$remote_tools/curl.log"
 cat > "$remote_tools/curl" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
+printf '%s\n' "$2" >> "$SPLICE_FAKE_CURL_LOG"
 cp "$SPLICE_FAKE_RELEASE_ASSETS/$(basename "$2")" "$4"
 SH
 cat > "$remote_tools/gh" <<'SH'
@@ -153,6 +164,7 @@ mkdir -p "$sandbox/home" "$sandbox/share" "$sandbox/bin" "$sandbox/work"
   SPLICE_BIN_DIR="$sandbox/bin" \
   SPLICE_RELEASE_BASE_URL="https://example.invalid/splice-release" \
   SPLICE_FAKE_RELEASE_ASSETS="$DIST" \
+  SPLICE_FAKE_CURL_LOG="$remote_curl_log" \
   SPLICE_FAKE_GH_LOG="$remote_log" \
   PATH="$remote_tools:$sandbox/bin:$PATH" \
     bash -s < "$DIST/install.sh"
@@ -162,8 +174,81 @@ mkdir -p "$sandbox/home" "$sandbox/share" "$sandbox/bin" "$sandbox/work"
   cat "$remote_log" >&2
   exit 1
 }
-grep -q "splice.jar attestation: OK" "$output"
-grep -q "splice-launch attestation: OK" "$output"
+grep -q "splice.jar attestation: OK" "$output" || { echo "release accept: remote install missing splice.jar attestation OK" >&2; exit 1; }
+grep -q "splice-launch attestation: OK" "$output" || { echo "release accept: remote install missing splice-launch attestation OK" >&2; exit 1; }
+
+# With no channel override, every download must stay on GitHub's stable-only `latest` release.
+: > "$remote_log"
+: > "$remote_curl_log"
+stable_sandbox="$(mktemp -d)"
+stable_output="$stable_sandbox/output.log"
+mkdir -p "$stable_sandbox/home" "$stable_sandbox/share" "$stable_sandbox/bin" "$stable_sandbox/work"
+(
+  cd "$stable_sandbox/work"
+  HOME="$stable_sandbox/home" \
+  JAVA_TOOL_OPTIONS="-Duser.home=$stable_sandbox/home" \
+  SPLICE_SHARE_DIR="$stable_sandbox/share" \
+  SPLICE_BIN_DIR="$stable_sandbox/bin" \
+  SPLICE_FAKE_RELEASE_ASSETS="$DIST" \
+  SPLICE_FAKE_CURL_LOG="$remote_curl_log" \
+  SPLICE_FAKE_GH_LOG="$remote_log" \
+  PATH="$remote_tools:$stable_sandbox/bin:$PATH" \
+    bash -s < "$DIST/install.sh"
+) >"$stable_output" 2>&1 || { cat "$stable_output" >&2; exit 1; }
+stable_base="https://github.com/torad-labs/splice/releases/latest/download"
+printf '%s\n' \
+  "$stable_base/splice.jar" \
+  "$stable_base/sha256sums.txt" \
+  "$stable_base/splice-launch" > "$remote_tools/expected-stable-urls.log"
+cmp -s "$remote_tools/expected-stable-urls.log" "$remote_curl_log" || {
+  echo "release accept: default install did not use the exact stable latest URLs" >&2
+  exit 1
+}
+[ "$(grep -c '^attestation verify ' "$remote_log")" -eq 2 ] || {
+  echo "release accept: stable install did not attest both release artifacts" >&2
+  cat "$remote_log" >&2
+  exit 1
+}
+grep -q "splice.jar attestation: OK" "$stable_output" || { echo "release accept: stable install missing splice.jar attestation OK" >&2; exit 1; }
+grep -q "splice-launch attestation: OK" "$stable_output" || { echo "release accept: stable install missing splice-launch attestation OK" >&2; exit 1; }
+rm -rf "$stable_sandbox"
+
+# A prerelease install must pin every download to that exact tag.
+: > "$remote_log"
+: > "$remote_curl_log"
+versioned_sandbox="$(mktemp -d)"
+versioned_output="$versioned_sandbox/output.log"
+mkdir -p "$versioned_sandbox/home" "$versioned_sandbox/share" "$versioned_sandbox/bin" "$versioned_sandbox/work"
+(
+  cd "$versioned_sandbox/work"
+  HOME="$versioned_sandbox/home" \
+  JAVA_TOOL_OPTIONS="-Duser.home=$versioned_sandbox/home" \
+  SPLICE_SHARE_DIR="$versioned_sandbox/share" \
+  SPLICE_BIN_DIR="$versioned_sandbox/bin" \
+  SPLICE_VERSION="v9.8.7-beta.6" \
+  SPLICE_FAKE_RELEASE_ASSETS="$DIST" \
+  SPLICE_FAKE_CURL_LOG="$remote_curl_log" \
+  SPLICE_FAKE_GH_LOG="$remote_log" \
+  PATH="$remote_tools:$versioned_sandbox/bin:$PATH" \
+    bash -s < "$DIST/install.sh"
+) >"$versioned_output" 2>&1 || { cat "$versioned_output" >&2; exit 1; }
+expected_versioned_base="https://github.com/torad-labs/splice/releases/download/v9.8.7-beta.6"
+printf '%s\n' \
+  "$expected_versioned_base/splice.jar" \
+  "$expected_versioned_base/sha256sums.txt" \
+  "$expected_versioned_base/splice-launch" > "$remote_tools/expected-versioned-urls.log"
+cmp -s "$remote_tools/expected-versioned-urls.log" "$remote_curl_log" || {
+  echo "release accept: prerelease install did not use the exact version-pinned URLs" >&2
+  exit 1
+}
+[ "$(grep -c '^attestation verify ' "$remote_log")" -eq 2 ] || {
+  echo "release accept: prerelease install did not attest both release artifacts" >&2
+  cat "$remote_log" >&2
+  exit 1
+}
+grep -q "splice.jar attestation: OK" "$versioned_output" || { echo "release accept: prerelease install missing splice.jar attestation OK" >&2; exit 1; }
+grep -q "splice-launch attestation: OK" "$versioned_output" || { echo "release accept: prerelease install missing splice-launch attestation OK" >&2; exit 1; }
+rm -rf "$versioned_sandbox"
 
 # A failed provenance check must abort before the candidate artifacts become live.
 cat > "$remote_tools/gh" <<'SH'

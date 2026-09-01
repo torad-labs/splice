@@ -9,18 +9,23 @@
 //   2. The Main-install -> DaemonLog::write -> nine-provider-default WIRING. A broken install or a
 //      typo'd default is invisible to every other test, because every other test injects its own
 //      sink and never exercises the default at all.
+import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
-import splice.app.persistentLogger
+import splice.app.DaemonProcess
+import splice.core.config.KeyStore
 import splice.core.util.AsyncFileIo
 import splice.core.util.DaemonLog
+import splice.provider.openai.ApiKeyAuthProvider
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.readText
 
 class DaemonLogWiringTest {
+
+    private val process = DaemonProcess()
 
     private fun drainToDisk() = assertTrue(AsyncFileIo.drain(), "async file lane did not drain")
 
@@ -28,7 +33,7 @@ class DaemonLogWiringTest {
     fun `each message becomes exactly one daemon-log line, with or without a trailing newline`(
         @TempDir logs: Path,
     ) {
-        val log = persistentLogger(logs)
+        val log = process.persistentLogger(logs)
         // The two conventions that now coexist: pre-existing callers terminate their own message,
         // the 14 converted kt-no-println sites do not (System.err.println used to do it for them).
         log("[a] caller that terminates its own line\n")
@@ -45,7 +50,7 @@ class DaemonLogWiringTest {
 
     @Test
     fun `a message is never double-terminated`(@TempDir logs: Path) {
-        persistentLogger(logs)("[x] already terminated\n")
+        process.persistentLogger(logs)("[x] already terminated\n")
         drainToDisk()
         val raw = logs.resolve("daemon.log").readText()
         assertTrue(raw.endsWith("\n"), "must end with a terminator")
@@ -72,15 +77,23 @@ class DaemonLogWiringTest {
     }
 
     @Test
-    fun `the provider default resolves to DaemonLog, so the daemon wiring is one hop not two`() {
+    fun `the provider default resolves to DaemonLog, so the daemon wiring is one hop not two`(
+        @TempDir tmp: Path,
+    ) = runTest {
         val seen = mutableListOf<String>()
         try {
             DaemonLog.install { seen += it }
-            // Exactly what `log: (String) -> Unit = DaemonLog::write` binds to in the nine
-            // providers. If that reference were re-pointed, this is the assertion that fails.
-            val asDefault: (String) -> Unit = DaemonLog::write
-            asDefault("[provider] auth read failed")
-            assertEquals(listOf("[provider] auth read failed"), seen)
+            val unreadable = Files.createDirectory(tmp.resolve("key-directory"))
+            val provider = ApiKeyAuthProvider(
+                envVar = "DR33_API_KEY",
+                keyFile = unreadable,
+                envReader = { null },
+                keyStore = KeyStore(tmp.resolve("keys.toml")),
+            )
+
+            assertEquals(false, provider.describe().present)
+            assertEquals(1, seen.size)
+            assertTrue(seen.single().startsWith("[api-key-auth] failed to read $unreadable:"), seen.single())
         } finally {
             DaemonLog.install {}
         }

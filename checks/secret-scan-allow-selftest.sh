@@ -49,9 +49,19 @@ while IFS= read -r line; do
 
   case "$line" in
     '^#'*) continue ;;                                  # inert prose: a hit starts with a digit
-    '^'*'$') continue ;;                                # fully anchored exemption
-    *) bad "line $lineno unanchored (matches more than the one line it names): [$line]" ;;
   esac
+
+  # DR-188: this rule used to be the glob '^'*'$' — "starts with ^, ends with $" — and it called
+  # that FULLY ANCHORED. It is not. ERE gives `|` the lowest precedence, so
+  # `^[0-9]+:[[:space:]]*a|b[[:space:]]*$` starts with ^ and ends with $ while parsing as
+  # `(^…a)` OR `(b…$)`: only the outermost alternatives carry an anchor and every branch between
+  # them floats free. A credential appended to the first branch, or prepended to the second, was
+  # silently exempted while this rule reported the line as anchored. The generator now brackets the
+  # pattern, which makes the whole emitted shape checkable — so check the shape, not two characters
+  # of it, and a hand-edit that drops the group fails here.
+  if ! printf '%s\n' "$line" | grep -qE '^\^\[0-9\]\+:\[\[:space:\]\]\*\(.*\)\[\[:space:\]\]\*\$$'; then
+    bad "line $lineno is not a bracketed, fully anchored exemption (reach unknown): [$line]"
+  fi
 done < "$ALLOW"
 
 # ── canaries ─────────────────────────────────────────────────────────────────
@@ -89,7 +99,61 @@ for hit in "${must_exempt[@]}"; do
   fi
 done
 
+# ── generator contracts ──────────────────────────────────────────────────────
+# DR-188: nothing anywhere exercised the GENERATOR. This script read the .txt and the gate ran
+# `--check` against the real tree, so every rejection path in gen-secret-scan-allow.py — anchors,
+# missing reason, invalid ERE — was unexercised: a wall nobody has watched fail. The arms below run
+# it against fixture inputs in a throwaway tree (the generator resolves its paths from __file__, so
+# copying it is enough to relocate its whole world).
+GEN="$ROOT/checks/gen-secret-scan-allow.py"
+if [ ! -f "$GEN" ]; then
+  bad "the generator is missing — the allowlist's source of truth cannot be verified"
+else
+  gtmp="$(mktemp -d)"
+  trap 'rm -rf "$gtmp"' EXIT
+  mkdir -p "$gtmp/checks" "$gtmp/.github"
+  cp "$GEN" "$gtmp/checks/"
+
+  # $1 label · $2 expected rc (0 generated / 1 refused) · $3 TOML body
+  gen_arm() {
+    printf '%s\n' "$3" > "$gtmp/.github/secret-scan-allow.toml"
+    ( cd "$gtmp" && python3 checks/gen-secret-scan-allow.py >/dev/null 2>&1 )
+    local rc=$?
+    [ "$rc" = "$2" ] || bad "generator: $1 — expected rc=$2, got rc=$rc"
+  }
+  # A pattern is a TOML literal string, so it may not contain a single quote; none below does.
+  gen_pattern() { printf "[[exemption]]\npattern = '%s'\nreason = 'fixture arm'\n" "$1"; }
+
+  # G1 — an alternation is ACCEPTED, and the emitted line must BIND it. This is DR-188's whole
+  #      subject: before bracketing the same input produced a line that silently exempted anything
+  #      appended to the first branch or prepended to the second.
+  gen_arm "an alternation is accepted" 0 "$(gen_pattern 'val fixtureA = "aaa"|val fixtureB = "bbb"')"
+  emitted="$gtmp/.github/secret-scan-allow.txt"
+  for probe in \
+    '99:  AWS_SECRET_ACCESS_KEY = "AKIAIOSFODNN7EXAMPLE"; val fixtureB = "bbb"' \
+    '98:  val fixtureA = "aaa" ; token = "ghp_canary0000000000000000000000000000"'
+  do
+    printf '%s\n' "$probe" | grep -vEf "$emitted" >/dev/null 2>&1 \
+      || bad "generator: an alternation exemption still swallows a whole hit line: $probe"
+  done
+  # ...and the branches themselves must still be exempted, or the fix broke what it protects.
+  printf '%s\n' '10:  val fixtureB = "bbb"' | grep -vEf "$emitted" >/dev/null 2>&1 \
+    && bad "generator: bracketing broke a legitimate alternation branch"
+
+  # G2 — the breakout. `a)|(b` would close the group the generator adds and float free again; it is
+  #      refused because the BARE pattern is validated as an ERE, not because of any paren logic.
+  #      The generated line `(a)|(b)` is perfectly valid, so this arm is what pins that the bare
+  #      half of the ERE check stays — delete it and the breakout reopens with everything green.
+  gen_arm "a breakout pattern is refused" 1 "$(gen_pattern 'val a = "x")|(val b = "y"')"
+
+  # G3..G5 — contracts the generator has always claimed and nothing has ever exercised.
+  gen_arm "a pattern bringing its own anchor is refused" 1 "$(gen_pattern '^val a = "x"')"
+  gen_arm "an invalid ERE is refused" 1 "$(gen_pattern 'val a = "x"(')"
+  gen_arm "an exemption with no reason is refused" 1 "$(printf "[[exemption]]\npattern = 'val a = \"x\"'\n")"
+  gen_arm "an empty allowlist is refused" 1 "# no exemptions at all"
+fi
+
 if [ "$fail" -eq 0 ]; then
-  note "secret-scan allowlist: ${#must_report[@]} canaries still reported, ${#must_exempt[@]} exemption intact"
+  note "secret-scan allowlist: ${#must_report[@]} canaries still reported, ${#must_exempt[@]} exemption intact, generator contracts held"
 fi
 exit "$fail"

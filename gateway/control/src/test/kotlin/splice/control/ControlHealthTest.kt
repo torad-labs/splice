@@ -11,11 +11,9 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
-import splice.core.config.ConfigService
-import splice.core.config.StatePaths
+import splice.control.api.ControlPayloads
 import splice.core.head.Head
 import splice.core.head.HeadHealth
-import java.nio.file.Files
 
 private class FakeHead(override val key: String, private val up: Boolean) : Head {
     override val label = key
@@ -54,7 +52,6 @@ class ControlHealthTest {
         failed: Int = 0,
     ) = ControlPayloads(
         heads = heads,
-        config = ConfigService(StatePaths(baseOverride = Files.createTempDirectory("ctl-health"))),
         failedHeads = { failed },
         configuredHeads = heads.size,
         turnPathStalled = { stalled },

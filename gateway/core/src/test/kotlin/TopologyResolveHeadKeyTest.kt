@@ -110,7 +110,7 @@ class TopologyResolveHeadKeyTest {
 
     @Test
     fun `portCollisionMessage names both heads and the port - JW-13`() {
-        val msg = splice.core.topology.portCollisionMessage(3200, listOf("a", "b"))
+        val msg = splice.core.topology.TopologyMessages.portCollisionMessage(3200, listOf("a", "b"))
         assertEquals("port 3200 is claimed by a and b — give each head its own port", msg)
     }
 }

@@ -43,11 +43,20 @@ SHARED = "shared-definition"
 
 # The one definition, and one request-builder surface per dialect — where a compaction turn is
 # shaped for the wire.
-PATHS = {
+#
+# "anthropic-passthrough" is a LIST (HD-24 decomposition, 2026-08-17, the file-list mechanism
+# already used by cx_01/cx_09/cx_18/w4_a): compactAwareSystem — and with it both WIRING_TOKENS
+# spellings — moved onto PassthroughCompactSystem.kt; the call site named by CALL_SITES stayed in
+# PassthroughRequestBuilder.kt. ANY missing file in the list makes the whole key None (the vacuity
+# guard, unchanged and strengthened).
+PATHS: dict[str, str | list[str]] = {
     SHARED: "gateway/core/src/main/kotlin/splice/core/turn/CompactInstructions.kt",
     "openai-responses": "gateway/dialect-openai-responses/src/main/kotlin/splice/dialect/responses/ResponsesRequestBuilder.kt",
     "openai-chat": "gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatRequestBuilder.kt",
-    "anthropic-passthrough": "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughRequestBuilder.kt",
+    "anthropic-passthrough": [
+        "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughRequestBuilder.kt",
+        "gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughCompactSystem.kt",
+    ],
 }
 DIALECTS = [d for d in PATHS if d != SHARED]
 
@@ -74,6 +83,9 @@ CALL_SITES = {
 CANARY_TESTS = {
     "openai-chat": "gateway/dialect-openai-chat/src/test/kotlin/ChatRequestBuilderTest.kt",
     "anthropic-passthrough": "gateway/dialect-anthropic-passthrough/src/test/kotlin/PassthroughRequestBuilderTest.kt",
+    # DR-35d: responses was the missing third — its builder test asserted a hand-typed literal, so
+    # the responses-side directive could be deleted with this wall green for 1 of the 3 dialects.
+    "openai-responses": "gateway/dialect-openai-responses/src/test/kotlin/ResponsesRequestBuilderTest.kt",
 }
 CANARY_TOKEN = "COMPACT_DIRECTIVE_HEAD"
 
@@ -155,11 +167,20 @@ def detect(sources: Mapping[str, str | None]) -> tuple[list[str], str]:
     return problems, summary
 
 
+def _read_source(rel: str | list[str]) -> str | None:
+    """A source is one relative path or a LIST of them, concatenated in order. ANY missing file in
+    a list makes the whole key None — a deleted file must never go quiet by dropping out silently."""
+    rels = rel if isinstance(rel, list) else [rel]
+    texts = [(ROOT / r).read_text(encoding="utf-8") if (ROOT / r).exists() else None for r in rels]
+    if any(t is None for t in texts):
+        return None
+    return code_only("\n".join(t for t in texts if t is not None))
+
+
 def _load() -> dict[str, str | None]:
     out: dict[str, str | None] = {}
     for key, rel in PATHS.items():
-        p = ROOT / rel
-        out[key] = code_only(p.read_text(encoding="utf-8")) if p.exists() else None
+        out[key] = _read_source(rel)
     for key, rel in CANARY_TESTS.items():
         p = ROOT / rel
         out[f"canary:{key}"] = code_only(p.read_text(encoding="utf-8")) if p.exists() else None

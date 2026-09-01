@@ -2,13 +2,25 @@
 // context windows resolve EXACT match -> ordered startsWith prefix rules -> default
 // (never substring: the v29 fuzzy pass silently inherited windows and hid catalog gaps);
 // discovery wrap because Claude Code drops /v1/models ids not matching /^(claude|anthropic)/i;
-// stripSuffixes removes the discovery prefix and a trailing "[1m]" hint (case-insensitive);
+// stripSuffixes removes the discovery prefix and a trailing numeric tier hint ("[1m]", "[500k]" —
+// the [<digits><k|m>] grammar, case-insensitive, DR-27);
 // discovery rows carry display_name; availableModelIds stay UNWRAPPED (a wrapped active
 // model makes Claude Code ignore the context-window env and compact early).
 package splice.core.model
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+
+/** What Claude Code returns for a "[1m]" id — the literal it hardcodes, NOT 1024*1024. */
+private const val CLAUDE_CODE_ONE_MILLION = 1_000_000L
+
+/** Claude Code's own id-keyed window hook, matched anywhere in the client id. */
+// UNANCHORED on purpose, unlike the strip rule (DR-27): this predicate exists to predict what the
+// CLIENT will do, and Claude Code's own detection is a containsMatch — `/\[1m\]/i` (cli 2.1.233
+// `G4u`) — anywhere in the id. The anchored version disagreed with the client for a mid-string
+// spelling ("k3[1m]-preview"): the client used 1e6 while usageScale corrected against the pinned
+// window, a silently wrong factor. Mirror the client, never improve on it.
+private val oneMillionHint = Regex("\\[1m]", RegexOption.IGNORE_CASE)
 
 @Serializable
 public data class ModelEntry(
@@ -37,6 +49,9 @@ public data class ModelCatalog(
     val extraWindows: List<ExtraWindow> = emptyList(),
     val windowRules: List<WindowRule> = emptyList(),
     val defaultContextWindow: Long,
+    /** The head's pinned model — the row whose window became CLAUDE_CODE_MAX_CONTEXT_TOKENS at
+     *  launch, and therefore the window the CLIENT believes every non-"[1m]" row has. */
+    val pinnedModel: String = "",
 ) {
     init {
         require(models.isNotEmpty()) { "a catalog needs at least one picker model" }
@@ -45,7 +60,10 @@ public data class ModelCatalog(
 
     public val defaultModel: String get() = models.first().id
 
-    private val suffixHint = Regex("\\[1m]$", RegexOption.IGNORE_CASE)
+    // Numeric bracketed tier hints, not arbitrary trailing brackets: a provider that ships ONE id
+    // per model (xAI — grok-4.6 IS 500k) can offer two picker rows over one upstream id, while a
+    // genuine vendor id such as model[preview] still reaches that provider byte-for-byte.
+    private val suffixHint = Regex("\\[\\d+[km]]$", RegexOption.IGNORE_CASE)
 
     // Canonical (suffix-stripped) ids — `contains` and `contextWindowFor` both strip the query the
     // same way. Storing the RAW picker id (e.g. "k3[1m]") let membership pass after the contains
@@ -54,6 +72,14 @@ public data class ModelCatalog(
     private val exactWindows: Map<String, Long> =
         models.associate { stripSuffixes(it.id) to it.contextWindow } +
             extraWindows.associate { stripSuffixes(it.id) to it.contextWindow }
+
+    // RAW picker ids, consulted BEFORE the stripped map. Two rows over one upstream id collapse to
+    // one stripped key, so the stripped map alone cannot tell "grok-4.6" (capped) from
+    // "grok-4.6[500k]" — whichever row was declared last would win both. Raw-first keeps each row's
+    // own window while the stripped map still answers the bare upstream id every wire path uses.
+    private val rawWindows: Map<String, Long> =
+        models.associate { unwrap(it.id) to it.contextWindow } +
+            extraWindows.associate { unwrap(it.id) to it.contextWindow }
 
     // Canonical (suffix-stripped) ids — `contains` strips its query the same way, so both sides
     // compare on the upstream id. Storing the RAW id here let a "[1m]" picker model (kimi k3[1m])
@@ -68,7 +94,9 @@ public data class ModelCatalog(
     /** True only for a picker model owned by this head (wrapped or upstream id). */
     public fun contains(id: String): Boolean = stripSuffixes(id) in modelIds
 
-    /** Discovery wrapper + "[1m]" hint stripped — what the upstream actually sees. */
+    /** Discovery wrapper + any valid trailing numeric tier ("[1m]", "[500k]") stripped — what the
+     *  upstream actually sees. Only the [<digits><k|m>] grammar strips (DR-27): a non-numeric
+     *  bracket and a malformed tier ride to the wire byte-for-byte. */
     public fun stripSuffixes(id: String): String = unwrap(id).replace(suffixHint, "")
 
     /** Exact -> ordered startsWith prefix rules -> default. Order is the law. */
@@ -76,9 +104,52 @@ public data class ModelCatalog(
         val fallback = defaultOverride?.takeIf { it > 0 } ?: defaultContextWindow
         if (model.isNullOrEmpty()) return fallback
         val id = stripSuffixes(model)
-        return exactWindows[id]
+        // An UNDECLARED suffixed variant ("grok-4.6[1m]" over rows grok-4.6 + grok-4.6[500k])
+        // resolves to the stripped id's OWN row, not through exactWindows — that map collapses
+        // colliding rows by associate-last-wins, so the undeclared tier's denominator moved with
+        // fixture declaration order (DR-24 redo). exactWindows still answers a bare id declared
+        // only via suffixed rows (k3 <- k3[1m]), where no raw row exists to prefer.
+        return rawWindows[unwrap(model)]
+            ?: rawWindows[id]
+            ?: exactWindows[id]
             ?: windowRules.firstOrNull { id.startsWith(it.prefix) }?.contextWindow
             ?: fallback
+    }
+
+    /** The window the CLIENT will actually use for [id], which is not always what we declare.
+     *  Claude Code resolves it as: `KE(id) = /\[1m\]/i` -> exactly 1e6, else
+     *  CLAUDE_CODE_MAX_CONTEXT_TOKENS (cli 2.1.233 `G4u`). That "[1m]" test on the id is the ONLY
+     *  id-keyed branch there is — no other spelling moves it — and the env is one number for the
+     *  whole process, so every other row is stuck with the PINNED row's window however it is
+     *  declared here. [usageScale] is what bridges the two. */
+    public fun clientContextWindowFor(id: String): Long =
+        if (oneMillionHint.containsMatchIn(unwrap(id))) {
+            CLAUDE_CODE_ONE_MILLION
+        } else {
+            contextWindowFor(pinnedModel)
+        }
+
+    /** Multiplier for the input-token counts reported to the client, so a row compacts at ITS OWN
+     *  declared window rather than the session's.
+     *
+     *  We are a proxy: Claude Code compacts on `(input + cache_creation + cache_read) / window`, and
+     *  splice authors the NUMERATOR of that ratio even though the denominator is fixed in the
+     *  client's process. Scaling the numerator by `client/declared` makes the ratio reach 1 exactly
+     *  when real usage reaches the declared window — so a 500k row on a 256k session compacts at
+     *  500k, live, switchable from the /model menu. Returns 1.0 (untouched counts) whenever the row
+     *  already agrees with the client, which is every row on a head that declares one window. */
+    public fun usageScale(id: String): Double {
+        val declared = contextWindowFor(id)
+        // NO "[1m]" exemption, deliberately. `contains()` strips the suffix before its membership
+        // test, so an UNDECLARED tier id — `grok-4.6[1m]`, which exists in no catalog — passes the
+        // "proxies its own models only" gate, and Claude Code applies its own /\[1m\]/i rule to
+        // whatever string it holds. Exempting those from scaling let a 500k model run toward 1e6
+        // and hard-fail upstream. Scaling them instead makes the client's 1e6 land on the stripped
+        // id's real window. A DECLARED 1e6 row needs no special case: client and declared are both
+        // 1e6, so this arithmetic already returns exactly 1.0.
+        val client = clientContextWindowFor(id)
+        if (declared <= 0 || client <= 0) return 1.0
+        return client.toDouble() / declared
     }
 
     public fun labelFor(id: String): String = models.firstOrNull { it.id == id }?.label ?: id

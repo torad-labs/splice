@@ -16,6 +16,7 @@ import mock.MockChatGptUpstream
 import mock.awaitListening
 import mock.freshPort
 import org.junit.jupiter.api.AfterAll
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
@@ -108,5 +109,6 @@ class OpenAiResponsesTest {
         assertTrue(sse.contains("event: message_stop"))
         // api key rode as the bearer; NO ChatGPT-Account-ID header (openai platform, not ChatGPT)
         assertTrue(mock.upstreamAuths.any { it.second == "Bearer sk-openai-key-abcdef" })
+        assertEquals("basic" to null, mock.upstreamAccountIds.last())
     }
 }

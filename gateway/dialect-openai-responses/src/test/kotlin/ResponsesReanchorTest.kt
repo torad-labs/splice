@@ -126,20 +126,37 @@ class ResponsesReanchorControllerTest {
     }
 
     @Test
-    fun `a thinking-only partial refuses continuation - thinking cannot seed the resume`() {
+    fun `a thinking-only partial restarts from scratch - nothing replayable, no marker`() {
         val partial = TurnOutcome.PartialRound(thinkingText = "deep partial reasoning already streamed")
-        assertNull(
-            controller.continuationForFailure(
-                ReanchorRound(previousBody(), failureWith(partial = partial), 0),
-            ),
+        val next = controller.continuationForFailure(
+            ReanchorRound(previousBody(), failureWith(partial = partial), 0),
         )
+        // Verbatim whole-request retry (codex-rs responses_retry.rs parity) — NOT a marker
+        // continuation: thinking cannot seed a resume, so the round re-runs clean.
+        assertEquals(previousBody(), next)
     }
 
     @Test
-    fun `an empty partial refuses continuation - nothing to salvage`() {
+    fun `an empty partial restarts from scratch - the whole-request retry`() {
+        val next = controller.continuationForFailure(
+            ReanchorRound(previousBody(), failureWith(partial = TurnOutcome.PartialRound()), 0),
+        )
+        assertEquals(previousBody(), next)
+    }
+
+    @Test
+    fun `clean-slate restart respects the continuation budget`() {
+        val empty = failureWith(partial = TurnOutcome.PartialRound())
+        assertNotNull(controller.continuationForFailure(ReanchorRound(previousBody(), empty, 1)))
+        assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), empty, 2)))
+    }
+
+    @Test
+    fun `clean-slate restart refuses a tool round - double-dispatch risk unchanged`() {
+        val partial = TurnOutcome.PartialRound(hasToolUse = true)
         assertNull(
             controller.continuationForFailure(
-                ReanchorRound(previousBody(), failureWith(partial = TurnOutcome.PartialRound()), 0),
+                ReanchorRound(previousBody(), failureWith(partial = partial), 0),
             ),
         )
     }
@@ -236,6 +253,103 @@ class ResponsesReanchorPartialTest {
     }
 
     @Test
+    fun `a deterministic upstream rejection is never re-POSTed`() = runTest {
+        val outcome = ResponsesStreamTranslator(reanchorCtx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.failed","response":{"error":{""" +
+                        """"code":"invalid_parameter","message":"request rejected by policy"}}}""",
+                ),
+            ).asFlow(),
+            NullSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, failure.type)
+        assertTrue(failure.providerReported)
+        assertNull(failure.partial)
+        assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)))
+    }
+
+    // DR-10 redo (codex end-to-end counterexample): the arm above passed even pre-fix because its
+    // message carries no transient wording. The SAME deterministic code whose message says
+    // "unavailable ... try again" used to flip transient — free text overruled provenance and the
+    // whole context re-POSTed. The code rides classify() separately now; wording buys no replay.
+    @Test
+    fun `a deterministic code with transient-sounding text still never re-POSTs - DR-10`() = runTest {
+        val outcome = ResponsesStreamTranslator(reanchorCtx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.failed","response":{"error":{"code":"invalid_parameter",""" +
+                        """"message":"The selected model is unavailable in your region, try again"}}}""",
+                ),
+            ).asFlow(),
+            NullSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertTrue(failure.providerReported)
+        assertNull(failure.partial, "a deterministic failure must not carry a re-POSTable partial")
+        assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)))
+    }
+
+    // DR-10 sweep follow-up: the FLAT error event has no error envelope — the reducer's payload
+    // pick lands on the event itself, whose `type` is the SSE event discriminator ("error"), not
+    // vendor provenance. Riding it into classify() as a structured code made every code-less flat
+    // error deterministic, withholding the retry its own message wording grants.
+    @Test
+    fun `a flat error event's discriminator is not vendor provenance - DR-10`() = runTest {
+        val outcome = ResponsesStreamTranslator(reanchorCtx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"half an ans"}"""),
+                ev("""{"type":"error","code":null,"message":"The server had an error, please try again"}"""),
+            ).asFlow(),
+            NullSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertTrue(failure.providerReported)
+        assertEquals("half an ans", failure.partial?.bodyText, "transient flat error must keep its salvage")
+        val continuation = controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0))
+        assertNotNull(continuation, "a transient flat error must earn a re-POST")
+        assertTrue(continuation.toString().contains("half an ans"), "the marker continuation carries the salvage")
+    }
+
+    @Test
+    fun `a transient server failure remains eligible for a clean restart`() = runTest {
+        val outcome = ResponsesStreamTranslator(reanchorCtx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.failed","response":{"error":{""" +
+                        """"code":"server_error","message":"temporarily unavailable"}}}""",
+                ),
+            ).asFlow(),
+            NullSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertNotNull(failure.partial)
+        assertEquals(
+            previousBody(),
+            controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)),
+        )
+    }
+
+    @Test
+    fun `a content-filtered turn is deterministic and is never re-POSTed`() = runTest {
+        val outcome = ResponsesStreamTranslator(reanchorCtx()).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"blocked"}"""),
+                ev(
+                    """{"type":"response.incomplete","response":{"status":"incomplete",""" +
+                        """"incomplete_details":{"reason":"content_filter"}}}""",
+                ),
+            ).asFlow(),
+            NullSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, failure.type)
+        assertNull(failure.partial)
+        assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)))
+    }
+
+    @Test
     fun `a tool block torn mid-args marks the poison tear`() = runTest {
         val outcome = ResponsesStreamTranslator(reanchorCtx()).driveTurn(
             listOf(
@@ -282,17 +396,47 @@ class ResponsesReanchorPartialTest {
         assertEquals(42, partial?.usage?.outputTokens)
     }
 
+    // DR-7 REVERSES the arm that stood here ("a watchdog fire carries no partial - its cancellation
+    // owns the turn"). That sentence described a watchdog that cancelled the whole TURN; it now
+    // reaps a single ROUND, so an idle fire is a stall report about a round that still has real
+    // salvage — and withholding it threw away text the client had already been shown.
     @Test
-    fun `a watchdog fire carries no partial - its cancellation owns the turn`() = runTest {
+    fun `an idle watchdog fire carries its partial - the round is reaped, not the turn`() = runTest {
         val outcome = ResponsesStreamTranslator(
-            reanchorCtx(fired = WatchdogFired.Idle(idleMs = 1, sawFirstByte = true)),
+            reanchorCtx(fired = WatchdogFired.Idle(idleMs = 1, sawClientFrame = true, limitMs = 1)),
         ).driveTurn(
             listOf(
                 ev("""{"type":"response.output_text.delta","output_index":0,"delta":"text"}"""),
             ).asFlow(),
             NullSink(),
         )
-        assertNull((outcome as TurnOutcome.Failure).partial)
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals("text", failure.partial?.bodyText, "an idle stall must keep what the round produced")
+        assertNotNull(
+            controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)),
+            "and that salvage must be enough to earn the continuation",
+        )
+    }
+
+    // The half that did NOT reverse, and the reason the split is not cosmetic: totalCap is the
+    // whole-turn wall. Handing it a partial would let the turn continue past the one budget that
+    // exists to stop it, which is the opposite of what its own name says.
+    @Test
+    fun `a totalCap watchdog fire carries no partial - the whole-turn wall is not continuable`() = runTest {
+        val outcome = ResponsesStreamTranslator(
+            reanchorCtx(fired = WatchdogFired.TotalCap(elapsedMs = 1)),
+        ).driveTurn(
+            listOf(
+                ev("""{"type":"response.output_text.delta","output_index":0,"delta":"text"}"""),
+            ).asFlow(),
+            NullSink(),
+        )
+        val failure = outcome as TurnOutcome.Failure
+        assertNull(failure.partial, "the whole-turn cap must not hand out salvage")
+        assertNull(
+            controller.continuationForFailure(ReanchorRound(previousBody(), failure, attempt = 0)),
+            "and with no salvage there is nothing to continue from",
+        )
     }
 
     @Test

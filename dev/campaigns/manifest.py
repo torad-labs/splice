@@ -19,8 +19,14 @@ WHO CALLS: the orchestrator's review loop and every subagent brief
 ("update the manifest AS you work" => `manifest.py note <id> "..."`).
 
 TESTS/ORACLE: self-test via `manifest.py selftest` (runs get/list/note/
-set-status/edit-fence/edit-verify/packet against a temp copy and
+set-status/edit-fence/edit-verify/edit-title/packet against a temp copy and
 diff-checks the results).
+
+LOCAL DIVERGENCE [2026-08-15, promote upstream via the toolkit pipeline]:
+ONE-REVIEW-PER-ROW guard in `verdict` (operator law, claude-head campaign;
+the ledger record agrees — the only historical double-accept was P2-GOLD,
+reopened as FALSE-VERIFIED). Allowed: accepted | blocked | redo->accepted
+| redo->blocked. Selftest covers the full lifecycle red-green.
 
 USAGE:
   manifest.py list [--status S] [--phase P]     compact id|phase|status|title table
@@ -52,9 +58,15 @@ USAGE:
                                                 journal query (Monitor condition + drain);
                                                 exit 0 = new actionable events, 1 = none
   manifest.py cost <ID> [--db PATH] [--pricing PATH] [--now ISO]
+  manifest.py <new.toml> init                   the ONLY verb that creates a ledger (DR-181). Every
+                                                other verb hard-fails on a missing path, creating
+                                                nothing: a ledger that is not there is a wrong path
+                                                until you say otherwise, and inventing one silently
+                                                replaced a live campaign on 2026-09-01.
   manifest.py add --id X --phase P --title T --files F --verify V [--status todo]
   manifest.py edit-fence <ID> "f1, f2, ..."      replace the files fence + append FENCE-EDITED note
   manifest.py edit-verify <ID> "cmd"             replace the verify string + append VERIFY-EDITED note
+  manifest.py edit-title <ID> "text"             replace the title + append TITLE-EDITED note
   manifest.py add-law "text"                    append a dated # LAW line to the header banner
   manifest.py amend-header "old" "new"          substring-replace in exactly ONE banner comment
                                                 line — the sanctioned channel for a rotted pointer
@@ -93,6 +105,7 @@ import shutil
 import sys
 import sqlite3
 import tempfile
+import threading
 import time
 import tomllib
 from decimal import Decimal, ROUND_HALF_UP
@@ -104,6 +117,12 @@ DEFAULT = os.path.join(os.path.dirname(__file__), "kotlin-hardening.toml")
 # Verbs that are meaningful with no ledger path (`laws` aggregates across every ledger).
 # Everything else addresses ONE campaign and must be told which.
 PATHLESS_VERBS = frozenset({"laws"})
+# DR-183: one usage string, reachable from BOTH of add's rejection paths — the malformed flag and
+# the missing required one. It was inline at the first, so the second had nothing to print with.
+_ADD_USAGE = (
+    "usage: add --id <ID> --phase <P> --title <T> "
+    "[--files <f1, f2, ...>] [--verify <cmd>] [--status <s>]"
+)
 DEFAULT_WORKSPACES_DB = os.path.expanduser("~/.openclaw/workspaces/workspaces.db")
 DEFAULT_LITELLM_PRICING = os.path.expanduser("~/.openclaw/workspaces/litellm-pricing.json")
 HDR = re.compile(r"^\[\[items?\]\]\s*$")
@@ -181,6 +200,10 @@ try {
 
 class _CampaignProofRefusal(Exception):
     """A strict-mode verified transition refused while holding the manifest flock."""
+
+
+class _OneReviewPerRowRefusal(Exception):
+    """A ONE-REVIEW-PER-ROW verdict refused while holding the manifest flock."""
 
 
 def _campaign_proof_required() -> bool:
@@ -950,15 +973,35 @@ def _machine_id(_path: Path | str | None = None) -> str:
         existing = ""
     if MACHINE_ID_RE.match(existing):
         return existing
+    # DR-50b: first-writer-wins + persist-or-die. os.replace let the LAST racing first-use
+    # overwrite the file, so every loser returned an id that was no longer on disk; and the old
+    # bare `except OSError: pass` answered a failed write with a FRESH random id on every call —
+    # an unstable substrate identity scattering one machine's claims across many identities.
+    # os.link refuses to overwrite (exactly one racer claims the path; losers read the winner
+    # back), and a persistence failure dies loudly instead of degrading.
     new_id = secrets.token_hex(4)
+    # tmp is unique PER ATTEMPT, not per process: two first-uses in one process (threads) sharing
+    # a pid-named tmp let one racer's cleanup unlink the other's file between write and link,
+    # turning a benign lost race into ENOENT — the selftest race arm caught exactly that.
+    tmp = path.with_name(f".{path.name}.tmp.{os.getpid()}.{new_id}")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(f".{path.name}.tmp.{os.getpid()}")
         tmp.write_text(new_id + "\n", encoding="utf-8")
-        os.replace(tmp, path)
-    except OSError:
-        pass
-    return new_id
+        try:
+            os.link(tmp, path)  # atomic claim: FileExistsError = a concurrent first-use won
+        except FileExistsError:
+            pass
+        final = path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        sys.exit(f"error: cannot persist machine-id at {path}: {exc}")
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+    if not MACHINE_ID_RE.match(final):
+        sys.exit(f"error: machine-id file at {path} holds {final!r}, not 8 hex chars")
+    return final
 
 
 def _qualify_seat(seat: str, machine_id: str) -> str:
@@ -3128,7 +3171,26 @@ def _attested_scoped_files(path: str, item_id: str) -> list[str] | None:
 
 
 def _toml_basic_string(value: str) -> str:
-    return json.dumps(value)
+    # json.dumps escapes 0x00-0x1F plus the quote/backslash pair and leaves U+007F (DEL) RAW; TOML
+    # basic strings require every control character other than tab escaped, DEL included. A DEL byte
+    # in pasted input (plausible from a terminal capture still carrying erase bytes) was therefore
+    # accepted, written, and then rejected by _locked_rewrite's own tomllib re-parse — the whole edit
+    # rolled back under an opaque invalid-TOML error naming no cause (review 2026-08-28, PR 99).
+    # Fails closed either way; this is what stops it failing at all.
+    return json.dumps(value, ensure_ascii=False).replace("\x7f", "\\u007f")
+
+
+def _toml_basic_string_decoded(text: str) -> str | None:
+    """The decoded value of a TOML basic string this file wrote, or None for any other shape.
+
+    Basic strings are a subset of JSON strings, which is exactly why [_toml_basic_string] can be
+    json.dumps — so the inverse is json.loads, narrowed to str so a `files = [...]` list falls
+    through as None rather than comparing as a value."""
+    try:
+        value = json.loads(text.strip())
+    except ValueError:
+        return None
+    return value if isinstance(value, str) else None
 
 
 def _toml_string_list(values: list[str]) -> str:
@@ -3143,6 +3205,16 @@ def _replace_item_field(lines: list[str], s: int, e: int, field: str, new_value:
         old_line = lines[j].rstrip("\n")
         if field == "files" and ("[" not in old_line or "]" not in old_line):
             sys.exit("error: unsupported multiline files field")
+        # A re-save whose value is SEMANTICALLY identical (differing only in escaping: one em dash
+        # written as the six-character sequence \\u2014 on one save path and as the raw character on
+        # the other) used to log a full <TAG>-EDITED transition across ~900 characters of unchanged
+        # text; claude-head.toml carries exactly that pair, dated 2026-08-22. To the next auditor it
+        # reads as two independent corrections on one day where one substantive edit happened, in a
+        # file whose line 1 declares it the campaign's memory of record (review 2026-08-28, PR 99).
+        # Compared decoded, not byte-wise, because the escaping difference IS the whole artifact.
+        old_decoded = _toml_basic_string_decoded(_rhs)
+        if old_decoded is not None and old_decoded == _toml_basic_string_decoded(new_value):
+            return lines
         new_line = f"{lhs.rstrip()} = {new_value}\n"
         lines[j] = new_line
         note = (
@@ -3407,8 +3479,14 @@ def _locked_rewrite(path: str, mutate, *, after_commit=None):
     after a no-op mutate, or right after the write validates) — this is what lets a caller's
     pointer maintenance (claim/handover/release-stale) happen atomically with the ledger
     mutation instead of in a separate step after _locked_rewrite returns, closing the crash
-    window where a pointer file could observably disagree with the ledger's actual claim."""
-    with open(path, "a+", encoding="utf-8") as lockf:
+    window where a pointer file could observably disagree with the ledger's actual claim.
+
+    DR-181: "r+", not "a+". This handle exists only to carry the flock — it is never read or
+    written through, so the append position bought nothing, while the "a" bought file CREATION.
+    That is the primitive that manufactured a stranger ledger on 2026-09-01. main() now refuses a
+    missing path before dispatch, but a guard one caller can skip is not where this belongs: the
+    mutation primitive itself must be incapable of creating what it is meant to be editing."""
+    with open(path, "r+", encoding="utf-8") as lockf:
         fcntl.flock(lockf, fcntl.LOCK_EX)
         lines = _read(path)
         original = list(lines)
@@ -3718,8 +3796,22 @@ def cmd_set_status(
         )
 
 
+VERDICT_SIGIL_RE = re.compile(r"^VERDICT: outcome=\w+")
+
+
 def cmd_note(path, item_id, text, _notify=None, _this_file=None, _journal_root=None):
     notify = _notify_orchestrator if _notify is None else _notify
+
+    # The other half of the ONE-REVIEW-PER-ROW anchoring (_one_review_per_row_error): a note is free
+    # to DISCUSS a verdict, but only cmd_verdict may AUTHOR the line the guard reads. Refusing here
+    # means the reader can trust that every anchored match came from the verdict verb.
+    for line in text.splitlines():
+        if VERDICT_SIGIL_RE.match(_strip_leading_date_groups(line).lstrip()):
+            sys.exit(
+                f"error: a note may not open with the verdict sigil ({line.strip()!r}) — that line "
+                "is ONE-REVIEW-PER-ROW's record and only `verdict` may write it. Reword the note, or "
+                "record the real verdict with `manifest.py <ledger> verdict <ID> <outcome>`."
+            )
 
     def mutate(lines):
         s, e = _find(lines, item_id)
@@ -3736,6 +3828,49 @@ def cmd_note(path, item_id, text, _notify=None, _this_file=None, _journal_root=N
         and _should_poke_orchestrator()
     ):
         notify(path, f"{item_id} BLOCKED — see ledger ({Path(path).stem})")
+
+
+def _one_review_per_row_error(lines: list[str], item_id: str, outcome: str) -> str | None:
+    """ONE-REVIEW-PER-ROW (operator law 2026-08-15, claude-head campaign; enforced globally
+    because the ledger record agrees: 84 historical verdicts, the single double-accept was
+    P2-GOLD — reopened as FALSE-VERIFIED). An item gets ONE adversarial review round.
+    Allowed sequences: accepted | blocked | redo→accepted | redo→blocked. A second redo is a
+    second review round (fix the named gap forward and CLOSE instead); a verdict after a
+    terminal outcome silently reopens a closed row.
+
+    Returns the refusal message, or None when `outcome` is this row's allowed next verdict.
+    Called TWICE per verdict: once on an unlocked read as a fast path (same refusal without
+    paying for the flock in the common case), and once inside cmd_verdict's mutate() on the
+    lines _locked_rewrite freshly read under the flock. Only the second one is authoritative —
+    a check outside the lock cannot make the append it guards conditional, so two overlapping
+    `verdict <ID>` runs would both read the pre-verdict state, both pass, and both append."""
+    s, e = _find(lines, item_id)
+    # ANCHORED to the start of the note BODY, not searched anywhere in the line: cmd_note appends
+    # arbitrary caller text in the identical `# [DATE] <text>` shape a real verdict uses, so an
+    # unanchored search let a note that merely CONTAINS the sigil ("planning to record VERDICT:
+    # outcome=accepted once tests pass", or one quoting another row's verdict for context) lock the
+    # `verdict` verb for that item without cmd_verdict ever having run (review 2026-08-28, PR 99).
+    # cmd_note now refuses to author the sigil at all, so only cmd_verdict can produce a match.
+    prior_outcomes = [
+        m.group(1)
+        for line in lines[s:e]
+        for m in [re.match(r"VERDICT: outcome=(\w+)", _note_body(line) or "")]
+        if m
+    ]
+    if any(o in ("accepted", "blocked") for o in prior_outcomes):
+        return (
+            f"error: {item_id} already carries a terminal verdict "
+            f"({', '.join(prior_outcomes)}) — ONE-REVIEW-PER-ROW: a closed row is never "
+            "re-reviewed. Reopening is an operator act (dated note + set-status), never a "
+            "second verdict."
+        )
+    if outcome == "redo" and "redo" in prior_outcomes:
+        return (
+            f"error: {item_id} already has a redo verdict — ONE-REVIEW-PER-ROW: one "
+            "adversarial review round per item. Fix the named gap forward and close with "
+            "accepted|blocked; a second redo is a second review round."
+        )
+    return None
 
 
 def cmd_verdict(
@@ -3767,6 +3902,14 @@ def cmd_verdict(
     if contradiction is not None and not locus:
         sys.exit("error: --contradiction requires a non-empty locus")
 
+    # ONE-REVIEW-PER-ROW fast path: refuse without taking the flock in the common case. The
+    # AUTHORITATIVE copy of this same check runs inside mutate() below, under the lock.
+    with open(path, encoding="utf-8") as handle:
+        prior_lines = handle.readlines()
+    fast_refusal = _one_review_per_row_error(prior_lines, item_id, outcome)
+    if fast_refusal is not None:
+        sys.exit(fast_refusal)
+
     parts = [f"VERDICT: outcome={outcome}"]
     if gap_named:
         parts.append(f"gap={gap_named}")
@@ -3777,23 +3920,45 @@ def cmd_verdict(
     note_text = " ".join(parts)
 
     def mutate(lines):
+        # The guard that makes this append conditional has to read the SAME lines the append
+        # writes, under the SAME flock — otherwise the lock serialises the write but not the
+        # check, and two racing verdicts both land (PR 99 finding 7).
+        refusal = _one_review_per_row_error(lines, item_id, outcome)
+        if refusal is not None:
+            raise _OneReviewPerRowRefusal(refusal)
         s, e = _find(lines, item_id)
         stamp = date.today().isoformat()
         return _append_block_lines(lines, s, e, [f"# [{stamp}] {note_text}\n"])
 
-    _locked_rewrite(path, mutate)
+    seat = _canonical_seat() or "unknown"
+
+    def after_commit(noop):
+        # DR-50a: the journal record lands WHILE the manifest flock is still held (REV2-F5
+        # posture, same as claim's pointer write). It used to run after _locked_rewrite
+        # returned, so two racing verdicts could commit their ledger notes in one order and
+        # their journal lines in the other — the gym trajectory join then reads a verdict
+        # order the ledger never had. The appender's own 2s lock timeout is fail-open, so a
+        # wedged journal delays the flock briefly and never deadlocks it. noop is unreachable
+        # for a verdict (mutate appends or raises) but must never mint a journal line.
+        if noop:
+            return
+        _append_orchestrator_verdict_journal_line(
+            path,
+            item_id,
+            seat,
+            outcome,
+            gap_named,
+            locus,
+            bool(env_failure),
+            _this_file,
+            _journal_root,
+        )
+
+    try:
+        _locked_rewrite(path, mutate, after_commit=after_commit)
+    except _OneReviewPerRowRefusal as exc:
+        sys.exit(str(exc))
     print(f"verdict recorded on {item_id}: {note_text}")
-    _append_orchestrator_verdict_journal_line(
-        path,
-        item_id,
-        _canonical_seat() or "unknown",
-        outcome,
-        gap_named,
-        locus,
-        bool(env_failure),
-        _this_file,
-        _journal_root,
-    )
     with open(path, encoding="utf-8") as handle:
         lines = handle.readlines()
     s, e = _find(lines, item_id)
@@ -3875,6 +4040,20 @@ def cmd_edit_verify(path, item_id, verify_text):
 
     _locked_rewrite(path, mutate)
     print(f"{item_id} -> verify")
+
+
+def cmd_edit_title(path, item_id, title_text):
+    if not title_text.strip():
+        sys.exit("error: edit-title requires a non-empty value")
+
+    def mutate(lines):
+        s, e = _find(lines, item_id)
+        return _replace_item_field(
+            lines, s, e, "title", _toml_basic_string(title_text), "TITLE-EDITED"
+        )
+
+    _locked_rewrite(path, mutate)
+    print(f"{item_id} -> title")
 
 
 def cmd_claim(
@@ -4668,6 +4847,55 @@ def cmd_amend_header(path, old, new):
     print("header line amended")
 
 
+def _selftest_fixture_copy(source_ledger, dest):
+    """DR-184: the one way the selftest may take a copy of the ledger it was pointed at.
+
+    Every fixture in the suite is such a copy, so the suite INHERITED that ledger's shape — and
+    the packet/dispatch arms need a campaign name. Two of the ten ledgers in dev/campaigns carry
+    none, so `selftest` passed on eight and failed on two: once on a raw KeyError in the packet
+    arm, once on a clean sys.exit escaping mid-arm out of a redirect_stdout block. A suite whose
+    verdict depends on which campaign you hand it is not a regression suite, and nothing caught
+    the split because no gate leg ran it at all (DR-184's other half).
+
+    Copying THROUGH here is what makes a fixture a fixture: it supplies the field the source may
+    lack. A ledger that already has a name is left exactly as it was, so every existing arm on a
+    named ledger keeps its current subject."""
+    shutil.copy(source_ledger, dest)
+    _selftest_ensure_campaign_name(os.fspath(dest), "selftest-fixture")
+    return dest
+
+
+def _selftest_ensure_campaign_name(fixture_path, name):
+    """DR-184: give a COPIED ledger a campaign name if it has none, so the packet arm's outcome
+    does not depend on which campaign the selftest was pointed at.
+
+    The arm read `packet_manifest["campaign"]["name"]` as a raw subscript, so `selftest` passed on
+    8 of the 10 ledgers in dev/campaigns and died on a KeyError traceback on the other 2 — and
+    nothing noticed, because no gate leg ran it (that is DR-184's other half). Production was never
+    the problem: cmd_packet's own missing-name path is a clean `sys.exit("error: manifest missing
+    campaign name")`. Same remedy as the self-sufficient-target note in the arm itself: the FIXTURE
+    supplies what it needs. An existing name is left alone, so behaviour on named ledgers is
+    unchanged.
+
+    Text, not a TOML round-trip: rewriting the file through a serializer would reorder and reflow
+    every row this suite then asserts on byte ranges. `[campaign]` is a header line to insert
+    under, or a table to append when the ledger has none — appending at EOF is only safe in the
+    second case, which is why the two are distinguished rather than merged.
+    """
+    with open(fixture_path, "rb") as handle:
+        doc = tomllib.load(handle)
+    if (doc.get("campaign") or {}).get("name"):
+        return
+    lines = _read(fixture_path)
+    header = next((i for i, line in enumerate(lines) if line.strip() == "[campaign]"), None)
+    if header is None:
+        lines = lines + ["\n", "[campaign]\n", f'name = "{name}"\n']
+    else:
+        lines = lines[: header + 1] + [f'name = "{name}"\n'] + lines[header + 1 :]
+    with open(fixture_path, "w", encoding="utf-8") as handle:
+        handle.writelines(lines)
+
+
 def cmd_selftest(path):
     """Wraps the real selftest body with TORAD_LEDGER_NOTIFY=off (save/restore) so a selftest
     run — which flips several fixture items to done/BLOCKED — never pokes a real seat.
@@ -4784,7 +5012,7 @@ def _cross_ledger_duplicate_ids() -> dict[str, list[str]]:
 def _cmd_selftest_body(path):
     tmp = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp.close()
-    shutil.copy(path, tmp.name)
+    _selftest_fixture_copy(path, tmp.name)
     cmd_add(tmp.name, "ZZTEST", "Z", "selftest item", "a/**, b/**", "n/a")
     cmd_set_status(tmp.name, "ZZTEST", "in_flight")
     cmd_note(tmp.name, "ZZTEST", "note line one")
@@ -4806,7 +5034,7 @@ def _cmd_selftest_body(path):
 
     tmp_fence = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_fence.close()
-    shutil.copy(path, tmp_fence.name)
+    _selftest_fixture_copy(path, tmp_fence.name)
     cmd_add(tmp_fence.name, "FENCETEST", "F", "fence item", "a/**", "n/a")
     cmd_edit_fence(tmp_fence.name, "FENCETEST", "one/**, two/**")
     lines = _read(tmp_fence.name)
@@ -4824,7 +5052,7 @@ def _cmd_selftest_body(path):
 
     tmp_dirfence = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_dirfence.close()
-    shutil.copy(path, tmp_dirfence.name)
+    _selftest_fixture_copy(path, tmp_dirfence.name)
     # G62: these fixtures deliberately test G32's own bare-directory OVERLAP warning, which
     # requires bare-directory fences to exercise at all — override_bare_dir=True opts each one
     # out of G62's own (separate, unconditional) block, matching a real --override-bare-dir use.
@@ -4859,7 +5087,7 @@ def _cmd_selftest_body(path):
     # scoped to directory-vs-directory collisions only, per the slot.
     tmp_dirfence_file_peer = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_dirfence_file_peer.close()
-    shutil.copy(path, tmp_dirfence_file_peer.name)
+    _selftest_fixture_copy(path, tmp_dirfence_file_peer.name)
     cmd_add(tmp_dirfence_file_peer.name, "DIRFENCEE", "D", "exact file claimant", "shared/sub/exact.kt", "n/a")
     cmd_claim(tmp_dirfence_file_peer.name, "DIRFENCEE", "dir-owner-e", _alive=lambda _sid: False)
     cmd_add(tmp_dirfence_file_peer.name, "DIRFENCEF", "D", "dir vs file peer", "shared/sub/", "n/a", override_bare_dir=True)
@@ -4874,7 +5102,7 @@ def _cmd_selftest_body(path):
     # injectable override — a real seat name could accidentally hit live state on this machine.
     tmp_g30 = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_g30.close()
-    shutil.copy(path, tmp_g30.name)
+    _selftest_fixture_copy(path, tmp_g30.name)
     cmd_add(tmp_g30.name, "G30ITEM", "Q", "qualified identity item", "a/**", "n/a")
 
     # Machine A claims under seat "g30-fixture-seat" with machine-id aaaaaaaa.
@@ -4972,8 +5200,112 @@ def _cmd_selftest_body(path):
         second = _machine_id(g30_machine_id_path)
         assert MACHINE_ID_RE.match(first), first
         assert first == second, (first, second)
+
+        # DR-50b persist-or-die: an unpersistable machine-id must die loudly. The old
+        # `except OSError: pass` answered with a FRESH random id per call — an unstable
+        # substrate identity (red on that code: no SystemExit, two calls, two ids).
+        blocked_parent = g30_machine_id_dir / "not-a-dir"
+        blocked_parent.write_text("a plain file where the parent directory must be", encoding="utf-8")
+        try:
+            _machine_id(blocked_parent / "machine-id")
+            raise AssertionError("an unpersistable machine-id must SystemExit, not mint unstable ids")
+        except SystemExit:
+            pass
+
+        # DR-50b first-writer-wins: N simultaneous first-uses of ONE fresh path must all
+        # return the SAME id, and that id must be exactly what the file holds (read-back law).
+        # Red on the os.replace code: barrier-released racers each returned their OWN token.
+        race_path = g30_machine_id_dir / "raced-machine-id"
+        racers = 8
+        barrier = threading.Barrier(racers)
+        raced: list[str] = []
+        raced_lock = threading.Lock()
+
+        def _race_first_use():
+            barrier.wait()
+            got = _machine_id(race_path)
+            with raced_lock:
+                raced.append(got)
+
+        race_threads = [threading.Thread(target=_race_first_use) for _ in range(racers)]
+        for t in race_threads:
+            t.start()
+        for t in race_threads:
+            t.join()
+        on_disk = race_path.read_text(encoding="utf-8").strip()
+        assert len(raced) == racers and len(set(raced)) == 1 and raced[0] == on_disk, (raced, on_disk)
     finally:
         shutil.rmtree(g30_machine_id_dir, ignore_errors=True)
+
+    # DR-50a: the verdict journal line lands while the manifest flock is STILL HELD, so ledger
+    # order and journal order cannot invert. Proof shape: hold the journal lock; verdict A must
+    # then keep holding the manifest flock while it waits on the journal, so verdict B (a
+    # different row, different process) cannot land its ledger note inside the window. Red on
+    # the unfixed CLI: A released the flock before touching the journal, B's note landed while
+    # A's journal line was still pending — the inversion this arm exists to forbid.
+    dr50_dir = Path(tempfile.mkdtemp(prefix="manifest-dr50-order-"))
+    try:
+        dr50_script = str(Path(dr50_dir) / "manifest.py")
+        shutil.copy(__file__, dr50_script)
+        dr50_ledger = str(Path(dr50_dir) / "fixture.toml")
+        Path(dr50_ledger).write_text("", encoding="utf-8")
+        dr50_env = dict(
+            os.environ,
+            TORAD_FLEET_ROOT=str(dr50_dir),
+            TORAD_LEDGER_NOTIFY="off",
+        )
+        for iid in ("OR-1", "OR-2"):
+            subprocess.run(
+                [sys.executable, dr50_script, dr50_ledger, "add", "--id", iid, "--phase", "t",
+                 "--title", f"dr50 order fixture {iid}", "--files", "x.py", "--verify", "true"],
+                check=True, capture_output=True, env=dr50_env,
+            )
+        journal_dir = Path(dr50_dir) / "journal"
+        journal_dir.mkdir(parents=True, exist_ok=True)
+        held_lock = _journal_lock_path(journal_dir / JOURNAL_FILE_NAME)
+        os.mkdir(held_lock)  # the selftest IS the wedged journal producer
+        try:
+            proc_a = subprocess.Popen(
+                [sys.executable, dr50_script, dr50_ledger, "verdict", "OR-1", "--outcome", "accepted"],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=dr50_env,
+            )
+            deadline = time.time() + 5.0
+            while time.time() < deadline:
+                if "VERDICT: outcome=accepted" in Path(dr50_ledger).read_text(encoding="utf-8"):
+                    break
+                time.sleep(0.02)
+            else:
+                raise AssertionError("verdict A never committed its ledger note")
+            proc_b = subprocess.Popen(
+                [sys.executable, dr50_script, dr50_ledger, "verdict", "OR-2", "--outcome", "accepted"],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=dr50_env,
+            )
+            time.sleep(0.8)  # well inside A's 2s journal-lock wait
+            mid_text = Path(dr50_ledger).read_text(encoding="utf-8")
+            or2_block = mid_text.split('id = "OR-2"', 1)[1] if 'id = "OR-2"' in mid_text else ""
+            assert "VERDICT" not in or2_block, (
+                "verdict B overtook A across the ledger/journal boundary — the journal append "
+                "must hold the manifest flock (DR-50a)"
+            )
+        finally:
+            try:
+                os.rmdir(held_lock)
+            except OSError:
+                pass
+        _, a_err = proc_a.communicate(timeout=10)
+        assert proc_a.returncode == 0, a_err
+        _, b_err = proc_b.communicate(timeout=10)
+        assert proc_b.returncode == 0, b_err
+        final_text = Path(dr50_ledger).read_text(encoding="utf-8")
+        assert "VERDICT" in final_text.split('id = "OR-2"', 1)[1], "B's note must land after release"
+        journal_lines = [
+            json.loads(l) for l in (journal_dir / JOURNAL_FILE_NAME).read_text(encoding="utf-8").splitlines()
+        ]
+        verdict_order = [l["itemId"] for l in journal_lines if l.get("kind") == JOURNAL_KIND_ORCHESTRATOR_VERDICT]
+        assert verdict_order == ["OR-1", "OR-2"], (
+            "journal verdict order must equal ledger commit order", verdict_order)
+    finally:
+        shutil.rmtree(dr50_dir, ignore_errors=True)
 
     os.unlink(tmp_g30.name)
 
@@ -5006,7 +5338,7 @@ def _cmd_selftest_body(path):
     try:
         journal_ledger_dir = Path(tempfile.mkdtemp(prefix="manifest-s34-ledger-"))
         journal_fixture = journal_ledger_dir / "fixture.toml"
-        shutil.copy(path, journal_fixture)
+        _selftest_fixture_copy(path, journal_fixture)
         journal_fixture_script = journal_ledger_dir / "manifest.py"
         shutil.copy(__file__, journal_fixture_script)
 
@@ -5161,6 +5493,54 @@ def _cmd_selftest_body(path):
             "a refused verdict must journal NOTHING"
         )
 
+        # ONE-REVIEW-PER-ROW (operator law 2026-08-15): one adversarial review round per item.
+        # Green path: redo -> accepted closes a row. Red paths: a SECOND redo on an open review,
+        # any verdict after a terminal accepted|blocked. Refusals journal NOTHING.
+        cmd_add(
+            journal_fixture.as_posix(), "ONEREV", "Z", "one-review lifecycle item", "z/onerev.txt", "n/a",
+        )
+        cmd_verdict(
+            journal_fixture.as_posix(), "ONEREV", "redo", gap="first and only review round",
+            _this_file=journal_fixture_script.as_posix(), _journal_root=journal_root_dir,
+        )
+        one_review_len_before = len(s34_journal_path.read_text(encoding="utf-8").splitlines())
+        try:
+            cmd_verdict(
+                journal_fixture.as_posix(), "ONEREV", "redo", gap="second round",
+                _this_file=journal_fixture_script.as_posix(), _journal_root=journal_root_dir,
+            )
+            raise AssertionError("a second redo must be refused (second review round)")
+        except SystemExit as exc:
+            assert exc.code != 0
+        cmd_verdict(
+            journal_fixture.as_posix(), "ONEREV", "accepted",
+            _this_file=journal_fixture_script.as_posix(), _journal_root=journal_root_dir,
+        )
+        for terminal_case in (
+            ("ONEREV", {"outcome": "accepted"}),
+            ("ONEREV", {"outcome": "redo", "gap": "reopen attempt"}),
+            ("S34HANDOVER", {"outcome": "accepted"}),
+        ):
+            try:
+                cmd_verdict(
+                    journal_fixture.as_posix(), terminal_case[0],
+                    _this_file=journal_fixture_script.as_posix(), _journal_root=journal_root_dir,
+                    **terminal_case[1],
+                )
+                raise AssertionError(f"verdict after terminal must be refused: {terminal_case}")
+            except SystemExit as exc:
+                assert exc.code != 0, terminal_case
+        one_review_tail = [
+            json.loads(l) for l in s34_journal_path.read_text(encoding="utf-8").splitlines() if l.strip()
+        ][-1]
+        assert one_review_tail["outcome"] == "accepted" and one_review_tail["itemId"] == "ONEREV", (
+            "the redo->accepted closure must be the last journal record; refusals journal NOTHING: "
+            f"{one_review_tail}"
+        )
+        assert len(s34_journal_path.read_text(encoding="utf-8").splitlines()) == one_review_len_before + 1, (
+            "exactly ONE record (the closure) may land after the refusals"
+        )
+
         # GYM-VERDICT-NUDGE: `verified` with NO typed verdict record prints the one-line
         # reminder naming the verdict command; `verified` on an item whose verdict exists
         # (S34ITEM got one above) stays silent. Advisory only — both transitions succeed.
@@ -5215,7 +5595,8 @@ def _cmd_selftest_body(path):
         assert "verdict-coverage:      1/2" in kpi_text, kpi_text
         assert "; 0 via backfill" in kpi_text, kpi_text
         assert "overall 2/2 claims lineage-attributed (100.0%)" in kpi_text, kpi_text
-        assert "trajectories-7d:       3 distinct episodes active" in kpi_text, kpi_text
+        # 4 = the 3 original fixture episodes + ONEREV from the one-review lifecycle sweep above.
+        assert "trajectories-7d:       4 distinct episodes active" in kpi_text, kpi_text
         assert "honesty-yield:         1 typed contradiction record(s)" in kpi_text, kpi_text
         assert s34_journal_path.read_bytes() == kpi_bytes_before, "gym-kpi must be READ-ONLY"
 
@@ -5501,7 +5882,7 @@ def _cmd_selftest_body(path):
 
     tmp_verify = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_verify.close()
-    shutil.copy(path, tmp_verify.name)
+    _selftest_fixture_copy(path, tmp_verify.name)
     cmd_add(tmp_verify.name, "VERIFYTEST", "V", "verify item", "a/**", "old verify")
     cmd_edit_verify(tmp_verify.name, "VERIFYTEST", "new verify command")
     lines = _read(tmp_verify.name)
@@ -5512,9 +5893,22 @@ def _cmd_selftest_body(path):
     with open(tmp_verify.name, "rb") as f:
         tomllib.load(f)
 
+    tmp_title = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
+    tmp_title.close()
+    _selftest_fixture_copy(path, tmp_title.name)
+    cmd_add(tmp_title.name, "TITLETEST", "T", "old title", "a/**", "n/a")
+    cmd_edit_title(tmp_title.name, "TITLETEST", "new title with three inversions")
+    lines = _read(tmp_title.name)
+    s, e = _find(lines, "TITLETEST")
+    blk = "".join(lines[s:e])
+    assert 'title = "new title with three inversions"' in blk, blk
+    assert "TITLE-EDITED" in blk, blk
+    with open(tmp_title.name, "rb") as f:
+        tomllib.load(f)
+
     tmp_packet = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_packet.close()
-    shutil.copy(path, tmp_packet.name)
+    _selftest_fixture_copy(path, tmp_packet.name)
     cmd_add(tmp_packet.name, "PACKETPEER", "P", "peer rm clean", "peer/**", "n/a")
     cmd_claim(tmp_packet.name, "PACKETPEER", "peer-owner", _alive=lambda _sid: False)
     # Self-sufficient packet target: reference ledgers (files=[] everywhere, e.g.
@@ -5595,7 +5989,7 @@ def _cmd_selftest_body(path):
 
     tmp_no_verify = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_no_verify.close()
-    shutil.copy(path, tmp_no_verify.name)
+    _selftest_fixture_copy(path, tmp_no_verify.name)
     cmd_add(tmp_no_verify.name, "PKTNOVERIFY", "N", "missing verify item", "a/**", "n/a")
     lines = _read(tmp_no_verify.name)
     s, e = _find(lines, "PKTNOVERIFY")
@@ -5615,7 +6009,7 @@ def _cmd_selftest_body(path):
 
     tmp_destructive = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_destructive.close()
-    shutil.copy(path, tmp_destructive.name)
+    _selftest_fixture_copy(path, tmp_destructive.name)
     cmd_add(tmp_destructive.name, "PKTDESTRUCTIVE", "D", "rm clean release", "a/**", "rm -rf dist")
     try:
         cmd_packet(tmp_destructive.name, "PKTDESTRUCTIVE")
@@ -5625,7 +6019,7 @@ def _cmd_selftest_body(path):
 
     tmp_apostrophe = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_apostrophe.close()
-    shutil.copy(path, tmp_apostrophe.name)
+    _selftest_fixture_copy(path, tmp_apostrophe.name)
     cmd_add(tmp_apostrophe.name, "APOSTEST", "A", "session's packet title", "a/**", "echo ok")
     apostrophe_buf = io.StringIO()
     with redirect_stdout(apostrophe_buf):
@@ -5637,7 +6031,7 @@ def _cmd_selftest_body(path):
     # emits the packet + records claim intent on a real one.
     tmp_dispatch = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_dispatch.close()
-    shutil.copy(path, tmp_dispatch.name)
+    _selftest_fixture_copy(path, tmp_dispatch.name)
     # (a) uncut ID -> nonzero, naming the fix. This is the antibody the item exists for.
     try:
         cmd_dispatch(tmp_dispatch.name, "NEVERCUTID", "seat-x")
@@ -5673,7 +6067,7 @@ def _cmd_selftest_body(path):
 
     tmp_claim = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_claim.close()
-    shutil.copy(path, tmp_claim.name)
+    _selftest_fixture_copy(path, tmp_claim.name)
     cmd_add(tmp_claim.name, "CLAIMTEST", "C", "claim item", "a/**", "n/a")
     cmd_claim(tmp_claim.name, "CLAIMTEST", "sid-a", _alive=lambda _sid: False)
     lines = _read(tmp_claim.name)
@@ -5765,7 +6159,7 @@ def _cmd_selftest_body(path):
         )
         fixture_manifest = git_repo / "dev" / "campaigns" / "orchestration-product.toml"
         fixture_manifest.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy(path, fixture_manifest)
+        _selftest_fixture_copy(path, fixture_manifest)
         fixture_script = git_repo / "dev" / "campaigns" / "manifest.py"
         shutil.copy(__file__, fixture_script)
         fixture_toml = git_repo / "dev" / "campaigns" / "fixture.toml"
@@ -5930,7 +6324,7 @@ def _cmd_selftest_body(path):
 
     tmp_notify = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_notify.close()
-    shutil.copy(path, tmp_notify.name)
+    _selftest_fixture_copy(path, tmp_notify.name)
     cmd_add(tmp_notify.name, "NOTIFYTEST", "N", "notify wiring item", "a/**", "n/a")
     notify_calls = []
 
@@ -5950,7 +6344,7 @@ def _cmd_selftest_body(path):
     fixture_script = fixture_campaigns_dir / "manifest.py"
     shutil.copy(__file__, fixture_script)
     fixture_ledger = fixture_campaigns_dir / "fixture-notify.toml"
-    shutil.copy(path, fixture_ledger)
+    _selftest_fixture_copy(path, fixture_ledger)
     cmd_add(fixture_ledger.as_posix(), "NOTIFYTEST", "N", "notify wiring item (canonical fixture)", "a/**", "n/a")
     cmd_add(fixture_ledger.as_posix(), "POINTERTEST", "N", "pointer writer item (canonical fixture)", "a/**", "n/a")
 
@@ -6092,7 +6486,7 @@ def _cmd_selftest_body(path):
     ) if real_root is not None else None
     tmp_pointer_ledger = tempfile.NamedTemporaryFile("w", delete=False, suffix=".toml")
     tmp_pointer_ledger.close()
-    shutil.copy(path, tmp_pointer_ledger.name)
+    _selftest_fixture_copy(path, tmp_pointer_ledger.name)
     cmd_add(tmp_pointer_ledger.name, "POINTERNONCANON", "P", "non-canonical pointer item", "a/**", "n/a")
     cmd_claim(tmp_pointer_ledger.name, "POINTERNONCANON", "seat-a", _registry_dir=registry_dir, _alive=lambda _sid: False)
     if real_root is not None:
@@ -6120,7 +6514,7 @@ def _cmd_selftest_body(path):
     # (NOTIFYTEST + POINTERTEST above), which would trip the review-debt brake before these
     # dispatch assertions even ran — same fixture_root/fixture_script, a fresh ledger file.
     fixture_dispatch_ledger = fixture_campaigns_dir / "fixture-dispatch.toml"
-    shutil.copy(path, fixture_dispatch_ledger)
+    _selftest_fixture_copy(path, fixture_dispatch_ledger)
     _neutralize_done_items(fixture_dispatch_ledger)
 
     cmd_add(
@@ -6160,7 +6554,14 @@ def _cmd_selftest_body(path):
 
     # CLI-birth path: a ledger created by `add` alone has no [campaign] section;
     # set-next must insert one (after any leading law banner) instead of dying.
+    # DR-181: this arm's subject is that a ledger built from NOTHING bootstraps its sections in the
+    # right order — birth was by cmd_add only because that was the sole way to obtain an empty one.
+    # Creation now belongs to `init`, so the arm names its birth mechanism and keeps every
+    # assertion, and doubles as the proof that deliberate creation still works end to end.
     fixture_born_ledger = fixture_campaigns_dir / "fixture-cli-born.toml"
+    with redirect_stdout(io.StringIO()):
+        _init_ledger(fixture_born_ledger.as_posix())
+    assert fixture_born_ledger.exists(), "init must bring the ledger into being"
     cmd_add(
         fixture_born_ledger.as_posix(), "BORN1", "B", "cli-born item", "born/**", "echo ok"
     )
@@ -6194,7 +6595,7 @@ def _cmd_selftest_body(path):
     )
 
     fixture_debt_ledger = fixture_campaigns_dir / "fixture-debt.toml"
-    shutil.copy(path, fixture_debt_ledger)
+    _selftest_fixture_copy(path, fixture_debt_ledger)
     _neutralize_done_items(fixture_debt_ledger)
     cmd_add(fixture_debt_ledger.as_posix(), "DEBT1", "N", "unreviewed done item one", "debt-a/**", "n/a", status="done")
     cmd_add(fixture_debt_ledger.as_posix(), "DEBT2", "N", "unreviewed done item two", "debt-b/**", "n/a", status="done")
@@ -6224,7 +6625,7 @@ def _cmd_selftest_body(path):
         encoding="utf-8",
     )
     fixture_handover_ledger = fixture_campaigns_dir / "fixture-handover.toml"
-    shutil.copy(path, fixture_handover_ledger)
+    _selftest_fixture_copy(path, fixture_handover_ledger)
     handover_kwargs = {"_registry_dir": registry_dir, "_this_file": fixture_script.as_posix()}
     handover_state_dir = fixture_root / ".claude" / "state"
 
@@ -6347,6 +6748,123 @@ def _cmd_selftest_body(path):
     os.unlink(tmp_apostrophe.name)
     os.unlink(tmp_claim.name)
 
+    # DR-181: a missing ledger is diagnosed, never manufactured. These arms exist because the
+    # ledger CLI destroyed a live 164-row campaign on 2026-09-01 and reported success at every
+    # step — a `add` run from a stale checkout opened the absent path "a+" for its flock, created
+    # it, and wrote a coherent stranger over the name of a real campaign.
+    absent_dir = Path(tempfile.mkdtemp(prefix="manifest-dr181-"))
+    try:
+        ghost = absent_dir / "not-a-campaign.toml"
+
+        # Both verb CLASSES, through the real dispatch: a read and a mutation. Exit code AND the
+        # filesystem are asserted — "it errored" is not the claim; "it errored having touched
+        # nothing" is, and only the second one would have saved the campaign.
+        # A DIAGNOSED exit, not merely a non-zero one: the guard and the "r+" primitive are
+        # independent defences, so with either one alone the CLI still creates nothing — it just
+        # dies in a stack trace instead of naming the wrong path and listing the ledgers that do
+        # exist. A traceback is what the operator got before, and it is what taught a session to
+        # reach for the verb that "worked". So the arm pins the message too.
+        for verb, argv in (
+            ("read", [ghost.as_posix(), "list"]),
+            ("mutation", [ghost.as_posix(), "note", "DR-1", "text"]),
+        ):
+            try:
+                with redirect_stdout(io.StringIO()):
+                    main(["manifest.py", *argv])
+            except SystemExit as exit_code:
+                assert exit_code.code not in (0, None), f"{verb} verb on a missing ledger exited clean"
+                assert "does not exist" in str(exit_code.code), (
+                    f"the {verb} verb must NAME the missing ledger, not merely fail: {exit_code.code}"
+                )
+            except BaseException as raw:  # noqa: BLE001 — the point is that nothing else may escape
+                raise AssertionError(
+                    f"the {verb} verb died undiagnosed on a missing ledger ({type(raw).__name__}) "
+                    "— a traceback is not a diagnosis"
+                ) from raw
+            else:
+                raise AssertionError(f"{verb} verb on a missing ledger did not exit at all")
+            assert not ghost.exists(), f"the {verb} verb CREATED a ledger it was only meant to address"
+
+        # The primitive, not the guard. cmd_add reaches _locked_rewrite directly, which is the
+        # call path that did the damage and the one a future caller can still take past main().
+        try:
+            with redirect_stdout(io.StringIO()):
+                cmd_add(ghost.as_posix(), "GHOST1", "X", "must never exist", "a/**", "true")
+        except (FileNotFoundError, SystemExit):
+            pass
+        else:
+            raise AssertionError("cmd_add manufactured a ledger when called directly")
+        assert not ghost.exists(), "the mutation primitive CREATED the ledger it was editing"
+
+        # Deliberate creation still works, through the one verb that admits to it — and refuses
+        # to be the instrument of a second such accident by overwriting anything.
+        born = absent_dir / "deliberate.toml"
+        try:
+            with redirect_stdout(io.StringIO()):
+                main(["manifest.py", born.as_posix(), "init"])
+        except SystemExit as blocked:
+            raise AssertionError(
+                f"init must create the ledger it was asked for, but the guard refused it: {blocked.code}"
+            ) from blocked
+        assert born.exists(), "init must create the ledger it was asked for"
+        with redirect_stdout(io.StringIO()):
+            cmd_add(born.as_posix(), "REAL1", "X", "a row in a deliberately created ledger", "a/**", "true")
+        # Asserted on the row's own bytes: _find exits rather than returning falsy, so a truthiness
+        # check on it is a test that cannot fail — the tautology this whole row is about.
+        born_rows = _read(born.as_posix())
+        start, end = _find(born_rows, "REAL1")
+        assert 'id = "REAL1"' in "".join(born_rows[start:end]), "an init-created ledger must accept rows"
+        stamp = born.read_bytes()
+        try:
+            main(["manifest.py", born.as_posix(), "init"])
+        except SystemExit as exit_code:
+            assert exit_code.code not in (0, None), "init over an existing ledger exited clean"
+        else:
+            raise AssertionError("init overwrote an existing ledger")
+        assert born.read_bytes() == stamp, "a refused init altered the ledger anyway"
+
+        # DR-183: `add` printed usage for a MALFORMED flag and tracebacked on an ABSENT one — the
+        # three required keys went into cmd_add as raw subscripts, so a bare `add` (what you type
+        # to find out what the verb wants) died on a KeyError three lines under the comment
+        # forbidding exactly that. Same law as the arms above: a traceback is not a diagnosis.
+        # `wanted` is the WHOLE missing-flag sentence, not just a flag name: the usage line lists
+        # every flag, so `"--title" in message` is satisfied by printing usage alone and cannot
+        # tell "named what is missing" from "printed the menu". Caught by mutating the diagnosis
+        # down to a bare _ADD_USAGE and watching this arm stay green.
+        for label, argv, wanted in (
+            ("bare", ["add"], "add is missing --id, --phase, --title"),
+            ("missing --title", ["add", "--id", "X1", "--phase", "repair"], "add is missing --title"),
+            ("missing --phase", ["add", "--id", "X1", "--title", "t"], "add is missing --phase"),
+        ):
+            try:
+                with redirect_stdout(io.StringIO()):
+                    main(["manifest.py", born.as_posix(), *argv])
+            except SystemExit as exit_code:
+                assert exit_code.code not in (0, None), f"add {label} exited clean"
+                assert "usage: add" in str(exit_code.code), (
+                    f"add {label} must print its usage, not merely fail: {exit_code.code}"
+                )
+                assert wanted in str(exit_code.code), (
+                    f"add {label} must NAME what is missing, not just print the menu: {exit_code.code}"
+                )
+            except BaseException as raw:  # noqa: BLE001 — a traceback is the defect, not the report
+                raise AssertionError(
+                    f"add {label} died undiagnosed ({type(raw).__name__}) — a traceback is not a diagnosis"
+                ) from raw
+            else:
+                raise AssertionError(f"add {label} did not exit at all")
+            assert born.read_bytes() == stamp, f"add {label} was rejected but wrote to the ledger anyway"
+
+        # The control the rejections are measured against: a complete `add` through the same
+        # dispatch still lands, so the guard rejects absence and nothing else.
+        with redirect_stdout(io.StringIO()):
+            main(["manifest.py", born.as_posix(), "add", "--id", "REAL2", "--phase", "X", "--title", "complete"])
+        rows2 = _read(born.as_posix())
+        s2, e2 = _find(rows2, "REAL2")
+        assert 'id = "REAL2"' in "".join(rows2[s2:e2]), "a complete add must still land"
+    finally:
+        shutil.rmtree(absent_dir, ignore_errors=True)
+
     # D11: id namespaces are PER-LEDGER by design (each campaign numbers its own G-/D-/S-series),
     # and every access is ledger-path-scoped, so cross-ledger reuse is harmless — NOT an invariant
     # to enforce. selftest reports the standing count as health context only (never a per-id flood:
@@ -6357,7 +6875,7 @@ def _cmd_selftest_body(path):
         if duplicates else "; no cross-ledger id reuse"
     )
     print(
-        "selftest OK (add/set-status/note/verdict/add-law/edit-fence/edit-verify/packet/claim/release-stale/events "
+        "selftest OK (add/set-status/note/verdict/add-law/edit-fence/edit-verify/edit-title/packet/claim/release-stale/events "
         f"round-trip + valid TOML{dup_note})"
     )
 
@@ -6392,6 +6910,53 @@ def _no_default_ledger(cmd):
     )
 
 
+def _no_such_ledger(cmd, path):
+    """DR-181: the message for an EXPLICIT path that names no file.
+
+    The 2026-07-27 guard above reasoned correctly — "silently picking one for a mutating verb
+    would write the right text into the WRONG campaign" — and then scoped itself to `not
+    explicit_path`, so the case it described stayed open in the other half: an explicit path to a
+    file that does not exist. `add` opened it "a+" for the flock, which CREATES, and manufactured a
+    fresh one-row campaign reporting success. On 2026-09-01 fifteen such writes ran from a stale
+    checkout where this ledger does not exist, produced a coherent 15-row stranger, and the copy
+    back over the real file deleted 2604 lines. Every downstream signal was green, including a full
+    13-leg gate, because nothing in the pipeline could tell a new campaign from a lost one.
+
+    The census is the payload, not decoration: the CLI already knew drift-repair.toml sat next to
+    the path being typed — it prints exactly that in an `add` id-collision note — so the sibling
+    listing names the file the operator almost certainly meant. Absence is diagnosed here, never
+    repaired: creation belongs to `init` and to nothing else."""
+    here = os.path.dirname(os.path.abspath(path)) or "."
+    try:
+        siblings = sorted(f for f in os.listdir(here) if f.endswith(".toml"))
+    except OSError:
+        siblings = []
+    listing = "\n".join(f"  {os.path.join(here, f)}" for f in siblings) or "  (none — wrong directory?)"
+    return (
+        f"error: `{cmd}` was given an explicit ledger that does not exist:\n"
+        f"  {path}\n\n"
+        "Nothing was created. A missing ledger is a WRONG PATH until proven otherwise — most often a\n"
+        "stale checkout or a relative path resolved from the wrong cwd — and manufacturing an empty\n"
+        "campaign here is how a real one gets silently replaced.\n\n"
+        f"Ledgers that DO exist beside that path:\n{listing}\n\n"
+        f"If you genuinely mean to start a new campaign, say so: `manifest.py {path} init`."
+    )
+
+
+def _init_ledger(path):
+    """DR-181: the ONE verb that may bring a ledger into being, and it says so out loud."""
+    if os.path.exists(path):
+        sys.exit(f"error: refusing to init over an existing file: {path}")
+    parent = os.path.dirname(os.path.abspath(path))
+    if not os.path.isdir(parent):
+        sys.exit(f"error: no such directory: {parent}")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(f"# campaign ledger — created by `manifest.py {os.path.basename(path)} init`\n")
+        f.flush()
+        os.fsync(f.fileno())
+    print(f"initialised empty campaign ledger: {path}")
+
+
 def main(argv):
     args = list(argv[1:])
     path = DEFAULT
@@ -6401,9 +6966,15 @@ def main(argv):
     if not args:
         sys.exit(__doc__)
     cmd, rest = args[0], args[1:]
-    if not explicit_path and cmd not in PATHLESS_VERBS and not os.path.exists(path):
-        sys.exit(_no_default_ledger(cmd))
-    if cmd == "list":
+    # DR-181: existence is checked for BOTH path classes now. The explicit-path half was open,
+    # and it is the half a wrong cwd produces. `init` is the sole verb allowed past a missing file.
+    if cmd not in PATHLESS_VERBS and cmd != "init" and not os.path.exists(path):
+        sys.exit(_no_default_ledger(cmd) if not explicit_path else _no_such_ledger(cmd, path))
+    if cmd == "init":
+        if not explicit_path:
+            sys.exit("error: init requires the new ledger path as the FIRST arg")
+        _init_ledger(path)
+    elif cmd == "list":
         kw = {}
         while rest:
             flag = rest.pop(0)
@@ -6461,6 +7032,10 @@ def main(argv):
         if len(rest) != 2:
             sys.exit('error: edit-verify requires <ID> "cmd"')
         cmd_edit_verify(path, rest[0], rest[1])
+    elif cmd == "edit-title":
+        if len(rest) != 2:
+            sys.exit('error: edit-title requires <ID> "text"')
+        cmd_edit_title(path, rest[0], rest[1])
     elif cmd == "claim":
         if not rest:
             sys.exit("error: claim requires <ID> --session <sid> [--lease CLAUSE]")
@@ -6639,11 +7214,16 @@ def main(argv):
             # never traceback on an empty pop — an instrument that crashes on its own usage
             # errors trains users to stop asking it questions.
             if not flag.startswith("--") or not rest:
-                sys.exit(
-                    "usage: add --id <ID> --phase <P> --title <T> "
-                    "[--files <f1, f2, ...>] [--verify <cmd>] [--status <s>]"
-                )
+                sys.exit(_ADD_USAGE)
             kw[flag.lstrip("-").replace("-", "_")] = rest.pop(0)
+        # DR-183: the guard above covered the MALFORMED flag and stopped at the doorstep of the
+        # ABSENT one — the three required keys went straight into cmd_add as raw subscripts, so a
+        # bare `add`, or one missing --title, died on a KeyError traceback three lines under the
+        # comment that forbids exactly that. Absence is the commoner mistake of the two (it is what
+        # you get typing the verb to see what it wants), and it got the worse answer.
+        missing = [f"--{k}" for k in ("id", "phase", "title") if not kw.get(k)]
+        if missing:
+            sys.exit(f"error: add is missing {', '.join(missing)}\n{_ADD_USAGE}")
         cmd_add(
             path,
             kw["id"],

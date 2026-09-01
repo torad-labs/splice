@@ -1,4 +1,4 @@
-// NEW (G7): regression guard for the KimiRefresh.kt extraction — kimiRefresh()'s body and
+// NEW (G7): regression guard for the KimiRefresh.kt extraction — KimiRefresh().refresh()'s body and
 // postRefresh()'s signature changed shape (retry loop now shared, client injected) even though
 // observable behavior should not: same 3 attempts, same terminal/retryable statuses, identity
 // headers still ride on the POST. MockEngine, no network.
@@ -11,8 +11,10 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.app.kimiRefresh
+import splice.app.KimiRefresh
 import splice.core.auth.RefreshAttempt
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
 import java.util.concurrent.atomic.AtomicInteger
 
 class KimiRefreshTest {
@@ -37,7 +39,7 @@ class KimiRefreshTest {
                 )
             }
         }
-        val result = kimiRefresh(
+        val result = KimiRefresh().refresh(
             "https://auth.kimi.com/token",
             "old-refresh",
             identityHeaders,
@@ -57,7 +59,12 @@ class KimiRefreshTest {
             calls.incrementAndGet()
             respond("unauthorized", HttpStatusCode.Unauthorized, headersOf())
         }
-        val result = kimiRefresh("https://auth.kimi.com/token", "dead-refresh", identityHeaders, clientOver(engine))
+        val result = KimiRefresh().refresh(
+            "https://auth.kimi.com/token",
+            "dead-refresh",
+            identityHeaders,
+            clientOver(engine),
+        )
         assertTrue(result is RefreshAttempt.InvalidGrant)
         assertEquals(1, calls.get())
     }
@@ -69,7 +76,12 @@ class KimiRefreshTest {
             calls.incrementAndGet()
             respond("""{"error":"invalid_grant"}""", HttpStatusCode.BadRequest, headersOf())
         }
-        val result = kimiRefresh("https://auth.kimi.com/token", "dead-refresh", identityHeaders, clientOver(engine))
+        val result = KimiRefresh().refresh(
+            "https://auth.kimi.com/token",
+            "dead-refresh",
+            identityHeaders,
+            clientOver(engine),
+        )
         assertTrue(result is RefreshAttempt.InvalidGrant)
         assertEquals(1, calls.get())
     }
@@ -81,8 +93,41 @@ class KimiRefreshTest {
             calls.incrementAndGet()
             respond("down", HttpStatusCode.ServiceUnavailable, headersOf())
         }
-        val result = kimiRefresh("https://auth.kimi.com/token", "refresh", identityHeaders, clientOver(engine))
+        val result = KimiRefresh().refresh(
+            "https://auth.kimi.com/token",
+            "refresh",
+            identityHeaders,
+            clientOver(engine),
+        )
         assertTrue(result is RefreshAttempt.Denied)
         assertEquals(3, calls.get())
+    }
+
+    @Test
+    fun `failed refresh logs status without exposing response body`() = runTest {
+        val secret = "vendor-secret-response-value"
+        val engine = MockEngine {
+            respond(
+                """{"error":"invalid_grant","detail":"$secret"}""",
+                HttpStatusCode.BadRequest,
+                headersOf(),
+            )
+        }
+        val stderr = ByteArrayOutputStream()
+        val realErr = System.err
+        System.setErr(PrintStream(stderr, true))
+        try {
+            KimiRefresh().refresh(
+                "https://auth.kimi.com/token",
+                "dead-refresh",
+                identityHeaders,
+                clientOver(engine),
+            )
+        } finally {
+            System.setErr(realErr)
+        }
+        val logged = stderr.toString()
+        assertTrue(logged.contains("HTTP 400"), "status must remain diagnosable: $logged")
+        assertTrue(!logged.contains(secret), "response body must not reach stderr: $logged")
     }
 }

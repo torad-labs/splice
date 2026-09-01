@@ -1,0 +1,20 @@
+id: kt-no-secondary-constructor
+valid:
+  # the repo idiom — primary constructor carrying defaults (184 data classes do this).
+  - 'data class Head(val id: String, val providerErrors: Long = 0)'
+  # a top-level factory function is the named-alternate-shape option; it is not a constructor.
+  - 'fun headOf(id: String): Head = Head(id)'
+  # an init block is not a second construction path — it runs for the primary constructor.
+  - |
+    class Probe(val a: Int) {
+        init { require(a > 0) }
+    }
+invalid:
+  - |
+    class Probe(val a: Int) {
+        constructor(a: Int, b: Int) : this(a)
+    }
+  - |
+    class Probe {
+        constructor() : this(0)
+    }

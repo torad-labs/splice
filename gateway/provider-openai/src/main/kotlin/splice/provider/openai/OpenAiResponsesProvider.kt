@@ -4,9 +4,9 @@
 // duplicated drive logic; this class adds ONLY its quirk profile.
 package splice.provider.openai
 
-import splice.core.auth.Credentials
 import splice.core.turn.ReasoningDisplay
 import splice.core.util.DaemonLog
+import splice.core.util.LogSink
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.EffortLadder
 import splice.dialect.responses.ResponsesProvider
@@ -19,23 +19,23 @@ public class OpenAiResponsesProvider(
     replayReasoning: Boolean,
     configEffort: String?,
     configSummary: String?,
-    quirks: ResponsesQuirks = defaultQuirks(),
+    quirks: ResponsesQuirks = OpenAiQuirks().defaultQuirks(),
     /** Daemon log sink — forwarded to ResponsesProvider so its diagnostics reach
      *  /mgmt/logs and not stderr alone (wall kt-no-println, 2026-07-27). */
-    log: (String) -> Unit = DaemonLog::write,
-) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks, log = log) {
+    log: LogSink = LogSink(DaemonLog::write),
+) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks, log = log)
 
-    // api key rides as the standard bearer (UpstreamClient maps Credentials.ApiKey); no account header.
-    override fun extraHeaders(creds: Credentials): Map<String, String> = mapOf("Accept" to "text/event-stream")
-
-    public companion object {
-        /** The openai-platform quirk profile — injectable so TOML [providers.*.quirks] is REAL. */
-        public fun defaultQuirks(): ResponsesQuirks = ResponsesQuirks(
-            providerTag = "openai",
-            store = false,
-            cacheKeyStrategy = CacheKeyStrategy.FIRST_MESSAGE_HASH,
-            effortLadder = EffortLadder.CODEX,
-            supportsSummary = true,
-        )
-    }
+/** Holder for the openai-platform quirk profile. A class rather than a static namespace so the
+ *  profile is constructed by whoever needs it (the daemon overlays TOML on top of it), and so the
+ *  default is still re-evaluated per OpenAiResponsesProvider construction exactly as the companion's
+ *  function was. */
+public class OpenAiQuirks {
+    /** The openai-platform quirk profile — injectable so TOML [providers.*.quirks] is REAL. */
+    public fun defaultQuirks(): ResponsesQuirks = ResponsesQuirks(
+        providerTag = "openai",
+        store = false,
+        cacheKeyStrategy = CacheKeyStrategy.FIRST_MESSAGE_HASH,
+        effortLadder = EffortLadder.CODEX,
+        supportsSummary = true,
+    )
 }

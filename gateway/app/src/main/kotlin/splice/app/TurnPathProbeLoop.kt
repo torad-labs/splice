@@ -27,16 +27,20 @@
 // traffic spike is worse than one with a documented ceiling. Deepening it needs a slot-exempt
 // internal route, which is a design change, not a comment fix.
 //
-// Mirrors the AuthProbeLoop delay-loop idiom; blocking HttpURLConnection rides Dispatchers.IO.
+// Mirrors the AuthProbeLoop tick-loop idiom; the blocking HttpURLConnection rides the injected
+// dispatcher, which the composition root defaults to the IO dispatcher it used to hardcode.
 package splice.app
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import splice.core.util.LogSink
+import splice.spi.ProcessDispatchers
+import splice.spi.ProcessTicker
+import splice.spi.Ticker
 import java.net.HttpURLConnection
 import java.net.URI
 import java.util.concurrent.ConcurrentHashMap
@@ -45,14 +49,19 @@ public class TurnPathProbeLoop(
     private val key: String,
     private val port: Int,
     private val stalled: ConcurrentHashMap<String, Boolean>,
-    private val log: (String) -> Unit,
+    private val log: LogSink,
     private val intervalMs: Long = PROBE_INTERVAL_MS,
     private val timeoutMs: Int = PROBE_TIMEOUT_MS,
+    // HD-19: the two runtime reaches this loop used to make directly. [dispatcher] is where the
+    // blocking HttpURLConnection probe runs (was a hardcoded Dispatchers.IO); [ticker] is the tick
+    // cadence (was a bare delay). Both default to the exact prior values.
+    private val dispatcher: CoroutineDispatcher = ProcessDispatchers().io(),
+    private val ticker: Ticker = ProcessTicker(),
 ) {
     private var consecutiveFailures = 0
 
     public fun start(scope: CoroutineScope): Job {
-        val launched = scope.launch(Dispatchers.IO) {
+        val launched = scope.launch(dispatcher) {
             while (isActive) {
                 // delay FIRST, deliberately: the head is still binding its port at t=0, so an
                 // immediate tick (AuthProbeLoop's idiom, which has no port to wait on) would count
@@ -61,7 +70,7 @@ public class TurnPathProbeLoop(
                 // for 30s and cannot be marked stalled before 60s (two failures). A boot-time false
                 // ALARM was judged worse than a 60s detection floor on a fault that has already
                 // lasted hours by the time anyone looks.
-                delay(intervalMs)
+                if (!ticker.awaitTick(intervalMs)) return@launch
                 tick()
             }
         }
@@ -131,11 +140,12 @@ public class TurnPathProbeLoop(
             conn.disconnect()
         }
     }
-
-    private companion object {
-        const val PROBE_INTERVAL_MS = 30_000L
-        const val PROBE_TIMEOUT_MS = 5_000
-        const val STALL_THRESHOLD = 2
-        val PROBE_BODY = """{"splice_liveness_probe":true}""".toByteArray()
-    }
 }
+
+// TurnPathProbeLoop's tick cadence, per-probe deadline, stall threshold, and the fixed body every
+// probe POSTs. File-scope declarations (Kotlin style law, 2026-08-15): a top-level `private const
+// val` / `private val` is the sanctioned home for constants, never a static block on the type.
+private const val PROBE_INTERVAL_MS = 30_000L
+private const val PROBE_TIMEOUT_MS = 5_000
+private const val STALL_THRESHOLD = 2
+private val PROBE_BODY = """{"splice_liveness_probe":true}""".toByteArray()

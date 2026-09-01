@@ -1,0 +1,49 @@
+# Stream discipline — `suspend fun x(): Flow<T>` marks the FACTORY as suspending, but a Flow is
+# cold: nothing runs until it is collected, and `collect` already suspends. The `suspend` therefore
+# buys nothing and costs something: it forces every caller into a coroutine merely to OBTAIN a
+# stream it has not started, so the builder cannot be called from an init/property/DI seam and the
+# suspension point lands in the wrong place — before the work rather than during it.
+#
+# Compliant forms: drop the modifier (`fun x(): Flow<T>`), which is the shape this repo already
+# uses for its upstream builders; or, if the work really must run eagerly and once, return the
+# value and keep the modifier (`suspend fun x(): T`).
+#
+# PROMOTED 2026-08-16 (HD-17) from the dormant .rules/kotlin/ast-grep pack, which was wired to
+# nothing and so had never run. Android/Compose framing dropped: the source header argued a blanket
+# "Flow over suspend even for fire-and-forget" tenet for consistency with a repository/UI stack this
+# repo does not have. That tenet is NOT adopted here — a `suspend fun` returning a plain value is
+# correct and common in this gateway. Only the narrow, always-true case is walled: suspend + Flow
+# RETURN.
+#
+# RETURN TYPE ONLY — the `follows: function_value_parameters` constraint is load-bearing, not
+# decoration. This repo's provider SPI is `suspend fun driveTurn(upstream: Flow<JsonObject>, sink:
+# WireSink): TurnOutcome` (provider-spi/Provider.kt:20 plus the three dialect implementations), and
+# that shape is CORRECT: it consumes a Flow and suspends for the whole turn. A rule keyed on
+# `suspend` and `Flow` merely co-occurring flags all four and turns the gate red on the SPI
+# contract itself. `follows:` is what distinguishes "returns a stream" from "is handed a stream";
+# verified 2026-08-16 against both shapes before promotion (0 findings in gateway/*/src/main).
+id: kt-flow-over-suspend
+language: kotlin
+severity: error
+message: "A `suspend fun` returning Flow is redundant — Flow is cold and `collect` already suspends. Drop `suspend`, or return the value directly."
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  kind: function_declaration
+  all:
+    - has:
+        kind: modifiers
+        has:
+          kind: function_modifier
+          regex: '^suspend$'
+    - has:
+        kind: user_type
+        all:
+          - has:
+              kind: type_identifier
+              regex: '^Flow$'
+          # the Flow type must sit AFTER the parameter list — i.e. be the return type. Without
+          # this, `driveTurn(upstream: Flow<JsonObject>, ...)` (a Flow PARAMETER) matches too.
+          - follows:
+              kind: function_value_parameters
+              stopBy: end

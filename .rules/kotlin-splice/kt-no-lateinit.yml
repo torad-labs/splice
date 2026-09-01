@@ -1,0 +1,38 @@
+# Initialization discipline — `lateinit var` trades a compile-time guarantee for a runtime one.
+# The compiler stops tracking whether the property is set, so every read is an unchecked bet and
+# the failure mode is an UninitializedPropertyAccessException at the first touch, far from the
+# wiring mistake that caused it. It also makes the property permanently reassignable, which is a
+# second, unasked-for concession.
+#
+# Compliant forms: constructor injection (the seam this gateway already uses to thread `log`,
+# `env` and clock lambdas into providers); `by lazy` for a value that must be built on first use
+# (6 sites in gateway/*/src/main); or a nullable `val` when absence is a real state the caller
+# should handle rather than a window to survive.
+#
+# PROMOTED 2026-08-16 (HD-17) from the dormant .rules/kotlin/ast-grep pack, which was wired to
+# nothing and so had never run.
+#
+# THE SOURCE RULE WAS BROKEN, not merely dormant — worth recording, because it would have passed
+# review as a working wall. It read `kind: property_modifier`, and no such node kind exists in this
+# tree-sitter Kotlin grammar: `--debug-query=cst` on `lateinit var late: String` gives
+# `property_declaration > modifiers > member_modifier > lateinit`. So the rule could never match
+# anything, in any repo, under any glob. Had it been promoted verbatim it would have joined the
+# gate green and stayed green forever — a wall reporting 0 because it is blind, which is precisely
+# the failure checks/rule-routing.sh exists to catch one level up. Fixed to `member_modifier` and
+# re-censused: with the working rule, 30 hits exist in the tree, ALL under src/test/ (JUnit
+# @TempDir and @BeforeEach fixture fields), and 0 under gateway/*/src/main. The production glob
+# exempts every one of them.
+id: kt-no-lateinit
+language: kotlin
+severity: error
+message: "No `lateinit var` in production — use constructor injection, `by lazy`, or a nullable val."
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  kind: property_declaration
+  has:
+    # `member_modifier`, NOT `property_modifier` — see header. stopBy: end because the modifier is
+    # nested under a `modifiers` node, and annotations may precede it (@Inject lateinit var ...).
+    stopBy: end
+    kind: member_modifier
+    regex: '^lateinit$'

@@ -5,57 +5,18 @@
 // max_tokens IS honored (unlike the ChatGPT backend); reasoning is a plain field where supported.
 package splice.dialect.chat
 
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonArrayBuilder
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.JsonObjectBuilder
-import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.add
-import kotlinx.serialization.json.addJsonObject
-import kotlinx.serialization.json.buildJsonArray
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
+import splice.core.turn.CompactInstructions
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
-import splice.core.turn.withCompactDirective
 import splice.core.wire.AnthropicRequest
-import splice.core.wire.DocumentBlock
-import splice.core.wire.ImageBlock
-import splice.core.wire.MediaSource
-import splice.core.wire.TextBlock
-import splice.core.wire.ToolResultBlock
-import splice.core.wire.ToolUseBlock
-import splice.core.wire.openAiToolChoice
-
-public data class ChatQuirks(
-    val providerTag: String,
-    val supportsTools: Boolean = true,
-    val supportsVision: Boolean = true,
-    /** Some vendors want `max_completion_tokens`, most want `max_tokens`. */
-    val maxTokensField: String = "max_tokens",
-    /**
-     * When true, emit `reasoning_effort` (and/or `reasoning`) from Anthropic thinking budget so
-     * DeepSeek/xAI-compatible chat backends return `reasoning_content` in the stream.
-     */
-    val emitReasoningEffort: Boolean = true,
-    /** When set, prompt_cache_key = "<prefix>:<sessionId>" rides every request (server-side
-     *  session cache pinning; null = field omitted for vendors of unknown tolerance). */
-    val sessionCacheKeyPrefix: String? = null,
-    /** Emit stream_options.include_usage (usage frames are opt-in on OpenAI-compat streams). */
-    val emitUsageInStream: Boolean = false,
-)
-
-/** Overlay TOML `[providers.*.quirks].reasoning_effort` onto a chat-dialect quirk profile — null
- *  keeps the provider's own default (see [ChatQuirks.emitReasoningEffort]). */
-public fun ChatQuirks.withReasoningEffortToml(reasoningEffort: Boolean?): ChatQuirks =
-    copy(emitReasoningEffort = reasoningEffort ?: this.emitReasoningEffort)
-
-public data class BuiltChatRequest(val req: JsonObject, val meta: TurnMeta)
 
 public class ChatRequestBuilder(
     private val quirks: ChatQuirks,
     private val showReasoning: ReasoningDisplay = ReasoningDisplay.TEXT,
 ) {
+    private val wire = ChatWireMapper(quirks)
+    private val assembler = ChatRequestAssembler(quirks, wire)
+    private val effortTiers = ChatEffortTiers()
 
     public fun build(
         body: AnthropicRequest,
@@ -64,24 +25,13 @@ public class ChatRequestBuilder(
         compact: Boolean,
         sessionId: String? = null,
     ): BuiltChatRequest {
-        val messages = buildJsonArray {
-            // CX-02: on a compact turn the directive rides the system message — and a compact turn
-            // with no system prompt at all still gets one, because stripping tools alone never told
-            // the backend it was summarizing. Non-compact is untouched: no system, no message.
-            compactAwareSystem(body.system, compact)?.let { sys ->
-                addJsonObject {
-                    put(ROLE, "system")
-                    put(CONTENT, sys)
-                }
-            }
-            body.messages.forEach { msg -> appendMessage(this, msg.role, msg.content) }
-        }
+        val messages = wire.messagesArray(compactAwareSystem(body.system, compact), body)
         val emitTools = quirks.supportsTools && !compact && body.tools.isNotEmpty()
-        val effort = chatReasoningEffort(body, upstreamModel)
+        val effort = effortTiers.chatReasoningEffort(body, upstreamModel)
         // TIER-1 (#924): the request is a CLOSED ChatRequest DTO (see chatRequestObject) — a knob
         // that doesn't belong can't be added without a field.
         val cacheKey = quirks.sessionCacheKeyPrefix?.let { prefix -> sessionId?.let { "$prefix:$it" } }
-        val req = chatRequestObject(upstreamModel, messages, emitTools, body, ChatKnobs(effort, cacheKey))
+        val req = assembler.chatRequestObject(upstreamModel, messages, emitTools, body, ChatKnobs(effort, cacheKey))
         val meta = TurnMeta(
             compact = compact,
             showReasoning = showReasoning,
@@ -100,263 +50,5 @@ public class ChatRequestBuilder(
      *  Compact ALWAYS produces one (the directive is the point); non-compact passes through
      *  unchanged, including the null that means "emit no system message at all". */
     private fun compactAwareSystem(system: String?, compact: Boolean): String? =
-        if (compact) withCompactDirective(system, compact = true) else system
-
-    // The CLOSED request object: the fixed fields via the ChatRequest DTO, plus max_tokens injected
-    // by its vendor-dynamic key (max_tokens vs max_completion_tokens) — the one field a fixed DTO
-    // can't name. Extracted so build() stays under the complexity gate.
-    /** The per-request knob pair threaded to [chatRequestObject] (LongParameterList budget). */
-    private data class ChatKnobs(val effort: String?, val cacheKey: String?)
-
-    private fun chatRequestObject(
-        upstreamModel: String,
-        messages: JsonArray,
-        emitTools: Boolean,
-        body: AnthropicRequest,
-        knobs: ChatKnobs,
-    ): JsonObject {
-        val effort = knobs.effort
-        val dto = ChatRequest(
-            model = upstreamModel,
-            messages = messages,
-            stream = true,
-            tools = if (emitTools) toolsArray(body) else null,
-            toolChoice = if (emitTools) openAiToolChoice(body.toolChoice) else null,
-            reasoningEffort = if (quirks.emitReasoningEffort) effort else null,
-            reasoning = if (quirks.emitReasoningEffort && effort != null) {
-                buildJsonObject { put("effort", effort) }
-            } else {
-                null
-            },
-            promptCacheKey = knobs.cacheKey,
-            streamOptions = if (quirks.emitUsageInStream) {
-                buildJsonObject { put("include_usage", true) }
-            } else {
-                null
-            },
-        )
-        val fields = (chatRequestJson.encodeToJsonElement(ChatRequest.serializer(), dto) as JsonObject).toMutableMap()
-        body.maxTokens?.takeIf { it > 0 }?.let { fields[quirks.maxTokensField] = JsonPrimitive(it) }
-        return JsonObject(fields)
-    }
-
-    // the content-block split is the mapping contract
-    private fun appendMessage(
-        sink: JsonArrayBuilder,
-        role: String,
-        content: List<splice.core.wire.ContentBlock>,
-    ) {
-        // tool_result blocks become their own `tool` role messages; text/images fold into one.
-        val toolResults = content.filterIsInstance<ToolResultBlock>()
-        val toolUses = content.filterIsInstance<ToolUseBlock>()
-        // Dropped media leaves an HONEST MARKER (the v25 doctrine: screenshots silently
-        // vanishing is the regression class; the model must know something was omitted).
-        val markers = omissionMarkers(content)
-        val textsRaw = content.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
-        val texts = (listOf(textsRaw) + markers).filter { it.isNotEmpty() }.joinToString("\n")
-        val images = content.filterIsInstance<ImageBlock>().mapNotNull { imagePart(it.source) }
-
-        if (toolUses.isNotEmpty()) {
-            appendAssistantToolCalls(sink, toolUses, texts)
-        }
-        // A `tool` message must immediately follow the assistant message that carries its
-        // tool_call_ids. Claude Code packs [tool_result, text] into one user message, so emit the
-        // tool results BEFORE any sibling user text/images — an interposed `user` message is a 400
-        // on strict OpenAI-compatible validators (and reorders the turn semantically everywhere).
-        appendToolResults(sink, toolResults)
-        val hasUserPayload = texts.isNotEmpty() || images.isNotEmpty()
-        if (toolUses.isEmpty() && hasUserPayload) {
-            appendUserContent(sink, role, texts, images)
-        }
-    }
-
-    /** Honest markers for content this dialect cannot carry: documents always; images when the
-     *  vendor has no vision. An image-only message still yields a marker — silently dropping the
-     *  whole message breaks role alternation AND hides the omission from the model. */
-    private fun omissionMarkers(content: List<splice.core.wire.ContentBlock>): List<String> {
-        val out = mutableListOf<String>()
-        content.filterIsInstance<DocumentBlock>().forEach { _ ->
-            out.add("[document omitted by ${quirks.providerTag} proxy: unsupported on this backend]")
-        }
-        if (!quirks.supportsVision) {
-            val n = content.count { it is ImageBlock }
-            if (n > 0) out.add("[$n image(s) omitted by ${quirks.providerTag} proxy: backend has no vision]")
-        }
-        return out
-    }
-
-    private fun appendAssistantToolCalls(
-        sink: JsonArrayBuilder,
-        toolUses: List<ToolUseBlock>,
-        texts: String,
-    ) {
-        sink.addJsonObject {
-            put(ROLE, "assistant")
-            if (texts.isNotEmpty()) put(CONTENT, texts) else put(CONTENT, null as String?)
-            put(
-                "tool_calls",
-                buildJsonArray {
-                    toolUses.forEach { tu ->
-                        addJsonObject {
-                            put("id", tu.id)
-                            put(TYPE, FUNCTION)
-                            putFunction(tu.name, tu.input.toString())
-                        }
-                    }
-                },
-            )
-        }
-    }
-
-    private fun appendUserContent(
-        sink: JsonArrayBuilder,
-        role: String,
-        texts: String,
-        images: List<JsonObject>,
-    ) {
-        sink.addJsonObject {
-            put(ROLE, role)
-            if (images.isEmpty()) {
-                put(CONTENT, texts)
-            } else {
-                put(
-                    CONTENT,
-                    buildJsonArray {
-                        if (texts.isNotEmpty()) {
-                            addJsonObject {
-                                put(TYPE, TEXT)
-                                put(TEXT, texts)
-                            }
-                        }
-                        images.forEach { add(it) }
-                    },
-                )
-            }
-        }
-    }
-
-    private fun appendToolResults(
-        sink: JsonArrayBuilder,
-        toolResults: List<ToolResultBlock>,
-    ) {
-        // Emit ALL tool messages first (OpenAI adjacency: every tool must immediately follow
-        // assistant.tool_calls with no intervening user). Image follow-ups land AFTER the full
-        // tool block — inserting user(images) between parallel tools 400s strict validators.
-        val trailingImages = mutableListOf<Pair<String, List<JsonObject>>>()
-        toolResults.forEach { tr ->
-            val out = tr.content.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
-            val images = tr.content.filterIsInstance<ImageBlock>().mapNotNull { imagePart(it.source) }
-            val imageCount = tr.content.count { it is ImageBlock }
-            sink.addJsonObject {
-                put(ROLE, "tool")
-                put("tool_call_id", tr.toolUseId)
-                // string-only channel: dropped images (no vision) are declared IN the output.
-                put(CONTENT, if (imageCount > 0 && images.isEmpty()) markerFold(out, imageCount) else out)
-            }
-            if (images.isNotEmpty()) {
-                trailingImages.add(tr.toolUseId to images)
-            }
-        }
-        // v25 doctrine: chat `tool` messages are string-only, so tool_result images ride
-        // follow-up user messages after the contiguous tool block (Responses parity).
-        trailingImages.forEach { (toolUseId, images) ->
-            appendUserContent(sink, "user", "[images from tool_result $toolUseId]", images)
-        }
-    }
-
-    private fun markerFold(out: String, imageCount: Int): String =
-        (listOf(out) + "[$imageCount image(s) omitted by ${quirks.providerTag} proxy: backend has no vision]")
-            .filter { it.isNotEmpty() }
-            .joinToString("\n")
-
-    private fun JsonObjectBuilder.putFunction(name: String, args: String) {
-        put(
-            FUNCTION,
-            buildJsonObject {
-                put(NAME, name)
-                put("arguments", args)
-            },
-        )
-    }
-
-    private fun toolsArray(body: AnthropicRequest) = buildJsonArray {
-        body.tools.forEach { t ->
-            addJsonObject {
-                put(TYPE, FUNCTION)
-                put(
-                    FUNCTION,
-                    buildJsonObject {
-                        put(NAME, t.name)
-                        put("description", t.description ?: "")
-                        put("parameters", t.inputSchema ?: buildJsonObject { put(TYPE, "object") })
-                    },
-                )
-            }
-        }
-    }
-
-    private fun imagePart(source: MediaSource?): JsonObject? = when {
-        source == null || !quirks.supportsVision -> null
-        source.type == "base64" && !source.data.isNullOrEmpty() -> {
-            val mime = source.mediaType ?: "image/png"
-            val data = source.data!!
-            val dataUrl = StringBuilder(DATA_URL_PREFIX.length + mime.length + BASE64_SEPARATOR.length + data.length)
-                .append(DATA_URL_PREFIX).append(mime).append(BASE64_SEPARATOR).append(data)
-                .toString()
-            buildJsonObject {
-                put(TYPE, IMAGE_URL)
-                put(IMAGE_URL, buildJsonObject { put(URL, dataUrl) })
-            }
-        }
-        source.type == "url" && !source.url.isNullOrEmpty() -> buildJsonObject {
-            put(TYPE, IMAGE_URL)
-            put(IMAGE_URL, buildJsonObject { put(URL, source.url) })
-        }
-        else -> null
-    }
-
-    private companion object {
-        // Chat wire field names — repeated across the message/tool/image mappings.
-        const val ROLE = "role"
-        const val CONTENT = "content"
-        const val TYPE = "type"
-        const val NAME = "name"
-        const val TEXT = "text"
-        const val URL = "url"
-        const val FUNCTION = "function"
-        const val IMAGE_URL = "image_url"
-        const val DATA_URL_PREFIX = "data:"
-        const val BASE64_SEPARATOR = ";base64,"
-    }
+        if (compact) CompactInstructions.withCompactDirective(system, compact = true) else system
 }
-
-/**
- * Map Anthropic thinking budget → chat `reasoning_effort`. Default high so backends that
- * support cleartext CoT actually emit `reasoning_content`. Compact turns INHERIT the session
- * effort (AGENTS cache law — a mismatched effort cold-starts the prompt cache); tools are
- * stripped separately, effort is deliberately not compact-aware.
- */
-private fun chatReasoningEffort(body: AnthropicRequest, upstreamModel: String): String? {
-    if (body.thinking?.disabled == true) return null
-    val budget = body.thinking?.budgetTokens
-    return when {
-        budget == null -> "high"
-        // grok-4.6+ (xAI docs 2026-08; older groks clamp xhigh to high). Gated on the model
-        // because this dialect also serves arbitrary OpenAI-compatible vendors, and an unknown
-        // enum there may be an error rather than a clamp.
-        budget >= XHIGH_BUDGET_FLOOR && XHIGH_MODELS.containsMatchIn(upstreamModel) -> "xhigh"
-        budget >= HIGH_BUDGET_FLOOR -> "high"
-        budget >= MEDIUM_BUDGET_FLOOR -> "medium"
-        budget > 0L -> "low"
-        else -> "high"
-    }
-}
-
-// /effort picker budget_tokens -> chat reasoning_effort tier floors
-private const val XHIGH_BUDGET_FLOOR = 64_000L
-private const val HIGH_BUDGET_FLOOR = 32_000L
-private const val MEDIUM_BUDGET_FLOOR = 8_000L
-
-// xhigh is native on grok-4.6 and later (4.6..4.9, 4.10+). grok-5+ lands here when it exists —
-// a one-line extension, not a silent cap on a shipped model.
-private val XHIGH_MODELS = Regex("grok-4\\.(?:[6-9]|[1-9]\\d)")

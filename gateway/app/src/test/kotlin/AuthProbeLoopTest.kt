@@ -14,9 +14,11 @@ import splice.app.AuthProbeLoop
 import splice.core.auth.AuthDescription
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshableAuthProvider
+import splice.spi.Ticker
 import java.io.IOException
 import java.util.concurrent.atomic.AtomicInteger
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class AuthProbeLoopTest {
 
     /** credentials()/refresh() independently toggle-able and counted; refreshThrows simulates a
@@ -182,6 +184,44 @@ class AuthProbeLoopTest {
         loop.stop()
         assertTrue(logs.any { it.contains("loop died") && it.contains("restarting (1/5)") }, "$logs")
         assertTrue(auth.calls.get() >= 2, "the restarted loop must tick again, saw ${auth.calls.get()}")
+    }
+
+    @Test
+    fun `stop during restart handoff prevents probe resurrection`() = runTest {
+        val calls = AtomicInteger(0)
+        val auth = object : RefreshableAuthProvider {
+            override suspend fun credentials(): Credentials? {
+                if (calls.incrementAndGet() == 1) error("provider invariant blew up")
+                return Credentials.ApiKey("k")
+            }
+            override suspend fun refresh(): Credentials? = credentials()
+            override suspend fun describe() = AuthDescription(present = true, kind = "fake")
+        }
+        lateinit var loop: AuthProbeLoop
+        var stopIssued = false
+        loop = AuthProbeLoop(
+            key = "codex",
+            auth = auth,
+            intervalMs = 1_000,
+            log = { line ->
+                if (line.contains("restarting")) {
+                    stopIssued = true
+                    loop.stop()
+                }
+            },
+            clock = { 0L },
+            ticker = Ticker { false },
+        )
+        val scope = kotlinx.coroutines.CoroutineScope(
+            StandardTestDispatcher(testScheduler) + kotlinx.coroutines.SupervisorJob() +
+                kotlinx.coroutines.CoroutineExceptionHandler { _, _ -> },
+        )
+
+        loop.start(scope)
+        testScheduler.advanceUntilIdle()
+
+        assertTrue(stopIssued, "the test must stop exactly inside the restart handoff")
+        assertEquals(1, calls.get(), "stop must prevent a replacement probe from launching")
     }
 
     @Test

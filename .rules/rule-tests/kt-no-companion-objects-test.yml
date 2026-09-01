@@ -1,0 +1,63 @@
+id: kt-no-companion-objects
+valid:
+  # constants as top-level declarations in the same file — the compliant landing for 58 migrated
+  # companions. Note this is NOT "move the members to the top level" for behaviour, which would
+  # only trade this violation for a kt-no-top-level-functions one.
+  - |
+    private const val DEFAULT_MAX_REQUEST_BYTES = 8 * 1024 * 1024
+
+    class HeadServer(private val deps: HeadDeps) {
+        fun cap(): Int = DEFAULT_MAX_REQUEST_BYTES
+    }
+  # a plain (non-companion) named object is untouched — it has an owner and a name.
+  - |
+    internal object PerfKeys {
+        const val UPSTREAM_REQ_BYTES = "upstream_req_bytes"
+    }
+  # the injected collaborator that replaces a companion factory.
+  - |
+    internal class TurnDriveFactory(private val deps: HeadDeps) {
+        fun assemble(inputs: TurnInputs): TurnDrive = TurnDrive(inputs, deps)
+    }
+  # `operator fun invoke` on a class the caller holds, rather than a companion factory.
+  - |
+    class ClampPolicy(private val cap: Int) {
+        operator fun invoke(text: String): String = text.take(cap)
+    }
+invalid:
+  # the bare companion.
+  - |
+    class HeadServer {
+        companion object {
+            const val DEFAULT_REQUEST_READ_TIMEOUT_MS = 30_000L
+        }
+    }
+  # a named companion is still a companion.
+  - |
+    class Codec {
+        companion object Factory {
+            fun create(): Codec = Codec()
+        }
+    }
+  # private does not launder it.
+  - |
+    class Reader {
+        private companion object {
+            const val LIMIT = 16
+        }
+    }
+  # a companion holding behaviour — the god-class accelerant this rule exists to stop.
+  - |
+    class ResponsesRequestBuilder {
+        companion object {
+            fun build(req: JsonObject): JsonObject = req
+            fun quirks(): List<String> = emptyList()
+        }
+    }
+  # inside an interface, still a companion.
+  - |
+    interface Provider {
+        companion object {
+            const val NAME = "provider"
+        }
+    }

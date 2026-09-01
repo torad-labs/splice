@@ -1,0 +1,14 @@
+id: kt-flow-over-suspend
+valid:
+  # the compliant form — a cold Flow builder needs no `suspend`; collecting it suspends.
+  - 'fun upstream(): Flow<JsonObject> = flowOf(o)'
+  # a suspend fun returning a plain value is correct and common here — this wall does NOT
+  # adopt the source pack's blanket "Flow over suspend" tenet.
+  - 'suspend fun drive(): TurnOutcome = run()'
+  # Flow as a PARAMETER is the provider SPI's mandated shape (Provider.kt:20 + 3 dialects).
+  # The `follows: function_value_parameters` constraint exists to keep these four green.
+  - 'suspend fun driveTurn(upstream: Flow<JsonObject>, sink: WireSink): TurnOutcome = TODO2()'
+  - 'suspend fun consume(src: Flow<String>): String = src.first()'
+invalid:
+  - 'suspend fun upstream(): Flow<JsonObject> = flowOf(o)'
+  - 'suspend fun ticks(id: Int): Flow<Int> { return flowOf(id) }'

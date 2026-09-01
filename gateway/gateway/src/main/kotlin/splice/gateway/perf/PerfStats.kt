@@ -15,8 +15,12 @@ import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.put
 import splice.core.perf.PerfSnapshot
 import splice.core.util.AsyncFileIo
+import splice.core.util.Cancellables
+import splice.core.util.DaemonLog
 import splice.core.util.JsonlSink
-import splice.core.util.runCatchingCancellable
+import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
+import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -27,7 +31,18 @@ public data class PerfRowMeta(
     val compact: Boolean,
 )
 
-public class PerfStats(private val file: Path, private val clock: () -> Long = System::currentTimeMillis) {
+private const val DEFAULT_TAIL = 200
+
+// ~256 KiB of trailing JSONL bounds parse cost regardless of file age.
+private const val READ_TAIL_BYTES = 256 * 1024
+
+public class PerfStats(
+    private val file: Path,
+    private val clock: WallClock = WallClock(System::currentTimeMillis),
+    private val log: LogSink = LogSink(DaemonLog::write),
+) {
+
+    private val unreadableLogged = java.util.concurrent.atomic.AtomicBoolean(false)
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -43,7 +58,7 @@ public class PerfStats(private val file: Path, private val clock: () -> Long = S
             snap.counters.forEach { (k, v) -> put(k, v) }
         }.toString()
         AsyncFileIo.submit {
-            runCatchingCancellable {
+            Cancellables.runCatchingCancellable {
                 Files.createDirectories(file.parent)
                 JsonlSink.appendLine(file, row)
             }
@@ -54,25 +69,33 @@ public class PerfStats(private val file: Path, private val clock: () -> Long = S
     // read is best-effort by design: a missing/corrupt file yields empty; a bad line is skipped.
     public fun tailNumeric(tailN: Int = DEFAULT_TAIL): List<Map<String, Long>> {
         AsyncFileIo.drain()
-        if (!Files.exists(file)) return emptyList()
-        val rows = runCatchingCancellable {
+        // DR-60 (class law): only PROVEN absence — NoSuch with no NOFOLLOW entry — is the quiet
+        // empty; an inaccessible perf log degrades the same but leaves a trace instead of a
+        // silently-blank instrument.
+        val rows = Cancellables.runCatchingCancellable {
             JsonlSink.readTail(file, READ_TAIL_BYTES).mapNotNull { line ->
-                runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
+                Cancellables.runCatchingCancellable { json.parseToJsonElement(line).jsonObject }.getOrNull()
             }
-        }.getOrDefault(emptyList())
-        return rows.takeLast(tailN).map { it.numericFields() }
+        }.onSuccess {
+            // ANY healthy read — an empty or all-skipped tail included — closes the unreadable
+            // episode so the next one logs again; guarded on isNotEmpty, a recovered-but-empty
+            // file kept the latch armed and the second episode silent (sweep 2026-08-31).
+            unreadableLogged.set(false)
+        }.getOrElse { failure ->
+            val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+                !Files.exists(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+            if (!genuinelyAbsent && unreadableLogged.compareAndSet(false, true)) {
+                log("[perf] $file unreadable (${SafeFailureText.render(failure)}) — stats rendered empty\n")
+            }
+            if (genuinelyAbsent) unreadableLogged.set(false)
+            emptyList()
+        }
+        return rows.takeLast(tailN).map { numericFields(it) }
     }
 
-    private companion object {
-        const val DEFAULT_TAIL = 200
-
-        // ~256 KiB of trailing JSONL bounds parse cost regardless of file age.
-        const val READ_TAIL_BYTES = 256 * 1024
-
-        fun JsonObject.numericFields(): Map<String, Long> = buildMap {
-            this@numericFields.forEach { (k, v) ->
-                (v as? JsonPrimitive)?.longOrNull?.let { put(k, it) }
-            }
+    private fun numericFields(row: JsonObject): Map<String, Long> = buildMap {
+        row.forEach { (k, v) ->
+            (v as? JsonPrimitive)?.longOrNull?.let { put(k, it) }
         }
     }
 }

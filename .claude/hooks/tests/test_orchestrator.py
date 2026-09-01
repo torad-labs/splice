@@ -30,8 +30,13 @@ REPO = HOOKS_DIR.parents[1]
 # Kotlin `kt-l3-sole-wire-terminals` is the same invariant on the live stack —
 # same error severity, same sole-emitter shape with a path `ignores` — so the
 # routing mechanics under test are unchanged.
-VIOLATION = 'fun endTurn(out: Writer) {\n    out.write("message_stop")\n}\n'
-CLEAN = "fun endTurn(out: Writer) {\n    out.close()\n}\n"
+# Class-wrapped on 2026-08-17, when kt-no-top-level-functions was promoted from a write-time-only
+# hook into a routed gate rule. These fixtures must be clean under EVERY rule except the one under
+# test, or CLEAN stops proving what its name claims: a bare `fun endTurn(...)` at file scope now
+# trips the top-level-function wall, so the "clean write passes" case would fail for a reason that
+# has nothing to do with L3. Only the body differs between the two.
+VIOLATION = 'class Probe {\n    fun endTurn(out: Writer) {\n        out.write("message_stop")\n    }\n}\n'
+CLEAN = "class Probe {\n    fun endTurn(out: Writer) {\n        out.close()\n    }\n}\n"
 L3_TARGET = "gateway/core/src/main/kotlin/splice/core/Probe.kt"  # in scope, NOT the emitter
 L3_EXEMPT = "gateway/gateway/src/main/kotlin/splice/gateway/wire/SseEmitter.kt"  # the sole emitter
 L3_RULE = "kt-l3-sole-wire-terminals"
@@ -121,7 +126,10 @@ class OrchestratorTest(unittest.TestCase):
     def test_edit_introducing_violation_blocks(self):
         target = self.root / L3_TARGET
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text("fun onDone(out: Writer) {\n    finish(out)\n}\n", encoding="utf-8")
+        target.write_text(
+            "class Probe {\n    fun onDone(out: Writer) {\n        finish(out)\n    }\n}\n",
+            encoding="utf-8",
+        )
         event = {
             "tool_name": "Edit",
             "tool_input": {
@@ -140,7 +148,8 @@ class OrchestratorTest(unittest.TestCase):
         target = self.root / "gateway/gateway/src/main/kotlin/splice/gateway/head/Boot.kt"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(
-            'fun boot() {\n    embeddedServer(Netty, port = PORT, host = "127.0.0.1")\n}\n',
+            'class Boot {\n    fun boot() {\n'
+            '        embeddedServer(Netty, port = PORT, host = "127.0.0.1")\n    }\n}\n',
             encoding="utf-8",
         )
         event = {

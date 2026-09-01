@@ -1,0 +1,18 @@
+id: kt-no-todo-throws
+valid:
+  - 'fun drive(): TurnOutcome = run()'
+  # naming the type is fine — only CONSTRUCTING it is banned. `kind: call_expression` on the
+  # NotImplementedError branch is what keeps this green.
+  - |
+    fun guard() {
+        try { drive() } catch (e: NotImplementedError) { report(e) }
+    }
+  # not the Kotlin intrinsic — a comment marker carries no runtime throw.
+  - 'fun drive() = run() // TODO later'
+invalid:
+  - 'fun drive(): TurnOutcome = TODO()'
+  # the message form — `$$$A` matches zero-or-more, so one branch covers both spellings.
+  - 'fun drive(): TurnOutcome = TODO("wire this up")'
+  # the longhand the source rule was blind to, added at promotion.
+  - 'fun drive(): TurnOutcome = throw NotImplementedError()'
+  - 'fun drive(): TurnOutcome = throw NotImplementedError("wire this up")'

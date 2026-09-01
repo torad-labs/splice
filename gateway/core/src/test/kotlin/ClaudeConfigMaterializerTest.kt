@@ -20,14 +20,54 @@ import splice.core.launch.ClaudeConfigMaterializer
 import splice.core.launch.ClaudePolicy
 import splice.core.launch.MaterializeSpec
 import splice.core.launch.TokenCaptureSpec
+import splice.core.util.LogSink
+import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
+import java.nio.file.attribute.PosixFilePermissions
 import kotlin.io.path.isSymbolicLink
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
 class ClaudeConfigMaterializerTest {
+
+    // DR-11c: the local .claude.json is Claude Code's own state; an unparseable one must abort
+    // the rewrite (the KeyStore strict doctrine), not become an empty merge base that a five-key
+    // file then atomically replaces — destroying, among everything else, the approved
+    // customApiKeyResponses the rewrite exists to preserve.
+    @Test
+    fun `a corrupt local claude json aborts materialize and keeps its bytes`(@TempDir home: Path) {
+        seedGlobal(home)
+        val configDir = home.resolve(".claude-head")
+        Files.createDirectories(configDir)
+        val corrupt = """{"customApiKeyResponses": {"approved": ["k1"]}, TRUNCATED"""
+        configDir.resolve(".claude.json").writeText(corrupt)
+
+        assertThrows(IOException::class.java) {
+            materializer(home).materialize(configDir, allPolicy, listOf("m1"), "m1", optionsCache)
+        }
+        assertEquals(
+            corrupt,
+            configDir.resolve(".claude.json").readText(),
+            "the unreadable file must keep its bytes for the operator to fix",
+        )
+    }
+
+    // DR-11b: both generated files are rewritten while a LIVE Claude Code can be mid-read; the
+    // truncate-then-write pair is replaced by the repo's one atomic-write primitive. The
+    // observable pin is the primitive's 0600 stamp — a plain writeString leaves umask perms.
+    @Test
+    fun `settings and claude json are written through the atomic 0600 primitive`(@TempDir home: Path) {
+        seedGlobal(home)
+        val configDir = home.resolve(".claude-head")
+
+        materializer(home).materialize(configDir, allPolicy, listOf("m1"), "m1", optionsCache)
+
+        val perms = { p: Path -> PosixFilePermissions.toString(Files.getPosixFilePermissions(p)) }
+        assertEquals("rw-------", perms(configDir.resolve("settings.json")))
+        assertEquals("rw-------", perms(configDir.resolve(".claude.json")))
+    }
 
     private val allPolicy = ClaudePolicy(
         share = setOf("settings", "mcps", "agents", "commands", "skills", "hooks", "plugins", "CLAUDE.md"),
@@ -37,6 +77,36 @@ class ClaudeConfigMaterializerTest {
     private val statusline = "\"/usr/bin/curl\" -s :3096/statusline"
 
     private fun materializer(home: Path) = ClaudeConfigMaterializer(home)
+
+    // DR-39: linkShared's best-effort legs were best-effort AND silent — a head could launch
+    // without the operator's agents/skills/hooks layer and nothing said so. Deterministic
+    // reproduction: a real dir the operator made where the share would link must LOG the decline.
+    // (commands is exempt by design — real-dir-ness there is the login.md steady state — but the
+    // exemption is only honest because LoginInterception reconciles a real commands dir on EVERY
+    // launch, blank-login included: this arm materializes with a blank loginCommand and a real
+    // local commands dir, and the operator's entry must still arrive. codex repro, DR-39 redo.)
+    @Test
+    fun `an undone share names itself in the log instead of failing silently`(@TempDir home: Path) {
+        seedGlobal(home)
+        home.resolve(".claude/commands/team.md").writeText("# team")
+        val configDir = home.resolve(".claude-head")
+        Files.createDirectories(configDir.resolve("agents")) // operator-made REAL dir blocks the link
+        Files.createDirectories(configDir.resolve("commands")) // by-design real dir: exempt AND reconciled
+        val log = mutableListOf<String>()
+
+        ClaudeConfigMaterializer(home, log = LogSink { log += it })
+            .materialize(configDir, allPolicy, listOf("m1"), "m1", optionsCache)
+
+        assertTrue(
+            log.any { it.contains("'agents'") && it.contains("not linked") },
+            "the declined agents share must be named in the log, got $log",
+        )
+        assertTrue(log.none { it.contains("'commands'") }, "commands real-dir is by design; no noise: $log")
+        assertTrue(
+            Files.isSymbolicLink(configDir.resolve("commands/team.md")),
+            "a blank-login head's real commands dir must still receive the operator's entries",
+        )
+    }
 
     // Test shim: materialize() now takes a MaterializeSpec; supply a fixed statusline so the
     // existing positional call sites read unchanged.
@@ -142,6 +212,84 @@ class ClaudeConfigMaterializerTest {
         materializer(tmp).materialize(dir, policy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
         assertFalse(Files.exists(dir.resolve("commands"), NOFOLLOW_LINKS)) // isolated: no link
         assertTrue(dir.resolve("agents").isSymbolicLink()) // still shared
+    }
+
+    @Test
+    fun `sessions registry migrates a real head dir into the global and links it`(@TempDir tmp: Path) {
+        seedGlobal(tmp)
+        val globalSessions = tmp.resolve(".claude/sessions")
+        Files.createDirectories(globalSessions)
+        val dir = tmp.resolve(".claude-codex")
+        val headSessions = dir.resolve("sessions")
+        Files.createDirectories(headSessions) // Claude Code made this before the link existed
+        headSessions.resolve("12345.json").writeText("""{"pid":12345}""")
+        headSessions.resolve("12345.abc.key").writeText("k")
+        val policy = ClaudePolicy(share = allPolicy.share + "sessions", isolate = emptySet())
+        materializer(tmp).materialize(dir, policy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
+        assertTrue(headSessions.isSymbolicLink())
+        assertEquals(globalSessions, Files.readSymbolicLink(headSessions))
+        // registrations moved with the dir swap: a live session keeps writing through the link
+        assertTrue(Files.isRegularFile(globalSessions.resolve("12345.json")))
+        assertTrue(Files.isRegularFile(globalSessions.resolve("12345.abc.key")))
+    }
+
+    @Test
+    fun `sessions link is idempotent across rematerializations`(@TempDir tmp: Path) {
+        seedGlobal(tmp)
+        val globalSessions = tmp.resolve(".claude/sessions")
+        Files.createDirectories(globalSessions)
+        val dir = tmp.resolve(".claude-codex")
+        val policy = ClaudePolicy(share = allPolicy.share + "sessions", isolate = emptySet())
+        repeat(2) { materializer(tmp).materialize(dir, policy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache) }
+        assertTrue(dir.resolve("sessions").isSymbolicLink())
+        assertEquals(globalSessions, Files.readSymbolicLink(dir.resolve("sessions")))
+    }
+
+    // INVERTED (DR-1 redo, 2026-08-30). This used to pin "a missing global registry leaves the head's
+    // sessions dir alone", which is the skip-if-missing rule every OTHER shared item follows. The
+    // registry is not like the others: Claude Code GENERATES it, so "missing" means a machine that has
+    // never run plain `claude` — precisely the fresh install where cross-head visibility is wanted and
+    // where its absence is invisible, because nothing said sharing did not happen. DR-1 demanded
+    // Files.createDirectories(globalSessions) for exactly that case. The share-vs-isolate decision is
+    // untouched and still pinned by `isolate sessions keeps the head registry private` below — this
+    // arm only covers a policy that ASKED to share.
+    @Test
+    fun `a missing global registry is created so sessions sharing is never silently inert`(@TempDir tmp: Path) {
+        seedGlobal(tmp) // seeds ~/.claude WITHOUT a sessions dir
+        val dir = tmp.resolve(".claude-codex")
+        val headSessions = dir.resolve("sessions")
+        Files.createDirectories(headSessions)
+        val policy = ClaudePolicy(share = allPolicy.share + "sessions", isolate = emptySet())
+        materializer(tmp).materialize(dir, policy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
+        assertTrue(Files.isDirectory(tmp.resolve(".claude/sessions")), "the registry must be created")
+        assertTrue(headSessions.isSymbolicLink(), "a sharing head must end up linked, not left private")
+        assertEquals(tmp.resolve(".claude/sessions"), Files.readSymbolicLink(headSessions))
+    }
+
+    @Test
+    fun `isolate sessions keeps the head registry private`(@TempDir tmp: Path) {
+        seedGlobal(tmp)
+        Files.createDirectories(tmp.resolve(".claude/sessions"))
+        val dir = tmp.resolve(".claude-codex")
+        val headSessions = dir.resolve("sessions")
+        Files.createDirectories(headSessions)
+        val policy = ClaudePolicy(share = allPolicy.share + "sessions", isolate = setOf("sessions"))
+        materializer(tmp).materialize(dir, policy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
+        assertFalse(headSessions.isSymbolicLink())
+        assertTrue(Files.isDirectory(headSessions, NOFOLLOW_LINKS))
+    }
+
+    @Test
+    fun `sessions migration aborts on unexpected content and leaves the real dir`(@TempDir tmp: Path) {
+        seedGlobal(tmp)
+        Files.createDirectories(tmp.resolve(".claude/sessions"))
+        val dir = tmp.resolve(".claude-codex")
+        val headSessions = dir.resolve("sessions")
+        Files.createDirectories(headSessions.resolve("weird-subdir"))
+        val policy = ClaudePolicy(share = allPolicy.share + "sessions", isolate = emptySet())
+        materializer(tmp).materialize(dir, policy, listOf("gpt-5.6-sol"), "gpt-5.6-sol", optionsCache)
+        assertFalse(headSessions.isSymbolicLink())
+        assertTrue(Files.isDirectory(headSessions.resolve("weird-subdir")))
     }
 
     @Test

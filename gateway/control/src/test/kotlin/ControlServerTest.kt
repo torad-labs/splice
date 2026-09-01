@@ -377,9 +377,11 @@ class ControlServerTest {
         val obj = json.parseToJsonElement(body).jsonObject
         val env = obj["env"]!!.jsonObject
         assertEquals("http://127.0.0.1:3099", env["ANTHROPIC_BASE_URL"]?.jsonPrimitive?.content)
-        // the two fixes: a bearer AUTH_TOKEN (no /login), and gateway model discovery (all models show)
+        // a bearer AUTH_TOKEN (no /login); discovery stays OFF — the materialized bare-id roster
+        // is the picker's one source (the wrapped /v1/models spelling doubled every row and makes
+        // Claude Code ignore CLAUDE_CODE_MAX_CONTEXT_TOKENS — LaunchService header).
         assertEquals(key, env["ANTHROPIC_AUTH_TOKEN"]?.jsonPrimitive?.content)
-        assertEquals("1", env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"]?.jsonPrimitive?.content)
+        assertFalse(env.containsKey("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"))
         assertEquals("gpt-5.6-sol", env["ANTHROPIC_MODEL"]?.jsonPrimitive?.content)
         assertEquals("272000", env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"]?.jsonPrimitive?.content)
         // ANTHROPIC_API_KEY is UNSET (else Claude Code's custom-key approval dead-ends at /login)

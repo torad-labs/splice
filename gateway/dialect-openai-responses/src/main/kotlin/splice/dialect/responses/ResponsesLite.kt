@@ -9,41 +9,56 @@ import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
-/** Lite gate: non-compact turns on a responses-lite model (compact keeps the normal shape —
- *  a text-only summarizer turn has no tools and its forced instructions stay top-level). */
-internal fun ResponsesQuirks.isLite(opts: BuildOptions): Boolean =
-    !opts.compact && responsesLiteModelRegex?.containsMatchIn(opts.upstreamModel) == true
-
 /** The one lite seam: how input/instructions/tools ride on the wire for this turn. */
 internal data class WireShape(val input: JsonArray, val instructions: String?, val tools: JsonArray?)
 
-internal fun wireShape(lite: Boolean, input: JsonArray, instructions: String, tools: JsonArray?): WireShape =
-    if (lite) {
-        WireShape(liteInput(input, tools, instructions), instructions = null, tools = null)
-    } else {
-        WireShape(input, instructions, tools)
-    }
+/**
+ * The lite gate + the lite input reshaping, bound to ONE provider's quirks.
+ *
+ * [isLite] and [wireShape] were file-level functions (the gate an extension on [ResponsesQuirks]);
+ * Kotlin main sources carry no top-level functions, so the seam became a type. The quirks ride the
+ * CONSTRUCTOR rather than a leading parameter deliberately: every member keeps its old argument
+ * list exactly, so no call site can silently reorder arguments.
+ */
+internal class ResponsesLiteShape(private val quirks: ResponsesQuirks) {
 
-/** codex-rs responses-lite input: [additional_tools (developer), developer base-instructions,
- *  ...history]. Shape read from codex-rs core/src/client.rs and accepted by the live backend. */
-private fun liteInput(input: JsonArray, tools: JsonArray?, instructions: String): JsonArray =
-    buildJsonArray {
-        if (tools != null) {
+    /** Lite gate: non-compact turns on a responses-lite model (compact keeps the normal shape —
+     *  a text-only summarizer turn has no tools and its forced instructions stay top-level). */
+    fun isLite(opts: BuildOptions): Boolean =
+        !opts.compact && quirks.responsesLiteModelRegex?.containsMatchIn(opts.upstreamModel) == true
+
+    fun wireShape(lite: Boolean, input: JsonArray, instructions: String, tools: JsonArray?): WireShape =
+        if (lite) {
+            // The empty field is codex-only serde parity, never a property of responses-lite itself:
+            // ResponsesApiRequest.instructions is non-optional (core/src/client.rs:874), while the
+            // shared dialect historically omitted top-level instructions after moving them to input.
+            val topLevelInstructions = if (quirks.emitEmptyLiteInstructions) "" else null
+            WireShape(liteInput(input, tools, instructions), instructions = topLevelInstructions, tools = null)
+        } else {
+            WireShape(input, instructions, tools)
+        }
+
+    /** codex-rs responses-lite input: [additional_tools (developer), developer base-instructions,
+     *  ...history]. Shape read from codex-rs core/src/client.rs and accepted by the live backend. */
+    private fun liteInput(input: JsonArray, tools: JsonArray?, instructions: String): JsonArray =
+        buildJsonArray {
+            if (tools != null) {
+                add(
+                    buildJsonObject {
+                        put("type", "additional_tools")
+                        put("role", "developer")
+                        put("tools", tools)
+                    },
+                )
+            }
             add(
                 buildJsonObject {
-                    put("type", "additional_tools")
                     put("role", "developer")
-                    put("tools", tools)
+                    put(LITE_CONTENT_FIELD, instructions)
                 },
             )
+            input.forEach { add(it) }
         }
-        add(
-            buildJsonObject {
-                put("role", "developer")
-                put(LITE_CONTENT_FIELD, instructions)
-            },
-        )
-        input.forEach { add(it) }
-    }
+}
 
 private const val LITE_CONTENT_FIELD = "content"

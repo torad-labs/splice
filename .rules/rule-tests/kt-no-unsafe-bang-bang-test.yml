@@ -1,0 +1,32 @@
+id: kt-no-unsafe-bang-bang
+valid:
+  # Bound to a local before the branch, so `isNullOrEmpty`'s contract narrows what the compiler
+  # tracks — the shape both request builders moved to.
+  - |
+    fun imagePart(source: MediaSource?): JsonObject? {
+        val data = source?.data
+        return when {
+            source == null -> null
+            !data.isNullOrEmpty() -> encode(data)
+            else -> null
+        }
+    }
+  # Null checks in the branch that RETURNS: both stay smart-cast past it, no assertion needed.
+  - |
+    fun completed(responseId: String?, input: JsonArray?) {
+        if (responseId == null || input == null) return
+        commit(input.map { it.toString() }, responseId)
+    }
+  # One read into a local instead of two reads with an assertion on the second.
+  - |
+    fun inherit(global: JsonObject, key: String) {
+        val inherited = global[key]
+        if (inherited != null) put(key, inherited)
+    }
+  # `!=` is not `!!`; the wall must not confuse the two.
+  - 'val changed = a != b'
+invalid:
+  - 'val data = source.data!!'
+  - 'put(k, global[k]!!)'
+  - 'chains[key] = Chain(input!!.map { it.toString() }, responseId!!, generation)'
+  - 'val length = maybeName!!.length'

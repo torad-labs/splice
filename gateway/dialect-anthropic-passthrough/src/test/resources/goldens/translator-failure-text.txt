@@ -1,0 +1,1 @@
+Failure(type=OVERLOADED, message=kimi: upstream busy, providerReported=true, partial=null, salvagedUsage=Usage(inputTokens=0, outputTokens=0, cachedTokens=0, reasoningTokens=0))

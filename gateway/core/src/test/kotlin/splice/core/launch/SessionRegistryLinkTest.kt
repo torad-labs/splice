@@ -88,7 +88,12 @@ class SessionRegistryLinkTest {
         Files.writeString(local.resolve("z.key"), "local-z")
         val failingFs = object : SessionRegistryFs {
             override fun move(source: Path, target: Path, vararg options: CopyOption): Path {
-                if (source.fileName.toString() == "z.key") throw IOException("injected transfer failure")
+                // DR-140: a FileSystemException, which is what Files.move actually throws, and
+                // which SafeFailureText.render allowlists — so this arm still proves the cause is
+                // logged. The old fixture threw a BARE IOException that production cannot produce.
+                if (source.fileName.toString() == "z.key") {
+                    throw java.nio.file.FileSystemException(source.toString(), null, "injected transfer failure")
+                }
                 return Files.move(source, target, *options)
             }
 
@@ -103,6 +108,35 @@ class SessionRegistryLinkTest {
             log.any { it.contains("rolled") && it.contains("injected transfer failure") },
             "the rollback must log its cause, got $log",
         )
+    }
+
+    // DR-140: the sink's other half. render() is an ALLOWLIST, so the fs failure above keeps its
+    // full text while a throwable outside the list is withheld whole — that is the property the
+    // DR-65 law buys, and without this arm the route above is indistinguishable from `.message`.
+    @Test
+    fun `a non-filesystem commit failure is withheld rather than quoted - DR-140`(@TempDir tmp: Path) {
+        val local = tmp.resolve("local-sessions")
+        val global = tmp.resolve("global-sessions")
+        Files.createDirectories(local)
+        Files.createDirectories(global)
+        Files.writeString(local.resolve("a.json"), "local-a")
+        Files.writeString(local.resolve("z.key"), "local-z")
+        val leaky = object : SessionRegistryFs {
+            override fun move(source: Path, target: Path, vararg options: CopyOption): Path {
+                if (source.fileName.toString() == "z.key") throw IOException("sk-SECRET-0140 from file bytes")
+                return Files.move(source, target, *options)
+            }
+
+            override fun createSymbolicLink(link: Path, target: Path): Path =
+                Files.createSymbolicLink(link, target)
+        }
+        val log = mutableListOf<String>()
+
+        SessionRegistryLink(leaky).link(global, local, log = { log += it })
+
+        val joined = log.joinToString("")
+        assertFalse(joined.contains("sk-SECRET-0140"), "a non-fs throwable must never be quoted, got $joined")
+        assertTrue(joined.contains("message withheld"), "the sanitizer's fixed literal must appear, got $joined")
     }
 
     // DR-1 second residual (codex-splice review, 2026-08-30): the item demanded

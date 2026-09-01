@@ -83,6 +83,7 @@ internal class ControlPlane(
         )
         val controlBound = boundary.runCatchingDaemonBoundary { srv.start() }
             .onFailure {
+                // SAFE-RENDER-EXEMPT[2026-08-31]: srv.start() bind failure — a SocketException names a port and an address, never file bytes
                 log("[daemon] control plane could not bind :$controlPort (${it.message}); another owns it, exiting\n")
                 shutdownDaemon()
             }

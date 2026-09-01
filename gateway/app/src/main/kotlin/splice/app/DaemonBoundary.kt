@@ -8,6 +8,7 @@ import splice.core.config.StatePaths
 import splice.core.util.AsyncFileIo
 import splice.core.util.Cancellables
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -98,7 +99,10 @@ internal class DaemonBoundary {
                     // self-corrects, and say so on stderr (the one lane still alive here).
                     written = Cancellables.runCatchingCancellable { if (Files.exists(file)) Files.size(file) else 0L }
                         .getOrDefault(0L)
-                    System.err.print("[daemon-log] write/rotate failed ($failure) — size reconciled to $written\n")
+                    System.err.print(
+                        "[daemon-log] write/rotate failed (${SafeFailureText.render(failure)}) — " +
+                            "size reconciled to $written\n",
+                    )
                 }
             }
         }

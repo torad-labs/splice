@@ -72,7 +72,7 @@ internal class DoctorCommand {
     // One crashing check must not kill the report (nor masquerade as healthy).
     private fun guarded(block: DoctorProbe): List<DoctorCheck> =
         Cancellables.runCatchingCancellable(block::invoke).getOrElse { e ->
-            listOf(DoctorCheck("doctor", CheckStatus.FAIL, "check crashed: ${e.message}"))
+            listOf(DoctorCheck("doctor", CheckStatus.FAIL, "check crashed: ${SafeFailureText.render(e)}"))
         }
 
     // DR-69: doctor's contract is exact diagnosis — only proven absence is Absent; an

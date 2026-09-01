@@ -62,7 +62,10 @@ internal class GrokAuthDescribe(
     fun grokAuthMtimeOrNull(authPath: Path, log: LogSink): Long? = Cancellables.runCatchingCancellable {
         Files.getLastModifiedTime(authPath).toMillis()
     }.onFailure {
-        log("[grok-auth] failed to stat $authPath mtime: $it — invalid_grant latch check skipped")
+        log(
+            "[grok-auth] failed to stat $authPath mtime: ${SafeFailureText.render(it)} — " +
+                "invalid_grant latch check skipped",
+        )
     }.getOrNull()
 
     internal fun describe(): AuthDescription {

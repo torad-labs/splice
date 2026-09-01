@@ -67,6 +67,7 @@ public object OAuthLoginFlow {
     } catch (e: IOException) {
         println(
             "splice: can't start the login listener on 127.0.0.1:$redirectPort " +
+                // SAFE-RENDER-EXEMPT[2026-08-31]: HttpServer.create bind on loopback — the IOException names a port, never file bytes
                 "(is another login already running?): ${e.message}",
         )
         null

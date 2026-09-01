@@ -104,6 +104,13 @@ run "oracle replay" npm run --silent oracle:replay
 run "heads-e2e selftest" bash checks/e2e/heads-e2e-selftest.sh
 run "config guard"   bash checks/config-guard.sh
 run "config-guard selftest" bash checks/config-guard-selftest.sh
+# DR-140: the DR-65 wall. Every throwable rendered into text from a source that touches files or
+# names credential/state types is routed through SafeFailureText.render or carries a dated,
+# reasoned exemption; an undispositioned sink fails BY NAME. DR-73 swept this class by hand and
+# its denominator was files rather than sinks, so UsageRingFile's write half kept a raw render for
+# another eight days (DR-139) — a hand sweep closes the instance, a checker closes the class.
+run "safe-failure-render" python3 checks/config/safe-failure-render.py check .
+run "safe-failure-render selftest" bash checks/safe-failure-render-selftest.sh
 run "pr title"       bash checks/pr-title.sh
 # Two layers, deliberately. The generator makes the hazards inexpressible (#924); the canary
 # selftest is defence in depth over its OUTPUT, so a bug in the generator itself still gets caught.

@@ -19,6 +19,7 @@ import splice.core.util.EnvReader
 import splice.core.util.FormEncoding
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -173,7 +174,10 @@ public class KimiOAuth {
         Cancellables.runCatchingCancellable {
             Files.getLastModifiedTime(authPath).toMillis()
         }.onFailure {
-            log("[kimi-auth] failed to stat $authPath mtime: $it — invalid_grant latch check skipped")
+            log(
+                "[kimi-auth] failed to stat $authPath mtime: ${SafeFailureText.render(it)} — " +
+                    "invalid_grant latch check skipped",
+            )
         }.getOrNull()
 }
 

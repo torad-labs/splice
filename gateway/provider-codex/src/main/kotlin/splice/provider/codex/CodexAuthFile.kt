@@ -6,6 +6,7 @@ package splice.provider.codex
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -37,6 +38,9 @@ internal class CodexAuthFile {
         Cancellables.runCatchingCancellable {
             Files.getLastModifiedTime(authPath).toMillis()
         }.onFailure {
-            log("[codex-auth] failed to stat $authPath mtime: $it — invalid_grant latch check skipped")
+            log(
+                "[codex-auth] failed to stat $authPath mtime: ${SafeFailureText.render(it)} — " +
+                    "invalid_grant latch check skipped",
+            )
         }.getOrNull()
 }

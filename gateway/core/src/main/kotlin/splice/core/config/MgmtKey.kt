@@ -56,7 +56,7 @@ public class MgmtKey(
             failure !is java.nio.file.NoSuchFileException -> "unreadable (${SafeFailureText.render(failure)})"
             // A read that vanished: genuine absence, OR a dangling symlink (entry present, target
             // gone). Only the former is the quiet first run.
-            Files.exists(path, LinkOption.NOFOLLOW_LINKS) -> "dangling symlink ($failure)"
+            Files.exists(path, LinkOption.NOFOLLOW_LINKS) -> "dangling symlink (${SafeFailureText.render(failure)})"
             else -> null
         }
         if (readFailure != null) {
@@ -65,6 +65,7 @@ public class MgmtKey(
             // now invalid" was a false diagnostic. The consequence is spelled conditionally so the
             // line is true on both paths.
             log(
+                // SAFE-RENDER-EXEMPT[2026-08-31]: readFailure is not a throwable but a String built by the when above, whose every throwable-bearing branch already renders through the sanitizer
                 "[mgmt-key] $path $readFailure — minting a NEW key: if the replacement publishes, " +
                     "every existing bearer (dashboard session, scripts, the launch shim's stop " +
                     "hook) becomes invalid; re-copy the key from $path\n",

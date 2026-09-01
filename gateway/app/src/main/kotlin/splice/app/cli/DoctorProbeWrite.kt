@@ -7,6 +7,7 @@ package splice.app.cli
 import kotlinx.serialization.json.jsonObject
 import splice.core.util.Cancellables
 import splice.core.util.JsonScalars
+import splice.core.util.SafeFailureText
 import java.nio.file.Files
 import java.nio.file.Path
 
@@ -31,7 +32,12 @@ internal class DoctorProbeWrite {
             // fact and the reflective lookup that used to produce the same six syllables is gone.
             DoctorCheck(name, CheckStatus.FAIL, "$dir is not writable (AccessDeniedException)", "chmod u+rwx $dir")
         } catch (e: java.io.IOException) {
-            DoctorCheck(name, CheckStatus.FAIL, "$dir is not writable (${e.message})", "check free space: df -h $dir")
+            DoctorCheck(
+                name,
+                CheckStatus.FAIL,
+                "$dir is not writable (${SafeFailureText.render(e)})",
+                "check free space: df -h $dir",
+            )
         } finally {
             Cancellables.runCatchingCancellable { Files.deleteIfExists(probe) }
         }

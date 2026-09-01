@@ -9,6 +9,7 @@ package splice.app.cli
 
 import splice.core.util.Cancellables
 import splice.core.util.EnvReader
+import splice.core.util.SafeFailureText
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.util.concurrent.Callable
@@ -61,11 +62,16 @@ internal class DoctorProbes {
                     DoctorCheck(
                         "probe",
                         CheckStatus.FAIL,
-                        "probe did not complete in time (${e.message})",
+                        "probe did not complete in time (${SafeFailureText.render(e)})",
                         FIX_REDOCTOR,
                     )
                 } catch (e: ExecutionException) {
-                    DoctorCheck("probe", CheckStatus.FAIL, "probe crashed: ${e.cause?.message}", FIX_REDOCTOR)
+                    DoctorCheck(
+                        "probe",
+                        CheckStatus.FAIL,
+                        "probe crashed: ${e.cause?.let { SafeFailureText.render(it) }}",
+                        FIX_REDOCTOR,
+                    )
                 }
             }
         } finally {

@@ -134,6 +134,7 @@ internal object LoginInterception {
             if (leg.isFailure) {
                 log(
                     "[login] /login interception NOT installed in $configDir " +
+                        // SAFE-RENDER-EXEMPT[2026-08-31]: staged-file copy leg — a FileSystemException over paths this code authored, never their content
                         "(${leg.exceptionOrNull()?.message}) — commands/login.md or its hook failed; " +
                         "the head runs without an interceptor\n",
                 )
@@ -159,6 +160,7 @@ internal object LoginInterception {
     ): Map<String, List<JsonObject>> {
         val leg = Cancellables.runCatchingCancellable {
             execProbe(configDir, chmod)?.let { failure ->
+                // SAFE-RENDER-EXEMPT[2026-08-31]: an exec-bit probe on a directory we create — the failure names that directory, never file content
                 throw IOException("$configDir cannot execute a staged hook (${failure.message})")
             }
             val script =
@@ -168,6 +170,7 @@ internal object LoginInterception {
         if (leg.isFailure) {
             log(
                 "[login] key-setup advertiser NOT installed in $configDir " +
+                    // SAFE-RENDER-EXEMPT[2026-08-31]: staged commands/login.md copy — a FileSystemException over paths this code authored, never content
                     "(${leg.exceptionOrNull()?.message}) — the paste flow stays undiscoverable this launch\n",
             )
         }
@@ -217,6 +220,7 @@ internal object LoginInterception {
         if (leg.isFailure) {
             log(
                 "[login] shared commands NOT reconciled into $configDir " +
+                    // SAFE-RENDER-EXEMPT[2026-08-31]: staged commands dir link leg — a FileSystemException over paths this code authored, never content
                     "(${leg.exceptionOrNull()?.message}) — this head's own commands dir is " +
                     "missing the operator's entries\n",
             )
@@ -327,11 +331,13 @@ internal object LoginInterception {
         val execFailure = execProbe(configDir, chmod) ?: return true
         if (tokenCapture != null) {
             throw IOException(
+                // SAFE-RENDER-EXEMPT[2026-08-31]: the same exec-bit probe — the failure names the head config directory, never file content
                 "$configDir cannot execute a staged hook (${execFailure.message}) — the capture " +
                     "hook would register but never run; refusing to launch uninterceptable",
             )
         }
         log(
+            // SAFE-RENDER-EXEMPT[2026-08-31]: the same exec-bit probe — the failure names the head config directory, never file content
             "[login] hooks NOT installed in $configDir (${execFailure.message}) — the directory " +
                 "cannot execute scripts (noexec mount?); the head runs without an interceptor\n",
         )
@@ -399,6 +405,7 @@ internal object LoginInterception {
             }
             if (chmodFailure != null) {
                 throw IOException(
+                    // SAFE-RENDER-EXEMPT[2026-08-31]: a chmod on a copy we just wrote — the failure names that path, never the script's bytes
                     "$script: chmod rwx------ failed on the staged copy (${chmodFailure.message}) — " +
                         "staged file deleted, any existing hook left untouched",
                 )

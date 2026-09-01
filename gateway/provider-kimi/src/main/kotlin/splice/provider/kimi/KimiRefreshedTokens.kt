@@ -87,7 +87,12 @@ internal class KimiAuthStore(
         // the read that produced [snap] and this one. Unguarded, an IOException escaped
         // refreshLocked() as a crash while every other failure there degrades to an outcome.
         return Cancellables.runCatchingCancellable { Files.getLastModifiedTime(authPath).toMillis() }
-            .onFailure { log("[kimi-auth] stat of $authPath failed: $it — skipping peer rotation, refreshing instead") }
+            .onFailure {
+                log(
+                    "[kimi-auth] stat of $authPath failed: ${SafeFailureText.render(it)} — " +
+                        "skipping peer rotation, refreshing instead",
+                )
+            }
             .getOrNull()
             ?.let { mtime ->
                 cache = Cache(snap, mtime, clock())

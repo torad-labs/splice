@@ -51,6 +51,7 @@ internal class HeadBoot {
                 .onSuccess { heads[key] = it }
                 .onFailure {
                     failed[key] = boundary.reason(it)
+                    // SAFE-RENDER-EXEMPT[2026-08-31]: runCatchingDaemonBoundary catches a CLOSED set (IOException, IllegalArgumentException, IllegalStateException) and assembly only WIRES objects from already-parsed topology — it opens no credential file, so no parser excerpt can arrive here; routing it withheld the rejected auth/dialect tuple that AuthDialectCompatibilityBootTest pins as the operator's only diagnosis of a failed head
                     log("[$key][boot] SKIPPED (build failed): ${it.message}\n")
                 }
         }

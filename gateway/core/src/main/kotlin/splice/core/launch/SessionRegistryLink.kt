@@ -17,6 +17,7 @@ package splice.core.launch
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import java.nio.file.CopyOption
 import java.nio.file.Files
 import java.nio.file.LinkOption.NOFOLLOW_LINKS
@@ -101,7 +102,7 @@ internal class SessionRegistryLink(
         created.exceptionOrNull()?.let { cause ->
             log(
                 "[sessions] could not create the global registry $globalSessions " +
-                    "(${cause.message}) — this head keeps private sessions\n",
+                    "(${SafeFailureText.render(cause)}) — this head keeps private sessions\n",
             )
         }
         return created.isSuccess
@@ -121,7 +122,11 @@ internal class SessionRegistryLink(
         if (nonRegular != null || collision != null) {
             val cause = nonRegular?.let { "unexpected non-file entry '${it.fileName}'" }
                 ?: "'${collision?.second?.fileName}' already exists in the global registry"
-            log("[sessions] REFUSED to migrate $dst into $globalSessions ($cause) — this head keeps private sessions\n")
+            // SAFE-RENDER-EXEMPT[2026-08-31]: `cause` here is a String this function composes from a file NAME and a fixed phrase, not a throwable — no exception text reaches it
+            log(
+                "[sessions] REFUSED to migrate $dst into $globalSessions ($cause) — " +
+                    "this head keeps private sessions\n",
+            )
             return false
         }
 
@@ -136,7 +141,8 @@ internal class SessionRegistryLink(
         }
         if (commit.isFailure) {
             log(
-                "[sessions] migration of $dst failed (${commit.exceptionOrNull()?.message}) — " +
+                "[sessions] migration of $dst failed " +
+                    "(${commit.exceptionOrNull()?.let { SafeFailureText.render(it) }}) — " +
                     "rolled ${moved.size} confirmed moves back; this head keeps private sessions\n",
             )
             rollback(dst, moved)

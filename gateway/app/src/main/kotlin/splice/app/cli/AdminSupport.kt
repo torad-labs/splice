@@ -32,7 +32,7 @@ internal object AdminSupport {
             TopologyLoader.loadOrMaterialize(configPath)
         }.onFailure {
             System.err.println(
-                "splice: could not read $configPath (${it.message}) — " +
+                "splice: could not read $configPath (${SafeFailureText.render(it)}) — " +
                     "using default ports; a running daemon may appear stopped",
             )
         }.getOrNull()

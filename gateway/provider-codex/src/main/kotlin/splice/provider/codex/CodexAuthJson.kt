@@ -133,7 +133,10 @@ internal class CodexAuthJson(
             Cache(snapshot, Files.getLastModifiedTime(authPath).toMillis(), clock(), Files.size(authPath))
         }
             .onFailure {
-                log("[codex-auth] stat of $authPath failed: $it — skipping peer rotation, refreshing instead")
+                log(
+                    "[codex-auth] stat of $authPath failed: ${SafeFailureText.render(it)} — " +
+                        "skipping peer rotation, refreshing instead",
+                )
             }
             .getOrNull()
             ?.let { fresh ->

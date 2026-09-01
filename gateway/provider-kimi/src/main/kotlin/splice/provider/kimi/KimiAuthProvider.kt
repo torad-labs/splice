@@ -168,7 +168,7 @@ public class KimiAuthProvider(
         Cancellables.runCatchingCancellable {
             val merged = CredentialJson.mergedCredentialJson(onDisk, oauth.kimiAuthJson(tokens, clock()))
             writeSecure(authPath, merged.toString())
-        }.getOrElse { return RefreshOutcome.PersistFailed("credentials write failed: $it") }
+        }.getOrElse { return RefreshOutcome.PersistFailed("credentials write failed: ${SafeFailureText.render(it)}") }
         store.clearCache()
         return RefreshOutcome.Refreshed(apiKey(tokens.accessToken))
     }

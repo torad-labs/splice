@@ -27,6 +27,7 @@ internal class UninstallCommand(
                 }
             }.onFailure { e ->
                 ok = false
+                // SAFE-RENDER-EXEMPT[2026-08-31]: Files.delete of a bin symlink — the failure names the link path, never file content
                 println("splice: failed to remove $command: ${e.message}")
             }
         }

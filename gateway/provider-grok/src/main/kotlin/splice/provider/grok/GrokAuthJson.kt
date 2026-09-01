@@ -142,7 +142,12 @@ internal class GrokAuthJson(
         // produced [snap] and this stat is the contended one. Every other failure in this ladder
         // degrades to an outcome; an unguarded IOException here escaped refreshLocked() as a crash.
         return Cancellables.runCatchingCancellable { Files.getLastModifiedTime(authPath).toMillis() }
-            .onFailure { log("[grok-auth] stat of $authPath failed: $it — skipping peer rotation, refreshing instead") }
+            .onFailure {
+                log(
+                    "[grok-auth] stat of $authPath failed: ${SafeFailureText.render(it)} — " +
+                        "skipping peer rotation, refreshing instead",
+                )
+            }
             .getOrNull()
             ?.let { mtime ->
                 cache = Cache(snap, mtime, clock())

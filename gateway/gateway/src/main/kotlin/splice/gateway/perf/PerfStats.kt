@@ -19,6 +19,7 @@ import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.JsonlSink
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 import splice.core.util.WallClock
 import java.nio.file.Files
 import java.nio.file.Path
@@ -84,7 +85,7 @@ public class PerfStats(
             val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
                 !Files.exists(file, java.nio.file.LinkOption.NOFOLLOW_LINKS)
             if (!genuinelyAbsent && unreadableLogged.compareAndSet(false, true)) {
-                log("[perf] $file unreadable ($failure) — stats rendered empty\n")
+                log("[perf] $file unreadable (${SafeFailureText.render(failure)}) — stats rendered empty\n")
             }
             if (genuinelyAbsent) unreadableLogged.set(false)
             emptyList()

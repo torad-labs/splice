@@ -99,7 +99,7 @@ internal class LoginIo {
             val store = KeyStore(KeyStorePath.defaultPath())
             store.write(envVar, value)
             println("$envVar stored to ${store.path} (0600) — live daemons pick it up on the next request.")
-        }.onFailure { System.err.println("splice: failed to store key: ${it.message}") }.isSuccess
+        }.onFailure { System.err.println("splice: failed to store key: ${SafeFailureText.render(it)}") }.isSuccess
     }
 
     /** File / env / KeyStore presence for a head whose credential SPLICE holds. */

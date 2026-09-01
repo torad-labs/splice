@@ -172,6 +172,7 @@ public class ClaudeConfigMaterializer(
                 Cancellables.runCatchingCancellable {
                     sessionRegistry.link(globalDir().resolve(item), configDir.resolve(item))
                 }.exceptionOrNull()?.let { cause ->
+                    // SAFE-RENDER-EXEMPT[2026-08-31]: SessionRegistryLink.link does path work only — the failure names a directory, never its content
                     log("[materialize] sessions registry NOT linked into $configDir (${cause.message})\n")
                 }
             } else {
@@ -198,6 +199,7 @@ public class ClaudeConfigMaterializer(
         if (probeFailure is NoSuchFileException) return
         if (probeFailure != null) {
             log(
+                // SAFE-RENDER-EXEMPT[2026-08-31]: a NOFOLLOW stat plus our OWN authored IOException text; render would withhold the dangling-target sentence this line exists to name
                 "[materialize] shared '$item' NOT linked into $configDir (${probeFailure.message}) — " +
                     "this head launches without the operator's $item\n",
             )
@@ -226,6 +228,7 @@ public class ClaudeConfigMaterializer(
             .exceptionOrNull()
             ?.let { cause ->
                 log(
+                    // SAFE-RENDER-EXEMPT[2026-08-31]: replaceWithSymlink is path work only — the failure names src or dst, never file content
                     "[materialize] shared '$item' NOT linked into $configDir (${cause.message}) — " +
                         "this head launches without the operator's $item\n",
                 )

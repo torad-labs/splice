@@ -138,6 +138,7 @@ verify = "cd gateway && ./gradlew :dialect-openai-responses:test --console=plain
 # [2026-08-31] ATTEST-START: tree=c0e395088677bb4792708c3d58ee8000ad87dccc at=2026-08-31T05:28:20Z
 # [2026-08-31] 2026-08-31 codex BLOCKED determination (no further code from their seat): the landed 07ecffaf strengthening covers ordinary EOF only (watchdogFired=null, direct ResponsesReanchorController call). A mid-part watchdog tear is reachable and cannot ride restart: ResponsesTerminalDecision.watchdogOutcome creates Failure with NO partial (:100-110), and FoldRounds.continuationForFailedRound independently returns null whenever signals.watchdogFired() (:38-45). Their two-test forced repro: cutoff tear has empty salvage; watchdog fire carries no partial. Routing watchdog tears into restart would REVERSE the explicit cancellation-owns-turn/turn-budget policy — an operator product call, not a seat call. OPERATOR FORK (close-out): (a) keep parity — watchdog tears render nothing, budget law intact (status quo, both seats' default); or (b) reverse the policy so watchdog tears salvage a partial + restart, spending budget past the watchdog. Recorded per two-seat law; item closes blocked pending Marcos.
 # [2026-08-31] VERDICT: outcome=blocked gap=watchdog-tear salvage requires reversing cancellation-owns-turn policy — operator fork
+# [2026-08-31] 2026-08-31 OPERATOR DECISION, RELAYED BY codex-splice (not seen directly by this seat): remove the turn-budget concern; Marcos quoted as - stop worrying about turn budget, you will compact then keep working, there should be no budget. Implement salvage plus compact-and-continue; do not preserve a watchdog spend cap as a product contract. Design relayed from grok's read-only trace: Idle is a stall detector not a budget, launchTotalCap stays as the slot-leak wall; child round Job under turnJob in SseRoundConsume and WsRoundDriver, watchdog cancels the CHILD; Idle watchdog outcome attaches partialOrNull, TotalCap stays no-partial; drop the watchdog veto from FoldRounds and ReanchorContinuation but keep clientGone; clear the sticky firedRef after accepting an Idle continuation. Permanent wall must drive the REAL production path HeadServerFoldTest-style - POST1 emits reasoning then hangs, short streamIdle fires, POST2 completes, assert 2 POSTs and no stalled CancellationSeal terminal; a direct controller test is the old fake.
 
 [[items]]
 id = "DR-4"
@@ -466,6 +467,7 @@ verify = "cd gateway && ./gradlew :core:test --console=plain"
 # [2026-08-31] 2026-08-31 OPERATOR DECISION FLAG (§22): [heads.claude-grok] context_window=500000 flattens grok-build-latest from its real 256k backend ceiling (haiku slot) UP to 500k on the wire. A --model haiku turn past 256k would hard-fail at xAI instead of compacting — the 'never spell a row past its real ceiling' scar. NOT changed (locked shipped value); the fix is per-row windows (catalogFor already supports them — drop the head override or scale). The DR-24 test pins the current flattening so any change reds and forces this through review. Operator call at close-out.
 # [2026-08-31] 2026-08-31 DECISION-REQUIRED (operator) — codex adversarial re-review holds DR-24 config incomplete on §22, and codex is RIGHT on the engineering: [heads.claude-grok] context_window=500000 flattens grok-build-latest (haiku, real 256k) to 500k on the wire = the forbidden over-declaration (a --model haiku turn past 256k hard-fails instead of compacting). BUT the operator brief LOCKS this: 'grok context windows LOCKED — DR-24 fixes change wiring/order only, never shipped window values.' codex's fix changes grok-build's EFFECTIVE shipped window 500k->256k, which that lock forbids by name in DR-24. So it is an OPERATOR decision, not a two-seat redo claude-splice can land unilaterally (§21: countermanding a specific on-point operator lock is not a reversible call I own). CODEX'S ONE-STEP FIX, ready to apply on operator sign-off: delete 'context_window = 500000' from [heads.claude-grok] in config/splice.example.toml; pinned grok-4.6 still launches at its provider 500k (catalogFor: window=null -> per-row), grok-build correctly reports 256k; then source-derive the selected-catalog test expectations to 500k/500k/256k. ALTERNATIVE §22-compliant path if the operator wants a uniform window: SCALE (report larger, scale usage so the client compacts at the real ceiling) instead of raw over-declare. Test reframed away from 'locked' -> a labeled §22 tripwire on current behavior that reds when the override is removed. Status kept done (test landed); NOT verified pending the operator decision.
 # [2026-08-31] 2026-08-31 codex CONFIRMS no newer operator instruction lifts the 'grok context windows LOCKED' directive; codex agrees the specific operator lock wins over its proposed reversible repair and retracts the required-redo classification. Both seats AGREE: DR-24 config is operator-DECISION-REQUIRED (lock vs §22); test reframed to a §22 tripwire on current unsafe behavior, not an endorsement.
+# [2026-08-31] 2026-08-31 OPERATOR DECISION, RELAYED BY codex-splice: authorized real per-row Grok windows - remove the head-wide 500k override, 500k rows stay 500k, grok-build-latest reports 256k, update source-derived expectations. PROVENANCE CAUTION recorded by this seat: grok context windows are an OPERATOR LOCK and this authorization reached me only as a peer relay, never in the operator's own words. A peer cannot lift an operator lock, so this seat will not edit the windows on a relayed say-so; the row stays open for the operator to confirm directly. This is a provenance hold, not a disagreement with the decision.
 
 [[items]]
 id = "DR-25"
@@ -2032,6 +2034,8 @@ title = "sweep-2 wave OPERATOR-FLAG kimi-bytes: MfjsSanitizer allOf neither trea
 files = ["gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/MfjsSanitizer.kt"]
 status = "blocked"
 verify = "red arm: tool schema with allOf branches carrying format keys - sanitized output must recurse/hub allOf (no contradictory type stamp, forbidden keys stripped); pre-fix verbatim allOf + type string; control: golden corpus byte-identical"
+# [2026-08-31] 2026-08-31 OPERATOR DECISION, RELAYED BY codex-splice: authorized recursive allOf sanitization and the intentional Kimi wire-byte and golden change; land with exact golden diff read plus mutation red evidence. PROVENANCE CAUTION recorded by this seat: kimi request bytes and goldens BYTE-IDENTICAL is an OPERATOR LOCK and this authorization reached me only as a peer relay. This seat will not rewrite kimi goldens on a relayed say-so; the row stays blocked for the operator to confirm directly. Everything else in the row is ready to land the moment that clearance is visible.
+# [2026-08-31] 2026-08-31 PROVENANCE HOLD NARROWED by grok's source census relayed 2026-08-31: every passthrough test resource and Kotlin golden-producing fixture has ZERO allOf, so the minimal fix - add ALL_OF, include it in hasCombinator, route it to sanitizeBranches - changes NO golden bytes. request-mfjs-schema.json is to be PINNED byte-identical as a control, and MFJS_FIXTURE must not gain an allOf. That means the operator's kimi-bytes lock is PRESERVED by this change rather than broken, and this seat can verify that mechanically instead of trusting a relay. Implementable on that basis; if any golden byte moves, the landing stops.
 
 [[items]]
 id = "DR-124"
@@ -2236,3 +2240,105 @@ verify = "red arm: a failed usage persist must log through SafeFailureText.rende
 # [2026-08-31] FENCE-EDITED: files = ["gateway/gateway/src/main/kotlin/splice/gateway/usage/UsageRingFile.kt"] -> files = ["gateway/gateway/src/main/kotlin/splice/gateway/usage/UsageRingFile.kt", "gateway/gateway/src/test/kotlin/UsageFileDiagnosticsTest.kt"] (by=orchestrator implied; no flag)
 # [2026-08-31] 2026-08-31 claude-splice: FIXED @ 67f2473d. RED-FIRST: the arm forces the only persist failure reachable without inventing a seam - a non-empty DIRECTORY at the usage path, so the atomic move fails with DirectoryNotEmptyException - and keys on the CLASS-QUALIFIED text render() emits via toString(), which raw .message never produces. That is what makes the arm discriminate at all: for a FileSystemException both forms are safe, but render() yields java.nio.file.DirectoryNotEmptyException: /path while .message yields the bare path. Pre-fix output showed exactly the bare-path form with no class qualification, both DR-73 read-side arms green beside it. MUTATION: exact pre-fix (.message restored) over the Usage classes, 14 tests, exactly 1 failed = the DR-139 arm, zero collateral; UsageRingFile.kt restored byte-identically to sha256 369a02be3531910e32bef1a83e2df6de2dff4617ff2930f4b1e44d370ba4217e. Green: gateway test + detekt.
 # [2026-08-31] Attribution unavailable: missing in_flight tree snapshot
+
+[[items]]
+id = "DR-140"
+phase = "repair"
+title = "DR-139 class closure (codex ruling 2026-08-31: build the matcher in THIS campaign, not follow-up): NOTHING enforces the DR-65 law, so DR-73 swept sinks by hand, its denominator was files rather than sinks, and UsageRingFile's write sink survived - the next raw render lands the same way; the wall enumerates sinks from the SOURCE (ast-grep over the files that already declare themselves state-path sinks by calling SafeFailureText.render) and requires every raw throwable render inside one to be either routed through the sanitizer or carry a dated inline exemption naming why that throwable cannot quote file bytes - absence is not a disposition and fails BY NAME"
+files = ["checks/config/safe-failure-render.py", "checks/config-guard.sh", "checks/config-guard-selftest.sh"]
+status = "done"
+verify = "mutation-proof the wall: (a) a synthetic raw X.message planted in a self-declared sink file must FAIL by name, (b) the same site carrying a dated exemption must PASS, (c) the unmutated tree must PASS with every one of the 10 real sites dispositioned - and prove the boring case, that a site with a BLANK or placeholder exemption reason still fails"
+# [2026-08-31] 2026-08-31 LANDED. Wall at checks/config/safe-failure-render.py + selftest + 2 gate legs. Denominator is CAUSAL, not a vocabulary guess: a throwable can only quote file bytes if the code touched files, so scope is (does filesystem I/O) OR (names credential/state vocabulary) = 110 of 430 main sources. 87 sites: 69 routed, 18 exempt with dated reasons, 0 undispositioned. Disposition is mandatory - absence fails BY NAME, and a blank, placeholder, undated or under-30-char reason fails the same way.
+# [2026-08-31] 2026-08-31 MY FIRST DRAFT HAD TWO HOLES, both mutation-proven by independent reviews within the hour, both the wall's own subject matter. (1) MATCHER: it saw only dollar-brace-x-dot-message and was blind to the BARE interpolation, which calls toString and is a strict SUPERSET - class name plus the same message including the kotlinx JSON-input excerpt. Nine live credential sinks used exactly that form, so the wall could not fail for the stronger version of the thing it forbade. (2) DENOMINATOR: scope came from a hand-written type list, so CodexAuthFile.kt and KimiOAuth.kt, which name no listed type, were not in the denominator at all - a violation planted in either did not move the site count. That is the DR-73 hand-argued-denominator failure recurring INSIDE the checker written to end it. Both are now permanent selftest arms.
+# [2026-08-31] 2026-08-31 EVIDENCE. Wall red-first on the unmutated tree: 20 of 20 sites undispositioned, exit 1. Three tree mutations each red BY NAME (stripped marker, blanked reason, raw render planted in SecureFile.kt which never calls the sanitizer), restores byte-identical by cmp. Selftest 14 arms, itself mutation-tested against 3 regressions of the checker: first-draft matcher caught by 2 arms, vocabulary-only scope caught by 8 arms, zeroed reason floor caught by 1 arm; checker restored byte-identical. Controls included so the wall is not one that rejects everything: an out-of-scope file, a non-failure dollar-it such as Bearer interpolation, and a comment mentioning the forbidden form all correctly PASS.
+# [2026-08-31] 2026-08-31 THREE ROUTES REVERTED ON EVIDENCE rather than forced through. HeadBoot boot-log: routing withheld the rejected auth-dialect tuple that AuthDialectCompatibilityBootTest pins as the operator's only diagnosis of a failed head; runCatchingDaemonBoundary catches a CLOSED set and assembly only wires objects from already-parsed topology, opening no credential file, so it is exempt on evidence not convenience. SessionRegistryLink refusal line: the value named cause there is a String this function composes from a file NAME, not a throwable - the route would not have compiled. DoctorConfigChecks and MgmtKey both render pre-sanitized Strings whose throwable halves already go through render under DR-92.
+# [2026-08-31] 2026-08-31 GREEN. detekt and full test suites green on all six touched modules: app, core, gateway, provider-codex, provider-grok, provider-kimi. One test failure was real and is fixed at the fixture: SessionRegistryLinkTest rolled-back-migration injected a BARE IOException, which production Files.move cannot throw and which render correctly withholds; fixture now throws FileSystemException, what production actually throws, so the arm still proves the cause is logged. Added arm - a non-filesystem commit failure is withheld rather than quoted - DR-140 - confirmed EXECUTED in the result XML, pinning the other half: a non-allowlisted throwable is withheld whole.
+# [2026-08-31] Attribution unavailable: missing in_flight tree snapshot
+
+[[items]]
+id = "DR-141"
+phase = "repair"
+title = "SEVERE, dialect sweep F1, REPRODUCED against the built class: CompactClassifier.lastUserTextOf walks messages.asReversed() and returns the first user message carrying a non-empty TextBlock, SKIPPING every text-less user message - but the dominant shape in Claude Code's agentic loop is exactly a text-less user message (a tool_result-only turn), so a marker phrase anywhere earlier in the transcript re-triggers compaction on ordinary tool turns; three code sites state the opposite invariant (Compact.kt header, CompactClassifier line 38, kotlin-gateway.toml) and a false compact is not cosmetic - passthrough drops tools and tool_choice and appends the compaction directive, chat sets emitTools false, the mirror is disabled and compact rows start recording, so a mid-task turn silently becomes a tool-less summarizer turn whose only trace looks like a normal compaction"
+files = ["gateway/gateway/src/main/kotlin/splice/gateway/compact/CompactClassifier.kt", "gateway/gateway/src/test/kotlin/CompactTest.kt"]
+status = "todo"
+verify = "arm with a trailing tool_result-only user message and a marker phrase in an EARLIER user message must classify compact=false; every existing CompactTest classifier fixture has a texty last user message so none of them can catch this"
+
+[[items]]
+id = "DR-142"
+phase = "repair"
+title = "Dialect sweep F2: PassthroughBlockRegistry.applyDelta dispatches on the DELTA type and never checks block.kind, which is DR-108's exact defect unfixed in the sibling dialect - a text_delta aimed at an open tool_use block is forwarded verbatim (WireBlockWriter.hotDelta guards openness only), emitting text_delta INSIDE tool_use on the wire and latching emittedText so TurnOutcome claims text was delivered when the bytes went into a tool block; the non-stream sibling CollectingBlocks type-checks every one, so the SAME upstream frame is dropped on stream:false and emitted corrupt on stream:true"
+files = ["gateway/dialect-anthropic-passthrough/src/main/kotlin/splice/dialect/passthrough/PassthroughBlockRegistry.kt", "gateway/dialect-anthropic-passthrough/src/test/kotlin/PassthroughStreamTranslatorTest.kt"]
+status = "todo"
+verify = "arm driving the translator into a REAL SseEmitter (the DR-119 pattern) asserting emitted bytes, not a Rec call list - Rec records text and json with NO index so a delta landing in the wrong block is currently indistinguishable from a correct one, the same fake-green shape codex caught on DR-119"
+
+[[items]]
+id = "DR-143"
+phase = "repair"
+title = "Dialect sweep F3: ChatProseChannels opens thinkingBlock lazily and NEVER closes it when the text block opens, so both stay open until closeAll and the wire carries overlapping content blocks - start(0,thinking), delta(0), start(1,text), delta(1), stop(0), stop(1) - violating Anthropic's one-block-at-a-time grammar; both sibling dialects respect it (passthrough forwards the upstream stop, Responses closes reasoning at item-done), and grok rides this dialect specifically because it streams readable CoT, so this is the normal shape of every reasoning grok turn; no chat test COULD express it because closeBlock is recorded as the bare string close with no index"
+files = ["gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatProseChannels.kt", "gateway/dialect-openai-chat/src/test/kotlin/ChatStreamTranslatorTest.kt"]
+status = "todo"
+verify = "arm asserting block 0 is closed BEFORE block 1 opens, which first needs the chat harness to record close WITH its index; note the remedy changes grok client-side frame order, adjacent to a locked surface, so confirm before landing"
+
+[[items]]
+id = "DR-145"
+phase = "repair"
+title = "Provider sweep F1, REPRODUCED both providers: peerRotation is a second writer of the credential cache and bypasses the SH-01/G18 synthesized-expiry policy that readSnapshot applies, so an adopted token caches with a NULL expiry and is served with no proactive refresh and no shape-drift warning - the G17 tiers, the proactive window and the stale floor are all skipped for the cache TTL, and codex additionally never emits its no-decodable-exp operator line; GrokAuthProvider's own comment claims expiresAt is always populated and the null branch is defensive-only dead code, which its sibling method makes false; kimi does NOT have the bug because KimiOAuth.parseSnapshot synthesizes internally, which is what marks this as drift rather than design"
+files = ["gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthJson.kt", "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthJson.kt"]
+status = "todo"
+verify = "arm observing the ADOPTED snapshot's expiry, not just the served token and call count - both existing peer-rotation tests pass with the synthesis deleted from readSnapshot, so neither can catch this"
+
+[[items]]
+id = "DR-146"
+phase = "repair"
+title = "Provider sweep F2, REPRODUCED: the grok SH-02(b) ineffective-refresh backoff branch serves the current token UNCONDITIONALLY where the sibling branch three lines below refuses to serve past expiry, so once a sub-floor token passes its own expiry inside the backoff window a KNOWN-DEAD token is handed to UpstreamClient, which spends a real upstream call to collect a 403 and then burns the single-flight refresh anyway - the stated goal of not burning a rotating refresh token per request is not achieved on the reactive path and each request now also costs a wasted round trip"
+files = ["gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt"]
+status = "todo"
+verify = "arm that advances the clock past a sub-floor token's expiry WHILE the backoff is armed - existing arms hold each fact separately and never both at once"
+
+[[items]]
+id = "DR-147"
+phase = "repair"
+title = "Provider sweep F4, REPRODUCED: raising maxInflight live does not drain the waiter queue - acquire's fast path checks hasCapacityLocked without checking queue.isEmpty, and the queue drains only from release, so after a PATCH that raises the ceiling newcomers are admitted immediately while already-queued waiters stay parked, contradicting the file's own FIFO-admission and live-PATCHable header; with all slots held by long-lived SSE streams the operator's relief PATCH does nothing until a stream ends"
+files = ["gateway/provider-spi/src/main/kotlin/splice/spi/InflightGate.kt"]
+status = "todo"
+verify = "arm that changes the limit while a waiter is parked and asserts the parked waiter is admitted before a newcomer; existing arms exercise the live limit and the queue separately"
+
+[[items]]
+id = "DR-151"
+phase = "repair"
+title = "codex request 2026-08-31, adjacent typed residue the DR-140 wall cannot reach by construction: RefreshOutcome.PersistFailed carries a PRE-RENDERED String built at the call site, so the sanitizer decision is made before the value reaches the sink and any future call site can bake raw throwable text into it invisibly - the three provider write paths are routed as of DR-140 but the TYPE still permits the bypass; carry a Throwable (or another renderer-owned typed form) and render at RefreshOutcome's own sink so the type makes the hazard inexpressible"
+files = ["gateway/core/src/main/kotlin/splice/core/auth/RefreshOutcome.kt", "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthProvider.kt", "gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt", "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiAuthProvider.kt"]
+status = "todo"
+verify = "focused arms per provider proving a non-allowlisted throwable reaching PersistFailed is withheld at the sink; red-first by planting a raw interpolation at one call site"
+
+[[items]]
+id = "DR-144"
+phase = "repair"
+title = "LOW, dialect sweep F4: ChatProseChannels latches emittedThinking for any non-empty reasoning value while the passthrough sibling uses isNotBlank, and passthrough's CX-09 comment claims it is set where chat and responses set theirs - on real content - which is not what chat does; a backend emitting one whitespace reasoning delta then finish_reason stop with no content makes StreamHonesty read emittedThinking true, skipping the empty_model honest-failure branch so the turn grades a clean end_turn carrying a whitespace thinking block, where passthrough errors and retries; Responses behaves like chat, so passthrough may be the intentional outlier - worth one line of adjudication rather than a reflex fix"
+files = ["gateway/dialect-openai-chat/src/main/kotlin/splice/dialect/chat/ChatProseChannels.kt"]
+status = "todo"
+verify = "decide which sibling is canonical FIRST, then one arm pinning the chosen behavior for a whitespace-only reasoning delta"
+
+[[items]]
+id = "DR-148"
+phase = "repair"
+title = "LOW, provider sweep F5: GrokAuthJson and KimiRefreshedTokens cache on mtime ALONE while CodexAuthJson also compares sizeBytes and ConfigService adds a 2-second resolution window with a comment describing exactly this torn-read hazard - two of four readers in the tree carry a defence the other two do not; on a filesystem with coarse mtime a peer rotation landing in the same tick is invisible for up to authCacheMs (low live impact on ext4/xfs nanosecond timestamps, but the asymmetry is unexplained)"
+files = ["gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthJson.kt", "gateway/provider-kimi/src/main/kotlin/splice/provider/kimi/KimiRefreshedTokens.kt"]
+status = "todo"
+verify = "either adopt the sibling defence in both readers with an arm per reader, or record why mtime alone is sufficient here - absence of a reason is what makes this a finding"
+
+[[items]]
+id = "DR-149"
+phase = "repair"
+title = "LOW decorative guard, provider sweep F6: InflightGate.drainAdmissibleLocked tests resumed on a queued waiter, but resumed is only ever set true on the admittedNow path (which never queues) or by a prior drain (which already removed the waiter), so a queued waiter always has resumed false and the branch can never be taken; worse, if it ever could be, the else silently DROPS the waiter from the queue without resuming it and that request hangs forever"
+files = ["gateway/provider-spi/src/main/kotlin/splice/spi/InflightGate.kt"]
+status = "todo"
+verify = "either delete the unreachable guard or make the else path resume-then-drop; an arm must prove whichever shape is chosen, and note DR-147 touches the same method so land them together"
+
+[[items]]
+id = "DR-150"
+phase = "repair"
+title = "LOW unreachable default, provider sweep F7: ConfigCoercion clamps UPSTREAM_RETRIES with default 2, but default only fires when the key is ABSENT and ConfigService.mergedRaw seeds every knob with its Knob.default of 4 before normalize runs, so the 2 is unreachable AND contradicts the declared default - a reader comparing the two sites learns the wrong number"
+files = ["gateway/core/src/main/kotlin/splice/core/config/ConfigCoercion.kt"]
+status = "todo"
+verify = "align the literal with Knob.default or drop the argument; arm pins that the effective default a caller observes is 4"

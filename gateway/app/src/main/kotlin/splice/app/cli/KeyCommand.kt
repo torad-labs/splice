@@ -8,6 +8,7 @@ package splice.app.cli
 import splice.core.config.KeyStore
 import splice.core.config.KeyStorePath
 import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 
 private const val MASK_PROMPT = "API key: "
 
@@ -63,7 +64,7 @@ internal class KeyCommand(
                 println("$envVar stored to ${store.path} (0600).")
                 println("Live daemons pick it up on the next request; `splice restart` refreshes status.")
             }
-            .onFailure { System.err.println("splice key set: ${it.message}") }
+            .onFailure { System.err.println("splice key set: ${SafeFailureText.render(it)}") }
             .isSuccess
     }
 

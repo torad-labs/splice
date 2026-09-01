@@ -432,3 +432,109 @@ class UninstallUnreadableTopologyTest {
         }
     }
 }
+
+// DR-169 (grok-splice source sweep, confirmed by reading InstallLinker): a wrapper command is
+// head.claude.command or the head key — an unsanitized TOML string — and bin.resolve honoured
+// whatever it held. A leading ../ normalized OUT of bin and an absolute value discarded bin
+// entirely, so install CREATED and uninstall DELETED symlinks anywhere the user could write.
+// requireReplaceableLink only ever asked whether the entry was a symlink, never where it was.
+//
+// Its own class: InstallCommandTest is the happy-path suite and this is a containment law, which
+// is also why every arm asserts on the FILESYSTEM OUTSIDE bin rather than on the verb's return.
+class InstallContainmentTest {
+
+    private val noEnv: (String) -> String? = { null }
+
+    private fun withHome(home: Path, block: () -> Unit) {
+        val prev = System.getProperty("user.home")
+        System.setProperty("user.home", home.toString())
+        try {
+            block()
+        } finally {
+            System.setProperty("user.home", prev)
+        }
+    }
+
+    /** A topology whose single head carries [command] as its wrapper name. */
+    private fun seedWithCommand(home: Path, command: String) {
+        val cfg = home.resolve(".config").resolve("splice")
+        Files.createDirectories(cfg)
+        Files.writeString(
+            cfg.resolve("splice.toml"),
+            """
+            [daemon]
+            control_port = 3096
+
+            [providers.codex]
+            dialect = "openai-responses"
+            base_url = "https://x"
+            auth = { kind = "chatgpt-oauth" }
+
+            [heads.claudex]
+            provider = "codex"
+            port = 3099
+            discovery_prefix = "claude-codex--"
+            pinned_model = "gpt-5.6-sol"
+
+            [heads.claudex.claude]
+            command = "$command"
+            """.trimIndent(),
+        )
+        val share = home.resolve(".local").resolve("share").resolve("splice")
+        Files.createDirectories(share)
+        Files.writeString(share.resolve("splice-launch"), "#!/usr/bin/env bash\n")
+    }
+
+    @Test
+    fun `a relative escape in a wrapper command is refused, creating nothing - DR-169`(@TempDir home: Path) {
+        withHome(home) {
+            seedWithCommand(home, "../escaped")
+            assertThrows<IllegalStateException> { InstallCommand().install("--all", env = noEnv) }
+            // The assertion is the filesystem, not the exception: bin's PARENT is where ../escaped
+            // lands, and before DR-169 a symlink appeared there.
+            val outside = home.resolve(".local").resolve("escaped")
+            assertFalse(Files.exists(outside, NOFOLLOW_LINKS), "nothing may be created outside bin")
+        }
+    }
+
+    @Test
+    fun `an absolute wrapper command is refused, creating nothing - DR-169`(@TempDir home: Path) {
+        withHome(home) {
+            val target = home.resolve("absolute-escape")
+            seedWithCommand(home, target.toString())
+            assertThrows<IllegalStateException> { InstallCommand().install("--all", env = noEnv) }
+            // bin.resolve(absolute) discards bin altogether, so this one never went near it.
+            assertFalse(Files.exists(target, NOFOLLOW_LINKS), "an absolute command must not be claimed")
+        }
+    }
+
+    @Test
+    fun `uninstall refuses an escaping arg and leaves the outside link alone - DR-169`(@TempDir home: Path) {
+        withHome(home) {
+            // No topology at all, which is the path that hands the operator's string through
+            // verbatim (DR-101: the operator named the link, the topology only disambiguates).
+            val bin = home.resolve(".local").resolve("bin")
+            Files.createDirectories(bin)
+            val victimTarget = home.resolve("victim-target")
+            Files.writeString(victimTarget, "sentinel")
+            val outsideLink = home.resolve(".local").resolve("escaped")
+            Files.createSymbolicLink(outsideLink, victimTarget)
+
+            assertFalse(InstallCommand().uninstall("../escaped", env = noEnv), "the verb must report failure")
+
+            assertTrue(Files.exists(outsideLink, NOFOLLOW_LINKS), "a link outside bin must survive uninstall")
+        }
+    }
+
+    @Test
+    fun `an ordinary wrapper command still installs and uninstalls - DR-169 control`(@TempDir home: Path) {
+        withHome(home) {
+            seedWithCommand(home, "claudex")
+            assertTrue(InstallCommand().install("--all", env = noEnv))
+            val link = home.resolve(".local").resolve("bin").resolve("claudex")
+            assertTrue(link.isSymbolicLink(), "the containment law must not reject a normal name")
+            assertTrue(InstallCommand().uninstall("--all", env = noEnv))
+            assertFalse(Files.exists(link, NOFOLLOW_LINKS), "and uninstall must still remove it")
+        }
+    }
+}

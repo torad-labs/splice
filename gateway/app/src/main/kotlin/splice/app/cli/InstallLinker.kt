@@ -65,7 +65,7 @@ internal class InstallLinker(
         }
         val requested = selected.map { (key, head) -> key to (head.claude.command ?: key) }
         val commands = requested.map { it.second } + SELF_COMMAND
-        commands.forEach { command -> requireReplaceableLink(bin.resolve(command)) }
+        commands.forEach { command -> requireReplaceableLink(wrapperLink(bin, command)) }
         requested.forEach { (key, command) -> linkOne(bin, key, command, launchShim) }
         linkOne(bin, SELF_COMMAND, SELF_COMMAND, launchShim)
         println("splice: ensure $bin is on your PATH to use the wrappers")
@@ -82,8 +82,19 @@ internal class InstallLinker(
         return true
     }
 
+    /** DR-169: [InstallLayout.wrapperLinkOrNull]'s refusal turned into the loud failure install
+     *  already uses for a bad topology — the same shape as the command-collision check above, and
+     *  for the same reason: install.sh must not print success over a topology it could not honour. */
+    private fun wrapperLink(bin: Path, command: String): Path {
+        val link = layout.wrapperLinkOrNull(bin, command)
+        check(link != null) {
+            "wrapper command '$command' must be a bare name directly under $bin"
+        }
+        return link
+    }
+
     private fun linkOne(bin: Path, headKey: String, command: String, launchShim: Path) {
-        val link = bin.resolve(command)
+        val link = wrapperLink(bin, command)
         requireReplaceableLink(link)
         try {
             // DR-67: delete only a CONFIRMED symlink, then claim exclusively — a foreign file that

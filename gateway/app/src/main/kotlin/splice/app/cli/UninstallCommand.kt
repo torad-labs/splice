@@ -19,7 +19,16 @@ internal class UninstallCommand(
         val bin = layout.localBin(env)
         var ok = true
         for (command in commands) {
-            val link = bin.resolve(command)
+            // DR-169: refuse before touching anything. This loop DELETES, and its specific-arg
+            // path hands through the operator-typed string verbatim when the topology is unreadable
+            // (DR-101, deliberately — the operator named the link). Without a containment law that
+            // made `splice uninstall ../something` a symlink deletion outside bin.
+            val link = layout.wrapperLinkOrNull(bin, command)
+            if (link == null) {
+                ok = false
+                println("splice: refusing '$command' — a wrapper must be a bare name directly under $bin")
+                continue
+            }
             Cancellables.runCatchingCancellable {
                 if (link.isSymbolicLink()) {
                     Files.delete(link)

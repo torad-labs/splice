@@ -90,8 +90,15 @@ internal class UsageRingFile(
                 persistFailureLogged = false
             } else if (!persistFailureLogged) {
                 persistFailureLogged = true
+                // DR-139: through the sanitizer, like the read sink 27 lines up and like this
+                // sink's exact twin, RateLimitStore's "[usage] ratelimit flush FAILED". DR-73
+                // sealed the read half and left this one on raw `failure.message` — its sweep
+                // counted FILES, not sinks. Nothing leaks today (every throwable SecureFile can
+                // raise is a FileSystemException, which render allowlists), but the renderer
+                // exists so that a future wrapped or custom exception cannot START quoting the
+                // state bytes being written, and `.message` opts out of that silently.
                 log(
-                    "[usage] $usageFile persist FAILED (${failure.message}) — the 5h window " +
+                    "[usage] $usageFile persist FAILED (${SafeFailureText.render(failure)}) — the 5h window " +
                         "survives in memory only until a later write succeeds\n",
                 )
             }

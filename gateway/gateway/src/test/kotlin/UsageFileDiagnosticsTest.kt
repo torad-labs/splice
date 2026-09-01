@@ -36,4 +36,28 @@ class UsageFileDiagnosticsTest {
         assertTrue(!joined.contains(sentinel), "state bytes must never surface: $joined")
         assertTrue(log.any { it.contains("unreadable/corrupt") }, joined)
     }
+
+    // DR-139: the WRITE half of the same law. DR-73 named UsageRingFile in its sink list and sealed
+    // the READ render at :67, but the persist-failure line kept `failure.message`. Its exact twin —
+    // RateLimitStore's "[usage] ratelimit flush FAILED" — renders through SafeFailureText, so the
+    // intended form is twin-proven. Nothing leaks today: every throwable SecureFile can raise is a
+    // FileSystemException, which render() allowlists. The point of the renderer is that a future
+    // wrapped or custom exception cannot START quoting file bytes, and `.message` defeats that
+    // silently. The assertion keys on the class-qualified text render() emits via toString(), which
+    // raw `.message` never produces.
+    @Test
+    fun `usage-ring persist failures render through the sanitizer - DR-139`(@TempDir tmp: Path) {
+        // A non-empty DIRECTORY at the usage path: the atomic move onto it fails with
+        // DirectoryNotEmptyException — the only persist failure reachable without inventing a seam.
+        val usageFile = Files.createDirectories(tmp.resolve("usage.json"))
+        Files.writeString(usageFile.resolve("occupant"), "x")
+        val log = mutableListOf<String>()
+        UsageRingFile(usageFile, Any(), LogSink { log += it }).persistSnapshot(emptyList(), 1L)
+        val joined = log.joinToString("\n")
+        assertTrue(joined.contains("persist FAILED"), "a failed write must leave a trace: $joined")
+        assertTrue(
+            joined.contains("java.nio.file."),
+            "the cause must render through SafeFailureText, not raw failure.message: $joined",
+        )
+    }
 }

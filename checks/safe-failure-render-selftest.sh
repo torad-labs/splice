@@ -901,6 +901,16 @@ fun a(failure: Throwable) {
     out.put("read_error", failure.message)
 }'
 
+# 45g — DR-187 GAP (2026-09-01 verifier): the matcher was single-hop, so the exact multi-hop form the
+#       _DOT comment names — `failure.cause?.message` — matched NOTHING (0 sites, the disappearing
+#       denominator this row exists to stop). Zero or more `receiver?.` hops now precede the name.
+arm_at "a multi-hop non-interpolated .message is reported" 5 "renders a throwable raw" Hops.kt 'package p
+import java.nio.file.Files
+fun a(failure: Throwable) {
+    Files.size(p)
+    out.put("read_error", failure.cause?.message)
+}'
+
 # 45b — the same for toString, on a SHORT name, which is claimed only inside a failure frame.
 arm_at "a non-interpolated toString in a failure lambda is reported" 5 "renders a throwable raw" DirectShort.kt 'package p
 import java.nio.file.Files

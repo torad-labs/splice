@@ -21,11 +21,13 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
+import splice.core.auth.SYNTHETIC_EXPIRY_TTL_MS
 import splice.provider.codex.CodexAuthProvider
 import splice.provider.codex.CodexOAuth
 import splice.provider.codex.RefreshedTokens
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 import java.nio.file.attribute.PosixFilePermissions
 import java.util.Base64
 import java.util.concurrent.atomic.AtomicInteger
@@ -503,4 +505,65 @@ class CodexAuthTest {
         assertEquals(1, calls.get(), "past the synthesized ceiling: exactly one blocking refresh")
         assertTrue(refreshed.token != "opaque-no-jwt", "the refreshed token must serve")
     }
+}
+
+/** DR-145's peer-rotation expiry arm, in its own class because CodexAuthTest is at detekt's
+ *  LargeClass ceiling. Carries its own copy of the provider helper, which is private above. */
+class CodexPeerRotationExpiryTest {
+
+    private val prefetchJob = kotlinx.coroutines.SupervisorJob()
+    private val prefetchScope = CoroutineScope(prefetchJob + kotlinx.coroutines.Dispatchers.Default)
+
+    private fun provider(
+        tmp: Path,
+        clock: () -> Long,
+        refresh: suspend (String) -> RefreshAttempt<RefreshedTokens>,
+    ): Pair<CodexAuthProvider, Path> {
+        val authPath = tmp.resolve(".codex/auth.json")
+        return CodexAuthProvider(
+            authPath = authPath,
+            authCacheMs = 60_000,
+            clock = clock,
+            nowIso = { "2026-07-16T00:00:00Z" },
+            refreshCall = refresh,
+            prefetchScope = prefetchScope,
+        ) to authPath
+    }
+
+    // DR-145 (provider sweep, 2026-08-31): peerRotation is a SECOND writer of the credential cache
+    // and it took the JWT `exp` alone, with no fallback to the injected SH-01 synthesis that
+    // readSnapshot applies. An adopted OPAQUE token — the exact shape SH-01 exists for, and the one
+    // the arm above already uses without noticing — was cached with a NULL expiry and served as
+    // never-expiring: no proactive refresh, no stale floor, and the operator line about a token
+    // carrying no decodable exp never fired. The existing peer arm observes only the served token
+    // and the call count, so it passes either way.
+    @Test
+    fun `a peer-adopted opaque token gets the synthesized ceiling - DR-145`(@TempDir tmp: Path) =
+        runTest {
+            val now = 5_000_000_000L
+            val calls = AtomicInteger(0)
+            val (auth, path) = provider(tmp, { now }) {
+                calls.incrementAndGet()
+                RefreshAttempt.Denied("test-denied")
+            }
+            Files.createDirectories(path.parent)
+            path.writeText("""{"tokens":{"access_token":"opaque-A","refresh_token":"R1","account_id":"acct-1"}}""")
+            // Pin the mtime so the synthesized ceiling (mtime + 4h) leaves well over the 300s
+            // proactive window for token A: this read must NOT refresh.
+            Files.setLastModifiedTime(path, FileTime.fromMillis(now - 1_000))
+            assertEquals("opaque-A", (auth.credentials() as Credentials.Bearer).token)
+            assertEquals(0, calls.get(), "token A is nowhere near its synthesized ceiling")
+
+            // The peer rotates to another OPAQUE token — no JWT exp to read.
+            path.writeText("""{"tokens":{"access_token":"opaque-B","refresh_token":"R1","account_id":"acct-1"}}""")
+            // Its ceiling leaves 10s, inside the 30s stale floor.
+            Files.setLastModifiedTime(path, FileTime.fromMillis(now + 10_000 - SYNTHETIC_EXPIRY_TTL_MS))
+
+            assertEquals("opaque-B", (auth.refresh() as Credentials.Bearer).token)
+            assertEquals(0, calls.get(), "adoption is still POST-free")
+
+            // HOT read at the SAME clock: the adopted snapshot must carry the synthesized ceiling.
+            auth.credentials()
+            assertEquals(1, calls.get(), "an adopted opaque token must not be served as never-expiring")
+        }
 }

@@ -2298,16 +2298,23 @@ id = "DR-145"
 phase = "repair"
 title = "Provider sweep F1, REPRODUCED both providers: peerRotation is a second writer of the credential cache and bypasses the SH-01/G18 synthesized-expiry policy that readSnapshot applies, so an adopted token caches with a NULL expiry and is served with no proactive refresh and no shape-drift warning - the G17 tiers, the proactive window and the stale floor are all skipped for the cache TTL, and codex additionally never emits its no-decodable-exp operator line; GrokAuthProvider's own comment claims expiresAt is always populated and the null branch is defensive-only dead code, which its sibling method makes false; kimi does NOT have the bug because KimiOAuth.parseSnapshot synthesizes internally, which is what marks this as drift rather than design"
 files = ["gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthJson.kt", "gateway/provider-codex/src/main/kotlin/splice/provider/codex/CodexAuthJson.kt"]
-status = "todo"
+status = "done"
 verify = "arm observing the ADOPTED snapshot's expiry, not just the served token and call count - both existing peer-rotation tests pass with the synthesis deleted from readSnapshot, so neither can catch this"
+# [2026-08-31] 2026-08-31 FIXED both providers, on grok's relayed trace. GROK GrokAuthJson.peerRotation now adopts through the same policy readSnapshot applies: adopted = snap.copy(expiresAtMs = snap.expiresAtMs ?: synthesizeExpiry(mtime, clock())), and the CACHE plus the returned Bearer both carry the adopted snapshot. CODEX CodexAuthJson.peerRotation now stats mtime and size BEFORE building the Snapshot, because the mtime is an INPUT to it, and falls back from the JWT exp to the INJECTED synthesizeExpiry(mtime) - injected specifically so the SH-01 no-decodable-exp operator line fires. Kimi deliberately untouched: KimiOAuth.parseSnapshot already synthesizes internally, which is what marks this as drift rather than design.
+# [2026-08-31] 2026-08-31 EVIDENCE. Both arms observe the HOT ADOPTED EXPIRY rather than the served token, which is why the existing peer arms could not catch this - they assert only the token and the call count and pass either way, and grok's existing arm writes an expires so it never exercises the drifted shape at all. Shape per grok's design: peer writes a token with no usable expiry, mtime is PINNED so the synthesized ceiling leaves 10s (inside the 30s stale floor), refresh() adopts with zero calls, then credentials() at the SAME clock must enter the stale floor and make the count 1. Deliberately NO plus-4h clock jump - that would miss the cache and pass for the wrong reason. Red-first on unfixed code both halves. Exact pre-fix mutants: grok 1 failure of 36, codex 1 failure of 35, each only the DR-145 arm. Restored byte-identical: GrokAuthJson 03edfd04, CodexAuthJson 14a8d2c9. detekt and full suites green on provider-grok, provider-codex, provider-kimi.
+# [2026-08-31] 2026-08-31 both arms live in NEW sibling classes GrokPeerRotationExpiryTest and CodexPeerRotationExpiryTest, each carrying its own copy of the private helpers, because adding them in place tripped detekt LargeClass on GrokAuthProviderTest and CodexAuthTest. Both confirmed EXECUTED by name in their own result XML - the multi-class filter trap has bitten this campaign three times and a new class is exactly where it bites.
+# [2026-08-31] Attribution unavailable: missing in_flight tree snapshot
 
 [[items]]
 id = "DR-146"
 phase = "repair"
 title = "Provider sweep F2, REPRODUCED: the grok SH-02(b) ineffective-refresh backoff branch serves the current token UNCONDITIONALLY where the sibling branch three lines below refuses to serve past expiry, so once a sub-floor token passes its own expiry inside the backoff window a KNOWN-DEAD token is handed to UpstreamClient, which spends a real upstream call to collect a 403 and then burns the single-flight refresh anyway - the stated goal of not burning a rotating refresh token per request is not achieved on the reactive path and each request now also costs a wasted round trip"
 files = ["gateway/provider-grok/src/main/kotlin/splice/provider/grok/GrokAuthProvider.kt"]
-status = "todo"
+status = "done"
 verify = "arm that advances the clock past a sub-floor token's expiry WHILE the backoff is armed - existing arms hold each fact separately and never both at once"
+# [2026-08-31] 2026-08-31 FIXED, exactly as grok's map specified: the SH-02(b) armed branch keeps the backoff but replaces its unconditional current with current.takeIf { clock() < expiresAt }, which is the same refusal the stale-floor branch three lines below has always applied. The backoff still suppresses the refresh it was armed to suppress; it just no longer hands out a token it knows is dead.
+# [2026-08-31] 2026-08-31 EVIDENCE. New arm in GrokBackoffExpiryTest (own class - GrokAuthProviderTest is at detekt's LargeClass ceiling) holding BOTH facts at once, which is the only state where this is visible: a sub-floor grant arms the backoff (served, 1 refresh), then the clock advances to now+10_001, inside the 30s window but PAST the granted token's own 10s expiry - credentials() must return null AND the call count must stay 1. The existing SH-02b arm holds backoff-armed and the +31s arm holds token-lapsed, never both. Arm confirmed EXECUTED by name in its own XML. Exact pre-fix mutant restoring the unconditional current: 1 failure of 37, only the DR-146 arm; GrokAuthProvider restored byte-identical sha256 38af7aa2, green rerun.
+# [2026-08-31] Attribution unavailable: missing in_flight tree snapshot
 
 [[items]]
 id = "DR-147"
@@ -2364,6 +2371,7 @@ title = "LIVE SOAK ANOMALY observed 2026-08-31 during the DR-140 landing, operat
 files = ["observation only - no fix proposed without the upstream response body"]
 status = "todo"
 verify = "capture one failing turn's upstream response body from the LIVE daemon's real state dir, then decide whether this is request size, a vendor-side degradation, or a splice-side request defect - do not speculate before that body exists"
+# [2026-08-31] 2026-08-31 further observation, and it CUTS AGAINST a request-size explanation: claudex also returned failure:overloaded_error at req_bytes 952106 (upstream 897545) with frames_out 16 and content_frames_out 14, i.e. a turn that streamed real content and then failed. So the same head produces empty_model at 7.1MB and overloaded_error at under 1MB, and claude-grok produced upstream-failed at both ~5.7MB and ~1.0MB. Three different failure outcomes across an order of magnitude of request size points at upstream capacity rather than a splice-side request defect, but that is a hypothesis and stays one until someone captures a response body. Do not act on it as a conclusion.
 
 [[items]]
 id = "DR-153"

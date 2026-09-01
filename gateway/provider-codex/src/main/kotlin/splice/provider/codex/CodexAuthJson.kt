@@ -124,13 +124,24 @@ internal class CodexAuthJson(
         if (priorAccess == null || freshAccess == null) return null
         if (freshAccess == priorAccess) return null
         val accountId = JsonScalars.str(tokens, FIELD_ACCOUNT_ID)
-        val expiresAtMs = JsonScalars.long(oauth.decodeJwtClaims(freshAccess), FIELD_EXP)?.let { it * MS_PER_S }
-        val snapshot = Snapshot(freshAccess, accountId, expiresAtMs)
         // Two unguarded stats in the contended window: a peer (another splice, the official codex
         // CLI) can replace the file between the read that produced [tokens] and these calls. Both
         // now degrade to "no peer rotation, do the real refresh" rather than escaping as a crash.
+        //
+        // DR-145: the stats happen BEFORE the Snapshot because the mtime is an INPUT to it. This
+        // used to take the JWT `exp` alone, so an adopted OPAQUE token — the exact shape SH-01
+        // exists for — cached a NULL expiry and was then served as never-expiring: no proactive
+        // refresh, no stale floor, and the injected synthesis (which is also what logs "carries no
+        // decodable exp") never ran. readSnapshot has always applied that fallback; this second
+        // writer of the same cache skipped it. The kimi twin never had the bug because it
+        // synthesizes inside parseSnapshot.
         return Cancellables.runCatchingCancellable {
-            Cache(snapshot, Files.getLastModifiedTime(authPath).toMillis(), clock(), Files.size(authPath))
+            val mtime = Files.getLastModifiedTime(authPath).toMillis()
+            val size = Files.size(authPath)
+            val expiresAtMs = JsonScalars.long(oauth.decodeJwtClaims(freshAccess), FIELD_EXP)
+                ?.let { it * MS_PER_S }
+                ?: synthesizeExpiry(mtime)
+            Cache(Snapshot(freshAccess, accountId, expiresAtMs), mtime, clock(), size)
         }
             .onFailure {
                 log(

@@ -152,7 +152,16 @@ public class GrokAuthProvider(
             // SH-02(b): the last refresh succeeded without advancing past the stale floor — another
             // one would too. Serve the current token through the backoff window instead of burning
             // a rotating refresh token per request.
-            current
+            //
+            // DR-146: but only while it is actually ALIVE. This branch served `current`
+            // unconditionally, where the stale-floor branch three lines below has always refused a
+            // token past its own expiry (`current.takeIf { clock() < expiresAt }`). A sub-floor
+            // grant arms this backoff, and once that token passes its expiry INSIDE the window a
+            // known-dead token went to UpstreamClient, which spent a real upstream call to collect
+            // a 403 and then burned the single-flight refresh anyway — so the stated goal of not
+            // burning a rotating refresh token per request was not achieved on the reactive path,
+            // and each request also cost a wasted round trip.
+            current.takeIf { clock() < expiresAt }
         } else {
             // stale floor: too close to hard expiry to risk it — block for a confirmed-fresh token,
             // same as pre-G17 behavior.

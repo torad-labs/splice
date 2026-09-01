@@ -150,8 +150,15 @@ internal class GrokAuthJson(
             }
             .getOrNull()
             ?.let { mtime ->
-                cache = Cache(snap, mtime, clock())
-                RefreshOutcome.Refreshed(Credentials.Bearer(snap.access, null))
+                // DR-145: adopt through the SAME synthesized-expiry policy readSnapshot applies.
+                // This is a second writer of the cache, and it used to store `snap` verbatim — so a
+                // peer token from the drifted shape G18/SH-01 exist for (no top-level `expires`)
+                // was cached with a NULL expiry and then served as never-expiring: no proactive
+                // refresh, no stale floor, no shape-drift warning, until a mid-turn 401. The kimi
+                // twin never had this because it synthesizes inside parseSnapshot.
+                val adopted = snap.copy(expiresAtMs = snap.expiresAtMs ?: synthesizeExpiry(mtime, clock()))
+                cache = Cache(adopted, mtime, clock())
+                RefreshOutcome.Refreshed(Credentials.Bearer(adopted.access, null))
             }
     }
 }

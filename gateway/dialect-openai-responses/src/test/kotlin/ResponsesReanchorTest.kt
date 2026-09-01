@@ -403,7 +403,7 @@ class ResponsesReanchorPartialTest {
     @Test
     fun `an idle watchdog fire carries its partial - the round is reaped, not the turn`() = runTest {
         val outcome = ResponsesStreamTranslator(
-            reanchorCtx(fired = WatchdogFired.Idle(idleMs = 1, sawFirstByte = true)),
+            reanchorCtx(fired = WatchdogFired.Idle(idleMs = 1, sawClientFrame = true, limitMs = 1)),
         ).driveTurn(
             listOf(
                 ev("""{"type":"response.output_text.delta","output_index":0,"delta":"text"}"""),

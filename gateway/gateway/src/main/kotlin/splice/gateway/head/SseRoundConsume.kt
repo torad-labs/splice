@@ -26,10 +26,11 @@ internal class SseRoundConsume(
         // first and nothing here pre-empts it. Recovers p50 2840ms of frozen screen per codex
         // turn; also gives the keepalive pinger an opened stream to ping into.
         drive.emitter.ensureStarted()
-        // Fresh upstream round/attempt: reset the idle tier so this round's (possibly long,
-        // silent) prefill is judged against firstByteTimeout, not the short streamIdle a prior
-        // round's first byte would otherwise pin it to. totalCap still spans the whole turn.
-        drive.watchdog.resetFirstByte()
+        // Fresh upstream round/attempt: clear a stale Idle sentinel (DR-7). The idle TIER needs no
+        // reset — the poller below reads this round's own client-frame probe, so a (possibly long,
+        // silent) prefill is judged against firstByteTimeout until the client has seen content.
+        // totalCap still spans the whole turn.
+        drive.watchdog.resetRound()
         // DR-7: the idle watchdog reaps THIS ROUND, not the turn. It used to cancel inputs.turnJob,
         // which killed driveTurn along with the round — so the translator never returned, the
         // salvaged reasoning died with it, and the fold loop had nothing left to continue from. The
@@ -51,7 +52,7 @@ internal class SseRoundConsume(
         val roundJob = Job(inputs.turnJob)
         val body = resp.bodyChannel()
         roundJob.invokeOnCompletion { cause -> if (cause != null) body.cancel(IOException(REAPED, cause)) }
-        val poller = drive.watchdog.launchIn(inputs.scope, drive.slot, roundJob)
+        val poller = drive.watchdog.launchIn(inputs.scope, drive.slot, roundJob, inputs.frameEmittedThisRound)
         // Leak wall (review 2026-07-19): the attempt's poller dies on EVERY exit of this
         // block — a torn-then-reissued stream used to leak it into `self`, pinning the
         // admission slot ~streamIdle past turn completion. (The client pinger is whole-turn

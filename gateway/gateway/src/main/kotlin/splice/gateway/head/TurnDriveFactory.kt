@@ -37,7 +37,10 @@ internal class TurnDriveFactory(
         // so a request that stamped tools_deferred=0 is VISIBLE, never silently absent.
         meta.toolsEager?.let { perf.setCount(PerfKeys.TOOLS_EAGER, it.toLong()) }
         meta.toolsDeferred?.let { perf.setCount(PerfKeys.TOOLS_DEFERRED, it.toLong()) }
-        val watchdog = TurnWatchdog(provider.watchdog, deps.clock)
+        // A compact turn's silence before its first output is bounded by totalCap only — see
+        // WatchdogBudget.forCompact for the live evidence. Normal turns keep the provider budget.
+        val budget = if (meta.compact) provider.watchdog.forCompact() else provider.watchdog
+        val watchdog = TurnWatchdog(budget, deps.clock)
         val signals = driveSignals.make(watchdog, channel, perf)
         return TurnDrive(
             bodyJson = bodyJson,

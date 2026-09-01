@@ -135,6 +135,15 @@ public object UpstreamFailureClassifier {
         val blob = "${fields.code} ${fields.message}"
         return when {
             overflowRe.containsMatchIn(blob) -> overflowFailure(msg)
+            // Provenance beats status: a content-policy refusal is a fact about the REQUEST, and the
+            // vendor itself returns it as HTTP 400 when it arrives pre-stream. Mid-stream it comes
+            // status-less, and DR-72's api_error verdict was still RETRYABLE on the client side —
+            // Claude Code re-sends an api_error with backoff, so every refusal became a ~30s x N
+            // storm of the same 1.3MB transcript (242 turns on 2026-09-01, 42 of them compactions
+            // that could never complete). invalid_request_error is terminal to the client, and the
+            // vendor's own remedy text ("try rephrasing") rides along untouched.
+            fields.code.lowercase() in POLICY_REFUSAL_CODES ->
+                ClassifiedFailure(ErrorType.INVALID_REQUEST, msg.take(MAX_MESSAGE))
             status == RATE_LIMIT_STATUS || rateRe.containsMatchIn(blob) ->
                 ClassifiedFailure(ErrorType.RATE_LIMIT, msg.take(MAX_MESSAGE))
             status == AUTH_STATUS || authRe.containsMatchIn(blob) ->
@@ -221,6 +230,17 @@ public object UpstreamFailureClassifier {
     private const val SECONDS_PER_MINUTE = 60L
     private const val SECONDS_PER_HOUR = 3600L
     private const val SECONDS_PER_DAY = 86_400L
+
+    // The deterministic prompt-level refusals: the Responses API's own error enum
+    // (openai-python ResponseError.code: invalid_prompt, bio_policy, image_content_policy_violation)
+    // plus the ChatGPT backend's Trusted-Access gate (cyber_policy, live on claudex 2026-08-31/09-01).
+    // Exact codes, never wording — the same rule as RETRYABLE_CODES below.
+    private val POLICY_REFUSAL_CODES = setOf(
+        "cyber_policy",
+        "bio_policy",
+        "invalid_prompt",
+        "image_content_policy_violation",
+    )
 
     // The exact codes a status-less failure may be re-POSTed on: named transient server
     // conditions only. Anything else — known-deterministic or unknown — does not earn a

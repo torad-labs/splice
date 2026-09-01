@@ -1,11 +1,16 @@
 // PORT-OF: the v35 watchdog pins from server/test/codex-proxy.test.mjs @ pre-public-port-baseline — the
 // slow-prefill regression (silent LONGER than streamIdle but shorter than firstByteTimeout
-// must NOT be reaped before the first byte), idle-after-first-byte reaped, total cap reaped,
-// typed sentinel set before cancel.
+// must NOT be reaped before the client has seen output), idle-after-first-frame reaped, total cap
+// reaped, typed sentinel set before cancel.
+//
+// 2026-09-01: the tier is chosen by the round's CLIENT-FRAME probe, not by the first upstream byte.
+// A Responses handshake (response.created) is bytes with no output, and flipping on it pinned every
+// silent compaction to the short streamIdle tier — 109 live stalls in one day. The handshake arm
+// below is that case; the v35 arm keeps its name and now passes the probe the driver would.
 //
 // DR-7 moved the cap OUT of launchIn: that poller now reaps a single round so the turn can salvage
 // and continue, and launchTotalCap owns the only whole-turn cancel. The sentinel is per-turn and
-// sticky, so resetFirstByte clears a stale Idle between rounds while leaving TotalCap standing.
+// sticky, so resetRound clears a stale Idle between rounds while leaving TotalCap standing.
 //
 // CLOCK POLICY (HD-19): the two IDLE cases still ride a real clock with generous margins, because
 // what they prove is idleness measured by InflightGate.Slot, whose clock is its own and outside this
@@ -22,6 +27,7 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Timeout
 import splice.core.turn.WatchdogBudget
+import splice.spi.ClientFrameEmitted
 import splice.spi.InflightGate
 import splice.spi.Ticker
 import splice.spi.TurnWatchdog
@@ -80,7 +86,7 @@ class WatchdogTest {
     )
 
     @Test
-    fun `prefill silence beyond streamIdle is NOT reaped before first byte - the v35 case`() {
+    fun `prefill silence beyond streamIdle is NOT reaped before the first client frame - the v35 case`() {
         runBlocking {
             val gate = InflightGate({ 0 })
             val slot = gate.acquire()
@@ -93,7 +99,7 @@ class WatchdogTest {
                     cancelled.set(true)
                 }
             }
-            val poller = dog.launchIn(this, slot, target)
+            val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { false })
             delay(900) // silent 3x streamIdle, still under firstByteTimeout
             assertNull(dog.fired, "prefill was reaped — the compaction-ate-my-quota regression")
             target.cancel()
@@ -102,40 +108,69 @@ class WatchdogTest {
         }
     }
 
+    // THE 2026-09-01 CASE. The backend acknowledges at once (bytes touch the slot), then reasons in
+    // silence with nothing yet shown to the client. Under the byte rule that ack flipped the tier and
+    // the 300ms streamIdle reaped the round; under the frame rule the silence is judged on the 5s
+    // first-output cap and survives. Then the first client frame lands, and the SAME silence is
+    // reaped on streamIdle — the tier moved with the frame, exactly once, in the right direction.
     @Test
-    fun `idle after first byte is reaped with a typed sentinel`() {
+    fun `a handshake byte before any client frame keeps the first-output tier - the compaction stall case`() {
+        runBlocking {
+            val gate = InflightGate({ 0 })
+            val slot = gate.acquire()
+            val dog = TurnWatchdog(budget(firstByteMs = 5_000, idleMs = 300, capMs = 30_000))
+            val frameSeen = AtomicBoolean(false)
+            val target = launch { delay(10.seconds) }
+            val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { frameSeen.get() })
+            slot.touch() // response.created: bytes on the wire, no output
+            delay(900) // silent 3x streamIdle after the ack, still under firstByteTimeout
+            assertNull(dog.fired, "a handshake is not output — the ack must not flip the tier")
+            assertTrue(target.isActive)
+            frameSeen.set(true) // the first content frame reaches the client
+            delay(900) // and the same silence is now a mid-output stall
+            target.join()
+            val fired = dog.fired
+            assertTrue(fired is WatchdogFired.Idle, "expected Idle once the client has seen output, got $fired")
+            assertTrue((fired as WatchdogFired.Idle).sawClientFrame)
+            assertEquals(300L, fired.limitMs, "the sentinel names the tier's cap")
+            poller.cancel()
+            slot.release()
+        }
+    }
+
+    @Test
+    fun `idle after the first client frame is reaped with a typed sentinel`() {
         runBlocking {
             val gate = InflightGate({ 0 })
             val slot = gate.acquire()
             val dog = TurnWatchdog(budget(firstByteMs = 10_000, idleMs = 300, capMs = 30_000))
             val target = launch { delay(10.seconds) }
-            val poller = dog.launchIn(this, slot, target)
+            val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { true })
             slot.touch()
-            dog.markByte()
             delay(900)
             target.join()
             val fired = dog.fired
             assertTrue(fired is WatchdogFired.Idle, "expected Idle, got $fired")
-            assertTrue((fired as WatchdogFired.Idle).sawFirstByte)
+            assertTrue((fired as WatchdogFired.Idle).sawClientFrame)
+            assertEquals(300L, fired.limitMs)
             assertTrue(target.isCancelled)
             poller.cancel()
             slot.release()
         }
     }
 
-    // DR-7, from codex-splice's review: resetFirstByte's Idle-clear was comment-only. Deleting the
+    // DR-7, from codex-splice's review: resetRound's Idle-clear was comment-only. Deleting the
     // line left every Watchdog arm AND the real HeadServer acceptance green, which means the
     // behaviour was asserted nowhere at all.
     @Test
-    fun `resetFirstByte clears a stale Idle so the next round is not born stalled - DR-7`() {
+    fun `resetRound clears a stale Idle so the next round is not born stalled - DR-7`() {
         runBlocking {
             val gate = InflightGate({ 0 })
             val slot = gate.acquire()
             val dog = TurnWatchdog(budget(firstByteMs = 10_000, idleMs = 300, capMs = 30_000))
             val target = launch { delay(10.seconds) }
-            val poller = dog.launchIn(this, slot, target)
+            val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { true })
             slot.touch()
-            dog.markByte()
             delay(900)
             target.join()
             assertTrue(dog.fired is WatchdogFired.Idle, "setup: the round must actually have been reaped")
@@ -143,7 +178,7 @@ class WatchdogTest {
             // The sentinel is sticky so the terminal decision can name why the round died. Left set,
             // it makes every LATER round of the same turn terminate as stalled no matter how healthy
             // it is — and a salvaged round is by definition followed by another round.
-            dog.resetFirstByte()
+            dog.resetRound()
             assertNull(dog.fired, "a salvaged round must not leave the next one born stalled")
             slot.release()
         }
@@ -152,7 +187,7 @@ class WatchdogTest {
     // The other half, and the reason it is a CAS against the observed Idle rather than a set(null):
     // totalCap is a WHOLE-TURN verdict, and no new round may erase it.
     @Test
-    fun `resetFirstByte preserves a TotalCap verdict - DR-7`() {
+    fun `resetRound preserves a TotalCap verdict - DR-7`() {
         runBlocking {
             val ticks = VirtualTicks()
             val dog = TurnWatchdog(
@@ -164,7 +199,7 @@ class WatchdogTest {
             val capPoller = dog.launchTotalCap(this, target)
             target.join()
             assertTrue(dog.fired is WatchdogFired.TotalCap, "setup: expected TotalCap, got ${dog.fired}")
-            dog.resetFirstByte()
+            dog.resetRound()
             assertTrue(dog.fired is WatchdogFired.TotalCap, "the whole-turn verdict is not a round's to erase")
             capPoller.cancel()
         }
@@ -181,14 +216,13 @@ class WatchdogTest {
             val slot = gate.acquire()
             val dog = TurnWatchdog(budget(firstByteMs = 10_000, idleMs = 300, capMs = 1_200))
             val stalled = launch { delay(10.seconds) }
-            val poller = dog.launchIn(this, slot, stalled)
+            val poller = dog.launchIn(this, slot, stalled, ClientFrameEmitted { true })
             slot.touch()
-            dog.markByte()
             delay(900)
             stalled.join()
             assertTrue(dog.fired is WatchdogFired.Idle, "setup: round one must be reaped")
             poller.cancel()
-            dog.resetFirstByte()
+            dog.resetRound()
             val next = launch { delay(10.seconds) }
             val capPoller = dog.launchTotalCap(this, next)
             next.join()
@@ -214,11 +248,10 @@ class WatchdogTest {
                 ticker = ticks.ticker,
             )
             val target = launch { delay(10.seconds) }
-            // lively and past first byte: real idle is ~0 against a 5s limit, so Idle cannot fire
-            // and the virtual clock is far past the 600ms cap. Nothing is left that could.
+            // lively and past the first client frame: real idle is ~0 against a 5s limit, so Idle
+            // cannot fire and the virtual clock is far past the 600ms cap. Nothing is left that could.
             slot.touch()
-            dog.markByte()
-            val poller = dog.launchIn(this, slot, target)
+            val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { true })
             poller.join()
             assertNull(dog.fired, "a round-scoped poller must not raise a whole-turn verdict")
             assertTrue(ticks.now > 600, "the virtual clock really did run past the cap (${ticks.now}ms)")
@@ -243,7 +276,6 @@ class WatchdogTest {
             )
             val target = launch {
                 while (true) {
-                    dog.markByte()
                     delay(50)
                 }
             }
@@ -297,7 +329,7 @@ class WatchdogTest {
             val slot = gate.acquire()
             val dog = TurnWatchdog(budget(2_000, 2_000, 5_000))
             val target = launch { delay(100) }
-            val poller = dog.launchIn(this, slot, target)
+            val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { false })
             target.join()
             poller.cancel()
             assertNull(dog.fired)
@@ -306,10 +338,15 @@ class WatchdogTest {
     }
 
     @Test
-    fun `poll interval floors and caps`() {
-        assertEquals(250, TurnWatchdog(budget(1, 300, 1)).pollInterval().inWholeMilliseconds)
-        assertEquals(15_000, TurnWatchdog(budget(1, 600_000, 1)).pollInterval().inWholeMilliseconds)
-        assertEquals(1_000, TurnWatchdog(budget(1, 3_000, 1)).pollInterval().inWholeMilliseconds)
+    fun `poll interval floors and caps, paced to the tighter idle tier`() {
+        assertEquals(250, TurnWatchdog(budget(300, 300, 1)).pollInterval().inWholeMilliseconds)
+        assertEquals(15_000, TurnWatchdog(budget(600_000, 600_000, 1)).pollInterval().inWholeMilliseconds)
+        assertEquals(1_000, TurnWatchdog(budget(3_000, 3_000, 1)).pollInterval().inWholeMilliseconds)
+        // A first-output cap tighter than streamIdle paces the poll, or a pre-output stall would be
+        // sampled only every streamIdle/3 — the SseRoundConsumeTest rig (1s / 20s) is that case.
+        assertEquals(333, TurnWatchdog(budget(1_000, 20_000, 1)).pollInterval().inWholeMilliseconds)
+        // Production: 300s first-output / 180s streamIdle still sits on the 15s ceiling.
+        assertEquals(15_000, TurnWatchdog(budget(300_000, 180_000, 1)).pollInterval().inWholeMilliseconds)
     }
 }
 

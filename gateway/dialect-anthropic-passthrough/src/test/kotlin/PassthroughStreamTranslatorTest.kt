@@ -416,7 +416,7 @@ class PassthroughStreamTranslatorTest {
         // Preferring watchdog discarded successful kimi turns and burned quota on retries.
         val late = PassthroughTurnContext(
             { false },
-            { splice.spi.WatchdogFired.Idle(180_000, true) },
+            { splice.spi.WatchdogFired.Idle(180_000, sawClientFrame = true, limitMs = 180_000) },
             180_000,
             900_000,
         )

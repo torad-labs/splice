@@ -105,7 +105,7 @@ class ResponsesStreamTranslatorTest {
         // was parsed. A fully-received turn must NOT be discarded as OVERLOADED (that retries a
         // successful compaction — the quota waste the watchdog exists to prevent).
         val outcome = ResponsesStreamTranslator(
-            ctx(fired = WatchdogFired.Idle(idleMs = 200_000, sawFirstByte = true)),
+            ctx(fired = WatchdogFired.Idle(idleMs = 200_000, sawClientFrame = true, limitMs = 180_000)),
         ).driveTurn(listOf(completed).asFlow(), RecordingSink())
         val success = outcome as TurnOutcome.Success
         assertEquals(100, success.usage.inputTokens)
@@ -351,7 +351,7 @@ class ResponsesStreamTranslatorTest {
     @Test
     fun `watchdog fired maps to overloaded with the idle cap message`() = runTest {
         val outcome = ResponsesStreamTranslator(
-            ctx(fired = WatchdogFired.Idle(idleMs = 200_000, sawFirstByte = true)),
+            ctx(fired = WatchdogFired.Idle(idleMs = 200_000, sawClientFrame = true, limitMs = 180_000)),
         ).driveTurn(emptyList<JsonObject>().asFlow(), RecordingSink())
         val failure = outcome as TurnOutcome.Failure
         assertEquals(ErrorType.OVERLOADED, failure.type)

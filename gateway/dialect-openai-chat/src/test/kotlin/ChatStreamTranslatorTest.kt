@@ -275,7 +275,9 @@ class ChatStreamTranslatorTest {
 
     @Test
     fun `finished turn beats a late watchdog fire - success not overloaded`() = runTest {
-        val outcome = ChatStreamTranslator(firedCtx(splice.spi.WatchdogFired.Idle(180_000, true))).driveTurn(
+        val outcome = ChatStreamTranslator(
+            firedCtx(splice.spi.WatchdogFired.Idle(180_000, sawClientFrame = true, limitMs = 180_000)),
+        ).driveTurn(
             listOf(
                 ev("""{"choices":[{"delta":{"content":"done"},"finish_reason":null}]}"""),
                 ev("""{"choices":[{"delta":{},"finish_reason":"stop"}]}"""),
@@ -287,7 +289,9 @@ class ChatStreamTranslatorTest {
 
     @Test
     fun `watchdog fire without a finish stays an overloaded failure`() = runTest {
-        val outcome = ChatStreamTranslator(firedCtx(splice.spi.WatchdogFired.Idle(180_000, true))).driveTurn(
+        val outcome = ChatStreamTranslator(
+            firedCtx(splice.spi.WatchdogFired.Idle(180_000, sawClientFrame = true, limitMs = 180_000)),
+        ).driveTurn(
             listOf(ev("""{"choices":[{"delta":{"content":"partial"},"finish_reason":null}]}""")).asFlow(),
             Rec(),
         )

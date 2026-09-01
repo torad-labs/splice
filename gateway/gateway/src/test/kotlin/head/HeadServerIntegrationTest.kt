@@ -101,11 +101,11 @@ class HeadServerIntegrationTest {
                 upstream = UpstreamClient(firstByteTimeoutMs = 5_000, totalTimeoutMs = 30_000, maxRetries = 2),
                 inferenceToken = "test-inference-token",
                 gate = InflightGate({ 0 }),
-                shadow = ShadowClassifier(log = { logs.add(it) }),
+                shadow = ShadowClassifier(log = { synchronized(logs) { logs.add(it) } }),
                 compactStats = CompactStats(tmp.resolve("compact.jsonl")),
                 usageStore = UsageStore(tmp.resolve("usage.json"), tmp.resolve("ratelimit.json")),
                 perfStats = PerfStats(tmp.resolve("perf.jsonl")),
-                log = { logs.add(it) },
+                log = { synchronized(logs) { logs.add(it) } },
                 maxRequestBytes = 1_024,
             ),
         )
@@ -129,6 +129,19 @@ class HeadServerIntegrationTest {
                     "messages":[{"role":"user","content":"go"}]}""",
             )
         }.bodyAsText()
+
+    // TurnFinish sends the terminal frames FIRST (DR-129) and records perf LAST, so the client's
+    // body completes before this turn's perf line lands in `logs`. Waiting for a line past `from`
+    // reads THIS turn's telemetry instead of whichever earlier turn's line happened to be last —
+    // the read that failed under kover on a slow runner (coverage run 33551147526, 2026-09-01).
+    private fun awaitLog(from: Int, timeoutMs: Long = 5_000, match: (String) -> Boolean): String? {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (true) {
+            synchronized(logs) { logs.drop(from).lastOrNull(match) }?.let { return it }
+            if (System.currentTimeMillis() >= deadline) return null
+            Thread.sleep(20)
+        }
+    }
 
     @Test
     fun `health carries version and port`() = runTest {
@@ -200,18 +213,19 @@ class HeadServerIntegrationTest {
         val before = logs.size
         val sse = messages("malformed_sse")
         assertTrue(sse.contains("\"stop_reason\":\"end_turn\""))
-        val scoped = logs.drop(before)
+        val perfLine = awaitLog(before) { it.contains("] perf outcome=ok") }
+        val scoped = synchronized(logs) { logs.drop(before) }
         val malformedLines = scoped.filter { it.contains("malformed SSE frame skipped: {not-json}") }
         assertEquals(1, malformedLines.size, "expected exactly one malformed-frame log line, got: $scoped")
-        val perfLine = scoped.lastOrNull { it.contains("] perf outcome=ok") }
         assertTrue(perfLine != null, "expected a perf line in the log, got: $scoped")
         assertTrue(perfLine!!.contains("frames_skipped=1"), "expected frames_skipped=1 in: $perfLine")
     }
 
     @Test
     fun `turn records perf telemetry - log line and JSONL row with pipeline marks`() = runTest {
+        val before = logs.size
         messages("basic")
-        val perfLine = logs.lastOrNull { it.contains("] perf outcome=ok") }
+        val perfLine = awaitLog(before) { it.contains("] perf outcome=ok") }
         assertTrue(perfLine != null, "expected a perf line in the log, got: $logs")
         val expectedFields = listOf(
             "recv=", "parse=", "build=", "gate=", "headers=", "first_byte=",

@@ -229,15 +229,16 @@ class SseRoundConsumeTest {
             TurnTelemetry("codex", PerfStats(tmp.resolve("perf-dr7.jsonl")), log = {}, clock = ElapsedClock { 0L }),
             TearAwareEvents(provider, log = {}),
         )
-        // STREAM-IDLE is the tier that reaps this, not firstByteTimeout — the opposite of what this
-        // comment used to claim. The scenario's response.created is bytes on the wire, and
-        // TearAwareEvents.onBytes marks them on the RAW read, so the watchdog has already flipped
-        // tiers before the stall begins. "Pre-content" is about CLIENT FRAMES, not bytes.
-        //
-        // The budgets are now far apart so the arm can actually tell the tiers apart: with both at
-        // 1s (as they were) either tier produced the same pass, which is how the false claim went
-        // unnoticed. A generous 20s first-byte tier blows REAP_DEADLINE_MS if markByte never ran.
-        val drive = drive(WatchdogBudget(20.seconds, 1.seconds, 30.seconds))
+        // FIRST-OUTPUT is the tier that judges this, not streamIdle — the reverse of what this arm
+        // asserted until 2026-09-01. The scenario's response.created is bytes on the wire, but it
+        // is a HANDSHAKE, not model output: no client frame exists yet, and the watchdog's short
+        // tier applies only once the client has been handed content. Live evidence: 109 codex
+        // compactions in one day died at "180s idle cap" with first_byte at 1-5s and NO first
+        // delta — the model was reasoning silently over a 1.2MB transcript and the handshake had
+        // already flipped the tier. The budgets are far apart so the arm names the tier: a 1s
+        // first-output cap must reap this well inside the 6s mock stall, and a 20s streamIdle would
+        // let the mock hang up first (no Idle sentinel at all).
+        val drive = drive(WatchdogBudget(1.seconds, 20.seconds, 30.seconds))
         val inputs = WsRoundInputs(
             drive = drive,
             bodyJson = "{}",
@@ -270,17 +271,16 @@ class SseRoundConsumeTest {
                 assertTrue(outcome is TurnOutcome.Failure, "a reaped round must report an outcome: $outcome")
                 val fired = drive.watchdog.fired
                 assertTrue(fired is WatchdogFired.Idle, "expected an Idle reap: $fired")
-                // Names the TIER directly instead of inferring it from a pass. The ack is a byte,
-                // so a correct watchdog reports sawFirstByte=true and judged this against
-                // streamIdle; the arm previously asserted nothing about it and could not have
-                // noticed if the first-byte tier had been the one that fired.
+                // Names the TIER directly instead of inferring it from a pass: the ack is not a
+                // client frame, so a correct watchdog reports sawClientFrame=false and judged this
+                // against firstByteTimeout (the first-output cap), not streamIdle.
                 assertTrue(
-                    (fired as? WatchdogFired.Idle)?.sawFirstByte == true,
-                    "the ack is a byte, so the stall is judged on streamIdle, not firstByteTimeout: $fired",
+                    (fired as? WatchdogFired.Idle)?.sawClientFrame == false,
+                    "a handshake is not output — the stall is judged on the first-output cap, not streamIdle: $fired",
                 )
                 assertTrue(
                     tookMs < REAP_DEADLINE_MS,
-                    "reaped by the 1s streamIdle cap, not by the 20s first-byte tier or the mock hanging up " +
+                    "reaped by the 1s first-output cap, not by the 20s streamIdle tier or the mock hanging up " +
                         "($tookMs ms)",
                 )
             }
@@ -291,7 +291,7 @@ class SseRoundConsumeTest {
     }
 }
 
-// The mock stalls for 6s, and the arm's first-byte tier is 20s. A reap driven by the 1s STREAM-IDLE
+// The mock stalls for 6s, and the arm's streamIdle tier is 20s. A reap driven by the 1s FIRST-OUTPUT
 // cap must land far inside both — which is what makes this deadline name the tier rather than just
 // asserting that something eventually happened.
 private const val REAP_DEADLINE_MS = 4_000L

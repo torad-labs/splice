@@ -200,11 +200,21 @@ public class SharedSummaryParts(
     }
 }
 
-/** The two-tier watchdog knobs (v35 doctrine): before first byte the idle limit is
- *  firstByteTimeout (prefill is legitimately silent for minutes); after, streamIdle;
+/** The two-tier watchdog knobs (v35 doctrine): before the client has seen output the idle limit
+ *  is firstByteTimeout (prefill is legitimately silent for minutes); after, streamIdle;
  *  totalCap bounds the whole turn. */
 public data class WatchdogBudget(
     val firstByteTimeout: Duration,
     val streamIdle: Duration,
     val totalCap: Duration,
-)
+) {
+    /** The budget a COMPACT turn runs under: its pre-output silence is bounded by [totalCap] alone.
+     *  A compaction's prefill + reasoning over the whole transcript is the case the v35 doctrine
+     *  calls legitimately silent for minutes, and once the watchdog tier was corrected to key on
+     *  the first client frame (2026-09-01) the very first compaction on the corrected tier still
+     *  died at "no first output within the 300s first-output cap" — 1.13MB body, first byte at 3s,
+     *  then silence past five minutes, the same session that had looped all day. Idle is a stall
+     *  detector, not a budget (operator, DR-7): the one wall before a compaction's first output is
+     *  the whole-turn cap. Normal turns keep [firstByteTimeout]. */
+    public fun forCompact(): WatchdogBudget = copy(firstByteTimeout = totalCap)
+}

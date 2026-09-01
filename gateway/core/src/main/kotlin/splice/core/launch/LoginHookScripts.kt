@@ -134,8 +134,14 @@ internal object LoginHookScripts {
             // must not announce "sign-in did not complete" on a fresh session after auth was fixed
             // another way. find -mmin truncates to whole minutes (a ≤59s skew vs the ms check);
             // the stale receipt is still consumed below so it cannot linger.
+            //
+            // DR-137: -L, because find defaults to -P and would judge a SYMLINK by its own mtime
+            // while every other reader of this same receipt follows it — `[ -f ]` and `cat` two
+            // lines below, and Files.isRegularFile / Files.getLastModifiedTime in
+            // LoginOutcomeFile.consume. A link created now over a long-dead receipt read as fresh
+            // and announced a stale failure. Same file, same verdict, whichever reader asks.
             appendLine(
-                "  stale=\"$d(find \"${d}receipt\" -mmin +${LoginOutcomeFile.FRESH_WINDOW_MINUTES}" +
+                "  stale=\"$d(find -L \"${d}receipt\" -mmin +${LoginOutcomeFile.FRESH_WINDOW_MINUTES}" +
                     " -print 2>/dev/null)\"",
             )
             appendLine("  msg=\"$d(cat \"${d}receipt\" 2>/dev/null)\"")

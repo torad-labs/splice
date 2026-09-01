@@ -23,6 +23,7 @@ import splice.core.launch.LoginHookSpec
 import splice.core.launch.TokenCaptureSpec
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
 import java.util.concurrent.TimeUnit
 
 // Every character that used to break one of the two layers: an apostrophe closes a single-quoted
@@ -100,6 +101,30 @@ class LoginHookScriptSafetyTest {
             .jsonObject["hookSpecificOutput"]?.jsonObject?.get("additionalContext")?.jsonPrimitive?.content
         assertTrue(ctx.orEmpty().contains(HOSTILE_LABEL), "the label must survive: $ctx")
         assertTrue(ctx.orEmpty().contains("signed in as"), "the runtime receipt must ride: $ctx")
+    }
+
+    // DR-137: `find` defaults to -P, so the freshness check read the LINK's own mtime while every
+    // other reader of the same receipt follows the link — `[ -f ]` and `cat` in this very script,
+    // and Files.isRegularFile / Files.getLastModifiedTime in LoginOutcomeFile.consume. A symlink
+    // created now over a long-dead receipt therefore announced a stale "sign-in failed" as if it
+    // were fresh. Exactly the drift DR-103's comment ("one definition, or the two readers drift")
+    // exists to prevent. Low severity — SecureFile.writeAtomic0600 always lands a regular file —
+    // but the two readers must agree about which file they are judging.
+    @Test
+    fun `a symlink receipt is judged by its target's age, like every other reader - DR-137`() {
+        assumeTrue(bashAvailable(), "bash is required to execute the generated hook")
+        val target = tmp.resolve("dr137-target.txt")
+        Files.write(target, "sign-in failed: expired device code".toByteArray())
+        Files.setLastModifiedTime(target, FileTime.fromMillis(0L)) // far outside the freshness window
+        val link = tmp.resolve("dr137-link.txt")
+        Files.createSymbolicLink(link, target) // the LINK's own mtime is NOW
+        write(tmp, "login-dr137.sh", LoginHookScripts.loginHookScript(spec(link.toString())))
+        val ran = run("bash", "login-dr137.sh", stdin = """{"prompt":"hello"}""", dir = tmp)
+        assertEquals(0, ran.exit, ran.err)
+        assertTrue(
+            !ran.out.contains("sign-in failed"),
+            "a receipt whose TARGET is stale must not be announced as fresh: ${ran.out}",
+        )
     }
 
     @Test

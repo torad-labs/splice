@@ -22,7 +22,7 @@ internal class ResponsesInputTools(
 
     private val ids = ResponsesStableIds()
     private val toolSearchOutput = ToolSearchOutput()
-    private val parts = ResponsesInputParts()
+    private val parts = ResponsesInputParts(quirks.minImageEdgePx)
     private val inject = ResponsesReasoningInject()
 
     internal fun appendToolUse(
@@ -109,9 +109,33 @@ internal class ResponsesInputTools(
         )
         // v25: images inside tool_result (Read on a PNG, screenshots) used to vanish —
         // function_call_output.output is string-only, so ride them in a follow-up user message.
-        val imageParts = block.content.filterIsInstance<ImageBlock>().mapNotNull { parts.imagePart(it.source) }
+        val (undersized, mappable) = block.content.filterIsInstance<ImageBlock>()
+            .partition { parts.belowFloor(it.source) != null }
+        val imageParts = mappable.mapNotNull { parts.imagePart(it.source) }
         if (imageParts.isNotEmpty()) {
             sink.add(parts.toolResultImageMessage(block.toolUseId, imageParts))
         }
+        appendFloorDrops(sink, block.toolUseId, undersized)
+    }
+
+    /**
+     * DR-155: say so when a tool_result image was dropped for being under the backend's minimum.
+     *
+     * This path drops an UNMAPPABLE image silently today — unlike the message walk, which emits an
+     * "unsupported source" marker — and that silence is a real gap but not this row's, so it is
+     * deliberately left exactly as it is. The floor drop does not join it: an undersized image is
+     * the one case measured to cost a whole turn, and a screenshot tool whose output quietly lost
+     * its image is precisely the regression the v25 marker doctrine exists to prevent.
+     */
+    private fun appendFloorDrops(sink: JsonArrayBuilder, toolUseId: String, undersized: List<ImageBlock>) {
+        val min = undersized.firstNotNullOfOrNull { parts.belowFloor(it.source) } ?: return
+        val why = parts.floorReason(min)
+        sink.add(
+            parts.roleText(
+                "user",
+                "[${undersized.size} image(s) from tool_result $toolUseId omitted by " +
+                    "${quirks.providerTag} proxy: $why]",
+            ),
+        )
     }
 }

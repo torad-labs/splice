@@ -23,6 +23,15 @@ public data class ChatQuirks(
     val sessionCacheKeyPrefix: String? = null,
     /** Emit stream_options.include_usage (usage frames are opt-in on OpenAI-compat streams). */
     val emitUsageInStream: Boolean = false,
+    /**
+     * DR-155: the vendor's minimum image edge in pixels, or null for "this backend has no stated
+     * minimum". NULL IS THE DEFAULT AND THE DEFAULT MATTERS: with it, no outbound image is ever
+     * decoded and every non-opted provider's request bytes are identical to before this knob
+     * existed. Set only where a vendor documents and ENFORCES a floor — xAI 400s the whole turn
+     * with code=invalid_image on anything under 8px per edge, which cost six live turns in the
+     * DR-152 soak. See [splice.core.media.ImageFloor] for why every unknown forwards.
+     */
+    val minImageEdgePx: Int? = null,
 ) {
     /** Overlay TOML `[providers.*.quirks].reasoning_effort` onto a chat-dialect quirk profile — null
      *  keeps the provider's own default (see [emitReasoningEffort]). A member rather than the

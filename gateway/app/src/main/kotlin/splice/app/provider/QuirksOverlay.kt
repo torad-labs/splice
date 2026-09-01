@@ -8,6 +8,7 @@ package splice.app.provider
 import splice.core.config.SpliceConfig
 import splice.core.topology.ProviderConfig
 import splice.core.topology.ToolSurfaceConfig
+import splice.dialect.chat.ChatQuirks
 import splice.dialect.passthrough.PassthroughQuirks
 import splice.dialect.responses.DEFAULT_MARKER_TEXT
 import splice.dialect.responses.FoldConfig
@@ -17,6 +18,12 @@ import splice.dialect.responses.ToolDeferralPolicy
 private const val MIN_TOOL_SURFACE_FLOOR = 1
 private const val MAX_TOOL_SEARCH_LIMIT = 50
 private const val MAX_TOOL_SEARCH_ROUNDS = 5
+
+// DR-155: xAI's documented and ENFORCED minimum image edge. Its verbatim HTTP 400 body is "Image
+// dimensions 1x1 are too small. Both width and height must be at least 8 pixels." — six of those,
+// each costing a whole claude-grok turn, are what the DR-152 soak captured. GrokProvider carries the
+// same number for the same vendor on the Responses dialect.
+private const val XAI_MIN_IMAGE_EDGE_PX = 8
 
 /**
  * Declared TOML -> effective dialect quirk profile, for all three dialects. Every member is a pure
@@ -41,6 +48,37 @@ internal class QuirksOverlay {
         .withParallelToolCallsToml(providerCfg.quirks.parallelToolCalls)
         .withWebSocketToml(providerCfg.quirks.webSocket)
         .withToolSurfaceToml(toolDeferralPolicy(providerCfg.quirks.toolSurface, cfg.toolSurfaceOff))
+
+    /**
+     * The chat dialect's base profile, chosen by AUTH KIND, with the head's TOML overlaid.
+     *
+     * This lived inline inside [ChatArm.chatProvider] until DR-155 gave it a VENDOR FACT worth
+     * pinning — xAI's minimum image edge — and a fact is only pinned if a test can reach it. It
+     * could not: the enclosing function also constructs an auth provider and starts a token
+     * prefetch, so asserting one field meant standing up half a daemon. It belongs here anyway;
+     * this class's own KDoc has claimed "all three dialects" since the decomposition and chat was
+     * the missing third.
+     *
+     * grok-oauth is the ONLY profile carrying a floor, because xAI is the only vendor observed
+     * enforcing one. An unregistered api-key vendor on this same dialect keeps null and therefore
+     * never decodes an outbound image at all.
+     */
+    internal fun chatQuirks(providerCfg: ProviderConfig, key: String, label: String): ChatQuirks {
+        // grok-oauth rides session-pinned prompt caching + opt-in usage frames (probed 2026-07-19:
+        // 135k tokens, 1.7-2.8s TTFB, 99.97% cached — the two gaps that sank the 07-18 chat-dialect
+        // attempt). Unknown api-key vendors keep the bare quirks.
+        val base = if (providerCfg.auth.kind == GROK_OAUTH) {
+            ChatQuirks(
+                providerTag = key,
+                sessionCacheKeyPrefix = label,
+                emitUsageInStream = true,
+                minImageEdgePx = XAI_MIN_IMAGE_EDGE_PX,
+            )
+        } else {
+            ChatQuirks(providerTag = key)
+        }
+        return base.withReasoningEffortToml(providerCfg.quirks.reasoningEffort)
+    }
 
     /** Overlay the head's TOML [providers.*.quirks] onto a passthrough head's BASE quirk profile.
      *  Absent (null) keeps the base, which is what makes a splice.toml written before these knobs

@@ -11,7 +11,6 @@ import splice.app.GrokRefresh
 import splice.app.TopologyLoader
 import splice.core.util.HeadScopedLogs
 import splice.core.util.LogSink
-import splice.dialect.chat.ChatQuirks
 import splice.provider.grok.GrokAuthProvider
 import splice.provider.grok.GrokOAuthEndpoints
 import splice.provider.openai.ApiKeyAuthProvider
@@ -24,6 +23,8 @@ internal class ChatArm(
     private val log: LogSink,
     private val grokRefresh: GrokRefresh,
 ) {
+    private val overlay = QuirksOverlay()
+
     // After compatibility validation: Grok OAuth uses refresh-capable auth; unregistered
     // api-key/custom kinds use generic Bearer auth. Grok rides this dialect because
     // /v1/chat/completions streams the full readable CoT (`reasoning_content`) where Responses
@@ -60,16 +61,9 @@ internal class ChatArm(
                     watchdog = ctx.watchdog,
                     loginCommand = ctx.loginCommand,
                 ),
-                // grok-oauth rides session-pinned prompt caching + opt-in usage frames (probed
-                // 2026-07-19: 135k tokens, 1.7-2.8s TTFB, 99.97% cached — the two gaps that sank
-                // the 07-18 chat-dialect attempt). Unknown api-key vendors keep the bare quirks.
-                quirks = (
-                    if (providerCfg.auth.kind == GROK_OAUTH) {
-                        ChatQuirks(providerTag = key, sessionCacheKeyPrefix = label, emitUsageInStream = true)
-                    } else {
-                        ChatQuirks(providerTag = key)
-                    }
-                    ).withReasoningEffortToml(providerCfg.quirks.reasoningEffort),
+                // The profile and its TOML overlay live in QuirksOverlay with the other two dialects
+                // (DR-155) — this arm's job is auth selection and provider construction.
+                quirks = overlay.chatQuirks(providerCfg, key, label),
                 showReasoning = ctx.cfg.showReasoning,
             ),
             auth,

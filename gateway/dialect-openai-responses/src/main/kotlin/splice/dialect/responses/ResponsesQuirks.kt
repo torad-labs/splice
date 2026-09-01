@@ -78,6 +78,17 @@ public data class ResponsesQuirks(
      *  (probed 2026-07-19: 30 parts/1546ch vs 14/646 on the same prompt) — the same value
      *  codex-rs sends. null = field omitted (grok/openai-platform). */
     val summaryDelivery: String? = null,
+    /**
+     * DR-155: the vendor's minimum image edge in pixels, or null for "this backend has no stated
+     * minimum". NULL IS THE DEFAULT AND THE DEFAULT MATTERS: with it, no outbound image is ever
+     * decoded and every non-opted provider's request bytes are identical to before this knob
+     * existed. Set only where a vendor documents and ENFORCES a floor — xAI 400s the whole turn
+     * with code=invalid_image on anything under 8px per edge, which cost six live turns in the
+     * DR-152 soak. Deliberately NOT a TOML overlay: it is a fact about a backend, not an operator
+     * preference, and a wrong value here silently deletes images. See
+     * [splice.core.media.ImageFloor] for why every unknown forwards.
+     */
+    val minImageEdgePx: Int? = null,
 ) {
     // ── TOML overlays ────────────────────────────────────────────────────────
     // All five were file-level extensions on this type, spread across three files because

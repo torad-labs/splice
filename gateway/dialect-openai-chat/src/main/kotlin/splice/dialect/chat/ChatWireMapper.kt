@@ -5,6 +5,11 @@
 // argument order). imagePart/omissionMarkers share `quirks.supportsVision` — one field, one gate,
 // so the v25 omission markers can't drift. toolsArray rides along as the third consumer of the
 // same TYPE/FUNCTION/NAME wire vocabulary, avoiding a duplicated constant set.
+//
+// DR-155 adds a SECOND drop gate beside supportsVision: the vendor minimum-edge floor. It is
+// deliberately applied BEFORE imagePart rather than inside it, so imagePart's null keeps meaning
+// exactly the three things it already meant and the new policy carries its own count and its own
+// sentence — see [belowFloor].
 package splice.dialect.chat
 
 import kotlinx.serialization.json.JsonArray
@@ -16,6 +21,7 @@ import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.media.ImageFloor
 import splice.core.wire.AnthropicRequest
 import splice.core.wire.ImageBlock
 import splice.core.wire.MediaSource
@@ -24,6 +30,8 @@ import splice.core.wire.ToolResultBlock
 import splice.core.wire.ToolUseBlock
 
 internal class ChatWireMapper(private val quirks: ChatQuirks) {
+
+    private val floor = ImageFloor(quirks.minImageEdgePx)
 
     fun messagesArray(system: String?, body: AnthropicRequest): JsonArray = buildJsonArray {
         // CX-02: on a compact turn the directive rides the system message — and a compact turn
@@ -51,12 +59,15 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
         // vanishing is the regression class; the model must know something was omitted).
         val markers = quirks.omissionMarkers(content)
         val imageBlocks = content.filterIsInstance<ImageBlock>()
-        val images = imageBlocks.mapNotNull { imagePart(it.source) }
+        // DR-155: split off the images a vendor floor PROVES are undersized before anything maps
+        // them, so the two drop reasons stay two reasons. `mappable` is what the old code saw.
+        val (undersized, mappable) = imageBlocks.partition { belowFloor(it.source) != null }
+        val images = mappable.mapNotNull { imagePart(it.source) }
         // DR-94: vision-ON drops (a source imagePart cannot map) escaped the omissionMarkers gate,
         // which keys on supportsVision alone — an image-only message then vanished ENTIRELY,
         // breaking role alternation and hiding the loss from the model. Marker on the DELTA the
         // mapping actually produced; the no-vision case stays omissionMarkers' (one marker, not two).
-        val sourceMarkers = unreadableSourceMarkers(imageBlocks.size - images.size)
+        val sourceMarkers = unreadableSourceMarkers(mappable.size - images.size) + floorMarkers(undersized)
         val textsRaw = content.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
         val texts = (listOf(textsRaw) + markers + sourceMarkers).filter { it.isNotEmpty() }.joinToString("\n")
 
@@ -134,14 +145,19 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
         val trailingImages = mutableListOf<Pair<String, List<JsonObject>>>()
         toolResults.forEach { tr ->
             val out = tr.content.filterIsInstance<TextBlock>().joinToString("\n") { it.text }
-            val images = tr.content.filterIsInstance<ImageBlock>().mapNotNull { imagePart(it.source) }
-            val dropped = tr.content.count { it is ImageBlock } - images.size
+            // DR-155: the same pre-split as the message path. A tool_result carrying a screenshot
+            // AND a favicon-sized image is the realistic case, and it must say both things.
+            val (undersized, mappable) = tr.content.filterIsInstance<ImageBlock>()
+                .partition { belowFloor(it.source) != null }
+            val images = mappable.mapNotNull { imagePart(it.source) }
+            val dropped = mappable.size - images.size
             sink.addJsonObject {
                 put(ROLE, "tool")
                 put("tool_call_id", tr.toolUseId)
-                // string-only channel: dropped images (no vision, or an unreadable source) are
-                // declared IN the output — on the DELTA, so a partial drop is marked too (DR-94).
-                put(CONTENT, if (dropped > 0) markerFold(out, dropped) else out)
+                // string-only channel: dropped images (no vision, an unreadable source, or a vendor
+                // minimum edge) are declared IN the output — on the DELTA, so a partial drop is
+                // marked too (DR-94), each reason keeping its own sentence (DR-155).
+                put(CONTENT, markerFold(out, dropped, undersized))
             }
             if (images.isNotEmpty()) {
                 trailingImages.add(tr.toolUseId to images)
@@ -154,11 +170,16 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
         }
     }
 
-    fun markerFold(out: String, imageCount: Int): String {
+    fun markerFold(out: String, imageCount: Int, undersized: List<ImageBlock>): String {
         // DR-94: with vision ON the drop was an unreadable SOURCE, not a capability gap — the
         // marker must not blame vision the backend has.
         val reason = if (quirks.supportsVision) "unreadable image source" else "backend has no vision"
-        return (listOf(out) + "[$imageCount image(s) omitted by ${quirks.providerTag} proxy: $reason]")
+        val unreadable = if (imageCount > 0) {
+            listOf("[$imageCount image(s) omitted by ${quirks.providerTag} proxy: $reason]")
+        } else {
+            emptyList()
+        }
+        return (listOf(out) + unreadable + floorMarkers(undersized))
             .filter { it.isNotEmpty() }
             .joinToString("\n")
     }
@@ -171,6 +192,29 @@ internal class ChatWireMapper(private val quirks: ChatQuirks) {
         } else {
             emptyList()
         }
+
+    /**
+     * DR-155: the vendor-floor marker, with its OWN count and its OWN reason. Relabelling an
+     * undersized image as "unreadable image source" would be a lie the operator cannot debug — the
+     * source read perfectly, the backend simply refuses images that small — so a message carrying
+     * one of each emits TWO markers rather than a merged count.
+     */
+    private fun floorMarkers(undersized: List<ImageBlock>): List<String> {
+        val min = undersized.firstNotNullOfOrNull { belowFloor(it.source) } ?: return emptyList()
+        return listOf(
+            "[${undersized.size} image(s) omitted by ${quirks.providerTag} proxy: ${floor.reason(min)}]",
+        )
+    }
+
+    /**
+     * The floor a source is proven to violate, or null. Gated on vision: with vision OFF every image
+     * is dropped anyway and omissionMarkers already says so once, so probing here could only add a
+     * second marker for the same image — the double-marker class DR-94's split exists to prevent.
+     */
+    private fun belowFloor(source: MediaSource?): Int? {
+        if (source == null || !quirks.supportsVision) return null
+        return floor.violatedMinimum(source)
+    }
 
     // ARGUMENT ORDER (HD-20): the former `JsonObjectBuilder` receiver became the first parameter and
     // [name]/[args] kept their order, so the sole call site reads `putFunction(this, tu.name,

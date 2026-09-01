@@ -52,5 +52,16 @@ public class GrokQuirks {
         // request's include[] for nothing (untested surface on xai). TOML
         // `reasoning_cache = true` re-enables via the overlay if that ever changes.
         reasoningCache = false,
+        // DR-155: xAI enforces a minimum image edge and 400s the WHOLE turn below it. The claude-grok
+        // head rides the chat dialect today (ChatArm carries the same number for the same reason),
+        // but this profile is what any Responses-dialect grok head would use, and the vendor
+        // constraint belongs to the vendor rather than to whichever dialect happens to be selected.
+        minImageEdgePx = XAI_MIN_IMAGE_EDGE_PX,
     )
 }
+
+// See ChatArm.kt's copy: xAI's verbatim 400 is "Image dimensions 1x1 are too small. Both width and
+// height must be at least 8 pixels." Duplicated rather than shared because provider-grok and :app
+// have no dependency between them, and a vendor fact is cheaper to state twice than to route
+// through a third module.
+private const val XAI_MIN_IMAGE_EDGE_PX = 8

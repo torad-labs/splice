@@ -30,7 +30,7 @@ internal class ResponsesInputBuilder(
     private val loopGuardDirectives: Map<String, String> = emptyMap(),
 ) {
 
-    private val parts = ResponsesInputParts()
+    private val parts = ResponsesInputParts(quirks.minImageEdgePx)
     private val tools = ResponsesInputTools(quirks, loopGuardDirectives)
     private val inject = ResponsesReasoningInject()
 
@@ -81,6 +81,15 @@ internal class ResponsesInputBuilder(
 
     private fun appendImage(sink: JsonArrayBuilder, block: ImageBlock, opts: BuildOptions) {
         if (opts.compact) return // compact is a text-only summarizer
+        // DR-155: an undersized image gets its OWN sentence. Falling through to the marker below
+        // would print "unsupported source", which is false and undebuggable — the source is
+        // perfectly supported and read cleanly; the BACKEND refuses images that small, and only
+        // saying so tells the operator (and the model) what actually happened.
+        parts.belowFloor(block.source)?.let { min ->
+            val why = parts.floorReason(min)
+            sink.add(parts.roleText("user", "[image omitted by ${quirks.providerTag} proxy: $why]"))
+            return
+        }
         val part = parts.imagePart(block.source)
         if (part != null) {
             sink.add(

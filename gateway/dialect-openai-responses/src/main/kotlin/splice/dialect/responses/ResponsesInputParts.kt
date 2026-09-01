@@ -10,9 +10,22 @@ import kotlinx.serialization.json.add
 import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
+import splice.core.media.ImageFloor
 import splice.core.wire.MediaSource
 
-internal class ResponsesInputParts {
+internal class ResponsesInputParts(minImageEdgePx: Int? = null) {
+
+    private val floor = ImageFloor(minImageEdgePx)
+
+    /** DR-155: the vendor floor this source is PROVEN to violate, or null for everything else.
+     *  Asked BEFORE [imagePart] on every path, so imagePart's null keeps meaning exactly what it
+     *  meant — the walk renders that null as "unsupported source" verbatim, and an undersized image
+     *  is not an unsupported one. */
+    internal fun belowFloor(source: MediaSource?): Int? = floor.violatedMinimum(source)
+
+    /** The reason phrase for a below-floor drop, owned by [ImageFloor] so this dialect and the chat
+     *  dialect cannot tell two different stories about the same event. */
+    internal fun floorReason(minPx: Int): String = floor.reason(minPx)
 
     internal fun toolResultImageMessage(toolUseId: String, imageParts: List<JsonObject>): JsonObject =
         buildJsonObject {

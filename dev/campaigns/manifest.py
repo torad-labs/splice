@@ -58,6 +58,11 @@ USAGE:
                                                 journal query (Monitor condition + drain);
                                                 exit 0 = new actionable events, 1 = none
   manifest.py cost <ID> [--db PATH] [--pricing PATH] [--now ISO]
+  manifest.py <new.toml> init                   the ONLY verb that creates a ledger (DR-181). Every
+                                                other verb hard-fails on a missing path, creating
+                                                nothing: a ledger that is not there is a wrong path
+                                                until you say otherwise, and inventing one silently
+                                                replaced a live campaign on 2026-09-01.
   manifest.py add --id X --phase P --title T --files F --verify V [--status todo]
   manifest.py edit-fence <ID> "f1, f2, ..."      replace the files fence + append FENCE-EDITED note
   manifest.py edit-verify <ID> "cmd"             replace the verify string + append VERIFY-EDITED note
@@ -3468,8 +3473,14 @@ def _locked_rewrite(path: str, mutate, *, after_commit=None):
     after a no-op mutate, or right after the write validates) — this is what lets a caller's
     pointer maintenance (claim/handover/release-stale) happen atomically with the ledger
     mutation instead of in a separate step after _locked_rewrite returns, closing the crash
-    window where a pointer file could observably disagree with the ledger's actual claim."""
-    with open(path, "a+", encoding="utf-8") as lockf:
+    window where a pointer file could observably disagree with the ledger's actual claim.
+
+    DR-181: "r+", not "a+". This handle exists only to carry the flock — it is never read or
+    written through, so the append position bought nothing, while the "a" bought file CREATION.
+    That is the primitive that manufactured a stranger ledger on 2026-09-01. main() now refuses a
+    missing path before dispatch, but a guard one caller can skip is not where this belongs: the
+    mutation primitive itself must be incapable of creating what it is meant to be editing."""
+    with open(path, "r+", encoding="utf-8") as lockf:
         fcntl.flock(lockf, fcntl.LOCK_EX)
         lines = _read(path)
         original = list(lines)
@@ -6488,7 +6499,14 @@ def _cmd_selftest_body(path):
 
     # CLI-birth path: a ledger created by `add` alone has no [campaign] section;
     # set-next must insert one (after any leading law banner) instead of dying.
+    # DR-181: this arm's subject is that a ledger built from NOTHING bootstraps its sections in the
+    # right order — birth was by cmd_add only because that was the sole way to obtain an empty one.
+    # Creation now belongs to `init`, so the arm names its birth mechanism and keeps every
+    # assertion, and doubles as the proof that deliberate creation still works end to end.
     fixture_born_ledger = fixture_campaigns_dir / "fixture-cli-born.toml"
+    with redirect_stdout(io.StringIO()):
+        _init_ledger(fixture_born_ledger.as_posix())
+    assert fixture_born_ledger.exists(), "init must bring the ledger into being"
     cmd_add(
         fixture_born_ledger.as_posix(), "BORN1", "B", "cli-born item", "born/**", "echo ok"
     )
@@ -6675,6 +6693,83 @@ def _cmd_selftest_body(path):
     os.unlink(tmp_apostrophe.name)
     os.unlink(tmp_claim.name)
 
+    # DR-181: a missing ledger is diagnosed, never manufactured. These arms exist because the
+    # ledger CLI destroyed a live 164-row campaign on 2026-09-01 and reported success at every
+    # step — a `add` run from a stale checkout opened the absent path "a+" for its flock, created
+    # it, and wrote a coherent stranger over the name of a real campaign.
+    absent_dir = Path(tempfile.mkdtemp(prefix="manifest-dr181-"))
+    try:
+        ghost = absent_dir / "not-a-campaign.toml"
+
+        # Both verb CLASSES, through the real dispatch: a read and a mutation. Exit code AND the
+        # filesystem are asserted — "it errored" is not the claim; "it errored having touched
+        # nothing" is, and only the second one would have saved the campaign.
+        # A DIAGNOSED exit, not merely a non-zero one: the guard and the "r+" primitive are
+        # independent defences, so with either one alone the CLI still creates nothing — it just
+        # dies in a stack trace instead of naming the wrong path and listing the ledgers that do
+        # exist. A traceback is what the operator got before, and it is what taught a session to
+        # reach for the verb that "worked". So the arm pins the message too.
+        for verb, argv in (
+            ("read", [ghost.as_posix(), "list"]),
+            ("mutation", [ghost.as_posix(), "note", "DR-1", "text"]),
+        ):
+            try:
+                with redirect_stdout(io.StringIO()):
+                    main(["manifest.py", *argv])
+            except SystemExit as exit_code:
+                assert exit_code.code not in (0, None), f"{verb} verb on a missing ledger exited clean"
+                assert "does not exist" in str(exit_code.code), (
+                    f"the {verb} verb must NAME the missing ledger, not merely fail: {exit_code.code}"
+                )
+            except BaseException as raw:  # noqa: BLE001 — the point is that nothing else may escape
+                raise AssertionError(
+                    f"the {verb} verb died undiagnosed on a missing ledger ({type(raw).__name__}) "
+                    "— a traceback is not a diagnosis"
+                ) from raw
+            else:
+                raise AssertionError(f"{verb} verb on a missing ledger did not exit at all")
+            assert not ghost.exists(), f"the {verb} verb CREATED a ledger it was only meant to address"
+
+        # The primitive, not the guard. cmd_add reaches _locked_rewrite directly, which is the
+        # call path that did the damage and the one a future caller can still take past main().
+        try:
+            with redirect_stdout(io.StringIO()):
+                cmd_add(ghost.as_posix(), "GHOST1", "X", "must never exist", "a/**", "true")
+        except (FileNotFoundError, SystemExit):
+            pass
+        else:
+            raise AssertionError("cmd_add manufactured a ledger when called directly")
+        assert not ghost.exists(), "the mutation primitive CREATED the ledger it was editing"
+
+        # Deliberate creation still works, through the one verb that admits to it — and refuses
+        # to be the instrument of a second such accident by overwriting anything.
+        born = absent_dir / "deliberate.toml"
+        try:
+            with redirect_stdout(io.StringIO()):
+                main(["manifest.py", born.as_posix(), "init"])
+        except SystemExit as blocked:
+            raise AssertionError(
+                f"init must create the ledger it was asked for, but the guard refused it: {blocked.code}"
+            ) from blocked
+        assert born.exists(), "init must create the ledger it was asked for"
+        with redirect_stdout(io.StringIO()):
+            cmd_add(born.as_posix(), "REAL1", "X", "a row in a deliberately created ledger", "a/**", "true")
+        # Asserted on the row's own bytes: _find exits rather than returning falsy, so a truthiness
+        # check on it is a test that cannot fail — the tautology this whole row is about.
+        born_rows = _read(born.as_posix())
+        start, end = _find(born_rows, "REAL1")
+        assert 'id = "REAL1"' in "".join(born_rows[start:end]), "an init-created ledger must accept rows"
+        stamp = born.read_bytes()
+        try:
+            main(["manifest.py", born.as_posix(), "init"])
+        except SystemExit as exit_code:
+            assert exit_code.code not in (0, None), "init over an existing ledger exited clean"
+        else:
+            raise AssertionError("init overwrote an existing ledger")
+        assert born.read_bytes() == stamp, "a refused init altered the ledger anyway"
+    finally:
+        shutil.rmtree(absent_dir, ignore_errors=True)
+
     # D11: id namespaces are PER-LEDGER by design (each campaign numbers its own G-/D-/S-series),
     # and every access is ledger-path-scoped, so cross-ledger reuse is harmless — NOT an invariant
     # to enforce. selftest reports the standing count as health context only (never a per-id flood:
@@ -6720,6 +6815,53 @@ def _no_default_ledger(cmd):
     )
 
 
+def _no_such_ledger(cmd, path):
+    """DR-181: the message for an EXPLICIT path that names no file.
+
+    The 2026-07-27 guard above reasoned correctly — "silently picking one for a mutating verb
+    would write the right text into the WRONG campaign" — and then scoped itself to `not
+    explicit_path`, so the case it described stayed open in the other half: an explicit path to a
+    file that does not exist. `add` opened it "a+" for the flock, which CREATES, and manufactured a
+    fresh one-row campaign reporting success. On 2026-09-01 fifteen such writes ran from a stale
+    checkout where this ledger does not exist, produced a coherent 15-row stranger, and the copy
+    back over the real file deleted 2604 lines. Every downstream signal was green, including a full
+    13-leg gate, because nothing in the pipeline could tell a new campaign from a lost one.
+
+    The census is the payload, not decoration: the CLI already knew drift-repair.toml sat next to
+    the path being typed — it prints exactly that in an `add` id-collision note — so the sibling
+    listing names the file the operator almost certainly meant. Absence is diagnosed here, never
+    repaired: creation belongs to `init` and to nothing else."""
+    here = os.path.dirname(os.path.abspath(path)) or "."
+    try:
+        siblings = sorted(f for f in os.listdir(here) if f.endswith(".toml"))
+    except OSError:
+        siblings = []
+    listing = "\n".join(f"  {os.path.join(here, f)}" for f in siblings) or "  (none — wrong directory?)"
+    return (
+        f"error: `{cmd}` was given an explicit ledger that does not exist:\n"
+        f"  {path}\n\n"
+        "Nothing was created. A missing ledger is a WRONG PATH until proven otherwise — most often a\n"
+        "stale checkout or a relative path resolved from the wrong cwd — and manufacturing an empty\n"
+        "campaign here is how a real one gets silently replaced.\n\n"
+        f"Ledgers that DO exist beside that path:\n{listing}\n\n"
+        f"If you genuinely mean to start a new campaign, say so: `manifest.py {path} init`."
+    )
+
+
+def _init_ledger(path):
+    """DR-181: the ONE verb that may bring a ledger into being, and it says so out loud."""
+    if os.path.exists(path):
+        sys.exit(f"error: refusing to init over an existing file: {path}")
+    parent = os.path.dirname(os.path.abspath(path))
+    if not os.path.isdir(parent):
+        sys.exit(f"error: no such directory: {parent}")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(f"# campaign ledger — created by `manifest.py {os.path.basename(path)} init`\n")
+        f.flush()
+        os.fsync(f.fileno())
+    print(f"initialised empty campaign ledger: {path}")
+
+
 def main(argv):
     args = list(argv[1:])
     path = DEFAULT
@@ -6729,9 +6871,15 @@ def main(argv):
     if not args:
         sys.exit(__doc__)
     cmd, rest = args[0], args[1:]
-    if not explicit_path and cmd not in PATHLESS_VERBS and not os.path.exists(path):
-        sys.exit(_no_default_ledger(cmd))
-    if cmd == "list":
+    # DR-181: existence is checked for BOTH path classes now. The explicit-path half was open,
+    # and it is the half a wrong cwd produces. `init` is the sole verb allowed past a missing file.
+    if cmd not in PATHLESS_VERBS and cmd != "init" and not os.path.exists(path):
+        sys.exit(_no_default_ledger(cmd) if not explicit_path else _no_such_ledger(cmd, path))
+    if cmd == "init":
+        if not explicit_path:
+            sys.exit("error: init requires the new ledger path as the FIRST arg")
+        _init_ledger(path)
+    elif cmd == "list":
         kw = {}
         while rest:
             flag = rest.pop(0)

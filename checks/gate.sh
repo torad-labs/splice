@@ -95,6 +95,12 @@ run "hook tests"     npm run --silent test:hooks
 # of this ladder, which meant nothing ran it at all.
 run "campaign walls"  npm run --silent gate:campaign
 run "campaign selftest" npm run --silent gate:campaign:selftest
+# DR-181: the walls above guard the SOURCE TREE a campaign describes; nothing guarded the campaign
+# MEMORY itself. On 2026-09-01 drift-repair.toml lost 164 rows and 2604 lines, was committed and
+# pushed, and this ladder passed 13 of 13 — because no leg read the file. A green gate said nothing
+# about the one artifact whose entire purpose is to outlive the session that wrote it.
+run "campaign ledger floor" python3 checks/campaign-ledger-floor.py --check
+run "campaign ledger floor selftest" bash checks/campaign-ledger-floor-selftest.sh
 # Eleven frozen request/response scenarios grade the built Kotlin gateway byte-for-byte against the
 # captured Node oracle. Keeping the replay as a package script without a gate leg left the parity
 # claim entirely opt-in: every other check could pass while none of these fixtures ran.

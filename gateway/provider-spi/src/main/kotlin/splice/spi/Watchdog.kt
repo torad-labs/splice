@@ -51,7 +51,8 @@ public class TurnWatchdog(
      *  for minutes. The watchdog is shared across rounds (totalCap must span the whole turn), but the
      *  idle TIER must reset per round — otherwise round 1's first byte pins every later round to the
      *  short streamIdle cap instead of firstByteTimeout, wrongly aborting a slow continuation prefill.
-     *  Only the first-byte tier resets; startedAt/totalCap are untouched. */
+     *  startedAt/totalCap are untouched, and since DR-7 a stale IDLE sentinel is cleared too (see
+     *  below); a TotalCap verdict survives, because it belongs to the turn and not to a round. */
     public fun resetFirstByte() {
         sawFirstByte.set(false)
         // DR-7: also clear a STALE IDLE fire. The sentinel is sticky by design so the terminal
@@ -69,8 +70,12 @@ public class TurnWatchdog(
     }
 
     /**
-     * Launch the sibling poller: watches [slot] idleness + total elapsed, and on breach sets
-     * the typed sentinel FIRST, then cancels [target]. Cancel the returned job on clean exit.
+     * Launch the sibling poller: watches [slot] IDLENESS, and on breach sets the typed sentinel
+     * FIRST, then cancels [target]. Cancel the returned job on clean exit.
+     *
+     * DR-7: [target] is a ROUND, not the turn — the SSE path parents a job to the turn job and
+     * aborts that round's body channel, so the translator survives to report the stall WITH its
+     * salvage. Total elapsed is NOT sampled here any more; see [launchTotalCap].
      */
     public fun launchIn(scope: CoroutineScope, slot: InflightGate.Slot, target: Job): Job =
         scope.launch {
@@ -98,12 +103,13 @@ public class TurnWatchdog(
             }
         }
 
-    /** NF-03: the whole-turn wall clock, armed from admission to terminal. [launchIn]'s totalCap
-     *  check only runs while an upstream stream is open, so connect, headers-wait, retry backoff,
-     *  refresh, and between-round gaps were previously uncounted — an N-round fold/re-anchor turn
-     *  got N x the per-round budget against one totalCap while pinning its gate slot. Idle tiers
-     *  stay with [launchIn] (they need the slot); breach semantics are identical: the typed
-     *  sentinel is set FIRST, then [target] is cancelled. */
+    /** NF-03: the whole-turn wall clock, armed from admission to terminal, and since DR-7 the ONLY
+     *  place a totalCap breach is raised. It was once a second sampler beside [launchIn]'s, which
+     *  ran only while an upstream stream was open — so connect, headers-wait, retry backoff,
+     *  refresh, and between-round gaps went uncounted and an N-round fold/re-anchor turn got N x
+     *  the per-round budget against one totalCap while pinning its gate slot. Idle tiers stay with
+     *  [launchIn] (they need the slot, and they reap a round rather than the turn); breach
+     *  semantics are identical: the typed sentinel is set FIRST, then [target] is cancelled. */
     public fun launchTotalCap(scope: CoroutineScope, target: Job): Job =
         scope.launch {
             // Paced against totalCap as well as streamIdle: pollInterval() alone is streamIdle/3,

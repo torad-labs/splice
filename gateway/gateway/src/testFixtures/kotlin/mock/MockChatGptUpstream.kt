@@ -192,7 +192,8 @@ class MockChatGptUpstream {
             // a broken pipe mid-stream is the drip/hold scenarios' EXPECTED client-abort exit
             // DR-7 adds foldstall: the head's idle watchdog reaps the stalled round, so this
             // server thread wakes from its sleep onto a socket the head already hung up.
-            val expected = scenario == "drip" || scenario == "hold" || scenario == "foldstall"
+            val expected = scenario == "drip" || scenario == "hold" ||
+                scenario == "foldstall" || scenario == "idlepre"
             if (expected) abortedScenarios.add(scenario)
             check(expected) {
                 "unexpected mid-stream I/O failure in scenario '$scenario': ${abort.message}"
@@ -339,6 +340,19 @@ class MockChatGptUpstream {
                 if (isContinuationRound(body)) foldSummaryCleanRound(ex) else foldSummaryTruncatedRound(ex)
             "foldcap" -> foldTruncatedRound(ex)
             "foldstall" -> if (isContinuationRound(body)) foldCleanRound(ex) else foldStalledRound(ex)
+            // DR-7: headers, then silence, with NO event ever sent — the PRE-CONTENT stall. The
+            // head has emitted no client frame, which is precisely the state the G5 reissue path
+            // claims, so this is the shape that separates a reaped round from a transport tear.
+            "idlepre" -> {
+                // The backend ACKNOWLEDGES and then goes quiet: response.created carries no
+                // content, so the round reaches its stall having emitted nothing to the client —
+                // the pre-content state the G5 reissue path claims. A scenario that only slept
+                // would be untestable, because the client blocks on headers and the stall would
+                // land before the head had a stream to watch at all; and a bare SSE comment ends
+                // the round instantly as a dead-head body rather than stalling it.
+                sse(ex, """{"type":"response.created","response":{"id":"rs_idle"}}""")
+                Thread.sleep(STALL_SLEEP_MS)
+            }
             "multipart" -> {
                 sse(ex, """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning","id":"rs_mp"}}""")
                 sse(ex, """{"type":"response.reasoning_summary_part.added","output_index":0}""")

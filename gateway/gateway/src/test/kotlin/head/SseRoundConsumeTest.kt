@@ -10,7 +10,9 @@ package head
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
 import io.ktor.client.request.post
+import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
@@ -60,6 +62,7 @@ import splice.spi.Provider
 import splice.spi.ProviderTuning
 import splice.spi.TurnWatchdog
 import splice.spi.UpstreamResponse
+import splice.spi.WatchdogFired
 import splice.spi.WireSink
 import java.nio.file.Files
 import java.nio.file.Path
@@ -121,7 +124,9 @@ class SseRoundConsumeTest {
         configSummary = "detailed",
     )
 
-    private suspend fun drive(): TurnDrive = TurnDrive(
+    private suspend fun drive(
+        budget: WatchdogBudget = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
+    ): TurnDrive = TurnDrive(
         bodyJson = "{}",
         requestBody = buildJsonObject { },
         meta = TurnMeta(
@@ -136,7 +141,7 @@ class SseRoundConsumeTest {
             budgetTokens = null,
         ),
         emitter = NoopTerminal(),
-        watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
+        watchdog = TurnWatchdog(budget),
         slot = InflightGate(LiveLimit { 1 }).acquire(),
         pipeline = TurnPipeline(
             CompactStats(tmp.resolve("compact-dr90.jsonl")),
@@ -201,4 +206,72 @@ class SseRoundConsumeTest {
             drive.slot.release()
         }
     }
+
+    // DR-7, from codex-splice's review: the HeadServer acceptance arm could not pin this, because
+    // by the time its round stalls it has already emitted thinking — so frameEmittedThisRound() is
+    // true and the G5 branch is unreachable there either way. THIS is the state that separates a
+    // reaped round from a transport tear: the watchdog fires before any client frame.
+    //
+    // Reaping now aborts the body channel, which surfaces as exactly the IOException a real tear
+    // does. Without the watchdog test in TearAwareEvents.reissuable, this round would be rethrown
+    // as StreamTornBeforeClient and silently re-POSTed by the reissue machinery — racing the
+    // salvage-and-continue decision the terminal outcome is about to make, and spending an upstream
+    // request on a backend that has just been observed to be stalled rather than broken.
+    // Dispatchers.Default deliberately: the watchdog poller is a SIBLING coroutine that must sample
+    // while the SSE read is parked, and the default single-threaded runBlocking event loop cannot
+    // run both — the poller's own delay never resumes, so no budget can ever fire in that rig.
+    @Test
+    fun `a pre-content idle reap is an outcome, not a transport tear - DR-7`() = runBlocking(Dispatchers.Default) {
+        val provider = provider()
+        val consume = SseRoundConsume(
+            provider,
+            ZeroEventFailure(provider, log = {}),
+            TurnTelemetry("codex", PerfStats(tmp.resolve("perf-dr7.jsonl")), log = {}, clock = ElapsedClock { 0L }),
+            TearAwareEvents(provider, log = {}),
+        )
+        // Short FIRST-BYTE tier, because no byte ever arrives: pre-content idleness is judged
+        // against firstByteTimeout, not streamIdle.
+        val drive = drive(WatchdogBudget(1.seconds, 1.seconds, 30.seconds))
+        val inputs = WsRoundInputs(
+            drive = drive,
+            bodyJson = "{}",
+            sink = RecordingSink2(),
+            scope = this,
+            turnJob = Job(),
+            frameEmittedThisRound = ClientFrameEmitted { false },
+            eventsBase = 0,
+        )
+        try {
+            // The assertion is that this RETURNS. A StreamTornBeforeClient thrown from here is the
+            // regression, and it would fail this test by propagating rather than by an assertEquals.
+            // preparePost/execute, NOT the buffered post the DR-90 arm uses: a buffered request
+            // reads the WHOLE response before consume ever runs, so the round would be handed an
+            // already-complete channel and the stall would be over before the watchdog existed.
+            // (That is not a hypothetical — it is what this arm did until the body streamed.)
+            client.preparePost("${mock.baseUrl}/v1/responses") {
+                setBody("""{"instructions":"SCENARIO:idlepre"}""")
+            }.execute { raw ->
+                val t0 = System.currentTimeMillis()
+                // The assertion is that this RETURNS. A StreamTornBeforeClient thrown from here is
+                // the regression, and it fails this test by propagating rather than by an assert.
+                val outcome = consume.consume(inputs, UpstreamResponse(raw))
+                val tookMs = System.currentTimeMillis() - t0
+                assertTrue(outcome is TurnOutcome.Failure, "a reaped round must report an outcome: $outcome")
+                assertTrue(
+                    drive.watchdog.fired is WatchdogFired.Idle,
+                    "expected an Idle reap: ${drive.watchdog.fired}",
+                )
+                assertTrue(
+                    tookMs < REAP_DEADLINE_MS,
+                    "reaped by the 1s idle cap, not by the mock hanging up ($tookMs ms)",
+                )
+            }
+        } finally {
+            inputs.turnJob.cancel()
+            drive.slot.release()
+        }
+    }
 }
+
+// The mock stalls for 6s; a reap driven by the 1s idle cap must land far inside that.
+private const val REAP_DEADLINE_MS = 4_000L

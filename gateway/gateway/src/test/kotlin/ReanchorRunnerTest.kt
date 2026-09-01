@@ -1,7 +1,9 @@
 // Walls for the round runners (eli design 2026-07-24 + code-review fix round): a spliced turn is
 // ONE coherent Anthropic message — single message_start, monotonic block indices, exactly ONE
-// terminal; budget exhaustion ends in the honest error AFTER the appended blocks; watchdog fires
-// and gone clients never continue; the finish outcome carries the WHOLE turn's facts (cross-round
+// terminal; budget exhaustion ends in the honest error AFTER the appended blocks; gone clients
+// never continue (DR-7 REVERSED the watchdog half of that pair — an idle fire reaps a ROUND now,
+// and a stalled round is the case most worth continuing); the finish outcome carries the WHOLE
+// turn's facts (cross-round
 // merge — a round-2 empty completion must not read as an empty model); fold-eligible turns retry
 // failed rounds via trigger-B with never-forwarded prose stripped from the salvage.
 import kotlinx.coroutines.test.runTest

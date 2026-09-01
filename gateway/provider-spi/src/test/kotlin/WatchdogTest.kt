@@ -3,6 +3,10 @@
 // must NOT be reaped before the first byte), idle-after-first-byte reaped, total cap reaped,
 // typed sentinel set before cancel.
 //
+// DR-7 moved the cap OUT of launchIn: that poller now reaps a single round so the turn can salvage
+// and continue, and launchTotalCap owns the only whole-turn cancel. The sentinel is per-turn and
+// sticky, so resetFirstByte clears a stale Idle between rounds while leaving TotalCap standing.
+//
 // CLOCK POLICY (HD-19): the two IDLE cases still ride a real clock with generous margins, because
 // what they prove is idleness measured by InflightGate.Slot, whose clock is its own and outside this
 // wave's seams. The two TOTAL-CAP cases do NOT: TurnWatchdog now takes an injected Ticker, so
@@ -106,6 +110,81 @@ class WatchdogTest {
             assertTrue((fired as WatchdogFired.Idle).sawFirstByte)
             assertTrue(target.isCancelled)
             poller.cancel()
+            slot.release()
+        }
+    }
+
+    // DR-7, from codex-splice's review: resetFirstByte's Idle-clear was comment-only. Deleting the
+    // line left every Watchdog arm AND the real HeadServer acceptance green, which means the
+    // behaviour was asserted nowhere at all.
+    @Test
+    fun `resetFirstByte clears a stale Idle so the next round is not born stalled - DR-7`() {
+        runBlocking {
+            val gate = InflightGate({ 0 })
+            val slot = gate.acquire()
+            val dog = TurnWatchdog(budget(firstByteMs = 10_000, idleMs = 300, capMs = 30_000))
+            val target = launch { delay(10.seconds) }
+            val poller = dog.launchIn(this, slot, target)
+            slot.touch()
+            dog.markByte()
+            delay(900)
+            target.join()
+            assertTrue(dog.fired is WatchdogFired.Idle, "setup: the round must actually have been reaped")
+            poller.cancel()
+            // The sentinel is sticky so the terminal decision can name why the round died. Left set,
+            // it makes every LATER round of the same turn terminate as stalled no matter how healthy
+            // it is — and a salvaged round is by definition followed by another round.
+            dog.resetFirstByte()
+            assertNull(dog.fired, "a salvaged round must not leave the next one born stalled")
+            slot.release()
+        }
+    }
+
+    // The other half, and the reason it is a CAS against the observed Idle rather than a set(null):
+    // totalCap is a WHOLE-TURN verdict, and no new round may erase it.
+    @Test
+    fun `resetFirstByte preserves a TotalCap verdict - DR-7`() {
+        runBlocking {
+            val ticks = VirtualTicks()
+            val dog = TurnWatchdog(
+                budget(firstByteMs = 10_000, idleMs = 5_000, capMs = 600),
+                clock = ticks.clock,
+                ticker = ticks.ticker,
+            )
+            val target = launch { delay(10.seconds) }
+            val capPoller = dog.launchTotalCap(this, target)
+            target.join()
+            assertTrue(dog.fired is WatchdogFired.TotalCap, "setup: expected TotalCap, got ${dog.fired}")
+            dog.resetFirstByte()
+            assertTrue(dog.fired is WatchdogFired.TotalCap, "the whole-turn verdict is not a round's to erase")
+            capPoller.cancel()
+        }
+    }
+
+    // codex-splice named the consequence, and it is the one that actually bites: firedRef is written
+    // by compareAndSet(null, …), so a sentinel left set from an earlier round SILENTLY BLOCKS the
+    // whole-turn cap from ever recording its own verdict. The turn would then be cancelled by the
+    // cap while reporting an idle stall from a round that already ended.
+    @Test
+    fun `a stale Idle would block the later TotalCap from recording - DR-7`() {
+        runBlocking {
+            val gate = InflightGate({ 0 })
+            val slot = gate.acquire()
+            val dog = TurnWatchdog(budget(firstByteMs = 10_000, idleMs = 300, capMs = 1_200))
+            val stalled = launch { delay(10.seconds) }
+            val poller = dog.launchIn(this, slot, stalled)
+            slot.touch()
+            dog.markByte()
+            delay(900)
+            stalled.join()
+            assertTrue(dog.fired is WatchdogFired.Idle, "setup: round one must be reaped")
+            poller.cancel()
+            dog.resetFirstByte()
+            val next = launch { delay(10.seconds) }
+            val capPoller = dog.launchTotalCap(this, next)
+            next.join()
+            assertTrue(dog.fired is WatchdogFired.TotalCap, "the cap must record its own verdict, got ${dog.fired}")
+            capPoller.cancel()
             slot.release()
         }
     }

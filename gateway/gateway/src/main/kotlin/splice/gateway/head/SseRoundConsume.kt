@@ -34,11 +34,17 @@ internal class SseRoundConsume(
         // which killed driveTurn along with the round — so the translator never returned, the
         // salvaged reasoning died with it, and the fold loop had nothing left to continue from. The
         // round job carries no work of its own; it is a cancellation SIGNAL, and the thing it
-        // signals is "stop reading this body". Cancelling the channel with an IOException rather
-        // than a CancellationException is what keeps driveTurn alive: the translator already folds
-        // an IOException into an honest terminal, and the terminal decision then sees the watchdog
-        // sentinel and reports a stall WITH its partial. A CancellationException here would
-        // propagate into the turn coroutine and reproduce the very bug this fixes.
+        // signals is "stop reading this body". The translator folds the resulting IOException into
+        // an honest terminal, and the terminal decision then sees the watchdog sentinel and reports
+        // a stall WITH its partial.
+        //
+        // The cause type is DEFENSIVE, not load-bearing, and this comment used to claim otherwise:
+        // it said a CancellationException here would propagate into the turn coroutine and
+        // reproduce the bug. codex-splice disproved that by swapping the cause and finding the
+        // whole acceptance suite still green — every translator already swallows a cancellation
+        // when the watchdog has fired (ResponsesStreamTranslator does it explicitly). IOException
+        // is kept because it does not DEPEND on that swallow: it reads as an ordinary torn read on
+        // any translator, including one written later that forwards cancellation faithfully.
         //
         // Parented to turnJob so the reverse direction still holds: a client hang-up or the
         // whole-turn totalCap cancels the turn, which cancels this, which aborts the read.

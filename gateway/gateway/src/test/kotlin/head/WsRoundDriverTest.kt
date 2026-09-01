@@ -17,14 +17,16 @@ import io.ktor.client.request.post
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.onCompletion
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -47,6 +49,7 @@ import splice.core.perf.TurnPerf
 import splice.core.turn.ErrorType
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
+import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
 import splice.core.turn.WatchdogBudget
 import splice.gateway.compact.CompactStats
@@ -75,7 +78,10 @@ import splice.spi.ProviderTuning
 import splice.spi.TurnWatchdog
 import splice.spi.UpstreamClient
 import splice.spi.WireSink
+import splice.spi.WsRound
+import splice.spi.WsRoundAbort
 import splice.spi.WsRoundRunner
+import java.io.IOException
 import java.net.ServerSocket
 import java.nio.file.Files
 import java.nio.file.Path
@@ -100,13 +106,14 @@ private class ScriptedRunner(private val events: List<String>, private val throw
     var endedOk = 0
     var endedNotOk = 0
     var flowCompletions = 0
+    var aborts = 0
 
     override suspend fun attempt(
         bodyJson: String,
         meta: TurnMeta,
         turnHeaders: Map<String, String>,
         creds: Credentials,
-    ): Flow<JsonObject>? {
+    ): WsRound {
         attempts += 1
         val scripted = if (throwAfter == null) {
             flowOf(*events.map(::ev).toTypedArray())
@@ -116,7 +123,7 @@ private class ScriptedRunner(private val events: List<String>, private val throw
                 error("scripted translator blow-up")
             }
         }
-        return scripted.onCompletion { flowCompletions += 1 }
+        return WsRound(scripted.onCompletion { flowCompletions += 1 }, WsRoundAbort { aborts += 1 })
     }
 
     override fun isFailureTerminal(event: JsonObject): Boolean =
@@ -131,6 +138,59 @@ private class ScriptedRunner(private val events: List<String>, private val throw
     }
 }
 
+/**
+ * A round that STALLS after its scripted events and ends only when the head aborts it — the fake of
+ * a WebSocket whose server went quiet mid-round.
+ *
+ * Its [WsRound.abort] releases the gate with an IOException, which is what the real transport does:
+ * killing the connection closes its inbox and WsRoundStream turns a closed inbox into
+ * `IOException("websocket stream ended mid-round")`. The fake reproduces the SHAPE the head depends
+ * on — a torn read, not a cancelled collector — because that is the whole difference between
+ * reaping a round and killing the turn with it.
+ */
+private class StallingRunner(private val events: List<String>) : WsRoundRunner {
+    var aborts = 0
+    var endedOk = 0
+    var endedNotOk = 0
+    private val torn = CompletableDeferred<Unit>()
+
+    override suspend fun attempt(
+        bodyJson: String,
+        meta: TurnMeta,
+        turnHeaders: Map<String, String>,
+        creds: Credentials,
+    ): WsRound = WsRound(
+        events = flow {
+            events.forEach { emit(ev(it)) }
+            torn.await()
+            throw IOException("websocket stream ended mid-round")
+        },
+        abort = WsRoundAbort {
+            aborts += 1
+            torn.complete(Unit)
+        },
+    )
+
+    override fun isFailureTerminal(event: JsonObject): Boolean = false
+
+    override fun roundEnded(meta: TurnMeta, ok: Boolean) {
+        if (ok) endedOk += 1 else endedNotOk += 1
+    }
+
+    override fun roundBypassed(meta: TurnMeta) = Unit
+}
+
+/** A terminal that records instead of throwing — the cold-flow arms that are NOT about a failing
+ *  start need the round to actually run. */
+private class RecordingTerminal : TurnTerminal, WireSink by RecordingSink2() {
+    override val hasEnded: Boolean = false
+
+    override suspend fun ensureStarted() = Unit
+    override suspend fun emitTerminal(hasToolUse: Boolean, incomplete: Boolean, usage: Usage) = Unit
+    override suspend fun emitError(type: ErrorType, message: String) = Unit
+    override fun abandon() = Unit
+}
+
 /** DR-91: stands in for a turn cancelled while attempt() is in flight — the WS send may already
  *  have advanced the runner's chaining state when the cancellation unwinds. */
 private class CancellingAttemptRunner(private val cancel: CancellationException) : WsRoundRunner {
@@ -142,7 +202,7 @@ private class CancellingAttemptRunner(private val cancel: CancellationException)
         meta: TurnMeta,
         turnHeaders: Map<String, String>,
         creds: Credentials,
-    ): Flow<JsonObject>? = throw cancel
+    ): WsRound? = throw cancel
 
     override fun isFailureTerminal(event: JsonObject): Boolean = false
 
@@ -236,7 +296,11 @@ class WsRoundDriverTest {
         ),
     )
 
-    private suspend fun coldFlowInputs(emitter: TurnTerminal, scope: CoroutineScope): WsRoundInputs {
+    private suspend fun coldFlowInputs(
+        emitter: TurnTerminal,
+        scope: CoroutineScope,
+        budget: WatchdogBudget = WatchdogBudget(10.seconds, 10.seconds, 30.seconds),
+    ): WsRoundInputs {
         val slot = InflightGate(LiveLimit { 1 }).acquire()
         val drive = TurnDrive(
             bodyJson = "{}",
@@ -253,7 +317,7 @@ class WsRoundDriverTest {
                 budgetTokens = null,
             ),
             emitter = emitter,
-            watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
+            watchdog = TurnWatchdog(budget),
             slot = slot,
             pipeline = TurnPipeline(
                 CompactStats(tmp.resolve("cold-flow-compact.jsonl")),
@@ -399,6 +463,10 @@ class WsRoundDriverTest {
             assertEquals(before, mock.upstreamBodies.size, "no SSE upstream request may be made")
             assertTrue(sse.contains("hello"), "the content the client already saw is preserved")
             assertFalse(sse.isEmpty())
+            // DR-7, the same defect the unit arm names, seen end to end: this round really did end
+            // in a failure terminal, so it must NOT have committed its chain.
+            assertEquals(0, runner.endedOk, "a failed round is not a clean terminal at any level")
+            assertTrue(runner.endedNotOk >= 1, "and every one of its attempts must clear the chain")
         } finally {
             runBlocking { h.stop() }
         }
@@ -432,5 +500,109 @@ class WsRoundDriverTest {
         assertSame(cancel, thrown, "the genuine cancellation must propagate unchanged")
         assertEquals(1, runner.endedNotOk, "the aborted acquisition must clear the chaining state")
         assertEquals(0, runner.bypassed, "an aborted acquisition is not a bypass")
+    }
+
+    /** DR-7, THE WS HALF. The idle watchdog used to target the TURN job on this path, so a stalled
+     *  WebSocket round killed the translator along with the round and the salvage died with it —
+     *  the SSE path earned salvage-and-continue and this one was left behind. The watchdog now
+     *  cancels a round-scoped job whose completion aborts the round's EVENT SOURCE, and the torn
+     *  read folds into an honest terminal with the turn still alive underneath it.
+     *
+     *  Zero budgets so the first poll fires: the poller wakes only once the collector has parked at
+     *  its stall, because runTest advances virtual time only when everything else is idle. */
+    @Test
+    fun `a stalled ws round is reaped and the turn survives it - DR-7`() = runTest {
+        val runner = StallingRunner(listOf("""{"type":"response.created","response":{"id":"r1"}}"""))
+        val inputs = coldFlowInputs(RecordingTerminal(), this, WatchdogBudget(0.seconds, 0.seconds, 30.seconds))
+        val driver = WsRoundDriver(
+            provider(runner),
+            log = {},
+            classifyZeroEvent = ZeroEventClassifier { _, outcome, _, _ -> outcome },
+        )
+
+        val outcome = try {
+            driver.run(inputs)
+        } finally {
+            inputs.drive.slot.release()
+        }
+
+        assertEquals(1, runner.aborts, "the idle watchdog must abort THIS ROUND's event source")
+        assertTrue(
+            inputs.turnJob.isActive,
+            "and must not cancel the turn — the fold loop still owns it, which is the whole repair",
+        )
+        assertTrue(outcome is TurnOutcome.Failure, "the torn read folds into an honest terminal, not a dead turn")
+        assertEquals(0, runner.endedOk, "a reaped round is not a clean terminal")
+        assertEquals(1, runner.endedNotOk, "so its chaining state must be cleared")
+    }
+
+    /** THE REVERSE DIRECTION, and the reason the round job is PARENTED to the turn job rather than
+     *  free-standing: a client hang-up or the whole-turn cap cancels the turn, and the round beneath
+     *  it must still let go of its socket. A free-standing job would leave the round reading into a
+     *  turn nobody is listening to. Long budgets here on purpose — the watchdog must not be what
+     *  fires, or the arm would pass without proving the parent link. */
+    @Test
+    fun `cancelling the turn still aborts the round beneath it - DR-7`() = runTest {
+        val runner = StallingRunner(listOf("""{"type":"response.created","response":{"id":"r1"}}"""))
+        val inputs = coldFlowInputs(RecordingTerminal(), this)
+        val driver = WsRoundDriver(
+            provider(runner),
+            log = {},
+            classifyZeroEvent = ZeroEventClassifier { _, outcome, _, _ -> outcome },
+        )
+
+        val round = launch { driver.run(inputs) }
+        runCurrent()
+        assertEquals(0, runner.aborts, "nothing has cancelled anything yet")
+        inputs.turnJob.cancel()
+        round.join()
+        inputs.drive.slot.release()
+
+        assertEquals(1, runner.aborts, "the cancelled turn must abort the round beneath it")
+    }
+
+    /** THE BOUND on both of the above: an ordinary round must never abort itself. The round job is
+     *  completed with NO cause on every clean exit, and a fix that cancelled it instead — or that
+     *  aborted unconditionally in the finally — would pass the two arms above and tear down every
+     *  healthy connection in the pool. */
+    @Test
+    fun `an ordinary ws round never aborts its own connection - DR-7`() = runTest {
+        val runner = ScriptedRunner(listOf("""{"type":"response.created","response":{"id":"r1"}}"""))
+        val inputs = coldFlowInputs(RecordingTerminal(), this)
+        val driver = WsRoundDriver(
+            provider(runner),
+            log = {},
+            classifyZeroEvent = ZeroEventClassifier { _, outcome, _, _ -> outcome },
+        )
+
+        driver.run(inputs)
+        inputs.drive.slot.release()
+
+        assertEquals(0, runner.aborts, "a round that ended on its own must not have its source torn")
+    }
+
+    /** DR-7, THE SECOND DEFECT ON THIS PATH and one nothing pointed at: WsRoundDrive reported
+     *  `roundEnded(ok = true)` for ANY return, a FAILURE outcome included. `ok` means "a clean,
+     *  fully-consumed terminal" in the seam's own words, and anything else must CLEAR the chaining
+     *  state — so a round that ended in a failure terminal, or that the zero-event classifier
+     *  reclassified into one, still committed its chain and the next turn anchored onto a response
+     *  the server never finished building. The one caller of that flag always said yes. */
+    @Test
+    fun `a ws round that ends in failure must not report a clean terminal - DR-7`() = runTest {
+        val runner = ScriptedRunner(listOf("""{"type":"response.created","response":{"id":"r1"}}"""))
+        val inputs = coldFlowInputs(RecordingTerminal(), this)
+        val driver = WsRoundDriver(
+            provider(runner),
+            log = {},
+            classifyZeroEvent = ZeroEventClassifier { _, _, _, _ ->
+                TurnOutcome.Failure(ErrorType.API_ERROR, "the classifier reclassified this round as failed")
+            },
+        )
+
+        driver.run(inputs)
+        inputs.drive.slot.release()
+
+        assertEquals(0, runner.endedOk, "a failure outcome is not a clean terminal")
+        assertEquals(1, runner.endedNotOk, "so the chain must be cleared, not committed")
     }
 }

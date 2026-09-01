@@ -11,6 +11,7 @@
 // reimplemented here.
 package splice.gateway.head
 
+import kotlinx.coroutines.CompletableJob
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.onEach
 import splice.core.turn.TurnOutcome
@@ -39,13 +40,14 @@ internal class WsRoundDriver(
         // than a catch so the exception itself continues untouched.
         var reported = false
         var poller: Job? = null
+        var roundJob: CompletableJob? = null
         try {
             // Credentials come from the provider's auth surface, NOT from a WS-side refresh: L5
             // keeps the single-flight 401 refresh in UpstreamClient, so a missing/expired
             // credential here simply rides SSE and gets refreshed there.
-            val events = provider.auth.credentials()
+            val accepted = provider.auth.credentials()
                 ?.let { creds -> runner.attempt(inputs.bodyJson, drive.meta, drive.turnHeaders, creds) }
-            if (events == null) {
+            if (accepted == null) {
                 // SSE is about to serve this round, so the conversation advances outside any chain.
                 runner.roundBypassed(drive.meta)
                 reported = true
@@ -55,19 +57,37 @@ internal class WsRoundDriver(
             // Start the client while the acquired cold flow is being collected, not before: if the
             // start write throws or is cancelled, the exception unwinds through the transport flow's
             // onCompletion and poisons its busy lease instead of stranding the connection forever.
-            val startingEvents = events.onEach { drive.emitter.ensureStarted() }
+            val startingEvents = accepted.events.onEach { drive.emitter.ensureStarted() }
             drive.watchdog.resetFirstByte()
-            // DR-7 scope note, deliberate and not an oversight: this path still targets the TURN
-            // job, while the SSE path now reaps a per-round job (SseRoundConsume). Reaping a round
-            // means aborting the byte source under a live translator, and SSE has one to abort —
-            // the response's ByteReadChannel. A WS round's events arrive as an opaque Flow from
-            // WsRoundRunner, which exposes no per-round abort, so giving this path the same
-            // treatment means widening that SPI and every implementation of it. Left as-is because
-            // the behaviour is UNCHANGED here rather than newly wrong: a WS stall still ends the
-            // turn exactly as it did before, and the whole-turn cap still rides launchTotalCap in
-            // driveOneTurn. What a WS turn does not yet get is the salvage-and-continue the SSE
-            // path just earned.
-            poller = drive.watchdog.launchIn(inputs.scope, drive.slot, inputs.turnJob)
+            // DR-7 round 2: the idle watchdog reaps THIS ROUND here too, the same way
+            // SseRoundConsume does. It used to cancel inputs.turnJob, so a WS stall killed the
+            // translator along with the round and the salvage died with it — the SSE path earned
+            // salvage-and-continue and this one was left behind because a WS round's events are an
+            // opaque Flow with no per-round abort. The seam was widened rather than the behaviour
+            // left wrong: an accepted round now carries its own [WsRound.abort], and the Responses
+            // implementation kills that round's socket — which WsRoundStream turns into an
+            // IOException out of the flow. Same shape as cancelling an SSE body: a torn read the
+            // translator folds into an honest terminal, and NOT a cancellation, which would take
+            // the collector down and lose the partial with it.
+            //
+            // The abort rides the ROUND rather than being a runner method the head calls by name,
+            // because the head has no name precise enough — one conversation can hold two live
+            // rounds on two sockets (compact and non-compact want different handshake headers), so
+            // a lookup keyed by conversation aborts whichever was registered last. Closing over the
+            // round is also what the SSE path does with its response body.
+            //
+            // Parented to turnJob so the reverse direction still holds: a client hang-up or the
+            // whole-turn totalCap cancels the turn, which cancels this, which aborts the round.
+            //
+            // NOT covered, and named rather than left to be discovered: the window INSIDE attempt()
+            // — connect, send, and the wait for the first event — has no round job yet, so a stall
+            // there is still owned by the transport's own first-event timeout, which ends it with a
+            // null and rides SSE. That is the status quo and it is bounded; this repair is about
+            // the window after the round is accepted.
+            val round = Job(inputs.turnJob)
+            roundJob = round
+            round.invokeOnCompletion { cause -> if (cause != null) accepted.abort.abort() }
+            poller = drive.watchdog.launchIn(inputs.scope, drive.slot, round)
             return try {
                 roundDrive.drive(inputs, runner, startingEvents).also { reported = true }
             } catch (ignored: WsRoundNeedsSse) {
@@ -83,6 +103,10 @@ internal class WsRoundDriver(
         } finally {
             if (!reported) runner.roundEnded(drive.meta, ok = false)
             poller?.cancel()
+            // Completes with no cause on every ordinary exit, so the handler above leaves a healthy
+            // connection alone; a no-op if the watchdog already cancelled it. Without this the job
+            // stays an incomplete child of turnJob and the turn cannot finish.
+            roundJob?.complete()
         }
     }
 }

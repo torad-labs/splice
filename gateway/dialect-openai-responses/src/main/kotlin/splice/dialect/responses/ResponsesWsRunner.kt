@@ -24,13 +24,14 @@
 //     character at all.
 package splice.dialect.responses
 
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.onEach
 import kotlinx.serialization.json.JsonObject
 import splice.core.auth.Credentials
 import splice.core.turn.TurnMeta
 import splice.core.util.JsonScalars
 import splice.core.util.LogSink
+import splice.spi.WsRound
+import splice.spi.WsRoundAbort
 import splice.spi.WsRoundRunner
 
 // ResponsesRoundEnd + HandshakeHeaders live in ResponsesRoundEnd.kt (concentration, 2026-08-19).
@@ -51,7 +52,7 @@ internal class ResponsesWsRunner(
         meta: TurnMeta,
         turnHeaders: Map<String, String>,
         creds: Credentials,
-    ): Flow<JsonObject>? {
+    ): WsRound? {
         // No parseable body, or no isolation identity => ride SSE. The second is not a weaker key
         // but NO key: without it, conversations sharing a first message would share a chain.
         val request = identity.parseRequest(bodyJson)
@@ -62,12 +63,21 @@ internal class ResponsesWsRunner(
         // Committed at SEND time, read at TERMINAL time: the frame the chaining layer just built
         // determines what the next turn's prefix must be, and only a clean terminal may commit it.
         var pending: ResponsesWsIdentity.PendingCommit? = null
+        // The round's abort, closed over the ONE connection this attempt got and the LEASE it held
+        // when it got it. No registry and no key: see WsRound's doc for why a chain-keyed lookup
+        // aborts the wrong socket, and the lease for why "still my round" is not the same question
+        // as "not finished yet". Default no-op covers the paths that never reach a connection.
+        var abort = WsRoundAbort { }
         val flow = transport.round(
             key = key,
             headers = headers,
             wssUrl = wssUrl,
             isTerminal = { JsonScalars.str(it[FIELD_TYPE]) in ResponsesRoundEnd.ALL },
         ) { conn ->
+            // Armed HERE because this is the only place the transport hands the connection out and
+            // the head never sees one (module law).
+            val lease = conn.lease.get()
+            abort = WsRoundAbort { if (conn.lease.get() == lease) conn.kill() }
             // F7: frame + epoch captured atomically. Two calls (frameFor then epochOf) left a
             // window where a concurrent clear bumped the epoch after the frame was built on
             // now-stale context, and the post-bump epoch still matched at commit — resurrecting the
@@ -84,7 +94,10 @@ internal class ResponsesWsRunner(
         if (flow == null) return null
         // Terminal observation lives HERE, not in the caller: the runner is the only party that
         // knows which events are terminal AND owns the chaining state they commit.
-        return flow.onEach { event -> identity.observeTerminal(chain, pending, event) }
+        return WsRound(
+            events = flow.onEach { event -> identity.observeTerminal(chain, pending, event) },
+            abort = abort,
+        )
     }
 
     override fun isFailureTerminal(event: JsonObject): Boolean =

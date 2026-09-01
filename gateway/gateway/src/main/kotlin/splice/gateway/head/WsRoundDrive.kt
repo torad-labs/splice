@@ -52,7 +52,14 @@ internal class WsRoundDrive(
         // edit to it is what would make the gap real. The WsRoundNeedsSse path is unaffected: that
         // throw fires inside driveTurn's onEach, upstream of both statements either way.
         val outcome = classifyZeroEvent(drive, raw, "", inputs.eventsBase)
-        runner.roundEnded(drive.meta, ok = true)
+        // ok means "a clean, fully-consumed terminal" — WsRoundRunner.roundEnded's own words — and
+        // this used to report it for ANY return, a FAILURE outcome included. A round that ended in
+        // a failure terminal, or that the zero-event classifier reclassified into one, still
+        // committed its chain, so the next turn anchored onto a response the server never finished
+        // building. That is the exact corruption the ok flag exists to prevent, reported by the one
+        // caller that always said yes (DR-7, grok-splice's WS map). A Success with incomplete=true
+        // is still clean: the server finished the response object, it just stopped early.
+        runner.roundEnded(drive.meta, ok = outcome is TurnOutcome.Success)
         return outcome
     }
 }

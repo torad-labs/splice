@@ -38,6 +38,8 @@ internal class WsConnectionPool(
         // A NEW round begins: the previous round's terminal must not make this round's first frame
         // look like a late tail. The fence is per-round, and this is the one place a round starts.
         conn.terminalSeen.set(false)
+        // A new ROUND holds it now, so any abort still armed by the previous one is stale.
+        conn.lease.incrementAndGet()
         return conn.takeIf { !it.dead.get() }
     }
 

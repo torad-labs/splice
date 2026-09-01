@@ -10,6 +10,7 @@ import splice.core.util.Cancellables
 import splice.core.util.LogSink
 import java.net.http.WebSocket
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 
 /** One live upstream WebSocket + its inbox. [generation] is the chaining layer's reconnect
  *  detector: a new socket for the same key gets a new generation, and chaining state pinned to an
@@ -22,6 +23,18 @@ public class WsConnection internal constructor(
 ) {
     internal val busy = AtomicBoolean(false)
     internal val dead = AtomicBoolean(false)
+
+    /** Which ROUND currently holds this connection. Bumped by every acquire, so a round can ask
+     *  "is this still mine" and get an answer that survives pool reuse.
+     *
+     *  DR-7 needs that question and none of the existing flags answer it (grok-splice, before the
+     *  wrong version shipped): [generation] identifies the SOCKET and does not change when the pool
+     *  hands the same object to the next round, and [terminalSeen] is reset to false by that same
+     *  acquire — so a late abort from a finished round would look at a REUSED connection, see "no
+     *  terminal yet", and kill the round that had just taken it over. Gating on the lease closes
+     *  that; the worst a stale abort can now do is kill an idle pooled connection, which costs one
+     *  reconnect and is the status quo for every tear already. */
+    internal val lease = AtomicLong(0)
 
     /** Set by the consumer when the round's terminal event has been taken. From that moment ANY
      *  further frame is a late tail belonging to a finished round, and the listener (the producer)

@@ -1,6 +1,7 @@
-// NEW: unit test the Moonshot-Flavored JSON Schema sanitizer — explicit-type inference, anyOf
-// parent-type pushdown, tuple-items collapse, $ref sibling stripping, key blocklist, depth cap,
-// and $ref-cycle termination. Pure function; every case is a JsonObject -> JsonObject assertion.
+// NEW: unit test the Moonshot-Flavored JSON Schema sanitizer — explicit-type inference, anyOf/
+// oneOf/allOf parent-type pushdown, tuple-items collapse, $ref sibling stripping, key blocklist,
+// depth cap, and $ref-cycle termination. Pure function; every case is a JsonObject -> JsonObject
+// assertion.
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
@@ -54,6 +55,74 @@ class MfjsSanitizerTest {
         val out = sanitize("""{"type":"object","oneOf":[{"description":"x"}]}""")
         assertNull(out["type"])
         assertEquals("string", out["oneOf"]!!.jsonArray.single().jsonObject.type())
+    }
+
+    // --- allOf: the third combinator (DR-123) --------------------------------------------------
+    // Before the repair `allOf` was neither hub nor child: the node kept a sibling type AND the
+    // branch list rode through the `else` arm verbatim, so a composed schema reached Moonshot with
+    // an un-sanitized branch list beside a type its branches contradict.
+
+    @Test
+    fun `allOf is a combinator hub and its branches are sanitized`() {
+        val out = sanitize(
+            """{"type":"string","allOf":[
+                 {"properties":{"a":{"type":"string","format":"email"}}},
+                 {"${'$'}ref":"#/${'$'}defs/B","description":"drop me"}]}""",
+        )
+        assertNull(out["type"]) // hub keeps no type — the branches carry their own (rule 2)
+        val branches = out["allOf"]!!.jsonArray.map { it.jsonObject }
+        assertEquals("object", branches[0].type()) // inferred one level down (rule 1)
+        val a = branches[0]["properties"]!!.jsonObject["a"]!!.jsonObject
+        assertNull(a["format"], "the blocklist must reach inside an allOf branch")
+        assertEquals("#/\$defs/B", branches[1]["\$ref"]?.jsonPrimitive?.content)
+        assertEquals(1, branches[1].size) // the $ref rule applies to a branch too
+    }
+
+    /** The corruption the row names: with no explicit type at the hub, [inferType]'s fallback
+     *  stamped `string` beside a branch list that describes an object. */
+    @Test
+    fun `a bare allOf hub is not stamped with an inferred type`() {
+        val out = sanitize("""{"allOf":[{"type":"object","properties":{"a":{"type":"string"}}}]}""")
+        assertNull(out["type"])
+    }
+
+    /** Ordering pin, green before and after: $ref wins over every combinator, so a node carrying
+     *  both is still reduced to its $ref. Widening [hasCombinator] must not move that check. */
+    @Test
+    fun `a ref node with an allOf sibling still keeps only the ref`() {
+        val out = sanitize("""{"${'$'}ref":"#/${'$'}defs/Foo","allOf":[{"type":"object"}],"description":"x"}""")
+        assertEquals("#/\$defs/Foo", out["\$ref"]?.jsonPrimitive?.content)
+        assertEquals(1, out.size)
+    }
+
+    /** A non-array `allOf` is not a branch list, so it rides verbatim — keys and all — exactly as a
+     *  non-array anyOf does. It is still a combinator for the type rule. */
+    @Test
+    fun `a non-array allOf rides verbatim and still suppresses the hub type`() {
+        val out = sanitize("""{"allOf":{"type":"object","format":"email"}}""")
+        assertNull(out["type"])
+        val kept = out["allOf"]!!.jsonObject
+        assertEquals("object", kept.type())
+        assertEquals("email", kept["format"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `allOf branches are depth-counted and collapse at the cap`() {
+        val depth = 15
+        val json = buildString {
+            repeat(depth) { append("""{"allOf":[""") }
+            append("{}")
+            repeat(depth) { append("]}") }
+        }
+        var node = sanitize(json)
+        var steps = 0
+        while (node.containsKey("allOf") && steps < depth) {
+            node = node["allOf"]!!.jsonArray.single().jsonObject
+            steps++
+        }
+        assertEquals("object", node.type())
+        assertFalse(node.containsKey("allOf"))
+        assertTrue(steps < depth, "collapse must happen before the full nesting depth")
     }
 
     @Test

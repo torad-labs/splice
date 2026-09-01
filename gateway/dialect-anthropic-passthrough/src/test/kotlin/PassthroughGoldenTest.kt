@@ -316,6 +316,22 @@ class PassthroughGoldenTest {
         }
     }
 
+    /**
+     * DR-123 routed `allOf` through the sanitizer, which CAN move kimi's request bytes — and kimi
+     * bytes are an operator lock. It moved none, and this arm is why that claim is checkable rather
+     * than asserted: the fixture behind `request-mfjs-schema.json` carries no `allOf` at all, so
+     * that golden is a genuine control for the change instead of a golden that was regenerated.
+     * Adding an `allOf` here is legitimate work, but it makes the golden move — so it stops being a
+     * control, and this arm says so out loud instead of letting the byte diff arrive unexplained.
+     */
+    @Test
+    fun `the mfjs golden is an allOf-free control for the DR-123 routing`() {
+        assertTrue(!MFJS_FIXTURE.contains("allOf")) {
+            "the mfjs fixture gained an allOf — request-mfjs-schema.json is no longer a byte-identical " +
+                "control for the allOf routing, and the operator's kimi-bytes lock needs the new bytes read"
+        }
+    }
+
     /** The fifth deformation, on the translator leg: the unsigned-thinking transcript's golden
      *  literally IS the synthesized `sig:splice-synth-v1` line, so turning the quirk off must move
      *  it. Same events as the golden test, so only the knob differs. */

@@ -20,6 +20,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import splice.core.turn.WatchdogBudget
 import splice.spi.InflightGate
 import splice.spi.Ticker
@@ -28,6 +29,14 @@ import splice.spi.WatchdogFired
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
+
+// DR-186: every OTHER arm in this file is self-bounding — it joins a `launch { delay(10.seconds) }`,
+// so a watchdog that fails to cancel still returns in ten seconds and the assertion goes RED. The
+// lively-stream arm is the one exception: its target loops forever by construction, so its join
+// returns ONLY if the code under test cancels it. Without a backstop a regression there does not
+// fail the suite, it wedges it — which is the whole of DR-186, in a shape that sweep did not
+// enumerate because it looked for spin predicates rather than for the property.
+private const val HANG_BACKSTOP_S = 60L
 
 class WatchdogTest {
 
@@ -223,6 +232,7 @@ class WatchdogTest {
     // consults the slot, so liveliness cannot buy a turn extra time — which is exactly why it, and
     // not the idle poller, is the right owner of the whole-turn cancel.
     @Test
+    @Timeout(HANG_BACKSTOP_S) // DR-186: the target below never ends on its own; only the cap ends it
     fun `the whole-turn cap still reaps a lively stream - DR-7`() {
         runBlocking {
             val ticks = VirtualTicks()

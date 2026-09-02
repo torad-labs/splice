@@ -47,8 +47,10 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
                     // Collect this round's encrypted reasoning envelopes whenever a continuation
                     // could consume them: fold replay (Success side) OR mid-stream re-anchor salvage
                     // (Failure side) — i.e. every non-compact responses turn since re-anchor landed
-                    // (2026-07-24). Compact turns keep the collection off.
-                    collectReasoningEnvelopes = foldController(meta) != null || reanchorController(meta) != null ||
+                    // (2026-07-24). Compact turns keep the collection off: their re-anchor (2026-09-02)
+                    // can only ever be the verbatim restart, and their partial is usage-only, so an
+                    // envelope collected on a compaction would be carried and never read.
+                    collectReasoningEnvelopes = !meta.compact ||
                         deps.cachePolicy.reasoningCacheActive(deps.quirks, meta.compact),
                     onTurnReasoning = { ids, envs ->
                         if (deps.cachePolicy.reasoningCacheActive(deps.quirks, meta.compact)) {
@@ -75,9 +77,17 @@ internal class ResponsesTurnSeams(private val deps: ResponsesTurnSeamsDeps) {
         )
     }
 
-    // Every non-compact responses turn is re-anchor eligible (compaction is unary/buffered — the
-    // pre-handoff retry covers it). NB: fold-eligible turns get re-anchor via FoldRunner's
-    // trigger-B, not ReanchorRunner (driveOneTurn routes fold first).
-    fun reanchorController(meta: TurnMeta): ReanchorController? =
-        if (meta.compact) null else reanchorPolicy
+    // Every responses turn is re-anchor eligible, compaction included (2026-09-02). Compaction was
+    // excluded as "unary/buffered — the pre-handoff retry covers it", and the log says it did not:
+    // G5 (ReissueRules) re-issues an SSE body that TEARS before any client frame, but a stream that
+    // ENDS without response.completed — the WebSocket's status=1006, or an SSE body that closes
+    // clean — reaches the translator, not G5, and the turn surfaced as overloaded_error to the
+    // client (5 compactions in the daemon log, plus 3 server_is_overloaded events). Codex retries the
+    // same event for its RemoteCompactionV2 (responses_retry.rs) and the user never sees it. A
+    // compaction's partial is usage-only (ResponsesOutcomePayload), so the controller can only ever
+    // answer with the verbatim whole-request restart — the shape a buffered turn needs — and the
+    // deterministic verdicts (cyber_policy, refusals, content filter) carry no partial and are never
+    // re-POSTed. NB: fold-eligible turns get re-anchor via FoldRunner's trigger-B, not
+    // ReanchorRunner (driveOneTurn routes fold first).
+    fun reanchorController(): ReanchorController = reanchorPolicy
 }

@@ -23,6 +23,11 @@ internal class InboxListener(
     private val inbox: Channel<JsonObject>,
     private val log: LogSink,
     private val terminalSeen: TerminalSeen,
+    /** The socket's vital signs — stamped here on every frame and ping, read on the close line.
+     *  Defaulted only for the unit tests that drive a bare listener; WsConnectionFactory always
+     *  passes the connection's own (WsUpstreamCloseDiagnosticsTest pins that wiring). Declared
+     *  before [onAnomaly] so the factory's trailing lambda still binds to the anomaly seam. */
+    private val pulse: WsPulse = WsPulse("ws-?", OpenSockets { 0 }),
     private val onAnomaly: ProtocolAnomaly,
 ) : WebSocket.Listener {
     private var assembly = StringBuilder()
@@ -33,6 +38,7 @@ internal class InboxListener(
     }
 
     override fun onText(webSocket: WebSocket, data: CharSequence, last: Boolean): CompletionStage<*>? {
+        pulse.frame()
         if (!poisoned) acceptText(data, last)
         if (!poisoned) webSocket.request(1)
         return null
@@ -76,6 +82,16 @@ internal class InboxListener(
         onAnomaly()
     }
 
+    // The server pings every ~20s on a healthy path (probed live 2026-09-02, idle socket held 240s):
+    // the ping is the PATH's heartbeat, independent of whether the model has anything to say, which
+    // is exactly the fact a close line needs. The JDK answers the pong itself; this override only
+    // records the time — and re-arms demand, because overriding onPing REPLACES the default that did.
+    override fun onPing(webSocket: WebSocket, message: java.nio.ByteBuffer): CompletionStage<*>? {
+        pulse.ping()
+        webSocket.request(1)
+        return null
+    }
+
     override fun onBinary(webSocket: WebSocket, data: java.nio.ByteBuffer, last: Boolean): CompletionStage<*>? {
         log("[ws] unexpected binary frame — anomaly\n")
         onAnomaly() // the protocol is text-JSON; a binary frame means we misunderstand the stream
@@ -91,14 +107,22 @@ internal class InboxListener(
     // round observes is unchanged — kill()'s own close() is then a no-op.
     override fun onClose(webSocket: WebSocket, statusCode: Int, reason: String): CompletionStage<*>? {
         inbox.close()
-        log("[ws] socket closed by the server (status=$statusCode) — poisoning the pooled connection\n")
+        // status=1006 is the JDK's name for a TCP end WITHOUT a close frame (WebSocketImpl.onComplete),
+        // never a status the server sent; the pulse clauses are what say who went quiet first.
+        log(
+            "[ws] socket closed by the server (status=$statusCode; ${pulse.describe()}) — " +
+                "poisoning the pooled connection\n",
+        )
         onAnomaly()
         return null
     }
 
     override fun onError(webSocket: WebSocket, error: Throwable) {
         inbox.close(IOException("websocket error", error))
-        log("[ws] socket failed (${error::class.simpleName}) — poisoning the pooled connection\n")
+        log(
+            "[ws] socket failed (${error::class.simpleName}; ${pulse.describe()}) — " +
+                "poisoning the pooled connection\n",
+        )
         onAnomaly()
     }
 }

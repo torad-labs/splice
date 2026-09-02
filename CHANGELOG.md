@@ -19,6 +19,9 @@
   deadline; on a loaded runner the idle poller could win the tick and end a round as "first-output
   cap" (salvage invited) where the wall should have ended the turn. The tier is now off for
   compactions; `streamIdle` still reaps a stall once output has begun.
+- **A torn perf row no longer swallows the row after it.** When the disk filled mid-append
+  (2026-08-25) a short write left a fragment with no newline and the next row fused onto it, so
+  readers lost both. The JSONL sink now heals a torn tail before appending.
 
 ## splice v0.3.0-beta.1 — native Claude auth and a hardened multi-head gateway - 2026-08-30
 

@@ -305,6 +305,32 @@ step "daemon stopped (the shim must boot it on first launch)" daemon_down
 step "wrapper turn: claudex -p boots the daemon and completes" wrapper_turn claudex "ok after auth"
 step "wrapper turn: claude-mockchat -p through the head" wrapper_turn claude-mockchat "END"
 
+# ── 8b. cross-head sessions: every head's sessions/ IS the operator's global registry ─────────
+# Claude Code discovers peer sessions by listing $CLAUDE_CONFIG_DIR/sessions (the message sockets
+# are machine-global already), so per-head config isolation is the only thing that could hide one
+# head's sessions from another's ListAgents. On first launch the daemon links each head's dir at
+# ~/.claude/sessions — CREATING it here, because plain `claude` has never run on this machine —
+# which is what lets claudex, claude-mockchat and plain claude sessions see and message each other.
+# The proof is the mechanism itself: a registration written under one head is read under the other.
+sessions_shared() {
+  local global="$HOME/.claude/sessions" cfg probe
+  [ -d "$global" ] || { echo "global registry $global was not created"; ls -la "$HOME/.claude" 2>&1; return 1; }
+  for cfg in "$HOME/.claude-claudex" "$HOME/.claude-mockchat"; do
+    [ -L "$cfg/sessions" ] || { echo "$cfg/sessions is not a link"; ls -la "$cfg" 2>&1; return 1; }
+    [ "$(readlink -f "$cfg/sessions")" = "$(readlink -f "$global")" ] ||
+      { echo "$cfg/sessions -> $(readlink "$cfg/sessions"), not the global registry"; return 1; }
+  done
+  probe="e2e-probe-$$.json"
+  echo '{"probe":true}' > "$HOME/.claude-claudex/sessions/$probe"
+  if [ ! -f "$HOME/.claude-mockchat/sessions/$probe" ] || [ ! -f "$global/$probe" ]; then
+    rm -f "$global/$probe"
+    echo "a registration written under claudex is invisible from mockchat or the global registry"; return 1
+  fi
+  rm -f "$global/$probe"
+  echo "claudex and mockchat both resolve sessions/ to $global; a claudex registration is visible from mockchat"
+}
+step "cross-head sessions: both heads share ~/.claude/sessions, created on first launch" sessions_shared
+
 # ── 9. restart, logs, status, uninstall ────────────────────────────────────────────────────────
 restart_step() {
   splice restart </dev/null || return 1

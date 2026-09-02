@@ -5,7 +5,6 @@
 // Responses). This proves the dialect axis: one new dialect unlocks a whole family of backends.
 package splice.provider.openai
 
-import splice.core.auth.Credentials
 import splice.core.parse.AnthropicTurnBody
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
@@ -46,6 +45,4 @@ public class OpenAiChatProvider(
                 totalCapMs = watchdog.totalCap.inWholeMilliseconds,
             ),
         )
-
-    override fun extraHeaders(creds: Credentials): Map<String, String> = mapOf("Accept" to "text/event-stream")
 }

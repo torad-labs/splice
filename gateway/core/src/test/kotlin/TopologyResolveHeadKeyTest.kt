@@ -14,9 +14,9 @@ import splice.core.topology.Topology
 
 class TopologyResolveHeadKeyTest {
 
-    private fun head(command: String? = null) = HeadConfig(
+    private fun head(command: String? = null, port: Int = 3101) = HeadConfig(
         provider = "openrouter",
-        port = 3101,
+        port = port,
         discoveryPrefix = "claude-openrouter--",
         pinnedModel = "m",
         claude = ClaudeWrapperConfig(command = command),
@@ -79,5 +79,38 @@ class TopologyResolveHeadKeyTest {
         assertNull(ambiguous.resolveHeadKey("dup"))
         assertEquals(listOf("a", "b"), ambiguous.resolveHeadKeys("dup").sorted())
         assertEquals(emptyList<String>(), ambiguous.resolveHeadKeys("nope"))
+    }
+
+    @Test
+    fun `two heads on the same port collide, naming both - JW-13`() {
+        val topo = Topology(
+            providers = mapOf("openrouter" to provider),
+            heads = mapOf(
+                "a" to head(command = "claude-a", port = 3200),
+                "b" to head(command = "claude-b", port = 3200),
+                "c" to head(command = "claude-c", port = 3201),
+            ),
+        )
+        val collisions = topo.portCollisions()
+        assertEquals(setOf(3200), collisions.keys)
+        assertEquals(listOf("a", "b"), collisions[3200])
+    }
+
+    @Test
+    fun `distinct ports do not collide - JW-13`() {
+        val topo = Topology(
+            providers = mapOf("openrouter" to provider),
+            heads = mapOf(
+                "a" to head(command = "claude-a", port = 3200),
+                "b" to head(command = "claude-b", port = 3201),
+            ),
+        )
+        assertEquals(emptyMap<Int, List<String>>(), topo.portCollisions())
+    }
+
+    @Test
+    fun `portCollisionMessage names both heads and the port - JW-13`() {
+        val msg = splice.core.topology.TopologyMessages.portCollisionMessage(3200, listOf("a", "b"))
+        assertEquals("port 3200 is claimed by a and b — give each head its own port", msg)
     }
 }

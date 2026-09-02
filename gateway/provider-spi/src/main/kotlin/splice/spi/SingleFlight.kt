@@ -15,30 +15,44 @@
 // A settled Deferred is not reused, so the next wave starts a fresh refresh.
 package splice.spi
 
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.coroutines.CoroutineContext
 
+/**
+ * The work a wave of concurrent callers COALESCES onto — in this tree, always a credential refresh.
+ *
+ * Its contract is the single-flight invariant itself and nothing weaker: it runs EXACTLY ONCE per
+ * wave however many callers pile up and however many of them are cancelled mid-wait, and it runs in
+ * a scope [SingleFlight] owns rather than any caller's. So it must not close over one caller's
+ * cancellation, one caller's deadline, or anything else that would make "whoever got there first"
+ * observable in the shared result every survivor receives.
+ */
+public fun interface CoalescedWork<T> {
+    public suspend operator fun invoke(): T
+}
+
 public class SingleFlight<T>(
     // The refresh runs here, off the caller's coroutine. Injectable for tests (a test dispatcher);
-    // Dispatchers.Default is only the production default for a background auth refresh.
-    context: CoroutineContext = Dispatchers.Default,
+    // the background dispatcher is only the production default for a background auth refresh.
+    // HD-19: the concrete Dispatchers.Default it used to name now comes from the process runtime
+    // edge, so the value is unchanged and this file no longer reaches for a global dispatcher.
+    context: CoroutineContext = ProcessDispatchers().background(),
 ) {
-    // SupervisorJob on the RIGHT so it unconditionally wins the Job key — even if a caller passes a
-    // context that carries its own Job (e.g. someScope.coroutineContext), isolation is preserved and
-    // the injected context can't tie this scope's lifetime/failure-propagation to a caller's Job.
-    private val scope = CoroutineScope(context + SupervisorJob())
+    // LifecycleScope applies SupervisorJob on the RIGHT of the caller's context so it unconditionally
+    // wins the Job key — even if a caller passes a context that carries its own Job (e.g.
+    // someScope.coroutineContext), isolation is preserved and the injected context can't tie this
+    // scope's lifetime/failure-propagation to a caller's Job. That invariant moved into the type
+    // (HD-19); the resulting context is identical to the old `CoroutineScope(context + SupervisorJob())`.
+    private val scope = LifecycleScope(context)
     private val mutex = Mutex()
     private var inflight: Deferred<T>? = null
 
     /** Runs [block] once even under concurrent callers; everyone awaits the same shared result. */
-    public suspend fun run(block: suspend () -> T): T {
+    public suspend fun run(block: CoalescedWork<T>): T {
         val shared = mutex.withLock {
             // reuse only a still-running refresh; a settled one means the next wave starts fresh.
             inflight?.takeIf { it.isActive } ?: scope.async { block() }.also { inflight = it }

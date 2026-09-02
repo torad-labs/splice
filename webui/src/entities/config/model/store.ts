@@ -37,3 +37,9 @@ export function parseConfigInput(raw: string, reference: ConfigValue): ConfigVal
   }
   return s;
 }
+
+/** JW-06: the head-selector roster — 'global' plus every override-carrying head, stable order.
+ * Only heads that actually override anything are selectable; everything else IS the global view. */
+export function headOptions(perHead: Record<string, unknown> | undefined): string[] {
+  return ['global', ...Object.keys(perHead ?? {}).sort()];
+}

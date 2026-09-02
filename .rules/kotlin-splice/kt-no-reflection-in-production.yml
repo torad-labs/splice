@@ -1,0 +1,62 @@
+# Type-identity discipline — reflection asks the RUNTIME what something is, in code that already
+# knows at compile time. Every site this wall cleared out was the same shape: a catch clause that
+# had just narrowed the throwable to a named type, then reflected on the caught object to recover
+# the name it was standing in. `catch (e: AccessDeniedException) { "(${e.javaClass.simpleName})" }`
+# is a runtime lookup for a string the compiler could have written. The cost is not speed, it is
+# that the value stops being checkable: nothing tells you when the branch and the reported name
+# drift apart, and a subclass silently changes an operator-facing message.
+#
+# Compliant forms:
+#   - name it from the BRANCH. A `catch (_: NoSuchFileException)` clause knows its own label, and
+#     splitting one broad catch into the clauses that actually occur is both the fix and better
+#     diagnostics (MgmtKey.ensure, DoctorProbeWrite.writableProbe).
+#   - a `when` over a CLOSED set, where the closure is provable AND the base class is the thing
+#     worth reporting. DaemonBoundary.reason is a `when` over exactly the classes its own catch list
+#     converts into failures. Read the next paragraph before reaching for this one: closure over the
+#     BASE classes a boundary converts is not closure over the SUBCLASSES that arrive.
+#   - when the runtime class IS the information — an operator-facing diagnostic naming the source of
+#     a bug — let the throwable render itself: `"$e"` is `Throwable.toString()`, the JVM's own
+#     diagnostic, and no runtime type lookup appears in this source (TurnDriver.emitFailure).
+#   - for classpath resources, ask the class loader by name: `ClassLoader.getSystemResourceAsStream`
+#     rather than a class token whose only role was to name a loader (DashboardHtml).
+#   - for the archive the running code came out of, ask the loader for this class's own `.class`
+#     resource by name and read the `jar:` URL (AdminSupport.selfJar) — same question the protection
+#     domain answered, no reflection. NOT `java.class.path`: that says how the JVM was launched, and
+#     a lone `.jar` entry can be a pathing/wrapper jar rather than this build.
+#
+# A CLOSED `when` IS NOT AUTOMATICALLY AN IDENTITY (HD-18 review, 2026-08-16). The first version of
+# this wall replaced `e.javaClass.simpleName` in TurnDriver's L3 `unexpected` turn line with a `when`
+# over IllegalArgumentException/IllegalStateException and called it information-preserving. It was
+# not: the boundary converts a closed set of BASE classes, but subclasses are open, and it is the
+# subclass that names the bug source. io.ktor.http.URLParserException extends IllegalStateException;
+# kotlinx.serialization.SerializationException extends IllegalArgumentException — the exact two
+# examples that site's comments name. The `when` was total and still a coarsening. When the value is
+# an operator's only pointer at the bug, prove the mapping is an IDENTITY, not just total.
+#
+# THIS RULE MATCHES SPELLINGS, NOT SEMANTICS — the same lesson kt-no-system-getenv and
+# kt-no-todo-throws record. `e::class.simpleName` is the same runtime lookup and is NOT matched by
+# any branch below. That is a known hole, deliberately left as a hole rather than papered over with
+# a branch that would also catch legitimate `::class` uses: writing it to get past this wall would
+# be evading the wall, which the campaign forbids outright. Treat the four branches as the shapes
+# known to occur here, never as closure.
+#
+# PROMOTED 2026-08-16 (HD-18) from the dormant .rules/kotlin/ast-grep pack, which sgconfig.yml
+# references from nowhere and so had never run. Red-proven against a synthetic violation before the
+# census was trusted: 6 hits in gateway/*/src/main, all six converted in the same commit. The
+# source pack's `ignores: **/di/**` is dropped — there is no DI container here, and the production
+# glob below already exempts src/test and src/testFixtures without a second list to keep in sync.
+id: kt-no-reflection-in-production
+language: kotlin
+severity: error
+message: "No reflection — name the type from the branch, a closed `when`, or the class loader."
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  any:
+    # The class token: `Daemon::class.java.getResourceAsStream(...)`, `X::class.java.protectionDomain`.
+    - pattern: $T::class.java
+    - pattern: $T::class.qualifiedName
+    # The instance form — this is the one that had five of the six hits, always inside a catch.
+    - pattern: $X.javaClass
+    # Name-based loading: no compile-time reference at all, so nothing links or renames with it.
+    - pattern: Class.forName($$$ARGS)

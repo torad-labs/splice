@@ -16,7 +16,7 @@ import io.ktor.client.request.bearerAuth
 import io.ktor.client.request.preparePost
 import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
-import io.ktor.utils.io.readUTF8Line
+import io.ktor.utils.io.readLine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -37,7 +37,7 @@ import splice.core.model.ModelCatalog
 import splice.core.model.ModelEntry
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.WatchdogBudget
-import splice.core.util.discard
+import splice.core.util.Cancellables
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.head.HeadDeps
@@ -82,8 +82,8 @@ private class HoldingSseUpstream {
             while (!closed.get()) {
                 val sock = runCatching { server.accept() }.getOrNull() ?: break
                 Thread.ofVirtual().start {
-                    runCatching { serve(sock) }.discard("load-test peer: serve errors are the scenario")
-                    runCatching { sock.close() }.discard("test-socket teardown")
+                    Cancellables.discard(runCatching { serve(sock) }, "load-test peer: serve errors are the scenario")
+                    Cancellables.discard(runCatching { sock.close() }, "test-socket teardown")
                 }
             }
         }
@@ -92,7 +92,7 @@ private class HoldingSseUpstream {
     fun stop() {
         closed.set(true)
         release.countDown()
-        runCatching { server.close() }.discard("test-server teardown")
+        Cancellables.discard(runCatching { server.close() }, "test-server teardown")
     }
 
     /** Consume the request head + body; returns false when the socket closed early. */
@@ -343,7 +343,7 @@ class HeadServerLoadTest {
             }.execute { resp ->
                 val ch = resp.bodyAsChannel()
                 while (true) {
-                    val line = ch.readUTF8Line() ?: break
+                    val line = ch.readLine() ?: break
                     sb.append(line).append('\n')
                     if (!held && line.contains("\"held\"")) {
                         held = true

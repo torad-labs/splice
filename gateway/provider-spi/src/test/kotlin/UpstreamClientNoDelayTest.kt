@@ -8,7 +8,7 @@
 // parameter rather than relying on the process-wide default.
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
-import splice.spi.UpstreamClient
+import splice.spi.UpstreamTransport
 import java.util.concurrent.atomic.AtomicBoolean
 
 class UpstreamClientNoDelayTest {
@@ -17,8 +17,8 @@ class UpstreamClientNoDelayTest {
     fun `client tcp_nodelay diagnostic logs exactly once per guard`() {
         val guard = AtomicBoolean(false)
         val logs = mutableListOf<String>()
-        UpstreamClient.defaultClient(1_000, 1_000, log = { logs.add(it) }, noDelayGuard = guard)
-        UpstreamClient.defaultClient(1_000, 1_000, log = { logs.add(it) }, noDelayGuard = guard)
+        UpstreamTransport().defaultClient(1_000, 1_000, log = { logs.add(it) }, noDelayGuard = guard)
+        UpstreamTransport().defaultClient(1_000, 1_000, log = { logs.add(it) }, noDelayGuard = guard)
         assertEquals(1, logs.count { it.contains("tcp_nodelay") })
     }
 }

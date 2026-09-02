@@ -1,0 +1,54 @@
+{
+  "bug-sweep.toml": {
+    "lines": 100,
+    "rows": 6
+  },
+  "ci-hardening.toml": {
+    "lines": 165,
+    "rows": 8
+  },
+  "claude-head.toml": {
+    "lines": 259,
+    "rows": 13
+  },
+  "drift-repair.toml": {
+    "lines": 2969,
+    "rows": 188
+  },
+  "head-decoupling.toml": {
+    "lines": 973,
+    "rows": 37
+  },
+  "kotlin-gateway.toml": {
+    "lines": 896,
+    "rows": 43
+  },
+  "oss-release.toml": {
+    "lines": 186,
+    "rows": 13
+  },
+  "proxy-hardening.toml": {
+    "lines": 1059,
+    "rows": 88
+  },
+  "proxy-hardening/oracle/expectations.toml": {
+    "lines": 198,
+    "rows": 0
+  },
+  "proxy-hardening/walls/law_registry.toml": {
+    "lines": 122,
+    "rows": 0
+  },
+  "proxy-hardening/walls/wall_registry.toml": {
+    "lines": 463,
+    "rows": 88
+  },
+  "reasoning-cache.toml": {
+    "lines": 122,
+    "rows": 6
+  },
+  "ws-transport.toml": {
+    "lines": 125,
+    "rows": 7
+  }
+}

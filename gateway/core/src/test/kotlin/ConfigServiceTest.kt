@@ -2,18 +2,24 @@
 // + restart-required flagging, invalid-value/unknown-key rejection, maxInflight aliases,
 // normalization floors, showReasoning folding, sub-second cache pickup. Env is faked via the
 // injected reader seam (JVM cannot setenv).
+import kotlinx.serialization.json.JsonNull
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
+import splice.core.config.ConfigCoercion
 import splice.core.config.ConfigService
+import splice.core.config.Knob
 import splice.core.config.StatePaths
-import splice.core.config.normalizeShowReasoning
 import splice.core.turn.ReasoningDisplay
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
+import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
@@ -36,6 +42,81 @@ class ConfigServiceTest {
         )
     }
 
+    // DR-9: the mutation-path read must be STRICT (KeyStore.entriesStrict doctrine) — an
+    // unreadable config.json as the merge base for an atomic overwrite destroys every previously
+    // persisted knob, silently, while the CLI reports success.
+    @Test
+    fun `a corrupt config file aborts persistence and keeps its bytes`() {
+        val paths = StatePaths(baseOverride = tmp.resolve("state"))
+        val logged = mutableListOf<String>()
+        val svc = ConfigService(paths, envReader = { null }, log = { logged += it })
+        svc.patch(mapOf("effort" to "high"))
+        val corrupt = "{ \"effort\": \"high\", "
+        paths.configFile.writeText(corrupt)
+
+        svc.patch(mapOf("maxQueued" to 77))
+
+        assertEquals(corrupt, paths.configFile.readText(), "an unreadable merge base must abort the rewrite")
+        assertTrue(logged.any { it.contains("refusing to rewrite") }, "the aborted persist must log, got $logged")
+    }
+
+    @Test
+    fun `an unreadable file layer is discarded with one logged cause not silence`() {
+        val paths = StatePaths(baseOverride = tmp.resolve("state"))
+        val logged = mutableListOf<String>()
+        val svc = ConfigService(paths, envReader = { null }, log = { logged += it })
+        Files.createDirectories(paths.configFile.parent)
+        paths.configFile.writeText("not json at all")
+
+        svc.getConfig()
+        svc.getConfig()
+
+        assertEquals(
+            1,
+            logged.count { it.contains("unreadable") },
+            "a present-but-unparseable file logs its discard once per mtime, got $logged",
+        )
+    }
+
+    @Test
+    fun `concurrent readers of an unreadable file log its discard exactly once per mtime`() {
+        val paths = StatePaths(baseOverride = tmp.resolve("state"))
+        // DR-9 redo (2026-08-31): the latch was volatile check-then-set; a 64-way probe logged the
+        // same mtime up to 11 times. Four rounds of barrier-released readers, one distinct mtime
+        // each: the CAS latch must produce exactly one line per round.
+        val logged = ConcurrentLinkedQueue<String>()
+        val svc = ConfigService(paths, envReader = { null }, log = { logged += it })
+        Files.createDirectories(paths.configFile.parent)
+        paths.configFile.writeText("not json at all")
+
+        val readers = 64
+        val rounds = 4
+        val pool = Executors.newFixedThreadPool(readers)
+        try {
+            repeat(rounds) { round ->
+                Files.setLastModifiedTime(paths.configFile, FileTime.fromMillis(1_000_000L + round * 10_000L))
+                val start = CountDownLatch(1)
+                val done = CountDownLatch(readers)
+                repeat(readers) {
+                    pool.execute {
+                        start.await()
+                        svc.getConfig()
+                        done.countDown()
+                    }
+                }
+                start.countDown()
+                assertTrue(done.await(30, TimeUnit.SECONDS), "readers wedged")
+            }
+        } finally {
+            pool.shutdownNow()
+        }
+        assertEquals(
+            rounds,
+            logged.count { it.contains("unreadable") },
+            "the discard latch must fire exactly once per mtime under concurrent readers, got $logged",
+        )
+    }
+
     @Test
     fun `defaults resolve and normalize`() {
         val cfg = service().getConfig()
@@ -44,9 +125,47 @@ class ConfigServiceTest {
         assertEquals(ReasoningDisplay.TEXT, cfg.showReasoning)
         assertEquals(false, cfg.replayReasoning)
         // Bounded by default since the 2026-07-19 storm (0 = unlimited stays an explicit opt-out).
-        assertEquals(100, cfg.maxInflight)
+        // NF-02: 12 sits inside the measured 0.3%-failure band (<=14; 67% failure at the old 100).
+        assertEquals(12, cfg.maxInflight)
+        // 0 = unlimited stays the explicit operator opt-out — the new default must not eat it.
+        assertEquals(0, service(env = mapOf("CLAUDEX_MAX_INFLIGHT" to "0")).getConfig().maxInflight)
         assertEquals(512, cfg.maxQueued)
         assertEquals(3096, cfg.controlPort)
+    }
+
+    @Test
+    fun `reasoning mirror stays locked off across every configuration layer`() {
+        assertEquals(false, service().getConfig().mirrorReasoning)
+        assertEquals(
+            false,
+            service(overrides = mapOf("mirrorReasoning" to "true")).getConfig().mirrorReasoning,
+        )
+        assertEquals(
+            false,
+            service(perHead = mapOf("codex" to mapOf("mirrorReasoning" to "true")))
+                .getConfig("codex").mirrorReasoning,
+        )
+        assertEquals(
+            false,
+            service(env = mapOf("CLAUDEX_MIRROR_REASONING" to "true")).getConfig().mirrorReasoning,
+        )
+
+        val stateRoot = tmp.resolve("mirror-state")
+        Files.createDirectories(stateRoot)
+        stateRoot.resolve("config.json").writeText("""{"mirrorReasoning":true}""")
+        val state = ConfigService(StatePaths(baseOverride = stateRoot), envReader = { null })
+        assertEquals(false, state.getConfig().mirrorReasoning)
+
+        val runtimeRoot = tmp.resolve("mirror-runtime")
+        val runtime = ConfigService(StatePaths(baseOverride = runtimeRoot), envReader = { null })
+        val patch = runtime.patch(mapOf("mirrorReasoning" to true))
+        assertEquals(false, patch.applied["mirrorReasoning"])
+        assertEquals(false, patch.effective.mirrorReasoning)
+        assertEquals(false, runtime.layers().runtime["mirrorReasoning"])
+        assertTrue(runtimeRoot.resolve("config.json").readText().contains("\"mirrorReasoning\":false"))
+
+        val normalized = ConfigCoercion { null }.normalize(mapOf("mirrorReasoning" to true))
+        assertEquals(false, normalized["mirrorReasoning"])
     }
 
     @Test
@@ -62,6 +181,41 @@ class ConfigServiceTest {
         // runtime PATCH beats env
         svc.patch(mapOf("effort" to "medium"))
         assertEquals("medium", svc.getConfig().effort)
+    }
+
+    // DR-48: a JSON null in config.json is ABSENCE, never the four-char string "null". jsonScalar
+    // fell through JsonNull (a JsonPrimitive) to el.content, so a nulled STRING knob replaced its
+    // default with the literal "null" — e.g. a "null" chatgptApiBase upstream URL.
+    @Test
+    fun `a json null knob in the state file reads as absent, not the string null`() {
+        val svc = service()
+        val stateDir = tmp.resolve("state")
+        Files.createDirectories(stateDir)
+        stateDir.resolve("config.json").writeText("""{"chatgptApiBase":null,"maxQueued":null}""")
+        assertEquals(Knob.CHATGPT_API_BASE.default, svc.getConfig().chatgptApiBase)
+        assertEquals(512, svc.getConfig().maxQueued, "a nulled NUMBER knob keeps its default")
+    }
+
+    // DR-150: normalize's own `default` for upstreamRetries was still the pre-G4b 2, four years of
+    // knob history behind Knob.UPSTREAM_RETRIES.default of 4. It never fired in production —
+    // mergedRaw seeds every knob before normalize runs — so nothing could catch the drift. This
+    // arm normalizes an UNSEEDED map, which is the only shape that reaches the substitution, and
+    // pins it to the DECLARED default rather than to a second copy of the literal.
+    @Test
+    fun `an unseeded upstreamRetries normalizes to the declared knob default - DR-150`() {
+        val normalized = ConfigCoercion { null }.normalize(emptyMap())
+        assertEquals(Knob.UPSTREAM_RETRIES.default, normalized["upstreamRetries"])
+        assertEquals(4L, normalized["upstreamRetries"], "and that declared default is still 4")
+        // the seeded path a real caller takes must agree with it, or the two sites have drifted
+        // again in the other direction
+        assertEquals(4, service().getConfig().upstreamRetries)
+    }
+
+    @Test
+    fun `coercion never manufactures the string null from an absent value`() {
+        val coercion = ConfigCoercion { null }
+        assertNull(coercion.jsonScalar(JsonNull))
+        assertNull(coercion.coerce(Knob.CHATGPT_API_BASE, null))
     }
 
     @Test
@@ -141,7 +295,7 @@ class ConfigServiceTest {
                 "CLAUDEX_MAX_QUEUED" to "Infinity",
             ),
         ).getConfig()
-        assertEquals(100, nonFinite.maxInflight)
+        assertEquals(12, nonFinite.maxInflight)
         assertEquals(512, nonFinite.maxQueued)
     }
 
@@ -178,13 +332,14 @@ class ConfigServiceTest {
 
     @Test
     fun `showReasoning folding matches the node table`() {
-        assertEquals("off", normalizeShowReasoning("0"))
-        assertEquals("off", normalizeShowReasoning("none"))
-        assertEquals("off", normalizeShowReasoning(null))
-        assertEquals("text", normalizeShowReasoning("mirror"))
-        assertEquals("text", normalizeShowReasoning("FULL"))
-        assertEquals("thinking", normalizeShowReasoning("anything-else"))
-        assertEquals("thinking", normalizeShowReasoning("1"))
+        val coercion = ConfigCoercion { null }
+        assertEquals("off", coercion.normalizeShowReasoning("0"))
+        assertEquals("off", coercion.normalizeShowReasoning("none"))
+        assertEquals("off", coercion.normalizeShowReasoning(null))
+        assertEquals("text", coercion.normalizeShowReasoning("mirror"))
+        assertEquals("text", coercion.normalizeShowReasoning("FULL"))
+        assertEquals("thinking", coercion.normalizeShowReasoning("anything-else"))
+        assertEquals("thinking", coercion.normalizeShowReasoning("1"))
     }
 
     @Test
@@ -229,6 +384,18 @@ class ConfigServiceTest {
 
     // Per-head overrides ([heads.<key>.overrides]). Before this layer existed, every head shared
     // ONE maxInflight, so a ceiling sized for a fast upstream also governed a rate-limited one.
+    @Test
+    fun `layers expose the per-head override map - JW-06`() {
+        val svc = service(
+            overrides = mapOf("maxInflight" to "100"),
+            perHead = mapOf("kimi" to mapOf("maxInflight" to "8"), "claudex" to emptyMap()),
+        )
+        val layers = svc.layers()
+        // the tuned head appears with its coerced knobs; a head with no overrides is ABSENT
+        assertEquals(mapOf("maxInflight" to 8L), layers.perHead["kimi"])
+        assertEquals(setOf("kimi"), layers.perHead.keys)
+    }
+
     @Test
     fun `per-head override applies to its own head only`() {
         val svc = service(

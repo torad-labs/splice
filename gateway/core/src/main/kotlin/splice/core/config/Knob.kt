@@ -5,7 +5,8 @@
 // anthropicUpstream + claudeCredentialsPath keys (nothing read them; claudithos leftovers).
 package splice.core.config
 
-public enum class KnobKind { STRING, NUMBER, BOOL }
+// KnobKind + knobsByKey + restartRequiredKnobKeys live in KnobKind.kt
+// (concentration, 2026-08-19).
 
 // HONESTY (audit 2026-07-18): nearly every knob is SNAPSHOTTED at Daemon.start into constructed
 // objects (providers, watchdog budgets, auth caches, warn thresholds) — so nearly every knob is
@@ -80,15 +81,14 @@ public enum class Knob(
         restartRequired = true,
     ),
 
-    // The transcript mirror ("[reasoning summary]" text block, L2). ON is the measured codex
-    // distillation-loop default. Turning it OFF stops the summary riding back upstream in the
-    // transcript (token cost) while reasoning still displays as thinking blocks — the operator
-    // accepts the cross-step continuity trade consciously (2026-07-19).
+    // The transcript mirror ("[reasoning summary]" text block, L2) is operator-locked OFF.
+    // Provider-native reasoning still displays as thinking blocks, but splice never authors a
+    // summary into the transcript or sends that synthetic block back upstream.
     MIRROR_REASONING(
         "mirrorReasoning",
         KnobKind.BOOL,
         listOf("CLAUDEX_MIRROR_REASONING"),
-        true,
+        false,
         restartRequired = true,
     ),
 
@@ -133,10 +133,13 @@ public enum class Knob(
     TOOL_SURFACE("toolSurface", KnobKind.STRING, listOf("CLAUDEX_TOOL_SURFACE"), "auto", restartRequired = true),
 
     // Per-head admission (each head is a different backend/account). Bounded by default since the
-    // 2026-07-19 storm: unlimited (0) let ~650 concurrent streams OOM the 1G heap. Default 100
-    // (was 48) leaves headroom for multi-agent fleets without reopening the unlimited storm.
-    // 0 still means unlimited for an explicit operator opt-out; both stay live-PATCHable.
-    MAX_INFLIGHT("maxInflight", KnobKind.NUMBER, listOf("CLAUDEX_MAX_INFLIGHT"), 100L),
+    // 2026-07-19 storm: unlimited (0) let ~650 concurrent streams OOM the 1G heap. NF-02: default
+    // 12 (was 100) — splice's own perf-JSONL measurement (config/splice.example.toml: 0.3% turn
+    // failure at inflight<=14, 11% at 38, 67% at 100) sits INSIDE the 0.3% band with headroom
+    // over kimi's proven 8. The ceiling belongs to the upstream ACCOUNT (Daemon.kt reasoning);
+    // high-capacity backends (vLLM, enterprise keys) raise it per head via [heads.*.overrides]
+    // or opt out with 0 = unlimited. Hot-PATCHable, no restart.
+    MAX_INFLIGHT("maxInflight", KnobKind.NUMBER, listOf("CLAUDEX_MAX_INFLIGHT"), 12L),
     MAX_QUEUED("maxQueued", KnobKind.NUMBER, listOf("CLAUDEX_MAX_QUEUED"), 512L),
     UPSTREAM_RETRIES(
         "upstreamRetries",
@@ -194,7 +197,7 @@ public enum class Knob(
         "grokModel",
         KnobKind.STRING,
         listOf("CLAUDE_GROK_MODEL", "CLAUDE_GROK_PINNED_MODEL"),
-        "grok-4.5",
+        "grok-4.6",
         restartRequired = true,
     ),
     XAI_API_BASE(
@@ -208,7 +211,10 @@ public enum class Knob(
         "grokAuthPath",
         KnobKind.STRING,
         listOf("GROK_AUTH_PATH"),
-        "~/.local/share/claude-grok/auth.json",
+        // DR-79: must agree with AuthKind.GrokOAuth's registry default — login writes there, the
+        // arm reads here, and the spike-era ~/.local/share/claude-grok path made a head omitting
+        // auth.file 401 forever while doctor said signed-in (pinned by the registry-agreement arm).
+        "~/.grok/auth.json",
         restartRequired = true,
     ),
     CONTROL_PORT(
@@ -218,13 +224,7 @@ public enum class Knob(
         3096L,
         restartRequired = true,
     ),
-    USAGE_WARN_PCT(
-        "usageWarnPct",
-        KnobKind.NUMBER,
-        listOf("SPLICE_USAGE_WARN_PCT"),
-        80L,
-        restartRequired = true,
-    ),
+    USAGE_WARN_PCT("usageWarnPct", KnobKind.NUMBER, listOf("SPLICE_USAGE_WARN_PCT"), 80L, restartRequired = true),
     USAGE_WARN_TOKENS_5H(
         "usageWarnTokens5h",
         KnobKind.NUMBER,
@@ -243,10 +243,4 @@ public enum class Knob(
         listOf("CLAUDEX_STATUSLINE_GIT_ROOTS"),
         "",
     ),
-    ;
-
-    public companion object {
-        public val byKey: Map<String, Knob> = entries.associateBy { it.key }
-        public val restartRequiredKeys: List<String> = entries.filter { it.restartRequired }.map { it.key }
-    }
 }

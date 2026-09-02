@@ -11,8 +11,16 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import splice.spi.CredentialLock
 import java.nio.file.Files
+
+// DR-186: the backstop InflightGateTest already puts on its racing arm ("a genuine leak hangs, and
+// must FAIL the suite, never wedge it"), applied to the other unbounded spin-wait. JUnit's
+// TimeoutInvocation schedules a real interrupt and runBlocking's joinBlocking tests
+// Thread.interrupted() on every turn of its event loop, so this bounds a spin that yield() alone
+// never will. Generous on purpose: it is a hang backstop, not a latency assertion.
+private const val HANG_BACKSTOP_S = 60L
 
 class CredentialLockTest {
 
@@ -26,6 +34,7 @@ class CredentialLockTest {
     }
 
     @Test
+    @Timeout(HANG_BACKSTOP_S) // DR-186: the wait below is a SPIN, and a spin that never ends wedges the suite
     fun `withLock serializes two concurrent same-JVM callers`() = runBlocking {
         val path = Files.createTempDirectory("credlock-serial").resolve("auth.json")
         Files.writeString(path, "{}")
@@ -67,5 +76,66 @@ class CredentialLockTest {
 
         assertEquals("""{"token":"secret"}""", Files.readString(path)) // credential untouched
         assertTrue(Files.exists(lockPath)) // sibling lock file created beside it
+    }
+
+    @Test
+    fun `a peer holding the lock past the budget degrades to unlocked - SH-06`() = runBlocking {
+        // The live-slow-peer case: a second channel holds the sibling .lock for LONGER than the
+        // budget. withLock must return within budget+slack, log the honest degrade line, and the
+        // block must still have run (bounded-and-unlocked beats hung; G1's layers own the race).
+        val dir = Files.createTempDirectory("credlock-degrade")
+        val path = dir.resolve("auth.json")
+        Files.writeString(path, "{}")
+        val lockPath = dir.resolve("auth.json.lock")
+        val holder = java.nio.channels.FileChannel.open(
+            lockPath,
+            java.nio.file.StandardOpenOption.CREATE,
+            java.nio.file.StandardOpenOption.WRITE,
+        )
+        val held = holder.lock()
+        try {
+            val logs = mutableListOf<String>()
+            var ran = false
+            val t0 = System.currentTimeMillis()
+            val result = CredentialLock.withLock(path, waitMs = 600, log = logs::add) {
+                ran = true
+                "went-unlocked"
+            }
+            val took = System.currentTimeMillis() - t0
+            assertEquals("went-unlocked", result)
+            assertTrue(ran, "the refresh block must still run after the degrade")
+            assertTrue(took in 600..5_000, "must return within budget+slack, took ${took}ms")
+            assertTrue(
+                logs.any { it.contains("proceeding unlocked") },
+                "the degrade must be honestly logged, got $logs",
+            )
+        } finally {
+            held.release()
+            holder.close()
+        }
+    }
+
+    @Test
+    fun `a peer releasing inside the budget hands the lock over normally - SH-06`() = runBlocking {
+        val dir = Files.createTempDirectory("credlock-handover")
+        val path = dir.resolve("auth.json")
+        Files.writeString(path, "{}")
+        val lockPath = dir.resolve("auth.json.lock")
+        val holder = java.nio.channels.FileChannel.open(
+            lockPath,
+            java.nio.file.StandardOpenOption.CREATE,
+            java.nio.file.StandardOpenOption.WRITE,
+        )
+        val held = holder.lock()
+        val releaser = launch {
+            kotlinx.coroutines.delay(300)
+            held.release()
+            holder.close()
+        }
+        val logs = mutableListOf<String>()
+        val result = CredentialLock.withLock(path, waitMs = 10_000, log = logs::add) { "locked-run" }
+        releaser.join()
+        assertEquals("locked-run", result)
+        assertTrue(logs.none { it.contains("proceeding unlocked") }, "no degrade when the peer yields: $logs")
     }
 }

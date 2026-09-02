@@ -1,0 +1,36 @@
+# Null-honesty discipline — `!!` is a claim the compiler is not allowed to check. Every occurrence
+# this wall cleared out was a TRUE claim standing next to the guard that made it true, which is
+# exactly what makes the operator dangerous: it looks harmless, so it survives the refactor that
+# moves or weakens the guard, and the failure lands as a bare NullPointerException with no message
+# on a live turn. Two of the five sites were `source.data!!` guarded three tokens earlier by
+# `!source.data.isNullOrEmpty()`; one was a re-read of a map the code had just null-checked; one
+# was a `committable` boolean that hid two null checks from the compiler behind a `Boolean`.
+#
+# Compliant forms — RESTRUCTURE so the compiler carries the guard, do not swap one runtime check
+# for another:
+#   - bind the nullable to a LOCAL val before the branch. A property read off another module's
+#     class is not smart-cast-stable, which is the entire reason both request builders needed `!!`;
+#     one local makes `isNullOrEmpty`'s contract narrow the type the compiler tracks.
+#   - put the null checks in the branch that RETURNS, not in a boolean. `if (a == null || b == null)
+#     return` leaves both smart-cast past it; `val ok = a != null && b != null` does not.
+#   - read a map once into a local rather than twice with an assertion on the second read.
+#
+# What this wall must NOT be satisfied with: `?: return`, `?: null` or `?: emptyList()` dropped in
+# to silence it. That converts a crash into a wrong answer, which is the L3 honesty law's exact
+# prohibition — a truncated or failed path must never end as a clean success. If absence is real,
+# it gets an honest failure the caller already handles (an error frame, a named exception, a
+# `Result.failure`); if absence is impossible, it gets a shape that cannot be null.
+#
+# PROMOTED 2026-08-16 (HD-18) from the dormant .rules/kotlin/ast-grep pack, which sgconfig.yml
+# references from nowhere and so had never run. Red-proven against a synthetic violation before the
+# census was trusted: 5 hits in gateway/*/src/main, all five restructured in the same commit.
+# Test sources keep `!!` — the glob below exempts them, and a test asserting a value IS non-null is
+# making the claim on purpose, with a stack trace that points at the assertion.
+id: kt-no-unsafe-bang-bang
+language: kotlin
+severity: error
+message: "No `!!` — restructure so the compiler carries the guard, or fail honestly."
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  pattern: $X!!

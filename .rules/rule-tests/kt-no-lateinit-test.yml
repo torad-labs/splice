@@ -1,0 +1,18 @@
+id: kt-no-lateinit
+valid:
+  # constructor injection — the seam this gateway threads log/env/clock lambdas through.
+  - 'class Daemon(private val head: HeadServer)'
+  # deferred build with a compile-time guarantee, unlike lateinit.
+  - 'private val tmp: Path by lazy { Files.createTempDirectory("x") }'
+  # absence modelled as a real state the caller handles.
+  - 'private var head: HeadServer? = null'
+  # `lateinit` is banned; a plain `var` is not this wall's business.
+  - 'private var count: Int = 0'
+invalid:
+  - 'lateinit var late: String'
+  - 'private lateinit var head: HeadServer'
+  # annotated fixture shape — proves stopBy: end reaches the modifier past an annotation.
+  # (This spelling is legal only under src/test/, which the production glob exempts.)
+  - |
+    @TempDir
+    lateinit var tmp: Path

@@ -65,7 +65,7 @@ class DaemonPerHeadConfigTest {
             refreshCall = { _, _ -> RefreshAttempt.Denied("test-denied") },
         )
         fun build(key: String) =
-            d.providerContext(key, topology.heads.getValue(key), topology.providers.getValue("codex"))
+            d.buildInputs.providerContext(key, topology.heads.getValue(key), topology.providers.getValue("codex"))
 
         val slow = build("slow")
         val fast = build("fast")

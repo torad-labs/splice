@@ -7,6 +7,7 @@
 package head
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Test
 import splice.gateway.head.RequestMaterializationGate
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class RequestMaterializationGateTest {
 
     @Test

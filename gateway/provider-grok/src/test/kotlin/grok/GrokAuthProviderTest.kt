@@ -14,18 +14,30 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshAttempt
+import splice.core.auth.SYNTHETIC_EXPIRY_TTL_MS
+import splice.core.util.LogSink
 import splice.provider.grok.GrokAuthProvider
 import splice.provider.grok.GrokRefreshedTokens
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.attribute.FileTime
+import java.nio.file.attribute.PosixFilePermissions
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.readText
+
+// DR-186: the backstop InflightGateTest already puts on its racing arm ("a genuine leak hangs, and
+// must FAIL the suite, never wedge it"), applied to the other unbounded spin-wait. JUnit's
+// TimeoutInvocation schedules a real interrupt and runBlocking's joinBlocking tests
+// Thread.interrupted() on every turn of its event loop, so this bounds a spin that yield() alone
+// never will. Generous on purpose: it is a hang backstop, not a latency assertion.
+private const val HANG_BACKSTOP_S = 60L
 
 class GrokAuthProviderTest {
 
@@ -231,6 +243,7 @@ class GrokAuthProviderTest {
     // Mirrors KimiAuthProviderTest's "two concurrent refreshes coalesce" idiom (runBlocking, not
     // runTest, for deterministic real-dispatcher async proof).
     @Test
+    @Timeout(HANG_BACKSTOP_S) // DR-186: two SPINS below, and a spin that never ends wedges the suite
     fun `prefetch tier does not block on a slow background refresh`() = runBlocking {
         val dir = Files.createTempDirectory("grok-prefetch-async")
         val now = 1_000_000L
@@ -339,7 +352,10 @@ class GrokAuthProviderTest {
     }
 
     @Test
-    fun `refresh response without expires_in keeps the old expires field`() = runTest {
+    fun `refresh response without expires_in synthesizes a new expires field - SH-02 rewrite`() = runTest {
+        // SH-02 REWRITE of the old keeps-the-old-expires pin: carrying the stale value was the
+        // refresh-ineffective loop (every next call re-entered the blocking tier and burned a
+        // rotating refresh token). A just-minted token synthesizes now+TTL instead.
         val dir = Files.createTempDirectory("grok-noexp")
         val now = 1_000_000L
         val oldExpires = now - 1
@@ -353,7 +369,8 @@ class GrokAuthProviderTest {
         )
         assertEquals("new-access", bearerToken(auth.credentials()))
         val onDisk = Json.parseToJsonElement(Files.readString(file)).jsonObject
-        assertEquals(oldExpires, onDisk["expires"]!!.jsonPrimitive.content.toLong())
+        val persisted = onDisk["expires"]!!.jsonPrimitive.content.toLong()
+        assertTrue(persisted > now, "expires must ADVANCE past now (was $oldExpires, got $persisted)")
     }
 
     // G15: a confirmed invalid_grant (post-G1 re-read: disk untouched, so the retry-once check
@@ -409,5 +426,348 @@ class GrokAuthProviderTest {
         assertNull(auth.describe().fields["refresh_latched"])
         assertNull(auth.refresh())
         assertEquals("invalid_grant", auth.describe().fields["refresh_latched"])
+    }
+
+    // Sweep 2026-08-31 (absence-class): the G1 confirming reread can itself FAIL. Unfixed, that
+    // failure was swallowed and the bare invalid_grant reason armed the latch UNCONFIRMED —
+    // breaking G15's own "one that survived that race check" contract. The composite reason
+    // names the read failure and never latches (codex twin parity).
+    @Test
+    fun `a failed confirming reread names the failure and never arms the latch`() = runTest {
+        val dir = Files.createTempDirectory("grok-reread")
+        val file = authFile(dir, refresh = "dead-refresh")
+        val log = mutableListOf<String>()
+        val auth = GrokAuthProvider(
+            authPath = file,
+            clock = { 1_000_000L },
+            refreshCall = {
+                Files.setPosixFilePermissions(
+                    dir,
+                    java.nio.file.attribute.PosixFilePermissions.fromString("---------"),
+                )
+                RefreshAttempt.InvalidGrant("dead")
+            },
+            log = splice.core.util.LogSink { log += it },
+        )
+        try {
+            assertNull(auth.refresh())
+        } finally {
+            Files.setPosixFilePermissions(
+                dir,
+                java.nio.file.attribute.PosixFilePermissions.fromString("rwx------"),
+            )
+        }
+        assertTrue(log.any { it.contains("credential reread failed") }, "unconfirmed rejection must be named: $log")
+        assertNull(auth.describe().fields["refresh_latched"], "an unconfirmed invalid_grant must not latch")
+    }
+
+    // DR-65 (codex security probe): a malformed auth.json still containing a live token must not
+    // leak it through parse-exception text ("JSON input:" excerpts) into logs or describe fields.
+    @Test
+    fun `diagnostics never quote credential bytes from a malformed auth file - DR-65`() = runTest {
+        val sentinel = "xai-SENTINEL-LEAK-CANARY"
+        val dir = Files.createTempDirectory("grok-leak")
+        val file = dir.resolve(".grok").resolve("auth.json")
+        Files.createDirectories(file.parent)
+        Files.writeString(file, """{"tokens":{"access_token":"$sentinel"""")
+        val log = mutableListOf<String>()
+        val auth = GrokAuthProvider(
+            authPath = file,
+            clock = { 1_000_000L },
+            refreshCall = { RefreshAttempt.Denied("must-not-be-reached") },
+            log = splice.core.util.LogSink { log += it },
+        )
+        assertNull(auth.credentials())
+        assertNull(auth.refresh())
+        val surfaced = (log + auth.describe().fields.map { "${it.key}=${it.value}" }).joinToString("\n")
+        assertTrue(!surfaced.contains(sentinel), "credential bytes must never surface: $surfaced")
+        assertTrue(log.any { it.contains("NOT a logged-out state") }, "diagnostics still classify: $log")
+    }
+
+    @Test
+    fun `granted refresh with no expires_in advances the expiry - one refresh across N calls - SH-02a`() = runTest {
+        // Pre-fix: null expiresIn persisted a null expiry, the merge kept the stale on-disk value,
+        // and every credentials() call below the stale floor blocked on ANOTHER refresh — each one
+        // consuming a rotating refresh token. The synthesized now+TTL expiry kills the loop.
+        val dir = Files.createTempDirectory("grok-noexpin")
+        var now = 1_000_000L
+        val file = authFile(dir, expiresAtMs = now + 1_000) // inside the stale floor: blocking tier
+        val calls = AtomicInteger(0)
+        val auth = GrokAuthProvider(authPath = file, clock = { now }, refreshCall = {
+            calls.incrementAndGet()
+            RefreshAttempt.Granted(GrokRefreshedTokens("new-access", "new-refresh", expiresIn = null))
+        })
+        repeat(5) { assertEquals("new-access", bearerToken(auth.credentials())) }
+        assertEquals(1, calls.get(), "an expires_in-less grant must refresh once, not per call")
+        assertEquals(0, auth.ineffectiveRefreshCount, "the synthesized expiry advanced — not ineffective")
+    }
+
+    @Test
+    fun `sub-floor grant trips the ineffective backoff - one refresh, logged once - SH-02b`() = runTest {
+        // A grant whose expires_in cannot satisfy the stale floor is a SUCCESSFUL refresh the tier
+        // logic will re-request forever. The guard logs, counts, and serves the current token
+        // through the 30s backoff window instead.
+        val dir = Files.createTempDirectory("grok-subfloor")
+        var now = 1_000_000L
+        val file = authFile(dir, expiresAtMs = now + 1_000)
+        val calls = AtomicInteger(0)
+        val logs = mutableListOf<String>()
+        val auth = GrokAuthProvider(authPath = file, clock = { now }, log = logs::add, refreshCall = {
+            calls.incrementAndGet()
+            RefreshAttempt.Granted(GrokRefreshedTokens("new-access", "new-refresh", expiresIn = 10))
+        })
+        repeat(5) { assertEquals("new-access", bearerToken(auth.credentials())) }
+        assertEquals(1, calls.get(), "the backoff must absorb the re-entering tier, not refresh per call")
+        assertEquals(1, auth.ineffectiveRefreshCount)
+        assertEquals(1, logs.count { it.contains("did not advance") }, "logged once, got $logs")
+        // the backoff lapses: the next stale-floor entry may refresh again
+        now += 31_000
+        auth.credentials()
+        assertEquals(2, calls.get(), "after the backoff window a refresh is allowed again")
+    }
+}
+
+// DR-73 (invariant audit): the persist-side merge re-read is the one credential parse DR-65 did
+// not seal on grok — a file gone malformed between the pre-refresh read and the persist quoted
+// its bytes through the raw throwable. The refreshCall corrupts the file mid-flow (the :311
+// peer-rotation interleave idiom) so the merge re-read fails on real bytes.
+class GrokMergeDiagnosticsTest {
+
+    @Test
+    fun `merge diagnostics never quote credential bytes - DR-73`() = runTest {
+        val sentinel = "xai-SENTINEL-MERGE-LEAK"
+        val dir = Files.createTempDirectory("grok-merge-leak")
+        val file = dir.resolve(".grok").resolve("auth.json")
+        Files.createDirectories(file.parent)
+        Files.writeString(file, """{"tokens":{"access_token":"acc","refresh_token":"R1"}}""")
+        val log = mutableListOf<String>()
+        val auth = GrokAuthProvider(
+            authPath = file,
+            clock = { 1_000_000L },
+            refreshCall = {
+                Files.writeString(file, """{"tokens":{"access_token":"$sentinel""")
+                RefreshAttempt.Granted(splice.provider.grok.GrokRefreshedTokens("new-access", "new-refresh", 3600))
+            },
+            log = splice.core.util.LogSink { log += it },
+        )
+        auth.refresh()
+        val joined = log.joinToString("\n")
+        assertTrue(!joined.contains(sentinel), "credential bytes must never surface: $joined")
+        assertTrue(log.any { it.contains("merge failed") }, "the merge degrade must log: $joined")
+    }
+}
+
+/** DR-145's peer-rotation expiry arm, in its own class because GrokAuthProviderTest is at detekt's
+ *  LargeClass ceiling. Carries its own copies of the two helpers it needs — they are private to the
+ *  sibling class above. */
+class GrokPeerRotationExpiryTest {
+
+    private fun authFile(dir: Path, access: String, expiresAtMs: Long?): Path {
+        val file = dir.resolve(".grok").resolve("auth.json")
+        Files.createDirectories(file.parent)
+        val expires = expiresAtMs?.let { """"expires":$it,""" }.orEmpty()
+        Files.writeString(
+            file,
+            """{"tokens":{"access_token":"$access","refresh_token":"grok-refresh"},
+                $expires"cli_field":"keep-me"}""",
+        )
+        return file
+    }
+
+    private fun bearerToken(creds: Credentials?): String {
+        assertTrue(creds is Credentials.Bearer)
+        return (creds as Credentials.Bearer).token
+    }
+
+    // DR-145 (provider sweep, 2026-08-31): peerRotation is a SECOND writer of the credential cache
+    // and it skipped the SH-01/G18 synthesized-expiry policy that readSnapshot applies. An adopted
+    // token from a drifted file — the shape those items exist for, with no top-level `expires` —
+    // was cached with a NULL expiry and then served as never-expiring: no proactive refresh, no
+    // stale floor, no shape-drift warning, until a mid-turn 401. GrokAuthProvider's own comment
+    // claims "expiresAt is always populated now" and that the null branch is defensive-only dead
+    // code; its sibling method made that false. Kimi does not have the bug because KimiOAuth
+    // synthesizes inside parseSnapshot, which is what marks this as drift rather than design.
+    //
+    // The existing peer arms cannot catch it: they assert only the served token and call count, and
+    // the G1 arm above writes an `expires`, so it never exercises the drifted shape at all.
+    @Test
+    fun `a peer-adopted token with no expires gets the synthesized ceiling - DR-145`() = runTest {
+        val dir = Files.createTempDirectory("grok-peer-expiry")
+        val now = 5_000_000_000L
+        val file = authFile(dir, access = "token-A", expiresAtMs = now + 3_600_000)
+        val calls = AtomicInteger()
+        val auth = GrokAuthProvider(authPath = file, clock = { now }, refreshCall = {
+            calls.incrementAndGet()
+            RefreshAttempt.Denied("test-denied")
+        })
+        assertEquals("token-A", bearerToken(auth.credentials())) // cache holds A
+
+        // The peer rotates to token-B and writes NO `expires` — the G18/SH-01 drifted shape.
+        Files.writeString(
+            file,
+            """{"tokens":{"access_token":"token-B","refresh_token":"grok-refresh"},"cli_field":"keep"}""",
+        )
+        // Pin the mtime so the synthesized ceiling (mtime + 4h) leaves 10s — inside the 30s floor.
+        Files.setLastModifiedTime(file, FileTime.fromMillis(now + 10_000 - SYNTHETIC_EXPIRY_TTL_MS))
+
+        assertEquals("token-B", bearerToken(auth.refresh())) // adopts B
+        assertEquals(0, calls.get(), "adoption is still POST-free")
+
+        // The claim: a HOT read at the SAME clock. The adopted snapshot must carry the synthesized
+        // ceiling, so this sits below the stale floor and must BLOCK for a refresh. Deliberately no
+        // clock jump — advancing +4h would miss the cache and pass for the wrong reason.
+        auth.credentials()
+        assertEquals(1, calls.get(), "an adopted expiry-less token must not be served as never-expiring")
+    }
+}
+
+/** DR-146's arm, in its own class because GrokAuthProviderTest is at detekt's LargeClass ceiling. */
+class GrokBackoffExpiryTest {
+
+    private fun authFile(dir: Path, expiresAtMs: Long): Path {
+        val file = dir.resolve(".grok").resolve("auth.json")
+        Files.createDirectories(file.parent)
+        Files.writeString(
+            file,
+            """{"tokens":{"access_token":"grok-access","refresh_token":"grok-refresh"},
+                "expires":$expiresAtMs,"cli_field":"keep-me"}""",
+        )
+        return file
+    }
+
+    private fun bearerToken(creds: Credentials?): String {
+        assertTrue(creds is Credentials.Bearer)
+        return (creds as Credentials.Bearer).token
+    }
+
+    // DR-146 (provider sweep, 2026-08-31): the SH-02(b) backoff branch served `current`
+    // UNCONDITIONALLY, where the stale-floor branch three lines below has always refused a token
+    // past its own expiry. A sub-floor grant arms the backoff; once that token passes its expiry
+    // INSIDE the 30s window, a KNOWN-DEAD token went to UpstreamClient, which spent a real upstream
+    // call to collect a 403 and then burned the single-flight refresh anyway — so the branch's own
+    // stated goal, not burning a rotating refresh token per request, was not achieved on the
+    // reactive path, and each request also cost a wasted round trip. The existing SH-02b arm holds
+    // "backoff armed" and the +31s arm holds "token lapsed"; neither holds BOTH at once, which is
+    // the only state where this is visible.
+    @Test
+    fun `an armed backoff never serves a token past its own expiry - DR-146`() = runTest {
+        val dir = Files.createTempDirectory("grok-backoff-expired")
+        var now = 1_000_000L
+        val file = authFile(dir, expiresAtMs = now + 1_000)
+        val calls = AtomicInteger(0)
+        val auth = GrokAuthProvider(authPath = file, clock = { now }, refreshCall = {
+            calls.incrementAndGet()
+            RefreshAttempt.Granted(GrokRefreshedTokens("new-access", "new-refresh", expiresIn = 10))
+        })
+        // The sub-floor grant is served and arms SH-02(b): exactly one refresh.
+        assertEquals("new-access", bearerToken(auth.credentials()))
+        assertEquals(1, calls.get())
+
+        // Inside the 30s backoff window, but PAST the granted token's own 10s expiry.
+        now += 10_001
+        assertNull(auth.credentials(), "a token past its own expiry must never be served, backoff or not")
+        assertEquals(1, calls.get(), "and the backoff still suppresses the refresh it was armed to suppress")
+    }
+}
+
+// DR-148 (provider sweep F5, 2026-08-31): GrokAuthJson keyed its cache on mtime ALONE while the
+// codex twin also compared sizeBytes. This file is written concurrently by the official grok CLI by
+// design, so a peer rotation landing inside the same filesystem timestamp tick was invisible and the
+// STALE token kept being served for the whole authCacheMs window. Its own class because
+// GrokAuthProviderTest is already at the LargeClass ceiling.
+class GrokTornReadCacheTest {
+
+    @Test
+    fun `a same-mtime rewrite is not served from the cache - DR-148`() = runTest {
+        val dir = Files.createTempDirectory("grok-torn-read")
+        val now = 5_000_000_000L
+        val file = dir.resolve(".grok").resolve("auth.json")
+        Files.createDirectories(file.parent)
+        // Explicitly Unit: Files.writeString returns Path, and an inferred lambda type makes
+        // every call site a discarded-return warning.
+        val write: (String, String) -> Unit = { access, pad ->
+            Files.writeString(
+                file,
+                """{"tokens":{"access_token":"$access","refresh_token":"grok-refresh"},
+                    "expires":${now + 3_600_000},"cli_field":"$pad"}""",
+            )
+        }
+        write("token-A", "keep-me")
+        val auth = GrokAuthProvider(
+            authPath = file,
+            // A generous TTL is the POINT: the arm must fail on staleness, never on expiry.
+            authCacheMs = 600_000,
+            clock = { now },
+            refreshCall = { RefreshAttempt.Denied("test-denied") },
+        )
+        assertEquals("token-A", (auth.credentials() as Credentials.Bearer).token)
+
+        // The peer rewrite: a different token AND a different byte length, with the mtime forced
+        // back to what the cache recorded. That is precisely the coarse-timestamp collision — same
+        // tick, different bytes — and it is the only way to exercise the size half of the identity.
+        val stamp = Files.getLastModifiedTime(file)
+        write("token-B", "keep-me-and-then-some-more")
+        Files.setLastModifiedTime(file, stamp)
+
+        assertEquals(
+            "token-B",
+            (auth.credentials() as Credentials.Bearer).token,
+            "a same-mtime rewrite of a DIFFERENT size must miss the cache, not serve the dead token",
+        )
+    }
+}
+
+// DR-151: BS-2's arm above proves the FALLBACK — a lost write still serves the current token — but
+// says nothing about the LINE the operator reads on the way, which is where a leak would hide.
+//
+// This arm deliberately does NOT inject the write. An earlier draft added a
+// `write: (Path, String) -> Unit` seam so a test could throw an arbitrary throwable; two walls
+// rejected it and both were right. kt-no-lambda-seam bans the raw function type outright, and
+// SH-10 requires the atomic 0600 primitive to be provably WHAT PERSISTS the credential — any
+// injection point, fun interface or not, makes the real writer a runtime choice and reopens
+// exactly the world-readable window #924 extracted SecureFile to make inexpressible. Trading a
+// security invariant for test convenience on a credential write is the wrong direction, so the
+// throwable here is one production actually produces: a denied parent directory.
+//
+// The withholding property itself lives at the sink and is proven there, with mutants, by
+// PersistFailedRenderTest. What this arm adds is that the provider REACHES that sink, and that the
+// line it produces never carries the credential.
+class GrokPersistLinePrivacyTest {
+
+    @Test
+    fun `a failed persist logs its line without ever quoting the credential - DR-151`() = runTest {
+        val dir = Files.createTempDirectory("grok-persist-line")
+        val now = 1_000_000L
+        val file = dir.resolve(".grok").resolve("auth.json")
+        Files.createDirectories(file.parent)
+        Files.writeString(
+            file,
+            """{"tokens":{"access_token":"grok-access","refresh_token":"grok-refresh"},
+                "expires":${now + 10_000}}""",
+        )
+        val lines = mutableListOf<String>()
+        val auth = GrokAuthProvider(
+            authPath = file,
+            clock = { now },
+            nowIso = { "iso-now" },
+            refreshCall = {
+                RefreshAttempt.Granted(GrokRefreshedTokens("new-access", "rotated-secret", expiresIn = 21_600))
+            },
+            log = LogSink { lines.add(it) },
+        )
+        Files.createFile(file.resolveSibling("${file.fileName}.lock"))
+        val writable = Files.getPosixFilePermissions(file.parent)
+        Files.setPosixFilePermissions(file.parent, PosixFilePermissions.fromString("r-xr-xr-x"))
+        val served = try {
+            auth.credentials()
+        } finally {
+            Files.setPosixFilePermissions(file.parent, writable)
+        }
+        assertEquals("grok-access", (served as Credentials.Bearer).token, "BS-2 fallback must still hold")
+
+        val persist = lines.single { it.contains("persist failed") }
+        assertFalse(persist.contains("rotated-secret"), "the rotated token must never reach the log: $persist")
+        assertFalse(persist.contains("grok-refresh"), "nor the old refresh token: $persist")
+        assertTrue(persist.contains("credential write failed"), "the typed Write branch must be what fired: $persist")
     }
 }

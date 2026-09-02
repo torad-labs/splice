@@ -142,9 +142,14 @@ export type EffectiveConfig = Record<string, ConfigValue>;
 
 export interface ConfigPayload {
   effective: EffectiveConfig;
+  /** JW-06: present when the view was fetched for one head (?head=<key>). */
+  head?: string;
   layers: {
     defaults: EffectiveConfig;
     toml: EffectiveConfig;
+    /** JW-06: headKey -> its [heads.<key>.overrides] knobs; only override-carrying heads appear.
+     * Precedence position: directly above the global TOML layer. */
+    perHead: Record<string, EffectiveConfig>;
     file: EffectiveConfig;
     env: EffectiveConfig;
     runtime: EffectiveConfig;
@@ -250,7 +255,8 @@ export const control = {
   startHead: (head: string) => request<HeadActionResult>(`/api/heads/${head}/start`, { method: 'POST' }),
   stopHead: (head: string) => request<HeadActionResult>(`/api/heads/${head}/stop`, { method: 'POST' }),
   restartHead: (head: string) => request<HeadActionResult>(`/api/heads/${head}/restart`, { method: 'POST' }),
-  config: () => request<ConfigPayload>('/api/config'),
+  config: (head?: string) =>
+    request<ConfigPayload>(head ? `/api/config?head=${encodeURIComponent(head)}` : '/api/config'),
   patchConfig: (patch: Record<string, ConfigValue>) =>
     request<PatchResult>('/api/config', { method: 'PATCH', body: JSON.stringify(patch) }),
   usage: () => request<UsagePayload>('/api/usage'),
@@ -259,3 +265,16 @@ export const control = {
   compact: () => request<CompactPayload>('/api/compact'),
   logs: (head: string, tail: number) => request<LogsPayload>(`/api/logs/${head}?tail=${tail}`),
 };
+
+// JW-04: the unauthenticated /health probe carries topologyStale — the daemon re-compares its
+// booted splice.toml digest against the file on disk per request (fail-open on unreadable).
+// An edited-but-inert topology used to be invisible everywhere; the config page banners it.
+export async function fetchTopologyStale(): Promise<boolean> {
+  try {
+    const res = await fetch('/health');
+    const body = (await res.json()) as { topologyStale?: boolean };
+    return body.topologyStale === true;
+  } catch {
+    return false; // fail open — a health hiccup must never block the page
+  }
+}

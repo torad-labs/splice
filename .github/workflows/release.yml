@@ -1,6 +1,6 @@
 name: release
 
-# Two ways in, ONE release identity (the vX.Y.Z tag):
+# Two ways in, ONE release identity (the vX.Y.Z or vX.Y.Z-PRERELEASE tag):
 #
 #   promote:  merge the main -> prod PR (merge commit, never squash). The merge's push fires
 #     this workflow — GitHub generates the release; nobody runs a release command. The version is
@@ -12,7 +12,7 @@ name: release
 #     Promoting without a version bump fails twice: promotion-check.yml pre-merge, and the
 #     resolve step here at build time.
 #
-#   tag push (the plumbing):  git push origin v0.2.0     — still works, unchanged.
+#   tag push (the plumbing):  git push origin v0.3.0-beta.1     — still works, unchanged.
 #
 # The tag created on publish uses the workflow's own GITHUB_TOKEN, and events created with that
 # token do not trigger workflows — so a promotion cannot recursively fire the tag path.
@@ -51,7 +51,7 @@ jobs:
 
       - name: setup java
         # Cache derives from reviewed main code; the attestation chain is the integrity control.
-        uses: actions/setup-java@03ad4de0992f5dab5e18fcb136590ce7c4a0ac95 # v5.6.0 # zizmor: ignore[cache-poisoning]
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.6.0 # zizmor: ignore[cache-poisoning]
         with:
           distribution: temurin
           java-version: '21'
@@ -109,7 +109,12 @@ jobs:
         run: ./gradlew :app:shadowJar --no-daemon --no-parallel --stacktrace
 
       - name: stage exact release bundle
-        run: bash checks/release/stage.sh
+        # DR-19: thread the resolved version in as the tag so the SemVer + tag/version equality
+        # block runs on the PROMOTION path too (a real pushed tag still wins inside stage.sh via
+        # GITHUB_REF_TYPE). Without this, the gate was skipped exactly where releases are cut.
+        env:
+          RESOLVED_VERSION: ${{ steps.version.outputs.version }}
+        run: SPLICE_RELEASE_TAG="v$RESOLVED_VERSION" bash checks/release/stage.sh
 
       - name: accept exact release bundle
         env:
@@ -146,12 +151,12 @@ jobs:
         run: sha256sum -c sha256sums.txt
 
       - name: attest build provenance
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-checksums: dist/sha256sums.txt
 
       - name: attest CycloneDX SBOM
-        uses: actions/attest@f7c74d28b9d84cb8768d0b8ca14a4bac6ef463e6 # v4.2.0
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
         with:
           subject-path: dist/splice.jar
           sbom-path: dist/bom.cdx.json
@@ -161,6 +166,7 @@ jobs:
         uses: softprops/action-gh-release@3d0d9888cb7fd7b750713d6e236d1fcb99157228 # v3.0.2 # zizmor: ignore[superfluous-actions]
         with:
           draft: true
+          prerelease: ${{ contains(needs.build.outputs.version, '-') }}
           # Explicit on BOTH paths: on a prod promotion there is no tag yet — it is created when
           # the draft publishes, at the exact SHA the build job gated and attested.
           tag_name: v${{ needs.build.outputs.version }}

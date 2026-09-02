@@ -15,20 +15,24 @@ import kotlinx.serialization.json.jsonPrimitive
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
+import org.junit.jupiter.api.Assertions.assertNotEquals
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Timeout
 import org.junit.jupiter.api.io.TempDir
 import splice.core.auth.Credentials
+import splice.core.auth.InvalidGrantLatch
 import splice.core.auth.RefreshAttempt
+import splice.core.auth.SYNTHETIC_EXPIRY_TTL_MS
+import splice.provider.codex.CodexAuthFile
 import splice.provider.codex.CodexAuthProvider
+import splice.provider.codex.CodexOAuth
 import splice.provider.codex.RefreshedTokens
-import splice.provider.codex.accountIdFromIdToken
-import splice.provider.codex.authJsonFromTokens
-import splice.provider.codex.buildAuthorizeUrl
-import splice.provider.codex.makePkce
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.attribute.FileTime
+import java.nio.file.attribute.PosixFilePermissions
 import java.util.Base64
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.readText
@@ -41,13 +45,21 @@ private fun jwt(payloadJson: String): String {
     return "$header.$payload.sig"
 }
 
+// DR-186: the backstop InflightGateTest already puts on its racing arm ("a genuine leak hangs, and
+// must FAIL the suite, never wedge it"), applied to the other unbounded spin-wait. JUnit's
+// TimeoutInvocation schedules a real interrupt and runBlocking's joinBlocking tests
+// Thread.interrupted() on every turn of its event loop, so this bounds a spin that yield() alone
+// never will. Generous on purpose: it is a hang backstop, not a latency assertion.
+private const val HANG_BACKSTOP_S = 60L
+
 class CodexAuthTest {
 
+    private val oauth = CodexOAuth()
     private val noEnv: (String) -> String? = { null }
 
     @Test
     fun `pkce - verifier and challenge are url-safe base64 without padding`() {
-        val p = makePkce()
+        val p = oauth.makePkce()
         assertTrue(p.verifier.matches(Regex("[A-Za-z0-9_-]+")))
         assertTrue(p.challenge.matches(Regex("[A-Za-z0-9_-]+")))
         assertFalse(p.verifier.contains("=") || p.challenge.contains("="))
@@ -55,7 +67,7 @@ class CodexAuthTest {
 
     @Test
     fun `authorize url - exact param order and percent-not-plus encoding`() {
-        val url = buildAuthorizeUrl(challenge = "CH", state = "ST", clientId = "cid", env = noEnv)
+        val url = oauth.buildAuthorizeUrl(challenge = "CH", state = "ST", clientId = "cid", env = noEnv)
         val query = url.substringAfter("?")
         val keys = query.split("&").map { it.substringBefore("=") }
         assertEquals(
@@ -75,14 +87,15 @@ class CodexAuthTest {
     @Test
     fun `jwt claim extraction pulls the chatgpt account id`() {
         val token = jwt("""{"email":"x@y.z","https://api.openai.com/auth":{"chatgpt_account_id":"acct-1234-5678"}}""")
-        assertEquals("acct-1234-5678", accountIdFromIdToken(token))
-        assertNull(accountIdFromIdToken("garbage"))
+        assertEquals("acct-1234-5678", oauth.accountIdFromIdToken(token))
+        assertNull(oauth.accountIdFromIdToken("garbage"))
     }
 
     @Test
     fun `auth json shape is codex-cli-compatible`() {
         val idToken = jwt("""{"https://api.openai.com/auth":{"chatgpt_account_id":"acct-9"}}""")
-        val obj = authJsonFromTokens(idToken, "access-1", "refresh-1", apiKey = "sk-x", nowIso = "2026-07-16T00:00:00Z")
+        val obj =
+            oauth.authJsonFromTokens(idToken, "access-1", "refresh-1", apiKey = "sk-x", nowIso = "2026-07-16T00:00:00Z")
         assertEquals("sk-x", obj["OPENAI_API_KEY"]?.jsonPrimitive?.content)
         val tokens = obj["tokens"]!!.jsonObject
         assertEquals("access-1", tokens["access_token"]?.jsonPrimitive?.content)
@@ -102,7 +115,13 @@ class CodexAuthTest {
     // the whole class, so the window is not even confined to the forgetful test. Draining in
     // @AfterEach makes it structural: no test can forget, and the per-test drainPrefetch() calls
     // below stay only because they document intent at the point the prefetch is launched.
+    // DR-186: the drain needs its OWN backstop, and it is the reason a @Timeout on the arm alone was
+    // not enough. When an arm dies before completing the gate its refresh coroutine stays parked on
+    // gate.await() forever, so this join never returns and the suite wedges in @AfterEach — after the
+    // arm has already been failed and reported. Measured: with only the arm bounded, a starved
+    // prefetch arm still hung past a 200s probe; with this line it fails and the suite finishes.
     @AfterEach
+    @Timeout(HANG_BACKSTOP_S)
     fun settlePrefetchBeforeTempDirCleanup(): Unit = runBlocking {
         prefetchJob.children.toList().forEach { it.join() }
     }
@@ -309,6 +328,7 @@ class CodexAuthTest {
     // Mirrors GrokAuthProviderTest's "prefetch tier does not block on a slow background refresh"
     // (runBlocking, not runTest, for deterministic real-dispatcher async proof).
     @Test
+    @Timeout(HANG_BACKSTOP_S) // DR-186: the wait below is a SPIN, and a spin that never ends wedges the suite
     fun `prefetch tier does not block on a slow background refresh`(@TempDir tmp: Path) = runBlocking {
         val now = 1_000_000L
         val access = jwt("""{"exp":${(now + 120_000) / 1000}}""") // inside window, above the floor
@@ -475,5 +495,200 @@ class CodexAuthTest {
         assertNull(auth.describe().fields["refresh_latched"])
         assertNull(auth.refresh())
         assertEquals("invalid_grant", auth.describe().fields["refresh_latched"])
+    }
+
+    @Test
+    fun `non-jwt access token ages out at the synthesized ceiling - SH-01`(@TempDir tmp: Path) = runTest {
+        // G18's codex twin: an opaque (non-JWT) access token used to yield expiresAtMs=null and
+        // be served FOREVER. The shared policy synthesizes mtime+4h: before the ceiling the token
+        // serves with zero refresh traffic; past it, the stale floor forces a blocking refresh.
+        var now = 0L
+        val calls = AtomicInteger(0)
+        val (auth, path) = provider(tmp, { now }) {
+            calls.incrementAndGet()
+            RefreshAttempt.Granted(
+                RefreshedTokens(accessToken = jwt("""{"exp":99999999999}"""), refreshToken = "r2", idToken = null),
+            )
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"opaque-no-jwt","refresh_token":"r1","account_id":"a"}}""")
+        val mtime = Files.getLastModifiedTime(path).toMillis()
+
+        now = mtime + 1_000 // fresh file, hours from the synthesized ceiling
+        assertEquals("opaque-no-jwt", (auth.credentials() as Credentials.Bearer).token)
+        assertEquals(0, calls.get(), "inside the synthesized ceiling: no refresh")
+
+        now = mtime + 4 * 60 * 60 * 1000L + 1_000 // past mtime+4h: below the stale floor
+        val refreshed = auth.credentials() as Credentials.Bearer
+        assertEquals(1, calls.get(), "past the synthesized ceiling: exactly one blocking refresh")
+        assertTrue(refreshed.token != "opaque-no-jwt", "the refreshed token must serve")
+    }
+}
+
+/** DR-177's overflow arm, in its own class for the same reason the peer-rotation one below is —
+ *  CodexAuthTest sits at detekt's LargeClass ceiling and this arm tips it. Same reason it carries
+ *  its own copy of the provider helper. */
+class CodexExpiryOverflowTest {
+
+    private val prefetchJob = kotlinx.coroutines.SupervisorJob()
+    private val prefetchScope = CoroutineScope(prefetchJob + kotlinx.coroutines.Dispatchers.Default)
+
+    private fun provider(
+        tmp: Path,
+        clock: () -> Long,
+        refresh: suspend (String) -> RefreshAttempt<RefreshedTokens>,
+    ): Pair<CodexAuthProvider, Path> {
+        val authPath = tmp.resolve(".codex/auth.json")
+        return CodexAuthProvider(
+            authPath = authPath,
+            authCacheMs = 60_000,
+            clock = clock,
+            nowIso = { "2026-07-16T00:00:00Z" },
+            refreshCall = refresh,
+            prefetchScope = prefetchScope,
+        ) to authPath
+    }
+
+    // DR-177: the exp claim went into a bare multiply by 1000, so an absurd one WRAPPED to a large
+    // negative instant and the token read as expired on its very first read — a blocking refresh
+    // per turn, forever, off one JWT field, and the refreshed token is not even the problem. An
+    // unrepresentable exp is not a usable expiry, which is precisely what the SH-01 ceiling already
+    // rules on, so it now takes that path: this is the SH-01 arm's shape with a HOSTILE exp in
+    // place of a missing one, and the call counts are what separate the two behaviours.
+    @Test
+    fun `a jwt exp too large to represent ages out at the ceiling, not immediately - DR-177`(
+        @TempDir tmp: Path,
+    ) = runTest {
+        var now = 0L
+        val calls = AtomicInteger(0)
+        val hostile = jwt("""{"exp":${Long.MAX_VALUE}}""")
+        val (auth, path) = provider(tmp, { now }) {
+            calls.incrementAndGet()
+            RefreshAttempt.Granted(
+                RefreshedTokens(accessToken = jwt("""{"exp":99999999999}"""), refreshToken = "r2", idToken = null),
+            )
+        }
+        Files.createDirectories(path.parent)
+        path.writeText("""{"tokens":{"access_token":"$hostile","refresh_token":"r1","account_id":"a"}}""")
+        val mtime = Files.getLastModifiedTime(path).toMillis()
+
+        now = mtime + 1_000
+        assertEquals(hostile, (auth.credentials() as Credentials.Bearer).token)
+        assertEquals(0, calls.get(), "a wrapped exp read as already-expired and refreshed on the FIRST call")
+
+        now = mtime + 4 * 60 * 60 * 1000L + 1_000
+        assertTrue((auth.credentials() as Credentials.Bearer).token != hostile, "past the ceiling it refreshes")
+        assertEquals(1, calls.get(), "and exactly once — the ceiling is a floor on staleness, not a storm")
+    }
+}
+
+/** DR-145's peer-rotation expiry arm, in its own class because CodexAuthTest is at detekt's
+ *  LargeClass ceiling. Carries its own copy of the provider helper, which is private above. */
+class CodexPeerRotationExpiryTest {
+
+    private val prefetchJob = kotlinx.coroutines.SupervisorJob()
+    private val prefetchScope = CoroutineScope(prefetchJob + kotlinx.coroutines.Dispatchers.Default)
+
+    private fun provider(
+        tmp: Path,
+        clock: () -> Long,
+        refresh: suspend (String) -> RefreshAttempt<RefreshedTokens>,
+    ): Pair<CodexAuthProvider, Path> {
+        val authPath = tmp.resolve(".codex/auth.json")
+        return CodexAuthProvider(
+            authPath = authPath,
+            authCacheMs = 60_000,
+            clock = clock,
+            nowIso = { "2026-07-16T00:00:00Z" },
+            refreshCall = refresh,
+            prefetchScope = prefetchScope,
+        ) to authPath
+    }
+
+    // DR-145 (provider sweep, 2026-08-31): peerRotation is a SECOND writer of the credential cache
+    // and it took the JWT `exp` alone, with no fallback to the injected SH-01 synthesis that
+    // readSnapshot applies. An adopted OPAQUE token — the exact shape SH-01 exists for, and the one
+    // the arm above already uses without noticing — was cached with a NULL expiry and served as
+    // never-expiring: no proactive refresh, no stale floor, and the operator line about a token
+    // carrying no decodable exp never fired. The existing peer arm observes only the served token
+    // and the call count, so it passes either way.
+    @Test
+    fun `a peer-adopted opaque token gets the synthesized ceiling - DR-145`(@TempDir tmp: Path) =
+        runTest {
+            val now = 5_000_000_000L
+            val calls = AtomicInteger(0)
+            val (auth, path) = provider(tmp, { now }) {
+                calls.incrementAndGet()
+                RefreshAttempt.Denied("test-denied")
+            }
+            Files.createDirectories(path.parent)
+            path.writeText("""{"tokens":{"access_token":"opaque-A","refresh_token":"R1","account_id":"acct-1"}}""")
+            // Pin the mtime so the synthesized ceiling (mtime + 4h) leaves well over the 300s
+            // proactive window for token A: this read must NOT refresh.
+            Files.setLastModifiedTime(path, FileTime.fromMillis(now - 1_000))
+            assertEquals("opaque-A", (auth.credentials() as Credentials.Bearer).token)
+            assertEquals(0, calls.get(), "token A is nowhere near its synthesized ceiling")
+
+            // The peer rotates to another OPAQUE token — no JWT exp to read.
+            path.writeText("""{"tokens":{"access_token":"opaque-B","refresh_token":"R1","account_id":"acct-1"}}""")
+            // Its ceiling leaves 10s, inside the 30s stale floor.
+            Files.setLastModifiedTime(path, FileTime.fromMillis(now + 10_000 - SYNTHETIC_EXPIRY_TTL_MS))
+
+            assertEquals("opaque-B", (auth.refresh() as Credentials.Bearer).token)
+            assertEquals(0, calls.get(), "adoption is still POST-free")
+
+            // HOT read at the SAME clock: the adopted snapshot must carry the synthesized ceiling.
+            auth.credentials()
+            assertEquals(1, calls.get(), "an adopted opaque token must not be served as never-expiring")
+        }
+}
+
+// DR-176 (grok-splice finding H): the plumbing half. The core arms pin what CredentialFileIdentity
+// MEANS; this one proves a provider actually derives it from the file, because the defect lived in
+// the derivation — codexAuthMtimeOrNull returned FileTime.toMillis(), which truncates the
+// nanoseconds ext4 and xfs store, so two genuinely different credentials could not be told apart.
+// The fixture is the row's own scenario: rewrite the content, then RESTORE the original FileTime,
+// which is exactly what a same-tick re-login or a backup restore produces.
+class CodexAuthIdentityTest {
+
+    private fun identity(path: Path) =
+        CodexAuthFile().codexAuthIdentityOrNull(path) { }
+
+    @Test
+    fun `a rewritten credential with a restored FileTime is a DIFFERENT identity - DR-176`(@TempDir tmp: Path) {
+        val auth = tmp.resolve("auth.json")
+        Files.writeString(auth, """{"tokens":{"access_token":"old"}}""")
+        val before = identity(auth)
+        val stamp = Files.getLastModifiedTime(auth)
+
+        Files.writeString(auth, """{"tokens":{"access_token":"a-freshly-minted-replacement"}}""")
+        Files.setLastModifiedTime(auth, stamp)
+        val after = identity(auth)
+
+        assertEquals(
+            stamp.toMillis(),
+            after?.mtimeMs,
+            "the fixture must actually restore the timestamp, or this arm proves nothing",
+        )
+        assertNotEquals(before, after, "a replaced credential must not share the rejected file's identity")
+
+        val latch = InvalidGrantLatch()
+        latch.latch(before)
+        assertFalse(latch.isLatched(after), "the operator re-authenticated; the latch must release")
+    }
+
+    @Test
+    fun `an untouched credential keeps its identity and stays latched - DR-176 trap control`(@TempDir tmp: Path) {
+        val auth = tmp.resolve("auth.json")
+        Files.writeString(auth, """{"tokens":{"access_token":"unchanged"}}""")
+        val before = identity(auth)
+
+        val latch = InvalidGrantLatch()
+        latch.latch(before)
+        assertEquals(before, identity(auth), "statting an untouched file twice must agree")
+        assertTrue(
+            latch.isLatched(identity(auth)),
+            "an untouched credential must keep suppressing, or the lockout fix becomes a refresh storm",
+        )
     }
 }

@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
 import org.junit.jupiter.api.Assertions.assertNull
+import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.topology.AuthConfig
@@ -23,7 +24,7 @@ import splice.core.topology.Dialect
 import splice.core.topology.HeadConfig
 import splice.core.topology.ProviderConfig
 
-private fun head(provider: String, command: String) = HeadConfig(
+private fun head(provider: String, command: String?) = HeadConfig(
     provider = provider,
     port = 3100,
     discoveryPrefix = "claude-$provider--",
@@ -39,6 +40,8 @@ private fun providerCfg(authKind: String, envVar: String? = null) = ProviderConf
 
 class SignInPlanMatrixTest {
 
+    private val planner = SignInPlanner()
+
     /** THE LOAD-BEARING ONE. Every supported head kind gets a /login command. A blank command is
      *  what makes LoginInterception.wire() skip the hook entirely, so a blank here means the head
      *  silently loses /login — the exact regression this pins against. */
@@ -52,7 +55,7 @@ class SignInPlanMatrixTest {
             API_KEY to head("fireworks", "claude-fireworks"), // NO known token shape
         )
         for ((kind, h) in cases) {
-            val plan = signInPlan(providerCfg(kind), h, h.provider)
+            val plan = planner.signInPlan(providerCfg(kind), h, h.provider)
             assertTrue(
                 plan.command.isNotBlank(),
                 "$kind (${h.provider}) lost its /login command — wire() would skip the hook entirely",
@@ -66,11 +69,11 @@ class SignInPlanMatrixTest {
      *  and the prompt it promises can never appear. */
     @Test
     fun `only browser-based kinds are marked viaBrowser`() {
-        assertTrue(signInPlan(providerCfg("chatgpt-oauth"), head("codex", "claudex"), "codex").viaBrowser)
-        assertTrue(signInPlan(providerCfg("grok-oauth"), head("xai", "claude-grok"), "xai").viaBrowser)
-        assertTrue(signInPlan(providerCfg("kimi-oauth"), head("kimi", "claude-kimi"), "kimi").viaBrowser)
+        assertTrue(planner.signInPlan(providerCfg("chatgpt-oauth"), head("codex", "claudex"), "codex").viaBrowser)
+        assertTrue(planner.signInPlan(providerCfg("grok-oauth"), head("xai", "claude-grok"), "xai").viaBrowser)
+        assertTrue(planner.signInPlan(providerCfg("kimi-oauth"), head("kimi", "claude-kimi"), "kimi").viaBrowser)
         assertFalse(
-            signInPlan(providerCfg(API_KEY), head("openrouter", "claude-openrouter"), "openrouter").viaBrowser,
+            planner.signInPlan(providerCfg(API_KEY), head("openrouter", "claude-openrouter"), "openrouter").viaBrowser,
             "an api-key head has no browser flow — claiming one is what produced the dead-end prompt",
         )
     }
@@ -79,17 +82,27 @@ class SignInPlanMatrixTest {
      *  knows. This scopes CAPTURE only — never whether /login exists (asserted above). */
     @Test
     fun `token capture is enabled only for vendors whose token shape splice knows`() {
-        val openrouter = signInPlan(providerCfg(API_KEY), head("openrouter", "claude-openrouter"), "openrouter")
+        val openrouter = planner.signInPlan(providerCfg(API_KEY), head("openrouter", "claude-openrouter"), "openrouter")
         assertNotNull(openrouter.tokenCapture, "OpenRouter's sk-or- prefix is unambiguous — capture is safe")
         assertEquals("OPENROUTER_API_KEY", openrouter.tokenCapture?.envVar)
         assertTrue(openrouter.tokenCapture!!.tokenPattern.startsWith("sk-or-"))
 
         for (vendor in listOf("fireworks", "openai", "moonshot")) {
             assertNull(
-                signInPlan(providerCfg(API_KEY), head(vendor, "claude-$vendor"), vendor).tokenCapture,
+                planner.signInPlan(providerCfg(API_KEY), head(vendor, "claude-$vendor"), vendor).tokenCapture,
                 "$vendor has no pinned token shape — guessing one risks capturing ordinary prose",
             )
         }
+    }
+
+    /** DR-97: the DAEMON derives the api-key env from the HEAD key — effectiveApiKeyEnv(ctx.key)
+     *  in every provider arm and in doctor — so capture must too. The provider-key derivation
+     *  stored OPENROUTER_API_KEY while the daemon read FAST_API_KEY: login printed success, the
+     *  head kept 401ing, doctor said not set. Token SHAPE stays keyed by provider identity. */
+    @Test
+    fun `capture derives the env var from the HEAD key - the var the daemon reads - DR-97`() {
+        val plan = planner.signInPlan(providerCfg(API_KEY), head("openrouter", "claude-fast"), "fast")
+        assertEquals("FAST_API_KEY", plan.tokenCapture?.envVar, "capture must write the var the daemon reads")
     }
 
     /** An OAuth head never captures pastes: its secret never appears in the prompt box at all. */
@@ -97,17 +110,50 @@ class SignInPlanMatrixTest {
     fun `oauth kinds never enable paste capture`() {
         for (kind in listOf("chatgpt-oauth", "grok-oauth", "kimi-oauth")) {
             assertNull(
-                signInPlan(providerCfg(kind), head("p", "claude-p"), "p").tokenCapture,
+                planner.signInPlan(providerCfg(kind), head("p", "claude-p"), "p").tokenCapture,
                 "$kind signs in through the browser — there is no token to paste",
             )
         }
+    }
+
+    @Test
+    fun `oauth wrappers must be bare portable command names`() {
+        val kinds = listOf(
+            "chatgpt-oauth" to "codex",
+            "grok-oauth" to "xai",
+            "kimi-oauth" to "kimi",
+        )
+        val invalid = listOf("/usr/bin/claudex", "./claudex", "claude grok", "claude;evil", "", "-claudex")
+
+        kinds.forEach { (kind, provider) ->
+            invalid.forEach { command ->
+                assertThrows(
+                    IllegalArgumentException::class.java,
+                    { planner.signInPlan(providerCfg(kind), head(provider, command), provider) },
+                    "$kind accepted '$command'",
+                )
+            }
+        }
+    }
+
+    @Test
+    fun `oauth wrapper falls back to the topology key when command is absent`() {
+        val plan = planner.signInPlan(providerCfg("chatgpt-oauth"), head("codex", null), "codex")
+        assertEquals("codex login", plan.command)
+    }
+
+    @Test
+    fun `api-key commands remain prose-only and are not subject to browser wrapper validation`() {
+        val plan = planner.signInPlan(providerCfg(API_KEY), head("fireworks", "custom wrapper"), "fireworks")
+        assertEquals("custom wrapper login", plan.command)
+        assertFalse(plan.viaBrowser)
     }
 
     /** An UNKNOWN auth kind is the one case with no sign-in path, and it must stay blank so
      *  wire() skips /login rather than advertising something that cannot work. */
     @Test
     fun `an unknown auth kind gets no login command`() {
-        val plan = signInPlan(providerCfg("some-future-kind"), head("x", "claude-x"), "x")
+        val plan = planner.signInPlan(providerCfg("some-future-kind"), head("x", "claude-x"), "x")
         assertEquals("", plan.command, "no known flow => no /login, rather than a broken one")
         assertNull(plan.tokenCapture)
     }
@@ -116,7 +162,7 @@ class SignInPlanMatrixTest {
      *  key lands somewhere nothing looks. Pinned for the explicit-env case too. */
     @Test
     fun `capture writes the same env var the provider resolves`() {
-        val explicit = signInPlan(
+        val explicit = planner.signInPlan(
             providerCfg(API_KEY, envVar = "CUSTOM_OR_KEY"),
             head("openrouter", "claude-openrouter"),
             "openrouter",
@@ -126,5 +172,24 @@ class SignInPlanMatrixTest {
             explicit.tokenCapture?.envVar,
             "an explicit auth.env must win, or the key is stored under a name nothing reads",
         )
+    }
+
+    /** THE INVERSE of the load-bearing case above, and it is load-bearing for the opposite reason.
+     *  A client-auth head is the ONE head that keeps the client's own /login enabled (the launcher
+     *  does not set DISABLE_LOGIN_COMMAND for it). A non-blank command here would make
+     *  LoginInterception.wire() plant splice's OWN /login into that head's config dir, competing
+     *  with the door that actually works — and its flow ends at `<command> login`, which for this
+     *  kind prints "no browser login for that kind" and fails forever. Blank is the fix, and the
+     *  same blank drops TurnDriver's "— run: <command>" clause from a 401 so the upstream's own
+     *  message stands instead of an instruction that cannot succeed. */
+    @Test
+    fun `a client-auth head gets NO splice login command — the client's own door stays the only one`() {
+        val plan = planner.signInPlan(providerCfg("client"), head("anthropic", "claude-splice"), "anthropic")
+        assertTrue(
+            plan.command.isBlank(),
+            "a non-blank command makes wire() plant a /login that can never succeed: '${plan.command}'",
+        )
+        assertFalse(plan.viaBrowser, "splice runs no browser flow for this kind")
+        assertEquals(null, plan.tokenCapture, "there is no token for splice to capture")
     }
 }

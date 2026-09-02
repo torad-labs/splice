@@ -13,8 +13,10 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.parse.parseAnthropicBody
-import splice.core.turn.ReasoningDisplay
+import splice.core.parse.AnthropicParse
+import splice.core.turn.COMPACT_DIRECTIVE_HEAD
+import splice.core.turn.CompactInstructions
+import splice.core.turn.ReasoningDisplayParser
 import splice.dialect.responses.BuildOptions
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.EffortLadder
@@ -22,12 +24,12 @@ import splice.dialect.responses.InjectPriorReasoning
 import splice.dialect.responses.RequestEncryptedReasoning
 import splice.dialect.responses.ResponsesQuirks
 import splice.dialect.responses.ResponsesRequestBuilder
+import splice.dialect.responses.ResponsesStableIds
 import splice.dialect.responses.ToolDeferralPolicy
-import splice.dialect.responses.stablePromptCacheKey
-import splice.dialect.responses.withParallelToolCallsToml
-import splice.dialect.responses.withReasoningCacheToml
 
-private val CODEX = ResponsesQuirks(providerTag = "claudex")
+private val stableIds = ResponsesStableIds()
+
+private val CODEX = ResponsesQuirks(providerTag = "claudex", emitEmptyLiteInstructions = true)
 private val GROK = ResponsesQuirks(
     providerTag = "claude-grok",
     cacheKeyStrategy = CacheKeyStrategy.SESSION_ID,
@@ -54,7 +56,7 @@ private fun opts(
     upstreamModel = model,
     configEffort = effort,
     configSummary = summary,
-    showReasoning = ReasoningDisplay.from(show),
+    showReasoning = ReasoningDisplayParser.from(show),
     replayReasoning = InjectPriorReasoning(replay),
     // Default: include when reasoning is shown (independent of input-replay).
     includeEncryptedReasoning = RequestEncryptedReasoning(includeEncrypted ?: (show != "off" && !compact)),
@@ -68,7 +70,7 @@ private fun opts(
 )
 
 private fun build(json: String, quirks: ResponsesQuirks = CODEX, options: BuildOptions = opts()): JsonObject {
-    val parsed = parseAnthropicBody(json)
+    val parsed = AnthropicParse.parseAnthropicBody(json)
     return ResponsesRequestBuilder(quirks).build(parsed.typed, parsed.raw, options).req
 }
 
@@ -90,6 +92,28 @@ class ResponsesRequestBuilderTest {
         // nothing anywhere -> high
         req = build("""{"model":"m","messages":[{"role":"user","content":"x"}]}""")
         assertEquals("high", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `grok ladder reaches xhigh on the top budget rung and the ultracode alias`() {
+        // Grok 4.6 adds the xhigh rung (xAI docs 2026-08: native on 4.6+; older groks clamp it
+        // to high upstream), so the ladder emits it model-blind — a stale gate would silently
+        // cap every future grok at high. Before this the GROK ladder topped out at high and the
+        // ultracode alias clamped to high.
+        var req = build(
+            """{"model":"grok-4.6","thinking":{"type":"enabled","budget_tokens":64000},
+                "messages":[{"role":"user","content":"x"}]}""",
+            quirks = GROK,
+            options = opts(model = "grok-4.6"),
+        )
+        assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        req = build(
+            """{"model":"grok-4.6","effort":"ultracode","thinking":{"type":"enabled","budget_tokens":2000},
+                "messages":[{"role":"user","content":"x"}]}""",
+            quirks = GROK,
+            options = opts(model = "grok-4.6"),
+        )
+        assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
     }
 
     @Test
@@ -159,7 +183,9 @@ class ResponsesRequestBuilderTest {
             "tools":[{"name":"Task","input_schema":{"type":"object"}}],
             "messages":[{"role":"user","content":"x"}]}"""
         val req = build(tooled, options = opts(model = "gpt-5.6-sol"))
-        assertNull(req["instructions"])
+        // "" and not omitted: codex's ResponsesApiRequest.instructions is a non-optional String,
+        // so its lite requests carry the empty string (client.rs:874; tools byte-parity 2026-08-26).
+        assertEquals("", req["instructions"]?.jsonPrimitive?.content)
         assertNull(req["tools"])
         // codex-rs parity (client.rs:896): tools ride as additional_tools, so the backend needs an
         // explicit tool_choice:"auto" to enable function-calling — omitting it left the model
@@ -182,7 +208,7 @@ class ResponsesRequestBuilderTest {
             """{"model":"m","system":"harness prompt","messages":[{"role":"user","content":"x"}]}""",
             options = opts(model = "gpt-5.6-luna"),
         )
-        assertNull(req["instructions"])
+        assertEquals("", req["instructions"]?.jsonPrimitive?.content) // lite parity: "", not omitted
         // the backend REQUIRES an explicit false whenever the lite header rides, tools or not
         assertEquals("false", req["parallel_tool_calls"]?.jsonPrimitive?.content)
         val input = req["input"]!!.jsonArray.map { it.jsonObject }
@@ -266,8 +292,12 @@ class ResponsesRequestBuilderTest {
         assertNull(req["tools"])
         val instructions = req["instructions"]?.jsonPrimitive?.content.orEmpty()
         assertTrue(instructions.startsWith("base system"))
-        assertTrue(instructions.contains("COMPACT MODE (critical)"))
+        // CX-02 canary (DR-35d): bound to the SHARED definition, not a hand-typed literal — the
+        // wall greps this file for COMPACT_DIRECTIVE_HEAD, and byte-equality with the :core
+        // composition IS the dialect-symmetry claim (chat and passthrough pin the same way).
+        assertTrue(instructions.contains(COMPACT_DIRECTIVE_HEAD), "the directive must ride: $instructions")
         assertTrue(instructions.contains("No tools. No function calls."))
+        assertEquals(CompactInstructions.withCompactDirective("base system", compact = true), instructions)
         val inputs = req["input"]!!.jsonArray.map { it.jsonObject }
         assertTrue(inputs.any { it["content"]?.jsonPrimitive?.content == "[tool_result t1] result body" })
         // images dropped on compact
@@ -325,21 +355,25 @@ class ResponsesRequestBuilderTest {
         val b = build(body)["prompt_cache_key"]?.jsonPrimitive?.content
         assertEquals(a, b)
         assertTrue(a!!.startsWith("splice-") && a.length == "splice-".length + 32)
-        val parsed = parseAnthropicBody("""{"model":"m","messages":[]}""")
-        assertNull(stablePromptCacheKey(parsed.typed))
+        val parsed = AnthropicParse.parseAnthropicBody("""{"model":"m","messages":[]}""")
+        assertNull(stableIds.stablePromptCacheKey(parsed.typed))
         val grokReq = build(body, quirks = GROK, options = opts(sessionId = "sess-1"))
         assertEquals("claude-grok:sess-1", grokReq["prompt_cache_key"]?.jsonPrimitive?.content)
     }
 
     @Test
-    fun `grok ladder clamps xhigh to high, emits tool_choice, floors disabled to low`() {
+    fun `grok ladder passes xhigh through (upstream clamps pre-4_6), emits tool_choice, floors disabled to low`() {
+        // 2026-08-13: the clamp moved UPSTREAM. xhigh is native on grok-4.6+; xAI documents
+        // treating it as high on older models, and this provider only ever talks to api.x.ai,
+        // so the ladder emits it model-blind instead of keeping a client-side gate that would
+        // silently cap every future grok at high.
         val req = build(
             """{"model":"grok-4.5","effort":"xhigh","tools":[{"name":"t","input_schema":{"type":"object"}}],
                 "tool_choice":{"type":"any"},"messages":[{"role":"user","content":"x"}]}""",
             quirks = GROK,
             options = opts(model = "grok-4.5"),
         )
-        assertEquals("high", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
+        assertEquals("xhigh", req["reasoning"]?.jsonObject?.get("effort")?.jsonPrimitive?.content)
         // Full reasoning visibility: detailed summary is requested so the stream fills the
         // thinking channel (xAI's public form of "full" reasoning text).
         assertEquals("detailed", req["reasoning"]?.jsonObject?.get("summary")?.jsonPrimitive?.content)
@@ -413,7 +447,7 @@ private fun cacheOpts(
     upstreamModel = "gpt-5.6-sol",
     configEffort = null,
     configSummary = null,
-    showReasoning = ReasoningDisplay.from("text"),
+    showReasoning = ReasoningDisplayParser.from("text"),
     replayReasoning = InjectPriorReasoning(replay),
     includeEncryptedReasoning = RequestEncryptedReasoning(true),
     sessionId = null,
@@ -454,7 +488,7 @@ private fun preCacheOpts() = BuildOptions(
     upstreamModel = "gpt-5.6-sol",
     configEffort = null,
     configSummary = null,
-    showReasoning = ReasoningDisplay.from("text"),
+    showReasoning = ReasoningDisplayParser.from("text"),
     replayReasoning = InjectPriorReasoning(false),
     includeEncryptedReasoning = RequestEncryptedReasoning(true),
     sessionId = null,
@@ -574,23 +608,23 @@ class ToolSurfaceRequestTest {
 
     @Test
     fun `BuiltRequest toolSearch is non-null exactly when the partition deferred something`() {
-        val parsedOn = parseAnthropicBody(toolSurfaceBody())
+        val parsedOn = AnthropicParse.parseAnthropicBody(toolSurfaceBody())
         val builtOn = ResponsesRequestBuilder(quirksOn).build(parsedOn.typed, parsedOn.raw, opts(model = "gpt-5.6-sol"))
         assertTrue(builtOn.toolSearch != null)
 
-        val parsedOff = parseAnthropicBody(toolSurfaceBody())
+        val parsedOff = AnthropicParse.parseAnthropicBody(toolSurfaceBody())
         val builtOff = ResponsesRequestBuilder(CODEX).build(parsedOff.typed, parsedOff.raw, opts(model = "gpt-5.6-sol"))
         assertNull(builtOff.toolSearch)
     }
 
     @Test
     fun `TurnMeta stamps tools eager and deferred, null when deferral is off`() {
-        val parsedOn = parseAnthropicBody(toolSurfaceBody())
+        val parsedOn = AnthropicParse.parseAnthropicBody(toolSurfaceBody())
         val builtOn = ResponsesRequestBuilder(quirksOn).build(parsedOn.typed, parsedOn.raw, opts(model = "gpt-5.6-sol"))
         assertEquals(1, builtOn.meta.toolsEager)
         assertEquals(12, builtOn.meta.toolsDeferred)
 
-        val parsedOff = parseAnthropicBody(toolSurfaceBody())
+        val parsedOff = AnthropicParse.parseAnthropicBody(toolSurfaceBody())
         val builtOff = ResponsesRequestBuilder(CODEX).build(parsedOff.typed, parsedOff.raw, opts(model = "gpt-5.6-sol"))
         assertNull(builtOff.meta.toolsEager)
         assertNull(builtOff.meta.toolsDeferred)

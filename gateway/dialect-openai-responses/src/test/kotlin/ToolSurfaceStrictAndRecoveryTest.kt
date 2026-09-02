@@ -12,8 +12,12 @@ import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.wire.ToolDefinition
-import splice.dialect.responses.deferredToolObject
-import splice.dialect.responses.dropToolSearchTool
+import splice.dialect.responses.ToolSurfaceRecovery
+import splice.dialect.responses.ToolWireObjects
+
+private val recovery = ToolSurfaceRecovery()
+
+private val toolWire = ToolWireObjects()
 
 class ToolSurfaceStrictAndRecoveryTest {
 
@@ -26,8 +30,10 @@ class ToolSurfaceStrictAndRecoveryTest {
     fun `deferredToolObject forces strict false under forceStrictFalse regardless of the tool's own value`() {
         val bash = ToolDefinition(name = "Bash", strict = true)
         val read = ToolDefinition(name = "Read") // strict = null
-        val strictTrue = deferredToolObject(bash, emitStrict = false, forceStrictFalse = true)
-        val strictNull = deferredToolObject(read, emitStrict = false, forceStrictFalse = true)
+        val strictTrue =
+            toolWire.deferredToolObject(bash, emitStrict = false, forceStrictFalse = true, normalizeSchemas = false)
+        val strictNull =
+            toolWire.deferredToolObject(read, emitStrict = false, forceStrictFalse = true, normalizeSchemas = false)
         assertEquals("false", strictTrue["strict"]?.jsonPrimitive?.content)
         assertEquals("false", strictNull["strict"]?.jsonPrimitive?.content)
     }
@@ -35,14 +41,16 @@ class ToolSurfaceStrictAndRecoveryTest {
     @Test
     fun `deferredToolObject passes through emitStrict true - unaffected by removing forceStrictFalse`() {
         val tool = ToolDefinition(name = "Bash", strict = true)
-        val passthrough = deferredToolObject(tool, emitStrict = true, forceStrictFalse = false)
+        val passthrough =
+            toolWire.deferredToolObject(tool, emitStrict = true, forceStrictFalse = false, normalizeSchemas = false)
         assertEquals("true", passthrough["strict"]?.jsonPrimitive?.content)
     }
 
     @Test
     fun `deferredToolObject omits strict entirely when neither quirk is set`() {
         val tool = ToolDefinition(name = "Bash", strict = true)
-        val omitted = deferredToolObject(tool, emitStrict = false, forceStrictFalse = false)
+        val omitted =
+            toolWire.deferredToolObject(tool, emitStrict = false, forceStrictFalse = false, normalizeSchemas = false)
         assertNull(omitted["strict"])
     }
 
@@ -65,7 +73,7 @@ class ToolSurfaceStrictAndRecoveryTest {
             {"type":"tool_search_call","call_id":"ts_1","execution":"client","arguments":"{}"},
             {"type":"tool_search_output","call_id":"ts_1","status":"completed","execution":"client","tools":[]}
         ],"store":false,"stream":true}"""
-        val stripped = dropToolSearchTool(body)
+        val stripped = recovery.dropToolSearchTool(body)
         assertTrue(stripped != null)
         val input = Json.parseToJsonElement(stripped!!).jsonObject["input"]!!.jsonArray
         assertEquals(2, input.size, "both reasoning items, the call, and the output are all gone")
@@ -93,7 +101,7 @@ class ToolSurfaceStrictAndRecoveryTest {
             {"type":"tool_search_call","call_id":"ts_2","execution":"client","arguments":"{}"},
             {"type":"tool_search_output","call_id":"ts_2","status":"completed","execution":"client","tools":[]}
         ],"store":false,"stream":true}"""
-        val stripped = dropToolSearchTool(body)
+        val stripped = recovery.dropToolSearchTool(body)
         assertTrue(stripped != null)
         val input = Json.parseToJsonElement(stripped!!).jsonObject["input"]!!.jsonArray
         // survivors: the additional_tools scaffold, "hi", and "between rounds" — IN THAT ORDER —

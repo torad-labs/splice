@@ -1,0 +1,41 @@
+# Completeness discipline — `TODO()` is not a marker, it is a `throw NotImplementedError`. It
+# compiles, type-checks as `Nothing` (so it satisfies any return type and no signature complains),
+# passes review as a note-to-self, and then throws on the first request that reaches it. In a
+# daemon that means an unhandled failure on a live turn rather than a build error, which is the
+# wrong end of the pipeline to find out.
+#
+# Compliant forms: implement the branch; or delete the placeholder and let the type system carry
+# the absence (return the sealed error case this repo already models, or narrow the signature so
+# the unimplemented state is unrepresentable). If a stub genuinely must exist for a seam that is
+# not built yet, it belongs behind a test double under src/test/, which this glob exempts.
+#
+# PROMOTED 2026-08-16 (HD-17) from the dormant .rules/kotlin/ast-grep pack, which was wired to
+# nothing and so had never run.
+#
+# WIDENED at promotion to cover `NotImplementedError` directly. The source rule matched only the
+# `TODO(...)` spelling while its own header named NotImplementedError as the thing that goes wrong,
+# so the longhand — `throw NotImplementedError("wire this up")` — walked straight through a wall
+# whose stated subject it is. This is the same lesson kt-no-system-getenv records: these rules
+# match SPELLINGS, and an enumeration of spellings is never provably complete. Treat the branches
+# as the shapes known to occur, not as closure. Constructing the error is banned; naming the type
+# is not, so `catch (e: NotImplementedError)` is untouched (it has no argument list and is not a
+# call_expression).
+#
+# Censused before promotion: 0 `TODO(` and 0 `NotImplementedError` occurrences anywhere in
+# gateway/*/src/main, so the added branch lands green rather than red.
+id: kt-no-todo-throws
+language: kotlin
+severity: error
+message: "TODO()/NotImplementedError throws at runtime — implement it, or model the absence in the type."
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  any:
+    # `$$$A` matches zero-or-more arguments, so this single branch covers both the bare `TODO()`
+    # and the message form `TODO("reason")`.
+    - pattern: TODO($$$A)
+    # the longhand the source rule was blind to. `kind: call_expression` keeps this to
+    # CONSTRUCTION — a `catch (e: NotImplementedError)` type reference is not a call.
+    - all:
+        - pattern: NotImplementedError($$$A)
+        - kind: call_expression

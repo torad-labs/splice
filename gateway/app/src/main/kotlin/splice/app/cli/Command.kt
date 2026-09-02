@@ -9,57 +9,63 @@ import splice.core.SHIM_VERSION
 
 /** The splice CLI verbs as a closed, exhaustively-dispatched hierarchy: argv is parsed into a typed
  *  case (so args like the install target are data, not positional lookups), and run() is total —
- *  adding a verb is a compile error until every site handles it. Replaces the old string→object map. */
+ *  adding a verb is a compile error until every site handles it. Replaces the old string→object map.
+ *
+ *  Each case constructs its verb's class and calls the member that used to be a top-level function
+ *  of the same name (Kotlin style law, 2026-08-15: main sources carry no top-level functions), so
+ *  every arm below is the old line plus a receiver. */
 public sealed class Command {
     public abstract fun run(): Int
 
-    public data object Doctor : Command() { override fun run(): Int = outcomeExitCode(doctor()) }
+    public data object Doctor : Command() {
+        override fun run(): Int = outcomeExitCode(DoctorCommand().doctor())
+    }
     public data object Version : Command() {
         override fun run(): Int = success { println("splice $GATEWAY_VERSION") }
     }
     public data object ShimVersion : Command() { override fun run(): Int = success { println(SHIM_VERSION) } }
-    public data object Init : Command() { override fun run(): Int = success { init() } }
+    public data object Init : Command() { override fun run(): Int = success { InstallCommand().init() } }
     public data class Install(val target: String?) : Command() {
-        override fun run(): Int = outcomeExitCode(install(target))
+        override fun run(): Int = outcomeExitCode(InstallCommand().install(target))
     }
     public data class Uninstall(val target: String?) : Command() {
-        override fun run(): Int = outcomeExitCode(uninstall(target))
+        override fun run(): Int = outcomeExitCode(InstallCommand().uninstall(target))
     }
     public data class Login(val head: String?) : Command() {
-        override fun run(): Int = outcomeExitCode(runBlocking { login(head) })
+        override fun run(): Int = outcomeExitCode(runBlocking { LoginCommand().login(head) })
     }
     public data object Setup : Command() {
-        override fun run(): Int = outcomeExitCode(runBlocking { setup() })
+        override fun run(): Int = outcomeExitCode(runBlocking { SetupCommand().setup() })
     }
-    public data object Status : Command() { override fun run(): Int = success { status() } }
-    public data object Restart : Command() { override fun run(): Int = outcomeExitCode(restart()) }
-    public data object Dashboard : Command() { override fun run(): Int = outcomeExitCode(dashboard()) }
+    public data object Status : Command() { override fun run(): Int = success { StatusCommand().status() } }
+    public data object Restart : Command() { override fun run(): Int = outcomeExitCode(RestartCommand().restart()) }
+    public data object Dashboard : Command() {
+        override fun run(): Int = outcomeExitCode(DashboardCommand().dashboard())
+    }
     public data class Key(val args: List<String>) : Command() {
-        override fun run(): Int = outcomeExitCode(key(args))
+        override fun run(): Int = outcomeExitCode(KeyCommand().key(args))
+    }
+    public data class Logs(val args: List<String>) : Command() {
+        override fun run(): Int = outcomeExitCode(LogsCommand().logs(args))
     }
 
-    public companion object {
-        // parse table (verb -> factory): a map keeps parse() at trivial complexity (no 10-arm `when`,
-        // which would trip CyclomaticComplexMethod). The COMMANDS are the sealed type; this is just parsing.
-        private val verbs: Map<String, (Array<String>) -> Command> = mapOf(
-            "doctor" to { Doctor }, "version" to { Version }, "shim-version" to { ShimVersion },
-            "init" to { Init },
-            "install" to { a -> Install(a.getOrNull(1)) },
-            "uninstall" to { a -> Uninstall(a.getOrNull(1)) },
-            "login" to { a -> Login(a.getOrNull(1)) },
-            "setup" to { Setup }, "status" to { Status }, "restart" to { Restart },
-            "dashboard" to { Dashboard },
-            "key" to { a -> Key(a.drop(1)) },
-        )
+    /** Verb outcome -> process exit code. Inherited by every case above, which is why each `run()`
+     *  arm still calls it unqualified; it was a top-level function until the no-top-level-functions
+     *  law (2026-08-15) gave it the type it always belonged to. Visibility unchanged (internal). */
+    internal fun outcomeExitCode(ok: Boolean): Int = if (ok) 0 else 1
 
-        /** argv -> Command, or null for an unknown/empty verb (caller prints usage). */
-        public fun parse(args: Array<String>): Command? = verbs[args.firstOrNull()]?.invoke(args)
+    /** A verb that cannot fail: run [block], exit 0.
+     *
+     *  `protected` rather than the old file-private, and that IS the narrowest that compiles: a case
+     *  is a subclass, and class-`private` is not reachable from the nested arms (measured — the
+     *  `Status` arm fails with "Cannot access 'fun success': it is private in Command").
+     *
+     *  What the widening actually costs: since Kotlin 1.5 a sealed subclass need only share the
+     *  PACKAGE and the compilation module, not the file, so the reach is any direct `: Command()` in
+     *  package `splice.app.cli` inside `:app` — not "this file only". Today all 13 cases are nested
+     *  right here, which is the whole of it, but a new file in this package could reach it. */
+    protected inline fun success(block: () -> Unit): Int {
+        block()
+        return 0
     }
-}
-
-internal fun outcomeExitCode(ok: Boolean): Int = if (ok) 0 else 1
-
-private inline fun success(block: () -> Unit): Int {
-    block()
-    return 0
 }

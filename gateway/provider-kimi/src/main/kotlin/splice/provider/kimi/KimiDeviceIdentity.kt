@@ -1,33 +1,50 @@
-// NEW: Kimi (Moonshot) device identity — the X-Msh-* headers sent on OAuth calls AND upstream
-// turns, plus a stable device_id (uuid) persisted next to the auth file (0600). Every header value
-// is ASCII-sanitized: non-ASCII chars are stripped and an empty result becomes "unknown", because
-// Ktor throws on non-Latin1 header values and CJK hostnames exist in the wild. The header set is
-// exactly the five X-Msh-* names the wire contract enumerates; device_id is persisted for identity
-// continuity and exposed via deviceId() for the login/wire layers.
+// NEW: Kimi (Moonshot) device identity — the five X-Msh-* runtime headers sent on OAuth calls and
+// upstream turns, plus a deviceId() helper that persists a stable UUID when explicitly requested.
+// Every header value is ASCII-sanitized: non-ASCII chars are stripped and an empty result becomes
+// "unknown", because Ktor rejects non-Latin1 header values and CJK hostnames exist in the wild.
+// The header map contains platform/version/hostname/OS values; it does not read or expose device_id.
 package splice.provider.kimi
 
 import splice.core.GATEWAY_VERSION
-import splice.core.util.runCatchingCancellable
+import splice.core.util.Cancellables
+import splice.core.util.SafeFailureText
+import splice.core.util.SecureFile
 import java.net.InetAddress
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.UUID
 
+private const val ASCII_CEILING = 0x80
+
 public class KimiDeviceIdentity(
     private val deviceIdPath: Path,
     private val version: String = GATEWAY_VERSION,
-    private val rawHostname: String = defaultHostname(),
+    private val rawHostname: String = KimiHostname().defaultHostname(),
     private val osName: String = System.getProperty("os.name").orEmpty(),
     private val osVersion: String = System.getProperty("os.version").orEmpty(),
     private val osArch: String = System.getProperty("os.arch").orEmpty(),
 ) {
 
-    /** Read-or-create the persisted device_id (uuid, 0600). */
+    /** Read-or-create the persisted device_id (uuid, 0600). Minting happens ONLY on proven
+     *  absence (DR-59, codex): an unreadable file is NOT a first run — a fresh uuid here ROTATES
+     *  the device identity kimi has bound to the operator's session, so indeterminate access
+     *  throws instead, naming the file. */
     public fun deviceId(): String {
-        // ast-grep-ignore: kt-no-silent-result-collapse -- unreadable device-id file regenerates a fresh uuid below; identity continuity is best-effort
-        val existing = runCatchingCancellable {
-            if (Files.exists(deviceIdPath)) Files.readString(deviceIdPath).trim() else null
-        }.getOrNull()
+        val read = Cancellables.runCatchingCancellable { Files.readString(deviceIdPath).trim() }
+        val failure = read.exceptionOrNull()
+        if (failure != null) {
+            val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
+                !Files.exists(deviceIdPath, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+            if (!genuinelyAbsent) {
+                throw java.io.IOException(
+                    "$deviceIdPath unreadable (${SafeFailureText.render(failure)}) — refusing to " +
+                        "mint a NEW device id over an existing identity; fix the file or remove it",
+                    failure,
+                )
+            }
+        }
+        // ast-grep-ignore: kt-no-silent-result-collapse -- non-absence failures threw above; null is proven absence
+        val existing = read.getOrNull()
         if (!existing.isNullOrEmpty()) return existing
         val id = UUID.randomUUID().toString()
         writeSecure(deviceIdPath, id)
@@ -43,14 +60,23 @@ public class KimiDeviceIdentity(
         "X-Msh-Os-Version" to asciiSanitize(osVersion),
     )
 
-    private companion object {
-        const val ASCII_CEILING = 0x80
+    private fun asciiSanitize(value: String): String =
+        value.filter { it.code < ASCII_CEILING }.ifEmpty { "unknown" }
 
-        fun asciiSanitize(value: String): String =
-            value.filter { it.code < ASCII_CEILING }.ifEmpty { "unknown" }
-
-        fun defaultHostname(): String =
-            // ast-grep-ignore: kt-no-silent-result-collapse -- hostname is cosmetic header data; "unknown" is the designed fallback
-            runCatchingCancellable { InetAddress.getLocalHost().hostName }.getOrNull() ?: "unknown"
+    // Atomic 0600 write (device_id file) — routes to the shared primitive, mirroring the private
+    // member CodexAuthProvider/GrokAuthProvider already carry. The old body here was
+    // write-then-chmod, which left the file world-readable for a window; SecureFile closes it.
+    private fun writeSecure(path: Path, content: String) {
+        SecureFile.writeAtomic0600(path, content)
     }
+}
+
+// FILE SCOPE ON PURPOSE: `rawHostname`'s constructor default is evaluated before an instance of
+// KimiDeviceIdentity exists, so the lookup cannot be an instance member. A one-method class keeps
+// it out of the top-level function namespace AND preserves per-construction evaluation (a top-level
+// `val` would resolve the hostname once per classloader instead of once per identity).
+private class KimiHostname {
+    fun defaultHostname(): String =
+        // ast-grep-ignore: kt-no-silent-result-collapse -- hostname is cosmetic header data; "unknown" is the designed fallback
+        Cancellables.runCatchingCancellable { InetAddress.getLocalHost().hostName }.getOrNull() ?: "unknown"
 }

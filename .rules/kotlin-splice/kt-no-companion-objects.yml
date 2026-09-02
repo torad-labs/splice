@@ -1,0 +1,25 @@
+# A companion object hides top-level helpers inside a class body: the members are neither the
+# class's behaviour nor an injectable collaborator, they are statics with a nicer name, and they
+# encourage the god class that owns them to keep growing.
+#
+# WHY THIS IS A GATE RULE AND NOT ONLY A WRITE-TIME HOOK — see kt-no-top-level-functions.yml. Same
+# outage, same month: hook disabled in 7589e19, second path wired to an unrouted directory, gate
+# green throughout while 58 companions accumulated.
+#
+# COMPLIANT FORMS, and note that "move it to the top level" is NOT one of them for behaviour, which
+# would only trade this violation for a kt-no-top-level-functions violation:
+#   - constants  -> a top-level `private const val` / `internal const val` in the same file
+#   - factories  -> an injected factory class, or `operator fun invoke` on a class the caller holds
+#   - behaviour  -> a method on the type that owns the data it reads
+id: kt-no-companion-objects
+language: kotlin
+severity: error
+message: "No companion objects. Constants become top-level `const val` in the same file; behaviour becomes a method on its owning type or an injected collaborator — NOT a top-level function."
+note: >
+  A companion is the usual way a class quietly turns into a god object: statics have no owner, so
+  nothing pushes back as they accumulate. If the members are only reachable from this one class,
+  they are that class's methods; if they are reachable from elsewhere, they want their own type.
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  kind: companion_object

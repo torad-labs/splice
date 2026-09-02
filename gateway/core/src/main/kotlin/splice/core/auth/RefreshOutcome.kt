@@ -9,6 +9,8 @@
 package splice.core.auth
 
 import splice.core.util.DaemonLog
+import splice.core.util.LogSink
+import splice.core.util.SafeFailureText
 
 /** The Rejected.reason marker for a CONFIRMED invalid_grant (401/403/explicit invalid_grant body) —
  *  as opposed to any other non-retryable refresh rejection. Paired with [InvalidGrantLatch]. */
@@ -34,49 +36,83 @@ public sealed class RefreshOutcome {
     /** The refresh network hop threw before the endpoint could answer (DNS, connect, TLS). */
     public data class TransportFailed(val cause: Throwable) : RefreshOutcome()
 
-    /** Tokens were rotated upstream but persisting/re-reading them locally failed — urgent: the old refresh token may already be dead. */
-    public data class PersistFailed(val reason: String) : RefreshOutcome()
-}
+    /**
+     * Tokens were rotated upstream but persisting/re-reading them locally failed — urgent: the old
+     * refresh token may already be dead.
+     *
+     * DR-151: this used to be `PersistFailed(val reason: String)`, and the String was the hazard.
+     * A pre-rendered message means the sanitizer decision is made at the CALL SITE, before the
+     * value ever reaches the sink — so the DR-140 wall, which can only see a call site it is
+     * looking at, cannot stop a future one from baking raw throwable text into the field. The
+     * three live write paths were routed correctly; the TYPE still permitted the bypass, and a
+     * wall that depends on everyone remembering is the thing DR-65 keeps re-learning.
+     *
+     * Split into the two shapes the tree actually constructs — a write that threw, and one
+     * semantic post-write condition — so there is nowhere left to put a string. The throwable is
+     * carried whole and rendered ONCE, at the sink below, by the renderer that owns the decision.
+     * The hazard is now inexpressible rather than merely absent.
+     */
+    public sealed class PersistFailed : RefreshOutcome() {
+        /** The credential write itself threw. The cause travels raw and is rendered at the sink. */
+        public data class Write(val cause: Throwable) : PersistFailed()
 
-/**
- * The SINGLE sanctioned flatten to the `RefreshableAuthProvider.refresh(): Credentials?` SPI shape.
- * Exhaustive by construction — a new outcome branch fails compilation here, not silently at
- * runtime — and every non-success branch logs its own distinguishable line before nulling.
- */
-public fun RefreshOutcome.credentialsOrNull(
-    tag: String,
-    // Was `= System.err::println`, which reached stderr ONLY and so never appeared in /mgmt/logs
-    // (wall kt-no-println, 2026-07-27). The default now resolves to the process sink Main installs,
-    // which writes daemon.log; daemon callers still pass their own injected sink explicitly, and
-    // tests pass a capturing one. Uninstalled, DaemonLog is a no-op — never a silent stderr write.
-    log: (String) -> Unit = DaemonLog::write,
-): Credentials? = when (this) {
-    is RefreshOutcome.Refreshed -> credentials
-    RefreshOutcome.NoCredentialsFile -> {
-        log("[$tag] refresh skipped: no credential file — not logged in")
-        null
+        /** The write reported success but the file did not read back — no throwable exists to carry. */
+        public data object UnreadableAfterWrite : PersistFailed()
+
+        /** The operator-facing half of the persist line. `internal` because rendering is the sink's
+         *  job and no caller may pre-empt it — that is the whole point of the split. */
+        internal fun detail(): String = when (this) {
+            // Deliberately does NOT name a file. The three providers write three different paths
+            // (codex/grok auth.json, kimi credentials/kimi-code.json), and `[$tag]` already says
+            // which provider is speaking, so a hardcoded "auth.json" would be wrong for kimi.
+            is Write -> "credential write failed: ${SafeFailureText.render(cause)}"
+            UnreadableAfterWrite -> "credential file unreadable after rotated-token write"
+        }
     }
-    RefreshOutcome.NoRefreshToken -> {
-        log("[$tag] refresh skipped: no refresh token on file — re-login required")
-        null
-    }
-    is RefreshOutcome.Rejected -> {
-        log("[$tag] refresh rejected by token endpoint: $reason")
-        null
-    }
-    is RefreshOutcome.ReadFailed -> {
-        log("[$tag] credential file read failed (NOT a logged-out state): $cause")
-        null
-    }
-    is RefreshOutcome.TransportFailed -> {
-        log("[$tag] refresh transport failed (likely transient): $cause")
-        null
-    }
-    is RefreshOutcome.PersistFailed -> {
-        log(
-            "[$tag] refresh rotated upstream but local persist failed: $reason — " +
-                "old token may be dead, re-login if errors persist",
-        )
-        null
+
+    /**
+     * The SINGLE sanctioned flatten to the `RefreshableAuthProvider.refresh(): Credentials?` SPI shape.
+     * Exhaustive by construction — a new outcome branch fails compilation here, not silently at
+     * runtime — and every non-success branch logs its own distinguishable line before nulling.
+     *
+     * A member since the 2026-08-16 style migration (HD-M8): it was a top-level extension on this
+     * very sealed class, so the receiver simply moved inside and every call site is unchanged.
+     */
+    public fun credentialsOrNull(
+        tag: String,
+        // Was `= System.err::println`, which reached stderr ONLY and so never appeared in /mgmt/logs
+        // (wall kt-no-println, 2026-07-27). The default now resolves to the process sink Main installs,
+        // which writes daemon.log; daemon callers still pass their own injected sink explicitly, and
+        // tests pass a capturing one. Uninstalled, DaemonLog is a no-op — never a silent stderr write.
+        log: LogSink = LogSink(DaemonLog::write),
+    ): Credentials? = when (this) {
+        is Refreshed -> credentials
+        NoCredentialsFile -> {
+            log("[$tag] refresh skipped: no credential file — not logged in")
+            null
+        }
+        NoRefreshToken -> {
+            log("[$tag] refresh skipped: no refresh token on file — re-login required")
+            null
+        }
+        is Rejected -> {
+            log("[$tag] refresh rejected by token endpoint: $reason")
+            null
+        }
+        is ReadFailed -> {
+            log("[$tag] credential file read failed (NOT a logged-out state): ${SafeFailureText.render(cause)}")
+            null
+        }
+        is TransportFailed -> {
+            log("[$tag] refresh transport failed (likely transient): ${SafeFailureText.render(cause)}")
+            null
+        }
+        is PersistFailed -> {
+            log(
+                "[$tag] refresh rotated upstream but local persist failed: ${detail()} — " +
+                    "old token may be dead, re-login if errors persist",
+            )
+            null
+        }
     }
 }

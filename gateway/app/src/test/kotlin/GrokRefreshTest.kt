@@ -9,8 +9,10 @@ import kotlinx.coroutines.test.runTest
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.app.grokRefresh
+import splice.app.GrokRefresh
 import splice.core.auth.RefreshAttempt
+import java.io.ByteArrayOutputStream
+import java.io.PrintStream
 import java.util.concurrent.atomic.AtomicInteger
 
 class GrokRefreshTest {
@@ -31,7 +33,7 @@ class GrokRefreshTest {
                 )
             }
         }
-        val result = grokRefresh("https://auth.x.ai/token", "old-refresh", clientOver(engine))
+        val result = GrokRefresh().refresh("https://auth.x.ai/token", "old-refresh", clientOver(engine))
         val granted = result as RefreshAttempt.Granted
         assertEquals("new-access", granted.tokens.accessToken)
         assertEquals("new-refresh", granted.tokens.refreshToken)
@@ -45,7 +47,7 @@ class GrokRefreshTest {
             calls.incrementAndGet()
             respond("unauthorized", HttpStatusCode.Unauthorized, headersOf())
         }
-        val result = grokRefresh("https://auth.x.ai/token", "dead-refresh", clientOver(engine))
+        val result = GrokRefresh().refresh("https://auth.x.ai/token", "dead-refresh", clientOver(engine))
         assertTrue(result is RefreshAttempt.InvalidGrant)
         assertEquals(1, calls.get())
     }
@@ -57,7 +59,7 @@ class GrokRefreshTest {
             calls.incrementAndGet()
             respond("""{"error":"invalid_grant"}""", HttpStatusCode.BadRequest, headersOf())
         }
-        val result = grokRefresh("https://auth.x.ai/token", "dead-refresh", clientOver(engine))
+        val result = GrokRefresh().refresh("https://auth.x.ai/token", "dead-refresh", clientOver(engine))
         assertTrue(result is RefreshAttempt.InvalidGrant)
         assertEquals(1, calls.get())
     }
@@ -69,7 +71,7 @@ class GrokRefreshTest {
             calls.incrementAndGet()
             respond("down", HttpStatusCode.ServiceUnavailable, headersOf())
         }
-        val result = grokRefresh("https://auth.x.ai/token", "refresh", clientOver(engine))
+        val result = GrokRefresh().refresh("https://auth.x.ai/token", "refresh", clientOver(engine))
         assertTrue(result is RefreshAttempt.Denied)
         assertEquals(3, calls.get())
     }
@@ -77,7 +79,30 @@ class GrokRefreshTest {
     @Test
     fun `malformed JSON on a 200 response returns Denied without throwing`() = runTest {
         val engine = MockEngine { respond("not json", HttpStatusCode.OK, headersOf()) }
-        val result = grokRefresh("https://auth.x.ai/token", "refresh", clientOver(engine))
+        val result = GrokRefresh().refresh("https://auth.x.ai/token", "refresh", clientOver(engine))
         assertTrue(result is RefreshAttempt.Denied)
+    }
+
+    @Test
+    fun `failed refresh logs status without exposing response body`() = runTest {
+        val secret = "vendor-secret-response-value"
+        val engine = MockEngine {
+            respond(
+                """{"error":"invalid_grant","detail":"$secret"}""",
+                HttpStatusCode.BadRequest,
+                headersOf(),
+            )
+        }
+        val stderr = ByteArrayOutputStream()
+        val realErr = System.err
+        System.setErr(PrintStream(stderr, true))
+        try {
+            GrokRefresh().refresh("https://auth.x.ai/token", "dead-refresh", clientOver(engine))
+        } finally {
+            System.setErr(realErr)
+        }
+        val logged = stderr.toString()
+        assertTrue(logged.contains("HTTP 400"), "status must remain diagnosable: $logged")
+        assertTrue(!logged.contains(secret), "response body must not reach stderr: $logged")
     }
 }

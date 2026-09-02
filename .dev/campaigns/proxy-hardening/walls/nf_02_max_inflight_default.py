@@ -55,8 +55,34 @@ def detect(knob_text: str | None, example_text: str | None) -> tuple[list[str], 
     return [], summary
 
 
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+_LINE_COMMENT = re.compile(r"//.*?$", re.M)
+_IMPORT_LINE = re.compile(r"^import .*$", re.M)
+
+
+def code_only(text: str | None) -> str | None:
+    """A mention is not a wiring: a token left behind in a `// TODO: restore ...` must not satisfy
+    this wall after the real declaration is deleted. Same stripper cx_02/cx_09/cx_18 already carry.
+
+    Applied to the Knob.kt reader ONLY, and the asymmetry is the point. The knob default is a
+    REQUIRED token — commenting the declaration out must not keep handing this wall a number to
+    approve, and the shape guard must fire instead. The example-config reader stays RAW because the
+    measurement it parses IS a comment BY DESIGN (`# ...0.3% turn failure at inflight<=14...`);
+    stripping there would not harden anything, it would blind the wall to its own ceiling and drop
+    it onto FALLBACK_CEILING — a weaker check whenever the committed measurement is stricter."""
+    if text is None:
+        return None
+    stripped = _BLOCK_COMMENT.sub("", text)
+    stripped = _LINE_COMMENT.sub("", stripped)
+    return _IMPORT_LINE.sub("", stripped)
+
+
 def _read(p: pathlib.Path) -> str | None:
     return p.read_text(encoding="utf-8") if p.exists() else None
+
+
+def _read_code(p: pathlib.Path) -> str | None:
+    return code_only(_read(p))
 
 
 OPEN_KNOB = 'MAX_INFLIGHT("maxInflight", KnobKind.NUMBER, listOf("CLAUDEX_MAX_INFLIGHT"), 100L),'
@@ -95,7 +121,7 @@ def selftest() -> int:
 def main() -> int:
     if "--selftest" in sys.argv:
         return selftest()
-    problems, summary = detect(_read(KNOB), _read(EXAMPLE))
+    problems, summary = detect(_read_code(KNOB), _read(EXAMPLE))
     print(f"NF-02: {summary}")
     if problems:
         print("NF-02 WALL RED:")

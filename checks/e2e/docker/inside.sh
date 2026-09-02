@@ -168,6 +168,10 @@ auth = { kind = "api-key", env = "MOCK_CHAT_API_KEY" }
 id = "mock-chat-2"
 label = "Chat 2 (mock)"
 context_window = 64000
+[[providers.mockchat2.models]]
+id = "mock-chat-2-big"
+label = "Chat 2 big (mock)"
+context_window = 128000
 
 [heads.claudex]
 provider = "codex"
@@ -306,32 +310,70 @@ step "launch recipe: mockchat base URL + API_TIMEOUT_MS > 900s" launch_recipe mo
 # Claude Code its own CLAUDE_CODE_MAX_CONTEXT_TOKENS, from the topology alone. Three heads, three
 # windows: a head reading another head's roster or window is exactly the fresh-install drift
 # this step exists to catch.
-head_contract() { # head model window
+# The same /launch also PACKAGES the head: the daemon's own status line (settings.json statusLine
+# posting Claude Code's blob to /statusline/<head>), the in-session /login command and the hook
+# that runs the head's sign-in when it is submitted. Splice is the whole package, so a head that
+# launches without any of these is a failed install, not a cosmetic gap.
+head_contract() { # head pinned-model pinned-window rows("id:window,...")
   curl_mgmt -X POST -H 'Content-Type: application/json' \
     --data '{"dangerouslySkipPermissions":"","args":[]}' "http://127.0.0.1:$CONTROL_PORT/launch/$1" \
     > "$OUT/recipe-$1.json" || return 1
-  python3 - "$1" "$2" "$3" "$HOME" "$OUT/recipe-$1.json" <<'EOF'
+  python3 - "$1" "$2" "$3" "$4" "$HOME" "$OUT/recipe-$1.json" "$CONTROL_PORT" <<'EOF'
 import json, os, sys
-head, model, window, home, recipe = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4], sys.argv[5]
+head, model, window, rows_arg, home, recipe, control = sys.argv[1:8]
+window = int(window)
+expected_rows = {kv.split(":")[0]: int(kv.split(":")[1]) for kv in rows_arg.split(",")}
 r = json.load(open(recipe)); env = r.get("env", {})
 cfg = env.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude-" + head)
 settings = json.load(open(os.path.join(cfg, "settings.json")))
 cache = json.load(open(os.path.join(cfg, ".claude.json"))).get("additionalModelOptionsCache", [])
 rows = {row["value"]: row.get("context_window") for row in cache}
+statusline = (settings.get("statusLine") or {}).get("command", "")
+hooks = settings.get("hooks", {}).get("UserPromptSubmit", [])
+hook_cmds = [h.get("command", "") for entry in hooks for h in entry.get("hooks", [])]
+login_md = os.path.join(cfg, "commands", "login.md")
 print("recipe:", {k: env.get(k) for k in ("ANTHROPIC_MODEL", "CLAUDE_CODE_MAX_CONTEXT_TOKENS", "CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_CONFIG_DIR")})
 print("picker:", {"model": settings.get("model"), "availableModels": settings.get("availableModels"),
                   "enforceAvailableModels": settings.get("enforceAvailableModels"), "rows": rows})
+print("packaging:", {"statusLine": statusline, "login.md": os.path.isfile(login_md), "UserPromptSubmit": hook_cmds})
 assert env.get("ANTHROPIC_MODEL") == model, env.get("ANTHROPIC_MODEL")
 assert env.get("CLAUDE_CODE_MAX_CONTEXT_TOKENS") == str(window), env.get("CLAUDE_CODE_MAX_CONTEXT_TOKENS")
 assert env.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW") == str(window), env.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW")
-assert settings.get("model") == model and settings.get("availableModels") == [model], "picker off: %r" % settings.get("availableModels")
+assert settings.get("model") == model, settings.get("model")
+assert settings.get("availableModels") == list(expected_rows), "picker off: %r" % settings.get("availableModels")
 assert settings.get("enforceAvailableModels") is True, "picker is not enforced"
-assert rows == {model: window}, rows
+assert rows == expected_rows, rows
+assert statusline == f"curl -sS --data-binary @- http://127.0.0.1:{control}/statusline/{head}", "status line not splice's: %r" % statusline
+assert os.path.isfile(login_md), "no in-session /login command materialized"
+assert any("splice-login-hook" in c for c in hook_cmds), "no /login hook on UserPromptSubmit: %r" % hook_cmds
 EOF
 }
-step "head contract: claudex offers gpt-5-codex at 272k" head_contract claudex gpt-5-codex 272000
-step "head contract: mockchat offers mock-chat at 128k" head_contract mockchat mock-chat 128000
-step "head contract: mockchat2 offers mock-chat-2 at 64k" head_contract mockchat2 mock-chat-2 64000
+step "head contract + packaging: claudex (gpt-5-codex @272k, status line, /login)" head_contract claudex gpt-5-codex 272000 "gpt-5-codex:272000"
+step "head contract + packaging: mockchat (mock-chat @128k, status line, /login)" head_contract mockchat mock-chat 128000 "mock-chat:128000"
+step "head contract + packaging: mockchat2 (mock-chat-2 @64k + a 128k row, status line, /login)" head_contract mockchat2 mock-chat-2 64000 "mock-chat-2:64000,mock-chat-2-big:128000"
+
+# ── 7c. the daemon's status line on a SCALED row ─────────────────────────────────────────────
+# Claude Code fixes its context window per process (the pinned row's) and splice scales the counts
+# it reports so any other row compacts at its own window, so the blob Claude Code pipes back is in
+# client units. On the 128k row of the 64k mockchat2 session, 32000 reported tokens are 64000
+# real ones: the bar must read the row's label and "64k/128k", not "32k/64k". The pinned row is the
+# control: nothing changes. Posted exactly as Claude Code does (no management key on /statusline).
+statusline_row() { # head model expected-fragment...
+  local head="$1" model="$2" line; shift 2
+  line="$(curl -sS -m 10 --data-binary @- "http://127.0.0.1:$CONTROL_PORT/statusline/$head" <<EOF | strip_ansi
+{"model":{"id":"$model","display_name":"$model"},
+ "context_window":{"context_window_size":64000,"used_percentage":50,
+   "current_usage":{"input_tokens":2000,"cache_read_input_tokens":30000,"cache_creation_input_tokens":0}}}
+EOF
+)"
+  printf '%s\n' "$line"
+  local frag
+  for frag in "$@"; do
+    printf '%s' "$line" | grep -qF -- "$frag" || { echo "status line lacks '$frag'"; return 1; }
+  done
+}
+step "status line: the scaled 128k row shows its label and real window" statusline_row mockchat2 mock-chat-2-big "Chat 2 big (mock)" "64k/128k" "50%"
+step "status line: the pinned 64k row is untouched" statusline_row mockchat2 mock-chat-2 "Chat 2 (mock)" "32k/64k" "50%"
 
 # ── 8. the real wrapper: Claude Code itself, print mode, through the head, to the mock ───────
 wrapper_turn() { # wrapper expected-substring
@@ -359,6 +401,35 @@ step "daemon stopped (the shim must boot it on first launch)" daemon_down
 # The vendored codex mock answers every basic turn with "ok after auth"; the chat mock ends in END.
 step "wrapper turn: claudex -p boots the daemon and completes" wrapper_turn claudex "ok after auth"
 step "wrapper turn: claude-mockchat -p through the head" wrapper_turn claude-mockchat "END"
+
+# ── 8a. `<wrapper> login`: the sign-in verb every head installs with its wrapper ─────────────
+# claudex is an OAuth head: `claudex login` must start the ChatGPT browser flow — bind the loopback
+# callback, print the authorize URL (no browser here) and wait for the callback. The paste
+# fallback only shows on a terminal, and there is none here. With no network and stdin closed it
+# waits out its callback timeout, so the run is bounded by `timeout`.
+login_oauth() { # wrapper expected-host
+  local out
+  out="$(timeout 10 "$1" login </dev/null 2>&1)" || true
+  printf '%s\n' "$out" | head -8
+  printf '%s' "$out" | grep -q 'open this URL to sign in' || { echo "$1 login did not print the sign-in URL"; return 1; }
+  printf '%s' "$out" | grep -q "https://$2" || { echo "$1 login URL is not on $2"; return 1; }
+}
+# claude-mockchat is an api-key head: with no terminal, `login` names the pipe alternative
+# verbatim, and that command stores the key in ~/.config/splice/keys.toml (0600).
+login_apikey() {
+  local out
+  out="$(claude-mockchat login </dev/null 2>&1)" || true
+  printf '%s\n' "$out"
+  printf '%s' "$out" | grep -qF 'splice key set MOCK_CHAT_API_KEY --stdin' || { echo "login did not name the pipe path"; return 1; }
+  printf '%s' "mock-chat-key" | splice key set MOCK_CHAT_API_KEY --stdin || { echo "splice key set failed"; return 1; }
+  local store="$HOME/.config/splice/keys.toml"
+  [ -f "$store" ] || { echo "no $store after key set"; return 1; }
+  grep -q '^MOCK_CHAT_API_KEY' "$store" || { echo "key not stored"; cat "$store"; return 1; }
+  [ "$(stat -c %a "$store")" = "600" ] || { echo "keys.toml mode is $(stat -c %a "$store"), not 600"; return 1; }
+  echo "MOCK_CHAT_API_KEY stored in $store (0600)"
+}
+step "claudex login: the ChatGPT OAuth flow starts from the installed wrapper" login_oauth claudex "auth.openai.com"
+step "claude-mockchat login: the api-key path names its pipe, and the pipe stores the key" login_apikey
 
 # ── 8b. cross-head sessions: every head's sessions/ IS the operator's global registry ─────────
 # Claude Code discovers peer sessions by listing $CLAUDE_CONFIG_DIR/sessions (the message sockets
@@ -474,6 +545,32 @@ for head, h in t["heads"].items():
     if not ok:
         bad.append(head)
 assert not bad, f"heads off the example contract: {bad}"
+
+# `<wrapper> login` for every head of the shipped example, offline: each auth kind must reach ITS
+# flow — OAuth prints the authorize URL and waits (bounded by timeout), the Kimi device flow fails
+# on the unreachable network AFTER trying, api-key names the pipe path, client auth says so.
+import subprocess
+expect = {
+    "chatgpt-oauth": ["open this URL to sign in", "https://auth.openai.com"],
+    "grok-oauth": ["open this URL to sign in", "https://"],
+    "kimi-oauth": ["login error", "could not start device login", "enter this code"],
+    "api-key": ["pipe it instead", "splice key set"],
+    "client": ["no browser login for that kind"],
+}
+failed = []
+for head, h in t["heads"].items():
+    kind = t["providers"][h["provider"]]["auth"]["kind"]
+    command = h.get("claude", {}).get("command", head)
+    proc = subprocess.run(["timeout", "10", os.path.join(home, ".local", "bin", command), "login"],
+                          stdin=subprocess.DEVNULL, capture_output=True, text=True)
+    out = proc.stdout + proc.stderr
+    wanted = expect[kind]
+    hit = all(w in out for w in wanted) if kind in ("chatgpt-oauth", "grok-oauth", "api-key") else any(w in out for w in wanted)
+    first = next((l for l in out.splitlines() if l.strip()), "")
+    print(f"{command:18} {kind:13} {'OK' if hit else 'MISSING'}  {first[:110]}")
+    if not hit:
+        print(out[-600:]); failed.append(command)
+assert not failed, f"login verb did not reach its provider flow for: {failed}"
 EOF
 }
 example_topology() {

@@ -12,6 +12,7 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.jsonObject
+import splice.core.model.ModelCatalog
 import splice.core.usage.RateLimitState
 import splice.core.usage.UsageWarnPolicy
 import splice.core.util.JsonScalars
@@ -27,6 +28,13 @@ public class StatuslineRenderer(
     /** Branch-lookup seam (DR-22 redo): the real git subprocess in production; a test injects a
      *  latched lookup so the concurrent late-publish race is deterministic instead of timing-dependent. */
     branchLookup: GitBranchReader? = null,
+    /** The head's catalog when the route knows it. Claude Code fixes its context window per
+     *  PROCESS (the pinned row's, via CLAUDE_CODE_MAX_CONTEXT_TOKENS) and splice scales the token
+     *  counts it reports so any other row compacts at its own declared window, which leaves the
+     *  blob Claude Code pipes back here in client units: on a 500k row over a 256k session the bar
+     *  read "…/256k" with counts x 0.512 however the operator switched. The catalog undoes that
+     *  scaling for the picked row and names it by its label. Null renders the blob as sent. */
+    private val catalog: ModelCatalog? = null,
 ) {
     // Resolved in the body (not a ctor default) so the real lookup can reference the member gitBranch.
     private val branchLookup: GitBranchReader = branchLookup ?: GitBranchReader { cwd -> gitBranch(cwd) }
@@ -49,6 +57,7 @@ public class StatuslineRenderer(
     private val json = Json { ignoreUnknownKeys = true }
 
     private val blob = StatuslineJson()
+    private val row = StatuslineRow(catalog)
     private val branchCacheLock = Any()
     private val branchCache = LinkedHashMap<String, CachedBranch>(
         GIT_CACHE_INITIAL_CAPACITY,
@@ -70,14 +79,15 @@ public class StatuslineRenderer(
 
     private fun modelSegment(root: JsonObject): String? {
         val model = blob.obj(root, "model") ?: return null
-        val name = blob.str(model["display_name"]) ?: blob.str(model["id"]) ?: return null
+        val id = blob.str(model["id"])
+        val name = row.label(id) ?: blob.str(model["display_name"]) ?: id ?: return null
         return "$BOLD$CYAN●$RESET $BOLD$name$RESET"
     }
 
     private fun contextSegment(root: JsonObject): String? {
         val cw = blob.obj(root, "context_window") ?: return null
-        val size = blob.num(cw["context_window_size"]) ?: 0
-        val used = usedTokens(cw)
+        val id = blob.str(blob.obj(root, "model")?.get("id"))
+        val (size, used) = row.window(id, blob.num(cw["context_window_size"]) ?: 0, usedTokens(cw))
         val pct = blob.num(cw["used_percentage"])?.toInt() ?: if (size > 0) (used * PERCENT / size).toInt() else 0
         val color = when {
             pct >= CTX_CRITICAL_PCT -> RED

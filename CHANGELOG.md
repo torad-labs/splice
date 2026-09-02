@@ -23,6 +23,11 @@
 
 ### Fixed
 
+- **The status line follows the picked model row.** Claude Code fixes its context window per
+  process and splice scales the counts it reports so any other row compacts at its own window,
+  which left the bar showing the session's window and scaled counts however the operator switched
+  (`grok-4.6[500k]` on a 256k grok head still read `…/256k`). The daemon's status line now renders
+  the picked row's label, its declared window and the real counts.
 - **Codex compaction no longer dies at the idle cap while the model is still reading.** The stall
   watchdog switched to its short `streamIdleMs` tier on the first upstream byte, and on the
   Responses API that byte is the `response.created` handshake, not output — so a compaction that

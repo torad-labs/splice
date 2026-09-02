@@ -65,6 +65,7 @@ internal class ManagedHeadFactory(
             ),
             perf = PerfStatsSource(stores.perfStats),
             keyPresence = keyPresence,
+            catalog = ctx.catalog,
         )
     }
 }

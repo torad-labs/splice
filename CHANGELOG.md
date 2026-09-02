@@ -21,6 +21,11 @@
 
 ### Changed
 
+- **Every perf row and every client-abort line names the client session.** The daemon now stamps
+  the Claude Code session id on every dialect's turn (only the Responses dialect kept it before),
+  writes its short tag into the perf JSONL and the perf log line, and the "client gone" line names
+  the session and the failure class instead of `keepalive write failed: null`. A client abort in
+  the log is now one grep away from the session that hung up and the transcript that says why.
 - Provider-native readable reasoning remains visible as thinking blocks, while
   `mirror_reasoning` is locked off after every configuration layer. TOML, state, environment, runtime
   PATCH, and direct construction cannot enable synthetic transcript reinjection.

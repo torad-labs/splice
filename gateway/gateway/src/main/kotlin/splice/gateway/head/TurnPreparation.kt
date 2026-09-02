@@ -42,11 +42,16 @@ internal class TurnPreparation(
         val compactProbe = compactClassifier.classifyCompact(parsed.typed)
         deps.shadow.record(parsed.typed, compactProbe)
         perf.mark(PerfKeys.PARSE)
-        val prepared = provider.buildTurn(
-            parsed,
-            compactProbe.compact,
-            call.request.headers["x-claude-code-session-id"],
-        )
+        val sessionId = call.request.headers["x-claude-code-session-id"]
+        val fromProvider = provider.buildTurn(parsed, compactProbe.compact, sessionId)
+        // Every dialect's turn names its client session (2026-09-02): only the responses dialect
+        // kept the id on its meta, so a chat or passthrough head's abort could not be tied to a
+        // session. Stamped here, once, when the provider left it null.
+        val prepared = if (fromProvider.meta.sessionId == null && sessionId != null) {
+            fromProvider.copy(meta = fromProvider.meta.copy(sessionId = sessionId))
+        } else {
+            fromProvider
+        }
         // Per-turn headers already outrank the provider's own in TurnDriver's merge, so a forwarded
         // value REPLACES a configured default (e.g. the caller's anthropic-version wins over the
         // provider's), and UpstreamClient folds the casing.

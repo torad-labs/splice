@@ -29,6 +29,10 @@ public data class PerfRowMeta(
     val model: String,
     val outcome: String,
     val compact: Boolean,
+    /** The client's session tag (first 8 of x-claude-code-session-id), so an abort or a stall in
+     *  the perf log is attributable to ONE Claude Code session in a single grep (2026-09-02: seven
+     *  client aborts in two hours could only be tied to sessions by cross-reading transcripts). */
+    val session: String? = null,
 )
 
 private const val DEFAULT_TAIL = 200
@@ -54,6 +58,7 @@ public class PerfStats(
             put("model", meta.model)
             put("outcome", meta.outcome)
             put("compact", meta.compact)
+            meta.session?.let { put("session", it) }
             snap.marks.forEach { (k, v) -> put(k, v) }
             snap.counters.forEach { (k, v) -> put(k, v) }
         }.toString()

@@ -21,8 +21,14 @@ public data class AnthropicTurnBody(
     val typed: AnthropicRequest,
 )
 
-public fun parseAnthropicBody(text: String): AnthropicTurnBody {
-    val raw = lenientJson.parseToJsonElement(text).jsonObject
-    val typed = lenientJson.decodeFromJsonElement(AnthropicRequest.serializer(), raw)
-    return AnthropicTurnBody(raw = raw, typed = typed)
+/** The two-view parse, as a named object since the 2026-08-16 style migration (HD-M8): it is a
+ *  FACTORY for [AnthropicTurnBody] over a raw request string, so it cannot be a member of the type
+ *  it builds. Same name, same lenient config, same parsing semantics — the dialects' exact contract. */
+public object AnthropicParse {
+
+    public fun parseAnthropicBody(text: String): AnthropicTurnBody {
+        val raw = lenientJson.parseToJsonElement(text).jsonObject
+        val typed = lenientJson.decodeFromJsonElement(AnthropicRequest.serializer(), raw)
+        return AnthropicTurnBody(raw = raw, typed = typed)
+    }
 }

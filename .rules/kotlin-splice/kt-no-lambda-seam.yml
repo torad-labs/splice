@@ -1,0 +1,80 @@
+# Name every seam with a `fun interface`, never a raw function type. A function type as a parameter,
+# property or return type is an UNNAMED, TRANSPOSABLE seam: it says how many arguments arrive and
+# nothing about what the thing is for, and the compiler will happily let one be passed where another
+# was meant as long as the arities line up. A named port makes that mistake inexpressible, gives the
+# seam a place to carry its KDoc, and gives a test something to say where `{ _ -> }` says nothing.
+#
+# WHY BY ROLE AND NEVER BY SHAPE. This is the rule's real content and the part a matcher cannot
+# enforce. The measured census found 246 seams spread over 49 SHAPES but only a handful of ROLES,
+# and the two do not correspond in either direction:
+#   - one shape, several roles. `() -> Boolean` is [ClientGone] (the client hung up — abandon the
+#     turn) AND [ClientFrameEmitted] (the client already saw output — too late to retry). They are
+#     read a few lines apart on the same retry path and drive opposite decisions; swapping them
+#     compiled before this wave and produced either an abandoned healthy turn or duplicate output on
+#     the wire. `() -> Long` split the same way into [WallClock] and [ElapsedClock] (HD-21).
+#   - several spellings, one role. `env` and `envReader` are both [EnvReader]; `toAuthJson` in the
+#     OAuth and device login specs is one [AuthJsonFromResponse]; `frameEmittedThisRound` and
+#     `clientFrameEmitted` are one [ClientFrameEmitted] (TurnDriver wires the same value into both).
+# Collapsing distinct roles into one shared `BooleanSupplier` would be STRICTLY WORSE than the
+# lambdas it replaced. One interface per role; a role with two spellings is one interface.
+#
+# Compliant form: `public fun interface RoleName { public operator fun invoke(...): T }`. Spelling
+# the single abstract method `invoke` keeps every call site byte-identical, so adopting a port is a
+# declaration-and-wiring diff, never a rename storm. Lambda literals AT CALL SITES are untouched —
+# SAM conversion means `timed("auth") { … }` is unchanged.
+#
+# PROMOTED 2026-08-17 (HD-22 wave 4b) from the dormant .rules/kotlin/ast-grep pack, which was wired
+# to nothing and so had never run. 246 at census, cleared to 0 across 14 modules over waves 4a/4b.
+#
+# INLINE-FUNCTION PARAMETERS ARE EXEMPT (added HD-21) — a rule defect fixed, not a code defect
+# waived. 18 of the census sites were named `block`, all parameters of higher-order utilities
+# (`Cancellables.runCatchingCancellable`, `DaemonBoundary.runCatchingDaemonBoundary`,
+# `Command.success`, `TurnDriver.catchingTurnFailure`). For the ones declared `inline`, obeying this
+# rule would make the code STRICTLY WORSE: a `fun interface` parameter cannot be inlined, so every
+# call site gains an allocation, and — the part that is not merely a cost — the lambda loses
+# NON-LOCAL RETURN. `runCatchingCancellable { return x }` compiles today and would stop compiling,
+# so the rule as written asked callers to restructure working control flow to satisfy a matcher. A
+# rule that can only be satisfied by damaging the code is wrong.
+#
+# The exemption is deliberately NARROW: a function type in the parameter list of a declaration
+# carrying the `inline` modifier, and nothing else. Red-proven both ways in the rule-test — it does
+# NOT exempt a return type, a constructor property, a NON-inline sibling of the same shape, or a
+# non-inline local function nested inside an inline one. The `stopBy` on the parameter list is
+# load-bearing: it stops at the FIRST enclosing parameter list, so an outer inline declaration can
+# never launder an inner non-inline seam (pinned by the object-expression-default case).
+# `function_modifier` is the node kind that also spells `suspend`, `operator` and `tailrec`, so the
+# ANCHORED regex is what makes this mean `inline` and not "any modifier" — checked against the
+# grammar, never assumed.
+#
+# TWO CARVE-OUTS DROPPED AT PROMOTION, each measured rather than reasoned about:
+#   - `@Composable` slots. Not merely unused — UNREACHABLE IN PRINCIPLE. Probed against
+#     tree-sitter-kotlin 2026-08-17: an annotated function type never produces a `function_type`
+#     node at all (`@Composable () -> Unit` yields 0 function_type, 1 type_modifiers, 1 annotation
+#     and 1 ERROR), so the rule could not have fired on that shape with or without the clause. The
+#     exemption was describing a protection it never provided — the same dead-matcher defect this
+#     campaign already found once elsewhere in the dormant pack. The rule-test pins the shape as
+#     silent, so if the grammar ever parses it the case goes red and the question gets re-answered.
+#   - function types inside a `type_projection` (a generic type ARGUMENT, e.g.
+#     `Map<String, (Array<String>) -> Command>`). This one was LIVE and hiding a real seam. Measured
+#     at promotion: removing it surfaced exactly ONE declaration tree-wide, `Command.kt`'s verb table,
+#     which is now [CommandFactory]. A seam does not stop being a seam for sitting inside angle
+#     brackets, and the cost of closing the hole was one interface.
+id: kt-no-lambda-seam
+language: kotlin
+severity: error
+message: "Name the seam with a `fun interface`, not a raw function type. Name it for the ROLE it plays at this seam (ClientGone, WallClock, RefreshCall) — never for its shape."
+note: "Use `operator fun invoke` so call sites stay byte-identical. Two seams that share a shape but not a concept get TWO interfaces; two spellings of one concept get ONE. Parameters of an `inline` declaration are exempt (inlining + non-local return). Lambda literals at call sites are untouched."
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  kind: function_type
+  # A parameter of an `inline` declaration: inlining and non-local return are the contract.
+  not:
+    inside:
+      kind: function_value_parameters
+      stopBy: {kind: function_value_parameters}
+      inside:
+        kind: function_declaration
+        has:
+          kind: modifiers
+          has: {kind: function_modifier, regex: "^inline$"}

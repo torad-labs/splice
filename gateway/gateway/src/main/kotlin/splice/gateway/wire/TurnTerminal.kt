@@ -6,9 +6,26 @@
 // same machinery as the stream:true path instead of a drifting parallel copy.
 package splice.gateway.wire
 
+import kotlinx.serialization.json.JsonObject
 import splice.core.turn.ErrorType
 import splice.core.turn.Usage
 import splice.spi.WireSink
+import java.util.concurrent.atomic.AtomicLong
+
+/**
+ * Builds the (non-standard) usage payload Claude Code reads from gateways.
+ *
+ * Injected so the emitter stays hud-agnostic. Was a `typealias` for the raw function type, which is
+ * a NAME for a shape and not a type of its own: any `(Usage?) -> JsonObject` satisfied it, and the
+ * alias bought documentation without buying non-transposability (HD-22). Null usage is the ordinary
+ * "no usage known for this turn" case, not an error.
+ *
+ * Held here (both terminal implementations already live in this file's package) rather than
+ * duplicated per sink, the same reasoning [MessageIds] below states for the message-id minter.
+ */
+public fun interface UsagePayloadBuilder {
+    public operator fun invoke(usage: Usage?): JsonObject
+}
 
 public interface TurnTerminal : WireSink {
     /** True once this turn's ending is SETTLED — a terminal or error durably reached the wire,
@@ -27,6 +44,13 @@ public interface TurnTerminal : WireSink {
     /** Client vanished before any ending: seal with nothing emitted (never an error/terminal). */
     public fun abandon()
 
+    /** DR-87: non-null when THIS terminal downgraded a Success emit into an error envelope at
+     *  emit time (the collect-path malformed-tool/capacity rewrite) — the short reason tag the
+     *  perf row carries. Default null: the streaming emitter never rewrites at the terminal, and
+     *  a downgrade the caller cannot see is exactly how a client-facing 502 read "ok" in every
+     *  instrument. */
+    public val degradedReason: String? get() = null
+
     /** Open the turn on the wire NOW, before any content exists.
      *
      * message_start needs nothing from upstream — the id, model and a zeroed usage payload are all
@@ -42,4 +66,21 @@ public interface TurnTerminal : WireSink {
      * still call it, and re-anchor rounds are no-ops. No-op by default for the non-stream sink,
      * which has no incremental wire to open. */
     public suspend fun ensureStarted() {}
+}
+
+// HEAD-001/HEAD-002: a bare "msg_${System.currentTimeMillis()}" collides whenever two turns start
+// within the same millisecond, violating the unique-id invariant the client relies on. A
+// process-wide monotonic sequence appended to the timestamp makes every id distinct regardless of
+// concurrency; shared here (both terminal implementations already live in this file's package)
+// rather than duplicated per sink.
+// FILE SCOPE ON PURPOSE: the sequence must be PROCESS-wide. Held on MessageIds it would restart at
+// 0 per instance, and the two sinks below each construct their own — reintroducing HEAD-001.
+private val messageIdSeq = AtomicLong(0)
+
+/** The message-id minter. A class, not a file-scope function: both terminal sinks read it from a
+ *  constructor DEFAULT (so it cannot be a member of either), and it stays stateless — the
+ *  process-wide sequence above is what actually carries the uniqueness. */
+public class MessageIds {
+    /** A fresh Anthropic-shaped message id, unique even across turns starting in the same ms. */
+    public fun generateMessageId(): String = "msg_${System.currentTimeMillis()}_${messageIdSeq.incrementAndGet()}"
 }

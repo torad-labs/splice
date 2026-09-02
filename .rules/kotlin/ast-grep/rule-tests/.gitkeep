@@ -1,0 +1,13 @@
+# Keeps this directory tracked while it is EMPTY.
+#
+# The dormant pack's sgconfig.yml declares `testConfigs: [{testDir: rule-tests}]` (added HD-21) so a
+# dormant rule's matcher can be red/green pinned BEFORE it graduates to .rules/kotlin-splice — a
+# rule-test dropped into the root .rules/rule-tests for a rule that is not in a root ruleDir is
+# silently skipped, which is a test that cannot fail.
+#
+# HD-22 wave 4b promoted the pack's only tested rule (no-lambda-seam), emptying this directory. git
+# does not track empty directories, so without this file the directory disappears and
+# `npm run gate:rules` fails on its third leg with
+#   Error: Cannot read rule directory .rules/kotlin/ast-grep/rule-tests
+# Deleting the testConfigs entry instead would have removed the pin mechanism the next wave needs,
+# so the placeholder is the fix that keeps the gate honest AND keeps the capability.

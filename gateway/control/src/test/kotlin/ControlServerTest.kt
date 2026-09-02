@@ -134,6 +134,9 @@ class ControlServerTest {
                 splice.core.launch.ClaudeConfigMaterializer(tmp),
             ),
             shutdownDaemon = { shutdownRequests.incrementAndGet() },
+            topologyDigest = "boot-digest-abc",
+            configPath = "/tmp/splice.toml",
+            topologyStale = { true },
         )
         control.start()
         awaitListening(port)
@@ -190,6 +193,11 @@ class ControlServerTest {
         assertEquals("true", body["ok"]?.jsonPrimitive?.content)
         assertTrue(body.containsKey("version"))
         assertEquals(SHIM_VERSION, body["wantShimVersion"]?.jsonPrimitive?.content)
+        // JW-04: the booted config identity + per-request staleness recompute ride /health so
+        // shim/doctor/dashboard can see an edited-but-inert splice.toml.
+        assertEquals("boot-digest-abc", body["topologyDigest"]?.jsonPrimitive?.content)
+        assertEquals("/tmp/splice.toml", body["configPath"]?.jsonPrimitive?.content)
+        assertEquals("true", body["topologyStale"]?.jsonPrimitive?.content)
     }
 
     @Test
@@ -369,9 +377,11 @@ class ControlServerTest {
         val obj = json.parseToJsonElement(body).jsonObject
         val env = obj["env"]!!.jsonObject
         assertEquals("http://127.0.0.1:3099", env["ANTHROPIC_BASE_URL"]?.jsonPrimitive?.content)
-        // the two fixes: a bearer AUTH_TOKEN (no /login), and gateway model discovery (all models show)
+        // a bearer AUTH_TOKEN (no /login); discovery stays OFF — the materialized bare-id roster
+        // is the picker's one source (the wrapped /v1/models spelling doubled every row and makes
+        // Claude Code ignore CLAUDE_CODE_MAX_CONTEXT_TOKENS — LaunchService header).
         assertEquals(key, env["ANTHROPIC_AUTH_TOKEN"]?.jsonPrimitive?.content)
-        assertEquals("1", env["CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"]?.jsonPrimitive?.content)
+        assertFalse(env.containsKey("CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY"))
         assertEquals("gpt-5.6-sol", env["ANTHROPIC_MODEL"]?.jsonPrimitive?.content)
         assertEquals("272000", env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"]?.jsonPrimitive?.content)
         // ANTHROPIC_API_KEY is UNSET (else Claude Code's custom-key approval dead-ends at /login)
@@ -517,5 +527,71 @@ private fun awaitOne(port: Int) {
     while (runCatching { Socket("127.0.0.1", port).use { } }.isFailure) {
         check(System.currentTimeMillis() < deadline) { "nothing listening on :$port" }
         Thread.sleep(50)
+    }
+}
+
+// JW-06 lives in its own class: ControlServerTest sits at detekt's LargeClass ceiling.
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+class ControlServerPerHeadConfigTest {
+    private val json = Json { ignoreUnknownKeys = true }
+    private val client = HttpClient(CIO)
+
+    @AfterAll
+    fun tearDown() = client.close()
+
+    @Test
+    fun `config head param folds that head's override layer into effective - JW-06`() = runTest {
+        // [heads.<key>.overrides] was a real precedence layer that /api/config could not show:
+        // "why is kimi's maxInflight 8 when the panel says 100" was unanswerable.
+        val tmp = Files.createTempDirectory("control-perhead")
+        val paths = StatePaths(baseOverride = tmp.resolve("state"))
+        val mgmt = MgmtKey(paths)
+        val perHeadPort = freshPort()
+        val svc = ConfigService(
+            paths,
+            headOverrides = mapOf("maxInflight" to "100"),
+            perHeadOverrides = mapOf("kimi" to mapOf("maxInflight" to "8")),
+        )
+        val server = ControlServer(
+            port = perHeadPort,
+            heads = emptyMap(),
+            config = svc,
+            mgmtKey = mgmt,
+            dashboardHtml = { "" },
+            log = {},
+        )
+        server.start()
+        try {
+            awaitListening(perHeadPort)
+            val bearer = mgmt.get()
+            suspend fun getConfig(path: String) = json.parseToJsonElement(
+                client.get("http://127.0.0.1:$perHeadPort$path") {
+                    header("Authorization", "Bearer $bearer")
+                }.bodyAsText(),
+            ).jsonObject
+
+            val global = getConfig("/api/config")
+            assertEquals(
+                "100",
+                global["effective"]!!.jsonObject["maxInflight"]!!.jsonPrimitive.content,
+                "the unparameterized view stays global",
+            )
+            val perHeadLayer = global["layers"]!!.jsonObject["perHead"]!!.jsonObject
+            assertEquals(
+                "8",
+                perHeadLayer["kimi"]!!.jsonObject["maxInflight"]!!.jsonPrimitive.content,
+                "the override-carrying head appears in the perHead layer",
+            )
+
+            val kimi = getConfig("/api/config?head=kimi")
+            assertEquals(
+                "8",
+                kimi["effective"]!!.jsonObject["maxInflight"]!!.jsonPrimitive.content,
+                "?head folds the head's layer exactly as admission does",
+            )
+            assertEquals("kimi", kimi["head"]!!.jsonPrimitive.content)
+        } finally {
+            server.stop()
+        }
     }
 }

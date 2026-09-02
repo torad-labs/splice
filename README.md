@@ -13,7 +13,7 @@
 
 </div>
 
-splice is a local, loopback-only proxy stack. A single Kotlin daemon (**spliced**) sits between Claude Code and one or more model backends, translating Anthropic's Messages API into each backend's own wire dialect. Each backend is exposed as a **head** — a thin Claude Code wrapper on its own loopback port (`claudex`, `claude-grok`, `claude-kimi`, `claude-openrouter`, …). Its central feature is the **mirror**: the backend's reasoning summary is written back into the transcript as visible text, so conclusions stay readable turn after turn.
+splice is a local, loopback-only proxy stack. A single Kotlin daemon (**spliced**) sits between Claude Code and one or more model backends, translating Anthropic's Messages API into each backend's own wire dialect. Each backend is exposed as a **head** — a thin Claude Code wrapper on its own loopback port (`claude-splice`, `claudex`, `claude-grok`, `claude-kimi`, `claude-openrouter`, …). Provider-native reasoning remains visible as thinking blocks; splice does not synthesize or mirror a reasoning summary into the transcript.
 
 ## Not affiliated
 
@@ -30,13 +30,13 @@ When something is wrong, `splice doctor` names the exact fix:
 Long coding-agent sessions bleed tokens and lose the thread. splice goes after both:
 
 - **The prompt cache stays warm.** A stable cache key and **compaction that runs on the session's own model and reasoning effort** keep the cache warm across a long session. Opaque encrypted reasoning-item replay is an explicit, default-off trade-off: it can add cache warmth, but measurements showed it also made fresh reasoning substantially thinner. A mismatched compaction model *or* effort silently invalidates the cache and re-reads the entire transcript uncached.
-- **Reasoning continuity is load-bearing.** The mirror preserves the provider-generated readable reasoning summary in the transcript, so both the agent and you can inspect the summary and carry that context through later turns and compaction. It is not raw, private, or exact chain-of-thought.
+- **Reasoning stays provider-native.** Readable reasoning fields returned by a backend are streamed as thinking blocks. splice does not manufacture a summary or feed synthetic reasoning text back into later turns.
 - **One instrument panel for the fleet.** The daemon serves a single dashboard over every head: live status, start/stop/restart, layered config with provenance, per-head 5-hour usage soft-warnings, auth, and logs.
 
 What you get:
 
-- [x] A [wrapper command per backend](#quick-start): `claudex`, `claude-grok`, `claude-kimi`, `claude-openrouter`
-- [x] The reasoning **mirror**: [summaries survive turns and compaction](#reasoning)
+- [x] A [wrapper command per backend](#quick-start): `claude-splice`, `claudex`, `claude-grok`, `claude-kimi`, `claude-openrouter`
+- [x] [Provider-native reasoning display](#reasoning), without synthetic transcript mirrors
 - [x] Cache-warm compaction on the session's own model and effort
 - [x] A [fleet dashboard](#quick-start) on loopback: status, config with provenance, usage soft-warnings, logs
 - [x] [`splice doctor`](#troubleshooting): every failing check prints the command that fixes it
@@ -87,6 +87,13 @@ attestations before anything goes live, so authenticate `gh` once first:
 ```bash
 gh auth login   # once
 curl -fsSL https://github.com/torad-labs/splice/releases/latest/download/install.sh | bash
+```
+
+The first beta is version-pinned so the stable `latest` channel remains stable-only:
+
+```bash
+curl -fsSL https://github.com/torad-labs/splice/releases/download/v0.3.0-beta.1/install.sh \
+  | env SPLICE_VERSION=v0.3.0-beta.1 bash
 ```
 
 **Option 2: from source** (no `gh` needed):
@@ -143,6 +150,8 @@ An explicit `OPENROUTER_API_KEY` in the daemon's environment always wins over th
 
 **splice was built for ChatGPT, Grok, and Kimi subscriptions.** Copy the matching provider and head from [`config/splice.example.toml`](config/splice.example.toml) into `~/.config/splice/splice.toml`, run `splice install --all`, then sign in with that head's `login` command (`claudex login`, `claude-grok login`, `claude-kimi login`). These routes are unofficial: they reuse each vendor's own CLI OAuth client identity, which no vendor documents for third parties. Use them at your own risk; the API-key starter above is the zero-config alternative.
 
+For Claude itself, `claude-splice` preserves Claude Code's native Anthropic login while routing through splice; splice stores no Claude credential. Use Claude Code's own `/login` inside that head.
+
 Admin verbs go through the `splice` command:
 
 ```bash
@@ -174,6 +183,7 @@ Each of these is a **password-equivalent secret**: anything that can read the fi
 
 | Backend / route | Auth kind | Location | Notes |
 | --- | --- | --- | --- |
+| Claude (`claude-splice`) | `client` | Claude Code's native credential store | forwarded by Claude Code; splice stores no credential |
 | codex (ChatGPT) | `chatgpt-oauth` | `~/.codex/auth.json` | OAuth tokens — password-equivalent |
 | grok (xAI) | `grok-oauth` | `~/.grok/auth.json` | OAuth tokens — password-equivalent |
 | kimi (Moonshot) | `kimi-oauth` | `~/.kimi/credentials/kimi-code.json` | device-flow token — password-equivalent |
@@ -186,6 +196,7 @@ Each of these is a **password-equivalent secret**: anything that can read the fi
 
 | Route | Auth | Status |
 | --- | --- | --- |
+| Claude (`claude-splice`) | `client` (Claude Code native login) | **Primary** — Anthropic passthrough; splice stores no credential |
 | OpenRouter | `api-key` (`OPENROUTER_API_KEY`) | **Supported** — pay-per-token, any OpenAI-compatible vendor |
 | Moonshot | `api-key` (`MOONSHOT_API_KEY`) | **Supported** — pay-per-token Anthropic base |
 | codex (ChatGPT) | `chatgpt-oauth` | **Primary** — what splice was built for; unofficial, at your own risk |
@@ -218,9 +229,9 @@ The codex backend at `https://chatgpt.com/backend-api/codex` is a **ChatGPT / Co
 - **Readable reasoning fields**: supplied explicitly by the backend on the wire (e.g. `reasoning_text` / summary fields).
 - **Opaque encrypted reasoning-item replay**: carrying the backend's own encrypted reasoning items forward into a later request, verbatim and unread.
 
-splice never has, exposes, or reconstructs the model's raw chain-of-thought or exact reasoning. The **mirror** writes only the provider-generated summary text back into the transcript.
+splice never has, exposes, or reconstructs the model's raw chain-of-thought or exact reasoning. Provider-native readable fields may be displayed as thinking blocks, but `mirror_reasoning` is locked off after every configuration layer: TOML, state, environment variables, and runtime PATCH cannot enable a synthetic transcript summary.
 
-Replay ships off. Set `CLAUDEX_REPLAY_REASONING=1` only if you deliberately prefer additional replay/cache warmth over the deeper fresh reasoning observed with the mirror-only default.
+Opaque replay also ships off. Set `CLAUDEX_REPLAY_REASONING=1` only if you deliberately prefer additional replay/cache warmth over the deeper fresh reasoning observed without replay.
 
 ## The cache-replay experiment
 
@@ -236,15 +247,18 @@ The cache effect remains workload-dependent, but the reasoning-depth result was 
 ```
 gateway/       Kotlin daemon (spliced) — Gradle multi-module, JDK 21; the PRIMARY stack
 config/        splice.example.toml — the sample multi-provider topology
-bin/           splice-launch (the installed wrapper) + legacy Node shims (claudex, claudex-next)
+bin/           splice-launch (the installed wrapper) + claudex (the codex-head entry)
 install.sh     fetch/build the jar, install the shim, link wrapper commands
 webui/         React 19 + Vite + Zustand dashboard, single-file build
 experiments/   cache-replay A/B reproducer
-server/        LEGACY Node proxy stack — still runnable during cutover, not the primary path
 .rules/        ast-grep "walls" enforced write-time AND at the commit gate (same rules twice)
 ```
 
-The **gateway/** Kotlin daemon is the primary stack. The **server/** Node stack (and the `bin/claudex` / `bin/claudex-next` shims that drive it) is legacy, kept runnable during cutover but no longer the documented entry point.
+The **gateway/** Kotlin daemon is the only stack. The legacy `server/` Node proxy and its
+`bin/claudex-next` shim were **deleted on 2026-08-10** (P8-CUT), after the Kotlin daemon had
+owned the production ports for three days and 32,326 turns at 99.14% clean. The wire behaviour it
+established survives as 11 byte-exact fixtures in the migration oracle
+(`npm run oracle:replay`), whose mock upstream is vendored so it no longer depends on the deleted tree.
 
 ## Development
 

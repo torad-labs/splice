@@ -9,17 +9,24 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import splice.core.parse.parseAnthropicBody
+import splice.core.parse.AnthropicParse
+import splice.core.turn.COMPACT_DIRECTIVE_HEAD
+import splice.core.turn.CompactInstructions
+import splice.core.turn.compactDirective
 import splice.dialect.chat.ChatQuirks
 import splice.dialect.chat.ChatRequestBuilder
-import splice.dialect.chat.withReasoningEffortToml
 
 private val CHAT = ChatQuirks(providerTag = "kimi")
 
-private fun build(json: String, quirks: ChatQuirks = CHAT, compact: Boolean = false): JsonObject {
-    val body = parseAnthropicBody(json).typed
+private fun build(
+    json: String,
+    quirks: ChatQuirks = CHAT,
+    compact: Boolean = false,
+    model: String = "kimi-k2",
+): JsonObject {
+    val body = AnthropicParse.parseAnthropicBody(json).typed
     return ChatRequestBuilder(quirks)
-        .build(body, upstreamModel = "kimi-k2", originalModel = "claude-kimi--kimi-k2", compact = compact)
+        .build(body, upstreamModel = model, originalModel = "claude-kimi--$model", compact = compact)
         .req
 }
 
@@ -167,6 +174,51 @@ class ChatRequestBuilderTest {
     }
 
     @Test
+    fun `unreadable image source leaves an honest marker instead of dropping the message - DR-94`() {
+        // Vision is ON (default quirk) but the source cannot be mapped: pre-fix the image-only
+        // message vanished ENTIRELY - role alternation broken, omission hidden from the model.
+        val req = build(
+            """{"model":"m","messages":[
+                {"role":"user","content":[
+                    {"type":"image","source":{"type":"base64","media_type":"image/png","data":""}}
+                ]}
+            ]}""",
+        )
+        val user = req.messages().single()
+        assertEquals("user", user["role"]?.jsonPrimitive?.content)
+        val content = user["content"]?.jsonPrimitive?.content.orEmpty()
+        assertTrue(
+            content.contains("1 image(s) omitted by kimi proxy: unreadable image source"),
+            "marker missing: $content",
+        )
+    }
+
+    @Test
+    fun `a partially unreadable tool_result declares the dropped image - DR-94`() {
+        // Pre-fix the tool-output marker fired only when ALL images dropped, so losing one of two
+        // was silent - and with vision ON the old wording blamed vision the backend has.
+        val req = build(
+            """{"model":"m","messages":[
+                {"role":"assistant","content":[{"type":"tool_use","id":"t9","name":"shot","input":{}}]},
+                {"role":"user","content":[{"type":"tool_result","tool_use_id":"t9","content":[
+                    {"type":"text","text":"took screenshot"},
+                    {"type":"image","source":{"type":"base64","media_type":"image/png","data":"aGk="}},
+                    {"type":"image","source":{"type":"base64","media_type":"image/png","data":""}}
+                ]}]}
+            ]}""",
+        )
+        val msgs = req.messages()
+        val tool = msgs.first { it["role"]?.jsonPrimitive?.content == "tool" }
+        val content = tool["content"]?.jsonPrimitive?.content.orEmpty()
+        assertTrue(
+            content.contains("1 image(s) omitted by kimi proxy: unreadable image source"),
+            "marker missing: $content",
+        )
+        // the readable sibling still rides the follow-up user message
+        assertTrue(msgs.last().toString().contains("data:image/png;base64,aGk="))
+    }
+
+    @Test
     fun `document blocks leave an omission marker`() {
         val req = build(
             """{"model":"m","messages":[
@@ -190,6 +242,18 @@ class ChatRequestBuilderTest {
         )
         assertFalse(off.containsKey("reasoning_effort"))
         assertFalse(off.containsKey("reasoning"))
+    }
+
+    @Test
+    fun `top thinking budget emits xhigh on grok-4_6, high elsewhere`() {
+        // Grok 4.6 adds the xhigh rung (xAI docs 2026-08: native on 4.6+; older models clamp it
+        // to high upstream). The chat dialect serves arbitrary vendors, so the rung is gated on
+        // the upstream model — an unknown vendor must never see an enum it may reject.
+        val withBudget = """{"model":"m","messages":[{"role":"user","content":"hard"}],
+            "thinking":{"type":"enabled","budget_tokens":64000}}"""
+        assertEquals("xhigh", build(withBudget, model = "grok-4.6")["reasoning_effort"]?.jsonPrimitive?.content)
+        assertEquals("high", build(withBudget, model = "grok-4.5")["reasoning_effort"]?.jsonPrimitive?.content)
+        assertEquals("high", build(withBudget, model = "deepseek-reasoner")["reasoning_effort"]?.jsonPrimitive?.content)
     }
 
     @Test
@@ -249,6 +313,40 @@ class ChatRequestBuilderTest {
         assertEquals("high", compact["reasoning_effort"]?.jsonPrimitive?.content)
         assertFalse(compact.containsKey("tools"))
         assertFalse(compact.containsKey("tool_choice"))
+    }
+
+    // CX-02: stripping tools was the ONLY thing chat did on a compact turn, so the backend was
+    // never told it was summarizing and a conversational reply became the stored summary.
+    @Test
+    fun `compact appends the shared directive to the system message`() {
+        val msgs = build(
+            """{"model":"m","system":"You are helpful.",
+                "messages":[{"role":"user","content":"summarize"}]}""",
+            compact = true,
+        ).messages()
+        val system = msgs.first()
+        assertEquals("system", system["role"]?.jsonPrimitive?.content)
+        val content = system["content"]!!.jsonPrimitive.content
+        assertTrue(content.startsWith("You are helpful."), "the client's system prompt stays first")
+        assertTrue(content.contains(COMPACT_DIRECTIVE_HEAD), "the directive must ride: $content")
+        assertEquals(CompactInstructions.withCompactDirective("You are helpful.", compact = true), content)
+    }
+
+    @Test
+    fun `compact with no system prompt still gets one carrying the directive`() {
+        val msgs = build(
+            """{"model":"m","messages":[{"role":"user","content":"summarize"}]}""",
+            compact = true,
+        ).messages()
+        assertEquals("system", msgs.first()["role"]?.jsonPrimitive?.content)
+        assertEquals(compactDirective, msgs.first()["content"]!!.jsonPrimitive.content)
+    }
+
+    @Test
+    fun `a non-compact turn carries no directive and no invented system message`() {
+        val plain = build("""{"model":"m","messages":[{"role":"user","content":"hi"}]}""")
+        assertFalse(plain.toString().contains(COMPACT_DIRECTIVE_HEAD))
+        assertEquals("user", plain.messages().first()["role"]?.jsonPrimitive?.content)
     }
 
     @Test

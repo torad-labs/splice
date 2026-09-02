@@ -2,6 +2,13 @@
 /**
  * dev/campaigns/proxy-hardening/oracle/capture.mjs — FREEZE THE MIGRATION ORACLE.
  *
+ * INOPERABLE SINCE 2026-08-10, BY DESIGN. This script drives `server/`, and P8-CUT deleted that
+ * tree. It is KEPT, not removed, because it is the PROVENANCE of the 11 fixtures: it records how
+ * they were produced from a known-good implementation that no longer exists, which is the only
+ * reason `replay.mjs` can claim they were "not written to flatter the Kotlin port". Running it
+ * now exits 2 with that explanation rather than a confusing module-not-found. The fixtures are
+ * frozen; re-capturing would require restoring server/ from git history first.
+ *
  * WHAT  Drives the LEGACY Node stack (server/) through every scenario its own mock upstream
  *       defines, and records BOTH wire directions byte-exactly into dev/campaigns/proxy-hardening/oracle/fixtures/:
  *
@@ -46,6 +53,16 @@ import { once } from 'node:events';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(HERE, '../../../..');
 const SOURCE = join(ROOT, 'server/test/codex-proxy.test.mjs');
+
+// The Node tree this script drives was deleted on 2026-08-10 (P8-CUT). Fail with the reason.
+if (!existsSync(join(ROOT, 'server/src/codex-proxy.mjs'))) {
+  console.error(
+    'oracle:capture is INOPERABLE — server/ was deleted on 2026-08-10 (P8-CUT).\n' +
+    'The 11 fixtures it produced are frozen and still verified by `npm run oracle:replay`.\n' +
+    'This file is kept as their provenance. To re-capture, restore server/ from git history first.',
+  );
+  process.exit(2);
+}
 const FIXTURES = join(HERE, 'fixtures');
 
 // The mock region, delimited by markers that have been stable across the port.
@@ -111,15 +128,16 @@ export { mock, upstreamAuths, upstreamBodies, abortedScenarios, AUTH_PATH, state
  * CANONICALIZATION — deliberately ONE rule, declared in the manifest.
  *
  * Measured 2026-07-26 by diffing two independent captures of all 11 scenarios: the ONLY byte that
- * moves between runs is the Anthropic message id, minted as `msg_<epoch_ms>`. Everything else —
- * event ordering, block indices, usage numbers, mirror text — is already byte-stable.
+ * moves between runs is the Anthropic message id. Node minted `msg_<epoch_ms>`; Kotlin appends a
+ * process-wide uniqueness sequence as `msg_<epoch_ms>_<sequence>`. Everything else — event ordering,
+ * block indices, usage numbers, mirror text — is already byte-stable.
  *
  * The rule stays narrow ON PURPOSE. A broad normalizer (strip all digits, sort keys, ignore
  * whitespace) would make the oracle pass on drift it should catch. Anything added here must be
  * justified by an observed diff, never by anticipation.
  */
 const CANON_RULES = [
-  { name: 'message-id', pattern: 'msg_<digits> -> msg_CANON', re: /msg_\d+/g, to: 'msg_CANON' },
+  { name: 'message-id', pattern: 'msg_<digits>[_<sequence>] -> msg_CANON', re: /msg_\d+(?:_\d+)?/g, to: 'msg_CANON' },
 ];
 
 function canonicalize(text) {

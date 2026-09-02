@@ -1,0 +1,14 @@
+id: kt-no-coroutine-scope-factory
+valid:
+  # the scope arrives from the component that owns the lifecycle
+  - 'private val prefetchScope: CoroutineScope = injected'
+  # the named owner: implementing the interface, never calling the factory
+  - 'public class LifecycleScope(context: CoroutineContext) : CoroutineScope'
+  - 'override val coroutineContext: CoroutineContext = context + SupervisorJob()'
+  # a plain type annotation must stay green
+  - 'internal class ProviderAssembly(private val probeScope: CoroutineScope)'
+invalid:
+  - 'private val probeScope = CoroutineScope(Dispatchers.Default + SupervisorJob())'
+  - 'val scope = CoroutineScope(context)'
+  # zero live hits in this repo; the branch is what keeps it that way
+  - 'val ui = MainScope()'

@@ -5,9 +5,9 @@
 // the per-turn conv-id header and the grok quirk profile.
 package splice.provider.grok
 
-import splice.core.auth.Credentials
 import splice.core.turn.ReasoningDisplay
 import splice.core.util.DaemonLog
+import splice.core.util.LogSink
 import splice.dialect.responses.CacheKeyStrategy
 import splice.dialect.responses.EffortLadder
 import splice.dialect.responses.ResponsesProvider
@@ -20,10 +20,10 @@ public class GrokProvider(
     replayReasoning: Boolean,
     configEffort: String?,
     configSummary: String? = null,
-    quirks: ResponsesQuirks = defaultQuirks(),
+    quirks: ResponsesQuirks = GrokQuirks().defaultQuirks(),
     /** Daemon log sink — forwarded to ResponsesProvider so its diagnostics reach
      *  /mgmt/logs and not stderr alone (wall kt-no-println, 2026-07-27). */
-    log: (String) -> Unit = DaemonLog::write,
+    log: LogSink = LogSink(DaemonLog::write),
 ) : ResponsesProvider(tuning, showReasoning, replayReasoning, configEffort, configSummary, quirks, log = log) {
 
     // Grok Build sets both the body prompt_cache_key AND x-grok-conv-id for sticky routing. The
@@ -31,25 +31,44 @@ public class GrokProvider(
     // field raced concurrent sessions into each other's affinity header (audit 2026-07-18).
     override fun perTurnHeaders(sessionId: String?): Map<String, String> =
         sessionId?.takeIf { it.isNotEmpty() }?.let { mapOf("x-grok-conv-id" to it) } ?: emptyMap()
-
-    override fun extraHeaders(creds: Credentials): Map<String, String> = mapOf("Accept" to "text/event-stream")
-
-    public companion object {
-        /** The grok quirk profile — injectable so the TOML [providers.*.quirks] table is REAL. */
-        public fun defaultQuirks(): ResponsesQuirks = ResponsesQuirks(
-            providerTag = "claude-grok",
-            store = false,
-            cacheKeyStrategy = CacheKeyStrategy.SESSION_ID,
-            effortLadder = EffortLadder.GROK,
-            supportsSummary = true,
-            summaryRejectModelRegex = null,
-            compactEffortPin = null, // inherit session effort on compact (v27 cache law — no pins)
-            emitToolChoice = true,
-            emitStrict = true,
-            // xai returns no encrypted reasoning envelopes, so the cache would only widen the
-            // request's include[] for nothing (untested surface on xai). TOML
-            // `reasoning_cache = true` re-enables via the overlay if that ever changes.
-            reasoningCache = false,
-        )
-    }
 }
+
+/** Holder for the grok quirk profile. A class rather than a static namespace so the profile is
+ *  constructed by whoever needs it (the daemon overlays TOML on top of it), and so the default is
+ *  still re-evaluated per GrokProvider construction exactly as the companion's function was. */
+public class GrokQuirks {
+    /** The grok quirk profile — injectable so the TOML [providers.*.quirks] table is REAL. */
+    public fun defaultQuirks(): ResponsesQuirks = ResponsesQuirks(
+        providerTag = "claude-grok",
+        store = false,
+        cacheKeyStrategy = CacheKeyStrategy.SESSION_ID,
+        effortLadder = EffortLadder.GROK,
+        supportsSummary = true,
+        summaryRejectModelRegex = null,
+        compactEffortPin = null, // inherit session effort on compact (v27 cache law — no pins)
+        emitToolChoice = true,
+        emitStrict = true,
+        // xai returns no encrypted reasoning envelopes, so the cache would only widen the
+        // request's include[] for nothing (untested surface on xai). TOML
+        // `reasoning_cache = true` re-enables via the overlay if that ever changes.
+        reasoningCache = false,
+        // DR-155: xAI enforces a minimum image edge and 400s the WHOLE turn below it.
+        //
+        // WHICH DIALECT A GROK HEAD RIDES IS NOT SETTLED, and this comment said it was. The shipped
+        // config/splice.example.toml puts [providers.xai] on openai-responses; the operator config
+        // that produced the DR-152 soak has it on openai-chat. Both are valid — grok-oauth works on
+        // either — so a reader of one file will confidently contradict a reader of the other, which
+        // is exactly what happened in review.
+        //
+        // That is the argument for putting the number on BOTH profiles rather than on the one that
+        // looked live: a vendor's constraint belongs to the vendor, and a floor that depends on a
+        // dialect an operator can switch in one TOML line is a floor that goes missing silently.
+        minImageEdgePx = XAI_MIN_IMAGE_EDGE_PX,
+    )
+}
+
+// See ChatArm.kt's copy: xAI's verbatim 400 is "Image dimensions 1x1 are too small. Both width and
+// height must be at least 8 pixels." Duplicated rather than shared because provider-grok and :app
+// have no dependency between them, and a vendor fact is cheaper to state twice than to route
+// through a third module.
+private const val XAI_MIN_IMAGE_EDGE_PX = 8

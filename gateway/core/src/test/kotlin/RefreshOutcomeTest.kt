@@ -3,12 +3,13 @@
 // that names its distinct story (dead token vs transport blip vs corrupt file vs not-logged-in
 // were previously one indistinguishable null — the 2026-07-18 incident shape).
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.auth.Credentials
 import splice.core.auth.RefreshOutcome
-import splice.core.auth.credentialsOrNull
+import splice.core.util.LogSink
 import java.io.IOException
 
 class RefreshOutcomeTest {
@@ -36,7 +37,8 @@ class RefreshOutcomeTest {
             RefreshOutcome.Rejected("invalid_grant") to "invalid_grant",
             RefreshOutcome.ReadFailed(IOException("corrupt")) to "read failed",
             RefreshOutcome.TransportFailed(IOException("dns")) to "transport failed",
-            RefreshOutcome.PersistFailed("disk full") to "persist failed",
+            RefreshOutcome.PersistFailed.Write(IOException("disk full")) to "persist failed",
+            RefreshOutcome.PersistFailed.UnreadableAfterWrite to "persist failed",
         )
         for ((outcome, marker) in branches) {
             val (out, lines) = logsOf(outcome)
@@ -58,8 +60,62 @@ class RefreshOutcomeTest {
             RefreshOutcome.Rejected("r"),
             RefreshOutcome.ReadFailed(IOException("x")),
             RefreshOutcome.TransportFailed(IOException("y")),
-            RefreshOutcome.PersistFailed("p"),
+            RefreshOutcome.PersistFailed.Write(IOException("p")),
+            RefreshOutcome.PersistFailed.UnreadableAfterWrite,
         ).map { logsOf(it).second.single() }
         assertEquals(all.size, all.toSet().size)
+    }
+}
+
+// DR-151: PersistFailed used to carry a PRE-RENDERED String, so the sanitizer decision was made at
+// the call site and the DR-140 wall — which can only see call sites it is looking at — could not
+// stop a future one from baking raw throwable text into the field. The type now carries the
+// throwable whole and the sink owns the render, which makes the hazard inexpressible rather than
+// merely absent. These arms hold that property at the SINK, where it is now decided.
+class PersistFailedRenderTest {
+
+    private fun logsOf(outcome: RefreshOutcome): List<String> {
+        val lines = mutableListOf<String>()
+        outcome.credentialsOrNull("test-auth", LogSink { lines.add(it) })
+        return lines
+    }
+
+    // The hostile shape: a throwable whose own toString() carries the secret. SafeFailureText
+    // allowlists a small set of I/O types and renders everything else as a withheld marker, so a
+    // vendor or JSON exception that embedded a token cannot reach the log through this branch.
+    @Test
+    fun `a non-allowlisted throwable carrying a secret is withheld at the persist sink - DR-151`() {
+        val secret = "sk-live-DR151-must-never-appear"
+        val hostile = object : RuntimeException("boom") {
+            override fun toString(): String = "HostileException: $secret"
+        }
+        val line = logsOf(RefreshOutcome.PersistFailed.Write(hostile)).single()
+        assertFalse(line.contains(secret), "the persist line must never quote the throwable's own text: $line")
+        assertTrue(line.contains("withheld"), "it must say the message was withheld, not go silent: $line")
+        assertTrue(line.contains("persist failed"), "and still tell the persist story: $line")
+    }
+
+    // The other half: an ALLOWLISTED filesystem failure is exactly the diagnostic an operator needs
+    // for a failed credential write, so the split must not have made the branch uselessly silent.
+    @Test
+    fun `an allowlisted filesystem failure still reaches the persist line - DR-151`() {
+        val denied = java.nio.file.FileSystemException(
+            "/tmp/auth.json",
+            null,
+            "No space left",
+        )
+        val line = logsOf(RefreshOutcome.PersistFailed.Write(denied)).single()
+        assertTrue(line.contains("No space left"), "a FileSystemException quotes paths we authored, not content: $line")
+    }
+
+    // The semantic branch has no throwable to carry, so it is an object and its text is fixed.
+    @Test
+    fun `the unreadable-after-write branch renders its exact literal - DR-151`() {
+        val line = logsOf(RefreshOutcome.PersistFailed.UnreadableAfterWrite).single()
+        assertTrue(
+            line.contains("credential file unreadable after rotated-token write"),
+            "the semantic branch keeps its own distinguishable story: $line",
+        )
+        assertFalse(line.contains("withheld"), "there is no throwable here, so nothing is withheld: $line")
     }
 }

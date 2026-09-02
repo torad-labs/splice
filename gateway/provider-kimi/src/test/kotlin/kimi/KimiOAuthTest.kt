@@ -12,16 +12,13 @@ import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.auth.SYNTHETIC_EXPIRY_TTL_MS
+import splice.provider.kimi.KimiOAuth
 import splice.provider.kimi.KimiOAuthEndpoints
-import splice.provider.kimi.isPlanTierRejection
-import splice.provider.kimi.kimiAuthJsonFromTokenResponse
-import splice.provider.kimi.kimiDeviceAuthorizationForm
-import splice.provider.kimi.kimiRefreshForm
-import splice.provider.kimi.kimiTokenPollForm
-import splice.provider.kimi.parseKimiDeviceAuthorization
 
 class KimiOAuthTest {
 
+    private val oauth = KimiOAuth()
     private val noEnv: (String) -> String? = { null }
     private val cid = "17e5f671-d194-4dfb-9706-5516cb48c098"
 
@@ -46,15 +43,15 @@ class KimiOAuthTest {
 
     @Test
     fun `device authorization form is client_id only with no scope`() {
-        assertEquals("client_id=$cid", kimiDeviceAuthorizationForm())
-        assertFalse(kimiDeviceAuthorizationForm().contains("scope"))
+        assertEquals("client_id=$cid", oauth.kimiDeviceAuthorizationForm())
+        assertFalse(oauth.kimiDeviceAuthorizationForm().contains("scope"))
     }
 
     @Test
     fun `token poll form carries client_id, device_code and percent-encoded grant_type`() {
         assertEquals(
             "client_id=$cid&device_code=DEV123&grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Adevice_code",
-            kimiTokenPollForm("DEV123"),
+            oauth.kimiTokenPollForm("DEV123"),
         )
     }
 
@@ -62,13 +59,13 @@ class KimiOAuthTest {
     fun `refresh form carries client_id, grant and refresh_token`() {
         assertEquals(
             "client_id=$cid&grant_type=refresh_token&refresh_token=my-rt",
-            kimiRefreshForm("my-rt"),
+            oauth.kimiRefreshForm("my-rt"),
         )
     }
 
     @Test
     fun `device authorization parse applies defaults and clamps interval`() {
-        val full = parseKimiDeviceAuthorization(
+        val full = oauth.parseKimiDeviceAuthorization(
             """{"user_code":"WXYZ-1234","device_code":"dev-abc",
                 "verification_uri":"https://kimi.com/device",
                 "verification_uri_complete":"https://kimi.com/device?code=WXYZ-1234",
@@ -82,12 +79,12 @@ class KimiOAuthTest {
         assertEquals(8L, full.intervalS)
 
         // defaults: expires_in -> 1800, interval -> 5
-        val defaults = parseKimiDeviceAuthorization("""{"user_code":"A","device_code":"b"}""")
+        val defaults = oauth.parseKimiDeviceAuthorization("""{"user_code":"A","device_code":"b"}""")
         assertEquals(1800L, defaults.expiresInS)
         assertEquals(5L, defaults.intervalS)
 
         // interval clamp: 0 -> 1
-        val clamped = parseKimiDeviceAuthorization("""{"user_code":"A","device_code":"b","interval":0}""")
+        val clamped = oauth.parseKimiDeviceAuthorization("""{"user_code":"A","device_code":"b","interval":0}""")
         assertEquals(1L, clamped.intervalS)
     }
 
@@ -95,7 +92,8 @@ class KimiOAuthTest {
     fun `token response maps to the flat kimi-cli auth file field-for-field`() {
         val body =
             """{"access_token":"at","refresh_token":"rt","expires_in":3600,"scope":"coding","token_type":"Bearer"}"""
-        val obj = Json.parseToJsonElement(kimiAuthJsonFromTokenResponse(body, nowMs = 5000L).toString()).jsonObject
+        val obj =
+            Json.parseToJsonElement(oauth.kimiAuthJsonFromTokenResponse(body, nowMs = 5000L).toString()).jsonObject
         assertEquals("at", obj["access_token"]?.jsonPrimitive?.content)
         assertEquals("rt", obj["refresh_token"]?.jsonPrimitive?.content)
         assertEquals("3605", obj["expires_at"]?.jsonPrimitive?.content) // 5000/1000 + 3600
@@ -104,10 +102,29 @@ class KimiOAuthTest {
         assertEquals("3600", obj["expires_in"]?.jsonPrimitive?.content)
     }
 
+    // DR-177, the seconds-domain twin. kimi writes unix SECONDS, so this site never multiplied and
+    // looked safe — but now/1000 + expires_in wraps just as readily, and the file's expires_at then
+    // sits in the past forever. The unit is why the shared conversion is divided back down here
+    // rather than skipped; the arm above pins that the ordinary case is byte-identical.
+    @Test
+    fun `an absurd expires_in cannot persist an expires_at in the past - DR-177`() {
+        val absurd = Long.MAX_VALUE - 1
+        val body = """{"access_token":"at","refresh_token":"rt","expires_in":$absurd}"""
+        val written = oauth.kimiAuthJsonFromTokenResponse(body, nowMs = 5000L)
+        val obj = Json.parseToJsonElement(written.toString()).jsonObject
+        val expiresAt = obj["expires_at"]!!.jsonPrimitive.content.toLong()
+        assertTrue(expiresAt > 5L, "a wrapped expires_at reads as already-expired forever: got $expiresAt")
+        assertEquals(
+            (5000L + SYNTHETIC_EXPIRY_TTL_MS) / 1000,
+            expiresAt,
+            "an unusable lifetime takes the synthesized ceiling, in this file's SECONDS",
+        )
+    }
+
     @Test
     fun `scope defaults empty and token_type defaults Bearer when absent`() {
         val body = """{"access_token":"at","refresh_token":"rt","expires_in":100}"""
-        val obj = Json.parseToJsonElement(kimiAuthJsonFromTokenResponse(body, nowMs = 0L).toString()).jsonObject
+        val obj = Json.parseToJsonElement(oauth.kimiAuthJsonFromTokenResponse(body, nowMs = 0L).toString()).jsonObject
         assertEquals("", obj["scope"]?.jsonPrimitive?.content)
         assertEquals("Bearer", obj["token_type"]?.jsonPrimitive?.content)
     }
@@ -115,25 +132,29 @@ class KimiOAuthTest {
     @Test
     fun `token response missing refresh_token is a hard error (rotation is mandatory)`() {
         assertThrows(IllegalStateException::class.java) {
-            kimiAuthJsonFromTokenResponse("""{"access_token":"at","expires_in":3600}""", nowMs = 0L)
+            oauth.kimiAuthJsonFromTokenResponse("""{"access_token":"at","expires_in":3600}""", nowMs = 0L)
         }
     }
 
     @Test
     fun `token response missing access_token or expires_in is a hard error`() {
         assertThrows(IllegalStateException::class.java) {
-            kimiAuthJsonFromTokenResponse("""{"refresh_token":"rt","expires_in":3600}""", nowMs = 0L)
+            oauth.kimiAuthJsonFromTokenResponse("""{"refresh_token":"rt","expires_in":3600}""", nowMs = 0L)
         }
         assertThrows(IllegalStateException::class.java) {
-            kimiAuthJsonFromTokenResponse("""{"access_token":"at","refresh_token":"rt"}""", nowMs = 0L)
+            oauth.kimiAuthJsonFromTokenResponse("""{"access_token":"at","refresh_token":"rt"}""", nowMs = 0L)
         }
     }
 
     @Test
     fun `plan-tier rejection recognises entitlement bodies and rejects token-expiry bodies`() {
-        assertTrue(isPlanTierRejection("""{"error":{"message":"Your current subscription does not have access"}}"""))
-        assertTrue(isPlanTierRejection("This plan supports only kimi-k3 up to 256K context"))
-        assertFalse(isPlanTierRejection("""{"error":{"type":"authentication_error","message":"invalid token"}}"""))
-        assertFalse(isPlanTierRejection("expired_token"))
+        assertTrue(
+            oauth.isPlanTierRejection("""{"error":{"message":"Your current subscription does not have access"}}"""),
+        )
+        assertTrue(oauth.isPlanTierRejection("This plan supports only kimi-k3 up to 256K context"))
+        assertFalse(
+            oauth.isPlanTierRejection("""{"error":{"type":"authentication_error","message":"invalid token"}}"""),
+        )
+        assertFalse(oauth.isPlanTierRejection("expired_token"))
     }
 }

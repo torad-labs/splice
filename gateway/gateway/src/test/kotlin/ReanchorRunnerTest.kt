@@ -1,7 +1,9 @@
 // Walls for the round runners (eli design 2026-07-24 + code-review fix round): a spliced turn is
 // ONE coherent Anthropic message — single message_start, monotonic block indices, exactly ONE
-// terminal; budget exhaustion ends in the honest error AFTER the appended blocks; watchdog fires
-// and gone clients never continue; the finish outcome carries the WHOLE turn's facts (cross-round
+// terminal; budget exhaustion ends in the honest error AFTER the appended blocks; gone clients
+// never continue (DR-7 REVERSED the watchdog half of that pair — an idle fire reaps a ROUND now,
+// and a stalled round is the case most worth continuing); the finish outcome carries the WHOLE
+// turn's facts (cross-round
 // merge — a round-2 empty completion must not read as an empty model); fold-eligible turns retry
 // failed rounds via trigger-B with never-forwarded prose stripped from the salvage.
 import kotlinx.coroutines.test.runTest
@@ -15,12 +17,14 @@ import splice.core.turn.ToolSearchCall
 import splice.core.turn.ToolSearchCallId
 import splice.core.turn.TurnOutcome
 import splice.core.turn.Usage
-import splice.gateway.head.FoldRunner
-import splice.gateway.head.ReanchorRunner
-import splice.gateway.head.RunnerSignals
-import splice.gateway.wire.SseEmitter
+import splice.gateway.round.FoldRunner
+import splice.gateway.round.ReanchorRunner
+import splice.gateway.round.RoundStrategy
+import splice.gateway.round.RunnerSignals
+import splice.gateway.wire.SseEmitterFactory
 import splice.spi.FoldController
 import splice.spi.ReanchorController
+import splice.spi.RetryBackoff
 import splice.spi.ToolSearchController
 import splice.spi.WireSink
 
@@ -46,7 +50,7 @@ private fun searchSuccess(
 
 private class Harness {
     val frames = mutableListOf<String>()
-    val emitter = SseEmitter.create(
+    val emitter = SseEmitterFactory().create(
         write = { frames.add(it) },
         model = "m",
         usagePayload = { buildJsonObject { } },
@@ -68,7 +72,7 @@ private class Harness {
         when (outcome) {
             is TurnOutcome.Success -> emitter.emitTerminal(outcome.hasToolUse, outcome.incomplete, outcome.usage)
             is TurnOutcome.Failure -> emitter.emitError(outcome.type, outcome.message)
-            TurnOutcome.ClientAbandoned -> emitter.abandon()
+            is TurnOutcome.ClientAbandoned -> emitter.abandon()
         }
     }
 
@@ -185,8 +189,13 @@ class ReanchorRunnerTest {
         assertTrue(h.finished is TurnOutcome.Failure)
     }
 
+    // DR-7 REVERSES this arm. It used to assert the controller is never consulted after a watchdog
+    // fire — true of a watchdog that cancelled the whole turn, false of one that reaps a single
+    // round. A stalled round is the case most worth continuing: the client is still listening and
+    // the round left real reasoning behind. The bound is the controller's own attempt budget, which
+    // is why this fixture caps at two rather than returning a continuation forever.
     @Test
-    fun `a watchdog fire never continues - its cancellation owns the turn`() = runTest {
+    fun `an idle watchdog fire continues - the round is reaped, not the turn`() = runTest {
         val h = Harness()
         var asks = 0
         ReanchorRunner(
@@ -197,13 +206,14 @@ class ReanchorRunnerTest {
             signals = h.signals(watchdog = true),
         ).run(
             continuationBody(),
-            ReanchorController {
+            ReanchorController { round ->
                 asks++
-                continuationBody()
+                if (round.attempt < 2) continuationBody() else null
             },
         )
-        assertEquals(0, asks, "the controller is never consulted after a watchdog fire")
-        assertEquals(1, h.count("error"))
+        assertEquals(3, asks, "the controller is consulted despite the watchdog fire")
+        assertEquals(1, h.count("error"), "the turn still ends on ONE honest terminal")
+        assertEquals(0, h.count("message_stop"), "never a fabricated clean stop")
     }
 
     @Test
@@ -248,6 +258,7 @@ class FoldRunnerReanchorTest {
     fun `fold trigger-B retries a failed round with never-forwarded prose stripped from the salvage`() = runTest {
         val h = Harness()
         val seenPartialBodies = mutableListOf<String?>()
+        val waits = mutableListOf<Int>()
         val rounds = ArrayDeque<suspend () -> TurnOutcome>()
         rounds.add { retryableFailure(outputTokens = 3, bodyText = "buffered never-sent prose") }
         rounds.add {
@@ -270,9 +281,14 @@ class FoldRunnerReanchorTest {
                 continuationBody()
             },
             signals = h.signals(),
+            backoff = RetryBackoff { attempt, minDelayMs ->
+                assertEquals(0, minDelayMs)
+                waits += attempt
+            },
         ).run(continuationBody()) { null }
 
         assertEquals(listOf(""), seenPartialBodies, "buffered prose must be stripped before the policy sees it")
+        assertEquals(listOf(0), waits, "fold trigger-B must pause before the re-POST")
         val success = h.finished as TurnOutcome.Success
         assertEquals("clean full answer", success.bodyText, "the merge-side strip must hold too")
         assertEquals(8, success.usage.outputTokens, "failed round's salvaged usage accrues")
@@ -315,6 +331,7 @@ class FoldRunnerReanchorTest {
     fun `salvaged usage rides the failure when the turn ultimately fails`() = runTest {
         val h = Harness()
         var posts = 0
+        val waits = mutableListOf<Int>()
         ReanchorRunner(
             key = "t",
             log = { },
@@ -324,17 +341,45 @@ class FoldRunnerReanchorTest {
             },
             finish = { h.finish(it) },
             signals = h.signals(),
+            backoff = RetryBackoff { attempt, minDelayMs ->
+                assertEquals(0, minDelayMs)
+                waits += attempt
+            },
         ).run(
             continuationBody(),
             ReanchorController { round -> if (round.attempt < 2) continuationBody() else null },
         )
         assertEquals(3, posts)
+        assertEquals(listOf(0, 1), waits, "every absorbed failure must pause before the re-POST")
         val failure = h.finished as TurnOutcome.Failure
         assertEquals(
-            8,
+            12,
             failure.salvagedUsage.outputTokens,
-            "two absorbed rounds' tokens carried, final round's not salvaged",
+            "two absorbed rounds' tokens carried AND the terminal round's own burn (DR-124)",
         )
+    }
+
+    // DR-125: absorbed failures must reach health when the client abandons — pre-fix the hook
+    // fired only on ultimate Success, so a degraded provider grinding retries while clients hung
+    // up kept head health clean. Fired in the runner, not finishTurn: finishTurn attributes
+    // nothing for ClientAbandoned, so this cannot double-count (a Failure final stays
+    // finishTurn's, exactly once — HeadServerIntegrationTest).
+    @Test
+    fun `absorbed failures reach health when the client abandons - DR-125`() = runTest {
+        val h = Harness()
+        val rounds = ArrayDeque<suspend () -> TurnOutcome>()
+        rounds.add { retryableFailure(outputTokens = 8) }
+        rounds.add { TurnOutcome.ClientAbandoned() }
+        ReanchorRunner(
+            key = "t",
+            log = { },
+            postRound = { rounds.removeFirst().invoke() },
+            finish = { h.finish(it) },
+            signals = h.signals(),
+        ).run(continuationBody(), ReanchorController { continuationBody() })
+        assertEquals(1, h.absorbed.size, "the absorbed round failure must reach the health hook")
+        val abandoned = h.finished as TurnOutcome.ClientAbandoned
+        assertEquals(8, abandoned.salvagedUsage.outputTokens, "absorbed burn must ride the abandonment")
     }
 
     @Test
@@ -355,6 +400,39 @@ class FoldRunnerReanchorTest {
         ).run(continuationBody()) { null }
         assertEquals(0, asks)
         assertNull(h.finished as? TurnOutcome.Success)
+    }
+
+    // DR-89 (runtime sweep): trigger-A — the truncated-reasoning fold on a SUCCESS — was the only
+    // round-continuation trigger with no clientGone/watchdogFired gate; its two siblings (the
+    // search branch and trigger-B above) both refuse in exactly this state. A client that hung up
+    // must not buy more upstream fold rounds: quota burn plus a pinned InflightGate slot for a
+    // reader that already left.
+    @Test
+    fun `a gone client buys no fold continuation - DR-89`() = runTest {
+        val h = Harness()
+        var asked = 0
+        val fold = FoldController { round ->
+            if (round.roundIndex == 0) {
+                asked++
+                continuationBody()
+            } else {
+                null
+            }
+        }
+        val rounds = ArrayDeque<suspend (WireSink) -> TurnOutcome>()
+        rounds.add { _ ->
+            TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(reasoningTokens = 516))
+        }
+        rounds.add { _ -> TurnOutcome.Success(hasToolUse = false, incomplete = false, usage = Usage(outputTokens = 1)) }
+        FoldRunner(
+            emitter = h.emitter,
+            key = "t",
+            log = { },
+            postRound = { _, sink -> rounds.removeFirst().invoke(sink) },
+            finish = { h.finish(it) },
+            signals = h.signals(gone = true),
+        ).run(continuationBody(), fold)
+        assertEquals(0, asked, "a gone client must not be asked for more fold rounds")
     }
 }
 
@@ -380,7 +458,7 @@ class ReanchorRunnerSearchTest {
         val search = ToolSearchController { round ->
             // The runner consults the controller on EVERY Success round (searchContinuation only
             // type/liveness-guards); the "nothing to answer" decision lives inside the real
-            // controller (ResponsesToolSearch.kt). Count only genuine answers, matching this
+            // controller (ResponsesToolSearchController.kt). Count only genuine answers, matching this
             // test's intent ("a search round continues ONCE") — review 2026-07-24 round 1.
             if (round.outcome.toolSearches.isEmpty()) {
                 null
@@ -457,8 +535,13 @@ class ReanchorRunnerSearchTest {
         assertEquals(1, h.count("message_stop"))
     }
 
+    // The veto itself survived DR-7; its REASON did not. This name used to end "its cancellation
+    // owns the turn", which described a watchdog that killed the whole turn — an Idle fire now
+    // reaps one round and the turn continues. What still holds is narrower: a search asks the model
+    // for MORE work on a turn whose budget already blew, so the gate stays. Its sibling arm below
+    // (an idle fire continues a FAILURE re-anchor) is the half that changed.
     @Test
-    fun `a watchdog fire never continues a search - its cancellation owns the turn`() = runTest {
+    fun `a watchdog fire never continues a search - more work on a spent budget`() = runTest {
         val h = Harness()
         var asks = 0
         val search = ToolSearchController {
@@ -551,6 +634,31 @@ class ReanchorRunnerSearchTest {
 // Search-continuation walls on FoldRunner: buffered rounds strip bodyText/emittedText but keep
 // live thinking (the same rule fold's own re-anchor trigger-B applies), and fold-continuation
 // (a truncated round) takes precedence over a search on the same round.
+class FoldRunnerAbandonTest {
+
+    // DR-125: same wall for the fold loop — trigger-B absorbs the failure; the next round's
+    // client hang-up must not erase it from head health.
+    @Test
+    fun `fold-absorbed failures reach health when the client abandons - DR-125`() = runTest {
+        val h = Harness()
+        val rounds = ArrayDeque<suspend () -> TurnOutcome>()
+        rounds.add { retryableFailure(outputTokens = 8, bodyText = "") }
+        rounds.add { TurnOutcome.ClientAbandoned() }
+        FoldRunner(
+            emitter = h.emitter,
+            key = "t",
+            log = { },
+            postRound = { _, _ -> rounds.removeFirst().invoke() },
+            finish = { h.finish(it) },
+            reanchor = ReanchorController { continuationBody() },
+            signals = h.signals(),
+        ).run(continuationBody()) { null }
+        assertEquals(1, h.absorbed.size, "the fold-absorbed failure must reach the health hook")
+        val abandoned = h.finished as TurnOutcome.ClientAbandoned
+        assertEquals(8, abandoned.salvagedUsage.outputTokens, "fold-absorbed burn must ride the abandonment")
+    }
+}
+
 class FoldRunnerSearchTest {
 
     @Test
@@ -633,5 +741,33 @@ class FoldRunnerSearchTest {
             "fold continuation wins on round 1; the search gate never sees that round's outcome",
         )
         assertEquals(1, h.count("message_stop"))
+    }
+}
+
+/** DR-130: RoundStrategy's third branch — `finish(postRound(...))`, taken when neither fold nor
+ *  re-anchor nor tool-search applies — hands the raw outcome straight to finishTurn, which stamps
+ *  only `salvagedUsage`. So the failed round's OWN harvested burn (the DR-124 mechanism) never
+ *  reached the usage store or the perf counts on that path. Every compact turn takes it. */
+class RoundStrategySingleRoundTest {
+
+    @Test
+    fun `the single-round path carries the failed round's own burn - DR-130`() = runTest {
+        val h = Harness()
+        RoundStrategy(
+            key = "t",
+            log = { },
+            emitter = h.emitter,
+            signals = h.signals(),
+            postRoundToSink = { _, _ -> error("the single-round path must not buffer") },
+            postRound = { retryableFailure(outputTokens = 11) },
+            finish = { h.finish(it) },
+            toolSearch = null,
+        ).run(continuationBody(), fold = null, reanchor = null)
+        val failure = h.finished as TurnOutcome.Failure
+        assertEquals(
+            11,
+            failure.salvagedUsage.outputTokens,
+            "a single-round failure's harvested burn must reach finishTurn's stamp (DR-124's mechanism)",
+        )
     }
 }

@@ -13,7 +13,7 @@ plugins {
     id("splice.module-law")
     application
     id("com.gradleup.shadow") version "9.6.1"
-    id("org.cyclonedx.bom") version "3.3.0"
+    id("org.cyclonedx.bom") version "3.4.1"
     id("com.github.jk1.dependency-license-report") version "3.1.4"
 }
 
@@ -22,6 +22,7 @@ dependencies {
     implementation(project(":provider-spi"))
     implementation(project(":dialect-openai-responses"))
     implementation(project(":dialect-openai-chat"))
+    implementation(project(":dialect-anthropic-passthrough"))
     implementation(project(":provider-codex"))
     implementation(project(":provider-grok"))
     implementation(project(":provider-kimi"))
@@ -51,6 +52,17 @@ tasks.test {
     inputs.file(rootProject.layout.projectDirectory.file("../config/splice.example.toml"))
         .withPropertyName("spliceExampleToml")
         .withPathSensitivity(PathSensitivity.RELATIVE)
+
+    // The arms that enter at a production call site (DR-97 login(), DR-99 runCli()) redirect
+    // `user.home` to a @TempDir, but TopologyLoader.configPath() consults SPLICE_CONFIG and
+    // XDG_CONFIG_HOME BEFORE user.home — so an ambient value in the runner's environment aims
+    // the verb at the operator's own config and the arm fails on its own PREMISE assertion.
+    // That is not hypothetical: green on a machine with neither set, red on CI with
+    // XDG_CONFIG_HOME set, reproduced locally by exporting it (expected /tmp/junit-.../.config,
+    // was ~/.config). Removed here rather than asserted around, because the hermetic JVM covers
+    // the whole CLASS - every future arm that redirects user.home - not just the two that
+    // happen to assert the premise today.
+    environment = environment.filterKeys { it != "XDG_CONFIG_HOME" && it != "SPLICE_CONFIG" }
 }
 
 val repositoryRoot = rootProject.layout.projectDirectory.dir("..")
@@ -64,8 +76,16 @@ val licenses = complianceDir.map { it.file("dependency-licenses.json") }
 val thirdPartyLicenses = complianceDir.map { it.file("THIRD_PARTY_LICENSES.txt") }
 val thirdPartyNotices = repositoryRoot.file("THIRD_PARTY_NOTICES.md")
 val dashboard = repositoryRoot.file("webui/dist/index.html")
+// The set was written 2026-07-20 when every dependency was Apache-2.0/MIT/EPL; BSD was never
+// considered rather than rejected. BSD 2-Clause is strictly MORE permissive than Apache-2.0, which
+// is already allowed — no patent clause, no NOTICE obligation, no copyleft, OSI-approved — and the
+// attribution it does require is already emitted by generateThirdPartyLicenses. Added 2026-08-11
+// for com.github.luben:zstd-jni, the canonical JVM zstd binding (Kafka/Spark/Netty use it); the
+// alternatives cannot compress (aircompressor is decompress-only) or shell out to it anyway.
 val allowedReleaseLicenses = setOf(
     "Apache License, Version 2.0",
+    "BSD 2-Clause License",
+    "BSD-2-Clause",
     "Apache Software License - Version 2.0",
     "Apache-2.0",
     "Eclipse Public License - Version 1.0",

@@ -1,0 +1,30 @@
+# Behaviour belongs ON a type. A loose top-level function is the TypeScript-module smell: it has no
+# owner, cannot be substituted in a test, and accumulates until a file is a bag of helpers.
+#
+# WHY THIS IS A GATE RULE AND NOT ONLY A WRITE-TIME HOOK. It used to be hook-only. The hook was
+# turned off in 7589e19 while a second delivery path was wired to a directory sgconfig.yml never
+# referenced, so BOTH paths were dead and the gate stayed green for a month while 336 top-level
+# functions accumulated. ast-grep fails open on an unreferenced rule dir, so a wall nobody routes is
+# a wall nobody has. checks/rule-routing.sh now fails the gate on an unrouted rule dir, and this
+# rule lives in a ROUTED dir so `npm run gate:rules` scans the tree for it on every run.
+#
+# COMPLIANT FORMS: a member of the type that owns the behaviour; `class X { operator fun invoke() }`
+# for a single-purpose unit; an injected collaborator for anything a test needs to substitute.
+# EXEMPT: `fun main` (the entry point) and `fun interface` SAM declarations, which tree-sitter
+# reports as function_declaration.
+id: kt-no-top-level-functions
+language: kotlin
+severity: error
+message: "Put behaviour on the type that owns it (a method, or `class X { operator fun invoke(...) }`), never a loose top-level function. `fun main` and `fun interface` are exempt."
+note: >
+  Top-level `val`/`const val` are untouched — this rule is about behaviour, not constants. If the
+  function is a pure helper over its first argument, make it a member of that argument's type; if it
+  needs collaborators, make it a class and inject them.
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  kind: function_declaration
+  all:
+    - inside: {kind: source_file}
+    - not: {has: {kind: simple_identifier, regex: "^main$"}}
+    - not: {regex: "^\\s*(?:\\w+\\s+)*fun\\s+interface\\b"}

@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.core.index.WireBlockIndex
+import splice.core.turn.ErrorType
 import splice.core.turn.TurnOutcome
 import splice.dialect.chat.ChatStreamTranslator
 import splice.dialect.chat.ChatTurnContext
@@ -30,7 +31,11 @@ private class FoldRec : WireSink {
     override suspend fun textDelta(index: WireBlockIndex, text: String) { calls.add("text:$text") }
     override suspend fun thinkingDelta(index: WireBlockIndex, thinking: String) { calls.add("think:$thinking") }
     override suspend fun inputJsonDelta(index: WireBlockIndex, partialJson: String) { calls.add("json:$partialJson") }
-    override suspend fun closeBlock(index: WireBlockIndex) { calls.add("close") }
+
+    // DR-153: was a bare "close". An index-blind record cannot tell WHICH block was closed, so an
+    // assertion that a tool open closed the PROSE block could not be written at all — the same
+    // fake-green shape DR-143 fixed in Rec.
+    override suspend fun closeBlock(index: WireBlockIndex) { calls.add("close#${index.value}") }
     override suspend fun closeAll() { calls.add("closeAll") }
     override suspend fun addTextBlock(text: String) { calls.add("addText:$text") }
     override suspend fun addRedactedThinking(data: String) = Unit
@@ -40,6 +45,70 @@ private fun foldEv(json: String): JsonObject = Json.parseToJsonElement(json).jso
 private fun foldCtx() = ChatTurnContext({ false }, { null }, 180_000, 900_000)
 
 class ChatToolFoldTest {
+
+    // DR-153: the FOURTH entry, and the one a delta-path-only close still misses. Here the final
+    // message does NOT mint a new call — it adopts a PENDING slot reserved by an earlier nameless
+    // delta, so ChatFinalToolFold calls openPendingTool DIRECTLY rather than routing back through
+    // applyToolCall. Found while attributing a mutant: the close-in-the-delta-path-only mutant
+    // reddened the flush arm but not the final-fold one, because that arm's call had no pending
+    // slot. Without this arm the mutant's coverage claim would have been overstated.
+    @Test
+    fun `a final echo adopting a pending slot closes the prose block first - DR-153`() = runTest {
+        val sink = FoldRec()
+        val outcome = ChatStreamTranslator(foldCtx()).driveTurn(
+            listOf(
+                foldEv("""{"choices":[{"delta":{"content":"answer first"}}]}"""),
+                foldEv("""{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"t1","function":{}}]}}]}"""),
+                foldEv(
+                    """{"choices":[{"message":{"role":"assistant","tool_calls":[""" +
+                        """{"id":"t1","type":"function","function":{"name":"run","arguments":"{\"x\":1}"}}""" +
+                        """]},"finish_reason":"tool_calls"}]}""",
+                ),
+            ).asFlow(),
+            sink,
+        )
+        assertTrue((outcome as TurnOutcome.Success).hasToolUse)
+        val expected = listOf(
+            "openText",
+            "text:answer first",
+            "close#0",
+            "openTool:run",
+            "json:{\"x\":1}",
+            "closeAll",
+        )
+        assertEquals(expected, sink.calls)
+    }
+
+    // DR-153, the THIRD path into openPendingTool and the one FoldRec could not previously express:
+    // a tool present only in the final consolidated message, opened while a streamed text block is
+    // still live. Before the fix the tool_use opened over the open text block; a close in the delta
+    // path alone would still miss this. FoldRec's close now carries its index, which is what makes
+    // "the TEXT block (0) closed, and before the tool opened" writable at all.
+    @Test
+    fun `a final-only tool closes the streamed prose block before opening - DR-153`() = runTest {
+        val sink = FoldRec()
+        val outcome = ChatStreamTranslator(foldCtx()).driveTurn(
+            listOf(
+                foldEv("""{"choices":[{"delta":{"content":"answer first"}}]}"""),
+                foldEv(
+                    """{"choices":[{"message":{"role":"assistant","tool_calls":[""" +
+                        """{"id":"t9","type":"function","function":{"name":"run","arguments":"{\"x\":1}"}}""" +
+                        """]},"finish_reason":"tool_calls"}]}""",
+                ),
+            ).asFlow(),
+            sink,
+        )
+        assertTrue((outcome as TurnOutcome.Success).hasToolUse)
+        val expected = listOf(
+            "openText",
+            "text:answer first",
+            "close#0",
+            "openTool:run",
+            "json:{\"x\":1}",
+            "closeAll",
+        )
+        assertEquals(expected, sink.calls)
+    }
 
     @Test
     fun `final-message name and args both final-only open the tool with real input not empty`() = runTest {
@@ -123,13 +192,14 @@ class ChatToolFoldTest {
     }
 
     @Test
-    fun `id-matched echo does not repair under-delivered stream args - pins known limitation finding 5b`() = runTest {
-        // KNOWN LIMITATION (pinned): the stream under-delivers a call's arguments (partial JSON),
-        // then the trailing consolidated message echoes the SAME id with the COMPLETE arguments. The
-        // echo is suppressed wholesale (by id) to keep the common full-delivery echo a no-op, so the
-        // final's complete copy is discarded and the wire keeps only the partial args. Left as-is —
-        // repairing it needs per-block arg tracking, not worth the hot-path risk for a non-standard
-        // vendor (not codex/grok/kimi).
+    fun `under-delivered stream args echoed by id are caught as a Failure - CX-01 supersedes finding 5b`() = runTest {
+        // The former finding 5b was a KNOWN LIMITATION: the stream under-delivers a call's
+        // arguments (partial JSON), the trailing consolidated message echoes the SAME id with the
+        // COMPLETE arguments, the echo is suppressed wholesale (by id), and the wire kept only the
+        // partial args — i.e. the turn succeeded carrying corrupt tool JSON. CX-01 (2026-08-08)
+        // makes that a Failure: the partial "{\"x\":" on the wire is invalid JSON, so the turn is
+        // rejected for retry instead of dispatching garbage. The echo-suppression itself is
+        // unchanged (still no per-id repair); CX-01 just refuses to ship the corrupt result.
         val sink = FoldRec()
         val outcome = ChatStreamTranslator(foldCtx()).driveTurn(
             listOf(
@@ -145,9 +215,11 @@ class ChatToolFoldTest {
             ).asFlow(),
             sink,
         )
-        assertTrue((outcome as TurnOutcome.Success).hasToolUse)
-        assertEquals(listOf("t1" to "run"), sink.toolOpens)
-        // only the partial streamed args reached the wire; the final's complete "{\"x\":1}" is dropped
+        val failure = outcome as TurnOutcome.Failure
+        assertEquals(ErrorType.API_ERROR, failure.type)
+        assertTrue(failure.message.contains("malformed JSON"), failure.message)
+        // the partial args still reached the wire before the terminal verdict — the fix is the
+        // outcome, not a wire rewrite (finding 5b's suppression is untouched).
         assertEquals(listOf("json:{\"x\":"), sink.calls.filter { it.startsWith("json:") })
     }
 }

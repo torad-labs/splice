@@ -1,0 +1,34 @@
+id: kt-no-reflection-in-production
+valid:
+  # Named from the BRANCH: the clause already knows which type it stands in.
+  - |
+    fun probe(): String =
+        try {
+            write()
+        } catch (_: java.nio.file.AccessDeniedException) {
+            "unreadable (AccessDeniedException)"
+        }
+  # A `when` over a closed set — the catch list upstream is what makes the mapping total. Only
+  # compliant where the BASE class is the thing worth reporting; see the rule header on why the
+  # same shape was wrong for TurnDriver's `unexpected` line.
+  - |
+    fun reason(failure: Throwable): String = failure.message ?: when (failure) {
+        is IllegalArgumentException -> "IllegalArgumentException"
+        is IllegalStateException -> "IllegalStateException"
+        else -> "boundary failure"
+    }
+  # When the runtime class IS the information, the throwable renders itself.
+  - 'log(errTurn("unexpected", drive, ": $e"))'
+  # Classpath resources come from the loader by name, not from a class token.
+  - 'val html = ClassLoader.getSystemResourceAsStream("webui/index.html")'
+  # The running jar from this class's own resource on the loader, not from a protection domain.
+  - 'val self = ClassLoader.getSystemResource("splice/app/cli/AdminSupport.class")'
+  # `is` checks are compile-time type tests, not reflection — this wall must never touch them.
+  - 'val io = failure is IOException'
+invalid:
+  - 'val stream = Daemon::class.java.getResourceAsStream("/webui/index.html")'
+  - 'val loc = AdminSupport::class.java.protectionDomain.codeSource.location.toURI()'
+  - 'val fqn = Daemon::class.qualifiedName'
+  # The instance form — five of this wall's six original hits were exactly this, inside a catch.
+  - 'val reason = e.javaClass.simpleName'
+  - 'val c = Class.forName("splice.app.Daemon")'

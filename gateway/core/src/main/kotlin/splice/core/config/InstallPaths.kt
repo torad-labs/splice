@@ -5,13 +5,14 @@
 // the reader stays injectable for hermetic tests (StatePaths idiom — JVM cannot setenv).
 package splice.core.config
 
+import splice.core.util.EnvReader
 import java.nio.file.Path
 import java.nio.file.Paths
 
 public class InstallPaths(
     binOverride: Path? = null,
     shareOverride: Path? = null,
-    envReader: (String) -> String? = System::getenv,
+    envReader: EnvReader = EnvReader(System::getenv),
 ) {
     public val binDir: Path = binOverride
         ?: envReader("SPLICE_BIN_DIR")?.let { Paths.get(it) }

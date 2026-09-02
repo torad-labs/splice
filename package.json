@@ -1,18 +1,18 @@
 {
   "name": "splice",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0-beta.1",
   "engines": {
     "node": ">=24"
   },
   "packageManager": "npm@11.13.0",
   "workspaces": [
-    "server",
     "webui"
   ],
   "scripts": {
     "gate": "bash checks/gate.sh",
-    "gate:rules": "ast-grep scan && ast-grep test --skip-snapshot-tests",
+    "gate:rules": "ast-grep scan && ast-grep test --skip-snapshot-tests && ast-grep test --config .rules/kotlin/ast-grep/sgconfig.yml --skip-snapshot-tests",
+    "gate:concentration": "python3 checks/concentration.py --ratchet --max-ratio 1.8",
     "gate:campaign": "python3 dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py",
     "gate:campaign:census": "python3 dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py --no-run",
     "gate:campaign:selftest": "python3 dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py --selftest",
@@ -20,13 +20,15 @@
     "oss:verify": "bash checks/oss/run.sh",
     "e2e:heads": "bash checks/e2e/heads-e2e.sh",
     "e2e:heads:wire": "bash checks/e2e/heads-e2e.sh --tier 1",
+    "e2e:heads:selftest": "bash checks/e2e/heads-e2e-selftest.sh",
     "oracle:capture": "node dev/campaigns/proxy-hardening/oracle/capture.mjs",
     "oracle:check": "node dev/campaigns/proxy-hardening/oracle/capture.mjs --check",
+    "oracle:replay": "node dev/campaigns/proxy-hardening/oracle/replay.mjs",
     "gate:campaign:strict": "python3 dev/campaigns/proxy-hardening/walls/campaign_wall_gate.py --strict",
     "promote": "bash checks/promote.sh"
   },
   "devDependencies": {
-    "@ast-grep/cli": "0.45.0"
+    "@ast-grep/cli": "0.45.1"
   },
   "overrides": {
     "handlebars": "4.7.9"

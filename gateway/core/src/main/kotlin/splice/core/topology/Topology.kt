@@ -1,6 +1,22 @@
 // NEW: the TOML topology schema (shape proven by spike P0-TOML incl. @SerialName mapping;
 // gateway/spikes/results/ktoml.md). Loaded once at daemon start by :app — adding a
 // provider or head is an operator action and implies a restart (no hot topology).
+// 2026-08-16 (HD-M8): the file's top-level functions were relocated without changing any body.
+// The extensions on types THIS file owns became members of those types, so `provider.catalogFor(...)`
+// and `topology.configOverrides()` read exactly as before; the three operator-facing diagnostics
+// became members of TopologyMessages; effectiveApiKeyEnv became a member of AuthConfig, which is
+// the type it interrogates.
+// 2026-08-17 (HD-20): the last MEMBER extension here — `DaemonConfig.putFoldOverrides`, declared
+// inside Topology — moved down onto DaemonConfig itself, the type it always read. Same body, same
+// name, byte-identical call site.
+// 2026-08-18 (HD-25): three passengers left this file, no schema type was shredded. QuirksConfig +
+// ToolSurfaceConfig -> QuirksConfig.kt (nothing here ever read a quirk); TopologyMessages + the port
+// range -> TopologyMessages.kt (no call site holds a Topology); configOverrides +
+// putLegacyProviderOverrides + putFoldOverrides -> TopologyKnobLayer.kt (the one place this package
+// hardcoded splice.core.config's key vocabulary). What STAYS is the schema graph and its invariants:
+// Topology with the four pure folds over `heads` (three of them asserting uniqueness across it), and
+// ProviderConfig/HeadConfig/AuthConfig/Dialect, which carry the referential-integrity invariant that
+// HeadConfig.provider is a key into Topology.providers.
 package splice.core.topology
 
 import kotlinx.serialization.SerialName
@@ -30,12 +46,19 @@ public data class Topology(
     /** The single topology key for [name], or null when unknown OR ambiguous (several heads share
      *  the wrapper command). Callers that must tell those apart use [resolveHeadKeys]. */
     public fun resolveHeadKey(name: String): String? = resolveHeadKeys(name).singleOrNull()
-}
 
-/** Distinct-from-"unknown-head" message for the ambiguous case: [keys] heads all map to [command].
- *  Naming both heads points the operator at the topology collision instead of a phantom head. */
-public fun ambiguousHeadMessage(command: String, keys: List<String>): String =
-    "ambiguous head '$command' — heads ${keys.joinToString(" and ")} both use that command; fix the topology"
+    /** JW-13: ports mapped to the >1 heads that share them — the port analogue of the
+     *  wrapper-command collision install already validates. A copy-pasted [heads.X] with an
+     *  unchanged port otherwise surfaces only as an opaque per-head "Address already in use". */
+    public fun portCollisions(): Map<Int, List<String>> =
+        heads.entries.groupBy({ it.value.port }, { it.key }).filterValues { it.size > 1 }
+
+    /** CTL-005: heads whose port is outside the valid TCP range — 0, negative, or > 65535 all
+     *  parse fine as an Int and otherwise surface only at bind time, as an opaque error that
+     *  never names the offending [heads.X] entry. Same idiom as [portCollisions]. */
+    public fun invalidPortHeads(): Map<String, Int> =
+        heads.filterValues { it.port !in validPortRange }.mapValues { it.value.port }
+}
 
 @Serializable
 public data class DaemonConfig(
@@ -65,82 +88,103 @@ public data class ProviderConfig(
     @SerialName("base_url") val baseUrl: String,
     val auth: AuthConfig,
     val quirks: QuirksConfig = QuirksConfig(),
+    /** Static vendor headers every upstream request carries (e.g. `anthropic-version`). Operator-
+     *  owned and pure TOML, so an anthropic-compatible vendor needs no provider code at all. On a
+     *  head that forwards the client's own headers, a forwarded value WINS over these defaults. */
+    @SerialName("extra_headers") val extraHeaders: Map<String, String> = emptyMap(),
     val models: List<ModelEntry> = emptyList(),
     @SerialName("extra_windows") val extraWindows: List<ExtraWindow> = emptyList(),
     @SerialName("window_rules") val windowRules: List<WindowRule> = emptyList(),
     @SerialName("default_context_window") val defaultContextWindow: Long = 0,
-)
+) {
+    /**
+     * [extraHeaders] with TOML key quoting removed — THE accessor every consumer must use.
+     *
+     * `extra_headers = { "anthropic-version" = "..." }` is valid TOML and the natural thing to
+     * write (a header name contains a dash), but ktoml hands back the key WITH its quote
+     * characters, which would put a literally malformed name on the wire. Bare keys parse clean;
+     * both forms must behave identically, so the quotes are stripped here rather than in each
+     * consumer. Header names never legitimately contain a double quote.
+     */
+    init {
+        if (auth.kind == AuthKind.Client.wire) {
+            require(
+                extraHeaders.keys.none { raw ->
+                    val header = raw.trim('"')
+                    header.equals("Authorization", ignoreCase = true) ||
+                        header.equals("x-api-key", ignoreCase = true)
+                },
+            ) { "client auth cannot configure Authorization or x-api-key in extra_headers" }
+        }
+    }
 
-@Serializable
-public enum class Dialect {
-    @SerialName("openai-responses")
-    OPENAI_RESPONSES,
+    public val staticHeaders: Map<String, String>
+        get() = extraHeaders.mapKeys { (key, _) -> key.trim('"') }
 
-    @SerialName("openai-chat")
-    OPENAI_CHAT,
+    /** A catalog is the JOIN of this provider's models with the head's [HeadConfig.discoveryPrefix]
+     *  — which is why it lives on the provider and takes the head, and why the two types stay in one
+     *  file. A non-empty [HeadConfig.models] is an ordered per-head allowlist; an absent list preserves
+     *  the provider-wide surface for older topologies. [contextWindowOverride] wins over the declared
+     *  per-head window and, when positive, replaces the window on every selected entry. */
+    public fun catalogFor(head: HeadConfig, contextWindowOverride: Long? = null): ModelCatalog {
+        val selectedModels = modelsFor(head)
+        head.contextWindow?.let { require(it > 0) { "head context_window must be positive" } }
+        val window = contextWindowOverride?.takeIf { it > 0 } ?: head.contextWindow
+        return ModelCatalog(
+            // The pinned row's window IS the launch env, so the catalog needs it to know what the
+            // client believes about every OTHER row (ModelCatalog.clientContextWindowFor).
+            pinnedModel = head.pinnedModel,
+            discoveryPrefix = head.discoveryPrefix,
+            models = if (window == null) {
+                selectedModels
+            } else {
+                selectedModels.map { it.copy(contextWindow = window) }
+            },
+            extraWindows = if (window == null) extraWindows else extraWindows.map { it.copy(contextWindow = window) },
+            windowRules = if (window == null) windowRules else windowRules.map { it.copy(contextWindow = window) },
+            defaultContextWindow = if (window != null) {
+                window
+            } else if (defaultContextWindow > 0) {
+                defaultContextWindow
+            } else {
+                selectedModels.firstOrNull()?.contextWindow ?: DEFAULT_WINDOW_FLOOR
+            },
+        )
+    }
 
-    @SerialName("anthropic-passthrough")
-    ANTHROPIC_PASSTHROUGH,
+    private fun modelsFor(head: HeadConfig): List<ModelEntry> {
+        val requested = head.models ?: return models
+        require(requested.isNotEmpty()) { "head model list must not be empty" }
+        require(requested.map { it.id }.distinct().size == requested.size) { "head model list contains duplicates" }
+        val slots = requested.mapNotNull { it.slot?.lowercase() }
+        require(slots.all { it in headModelSlots }) { "unknown Claude model slot" }
+        require(slots.distinct().size == slots.size) { "head model slots contain duplicates" }
+        val byId = models.associateBy(ModelEntry::id)
+        val selected = requested.map { model ->
+            requireNotNull(byId[model.id]) {
+                "head model '${model.id}' is not declared by provider '${head.provider}'"
+            }
+        }
+        // The failing id can come from OUTSIDE the TOML: resolveHeadConfig swaps pinned_model with
+        // the pinnedModel/grokModel knob for oauth heads, and env/config.json/PATCH override that
+        // knob — so a self-consistent splice.toml still fails here. Name the id, the roster, and
+        // the provenance, or the operator greps the TOML for a value that is not in it (DR-44a).
+        require(selected.any { it.id == head.pinnedModel }) {
+            "pinned model '${head.pinnedModel}' is not in the head model list " +
+                "[${selected.joinToString(", ") { it.id }}] — set by pinned_model in splice.toml " +
+                "unless the pinnedModel/grokModel knob (env, config.json, or PATCH) overrode it"
+        }
+        return selected
+    }
 }
 
-@Serializable
-public data class AuthConfig(
-    val kind: String,
-    val file: String? = null,
-    val env: String? = null,
-)
+// Dialect / AuthConfig / ClaudeWrapperConfig / ClaudeSharingDefaults live in
+// TopologySchema.kt (concentration, 2026-08-19). Same-package FQCNs are unchanged.
 
-/** The api-key env var a head actually reads: the explicit [AuthConfig.env], else the derived
- *  `<KEY>_API_KEY` default the daemon synthesizes. One source for daemon wiring AND the CLI so a
- *  head on the derived default never reads as "not signed in" while the daemon serves it fine. */
-public fun effectiveApiKeyEnv(key: String, auth: AuthConfig): String =
-    auth.env ?: "${key.uppercase()}_API_KEY"
-
-/** The finite quirk surface of the openai dialects — everything a vendor varies without code. */
 @Serializable
-public data class QuirksConfig(
-    val store: Boolean = false,
-    @SerialName("account_id_header") val accountIdHeader: Boolean = false,
-    @SerialName("cache_key") val cacheKey: String = "first-message-hash",
-    @SerialName("effort_ceiling") val effortCeiling: String = "max",
-    @SerialName("summary_field") val summaryField: Boolean = true,
-    @SerialName("compact_effort") val compactEffort: String? = null,
-    @SerialName("tool_choice") val toolChoice: Boolean = false,
-    /** openai-responses only: the gateway-held reasoning cache for tool round-trips (RC-5,
-     *  2026-07-24). NULLABLE like every overlay knob — absent keeps the provider's own default
-     *  (codex: on; grok: off — xai returns no envelopes), so the overlay can't stomp it. False
-     *  restores the pre-cache behavior (per-tool-result amnesia). */
-    @SerialName("reasoning_cache") val reasoningCache: Boolean? = null,
-    /** openai-responses only: the VALUE sent for parallel_tool_calls on responses-lite turns (the
-     *  field always rides; a lite request without it 400s). NULLABLE overlay like reasoning_cache —
-     *  absent keeps the provider's own default (false), so it can't stomp a provider default the
-     *  way the non-nullable summary_field above does. true lets the model batch tool calls into one
-     *  turn instead of one per turn; UNTESTED against the live backend, see ResponsesQuirks. */
-    @SerialName("parallel_tool_calls") val parallelToolCalls: Boolean? = null,
-    /** openai-responses only: serve rounds over the Responses WebSocket with previous_response_id
-     *  chaining (ws-transport). NULLABLE overlay — absent keeps the provider default (false), so
-     *  the feature is invisible until an operator opts in. Any failure degrades to the SSE path. */
-    @SerialName("websocket") val webSocket: Boolean? = null,
-    /** openai-chat only: emit reasoning_effort/reasoning fields (DeepSeek/xAI/OpenRouter-style
-     *  backends read them). null keeps the provider's own default (true); set false for strict
-     *  OpenAI-compatible vendors (Fireworks — issue #21) that 400 on unrecognized fields. */
-    @SerialName("reasoning_effort") val reasoningEffort: Boolean? = null,
-    /** openai-responses only: the deferred tool surface (tool_search) for responses-lite turns.
-     *  ABSENT TABLE = feature off — the reasoning_cache nullable-overlay idiom (Topology.kt:109-113). */
-    @SerialName("tool_surface") val toolSurface: ToolSurfaceConfig? = null,
-)
-
-/** openai-responses only: the deferred tool surface (tool_search) for responses-lite turns.
- *  ABSENT TABLE = feature off — the reasoning_cache nullable-overlay idiom (Topology.kt:109-113). */
-@Serializable
-public data class ToolSurfaceConfig(
-    val enabled: Boolean = true,
-    @SerialName("defer_prefixes") val deferPrefixes: List<String> = listOf("mcp__"),
-    val defer: List<String> = emptyList(),
-    val eager: List<String> = emptyList(),
-    @SerialName("min_deferred") val minDeferred: Int = 8,
-    @SerialName("search_limit") val searchLimit: Int = 8,
-    @SerialName("search_rounds") val searchRounds: Int = 3,
+public data class HeadModel(
+    val id: String,
+    val slot: String? = null,
 )
 
 @Serializable
@@ -149,109 +193,11 @@ public data class HeadConfig(
     val port: Int,
     @SerialName("discovery_prefix") val discoveryPrefix: String,
     @SerialName("pinned_model") val pinnedModel: String,
+    val models: List<HeadModel>? = null,
+    @SerialName("context_window") val contextWindow: Long? = null,
     val overrides: Map<String, String> = emptyMap(),
     val claude: ClaudeWrapperConfig = ClaudeWrapperConfig(),
 )
 
-/** Per-head Claude Code wrapper policy: command name, config dir, share/isolate per item. */
-@Serializable
-public data class ClaudeWrapperConfig(
-    val command: String? = null,
-    @SerialName("config_dir") val configDir: String? = null,
-    val isolate: List<String> = emptyList(),
-)
-
-@Serializable
-public data class ClaudeSharingDefaults(
-    val share: List<String> = listOf(
-        "settings",
-        "mcps",
-        "skills",
-        "hooks",
-        "agents",
-        "commands",
-        "plugins",
-        "claude_md",
-    ),
-)
-
-public fun ProviderConfig.catalogFor(head: HeadConfig, contextWindowOverride: Long? = null): ModelCatalog {
-    val override = contextWindowOverride?.takeIf { it > 0 }
-    return ModelCatalog(
-        discoveryPrefix = head.discoveryPrefix,
-        models = models.map { model ->
-            if (override == null) model else model.copy(contextWindow = override)
-        },
-        extraWindows = extraWindows.map { extra ->
-            if (override == null) extra else extra.copy(contextWindow = override)
-        },
-        windowRules = windowRules.map { rule ->
-            if (override == null) rule else rule.copy(contextWindow = override)
-        },
-        defaultContextWindow = if (override != null) {
-            override
-        } else if (defaultContextWindow > 0) {
-            defaultContextWindow
-        } else {
-            models.firstOrNull()?.contextWindow ?: DEFAULT_WINDOW_FLOOR
-        },
-    )
-}
-
-/**
- * Flat knob map from topology TOML for ConfigService's headOverrides layer.
- * Order: free-form [defaults] first, then explicit [daemon] fields (win on conflict).
- * Values are strings because ConfigService coerces by KnobKind.
- */
-public fun Topology.configOverrides(): Map<String, String> {
-    val out = LinkedHashMap(defaults)
-    daemon.controlPort?.let { out["controlPort"] = it.toString() }
-    daemon.showReasoning?.let { out["showReasoning"] = it }
-    daemon.summary?.let { out["summary"] = it }
-    daemon.effort?.let { out["effort"] = it }
-    daemon.replayReasoning?.let { out["replayReasoning"] = it.toString() }
-    daemon.mirrorReasoning?.let { out["mirrorReasoning"] = it.toString() }
-    daemon.putFoldOverrides(out)
-    putLegacyProviderOverrides(out)
-    return out
-}
-
-/**
- * The management API retains the original codex/grok knob names. Seed those knobs from TOML so
- * their effective values describe the topology, then let state/env/runtime override them through
- * ConfigService's normal precedence.
- */
-private fun Topology.putLegacyProviderOverrides(out: MutableMap<String, String>) {
-    val codex = heads.entries.firstOrNull { (_, head) ->
-        providers[head.provider]?.auth?.kind == "chatgpt-oauth"
-    }
-    codex?.let { (_, head) ->
-        val provider = providers.getValue(head.provider)
-        out["port"] = head.port.toString()
-        out["pinnedModel"] = head.pinnedModel
-        out["chatgptApiBase"] = provider.baseUrl
-        provider.auth.file?.let { out["codexAuthPath"] = it }
-    }
-
-    val grok = heads.entries.firstOrNull { (key, head) ->
-        providers[head.provider]?.auth?.kind == "grok-oauth" || key.contains("grok", ignoreCase = true)
-    }
-    grok?.let { (_, head) ->
-        val provider = providers.getValue(head.provider)
-        out["grokPort"] = head.port.toString()
-        out["grokModel"] = head.pinnedModel
-        out["xaiApiBase"] = provider.baseUrl
-        provider.auth.file?.let { out["grokAuthPath"] = it }
-    }
-}
-
-/** Reasoning-continuation fold knobs, split out so [configOverrides] stays under the complexity cap.
- *  The comma-joined model list is what the STRING knob coerces (SpliceConfig splits it back). */
-private fun DaemonConfig.putFoldOverrides(out: MutableMap<String, String>) {
-    foldReasoningModels?.let { out["foldReasoningModels"] = it.joinToString(",") }
-    foldMaxContinue?.let { out["foldMaxContinue"] = it.toString() }
-    foldMarkerText?.let { out["foldMarkerText"] = it }
-    foldMaxTier?.let { out["foldMaxTier"] = it.toString() }
-}
-
 private const val DEFAULT_WINDOW_FLOOR: Long = 200_000
+private val headModelSlots = setOf("opus", "sonnet", "haiku", "fable")

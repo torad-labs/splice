@@ -1,4 +1,4 @@
-// NEW (discipline L4): binds the checker into FIR analysis and registers its diagnostics container so
+// NEW: (discipline L4) binds the checker into FIR analysis and registers its diagnostics container so
 // the compiler can render the error message.
 package splice.firchecks
 

@@ -8,12 +8,12 @@
 // treated as retryable, not a permanent failure.
 package splice.app
 
-import io.ktor.client.statement.HttpResponse
-import kotlinx.coroutines.delay
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
-import splice.core.util.runCatchingCancellable
-import splice.core.util.str
+import splice.core.util.Cancellables
+import splice.core.util.JsonScalars
+import splice.spi.ProcessWaiter
+import splice.spi.Waiter
 import kotlin.random.Random
 
 internal const val REFRESH_MAX_ATTEMPTS = 3
@@ -41,34 +41,54 @@ internal sealed class RefreshStep<out T> {
     data object Retry : RefreshStep<Nothing>()
 }
 
-private fun isInvalidGrant(body: String, json: Json): Boolean = runCatchingCancellable {
-    (json.parseToJsonElement(body) as? JsonObject)?.str("error") == "invalid_grant"
-}.getOrDefault(false)
+/** The retry loop and its terminal-failure classifier, held as a collaborator by each vendor's
+ *  refresh (Kotlin style law, 2026-08-15): a helper shared by several types is a small named
+ *  class they construct, not a pair of free functions. Stateless — every attempt's state lives
+ *  in [refreshWithRetry]'s own frame, so one instance per vendor is as correct as one per call. */
+internal class RefreshRetry(
+    // HD-19: the backoff sleep, as a named port. Production wires ProcessWaiter (`delay`); a test
+    // wires a recorder, which turns "3 attempts at 2s then 4s (+/-10%)" from three real seconds of
+    // sleeping into an assertion on the captured intervals.
+    private val waiter: Waiter = ProcessWaiter(),
+) {
 
-/** 401/403 are terminal by status alone; invalid_grant wins even under a nominally-retryable status. */
-internal fun isTerminalRefreshFailure(status: Int, body: String, json: Json): Boolean =
-    status == HTTP_UNAUTHORIZED || status == HTTP_FORBIDDEN || isInvalidGrant(body, json)
+    /** 401/403 are terminal by status alone; invalid_grant wins even under a nominally-retryable status. */
+    internal fun isTerminalRefreshFailure(status: Int, body: String, json: Json): Boolean =
+        status == HTTP_UNAUTHORIZED || status == HTTP_FORBIDDEN || isInvalidGrant(body, json)
 
-/**
- * Run [call] up to [maxAttempts] times, handing each response to [classify]. A thrown exception
- * from [call] or [classify] (network blip, malformed response) is treated as [RefreshStep.Retry],
- * not a permanent failure. Returns the terminal value, or null once retries are exhausted.
- */
-internal suspend fun <T> refreshWithRetry(
-    maxAttempts: Int = REFRESH_MAX_ATTEMPTS,
-    call: suspend () -> HttpResponse,
-    classify: suspend (HttpResponse) -> RefreshStep<T>,
-): T? {
-    var attempt = 0
-    while (attempt < maxAttempts) {
-        val step = runCatchingCancellable { classify(call()) }.getOrDefault(RefreshStep.Retry)
-        if (step is RefreshStep.Terminal) return step.value
-        attempt++
-        if (attempt < maxAttempts) {
-            val base = REFRESH_BACKOFF_BASE_MS shl attempt // 2^attempt seconds
-            val jittered = base * Random.nextDouble(REFRESH_JITTER_LO, REFRESH_JITTER_HI) // ±10%
-            delay(jittered.toLong())
+    private fun isInvalidGrant(body: String, json: Json): Boolean = Cancellables.runCatchingCancellable {
+        JsonScalars.str(json.parseToJsonElement(body) as? JsonObject, "error") == "invalid_grant"
+    }.getOrDefault(false)
+
+    /**
+     * Run [call] up to [maxAttempts] times, handing each response to [classify]. A thrown exception
+     * from [call] or [classify] (network blip, malformed response) is treated as [RefreshStep.Retry],
+     * not a permanent failure. Returns the terminal value, or null once retries are exhausted —
+     * unless the FINAL attempt itself threw, which rethrows (DR-82): the swallow made
+     * RefreshOutcome.TransportFailed unreachable, so a network outage reported as "refresh
+     * rejected by token endpoint". The provider boundary's getOrElse owns the throw; null stays
+     * the answer only when the endpoint really answered and classified every attempt Retry.
+     */
+    internal suspend fun <T> refreshWithRetry(
+        maxAttempts: Int = REFRESH_MAX_ATTEMPTS,
+        call: RefreshPost,
+        classify: RefreshClassify<T>,
+    ): T? {
+        var attempt = 0
+        var lastFailure: Throwable? = null
+        while (attempt < maxAttempts) {
+            val result = Cancellables.runCatchingCancellable { classify(call()) }
+            lastFailure = result.exceptionOrNull()
+            val step = result.getOrDefault(RefreshStep.Retry)
+            if (step is RefreshStep.Terminal) return step.value
+            attempt++
+            if (attempt < maxAttempts) {
+                val base = REFRESH_BACKOFF_BASE_MS shl attempt // 2^attempt seconds
+                val jittered = base * Random.nextDouble(REFRESH_JITTER_LO, REFRESH_JITTER_HI) // ±10%
+                waiter.wait(jittered.toLong())
+            }
         }
+        lastFailure?.let { throw it }
+        return null
     }
-    return null
 }

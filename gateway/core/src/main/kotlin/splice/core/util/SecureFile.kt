@@ -28,16 +28,30 @@ public object SecureFile {
         val tmp = try {
             Files.createTempFile(parent, ".secure", ".tmp", PosixFilePermissions.asFileAttribute(OWNER_ONLY))
         } catch (_: UnsupportedOperationException) {
-            Files.createTempFile(parent, ".secure", ".tmp")
+            // IO-004: no POSIX attribute support at creation — the file briefly exists at default
+            // (often world-readable) perms. Close the window before any content is written: set
+            // owner-only perms first, best-effort (a non-POSIX filesystem has no perms to set, and
+            // the atomic move afterward still holds), THEN write the credential.
+            val fallback = Files.createTempFile(parent, ".secure", ".tmp")
+            Cancellables.discard(
+                runCatching { Files.setPosixFilePermissions(fallback, OWNER_ONLY) },
+                "POSIX perms unsupported on this filesystem — nothing to lock down",
+            )
+            fallback
         }
-        runCatchingCancellable {
+        Cancellables.runCatchingCancellable {
             Files.writeString(tmp, content)
             Files.move(tmp, path, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE)
         }.onFailure {
-            runCatching { Files.deleteIfExists(tmp) }.discard("tmp cleanup is best-effort; the write failure rethrows")
+            Cancellables.discard(
+                runCatching { Files.deleteIfExists(tmp) },
+                "tmp cleanup is best-effort; the write failure rethrows",
+            )
             throw it
         }
-        runCatching { Files.setPosixFilePermissions(path, OWNER_ONLY) }
-            .discard("POSIX perms unsupported on this filesystem → keep the completed write")
+        Cancellables.discard(
+            runCatching { Files.setPosixFilePermissions(path, OWNER_ONLY) },
+            "POSIX perms unsupported on this filesystem → keep the completed write",
+        )
     }
 }

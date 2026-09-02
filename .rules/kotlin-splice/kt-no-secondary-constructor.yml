@@ -1,0 +1,27 @@
+# Initialization discipline — one construction path per type. A secondary constructor forks
+# initialization: the invariants a reader verified in the primary constructor can be re-established
+# differently (or forgotten) in the secondary, and every future field has to be threaded through
+# both. The delegation chain also hides the real arity from callers, so "what does this need to be
+# valid?" stops having a single answer.
+#
+# Compliant form in this repo: the primary constructor with default values — the idiom already in
+# use across 184 `data class` declarations under gateway/*/src/main (e.g. core/head/Head.kt, whose
+# counters all default). Where an alternate shape genuinely needs a name, a top-level function that
+# builds and returns the type is the second option. NOT a companion-object factory: this gateway
+# has zero companion objects in production and the promoted rule should not point at a construct
+# the codebase does not use.
+#
+# PROMOTED 2026-08-16 (HD-17) from the dormant .rules/kotlin/ast-grep pack, which was wired to
+# nothing and so had never run. The source rule's `files: **/*.kt` + `ignores: **/test/**` were
+# replaced with this repo's production glob; `gateway/*/src/main/**/*.kt` already excludes
+# src/test/ and src/testFixtures/ (both are siblings of src/main, not children), so no redundant
+# ignores: block is needed — verified by scanning identical violating content at all three paths.
+# 0 findings in gateway/*/src/main at promotion.
+id: kt-no-secondary-constructor
+language: kotlin
+severity: error
+message: "No secondary constructors — one initialization path. Use the primary constructor with defaults, or a top-level factory function."
+files:
+  - gateway/*/src/main/**/*.kt
+rule:
+  kind: secondary_constructor

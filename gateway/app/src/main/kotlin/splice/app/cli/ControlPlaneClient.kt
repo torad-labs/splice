@@ -1,85 +1,45 @@
-// NEW: tiny HTTP client for the daemon's loopback control plane, used by the operator CLI
-// (restart, doctor). Split from AdminSupport purely for size — same idiom, same timeouts.
+// NEW: tiny HTTP client for the daemon's loopback control plane. HTTP status only —
+// the fetch cluster (health / heads / auth) moved to DaemonBoundary + TopologyLoader
+// (concentration, 2026-08-19). [statusOf] stays because DaemonStop needs to SEE a
+// 401/403; request() swallows non-2xx and that would paper over F1.
 package splice.app.cli
 
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import splice.core.util.discard
-import splice.core.util.runCatchingCancellable
-import splice.core.util.str
+import splice.core.util.Cancellables
 import java.net.HttpURLConnection
 import java.net.URI
 
 internal object ControlPlaneClient {
-    private val json = Json { ignoreUnknownKeys = true }
 
-    /** The version any splice-shaped listener reports on /health, or null when nothing answers.
-     *  Unlike AdminSupport.daemonUp this accepts a STALE daemon — restart must be able to stop one.
-     *  str() (JsonNull-filtering) keeps a foreign listener's {"version": null} from reading back as
-     *  the literal string "null". */
-    fun healthVersion(port: Int): String? = runCatchingCancellable {
-        request("http://127.0.0.1:$port/health") { connection ->
-            json.parseToJsonElement(body(connection)).jsonObject.str("version")
-        }
-    }.getOrNull()
-
-    /** Ask the daemon to shut down (bearer-guarded) and wait until the LISTENER is actually gone.
-     *  The POST is fire-and-observe: a graceful teardown can drop the connection mid-response
-     *  (read-timeout) before it 2xx's, so the POST outcome is NOT the signal — the stop poll is.
-     *  Failure is reported only when the port is still bound after the whole poll budget. */
-    fun stopDaemon(port: Int, key: String): Boolean {
-        runCatchingCancellable {
-            request("http://127.0.0.1:$port/api/daemon/shutdown", method = "POST", bearer = key) { true }
-        }.discard("POST may fail on graceful teardown; the stop poll below is the real stop signal")
-        repeat(STOP_POLLS) {
-            if (stopped(port)) return true
-            Thread.sleep(POLL_INTERVAL_MS)
-        }
-        return stopped(port)
-    }
-
-    /** "Stopped" means the LISTENER is gone, not merely that /health went null: a daemon whose control
-     *  server quit answering can still linger with the port bound on non-daemon Netty threads, and
-     *  reporting a premature "stopped" is what invited the restart-into-a-still-bound-port race (BS-4). */
-    private fun stopped(port: Int): Boolean =
-        healthVersion(port) == null && !AdminSupport.controlPortBound(port)
-
-    /** Per-head credential presence as the DAEMON sees it (`/api/auth`), or null when unreachable.
-     *  Doctor compares this against shell-side presence to catch the exported-after-boot trap. */
-    fun authPresence(port: Int, key: String): Map<String, Boolean>? = runCatchingCancellable {
-        request("http://127.0.0.1:$port/api/auth", bearer = key) { connection ->
-            json.parseToJsonElement(body(connection)).jsonObject.mapValues { (_, v) ->
-                v.jsonObject["present"]?.jsonPrimitive?.booleanOrNull == true
-            }
-        }
-    }.getOrNull()
-
-    private fun <T> request(
+    /** The raw HTTP status of a request, or null if it never connected. Unlike the 2xx-gated
+     *  fetch helper this does NOT swallow non-2xx — DaemonStop.stopDaemon needs to SEE a 401/403,
+     *  since that names the root cause (mgmt-key mismatch) the escalation ladder would otherwise
+     *  silently paper over (F1). */
+    /** [readTimeoutMs] defaults to the shutdown budget, NOT the liveness-probe 400ms: a busy
+     *  daemon that takes longer than that to answer 401/403 would time out into `null` — read
+     *  by the caller as "transport drop, expected", so F1's whole point (make the rejection
+     *  VISIBLE) would silently not happen in exactly the loaded case it matters. */
+    internal fun statusOf(
         url: String,
-        method: String = "GET",
-        bearer: String? = null,
-        read: (HttpURLConnection) -> T,
-    ): T? {
+        method: String,
+        bearer: String?,
+        readTimeoutMs: Int = STATUS_TIMEOUT_MS,
+    ): Int? = Cancellables.runCatchingCancellable {
         val connection = URI(url).toURL().openConnection() as HttpURLConnection
-        return try {
+        try {
             connection.requestMethod = method
             bearer?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
             connection.connectTimeout = PROBE_TIMEOUT_MS
-            connection.readTimeout = PROBE_TIMEOUT_MS
-            // 2xx (the shutdown endpoint answers 202 Accepted); anything else is a miss.
-            val ok = connection.responseCode in HttpURLConnection.HTTP_OK until HttpURLConnection.HTTP_MULT_CHOICE
-            if (ok) read(connection) else null
+            connection.readTimeout = readTimeoutMs
+            connection.responseCode
         } finally {
             connection.disconnect()
         }
-    }
-
-    private fun body(connection: HttpURLConnection): String =
-        connection.inputStream.bufferedReader().use { it.readText() }
+    }.getOrNull()
 
     private const val PROBE_TIMEOUT_MS = 400
-    private const val STOP_POLLS = 60
-    private const val POLL_INTERVAL_MS = 250L
+
+    // The shutdown POST answers 202 BEFORE tearing down, but under load that answer (or a 401/403)
+    // can take longer than a liveness probe's 400ms. Timing out there produced `null`, which the
+    // ladder reads as an expected transport drop — silently losing the diagnostic F1 added.
+    private const val STATUS_TIMEOUT_MS = 3_000
 }

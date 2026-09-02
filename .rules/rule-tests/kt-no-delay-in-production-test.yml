@@ -1,0 +1,16 @@
+id: kt-no-delay-in-production
+valid:
+  # The one-shot seam — what UpstreamClient's backoff curve and CredentialLock's poll now call.
+  - 'waiter.wait(maxOf(jittered, minDelayMs))'
+  # The loop-pacing seam, with the Boolean that lets a fake end the loop cleanly.
+  - 'if (!ticker.awaitTick(intervalMs)) return@launch'
+  # A receiver-qualified `delay` is somebody's own method, not kotlinx.coroutines.delay.
+  - 'animator.delay(5)'
+  # The word inside a log string must not match — HeadServer and UpstreamClient both log this.
+  - 'log("[upstream] tcp_nodelay(client)=unverifiable")'
+invalid:
+  - 'delay(intervalMs)'
+  # named-argument spelling — a different argument node, verified to match
+  - 'delay(timeMillis = 5L)'
+  # the Duration overload TurnWatchdog's pollers used
+  - 'delay(pollInterval())'

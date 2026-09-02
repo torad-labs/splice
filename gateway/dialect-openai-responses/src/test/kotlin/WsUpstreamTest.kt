@@ -36,6 +36,7 @@ import org.junit.jupiter.api.Test
 import splice.dialect.responses.InboxListener
 import splice.dialect.responses.WsConnection
 import splice.dialect.responses.WsUpstream
+import splice.spi.BufferCapacity
 import java.io.IOException
 import java.net.URI
 import java.net.http.WebSocket
@@ -46,6 +47,10 @@ private const val KEY = "conv-1"
 private const val WSS_URL = "wss://chatgpt.com/backend-api/codex/responses"
 private const val FRAME = """{"type":"response.create","input":[]}"""
 private const val BUDGET = 15_000L
+
+// DR-182: deliberately DIFFERENT from BUDGET. The send and the first event are separate budgets,
+// and a test that gave them the same number could not tell which one a fallback was charged to.
+private const val SEND_BUDGET = 3_000L
 private const val CREATED = """{"type":"response.created"}"""
 private const val DELTA = """{"type":"response.output_text.delta","delta":"hi"}"""
 private const val DONE = """{"type":"response.completed"}"""
@@ -154,10 +159,15 @@ private class Fixture {
             socket
         }
 
-    fun start(firstEventTimeoutMs: Long = BUDGET, maxConnections: Int = 32): Fixture {
+    fun start(
+        firstEventTimeoutMs: Long = BUDGET,
+        maxConnections: Int = 32,
+        sendTimeoutMs: Long = SEND_BUDGET,
+    ): Fixture {
         up = WsUpstream(
             firstEventTimeoutMs = firstEventTimeoutMs,
             maxConnections = maxConnections,
+            sendTimeoutMs = sendTimeoutMs,
             log = { log += it },
             connector = connector,
         )
@@ -243,6 +253,38 @@ class WsUpstreamTest {
         assertSame(fx.handed[0], fx.handed[1])
         assertEquals(generation, fx.handed[1].generation, "reuse must NOT bump the generation")
         assertEquals(0, fx.opened.single().aborts)
+    }
+
+    @Test
+    fun `a server close BETWEEN rounds poisons the pooled connection`() = runTest {
+        // PRODUCTION (daemon.log 2026-08-26, 67 stale sends in 17h): the server sheds an idle pooled
+        // socket between rounds. onClose closed the inbox but never poisoned, so `dead` stayed false,
+        // acquire()'s liveness filter passed the corpse to the next round, and that round discovered
+        // it on send — "send failed async (IOException: Output closed) — killing connection, round
+        // rides SSE". Every occurrence cost a wasted frame plus a reconnect. The close is OBSERVED
+        // here, so the pool can learn of it before handing the socket out again.
+        val fx = Fixture().apply { reply = replyWith(DONE) }.start()
+        assertEquals(listOf("response.completed"), fx.types())
+        val pooled = fx.handed.single()
+        fx.opened.single().closeClean() // no round in flight: the round-tear path cannot poison this
+        assertTrue(pooled.dead.get(), "an observed close must poison the pooled connection")
+
+        assertEquals(listOf("response.completed"), fx.types(), "the next round still serves, on a NEW socket")
+        assertEquals(2, fx.connects, "a closed socket must never be handed to another round")
+        assertTrue(fx.handed[1].generation > pooled.generation, "the reconnect bumps the generation")
+        assertTrue(fx.logged("closed by the server"), "and the close is diagnosable from daemon.log")
+    }
+
+    @Test
+    fun `a transport error BETWEEN rounds poisons the pooled connection`() = runTest {
+        val fx = Fixture().apply { reply = replyWith(DONE) }.start()
+        assertEquals(listOf("response.completed"), fx.types())
+        val pooled = fx.handed.single()
+        fx.opened.single().failWith(IOException("connection reset"))
+        assertTrue(pooled.dead.get(), "an observed transport error must poison the pooled connection")
+
+        assertEquals(listOf("response.completed"), fx.types())
+        assertEquals(2, fx.connects, "the errored socket must never be handed to another round")
     }
 
     @Test
@@ -514,6 +556,26 @@ class WsUpstreamTest {
     }
 
     @Test
+    fun `an all-busy overshoot trims back to the cap when a connection is released`() = runTest {
+        val fx = Fixture().apply { reply = replyWith(CREATED) }.start(maxConnections = CAP)
+        assertNotNull(fx.go("a"), "a remains in flight")
+        assertNotNull(fx.go("b"), "b remains in flight")
+
+        fx.reply = replyWith(DONE)
+        val flow = fx.go("c")
+
+        assertNotNull(flow, "the fresh connection must survive insertion while every predecessor is busy")
+        assertEquals(0, fx.opened[2].aborts, "the in-flight fresh socket cannot be the insertion-time victim")
+        assertEquals(listOf("response.completed"), flow?.toList()?.map { it.type() })
+        assertEquals(3, fx.connects)
+        assertEquals(1, fx.opened[2].aborts, "release makes c idle, so the soft overshoot must be trimmed")
+        assertTrue(
+            fx.handed.last().busy.get(),
+            "eviction must reserve c before removal so a concurrent acquire cannot win it before kill()",
+        )
+    }
+
+    @Test
     fun `a completed round moves its connection to MRU so eviction takes the truly-oldest`() = runTest {
         val fx = Fixture().apply { reply = replyWith(DONE) }.start(maxConnections = CAP)
         assertEquals(1, fx.types("a").size)
@@ -581,17 +643,29 @@ class WsUpstreamTest {
     }
 
     @Test
-    fun `KNOWN GAP - an anomaly during the handshake window cannot poison anything yet`() = runTest {
+    fun `an anomaly during the handshake is latched until the connection is published`() = runTest {
         val fx = Fixture().apply {
             onHandshake = { socket -> socket.pushBinary() }
             reply = replyWith(DONE)
-        }.start()
-        assertEquals(listOf("response.completed"), fx.types(), "the round proceeds regardless")
-        assertFalse(
-            fx.handed.single().dead.get(),
-            "pins the gap: onAnomaly fires into a null holder until connect() publishes the connection",
+        }.start(firstEventTimeoutMs = BUDGET)
+        val before = testScheduler.currentTime
+
+        assertNull(fx.go(), "the anomalous connection must fall back before sending a frame")
+        assertTrue(
+            testScheduler.currentTime - before < BUDGET,
+            "a latched anomaly must not burn the first-event budget",
         )
-        assertTrue(fx.logged("unexpected binary frame"), "it is logged, just not acted on")
+        assertTrue(
+            fx.opened.single().sent.isEmpty(),
+            "the poisoned handshake must never carry a request frame",
+        )
+        assertEquals(
+            1,
+            fx.opened.single().aborts,
+            "publication must apply the anomaly to its owning connection",
+        )
+        assertFalse(fx.logged("connected"), "an anomalous handshake must not register or announce a dead socket")
+        assertTrue(fx.logged("unexpected binary frame"))
     }
 }
 
@@ -622,6 +696,25 @@ class WsUpstreamInboxListenerTest {
     }
 
     @Test
+    fun `an oversized unfinished fragment poisons before the translator can see an event`() {
+        val inbox = Channel<JsonObject>(Channel.UNLIMITED)
+        var anomalies = 0
+        val socket = FakeSocket(Fixture())
+        val listener = InboxListener(
+            inbox,
+            { },
+            terminalSeen = { false },
+            onAnomaly = { anomalies += 1 },
+        )
+
+        listener.onText(socket, "x".repeat(BufferCapacity.MAX_BUFFERED_CHARS), false)
+        listener.onText(socket, """{"type":"valid-looking-tail"}""", true)
+
+        assertEquals(1, anomalies, "fragment assembly reached the shared heap cap without poisoning")
+        assertNull(inbox.tryReceive().getOrNull(), "an oversized message's tail must never become a fresh event")
+    }
+
+    @Test
     fun `every text frame re-arms request - a missed re-arm deadlocks the stream silently`() {
         val inbox = Channel<JsonObject>(Channel.UNLIMITED)
         val socket = FakeSocket(Fixture())
@@ -637,6 +730,25 @@ class WsUpstreamInboxListenerTest {
         assertEquals(2, socket.requests, "a NON-final fragment must re-arm too, or assembly stalls forever")
         listener.onText(socket, """"}""", true)
         assertEquals(3, socket.requests)
+    }
+
+    @Test
+    fun `a binary anomaly re-arms demand while connection ownership is still unpublished`() {
+        val inbox = Channel<JsonObject>(Channel.UNLIMITED)
+        var anomalies = 0
+        val socket = FakeSocket(Fixture())
+        val listener = InboxListener(
+            inbox,
+            { },
+            terminalSeen = { false },
+            onAnomaly = { anomalies += 1 },
+        )
+
+        listener.onOpen(socket)
+        listener.onBinary(socket, ByteBuffer.allocate(1), true)
+
+        assertEquals(1, anomalies)
+        assertEquals(2, socket.requests, "onBinary must replace the listener default's request(1)")
     }
 
     @Test
@@ -671,20 +783,23 @@ class WsUpstreamInboxListenerTest {
     }
 
     @Test
-    fun `onClose closes the inbox with NO cause and onError closes it with an IOException`() = runTest {
+    fun `onClose and onError close the inbox with the right cause AND poison the connection`() = runTest {
+        var anomalies = 0
         val clean = Channel<JsonObject>(1)
-        InboxListener(clean, { }, terminalSeen = { false }, onAnomaly = { })
+        InboxListener(clean, { }, terminalSeen = { false }, onAnomaly = { anomalies += 1 })
             .onClose(FakeSocket(Fixture()), WebSocket.NORMAL_CLOSURE, "bye")
         val closed = clean.receiveCatching()
         assertTrue(closed.isClosed)
         assertNull(closed.exceptionOrNull(), "a clean close carries NO cause — this is the shape that used to escape")
+        assertEquals(1, anomalies, "an unpoisoned close leaves the pool holding a socket the server has dropped")
 
         val errored = Channel<JsonObject>(1)
-        InboxListener(errored, { }, terminalSeen = { false }, onAnomaly = { })
+        InboxListener(errored, { }, terminalSeen = { false }, onAnomaly = { anomalies += 1 })
             .onError(FakeSocket(Fixture()), IOException("reset"))
         val cause = errored.receiveCatching().exceptionOrNull()
         assertTrue(cause is IOException, "an errored close carries an IOException, got $cause")
         assertEquals("websocket error", cause?.message)
+        assertEquals(2, anomalies, "an errored close poisons too — same reuse hazard as a clean one")
     }
 }
 
@@ -772,5 +887,52 @@ class WsUpstreamLogHygieneTest {
         assertTrue(flow != null, "round should acquire")
         flow!!.collect { }
         assertSafeLogs(fx, key)
+    }
+}
+
+// DR-182's arms live in their own class rather than the main suite: adding them tipped
+// WsUpstreamTest past detekt's LargeClass threshold, and "the send budget" is a coherent subject
+// of its own — the same split this file already makes for the inbox listener and log hygiene.
+@OptIn(ExperimentalCoroutinesApi::class)
+class WsUpstreamSendBudgetTest {
+
+    // DR-182: the third failure mode, and the one that does not throw. sendText's future completes
+    // when the write reaches the transport, so a peer that stops reading — zero window, a
+    // black-holed connection — leaves it pending forever with nothing raised. The first-event
+    // budget cannot save the round because it is applied AFTER the send returns, so before this
+    // there was no bound in the transport at all: the only one left was the whole-turn totalCap,
+    // and the round burned it instead of degrading to SSE. Unfixed, this arm does not fail fast —
+    // it HANGS until runTest's own timeout, which is the shape of the bug.
+    @Test
+    fun `a send whose future never completes falls back on the SEND budget - DR-182`() = runTest {
+        val fx = Fixture().apply { sendFuture = { CompletableFuture() } }.start()
+        val before = testScheduler.currentTime
+        assertNull(fx.go(), "a stalled send must ride SSE, not hang the turn")
+        assertEquals(
+            SEND_BUDGET,
+            testScheduler.currentTime - before,
+            "a stalled send is charged to the send budget and nothing else",
+        )
+        assertTrue(fx.logged("send failed stalled"), "stalled is its own diagnostic: log=${fx.log}")
+        assertTrue(fx.logged("no delivery in ${SEND_BUDGET}ms"), "the budget it blew must be nameable: ${fx.log}")
+        assertTrue(fx.handed.single().dead.get(), "a stalled send poisons the connection")
+    }
+
+    // The trap, pinned deliberately: charging the stall to firstEventTimeoutMs would look identical
+    // on a fixture where the two budgets are equal, and would silently make a slow-to-deliver frame
+    // wait out the model's whole thinking budget. SEND_BUDGET and BUDGET differ so the arm above
+    // can only pass by using the right one; this one proves the first-event budget still governs
+    // its own step, so DR-182 bounded the send WITHOUT shortening the wait for response.created.
+    @Test
+    fun `the first-event budget is untouched by the send budget - DR-182 trap control`() = runTest {
+        val fx = Fixture().start() // sends fine, never replies
+        val before = testScheduler.currentTime
+        assertNull(fx.go(), "no first event must still ride SSE")
+        assertEquals(
+            BUDGET,
+            testScheduler.currentTime - before,
+            "the wait for response.created is the FIRST-EVENT budget, not the send one",
+        )
+        assertTrue(fx.logged("no first event in ${BUDGET}ms"), "log=${fx.log}")
     }
 }

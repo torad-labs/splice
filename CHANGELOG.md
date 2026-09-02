@@ -34,6 +34,12 @@
   which left the bar showing the session's window and scaled counts however the operator switched
   (`grok-4.6[500k]` on a 256k grok head still read `…/256k`). The daemon's status line now renders
   the picked row's label, its declared window and the real counts.
+- **`splice restart` no longer loses the new daemon to the old one's last second.** The restart
+  spawns the new daemon the moment the old one's ports are free, but the old process releases the
+  daemon lock only after its engines' stop grace and log drain, up to a second later on a loaded
+  box. The new daemon tried the lock once, conceded to "the winner" that was already leaving, and
+  exited, so the restart reported "did not come up" with nothing serving. The loser now waits out
+  the old daemon's whole teardown floor and yields only to a peer that answers `/health`.
 - **Codex compaction no longer dies at the idle cap while the model is still reading.** The stall
   watchdog switched to its short `streamIdleMs` tier on the first upstream byte, and on the
   Responses API that byte is the `response.created` handshake, not output — so a compaction that

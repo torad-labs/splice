@@ -402,7 +402,32 @@ step "daemon stopped (the shim must boot it on first launch)" daemon_down
 step "wrapper turn: claudex -p boots the daemon and completes" wrapper_turn claudex "ok after auth"
 step "wrapper turn: claude-mockchat -p through the head" wrapper_turn claude-mockchat "END"
 
-# ── 8a. `<wrapper> login`: the sign-in verb every head installs with its wrapper ─────────────
+# ── 8a. plan usage: the head's 5h/7d windows ride every response and draw the bars ───────────
+# The daemon polls the provider's usage endpoint (the mock's wham/usage: 14% of 5h, 42% of 7d),
+# stamps every response with the anthropic-ratelimit-unified-* headers Claude Code reads into its
+# rate_limits, and draws the same windows on the status line beside effort and session spend.
+quota_bars() {
+  local log="$HOME/.claude-codex/logs/daemon.log" hdrs line frag
+  for _ in $(seq 1 30); do grep -q '\[claudex\]\[quota\]' "$log" 2>/dev/null && break; sleep 0.5; done
+  grep '\[claudex\]\[quota\]' "$log" | tail -1 || { echo "the codex usage probe never reported"; return 1; }
+  hdrs="$(curl_mgmt -D - -o /dev/null -X POST "http://127.0.0.1:$CODEX_HEAD_PORT/v1/messages" \
+    -H 'Content-Type: application/json' \
+    -d '{"model":"claude-codex--gpt-5-codex","max_tokens":16,"stream":false,"messages":[{"role":"user","content":"hi"}]}')"
+  printf '%s\n' "$hdrs" | grep -i 'anthropic-ratelimit-unified' | tr -d '\r'
+  printf '%s' "$hdrs" | grep -qi '^anthropic-ratelimit-unified-5h-utilization: 0.1400' ||
+    { echo "the head's response carries no 5h utilization header"; return 1; }
+  printf '%s' "$hdrs" | grep -qi '^anthropic-ratelimit-unified-7d-utilization: 0.4200' ||
+    { echo "the head's response carries no 7d utilization header"; return 1; }
+  line="$(curl -sS -m 10 --data-binary '{"model":{"id":"gpt-5-codex"},"effort":{"level":"high"},"cost":{"total_cost_usd":1.5}}' \
+    "http://127.0.0.1:$CONTROL_PORT/statusline/claudex" | strip_ansi)"
+  printf '%s\n' "$line"
+  for frag in "Codex (mock)·high" '$1.50' "5h █░░░░░░░ 14%" "7d ███░░░░░ 42%"; do
+    printf '%s' "$line" | grep -qF -- "$frag" || { echo "status line lacks '$frag'"; return 1; }
+  done
+}
+step "plan usage: 5h/7d windows on every claudex response and on its status line" quota_bars
+
+# ── 8a'. `<wrapper> login`: the sign-in verb every head installs with its wrapper ────────────
 # claudex is an OAuth head: `claudex login` must start the ChatGPT browser flow — bind the loopback
 # callback, print the authorize URL (no browser here) and wait for the callback. The paste
 # fallback only shows on a terminal, and there is none here. With no network and stdin closed it

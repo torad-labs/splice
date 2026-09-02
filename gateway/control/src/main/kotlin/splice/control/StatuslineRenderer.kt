@@ -58,6 +58,7 @@ public class StatuslineRenderer(
 
     private val blob = StatuslineJson()
     private val row = StatuslineRow(catalog)
+    private val bars = StatuslineBars()
     private val branchCacheLock = Any()
     private val branchCache = LinkedHashMap<String, CachedBranch>(
         GIT_CACHE_INITIAL_CAPACITY,
@@ -67,13 +68,15 @@ public class StatuslineRenderer(
 
     public fun render(stdinJson: String, usage: HeadUsageSource?, warnPct: Int, warnTokens5h: Long): String {
         val root = runCatching { json.parseToJsonElement(stdinJson).jsonObject }.getOrNull() ?: return dim(label)
-        val segments = listOfNotNull(
-            modelSegment(root),
-            contextSegment(root),
-            cacheSegment(root),
-            warnSegment(usage, warnPct, warnTokens5h),
-            locationSegment(root),
-        )
+        val snapshot = usage?.snapshot()
+        val segments = listOfNotNull(modelSegment(root), bars.costSegment(root)) +
+            bars.limitSegments(root, snapshot?.quota) +
+            listOfNotNull(
+                contextSegment(root),
+                cacheSegment(root),
+                warnSegment(snapshot, warnPct, warnTokens5h),
+                locationSegment(root),
+            )
         return if (segments.isEmpty()) dim(label) else segments.joinToString(SEPARATOR)
     }
 
@@ -81,7 +84,8 @@ public class StatuslineRenderer(
         val model = blob.obj(root, "model") ?: return null
         val id = blob.str(model["id"])
         val name = row.label(id) ?: blob.str(model["display_name"]) ?: id ?: return null
-        return "$BOLD$CYAN●$RESET $BOLD$name$RESET"
+        val effort = bars.effort(root)?.let { "${dim("·")}$it" }.orEmpty()
+        return "$BOLD$CYAN●$RESET $BOLD$name$RESET$effort"
     }
 
     private fun contextSegment(root: JsonObject): String? {
@@ -116,9 +120,8 @@ public class StatuslineRenderer(
         else -> DIM
     }
 
-    private fun warnSegment(usage: HeadUsageSource?, warnPct: Int, warnTokens5h: Long): String? {
-        val source = usage ?: return null
-        val snapshot = source.snapshot()
+    private fun warnSegment(snapshot: UsageView?, warnPct: Int, warnTokens5h: Long): String? {
+        snapshot ?: return null
         val ratelimit = snapshot.ratelimit?.let {
             RateLimitState(it.limitTokens, it.remainingTokens, it.resetTokens)
         }

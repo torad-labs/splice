@@ -4,6 +4,12 @@
 
 ### Added
 
+- **Every head shows its plan usage the way the native Claude head does.** The daemon tracks each
+  head's 5-hour and 7-day windows (ChatGPT's usage endpoint and its `x-codex-*` round headers,
+  Kimi's usage endpoint, SuperGrok's billing period, Anthropic's own unified headers on the
+  passthrough head), stamps them onto every response as the `anthropic-ratelimit-unified-*`
+  headers Claude Code reads into its `rate_limits`, and draws them on the status line as the 5h
+  and 7d bars with the reset time once a bar is worth acting on, beside effort and session spend.
 - **`claude-splice`, the native-auth Claude head.** Claude Code keeps its own Anthropic login and
   sends the caller credential through the local passthrough head; splice never stores, reads,
   refreshes, or logs that credential. The management key is not reused on this route.

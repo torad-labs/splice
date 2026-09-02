@@ -15,7 +15,17 @@ public fun interface HeadUsageSource {
 }
 
 public data class RateLimitView(val limitTokens: Long?, val remainingTokens: Long?, val resetTokens: String?)
-public data class UsageView(val outputTokens5h: Long, val entries: Int, val ratelimit: RateLimitView?)
+public data class UsageView(
+    val outputTokens5h: Long,
+    val entries: Int,
+    val ratelimit: RateLimitView?,
+    /** The provider's own plan windows, when the head has any (see QuotaTracker). */
+    val quota: QuotaView? = null,
+)
+
+public data class QuotaWindowView(val usedPct: Int, val resetsAt: Long?)
+
+public data class QuotaView(val fiveHour: QuotaWindowView?, val sevenDay: QuotaWindowView?, val plan: String?)
 
 /** Reads the head's compaction stats (file truth). */
 public interface HeadCompactSource {

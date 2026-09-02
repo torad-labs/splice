@@ -133,6 +133,11 @@ public class LaunchService(
             put("CLAUDE_CODE_AUTO_COMPACT_WINDOW", max(AUTO_COMPACT_FLOOR, spec.contextWindow).toString())
             put("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "85")
             put("MAX_THINKING_TOKENS", "128000")
+            // Claude Code's default request timeout is 600s and it also bounds the first-byte
+            // deadline; the head's whole-turn cap is the wall that decides a turn, so the client
+            // must outlive it (spec.apiTimeoutMs = cap + grace). Without this every compaction
+            // longer than ten minutes died as client_abort while the daemon was still serving it.
+            put("API_TIMEOUT_MS", spec.apiTimeoutMs.toString())
             put("NO_PROXY", mergedNoProxy())
             // Hide Claude Code's built-in Anthropic-account commands: in a gateway head, auth is the
             // proxy bearer above, so /login (a local-jsx command hardwired to platform.claude.com —

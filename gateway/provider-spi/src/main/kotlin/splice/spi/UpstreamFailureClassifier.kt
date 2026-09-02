@@ -148,7 +148,16 @@ public object UpstreamFailureClassifier {
                 ClassifiedFailure(ErrorType.RATE_LIMIT, msg.take(MAX_MESSAGE))
             status == AUTH_STATUS || authRe.containsMatchIn(blob) ->
                 ClassifiedFailure(ErrorType.AUTHENTICATION, msg.take(MAX_MESSAGE))
-            status == BAD_GATEWAY ->
+            // Overload: a 502 from the gateway, or capacity by CODE SHAPE. The ChatGPT backend
+            // reports "model at capacity" as HTTP 503 or an in-stream response.failed whose code is
+            // server_is_overloaded / slow_down — codex-rs names exactly those two (PR #31058, which
+            // turned them from turn-ending into a patient same-turn retry). An exact allowlist keeps
+            // losing this race one spelling at a time: DR-71 added engine_/model_overloaded, and on
+            // 2026-09-01 20:56 a claudex compaction (830KB upstream body) died as a non-transient
+            // api_error on server_is_overloaded — no reissue, no salvage, "compaction failed" in the
+            // client. Any code spelling overload IS the named transient server condition, and it
+            // surfaces as OVERLOADED (529 / overloaded_error): the type Claude Code retries on.
+            fields.isOverload(status) ->
                 ClassifiedFailure(ErrorType.OVERLOADED, msg.take(MAX_MESSAGE), transient = true)
             else -> statusFallback(status, msg, fields.code)
         }
@@ -222,7 +231,13 @@ public object UpstreamFailureClassifier {
     public fun mapOutStatus(status: Int): Int = if (status == BAD_GATEWAY) OVERLOADED_STATUS else status
 
     private sealed class ExtractResult {
-        data class Fields(val message: String, val code: String) : ExtractResult()
+        data class Fields(val message: String, val code: String) : ExtractResult() {
+            /** Overload: a 502 from the gateway, or capacity by CODE SHAPE (classifyContent's branch
+             *  comment carries the provenance). Lives on the fields, not the object: the object sits
+             *  at detekt's function budget and classifyContent at its complexity budget. */
+            fun isOverload(status: Int?): Boolean =
+                status == BAD_GATEWAY || code.lowercase() in CAPACITY_CODES || overloadCodeRe.containsMatchIn(code)
+        }
         data class Gateway(val failure: ClassifiedFailure) : ExtractResult()
     }
 
@@ -244,22 +259,24 @@ public object UpstreamFailureClassifier {
 
     // The exact codes a status-less failure may be re-POSTed on: named transient server
     // conditions only. Anything else — known-deterministic or unknown — does not earn a
-    // full-context replay on the say-so of its message text.
+    // full-context replay on the say-so of its message text. Overload is NOT listed here: every
+    // spelling of it (overloaded, overloaded_error, engine_/model_overloaded, server_is_overloaded)
+    // is classified by shape in classifyContent, one rule instead of a list that rots a spelling
+    // at a time (DR-71, then 2026-09-01).
     private val RETRYABLE_CODES = setOf(
         "server_error",
         "internal_error",
         "internal_server_error",
-        "overloaded",
-        "overloaded_error",
         "timeout",
         "request_timeout",
         "service_unavailable",
         "temporarily_unavailable",
-        // DR-71: the engine/model-scoped overload spellings vendors emit are the same named
-        // transient server condition — a deterministic-looking absence here made them non-retryable.
-        "engine_overloaded",
-        "model_overloaded",
     )
+
+    // The backend's two capacity codes by name (codex-rs PR #31058); `slow_down` does not spell
+    // overload, so the shape rule alone would miss it.
+    private val CAPACITY_CODES = setOf("server_is_overloaded", "slow_down")
+    private val overloadCodeRe = Regex("overload", RegexOption.IGNORE_CASE)
 
     private const val RATE_LIMIT_STATUS = 429
     private const val AUTH_STATUS = 401

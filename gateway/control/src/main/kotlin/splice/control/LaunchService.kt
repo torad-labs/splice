@@ -140,6 +140,11 @@ public class LaunchService(
             // Planted unconditionally: the head's own wall owns this deadline, so an ambient
             // API_TIMEOUT_MS is replaced rather than merged (unlike NO_PROXY below); a larger value
             // buys nothing past totalCap and a smaller one recreates the abort.
+            // Claude Code's non-streaming fallback (after a streaming error it re-sends the turn
+            // with stream:false under this same deadline) stays ENABLED on purpose: the collect
+            // path answers it silently until the terminal body, and with the deadline past totalCap
+            // the head's wall speaks first. CLAUDE_CODE_DISABLE_NONSTREAMING_FALLBACK would only
+            // delete a recovery path.
             put("API_TIMEOUT_MS", spec.apiTimeoutMs.toString())
             put("NO_PROXY", mergedNoProxy())
             // Hide Claude Code's built-in Anthropic-account commands: in a gateway head, auth is the

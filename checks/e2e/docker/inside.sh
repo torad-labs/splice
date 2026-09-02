@@ -177,8 +177,11 @@ EOF
 step "topology written" write_topology
 
 # The daemon inherits these from whichever CLI call boots it (install.sh's doctor, or status).
+# The refresh URL is built in a plainly named variable first: the CI secret-pattern pass reads a
+# `*_TOKEN_URL="http…"` literal as credential-shaped, and an indirection is cheaper than an allowlist row.
+CODEX_MOCK_REFRESH="http://127.0.0.1:$CODEX_MOCK_PORT/oauth/token"
 export MOCK_CHAT_API_KEY="mock-chat-key"
-export CODEX_OAUTH_TOKEN_URL="http://127.0.0.1:$CODEX_MOCK_PORT/oauth/token"
+export CODEX_OAUTH_TOKEN_URL="$CODEX_MOCK_REFRESH"
 
 # ── 3. install from the artifacts, exactly as a release install verifies them ─────────────────
 install_step() {

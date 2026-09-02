@@ -110,10 +110,11 @@ class ExampleConfigTest {
 
     // DR-43: undeclared tiers 400 cleanly pre-upstream (background titling / --model <tier>),
     // characterized by the roster lens. The example's DECISIONS are pinned in both directions:
-    // grok serves a genuine fast tier (grok-build as haiku, no invented fable), and the
-    // single-model heads stay opus-only ON PURPOSE with the degradation documented in the TOML.
+    // grok serves a genuine fast tier (grok-build as haiku, no invented fable), kimi and openrouter
+    // serve the rows the shipped config offers (K3 256k and K2.7 Code; GLM 5.3), and the
+    // single-model fireworks head stays opus-only ON PURPOSE with the degradation documented.
     @Test
-    fun `example heads declare the tier decision - grok gains haiku, single-model heads stay opus-only`() {
+    fun `example heads declare the tier decision - grok gains haiku, kimi and openrouter serve their rows, fireworks stays opus-only`() {
         val topology = TopologyLoader.parse(exampleToml())
         fun slots(head: String) = topology.heads.getValue(head).models.orEmpty().mapNotNull { it.slot }
 
@@ -122,13 +123,22 @@ class ExampleConfigTest {
             "grok-build-latest",
             topology.heads.getValue("claude-grok").models.orEmpty().first { it.slot == "haiku" }.id,
         )
-        for (head in listOf("openrouter", "fireworks", "claude-kimi")) {
-            assertEquals(listOf("opus"), slots(head), "$head is opus-only by documented choice")
-        }
+        assertEquals(listOf("opus", "sonnet", "haiku"), slots("claude-kimi"))
+        assertEquals(
+            listOf("k3[1m]", "k3-256k", "kimi-for-coding"),
+            topology.heads.getValue("claude-kimi").models.orEmpty().map { it.id },
+        )
+        assertEquals(listOf("opus", "sonnet"), slots("openrouter"))
+        assertEquals(
+            "z-ai/glm-5.3",
+            topology.heads.getValue("openrouter").models.orEmpty().first { it.slot == "sonnet" }.id,
+        )
+        assertEquals(listOf("opus"), slots("fireworks"), "fireworks is opus-only by documented choice")
     }
 
     // DR-43 redo (codex denominator catch): the documented-degradation set is FOUR local decisions —
-    // grok's declined-fable marker plus three opus-only markers — anchored by the central slot note.
+    // grok's declined-fable marker, fireworks' opus-only marker and the declared-tier markers on
+    // kimi and openrouter — anchored by the central slot note.
     // Each marker is pinned INSIDE its own head's section slice (or the comment block directly above
     // its header), with boundaries derived from the source text, so one comment elsewhere cannot
     // satisfy all four. Removing any single marker reds by head name.
@@ -154,10 +164,14 @@ class ExampleConfigTest {
             "No fable analog" in grok && "400s cleanly" in grok,
             "grok must document its declined fable tier beside its own roster",
         )
-        for (head in listOf("openrouter", "fireworks", "claude-kimi")) {
+        assertTrue(
+            "opus-only on purpose" in section("fireworks"),
+            "fireworks must document its opus-only decision beside its own roster",
+        )
+        for (head in listOf("openrouter", "claude-kimi")) {
             assertTrue(
-                "opus-only on purpose" in section(head),
-                "$head must document its opus-only decision beside its own roster",
+                "Tiers declared on purpose" in section(head),
+                "$head must document its tier roster beside its own head",
             )
         }
     }
@@ -386,11 +400,13 @@ class ExampleConfigTest {
                 listOf("grok-4.6" to "opus", "grok-4.5" to "sonnet", "grok-build-latest" to "haiku") to
                     null
                 ),
-            "openrouter" to (listOf("meta-llama/llama-4-maverick" to "opus") to 1_048_576L),
+            "openrouter" to (listOf("meta-llama/llama-4-maverick" to "opus", "z-ai/glm-5.3" to "sonnet") to null),
             "fireworks" to (
                 listOf("accounts/fireworks/models/llama-v3p1-70b-instruct" to "opus") to 131_072L
                 ),
-            "claude-kimi" to (listOf("k3[1m]" to "opus") to 1_000_000L),
+            "claude-kimi" to (
+                listOf("k3[1m]" to "opus", "k3-256k" to "sonnet", "kimi-for-coding" to "haiku") to null
+                ),
             "claude-splice" to (
                 listOf(
                     "claude-fable-5" to "fable",

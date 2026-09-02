@@ -15,12 +15,14 @@ import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import splice.app.DaemonProcess
+import splice.app.logStamp
 import splice.core.config.KeyStore
 import splice.core.util.AsyncFileIo
 import splice.core.util.DaemonLog
 import splice.provider.openai.ApiKeyAuthProvider
 import java.nio.file.Files
 import java.nio.file.Path
+import java.time.LocalDateTime
 import kotlin.io.path.readText
 
 class DaemonLogWiringTest {
@@ -97,5 +99,30 @@ class DaemonLogWiringTest {
         } finally {
             DaemonLog.install {}
         }
+    }
+
+    // 3. The STAMP. daemon.log rotates by size, so one file spans days with no marker between them,
+    // and a line lifted out of it — a grep hit, a quote in a report — has to say which day it is.
+    // Audit 2026-09-02: 265,321 lines over four days, and a reader attributed one day's watchdog
+    // stalls to the next day's build because nothing on the line said otherwise.
+    @Test
+    fun `a written line dates itself, so a line read alone names its day`(@TempDir logs: Path) {
+        process.persistentLogger(logs)("[claudex] turn compact=true latency=336431ms ok")
+        drainToDisk()
+
+        val line = Files.readAllLines(logs.resolve("daemon.log")).single()
+        assertTrue(
+            Regex("""^\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}] \[claudex]""").containsMatchIn(line),
+            "a log line must carry a full date and a fixed-width clock, got: $line",
+        )
+    }
+
+    // Width is fixed, not merely dated: LocalTime/LocalDateTime.toString() OMIT the seconds field
+    // when it is zero, which stamped 4,339 live lines "[13:47]" and broke every column-oriented
+    // read. Pinned at a zero second because that is the only instant that used to differ.
+    @Test
+    fun `a zero second keeps its field, so every stamp is the same width`() {
+        assertEquals("2026-09-02 13:47:00", logStamp.format(LocalDateTime.of(2026, 9, 2, 13, 47, 0)))
+        assertEquals("2026-09-02 13:47:12", logStamp.format(LocalDateTime.of(2026, 9, 2, 13, 47, 12)))
     }
 }

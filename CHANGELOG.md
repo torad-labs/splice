@@ -36,6 +36,14 @@
   socket count. A real close frame still names the peer, its code and its reason. Read that way,
   six of one day's twelve were sockets left idle in our own pool for three to twenty-five minutes,
   and eleven of the twelve ended no round at all.
+- **Every daemon log line now carries its own date, at a fixed width.** `daemon.log` rotates by
+  size and never by day, so a single file spans as many days as 64MB buys — 265,321 lines over four
+  of them in the 2026-09-02 audit — while each line was stamped with a bare wall clock. A line read
+  on its own could not say which day it belonged to, and a reader attributed a full day of watchdog
+  stalls to the build running the next morning; they were the previous day's, on code already
+  replaced. The same audit found the stamp was not even fixed-width: `LocalTime.toString()` drops
+  the seconds field when it is zero, which had stamped 4,339 live lines `[13:47]` and quietly broke
+  column-oriented reads. Lines now read `[2026-09-02 13:47:00]`.
 - Provider-native readable reasoning remains visible as thinking blocks, while
   `mirror_reasoning` is locked off after every configuration layer. TOML, state, environment, runtime
   PATCH, and direct construction cannot enable synthetic transcript reinjection.

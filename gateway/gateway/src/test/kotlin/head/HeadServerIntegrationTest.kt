@@ -135,7 +135,11 @@ class HeadServerIntegrationTest {
     // body completes before this turn's perf line lands in `logs`. Waiting for a line past `from`
     // reads THIS turn's telemetry instead of whichever earlier turn's line happened to be last —
     // the read that failed under kover on a slow runner (coverage run 33551147526, 2026-09-01).
-    private fun awaitLog(from: Int, timeoutMs: Long = 5_000, match: (String) -> Boolean): String? {
+    // The ceiling is a failure-path cost only — a healthy turn's perf line lands in milliseconds —
+    // and 5s was not enough for a starved runner: gate run 33608202738 (2026-09-02) saw the line
+    // arrive AFTER the wait while the whole module suite ran alongside. 30s buys nothing on the
+    // pass path and stops a slow box from reading as a missing line.
+    private fun awaitLog(from: Int, timeoutMs: Long = 30_000, match: (String) -> Boolean): String? {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (true) {
             synchronized(logs) { logs.drop(from).lastOrNull(match) }?.let { return it }

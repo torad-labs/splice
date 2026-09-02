@@ -36,3 +36,8 @@ cde3ea158f8f99962a1c3ae8c31fe72d793f185a:dev/research/wire-compare/codex-0.145.0
 # way a real token does. gitleaks scans HISTORY, so redacting it at HEAD cannot clear commit
 # 5522ef3; the fingerprint is the only channel that closes it.
 5522ef38c19e701c337cabd7b8e75b6e18fe6598:gateway/core/src/test/kotlin/RefreshOutcomeTest.kt:generic-api-key:88
+
+# 2026-09-01 — the DR-151 canary in RefreshOutcomeTest ("sk-live-DR151-must-never-appear", a
+# deliberately secret-shaped literal that the test proves is WITHHELD from the log) was vetted on
+# feat/claude-head at 5522ef38; squash-merging PR #99 gave the same line a new commit SHA on main.
+646ce260dbd8e68618640eac4e39e12bf486e5c9:gateway/core/src/test/kotlin/RefreshOutcomeTest.kt:generic-api-key:88

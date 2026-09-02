@@ -322,6 +322,20 @@ class ConfigServiceTest {
         assertEquals(50, svc.getConfig().maxQueued)
     }
 
+    // Pinned against the reference client, not chosen freehand: codex-rs sets its only stream
+    // timer to 300_000ms and puts it on the receive side alone. At 180_000 the idle tier ended 129
+    // compactions in a single day (2026-09-01), each mid-stream on work already flowing.
+    @Test
+    fun `the idle stall detector defaults to the reference client's 300s, not a tighter guess`() {
+        val cfg = service().getConfig()
+        assertEquals(300_000L, cfg.streamIdleMs)
+        assertEquals(
+            cfg.firstByteTimeoutMs,
+            cfg.streamIdleMs,
+            "one number judges the stream before and after its first frame",
+        )
+    }
+
     @Test
     fun `test idle floor drops to 250ms under CODEX_PROXY_TEST`() {
         val svc = service(env = mapOf("CODEX_PROXY_TEST" to "1", "CLAUDEX_STREAM_IDLE_MS" to "300"))

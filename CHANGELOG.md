@@ -44,6 +44,13 @@
   replaced. The same audit found the stamp was not even fixed-width: `LocalTime.toString()` drops
   the seconds field when it is zero, which had stamped 4,339 live lines `[13:47]` and quietly broke
   column-oriented reads. Lines now read `[2026-09-02 13:47:00]`.
+- **The mid-stream stall detector now matches the reference client instead of guessing tighter.**
+  `streamIdleMs` judged a stream that had already begun flowing and aborted it after 180s of
+  silence. codex-rs sets its only stream timer to 300s and applies it to the receive side alone
+  (`DEFAULT_STREAM_IDLE_TIMEOUT_MS`, model-provider-info/src/lib.rs:26). Against the same backend
+  our tighter number ended 129 compactions in one day, each already mid-output and each costing a
+  full transcript re-read. The default is now 300s, equal to `firstByteTimeoutMs`, so one number
+  judges a stream before and after its first frame. Heads that want a tighter stall still set it.
 - Provider-native readable reasoning remains visible as thinking blocks, while
   `mirror_reasoning` is locked off after every configuration layer. TOML, state, environment, runtime
   PATCH, and direct construction cannot enable synthetic transcript reinjection.

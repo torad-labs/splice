@@ -164,11 +164,19 @@ public enum class Knob(
         300_000L,
         restartRequired = true,
     ),
+
+    // The mid-output stall detector, and the one timer the reference client also keeps. codex-rs
+    // (@63fe5a6, model-provider-info/src/lib.rs:26) sets DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
+    // and applies it ONLY to the receive side, as timeout(idle_timeout, ws_stream.next()). We ran
+    // 180_000 against the same backend and paid for it: on 2026-09-01 the idle tier alone ended 129
+    // compactions, each one a whole transcript re-read that had already begun streaming. 300_000
+    // matches the reference and equals our own firstByteTimeoutMs, so a stream is now judged by one
+    // number before and after its first frame. Lower it per head when a head wants a tighter stall.
     STREAM_IDLE_MS(
         "streamIdleMs",
         KnobKind.NUMBER,
         listOf("CLAUDEX_STREAM_IDLE_MS"),
-        180_000L,
+        300_000L,
         restartRequired = true,
     ),
     AUTH_CACHE_MS(

@@ -7,8 +7,9 @@
 - **Compactions no longer die on the ChatGPT backend's capacity signal.** An in-stream
   `server_is_overloaded` (or `slow_down`) used to classify as a non-retryable `api_error`, so the
   proxy neither reissued nor salvaged the turn and Claude Code reported the compaction failed. Any
-  overload-shaped error code is now a transient `overloaded_error`, the type Claude Code retries
-  with backoff, matching codex's own handling of the same two codes.
+  overload-shaped error code on an in-stream or server-side (5xx) failure is now a transient
+  `overloaded_error`, the type Claude Code retries with backoff, matching codex's own handling of
+  the same two codes; a 4xx keeps its deterministic verdict whatever its code spells.
 - **Claude Code now waits out the proxy's own whole-turn wall.** Every wrapper plants
   `API_TIMEOUT_MS` from the head's `upstreamTimeoutMs` plus a minute of grace (960 s on the
   default 900 s cap). With Claude Code's 600 s default, every compaction longer than ten minutes

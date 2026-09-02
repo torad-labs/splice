@@ -99,6 +99,28 @@ class UpstreamFailureRetryWordingTest {
         assertTrue(r.transient)
     }
 
+    // The shape rule IS the fix: an unseen overload spelling is capacity too. Mutation-checked: an
+    // exact four-entry allowlist keeps every arm above green and only this one red.
+    @Test
+    fun `an unseen overload spelling is capacity by shape, not by allowlist`() {
+        val r = coded("gpu_pool_overload_backpressure")
+        assertEquals(ErrorType.OVERLOADED, r.type)
+        assertTrue(r.transient)
+    }
+
+    // The shape rule never overrides a deterministic client error: a 4xx spelling overload keeps
+    // statusFallback's verdict instead of being re-POSTed four times against a limited account.
+    @Test
+    fun `a 4xx carrying an overload-shaped code stays a deterministic client error`() {
+        val r = UpstreamFailureClassifier.classify(
+            FailureSource.HTTP,
+            """{"error":{"code":"server_is_overloaded","message":"at capacity"}}""",
+            status = 403,
+        )
+        assertEquals(ErrorType.INVALID_REQUEST, r.type)
+        assertFalse(r.transient)
+    }
+
     // DR-71 redo (codex red-repro): the negation bridge caps at 2000 chars but the heuristic used
     // to scan the UNTRUNCATED message — an invitation past the bridge's reach was still seen by
     // tryAgainRe, so a clause whose visible (displayed) half is pure negation read as transient.

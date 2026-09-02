@@ -137,6 +137,9 @@ public class LaunchService(
             // deadline; the head's whole-turn cap is the wall that decides a turn, so the client
             // must outlive it (spec.apiTimeoutMs = cap + grace). Without this every compaction
             // longer than ten minutes died as client_abort while the daemon was still serving it.
+            // Planted unconditionally: the head's own wall owns this deadline, so an ambient
+            // API_TIMEOUT_MS is replaced rather than merged (unlike NO_PROXY below); a larger value
+            // buys nothing past totalCap and a smaller one recreates the abort.
             put("API_TIMEOUT_MS", spec.apiTimeoutMs.toString())
             put("NO_PROXY", mergedNoProxy())
             // Hide Claude Code's built-in Anthropic-account commands: in a gateway head, auth is the

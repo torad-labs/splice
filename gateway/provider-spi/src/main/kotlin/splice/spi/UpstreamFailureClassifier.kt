@@ -232,11 +232,21 @@ public object UpstreamFailureClassifier {
 
     private sealed class ExtractResult {
         data class Fields(val message: String, val code: String) : ExtractResult() {
-            /** Overload: a 502 from the gateway, or capacity by CODE SHAPE (classifyContent's branch
-             *  comment carries the provenance). Lives on the fields, not the object: the object sits
-             *  at detekt's function budget and classifyContent at its complexity budget. */
-            fun isOverload(status: Int?): Boolean =
-                status == BAD_GATEWAY || code.lowercase() in CAPACITY_CODES || overloadCodeRe.containsMatchIn(code)
+            /** Overload: a 502 from the gateway, or capacity by CODE SHAPE on a status-less (in-stream)
+             *  or server-side failure (classifyContent's branch comment carries the provenance). A 4xx
+             *  keeps its deterministic verdict whatever its code spells: this arm sits ahead of
+             *  statusFallback's client-error branch, so without the floor a permanent 403 spelling
+             *  "overload" would be re-POSTed UPSTREAM_RETRIES times (review of #115). Lives on the
+             *  fields, not the object: the object sits at detekt's function budget and
+             *  classifyContent at its complexity budget. */
+            fun isOverload(status: Int?): Boolean = when {
+                status == BAD_GATEWAY -> true
+                status == null -> capacityShape()
+                else -> status >= SERVER_ERROR_FLOOR && capacityShape()
+            }
+
+            private fun capacityShape(): Boolean =
+                code.lowercase() in CAPACITY_CODES || overloadCodeRe.containsMatchIn(code)
         }
         data class Gateway(val failure: ClassifiedFailure) : ExtractResult()
     }

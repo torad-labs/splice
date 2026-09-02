@@ -1,13 +1,15 @@
 // NEW: (2026-09-02) the wire's vital signs for ONE socket, read at the moment it dies. Twelve
-// "socket closed by the server (status=1006)" lines in one day, and not one of them said WHICH
-// socket, how old it was, whether a round was in flight, or when the server last spoke — so every
-// close was argued about from correlation ("25-minute cadence", "OpenAI drops everyone") instead
-// of read. status=1006 is the JDK's word for a TCP end with no close frame (WebSocketImpl:
-// onComplete -> signalClose(CLOSED_ABNORMALLY)); it names the shape, never the cause. The cause
-// is in the seconds before it: the server pings every ~20s on a healthy path (probed live), so
-// "last server ping 3s ago" at the close means the path was alive and the ORIGIN ended the
-// response, while "last server ping 95s ago" means the path itself went dark first. That one
-// clause is the difference between a retry policy and a fix, and it is now on every close line.
+// end-of-stream lines in one day, and not one of them said WHICH socket, how old it was, whether a
+// round was in flight, or when the peer last spoke — so every one was argued about from correlation
+// ("25-minute cadence", "OpenAI drops everyone") instead of read. With the clauses attached, the
+// same twelve read as what they are: six were sockets our own pool had left IDLE for 3-25 minutes,
+// which any infrastructure reaps, and eleven killed no round at all.
+//
+// The clause that decides it is the ping. The peer pings every ~20s on a healthy path (probed
+// live), so "last server ping 3s ago" at the end means the path was alive and the far side ended
+// the response, while "last server ping 95s ago" means the path itself went dark first. Without
+// that clause the honest answer is "we cannot tell", and the honest LINE must then not name an
+// actor at all — see InboxListener.endOfStream for why 1006 licenses no attribution.
 package splice.dialect.responses
 
 import splice.core.util.ElapsedClock

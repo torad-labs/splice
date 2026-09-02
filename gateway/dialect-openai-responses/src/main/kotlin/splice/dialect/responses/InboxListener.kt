@@ -107,15 +107,30 @@ internal class InboxListener(
     // round observes is unchanged — kill()'s own close() is then a no-op.
     override fun onClose(webSocket: WebSocket, statusCode: Int, reason: String): CompletionStage<*>? {
         inbox.close()
-        // status=1006 is the JDK's name for a TCP end WITHOUT a close frame (WebSocketImpl.onComplete),
-        // never a status the server sent; the pulse clauses are what say who went quiet first.
-        log(
-            "[ws] socket closed by the server (status=$statusCode; ${pulse.describe()}) — " +
-                "poisoning the pooled connection\n",
-        )
+        log("[ws] ${endOfStream(statusCode, reason)}; ${pulse.describe()} — poisoning the pooled connection\n")
         onAnomaly()
         return null
     }
+
+    /** What this end of stream ACTUALLY licenses us to say.
+     *
+     *  1006 is not a code any peer can put on the wire (RFC 6455 §7.4.1). The JDK synthesises it
+     *  when the TCP stream ends with no close frame at all (WebSocketImpl's receive task calls
+     *  onComplete, which signals CLOSED_ABNORMALLY), so it names OUR OBSERVATION and no actor: the
+     *  origin, a load balancer, a proxy hop and the network are indistinguishable from this side.
+     *  This line used to read "socket closed by the server", and that unearned word is how twelve
+     *  routine events a day became an accusation — six of the twelve were sockets our own pool had
+     *  left idle for three to twenty-five minutes, which every piece of infrastructure on earth
+     *  reaps, and eleven of the twelve killed no round at all (2026-09-02, four-day log: 17 torn
+     *  streams in 48,898 turns, and 302 of 303 backend overload verdicts inside ONE incident day).
+     *  Any OTHER code did arrive in a real close frame, and that one may be attributed to the peer. */
+    private fun endOfStream(statusCode: Int, reason: String): String =
+        if (statusCode == ABNORMAL_CLOSURE) {
+            "socket stream ended with no close frame (status=1006, actor unknown from here)"
+        } else {
+            val why = reason.take(ERR_SNIPPET).ifBlank { "no reason given" }
+            "socket closed by the peer (status=$statusCode, $why)"
+        }
 
     override fun onError(webSocket: WebSocket, error: Throwable) {
         inbox.close(IOException("websocket error", error))
@@ -131,3 +146,7 @@ private val wsJson = Json {
     ignoreUnknownKeys = true
     isLenient = true
 }
+
+// RFC 6455 §7.4.1 reserves 1006: it is never sent, only synthesised by an endpoint that lost the
+// stream without a close frame. See [InboxListener.endOfStream].
+private const val ABNORMAL_CLOSURE = 1006

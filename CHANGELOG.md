@@ -26,12 +26,16 @@
   writes its short tag into the perf JSONL and the perf log line, and the "client gone" line names
   the session and the failure class instead of `keepalive write failed: null`. A client abort in
   the log is now one grep away from the session that hung up and the transcript that says why.
-- **A WebSocket close explains itself.** The Responses transport's "socket closed by the server
-  (status=1006)" line, twelve times a day and never saying which socket, now names the socket, its
-  age, whether a round was in flight and for how long, when the server last sent a frame, when it
-  last pinged (the path's own heartbeat, every ~20s when healthy), and how many sockets were open.
-  Status 1006 is the JDK's word for a TCP end without a close frame, not a code the server sent;
-  the clauses beside it are what say whether the path went dark or the origin ended the response.
+- **A WebSocket end of stream reports what was observed instead of naming a culprit.** The
+  transport logged "socket closed by the server (status=1006)" twelve times a day without saying
+  which socket. Status 1006 is reserved by the WebSocket RFC and can never be sent by a peer. Our
+  own client synthesises it whenever the stream ends with no close frame, so the origin, a load
+  balancer and the network are indistinguishable from here, and the old wording asserted an actor
+  the client cannot see. The line now says the stream ended with the actor unknown, and carries the
+  socket, its age, whether a round was in flight, the last frame, the last peer ping and the open
+  socket count. A real close frame still names the peer, its code and its reason. Read that way,
+  six of one day's twelve were sockets left idle in our own pool for three to twenty-five minutes,
+  and eleven of the twelve ended no round at all.
 - Provider-native readable reasoning remains visible as thinking blocks, while
   `mirror_reasoning` is locked off after every configuration layer. TOML, state, environment, runtime
   PATCH, and direct construction cannot enable synthetic transcript reinjection.

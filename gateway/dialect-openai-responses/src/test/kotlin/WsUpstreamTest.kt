@@ -290,7 +290,10 @@ class WsUpstreamTest {
         assertEquals(listOf("response.completed"), fx.types(), "the next round still serves, on a NEW socket")
         assertEquals(2, fx.connects, "a closed socket must never be handed to another round")
         assertTrue(fx.handed[1].generation > pooled.generation, "the reconnect bumps the generation")
-        assertTrue(fx.logged("closed by the server"), "and the close is diagnosable from daemon.log")
+        assertTrue(
+            fx.logged("closed by the peer (status=1000, bye)"),
+            "a real close FRAME is attributable, and must name the peer's own code and reason",
+        )
     }
 
     @Test
@@ -979,23 +982,26 @@ class WsUpstreamSendBudgetTest {
 
 // ------------------------------------------------------------------- the close line's clauses ---
 
-// 2026-09-02: twelve "socket closed by the server (status=1006)" lines in one day, none naming the
-// socket, its age, whether a round was in flight, or when the server last pinged — so every close
-// was reasoned about from correlation. The listener is wired to the connection's own pulse by
-// WsConnectionFactory; these arms prove the wiring, not WsPulse's arithmetic (WsPulseTest does that).
+// 2026-09-02: twelve end-of-stream lines in one day, none naming the socket, its age, whether a
+// round was in flight, or when the peer last pinged — so every one was reasoned about from
+// correlation, and the line's own wording ("closed by the server") supplied an actor the client
+// cannot observe. The listener is wired to the connection's own pulse by WsConnectionFactory;
+// these arms prove the wiring and the wording, not WsPulse's arithmetic (WsPulseTest does that).
 @OptIn(ExperimentalCoroutinesApi::class)
 class WsUpstreamCloseDiagnosticsTest {
 
     private val closeLine = Regex(
-        "socket closed by the server \\(status=1006; ws-[0-9a-f]+ age \\d+s, (idle|mid-round \\d+s in), " +
-            "last frame \\d+s ago, (no server ping yet|last server ping \\d+s ago), open=\\d+\\)",
+        "socket stream ended with no close frame \\(status=1006, actor unknown from here\\); " +
+            "ws-[0-9a-f]+ age \\d+s, (idle|mid-round \\d+s in), last frame \\d+s ago, " +
+            "(no server ping yet|last server ping \\d+s ago), open=\\d+",
     )
 
     private fun closeLineOf(fx: Fixture): String =
-        fx.log.singleOrNull { "socket closed by the server" in it } ?: error("no close line in ${fx.log}")
+        fx.log.singleOrNull { "socket stream ended" in it || "closed by the peer" in it }
+            ?: error("no close line in ${fx.log}")
 
     @Test
-    fun `a server close mid-round names the socket, the round in flight and the open count`() = runTest {
+    fun `an end of stream mid-round names the socket, the round in flight and the open count`() = runTest {
         val fx = Fixture().apply { reply = replyWith(CREATED) }.start()
         val flow = fx.go() ?: error("the round must commit on the WebSocket")
         val socket = fx.opened.single()
@@ -1009,7 +1015,7 @@ class WsUpstreamCloseDiagnosticsTest {
     }
 
     @Test
-    fun `a server ping is remembered on the close line and re-arms demand`() = runTest {
+    fun `a peer ping is remembered on the close line and re-arms demand`() = runTest {
         val fx = Fixture().apply { reply = replyWith(CREATED) }.start()
         val flow = fx.go() ?: error("the round must commit")
         val socket = fx.opened.single()
@@ -1021,8 +1027,35 @@ class WsUpstreamCloseDiagnosticsTest {
         collectTorn(flow)
     }
 
+    // THE WORDING WALL. 1006 is synthesised by our own JDK when the stream ends with no close
+    // frame (RFC 6455 §7.4.1 reserves it, no peer can send it), so the client cannot tell the
+    // origin from a load balancer from the network. A line that says "closed by the server" is
+    // therefore an accusation the evidence does not support, and it is the one that turned six
+    // idle-socket reaps a day into "OpenAI drops everyone". A real close FRAME may be attributed.
     @Test
-    fun `an idle pooled socket the server closes reads as idle`() = runTest {
+    fun `1006 names no actor, while a real close frame is attributed to the peer`() = runTest {
+        val fx = Fixture().apply { reply = replyWith(CREATED, DONE) }.start()
+        fx.types()
+        fx.opened.single().closeAbnormally()
+        val synthesised = closeLineOf(fx)
+        assertFalse(
+            "by the server" in synthesised,
+            "1006 is our own observation of a dead stream; naming an actor is unearned: $synthesised",
+        )
+        assertTrue("actor unknown from here" in synthesised, "say what we know: $synthesised")
+
+        val peer = Fixture().apply { reply = replyWith(CREATED, DONE) }.start()
+        peer.types()
+        peer.opened.single().closeClean()
+        val framed = closeLineOf(peer)
+        assertTrue(
+            "closed by the peer (status=1000, bye)" in framed,
+            "a close FRAME carries the peer's own code and reason, and may be attributed: $framed",
+        )
+    }
+
+    @Test
+    fun `an idle pooled socket that ends reads as idle`() = runTest {
         val fx = Fixture().apply { reply = replyWith(CREATED, DONE) }.start()
         fx.types()
         fx.opened.single().closeAbnormally()

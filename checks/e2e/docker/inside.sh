@@ -19,6 +19,7 @@ OUT="${OUT:-/out}"
 CONTROL_PORT=3096
 CODEX_HEAD_PORT=3099
 CHAT_HEAD_PORT=3101
+CHAT2_HEAD_PORT=3105
 RECEIPT="$OUT/receipt.json"
 STEPS_FILE="$(mktemp)"
 FAILED=0
@@ -108,7 +109,7 @@ echo "fresh-machine e2e: user=$(id -un) home=$HOME artifacts=$ARTIFACTS"
 start_mocks() {
   nohup node "$REPO/checks/e2e/docker/mock_codex.mjs" "$REPO" 0 > "$OUT/mock_codex.out" 2> "$OUT/mock_codex.err" &
   echo $! > "$OUT/mock_codex.pid"
-  nohup python3 "$REPO/checks/e2e/docker/mock_chat.py" 0 > "$OUT/mock_chat.out" 2> "$OUT/mock_chat.err" &
+  MOCK_CHAT_HOLD_S=45 nohup python3 "$REPO/checks/e2e/docker/mock_chat.py" 0 > "$OUT/mock_chat.out" 2> "$OUT/mock_chat.err" &
   echo $! > "$OUT/mock_chat.pid"
   for _ in $(seq 1 50); do
     [ -s "$OUT/mock_codex.out" ] && [ -s "$OUT/mock_chat.out" ] && break
@@ -156,6 +157,18 @@ id = "mock-chat"
 label = "Chat (mock)"
 context_window = 128000
 
+# A second chat head on the SAME mock with its own window: the per-head contract check and the
+# cross-head ListAgents proof need two heads whose every turn the harness controls.
+[providers.mockchat2]
+dialect = "openai-chat"
+base_url = "http://127.0.0.1:$CHAT_MOCK_PORT"
+auth = { kind = "api-key", env = "MOCK_CHAT_API_KEY" }
+
+[[providers.mockchat2.models]]
+id = "mock-chat-2"
+label = "Chat 2 (mock)"
+context_window = 64000
+
 [heads.claudex]
 provider = "codex"
 port = $CODEX_HEAD_PORT
@@ -171,6 +184,14 @@ discovery_prefix = "claude-mockchat--"
 pinned_model = "mock-chat"
 [heads.mockchat.claude]
 command = "claude-mockchat"
+
+[heads.mockchat2]
+provider = "mockchat2"
+port = $CHAT2_HEAD_PORT
+discovery_prefix = "claude-mockchat2--"
+pinned_model = "mock-chat-2"
+[heads.mockchat2.claude]
+command = "claude-mockchat2"
 EOF
   cat "$HOME/.config/splice/splice.toml"
 }
@@ -205,6 +226,7 @@ install_step() {
   [ -x "$HOME/.local/bin/splice" ] || { echo "splice command not linked"; return 1; }
   [ -x "$HOME/.local/bin/claudex" ] || { echo "claudex wrapper not linked"; return 1; }
   [ -x "$HOME/.local/bin/claude-mockchat" ] || { echo "claude-mockchat wrapper not linked"; return 1; }
+  [ -x "$HOME/.local/bin/claude-mockchat2" ] || { echo "claude-mockchat2 wrapper not linked"; return 1; }
   ls -l "$HOME/.local/bin/"
   splice version
 }
@@ -226,7 +248,7 @@ step "doctor: prerequisites ✓, no ✗ anywhere" doctor_prereqs
 cold_start() {
   splice restart </dev/null || return 1
   wait_health 60 || return 1
-  ss -ltn | grep -E ":($CONTROL_PORT|$CODEX_HEAD_PORT|$CHAT_HEAD_PORT) " || { echo "head ports not listening"; return 1; }
+  ss -ltn | grep -E ":($CONTROL_PORT|$CODEX_HEAD_PORT|$CHAT_HEAD_PORT|$CHAT2_HEAD_PORT) " || { echo "head ports not listening"; return 1; }
 }
 step "daemon cold start: /health ok, every head ready" cold_start
 
@@ -237,10 +259,10 @@ d = json.load(sys.stdin); heads = d.get("heads", d)
 rows = heads.values() if isinstance(heads, dict) else heads
 keys = sorted(h["key"] for h in rows)
 print("heads:", [(h["key"], h.get("running"), h.get("healthy")) for h in rows])
-assert keys == ["claudex", "mockchat"], keys
+assert keys == ["claudex", "mockchat", "mockchat2"], keys
 assert all(h.get("running") for h in rows), "a head is not running"'
 }
-step "/api/heads lists both heads running" api_heads
+step "/api/heads lists all three heads running" api_heads
 
 # ── 6. the wire contract, per head, through the real translators ───────────────────────────────
 probe() { # head port model
@@ -277,6 +299,39 @@ assert r.get("argv"), "empty argv"' "$2"
 }
 step "launch recipe: claudex base URL + API_TIMEOUT_MS > 900s" launch_recipe claudex "$CODEX_HEAD_PORT"
 step "launch recipe: mockchat base URL + API_TIMEOUT_MS > 900s" launch_recipe mockchat "$CHAT_HEAD_PORT"
+
+# ── 7b. per-head model roster + window: what /model offers, what the client compacts on ─────
+# Each head materializes its OWN picker (settings.json availableModels + model, enforced, and a
+# .claude.json additionalModelOptionsCache row per model carrying its context_window) and hands
+# Claude Code its own CLAUDE_CODE_MAX_CONTEXT_TOKENS, from the topology alone. Three heads, three
+# windows: a head reading another head's roster or window is exactly the fresh-install drift
+# this step exists to catch.
+head_contract() { # head model window
+  curl_mgmt -X POST -H 'Content-Type: application/json' \
+    --data '{"dangerouslySkipPermissions":"","args":[]}' "http://127.0.0.1:$CONTROL_PORT/launch/$1" \
+    > "$OUT/recipe-$1.json" || return 1
+  python3 - "$1" "$2" "$3" "$HOME" "$OUT/recipe-$1.json" <<'EOF'
+import json, os, sys
+head, model, window, home, recipe = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4], sys.argv[5]
+r = json.load(open(recipe)); env = r.get("env", {})
+cfg = env.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude-" + head)
+settings = json.load(open(os.path.join(cfg, "settings.json")))
+cache = json.load(open(os.path.join(cfg, ".claude.json"))).get("additionalModelOptionsCache", [])
+rows = {row["value"]: row.get("context_window") for row in cache}
+print("recipe:", {k: env.get(k) for k in ("ANTHROPIC_MODEL", "CLAUDE_CODE_MAX_CONTEXT_TOKENS", "CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_CONFIG_DIR")})
+print("picker:", {"model": settings.get("model"), "availableModels": settings.get("availableModels"),
+                  "enforceAvailableModels": settings.get("enforceAvailableModels"), "rows": rows})
+assert env.get("ANTHROPIC_MODEL") == model, env.get("ANTHROPIC_MODEL")
+assert env.get("CLAUDE_CODE_MAX_CONTEXT_TOKENS") == str(window), env.get("CLAUDE_CODE_MAX_CONTEXT_TOKENS")
+assert env.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW") == str(window), env.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW")
+assert settings.get("model") == model and settings.get("availableModels") == [model], "picker off: %r" % settings.get("availableModels")
+assert settings.get("enforceAvailableModels") is True, "picker is not enforced"
+assert rows == {model: window}, rows
+EOF
+}
+step "head contract: claudex offers gpt-5-codex at 272k" head_contract claudex gpt-5-codex 272000
+step "head contract: mockchat offers mock-chat at 128k" head_contract mockchat mock-chat 128000
+step "head contract: mockchat2 offers mock-chat-2 at 64k" head_contract mockchat2 mock-chat-2 64000
 
 # ── 8. the real wrapper: Claude Code itself, print mode, through the head, to the mock ───────
 wrapper_turn() { # wrapper expected-substring
@@ -331,6 +386,112 @@ sessions_shared() {
 }
 step "cross-head sessions: both heads share ~/.claude/sessions, created on first launch" sessions_shared
 
+# ── 8c. cross-head ListAgents: a session on one head lists a live session held on another ────
+# The thing the announcement claims, run for real. claude-mockchat holds a turn (the mock sleeps
+# on it) from a directory named heldpeer; claude-mockchat2, a different head with a different
+# CLAUDE_CONFIG_DIR, is told to call ListAgents. The mock answers that turn with one ListAgents
+# call, then echoes the tool result back as "PEERS: …", so the caller's printed output IS what
+# ListAgents returned inside the second head. It must name the session held under the first.
+cross_head_listagents() {
+  local registry="$HOME/.claude/sessions" before held_pid held_json out rc
+  mkdir -p "$HOME/heldpeer"
+  before="$(ls "$registry" 2>/dev/null | sort)"
+  ( cd "$HOME/heldpeer" && DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1 \
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+      timeout 120 claude-mockchat -p "SCENARIO:hold Say END." --output-format text </dev/null >"$OUT/held-session.txt" 2>&1 ) &
+  held_pid=$!
+  for _ in $(seq 1 60); do
+    held_json="$(comm -13 <(printf '%s\n' "$before") <(ls "$registry" 2>/dev/null | sort) | head -1)"
+    [ -n "$held_json" ] && break
+    sleep 0.5
+  done
+  if [ -z "$held_json" ]; then
+    echo "the held claude-mockchat session never registered"; cat "$OUT/held-session.txt"
+    pkill -f 'SCENARIO:hold' 2>/dev/null || true; return 1
+  fi
+  echo "held session registered under claude-mockchat: $(cat "$registry/$held_json")"
+  out="$(cd "$HOME" && DISABLE_AUTOUPDATER=1 DISABLE_TELEMETRY=1 DISABLE_ERROR_REPORTING=1 \
+    CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
+    timeout 120 claude-mockchat2 -p "SCENARIO:listagents Call ListAgents and reply with its output." \
+      --allowed-tools ListAgents --output-format text </dev/null 2>&1)"
+  rc=$?
+  pkill -f 'SCENARIO:hold' 2>/dev/null || true; wait "$held_pid" 2>/dev/null || true
+  printf '%s\n' "$out" | tail -c 2000
+  [ $rc -eq 0 ] || { echo "claude-mockchat2 exit $rc"; return 1; }
+  printf '%s' "$out" | grep -qF 'PEERS:' || { echo "the mock never received a ListAgents tool result: the tool was not called"; return 1; }
+  printf '%s' "$out" | grep -q 'heldpeer' || { echo "ListAgents inside claude-mockchat2 does not list the session held under claude-mockchat"; return 1; }
+  echo "ListAgents inside claude-mockchat2 listed the claude-mockchat session held from ~/heldpeer"
+}
+step "cross-head ListAgents: claude-mockchat2 lists a session held on claude-mockchat" cross_head_listagents
+
+# ── 8d. the shipped example topology, on this machine, without a single credential ───────────
+# config/splice.example.toml is what a fresh install starts from. Boot it here: every head it
+# declares must install, list, and hand out a launch recipe whose model and window are the ones
+# the example promises, with its sessions registry linked and its wrapper on PATH. No provider is
+# reachable and no auth exists, which is a fresh machine before the operator's first login: the
+# daemon must still stand. The e2e topology is put back (and its wrappers relinked) afterwards.
+example_heads() { # example.toml
+  for _ in $(seq 1 60); do curl -sf -m 3 "http://127.0.0.1:$CONTROL_PORT/health" >/dev/null 2>&1 && break; sleep 1; done
+  curl -s -m 3 "http://127.0.0.1:$CONTROL_PORT/health"; echo
+  curl_mgmt "http://127.0.0.1:$CONTROL_PORT/api/heads" > "$OUT/example-heads.json" || return 1
+  python3 - "$1" "$OUT/example-heads.json" "$CONTROL_PORT" "$(mgmt)" "$HOME" <<'EOF'
+import json, os, sys, tomllib, urllib.request
+example, heads_file, port, key, home = sys.argv[1:6]
+t = tomllib.load(open(example, "rb"))
+d = json.load(open(heads_file)); heads = d.get("heads", d)
+rows = heads.values() if isinstance(heads, dict) else heads
+listed = sorted(h["key"] for h in rows); declared = sorted(t["heads"])
+print("declared:", declared)
+print("listed:  ", [(h["key"], h.get("running"), h.get("healthy")) for h in rows])
+assert listed == declared, (listed, declared)
+
+def launch(head):
+    req = urllib.request.Request(
+        f"http://127.0.0.1:{port}/launch/{head}", data=b'{"dangerouslySkipPermissions":"","args":[]}',
+        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return json.load(resp)
+
+registry = os.path.realpath(os.path.join(home, ".claude", "sessions"))
+bad = []
+for head, h in t["heads"].items():
+    prov = t["providers"][h["provider"]]
+    windows = {m["id"]: m.get("context_window") for m in prov.get("models", [])}
+    pinned = h["pinned_model"]
+    want = h.get("context_window") or windows.get(pinned) or prov.get("context_window")
+    command = h.get("claude", {}).get("command", head)
+    wrapper = os.access(os.path.join(home, ".local", "bin", command), os.X_OK)
+    try:
+        env = launch(head).get("env", {})
+    except Exception as e:  # noqa: BLE001 — the receipt wants the reason, whatever it is
+        print(f"{head:14} {command:18} launch FAILED: {e}"); bad.append(head); continue
+    sessions = os.path.join(env.get("CLAUDE_CONFIG_DIR", ""), "sessions")
+    linked = os.path.islink(sessions) and os.path.realpath(sessions) == registry
+    ok = (env.get("ANTHROPIC_MODEL") == pinned and env.get("CLAUDE_CODE_MAX_CONTEXT_TOKENS") == str(want)
+          and linked and wrapper)
+    print(f"{head:14} {command:18} model={env.get('ANTHROPIC_MODEL')} window={env.get('CLAUDE_CODE_MAX_CONTEXT_TOKENS')}"
+          f" example={pinned}@{want} sessions_link={linked} wrapper={wrapper} {'OK' if ok else 'MISMATCH'}")
+    if not ok:
+        bad.append(head)
+assert not bad, f"heads off the example contract: {bad}"
+EOF
+}
+example_topology() {
+  local example="$REPO/config/splice.example.toml" live="$HOME/.config/splice/splice.toml" rc=0
+  cp "$live" "$OUT/e2e-topology.toml"
+  cp "$example" "$live"
+  # install --all links every wrapper the topology declares; the running daemon still serves the
+  # old topology (/health says topologyStale) until `splice restart`, exactly as on a real machine.
+  splice install --all </dev/null || { echo "install --all failed on the example topology"; rc=1; }
+  [ $rc -eq 0 ] && { splice restart </dev/null || { echo "restart failed on the example topology"; rc=1; }; }
+  [ $rc -eq 0 ] && { example_heads "$example" || rc=1; }
+  # Back to the e2e topology the same way (never `uninstall` here: it removes the splice command).
+  cp "$OUT/e2e-topology.toml" "$live"
+  splice install --all </dev/null >/dev/null || { echo "could not reinstall the e2e topology"; return 1; }
+  return $rc
+}
+step "shipped example topology: every head installs, boots and launches to the example's model and window" example_topology
+
 # ── 9. restart, logs, status, uninstall ────────────────────────────────────────────────────────
 restart_step() {
   splice restart </dev/null || return 1
@@ -350,10 +511,10 @@ status_step() {
   out="$(splice status </dev/null 2>&1 | strip_ansi)" || { printf '%s\n' "$out"; return 1; }
   printf '%s\n' "$out"
   printf '%s\n' "$out" | grep -qE '^\s*daemon\s+running' || { echo "status does not report the daemon running"; return 1; }
-  printf '%s\n' "$out" | grep -q 'claudex' && printf '%s\n' "$out" | grep -q 'claude-mockchat' || { echo "status lacks a head row"; return 1; }
+  printf '%s\n' "$out" | grep -q 'claudex' && printf '%s\n' "$out" | grep -q 'claude-mockchat2' || { echo "status lacks a head row"; return 1; }
 }
 step "splice logs --tail 5: non-empty tail" logs_step
-step "splice status: daemon running, both heads listed" status_step
+step "splice status: daemon running, every head listed" status_step
 
 uninstall_step() {
   local out rc
@@ -362,5 +523,6 @@ uninstall_step() {
   [ $rc -eq 0 ] || { echo "uninstall exit $rc"; return 1; }
   [ ! -e "$HOME/.local/bin/claudex" ] || { echo "claudex link survived uninstall"; return 1; }
   [ ! -e "$HOME/.local/bin/claude-mockchat" ] || { echo "claude-mockchat link survived uninstall"; return 1; }
+  [ ! -e "$HOME/.local/bin/claude-mockchat2" ] || { echo "claude-mockchat2 link survived uninstall"; return 1; }
 }
 step "splice uninstall removes the wrappers" uninstall_step

@@ -34,9 +34,19 @@ done
 command -v docker >/dev/null || { echo "run.sh: docker is required" >&2; exit 2; }
 
 ART="$(mktemp -d "${TMPDIR:-/tmp}/splice-e2e-artifacts.XXXXXX")"
+RUN_OUT=""
 OUT="$ROOT/checks/e2e/receipts"
 mkdir -p "$OUT"
-cleanup() { [ "$KEEP" = 1 ] && echo "artifacts kept at $ART" || rm -rf "$ART"; }
+# One trap covers BOTH temp dirs on every exit path (review of #116: RUN_OUT used to be removed by
+# a plain rm behind three failure-capable copies, so a failed archive leaked a 0777 tree in TMPDIR).
+cleanup() {
+  if [ "$KEEP" = 1 ]; then
+    echo "artifacts kept at $ART${RUN_OUT:+, run output at $RUN_OUT}"
+  else
+    rm -rf "$ART"
+    [ -z "$RUN_OUT" ] || rm -rf "$RUN_OUT" 2>/dev/null || true
+  fi
+}
 trap cleanup EXIT
 
 if [ -n "$RELEASE" ]; then
@@ -61,9 +71,17 @@ chmod 0755 "$ART"; chmod 0644 "$ART"/*
 echo "run.sh: artifacts: $(sha256sum "$ART/splice.jar" | cut -c1-16)… splice.jar, $(sha256sum "$ART/splice-launch" | cut -c1-16)… splice-launch"
 
 if [ "$BUILD" = 1 ] || ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-  CC_VERSION="$(printf '%s' "${SPLICE_E2E_CLAUDE_VERSION:-$(claude --version 2>/dev/null)}" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
-  echo "run.sh: building $IMAGE (Claude Code ${CC_VERSION:-latest})"
-  docker build -q --build-arg "CLAUDE_CODE_VERSION=${CC_VERSION:-latest}" --build-arg "UID=$(id -u)" \
+  # The unprivileged tester account takes the host uid so the bind mounts read/write on both
+  # sides; uid 0 cannot be that account (useradd exits 4 on a taken uid, and -o would make the
+  # "unprivileged" user root). Refuse early with the reason instead of a bare useradd failure.
+  HOST_UID="$(id -u)"
+  [ "$HOST_UID" != 0 ] || { echo "run.sh: run as a non-root user (the image's tester account needs a non-zero uid)" >&2; exit 2; }
+  # grep exits 1 on no match and pipefail would abort the script here; an empty version is a
+  # legitimate outcome (no claude on PATH, nothing exported) that falls back to the Dockerfile pin.
+  CC_VERSION="$(printf '%s' "${SPLICE_E2E_CLAUDE_VERSION:-$(claude --version 2>/dev/null || true)}" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1 || true)"
+  [ -n "$CC_VERSION" ] || echo "run.sh: no Claude Code version discovered on this host; building with the Dockerfile's pinned default" >&2
+  echo "run.sh: building $IMAGE (Claude Code ${CC_VERSION:-<Dockerfile default>})"
+  docker build -q ${CC_VERSION:+--build-arg "CLAUDE_CODE_VERSION=$CC_VERSION"} --build-arg "UID=$HOST_UID" \
     -t "$IMAGE" "$ROOT/checks/e2e/docker" >/dev/null
 fi
 
@@ -82,5 +100,4 @@ if [ -f "$RUN_OUT/receipt.json" ]; then
   mkdir -p "$OUT/docker-$STAMP" && cp -r "$RUN_OUT"/. "$OUT/docker-$STAMP/"
   echo "run.sh: receipt $OUT/docker-$STAMP.json (steps + daemon.log in $OUT/docker-$STAMP/)"
 fi
-rm -rf "$RUN_OUT" 2>/dev/null || true
 exit "$RC"

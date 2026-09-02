@@ -188,7 +188,14 @@ install_step() {
   [ -f "$ARTIFACTS/splice.jar" ] || { echo "no $ARTIFACTS/splice.jar"; return 1; }
   [ -f "$ARTIFACTS/splice-launch" ] || { echo "no $ARTIFACTS/splice-launch"; return 1; }
   if [ -f "$ARTIFACTS/sha256sums.txt" ]; then
-    (cd "$ARTIFACTS" && sha256sum -c sha256sums.txt --ignore-missing) || return 1
+    # --ignore-missing lets a manifest that omits an artifact pass in silence (reproduced in the
+    # review of #116), so the two names this step claims to verify are asserted by name.
+    local sums f
+    sums="$(cd "$ARTIFACTS" && sha256sum -c sha256sums.txt --ignore-missing 2>&1)" || { printf '%s\n' "$sums"; return 1; }
+    printf '%s\n' "$sums"
+    for f in splice.jar splice-launch; do
+      printf '%s\n' "$sums" | grep -qx "$f: OK" || { echo "$f is not covered by sha256sums.txt"; return 1; }
+    done
   else
     echo "no sha256sums.txt beside the artifacts (checkout build) — checksum step skipped"
   fi
@@ -304,8 +311,23 @@ restart_step() {
   wait_health 60
 }
 step "splice restart: healthy again" restart_step
-step "splice logs --tail 5" bash -c 'splice logs --tail 5 </dev/null'
-step "splice status" bash -c 'splice status </dev/null'
+# Exit status alone is not a verdict for reporting commands (a status that reports a dead daemon
+# still exits 0): assert the content the step name promises.
+logs_step() {
+  local out
+  out="$(splice logs --tail 5 </dev/null 2>&1)" || { printf '%s\n' "$out"; return 1; }
+  printf '%s\n' "$out"
+  [ "$(printf '%s\n' "$out" | grep -c .)" -ge 1 ] || { echo "empty log tail"; return 1; }
+}
+status_step() {
+  local out
+  out="$(splice status </dev/null 2>&1 | strip_ansi)" || { printf '%s\n' "$out"; return 1; }
+  printf '%s\n' "$out"
+  printf '%s\n' "$out" | grep -qE '^\s*daemon\s+running' || { echo "status does not report the daemon running"; return 1; }
+  printf '%s\n' "$out" | grep -q 'claudex' && printf '%s\n' "$out" | grep -q 'claude-mockchat' || { echo "status lacks a head row"; return 1; }
+}
+step "splice logs --tail 5: non-empty tail" logs_step
+step "splice status: daemon running, both heads listed" status_step
 
 uninstall_step() {
   local out rc

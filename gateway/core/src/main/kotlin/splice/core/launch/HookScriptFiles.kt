@@ -1,4 +1,4 @@
-// NEW (split out of LoginInterception.kt 2026-09-02): the filesystem mechanics every generated
+// NEW: split out of LoginInterception.kt (2026-09-02) — the filesystem mechanics every generated
 // hook shares — prove the config dir can execute an owner-only script, stage-and-swap a script
 // into place with its mode proven, and the settings.json entry that registers it. The login and
 // key-capture policy (which legs fail closed, which degrade loudly) stays in LoginInterception.

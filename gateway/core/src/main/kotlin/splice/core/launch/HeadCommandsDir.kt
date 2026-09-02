@@ -1,4 +1,4 @@
-// NEW (split out of LoginInterception.kt 2026-09-02): the head's REAL commands dir — the
+// NEW: split out of LoginInterception.kt (2026-09-02) — the head's REAL commands dir — the
 // operator's shared ~/.claude/commands re-linked entry by entry, and the /login command file that
 // is the reason the dir must be real rather than a whole-dir symlink. Stage-and-swap throughout:
 // a working commands dir is never observable missing or torn (DR-39, DR-180).

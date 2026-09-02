@@ -51,6 +51,14 @@
   our tighter number ended 129 compactions in one day, each already mid-output and each costing a
   full transcript re-read. The default is now 300s, equal to `firstByteTimeoutMs`, so one number
   judges a stream before and after its first frame. Heads that want a tighter stall still set it.
+- **The socket gets five attempts before the turn falls back, matching the reference client.**
+  A retryable mid-stream failure re-anchored at most twice before the turn dropped to the SSE
+  transport. SSE is a fallback, not a co-equal second path: reaching it discards the socket's
+  cache key and re-uploads the whole body, which on today's traffic means a median 618KB and a
+  p99 of 5.2MB sent twice. codex-rs retries a retryable stream five times
+  (`DEFAULT_STREAM_MAX_RETRIES`) before it switches transport, and this controller exists to be
+  the proxy-side answer to that loop, so the budget is now five. Turn recovery and its cooldown
+  backoff are unchanged; only the number of times they may run has widened.
 - Provider-native readable reasoning remains visible as thinking blocks, while
   `mirror_reasoning` is locked off after every configuration layer. TOML, state, environment, runtime
   PATCH, and direct construction cannot enable synthetic transcript reinjection.

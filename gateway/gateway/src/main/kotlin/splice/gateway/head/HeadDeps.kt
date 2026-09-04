@@ -13,6 +13,7 @@ import splice.core.util.MonoClock
 import splice.gateway.compact.CompactStats
 import splice.gateway.compact.ShadowClassifier
 import splice.gateway.perf.PerfStats
+import splice.gateway.usage.QuotaTracker
 import splice.gateway.usage.UsageStore
 import splice.spi.InflightGate
 import splice.spi.ProcessTicker
@@ -37,6 +38,10 @@ public data class HeadDeps(
     val compactStats: CompactStats,
     val usageStore: UsageStore,
     val perfStats: PerfStats,
+    /** The head's quota windows: fed by upstream rounds and the app-side poller, stamped onto
+     *  every client response as the unified rate-limit headers Claude Code draws its bars from.
+     *  Null = a head that neither observes nor emits them (tests, and nothing else). */
+    val quota: QuotaTracker? = null,
     val log: LogSink,
     val clock: ElapsedClock = ElapsedClock(MonoClock::nowMs),
     /** HD-19: the head's two runtime seams, defaulted to the exact behaviour they replaced.

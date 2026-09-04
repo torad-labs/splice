@@ -84,6 +84,8 @@ public class Daemon(
         controlPlane.providerAssembly,
         headServerFactory,
         launchSpecFactory,
+        controlPlane.probeScope,
+        log,
     )
 
     // set once in start(); the daemon is not usable before it

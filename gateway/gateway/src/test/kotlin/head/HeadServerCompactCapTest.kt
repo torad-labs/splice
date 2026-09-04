@@ -8,10 +8,12 @@
 // wall is far away (30s) because the turn spans two upstream attempts (the WS round, then the SSE
 // re-serve) and sharing the compact arm's 4s wall let a slow CI runner reach the wall first (coverage
 // run 33549293551 failed this arm at the first-output assertion; locally it took 3.7s). A COMPACT
-// turn's first-output cap IS the total cap, so the only thing that can end it is its 4s whole-turn
+// turn has no first-output tier at all, so the only thing that can end it is its 4s whole-turn
 // wall — which surfaces as the cancellation seal's generic watchdog wording. Live provenance
 // (2026-09-01 14:07): the first compaction on the corrected tier died at "no first output within
-// the 300s first-output cap".
+// the 300s first-output cap". When the tier was merely RAISED to the wall, gate run 33575037270
+// failed this arm on a loaded runner: two pollers on one deadline, and the idle poller won the
+// tick and named the wrong cap (the coin flip WatchdogBudget.forCompact's KDoc describes).
 package head
 
 import io.ktor.client.HttpClient

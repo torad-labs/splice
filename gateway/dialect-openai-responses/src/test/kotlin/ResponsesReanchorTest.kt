@@ -44,6 +44,24 @@ private val controller = ResponsesReanchorController(
 
 class ResponsesReanchorControllerTest {
 
+    // SSE is a FALLBACK, and reaching it costs the socket's cache key plus a full re-upload, so
+    // the socket gets the reference client's number of attempts before we abandon it: codex-rs
+    // retries a retryable stream 5 times (DEFAULT_STREAM_MAX_RETRIES) before switching transport.
+    // Pinned so the budget cannot quietly drift back down to a freehand value.
+    @Test
+    fun `the socket gets five attempts before the fallback, matching the reference client`() {
+        repeat(5) { attempt ->
+            assertNotNull(
+                controller.continuationForFailure(ReanchorRound(previousBody(), failureWith(), attempt)),
+                "attempt $attempt must still be retried on the socket, not dropped to the fallback",
+            )
+        }
+        assertNull(
+            controller.continuationForFailure(ReanchorRound(previousBody(), failureWith(), attempt = 5)),
+            "the budget is exhausted after five, and the turn stops re-anchoring",
+        )
+    }
+
     @Test
     fun `overloaded mid-text failure yields replay + partial prose + resume marker`() {
         val partial = TurnOutcome.PartialRound(
@@ -100,9 +118,9 @@ class ResponsesReanchorControllerTest {
     }
 
     @Test
-    fun `the continuation budget caps at two`() {
-        assertNotNull(controller.continuationForFailure(ReanchorRound(previousBody(), failureWith(), 1)))
-        assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), failureWith(), 2)))
+    fun `the continuation budget caps at the reference client's five`() {
+        assertNotNull(controller.continuationForFailure(ReanchorRound(previousBody(), failureWith(), 4)))
+        assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), failureWith(), 5)))
     }
 
     @Test
@@ -147,8 +165,8 @@ class ResponsesReanchorControllerTest {
     @Test
     fun `clean-slate restart respects the continuation budget`() {
         val empty = failureWith(partial = TurnOutcome.PartialRound())
-        assertNotNull(controller.continuationForFailure(ReanchorRound(previousBody(), empty, 1)))
-        assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), empty, 2)))
+        assertNotNull(controller.continuationForFailure(ReanchorRound(previousBody(), empty, 4)))
+        assertNull(controller.continuationForFailure(ReanchorRound(previousBody(), empty, 5)))
     }
 
     @Test
@@ -168,6 +186,20 @@ class ResponsesReanchorControllerTest {
                 ReanchorRound(previousBody(), failureWith(partial = null), 0),
             ),
         )
+    }
+
+    // 2026-09-02: a compaction's partial is usage-only (ResponsesOutcomePayload keeps the buffered
+    // text out of it — nothing reached the client), so the only continuation it can ever take is
+    // the verbatim whole-request restart: no marker, no replayed prose. This is the codex-rs
+    // RemoteCompactionV2 retry (responses_retry.rs), which until now compaction alone did not get.
+    @Test
+    fun `a torn compaction restarts verbatim - its usage-only partial has nothing to replay`() {
+        val usageOnly = TurnOutcome.PartialRound(usage = splice.core.turn.Usage(inputTokens = 180_000))
+        val body = previousBody()
+        val next = controller.continuationForFailure(
+            ReanchorRound(body, failureWith(partial = usageOnly), attempt = 0),
+        )
+        assertEquals(body, next, "the whole request again, byte for byte — never a marker continuation")
     }
 }
 

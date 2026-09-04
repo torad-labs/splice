@@ -6,6 +6,7 @@ package splice.control
 
 import splice.core.auth.AuthProvider
 import splice.core.head.Head
+import splice.core.model.ModelCatalog
 
 /** Reads the head's persisted usage/ratelimit (file truth). */
 public fun interface HeadUsageSource {
@@ -14,7 +15,17 @@ public fun interface HeadUsageSource {
 }
 
 public data class RateLimitView(val limitTokens: Long?, val remainingTokens: Long?, val resetTokens: String?)
-public data class UsageView(val outputTokens5h: Long, val entries: Int, val ratelimit: RateLimitView?)
+public data class UsageView(
+    val outputTokens5h: Long,
+    val entries: Int,
+    val ratelimit: RateLimitView?,
+    /** The provider's own plan windows, when the head has any (see QuotaTracker). */
+    val quota: QuotaView? = null,
+)
+
+public data class QuotaWindowView(val usedPct: Int, val resetsAt: Long?)
+
+public data class QuotaView(val fiveHour: QuotaWindowView?, val sevenDay: QuotaWindowView?, val plan: String?)
 
 /** Reads the head's compaction stats (file truth). */
 public interface HeadCompactSource {
@@ -50,6 +61,11 @@ public data class ManagedHead(
      *  pickup, and a boot-frozen gate left the paste-your-key capture hook armed against a
      *  working credential). Default true = capture/advertiser stay disarmed, the safe side. */
     val keyPresence: KeyPresenceProbe = KeyPresenceProbe { true },
+    /** This head's model catalog, for the statusline: Claude Code reports every non-"[1m]" row
+     *  against the PINNED row's window and splice scales the counts it sends back, so the blob
+     *  Claude Code pipes to /statusline carries client units on a scaled row. The catalog is what
+     *  turns them back into the row's declared window and its label. Null = render the blob as is. */
+    val catalog: ModelCatalog? = null,
 )
 
 /** The launch-time key-presence read [ManagedHead.keyPresence] carries (role-named ctor seam). */

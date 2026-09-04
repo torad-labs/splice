@@ -34,7 +34,14 @@ internal class TurnOneDrive(
                 // OFF for the non-stream collect path: there is no open SSE channel to ping (the
                 // whole body is buffered and sent once), so liveness can't be probed mid-turn.
                 val pinger = if (pingClient) {
-                    drive.channel.launchClientPinger(self, turnJob, deps.ticker, provider.key, deps.log)
+                    drive.channel.launchClientPinger(
+                        self,
+                        turnJob,
+                        deps.ticker,
+                        provider.key,
+                        deps.log,
+                        drive.sessionTag(),
+                    )
                 } else {
                     null
                 }

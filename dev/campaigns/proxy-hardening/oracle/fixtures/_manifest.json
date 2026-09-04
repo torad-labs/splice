@@ -3,7 +3,8 @@
   "source_test": "server/test/codex-proxy.test.mjs",
   "mock_region_sha256": "91da8226d95fa2c09ec60620aa231d221cb9e4cacb52dc7bd9d1c92d5bccd396",
   "canonicalization": [
-    "message-id: msg_<digits>[_<sequence>] -> msg_CANON"
+    "message-id: msg_<digits>[_<sequence>] -> msg_CANON",
+    "sse-keepalive-comment: a line that is exactly ': ping' followed by a blank line -> removed (gateway wall-clock keepalive, SSE comment, never emitted by the reference; added 2026-09-03)"
   ],
   "node_suite_state_at_capture": "104/104 pass (node --test)",
   "excluded": {

@@ -2,12 +2,15 @@
 // per-head usage/warn projection, split out as the sole importer of splice.core.usage in the file.
 package splice.control.api
 
+import kotlinx.serialization.json.JsonObjectBuilder
 import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import kotlinx.serialization.json.putJsonObject
 import splice.control.ManagedHead
+import splice.control.QuotaView
+import splice.control.QuotaWindowView
 import splice.core.config.ConfigService
 import splice.core.usage.RateLimitState
 import splice.core.usage.UsageWarnPolicy
@@ -41,6 +44,7 @@ internal class UsagePayloads(
                         putJsonObject("usage") {
                             put("output_tokens_5h", usage.outputTokens5h)
                             put("entries", usage.entries)
+                            usage.quota?.let { q -> quota(this, q) }
                             if (rlView != null) {
                                 putJsonObject("ratelimit") {
                                     put("limit_tokens", rlView.limitTokens)
@@ -61,5 +65,21 @@ internal class UsagePayloads(
                 }
             }
         }.toString()
+    }
+
+    /** The head's tracked plan windows (see QuotaTracker): `{plan, five_hour, seven_day}`. */
+    private fun quota(into: JsonObjectBuilder, q: QuotaView) {
+        into.putJsonObject("quota") {
+            q.plan?.let { put("plan", it) }
+            q.fiveHour?.let { w -> window(this, "five_hour", w) }
+            q.sevenDay?.let { w -> window(this, "seven_day", w) }
+        }
+    }
+
+    private fun window(into: JsonObjectBuilder, name: String, w: QuotaWindowView) {
+        into.putJsonObject(name) {
+            put("used_pct", w.usedPct)
+            put("resets_at", w.resetsAt)
+        }
     }
 }

@@ -19,9 +19,12 @@ internal class WsConnectionPool(
     private val logKeys: WsLogKeys,
     connector: WsConnector,
 ) {
-    private val factory = WsConnectionFactory(connector, log, logKeys)
     private val connections = LinkedHashMap<String, WsConnection>()
     private val lock = Any()
+
+    // Declared AFTER the registry it reads: the OpenSockets seam is only ever invoked from a
+    // listener callback, long after construction, but property order keeps the dependency honest.
+    private val factory = WsConnectionFactory(connector, log, logKeys, OpenSockets { openCount() })
 
     /** Get-or-connect, and win the busy flag — or null (SSE round). */
     internal suspend fun acquire(key: String, headers: Map<String, String>, wssUrl: String): WsConnection? {
@@ -40,6 +43,7 @@ internal class WsConnectionPool(
         conn.terminalSeen.set(false)
         // A new ROUND holds it now, so any abort still armed by the previous one is stale.
         conn.lease.incrementAndGet()
+        conn.pulse.roundStarted()
         return conn.takeIf { !it.dead.get() }
     }
 
@@ -78,6 +82,7 @@ internal class WsConnectionPool(
     /** Return the connection to the pool: clear its busy flag and touch it MRU. The seam round-side
      *  code (WsRoundStream) uses instead of reaching into [connections] / [lock] directly. */
     internal fun release(key: String, conn: WsConnection) {
+        conn.pulse.roundEnded()
         conn.busy.set(false)
         val evicted = synchronized(lock) { // touch: completed rounds move their connection to MRU
             // Identity-guarded like failRound below: by the time a round ends, the key may hold a
@@ -101,6 +106,8 @@ internal class WsConnectionPool(
         }?.key
         return idleKey?.let { connections.remove(it) }
     }
+
+    private fun openCount(): Int = synchronized(lock) { connections.size }
 
     internal fun failRound(conn: WsConnection, key: String) {
         conn.kill()

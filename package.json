@@ -1,7 +1,7 @@
 {
   "name": "splice",
   "private": true,
-  "version": "0.3.0-beta.1",
+  "version": "0.3.0",
   "engines": {
     "node": ">=24"
   },
@@ -21,6 +21,7 @@
     "e2e:heads": "bash checks/e2e/heads-e2e.sh",
     "e2e:heads:wire": "bash checks/e2e/heads-e2e.sh --tier 1",
     "e2e:heads:selftest": "bash checks/e2e/heads-e2e-selftest.sh",
+    "e2e:docker": "bash checks/e2e/docker/run.sh",
     "oracle:capture": "node dev/campaigns/proxy-hardening/oracle/capture.mjs",
     "oracle:check": "node dev/campaigns/proxy-hardening/oracle/capture.mjs --check",
     "oracle:replay": "node dev/campaigns/proxy-hardening/oracle/replay.mjs",
@@ -28,7 +29,7 @@
     "promote": "bash checks/promote.sh"
   },
   "devDependencies": {
-    "@ast-grep/cli": "0.45.1"
+    "@ast-grep/cli": "0.45.2"
   },
   "overrides": {
     "handlebars": "4.7.9"

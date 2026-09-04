@@ -66,3 +66,14 @@ public fun interface TerminalSeen {
 public fun interface ProtocolAnomaly {
     public operator fun invoke()
 }
+
+/**
+ * How many sockets the registry holds right now — read by a dying socket's pulse so the close
+ * line can say whether it died alone or as one of forty.
+ *
+ * A seam because the listener that logs the close is built BEFORE the socket is registered and
+ * must never hold the registry itself; the pool answers, under its own lock.
+ */
+public fun interface OpenSockets {
+    public operator fun invoke(): Int
+}

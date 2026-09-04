@@ -11,6 +11,7 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.netty.NettyApplicationCall
+import io.ktor.server.response.header
 import io.ktor.server.response.respondText
 import io.ktor.server.routing.RoutingCall
 import io.ktor.server.routing.RoutingPipelineCall
@@ -23,6 +24,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
 import splice.core.perf.TurnPerf
+import splice.gateway.usage.QuotaTracker
 import splice.gateway.wire.ClientChannel
 import splice.gateway.wire.CollectingTerminal
 import splice.gateway.wire.ImmediateSseWriter
@@ -37,6 +39,7 @@ internal class CollectTurn(
     private val provider: Provider,
     private val driveFactory: TurnDriveFactory,
     private val driver: TurnDriver,
+    private val quota: QuotaTracker?,
 ) {
     private val wiring = TurnWiring()
 
@@ -78,6 +81,8 @@ internal class CollectTurn(
             }
             try {
                 driver.driveSealingCancellation(drive, pingClient = false, seal = false)
+                // Same unified rate-limit headers as the streaming path (TurnStreamer).
+                quota?.clientHeaders()?.forEach { (name, value) -> call.response.header(name, value) }
                 call.respondText(
                     terminal.responseBody().toString(),
                     ContentType.Application.Json,

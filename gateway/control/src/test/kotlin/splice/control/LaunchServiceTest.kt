@@ -37,7 +37,18 @@ class LaunchServiceTest {
         policy = ClaudePolicy(share = emptySet(), isolate = emptySet()),
         port = 3099,
         inferenceToken = "test-inference-token",
+        apiTimeoutMs = 960_000,
     )
+
+    // 2026-09-01: every claudex compaction ran 500-580s against Claude Code's 600s default request
+    // timeout while the daemon's whole-turn cap was 900s — the two over ten minutes died as
+    // client_abort with the summary still streaming. The recipe plants API_TIMEOUT_MS from the
+    // head's own budget so the client outlives the proxy's wall and receives its honest verdict.
+    @Test
+    fun `API_TIMEOUT_MS is planted from the head's whole-turn budget`() {
+        val env = service.launch(spec("codex"), emptyList(), dangerouslySkipPermissions = false).env
+        assertEquals("960000", env["API_TIMEOUT_MS"])
+    }
 
     // DR-81 (assembly sweep): the spec is assembled once at boot, but `splice key set` promises
     // live pickup — the capture hook and advertiser used to be frozen at the boot-time key check,

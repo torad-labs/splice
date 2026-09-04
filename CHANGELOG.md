@@ -1,15 +1,148 @@
 # Changelog
 
+## splice v0.3.0 — plan usage on every head, and a proxy that matches its reference client - 2026-09-03
+
+### Added
+
+- **Every head shows its plan usage the way the native Claude head does.** The daemon tracks each
+  head's 5-hour and 7-day windows (ChatGPT's usage endpoint and its `x-codex-*` round headers,
+  Kimi's usage endpoint, SuperGrok's billing period, Anthropic's own unified headers on the
+  passthrough head), stamps them onto every response as the `anthropic-ratelimit-unified-*`
+  headers Claude Code reads into its `rate_limits`, and draws them on the status line as the 5h
+  and 7d bars with the reset time once a bar is worth acting on, beside effort and session spend.
+
+- **The plan-usage poll is stated plainly, and it has an off switch.** To draw those bars before
+  the first turn, a subscription head asks its own provider every five minutes for the daemon's
+  life, with that head's own bearer: `claudex` reads `chatgpt.com/backend-api/wham/usage`,
+  `claude-kimi` reads `<kimi base>/v1/usages`, and `claude-grok` reads
+  `cli-chat-proxy.grok.com/v1/billing`. API-key and client-auth heads poll nothing. This is new
+  outbound traffic since the beta, so it is named here rather than left implicit;
+  `CLAUDEX_QUOTA_POLL=off` stops every poller (daemon restart), and the bars then draw only from
+  the rate-limit headers each round already carries.
+
+### Changed
+
+- **The shipped example config now matches the daily-driven one.** `claudex` ships with the
+  Responses WebSocket transport, zstd request bodies and the deferred tool surface (LSP deferred)
+  on, plus the inflight ceiling that account has sustained; `claude-kimi` offers Kimi K3 at 256k and
+  Kimi K2.7 Code beside the 1M row; `claude-openrouter` offers GLM 5.3 beside Llama 4 Maverick.
+- **Every perf row and every client-abort line names the client session.** The daemon now stamps
+  the Claude Code session id on every dialect's turn (only the Responses dialect kept it before),
+  writes its short tag into the perf JSONL and the perf log line, and the "client gone" line names
+  the session and the failure class instead of `keepalive write failed: null`. A client abort in
+  the log is now one grep away from the session that hung up and the transcript that says why.
+
+- **A WebSocket end of stream reports what was observed instead of naming a culprit.** The
+  transport logged "socket closed by the server (status=1006)" twelve times a day without saying
+  which socket. Status 1006 is reserved by the WebSocket RFC and can never be sent by a peer. Our
+  own client synthesises it whenever the stream ends with no close frame, so the origin, a load
+  balancer and the network are indistinguishable from here, and the old wording asserted an actor
+  the client cannot see. The line now says the stream ended with the actor unknown, and carries the
+  socket, its age, whether a round was in flight, the last frame, the last peer ping and the open
+  socket count. A real close frame still names the peer, its code and its reason. Read that way,
+  six of one day's twelve were sockets left idle in our own pool for three to twenty-five minutes,
+  and eleven of the twelve ended no round at all.
+
+- **Every daemon log line now carries its own date, at a fixed width.** `daemon.log` rotates by
+  size and never by day, so a single file spans as many days as 64MB buys — 265,321 lines over four
+  of them in the 2026-09-02 audit — while each line was stamped with a bare wall clock. A line read
+  on its own could not say which day it belonged to, and a reader attributed a full day of watchdog
+  stalls to the build running the next morning; they were the previous day's, on code already
+  replaced. The same audit found the stamp was not even fixed-width: `LocalTime.toString()` drops
+  the seconds field when it is zero, which had stamped 4,339 live lines `[13:47]` and quietly broke
+  column-oriented reads. Lines now read `[2026-09-02 13:47:00]`.
+
+- **A watchdog-ended turn says which tier fired, the limit it held, and the silence it measured.**
+  The stall message printed the configured idle cap whatever tier had actually tripped, so a
+  compaction killed at its first-output tier read as a mid-output stall and the log could not break
+  the tie. The turn line now carries the fired sentinel's own three numbers
+  (`watchdog=idle(tier=… limit=… idle=…)`); a turn the watchdog did not end prints byte-identically
+  to before.
+
+- **The mid-stream stall detector now matches the reference client instead of guessing tighter.**
+  `streamIdleMs` judged a stream that had already begun flowing and aborted it after 180s of
+  silence. codex-rs sets its only stream timer to 300s and applies it to the receive side alone
+  (`DEFAULT_STREAM_IDLE_TIMEOUT_MS`, model-provider-info/src/lib.rs:26). Against the same backend
+  our tighter number ended 129 compactions in one day, each already mid-output and each costing a
+  full transcript re-read. The default is now 300s, equal to `firstByteTimeoutMs`, so one number
+  judges a stream before and after its first frame. Heads that want a tighter stall still set it.
+
+- **The socket gets five attempts before the turn falls back, matching the reference client.**
+  A retryable mid-stream failure re-anchored at most twice before the turn dropped to the SSE
+  transport. SSE is a fallback, not a co-equal second path: reaching it discards the socket's
+  cache key and re-uploads the whole body, which on today's traffic means a median 618KB and a
+  p99 of 5.2MB sent twice. codex-rs retries a retryable stream five times
+  (`DEFAULT_STREAM_MAX_RETRIES`) before it switches transport, and this controller exists to be
+  the proxy-side answer to that loop, so the budget is now five. Turn recovery and its cooldown
+  backoff are unchanged; only the number of times they may run has widened.
+
+### Fixed
+
+- **Compactions no longer die on the ChatGPT backend's capacity signal.** An in-stream
+  `server_is_overloaded` (or `slow_down`) used to classify as a non-retryable `api_error`, so the
+  proxy neither reissued nor salvaged the turn and Claude Code reported the compaction failed. Any
+  overload-shaped error code on an in-stream or server-side (5xx) failure is now a transient
+  `overloaded_error`, the type Claude Code retries with backoff, matching codex's own handling of
+  the same two codes; a 4xx keeps its deterministic verdict whatever its code spells.
+- **Claude Code now waits out the proxy's own whole-turn wall.** Every wrapper plants
+  `API_TIMEOUT_MS` from the head's `upstreamTimeoutMs` plus a minute of grace (960 s on the
+  default 900 s cap). With Claude Code's 600 s default, every compaction longer than ten minutes
+  ended as a client abort while the daemon was still streaming the summary.
+- **A silent compaction is ended by the whole-turn wall alone.** The compact budget used to raise
+  the first-output tier to the wall instead of switching it off, leaving two pollers on one
+  deadline; on a loaded runner the idle poller could win the tick and end a round as "first-output
+  cap" (salvage invited) where the wall should have ended the turn. The tier is now off for
+  compactions; `streamIdle` still reaps a stall once output has begun.
+- **A torn perf row no longer swallows the row after it.** When the disk filled mid-append
+  (2026-08-25) a short write left a fragment with no newline and the next row fused onto it, so
+  readers lost both. The JSONL sink now heals a torn tail before appending.
+- **The status line follows the picked model row.** Claude Code fixes its context window per
+  process and splice scales the counts it reports so any other row compacts at its own window,
+  which left the bar showing the session's window and scaled counts however the operator switched
+  (`grok-4.6[500k]` on a 256k grok head still read `…/256k`). The daemon's status line now renders
+  the picked row's label, its declared window and the real counts.
+
+- **`splice restart` no longer loses the new daemon to the old one's last second.** The restart
+  spawns the new daemon the moment the old one's ports are free, but the old process releases the
+  daemon lock only after its engines' stop grace and log drain, up to a second later on a loaded
+  box. The new daemon tried the lock once, conceded to "the winner" that was already leaving, and
+  exited, so the restart reported "did not come up" with nothing serving. The loser now waits out
+  the old daemon's whole teardown floor and yields only to a peer that answers `/health`.
+
+- **A torn compaction restarts inside the proxy instead of failing the turn.** Every other round
+  already re-anchored on a stream that ended without `response.completed` or on a transient server
+  error; compaction alone was excluded on the belief that the pre-stream retry covered it, and the
+  daemon log shows it did not (five compactions and three `server_is_overloaded` events surfaced
+  as `overloaded_error`, each re-sent cold by Claude Code). A compaction's partial is usage-only,
+  so its restart is the verbatim whole request with backoff, the same retry Codex CLI performs for
+  its remote compaction. Deterministic verdicts (`cyber_policy`, refusals, the content filter) are
+  still never re-POSTed.
+
+- **A large WebSocket frame is no longer killed for being large.** The send budget was a flat 10s,
+  sized when the biggest frame on the wire was 1.5 MB; frames now reach 7.7 MB, and every "send
+  failed stalled" of a morning (13) landed while a 5–6.5 MB frame was in flight — a healthy socket
+  poisoned and the same megabytes re-sent over SSE. The budget is now the floor plus the frame's own
+  transfer time at 100 KB/s, and the stall line names both the budget and the frame size.
+
 ## splice v0.3.0-beta.1 — native Claude auth and a hardened multi-head gateway - 2026-08-30
 
 ### Added
 
+- **Heads that see each other.** Every wrapper's `sessions` directory is linked at the one registry
+  under `~/.claude/sessions` on first launch (created if plain `claude` never ran on the machine), so
+  claudex, claude-grok, claude-kimi, claude-openrouter, claude-splice and plain `claude` sessions all
+  appear in each other's `ListAgents` and can message each other with `SendMessage`: a session on one
+  backend can orchestrate a session on another. On by default through `[claude].share`;
+  `isolate = ["sessions"]` walls a head off. (Shipped in this release without a changelog entry;
+  recorded here.)
 - **`claude-splice`, the native-auth Claude head.** Claude Code keeps its own Anthropic login and
   sends the caller credential through the local passthrough head; splice never stores, reads,
   refreshes, or logs that credential. The management key is not reused on this route.
+
 - **Per-model context windows in the live model picker.** Each configured row reports its effective
   window without spelling a model above its real backend ceiling, so `/model` can switch windows
   without restarting Claude Code.
+
 - Provider OAuth sign-in plans for ChatGPT, Grok, and Kimi now resolve from the configured auth kind,
   with deterministic matrix coverage for every supported head.
 
@@ -18,6 +151,7 @@
 - Provider-native readable reasoning remains visible as thinking blocks, while
   `mirror_reasoning` is locked off after every configuration layer. TOML, state, environment, runtime
   PATCH, and direct construction cannot enable synthetic transcript reinjection.
+
 - The release pipeline now accepts SemVer prerelease tags and marks versions containing `-` as GitHub
   prereleases. Beta installs use a version-pinned URL; the stable `latest` installer remains stable-only.
 
@@ -32,23 +166,31 @@
   after it on `streamIdleMs`, on both the SSE and WebSocket transports. A compact turn's pre-output
   silence is bounded by `upstreamTimeoutMs` alone (compactions on the corrected tier still
   died silent at the 300s cap). The stall message names the tier that actually fired.
+
 - **A content-policy refusal is terminal, not retried.** ChatGPT's `cyber_policy` flag (and the
   Responses API's documented prompt refusals: `invalid_prompt`, `bio_policy`,
   `image_content_policy_violation`) reached Claude Code as a retryable `api_error`, so every refusal
   became a backoff storm of the same multi-megabyte transcript. They now surface as
   `invalid_request_error` with the vendor's own remedy text, matching the HTTP 400 the vendor returns
   for the same refusal pre-stream.
+
 - Refresh failures for Codex, Grok, and Kimi no longer risk logging vendor response bodies, and
   KeyStore values containing `#`, quotes, or backslashes round-trip without corruption.
+
 - Request-body torn wakeups become an Anthropic-shaped HTTP 400 without swallowing genuine coroutine
   cancellation; chat and Responses stream translators also stop draining runaway producers.
+
 - A newly created Responses WebSocket can no longer evict itself while older pooled sockets are busy.
+
 - Session-registry migration now preflights destination collisions, rolls back earlier transfers after
   a later failure, preserves stale links when replacement fails, and retains cross-filesystem support.
+
 - OAuth callback paste handling no longer double-encodes URLs, and stopped auth-probe loops cannot
   restart themselves after shutdown.
+
 - Repeated statusline ticks reuse a bounded branch cache instead of spawning an uncached Git process
   every time.
+
 - The release gate now rejects invalid SemVer tags and a mutated prerelease flag; the concentration
   gate rejects masked commands and contradictory ratchet modes; the head-E2E gate rejects unmatched
   head selectors and duplicate stream terminals. All previously reported false green.
@@ -57,8 +199,10 @@
 
 - Client-auth providers reject configured `Authorization` and `x-api-key` headers case-insensitively,
   preventing a splice-held upstream credential from sharing the local management-gate bypass.
+
 - OAuth wrapper overrides are restricted to portable command names; paths, shell syntax, whitespace,
   blank names, and option-like names are rejected before launch.
+
 - The transitive netty floor is raised to 4.2.17.Final (GHSA-8c42-7qj2-3j46, CORS `Vary` cache
   poisoning in `netty-codec-http`); the constraint stays a floor, so a newer ktor-shipped netty still
   wins.

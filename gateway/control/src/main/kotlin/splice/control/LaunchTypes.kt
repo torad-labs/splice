@@ -22,6 +22,12 @@ public data class LaunchSpec(
      *  second alias at an already-claimed model (the 2-model duplication this exists to remove). */
     val modelSlots: Map<String, String> = emptyMap(),
     val contextWindow: Long,
+    /** Claude Code's per-request timeout (API_TIMEOUT_MS) for THIS head: the daemon's whole-turn
+     *  cap plus a grace, so the client always outlives the proxy's own wall and receives its honest
+     *  verdict instead of aborting first. 2026-09-01: the daemon allowed a compaction 900s while
+     *  Claude Code's 600s default gave up — every compaction over ten minutes ended as client_abort
+     *  with the summary still streaming, and the ones that survived had 20-100s to spare. */
+    val apiTimeoutMs: Long,
     val modelOptionsCache: JsonElement, // the /model picker option list
     val statuslineCommand: String, // per-head statusline command (…/statusline/<head>)
     val loginCommand: String, // shell command that runs THIS head's provider sign-in (e.g. `claudex login`)

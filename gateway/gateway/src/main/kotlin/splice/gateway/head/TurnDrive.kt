@@ -46,4 +46,9 @@ internal data class TurnDrive(
     // `internal`, not `private`: TurnDrive is an internal type and TurnDriver (a different class)
     // reads this — a private member would be unreachable. Reads only this drive's own `perf`.
     internal fun perfCounter(key: String): Long = perf.snapshot().counters[key] ?: 0L
+
+    /** The client session's short tag for log lines and perf rows; null when it sent none. */
+    internal fun sessionTag(): String? = meta.sessionId?.take(SESSION_TAG_CHARS)
 }
+
+private const val SESSION_TAG_CHARS = 8

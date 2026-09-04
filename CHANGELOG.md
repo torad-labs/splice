@@ -27,6 +27,12 @@
 
 ### Added
 
+- **Every head shows its plan usage the way the native Claude head does.** The daemon tracks each
+  head's 5-hour and 7-day windows (ChatGPT's usage endpoint and its `x-codex-*` round headers,
+  Kimi's usage endpoint, SuperGrok's billing period, Anthropic's own unified headers on the
+  passthrough head), stamps them onto every response as the `anthropic-ratelimit-unified-*`
+  headers Claude Code reads into its `rate_limits`, and draws them on the status line as the 5h
+  and 7d bars with the reset time once a bar is worth acting on, beside effort and session spend.
 - **Heads that see each other.** Every wrapper's `sessions` directory is linked at the one registry
   under `~/.claude/sessions` on first launch (created if plain `claude` never ran on the machine), so
   claudex, claude-grok, claude-kimi, claude-openrouter, claude-splice and plain `claude` sessions all
@@ -45,6 +51,11 @@
 
 ### Changed
 
+- **Every perf row and every client-abort line names the client session.** The daemon now stamps
+  the Claude Code session id on every dialect's turn (only the Responses dialect kept it before),
+  writes its short tag into the perf JSONL and the perf log line, and the "client gone" line names
+  the session and the failure class instead of `keepalive write failed: null`. A client abort in
+  the log is now one grep away from the session that hung up and the transcript that says why.
 - **The shipped example config now matches the daily-driven one.** `claudex` ships with the
   Responses WebSocket transport, zstd request bodies and the deferred tool surface (LSP deferred)
   on, plus the inflight ceiling that account has sustained; `claude-kimi` offers Kimi K3 at 256k and
@@ -57,6 +68,17 @@
 
 ### Fixed
 
+- **The status line follows the picked model row.** Claude Code fixes its context window per
+  process and splice scales the counts it reports so any other row compacts at its own window,
+  which left the bar showing the session's window and scaled counts however the operator switched
+  (`grok-4.6[500k]` on a 256k grok head still read `…/256k`). The daemon's status line now renders
+  the picked row's label, its declared window and the real counts.
+- **`splice restart` no longer loses the new daemon to the old one's last second.** The restart
+  spawns the new daemon the moment the old one's ports are free, but the old process releases the
+  daemon lock only after its engines' stop grace and log drain, up to a second later on a loaded
+  box. The new daemon tried the lock once, conceded to "the winner" that was already leaving, and
+  exited, so the restart reported "did not come up" with nothing serving. The loser now waits out
+  the old daemon's whole teardown floor and yields only to a peer that answers `/health`.
 - **Codex compaction no longer dies at the idle cap while the model is still reading.** The stall
   watchdog switched to its short `streamIdleMs` tier on the first upstream byte, and on the
   Responses API that byte is the `response.created` handshake, not output — so a compaction that

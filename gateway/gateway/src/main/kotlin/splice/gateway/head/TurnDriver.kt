@@ -55,6 +55,7 @@ internal class TurnDriver(
             provider,
             deps.upstream,
             deps.usageStore,
+            deps.quota,
             SseRoundConsume(provider, zeroEvent, telemetry, TearAwareEvents(provider, deps.log)),
             RetryNotice { log("[${provider.key}] $it\n") },
         ),
@@ -83,7 +84,7 @@ internal class TurnDriver(
 
     // Pre-priced HD-24 contingency: collect() moved to its own file (CollectTurn.kt) because the
     // un-split TurnDriver.kt measured ratio 1.83, just over the 1.8 gate.
-    private val collectTurn = CollectTurn(provider, driveFactory, this)
+    private val collectTurn = CollectTurn(provider, driveFactory, this, deps.quota)
 
     /** G20: passive health snapshot for HeadServer.healthSnapshot() — the control-plane's
      *  /api/heads aggregation, never the per-head /health liveness route (external contract). */

@@ -48,9 +48,12 @@ internal class ManagedHeadFactory(
             quota = QuotaTracker(statePaths.quotaFile(key)),
         )
         // Subscription heads (ChatGPT, Kimi, SuperGrok) have a usage endpoint; poll it so the bars
-        // are right from the first tick. Every head still observes its rounds' headers.
-        quotaProbes.forHead(ctx, wired.auth)?.let { probe ->
-            QuotaPoller(probeScope, key, probe, stores.quota, log).start()
+        // are right from the first tick. Every head still observes its rounds' headers. The
+        // daemon-wide QUOTA_POLL knob ("off") is the operator's way to stop that outbound egress.
+        if (!cfg.quotaPollOff) {
+            quotaProbes.forHead(ctx, wired.auth)?.let { probe ->
+                QuotaPoller(probeScope, key, probe, stores.quota, log).start()
+            }
         }
         val logFile = statePaths.logsDir.resolve("daemon.log")
         // Derived from the CREDENTIAL, never from the declared string. The bypass is safe only

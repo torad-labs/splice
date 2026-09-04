@@ -316,6 +316,23 @@ class ConfigServiceTest {
         }
     }
 
+    // Same one-way law for the plan-usage poller: only an exact "off" stops it.
+    @Test
+    fun `quotaPoll knob normalizes to exactly off or auto, never an unrecognized value`() {
+        assertEquals("auto", service().getConfig().asMap()["quotaPoll"])
+        assertEquals(false, service().getConfig().quotaPollOff)
+        listOf("off", "OFF", " off ").forEach { raw ->
+            val cfg = service(env = mapOf("CLAUDEX_QUOTA_POLL" to raw)).getConfig()
+            assertEquals("off", cfg.asMap()["quotaPoll"])
+            assertTrue(cfg.quotaPollOff)
+        }
+        listOf("on", "true", "garbage").forEach { raw ->
+            val cfg = service(env = mapOf("CLAUDEX_QUOTA_POLL" to raw)).getConfig()
+            assertEquals("auto", cfg.asMap()["quotaPoll"])
+            assertEquals(false, cfg.quotaPollOff)
+        }
+    }
+
     @Test
     fun `maxQueued env alias applies`() {
         val svc = service(env = mapOf("CLAUDEX_MAX_QUEUED" to "50"))

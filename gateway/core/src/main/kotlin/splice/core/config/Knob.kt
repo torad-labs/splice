@@ -132,6 +132,13 @@ public enum class Knob(
     // globally would arm tool_search for grok/openai heads whose backends do not serve it.
     TOOL_SURFACE("toolSurface", KnobKind.STRING, listOf("CLAUDEX_TOOL_SURFACE"), "auto", restartRequired = true),
 
+    // Daemon-wide plan-usage poll switch, same one-way shape as TOOL_SURFACE. Subscription heads
+    // (ChatGPT, Kimi, SuperGrok) poll their provider's usage endpoint every five minutes with the
+    // operator's own bearer so the status line's 5h/7d bars are right from the first tick. "off"
+    // stops every poller without editing TOML; the bars then draw only from the rate-limit
+    // headers each round already carries. Any other value keeps polling.
+    QUOTA_POLL("quotaPoll", KnobKind.STRING, listOf("CLAUDEX_QUOTA_POLL"), "auto", restartRequired = true),
+
     // Per-head admission (each head is a different backend/account). Bounded by default since the
     // 2026-07-19 storm: unlimited (0) let ~650 concurrent streams OOM the 1G heap. NF-02: default
     // 12 (was 100) — splice's own perf-JSONL measurement (config/splice.example.toml: 0.3% turn

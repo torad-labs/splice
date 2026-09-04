@@ -16,6 +16,11 @@ import splice.core.launch.LoginOutcomeFile
 import splice.core.topology.Topology
 import java.nio.file.Paths
 
+/** How much longer than the daemon's whole-turn cap Claude Code waits before giving up on a
+ *  request. Large enough to cover the cancellation seal's travel, small enough that a hung proxy
+ *  still surfaces within a minute of its own wall. */
+private const val CLIENT_TIMEOUT_GRACE_MS = 60_000L
+
 internal class LaunchSpecFactory(
     private val topology: Topology,
     private val signInPlanner: SignInPlanner,
@@ -58,6 +63,9 @@ internal class LaunchSpecFactory(
                 model.slot?.let { slot -> model.id to slot }
             }.toMap(),
             contextWindow = ctx.catalog.contextWindowFor(head.pinnedModel),
+            // The client's request timeout is DERIVED from the head's whole-turn cap (never a
+            // second hand-maintained number): the proxy's wall is the one that names the verdict.
+            apiTimeoutMs = ctx.watchdog.totalCap.inWholeMilliseconds + CLIENT_TIMEOUT_GRACE_MS,
             modelOptionsCache = buildInputs.modelOptionsCache(ctx.catalog),
             statuslineCommand = "curl -sS --data-binary @- http://127.0.0.1:$controlPort/statusline/$key",
             // The installed wrapper (`<command> login`) runs this head's provider sign-in; the

@@ -15,7 +15,13 @@ public data class PerfSnapshot(
      * A member since the 2026-08-16 style migration (HD-M8): it reads nothing but this snapshot, so
      * the former trailing `snap` parameter became the receiver and the call site gained one.
      */
-    public fun perfLine(head: String, outcome: String, compact: Boolean, model: String): String {
+    public fun perfLine(
+        head: String,
+        outcome: String,
+        compact: Boolean,
+        model: String,
+        session: String? = null,
+    ): String {
         val markPart = PerfKeys.markOrder
             .mapNotNull { k -> marks[k]?.let { "$k=$it" } }
             .joinToString(" ")
@@ -24,6 +30,7 @@ public data class PerfSnapshot(
             append("[").append(head).append("] perf outcome=").append(outcome)
             append(" compact=").append(compact)
             append(" model=").append(model)
+            session?.let { append(" session=").append(it) }
             if (markPart.isNotEmpty()) append(" ").append(markPart)
             if (counterPart.isNotEmpty()) append(" | ").append(counterPart)
             append("\n")

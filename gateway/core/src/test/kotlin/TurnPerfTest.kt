@@ -94,5 +94,14 @@ class TurnPerfTest {
             "[codex] perf outcome=ok compact=false model=gpt-5.6-sol recv=3 headers=903 total=904 | out_tokens=850\n",
             line,
         )
+        val tagged = perf.snapshot().perfLine(
+            "codex",
+            "client_abort",
+            compact = false,
+            model = "m",
+            session = "a6b15bd7",
+        )
+        val head = "[codex] perf outcome=client_abort compact=false model=m session=a6b15bd7 recv="
+        assertTrue(tagged.startsWith(head), tagged)
     }
 }

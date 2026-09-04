@@ -169,6 +169,20 @@ class ResponsesReanchorControllerTest {
             ),
         )
     }
+
+    // 2026-09-02: a compaction's partial is usage-only (ResponsesOutcomePayload keeps the buffered
+    // text out of it — nothing reached the client), so the only continuation it can ever take is
+    // the verbatim whole-request restart: no marker, no replayed prose. This is the codex-rs
+    // RemoteCompactionV2 retry (responses_retry.rs), which until now compaction alone did not get.
+    @Test
+    fun `a torn compaction restarts verbatim - its usage-only partial has nothing to replay`() {
+        val usageOnly = TurnOutcome.PartialRound(usage = splice.core.turn.Usage(inputTokens = 180_000))
+        val body = previousBody()
+        val next = controller.continuationForFailure(
+            ReanchorRound(body, failureWith(partial = usageOnly), attempt = 0),
+        )
+        assertEquals(body, next, "the whole request again, byte for byte — never a marker continuation")
+    }
 }
 
 // ── translator salvage payload ──────────────────────────────────────────────────────────────

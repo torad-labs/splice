@@ -103,9 +103,9 @@ private const val FIRST_EVENT_TIMEOUT_MS = 15_000L
 
 // DR-182: the frame's delivery budget, and until now the one step of a round with no budget at
 // all. Sized against the CONNECT budget rather than the first-event one: both bound a transport
-// write on a live socket, where the only variable is bandwidth — the largest frames observed in
-// the perf log are ~1.5 MB, which is orders of magnitude inside 10s on any link that could have
-// completed the handshake. A model's thinking time is NOT in this window; that is what
-// FIRST_EVENT_TIMEOUT_MS covers, and it starts once this one is satisfied.
+// write on a live socket, where the only variable is bandwidth. A model's thinking time is NOT in
+// this window; that is what FIRST_EVENT_TIMEOUT_MS covers, and it starts once this one is satisfied.
+// This is the FLOOR: WsRoundOpener adds the frame's own transfer time on top (2026-09-02 — "~1.5 MB,
+// the largest frame observed" was true when this was written and 7.7 MB frames are routine now).
 private const val SEND_TIMEOUT_MS = 10_000L
 private const val MAX_CONNECTIONS = 32

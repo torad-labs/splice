@@ -11,7 +11,13 @@ dependencies {
     implementation(libs.ktor.server.netty)
     implementation(libs.ktor.server.sse)
     implementation(libs.ktor.client.core)
-    testImplementation(libs.ktor.server.test.host)
+    testImplementation(libs.ktor.server.test.host) {
+        // The test host drags in ktor-client-apache5 (httpclient5 5.5.1 / httpcore5 5.3.6 — dependabot
+        // alerts #19, #21, #22), an engine no test here uses: testApplication's client is the
+        // in-process test engine, and every other test rides CIO. Excluded rather than pinned, so
+        // the advisories leave the graph instead of chasing it.
+        exclude(group = "io.ktor", module = "ktor-client-apache5")
+    }
     testImplementation(libs.ktor.client.cio)
     testImplementation(project(":dialect-openai-responses"))
     testImplementation(project(":dialect-anthropic-passthrough"))

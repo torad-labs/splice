@@ -4,6 +4,14 @@
 // LaunchSpec construction mirrors ControlServerTest.kt/WebuiContractTest.kt in this same package.
 package splice.control
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
+import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -182,6 +190,83 @@ class LaunchServiceTest {
         assertNull(env["ANTHROPIC_DEFAULT_OPUS_MODEL"], "an undeclared tier is omitted, never filled")
         assertNull(env["ANTHROPIC_DEFAULT_SONNET_MODEL"])
         assertNull(env["ANTHROPIC_DEFAULT_FABLE_MODEL"])
+    }
+
+    // 2026-09-04: Claude Code 2.1.257 picker (gXr/lXr) renders each ANTHROPIC_DEFAULT_*_MODEL as
+    // an alias row (value "opus"/"sonnet"/"haiku"/"fable", label from _NAME) and THEN appends
+    // additionalModelOptionsCache rows whose value is the raw catalog id. eF/nHe only collapse
+    // equal values, so "opus" labeled Sol and "sol" labeled Sol both survive. A model that fills
+    // a slot must not also be a cache row; unslotted roster rows stay, availableModels stays.
+    private fun kimiRosterCache() = buildJsonArray {
+        addJsonObject {
+            put("value", "kimi-k3")
+            put("label", "Kimi K3 (256k)")
+            put("description", "Kimi K3 (256k)")
+            put("context_window", 256_000)
+        }
+        addJsonObject {
+            put("value", "kimi-k2.7-code")
+            put("label", "Kimi K2.7 Code")
+            put("description", "Kimi K2.7 Code")
+            put("context_window", 256_000)
+        }
+        addJsonObject {
+            put("value", "kimi-extra")
+            put("label", "Extra")
+            put("description", "Extra")
+            put("context_window", 128_000)
+        }
+    }
+
+    /** A three-model kimi head with two of them declared into slots; kimi-extra is unslotted. */
+    private fun launchKimiWithSlots(): LaunchRecipe = service.launch(
+        spec(
+            "kimi",
+            pinned = "kimi-k3",
+            available = listOf("kimi-k3", "kimi-k2.7-code", "kimi-extra"),
+            labels = mapOf(
+                "kimi-k3" to "Kimi K3 (256k)",
+                "kimi-k2.7-code" to "Kimi K2.7 Code",
+                "kimi-extra" to "Extra",
+            ),
+        ).copy(
+            modelSlots = mapOf("kimi-k3" to "opus", "kimi-k2.7-code" to "sonnet"),
+            modelOptionsCache = kimiRosterCache(),
+        ),
+        extraArgs = emptyList(),
+        dangerouslySkipPermissions = false,
+    )
+
+    @Test
+    fun `a slot-planted id is not also a cache row`() {
+        val recipe = launchKimiWithSlots()
+        val slotIds = listOf("OPUS", "SONNET", "HAIKU", "FABLE")
+            .mapNotNull { recipe.env["ANTHROPIC_DEFAULT_${it}_MODEL"] }
+            .toSet()
+        val written = Json.parseToJsonElement(
+            Files.readString(tmp.resolve(".claude-kimi/.claude.json")),
+        ).jsonObject.getValue("additionalModelOptionsCache").jsonArray
+        val cacheIds = written.map { it.jsonObject.getValue("value").jsonPrimitive.content }
+        val overlap = slotIds.intersect(cacheIds.toSet())
+        assertTrue(overlap.isEmpty(), "slot ids must not reappear as cache rows: $overlap")
+        assertEquals(listOf("kimi-extra"), cacheIds, "unslotted roster rows stay in the cache")
+        assertEquals(
+            128_000,
+            written.single().jsonObject.getValue("context_window").jsonPrimitive.long,
+            "unslotted rows keep the per-row window the catalog projected",
+        )
+    }
+
+    @Test
+    fun `dropping a slotted cache row keeps the id allowed and the slot labels intact`() {
+        val recipe = launchKimiWithSlots()
+        val settings = Files.readString(tmp.resolve(".claude-kimi/settings.json"))
+        for (id in listOf("kimi-k3", "kimi-k2.7-code", "kimi-extra")) {
+            assertTrue(id in settings, "$id must stay on availableModels so the id stays allowed")
+        }
+        assertEquals("Kimi K3 (256k)", recipe.env["ANTHROPIC_DEFAULT_OPUS_MODEL_NAME"])
+        assertEquals("Kimi K2.7 Code", recipe.env["ANTHROPIC_DEFAULT_SONNET_MODEL_NAME"])
+        assertEquals("272000", recipe.env["CLAUDE_CODE_MAX_CONTEXT_TOKENS"])
     }
 
     // Discovery retirement (2026-08-30). CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY made the

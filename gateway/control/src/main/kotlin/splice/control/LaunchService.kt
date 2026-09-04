@@ -12,6 +12,10 @@
 // only), which per-head context windows depend on.
 package splice.control
 
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import splice.core.launch.ClaudeConfigMaterializer
 import splice.core.launch.MaterializeSpec
 import splice.core.util.EnvReader
@@ -43,13 +47,21 @@ public class LaunchService(
         keyPresentNow: Boolean = true,
     ): LaunchRecipe {
         val effective = if (keyPresentNow) spec.copy(tokenCapture = null, advertiseKeySetup = false) else spec
+        // Slots first: the picker filter needs the planted ids, including positional fill
+        // (a declared-empty head still plants four tiers). LaunchSpec.modelOptionsCache stays
+        // the full catalog projection; only the materialized cache is stripped.
+        val slots = aliasSlots(effective)
+        val pickerCache = cacheWithoutSlotIds(
+            effective.modelOptionsCache,
+            slots.map { it.second }.toSet(),
+        )
         materializer.materialize(
             MaterializeSpec(
                 configDir = effective.configDir,
                 policy = effective.policy,
                 availableModelIds = effective.availableModelIds,
                 defaultModel = effective.pinnedModel,
-                modelOptionsCache = effective.modelOptionsCache,
+                modelOptionsCache = pickerCache,
                 statuslineCommand = effective.statuslineCommand,
                 loginCommand = effective.loginCommand,
                 signInLabel = effective.signInLabel,
@@ -59,7 +71,6 @@ public class LaunchService(
                 loginOutcomeFile = effective.loginOutcomeFile,
             ),
         )
-        val slots = aliasSlots(effective)
         val env = buildEnv(effective, slots)
         val unset = staleEnvUnsets(effective, slots)
         val argv = buildList {
@@ -76,6 +87,24 @@ public class LaunchService(
             null
         }
         return LaunchRecipe(env, unset, argv, warning)
+    }
+
+    // Claude Code 2.1.257 picker (gXr) starts from lXr slot rows whose value is the alias
+    // ("opus"/"sonnet"/"haiku"/"fable") and label is ANTHROPIC_DEFAULT_*_MODEL_NAME, then
+    // appends additionalModelOptionsCache rows whose value is the raw catalog id. eF/nHe
+    // collapse equal values only, so a slot labeled Sol plus a cache row valued "sol" both
+    // survive and the picker lists the same model twice. Drop cache rows whose value is
+    // already a planted slot id; keep availableModels so the id stays allowed, keep
+    // unslotted rows (including context_window, which vP ignores; Claude Code's window is
+    // CLAUDE_CODE_MAX_CONTEXT_TOKENS), keep slot NAME/DESCRIPTION.
+    private fun cacheWithoutSlotIds(cache: JsonElement, slotIds: Set<String>): JsonElement {
+        val rows = cache as? JsonArray ?: return cache
+        return JsonArray(
+            rows.filter { row ->
+                val value = (row as? JsonObject)?.get("value")?.jsonPrimitive?.content
+                value !in slotIds
+            },
+        )
     }
 
     /** Vars a launched head must SCRUB from the inherited environment: bin/splice-launch execs

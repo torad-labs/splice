@@ -10,6 +10,14 @@
   passthrough head), stamps them onto every response as the `anthropic-ratelimit-unified-*`
   headers Claude Code reads into its `rate_limits`, and draws them on the status line as the 5h
   and 7d bars with the reset time once a bar is worth acting on, beside effort and session spend.
+- **The plan-usage poll is stated plainly, and it has an off switch.** To draw those bars before
+  the first turn, a subscription head asks its own provider every five minutes for the daemon's
+  life, with that head's own bearer: `claudex` reads `chatgpt.com/backend-api/wham/usage`,
+  `claude-kimi` reads `<kimi base>/v1/usages`, and `claude-grok` reads
+  `cli-chat-proxy.grok.com/v1/billing`. API-key and client-auth heads poll nothing. This is new
+  outbound traffic since the beta, so it is named here rather than left implicit;
+  `CLAUDEX_QUOTA_POLL=off` stops every poller (daemon restart), and the bars then draw only from
+  the rate-limit headers each round already carries.
 - **`claude-splice`, the native-auth Claude head.** Claude Code keeps its own Anthropic login and
   sends the caller credential through the local passthrough head; splice never stores, reads,
   refreshes, or logs that credential. The management key is not reused on this route.
@@ -44,6 +52,12 @@
   replaced. The same audit found the stamp was not even fixed-width: `LocalTime.toString()` drops
   the seconds field when it is zero, which had stamped 4,339 live lines `[13:47]` and quietly broke
   column-oriented reads. Lines now read `[2026-09-02 13:47:00]`.
+- **A watchdog-ended turn says which tier fired, the limit it held, and the silence it measured.**
+  The stall message printed the configured idle cap whatever tier had actually tripped, so a
+  compaction killed at its first-output tier read as a mid-output stall and the log could not break
+  the tie. The turn line now carries the fired sentinel's own three numbers
+  (`watchdog=idle(tier=… limit=… idle=…)`); a turn the watchdog did not end prints byte-identically
+  to before.
 - **The mid-stream stall detector now matches the reference client instead of guessing tighter.**
   `streamIdleMs` judged a stream that had already begun flowing and aborted it after 180s of
   silence. codex-rs sets its only stream timer to 300s and applies it to the receive side alone

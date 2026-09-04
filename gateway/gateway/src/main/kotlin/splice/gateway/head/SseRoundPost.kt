@@ -4,6 +4,7 @@
 package splice.gateway.head
 
 import splice.core.turn.TurnOutcome
+import splice.gateway.usage.QuotaTracker
 import splice.gateway.usage.UsageStore
 import splice.spi.PostContext
 import splice.spi.Provider
@@ -14,6 +15,7 @@ internal class SseRoundPost(
     private val provider: Provider,
     private val upstream: UpstreamClient,
     private val usageStore: UsageStore,
+    private val quota: QuotaTracker?,
     private val consume: SseRoundConsume,
     private val onRetry: RetryNotice,
 ) {
@@ -34,6 +36,9 @@ internal class SseRoundPost(
             // Persist upstream rate-limit headers for /api/usage + statusline soft-warn (Node
             // codex-proxy wired this; the Kotlin split dropped the call site).
             usageStore.persistRateLimit { name -> resp.header(name) }
+            // Quota windows the same way: Anthropic's unified family on a passthrough head, the
+            // x-codex family on a Codex round. Most upstreams carry neither; then nothing moves.
+            quota?.observe { name -> resp.header(name) }
             consume.consume(inputs, resp)
         }
     }

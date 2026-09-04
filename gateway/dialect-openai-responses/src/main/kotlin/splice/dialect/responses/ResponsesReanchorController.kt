@@ -88,7 +88,18 @@ public class ResponsesReanchorController(
 // Narrowed from the companion's `public` to `private`: grep shows no consumer outside this file,
 // in :app, or in any test, and a bare top-level `MARKER_TEXT` would otherwise be importable
 // package-wide.
-private const val DEFAULT_MAX_CONTINUATIONS: Int = 2
+//
+// PARITY WITH THE REFERENCE, raised from 2 (operator call, 2026-09-02). codex-rs retries a
+// retryable stream DEFAULT_STREAM_MAX_RETRIES = 5 times (model-provider-info/src/lib.rs:27) before
+// it switches transport, and this controller exists to be the proxy-side answer to exactly that
+// loop. Two was chosen freehand and is simply too few: SSE is a FALLBACK, not a co-equal second
+// transport, and every drop to it discards the socket's cache key and re-uploads the whole body,
+// so the expensive path must not be reached until the cheap one has genuinely been exhausted. The
+// argument that 2 was harmless because the live log never shows `re-anchor 2` measured the wrong
+// thing — it says the first retry usually works, not that abandoning after the second is right,
+// and it counts only rounds that were re-anchor ELIGIBLE at all. Turn recovery and its cooldown
+// backoff are unchanged; this widens only how many times they may run.
+private const val DEFAULT_MAX_CONTINUATIONS: Int = 5
 
 private const val MARKER_TEXT: String =
     "Your previous stream was interrupted mid-answer. Continue EXACTLY where the text " +

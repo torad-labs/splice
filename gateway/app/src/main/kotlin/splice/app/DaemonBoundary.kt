@@ -14,8 +14,9 @@ import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption.APPEND
 import java.nio.file.StandardOpenOption.CREATE
-import java.time.LocalTime
-import java.time.temporal.ChronoUnit
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import java.util.concurrent.CancellationException
 
 /**
@@ -77,7 +78,7 @@ internal class DaemonBoundary {
             .runCatchingCancellable { if (Files.exists(file)) Files.size(file) else 0L }
             .getOrDefault(0L)
         return LogSink { msg ->
-            val line = "[${LocalTime.now().truncatedTo(ChronoUnit.SECONDS)}] ${msg.trimEnd('\n')}\n"
+            val line = "[${logStamp.format(LocalDateTime.now())}] ${msg.trimEnd('\n')}\n"
             AsyncFileIo.submit {
                 System.err.print(line)
                 Cancellables.runCatchingCancellable {
@@ -131,7 +132,7 @@ internal class DaemonBoundary {
      *  to parse. Message and frames are separable here, so the law costs no diagnosis. */
     internal fun bootFailureHandler(statePaths: StatePaths): Thread.UncaughtExceptionHandler =
         Thread.UncaughtExceptionHandler { thread, e ->
-            val line = "[${LocalTime.now().truncatedTo(ChronoUnit.SECONDS)}] [daemon] UNCAUGHT on " +
+            val line = "[${logStamp.format(LocalDateTime.now())}] [daemon] UNCAUGHT on " +
                 "${thread.name}: ${SafeFailureText.render(e)}\n" + bootFrames(e)
             System.err.print(line)
             Cancellables.runCatchingCancellable {
@@ -165,6 +166,18 @@ internal class DaemonBoundary {
             .let { Regex("pid=(\\d+)").findAll(it).map { m -> m.groupValues[1].toLong() }.toList() }
     }.getOrDefault(emptyList())
 }
+
+// A log line has to date itself. daemon.log rotates by SIZE, never by day, so one file spans
+// however many days 64MB buys — audit 2026-09-02 found 265,321 lines covering four of them — and a
+// line read on its own (quoted in a report, matched by a grep, pasted into a session) carried a
+// wall clock and nothing else. That is not a cosmetic gap: a session reading this file attributed a
+// whole day of watchdog stalls to the build running that morning, when they were the PREVIOUS day's
+// on code already replaced, and only a line-number bisect against detected midnight rollovers found
+// it. Width is FIXED for a second reason found in the same audit: LocalTime/LocalDateTime.toString()
+// drop the seconds field when it is zero, which stamped 4,339 live lines "[13:47]" and quietly broke
+// every column-oriented read of the file.
+internal val logStamp: DateTimeFormatter =
+    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss", Locale.ROOT)
 
 // One rolled generation at 64MB caps daemon.log disk at ~128MB — plenty of tail history, bounded.
 private const val MAX_LOG_BYTES = 64L * 1024 * 1024

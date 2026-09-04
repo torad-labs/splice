@@ -74,10 +74,10 @@ covers = "non-stream translation path + UTF-8 split-chunk handling without trans
 [[scenario]]
 name = "truncated"
 status = "sanctioned"
-authority = "PR #42 (8778274): mid-stream re-anchoring — salvage forwarded turns through provider brownouts; backoff deadline-gated by BS-3"
-pinned_sha256 = "6d6177ece878874da27b5a68e9e378b89e97317187dad24845e84ee86f8f65e0"
-pinned_upstream_sha256 = "87a5f158b6050927caf75fc3c4276344fde5046316f15f052e10c3fd421a6438"
-replay_note = "Reference gave up after 1 attempt (887B, one partial block + overloaded_error). Gateway re-anchors twice (CLAUDEX_UPSTREAM_RETRIES=2 -> 3 upstream requests, continuation-shaped: partial text + continue-exactly instruction), then emits the SAME overloaded_error class. Mock replays the identical truncation each time, so salvage cannot succeed here by construction; the pinned bytes encode 3 attempts."
+authority = "PR #42 (8778274): mid-stream re-anchoring — salvage forwarded turns through provider brownouts; backoff deadline-gated by BS-3. Re-pinned 2026-09-03 under 11ce5512 (the re-anchor budget is DEFAULT_MAX_CONTINUATIONS in ResponsesReanchorController, 2 -> 5 at codex-rs parity; CLAUDEX_UPSTREAM_RETRIES never governed it)"
+pinned_sha256 = "22f04bb1fd0f1823ee9a5e7c7c5319e8d3565b9ad4289ada969160d8f0fa0451"
+pinned_upstream_sha256 = "ecab8b70dfaeca0712235754f3f3e94af75fadbe75536107ed1074a75db4b1d3"
+replay_note = "Reference gave up after 1 attempt (887B, one partial block + overloaded_error). Gateway re-anchors five times (DEFAULT_MAX_CONTINUATIONS=5 -> 6 upstream requests, continuation-shaped: partial text + continue-exactly instruction), then emits the SAME overloaded_error class. Mock replays the identical truncation each time, so salvage cannot succeed here by construction; the pinned bytes encode 6 attempts. Was 3 attempts (2 re-anchors) until 11ce5512."
 covers = "honest failure: a truncated upstream stream is an SSE error, NEVER a clean empty end_turn (invariant L3)"
 
 [[scenario]]
@@ -108,10 +108,10 @@ covers = "encrypted reasoning-item replay wire path and ordinary answer text und
 [[scenario]]
 name = "failed"
 status = "sanctioned"
-authority = "PR #58 (561d7ec): message_start lands at upstream-handoff so G5 pre-content reissue stays safe (HeadServerReviewTest: torn-before-client stays retryable)"
+authority = "PR #58 (561d7ec): message_start lands at upstream-handoff so G5 pre-content reissue stays safe (HeadServerReviewTest: torn-before-client stays retryable). Upstream re-pinned 2026-09-03 under 11ce5512 (re-anchor budget 2 -> 5, so the pre-content retryable path now makes 6 upstream requests instead of 3)"
 pinned_sha256 = "9c253ca5cabd9e1b7052ad03fb693ba49ea8cd45f0f752c9fccc4fe83f5f57e9"
-pinned_upstream_sha256 = "d714fda858001d0bf33049ef78e50265153af46fa30e390917cc9da18dc148bf"
-replay_note = "Gateway emits message_start+ping BEFORE the upstream terminal, then the SAME api_error text the reference emitted bare. Error class and message identical; only the eager preamble differs."
+pinned_upstream_sha256 = "821f0db66654183c49afc11f920c9b42c159b384e3ec15cb1cb14957d41852f3"
+replay_note = "Gateway emits message_start+ping BEFORE the upstream terminal, then the SAME api_error text the reference emitted bare. Error class and message identical; only the eager preamble differs. The client bytes are unchanged by the 2026-09-03 budget change: with 6 attempts the turn spends ~6s in backoff and the 2s client keepalive wrote 2 or 3 SSE comment lines run to run, which is why those comments are now canonicalized away (replay.mjs CANON_RULES, _manifest.json)."
 covers = "upstream response.failed -> honest terminal error, no fabricated end_turn"
 
 [[scenario]]

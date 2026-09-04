@@ -90,6 +90,32 @@ your own `claude` login). Every other head tier 2 drives spends an OAuth subscri
 gating this one alone would single out a cost that is already universal. The spend is announced
 per head at dispatch instead. Use `--tier 1` if you do not want it.
 
+## Fresh-machine e2e (Docker)
+
+`npm run e2e:docker` proves a build on a **new machine**: a Docker image with only the
+prerequisites (Java 21, Node 24, python3, curl, bash, Claude Code) and an empty unprivileged
+HOME, run with `--network none`. Inside, `checks/e2e/docker/inside.sh` brings up two mock
+upstreams (the migration oracle's vendored ChatGPT-backend mock for `openai-responses`, a
+minimal `openai-chat` mock), writes a two-head topology, installs from artifacts through the
+real `install.sh` (checksum → `init` → `install --all` → `doctor`), cold-starts the daemon, drives
+`stream_probe.py` and `count_tokens` through every head, runs the **real** Claude Code wrapper
+(`claudex -p …`, `claude-mockchat -p …`) against the head, then `restart` / `logs` / `status` /
+`uninstall`. No vendor, no quota, no network: every byte the daemon or the wrapper moves goes to
+the in-container mocks or the step fails.
+
+```bash
+npm run e2e:docker                                     # build this checkout, prove it
+bash checks/e2e/docker/run.sh --release v0.3.0-beta.1  # prove a published release's assets
+bash checks/e2e/docker/run.sh --jar P --shim P         # prove any prebuilt pair
+bash checks/e2e/docker/run.sh --no-build               # reuse the image
+```
+
+Each run writes `checks/e2e/receipts/docker-<stamp>.json` (per-step verdict, seconds, evidence)
+and exits non-zero on any failed step; a failed step never stops the run, so later steps stay
+evidence. The image pins Claude Code to the host's `claude --version` (override with
+`SPLICE_E2E_CLAUDE_VERSION`). Run it before `npm run promote`: a release that has not passed here has
+not been installed anywhere.
+
 ## Debugging a failure
 
 `E2E_KEEP_TMUX=1` keeps the tmux session and scratch dir; attach with

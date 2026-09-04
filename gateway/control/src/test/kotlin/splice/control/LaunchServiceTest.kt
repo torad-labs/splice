@@ -197,45 +197,49 @@ class LaunchServiceTest {
     // additionalModelOptionsCache rows whose value is the raw catalog id. eF/nHe only collapse
     // equal values, so "opus" labeled Sol and "sol" labeled Sol both survive. A model that fills
     // a slot must not also be a cache row; unslotted roster rows stay, availableModels stays.
+    private fun kimiRosterCache() = buildJsonArray {
+        addJsonObject {
+            put("value", "kimi-k3")
+            put("label", "Kimi K3 (256k)")
+            put("description", "Kimi K3 (256k)")
+            put("context_window", 256_000)
+        }
+        addJsonObject {
+            put("value", "kimi-k2.7-code")
+            put("label", "Kimi K2.7 Code")
+            put("description", "Kimi K2.7 Code")
+            put("context_window", 256_000)
+        }
+        addJsonObject {
+            put("value", "kimi-extra")
+            put("label", "Extra")
+            put("description", "Extra")
+            put("context_window", 128_000)
+        }
+    }
+
+    /** A three-model kimi head with two of them declared into slots; kimi-extra is unslotted. */
+    private fun launchKimiWithSlots(): LaunchRecipe = service.launch(
+        spec(
+            "kimi",
+            pinned = "kimi-k3",
+            available = listOf("kimi-k3", "kimi-k2.7-code", "kimi-extra"),
+            labels = mapOf(
+                "kimi-k3" to "Kimi K3 (256k)",
+                "kimi-k2.7-code" to "Kimi K2.7 Code",
+                "kimi-extra" to "Extra",
+            ),
+        ).copy(
+            modelSlots = mapOf("kimi-k3" to "opus", "kimi-k2.7-code" to "sonnet"),
+            modelOptionsCache = kimiRosterCache(),
+        ),
+        extraArgs = emptyList(),
+        dangerouslySkipPermissions = false,
+    )
+
     @Test
     fun `a slot-planted id is not also a cache row`() {
-        val cache = buildJsonArray {
-            addJsonObject {
-                put("value", "kimi-k3")
-                put("label", "Kimi K3 (256k)")
-                put("description", "Kimi K3 (256k)")
-                put("context_window", 256_000)
-            }
-            addJsonObject {
-                put("value", "kimi-k2.7-code")
-                put("label", "Kimi K2.7 Code")
-                put("description", "Kimi K2.7 Code")
-                put("context_window", 256_000)
-            }
-            addJsonObject {
-                put("value", "kimi-extra")
-                put("label", "Extra")
-                put("description", "Extra")
-                put("context_window", 128_000)
-            }
-        }
-        val recipe = service.launch(
-            spec(
-                "kimi",
-                pinned = "kimi-k3",
-                available = listOf("kimi-k3", "kimi-k2.7-code", "kimi-extra"),
-                labels = mapOf(
-                    "kimi-k3" to "Kimi K3 (256k)",
-                    "kimi-k2.7-code" to "Kimi K2.7 Code",
-                    "kimi-extra" to "Extra",
-                ),
-            ).copy(
-                modelSlots = mapOf("kimi-k3" to "opus", "kimi-k2.7-code" to "sonnet"),
-                modelOptionsCache = cache,
-            ),
-            extraArgs = emptyList(),
-            dangerouslySkipPermissions = false,
-        )
+        val recipe = launchKimiWithSlots()
         val slotIds = listOf("OPUS", "SONNET", "HAIKU", "FABLE")
             .mapNotNull { recipe.env["ANTHROPIC_DEFAULT_${it}_MODEL"] }
             .toSet()
@@ -251,6 +255,11 @@ class LaunchServiceTest {
             written.single().jsonObject.getValue("context_window").jsonPrimitive.long,
             "unslotted rows keep the per-row window the catalog projected",
         )
+    }
+
+    @Test
+    fun `dropping a slotted cache row keeps the id allowed and the slot labels intact`() {
+        val recipe = launchKimiWithSlots()
         val settings = Files.readString(tmp.resolve(".claude-kimi/settings.json"))
         for (id in listOf("kimi-k3", "kimi-k2.7-code", "kimi-extra")) {
             assertTrue(id in settings, "$id must stay on availableModels so the id stays allowed")

@@ -45,6 +45,10 @@
 
 ### Changed
 
+- **The shipped example config now matches the daily-driven one.** `claudex` ships with the
+  Responses WebSocket transport, zstd request bodies and the deferred tool surface (LSP deferred)
+  on, plus the inflight ceiling that account has sustained; `claude-kimi` offers Kimi K3 at 256k and
+  Kimi K2.7 Code beside the 1M row; `claude-openrouter` offers GLM 5.3 beside Llama 4 Maverick.
 - Provider-native readable reasoning remains visible as thinking blocks, while
   `mirror_reasoning` is locked off after every configuration layer. TOML, state, environment, runtime
   PATCH, and direct construction cannot enable synthetic transcript reinjection.

@@ -45,7 +45,7 @@ internal class RoundStrategy(
             // DR-130: the runners salvage a failed round's own burn through withFailureSalvage
             // (DR-124); this path handed the raw outcome to finishTurn, which stamps ONLY
             // salvagedUsage — so the tokens the vendor billed went unrecorded. Every compact turn
-            // comes through here (fold, re-anchor and tool-search are all null when meta.compact),
+            // came through here until 2026-09-02 (re-anchor was null for compact; it no longer is),
             // which made the most expensive turn class the one that recorded nothing. There are no
             // absorbed rounds on this path, so the accumulator is empty by construction and a
             // Success or a clean abandonment passes through untouched.

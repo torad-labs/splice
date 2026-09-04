@@ -56,6 +56,16 @@
   writes its short tag into the perf JSONL and the perf log line, and the "client gone" line names
   the session and the failure class instead of `keepalive write failed: null`. A client abort in
   the log is now one grep away from the session that hung up and the transcript that says why.
+- **A WebSocket end of stream reports what was observed instead of naming a culprit.** The
+  transport logged "socket closed by the server (status=1006)" twelve times a day without saying
+  which socket. Status 1006 is reserved by the WebSocket RFC and can never be sent by a peer. Our
+  own client synthesises it whenever the stream ends with no close frame, so the origin, a load
+  balancer and the network are indistinguishable from here, and the old wording asserted an actor
+  the client cannot see. The line now says the stream ended with the actor unknown, and carries the
+  socket, its age, whether a round was in flight, the last frame, the last peer ping and the open
+  socket count. A real close frame still names the peer, its code and its reason. Read that way,
+  six of one day's twelve were sockets left idle in our own pool for three to twenty-five minutes,
+  and eleven of the twelve ended no round at all.
 - **The shipped example config now matches the daily-driven one.** `claudex` ships with the
   Responses WebSocket transport, zstd request bodies and the deferred tool surface (LSP deferred)
   on, plus the inflight ceiling that account has sustained; `claude-kimi` offers Kimi K3 at 256k and
@@ -88,6 +98,19 @@
   after it on `streamIdleMs`, on both the SSE and WebSocket transports. A compact turn's pre-output
   silence is bounded by `upstreamTimeoutMs` alone (compactions on the corrected tier still
   died silent at the 300s cap). The stall message names the tier that actually fired.
+- **A torn compaction restarts inside the proxy instead of failing the turn.** Every other round
+  already re-anchored on a stream that ended without `response.completed` or on a transient server
+  error; compaction alone was excluded on the belief that the pre-stream retry covered it, and the
+  daemon log shows it did not (five compactions and three `server_is_overloaded` events surfaced
+  as `overloaded_error`, each re-sent cold by Claude Code). A compaction's partial is usage-only,
+  so its restart is the verbatim whole request with backoff, the same retry Codex CLI performs for
+  its remote compaction. Deterministic verdicts (`cyber_policy`, refusals, the content filter) are
+  still never re-POSTed.
+- **A large WebSocket frame is no longer killed for being large.** The send budget was a flat 10s,
+  sized when the biggest frame on the wire was 1.5 MB; frames now reach 7.7 MB, and every "send
+  failed stalled" of a morning (13) landed while a 5–6.5 MB frame was in flight — a healthy socket
+  poisoned and the same megabytes re-sent over SSE. The budget is now the floor plus the frame's own
+  transfer time at 100 KB/s, and the stall line names both the budget and the frame size.
 - **A content-policy refusal is terminal, not retried.** ChatGPT's `cyber_policy` flag (and the
   Responses API's documented prompt refusals: `invalid_prompt`, `bio_policy`,
   `image_content_policy_violation`) reached Claude Code as a retryable `api_error`, so every refusal

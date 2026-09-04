@@ -13,6 +13,7 @@ import splice.app.UsageStoreSource
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
 import splice.app.quota.QuotaPoller
+import splice.app.quota.QuotaProbe
 import splice.app.quota.QuotaProbes
 import splice.control.ManagedHead
 import splice.core.auth.ClientAuthProvider
@@ -24,6 +25,10 @@ import splice.gateway.usage.QuotaTracker
 import splice.gateway.usage.UsageStore
 import splice.provider.openai.ApiKeyAuthProvider
 
+internal fun interface StartQuotaPoller {
+    operator fun invoke(head: String, probe: QuotaProbe, tracker: QuotaTracker)
+}
+
 internal class ManagedHeadFactory(
     private val statePaths: StatePaths,
     private val providerAssembly: ProviderAssembly,
@@ -33,6 +38,9 @@ internal class ManagedHeadFactory(
      *  end with Daemon.stop() like every other background probe. */
     private val probeScope: CoroutineScope,
     private val log: LogSink,
+    private val startQuotaPoller: StartQuotaPoller = StartQuotaPoller { head, probe, tracker ->
+        QuotaPoller(probeScope, head, probe, tracker, log).start()
+    },
 ) {
     private val quotaProbes by lazy { QuotaProbes(AuthHttpClientFactory().create()) }
 
@@ -52,7 +60,7 @@ internal class ManagedHeadFactory(
         // daemon-wide QUOTA_POLL knob ("off") is the operator's way to stop that outbound egress.
         if (!cfg.quotaPollOff) {
             quotaProbes.forHead(ctx, wired.auth)?.let { probe ->
-                QuotaPoller(probeScope, key, probe, stores.quota, log).start()
+                startQuotaPoller(key, probe, stores.quota)
             }
         }
         val logFile = statePaths.logsDir.resolve("daemon.log")

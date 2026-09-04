@@ -18,6 +18,9 @@ summary        = "detailed"  # "detailed" | "concise" | "auto" | "none"
 # effort       = "high"      # optional; omit → high (Grok floors invalid values to low)
 replay_reasoning = false     # NEVER turn on lightly: replaying prior opaque encrypted reasoning items thins fresh reasoning
 mirror_reasoning = false     # operator-locked off; TOML, state, env, and runtime PATCH cannot enable transcript mirrors
+# Plan-usage bars: a subscription head (ChatGPT, Kimi, SuperGrok) polls its provider's usage
+# endpoint every five minutes with that head's own bearer. Env CLAUDEX_QUOTA_POLL=off stops every
+# poller (restart the daemon); the bars then draw only from the headers each round already carries.
 
 # ── EXPERIMENTAL OPT-IN: ChatGPT Codex subscription via OAuth ─────────────────
 [providers.codex]

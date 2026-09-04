@@ -13,6 +13,7 @@ import splice.core.util.ElapsedClock
 import splice.core.util.LogSink
 import splice.gateway.perf.PerfRowMeta
 import splice.gateway.perf.PerfStats
+import splice.spi.WatchdogFired
 
 // MERGED: TurnDriver's and TurnTelemetry's private companions each carried an identical
 // `ERR_SNIPPET = 200`. Two file-scope consts cannot share a name, and the two values were never
@@ -44,8 +45,13 @@ internal class TurnTelemetry(
     fun errTurn(kind: String, drive: TurnDrive, detail: String): String =
         "[$headKey] turn ERROR $kind compact=${drive.meta.compact} latency=${clock() - drive.t0}ms $detail\n"
 
-    fun turnLine(meta: TurnMeta, model: String, outcome: TurnOutcome, latencyMs: Long): String =
-        line.render(meta, model, outcome, latencyMs)
+    fun turnLine(
+        meta: TurnMeta,
+        model: String,
+        outcome: TurnOutcome,
+        latencyMs: Long,
+        fired: WatchdogFired? = null,
+    ): String = line.render(meta, model, outcome, latencyMs, fired)
 
     /** MOVED out of finishTurn (HD-24): a log line is telemetry, and moving it here is what lets
      *  TurnFinish drop its dependency on UsageHud. [model] is the drive's upstream model; [headKey]

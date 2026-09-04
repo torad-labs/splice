@@ -316,10 +316,41 @@ class ConfigServiceTest {
         }
     }
 
+    // Same one-way law for the plan-usage poller: only an exact "off" stops it.
+    @Test
+    fun `quotaPoll knob normalizes to exactly off or auto, never an unrecognized value`() {
+        assertEquals("auto", service().getConfig().asMap()["quotaPoll"])
+        assertEquals(false, service().getConfig().quotaPollOff)
+        listOf("off", "OFF", " off ").forEach { raw ->
+            val cfg = service(env = mapOf("CLAUDEX_QUOTA_POLL" to raw)).getConfig()
+            assertEquals("off", cfg.asMap()["quotaPoll"])
+            assertTrue(cfg.quotaPollOff)
+        }
+        listOf("on", "true", "garbage").forEach { raw ->
+            val cfg = service(env = mapOf("CLAUDEX_QUOTA_POLL" to raw)).getConfig()
+            assertEquals("auto", cfg.asMap()["quotaPoll"])
+            assertEquals(false, cfg.quotaPollOff)
+        }
+    }
+
     @Test
     fun `maxQueued env alias applies`() {
         val svc = service(env = mapOf("CLAUDEX_MAX_QUEUED" to "50"))
         assertEquals(50, svc.getConfig().maxQueued)
+    }
+
+    // Pinned against the reference client, not chosen freehand: codex-rs sets its only stream
+    // timer to 300_000ms and puts it on the receive side alone. At 180_000 the idle tier ended 129
+    // compactions in a single day (2026-09-01), each mid-stream on work already flowing.
+    @Test
+    fun `the idle stall detector defaults to the reference client's 300s, not a tighter guess`() {
+        val cfg = service().getConfig()
+        assertEquals(300_000L, cfg.streamIdleMs)
+        assertEquals(
+            cfg.firstByteTimeoutMs,
+            cfg.streamIdleMs,
+            "one number judges the stream before and after its first frame",
+        )
     }
 
     @Test

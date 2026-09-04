@@ -20,6 +20,14 @@
   `CLAUDEX_QUOTA_POLL=off` stops every poller (daemon restart), and the bars then draw only from
   the rate-limit headers each round already carries.
 
+- **Heads that see each other.** Every wrapper's `sessions` directory is linked at the one registry
+  under `~/.claude/sessions` on first launch (created if plain `claude` never ran on the machine), so
+  claudex, claude-grok, claude-kimi, claude-openrouter, claude-splice and plain `claude` sessions all
+  appear in each other's `ListAgents` and can message each other with `SendMessage`: a session on one
+  backend can orchestrate a session on another. On by default through `[claude].share`;
+  `isolate = ["sessions"]` walls a head off. (Shipped in this release without a changelog entry;
+  recorded here.)
+
 ### Changed
 
 - **The shipped example config now matches the daily-driven one.** `claudex` ships with the
@@ -128,13 +136,6 @@
 
 ### Added
 
-- **Heads that see each other.** Every wrapper's `sessions` directory is linked at the one registry
-  under `~/.claude/sessions` on first launch (created if plain `claude` never ran on the machine), so
-  claudex, claude-grok, claude-kimi, claude-openrouter, claude-splice and plain `claude` sessions all
-  appear in each other's `ListAgents` and can message each other with `SendMessage`: a session on one
-  backend can orchestrate a session on another. On by default through `[claude].share`;
-  `isolate = ["sessions"]` walls a head off. (Shipped in this release without a changelog entry;
-  recorded here.)
 - **`claude-splice`, the native-auth Claude head.** Claude Code keeps its own Anthropic login and
   sends the caller credential through the local passthrough head; splice never stores, reads,
   refreshes, or logs that credential. The management key is not reused on this route.

@@ -3,10 +3,8 @@
 // The gap this closes, from the live log: five compactions died saying "no completion within the
 // 180s idle cap". That wording is chosen by the fired sentinel's sawClientFrame flag, and the
 // number in it is the CONFIGURED streamIdle, never the limit the poller actually compared against.
-// Their perf rows had no first_frame and no content_frames_out, so the round's client-frame probe
-// should have read false and put them on the first-output tier — which a compact turn lifts to the
-// whole-turn cap. Message and counters disagreed and the log could not break the tie. These arms
-// pin the tie-breaker: the tier NAME, the limit that fired, and the idleness that tripped it.
+// A compact turn has no first-output tier: WatchdogBudget.forCompact disables it, so only the
+// total cap can end a silent compaction. These arms pin the valid verdicts and their measured values.
 package head
 
 import org.junit.jupiter.api.Assertions.assertEquals
@@ -51,32 +49,30 @@ class TurnLineWatchdogVerdictTest {
         assertTrue("watchdog=idle(tier=mid-output limit=180000ms idle=180004ms)" in rendered, rendered)
     }
 
-    // THE ONE THAT WOULD HAVE SETTLED IT. A compaction with no client frame must read first-output,
-    // and its limit is the whole-turn cap, not streamIdle. If the live line had carried this, the
-    // five stalls would have said in one grep whether the probe or the message was lying.
     @Test
-    fun `a first-output fire on a compaction names the lifted cap, not the idle tier`() {
+    fun `a first-output fire on a non-compact turn names its real tier`() {
         val rendered = line.render(
-            meta(compact = true),
+            meta(compact = false),
             "gpt-5.6-sol",
             stalled,
-            latencyMs = 900_120,
-            fired = WatchdogFired.Idle(idleMs = 900_001, sawClientFrame = false, limitMs = 900_000),
+            latencyMs = 300_120,
+            fired = WatchdogFired.Idle(idleMs = 300_001, sawClientFrame = false, limitMs = 300_000),
         )
-        assertTrue("watchdog=idle(tier=first-output limit=900000ms idle=900001ms)" in rendered, rendered)
+        assertTrue("watchdog=idle(tier=first-output limit=300000ms idle=300001ms)" in rendered, rendered)
         assertFalse("mid-output" in rendered, "a turn the client never saw output from is not mid-output: $rendered")
     }
 
     @Test
-    fun `a whole-turn cap fire names its elapsed, which no idle tier explains`() {
+    fun `a silent compaction ended by the total cap names that verdict`() {
         val rendered = line.render(
-            meta(compact = false),
+            meta(compact = true),
             "gpt-5.6-sol",
             stalled,
             latencyMs = 900_030,
             fired = WatchdogFired.TotalCap(elapsedMs = 900_002),
         )
         assertTrue("watchdog=total-cap(elapsed=900002ms)" in rendered, rendered)
+        assertFalse("first-output" in rendered, "a compact turn has no pre-output idle tier: $rendered")
     }
 
     @Test

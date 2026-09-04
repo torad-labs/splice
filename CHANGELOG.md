@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- **Compactions no longer die on the ChatGPT backend's capacity signal.** An in-stream
+  `server_is_overloaded` (or `slow_down`) used to classify as a non-retryable `api_error`, so the
+  proxy neither reissued nor salvaged the turn and Claude Code reported the compaction failed. Any
+  overload-shaped error code on an in-stream or server-side (5xx) failure is now a transient
+  `overloaded_error`, the type Claude Code retries with backoff, matching codex's own handling of
+  the same two codes; a 4xx keeps its deterministic verdict whatever its code spells.
+- **Claude Code now waits out the proxy's own whole-turn wall.** Every wrapper plants
+  `API_TIMEOUT_MS` from the head's `upstreamTimeoutMs` plus a minute of grace (960 s on the
+  default 900 s cap). With Claude Code's 600 s default, every compaction longer than ten minutes
+  ended as a client abort while the daemon was still streaming the summary.
+- **A silent compaction is ended by the whole-turn wall alone.** The compact budget used to raise
+  the first-output tier to the wall instead of switching it off, leaving two pollers on one
+  deadline; on a loaded runner the idle poller could win the tick and end a round as "first-output
+  cap" (salvage invited) where the wall should have ended the turn. The tier is now off for
+  compactions; `streamIdle` still reaps a stall once output has begun.
+- **A torn perf row no longer swallows the row after it.** When the disk filled mid-append
+  (2026-08-25) a short write left a fragment with no newline and the next row fused onto it, so
+  readers lost both. The JSONL sink now heals a torn tail before appending.
+
 ## splice v0.3.0-beta.1 — native Claude auth and a hardened multi-head gateway - 2026-08-30
 
 ### Added

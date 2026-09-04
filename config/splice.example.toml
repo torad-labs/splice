@@ -30,7 +30,26 @@ base_url = "https://chatgpt.com/backend-api/codex"
 # third-party integration. auth.json is password-equivalent; splice reads AND refreshes it in place.
 # Documented alternative: OpenAI Platform API keys (kind = "api-key", env = "OPENAI_API_KEY").
 auth = { kind = "chatgpt-oauth", file = "~/.codex/auth.json" }
-quirks = { store = false, account_id_header = true, cache_key = "first-message-hash", effort_ceiling = "max", summary_field = true }
+# Table form, not inline: tool_surface below is a sub-table, and TOML forbids adding a sub-table
+# to an inline table. Every knob here is what the daily-driven claudex runs.
+[providers.codex.quirks]
+store = false
+account_id_header = true
+cache_key = "first-message-hash"
+effort_ceiling = "max"
+summary_field = true
+# websocket (default false in code): serve rounds over the Responses WebSocket with
+# previous_response_id chaining, so a continuation turn sends ONLY the new items instead of the
+# whole history. Measured on a 12-round tool loop: wire bytes go FLAT (~2.4KB) while the full send
+# grows linearly — 92.5% less at round 12. It is an OVERLAY: any failure — handshake, busy socket,
+# send, first-event timeout, or a round that fails before the client sees content — falls back to
+# the normal SSE path, which keeps sole ownership of retry, the 401 refresh and the 429 cooldown.
+# With the key false or absent no WebSocket is ever constructed and the request path is
+# byte-identical to a build without the feature.
+websocket = true
+# zstd_request_body (default false): compress request bodies the way codex-cli 0.145.0 does to
+# this endpoint (2.7x measured). Codex ONLY — xAI 400s on a compressed body; never set it elsewhere.
+zstd_request_body = true
 # reasoning_cache (default true): the gateway holds each turn's encrypted reasoning and reinjects
 # it on tool round-trips (codex-CLI parity — without it the model re-derives its plan at every
 # tool result: repeated tool calls, duplicated reasoning). The gateway retains only the OPAQUE
@@ -39,21 +58,23 @@ quirks = { store = false, account_id_header = true, cache_key = "first-message-h
 # (gpt-5.6) turns — the field itself always rides, since a lite request without it 400s. codex-rs
 # reads this per model rather than hardcoding it, so it is a knob here too. false = one tool call
 # per turn, which is why claudex averages ~2x the round-trips of grok/kimi and re-sends the whole
-# context each time. To opt in, add `parallel_tool_calls = true` INSIDE the inline quirks table
-# above (a separate [providers.codex.quirks] section would clash with it and fail to parse).
-# Guardrails: a client's explicit disable_parallel_tool_use=true always wins, and toolless turns
-# stay false. Lite-only — ignored on non-lite turns (grok's value comes from the client's
-# tool_choice). UNTESTED against the live backend: leaving the field out entirely once let the
-# backend default to parallel and gpt-5.6 sprayed 30-50 parallel Task calls. Opt in to measure.
-# websocket (default false): serve rounds over the Responses WebSocket with previous_response_id
-# chaining, so a continuation turn sends ONLY the new items instead of the whole history. Measured
-# on a 12-round tool loop: wire bytes go FLAT (~2.4KB) while the full send grows linearly — 92.5%
-# less at round 12. Add `websocket = true` INSIDE the inline quirks table above (a separate
-# [providers.codex.quirks] section would clash with it and fail to parse).
-# It is an OVERLAY: any failure — handshake, busy socket, send, first-event timeout, or a round that
-# fails before the client sees content — falls back to the normal SSE path, which keeps sole
-# ownership of retry, the 401 refresh and the 429 cooldown. With the key absent no WebSocket is ever
-# constructed and the request path is byte-identical to a build without the feature.
+# context each time. To opt in, add `parallel_tool_calls = true` to this table, above the
+# tool_surface sub-table. Guardrails: a client's explicit disable_parallel_tool_use=true always
+# wins, and toolless turns stay false. Lite-only — ignored on non-lite turns (grok's value comes
+# from the client's tool_choice). UNTESTED against the live backend: leaving the field out
+# entirely once let the backend default to parallel and gpt-5.6 sprayed 30-50 parallel Task
+# calls. Opt in to measure.
+# Deferred tool surface: Claude Code advertises 64-87 tools and every schema used to ride every
+# request; this defers the mcp__* tail and answers the model's tool_search at the gateway.
+[providers.codex.quirks.tool_surface]
+enabled = true
+# LSP availability brake: gpt-5.6 over-calls Claude Code's LSP tool when its schema rides every
+# request (Anthropic-native sessions keep it deferred, so the asymmetry only shows on this head).
+# Forcing it into the deferred set drops the schema from the eager surface; the model reaches it
+# only via tool_search, which it rarely does for navigation it can already do with grep/read.
+# Conversations that already used LSP keep it eager for their lifetime; the brake takes effect
+# on fresh conversations.
+defer = ["LSP"]
 [[providers.codex.models]]
 id = "gpt-5.6-sol"
 label = "Codex 5.6 Sol"
@@ -126,6 +147,10 @@ auth = { kind = "api-key", env = "OPENROUTER_API_KEY" }
 id = "meta-llama/llama-4-maverick"
 label = "Llama 4 Maverick"
 context_window = 1048576
+[[providers.openrouter.models]]
+id = "z-ai/glm-5.3"
+label = "GLM 5.3"
+context_window = 1310720       # OpenRouter's declared context_length for this row
 
 # ── strict OpenAI-compatible vendor: reasoning_effort must be turned OFF ────────
 # This dialect emits reasoning_effort/reasoning by default (DeepSeek/xAI/OpenRouter accept and
@@ -177,6 +202,10 @@ id = "k3"
 # EXACTLY 1e6, matching the k3[1m] row below — see the note there.
 context_window = 1000000
 [[providers.kimi.models]]
+id = "k3-256k"                 # same K3, fixed 256k window; Kimi meters k3 (1M) at ~2x this row's quota
+label = "Kimi K3 (256k)"
+context_window = 262144
+[[providers.kimi.models]]
 id = "k3[1m]"                  # sent upstream as bare `k3`; [1m] is a display/context-tier hint
 label = "Kimi K3 (1M)"
 description = "1M context needs the Allegretto plan or higher — Moderato serves 256K."
@@ -219,6 +248,8 @@ models = [{ id = "gpt-5.6-sol", slot = "opus" }, { id = "gpt-5.6-terra", slot = 
 context_window = 400000
 [heads.claudex.claude]
 command = "claudex"
+[heads.claudex.overrides]
+maxInflight = "100"            # the concurrency this account has tolerated in daily use (fan-outs included)
 
 # grok-build is the genuine fast tier (256k coder model) — declared as haiku below so background
 # titling and `--model haiku` stay served on this head. No fable analog exists: fable stays
@@ -238,10 +269,11 @@ provider = "openrouter"
 port = 3101
 discovery_prefix = "claude-openrouter--"
 pinned_model = "meta-llama/llama-4-maverick"
-# opus-only on purpose: undeclared tiers (sonnet/haiku/fable) 400 cleanly pre-upstream — the
-# slot note on [heads.claudex] explains what degrades (background titling, `--model haiku`).
-models = [{ id = "meta-llama/llama-4-maverick", slot = "opus" }]
-context_window = 1048576
+# Tiers declared on purpose: Llama 4 Maverick as opus (pinned, sets the process window), GLM 5.3
+# as sonnet. haiku and fable stay undeclared and 400 cleanly pre-upstream — the slot note on
+# [heads.claudex] explains what degrades (background titling, `--model haiku`). No head-wide
+# context_window: the two rows have different ceilings and each keeps its own.
+models = [{ id = "meta-llama/llama-4-maverick", slot = "opus" }, { id = "z-ai/glm-5.3", slot = "sonnet" }]
 [heads.openrouter.claude]
 command = "claude-openrouter"
 
@@ -250,7 +282,8 @@ provider = "fireworks"
 port = 3103
 discovery_prefix = "claude-fireworks--"
 pinned_model = "accounts/fireworks/models/llama-v3p1-70b-instruct"
-# opus-only on purpose — same degradation note as [heads.openrouter].
+# opus-only on purpose: undeclared tiers (sonnet/haiku/fable) 400 cleanly pre-upstream — the
+# slot note on [heads.claudex] explains what degrades (background titling, `--model haiku`).
 models = [{ id = "accounts/fireworks/models/llama-v3p1-70b-instruct", slot = "opus" }]
 context_window = 131072
 [heads.fireworks.claude]
@@ -261,9 +294,11 @@ provider = "kimi"
 port = 3102
 discovery_prefix = "claude-kimi--"
 pinned_model = "k3[1m]"
-# opus-only on purpose (one upstream model) — same degradation note as [heads.openrouter].
-models = [{ id = "k3[1m]", slot = "opus" }]
-context_window = 1000000
+# Tiers declared on purpose: opus is K3 on the 1M window (the pinned row sets the process window),
+# sonnet is the same K3 held at 256k (Kimi meters the 1M tier at ~2x this one), haiku is Kimi K2.7
+# Code. fable stays undeclared and 400s cleanly pre-upstream (slot note on [heads.claudex]). No
+# head-wide context_window: the rows have different ceilings and each keeps its own.
+models = [{ id = "k3[1m]", slot = "opus" }, { id = "k3-256k", slot = "sonnet" }, { id = "kimi-for-coding", slot = "haiku" }]
 [heads.claude-kimi.claude]
 command = "claude-kimi"
 # PER-HEAD KNOBS. Keys are the knob names from ConfigService's Knob enum (maxInflight, maxQueued,

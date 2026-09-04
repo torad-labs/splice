@@ -168,10 +168,13 @@ auth = { kind = "api-key", env = "MOCK_CHAT_API_KEY" }
 id = "mock-chat-2"
 label = "Chat 2 (mock)"
 context_window = 64000
+<<<<<<< HEAD
 [[providers.mockchat2.models]]
 id = "mock-chat-2-big"
 label = "Chat 2 big (mock)"
 context_window = 128000
+=======
+>>>>>>> origin/main
 
 [heads.claudex]
 provider = "codex"
@@ -310,6 +313,7 @@ step "launch recipe: mockchat base URL + API_TIMEOUT_MS > 900s" launch_recipe mo
 # Claude Code its own CLAUDE_CODE_MAX_CONTEXT_TOKENS, from the topology alone. Three heads, three
 # windows: a head reading another head's roster or window is exactly the fresh-install drift
 # this step exists to catch.
+<<<<<<< HEAD
 # The same /launch also PACKAGES the head: the daemon's own status line (settings.json statusLine
 # posting Claude Code's blob to /statusline/<head>), the in-session /login command and the hook
 # that runs the head's sign-in when it is submitted. Splice is the whole package, so a head that
@@ -323,11 +327,21 @@ import json, os, sys
 head, model, window, rows_arg, home, recipe, control = sys.argv[1:8]
 window = int(window)
 expected_rows = {kv.split(":")[0]: int(kv.split(":")[1]) for kv in rows_arg.split(",")}
+=======
+head_contract() { # head model window
+  curl_mgmt -X POST -H 'Content-Type: application/json' \
+    --data '{"dangerouslySkipPermissions":"","args":[]}' "http://127.0.0.1:$CONTROL_PORT/launch/$1" \
+    > "$OUT/recipe-$1.json" || return 1
+  python3 - "$1" "$2" "$3" "$HOME" "$OUT/recipe-$1.json" <<'EOF'
+import json, os, sys
+head, model, window, home, recipe = sys.argv[1], sys.argv[2], int(sys.argv[3]), sys.argv[4], sys.argv[5]
+>>>>>>> origin/main
 r = json.load(open(recipe)); env = r.get("env", {})
 cfg = env.get("CLAUDE_CONFIG_DIR") or os.path.join(home, ".claude-" + head)
 settings = json.load(open(os.path.join(cfg, "settings.json")))
 cache = json.load(open(os.path.join(cfg, ".claude.json"))).get("additionalModelOptionsCache", [])
 rows = {row["value"]: row.get("context_window") for row in cache}
+<<<<<<< HEAD
 statusline = (settings.get("statusLine") or {}).get("command", "")
 hooks = settings.get("hooks", {}).get("UserPromptSubmit", [])
 hook_cmds = [h.get("command", "") for entry in hooks for h in entry.get("hooks", [])]
@@ -374,6 +388,22 @@ EOF
 }
 step "status line: the scaled 128k row shows its label and real window" statusline_row mockchat2 mock-chat-2-big "Chat 2 big (mock)" "64k/128k" "50%"
 step "status line: the pinned 64k row is untouched" statusline_row mockchat2 mock-chat-2 "Chat 2 (mock)" "32k/64k" "50%"
+=======
+print("recipe:", {k: env.get(k) for k in ("ANTHROPIC_MODEL", "CLAUDE_CODE_MAX_CONTEXT_TOKENS", "CLAUDE_CODE_AUTO_COMPACT_WINDOW", "CLAUDE_CONFIG_DIR")})
+print("picker:", {"model": settings.get("model"), "availableModels": settings.get("availableModels"),
+                  "enforceAvailableModels": settings.get("enforceAvailableModels"), "rows": rows})
+assert env.get("ANTHROPIC_MODEL") == model, env.get("ANTHROPIC_MODEL")
+assert env.get("CLAUDE_CODE_MAX_CONTEXT_TOKENS") == str(window), env.get("CLAUDE_CODE_MAX_CONTEXT_TOKENS")
+assert env.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW") == str(window), env.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW")
+assert settings.get("model") == model and settings.get("availableModels") == [model], "picker off: %r" % settings.get("availableModels")
+assert settings.get("enforceAvailableModels") is True, "picker is not enforced"
+assert rows == {model: window}, rows
+EOF
+}
+step "head contract: claudex offers gpt-5-codex at 272k" head_contract claudex gpt-5-codex 272000
+step "head contract: mockchat offers mock-chat at 128k" head_contract mockchat mock-chat 128000
+step "head contract: mockchat2 offers mock-chat-2 at 64k" head_contract mockchat2 mock-chat-2 64000
+>>>>>>> origin/main
 
 # ── 8. the real wrapper: Claude Code itself, print mode, through the head, to the mock ───────
 wrapper_turn() { # wrapper expected-substring
@@ -402,6 +432,7 @@ step "daemon stopped (the shim must boot it on first launch)" daemon_down
 step "wrapper turn: claudex -p boots the daemon and completes" wrapper_turn claudex "ok after auth"
 step "wrapper turn: claude-mockchat -p through the head" wrapper_turn claude-mockchat "END"
 
+<<<<<<< HEAD
 # ── 8a. plan usage: the head's 5h/7d windows ride every response and draw the bars ───────────
 # The daemon polls the provider's usage endpoint (the mock's wham/usage: 14% of 5h, 42% of 7d),
 # stamps every response with the anthropic-ratelimit-unified-* headers Claude Code reads into its
@@ -456,6 +487,8 @@ login_apikey() {
 step "claudex login: the ChatGPT OAuth flow starts from the installed wrapper" login_oauth claudex "auth.openai.com"
 step "claude-mockchat login: the api-key path names its pipe, and the pipe stores the key" login_apikey
 
+=======
+>>>>>>> origin/main
 # ── 8b. cross-head sessions: every head's sessions/ IS the operator's global registry ─────────
 # Claude Code discovers peer sessions by listing $CLAUDE_CONFIG_DIR/sessions (the message sockets
 # are machine-global already), so per-head config isolation is the only thing that could hide one
@@ -570,6 +603,7 @@ for head, h in t["heads"].items():
     if not ok:
         bad.append(head)
 assert not bad, f"heads off the example contract: {bad}"
+<<<<<<< HEAD
 
 # `<wrapper> login` for every head of the shipped example, offline: each auth kind must reach ITS
 # flow — OAuth prints the authorize URL and waits (bounded by timeout), the Kimi device flow fails
@@ -596,6 +630,8 @@ for head, h in t["heads"].items():
     if not hit:
         print(out[-600:]); failed.append(command)
 assert not failed, f"login verb did not reach its provider flow for: {failed}"
+=======
+>>>>>>> origin/main
 EOF
 }
 example_topology() {

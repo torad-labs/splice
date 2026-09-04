@@ -22,6 +22,10 @@
 
 ### Changed
 
+- **The shipped example config now matches the daily-driven one.** `claudex` ships with the
+  Responses WebSocket transport, zstd request bodies and the deferred tool surface (LSP deferred)
+  on, plus the inflight ceiling that account has sustained; `claude-kimi` offers Kimi K3 at 256k and
+  Kimi K2.7 Code beside the 1M row; `claude-openrouter` offers GLM 5.3 beside Llama 4 Maverick.
 - **Every perf row and every client-abort line names the client session.** The daemon now stamps
   the Claude Code session id on every dialect's turn (only the Responses dialect kept it before),
   writes its short tag into the perf JSONL and the perf log line, and the "client gone" line names
@@ -74,6 +78,24 @@
 
 ### Fixed
 
+- **Compactions no longer die on the ChatGPT backend's capacity signal.** An in-stream
+  `server_is_overloaded` (or `slow_down`) used to classify as a non-retryable `api_error`, so the
+  proxy neither reissued nor salvaged the turn and Claude Code reported the compaction failed. Any
+  overload-shaped error code on an in-stream or server-side (5xx) failure is now a transient
+  `overloaded_error`, the type Claude Code retries with backoff, matching codex's own handling of
+  the same two codes; a 4xx keeps its deterministic verdict whatever its code spells.
+- **Claude Code now waits out the proxy's own whole-turn wall.** Every wrapper plants
+  `API_TIMEOUT_MS` from the head's `upstreamTimeoutMs` plus a minute of grace (960 s on the
+  default 900 s cap). With Claude Code's 600 s default, every compaction longer than ten minutes
+  ended as a client abort while the daemon was still streaming the summary.
+- **A silent compaction is ended by the whole-turn wall alone.** The compact budget used to raise
+  the first-output tier to the wall instead of switching it off, leaving two pollers on one
+  deadline; on a loaded runner the idle poller could win the tick and end a round as "first-output
+  cap" (salvage invited) where the wall should have ended the turn. The tier is now off for
+  compactions; `streamIdle` still reaps a stall once output has begun.
+- **A torn perf row no longer swallows the row after it.** When the disk filled mid-append
+  (2026-08-25) a short write left a fragment with no newline and the next row fused onto it, so
+  readers lost both. The JSONL sink now heals a torn tail before appending.
 - **The status line follows the picked model row.** Claude Code fixes its context window per
   process and splice scales the counts it reports so any other row compacts at its own window,
   which left the bar showing the session's window and scaled counts however the operator switched
@@ -106,6 +128,13 @@
 
 ### Added
 
+- **Heads that see each other.** Every wrapper's `sessions` directory is linked at the one registry
+  under `~/.claude/sessions` on first launch (created if plain `claude` never ran on the machine), so
+  claudex, claude-grok, claude-kimi, claude-openrouter, claude-splice and plain `claude` sessions all
+  appear in each other's `ListAgents` and can message each other with `SendMessage`: a session on one
+  backend can orchestrate a session on another. On by default through `[claude].share`;
+  `isolate = ["sessions"]` walls a head off. (Shipped in this release without a changelog entry;
+  recorded here.)
 - **`claude-splice`, the native-auth Claude head.** Claude Code keeps its own Anthropic login and
   sends the caller credential through the local passthrough head; splice never stores, reads,
   refreshes, or logs that credential. The management key is not reused on this route.

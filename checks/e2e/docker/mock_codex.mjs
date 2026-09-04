@@ -40,6 +40,7 @@ writeFileSync(
   region + `\nmock.listen(${port}, '127.0.0.1');\nexport { mock, AUTH_PATH };\n`,
 );
 const m = await import(pathToFileURL(modulePath).href);
+<<<<<<< HEAD
 // The e2e's one route on top of the vendored mock: the ChatGPT usage endpoint splice polls for the
 // plan's 5h/7d windows (GET <origin>/backend-api/wham/usage). Fixed numbers, so the response
 // headers and the status-line bars are asserted exactly.
@@ -62,5 +63,7 @@ m.mock.on('request', (req, res) => {
   }
   vendoredHandler(req, res);
 });
+=======
+>>>>>>> origin/main
 if (!m.mock.listening) await once(m.mock, 'listening');
 console.log(JSON.stringify({ port: m.mock.address().port, auth_path: m.AUTH_PATH }));

@@ -93,6 +93,13 @@ class MockChatGptUpstream {
         pool.shutdownNow()
     }
 
+    private fun capacityStatus(scenario: String): Int? = when (scenario) {
+        "overload_503" -> 503
+        "overload_once" -> if (upstreamBodies.count { it.first == scenario } == 1) 503 else null
+        "overload_403" -> 403
+        else -> null
+    }
+
     private fun sse(ex: HttpExchange, json: String) {
         ex.responseBody.write("data: $json\n\n".toByteArray())
         ex.responseBody.flush()
@@ -133,6 +140,18 @@ class MockChatGptUpstream {
         if (scenario == "refresh" && auth == "Bearer tok-old") {
             val err = """{"error":{"message":"token expired"}}"""
             ex.sendResponseHeaders(401, err.length.toLong())
+            ex.responseBody.use { it.write(err.toByteArray()) }
+            return
+        }
+
+        // The ChatGPT backend's capacity signal in its PRE-STREAM shape (PR #115 classifies the code
+        // by shape): "overload_503" never clears, so the head retries and then surfaces OVERLOADED;
+        // "overload_once" clears on the second POST, so the head's own retry completes the turn;
+        // "overload_403" wears the same code on a 4xx, which must stay a deterministic client error.
+        // The POST count in [upstreamBodies] is the retry proof — never the verdict alone.
+        capacityStatus(scenario)?.let { status ->
+            val err = """{"error":{"code":"server_is_overloaded","message":"The engine is currently overloaded, please try again later"}}"""
+            ex.sendResponseHeaders(status, err.length.toLong())
             ex.responseBody.use { it.write(err.toByteArray()) }
             return
         }
@@ -405,6 +424,12 @@ class MockChatGptUpstream {
             "failed" -> sse(
                 ex,
                 """{"type":"response.failed","response":{"error":{"code":"server_error","message":"boom upstream"}}}""",
+            )
+            // The capacity signal in its IN-STREAM shape — the 2026-09-01 20:56 compaction death.
+            "overload_sse" -> sse(
+                ex,
+                """{"type":"response.failed","response":{"error":{"code":"server_is_overloaded",""" +
+                    """"message":"The engine is currently overloaded, please try again later"}}}""",
             )
             "overflow_sse" -> sse(
                 ex,

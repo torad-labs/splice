@@ -23,6 +23,7 @@ internal class WsConnectionFactory(
     private val connector: WsConnector,
     private val log: LogSink,
     private val logKeys: WsLogKeys,
+    private val openSockets: OpenSockets,
 ) {
     private val generations = AtomicLong(0)
 
@@ -31,10 +32,14 @@ internal class WsConnectionFactory(
         val inbox = Channel<JsonObject>(INBOX_CAPACITY)
         val holder = AtomicReference<WsConnection?>(null)
         val anomalyObserved = AtomicBoolean(false)
+        // Born with the socket, before the listener: the first server ping can land during the
+        // handshake, and a close line must be able to name the socket that never got registered.
+        val pulse = WsPulse(logKeys.logKey(key), openSockets)
         val listener = InboxListener(
             inbox,
             log,
             terminalSeen = { holder.get()?.terminalSeen?.get() == true },
+            pulse = pulse,
         ) {
             // A connector may synchronously deliver callbacks before it returns the socket. Set the
             // latch FIRST, then try the owner: whichever side wins publication observes the anomaly.
@@ -50,7 +55,7 @@ internal class WsConnectionFactory(
             )
             return null
         }
-        val conn = WsConnection(socket, inbox, generation, log)
+        val conn = WsConnection(socket, inbox, generation, log, pulse)
         holder.set(conn)
         if (anomalyObserved.get()) {
             conn.kill()

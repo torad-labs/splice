@@ -1,7 +1,7 @@
 {
   "name": "splice",
   "private": true,
-  "version": "0.3.0-beta.1",
+  "version": "0.3.0",
   "engines": {
     "node": ">=24"
   },

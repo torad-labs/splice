@@ -90,11 +90,11 @@ gh auth login   # once
 curl -fsSL https://github.com/torad-labs/splice/releases/latest/download/install.sh | bash
 ```
 
-The first beta is version-pinned so the stable `latest` channel remains stable-only:
+To pin one version instead of following `latest` (prereleases never become `latest`):
 
 ```bash
-curl -fsSL https://github.com/torad-labs/splice/releases/download/v0.3.0-beta.1/install.sh \
-  | env SPLICE_VERSION=v0.3.0-beta.1 bash
+curl -fsSL https://github.com/torad-labs/splice/releases/download/v0.3.0/install.sh \
+  | env SPLICE_VERSION=v0.3.0 bash
 ```
 
 **Option 2: from source** (no `gh` needed):

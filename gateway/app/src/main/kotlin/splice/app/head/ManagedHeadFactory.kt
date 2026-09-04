@@ -4,17 +4,23 @@
 // credential" reads of the SAME wired.auth), and assembles the ManagedHead record.
 package splice.app.head
 
+import kotlinx.coroutines.CoroutineScope
+import splice.app.AuthHttpClientFactory
 import splice.app.CompactStatsSource
 import splice.app.LogFileSource
 import splice.app.PerfStatsSource
 import splice.app.UsageStoreSource
 import splice.app.provider.ProviderAssembly
 import splice.app.provider.ProviderBuild
+import splice.app.quota.QuotaPoller
+import splice.app.quota.QuotaProbes
 import splice.control.ManagedHead
 import splice.core.auth.ClientAuthProvider
 import splice.core.config.StatePaths
+import splice.core.util.LogSink
 import splice.gateway.compact.CompactStats
 import splice.gateway.perf.PerfStats
+import splice.gateway.usage.QuotaTracker
 import splice.gateway.usage.UsageStore
 import splice.provider.openai.ApiKeyAuthProvider
 
@@ -23,7 +29,13 @@ internal class ManagedHeadFactory(
     private val providerAssembly: ProviderAssembly,
     private val headServerFactory: HeadServerFactory,
     private val launchSpecFactory: LaunchSpecFactory,
+    /** The daemon's OWN scope (the same instance ProviderAssembly prefetches on): the quota pollers
+     *  end with Daemon.stop() like every other background probe. */
+    private val probeScope: CoroutineScope,
+    private val log: LogSink,
 ) {
+    private val quotaProbes by lazy { QuotaProbes(AuthHttpClientFactory().create()) }
+
     // Common assembly shared by every provider: stores, the generic HeadServer, launch spec.
     internal fun assembleHead(ctx: ProviderBuild, controlPort: Int): ManagedHead {
         val key = ctx.key
@@ -33,7 +45,16 @@ internal class ManagedHeadFactory(
             usageStore = UsageStore(statePaths.usageFile(key), statePaths.ratelimitFile(key)),
             compactStats = CompactStats(statePaths.compactStatsFile(key)),
             perfStats = PerfStats(statePaths.perfStatsFile(key)),
+            quota = QuotaTracker(statePaths.quotaFile(key)),
         )
+        // Subscription heads (ChatGPT, Kimi, SuperGrok) have a usage endpoint; poll it so the bars
+        // are right from the first tick. Every head still observes its rounds' headers. The
+        // daemon-wide QUOTA_POLL knob ("off") is the operator's way to stop that outbound egress.
+        if (!cfg.quotaPollOff) {
+            quotaProbes.forHead(ctx, wired.auth)?.let { probe ->
+                QuotaPoller(probeScope, key, probe, stores.quota, log).start()
+            }
+        }
         val logFile = statePaths.logsDir.resolve("daemon.log")
         // Derived from the CREDENTIAL, never from the declared string. The bypass is safe only
         // because splice holds nothing for this head, so it reads the artifact that IS that fact:
@@ -52,7 +73,7 @@ internal class ManagedHeadFactory(
         return ManagedHead(
             head = server,
             auth = wired.auth,
-            usage = UsageStoreSource(stores.usageStore),
+            usage = UsageStoreSource(stores.usageStore, stores.quota),
             compact = CompactStatsSource(stores.compactStats),
             logs = LogFileSource(logFile, "[$key]"),
             warnPct = cfg.usageWarnPct,
@@ -65,6 +86,7 @@ internal class ManagedHeadFactory(
             ),
             perf = PerfStatsSource(stores.perfStats),
             keyPresence = keyPresence,
+            catalog = ctx.catalog,
         )
     }
 }

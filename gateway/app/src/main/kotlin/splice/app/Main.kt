@@ -50,14 +50,31 @@ internal class DaemonProcess {
         // pre-logger stack trace died in /dev/null and the operator saw only "failed version
         // handshake (got <none>)".
         Thread.setDefaultUncaughtExceptionHandler(bootFailureHandler(statePaths))
-        val lock = DaemonLock(statePaths.daemonLockFile)
-        if (!lock.tryAcquire()) {
-            System.err.println("[daemon] another splice daemon holds the lock — exiting (the winner serves)")
-            return
-        }
+        // The topology is read BEFORE the lock so a loser can health-check the winner's control
+        // port (DaemonLockWait): reading is what the winner does next anyway, and a materialized
+        // example is idempotent between the two.
         val topologyPath = TopologyLoader.configPath()
         val loaded = TopologyLoader.loadOrMaterializeWithDigest(topologyPath)
         val topology = loaded.topology
+        val lock = DaemonLock(statePaths.daemonLockFile)
+        val controlPort = splice.app.cli.AdminSupport.controlPort(topology)
+        val lockWait = DaemonLockWait()
+        when (lockWait.acquire(lock, controlPort)) {
+            LockOutcome.WON -> Unit
+            LockOutcome.PEER_SERVING -> {
+                System.err.println(
+                    "[daemon] another splice daemon serves on :$controlPort — exiting (the winner serves)",
+                )
+                return
+            }
+            LockOutcome.EXPIRED -> {
+                System.err.println(
+                    "[daemon] the daemon lock stayed held for ${lockWait.windowMs()}ms by a process that is not " +
+                        "serving on :$controlPort — exiting; find that process (`splice doctor`) and retry",
+                )
+                return
+            }
+        }
         val distPath = Paths.get(System.getProperty("user.dir"), "..", "webui", "dist", "index.html")
         val log = persistentLogger(statePaths.logsDir)
         // Components that would otherwise fall back to bare stderr (auth providers, ConfigService,

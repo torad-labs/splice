@@ -20,6 +20,8 @@ public class WsConnection internal constructor(
     internal val inbox: Channel<JsonObject>,
     public val generation: Long,
     private val log: LogSink,
+    /** Stamped by the listener (frames, pings) and the pool (round start/end); read on the close line. */
+    internal val pulse: WsPulse,
 ) {
     internal val busy = AtomicBoolean(false)
     internal val dead = AtomicBoolean(false)

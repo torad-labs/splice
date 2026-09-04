@@ -31,6 +31,21 @@ class PerfStatsTest {
     }
 
     @Test
+    fun `a row names the client session when the turn carried one`() {
+        val file = Files.createTempDirectory("perf-stats").resolve("perf.jsonl")
+        val stats = PerfStats(file, clock = { 5L })
+        val tagged = PerfRowMeta("m", "client_abort", compact = false, session = "a6b15bd7")
+        stats.record(tagged, TurnPerf { 0L }.snapshot())
+        stats.record(PerfRowMeta("m", "ok", compact = false), TurnPerf { 0L }.snapshot())
+        val rows = stats.tailNumeric(10) // drains the writer
+        assertEquals(2, rows.size)
+        val lines = Files.readAllLines(file)
+        assertTrue(lines[0].contains("\"session\":\"a6b15bd7\""), lines[0])
+        assertTrue("session" !in lines[1], lines[1])
+        assertTrue("session" !in rows[0], "a string field never reaches the numeric aggregation input")
+    }
+
+    @Test
     fun `tailNumeric bounds to tailN newest-last and skips corrupt lines`() {
         val tmp = Files.createTempDirectory("perf-stats")
         val file = tmp.resolve("perf.jsonl")

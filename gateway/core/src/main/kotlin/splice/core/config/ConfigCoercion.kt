@@ -111,10 +111,13 @@ internal class ConfigCoercion(private val envReader: EnvReader) {
         out[Knob.USAGE_WARN_TOKENS_5H.key] = clampLong(out, Knob.USAGE_WARN_TOKENS_5H, floor = 0L)
         // anything that is not exactly "off" is "auto" — an unknown value must never silently arm
         // a feature (the r3 invalid-env-value lesson).
-        out[Knob.TOOL_SURFACE.key] =
-            if (str(out, Knob.TOOL_SURFACE)?.trim()?.lowercase() == "off") "off" else "auto"
+        out[Knob.TOOL_SURFACE.key] = offOrAuto(str(out, Knob.TOOL_SURFACE))
+        out[Knob.QUOTA_POLL.key] = offOrAuto(str(out, Knob.QUOTA_POLL))
         return out
     }
+
+    // The one-way kill-switch shape shared by TOOL_SURFACE and QUOTA_POLL.
+    private fun offOrAuto(raw: String?): String = if (raw?.trim()?.lowercase() == "off") "off" else "auto"
 
     fun normalizeShowReasoning(raw: String?): String {
         val v = raw?.trim()?.lowercase().orEmpty()

@@ -14,8 +14,9 @@
  * DISCIPLINE (mirrors capture.mjs, deliberately):
  *   - the mock is extracted BYTE-IDENTICAL from server/test/codex-proxy.test.mjs and its sha256
  *     MUST match _manifest.json — a moved or edited mock invalidates the oracle, fail closed;
- *   - canonicalization is the ONE manifest-declared rule (msg_<digits> -> msg_CANON), applied to
- *     the observed stream exactly as capture applied it to the recording;
+ *   - canonicalization is the manifest-declared rule set (msg_<digits> -> msg_CANON, and the
+ *     gateway's SSE keepalive comment lines dropped), applied to the observed stream exactly as
+ *     capture applied it to the recording;
  *   - a divergence is never "close enough": it is a byte diff, and it must be classified in
  *     expectations.toml (kotlin-wrong | sanctioned-with-authority), never suppressed here.
  *     [[divergence]] rows in expectations.toml are honored FIELD-WISE for upstream requests:
@@ -54,7 +55,17 @@ const REQUEST_TIMEOUT_MS = 60_000; // a replayed fixture answers in ms; 60s mean
 const HEAD_PORT = 39490;   // CI-hermetic fixed scratch ports (OSS-M pattern)
 const CONTROL_PORT = 39491;
 
-const CANON_RULES = [{ re: /msg_\d+(?:_\d+)?/g, to: 'msg_CANON' }];
+// Two rules, both declared in _manifest.json:
+//   1. message ids are canonicalized exactly as capture did;
+//   2. the gateway's SSE keepalive COMMENT lines (": ping\n\n", ClientChannel.SSE_KEEPALIVE_COMMENT)
+//      are dropped. They are SSE-spec comments, invisible to any consumer, and the reference never
+//      wrote them; their COUNT is pure wall clock (a 2s pinger against however long a turn spends
+//      in retry backoff), which is why the `failed` row flipped between 2 and 3 of them run to run
+//      once the re-anchor budget grew to five (2026-09-03). Real `event: ping` frames stay pinned.
+const CANON_RULES = [
+  { re: /msg_\d+(?:_\d+)?/g, to: 'msg_CANON' },
+  { re: /^: ping\n\n/gm, to: '' },
+];
 const canonicalize = (t) => CANON_RULES.reduce((x, r) => x.replace(r.re, r.to), t);
 
 const args = process.argv.slice(2);
@@ -304,6 +315,21 @@ async function main() {
   const mockPath = join(tmp, 'vendored_mock.mjs');
   writeFileSync(mockPath, region + `\nmock.listen(0, '127.0.0.1');\nexport { mock, upstreamAuths, upstreamBodies, abortedScenarios, AUTH_PATH, stateRoot };\n`);
   const m = await import(pathToFileURL(mockPath).href);
+  // The daemon's quota poller (QuotaPoller, 2026-09-02) asks this origin for
+  // GET /backend-api/wham/usage; the captured mock predates it and JSON-parses every request body,
+  // so an empty GET body crashed the mock process. Answer 404 BEFORE the vendored handler: the
+  // replay keeps its captured shape (no quota snapshot, no unified headers on head responses, no
+  // extra upstream request recorded) and the pinned mock region is untouched.
+  const vendoredHandler = m.mock.listeners('request')[0];
+  m.mock.removeAllListeners('request');
+  m.mock.on('request', (req, res) => {
+    if (req.method === 'GET' && req.url === '/backend-api/wham/usage') {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+    vendoredHandler(req, res);
+  });
   await once(m.mock, 'listening');
   const mockPort = m.mock.address().port;
 

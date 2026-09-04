@@ -22,7 +22,7 @@ internal class TurnFinish(
 ) {
     suspend fun finishTurn(drive: TurnDrive, outcome: TurnOutcome) {
         val latencyMs = clock() - drive.t0
-        log(telemetry.turnLine(drive.meta, drive.upstreamModel, outcome, latencyMs))
+        log(telemetry.turnLine(drive.meta, drive.upstreamModel, outcome, latencyMs, drive.watchdog.fired))
         // DR-129: terminal frames still go FIRST (the header invariant — usage I/O must never sit
         // between the last delta and message_stop), but the stamps below must survive the
         // dead-client IOException emitTerminal rethrows after sealing: the outcome's usage is IN

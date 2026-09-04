@@ -34,6 +34,8 @@ public class StatePaths(
 
     public fun ratelimitFile(headKey: String): Path = stateDir.resolve("${legacyStatKey(headKey)}-ratelimit.json")
 
+    public fun quotaFile(headKey: String): Path = stateDir.resolve("${legacyStatKey(headKey)}-quota.json")
+
     private fun legacyStatKey(headKey: String): String = when (headKey) {
         "codex", "claudex" -> "codex"
         "grok", "claude-grok" -> "grok"

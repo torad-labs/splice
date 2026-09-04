@@ -22,6 +22,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNull
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
@@ -102,6 +103,36 @@ class WatchdogTest {
             val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { false })
             delay(900) // silent 3x streamIdle, still under firstByteTimeout
             assertNull(dog.fired, "prefill was reaped — the compaction-ate-my-quota regression")
+            target.cancel()
+            poller.cancel()
+            slot.release()
+        }
+    }
+
+    // THE COMPACT BUDGET (WatchdogBudget.forCompact): the pre-output tier is OFF, so a silent
+    // compaction is never reaped by THIS poller — not at firstByteTimeout, not at totalCap, which is
+    // launchTotalCap's cancel and the wall that alone may end it. Before this the tier was RAISED to
+    // totalCap, and two pollers on one deadline flipped a coin over which verdict named the stall
+    // (gate run 33575037270 on a loaded runner). Rides a real clock like the v35 arm above: it
+    // proves idleness as the slot measures it, and the slot's clock has no seam.
+    @Test
+    fun `the compact budget never reaps pre-output silence from the idle poller, even past totalCap`() {
+        runBlocking {
+            val gate = InflightGate({ 0 })
+            val slot = gate.acquire()
+            val dog = TurnWatchdog(budget(firstByteMs = 5_000, idleMs = 300, capMs = 600).forCompact())
+            val cancelled = AtomicBoolean(false)
+            val target = launch {
+                try {
+                    delay(10.seconds)
+                } finally {
+                    cancelled.set(true)
+                }
+            }
+            val poller = dog.launchIn(this, slot, target, ClientFrameEmitted { false })
+            delay(1_200) // silent 4x streamIdle and 2x totalCap, no client frame yet
+            assertNull(dog.fired, "the idle poller reaped a compaction's pre-output silence — the wall alone owns it")
+            assertFalse(cancelled.get(), "the round was cancelled without a verdict")
             target.cancel()
             poller.cancel()
             slot.release()

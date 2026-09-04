@@ -155,6 +155,7 @@ class ControlServerTest {
         policy = splice.core.launch.ClaudePolicy(share = emptySet(), isolate = emptySet()),
         port = 3099,
         inferenceToken = inferenceToken,
+        apiTimeoutMs = 960_000,
     )
 
     /** A second head whose wrapper COMMAND differs from its topology KEY (the starter's

@@ -50,6 +50,7 @@ public class SpliceConfig internal constructor(private val m: Map<String, Any?>)
     public val usageWarnPct: Int get() = long(Knob.USAGE_WARN_PCT).toInt()
     public val usageWarnTokens5h: Long get() = long(Knob.USAGE_WARN_TOKENS_5H)
     public val toolSurfaceOff: Boolean get() = string(Knob.TOOL_SURFACE) == "off"
+    public val quotaPollOff: Boolean get() = string(Knob.QUOTA_POLL) == "off"
 
     // Colon-separated absolute paths → list; relative segments are dropped (trust boundary).
     public val statuslineGitRoots: List<String>

@@ -101,7 +101,14 @@ internal data class ClientChannel(
         turnJob.cancel()
     }
 
-    fun launchClientPinger(scope: CoroutineScope, turnJob: Job, ticker: Ticker, headKey: String, log: LogSink): Job =
+    fun launchClientPinger(
+        scope: CoroutineScope,
+        turnJob: Job,
+        ticker: Ticker,
+        headKey: String,
+        log: LogSink,
+        session: String? = null,
+    ): Job =
         scope.launch {
             while (isActive) {
                 // HD-19: the ping cadence is a named Ticker, not a bare delay. ProcessTicker always
@@ -112,7 +119,11 @@ internal data class ClientChannel(
                     writeMutex.withLock { coalesced.write(SSE_KEEPALIVE_COMMENT) }
                 } catch (e: IOException) {
                     clientGone.set(true)
-                    log("[$headKey] client gone (keepalive write failed: ${e.message}) — cancelling turn\n")
+                    // The class, not just the message: ClosedChannelException carries none, and
+                    // "keepalive write failed: null" said nothing about who closed what (2026-09-02).
+                    val why = e::class.simpleName + (e.message?.let { ": $it" } ?: "")
+                    val who = session?.let { "session $it, " } ?: ""
+                    log("[$headKey] client gone (${who}keepalive write failed: $why) — cancelling turn\n")
                     turnJob.cancel()
                     return@launch
                 }

@@ -376,6 +376,46 @@ class HeadServerIntegrationTest {
         assertTrue(sse.contains("overloaded_error"))
     }
 
+    // PR #115 end to end: the backend's capacity signal in every wire shape it takes, driven through
+    // the real head. UpstreamFailureRetryWordingTest proves the VERDICT; these prove the head RETRIES
+    // the pre-stream 503 (the mock counts POSTs), that a signal which clears is invisible to the
+    // client, and that what the client finally sees is overloaded_error — the type Claude Code
+    // itself retries on — never the terminal api_error that ended the 2026-09-01 20:56 compaction.
+    @Test
+    fun `a 503 capacity signal is retried by the head and surfaces as overloaded_error when it persists`() = runTest {
+        val sse = messages("overload_503")
+        assertTrue(sse.contains("event: error"), sse)
+        assertTrue(sse.contains("overloaded_error"), sse)
+        assertFalse(sse.contains("api_error"), sse)
+        val posts = mock.upstreamBodies.count { it.first == "overload_503" }
+        assertTrue(posts >= 2, "the head gave up on the capacity signal without retrying: $posts POST(s)")
+    }
+
+    @Test
+    fun `a capacity signal that clears on the head's retry completes the turn`() = runTest {
+        val sse = messages("overload_once")
+        assertTrue(sse.contains("ok after auth"), sse)
+        assertTrue(sse.contains("event: message_stop"), sse)
+        assertEquals(2, mock.upstreamBodies.count { it.first == "overload_once" })
+    }
+
+    @Test
+    fun `an in-stream capacity signal surfaces as overloaded_error, never api_error`() = runTest {
+        val sse = messages("overload_sse")
+        assertTrue(sse.contains("event: error"), sse)
+        assertTrue(sse.contains("overloaded_error"), sse)
+        assertFalse(sse.contains("api_error"), sse)
+    }
+
+    @Test
+    fun `a 4xx wearing the overload code keeps its deterministic verdict and is not retried`() = runTest {
+        val sse = messages("overload_403")
+        assertTrue(sse.contains("event: error"), sse)
+        assertTrue(sse.contains("invalid_request_error"), sse)
+        assertFalse(sse.contains("overloaded_error"), sse)
+        assertEquals(1, mock.upstreamBodies.count { it.first == "overload_403" }, "a 4xx must not be retried")
+    }
+
     @Test
     fun `compactish turn promotes reasoning to text (mirror + promote)`() = runTest {
         // a compact-shaped SCENARIO won't trigger classifyCompact (no marker), so this proves

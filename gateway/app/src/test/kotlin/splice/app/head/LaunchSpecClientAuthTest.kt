@@ -95,6 +95,14 @@ class LaunchSpecClientAuthTest {
         )
     }
 
+    // The client's request timeout is derived from the head's whole-turn cap, not a second number
+    // kept by hand: 600s cap here -> 660s for Claude Code (2026-09-01 compaction client_aborts).
+    @Test
+    fun `the client's request timeout outlives the head's whole-turn cap`(@TempDir tmp: Path) {
+        val spec = factory(tmp).launchSpecFor(build(tmp, Dialect.OPENAI_RESPONSES), 3099, forwardClientAuth = false)
+        assertEquals(600_000L + 60_000L, spec.apiTimeoutMs)
+    }
+
     /** Positive factory half: a resolved true input must be preserved rather than hardcoded false.
      *  AuthDialectCompatibilityBootTest covers the real passthrough arm derivation. */
     @Test

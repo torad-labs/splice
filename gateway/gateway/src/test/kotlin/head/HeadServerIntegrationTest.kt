@@ -59,6 +59,13 @@ class HeadServerIntegrationTest {
 
     private val mock = MockChatGptUpstream()
     private val client = HttpClient(CIO) {
+        // CIO's engine default caps a call at 15s (CIOEngineConfig.requestTimeout). On a loaded CI
+        // runner a turn that lands late trips it, the client hangs up, TurnFinish's terminal write
+        // hits a dead socket and the perf row lands as a conn-reset tag instead of "ok" (runs
+        // 33608202738 on 2026-09-02 and 33928312116 on 2026-09-04, both at the "expected a perf
+        // line" assertion; green locally every time). The awaitLog ceiling below is the one
+        // clock a test here should run on, so the engine's own is off.
+        engine { requestTimeout = 0 }
         defaultRequest { bearerAuth("test-inference-token") }
     }
     private val port = freshPort()

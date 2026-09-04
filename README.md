@@ -36,6 +36,7 @@ Long coding-agent sessions bleed tokens and lose the thread. splice goes after b
 What you get:
 
 - [x] A [wrapper command per backend](#quick-start): `claude-splice`, `claudex`, `claude-grok`, `claude-kimi`, `claude-openrouter`
+- [x] [Heads that see each other](#heads-that-see-each-other): every wrapper's sessions register in one shared list, so a session on one backend can find, message and orchestrate a session on another with Claude Code's own `ListAgents` and `SendMessage`
 - [x] [Provider-native reasoning display](#reasoning), without synthetic transcript mirrors
 - [x] Cache-warm compaction on the session's own model and effort
 - [x] A [fleet dashboard](#quick-start) on loopback: status, config with provenance, usage soft-warnings, logs
@@ -165,6 +166,14 @@ splice install --all  # (re)link the wrapper commands
 ```
 
 The dashboard and every control endpoint are bearer-guarded and loopback-only. The unlock key lives at `~/.claude-codex/state/mgmt-key`.
+
+## Heads that see each other
+
+Claude Code can list the other Claude Code sessions on a machine and send them messages. It discovers peers by reading the `sessions` directory inside its own config dir, and every splice head runs in its own config dir, so out of the box a claudex session would only ever see other claudex sessions.
+
+splice closes that gap on the first launch of every head. The head's `sessions` directory becomes a link to the one registry under `~/.claude/sessions`, which splice creates if plain `claude` has never run on the machine. From then on a claudex session, a claude-grok session, a claude-openrouter session and a plain `claude` session all appear in each other's `ListAgents`, and `SendMessage` reaches any of them. A session on one backend can hand work to a session on another backend and read the reply, which is how one splice install becomes a fleet of agents on different models that coordinate with each other.
+
+There is nothing to configure. `sessions` is in the default `[claude].share` list. Put it in a head's `isolate` list to wall that head off, or remove it from `share` to turn the feature off everywhere. The fresh-machine e2e checks the link on both heads of a clean install.
 
 ## Troubleshooting
 

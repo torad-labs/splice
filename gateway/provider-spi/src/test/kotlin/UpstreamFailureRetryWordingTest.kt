@@ -2,9 +2,11 @@
 // retry-wording heuristic and the structured-code allowlist, red 6/6 on the pre-fix classifier —
 // em/en-dash and line-break clause cuts, the "retry" invitation synonym, "service is unavailable"
 // wording, engine/model overload codes, the 120-char clause budget, and won't/will-not negators.
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
+import splice.core.turn.ErrorType
 import splice.spi.FailureSource
 import splice.spi.UpstreamFailureClassifier
 
@@ -54,6 +56,69 @@ class UpstreamFailureRetryWordingTest {
     fun `engine and model overload codes are allowlisted transients - DR-71`() {
         assertTrue(coded("engine_overloaded").transient)
         assertTrue(coded("model_overloaded").transient)
+        // Overload is the vendor's own verdict, so it surfaces as the type the client retries on.
+        assertEquals(ErrorType.OVERLOADED, coded("engine_overloaded").type)
+    }
+
+    // 2026-09-01 20:56, claudex compaction (830KB upstream body): the backend's response.failed
+    // carried code server_is_overloaded — "Our servers are currently overloaded. Please try again
+    // later." — and the exact-list idiom made it a non-transient api_error: no reissue, no salvage,
+    // "compaction failed" in Claude Code. codex-rs (PR #31058) names server_is_overloaded and
+    // slow_down as the backend's two capacity codes and retries them patiently on their own budget;
+    // here any code spelling overload is capacity, surfaced as OVERLOADED so the client retries
+    // with backoff instead of ending the turn. Red 3/3 on the allowlist classifier.
+    @Test
+    fun `the backend's capacity codes are transient overloaded, not api_error`() {
+        for (code in listOf("server_is_overloaded", "slow_down", "SERVER_IS_OVERLOADED")) {
+            val r = coded(code)
+            assertEquals(ErrorType.OVERLOADED, r.type, code)
+            assertTrue(r.transient, code)
+        }
+    }
+
+    @Test
+    fun `a capacity code outranks message wording that reads deterministic`() {
+        val r = UpstreamFailureClassifier.classify(
+            FailureSource.SSE,
+            "Do not retry this request",
+            code = "server_is_overloaded",
+        )
+        assertEquals(ErrorType.OVERLOADED, r.type)
+        assertTrue(r.transient)
+    }
+
+    // The pre-stream shape of the same verdict: HTTP 503 with the structured code in the body.
+    @Test
+    fun `an HTTP 503 carrying a capacity code is overloaded, not a generic 5xx api_error`() {
+        val r = UpstreamFailureClassifier.classify(
+            FailureSource.HTTP,
+            """{"error":{"code":"server_is_overloaded","message":"Our servers are currently overloaded."}}""",
+            status = 503,
+        )
+        assertEquals(ErrorType.OVERLOADED, r.type)
+        assertTrue(r.transient)
+    }
+
+    // The shape rule IS the fix: an unseen overload spelling is capacity too. Mutation-checked: an
+    // exact four-entry allowlist keeps every arm above green and only this one red.
+    @Test
+    fun `an unseen overload spelling is capacity by shape, not by allowlist`() {
+        val r = coded("gpu_pool_overload_backpressure")
+        assertEquals(ErrorType.OVERLOADED, r.type)
+        assertTrue(r.transient)
+    }
+
+    // The shape rule never overrides a deterministic client error: a 4xx spelling overload keeps
+    // statusFallback's verdict instead of being re-POSTed four times against a limited account.
+    @Test
+    fun `a 4xx carrying an overload-shaped code stays a deterministic client error`() {
+        val r = UpstreamFailureClassifier.classify(
+            FailureSource.HTTP,
+            """{"error":{"code":"server_is_overloaded","message":"at capacity"}}""",
+            status = 403,
+        )
+        assertEquals(ErrorType.INVALID_REQUEST, r.type)
+        assertFalse(r.transient)
     }
 
     // DR-71 redo (codex red-repro): the negation bridge caps at 2000 chars but the heuristic used

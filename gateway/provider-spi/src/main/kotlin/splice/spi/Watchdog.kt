@@ -23,8 +23,10 @@
 // keys reissue on): until the client has seen content, the silence is prefill/reasoning and the
 // first-output cap applies; after it, the stream is mid-output and streamIdle applies. Bytes still
 // TOUCH the slot (liveness: a keepalive resets idleness); they no longer choose the limit. A COMPACT
-// turn's first-output cap is totalCap itself (WatchdogBudget.forCompact, wired at TurnDriveFactory):
-// the first compaction on the corrected tier still died silent at 300s.
+// turn has NO first-output tier (WatchdogBudget.forCompact, wired at TurnDriveFactory) — its wall is
+// launchTotalCap alone: the first compaction on the corrected tier still died silent at 300s, and
+// raising the tier to totalCap instead of removing it left two pollers flipping a coin over which
+// verdict named the stall (gate run 33575037270).
 package splice.spi
 
 import kotlinx.coroutines.CoroutineScope

@@ -33,6 +33,24 @@ class JsonlSinkTest {
         assertEquals(listOf("new"), Files.readAllLines(file))
     }
 
+    // 2026-08-25 01:23: ENOSPC cut a perf row at 230 bytes with no newline; the next append fused
+    // onto it and BOTH rows were lost to every reader. The heal costs one byte read per append.
+    @Test
+    fun `a torn tail is healed before the next row lands - the ENOSPC case`(@TempDir tmp: Path) {
+        val file = tmp.resolve("perf.jsonl")
+        Files.write(file, """{"ts":1,"torn""".toByteArray())
+        JsonlSink.appendLine(file, """{"ts":2}""")
+        assertEquals(listOf("""{"ts":1,"torn""", """{"ts":2}"""), Files.readAllLines(file))
+    }
+
+    @Test
+    fun `a healthy tail is never padded - heal trap control`(@TempDir tmp: Path) {
+        val file = tmp.resolve("perf.jsonl")
+        JsonlSink.appendLine(file, """{"ts":1}""")
+        JsonlSink.appendLine(file, """{"ts":2}""")
+        assertEquals(listOf("""{"ts":1}""", """{"ts":2}"""), Files.readAllLines(file))
+    }
+
     // DR-178: the peer is held from a SECOND channel in this same JVM, which is not a weaker
     // stand-in for a second process — java.nio hands the lock to the whole JVM, so the second
     // acquirer gets OverlappingFileLockException where a foreign process would simply block. Both

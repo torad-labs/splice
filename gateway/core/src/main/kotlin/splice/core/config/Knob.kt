@@ -132,6 +132,13 @@ public enum class Knob(
     // globally would arm tool_search for grok/openai heads whose backends do not serve it.
     TOOL_SURFACE("toolSurface", KnobKind.STRING, listOf("CLAUDEX_TOOL_SURFACE"), "auto", restartRequired = true),
 
+    // Daemon-wide plan-usage poll switch, same one-way shape as TOOL_SURFACE. Subscription heads
+    // (ChatGPT, Kimi, SuperGrok) poll their provider's usage endpoint every five minutes with the
+    // operator's own bearer so the status line's 5h/7d bars are right from the first tick. "off"
+    // stops every poller without editing TOML; the bars then draw only from the rate-limit
+    // headers each round already carries. Any other value keeps polling.
+    QUOTA_POLL("quotaPoll", KnobKind.STRING, listOf("CLAUDEX_QUOTA_POLL"), "auto", restartRequired = true),
+
     // Per-head admission (each head is a different backend/account). Bounded by default since the
     // 2026-07-19 storm: unlimited (0) let ~650 concurrent streams OOM the 1G heap. NF-02: default
     // 12 (was 100) — splice's own perf-JSONL measurement (config/splice.example.toml: 0.3% turn
@@ -164,11 +171,19 @@ public enum class Knob(
         300_000L,
         restartRequired = true,
     ),
+
+    // The mid-output stall detector, and the one timer the reference client also keeps. codex-rs
+    // (@63fe5a6, model-provider-info/src/lib.rs:26) sets DEFAULT_STREAM_IDLE_TIMEOUT_MS = 300_000
+    // and applies it ONLY to the receive side, as timeout(idle_timeout, ws_stream.next()). We ran
+    // 180_000 against the same backend and paid for it: on 2026-09-01 the idle tier alone ended 129
+    // compactions, each one a whole transcript re-read that had already begun streaming. 300_000
+    // matches the reference and equals our own firstByteTimeoutMs, so a stream is now judged by one
+    // number before and after its first frame. Lower it per head when a head wants a tighter stall.
     STREAM_IDLE_MS(
         "streamIdleMs",
         KnobKind.NUMBER,
         listOf("CLAUDEX_STREAM_IDLE_MS"),
-        180_000L,
+        300_000L,
         restartRequired = true,
     ),
     AUTH_CACHE_MS(

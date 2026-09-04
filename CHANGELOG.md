@@ -33,6 +33,14 @@
   passthrough head), stamps them onto every response as the `anthropic-ratelimit-unified-*`
   headers Claude Code reads into its `rate_limits`, and draws them on the status line as the 5h
   and 7d bars with the reset time once a bar is worth acting on, beside effort and session spend.
+- **The plan-usage poll is stated plainly, and it has an off switch.** To draw those bars before
+  the first turn, a subscription head asks its own provider every five minutes for the daemon's
+  life, with that head's own bearer: `claudex` reads `chatgpt.com/backend-api/wham/usage`,
+  `claude-kimi` reads `<kimi base>/v1/usages`, and `claude-grok` reads
+  `cli-chat-proxy.grok.com/v1/billing`. API-key and client-auth heads poll nothing. This is new
+  outbound traffic since the beta, so it is named here rather than left implicit;
+  `CLAUDEX_QUOTA_POLL=off` stops every poller (daemon restart), and the bars then draw only from
+  the rate-limit headers each round already carries.
 - **Heads that see each other.** Every wrapper's `sessions` directory is linked at the one registry
   under `~/.claude/sessions` on first launch (created if plain `claude` never ran on the machine), so
   claudex, claude-grok, claude-kimi, claude-openrouter, claude-splice and plain `claude` sessions all
@@ -66,6 +74,35 @@
   socket count. A real close frame still names the peer, its code and its reason. Read that way,
   six of one day's twelve were sockets left idle in our own pool for three to twenty-five minutes,
   and eleven of the twelve ended no round at all.
+- **Every daemon log line now carries its own date, at a fixed width.** `daemon.log` rotates by
+  size and never by day, so a single file spans as many days as 64MB buys — 265,321 lines over four
+  of them in the 2026-09-02 audit — while each line was stamped with a bare wall clock. A line read
+  on its own could not say which day it belonged to, and a reader attributed a full day of watchdog
+  stalls to the build running the next morning; they were the previous day's, on code already
+  replaced. The same audit found the stamp was not even fixed-width: `LocalTime.toString()` drops
+  the seconds field when it is zero, which had stamped 4,339 live lines `[13:47]` and quietly broke
+  column-oriented reads. Lines now read `[2026-09-02 13:47:00]`.
+- **A watchdog-ended turn says which tier fired, the limit it held, and the silence it measured.**
+  The stall message printed the configured idle cap whatever tier had actually tripped, so a
+  compaction killed at its first-output tier read as a mid-output stall and the log could not break
+  the tie. The turn line now carries the fired sentinel's own three numbers
+  (`watchdog=idle(tier=… limit=… idle=…)`); a turn the watchdog did not end prints byte-identically
+  to before.
+- **The mid-stream stall detector now matches the reference client instead of guessing tighter.**
+  `streamIdleMs` judged a stream that had already begun flowing and aborted it after 180s of
+  silence. codex-rs sets its only stream timer to 300s and applies it to the receive side alone
+  (`DEFAULT_STREAM_IDLE_TIMEOUT_MS`, model-provider-info/src/lib.rs:26). Against the same backend
+  our tighter number ended 129 compactions in one day, each already mid-output and each costing a
+  full transcript re-read. The default is now 300s, equal to `firstByteTimeoutMs`, so one number
+  judges a stream before and after its first frame. Heads that want a tighter stall still set it.
+- **The socket gets five attempts before the turn falls back, matching the reference client.**
+  A retryable mid-stream failure re-anchored at most twice before the turn dropped to the SSE
+  transport. SSE is a fallback, not a co-equal second path: reaching it discards the socket's
+  cache key and re-uploads the whole body, which on today's traffic means a median 618KB and a
+  p99 of 5.2MB sent twice. codex-rs retries a retryable stream five times
+  (`DEFAULT_STREAM_MAX_RETRIES`) before it switches transport, and this controller exists to be
+  the proxy-side answer to that loop, so the budget is now five. Turn recovery and its cooldown
+  backoff are unchanged; only the number of times they may run has widened.
 - **The shipped example config now matches the daily-driven one.** `claudex` ships with the
   Responses WebSocket transport, zstd request bodies and the deferred tool surface (LSP deferred)
   on, plus the inflight ceiling that account has sustained; `claude-kimi` offers Kimi K3 at 256k and

@@ -90,15 +90,32 @@ public object JsonlSink {
 
     private fun append(file: Path, line: String, maxBytes: Long, rotate: Boolean) {
         val encoded = (line + "\n").toByteArray(StandardCharsets.UTF_8)
-        if (rotate) {
-            val currentSize = if (Files.exists(file)) Files.size(file) else 0L
-            if (currentSize > 0 && currentSize + encoded.size > maxBytes) {
-                val rolled = file.resolveSibling("${file.fileName}.1")
-                Files.move(file, rolled, StandardCopyOption.REPLACE_EXISTING)
-            }
+        val currentSize = if (Files.exists(file)) Files.size(file) else 0L
+        val rotated = rotate && currentSize > 0 && currentSize + encoded.size > maxBytes
+        if (rotated) {
+            val rolled = file.resolveSibling("${file.fileName}.1")
+            Files.move(file, rolled, StandardCopyOption.REPLACE_EXISTING)
         }
-        Files.write(file, encoded, StandardOpenOption.CREATE, StandardOpenOption.APPEND)
+        // A torn tail is healed BEFORE the row lands. 2026-08-25 01:23 the disk filled mid-append
+        // (ENOSPC): 230 bytes of one perf row were written with no newline, the next row was
+        // appended straight onto them, and every reader lost BOTH — the whole row that followed
+        // the short write was fused into the fragment. One byte read per append buys the
+        // guarantee that a short write costs exactly the row it interrupted.
+        val torn = !rotated && currentSize > 0 && lastByte(file) != NEWLINE_BYTE
+        val bytes = if (torn) byteArrayOf(NEWLINE_BYTE) + encoded else encoded
+        Files.write(file, bytes, StandardOpenOption.CREATE, StandardOpenOption.APPEND)
     }
+
+    private fun lastByte(file: Path): Byte =
+        FileChannel.open(file, StandardOpenOption.READ).use { ch ->
+            val size = ch.size()
+            if (size <= 0L) return@use NEWLINE_BYTE
+            val buf = ByteBuffer.allocate(1)
+            ch.position(size - 1)
+            if (ch.read(buf) < 1) return@use NEWLINE_BYTE
+            buf.flip()
+            buf.get()
+        }
 
     /**
      * Read the trailing [maxBytes] of [file] as UTF-8 lines. If the file is larger, the first

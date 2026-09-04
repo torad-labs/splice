@@ -215,6 +215,14 @@ public data class WatchdogBudget(
      *  died at "no first output within the 300s first-output cap" — 1.13MB body, first byte at 3s,
      *  then silence past five minutes, the same session that had looped all day. Idle is a stall
      *  detector, not a budget (operator, DR-7): the one wall before a compaction's first output is
-     *  the whole-turn cap. Normal turns keep [firstByteTimeout]. */
-    public fun forCompact(): WatchdogBudget = copy(firstByteTimeout = totalCap)
+     *  the whole-turn cap. Normal turns keep [firstByteTimeout].
+     *
+     *  The tier is OFF ([Duration.INFINITE]), not merely raised to [totalCap]: two pollers on one
+     *  deadline are a coin flip. TurnWatchdog's idle poller and its cap poller sample on the same
+     *  ~cap/3 cadence, so at the tick past the wall whichever coroutine is dispatched first names
+     *  the verdict — "first-output cap" (a ROUND reaped, salvage invited) or "total cap" (the TURN
+     *  ended). Gate run 33575037270 lost that flip on a loaded runner; production would have lost
+     *  it the same way at 300s. With no pre-output tier there is nothing to race: the wall alone
+     *  ends a silent compaction, and [streamIdle] still reaps a stall once output has begun. */
+    public fun forCompact(): WatchdogBudget = copy(firstByteTimeout = Duration.INFINITE)
 }

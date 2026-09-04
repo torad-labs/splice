@@ -3,7 +3,7 @@
 // /health). Single daemon (P4): one version restarts every head together (documented change).
 package splice.core
 
-public const val GATEWAY_VERSION: String = "0.3.0-beta.1"
+public const val GATEWAY_VERSION: String = "0.3.0"
 
 // Hand-paired with the SPLICE_SHIM_VERSION marker embedded in bin/splice-launch (same
 // hand-paired pattern as GATEWAY_VERSION/wantVersion already used for head staleness in

@@ -40,5 +40,27 @@ writeFileSync(
   region + `\nmock.listen(${port}, '127.0.0.1');\nexport { mock, AUTH_PATH };\n`,
 );
 const m = await import(pathToFileURL(modulePath).href);
+// The e2e's one route on top of the vendored mock: the ChatGPT usage endpoint splice polls for the
+// plan's 5h/7d windows (GET <origin>/backend-api/wham/usage). Fixed numbers, so the response
+// headers and the status-line bars are asserted exactly.
+const USAGE = JSON.stringify({
+  plan_type: 'plus',
+  rate_limit: {
+    allowed: true,
+    limit_reached: false,
+    primary_window: { used_percent: 14, limit_window_seconds: 18000, reset_after_seconds: 5880 },
+    secondary_window: { used_percent: 42, limit_window_seconds: 604800, reset_after_seconds: 400000 },
+  },
+});
+const vendoredHandler = m.mock.listeners('request')[0];
+m.mock.removeAllListeners('request');
+m.mock.on('request', (req, res) => {
+  if (req.url === '/backend-api/wham/usage') {
+    res.writeHead(200, { 'content-type': 'application/json' });
+    res.end(USAGE);
+    return;
+  }
+  vendoredHandler(req, res);
+});
 if (!m.mock.listening) await once(m.mock, 'listening');
 console.log(JSON.stringify({ port: m.mock.address().port, auth_path: m.AUTH_PATH }));

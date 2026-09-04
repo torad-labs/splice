@@ -8,32 +8,23 @@
 // to keys.toml via `splice key set --stdin` and BLOCKED before it ever reaches the model context
 // (so it never travels upstream through the gateway), and (4) — only while the key is missing —
 // a SessionStart advertiser that tells the model to offer the paste flow. The bash texts live in
-// LoginHookScripts.kt; wire() returns the settings.json hook entries to merge, keyed by event.
+// LoginHookScripts.kt, the script/commands-dir filesystem mechanics in HookScriptFiles.kt and
+// HeadCommandsDir.kt; wire() returns the settings.json hook entries to merge, keyed by event.
 package splice.core.launch
 
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.add
-import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonArray
 import splice.core.config.envNameRegex
 import splice.core.util.Cancellables
 import splice.core.util.DaemonLog
 import splice.core.util.LogSink
-import splice.core.util.SecureFile
 import java.io.IOException
 import java.nio.file.Files
-import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.nio.file.Path
-import java.nio.file.StandardCopyOption
-import java.nio.file.attribute.PosixFilePermission
-import java.nio.file.attribute.PosixFilePermissions
-import java.util.concurrent.TimeUnit
-import kotlin.io.path.isDirectory
-import kotlin.io.path.isSymbolicLink
 
 /** What an api-key head captures from the prompt box. [tokenPattern] is a bash ERE matched as
  *  the WHOLE prompt (quote-anchored in the hook JSON) — a token embedded in prose never matches,
@@ -56,32 +47,13 @@ public data class TokenCaptureSpec(
     }
 }
 
-/** Applies the owner-only executable mode to a generated hook script. A seam because the one step a
- *  test must be able to fail on demand is exactly this one — no temp filesystem refuses a chmod —
- *  and the capture hook's entire security value is that the mode took. */
-internal fun interface HookChmod {
-    operator fun invoke(script: Path, perms: Set<PosixFilePermission>)
-}
-
-/** Proves [dir] can EXECUTE a fresh owner-only script, or names why not (DR-8 redo-2, 2026-08-31).
- *  Chmod success is not executability: on a noexec mount every mode bit sets while exec returns
- *  EACCES, so a registered hook can never run — and for the capture hook that means a pasted
- *  credential reaches the model. Only an actual exec settles it; injected so the counterexample
- *  is a deterministic test rather than a root-only noexec mount. */
-internal fun interface HookExecProbe {
-    operator fun invoke(dir: Path, chmod: HookChmod): Throwable?
-}
-
 internal object LoginInterception {
-    private const val COMMANDS_DIR = "commands"
-    private const val LOGIN_MD = "login.md"
     private const val LOGIN_HOOK_SH = "splice-login-hook.sh"
     private const val CAPTURE_HOOK_SH = "splice-key-capture-hook.sh"
     private const val KEYSETUP_HOOK_SH = "splice-keysetup-hook.sh"
     private const val LOGIN_SENTINEL = "SPLICE_CODEX_LOGIN"
     private const val USER_PROMPT_SUBMIT = "UserPromptSubmit"
     private const val SESSION_START = "SessionStart"
-    private const val HOOK_TIMEOUT_SECONDS = 15
 
     /**
      * Materialize the /login command + hooks. [signInLabel] names the provider for the UX text;
@@ -106,16 +78,16 @@ internal object LoginInterception {
         loginOutcomeFile: String = "",
         log: LogSink = LogSink(DaemonLog::write),
         chmod: HookChmod = HookChmod(Files::setPosixFilePermissions),
-        execProbe: HookExecProbe = HookExecProbe(LoginInterception::probeExecutability),
+        execProbe: HookExecProbe = HookExecProbe(HookScriptFiles::probeExecutability),
     ): Map<String, List<JsonObject>> {
-        if (loginCommand.isBlank()) reconcileBlankLoginCommands(configDir, globalCommands, log)
+        if (loginCommand.isBlank()) HeadCommandsDir.reconcileBlankLogin(configDir, globalCommands, log)
         if (loginCommand.isBlank() && tokenCapture == null) return emptyMap()
         if (!dirCanExecuteHooks(configDir, tokenCapture, log, chmod, execProbe)) return emptyMap()
         val upsHooks = mutableListOf<JsonObject>()
         if (loginCommand.isNotBlank()) {
             val leg = Cancellables.runCatchingCancellable {
-                writeCommandsDir(configDir, signInLabel, globalCommands)
-                val script = writeHookScript(
+                HeadCommandsDir.write(configDir, signInLabel, globalCommands, LOGIN_SENTINEL)
+                val script = HookScriptFiles.writeHookScript(
                     configDir,
                     LOGIN_HOOK_SH,
                     LoginHookScripts.loginHookScript(
@@ -130,7 +102,7 @@ internal object LoginInterception {
                     ),
                     chmod,
                 )
-                upsHooks += hookEntry(script, HOOK_TIMEOUT_SECONDS)
+                upsHooks += HookScriptFiles.hookEntry(script, HookScriptFiles.HOOK_TIMEOUT_SECONDS)
             }
             if (leg.isFailure) {
                 log(
@@ -142,9 +114,13 @@ internal object LoginInterception {
             }
         }
         if (tokenCapture != null) {
-            val script =
-                writeHookScript(configDir, CAPTURE_HOOK_SH, LoginHookScripts.captureHookScript(tokenCapture), chmod)
-            upsHooks += hookEntry(script, HOOK_TIMEOUT_SECONDS)
+            val script = HookScriptFiles.writeHookScript(
+                configDir,
+                CAPTURE_HOOK_SH,
+                LoginHookScripts.captureHookScript(tokenCapture),
+                chmod,
+            )
+            upsHooks += HookScriptFiles.hookEntry(script, HookScriptFiles.HOOK_TIMEOUT_SECONDS)
         }
         return if (upsHooks.isEmpty()) emptyMap() else mapOf(USER_PROMPT_SUBMIT to upsHooks)
     }
@@ -157,16 +133,20 @@ internal object LoginInterception {
         loginCommand: String,
         log: LogSink = LogSink(DaemonLog::write),
         chmod: HookChmod = HookChmod(Files::setPosixFilePermissions),
-        execProbe: HookExecProbe = HookExecProbe(LoginInterception::probeExecutability),
+        execProbe: HookExecProbe = HookExecProbe(HookScriptFiles::probeExecutability),
     ): Map<String, List<JsonObject>> {
         val leg = Cancellables.runCatchingCancellable {
             execProbe(configDir, chmod)?.let { failure ->
                 // SAFE-RENDER-EXEMPT[2026-08-31]: an exec-bit probe on a directory we create — the failure names that directory, never file content
                 throw IOException("$configDir cannot execute a staged hook (${failure.message})")
             }
-            val script =
-                writeHookScript(configDir, KEYSETUP_HOOK_SH, LoginHookScripts.keySetupScript(spec, loginCommand), chmod)
-            mapOf(SESSION_START to listOf(hookEntry(script, HOOK_TIMEOUT_SECONDS)))
+            val script = HookScriptFiles.writeHookScript(
+                configDir,
+                KEYSETUP_HOOK_SH,
+                LoginHookScripts.keySetupScript(spec, loginCommand),
+                chmod,
+            )
+            mapOf(SESSION_START to listOf(HookScriptFiles.hookEntry(script, HookScriptFiles.HOOK_TIMEOUT_SECONDS)))
         }
         if (leg.isFailure) {
             log(
@@ -206,130 +186,6 @@ internal object LoginInterception {
         }
     }
 
-    /** DR-39 redo (codex): commands reconciliation is not login plumbing. A client-auth head
-     *  (blank loginCommand) still shares the operator's commands, and the materializer EXEMPTS
-     *  commands' real-dir decline on the promise that THIS file reconciles them — so for a
-     *  blank-login head the promise must hold before wire()'s login-specific early return. Only
-     *  the head's-own-REAL-dir shape needs work: a whole-dir symlink already IS the share, and an
-     *  absent dir is linked whole by the materializer. No login.md is written — a /login command
-     *  on a client-auth head would be wrong. */
-    private fun reconcileBlankLoginCommands(configDir: Path, globalCommands: Path?, log: LogSink) {
-        if (globalCommands == null) return
-        val dst = configDir.resolve(COMMANDS_DIR)
-        if (!Files.isDirectory(dst, NOFOLLOW_LINKS) || dst.isSymbolicLink()) return
-        val leg = Cancellables.runCatchingCancellable { linkGlobalCommandsInto(dst, globalCommands) }
-        if (leg.isFailure) {
-            log(
-                "[login] shared commands NOT reconciled into $configDir " +
-                    // SAFE-RENDER-EXEMPT[2026-08-31]: staged commands dir link leg — a FileSystemException over paths this code authored, never content
-                    "(${leg.exceptionOrNull()?.message}) — this head's own commands dir is " +
-                    "missing the operator's entries\n",
-            )
-        }
-    }
-
-    private fun writeCommandsDir(configDir: Path, signInLabel: String, globalCommands: Path?) {
-        val dst = configDir.resolve(COMMANDS_DIR)
-        val symlinked = dst.isSymbolicLink()
-        // A whole-dir commands symlink must become the real dir login.md lives in — but the old
-        // delete-then-createDirectories-then-populate lost the WORKING commands dir whenever a step
-        // after the delete failed (DR-39: ENOSPC/EPERM mid-populate). The real dir is now staged
-        // COMPLETE beside the link first; only unlink+rename remain after it is whole. A stale
-        // stage from a crashed attempt is a createDirectories no-op (dir) or a loud pre-delete
-        // failure (file) that leaves the link untouched.
-        val target = if (symlinked) {
-            Files.createDirectories(configDir.resolve(".$COMMANDS_DIR.staged-${ProcessHandle.current().pid()}"))
-        } else {
-            Files.createDirectories(dst)
-        }
-        if (globalCommands != null) linkGlobalCommandsInto(target, globalCommands)
-        // DR-180: stage-and-swap, not truncate-in-place. When `symlinked` is true the whole staged
-        // DIRECTORY is moved into place below, so login.md was already published atomically; the
-        // other branch writes straight into the LIVE commands dir, where Files.writeString truncates
-        // the running head's /login command and refills it — a crash or a concurrent read in that
-        // window yields a half-written or empty command file, and following a pre-planted symlink at
-        // that name truncates whatever it points at. writeHookScript in this same class has staged
-        // through a unique temp + ATOMIC_MOVE since DR-31 for exactly these two reasons; login.md
-        // was the sibling that never got it. SecureFile is the codebase's one atomic-write
-        // primitive (temp + ATOMIC_MOVE, perms before content) — 0600 is right for a file only this
-        // operator's own head reads.
-        SecureFile.writeAtomic0600(
-            target.resolve(LOGIN_MD),
-            LoginHookScripts.loginCommandMd(signInLabel, LOGIN_SENTINEL),
-        )
-        if (symlinked) {
-            Files.delete(dst)
-            Files.move(target, dst)
-        }
-    }
-
-    private fun linkGlobalCommandsInto(dst: Path, globalCommands: Path) {
-        // DR-39 redo 2 (codex): `isDirectory` was an absence PRE-gate, and it lies false for an
-        // untraversable parent — the login leg then "succeeded" with login.md while every shared
-        // command silently vanished. Opening the stream is the only honest probe (class law): a
-        // no-commands operator is the one quiet skip, proven by NoSuchFileException with no
-        // NOFOLLOW entry; everything else present-but-unreadable (denied parent, dangling link,
-        // regular file) throws into the caller's existing loud leg.
-        val entries = Cancellables.runCatchingCancellable { Files.newDirectoryStream(globalCommands) }
-            .getOrElse { failure ->
-                val genuinelyAbsent = failure is java.nio.file.NoSuchFileException &&
-                    !Files.exists(globalCommands, NOFOLLOW_LINKS)
-                if (genuinelyAbsent) return
-                throw failure
-            }
-        entries.use { stream ->
-            stream.filter { it.fileName.toString() != LOGIN_MD }.forEach { linkOneInto(dst, it) }
-        }
-    }
-
-    private fun linkOneInto(dir: Path, src: Path) {
-        val dst = dir.resolve(src.fileName.toString())
-        val present = Files.exists(dst, NOFOLLOW_LINKS)
-        // Steady state first (DR-39): commands reconcile on EVERY launch, and most launches find
-        // the link already correct — the old unconditional delete-and-recreate churned the inode
-        // and opened a window where a crash between the two syscalls left the command MISSING. A
-        // correct link is a no-op; a real directory is operator content and stays; only a stale
-        // file or wrong-target link is replaced, via a staged sibling published in ONE atomic
-        // rename so no reader ever sees the name absent. A staged-name collision (crashed attempt
-        // debris, or a fault-injection double) fails BEFORE dst is touched.
-        val alreadyCorrect = present && dst.isSymbolicLink() &&
-            Cancellables.runCatchingCancellable { Files.readSymbolicLink(dst) }.getOrNull() == src
-        when {
-            alreadyCorrect || (present && dst.isDirectory(NOFOLLOW_LINKS)) -> Unit
-            !present -> Files.createSymbolicLink(dst, src)
-            else -> {
-                val staged = dir.resolve(".${dst.fileName}.staged-${ProcessHandle.current().pid()}")
-                Files.createSymbolicLink(staged, src)
-                Files.move(staged, dst, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-            }
-        }
-    }
-
-    /**
-     * The generated hook script, owner-only and EXECUTABLE — or an [IOException] (DR-8 redo).
-     *
-     * A chmod failure used to be logged and shallowed here, which quietly defeated the fail-closed
-     * capture leg above: the script was written 0644, [hookEntry] registered its path in
-     * settings.json, and Claude Code could not run it. A registered hook that cannot execute is
-     * indistinguishable from no hook at all, so for the capture leg it means a pasted credential
-     * reaches the model — the exact outcome that leg exists to prevent. Throwing instead lets each
-     * caller's EXISTING wrap decide the policy: the login and advertiser legs catch it and log a
-     * dropped leg, the unwrapped capture leg fails the launch.
-     *
-     * The condition is the OUTCOME, not the call: [Files.isExecutable] holds on a filesystem that
-     * ignores modes but mounts exec (the LNC-005 case this used to tolerate wholesale) and fails on
-     * one that leaves the script unrunnable, whatever the chmod itself reported.
-     */
-    /** Stage-and-swap (DR-31): Claude Code parses these scripts on every prompt, so the LIVE hook
-     *  must never be observable truncated, torn, or mode-broken. Content and mode land on a staged
-     *  same-dir copy FIRST; the atomic move publishes it whole (rename keeps the inode, so the
-     *  proven mode travels with it). Any failure deletes only the staged copy — a pre-existing
-     *  working hook stays untouched and the launch fails loudly.
-     *
-     *  The chmod outcome is the ONLY mode probe (DR-8 redo: a seeded rwxrwxrwx file passes
-     *  isExecutable while anyone may rewrite what the hook runs), and the catch net is wider than
-     *  runCatchingCancellable's IO/serialization/IAE because setPosixFilePermissions also throws
-     *  UnsupportedOperationException (non-POSIX fs) and SecurityException (second DR-8 redo). */
     /** DR-8 redo-2 (codex noexec catch): prove the directory can execute an owner-only script
      *  BEFORE anything is staged or registered — a hook that registers but cannot run is
      *  indistinguishable from no hook. Per-leg policy holds: with a capture spec the launch fails
@@ -356,89 +212,5 @@ internal object LoginInterception {
                 "cannot execute scripts (noexec mount?); the head runs without an interceptor\n",
         )
         return false
-    }
-
-    /** The real [HookExecProbe]: write a throwaway owner-only `exit 0` script beside the hooks and
-     *  RUN it. Executability is a property of the mount + mode + uid, not of content, so a sibling
-     *  probe file proves exactly what the hook needs without executing any hook logic. EACCES from
-     *  a noexec mount surfaces here as ProcessBuilder's IOException — the codex /run/lock repro. */
-    private fun probeExecutability(dir: Path, chmod: HookChmod): Throwable? {
-        // DR-8 redo-3 (codex symlink catch): a FIXED ".splice-exec-probe.tmp" was a predictable
-        // path a local peer could pre-plant as a symlink (the write would follow it and clobber the
-        // victim) and a shared name two concurrent launches raced. createTempFile picks a random
-        // name and creates it with CREATE_NEW (O_EXCL), which refuses ANY pre-existing path —
-        // symlink or dangling symlink included — so the write can only land on the fresh regular
-        // file it just made. Creation runs INSIDE the try, so a creation failure returns as the
-        // probe's Throwable (fail-closed); the finally deletes only a probe that was created.
-        var probe: Path? = null
-        return try {
-            probe = Files.createTempFile(dir, ".splice-exec-probe.", ".tmp")
-            Files.writeString(probe, "#!/bin/sh\nexit 0\n")
-            chmod(probe, PosixFilePermissions.fromString("rwx------"))
-            val process = ProcessBuilder(probe.toString()).redirectErrorStream(true).start()
-            if (!process.waitFor(HOOK_TIMEOUT_SECONDS.toLong(), TimeUnit.SECONDS)) {
-                process.destroyForcibly()
-                IOException("exec probe timed out after ${HOOK_TIMEOUT_SECONDS}s")
-            } else if (process.exitValue() != 0) {
-                IOException("exec probe exited ${process.exitValue()}")
-            } else {
-                null
-            }
-        } catch (e: IOException) {
-            e
-        } catch (e: UnsupportedOperationException) {
-            e
-        } catch (e: SecurityException) {
-            e
-        } finally {
-            probe?.let { p -> Cancellables.runCatchingCancellable { Files.deleteIfExists(p) } }
-        }
-    }
-
-    private fun writeHookScript(configDir: Path, name: String, content: String, chmod: HookChmod): Path {
-        val script = configDir.resolve(name)
-        // DR-8/DR-31 redo (codex): a FIXED "$name.tmp" stage was a predictable path (symlink
-        // pre-plant → the write clobbers a victim) AND a shared name two concurrent launches raced
-        // (A's move published B's body). createTempFile picks a unique random name and creates it
-        // with CREATE_NEW (O_EXCL) in the SAME dir, so each launch owns its own stage and the write
-        // cannot follow a pre-existing symlink. The finally removes the stage on EVERY exit that
-        // did not consume it by move — write failure, chmod failure, an interrupt/cancellation
-        // mid-write — so no ".tmp" is ever stranded; the live hook is untouched until move succeeds.
-        val staged = Files.createTempFile(configDir, "$name.", ".tmp")
-        var moved = false
-        try {
-            Files.writeString(staged, content)
-            val chmodFailure = try {
-                Cancellables.runCatchingCancellable {
-                    chmod(staged, PosixFilePermissions.fromString("rwx------"))
-                }.exceptionOrNull()
-            } catch (e: UnsupportedOperationException) {
-                e
-            } catch (e: SecurityException) {
-                e
-            }
-            if (chmodFailure != null) {
-                throw IOException(
-                    // SAFE-RENDER-EXEMPT[2026-08-31]: a chmod on a copy we just wrote — the failure names that path, never the script's bytes
-                    "$script: chmod rwx------ failed on the staged copy (${chmodFailure.message}) — " +
-                        "staged file deleted, any existing hook left untouched",
-                )
-            }
-            Files.move(staged, script, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-            moved = true
-            return script
-        } finally {
-            if (!moved) Cancellables.runCatchingCancellable { Files.deleteIfExists(staged) }
-        }
-    }
-
-    private fun hookEntry(script: Path, timeoutSeconds: Int): JsonObject = buildJsonObject {
-        putJsonArray("hooks") {
-            addJsonObject {
-                put("type", "command")
-                put("command", script.toString())
-                put("timeout", timeoutSeconds)
-            }
-        }
     }
 }

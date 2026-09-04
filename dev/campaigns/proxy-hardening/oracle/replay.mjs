@@ -304,6 +304,21 @@ async function main() {
   const mockPath = join(tmp, 'vendored_mock.mjs');
   writeFileSync(mockPath, region + `\nmock.listen(0, '127.0.0.1');\nexport { mock, upstreamAuths, upstreamBodies, abortedScenarios, AUTH_PATH, stateRoot };\n`);
   const m = await import(pathToFileURL(mockPath).href);
+  // The daemon's quota poller (QuotaPoller, 2026-09-02) asks this origin for
+  // GET /backend-api/wham/usage; the captured mock predates it and JSON-parses every request body,
+  // so an empty GET body crashed the mock process. Answer 404 BEFORE the vendored handler: the
+  // replay keeps its captured shape (no quota snapshot, no unified headers on head responses, no
+  // extra upstream request recorded) and the pinned mock region is untouched.
+  const vendoredHandler = m.mock.listeners('request')[0];
+  m.mock.removeAllListeners('request');
+  m.mock.on('request', (req, res) => {
+    if (req.method === 'GET' && req.url === '/backend-api/wham/usage') {
+      res.writeHead(404);
+      res.end();
+      return;
+    }
+    vendoredHandler(req, res);
+  });
   await once(m.mock, 'listening');
   const mockPort = m.mock.address().port;
 

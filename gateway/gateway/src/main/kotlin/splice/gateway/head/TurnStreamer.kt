@@ -5,6 +5,7 @@ package splice.gateway.head
 
 import io.ktor.http.ContentType
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.response.header
 import io.ktor.server.response.respondTextWriter
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -28,6 +29,9 @@ internal class TurnStreamer(
     suspend fun stream(call: ApplicationCall, inputs: TurnInputs) {
         val built = inputs.built
         val perf = inputs.perf
+        // The head's quota windows ride every response as the headers Claude Code reads into its
+        // rate_limits (the 5h/7d bars): the client sees the head's real plan usage, proxy or not.
+        deps.quota?.clientHeaders()?.forEach { (name, value) -> call.response.header(name, value) }
         call.respondTextWriter(ContentType.Text.EventStream) {
             // Flush-per-frame: a frame buffered across an upstream lull is invisible to the
             // user exactly when responsiveness matters (see ImmediateSseWriter header).

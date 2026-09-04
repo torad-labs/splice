@@ -36,8 +36,9 @@ internal class TurnTelemetry(
     fun recordPerf(drive: TurnDrive, outcomeTag: String) {
         drive.perf.mark(PerfKeys.TOTAL)
         val snap = drive.perf.snapshot()
-        perfStats.record(PerfRowMeta(drive.upstreamModel, outcomeTag, drive.meta.compact), snap)
-        log(snap.perfLine(headKey, outcomeTag, drive.meta.compact, drive.upstreamModel))
+        val session = drive.sessionTag()
+        perfStats.record(PerfRowMeta(drive.upstreamModel, outcomeTag, drive.meta.compact, session), snap)
+        log(snap.perfLine(headKey, outcomeTag, drive.meta.compact, drive.upstreamModel, session))
     }
 
     fun errTurn(kind: String, drive: TurnDrive, detail: String): String =

@@ -52,6 +52,7 @@ internal class HeadServerFactory(
                 mirrorReasoning = cfg.mirrorReasoning,
                 usageStore = stores.usageStore,
                 perfStats = stores.perfStats,
+                quota = stores.quota,
                 log = log,
                 requestMaterializationGate = requestMaterializationGate,
             ),

@@ -305,11 +305,13 @@ step "launch recipe: claudex base URL + API_TIMEOUT_MS > 900s" launch_recipe cla
 step "launch recipe: mockchat base URL + API_TIMEOUT_MS > 900s" launch_recipe mockchat "$CHAT_HEAD_PORT"
 
 # ── 7b. per-head model roster + window: what /model offers, what the client compacts on ─────
-# Each head materializes its OWN picker (settings.json availableModels + model, enforced, and a
-# .claude.json additionalModelOptionsCache row per model carrying its context_window) and hands
-# Claude Code its own CLAUDE_CODE_MAX_CONTEXT_TOKENS, from the topology alone. Three heads, three
-# windows: a head reading another head's roster or window is exactly the fresh-install drift
-# this step exists to catch.
+# Each head materializes its OWN picker (settings.json availableModels + model, enforced) and
+# hands Claude Code its own CLAUDE_CODE_MAX_CONTEXT_TOKENS, from the topology alone. Every
+# catalog model reaches the picker EXACTLY ONCE (v0.3.1): either as a tier slot the recipe plants
+# (ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL, which Claude Code renders as its own rows)
+# or as a .claude.json additionalModelOptionsCache row carrying its context_window, never both
+# (both was the duplicated picker of v0.3.0). Three heads, three windows: a head reading another
+# head's roster or window is exactly the fresh-install drift this step exists to catch.
 # The same /launch also PACKAGES the head: the daemon's own status line (settings.json statusLine
 # posting Claude Code's blob to /statusline/<head>), the in-session /login command and the hook
 # that runs the head's sign-in when it is submitted. Splice is the whole package, so a head that
@@ -319,7 +321,7 @@ head_contract() { # head pinned-model pinned-window rows("id:window,...")
     --data '{"dangerouslySkipPermissions":"","args":[]}' "http://127.0.0.1:$CONTROL_PORT/launch/$1" \
     > "$OUT/recipe-$1.json" || return 1
   python3 - "$1" "$2" "$3" "$4" "$HOME" "$OUT/recipe-$1.json" "$CONTROL_PORT" <<'EOF'
-import json, os, sys
+import json, os, re, sys
 head, model, window, rows_arg, home, recipe, control = sys.argv[1:8]
 window = int(window)
 expected_rows = {kv.split(":")[0]: int(kv.split(":")[1]) for kv in rows_arg.split(",")}
@@ -342,7 +344,11 @@ assert env.get("CLAUDE_CODE_AUTO_COMPACT_WINDOW") == str(window), env.get("CLAUD
 assert settings.get("model") == model, settings.get("model")
 assert settings.get("availableModels") == list(expected_rows), "picker off: %r" % settings.get("availableModels")
 assert settings.get("enforceAvailableModels") is True, "picker is not enforced"
-assert rows == expected_rows, rows
+slots = {v for k, v in env.items() if re.fullmatch(r"ANTHROPIC_DEFAULT_(OPUS|SONNET|HAIKU|FABLE)_MODEL", k)}
+print("slots:", sorted(slots))
+assert not (set(rows) & slots), "a slotted model is also a cache row (the v0.3.0 duplication): %r" % (set(rows) & slots)
+assert slots | set(rows) == set(expected_rows), "picker roster %r != expected %r" % (sorted(slots | set(rows)), sorted(expected_rows))
+assert all(rows[m] == expected_rows[m] for m in rows), "cache row windows off: %r" % rows
 assert statusline == f"curl -sS --data-binary @- http://127.0.0.1:{control}/statusline/{head}", "status line not splice's: %r" % statusline
 assert os.path.isfile(login_md), "no in-session /login command materialized"
 assert any("splice-login-hook" in c for c in hook_cmds), "no /login hook on UserPromptSubmit: %r" % hook_cmds

@@ -139,6 +139,12 @@ internal class ResponsesHarvest {
     }
 
     /** Concatenate the output_text/text parts of one message item, in order. */
+    /** The readable text of a completed `message` item — every `output_text`/`text` content
+     *  part concatenated. Public so [ResponsesItemFold] can recover a message delivered whole on
+     *  output_item.done with no output_text.delta (Astra on heavy turns), which would otherwise
+     *  be dropped when the terminal `output` array is also empty. */
+    public fun messageItemText(item: JsonObject): String = messageText(item)
+
     private fun messageText(item: JsonObject): String {
         val content = item["content"] as? JsonArray ?: return ""
         val out = StringBuilder()

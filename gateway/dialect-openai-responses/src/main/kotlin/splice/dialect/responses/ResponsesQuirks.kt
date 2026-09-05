@@ -14,14 +14,15 @@ public data class ResponsesQuirks(
     val summaryRejectModelRegex: Regex? = Regex("spark", RegexOption.IGNORE_CASE),
     /** gpt-5.4-mini's ceiling is xhigh — the backend 400s effort=max on it (observed 2026-07-19). */
     val effortMaxRejectModelRegex: Regex? = Regex("mini", RegexOption.IGNORE_CASE),
-    /** codex-rs parity (read from source 2026-07-19): the gpt-5.6 family is served "responses-lite".
+    /** codex-rs parity (read from source 2026-07-19; models.json re-read 2026-09-04 for gpt-6-astra,
+     *  `use_responses_lite: true`): the gpt-5.6 and gpt-6 families are served "responses-lite".
      *  Lite turns (non-compact): instructions ride as a developer input item (top-level field
      *  omitted), tools ride as an additional_tools input item (top-level field omitted),
      *  parallel_tool_calls is FORCED false (splice omitting it left the backend default parallel ON
      *  — a sequential-tool model spraying 30-50 parallel Task calls), reasoning.context=all_turns,
      *  and the x-openai-internal-codex-responses-lite header rides. Shape accepted by the live
      *  backend (direct probe 2026-07-19: 200, correct tool call). */
-    val responsesLiteModelRegex: Regex? = Regex("gpt-5\\.6", RegexOption.IGNORE_CASE),
+    val responsesLiteModelRegex: Regex? = Regex("gpt-5\\.6|gpt-6", RegexOption.IGNORE_CASE),
     /** codex-rs serde parity: its non-optional instructions String rides as "" on lite turns.
      *  Provider-specific wire byte; false keeps the shared responses dialect's historical omission. */
     val emitEmptyLiteInstructions: Boolean = false,

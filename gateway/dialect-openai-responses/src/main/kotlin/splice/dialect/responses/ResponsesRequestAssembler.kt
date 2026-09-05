@@ -67,8 +67,7 @@ internal class ResponsesRequestAssembler(private val quirks: ResponsesQuirks) {
         // unconditionally (core/src/client.rs:896), so lite MUST too, independent of the grok-style
         // emitToolChoice negotiation that codex otherwise leaves off.
         val emitToolChoice = tools != null && (quirks.emitToolChoice || lite)
-        val include =
-            if (!opts.compact && opts.includeEncryptedReasoning.v) listOf(ENCRYPTED_CONTENT_INCLUDE) else null
+        val include = if (opts.includeEncryptedReasoning.v) listOf(ENCRYPTED_CONTENT_INCLUDE) else null
         val shape = liteShape.wireShape(lite, parts.input, parts.instructions, tools)
         val dto = ResponsesRequest(
             model = opts.upstreamModel,

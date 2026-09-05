@@ -139,10 +139,14 @@ public data class ModelCatalog(
      *  resolves to the client's own table or its 200k default, so the DECLARED window is returned
      *  and the counts ride raw — a factor we cannot honestly compute is 1.0; every other id ->
      *  [clientLaunchWindow], the env the launch planted. */
-    public fun clientContextWindowFor(id: String): Long = when {
+    public fun clientContextWindowFor(id: String, sessionWindow: Long? = null): Long = when {
         oneMillionHint.containsMatchIn(unwrap(id)) -> CLAUDE_CODE_ONE_MILLION
         id.startsWith(CLIENT_OWN_ID_PREFIX) -> contextWindowFor(id)
-        else -> clientLaunchWindow
+        // An env-governed id: the window is whatever THIS session's process was launched with.
+        // [sessionWindow] is that value when the session has told us (ClientWindows, fed by its
+        // status-line posts); a session that has not yet posted is assumed launched with the
+        // constant. A session from before the constant existed is exactly the case this serves.
+        else -> sessionWindow?.takeIf { it > 0 } ?: clientLaunchWindow
     }
 
     /** Multiplier for the input-token counts reported to the client, so a row compacts at ITS OWN
@@ -156,7 +160,13 @@ public data class ModelCatalog(
      *  [clientLaunchWindow]) every row scales, the pinned one included; 1.0 (untouched counts) is
      *  left only where the client's window is genuinely not ours: a declared 1e6 row and the
      *  "claude-" ids [clientContextWindowFor] names. */
-    public fun usageScale(id: String): Double {
+    /** True when Claude Code sizes [id]'s window from the launch env — the ids whose window a
+     *  session's status-line post reveals (ClientWindows). False for a "[1m]" id (always 1e6) and
+     *  a "claude-" id (Claude Code's own table): their posts say nothing about the env. */
+    public fun envGoverned(id: String): Boolean =
+        !oneMillionHint.containsMatchIn(unwrap(id)) && !id.startsWith(CLIENT_OWN_ID_PREFIX)
+
+    public fun usageScale(id: String, sessionWindow: Long? = null): Double {
         val declared = contextWindowFor(id)
         // NO "[1m]" exemption, deliberately. `contains()` strips the suffix before its membership
         // test, so an UNDECLARED tier id — `grok-4.6[1m]`, which exists in no catalog — passes the
@@ -165,7 +175,7 @@ public data class ModelCatalog(
         // and hard-fail upstream. Scaling them instead makes the client's 1e6 land on the stripped
         // id's real window. A DECLARED 1e6 row needs no special case: client and declared are both
         // 1e6, so this arithmetic already returns exactly 1.0.
-        val client = clientContextWindowFor(id)
+        val client = clientContextWindowFor(id, sessionWindow)
         if (declared <= 0 || client <= 0) return 1.0
         return client.toDouble() / declared
     }

@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Fixed
+- **A compaction is built byte-identical to a turn, so it hits the prompt cache.** Every dialect
+  used to reshape the compaction request (a directive appended to the instructions or system,
+  tools and `tool_choice` stripped, tool results folded to text, images dropped, the lite shape
+  off, cached reasoning left out, an effort pin), and the backend's exact-prefix cache missed the
+  whole transcript on every compaction (`cached_tokens=0` on every model, 2026-09-05). The request
+  now carries the session's model, reasoning, tools and history unchanged; `compact` only reaches
+  the response side. The `compact_effort` quirk is retired and a config that sets it fails at load.
+- **A session launched before the constant client window no longer over-compacts.** Its process
+  still divides by the window it was launched with, so the head learns each session's real window
+  from its status-line post (`session_id` + `context_window_size`) and scales that session's
+  counts against it. Live, no relaunch.
+
 ### Changed
 - **A context window edited in `splice.toml` now reaches running sessions.** Every launch plants
   one constant client window (`CLAUDE_CODE_MAX_CONTEXT_TOKENS=1000000`) and the proxy scales the

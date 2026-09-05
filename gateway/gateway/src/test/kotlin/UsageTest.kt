@@ -472,3 +472,72 @@ class UsageScalingTest {
         assertEquals(1, log.count { it.contains("unreadable") }, "a dangling ring link must log: $log")
     }
 }
+
+// 2026-09-05, the second half of the constant-window move: a session launched before the constant
+// existed still divides by its old env. The head learns that window from the session's status-line
+// posts (ClientWindows) and scales THAT session's counts against it, so it compacts at the row's
+// real window instead of a third of it — live, no relaunch.
+class SessionWindowUsageTest {
+
+    private val xai = ModelCatalog(
+        discoveryPrefix = "claude-grok--",
+        models = listOf(
+            ModelEntry(id = "grok-4.6", contextWindow = 256_000),
+            ModelEntry(id = "grok-4.3[1m]", contextWindow = 1_000_000),
+        ),
+        defaultContextWindow = 256_000,
+        pinnedModel = "grok-4.6",
+    )
+
+    private fun meta(model: String) = TurnMeta(
+        compact = false,
+        showReasoning = ReasoningDisplay.TEXT,
+        stream = true,
+        originalModel = model,
+        upstreamModel = xai.stripSuffixes(model),
+        clientMaxTokens = null,
+        effort = "high",
+        summary = null,
+        budgetTokens = null,
+        sessionId = "s-old",
+    )
+
+    private fun payload(model: String, input: Long, cached: Long, sessionWindow: Long?) =
+        TurnWiring().usagePayloadBuilder(xai, meta(model), sessionWindow)(Usage(input, 7, cached))
+
+    @Test
+    fun `a session's own window drives its scale and is what the payload declares`() {
+        val p = payload("grok-4.6", input = 100_000, cached = 40_000, sessionWindow = 400_000)
+        assertEquals(93_750, p["input_tokens"]?.jsonPrimitive?.content?.toLong(), "(100k - 40k) x 400k/256k")
+        assertEquals(62_500, p["cache_read_input_tokens"]?.jsonPrimitive?.content?.toLong(), "40k x 400k/256k")
+        assertEquals(400_000, p["context_window"]?.jsonPrimitive?.content?.toLong(), "the session's window")
+        assertEquals("39.0625", p["used_percentage"]?.jsonPrimitive?.content, "100k of the row's own 256k")
+    }
+
+    @Test
+    fun `a session already at the row's window rides raw and an unknown session gets the constant`() {
+        val exact = payload("grok-4.6", input = 100_000, cached = 40_000, sessionWindow = 256_000)
+        assertEquals(60_000, exact["input_tokens"]?.jsonPrimitive?.content?.toLong())
+        assertEquals(256_000, exact["context_window"]?.jsonPrimitive?.content?.toLong())
+        val unknown = payload("grok-4.6", input = 100_000, cached = 40_000, sessionWindow = null)
+        assertEquals(1_000_000, unknown["context_window"]?.jsonPrimitive?.content?.toLong(), "the launch constant")
+        assertEquals("39.0625", unknown["used_percentage"]?.jsonPrimitive?.content)
+    }
+
+    @Test
+    fun `a 1m row ignores the session window - the client sizes it from the id`() {
+        val p = payload("grok-4.3[1m]", input = 100_000, cached = 0, sessionWindow = 400_000)
+        assertEquals(100_000, p["input_tokens"]?.jsonPrimitive?.content?.toLong())
+        assertEquals(1_000_000, p["context_window"]?.jsonPrimitive?.content?.toLong())
+    }
+
+    @Test
+    fun `the factor line says whose window it used`() {
+        val logged = mutableListOf<String>()
+        TurnWiring(LogSink { logged += it }).usagePayloadBuilder(xai, meta("grok-4.6"), 400_000)(Usage(1_000, 7, 0))
+        assertTrue(logged.single().contains("the session's own"), logged.toString())
+        val constant = mutableListOf<String>()
+        TurnWiring(LogSink { constant += it }).usagePayloadBuilder(xai, meta("grok-4.6"), null)(Usage(1_000, 7, 0))
+        assertTrue(constant.single().contains("the launch constant"), constant.toString())
+    }
+}

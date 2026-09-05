@@ -16,7 +16,7 @@ public data class ResponsesQuirks(
     val effortMaxRejectModelRegex: Regex? = Regex("mini", RegexOption.IGNORE_CASE),
     /** codex-rs parity (read from source 2026-07-19; models.json re-read 2026-09-04 for gpt-6-astra,
      *  `use_responses_lite: true`): the gpt-5.6 and gpt-6 families are served "responses-lite".
-     *  Lite turns (non-compact): instructions ride as a developer input item (top-level field
+     *  Lite turns (compaction included): instructions ride as a developer input item (top-level field
      *  omitted), tools ride as an additional_tools input item (top-level field omitted),
      *  parallel_tool_calls is FORCED false (splice omitting it left the backend default parallel ON
      *  — a sequential-tool model spraying 30-50 parallel Task calls), reasoning.context=all_turns,
@@ -26,7 +26,6 @@ public data class ResponsesQuirks(
     /** codex-rs serde parity: its non-optional instructions String rides as "" on lite turns.
      *  Provider-specific wire byte; false keeps the shared responses dialect's historical omission. */
     val emitEmptyLiteInstructions: Boolean = false,
-    val compactEffortPin: String? = null, // null = inherit session effort (the cache law)
     /** The VALUE sent for parallel_tool_calls on responses-lite turns (the field itself always
      *  rides — a lite request without it 400s). codex-rs reads this per model from
      *  `model_info.supports_parallel_tool_calls` rather than hardcoding it, so it is a knob here
@@ -108,7 +107,6 @@ public data class ResponsesQuirks(
         store: Boolean? = null,
         cacheKey: String? = null,
         summaryField: Boolean? = null,
-        compactEffort: String? = null,
         toolChoice: Boolean? = null,
     ): ResponsesQuirks = copy(
         store = store ?: this.store,
@@ -119,7 +117,6 @@ public data class ResponsesQuirks(
             else -> this.cacheKeyStrategy
         },
         supportsSummary = summaryField ?: this.supportsSummary,
-        compactEffortPin = compactEffort ?: this.compactEffortPin,
         emitToolChoice = toolChoice ?: this.emitToolChoice,
     )
 

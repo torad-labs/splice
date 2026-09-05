@@ -31,7 +31,6 @@ internal class ResponsesInputTools(
         opts: BuildOptions,
         declareByName: Map<String, ToolDefinition>,
     ) {
-        if (opts.compact) return
         // CHANGE 2 (cache-prefix stability, 2026-07-25): a DEFERRED tool this block names gets its
         // full schema declared IN HISTORY, ONCE per request, immediately before this function_call
         // — the model then knows it from tool_search_output, never from a moving tools[] entry
@@ -95,11 +94,6 @@ internal class ResponsesInputTools(
         opts: BuildOptions,
     ) {
         val text = block.content.filterIsInstance<TextBlock>().joinToString("") { it.text }
-        if (opts.compact) {
-            // fold tool results into plain user text so the summarizer still sees them
-            if (text.isNotEmpty()) sink.add(parts.roleText("user", "[tool_result ${block.toolUseId}] $text"))
-            return
-        }
         sink.add(
             buildJsonObject {
                 put("type", "function_call_output")

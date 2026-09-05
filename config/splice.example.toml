@@ -76,6 +76,11 @@ enabled = true
 # on fresh conversations.
 defer = ["LSP"]
 [[providers.codex.models]]
+id = "gpt-6-astra"
+label = "Codex 6 Astra"
+description = "GPT-6 Astra (2026-09-03). Effort up to max; included in the ChatGPT plan."
+context_window = 400000
+[[providers.codex.models]]
 id = "gpt-5.6-sol"
 label = "Codex 5.6 Sol"
 context_window = 400000
@@ -244,7 +249,7 @@ pinned_model = "gpt-5.6-sol"
 # background titling/summarization, `--model haiku` — get a clean pre-upstream 400 on this head
 # (no quota burned; the main turn is unaffected). Declare a row per tier you want served; never
 # point two tiers at one id to silence this — one honest 400 beats a duplicated picker row.
-models = [{ id = "gpt-5.6-sol", slot = "opus" }, { id = "gpt-5.6-terra", slot = "sonnet" }, { id = "gpt-5.6-luna", slot = "haiku" }]
+models = [{ id = "gpt-5.6-sol", slot = "opus" }, { id = "gpt-5.6-terra", slot = "sonnet" }, { id = "gpt-5.6-luna", slot = "haiku" }, { id = "gpt-6-astra", slot = "fable" }]
 context_window = 400000
 [heads.claudex.claude]
 command = "claudex"

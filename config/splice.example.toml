@@ -79,10 +79,7 @@ defer = ["LSP"]
 id = "gpt-6-astra"
 label = "Codex 6 Astra"
 description = "GPT-6 Astra (2026-09-03). Effort up to max; included in the ChatGPT plan."
-# codex models.json: context_window 272000 (max 872000 is a plan ceiling, not the model's working
-# window). Declared at 400000 Claude Code drove turns to 320k+ and every one came back as
-# encrypted reasoning plus an empty message (2026-09-05); none did below 200k.
-context_window = 272000
+context_window = 400000
 [[providers.codex.models]]
 id = "gpt-5.6-sol"
 label = "Codex 5.6 Sol"
@@ -253,9 +250,7 @@ pinned_model = "gpt-5.6-sol"
 # (no quota burned; the main turn is unaffected). Declare a row per tier you want served; never
 # point two tiers at one id to silence this — one honest 400 beats a duplicated picker row.
 models = [{ id = "gpt-5.6-sol", slot = "opus" }, { id = "gpt-5.6-terra", slot = "sonnet" }, { id = "gpt-5.6-luna", slot = "haiku" }, { id = "gpt-6-astra", slot = "fable" }]
-# No head-wide context_window: it would replace every selected row's window (the 5.6 rows are
-# 400k, Astra is 272k). The pinned sol row sets the 400k process window; usage scaling makes
-# the Astra row compact at its own 272k.
+context_window = 400000
 [heads.claudex.claude]
 command = "claudex"
 [heads.claudex.overrides]

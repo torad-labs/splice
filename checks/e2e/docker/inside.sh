@@ -308,9 +308,10 @@ step "launch recipe: mockchat base URL + API_TIMEOUT_MS > 900s" launch_recipe mo
 # Each head materializes its OWN picker (settings.json availableModels + model, enforced, and a
 # .claude.json additionalModelOptionsCache row per model carrying its context_window) and hands
 # Claude Code its own CLAUDE_CODE_MAX_CONTEXT_TOKENS, from the topology alone. The four tier
-# slots (ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL) must carry four DISTINCT values: two
-# tiers on one bare id drew that model twice in /model (v0.3.0); a repeated tier now rides the
-# head's discovery-wrapped spelling, which the allowlist hides and the head still routes. Three
+# slots (ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL) never share a BARE id: two tiers on
+# one bare id drew that model twice in /model (v0.3.0); a repeated tier now rides the head's
+# discovery-wrapped spelling, which the allowlist hides (so wrapped values may repeat) and the
+# head still routes. Three
 # heads, three windows: a head reading another head's roster or window is exactly the
 # fresh-install drift this step exists to catch.
 # The same /launch also PACKAGES the head: the daemon's own status line (settings.json statusLine
@@ -348,8 +349,10 @@ assert settings.get("enforceAvailableModels") is True, "picker is not enforced"
 assert rows == expected_rows, rows
 slots = [v for k, v in sorted(env.items()) if re.fullmatch(r"ANTHROPIC_DEFAULT_(OPUS|SONNET|HAIKU|FABLE)_MODEL", k)]
 print("slots:", slots)
-assert len(set(slots)) == len(slots), "two tiers carry one value, so /model draws that model twice: %r" % slots
-assert all(any(v == m or v.endswith("--" + m) for m in expected_rows) for v in slots), "a tier points outside the roster: %r" % slots
+bare = [v for v in slots if v in expected_rows]
+wrapped = [v for v in slots if v not in expected_rows]
+assert len(set(bare)) == len(bare), "two tiers carry one bare id, so /model draws that model twice: %r" % slots
+assert all(any(v.endswith("--" + m) for m in expected_rows) for v in wrapped), "a tier points outside the roster: %r" % slots
 assert statusline == f"curl -sS --data-binary @- http://127.0.0.1:{control}/statusline/{head}", "status line not splice's: %r" % statusline
 assert os.path.isfile(login_md), "no in-session /login command materialized"
 assert any("splice-login-hook" in c for c in hook_cmds), "no /login hook on UserPromptSubmit: %r" % hook_cmds

@@ -388,13 +388,29 @@ class ExampleConfigTest {
         assertEquals(listOf("grok-4.6", "grok-4.5"), head.models?.map(HeadModel::id))
     }
 
+    // §22 (2026-09-05): the Astra row declares codex's own working window (models.json
+    // context_window 272000). Declared at 400k the client drove turns to 320k+ input and Astra
+    // answered every one with encrypted reasoning plus an empty message; below 200k it never did.
+    // The pinned sol row still launches the 400k process; usageScale compacts Astra at 272k live.
+    @Test
+    fun `the astra row keeps codex's 272k window under the claudex 400k process window`() {
+        val topology = TopologyLoader.parse(exampleToml())
+        val head = topology.heads.getValue("claudex")
+        assertNull(head.contextWindow, "a head-wide window would flatten the Astra row back to 400k")
+        val catalog = topology.providers.getValue(head.provider).catalogFor(head)
+        assertEquals(272_000L, catalog.contextWindowFor("gpt-6-astra"), "codex models.json context_window")
+        assertEquals(400_000L, catalog.contextWindowFor(head.pinnedModel), "the pinned sol row launches the 400k process")
+        assertEquals(400_000L, catalog.clientContextWindowFor("gpt-6-astra"), "the client keeps the process window")
+        assertEquals(400_000.0 / 272_000.0, catalog.usageScale("gpt-6-astra"), "client 400k / real 272k")
+    }
+
     @Test
     fun `each example head owns its model roster and explicit window policy`() {
         val topology = TopologyLoader.parse(exampleToml())
         val headProfiles = mapOf(
             "claudex" to (
                 listOf("gpt-5.6-sol" to "opus", "gpt-5.6-terra" to "sonnet", "gpt-5.6-luna" to "haiku", "gpt-6-astra" to "fable") to
-                    400_000L
+                    null
                 ),
             "claude-grok" to (
                 listOf("grok-4.6" to "opus", "grok-4.5" to "sonnet", "grok-build-latest" to "haiku") to

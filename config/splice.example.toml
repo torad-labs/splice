@@ -231,9 +231,10 @@ context_window = 262144
 # ── heads: each is a Claude Code wrapper on its own loopback port ───────────────
 # `command` names the installed wrapper (`splice install` links ~/.local/bin/<command>).
 # `models` is this process's ordered provider-model allowlist. An explicit `context_window` forces
-# one window onto every selected row; omit it when their real backend ceilings differ. The pinned
-# row sets CLAUDE_CODE_MAX_CONTEXT_TOKENS, and usage scaling makes every other row compact at its
-# own declared window while switching live through /model.
+# one window onto every selected row; omit it when their real backend ceilings differ. Every launch
+# plants one constant CLAUDE_CODE_MAX_CONTEXT_TOKENS, and usage scaling makes every row (the pinned
+# one included) compact at its own declared window — live through /model, and a window edited here
+# reaches running sessions after `splice restart`.
 [claude]                       # global config-sharing policy for every wrapper
 # `sessions` shares the cross-session-messaging peer registry, so sessions on ANY head (and plain
 # `claude`) can see and message each other; drop it (or isolate it per head) to wall a head off.
@@ -274,7 +275,7 @@ provider = "openrouter"
 port = 3101
 discovery_prefix = "claude-openrouter--"
 pinned_model = "meta-llama/llama-4-maverick"
-# Tiers declared on purpose: Llama 4 Maverick as opus (pinned, sets the process window), GLM 5.3
+# Tiers declared on purpose: Llama 4 Maverick as opus (pinned), GLM 5.3
 # as sonnet. haiku and fable stay undeclared and 400 cleanly pre-upstream — the slot note on
 # [heads.claudex] explains what degrades (background titling, `--model haiku`). No head-wide
 # context_window: the two rows have different ceilings and each keeps its own.
@@ -299,7 +300,7 @@ provider = "kimi"
 port = 3102
 discovery_prefix = "claude-kimi--"
 pinned_model = "k3[1m]"
-# Tiers declared on purpose: opus is K3 on the 1M window (the pinned row sets the process window),
+# Tiers declared on purpose: opus is K3 on the 1M window (pinned),
 # sonnet is the same K3 held at 256k (Kimi meters the 1M tier at ~2x this one), haiku is Kimi K2.7
 # Code. fable stays undeclared and 400s cleanly pre-upstream (slot note on [heads.claudex]). No
 # head-wide context_window: the rows have different ceilings and each keeps its own.

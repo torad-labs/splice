@@ -25,6 +25,8 @@ public data class LaunchSpec(
      *  is planted under this wrapped spelling so the picker's allowlist hides its row (see
      *  LaunchService.buildEnv). Blank keeps the duplicate row. */
     val discoveryPrefix: String = "",
+    /** The client window planted as CLAUDE_CODE_MAX_CONTEXT_TOKENS: ModelCatalog.clientLaunchWindow,
+     *  a constant. Per-row windows never ride the env — usage scaling applies them on the wire. */
     val contextWindow: Long,
     /** Claude Code's per-request timeout (API_TIMEOUT_MS) for THIS head: the daemon's whole-turn
      *  cap plus a grace, so the client always outlives the proxy's own wall and receives its honest

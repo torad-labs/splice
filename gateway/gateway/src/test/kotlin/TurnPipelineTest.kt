@@ -87,7 +87,11 @@ class TurnPipelineTest {
     )
 
     /** No text, no tools — the shape that reaches the promote/honesty branch. */
-    private fun outcome(thinking: String, emittedThinking: Boolean = false) = TurnOutcome.Success(
+    private fun outcome(
+        thinking: String,
+        emittedThinking: Boolean = false,
+        messageClosed: Boolean = false,
+    ) = TurnOutcome.Success(
         hasToolUse = false,
         incomplete = false,
         usage = Usage(0, 0, 0),
@@ -98,6 +102,7 @@ class TurnPipelineTest {
         // response, sink never touched); true models every translator that streamed a real
         // thinking block. Defaulting to false keeps the original cases meaning what they meant.
         emittedThinking = emittedThinking,
+        messageClosed = messageClosed,
     )
 
     /** In the uncovered band by construction: too short to promote, too long for the old check. */
@@ -178,6 +183,40 @@ class TurnPipelineTest {
         val rec = run(mirrorReasoning = false, showReasoning = "thinking", thinking = bandThinking)
         assertEquals("error", rec.ending)
         assertEquals(ErrorType.API_ERROR, rec.errorType)
+    }
+
+    // THE ASTRA CELL (2026-09-05). Thirteen retry storms in one evening, every one the same shape:
+    // the model gave its final answer, a Stop hook echoed an end-of-turn report back as a
+    // continuation, and the model closed a message with nothing in it — a finished answer, which is
+    // how codex ends the turn. The honesty gate read it as "no content", the client retried the
+    // identical request eleven times per incident. A CLOSED message ends clean and is tagged so the
+    // perf row still names the class; a round with no message item at all stays the honest error.
+    @Test
+    fun `a message the model closed empty ends clean and is tagged, never empty_model`() = runTest {
+        val rec = RecTerminal()
+        val tag = pipeline().finishStream(
+            rec,
+            outcome("", messageClosed = true),
+            meta("text"),
+            elapsedMs = 1,
+        )
+        assertEquals("terminal", rec.ending, "a closed empty message is a finished answer")
+        assertEquals("empty_message", tag, "the log must still name the class")
+        assertTrue(rec.texts.isEmpty(), "nothing is invented for the wire: ${rec.texts}")
+    }
+
+    @Test
+    fun `a closed empty message on a compact turn is still an empty_compact error`() = runTest {
+        // Compaction needs a summary in the text channel; "nothing to add" is not one.
+        val rec = RecTerminal()
+        val tag = pipeline().finishStream(
+            rec,
+            outcome("", messageClosed = true),
+            meta("text", compact = true),
+            elapsedMs = 1,
+        )
+        assertEquals("empty_compact", tag)
+        assertEquals("error", rec.ending)
     }
 
     @Test

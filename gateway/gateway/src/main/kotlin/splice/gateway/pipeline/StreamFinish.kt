@@ -24,7 +24,8 @@ internal class StreamFinish(
         meta: TurnMeta,
         elapsedMs: Long,
     ): String {
-        promote.apply(emitter, outcome, meta, elapsedMs)?.let { return it }
+        val verdict = promote.apply(emitter, outcome, meta, elapsedMs)
+        verdict.endedTag?.let { return it }
 
         // Reasoning mirror (L2): one mirrorInto for both paths; tools stay on.
         honesty.mirrorGated(emitter, outcome.thinkingText, meta)
@@ -41,6 +42,6 @@ internal class StreamFinish(
         // DR-87: the collect-path terminal can downgrade this emit into an error envelope
         // (malformed-tool/capacity). A literal "ok" here is what blinded perf/health/log to a
         // turn whose client saw a 502.
-        return emitter.degradedReason ?: "ok"
+        return emitter.degradedReason ?: verdict.cleanTag
     }
 }

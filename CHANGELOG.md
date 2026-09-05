@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- **A context window edited in `splice.toml` now reaches running sessions.** Every launch plants
+  one constant client window (`CLAUDE_CODE_MAX_CONTEXT_TOKENS=1000000`) and the proxy scales the
+  token counts it reports so each row, the pinned one included, compacts at its own declared
+  window. Before, the pinned row's number was the launch env, so lowering it (the 2026-09-05 move
+  of the codex rows to 272k, under OpenAI's 2x long-context price line) changed nothing for the
+  six sessions already running until each was relaunched. Now `splice restart` is enough. Ids
+  starting with `claude-` (a passthrough head's own models, a discovery-wrapped tier) ignore that
+  env in Claude Code and keep reporting raw counts.
+
 ## splice v0.3.0 — plan usage on every head, GPT-6 Astra on claudex, and a proxy that matches its reference client - 2026-09-04
 
 ### Added

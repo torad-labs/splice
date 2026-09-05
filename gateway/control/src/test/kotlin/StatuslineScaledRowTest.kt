@@ -1,10 +1,10 @@
-// NEW: the statusline on a SCALED row. Claude Code fixes its context window per process (the
-// pinned row's) and splice scales the counts it reports so another row compacts at its own window,
-// which left the bar reading the client's window and the scaled counts however the operator
-// switched: picking grok-4.6[500k] on a 256k grok head kept "…/256k" on screen (operator report,
-// 2026-09-02). With the head's catalog the renderer shows the picked row's label, its declared
-// window and the real counts; a row that agrees with the client, and a head with no catalog, render
-// the blob exactly as before.
+// NEW: the statusline on a SCALED row. Claude Code fixes its context window per process (one
+// constant 1e6 since 2026-09-05) and splice scales the counts it reports so every row compacts at
+// its own window, which leaves the bar reading the client's window and the scaled counts however
+// the operator switched: picking grok-4.6[500k] on a 256k grok head kept "…/256k" on screen
+// (operator report, 2026-09-02). With the head's catalog the renderer shows the picked row's label,
+// its declared window and the real counts — the pinned row included, now that it scales too; a
+// head with no catalog renders the blob exactly as sent.
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import splice.control.StatuslineRenderer
@@ -23,12 +23,13 @@ class StatuslineScaledRowTest {
         pinnedModel = "grok-4.6",
     )
 
-    // What Claude Code pipes on the 500k row of a 256k session: its window is still the process's
-    // 256000, and the counts are the ones splice scaled by 256000/500000 = 0.512 (real used: 250k).
+    // What Claude Code pipes: its window is the process's constant 1000000, and the counts are the
+    // ones splice scaled by 1e6/declared — 500k reported is real 250k on the 500k row (x2.0) and real
+    // 128k on the 256k row (x3.90625); 50% either way, because the ratio is the row's own.
     private fun blob(id: String, display: String) = """
         {"model":{"id":"$id","display_name":"$display"},
-         "context_window":{"context_window_size":256000,"used_percentage":50,
-           "current_usage":{"input_tokens":28000,"cache_read_input_tokens":100000,"cache_creation_input_tokens":0}}}
+         "context_window":{"context_window_size":1000000,"used_percentage":50,
+           "current_usage":{"input_tokens":56000,"cache_read_input_tokens":444000,"cache_creation_input_tokens":0}}}
     """.trimIndent()
 
     private fun render(renderer: StatuslineRenderer, stdin: String): String =
@@ -43,10 +44,10 @@ class StatuslineScaledRowTest {
     }
 
     @Test
-    fun `the pinned row and a catalog-less head render the blob as sent`() {
+    fun `the pinned row is repaired too and a catalog-less head renders the blob as sent`() {
         val pinned = render(StatuslineRenderer(label = "grok", catalog = grok), blob("grok-4.6", "grok-4.6"))
-        assertTrue("Grok 4.6" in pinned && "128k/256k" in pinned, "scale 1.0 touches nothing but the label: $pinned")
+        assertTrue("Grok 4.6" in pinned && "128k/256k" in pinned, "the pinned row's real counts and window: $pinned")
         val bare = render(StatuslineRenderer(label = "grok"), blob("grok-4.6[500k]", "grok-4.6[500k]"))
-        assertTrue("grok-4.6[500k]" in bare && "128k/256k" in bare, "no catalog, no repair: $bare")
+        assertTrue("grok-4.6[500k]" in bare && "500k/1000k" in bare, "no catalog, no repair: $bare")
     }
 }

@@ -1,40 +1,13 @@
 # Changelog
 
-## splice v0.3.1 — one picker row per model, and the proofs the review asked for - 2026-09-04
-
-### Fixed
-
-- **The `/model` picker lists each model once.** Every head showed a slotted model twice (Sol
-  twice on `claudex`; Kimi K3 (256k) and Kimi K2.7 Code twice on `claude-kimi`). Claude Code draws
-  one row per planted tier (`ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL`) and dedupes rows
-  by their alias, so two tiers on one model drew it twice: Fable shares the frontier with Opus, and
-  on a two-model head Haiku shares Sonnet. A tier cannot be left unset, because its alias then
-  resolves to Claude Code's built-in model, which the head rejects. A repeated tier is now planted
-  under the head's discovery-wrapped spelling (`claude-codex--gpt-5.6-sol`): the head routes it
-  like the bare id, and the picker's allowlist hides the row. Cache rows are unchanged; they are
-  where the Default line's label comes from.
-
-### Changed
-
-- **The watchdog turn-line tests pin what production does.** A test claimed a compaction's
-  first-output tier is lifted to the whole-turn cap; production switches that tier off
-  (`WatchdogBudget.forCompact`), so only the total cap ends a silent compaction. The arm now pins a
-  non-compact first-output fire and a compact total-cap fire, and two new `TurnFinish` arms fire
-  real pollers on virtual ticks and assert the rendered line carries the sentinel through the
-  production hop.
-- **`CLAUDEX_QUOTA_POLL=off` has an effect test.** `ManagedHeadFactory` exposes a poller-start
-  seam; assembling a real ChatGPT subscription head with the knob off starts nothing, with `auto`
-  starts one.
-- **The stable pin recipe is exercised.** `checks/release/accept.sh` now installs with
-  `SPLICE_VERSION` pinned to the jar's own stable tag as well as a synthetic prerelease, and fails
-  when `install.sh` ignores the pin.
-- **Changelog bookkeeping.** "Heads that see each other" landed after `v0.3.0-beta.1` and now sits
-  in the v0.3.0 section, so the beta.1 list matches its tag.
-
-## splice v0.3.0 — plan usage on every head, and a proxy that matches its reference client - 2026-09-03
+## splice v0.3.0 — plan usage on every head, GPT-6 Astra on claudex, and a proxy that matches its reference client - 2026-09-04
 
 ### Added
-
+- **GPT-6 Astra is a row on `claudex`.** OpenAI shipped GPT-6 Astra on 2026-09-03 and it is
+  included in the ChatGPT plan allowance. The example config carries it as `gpt-6-astra` (label
+  "Codex 6 Astra") and plants it on the head's fable tier, so `/model` lists it beside the 5.6 rows
+  and the default pin is untouched. Codex's own catalog serves it responses-lite with efforts up
+  to `max`, so the lite gate now matches the gpt-6 family as well as gpt-5.6.
 - **Every head shows its plan usage the way the native Claude head does.** The daemon tracks each
   head's 5-hour and 7-day windows (ChatGPT's usage endpoint and its `x-codex-*` round headers,
   Kimi's usage endpoint, SuperGrok's billing period, Anthropic's own unified headers on the
@@ -115,6 +88,22 @@
   the proxy-side answer to that loop, so the budget is now five. Turn recovery and its cooldown
   backoff are unchanged; only the number of times they may run has widened.
 
+
+- **The watchdog turn-line tests pin what production does.** A test claimed a compaction's
+  first-output tier is lifted to the whole-turn cap; production switches that tier off
+  (`WatchdogBudget.forCompact`), so only the total cap ends a silent compaction. The arm now pins a
+  non-compact first-output fire and a compact total-cap fire, and two new `TurnFinish` arms fire
+  real pollers on virtual ticks and assert the rendered line carries the sentinel through the
+  production hop.
+- **`CLAUDEX_QUOTA_POLL=off` has an effect test.** `ManagedHeadFactory` exposes a poller-start
+  seam; assembling a real ChatGPT subscription head with the knob off starts nothing, with `auto`
+  starts one.
+- **The stable pin recipe is exercised.** `checks/release/accept.sh` now installs with
+  `SPLICE_VERSION` pinned to the jar's own stable tag as well as a synthetic prerelease, and fails
+  when `install.sh` ignores the pin.
+- **Changelog bookkeeping.** "Heads that see each other" landed after `v0.3.0-beta.1` and now sits
+  in the v0.3.0 section, so the beta.1 list matches its tag.
+
 ### Fixed
 
 - **Compactions no longer die on the ChatGPT backend's capacity signal.** An in-stream
@@ -162,6 +151,17 @@
   failed stalled" of a morning (13) landed while a 5–6.5 MB frame was in flight — a healthy socket
   poisoned and the same megabytes re-sent over SSE. The budget is now the floor plus the frame's own
   transfer time at 100 KB/s, and the stall line names both the budget and the frame size.
+
+
+- **The `/model` picker lists each model once.** Every head showed a slotted model twice (Sol
+  twice on `claudex`; Kimi K3 (256k) and Kimi K2.7 Code twice on `claude-kimi`). Claude Code draws
+  one row per planted tier (`ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL`) and dedupes rows
+  by their alias, so two tiers on one model drew it twice: Fable shares the frontier with Opus, and
+  on a two-model head Haiku shares Sonnet. A tier cannot be left unset, because its alias then
+  resolves to Claude Code's built-in model, which the head rejects. A repeated tier is now planted
+  under the head's discovery-wrapped spelling (`claude-codex--gpt-5.6-sol`): the head routes it
+  like the bare id, and the picker's allowlist hides the row. Cache rows are unchanged; they are
+  where the Default line's label comes from.
 
 ## splice v0.3.0-beta.1 — native Claude auth and a hardened multi-head gateway - 2026-08-30
 

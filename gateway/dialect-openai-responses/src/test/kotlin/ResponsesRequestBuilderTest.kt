@@ -202,6 +202,20 @@ class ResponsesRequestBuilderTest {
         assertEquals("x", input[2]["content"]?.jsonPrimitive?.content)
     }
 
+    // gpt-6-astra (codex models.json 2026-09-04: use_responses_lite true, same shape as the 5.6
+    // family). The live /models listing shows it to this account at client_version 0.153.0.
+    @Test
+    fun `gpt-6-astra rides the lite shape like the 5-6 family`() {
+        val req = build(
+            """{"model":"m","system":"harness prompt","messages":[{"role":"user","content":"x"}]}""",
+            options = opts(model = "gpt-6-astra"),
+        )
+        assertEquals("", req["instructions"]?.jsonPrimitive?.content)
+        assertEquals("false", req["parallel_tool_calls"]?.jsonPrimitive?.content)
+        assertEquals("all_turns", req["reasoning"]?.jsonObject?.get("context")?.jsonPrimitive?.content)
+        assertEquals("developer", req["input"]!!.jsonArray[0].jsonObject["role"]?.jsonPrimitive?.content)
+    }
+
     @Test
     fun `gpt-5-6 lite without tools - developer instructions only, no additional_tools item`() {
         val req = build(

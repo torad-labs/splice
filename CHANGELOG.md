@@ -105,6 +105,15 @@
   in the v0.3.0 section, so the beta.1 list matches its tag.
 
 ### Fixed
+- **An empty answer is an answer, not an API error.** When the model closes a message with no
+  text in it, the turn now ends clean, the way codex ends it (only a tool call asks for a
+  follow-up there). Found on GPT-6 Astra: after its final answer, a project Stop hook echoed an
+  end-of-turn report back as a continuation, Astra correctly had nothing to add, and the empty-turn
+  gate graded that `empty_model`, so Claude Code retried the identical 120k to 320k-token request
+  eleven times per incident, thirteen times in one evening. A round with no message item at all
+  is still the honest error it was, a compaction that returns nothing is still an error, and the
+  clean case is tagged `empty_message` in the perf row and names the shape the backend sent
+  (`reasoning(summary=0,enc=1700)`, `message(output_text:0)`) in the log.
 
 - **Compactions no longer die on the ChatGPT backend's capacity signal.** An in-stream
   `server_is_overloaded` (or `slow_down`) used to classify as a non-retryable `api_error`, so the

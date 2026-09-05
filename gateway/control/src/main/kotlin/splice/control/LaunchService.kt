@@ -12,10 +12,6 @@
 // only), which per-head context windows depend on.
 package splice.control
 
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import splice.core.launch.ClaudeConfigMaterializer
 import splice.core.launch.MaterializeSpec
 import splice.core.util.EnvReader
@@ -47,21 +43,14 @@ public class LaunchService(
         keyPresentNow: Boolean = true,
     ): LaunchRecipe {
         val effective = if (keyPresentNow) spec.copy(tokenCapture = null, advertiseKeySetup = false) else spec
-        // Slots first: the picker filter needs the planted ids, including positional fill
-        // (a declared-empty head still plants four tiers). LaunchSpec.modelOptionsCache stays
-        // the full catalog projection; only the materialized cache is stripped.
         val slots = aliasSlots(effective)
-        val pickerCache = cacheWithoutSlotIds(
-            effective.modelOptionsCache,
-            slots.map { it.second }.toSet(),
-        )
         materializer.materialize(
             MaterializeSpec(
                 configDir = effective.configDir,
                 policy = effective.policy,
                 availableModelIds = effective.availableModelIds,
                 defaultModel = effective.pinnedModel,
-                modelOptionsCache = pickerCache,
+                modelOptionsCache = effective.modelOptionsCache,
                 statuslineCommand = effective.statuslineCommand,
                 loginCommand = effective.loginCommand,
                 signInLabel = effective.signInLabel,
@@ -87,24 +76,6 @@ public class LaunchService(
             null
         }
         return LaunchRecipe(env, unset, argv, warning)
-    }
-
-    // Claude Code 2.1.257 picker (gXr) starts from lXr slot rows whose value is the alias
-    // ("opus"/"sonnet"/"haiku"/"fable") and label is ANTHROPIC_DEFAULT_*_MODEL_NAME, then
-    // appends additionalModelOptionsCache rows whose value is the raw catalog id. eF/nHe
-    // collapse equal values only, so a slot labeled Sol plus a cache row valued "sol" both
-    // survive and the picker lists the same model twice. Drop cache rows whose value is
-    // already a planted slot id; keep availableModels so the id stays allowed, keep
-    // unslotted rows (including context_window, which vP ignores; Claude Code's window is
-    // CLAUDE_CODE_MAX_CONTEXT_TOKENS), keep slot NAME/DESCRIPTION.
-    private fun cacheWithoutSlotIds(cache: JsonElement, slotIds: Set<String>): JsonElement {
-        val rows = cache as? JsonArray ?: return cache
-        return JsonArray(
-            rows.filter { row ->
-                val value = (row as? JsonObject)?.get("value")?.jsonPrimitive?.content
-                value !in slotIds
-            },
-        )
     }
 
     /** Vars a launched head must SCRUB from the inherited environment: bin/splice-launch execs
@@ -152,8 +123,25 @@ public class LaunchService(
             // availableModels + .claude.json additionalModelOptionsCache) — see the header for why
             // the wrapped /v1/models spelling must never reach the picker.
             put("ANTHROPIC_MODEL", spec.pinnedModel)
+            // The picker lists one row per PLANTED TIER (Claude Code 2.1.257: fen()/hen()/uen()
+            // emit a row whenever ANTHROPIC_DEFAULT_<tier>_MODEL is set, value = the alias, label =
+            // _NAME) and dedupes rows by value only, so two tiers on one model drew that model
+            // twice: Sol as opus and as fable on claudex, K2.7 Code as sonnet and as haiku on
+            // claude-kimi (the 2026-09-04 release recording). The tier cannot be left unset: the
+            // alias then resolves to Claude Code's built-in model, which this head rejects
+            // ("proxies its own models only"), and every fable- or haiku-tiered subagent dies.
+            // The one lever is the allowlist: a tier row whose model is not on availableModels is
+            // hidden, while the head accepts its own DISCOVERY-WRAPPED spelling (catalog.contains
+            // unwraps). So a repeated tier is planted as "<prefix><id>": routed like the first, drawn
+            // never. Cache rows are untouched on purpose: Claude Code already drops a cache row that
+            // repeats a tier's model, and the cache row is where the Default line's label comes from
+            // (stripping them printed "currently gpt-5.6-sol[1m]"; verified live 2026-09-04). Known
+            // cost: a subagent on the wrapped tier runs under a wrapped ACTIVE id, for which Claude
+            // Code does not honor CLAUDE_CODE_MAX_CONTEXT_TOKENS (header note).
+            val planted = mutableSetOf<String>()
             slots.forEach { (slot, model) ->
-                put("ANTHROPIC_DEFAULT_${slot}_MODEL", model)
+                val repeated = !planted.add(model) && spec.discoveryPrefix.isNotBlank()
+                put("ANTHROPIC_DEFAULT_${slot}_MODEL", if (repeated) spec.discoveryPrefix + model else model)
                 val label = spec.modelLabels[model] ?: model
                 put("ANTHROPIC_DEFAULT_${slot}_MODEL_NAME", label)
                 put("ANTHROPIC_DEFAULT_${slot}_MODEL_DESCRIPTION", label)

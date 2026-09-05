@@ -4,13 +4,15 @@
 
 ### Fixed
 
-- **The `/model` picker lists each model once.** Every head showed its slotted models twice (Sol
-  twice on `claudex`; Kimi K3 (256k) and Kimi K2.7 Code twice on `claude-kimi`). Both rows were
-  ours: the launch recipe plants `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL`, which Claude
-  Code renders as its tier rows with the `_NAME` label, and then appends every
-  `additionalModelOptionsCache` row under the raw catalog id, and its dedupe compares values only.
-  The materialized cache now omits any id already planted in a slot; `availableModels` keeps every
-  id, so a saved model choice stays allowed, and unslotted rows keep their fields.
+- **The `/model` picker lists each model once.** Every head showed a slotted model twice (Sol
+  twice on `claudex`; Kimi K3 (256k) and Kimi K2.7 Code twice on `claude-kimi`). Claude Code draws
+  one row per planted tier (`ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU,FABLE}_MODEL`) and dedupes rows
+  by their alias, so two tiers on one model drew it twice: Fable shares the frontier with Opus, and
+  on a two-model head Haiku shares Sonnet. A tier cannot be left unset, because its alias then
+  resolves to Claude Code's built-in model, which the head rejects. A repeated tier is now planted
+  under the head's discovery-wrapped spelling (`claude-codex--gpt-5.6-sol`): the head routes it
+  like the bare id, and the picker's allowlist hides the row. Cache rows are unchanged; they are
+  where the Default line's label comes from.
 
 ### Changed
 

@@ -3,6 +3,15 @@
 ## Unreleased
 
 ### Fixed
+- **An auto-compaction no longer re-reads the whole transcript cold.** Claude Code compacts
+  between a tool call and its execution, so the compaction body ends at the previous tool result
+  and the call the backend just emitted is never answered. Chained over the WebSocket, the backend
+  refused every such turn ("No tool output found for function call …", 4 of 4 on 2026-09-05) and
+  the round fell back to a cold SSE send with the prefix cache lost (0-37% hit on 200k-token
+  compactions, 5-10 minutes each). The chaining state now remembers the calls a response left
+  open, a turn that answers none of them full-sends on the same socket instead (prefix cache
+  kept), and the fallback line names the backend's failure terminal (type, code, message) so the
+  next refusal of this kind is diagnosable from `daemon.log` alone.
 - **A compaction is built byte-identical to a turn, so it hits the prompt cache.** Every dialect
   used to reshape the compaction request (a directive appended to the instructions or system,
   tools and `tool_choice` stripped, tool results folded to text, images dropped, the lite shape
@@ -10,20 +19,24 @@
   whole transcript on every compaction (`cached_tokens=0` on every model, 2026-09-05). The request
   now carries the session's model, reasoning, tools and history unchanged; `compact` only reaches
   the response side. The `compact_effort` quirk is retired and a config that sets it fails at load.
-- **A session launched before the constant client window no longer over-compacts.** Its process
-  still divides by the window it was launched with, so the head learns each session's real window
-  from its status-line post (`session_id` + `context_window_size`) and scales that session's
-  counts against it. Live, no relaunch.
+- **A running session's counts are scaled against ITS window, never a guessed one.** Its process
+  divides by the window it was launched with, so the head learns each session's real window from
+  its status-line post (`session_id` + `context_window_size`) and scales that session's counts
+  against it. A session that has not posted yet is assumed on the pinned row's current window,
+  i.e. exact. For one morning on 2026-09-05 every launch planted a constant 1e6 instead, and the
+  sessions launched before it were scaled 2.5-3.7x against a window their process never had:
+  each compacted at a third of its row's window, forever (eight compactions in forty minutes on
+  one session, every one immediately re-triggered). Live, no relaunch.
 
 ### Changed
-- **A context window edited in `splice.toml` now reaches running sessions.** Every launch plants
-  one constant client window (`CLAUDE_CODE_MAX_CONTEXT_TOKENS=1000000`) and the proxy scales the
-  token counts it reports so each row, the pinned one included, compacts at its own declared
-  window. Before, the pinned row's number was the launch env, so lowering it (the 2026-09-05 move
-  of the codex rows to 272k, under OpenAI's 2x long-context price line) changed nothing for the
-  six sessions already running until each was relaunched. Now `splice restart` is enough. Ids
-  starting with `claude-` (a passthrough head's own models, a discovery-wrapped tier) ignore that
-  env in Claude Code and keep reporting raw counts.
+- **A context window edited in `splice.toml` now reaches running sessions.** A launch plants the
+  pinned row's window (`CLAUDE_CODE_MAX_CONTEXT_TOKENS`), every other row is usage-scaled on the
+  wire, and a session keeps compacting at the row's CURRENT window after an edit because its
+  counts are scaled against the window it reports on its status line. Before, lowering the pinned
+  row's number (the 2026-09-05 move of the codex rows to 272k, under OpenAI's 2x long-context
+  price line) changed nothing for the six sessions already running until each was relaunched. Now
+  `splice restart` is enough. Ids starting with `claude-` (a passthrough head's own models, a
+  discovery-wrapped tier) ignore that env in Claude Code and keep reporting raw counts.
 
 ## splice v0.3.0 — plan usage on every head, GPT-6 Astra on claudex, and a proxy that matches its reference client - 2026-09-04
 

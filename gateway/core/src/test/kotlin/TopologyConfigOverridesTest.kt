@@ -127,7 +127,7 @@ class TopologyConfigOverridesTest {
         assertEquals(listOf("wide-b", "wide-a"), catalog.availableModelIds())
         assertEquals(provider.models.map { it.id }, provider.catalogFor(head.copy(models = null)).availableModelIds())
         assertEquals(setOf(500_000L), catalog.models.map { it.contextWindow }.toSet())
-        assertEquals(2.0, catalog.usageScale("wide-a"), "constant 1e6 client window over the 500k override")
+        assertEquals(1.0, catalog.usageScale("wide-a"), "the pinned row's 500k launch env over the 500k override")
         assertThrows(IllegalArgumentException::class.java) {
             provider.catalogFor(head.copy(models = listOf(HeadModel("not-declared-by-provider"))))
         }

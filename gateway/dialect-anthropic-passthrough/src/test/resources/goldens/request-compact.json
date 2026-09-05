@@ -1,13 +1,25 @@
 {
   "model": "k3",
   "stream": true,
-  "system": "be brief\nCOMPACT MODE (critical): You are summarizing a coding session for another agent.\nRespond with ONLY a detailed plain-text summary. No tools. No function calls.\nDo not put the summary only in reasoning — the final message text MUST contain the full summary.\nStructure with headings: Goal, Decisions, Files touched, Current state, Errors, Next steps, Constraints.\nBe concrete (paths, commands, numbers). Omit boilerplate.",
+  "system": "be brief",
   "messages": [
     {
       "role": "user",
       "content": "summarize"
     }
   ],
+  "tools": [
+    {
+      "name": "run",
+      "input_schema": {
+        "type": "object"
+      },
+      "description": ""
+    }
+  ],
+  "tool_choice": {
+    "type": "auto"
+  },
   "thinking": {
     "type": "adaptive",
     "display": "summarized"

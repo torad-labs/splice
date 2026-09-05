@@ -1,5 +1,5 @@
-// NEW (2026-09-05): what a status-line post teaches the head about the window its session really
-// runs with. Claude Code computes `context_window.context_window_size` for its current model in
+// NEW: what a status-line post teaches the head about the window its session really
+// runs with (2026-09-05). Claude Code computes `context_window.context_window_size` for its current model in
 // THIS process — for an env-governed id that is the launch env, the number the head must scale
 // this session's counts against (ClientWindows). A "[1m]" row or a "claude-" id is sized from the
 // id (cli 2.1.257 `PL()`), so those posts say nothing about the env and record nothing.

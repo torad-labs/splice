@@ -88,11 +88,7 @@ internal class ResponsesInputTools(
         )
     }
 
-    internal fun appendToolResult(
-        sink: JsonArrayBuilder,
-        block: ToolResultBlock,
-        opts: BuildOptions,
-    ) {
+    internal fun appendToolResult(sink: JsonArrayBuilder, block: ToolResultBlock) {
         val text = block.content.filterIsInstance<TextBlock>().joinToString("") { it.text }
         sink.add(
             buildJsonObject {

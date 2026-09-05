@@ -416,5 +416,4 @@ class PassthroughRequestBuilderTest {
         assertEquals("disabled", req["thinking"]!!.jsonObject["type"]?.jsonPrimitive?.content)
         assertNull(req["output_config"])
     }
-
 }

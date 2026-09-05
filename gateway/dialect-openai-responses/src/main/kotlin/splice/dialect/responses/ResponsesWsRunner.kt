@@ -85,6 +85,7 @@ internal class ResponsesWsRunner(
             val built = session.frameAndEpoch(chain, request, conn.generation)
             pending = ResponsesWsIdentity.PendingCommit(request, conn.generation, built.epoch)
             if (built.frame.chained) log("[ws] ${identity.logKey(key)} chained onto the previous response\n")
+            built.frame.fullSendReason?.let { log("[ws] ${identity.logKey(key)} full send — $it\n") }
             built.frame.json
         }
         // No clear here: the transport declining (busy / connect failure) is a BYPASS, and the head

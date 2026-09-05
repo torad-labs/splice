@@ -319,7 +319,10 @@ class ChatRequestBuilderTest {
 
     @Test
     fun `a compact turn with no system prompt invents no system message`() {
-        val msgs = build("""{"model":"m","messages":[{"role":"user","content":"summarize"}]}""", compact = true).messages()
+        val msgs = build(
+            """{"model":"m","messages":[{"role":"user","content":"summarize"}]}""",
+            compact = true,
+        ).messages()
         assertEquals("user", msgs.first()["role"]?.jsonPrimitive?.content)
     }
 

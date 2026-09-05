@@ -1,6 +1,7 @@
 // NEW: the picked model row as the statusline should show it. Claude Code fixes its context window
-// per PROCESS (one constant, via CLAUDE_CODE_MAX_CONTEXT_TOKENS) and splice scales the token
-// counts it reports so every row compacts at its own declared window, which leaves the blob
+// per PROCESS (the pinned row's, via CLAUDE_CODE_MAX_CONTEXT_TOKENS — or whatever an older
+// process was launched with, learned from its posts) and splice scales the token counts it
+// reports so every row compacts at its own declared window, which leaves the blob
 // Claude Code pipes to /statusline in client units: on a 500k row over a 256k session the bar read
 // "…/256k" with counts x 0.512 however the operator switched (operator report, 2026-09-02). This
 // lens undoes that scaling for the picked row and names it by its catalog label; with no catalog,

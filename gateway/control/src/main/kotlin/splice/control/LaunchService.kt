@@ -18,8 +18,9 @@ import splice.core.util.EnvReader
 import kotlin.math.max
 
 // Floor for CLAUDE_CODE_AUTO_COMPACT_WINDOW (buildEnv): a small client window must not shrink the
-// auto-compact window below this. Moot for a real launch since the client window became a constant
-// 1e6 (LaunchSpec.contextWindow), kept so a synthetic spec cannot plant a nonsense cap.
+// auto-compact window below this. The client window is the pinned row's own (LaunchSpec.contextWindow,
+// 2026-09-05), so a row under 60k plants a cap above CLAUDE_CODE_MAX_CONTEXT_TOKENS, which Claude Code
+// resolves with min() — harmless; the floor is kept so a synthetic spec cannot plant a nonsense cap.
 private const val AUTO_COMPACT_FLOOR = 60_000L
 
 // LaunchSpec + LaunchRecipe live in LaunchTypes.kt (concentration, 2026-08-19).
@@ -147,11 +148,11 @@ public class LaunchService(
                 put("ANTHROPIC_DEFAULT_${slot}_MODEL_NAME", label)
                 put("ANTHROPIC_DEFAULT_${slot}_MODEL_DESCRIPTION", label)
             }
-            // ONE constant client window per process (ModelCatalog.clientLaunchWindow), never the
-            // pinned row's number: the row's real window is applied by usage scaling on every turn,
-            // so a TOML window edit + `splice restart` reaches THIS process live (2026-09-05).
-            // AUTO_COMPACT_WINDOW rides the same number — it is an absolute cap in the client's
-            // (scaled) units, and any smaller value would compact early by exactly that ratio.
+            // The pinned row's declared window (ModelCatalog.clientLaunchWindow). Claude Code's
+            // auto-compact threshold is min(this, AUTO_COMPACT_WINDOW) minus its output reserve
+            // (20k), times the pct below (cli 2.1.257 nxe/dZe): 272k -> 214,200. Other rows and a
+            // later TOML edit are applied by usage scaling on the wire. AUTO_COMPACT_WINDOW rides
+            // the same number: any smaller value would compact early by exactly that ratio.
             put("CLAUDE_CODE_MAX_CONTEXT_TOKENS", spec.contextWindow.toString())
             put("CLAUDE_CODE_AUTO_COMPACT_WINDOW", max(AUTO_COMPACT_FLOOR, spec.contextWindow).toString())
             put("CLAUDE_AUTOCOMPACT_PCT_OVERRIDE", "85")

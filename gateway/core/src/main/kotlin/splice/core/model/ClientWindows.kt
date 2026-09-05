@@ -1,13 +1,14 @@
-// NEW (2026-09-05): the context window each Claude Code SESSION actually runs with.
+// NEW: the context window each Claude Code SESSION actually runs with (2026-09-05) — learned from
+// its status-line posts, so a TOML window edit reaches a running process through ITS window.
 //
-// Claude Code fixes its window per PROCESS from the launch env, and splice scales the token counts
-// it reports by client/declared so a row compacts at its own declared window. The launch env is
-// one constant now (ModelCatalog.clientLaunchWindow), but a session launched before that constant
-// existed still holds the old value for its whole life, and scaling its counts against the wrong
-// window made it compact at a third of its row's window (operator report 2026-09-05: "claudex
-// sessions spend more time compacting than doing anything else"). The client tells us its window
-// on every status-line post (`session_id` + `context_window.context_window_size`), so the proxy
-// learns it per session and scales THAT session's counts against it — live, no relaunch.
+// Claude Code fixes its window per PROCESS from the launch env (the pinned row's window at launch
+// time), and splice scales the token counts it reports by client/declared so a row compacts at its
+// own declared window. A session launched before a TOML window edit still holds the old value for
+// its whole life, and scaling its counts against the wrong window compacts it at the wrong point —
+// at a THIRD of its row's window when the assumed window was a constant 1e6 (operator report
+// 2026-09-05: "claudex sessions spend more time compacting than doing anything else"). The client
+// tells us its window on every status-line post (`session_id` + `context_window.context_window_size`),
+// so the proxy learns it per session and scales THAT session's counts against it — live, no relaunch.
 package splice.core.model
 
 private const val DEFAULT_CAPACITY = 512

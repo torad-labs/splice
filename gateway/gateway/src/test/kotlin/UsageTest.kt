@@ -275,7 +275,7 @@ class UsageTest {
 /** The proxy seam that gives a picker row a window the CLIENT has no way to represent.
  *
  * Claude Code resolves a context window two ways only — `/\[1m\]/i` on the id -> 1e6, else the one
- * process-wide CLAUDE_CODE_MAX_CONTEXT_TOKENS, which the launch plants as a constant 1e6. It
+ * process-wide CLAUDE_CODE_MAX_CONTEXT_TOKENS, which the launch plants as the pinned row's window. It
  * compacts on `(input + cache_creation + cache_read) / window`, and splice writes that numerator,
  * which is every declared window's only possible source. These pin that the scale actually reaches
  * the payload, keyed on the RAW picker id (two rows can share one upstream id).
@@ -325,24 +325,25 @@ class UsageScalingTest {
     }
 
     @Test
-    fun `the pinned row scales too - the client's constant 1e6 carries its declared 256k`() {
-        // Since 2026-09-05 the launch plants a constant 1e6 client window, so the pinned row is no
-        // longer exempt: real 100k of a 256k row must read as 39.06% of the client's 1e6, which is
-        // what lets a TOML window edit reach this process without a relaunch.
+    fun `the pinned row rides raw - the launch env IS its declared 256k`() {
+        // The launch plants the pinned row's window, so on that row the client's numbers are the
+        // real ones: real 100k of a 256k row reads as 39.06% of the client's 256k, unscaled. A TOML
+        // window edit still reaches a running process through the window it reports on its
+        // status line (the session-window tests below), never through a guessed constant.
         val p = payload("grok-4.6", input = 100_000, cached = 40_000)
-        assertEquals(234_375, p["input_tokens"]?.jsonPrimitive?.content?.toLong(), "(100k - 40k) x 3.90625")
-        assertEquals(156_250, p["cache_read_input_tokens"]?.jsonPrimitive?.content?.toLong(), "40k x 3.90625")
-        assertEquals(1_000_000, p["context_window"]?.jsonPrimitive?.content?.toLong(), "what the client uses")
+        assertEquals(60_000, p["input_tokens"]?.jsonPrimitive?.content?.toLong(), "100k - 40k, raw")
+        assertEquals(40_000, p["cache_read_input_tokens"]?.jsonPrimitive?.content?.toLong(), "raw")
+        assertEquals(256_000, p["context_window"]?.jsonPrimitive?.content?.toLong(), "what the client uses")
         assertEquals("39.0625", p["used_percentage"]?.jsonPrimitive?.content, "100k of the row's own 256k")
     }
 
     @Test
-    fun `a 500k row doubles the reported counts so it compacts at a REAL 500k`() {
-        // The client believes 1e6. Real 250k of context must read as 500k (50.0%), so the bar
+    fun `a 500k row halves the reported counts so it compacts at a REAL 500k`() {
+        // The client believes 256k. Real 250k of context must read as 128k (50.0%), so the bar
         // fills at real 500k. Selectable live from /model.
         val p = payload("grok-4.6[500k]", input = 250_000, cached = 0)
-        assertEquals(500_000, p["input_tokens"]?.jsonPrimitive?.content?.toLong())
-        assertEquals(1_000_000, p["context_window"]?.jsonPrimitive?.content?.toLong(), "what the client uses")
+        assertEquals(128_000, p["input_tokens"]?.jsonPrimitive?.content?.toLong())
+        assertEquals(256_000, p["context_window"]?.jsonPrimitive?.content?.toLong(), "what the client uses")
         assertEquals("50", p["used_percentage"]?.jsonPrimitive?.content, "half of the row's own 500k")
     }
 
@@ -353,12 +354,12 @@ class UsageScalingTest {
     // ratio Claude Code compacts on is (input + cache_read)/window, so scaling only one half would
     // report 250k of real context as 69% of the client's 256k instead of the true 50%, and the row's
     // whole reason for existing is that that percentage is honest against ITS window. Scaled only
-    // one half, 250k real on a 500k row would read 250k+200k = 45% of 1e6 instead of the true 50%.
+    // one half, 250k real on a 500k row would read 76.8k+100k = 69% of 256k instead of the true 50%.
     @Test
     fun `cache_read scales with input, so the compaction ratio is unchanged by the cached split`() {
         val p = payload("grok-4.6[500k]", input = 250_000, cached = 100_000)
-        assertEquals(300_000, p["input_tokens"]?.jsonPrimitive?.content?.toLong(), "(250k - 100k) x 2.0")
-        assertEquals(200_000, p["cache_read_input_tokens"]?.jsonPrimitive?.content?.toLong(), "100k x 2.0")
+        assertEquals(76_800, p["input_tokens"]?.jsonPrimitive?.content?.toLong(), "(250k - 100k) x 0.512")
+        assertEquals(51_200, p["cache_read_input_tokens"]?.jsonPrimitive?.content?.toLong(), "100k x 0.512")
         assertEquals("50", p["used_percentage"]?.jsonPrimitive?.content, "same 50% as the cached=0 case")
     }
 
@@ -473,16 +474,17 @@ class UsageScalingTest {
     }
 }
 
-// 2026-09-05, the second half of the constant-window move: a session launched before the constant
-// existed still divides by its old env. The head learns that window from the session's status-line
-// posts (ClientWindows) and scales THAT session's counts against it, so it compacts at the row's
-// real window instead of a third of it — live, no relaunch.
+// 2026-09-05: a session divides by the env it was launched with for its whole life. The head learns
+// that window from the session's status-line posts (ClientWindows) and scales THAT session's counts
+// against it, so a window edited after its launch still compacts it at the row's real window — live,
+// no relaunch — and never against a window its process does not have.
 class SessionWindowUsageTest {
 
     private val xai = ModelCatalog(
         discoveryPrefix = "claude-grok--",
         models = listOf(
             ModelEntry(id = "grok-4.6", contextWindow = 256_000),
+            ModelEntry(id = "grok-4.6[500k]", contextWindow = 500_000),
             ModelEntry(id = "grok-4.3[1m]", contextWindow = 1_000_000),
         ),
         defaultContextWindow = 256_000,
@@ -515,12 +517,13 @@ class SessionWindowUsageTest {
     }
 
     @Test
-    fun `a session already at the row's window rides raw and an unknown session gets the constant`() {
+    fun `a session already at the row's window rides raw and an unknown session is assumed on the launch env`() {
         val exact = payload("grok-4.6", input = 100_000, cached = 40_000, sessionWindow = 256_000)
         assertEquals(60_000, exact["input_tokens"]?.jsonPrimitive?.content?.toLong())
         assertEquals(256_000, exact["context_window"]?.jsonPrimitive?.content?.toLong())
         val unknown = payload("grok-4.6", input = 100_000, cached = 40_000, sessionWindow = null)
-        assertEquals(1_000_000, unknown["context_window"]?.jsonPrimitive?.content?.toLong(), "the launch constant")
+        assertEquals(256_000, unknown["context_window"]?.jsonPrimitive?.content?.toLong(), "the pinned row's window")
+        assertEquals(60_000, unknown["input_tokens"]?.jsonPrimitive?.content?.toLong(), "raw, never a guessed factor")
         assertEquals("39.0625", unknown["used_percentage"]?.jsonPrimitive?.content)
     }
 
@@ -536,8 +539,14 @@ class SessionWindowUsageTest {
         val logged = mutableListOf<String>()
         TurnWiring(LogSink { logged += it }).usagePayloadBuilder(xai, meta("grok-4.6"), 400_000)(Usage(1_000, 7, 0))
         assertTrue(logged.single().contains("the session's own"), logged.toString())
-        val constant = mutableListOf<String>()
-        TurnWiring(LogSink { constant += it }).usagePayloadBuilder(xai, meta("grok-4.6"), null)(Usage(1_000, 7, 0))
-        assertTrue(constant.single().contains("the launch constant"), constant.toString())
+        // an unknown session on the pinned row is exact and logs nothing; a scaled row on an
+        // unknown session names the launch env as the window it assumed
+        val silent = mutableListOf<String>()
+        TurnWiring(LogSink { silent += it }).usagePayloadBuilder(xai, meta("grok-4.6"), null)(Usage(1_000, 7, 0))
+        assertTrue(silent.isEmpty(), silent.toString())
+        val assumed = mutableListOf<String>()
+        TurnWiring(LogSink { assumed += it }).usagePayloadBuilder(xai, meta("grok-4.6[500k]"), null)(Usage(1_000, 7, 0))
+        assertTrue(assumed.single().contains("the launch env"), assumed.toString())
+        assertTrue(assumed.single().contains("client window 256000"), assumed.toString())
     }
 }

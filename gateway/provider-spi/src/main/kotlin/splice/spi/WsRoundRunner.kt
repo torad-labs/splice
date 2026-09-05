@@ -88,5 +88,9 @@ public fun interface WsRoundAbort {
 /** Thrown by the head when a WS round failed BEFORE the client saw any content, so the round is
  *  re-served over SSE. A plain RuntimeException on purpose: the stream translators' catch lists
  *  (IOException / SerializationException / IllegalArgumentException) must not swallow it, the same
- *  reason [StreamTornBeforeClient] is one. */
-public class WsRoundNeedsSse : RuntimeException("websocket round failed before any client frame")
+ *  reason [StreamTornBeforeClient] is one. [detail] is what the server said — the failure terminal's
+ *  type and error — so the fallback line names WHY a round left the WebSocket: until 2026-09-05 it
+ *  said only that one did, and every chained compaction that failed this way (and then re-read the
+ *  whole transcript cold over SSE) left no cause anywhere. */
+public class WsRoundNeedsSse(public val detail: String = "") :
+    RuntimeException("websocket round failed before any client frame")

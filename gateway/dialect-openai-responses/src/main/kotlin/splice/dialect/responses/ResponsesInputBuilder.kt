@@ -58,7 +58,7 @@ internal class ResponsesInputBuilder(
             is DocumentBlock -> appendDocument(sink, block)
             is RedactedThinkingBlock -> inject.appendRedactedThinking(sink, block, opts)
             is ToolUseBlock -> tools.appendToolUse(sink, block, opts, declareByName)
-            is ToolResultBlock -> tools.appendToolResult(sink, block, opts)
+            is ToolResultBlock -> tools.appendToolResult(sink, block)
             is ThinkingBlock -> Unit // visible thinking never rides back upstream
             is UnknownBlock -> Unit // unknown client blocks are dropped, never crash
         }

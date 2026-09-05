@@ -4,8 +4,11 @@
 // stays Success. Pre-fix the turn line said success, head health recorded nothing, and (for the
 // collect rewrite) the perf row said "ok" — the client saw a 502 while every instrument read
 // green. These arms drive TurnFinish directly: outcome in, then assert what the instruments saw.
+// The watchdog arms fire real pollers first, then prove TurnFinish carries each sentinel into the line.
 package head
 
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.serialization.json.buildJsonObject
@@ -15,6 +18,7 @@ import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.TestInstance
 import splice.core.perf.TurnPerf
+import splice.core.turn.ErrorType
 import splice.core.turn.ReasoningDisplay
 import splice.core.turn.TurnMeta
 import splice.core.turn.TurnOutcome
@@ -39,12 +43,16 @@ import splice.gateway.wire.CollectingTerminal
 import splice.gateway.wire.ImmediateSseWriter
 import splice.gateway.wire.TurnTerminal
 import splice.gateway.wire.UsagePayloadBuilder
+import splice.spi.ClientFrameEmitted
 import splice.spi.InflightGate
 import splice.spi.LiveLimit
+import splice.spi.Ticker
 import splice.spi.TurnWatchdog
+import splice.spi.WatchdogFired
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.atomic.AtomicBoolean
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
@@ -55,6 +63,16 @@ class TurnFinishTest {
     @BeforeAll
     fun setUp() {
         tmp = Files.createTempDirectory("turn-finish")
+    }
+
+    private class VirtualTicks {
+        var now = 0L
+            private set
+        val clock = ElapsedClock { now }
+        val ticker = Ticker { intervalMs ->
+            now += intervalMs
+            true
+        }
     }
 
     /** One TurnFinish with observable instruments; [tag] isolates each test's files. */
@@ -72,7 +90,10 @@ class TurnFinishTest {
             telemetry,
         )
 
-        suspend fun drive(emitter: TurnTerminal): TurnDrive = TurnDrive(
+        suspend fun drive(
+            emitter: TurnTerminal,
+            watchdog: TurnWatchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
+        ): TurnDrive = TurnDrive(
             requestBody = buildJsonObject { },
             meta = TurnMeta(
                 compact = false,
@@ -86,7 +107,7 @@ class TurnFinishTest {
                 budgetTokens = null,
             ),
             emitter = emitter,
-            watchdog = TurnWatchdog(WatchdogBudget(10.seconds, 10.seconds, 30.seconds)),
+            watchdog = watchdog,
             slot = InflightGate(LiveLimit { 1 }).acquire(),
             pipeline = TurnPipeline(
                 CompactStats(perfFile.resolveSibling("compact-dr8x.jsonl")),
@@ -105,6 +126,64 @@ class TurnFinishTest {
             ),
             toolSearch = null,
         )
+    }
+
+    private suspend fun finishAndReadTurnLine(tag: String, watchdog: TurnWatchdog): String {
+        val rig = Rig(tmp, tag)
+        val emitter = CollectingTerminal("gpt-5.6-sol", UsagePayloadBuilder { buildJsonObject { } })
+        val drive = rig.drive(emitter, watchdog)
+        try {
+            rig.finish.finishTurn(drive, TurnOutcome.Failure(ErrorType.OVERLOADED, "upstream stalled"))
+        } finally {
+            drive.slot.release()
+        }
+        return rig.logs.first()
+    }
+
+    @Test
+    fun `a fired mid-output idle watchdog reaches the rendered turn line`() = runBlocking {
+        val ticks = VirtualTicks()
+        val watchdog = TurnWatchdog(
+            WatchdogBudget(10.seconds, 100.milliseconds, 30.seconds),
+            clock = ticks.clock,
+            ticker = ticks.ticker,
+        )
+        val slot = InflightGate(LiveLimit { 1 }, clock = ticks.clock).acquire()
+        val target = launch { delay(10.seconds) }
+        val poller = watchdog.launchIn(this, slot, target, ClientFrameEmitted { true })
+        try {
+            target.join()
+        } finally {
+            poller.cancel()
+            slot.release()
+        }
+        assertTrue(watchdog.fired is WatchdogFired.Idle, "setup must fire the mid-output idle tier")
+
+        val line = finishAndReadTurnLine("watchdog-idle", watchdog)
+
+        assertTrue("watchdog=idle(tier=mid-output limit=100ms idle=250ms)" in line, line)
+    }
+
+    @Test
+    fun `a fired total cap watchdog reaches the rendered turn line`() = runBlocking {
+        val ticks = VirtualTicks()
+        val watchdog = TurnWatchdog(
+            WatchdogBudget(10.seconds, 10.seconds, 400.milliseconds),
+            clock = ticks.clock,
+            ticker = ticks.ticker,
+        )
+        val target = launch { delay(10.seconds) }
+        val poller = watchdog.launchTotalCap(this, target)
+        try {
+            target.join()
+        } finally {
+            poller.cancel()
+        }
+        assertTrue(watchdog.fired is WatchdogFired.TotalCap, "setup must fire the whole-turn cap")
+
+        val line = finishAndReadTurnLine("watchdog-cap", watchdog)
+
+        assertTrue("watchdog=total-cap(elapsed=500ms)" in line, line)
     }
 
     @Test

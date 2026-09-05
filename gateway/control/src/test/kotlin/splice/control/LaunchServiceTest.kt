@@ -4,6 +4,14 @@
 // LaunchSpec construction mirrors ControlServerTest.kt/WebuiContractTest.kt in this same package.
 package splice.control
 
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.addJsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.long
+import kotlinx.serialization.json.put
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertNotNull
@@ -182,6 +190,86 @@ class LaunchServiceTest {
         assertNull(env["ANTHROPIC_DEFAULT_OPUS_MODEL"], "an undeclared tier is omitted, never filled")
         assertNull(env["ANTHROPIC_DEFAULT_SONNET_MODEL"])
         assertNull(env["ANTHROPIC_DEFAULT_FABLE_MODEL"])
+    }
+
+    private fun kimiRosterCache() = buildJsonArray {
+        addJsonObject {
+            put("value", "kimi-k3")
+            put("label", "Kimi K3 (256k)")
+            put("description", "Kimi K3 (256k)")
+            put("context_window", 256_000)
+        }
+        addJsonObject {
+            put("value", "kimi-k2.7-code")
+            put("label", "Kimi K2.7 Code")
+            put("description", "Kimi K2.7 Code")
+            put("context_window", 256_000)
+        }
+    }
+
+    /** A two-model kimi head, positional: k3 fills opus and fable, k2.7 fills sonnet and haiku. */
+    private fun launchKimiWithRepeatedTier(prefix: String): LaunchRecipe = service.launch(
+        spec(
+            "kimi",
+            pinned = "kimi-k3",
+            available = listOf("kimi-k3", "kimi-k2.7-code"),
+            labels = mapOf("kimi-k3" to "Kimi K3 (256k)", "kimi-k2.7-code" to "Kimi K2.7 Code"),
+        ).copy(discoveryPrefix = prefix, modelOptionsCache = kimiRosterCache()),
+        extraArgs = emptyList(),
+        dangerouslySkipPermissions = false,
+    )
+
+    // 2026-09-04: Claude Code 2.1.257 draws one picker row per PLANTED tier and dedupes by value
+    // ("opus" vs "fable"), so two tiers on one model listed it twice. A repeated tier is planted
+    // under the head's discovery-wrapped id: routed (catalog.contains unwraps), hidden (not on
+    // availableModels). The first tier, the labels and the cache rows are untouched.
+    @Test
+    fun `a tier that repeats an earlier tier's model is planted under the wrapped id`() {
+        val env = launchKimiWithRepeatedTier(prefix = "claude-kimi--").env
+        assertEquals("kimi-k3", env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
+        assertEquals("kimi-k2.7-code", env["ANTHROPIC_DEFAULT_SONNET_MODEL"])
+        assertEquals(
+            "claude-kimi--kimi-k2.7-code",
+            env["ANTHROPIC_DEFAULT_HAIKU_MODEL"],
+            "haiku repeats sonnet: wrapped",
+        )
+        assertEquals("claude-kimi--kimi-k3", env["ANTHROPIC_DEFAULT_FABLE_MODEL"], "fable repeats opus: wrapped")
+        assertEquals("Kimi K2.7 Code", env["ANTHROPIC_DEFAULT_HAIKU_MODEL_NAME"], "the label stays the model's own")
+        assertEquals("Kimi K3 (256k)", env["ANTHROPIC_DEFAULT_FABLE_MODEL_NAME"])
+    }
+
+    @Test
+    fun `positional fill plants the repeated frontier and mid tiers under the wrapped id`() {
+        val env = service.launch(
+            spec("codex", available = listOf("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"))
+                .copy(discoveryPrefix = "claude-codex--"),
+            extraArgs = emptyList(),
+            dangerouslySkipPermissions = false,
+        ).env
+        assertEquals("gpt-5.6-sol", env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
+        assertEquals("gpt-5.6-terra", env["ANTHROPIC_DEFAULT_SONNET_MODEL"])
+        assertEquals("gpt-5.6-luna", env["ANTHROPIC_DEFAULT_HAIKU_MODEL"])
+        assertEquals(
+            "claude-codex--gpt-5.6-sol",
+            env["ANTHROPIC_DEFAULT_FABLE_MODEL"],
+            "fable shares the frontier: wrapped",
+        )
+        assertEquals("gpt-5.6-sol", env["ANTHROPIC_DEFAULT_FABLE_MODEL_NAME"], "the label is the model's own")
+    }
+
+    @Test
+    fun `a head without a discovery prefix keeps the repeated tier bare, and the cache keeps every row`() {
+        val recipe = launchKimiWithRepeatedTier(prefix = "")
+        assertEquals("kimi-k3", recipe.env["ANTHROPIC_DEFAULT_OPUS_MODEL"])
+        val written = Json.parseToJsonElement(
+            Files.readString(tmp.resolve(".claude-kimi/.claude.json")),
+        ).jsonObject.getValue("additionalModelOptionsCache").jsonArray
+        assertEquals(
+            listOf("kimi-k3", "kimi-k2.7-code"),
+            written.map { it.jsonObject.getValue("value").jsonPrimitive.content },
+            "every roster row stays in the cache: Claude Code dedupes them against the tiers itself",
+        )
+        assertEquals(256_000, written.first().jsonObject.getValue("context_window").jsonPrimitive.long)
     }
 
     // Discovery retirement (2026-08-30). CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY made the

@@ -104,30 +104,36 @@ internal class ResponsesHarvest {
         }
         val status = JsonScalars.strOrEmpty(resp["status"]).ifEmpty { "?" }
         val output = resp["output"] as? JsonArray ?: return "status=$status items=<none>"
-        val items = output.mapNotNull { el ->
-            val item = el as? JsonObject ?: return@mapNotNull null
-            val type = JsonScalars.strOrEmpty(item["type"]).ifEmpty { "?" }
-            when (type) {
-                "message" -> {
-                    val parts = (item["content"] as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
-                    val detail = parts.joinToString(",") { part ->
-                        val t = JsonScalars.strOrEmpty(part["type"]).ifEmpty { "?" }
-                        val len = JsonScalars.strOrEmpty(part["text"]).length + JsonScalars.strOrEmpty(part["refusal"]).length
-                        "$t:$len"
-                    }
-                    "message(${detail.ifEmpty { "no parts" }})"
-                }
-                "reasoning" -> {
-                    val summaries = (item["summary"] as? JsonArray)?.size ?: 0
-                    val enc = JsonScalars.strOrEmpty(item["encrypted_content"]).length
-                    "reasoning(summary=$summaries,enc=$enc)"
-                }
-                "function_call" -> "function_call(${JsonScalars.strOrEmpty(item["name"])})"
-                else -> "$type(${item.keys.filter { it != "type" }.joinToString(",")})"
-            }
-        }
+        val items = output.mapNotNull { el -> (el as? JsonObject)?.let(::describeItem) }
         val streamed = if (streamedTypes.isEmpty()) "" else " streamed=[${streamedTypes.joinToString(",")}]"
         return "status=$status items=[${items.joinToString(" ")}]$streamed"
+    }
+
+    /** One output item in the evidence form [describeOutput] prints: `message(output_text:0)`,
+     *  `reasoning(summary=0,enc=1842)`, `function_call(name)`, or an unknown type by its keys.
+     *  Public so [ResponsesItemFold] records completed items in the SAME words the terminal
+     *  harvest uses — one vocabulary for the empty-turn line. */
+    public fun describeItem(item: JsonObject): String {
+        val type = JsonScalars.strOrEmpty(item["type"]).ifEmpty { "?" }
+        return when (type) {
+            "message" -> {
+                val parts = (item["content"] as? JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
+                val detail = parts.joinToString(",") { part ->
+                    val t = JsonScalars.strOrEmpty(part["type"]).ifEmpty { "?" }
+                    val len = JsonScalars.strOrEmpty(part["text"]).length +
+                        JsonScalars.strOrEmpty(part["refusal"]).length
+                    "$t:$len"
+                }
+                "message(${detail.ifEmpty { "no parts" }})"
+            }
+            "reasoning" -> {
+                val summaries = (item["summary"] as? JsonArray)?.size ?: 0
+                val enc = JsonScalars.strOrEmpty(item["encrypted_content"]).length
+                "reasoning(summary=$summaries,enc=$enc)"
+            }
+            "function_call" -> "function_call(${JsonScalars.strOrEmpty(item["name"])})"
+            else -> "$type(${item.keys.filter { it != "type" }.joinToString(",")})"
+        }
     }
 
     /** Append one reasoning item's fullest readable text as a blank-line-separated paragraph. */
@@ -139,12 +145,6 @@ internal class ResponsesHarvest {
     }
 
     /** Concatenate the output_text/text parts of one message item, in order. */
-    /** The readable text of a completed `message` item — every `output_text`/`text` content
-     *  part concatenated. Public so [ResponsesItemFold] can recover a message delivered whole on
-     *  output_item.done with no output_text.delta (Astra on heavy turns), which would otherwise
-     *  be dropped when the terminal `output` array is also empty. */
-    public fun messageItemText(item: JsonObject): String = messageText(item)
-
     private fun messageText(item: JsonObject): String {
         val content = item["content"] as? JsonArray ?: return ""
         val out = StringBuilder()

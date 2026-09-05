@@ -67,6 +67,7 @@ internal class ResponsesItemFold(
         reasoningFold.maybeEmitLateReasoning(item, oi, sink)
         maybeHarvestLateToolArgs(item, oi, sink)
         recordDoneDetail(item)
+        if (item != null && JsonScalars.strOrEmpty(item["type"]) == "message") state.messageClosed = true
         closeOpenBlocks(oi, sink)
         if (item == null) return
         replay.emitReplayedReasoning(item, sink)
@@ -90,23 +91,13 @@ internal class ResponsesItemFold(
     }
 
     /** Evidence for the empty-turn line: what a completed message/reasoning item actually carried,
-     *  since these can ride output_item.done with an EMPTY terminal output array. Records e.g.
-     *  message(text=0,parts=[]) or reasoning(enc=1842,sum=0) — the string appended to streamedItemTypes
-     *  is overwritten with the detailed form. Evidence only. */
+     *  since these can ride output_item.done with an EMPTY terminal output array. The bare type
+     *  recorded at added-time is replaced with [ResponsesHarvest.describeItem]'s form. Evidence only. */
     private fun recordDoneDetail(item: JsonObject?) {
         if (item == null) return
         val type = JsonScalars.strOrEmpty(item["type"])
-        val detail = when (type) {
-            "message" -> {
-                val parts = (item["content"] as? kotlinx.serialization.json.JsonArray)?.mapNotNull { it as? JsonObject }.orEmpty()
-                val text = harvest.messageItemText(item).length
-                val ptypes = parts.joinToString(",") { JsonScalars.strOrEmpty(it["type"]).ifEmpty { "?" } }
-                "message(text=$text,parts=[$ptypes])"
-            }
-            "reasoning" -> "reasoning(enc=${JsonScalars.strOrEmpty(item["encrypted_content"]).length},sum=${(item["summary"] as? kotlinx.serialization.json.JsonArray)?.size ?: 0})"
-            else -> return
-        }
-        // replace the last matching bare type recorded at added-time with the detailed form
+        if (type != "message" && type != "reasoning") return
+        val detail = harvest.describeItem(item)
         val idx = state.streamedItemTypes.indexOfLast { it == type }
         if (idx >= 0) state.streamedItemTypes[idx] = detail else state.streamedItemTypes.add(detail)
     }

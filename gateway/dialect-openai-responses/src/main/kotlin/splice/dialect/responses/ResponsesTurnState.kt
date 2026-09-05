@@ -54,6 +54,10 @@ internal class ResponsesTurnState {
      *  completed response object without emitting anything, and that is precisely the turn the
      *  honesty gate must still call empty. */
     var emittedThinking = false
+
+    /** A `message` item reached output_item.done this round (text or not) — see
+     *  [splice.core.turn.TurnOutcome.Success.messageClosed]. */
+    var messageClosed = false
     var incomplete = false
 
     // response.incomplete carrying a non-max_output_tokens reason (content_filter, etc.) — the

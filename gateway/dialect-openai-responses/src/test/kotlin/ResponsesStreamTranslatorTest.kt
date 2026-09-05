@@ -1441,4 +1441,58 @@ class ResponsesStringErrorTest {
         val failure = assertInstanceOf(TurnOutcome.Failure::class.java, outcome)
         assertTrue(failure.message.contains("boom"), failure.message)
     }
+
+    @Test
+    fun `an empty message the backend closed marks the outcome messageClosed without any text on the wire`() = runTest {
+        // gpt-6-astra, 2026-09-05: encrypted reasoning, then a message item whose one output_text
+        // part is empty, then a terminal with an empty output array. The model's finished answer
+        // is "nothing" — the gateway must be able to tell that from a round with no message at all.
+        val sink = RecordingSink()
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","encrypted_content":"zzz","summary":[]}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.added","output_index":1,"item":{"type":"message"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.done","output_index":1,"item":{"type":"message","content":[{"type":"output_text","text":""}]}}""",
+                ),
+                ev(
+                    """{"type":"response.completed","response":{"status":"completed","output":[],"usage":{"input_tokens":100,"output_tokens":9}}}""",
+                ),
+            ).asFlow(),
+            sink,
+        )
+        val success = assertInstanceOf(TurnOutcome.Success::class.java, outcome)
+        assertTrue(success.messageClosed, "the message item completed, so the answer is a deliberate empty")
+        assertFalse(success.emittedText, "no text was produced")
+        assertTrue(sink.calls.none { it.startsWith("text") }, "nothing may be invented on the wire: ${sink.calls}")
+    }
+
+    @Test
+    fun `a round with no message item is not messageClosed`() = runTest {
+        val outcome = ResponsesStreamTranslator(ctx()).driveTurn(
+            listOf(
+                ev(
+                    """{"type":"response.output_item.added","output_index":0,"item":{"type":"reasoning"}}""",
+                ),
+                ev(
+                    """{"type":"response.output_item.done","output_index":0,"item":{"type":"reasoning","encrypted_content":"zzz","summary":[]}}""",
+                ),
+                ev(
+                    """{"type":"response.completed","response":{"status":"completed","output":[],"usage":{"input_tokens":100,"output_tokens":9}}}""",
+                ),
+            ).asFlow(),
+            RecordingSink(),
+        )
+        assertFalse(
+            (outcome as TurnOutcome.Success).messageClosed,
+            "no message item, so the honest error still applies",
+        )
+    }
 }

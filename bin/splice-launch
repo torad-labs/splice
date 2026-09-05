@@ -62,7 +62,7 @@ DANGEROUS="false"
 # — bump both together whenever this shim's behavior changes. No code generation.
 SPLICE_SHIM_VERSION="shim-2"
 # Hand-paired with splice.core.GATEWAY_VERSION. Release acceptance verifies the marker.
-SPLICE_GATEWAY_VERSION="0.3.1"
+SPLICE_GATEWAY_VERSION="0.3.0"
 
 need_jar() {
   if [ ! -f "$JAR" ]; then

@@ -105,6 +105,14 @@
   in the v0.3.0 section, so the beta.1 list matches its tag.
 
 ### Fixed
+- **The Astra row declares the window Astra actually has.** Codex's own catalog gives
+  `gpt-6-astra` a 272k working window (the 872k figure is a plan ceiling). The example row said
+  400k, so Claude Code drove sessions past 320k input, where every Astra turn came back as
+  encrypted reasoning and an empty message and the client retried the same 258k-token request a
+  dozen times. Below 200k it never happened. The row is 272k now, the example head no longer
+  carries a head-wide 400k that would have flattened it back, and the 5.6 rows keep their 400k.
+  An empty turn's error line now names the shape the backend sent (`reasoning(enc=1700,sum=0)`,
+  `message(text=0)`) instead of asserting an absence.
 
 - **Compactions no longer die on the ChatGPT backend's capacity signal.** An in-stream
   `server_is_overloaded` (or `slow_down`) used to classify as a non-retryable `api_error`, so the

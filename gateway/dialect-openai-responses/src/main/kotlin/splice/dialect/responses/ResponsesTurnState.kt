@@ -89,6 +89,12 @@ internal class ResponsesTurnState {
     // Reasoning-cache capture (RC-1): the round's REAL upstream function_call ids, in order.
     val turnToolIds = mutableListOf<String>()
 
+    /** Every output item this round STREAMED, by `type`, in arrival order. The empty-turn line
+     *  reads this because a code-mode model (Astra) can stream an item type this dialect drops
+     *  and finish with an empty terminal `output` array — so `finalResponse` shows nothing while
+     *  the stream carried the whole (unrendered) round. Evidence only; nothing branches on it. */
+    val streamedItemTypes = mutableListOf<String>()
+
     // tool_search_call items this round emitted (deferred tool surface) — populated only when the
     // gateway declared deferral this turn; empty otherwise (pre-deferral behaviour intact).
     val toolSearches = mutableListOf<ToolSearchCall>()

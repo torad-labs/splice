@@ -17,6 +17,7 @@ internal class ResponsesItemFold(
 
     suspend fun onItemAdded(evt: JsonObject, sink: WireSink) {
         val item = evt["item"] as? JsonObject ?: return
+        state.streamedItemTypes.add(JsonScalars.strOrEmpty(item["type"]).ifEmpty { "?" })
         val oi = frames.intOr(evt[OUTPUT_INDEX]) ?: frames.intOr(item["index"]) ?: state.blocks.size
         // codex parity: EVERY added item (reasoning, message, function_call, search) becomes the
         // active item; summary done-events are rendered only while their item is active.

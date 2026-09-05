@@ -97,4 +97,13 @@ class HarvestedTest {
     fun `describeOutput says so when no terminal response was ever seen`() {
         assertEquals("status=<no terminal response>", harvest.describeOutput(null))
     }
+
+    @Test
+    fun `describeOutput appends the streamed item types when the terminal output is empty`() {
+        val line = harvest.describeOutput(
+            resp("""{"status":"completed","output":[]}"""),
+            listOf("reasoning", "custom_tool_call"),
+        )
+        assertEquals("status=completed items=[] streamed=[reasoning,custom_tool_call]", line)
+    }
 }

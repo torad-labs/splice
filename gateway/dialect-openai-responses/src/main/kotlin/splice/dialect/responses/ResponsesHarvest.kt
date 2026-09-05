@@ -97,8 +97,11 @@ internal class ResponsesHarvest {
      *  is the evidence the empty-turn honesty gate prints — an item type this dialect does not
      *  render (agent_message, custom_tool_call, context_compaction, ...) is invisible everywhere
      *  else, and "model returned no content" was asserting an absence nobody could grep. */
-    public fun describeOutput(resp: JsonObject?): String {
-        if (resp == null) return "status=<no terminal response>"
+    public fun describeOutput(resp: JsonObject?, streamedTypes: List<String> = emptyList()): String {
+        if (resp == null) {
+            val streamed = if (streamedTypes.isEmpty()) "" else " streamed=[${streamedTypes.joinToString(",")}]"
+            return "status=<no terminal response>$streamed"
+        }
         val status = JsonScalars.strOrEmpty(resp["status"]).ifEmpty { "?" }
         val output = resp["output"] as? JsonArray ?: return "status=$status items=<none>"
         val items = output.mapNotNull { el ->
@@ -123,7 +126,8 @@ internal class ResponsesHarvest {
                 else -> "$type(${item.keys.filter { it != "type" }.joinToString(",")})"
             }
         }
-        return "status=$status items=[${items.joinToString(" ")}]"
+        val streamed = if (streamedTypes.isEmpty()) "" else " streamed=[${streamedTypes.joinToString(",")}]"
+        return "status=$status items=[${items.joinToString(" ")}]$streamed"
     }
 
     /** Append one reasoning item's fullest readable text as a blank-line-separated paragraph. */

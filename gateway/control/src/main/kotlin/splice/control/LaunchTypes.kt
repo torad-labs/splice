@@ -21,6 +21,10 @@ public data class LaunchSpec(
      *  fully retired for that head, and an undeclared tier stays un-set rather than pointing a
      *  second alias at an already-claimed model (the 2-model duplication this exists to remove). */
     val modelSlots: Map<String, String> = emptyMap(),
+    /** The head's discovery prefix ("claude-codex--"): a tier that repeats an earlier tier's model
+     *  is planted under this wrapped spelling so the picker's allowlist hides its row (see
+     *  LaunchService.buildEnv). Blank keeps the duplicate row. */
+    val discoveryPrefix: String = "",
     val contextWindow: Long,
     /** Claude Code's per-request timeout (API_TIMEOUT_MS) for THIS head: the daemon's whole-turn
      *  cap plus a grace, so the client always outlives the proxy's own wall and receives its honest
